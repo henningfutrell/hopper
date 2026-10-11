@@ -11,7 +11,8 @@
 // hand-offs closed and the failures that ended in the last day, history that waits on nobody (issue #618) —; then the
 // profile and, for an admin, the settings. An action shows only when the daemon says it takes it now (`actions`) and the role may act; it
 // updates live, read again on each assessor event. The assessment summary and a person's note are rendered as Markdown,
-// sanitized (issue #569); the raw error stays as it was written.
+// sanitized (issue #569); the raw error stays as it was written. Each hand-off card and failure row has Report a bug on its
+// job (issue #694), for an operator or admin.
 import { Archive, History, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,7 @@ import type { FailureRecordView, HandoffResolutionAction, HandoffView, ProblemVi
 import { failureAct, useHopper } from '@/store';
 import { useCanAdmin, useCanOperate, useJobIndex } from '@/store/selectors';
 import { cn } from '@/lib/utils';
+import { ReportBugButton } from '@/app/bug-report';
 import { FailureProfilePanel, NameCause } from './failure-profile';
 import { FailureSettingsPanel } from './failure-settings';
 
@@ -205,6 +207,7 @@ function HandoffRow({ h }: { h: HandoffView }) {
         <span className="num" title={h.openedAt}>waiting since {ago(h.openedAt, now)}</span>
         {!open && h.closedAt && <span className="num" title={h.closedAt}>closed {ago(h.closedAt, now)}</span>}
         {h.causeName && <span>cause: {h.causeName}</span>}
+        <span className="ml-auto"><ReportBugButton jobId={h.jobId} /></span>
       </div>
     </li>
   );
@@ -255,6 +258,7 @@ function FailureRow({ r }: { r: FailureRecordView }) {
         <span className="ml-auto flex shrink-0 items-center gap-2">
           <StatusBadge status={r.decision} tone={DECISION_TONE[r.decision]} label={DECISION_LABEL[r.decision]} title={r.reasons.join('\n')} />
           {offered(r.actions.retry, canAct) && <Button size="xs" variant="outline" disabled={busy} onClick={() => void retry()}><RotateCcw />Retry</Button>}
+          <ReportBugButton jobId={r.jobId} />
         </span>
       </div>
       <Markdown text={r.summary} className="text-sm" />

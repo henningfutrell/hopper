@@ -1,5 +1,5 @@
 // Open questions: what the job asked, its recent output, the escalation trail, and the answer box
-// with Send answer, Close and Dismiss, and Park for the job waiting on it (issue #530: where a person decides the job
+// with Send answer, Close and Dismiss, Report a bug on its job (issue #694), and Park for the job waiting on it (issue #530: where a person decides the job
 // must wait; or why it cannot be parked). A level's recommendation on the trail is sent in one click, Use answer, by
 // the same route as Send answer; the card says in place whether it was sent, or why not with Retry (issue #459). A 403 on a mutation drops the UI to logged out: the landing
 // page (issue #213). Shown, the owner's
@@ -40,6 +40,7 @@ import { act, actFor, markSeen, refreshQuestions, useHopper } from '@/store';
 import { useCanAdmin, useCanOperate, useJobIndex, useQuestions } from '@/store/selectors';
 import { ParkButton } from '@/views/overview/lanes';
 import { PhaseShiftSettingsPanel, QuestionForks, ShiftActions } from '@/views/phase-shifts';
+import { ReportBugButton } from '@/app/bug-report';
 
 const Mark = ({ ok }: { ok: boolean }) => <span className={ok ? 'text-ok' : 'text-bad'}>{ok ? '✓' : '✗'}</span>;
 
@@ -154,6 +155,7 @@ function QuestionCard({ q }: { q: QuestionView }) {
               action="Dismiss question" onConfirm={() => void end('dismiss')}>
               <Button variant="ghost" disabled={sending} title="Drop a question that needs no action"><Archive />Dismiss</Button>
             </Confirm>
+            <span className="ml-auto self-center"><ReportBugButton jobId={q.jobId} /></span>
           </div>
           {!movedOn && <ShiftActions q={q} busy={sending} />}
         </div>

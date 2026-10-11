@@ -24,12 +24,19 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
   sh "$HOPPER_GH" pr create      --repo OWNER/NAME --head BRANCH [--base BRANCH] --title TITLE (--body TEXT | --body-file FILE)
   sh "$HOPPER_GH" pr view N       --repo OWNER/NAME
   sh "$HOPPER_GH" pr ready N      --repo OWNER/NAME      (mark a draft ready for review)
+  sh "$HOPPER_GH" report bug --title TITLE (--body TEXT | --body-file FILE) [--comment-on N] [--force]
+                                                         (report a bug in the hopper itself)
 
 Prints the answer as JSON, with the url. A refusal prints why and exits 1: do not try another way around it.
 An issue filed this way gets no labels or assignees and says the hopper filed it; a person triages it.
 git fetch and git push to GitHub go through the hopper too: this machine holds no GitHub token for them. A job
 pushes only to a new branch of its own work on this job's own repository, never to its default or a release branch.
-A pull request: push the branch first (git push), on this job's own repository.`;
+A pull request: push the branch first (git push), on this job's own repository.
+A bug report goes to the hopper's own issues (henningfutrell/hopper), filed with your user's GitHub connection and
+labelled user-report. Never file one with issue create. The hopper adds this job's context (version, install, state,
+last log lines) and masks tokens, keys, host names and IP addresses. Say what happened in the body; never put text from
+a private repository in it. When open reports look similar, nothing is filed: it prints them and exits 1. Then add yours
+to one with --comment-on N, or file a new one with --force. At most 3 reports per job a day. A report never starts a job.`;
 
 /** The script. Arguments become form fields, rebuilt in place (no eval); a body file is read by curl itself, the token from stdin. */
 export const PROXY_SCRIPT = `#!/bin/sh
@@ -39,7 +46,7 @@ ${PROXY_HELP}
 HOPPER_GH_HELP
 }
 case "$1 $2" in
-  'issue create'|'issue comment'|'issue view'|'issue close'|'pr create'|'pr view'|'pr ready') op="$1.$2"; shift 2 ;;
+  'issue create'|'issue comment'|'issue view'|'issue close'|'pr create'|'pr view'|'pr ready'|'report bug') op="$1.$2"; shift 2 ;;
   'help '*|' ') help; exit 0 ;;
   *) help >&2; exit 2 ;;
 esac
@@ -49,12 +56,15 @@ n=$#; i=0
 while [ "$i" -lt "$n" ]; do
   a=$1; shift; i=$((i + 1))
   case "$a" in
-    --repo|--title|--body|--head|--base|--body-file)
+    --force) set -- "$@" --data-urlencode "force=true" ;;
+    --repo|--title|--body|--head|--base|--body-file|--comment-on)
       [ "$i" -lt "$n" ] || { echo "hopper-gh: $a needs a value" >&2; exit 2; }
       v=$1; shift; i=$((i + 1))
       if [ "$a" = --body-file ]; then
         [ -r "$v" ] || { echo "hopper-gh: cannot read $v" >&2; exit 2; }
         set -- "$@" --data-urlencode "body@$v"
+      elif [ "$a" = --comment-on ]; then
+        set -- "$@" --data-urlencode "commentOn=$v"
       else
         set -- "$@" --data-urlencode "\${a#--}=$v"
       fi ;;

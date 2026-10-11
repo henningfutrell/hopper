@@ -73,6 +73,11 @@ describe('the address mask', () => {
     expect(maskAddresses('at 12:30:45, v1.2.3, std::vector')).toBe('at 12:30:45, v1.2.3, std::vector');
   });
 
+  it('masks an IP address at the end of a sentence, and keeps a longer dotted number', () => {
+    expect(maskAddresses('It failed at 10.20.30.40. Then 192.168.1.2.')).toBe('It failed at [IP address, masked]. Then [IP address, masked].');
+    expect(maskAddresses('oid 1.3.6.1.4.1')).toBe('oid 1.3.6.1.4.1');
+  });
+
   it('masks private host names', () => {
     expect(maskAddresses('reach build.lan and pi.local and box.tail1234.ts.net')).toBe('reach [host, masked] and [host, masked] and [host, masked]');
   });

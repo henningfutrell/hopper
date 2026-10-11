@@ -3,6 +3,8 @@
 // read and edit before sending. The daemon files it on the hopper's own repository as the person, through their own
 // GitHub connection. When open reports look similar it offers them first: add yours to one, or file a new one anyway.
 // After filing it shows the link. The user menu opens it (issue #666); the dialog lives outside the menu, so it stays open.
+// Every failure, hand-off and question card opens it on its job too (`ReportBugButton`).
+import { Bug } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
@@ -10,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { post } from '@/lib/api';
 import { draftProblem, emptyDraft, reportRequest, sentLine, type BugReportAnswer, type BugReportDraft, type SimilarReport } from '@/model/bug-report';
+import { useCanOperate } from '@/store/selectors';
 
 type Step = { at: 'form' } | { at: 'similar'; similar: SimilarReport[] } | { at: 'sent'; answer: Extract<BugReportAnswer, { kind: 'filed' | 'commented' }> };
 
@@ -112,4 +115,17 @@ export function useBugReport(): { open: (jobId?: string) => void; dialog: ReactN
     open: (jobId) => setAt(jobId ? { jobId } : {}),
     dialog: at && <BugReportDialog {...(at.jobId ? { jobId: at.jobId } : {})} onClose={() => setAt(null)} />,
   };
+}
+
+/** Report a bug on one job: the button a failure, hand-off or question card shows, for an operator or admin. */
+export function ReportBugButton({ jobId }: { jobId: string }) {
+  const canOperate = useCanOperate();
+  const report = useBugReport();
+  if (!canOperate) return null;
+  return (
+    <>
+      <Button size="xs" variant="ghost" title="Report a bug in the hopper, with this job's context" onClick={() => report.open(jobId)}><Bug />Report a bug</Button>
+      {report.dialog}
+    </>
+  );
 }

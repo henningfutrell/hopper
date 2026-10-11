@@ -67,7 +67,7 @@ export function maskLogLine(text: string, held: Iterable<string>): string {
  */
 const H = '[0-9A-Fa-f]{1,4}';
 const ADDRESS_PATTERNS: [RegExp, string][] = [
-  [/(?<![\w.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?![\w.])/g, '[IP address, masked]'],
+  [/(?<![\w.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\w|\.\d)/g, '[IP address, masked]'],
   [new RegExp(`(?<![\\w:])(?:(?:${H}:){7}${H}|(?:${H}:){1,6}:(?:${H}(?::${H}){0,5})?|::${H}(?::${H}){0,6})(?![\\w:])`, 'g'), '[IP address, masked]'],
   [/(?<![\w.-])[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?:local|lan|home|internal|corp|ts\.net)\b/g, '[host, masked]'],
   [/(?<=\/(?:home|Users)\/)[^/\s'"]+/g, '[user, masked]'],

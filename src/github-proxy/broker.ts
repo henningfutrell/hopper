@@ -4,13 +4,15 @@
 // work), the request's shape checked, the asker checked (policy.ts), the rate limits taken (limits.ts), then
 // done on GitHub (`github_proxy.done`, `.refused`, `.failed`). Every outcome but a token that names no job is
 // an event on the job's timeline; a request of
-// another user's job is also an event of the hopper's own user, whose connection it would act with.
+// another user's job is also an event of the hopper's own user, whose connection it would act with. A job's bug report
+// (`report.bug`, issue #694) is checked and limited the same way, then handed to `report`: Report a bug's own path, with
+// the job's own user's connection, whose events (`bug_report.filed`, `.failed`) record it.
 import { randomUUID } from 'node:crypto';
 import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
-import { checkRequest, filedNote, proxyRequest, type ProxyRequest } from './policy.ts';
+import { checkRequest, filedNote, proxyRequest, REPORT_OP, reportRequest, type ProxyRequest, type ReportRequest } from './policy.ts';
 import { parseProxyToken, type ProxyTokenParts } from './token.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
@@ -44,6 +46,8 @@ export interface GitHubProxyOptions {
   /** The user whose GitHub connection the hopper acts with (the oldest), and that connection; undefined: no user yet. */
   hopper(): { user: ProxyUser; connection: ProxyConnection } | undefined;
   limiter: ProxyLimiter;
+  /** A job's bug report, filed with its own user's connection (issue #694); absent: this hopper files none. Never throws. */
+  report?(user: ProxyUser, job: Job, req: ReportRequest): Promise<ProxyAnswer>;
   log(line: string): void;
   newId?: () => string;
 }
@@ -78,15 +82,23 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
         user.record({ type, jobId: job.id, data: at });
         if (hopper && !own) hopper.user.record({ type, data: { ...at, forUser: user.id, job: job.id } });
       };
-      const refuse = (status: number, reason: string, req?: Partial<ProxyRequest>): ProxyAnswer => {
+      const refuse = (status: number, reason: string, req?: { op?: string; repo?: string }): ProxyAnswer => {
         record('github_proxy.refused', { ...(req?.op ? { op: req.op } : {}), ...(req?.repo ? { repo: req.repo } : {}), reason });
         return { status, body: { error: `refused: ${reason}`, requestId } };
       };
-      const parsed = proxyRequest.safeParse(body);
+      const raw = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
+      const report = raw.op === REPORT_OP;
+      const parsed = report ? reportRequest.safeParse(body) : proxyRequest.safeParse(body);
       if (!parsed.success) {
-        const raw = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
         const why = parsed.error.issues.map((i) => `${i.path.join('.') || 'request'}: ${i.message}`).join('; ');
-        return refuse(400, `not a request the hopper takes (${why}). sh "$HOPPER_GH" help`, { ...(typeof raw.op === 'string' ? { op: raw.op as ProxyRequest['op'] } : {}), ...(typeof raw.repo === 'string' ? { repo: raw.repo } : {}) });
+        return refuse(400, `not a request the hopper takes (${why}). sh "$HOPPER_GH" help`, { ...(typeof raw.op === 'string' ? { op: raw.op } : {}), ...(typeof raw.repo === 'string' ? { repo: raw.repo } : {}) });
+      }
+      if (parsed.data.op === REPORT_OP) {
+        if (!o.report) return refuse(503, 'this hopper files no bug reports', parsed.data);
+        const over = o.limiter.take(REPORT_OP, `${user.id}/${job.id}`, machine === undefined ? undefined : `${user.id}/${machine}`);
+        if (over) return refuse(429, over, parsed.data);
+        const answer = await o.report(user, job, parsed.data);
+        return { status: answer.status, body: { ...answer.body, requestId } };
       }
       const req = parsed.data;
       if (!hopper) return refuse(503, 'the hopper has no user yet, so no GitHub connection', req);
