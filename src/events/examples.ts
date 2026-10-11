@@ -13,7 +13,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.approved': {},
   'job.claimed': { attempts: 1, effectivePriority: 50, reason: 'idle lane' },
   'job.started': { attempts: 1 },
-  'job.progressed': { progress: 0.5, message: 'half' },
+  'job.progressed': { message: 'Running the checks', tasks: { done: 2, total: 5 } },
   'job.finished': { result: { ok: true } },
   'job.failed': { error: 'boom' },
   'job.cancelled': { reason: 'cancelled while queued' },
@@ -170,6 +170,14 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     reason: 'Access denied it: template kube is not approved to write on namespace lab/web. write on namespace lab/web waits for a person\'s approval on Settings → Vault (the first-time gate)',
     decision: '6c1d2e3f-0000-4000-8000-000000000003',
   },
+  'vault.check_minted': {
+    kind: 'aws', operation: 'read', asset: { kind: 'aws-role', name: '123456789012/readonly' }, template: 'asked-0afb8cc6', check: 'hopper-check-asked-0afb8cc6-mgk2x0',
+    credential: 'AWS_LAB', decision: '6c1d2e3f-0000-4000-8000-000000000004', expiresAt: '2026-10-11T12:15:00.000Z',
+  },
+  'vault.check_mint_refused': {
+    mint: { kind: 'kube', operation: 'read', asset: { kind: 'cluster', name: 'lab' } }, template: 'asked-0afb8cc6', check: 'hopper-check-asked-0afb8cc6-mgk2x0',
+    reason: 'no minting credential mints for cluster lab: a person adds one on Settings → Vault', decision: '6c1d2e3f-0000-4000-8000-000000000005',
+  },
   'vault.mint_tested': {
     asset: { kind: 'aws-role', name: '123456789012/diag' }, credential: 'AWS_LAB', sessionName: 'hopper-mint-test',
     arn: 'arn:aws:sts::123456789012:assumed-role/diag/hopper-mint-test', expiresAt: '2026-10-09T12:15:00.000Z', by: 'Ada',
@@ -218,6 +226,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'lanes.undone': { machineId: 'laptop', from: 4, to: 2, by: 'admin' },
   'lanes.dismissed': { machineId: 'laptop', lanes: 4, configured: 2, reason: 'no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more', by: 'admin' },
   'bug_report.filed': { repo: 'henningfutrell/hopper', kind: 'issue', number: 712, url: 'https://github.com/henningfutrell/hopper/issues/712', jobId: 'b3f1c2d4', by: 'octocat' },
+  'bug_report.kept': { repo: 'henningfutrell/hopper', id: 'c2a7e9d1', problem: 'your GitHub is not connected: connect it in Sources → Connect GitHub', by: 'octocat' },
   'bug_report.failed': { repo: 'henningfutrell/hopper', error: 'your GitHub is not connected: connect it in Sources → Connect GitHub', by: 'octocat' },
   'repo_checks.job_queued': { repo: 'owner/repo', number: 41, url: 'https://github.com/owner/repo/issues/41', existing: false, by: 'octocat' },
   'repo_checks.dismissed': { repo: 'owner/repo', dismissed: true, by: 'octocat' },

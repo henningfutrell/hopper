@@ -49,6 +49,7 @@
 #                   HOPPER_KMS_URL=http://kms:8080
 #                 (the KMS also works with the vault in the hopper: COMPOSE_PROFILES=kms and HOPPER_KMS_URL alone.)
 #   vault         HashiCorp Vault, a vault backend secrets may be kept in (issue #585): see the service below.
+#   tunnel        an ngrok agent that forwards HOPPER_PUBLIC_URL to the hopper's API (issue #795): see the service below.
 # Turn the KMS on with the vault holding secrets: they are sealed again under the data key at its first use. Turn it
 # off again: set each vault secret again (a value sealed under the data key does not open without the KMS).
 name: hopper
@@ -136,6 +137,8 @@ services:
     ports:
       # HOPPER_BIND in .env: the address the UI is published on; 0.0.0.0 reaches it from the LAN (issue #697).
       - "${HOPPER_BIND:-127.0.0.1}:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"
+    # `tunnel` (issue #795): the network the hopper shares with the tunnel alone (profile `tunnel`, below).
+    networks: [default, tunnel]
 
   # OpenFGA (issue #559): access asks it before every credential a job is given. Its tables are the `openfga` schema of
   # the hopper's Postgres; its config is the file postgres writes, read from its working directory. On no host port:
@@ -202,6 +205,75 @@ services:
     restart: unless-stopped
     volumes:
       - kms:/data
+  # Optional (profile `tunnel`, issue #795, docs/deploy.md "The tunnel"): an ngrok agent that forwards HOPPER_PUBLIC_URL
+  # to the hopper, so an agent (Grok Bot) reaches its API from anywhere, with no inbound port on this machine. In .env:
+  #   COMPOSE_PROFILES=tunnel
+  #   NGROK_AUTHTOKEN=<the token from the ngrok dashboard>
+  #   HOPPER_PUBLIC_URL=https://<the domain reserved for it in ngrok>
+  #   HOPPER_TUNNEL_API=http://tunnel:4040
+  # It forwards to http://hopper over the `tunnel` network, which only the hopper shares, never to the hopper's loopback:
+  # an internet request is a public request (the API only with a session or an API token), and no box reaches the agent's
+  # local API. Its edge lets only the API through (/api/ but the event stream, /ui/api/, /ui/auth/api-token): never the UI,
+  # its sign-in pages or the installer; and it limits each caller's requests a minute. It names each caller to the hopper in
+  # `x-hopper-caller` (one a caller sent is dropped), which the hopper reads from this agent alone, so its own sign-in limit
+  # counts each caller, not the agent (docs/design.md "The tunnel"). The hopper asks the agent's local API
+  # whether the public URL is up (HOPPER_TUNNEL_API), and tells a Grok Bot routine where it is reached.
+  tunnel:
+    profiles: [tunnel]
+    image: docker.io/ngrok/ngrok:3.39.11-alpine
+    restart: unless-stopped
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+      HOPPER_PUBLIC_URL: ${HOPPER_PUBLIC_URL:-}
+      HOPPER_PORT: ${HOPPER_PORT:-4790}
+    entrypoint: [sh, -euc]
+    command:
+      - |
+        : "$${NGROK_AUTHTOKEN:?set NGROK_AUTHTOKEN in .env: the token from the ngrok dashboard}"
+        : "$${HOPPER_PUBLIC_URL:?set HOPPER_PUBLIC_URL in .env: https://<the domain reserved for the tunnel in ngrok>}"
+        p=/var/lib/ngrok/hopper-policy.yml
+        cat > $$p <<'EOF'
+        on_http_request:
+          - actions:
+              - type: remove-headers
+                config:
+                  headers:
+                    - x-hopper-caller
+              - type: add-headers
+                config:
+                  headers:
+                    x-hopper-caller: "$${conn.client_ip}"
+          - expressions:
+              - "!(req.url.path.startsWith('/api/') || req.url.path.startsWith('/ui/api/') || req.url.path == '/ui/auth/api-token') || req.url.path.startsWith('/api/events/stream')"
+            actions:
+              - type: custom-response
+                config:
+                  status_code: 404
+                  body: not found
+          - expressions:
+              - "req.url.path == '/ui/auth/api-token'"
+            actions:
+              - type: rate-limit
+                config:
+                  name: api-token exchanges per caller
+                  algorithm: sliding_window
+                  capacity: 5
+                  rate: 60s
+                  bucket_key:
+                    - conn.client_ip
+          - actions:
+              - type: rate-limit
+                config:
+                  name: requests per caller
+                  algorithm: sliding_window
+                  capacity: 120
+                  rate: 60s
+                  bucket_key:
+                    - conn.client_ip
+        EOF
+        exec ngrok --config=/var/lib/ngrok/ngrok.yml http "http://hopper:$${HOPPER_PORT}" --url "$${HOPPER_PUBLIC_URL}" --traffic-policy-file $$p --log stdout
+    networks: [tunnel]
+
   # HashiCorp Vault (issue #585), optional: a vault backend the hopper's vault can keep secrets in. It starts only when
   # asked for, and the hopper never needs it — without it the hopper starts and its own vault works:
   #   podman compose --profile vault up -d
@@ -257,6 +329,9 @@ services:
 networks:
   default:
     name: hopper_default
+  # The tunnel's (issue #795): the hopper and the tunnel only. No box joins it, so none reaches the tunnel agent's local API.
+  tunnel:
+    name: hopper_tunnel
 
 volumes:
   # The files Postgres makes at each start (the database password and URL, OpenFGA's and hopper-vault's preshared keys):

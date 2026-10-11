@@ -40,7 +40,7 @@ export async function pastDialog(d: StartDeps, ctx: ExecutionContext, s: PaneSta
     const step = screen !== answered && count < MAX_STARTUP_SCREENS ? startupStep(screen, policy) : undefined;
     if (step && 'keys' in step) {
       await d.herdr.sendKeys(s.paneId, step.keys);
-      ctx.progress(0, step.did);
+      ctx.progress(step.did);
       answered = screen;
       count++;
       looks = 0;
@@ -59,7 +59,7 @@ export async function askAtDialog(d: StartDeps, ctx: ExecutionContext, s: PaneSt
   if (notSignedIn(visible) || isLoginScreen(visible)) asked.question.text = `${NOT_SIGNED_IN}.\n\n${asked.question.text}`;
   const { lapsesAt } = asked.question;
   ctx.saveState({ ...s, turn: { seq, anchor, blockedAtSend: true, text, unsent: true }, parkedSeq: seq, lapsesAt });
-  ctx.progress(0, 'claude waits at a dialog before the prompt was sent: asked it as a question');
+  ctx.progress('claude waits at a dialog before the prompt was sent: asked it as a question');
   return asked;
 }
 
@@ -76,19 +76,19 @@ export async function answerDialog(d: StartDeps, ctx: ExecutionContext, s: PaneS
   const option = dialogOption(screen, answer);
   if (option) {
     await d.herdr.sendText(s.paneId, option);
-    ctx.progress(0, `picked option ${option} of the dialog`);
+    ctx.progress(`picked option ${option} of the dialog`);
     return null;
   }
   const picked = selectKeys(screen, answer);
   if (picked) {
     await d.herdr.sendKeys(s.paneId, picked.keys);
-    ctx.progress(0, `picked option ${picked.option} of the dialog`);
+    ctx.progress(`picked option ${picked.option} of the dialog`);
     return null;
   }
   const moved = cursorPick(screen, answer);
   if (moved) {
     await d.herdr.sendKeys(s.paneId, moved);
-    ctx.progress(0, 'picked the option the answer names');
+    ctx.progress('picked the option the answer names');
     return null;
   }
   if (showsDialog(screen) && (dialogOption(screen, '1') !== undefined || selectOf(screen.split('\n')))) {
@@ -98,7 +98,7 @@ export async function answerDialog(d: StartDeps, ctx: ExecutionContext, s: PaneS
   }
   await d.herdr.sendText(s.paneId, answer);
   await d.herdr.sendKeys(s.paneId, ['enter']);
-  ctx.progress(0, 'typed the answer into the dialog');
+  ctx.progress('typed the answer into the dialog');
   return null;
 }
 

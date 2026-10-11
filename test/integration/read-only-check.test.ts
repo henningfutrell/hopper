@@ -3,15 +3,21 @@
 // double at its port (test/support/fake-container-runtime.ts) whose one-shot containers run the check's real script under
 // `sh`, with fake aws, kubectl, helm and terraform (test/support/fake-cloud-tools.ts) that answer as under a read-only or a
 // writable credential. OpenFGA is a double at the AuthorizationServer seam.
+// Issue #797: the check box gets the read credentials its needs mint — an AWS read session, a Kubernetes token — from the
+// real minting adapters against an STS and a Kubernetes API faked on loopback, after Access allowed the template each one.
+// The fake tools answer only with those minted credentials, as the real ones do.
 //
 // Feature: the read-only check before a requested template's first box
 //   Scenario: every write refused, every read works: the check passes and the template is ready
-//     Given the read policy holds cluster/lab and aws-account/*
-//     When a job asks for read on cluster lab and aws-account 123456789012, with --wait
+//     Given the read policy holds cluster/lab and aws-role/123456789012/*
+//     And the vault holds a minting credential for cluster lab and one for aws-account 123456789012
+//     When a job asks for read on cluster lab and aws-role 123456789012/readonly, with --wait
 //     Then the template is approved by the read policy, and the job waits for its read-only check
 //     And a box of it is refused, saying the check has not run
 //     When the check pass runs
 //     Then a check box ran the template's image with its tools, under the sandbox flags, with the check label, and is gone
+//     And Access allowed the template each read before the vault minted it for the check box
+//     And the box ran its probes with the minted AWS session and Kubernetes token, never with a minting credential
 //     And the check passed: the template holds it, `template.checked` says so, and the job's wait ends with the template ready
 //     And a box of it starts
 //   Scenario: a write that goes through fails the check: the template takes no box until a person runs it again and it passes
@@ -19,12 +25,15 @@
 //   Scenario: a template with a write need, and one a person saved, take no read-only check
 //   Scenario: a check box that ends badly, or does not start, fails the check with the reason
 //   Scenario: a check box no run holds (a hopper stopped mid-check) is removed, and its check runs again
+//   Scenario: a need the vault cannot mint a credential for fails the check, saying why, and runs no check box
+//   Scenario: a read Access does not allow fails the check, saying so, and mints nothing
+//   Scenario: with the vault in a container of its own (issue #586), the check box gets its read credentials the same way
 import { execFile, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { TemplateView, VaultView } from '../../src/domain/types.ts';
+import type { AccessView, TemplateView, VaultView } from '../../src/domain/types.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
 import { CHECK_LABEL } from '../../src/sandbox/check.ts';
 import { BOX_LABEL } from '../../src/sandbox/launch.ts';
@@ -33,7 +42,9 @@ import { SKILL_SCRIPT } from '../../src/skills/index.ts';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { createFakeCloudTools, type FakeCloudTools } from '../support/fake-cloud-tools.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
+import { fakeKubeApi, fakeSts, MINTED_AWS, MINTED_KUBE_TOKEN, type FakeApi } from '../support/fake-mint-apis.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { startVaultContainer, VAULT_KEY } from '../support/vault-container.ts';
 import { KEY } from '../support/webhooks.ts';
 
 const apps: TestApp[] = [];
@@ -49,20 +60,33 @@ const temp = (prefix: string): string => {
   return dir;
 };
 
-interface Booted { a: TestApp; token: string; runtime: FakeContainerRuntime; cloud: FakeCloudTools }
+interface Booted { a: TestApp; token: string; runtime: FakeContainerRuntime; cloud: FakeCloudTools; kube: FakeApi; sts: FakeApi }
 
-async function boot(policy: string[]): Promise<Booted> {
+const ACCOUNT = '123456789012';
+const KUBE_MINTING_TOKEN = 'check-minting-token-never-in-the-box';
+const AWS_MINTING_SECRET = 'check-minting-secret-never-in-the-box';
+
+/** `container`: the vault in a container of its own (issue #586), holding the master key and the minting credentials. */
+async function boot(policy: string[], o: { container?: boolean } = {}): Promise<Booted> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  const cloud = createFakeCloudTools('read-only');
+  const vault = o.container ? await startVaultContainer(db.dbPath, { HOPPER_MASTER_KEY: KEY }) : undefined;
+  if (vault) cleanups.push(() => { void vault.stop(); });
+  const keys = vault ? { secrets: { HOPPER_MASTER_KEY: KEY, HOPPER_VAULT_KEY: VAULT_KEY }, env: { HOPPER_VAULT_URL: vault.url } } : { secrets: { HOPPER_MASTER_KEY: KEY } };
+  const kube = await fakeKubeApi();
+  const sts = await fakeSts(ACCOUNT);
+  cleanups.push(kube.close, sts.close);
+  const cloud = createFakeCloudTools('read-only', { awsSessionToken: MINTED_AWS.SessionToken, kubeToken: MINTED_KUBE_TOKEN });
   cleanups.push(cloud.cleanup);
   const runtime = createFakeContainerRuntime();
   runtime.runScript = cloud.runScript;
-  const a = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, plugins: { machines: lanes(2) }, seams: { authorizationServer: createFakeAuthorizationServer(), containerRuntime: runtime } });
+  const a = await startTestApp({ dbPath: db.dbPath, ...keys, plugins: { machines: lanes(2) }, seams: { authorizationServer: createFakeAuthorizationServer(), containerRuntime: runtime } });
   apps.push(a);
   const token = await a.login();
   expect((await a.ui('/ui/api/vault', { action: 'set-read-policy', assets: policy }, { token })).status).toBe(200);
-  return { a, token, runtime, cloud };
+  expect((await a.ui('/ui/api/vault', { action: 'set', name: 'KUBE_LAB', mints: { kind: 'cluster', name: 'lab' }, value: JSON.stringify({ server: kube.url, token: KUBE_MINTING_TOKEN }) }, { token })).status).toBe(200);
+  expect((await a.ui('/ui/api/vault', { action: 'set', name: 'AWS_LAB', mints: { kind: 'aws-account', name: ACCOUNT }, value: JSON.stringify({ AccessKeyId: 'AKIAMINTING', SecretAccessKey: AWS_MINTING_SECRET, Region: 'eu-west-1', Endpoint: sts.url }) }, { token })).status).toBe(200);
+  return { a, token, runtime, cloud, kube, sts };
 }
 
 /** A job running on the hopper's own machine, and its credentials dir as the hopper keeps it: its proxy token and `hopper-skill`. */
@@ -101,11 +125,11 @@ const asked = async (a: TestApp, token: string): Promise<TemplateView> =>
   (await a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': token })).body.templates.find((t) => t.name.startsWith('asked-'))!;
 const launch = (a: TestApp, token: string, template: string) => a.ui<{ container: string; error: string }>('/ui/api/machines/sandbox', { template }, { token });
 const vault = (a: TestApp, token: string, body: unknown) => a.ui<{ error: string }>('/ui/api/vault', body, { token });
-const NEEDS = ['sandbox-template', '--needs', 'read/cluster/lab read/aws-account/123456789012'];
+const NEEDS = ['sandbox-template', '--needs', `read/cluster/lab read/aws-role/${ACCOUNT}/readonly`];
 
 describe('the read-only check before a requested template\'s first box (issue #716)', () => {
   it('every write refused, every read works: the check passes and the template is ready', async () => {
-    const { a, token, runtime } = await boot(['cluster/lab', 'aws-account/*']);
+    const { a, token, runtime, cloud, kube, sts } = await boot(['cluster/lab', `aws-role/${ACCOUNT}/*`]);
     const creds = await runningJob(a);
     const done = waiting(a, creds, NEEDS);
     await done.opened;
@@ -133,9 +157,33 @@ describe('the read-only check before a requested template\'s first box (issue #7
     expect(runtime.boxes.size).toBe(0);
     expect(runtime.volumes.size).toBe(0);
 
+    // The vault minted a read session and a read token for the check box (issue #797), after Access allowed each.
+    expect(kube.seen.map((r) => [r.method, r.url, r.authorization])).toEqual([['POST', '/api/v1/namespaces/hopper/serviceaccounts/hopper-read/token', `Bearer ${KUBE_MINTING_TOKEN}`]]);
+    expect(sts.seen).toHaveLength(1);
+    expect(decodeURIComponent(sts.seen[0]!.body)).toContain(`RoleArn=arn:aws:iam::${ACCOUNT}:role/readonly`);
+    expect(decodeURIComponent(sts.seen[0]!.body)).toContain('RoleSessionName=hopper-read-only-check');
+    expect(decodeURIComponent(sts.seen[0]!.body)).toContain('arn:aws:iam::aws:policy/ReadOnlyAccess');
+    const minted = (await a.events()).filter((e) => e.type === 'vault.check_minted');
+    expect(minted.map((e) => e.data)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'kube', operation: 'read', asset: { kind: 'cluster', name: 'lab' }, template: t.name, check: box!.name, credential: 'KUBE_LAB', decision: expect.any(String), expiresAt: '2030-01-01T00:10:00Z' }),
+      expect.objectContaining({ kind: 'aws', operation: 'read', asset: { kind: 'aws-role', name: `${ACCOUNT}/readonly` }, template: t.name, check: box!.name, credential: 'AWS_LAB', decision: expect.any(String) }),
+    ]));
+    expect(minted).toHaveLength(2);
+    const decisions = (await a.api<AccessView>('GET', '/api/access', undefined, { 'x-hopper-session': token })).body.decisions;
+    for (const e of minted) {
+      expect(decisions.find((d) => d.id === (e.data as { decision: string }).decision)).toMatchObject({ allowed: true, check: { box: box!.name }, template: t.name, operation: 'read' });
+    }
+    // The box had the minted session and token, its region and its STS; never a minting credential.
+    const boxEnv = JSON.stringify(box!.env);
+    for (const minted of [MINTED_AWS.AccessKeyId, MINTED_AWS.SecretAccessKey, MINTED_AWS.SessionToken, MINTED_KUBE_TOKEN, kube.url, 'eu-west-1', sts.url]) expect(boxEnv).toContain(minted);
+    const kept = JSON.stringify([await a.events(), await asked(a, token), box!.script]);
+    for (const secret of [MINTED_AWS.SecretAccessKey, MINTED_AWS.SessionToken, MINTED_KUBE_TOKEN]) expect(kept).not.toContain(secret);
+    for (const secret of [KUBE_MINTING_TOKEN, AWS_MINTING_SECRET]) expect(boxEnv + kept).not.toContain(secret);
+    expect(cloud.calls().filter((c) => c.startsWith('aws ')).length).toBeGreaterThan(0);
+
     const checked = await asked(a, token);
     expect(checked.check).toMatchObject({ version: checked.savedAt, state: 'passed' });
-    // Five for the cluster (kubectl and helm), five for the account (aws).
+    // Five for the cluster (kubectl and helm), five for the role (aws).
     expect(checked.check!.probes.length).toBe(10);
     expect(checked.check!.probes.every((p) => p.passed)).toBe(true);
     const event = (await a.events()).find((e) => e.type === 'template.checked');
@@ -254,5 +302,51 @@ describe('the read-only check before a requested template\'s first box (issue #7
     expect(runtime.boxes.has('hopper-check-left')).toBe(false);
     expect(runtime.volumes.has('hopper-check-left-home')).toBe(false);
     expect((await asked(a, token)).check).toMatchObject({ state: 'passed' });
+  });
+  it('a need the vault cannot mint a credential for fails the check, saying why, and runs no check box', async () => {
+    const { a, token, runtime, kube } = await boot(['cluster/*', 'aws-account/*']);
+    const creds = await runningJob(a);
+    await skill(a, creds, ['sandbox-template', '--needs', `read/cluster/other read/aws-account/${ACCOUNT}`]);
+    await a.app.sandboxes.check();
+    const t = await asked(a, token);
+    expect(t.check).toMatchObject({ state: 'failed', probes: [] });
+    expect(t.check!.problem).toBe([
+      'the check box gets no credential for read on cluster other: no minting credential mints for cluster other: a person adds one on Settings → Vault',
+      `the check box gets no credential for read on aws-account ${ACCOUNT}: the vault mints a credential for read on an aws-role, a cluster or a namespace only`,
+    ].join('; '));
+    expect(runtime.ran.size).toBe(0);
+    expect(kube.seen).toHaveLength(0);
+    expect((await launch(a, token, t.name)).status).toBe(409);
+  });
+
+  it('a read Access does not allow fails the check, saying so, and mints nothing', async () => {
+    const { a, token, runtime, kube } = await boot(['cluster/lab']);
+    const creds = await runningJob(a);
+    await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab']);
+    const t = await asked(a, token);
+    const access = (await a.api<AccessView>('GET', '/api/access', undefined, { 'x-hopper-session': token })).body;
+    const approval = access.templates.find((x) => x.template === t.name)!.approvals[0]!;
+    expect((await a.ui('/ui/api/access', { action: 'revoke', approval: approval.id }, { token })).status).toBe(200);
+
+    await a.app.sandboxes.check();
+    const checked = await asked(a, token);
+    expect(checked.check).toMatchObject({ state: 'failed', probes: [] });
+    expect(checked.check!.problem).toBe(`the check box gets no credential for read on cluster lab: Access denied it: template ${t.name} is not approved to read on cluster lab`);
+    expect(runtime.ran.size).toBe(0);
+    expect(kube.seen).toHaveLength(0);
+    expect((await a.events()).find((e) => e.type === 'vault.check_mint_refused')?.data).toMatchObject({ template: t.name, mint: { kind: 'kube', operation: 'read', asset: { kind: 'cluster', name: 'lab' } }, decision: expect.any(String) });
+  });
+
+  it('with the vault in a container of its own (issue #586), the check box gets its read credentials the same way', async () => {
+    const { a, token, runtime, kube, sts } = await boot(['cluster/lab', `aws-role/${ACCOUNT}/*`], { container: true });
+    const creds = await runningJob(a);
+    await skill(a, creds, NEEDS);
+    await a.app.sandboxes.check();
+    expect((await asked(a, token)).check).toMatchObject({ state: 'passed' });
+    expect(kube.seen).toHaveLength(1);
+    expect(sts.seen).toHaveLength(1);
+    const env = JSON.stringify([...runtime.ran.values()][0]!.env);
+    for (const minted of [MINTED_AWS.SessionToken, MINTED_KUBE_TOKEN, kube.url, sts.url]) expect(env).toContain(minted);
+    expect(env).not.toContain(KUBE_MINTING_TOKEN);
   });
 });

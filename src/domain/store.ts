@@ -8,6 +8,7 @@ import type { VaultRepository } from './vault.ts';
 import type { SandboxRecord } from './sandboxes.ts';
 import type { ItemSnapshot } from './item-snapshots.ts';
 import type { VaultGrant } from './vault-grants.ts';
+import type { BugReportRepository } from './bug-reports.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type {
   DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
@@ -15,6 +16,9 @@ import type {
   UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, Handoff, Problem,
 } from './types.ts';
 import type { ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries } from './types.ts';
+
+// Report a bug (issue #694): its repository sits beside its record.
+export type { BugReportRepository } from './bug-reports.ts';
 
 export type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 export type { VaultRepository } from './vault.ts';
@@ -483,6 +487,7 @@ export interface UserStore {
   handoffs: HandoffRepository;
   itemSnapshots: ItemSnapshotRepository;
   vaultGrants: VaultGrantRepository;
+  bugReports: BugReportRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;

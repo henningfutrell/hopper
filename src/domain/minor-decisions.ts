@@ -4,7 +4,7 @@
 // pick at or above the point's threshold is applied, and below it the decision goes on as before.
 
 /** Where the hopper makes a decider call. */
-export const DECISION_POINTS = ['question-answer', 'failure-assessment', 'lane-count', 'job-machine'] as const;
+export const DECISION_POINTS = ['question-answer', 'failure-assessment', 'lane-count', 'job-machine', 'intake-order', 'merge-order'] as const;
 export type DecisionPoint = typeof DECISION_POINTS[number];
 
 /** off: Jev is not asked. shadow: Jev's pick is recorded next to what was decided. active: a confident pick is applied. */
@@ -25,6 +25,8 @@ export const DEFAULT_MINOR_DECISION_SETTINGS: MinorDecisionSettings = {
   'failure-assessment': { mode: 'shadow', threshold: 0.85 },
   'lane-count': { mode: 'shadow', threshold: 0.85 },
   'job-machine': { mode: 'shadow', threshold: 0.85 },
+  'intake-order': { mode: 'shadow', threshold: 0.85 },
+  'merge-order': { mode: 'shadow', threshold: 0.85 },
 };
 
 /** What each point is, in plain words (issue #217): the UI's labels. */
@@ -44,6 +46,14 @@ export const DECISION_POINT_TEXT: Readonly<Record<DecisionPoint, { label: string
   'job-machine': {
     label: 'The machine a waiting job goes to',
     describe: 'More than one machine can take a waiting job. Jev picks the machine. Active, a sure pick goes first when that machine has a free lane.',
+  },
+  'intake-order': {
+    label: 'The new item that enters the queue first',
+    describe: 'A job source finds more than one new item at once. Jev picks the one that enters the queue first. The rest follow in the source\'s order.',
+  },
+  'merge-order': {
+    label: 'The pull request to rebase and merge next',
+    describe: 'More than one waiting pull request of a repository needs tending. The hopper tends one at a time, so that each merge comes before the next rebase. Jev picks the next one.',
   },
 };
 
@@ -167,6 +177,11 @@ export interface MinorDecisionInput extends MinorDecisionAsk {
    * compared with it at once. Undefined: still open. Absent: the decision waits for Jev.
    */
   settled?: () => { actual: string; by: string } | undefined;
+  /**
+   * The option the rules pick without Jev (issue #796): a pick that is not applied is compared with it at once
+   * (`decidedBy: rules`). Absent: what is decided is known later.
+   */
+  rules?: string;
 }
 
 /** What Jev first did: not asked (off, or Jev unavailable), or its pick and whether it is applied. */

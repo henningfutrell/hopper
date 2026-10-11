@@ -3,7 +3,7 @@
 // its tools, the sandbox flags — and each write must be refused, each read must work. The template takes no box and no
 // job until the check of its current version passed. The probes are a catalog (src/sandbox/probes.ts), so issue #715 can
 // add to it or replace it.
-import type { AssetKind, OperationProfile } from './access.ts';
+import type { Asset, AssetKind, OperationProfile } from './access.ts';
 import type { BoxTool } from './sandboxes.ts';
 
 /** What a probe expects: the write is refused (`denied`), or the read works (`allowed`). */
@@ -29,8 +29,14 @@ export interface Probe {
   cleanup?: string;
 }
 
-/** A probe for one asset: what the check runs. */
-export interface ProbeRun { probe: Probe; asset: string }
+/** A probe for one asset: what the check runs. `kind` is the asset's kind: it picks the credential the probe runs with. */
+export interface ProbeRun { probe: Probe; kind: AssetKind; asset: string }
+
+/**
+ * The read credential a check box gets for one need (issue #797), minted for it: the environment its probes on that asset
+ * run with (an AWS session, its region and STS), and a kubeconfig for a cluster or a namespace.
+ */
+export interface CheckCredential { asset: Asset; env: Record<string, string>; kubeconfig?: string }
 
 /** The probes for a template's needs. The default is the hopper's catalog; issue #715 passes its own. */
 export interface ProbeCatalog { runsFor(needs: readonly OperationProfile[]): ProbeRun[] }

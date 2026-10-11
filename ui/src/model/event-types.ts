@@ -32,7 +32,7 @@ const ALL: Record<EventType, true> = {
   'job.phase_changed': true, 'job.forked': true, 'job.fork_resolved': true, 'phase_shifts.settings_changed': true,
   'question.corrected': true, 'auto_answer.settings_changed': true, 'auto_park.settings_changed': true,
   'github_proxy.done': true, 'github_proxy.refused': true, 'github_proxy.failed': true,
-  'vault.secret_set': true, 'vault.secret_removed': true, 'vault.secret_read': true, 'vault.secret_migrated': true, 'vault.master_key_rotated': true, 'template.saved': true, 'template.removed': true, 'vault.approved': true, 'vault.revoked': true, 'template.profile_approved': true, 'template.checked': true, 'template.check_requested': true, 'vault.delivered': true, 'vault.refused': true, 'vault.minted': true, 'vault.mint_refused': true, 'vault.mint_tested': true,
+  'vault.secret_set': true, 'vault.secret_removed': true, 'vault.secret_read': true, 'vault.secret_migrated': true, 'vault.master_key_rotated': true, 'template.saved': true, 'template.removed': true, 'vault.approved': true, 'vault.revoked': true, 'template.profile_approved': true, 'template.checked': true, 'template.check_requested': true, 'vault.delivered': true, 'vault.refused': true, 'vault.minted': true, 'vault.mint_refused': true, 'vault.mint_tested': true, 'vault.check_minted': true, 'vault.check_mint_refused': true,
   'vault.credential_asked': true, 'vault.credential_given': true, 'vault.credential_declined': true, 'vault.read_policy_set': true, 'vault.grant_asked': true, 'vault.granted': true, 'vault.grant_revoked': true,
   'source.request_approved': true, 'intake.actors_changed': true, 'job.origin_judged': true,
   'yolo_mode.changed': true, 'job.pull_request_merged': true, 'job.pull_request_closed': true, 'job.finish_briefed': true, 'job.pull_request_tended': true, 'job.pull_request_followed': true,
@@ -42,7 +42,7 @@ const ALL: Record<EventType, true> = {
   'artifact.revised': true, 'artifact.revision_pinned': true, 'artifact.revision_removed': true,
   'item.snapshot_recorded': true, 'item.changed_since_snapshot': true, 'item.original_kept': true, 'item.new_text_accepted': true,
   'lanes.recommended': true, 'lanes.tuning_changed': true, 'lanes.applied': true, 'lanes.undone': true, 'lanes.dismissed': true,
-  'bug_report.filed': true, 'bug_report.failed': true,
+  'bug_report.filed': true, 'bug_report.failed': true, 'bug_report.kept': true,
   'repo_checks.job_queued': true, 'repo_checks.dismissed': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];

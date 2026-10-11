@@ -43,7 +43,7 @@ async function runSleep(ctx: ExecutionContext, ms: number): Promise<ExecutionOut
   const step = ms / 10;
   for (let i = 1; i <= 10; i++) {
     if (!(await wait(step, ctx.signal))) return ABORTED;
-    ctx.progress(i / 10);
+    ctx.progress(undefined, { done: i, total: 10 });
   }
   return { kind: 'finished', result: { slept: ms } };
 }

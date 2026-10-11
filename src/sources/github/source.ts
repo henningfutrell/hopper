@@ -344,6 +344,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return followPullRequest({ api, labelledRepos, clock: o.clock, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}) }, job, act);
     },
     unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs),
+    mergesOnReady: (repo) => o.yoloMode?.(repo) ?? false,
     closedAsComplete(job) {
       return closedAsComplete(api, job);
     },

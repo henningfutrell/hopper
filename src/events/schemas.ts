@@ -11,7 +11,7 @@ import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
-import { advice, adviceAction, bugReportEvents, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, repoChecksEvents, startPlan, vaultGrantEvents } from './parts.ts';
+import { advice, adviceAction, bugReportEvents, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, repoChecksEvents, startPlan, taskCount, vaultGrantEvents } from './parts.ts';
 
 const strict = z.strictObject;
 const decisionPoint = z.enum(DECISION_POINTS);
@@ -120,7 +120,8 @@ export const EVENT_SCHEMAS = {
   'job.approved': strict({}),
   'job.claimed': strict({ attempts: z.number().int(), effectivePriority: z.number(), reason: z.string() }),
   'job.started': strict({ attempts: z.number().int() }),
-  'job.progressed': strict({ progress: z.number().min(0).max(1), message: z.string().optional() }),
+  // v2 (issue #794): the job's task count, never a fraction of time; a message, a count, or both.
+  'job.progressed': strict({ message: z.string().optional(), tasks: taskCount.optional() }),
   // `partlyDone` (issue #579, additive): the URL of the job's own pull request that ships part of its item.
   'job.finished': strict({ result: z.unknown(), partlyDone: z.string().optional() }),
   'job.failed': strict({ error: z.string(), ...priority }),
@@ -330,14 +331,13 @@ export const EVENT_SCHEMAS = {
   'template.profile_approved': strict({ template: z.string(), ...operationProfile.shape, level: radiusLevel, by: z.string() }),
   'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string(), backend: z.string().optional() }),
   'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), backend: z.string().optional(), reason: z.string() }),
-  'vault.minted': strict({
-    kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), machine: z.string(), job: z.string(), credential: z.string(),
-    decision: z.string(), expiresAt: z.string(), renewal: z.boolean(),
-  }),
+  'vault.minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), machine: z.string(), job: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string(), renewal: z.boolean() }),
   'vault.mint_refused': strict({
-    mint: strict({ kind: z.enum(MINT_KINDS), operation: z.string(), asset: z.union([asset, z.string()]) }),
-    machine: z.string(), template: z.string().optional(), job: z.string().optional(), reason: z.string(), decision: z.string().optional(),
+    mint: strict({ kind: z.enum(MINT_KINDS), operation: z.string(), asset: z.union([asset, z.string()]) }), machine: z.string(), template: z.string().optional(), job: z.string().optional(), reason: z.string(), decision: z.string().optional(),
   }),
+  // A read-only check's mints (issue #797): for the check box of a template, which runs no job. Never a credential.
+  'vault.check_minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), check: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string() }),
+  'vault.check_mint_refused': strict({ mint: strict({ kind: z.enum(MINT_KINDS).optional(), ...operationProfile.shape }), template: z.string(), check: z.string(), reason: z.string(), decision: z.string().optional() }),
   'vault.mint_tested': strict({ asset: z.union([asset, z.string()]), credential: z.string().optional(), sessionName: z.string().optional(), arn: z.string().optional(), expiresAt: z.string().optional(), reason: z.string().optional(), by: z.string() }),
   // The dynamic vault (issue #583): a credential request asked, given or declined. Never a value.
   'vault.credential_asked': strict({ request: z.string(), skill: z.string(), template: z.string(), machine: z.string(), job: z.string(), why: z.string().optional() }),

@@ -1,5 +1,5 @@
 // Report a bug's GitHub calls (issue #694), with the person's own GitHub connection, so a report is filed as that person:
-// the duplicate search over the open reports, filing one, and a comment on one. The same `@octokit/request` binding and
+// the duplicate search over the open reports, filing one, a comment on one, and a report's state. The same `@octokit/request` binding and
 // token renewal as the GitHub proxy (src/github-proxy/api.ts).
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
 import { makeRequest, splitRepo, statusOf } from '../sources/github/app/http.ts';
@@ -12,6 +12,8 @@ export interface ReportGitHub {
   search(repo: string, label: string, terms: string[], where?: 'title' | 'body'): Promise<SimilarReport[]>;
   create(repo: string, issue: { title: string; body: string; labels: string[] }): Promise<{ number: number; url: string }>;
   comment(repo: string, number: number, body: string): Promise<{ number: number; url: string }>;
+  /** The issue's state now (Your reports). */
+  state(repo: string, number: number): Promise<'open' | 'closed'>;
 }
 
 /** GitHub's refusal or failure, with its status when it gave one. */
@@ -52,5 +54,9 @@ export function createReportGitHub(o: { apiUrl: string } & TokenSource): ReportG
       const d = (await req('POST /repos/{owner}/{repo}/issues/{issue_number}/comments', { ...splitRepo(repo), issue_number: number, body, headers: headers(token) })).data as { html_url: string };
       return { number, url: d.html_url };
     }, failed(`a comment on ${repo}#${number}`)),
+    state: (repo, number) => withToken(async (token) => {
+      const d = (await req('GET /repos/{owner}/{repo}/issues/{issue_number}', { ...splitRepo(repo), issue_number: number, headers: headers(token) })).data as { state: string };
+      return d.state === 'closed' ? 'closed' : 'open';
+    }, failed(`the state of ${repo}#${number}`)),
   };
 }

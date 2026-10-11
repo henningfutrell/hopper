@@ -5,6 +5,7 @@ import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/por
 import type { LoginCheck } from '../../domain/types.ts';
 import { hideCodes } from '../../logins/recognise.ts';
 import { loginSignalIn, type LoginSignal } from '../../logins/signals.ts';
+import { isTaskCountLine, lastTaskCount, sameTaskCount, type TaskCount } from '../../domain/task-count.ts';
 import type { HerdrClient } from './client.ts';
 import { CTRL_END, afterLoginReport, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn, type AuthFields } from './screen.ts';
 
@@ -73,8 +74,7 @@ export interface TurnWatch {
   /** Claude was at a dialog when we sent (a stale `blocked` must not count). */
   blockedAtSend: boolean;
   timeoutMs: number;
-  expectedMs: number;
-  /** When the job's turn began, for `timeoutMs` and progress: a nudge goes on the same turn. Default now. */
+  /** When the job's turn began, for `timeoutMs`: a nudge goes on the same turn. Default now. */
   startedAt?: number;
   /**
    * Called with state_change_seq when the turn stops on a question, before the outcome returns; with when its dialog lapses, if it does;
@@ -117,6 +117,8 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
   const { herdr, clock, ctx } = w;
   const started = w.startedAt ?? clock.now().getTime();
   let lastLine = '';
+  /** The task count last reported from this turn (issue #794). */
+  let tasks: TaskCount | undefined;
   /** The turn's output as last seen: its lines and its last line. */
   let lastOutput = '';
   let idleSince: number | null = null;
@@ -147,11 +149,14 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       const turn = readTurn(recent, w.anchor, w.markersAfter);
       const output = `${turn.outputLines}\n${turn.lastLine}`;
       if (turn.lastLine && output !== lastOutput) { lastOutput = output; w.onOutput?.(now); }
-      if (turn.lastLine && turn.lastLine !== lastLine) {
-        lastLine = turn.lastLine;
-        // A device code on screen never goes into progress (issue #476).
-        ctx.progress(Math.min(0.9, (now - started) / w.expectedMs), hideCodes(lastLine, recent));
-      }
+      // Progress is the job's task count (issue #794), as it writes it: never a clock. Its count line is no message.
+      const counted = lastTaskCount(turn.assistantText);
+      const newCount = counted && !sameTaskCount(counted, tasks) ? counted : undefined;
+      if (newCount) tasks = newCount;
+      const newLine = turn.lastLine && turn.lastLine !== lastLine && !isTaskCountLine(turn.lastLine) ? turn.lastLine : undefined;
+      if (turn.lastLine) lastLine = turn.lastLine;
+      // A device code on screen never goes into progress (issue #476).
+      if (newLine || newCount) ctx.progress(newLine && hideCodes(newLine, recent), newCount);
       atStart ??= { text: turn.assistantText, lines: turn.outputLines };
       if (agent.status === 'working' || turn.assistantText !== atStart.text || turn.outputLines !== atStart.lines) worked = true;
       if (login) {
@@ -196,7 +201,7 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
         const work = backgroundWork(recent);
         if (work) {
           idleSince = null;
-          if (work !== waitedOn) ctx.progress(Math.min(0.9, (now - started) / w.expectedMs), `waiting on background work (${work}): no nudge while it runs`);
+          if (work !== waitedOn) ctx.progress(`waiting on background work (${work}): no nudge while it runs`);
           waitedOn = work;
         } else {
           waitedOn = undefined;

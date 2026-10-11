@@ -16,6 +16,7 @@ import type { JobOrigin } from './intake-origin.ts';
 import type { JobPhaseFields } from './phase.ts';
 import type { FollowOnOf } from './proposal-paths.ts';
 import type { JobRework } from './pull-requests.ts';
+import type { TaskCount } from './task-count.ts';
 
 export type JobId = string;
 export type MachineId = string;
@@ -128,7 +129,8 @@ export interface Job extends JobPhaseFields {
   /** The job's place in the user order (0 first): set when the user orders the queue; ranked jobs run before the rest. */
   userRank?: number;
   laneId?: LaneId;
-  progress?: number; // 0..1
+  /** Its task count (issue #794): done of total, as it last reported it. None before it has a task list. */
+  tasks?: TaskCount;
   progressMessage?: string;
   result?: unknown;
   /** Finished partly done (issue #579): the URL of its own pull request that ships part of its item. */
@@ -241,14 +243,7 @@ export interface Parts { done: number; total: number }
 
 /** The actions a router can advise — grok-bot-jev's router actions (src/router.py). */
 export type AdviceAction =
-  | 'proceed_full'
-  | 'reuse_cache'
-  | 'stop_retry'
-  | 'run_deterministic'
-  | 'chat_only'
-  | 'ask_human'
-  | 'allow_subagent'
-  | 'research_capped';
+  'proceed_full' | 'reuse_cache' | 'stop_retry' | 'run_deterministic' | 'chat_only' | 'ask_human' | 'allow_subagent' | 'research_capped';
 
 /** A router's answer for one job. */
 export interface Advice {
@@ -484,6 +479,7 @@ export { ESCALATION_REASONS } from './questions.ts';
 // ---- Sources: src/domain/sources.ts (re-exported here) ------------------------------------
 
 export type { SourceStatus } from './sources.ts';
+export type { TaskCount } from './task-count.ts';
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 

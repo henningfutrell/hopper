@@ -71,7 +71,7 @@ describe.skipIf(!CLAUDE)('a fresh home: Claude starts with no key press (issue #
     const work = join(dir, 'work');
     const { ctx, progress } = contextFor(jobWith({ prompt: 'unused' }, { id }), 'local/lane-1', { ...LOCAL, workTree: work });
     const state = await openPane(deps, ctx, work, paneEnv);
-    const out = await startClaude(deps, ctx, state, { prompt: 'unused', cwd: work, env: {}, expectedMs: 1, timeoutMs: 1 });
+    const out = await startClaude(deps, ctx, state, { prompt: 'unused', cwd: work, env: {}, timeoutMs: 1 });
     const screen = await real.read(state.paneId, { source: 'visible', lines: 60 });
     return { out, keys, screen, progress: progress.map((p) => p.message) };
   }

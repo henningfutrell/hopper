@@ -88,24 +88,25 @@ describe('Grok Bot routine webhook', () => {
     expect(r.hits).toHaveLength(0);
   });
 
-  it('a finished job sends nothing', async () => {
+  // Issue #795 (owner, 2026-10-11) replaces "questions only" (issue #3): a job's end wakes Grok Bot, so it need not poll.
+  it('a finished job posts job.finished once, with the issue it came from', async () => {
     const r = await receiver();
     const { a, secrets } = await start();
     setHook(secrets, r.url);
     const job = await a.pull({ op: 'echo' }, SRC);
     await a.waitForStatus(job.id, 'finished');
     await settle();
-    expect(r.hits).toHaveLength(0);
+    expect(r.hits.map((h) => h.body)).toEqual([expect.objectContaining({ source: 'hopper', kind: 'job.finished', jobId: job.id, issueTitle: SRC.title, issueUrl: SRC.url })]);
   });
 
-  it('a failed job sends nothing', async () => {
+  it('a failed job posts job.failed once, with its error', async () => {
     const r = await receiver();
     const { a, secrets } = await start();
     setHook(secrets, r.url);
     const job = await a.pull({ op: 'fail', message: 'boom' }, SRC);
     await a.waitForStatus(job.id, 'failed');
     await settle();
-    expect(r.hits).toHaveLength(0);
+    expect(r.hits.map((h) => h.body)).toEqual([expect.objectContaining({ source: 'hopper', kind: 'job.failed', jobId: job.id, error: expect.stringContaining('boom') })]);
   });
 
   it('a question escalated to the human posts once with bearer key, question text and id; the answer and assess stages do not', async () => {
@@ -122,11 +123,11 @@ describe('Grok Bot routine webhook', () => {
     expect(hit.body).toMatchObject({ source: 'hopper', jobId: human.id, question: 'Is this risky?', questionId: q.id, issueTitle: SRC.title, issueUrl: SRC.url });
     expect(typeof hit.body.at).toBe('string');
     expect(typeof hit.body.answerUrl).toBe('string');
-    expect(r.hits).toHaveLength(1);
-    expect(r.hits.some((h) => h.body.jobId === hard.id)).toBe(false);
+    expect(r.hits.filter((h) => h.body.kind === 'question.escalated_to_human')).toHaveLength(1);
+    expect(r.hits.some((h) => h.body.jobId === hard.id && h.body.kind !== 'job.finished')).toBe(false);
   });
 
-  it('re-notifications do not post again, and the failure that ends the wait posts nothing', async () => {
+  it('re-notifications do not post again, and the failure that ends the wait posts only its job.failed', async () => {
     const r = await receiver();
     const { a, secrets } = await start({ HOPPER_HUMAN_RENOTIFY_MS: '100', HOPPER_HUMAN_TIMEOUT_MS: '450' });
     setHook(secrets, r.url);
@@ -136,7 +137,7 @@ describe('Grok Bot routine webhook', () => {
     expect(events.length).toBeGreaterThanOrEqual(3);
     await settle();
     expect(r.hits.filter((h) => h.body.kind === 'question.escalated_to_human')).toHaveLength(1);
-    expect(r.hits).toHaveLength(1);
+    expect(r.hits.map((h) => h.body.kind).sort()).toEqual(['job.failed', 'question.escalated_to_human']);
   });
 
   it('variables set after start are honoured', async () => {

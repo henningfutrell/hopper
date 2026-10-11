@@ -8,6 +8,14 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- A running job's bar now shows how many of its tasks are done, for example 2/5, and moves on when a task is done. It no longer fills with time. Before the job has made its task list, the bar only shows that the job works.
+- When several pull requests of a repository need a rebase at once, the hopper now rebases and merges them one at a time, so each merge no longer breaks the others again. On Settings → Decider, Jev can now also pick which pull request goes next, and which new issue enters the queue first.
+- Through the tunnel, each caller now has its own sign-in limit, so a stranger can no longer use up the limit your agent needs to get its API token.
+- The read-only check of a template a job asked for now runs with real read access: the hopper makes a short read-only AWS session or Kubernetes token for each thing the template reads, after Access allows it. Reads can now pass, and a write is refused by AWS or the cluster itself. When the hopper cannot make one, the check fails and says what to add.
+- Priority lanes no longer sit empty while other jobs wait. A priority lane is held only while a high-priority job waits for one; otherwise any job can use it, and it is open to any job again when the high-priority job ends. On Machines, the setting is now **While a high-priority job waits**.
+- Your Grok Bot routine is now told when a job finishes or fails, so it no longer needs to check on its own.
+- The hopper's API can now be reached from anywhere through an optional ngrok tunnel, with no open port on your machine. Only the API goes through it, never the pages you sign in on. While the tunnel is up, your Grok Bot routine is told where to reach the hopper, and told again every few minutes.
+- When GitHub cannot take a bug report, because GitHub is not connected or the hopper has no access to its issues, the hopper keeps the report and sends it later, and the form says so. Settings has a new Your reports page that lists every report you and your jobs filed, with whether it is waiting, open or closed. You can also report a bug from the command line.
 - Your TypeSafe API key (for Jev) and your webhook signing secrets can now stay in your own secret manager (HashiCorp Vault, 1Password or Bitwarden). On the Vault page, choose Keep in a vault backend. The hopper reads the secret there when it starts and every 5 minutes, and keeps no copy on disk.
 - An issue's sub-issues now count as its parts when it has no Parts checklist, and a part that names another issue counts as done only when that issue is closed. A parent issue is not done while such a child is still open.
 - The hopper now has help pages for each feature, for the version you run. Open Help in the user menu. Agents and jobs can read the same pages too.

@@ -6,7 +6,7 @@ import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness,
-  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins, JobWait,
+  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins, JobWait, TaskCount,
 } from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
@@ -33,8 +33,11 @@ export interface ExecutionContext {
    * returns promptly and leaves external work (a herdr pane) as it is: `park` then releases it.
    */
   signal: AbortSignal;
-  /** Report progress 0..1 with an optional message. Emits job.progressed. */
-  progress(fraction: number, message?: string): void;
+  /**
+   * Report progress (issue #794): a progress message, the job's task count, or both. What is left out keeps what the
+   * job has. Emits job.progressed.
+   */
+  progress(message?: string, tasks?: TaskCount): void;
   /**
    * Persist executor-owned state on the job (`job.executorState`) as soon as it exists — e.g.
    * the herdr pane a job runs in — so restart recovery and resume can find it.
@@ -263,6 +266,8 @@ export interface NotifierEvents {
   artifactUrl?(id: string): string;
   /** What a notification of the question leads with (issue #569): its TL;DR, else the agent's own summary; undefined: a short question, or the TL;DR off. */
   tldr?(q: Question): string | undefined;
+  /** Where the hopper is reached from outside now (issue #795): HOPPER_PUBLIC_URL while its tunnel is up. Absent or undefined: not reached. */
+  reach?(): string | undefined;
 }
 
 /**

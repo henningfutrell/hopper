@@ -41,6 +41,7 @@ import { stateRoutes } from './state.ts';
 import { staticRoutes } from './static.ts';
 import { installTenancy, tenantOf, type Tenants } from './tenants.ts';
 import { registerUiRoutes } from './ui/index.ts';
+import type { CallerOf } from './ui/sign-in.ts';
 import type { Sandboxes } from '../sandbox/service.ts';
 import { createUiSessions, identityName } from './ui/sessions.ts';
 import { updateRoutes } from './update.ts';
@@ -51,9 +52,11 @@ import { machineHistoryRoutes } from './machine-history.ts';
 import { userRoutes } from './users.ts';
 import { createInstanceAdmin } from './instance-admin.ts';
 import { vaultRoutes } from './vault.ts';
+import { bugReportReadRoutes } from './ui/bug-reports.ts';
 import { webhookRoutes } from './webhooks.ts';
 
 export type { TenantParts, Tenants } from './tenants.ts';
+export { tunnelCaller, watchTunnel, type TunnelWatch } from './tunnel.ts';
 
 export interface ServerOptions {
   /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */
@@ -84,6 +87,8 @@ export interface ServerOptions {
   signInEnvironment: string[];
   /** The LAN names and peers (design.md "Reaching the UI across the LAN"); empty: loopback only. */
   lan: Lan;
+  /** Who a request counts as for the sign-in limit (issue #795): `tunnelCaller` of the tunnel watch; default its address. */
+  caller?: CallerOf;
   /** The built UI bundle (ui/dist). */
   uiDir: string;
   /** Machines joining and dialling in (issue #308): their links, the client release, the install script. */
@@ -126,6 +131,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   jobRulesRoutes(app, tenant);
   webhookRoutes(app, tenant);
   vaultRoutes(app, tenant);
+  bugReportReadRoutes(app, tenant); // Your reports (issue #694)
   sourceRoutes(app, tenant);
   accountRoutes(app, tenant);
   connectedAccountsRoutes(app, tenant);
@@ -160,7 +166,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   staticRoutes(app, o.uiDir);
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
-    ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
+    ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
     updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey,
   });
   return app;

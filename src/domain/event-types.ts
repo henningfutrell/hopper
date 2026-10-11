@@ -23,7 +23,7 @@ export const EVENT_TYPES = [
   'job.phase_changed', 'job.forked', 'job.fork_resolved', 'phase_shifts.settings_changed',
   'question.corrected', 'auto_answer.settings_changed', 'auto_park.settings_changed',
   'github_proxy.done', 'github_proxy.refused', 'github_proxy.failed',
-  'vault.secret_set', 'vault.secret_removed', 'vault.secret_read', 'vault.secret_migrated', 'vault.master_key_rotated', 'template.saved', 'template.removed', 'vault.approved', 'vault.revoked', 'template.profile_approved', 'template.checked', 'template.check_requested', 'vault.delivered', 'vault.refused', 'vault.minted', 'vault.mint_refused', 'vault.mint_tested',
+  'vault.secret_set', 'vault.secret_removed', 'vault.secret_read', 'vault.secret_migrated', 'vault.master_key_rotated', 'template.saved', 'template.removed', 'vault.approved', 'vault.revoked', 'template.profile_approved', 'template.checked', 'template.check_requested', 'vault.delivered', 'vault.refused', 'vault.minted', 'vault.mint_refused', 'vault.mint_tested', 'vault.check_minted', 'vault.check_mint_refused',
   'vault.credential_asked', 'vault.credential_given', 'vault.credential_declined', 'vault.read_policy_set', 'vault.grant_asked', 'vault.granted', 'vault.grant_revoked',
   'yolo_mode.changed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.finish_briefed', 'job.pull_request_tended', 'job.pull_request_followed',
   'skill.listed', 'skill.loaded', 'skill.refused',
@@ -32,7 +32,7 @@ export const EVENT_TYPES = [
   'artifact.revised', 'artifact.revision_pinned', 'artifact.revision_removed',
   'item.snapshot_recorded', 'item.changed_since_snapshot', 'item.original_kept', 'item.new_text_accepted',
   'lanes.recommended', 'lanes.tuning_changed', 'lanes.applied', 'lanes.undone', 'lanes.dismissed',
-  'bug_report.filed', 'bug_report.failed',
+  'bug_report.filed', 'bug_report.failed', 'bug_report.kept',
   'repo_checks.job_queued', 'repo_checks.dismissed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
@@ -43,7 +43,7 @@ export type EventType = typeof EVENT_TYPES[number];
  */
 export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'job.queued': 1, 'job.prioritized': 3, 'job.held': 1, 'job.approved': 1, 'job.claimed': 1,
-  'job.started': 1, 'job.progressed': 1, 'job.finished': 1, 'job.failed': 1, 'job.cancelled': 1,
+  'job.started': 1, 'job.progressed': 2, 'job.finished': 1, 'job.failed': 1, 'job.cancelled': 1,
   'job.requeued': 1, 'job.reattached': 1, 'job.reprioritized': 1, 'job.respecified': 1, 'lane.opened': 1, 'lane.closed': 1,
   'decision.made': 3, 'question.asked': 1, 'question.escalated': 2, 'question.escalated_to_human': 1,
   'question.answered': 2, 'question.closed': 1, 'question.dismissed': 1, 'question.expired': 1, 'question.lapsed': 1,
@@ -65,7 +65,7 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'job.phase_changed': 1, 'job.forked': 1, 'job.fork_resolved': 1, 'phase_shifts.settings_changed': 1,
   'question.corrected': 1, 'auto_answer.settings_changed': 1, 'auto_park.settings_changed': 1,
   'github_proxy.done': 1, 'github_proxy.refused': 1, 'github_proxy.failed': 1,
-  'vault.secret_set': 1, 'vault.secret_removed': 1, 'vault.secret_read': 1, 'vault.secret_migrated': 1, 'vault.master_key_rotated': 1, 'template.saved': 1, 'template.removed': 1, 'vault.approved': 1, 'vault.revoked': 1, 'template.profile_approved': 1, 'template.checked': 1, 'template.check_requested': 1, 'vault.delivered': 1, 'vault.refused': 1, 'vault.minted': 1, 'vault.mint_refused': 1, 'vault.mint_tested': 1,
+  'vault.secret_set': 1, 'vault.secret_removed': 1, 'vault.secret_read': 1, 'vault.secret_migrated': 1, 'vault.master_key_rotated': 1, 'template.saved': 1, 'template.removed': 1, 'vault.approved': 1, 'vault.revoked': 1, 'template.profile_approved': 1, 'template.checked': 1, 'template.check_requested': 1, 'vault.delivered': 1, 'vault.refused': 1, 'vault.minted': 1, 'vault.mint_refused': 1, 'vault.mint_tested': 1, 'vault.check_minted': 1, 'vault.check_mint_refused': 1,
   'vault.credential_asked': 1, 'vault.credential_given': 1, 'vault.credential_declined': 1, 'vault.read_policy_set': 1, 'vault.grant_asked': 1, 'vault.granted': 1, 'vault.grant_revoked': 1,
   'yolo_mode.changed': 1, 'job.pull_request_merged': 1, 'job.pull_request_closed': 1, 'job.finish_briefed': 1, 'job.pull_request_tended': 1, 'job.pull_request_followed': 1,
   'skill.listed': 1, 'skill.loaded': 1, 'skill.refused': 1,
@@ -74,6 +74,6 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'artifact.revised': 1, 'artifact.revision_pinned': 1, 'artifact.revision_removed': 1,
   'item.snapshot_recorded': 1, 'item.changed_since_snapshot': 1, 'item.original_kept': 1, 'item.new_text_accepted': 1,
   'lanes.recommended': 1, 'lanes.tuning_changed': 1, 'lanes.applied': 1, 'lanes.undone': 1, 'lanes.dismissed': 1,
-  'bug_report.filed': 1, 'bug_report.failed': 1,
+  'bug_report.filed': 1, 'bug_report.failed': 1, 'bug_report.kept': 1,
   'repo_checks.job_queued': 1, 'repo_checks.dismissed': 1,
 };

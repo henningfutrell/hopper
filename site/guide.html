@@ -364,8 +364,9 @@ Overview marks a priority lane with a star.</p>
 lane fault, newer runs counting more. A lane needs 5 runs and an online machine to be ranked. A priority lane is replaced only by
 one clearly more reliable.</li>
 <li><strong>How many</strong>: <em>Priority lanes</em>, default 1; 0 turns them off.</li>
-<li><strong>While no high-priority job waits</strong>: <em>a priority lane stays free</em> (default), or <em>it takes default
-jobs</em> — a default job takes one only when no other lane on that machine is free; a low job never does.</li>
+<li><strong>While a high-priority job waits</strong>: <em>only it takes a priority lane</em> (default), or <em>default jobs take
+one too</em> — then only low jobs leave it. A priority lane is held only while a high-priority job waits for one. While none
+waits, any job takes a priority lane, after the other lanes on that machine.</li>
 <li><strong>By hand</strong>: an admin ticks lanes and presses <strong>Use these lanes</strong>; <strong>Choose by
 reliability</strong> goes back to the automatic choice.</li>
 </ul>

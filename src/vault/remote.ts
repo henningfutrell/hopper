@@ -9,7 +9,7 @@
 // is unavailable, an ask refused — nothing else in the hopper waits on it.
 import type { UserStore } from '../domain/ports.ts';
 import type { Minted, NewEvent } from '../domain/types.ts';
-import type { CallerIdentity } from '../domain/minting.ts';
+import type { CallerIdentity, MintReach } from '../domain/minting.ts';
 import type { MintFrom } from './mint.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 import type { RuntimeSecrets } from '../secrets/runtime.ts';
@@ -61,7 +61,7 @@ export function remoteVault(o: {
   // that holds the minting credential. One kept in a vault backend is minted here, which runs the backends.
   const mintFrom: MintFrom = async (name, target, jobId, identify) => {
     if (o.local.view().secrets.find((s) => s.name === name)?.backend) return o.local.mintFrom(name, target, jobId, identify);
-    const r = await call<{ minted: Minted; sessionName?: string; identity?: CallerIdentity } | { refused: string }>('mint', { credential: name, target, jobId, ...(identify ? { identify } : {}) });
+    const r = await call<{ minted: Minted; reach: MintReach; sessionName?: string; identity?: CallerIdentity } | { refused: string }>('mint', { credential: name, target, jobId, ...(identify ? { identify } : {}) });
     return 'problem' in r ? { refused: r.problem } : r.result;
   };
 
@@ -94,6 +94,7 @@ export function remoteVault(o: {
     },
     mint: (ask, machineKey) => o.local.mint(ask, machineKey, mintFrom),
     testMint: (asset, by) => o.local.testMint(asset, by, mintFrom),
+    mintForCheck: (ask) => o.local.mintForCheck(ask, mintFrom),
     saveTemplate: (t, by) => o.local.saveTemplate(t, by),
     removeTemplate: (name, by) => o.local.removeTemplate(name, by),
     approveTemplate: (name, by) => o.local.approveTemplate(name, by),

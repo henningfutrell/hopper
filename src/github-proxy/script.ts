@@ -36,7 +36,8 @@ A bug report goes to the hopper's own issues (henningfutrell/hopper), filed with
 labelled user-report. Never file one with issue create. The hopper adds this job's context (version, install, state,
 last log lines) and masks tokens, keys, host names and IP addresses. Say what happened in the body; never put text from
 a private repository in it. When open reports look similar, nothing is filed: it prints them and exits 1. Then add yours
-to one with --comment-on N, or file a new one with --force. At most 3 reports per job a day. A report never starts a job.`;
+to one with --comment-on N, or file a new one with --force. When GitHub cannot take it now, the hopper keeps it and
+sends it later: it prints kind kept; do not send it again. At most 3 reports per job a day. A report never starts a job.`;
 
 /** The script. Arguments become form fields, rebuilt in place (no eval); a body file is read by curl itself, the token from stdin. */
 export const PROXY_SCRIPT = `#!/bin/sh

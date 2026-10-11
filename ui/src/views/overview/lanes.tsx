@@ -127,15 +127,7 @@ function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: str
           <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><ParkButton job={job} /><CancelButton job={job} /></div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {job.startedAt && <span title="Running for">for <Since iso={job.startedAt} /></span>}
-            {/* A bar only for a percentage the job reported (issue #381): none reads as stuck at 0%. */}
-            {job.progress !== undefined && (
-              <div data-slot="progress" className="flex flex-1 items-center gap-2">
-                <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-busy transition-[width] duration-700" style={{ width: `${Math.round(job.progress * 100)}%` }} />
-                </div>
-                <span className="num w-8 text-right">{Math.round(job.progress * 100)}%</span>
-              </div>
-            )}
+            <TaskBar tasks={job.tasks} />
           </div>
           {row.workTree && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground" title={`work tree ${row.workTree}`}>
@@ -188,5 +180,27 @@ export function LanesPanel() {
       ))}
       {laneless.map((m) => <div key={m.id} data-lane-idle className="text-xs text-muted-foreground">{machineName(m.id, machines)}: {idle.get(m.id)}</div>)}
     </Panel>
+  );
+}
+
+/**
+ * The job's task count as a bar and `x/y` (issue #794): it steps as each task completes, never on a clock. Before the
+ * job has a task list the bar is indeterminate: no count reads as stuck at 0% (issue #381).
+ */
+function TaskBar({ tasks }: { tasks: Job['tasks'] }) {
+  if (!tasks) {
+    return (
+      <div data-slot="progress" data-indeterminate="true" className="flex flex-1 items-center gap-2" title="No task list yet">
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted"><div className="h-full w-1/3 animate-pulse rounded-full bg-busy/40" /></div>
+      </div>
+    );
+  }
+  return (
+    <div data-slot="progress" className="flex flex-1 items-center gap-2" title={`${tasks.done} of ${tasks.total} tasks done`}>
+      <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+        <div data-slot="progress-fill" className="h-full rounded-full bg-busy transition-[width] duration-700" style={{ width: `${Math.round((tasks.done / tasks.total) * 100)}%` }} />
+      </div>
+      <span className="num text-right">{tasks.done}/{tasks.total}</span>
+    </div>
   );
 }

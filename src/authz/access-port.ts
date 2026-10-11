@@ -1,7 +1,7 @@
 // What Access answers (issue #559, design.md "Access: OpenFGA decides each mint"): the port the vault, artifacts, the
 // system scope and a changed item's acceptance ask. Implemented by createAccess (service.ts); apart for its size.
 import type {
-  AccessAnswer, AccessDecisionRecord, ApiTokenAsk, AccessStatus, AccessView, MintDecision, MintRequest, OperationProfile, SharedSecretAsk, SystemSecretAsk, TemplateApprovals,
+  AccessAnswer, AccessDecisionRecord, ApiTokenAsk, CheckMintRequest, AccessStatus, AccessView, MintDecision, MintRequest, OperationProfile, SharedSecretAsk, SystemSecretAsk, TemplateApprovals,
 } from '../domain/types.ts';
 
 /** Who asks to see an artifact (issue #624): a user of the hopper, or the holder of a public link. */
@@ -29,6 +29,8 @@ export interface Access extends TemplateApprovals {
   decideVaultGrant(userId: string, grant: { ownerId: string; key: string }): Promise<AccessAnswer>;
   /** Allowed or denied for the requester, why, and the relationship path; recorded. The vault calls it before every mint and renewal. */
   decideMint(request: MintRequest): Promise<MintDecision>;
+  /** Allowed or denied for a read-only check box of the template (issue #797), asked as for a live job of it; recorded as the check's. */
+  decideCheckMint(request: CheckMintRequest): Promise<MintDecision>;
   /** Whether a requester may change or read a system secret (issue #657): OpenFGA's `can_change` or `can_read`, with the owner and an admin told for that check only. Not recorded. */
   decideSystemSecret(ask: SystemSecretAsk): Promise<AccessAnswer>;
   /** Whether a user may read or change a shared secret (issue #718): OpenFGA's `can_read` or `can_change`, its readers and an admin told for that check only. Not recorded. */

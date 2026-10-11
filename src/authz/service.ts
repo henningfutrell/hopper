@@ -23,9 +23,7 @@ export const LIVE_JOB_STATUSES: readonly JobStatus[] = ['claimed', 'running', 'w
 export const ACCESS_SYNC_MS = 30_000;
 /** How often who is live is compared with what OpenFGA was given: a job started or ended, a box joined or left (issue #581). */
 export const REQUESTERS_CHECK_MS = 2_000;
-const STORE_NAME = 'hopper';
-const DECISIONS_SHOWN = 50;
-const REVOKED_SHOWN = 20;
+const STORE_NAME = 'hopper', DECISIONS_SHOWN = 50, REVOKED_SHOWN = 20;
 export const NOT_CONFIGURED = 'OpenFGA is not set up: set HOPPER_OPENFGA_URL (docs/deploy.md "Access: OpenFGA")';
 
 /** What an edit refused: 400 (not valid), 404 (no such approval) or 409 (the model changed since it was read). */
@@ -89,12 +87,9 @@ export function createAccess(o: AccessOptions): Access {
     let memo: { dsl: string; gaps: string[] } | undefined;
     return (dsl) => (memo?.dsl === dsl ? memo : (memo = { dsl, gaps: gapsIn(compileAccessModel(dsl)) })).gaps;
   };
-  const artifactGapsOf = gapsMemo(artifactGaps);
-  const systemGapsOf = gapsMemo(systemSecretGaps);
+  const artifactGapsOf = gapsMemo(artifactGaps), systemGapsOf = gapsMemo(systemSecretGaps);
   const itemGapsOf = gapsMemo(itemGaps), vaultGrantGapsOf = gapsMemo(vaultGrantGaps);
-  const sharedGapsOf = gapsMemo(sharedSecretGaps);
-  const apiTokenGapsOf = gapsMemo(apiTokenGaps);
-  const intakeGapsOf = gapsMemo(intakeGaps);
+  const sharedGapsOf = gapsMemo(sharedSecretGaps), apiTokenGapsOf = gapsMemo(apiTokenGaps), intakeGapsOf = gapsMemo(intakeGaps);
 
   const model = (): AccessModelView => {
     const m = o.repo.model() ?? o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
@@ -197,6 +192,10 @@ export function createAccess(o: AccessOptions): Access {
     }
   };
 
+  /** OpenFGA's answer for a made-up live job of the template (`job:<kind>/<uuid>`, `running` it, told for this check only): a trial, or a read-only check's mint (issue #797). */
+  const askAsTemplate = (kind: 'trial' | 'check', r: Omit<MintRequest, 'requester'> & { template: string }, job = `job:${kind}/${randomUUID()}`) =>
+    ask(job, [runningTuple(job, r.template)], r, `template ${r.template}`);
+
   const approvalOf = (approval: StoredTuple): Approval | undefined => {
     const id = approval.object.replace(/^operation_profile:/, '');
     const profile = profileOf(id);
@@ -267,12 +266,15 @@ export function createAccess(o: AccessOptions): Access {
       const at = asks.template === undefined ? {} : { template: asks.template };
       return record({ ...base, ...at, ...await ask(requesterObject(requester), [], request, requesterText(requester, asks.template)) });
     },
+    async decideCheckMint({ check, template, operation, asset }) {
+      const problem = requestProblem({ template, operation, asset });
+      return record({ check: { box: check }, template, operation, asset, ...(problem ? { allowed: false, reason: `not a request the model can hold: ${problem}` } : await askAsTemplate('check', { template, operation, asset })) });
+    },
     async tryCheck(request, by) {
       const problem = requestProblem(request);
       if (problem) throw new AccessEditError(400, problem);
       const { template, operation, asset } = request;
-      const job = `job:trial/${randomUUID()}`;
-      return record({ trial: { by }, template, operation, asset, ...await ask(job, [runningTuple(job, template)], request, `template ${template}`) });
+      return record({ trial: { by }, template, operation, asset, ...await askAsTemplate('trial', request) });
     },
     async approve(template, profile, by) {
       const problem = requestProblem({ template, ...profile });

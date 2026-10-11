@@ -117,7 +117,7 @@ describe('cursor-agent executor', () => {
     process.env.FAKE_CURSOR_REPLIES = JSON.stringify(['I looked at it and will now write the file.', 'Wrote it.\nHOPPER_DONE']);
     const progress: (string | undefined)[] = [];
     const { ctx } = ctxFor({ prompt: 'p', cwd: work }, HERE);
-    expect(await ex.run({ ...ctx, progress: (_f, m) => { progress.push(m); } })).toEqual({ kind: 'finished', result: { machine: 'local', summary: 'Wrote it.', chatId: 'chat-1' } });
+    expect(await ex.run({ ...ctx, progress: (m) => { progress.push(m); } })).toEqual({ kind: 'finished', result: { machine: 'local', summary: 'Wrote it.', chatId: 'chat-1' } });
     expect(calls().at(-1)!.argv.slice(-4)).toEqual(['--resume', 'chat-1', '--', STATUS_NOTE_NUDGE]);
     expect(progress).toContain('I looked at it and will now write the file.');
   });
