@@ -14,12 +14,12 @@ export * from './repo-checks.ts';
 /**
  * Why a waiting pull request is not merged yet: the first that holds, in this order. `no pull request`: none named nor
  * found yet. `tending`: its item's tend job works on it; `tend failed`: that job failed, and it waits on a person (issue
- * #763). `untrusted origin`: yolo mode on, but its job's item was neither of a trusted origin nor an approved request
- * (issue #652), so only a person merges it. `checks not started`: it has no checks, inside the grace window after its last
+ * #763). Its job's origin does not hold it (issue #805): the job already ran, so a pull request of a job with no origin
+ * merges as any other. `checks not started`: it has no checks, inside the grace window after its last
  * push. `ready`: yolo mode on and it is ready, so the next sync merges it (issue #677).
  */
 export const MERGE_WAITS = [
-  'no pull request', 'tending', 'tend failed', 'not checked yet', 'draft', 'conflicts', 'checks failing', 'yolo off', 'untrusted origin', 'checks pending', 'checks not started', 'merge refused', 'ready',
+  'no pull request', 'tending', 'tend failed', 'not checked yet', 'draft', 'conflicts', 'checks failing', 'yolo off', 'checks pending', 'checks not started', 'merge refused', 'ready',
 ] as const;
 export type MergeWait = (typeof MERGE_WAITS)[number];
 
@@ -87,14 +87,13 @@ export function waitsOnPullRequest(job: Job, newest: (key: string) => Job | unde
   return ((f === 'open' || f === 'closed') && newest(job.source.key)?.id === job.id) || tendJobOf(job, newest) !== undefined;
 }
 
-function waitOf(named: boolean, seen: PullRequestSeen | undefined, yolo: boolean, trusted: boolean, now: number): MergeWait {
+function waitOf(named: boolean, seen: PullRequestSeen | undefined, yolo: boolean, now: number): MergeWait {
   if (!named) return 'no pull request';
   if (!seen) return yolo ? 'not checked yet' : 'yolo off';
   if (seen.draft) return 'draft';
   if (seen.conflicting) return 'conflicts';
   if (seen.checks === 'failing') return 'checks failing';
   if (!yolo) return 'yolo off';
-  if (!trusted) return 'untrusted origin';
   if (seen.checks === 'pending') return 'checks pending';
   if (seen.checks === 'none' && !noChecksSettled(seen, now)) return 'checks not started';
   if (seen.mergeError || !readyToMerge(seen, now)) return 'merge refused';
@@ -105,7 +104,7 @@ function cardOf(job: Job, yolo: boolean, now: number, tendJob: Job | undefined):
   const f = followedOf(job);
   const seen = f.seen;
   const state = f.follow === 'open' || tendJob ? 'open' : 'closed';
-  const waits = tendJob ? (['failed', 'cancelled', 'rejected'].includes(tendJob.status) ? 'tend failed' : 'tending') : waitOf(f.pullRequest !== undefined, seen, yolo, job.source?.origin !== undefined, now);
+  const waits = tendJob ? (['failed', 'cancelled', 'rejected'].includes(tendJob.status) ? 'tend failed' : 'tending') : waitOf(f.pullRequest !== undefined, seen, yolo, now);
   return {
     jobId: job.id, repo: job.source!.repo!, issue: { number: job.source!.number!, url: job.source!.url ?? job.source!.key },
     ...(f.pullRequest ? { pullRequest: { number: numberOf(f.pullRequest), url: f.pullRequest } } : {}),

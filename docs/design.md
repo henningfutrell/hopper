@@ -12716,8 +12716,8 @@ recommendation; GitHub down and no connection say unknown; `hopper repo checks`)
 
 ## Repository setup (issue #652, 2026-10-11)
 
-Requirement 8 of issue #652. A job pushes only to a branch of its own work (part 1), and yolo mode merges only a job of a
-trusted origin once a check passed (parts 1 and 2). Nothing in the hopper keeps anyone else off a release branch: GitHub
+Requirement 8 of issue #652. A job pushes only to a branch of its own work (part 1), and yolo mode merges a job's pull request
+only once a check passed (parts 1 and 2; since issue #805 whatever the job's origin). Nothing in the hopper keeps anyone else off a release branch: GitHub
 does. So the hopper checks each job repository's setup, and Sources warns when it is not as asked. The owner's steps
 are in deploy.md "Repository setup".
 
@@ -13099,9 +13099,12 @@ its job is made shows the card again, with the approved text and the change line
 origin of the job they follow. A job of a source that does not judge origins has none; one taken before this change has
 none until the backfill below judges it.
 
-**Yolo mode** (requirement 7) merges only a job with an origin: a job with none waits for a person (`untrusted origin` on
-the Pull requests card). Its checks rule stays as issue #677 set it: no checks, settled, is ready — the owner's later
-decision over the issue's "no checks does not count".
+**Yolo mode** merges a job's ready pull request whatever its origin (issue #805, the owner's later decision over
+requirement 7, which held a job with none for a person as `untrusted origin` on the Pull requests card). The origin is a
+decision about running the work: the job ran, and its checks judge its pull request. A job with no origin is one taken
+before origins were judged, or one of a source that judges none; such a pull request merges as any other, and the card
+has no `untrusted origin` state. Its checks rule stays as issue #677 set it: no checks, settled, is ready — the owner's
+later decision over the issue's "no checks does not count".
 
 **Settings → Intake** (`/api/intake-actors`, `POST /ui/api/intake-actors`, admin): the whole list of GitHub logins,
 lowercased; empty: the connected login only. A bot's login is refused. `intake.actors_changed { from, to, by }`. Kept in

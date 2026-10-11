@@ -150,7 +150,7 @@ After intake, a new job also passes the queue gate. Set it in the **Queue** view
 - It releases its own stale claims: a claim of yours with no job here.
 - When you unassign a waiting job's issue, it cancels the job. A running job goes on, and the UI flags it for you to stop or let finish.
 - When an issue gets `hopper:backburner`, it cancels the waiting job.
-- Yolo mode merges only a job whose issue was of a trusted origin or approved. See [Pull requests](pull-requests.md).
+- The origin controls only whether a job runs. Yolo mode merges a ready pull request of any job. See [Pull requests](pull-requests.md).
 
 ## Limits and troubleshooting
 

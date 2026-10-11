@@ -32,13 +32,13 @@ function tending(job: Job, get: (id: string) => Job | undefined): string | undef
 }
 
 /**
- * On its way to the hopper's merge: followed, yolo mode on for its repository (`merges`), of a trusted or approved origin,
- * and — as last seen — no draft, no merge conflicts, no failing checks and no refused merge. Not seen yet counts: the next
+ * On its way to the hopper's merge: followed, yolo mode on for its repository (`merges`), whatever its job's origin (issue
+ * #805), and — as last seen — no draft, no merge conflicts, no failing checks and no refused merge. Not seen yet counts: the next
  * follow sees it.
  */
 function merging(job: Job, merges: (repo: string) => boolean): string | undefined {
   const f = followedOf(job);
-  if (!following(job) || !f.pullRequest || !merges(job.source!.repo!) || job.source?.origin === undefined) return undefined;
+  if (!following(job) || !f.pullRequest || !merges(job.source!.repo!)) return undefined;
   const s = f.seen;
   return !s || (!s.draft && !s.conflicting && s.checks !== 'failing' && s.mergeError === undefined) ? f.pullRequest : undefined;
 }
