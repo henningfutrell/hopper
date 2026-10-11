@@ -28,6 +28,10 @@ git merge-base --is-ancestor "origin/$to" "$commit" \
   || fail "$to has commits $commit lacks: not a fast-forward. A fix lands on dev and is promoted from there"
 [ "$(git rev-parse "origin/$to")" != "$commit" ] || { echo "$to is already at $commit"; exit 0; }
 
+fragments="$(git ls-tree --name-only "$commit" whats-new/ | sed -n 's|^whats-new/\([0-9][0-9a-z-]*\.md\)$|\1|p' | tr '\n' ' ')"
+[ -z "$fragments" ] \
+  || fail "$commit has What's new fragments not in WHATS-NEW.md yet (${fragments% }): run node scripts/whats-new.ts assemble on dev, merge it, then promote"
+
 conclusion="$(gh run list --workflow image.yml --branch "$from" --commit "$commit" --limit 1 --json conclusion --jq '.[0].conclusion // "none"')"
 [ "$conclusion" = success ] || fail "the image of $commit on $from has not built (image run: $conclusion); wait for it, or fix it on dev"
 

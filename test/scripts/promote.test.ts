@@ -123,6 +123,22 @@ describe('promote.sh', () => {
     expect(head('beta')).toBe(before);
   });
 
+  it('refuses a commit with What\'s new fragments left: they go into WHATS-NEW.md on dev first (issue #824)', () => {
+    mkdirSync(join(work, 'whats-new'), { recursive: true });
+    writeFileSync(join(work, 'whats-new', 'README.md'), 'how to');
+    const readme = onDev('whats-new/12.md');
+    const r = promote('beta');
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("What's new fragments not in WHATS-NEW.md yet (12.md)");
+    expect(r.stderr).toContain('node scripts/whats-new.ts assemble');
+    expect(head('beta')).not.toBe(readme);
+    git(work, 'rm', '-q', 'whats-new/12.md');
+    git(work, 'commit', '-q', '-m', 'assemble');
+    git(work, 'push', '-q', 'origin', 'dev');
+    const ok = promote('beta');
+    expect(ok.status, ok.stderr).toBe(0);
+  });
+
   it('takes only beta or stable', () => {
     for (const to of ['dev', 'main', 'release']) expect(promote(to).status).not.toBe(0);
   });

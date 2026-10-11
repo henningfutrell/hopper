@@ -10,8 +10,8 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import type { Clock, InstanceEvents, InstanceSettingsRepository, ReleaseCheck, Restarter, UpdateBuilder, Updater } from '../domain/ports.ts';
 import { isUpdateChannel, type InstallInfo, type UpdateApply, type UpdateSettings, type UpdateStatus, type UpdateTarget, type VersionHistory } from '../domain/types.ts';
-import { createGitMirror, type GitMirror } from './git.ts';
-import { bullets, newSince, WHATS_NEW_FILE } from './whats-new.ts';
+import { createGitMirror, type GitMirror, notesAt } from './git.ts';
+import { allBullets, newSince, readNotes, WHATS_NEW_DIR, WHATS_NEW_FILE } from './whats-new.ts';
 import { nextDirOf, readInstallInfo, swapInstall } from './install.ts';
 
 const exec = promisify(execFile);
@@ -73,10 +73,9 @@ const messageOf = (e: unknown): string => {
   return firstLine(err.stderr) || firstLine(err.message) || String(e);
 };
 
-/** The newest bullets of the install's own WHATS-NEW.md (install.sh and the image copy it); none without one. */
+/** The newest bullets of the install's own What's new (install.sh and the image copy it); none without it. */
 function installedWhatsNew(appDir: string): string[] {
-  const file = join(appDir, WHATS_NEW_FILE);
-  return existsSync(file) ? bullets(readFileSync(file, 'utf8')).slice(0, INSTALLED_WHATS_NEW) : [];
+  return allBullets(readNotes(appDir)).slice(0, INSTALLED_WHATS_NEW);
 }
 
 /** Imports the new build's composition root in a child process: a module that fails to load fails here, not after the swap. */
@@ -158,7 +157,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     // Only the merge of a pull request whose checks passed is offered (issue #652): nothing else is announced or applied.
     const verdict = await o.release.verify(info.repo, target.commit);
     if (!verdict.passed) return { ...base, state: 'held', target, reason: verdict.reason };
-    const notes = async (commit: string) => bullets((await mirror.read(commit, WHATS_NEW_FILE)) ?? '');
+    const notes = async (commit: string) => allBullets(await notesAt(mirror, commit));
     const whatsNew = newSince(await notes(info.commit), await notes(target.commit));
     return { ...base, state: 'available', target: { ...target, pullRequest: verdict.pullRequest }, whatsNew, commits: await mirror.count(info.commit, target.commit) };
   }
@@ -280,7 +279,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     if (history?.commit === commit) return { versions: history.versions, build };
     if (!(await mirror.has(commit))) await check();
     if (!(await mirror.has(commit))) return { versions: [], build, reason: checked.reason ?? `the installed commit ${short(commit)} is not in ${read.info.repo}` };
-    const versions = (await mirror.added(commit, WHATS_NEW_FILE)).map((v) => ({ commit: v.commit, at: v.at, changes: v.lines }));
+    const versions = (await mirror.added(commit, [WHATS_NEW_FILE, WHATS_NEW_DIR])).map((v) => ({ commit: v.commit, at: v.at, changes: v.lines }));
     history = { commit, versions };
     return { versions, build };
   }

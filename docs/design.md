@@ -6470,19 +6470,29 @@ migration leaves a store the build before it still runs on (AGENTS.md "Persisted
 the image tag of its name; the Pages site is published from `stable`. Until issue #423 the channels were
 `dev`, `beta`, `main` and `release` (the newest `v<semver>` tag, of which none was published): store
 migration 26 sets a hopper on `main` or `release` to `stable`, and `main` was moved once to the commit that
-brought it to `stable`, so a hopper on an older version reaches it by following `main` once. **What's new** (issue #104): the bullets of `WHATS-NEW.md`
-at the target that `WHATS-NEW.md` at the installed commit lacks, newest first (`whatsNew`; all of
-them when the installed commit has no such file) — plain words for people who use the hopper,
+brought it to `stable`, so a hopper on an older version reaches it by following `main` once. **What's new** (issue #104): the bullets of What's new
+at the target that What's new at the installed commit lacks, newest first (`whatsNew`; all of
+them when the installed commit has none) — plain words for people who use the hopper,
 written by hand in the change that makes them true (AGENTS.md "What's new"); `src/update/whats-new.ts`.
+What's new at a commit is its **fragments** first, then `WHATS-NEW.md` (issue #824): a change adds its
+bullets in a new file `whats-new/<issue number>.md`, never in `WHATS-NEW.md`, so open pull requests do not
+conflict on one top line. Fragments read newest first by issue number (`fragmentsInOrder`). Before a
+promotion to beta, `node scripts/whats-new.ts assemble` moves them into the top of `WHATS-NEW.md` in that
+order and deletes them, as a pull request to `dev`; `scripts/promote.sh` refuses a commit that still has
+fragments, so `beta`, `stable` and the Pages link read one human file. A bullet keeps its text when it moves,
+so the move brings no update news. The pull request check runs `node scripts/whats-new.ts check HEAD^1`
+(`problems`): a line added to `WHATS-NEW.md` that no fragment of the base had, a released line changed or
+removed, a line twice, or a fragment named wrongly fails it.
 Commit subjects, hashes and issue numbers are never shown: a merge list is the change's plumbing,
 not what changed for its users. **In this
-version** (issue #165): the newest 5 bullets of the install's own `WHATS-NEW.md` (`installedWhatsNew`;
-`install.sh` and the image copy the file), read once at start — shown whether or not an update
+version** (issue #165): the newest 5 bullets of the install's own What's new (`installedWhatsNew`;
+`install.sh` and the image copy `WHATS-NEW.md` and `whats-new/`), read once at start — shown whether or not an update
 exists, and when self-update is unavailable.
 **Version history** (issue #246): `GET /api/update/history`, Settings → Version history — the versions
 the installed commit is made of, newest first: each commit on the tracked branch's first-parent line
-that added `WHATS-NEW.md` bullets (a merged pull request is one version), with its commit date and
-those bullets (`GitMirror.added`). Read from the mirror, so it needs no state of its own and counts an
+that added What's new bullets (a merged pull request is one version), with its commit date and
+those bullets (`GitMirror.added`); a bullet the same commit removed from a fragment only moved, so an
+assembly is no version. Read from the mirror, so it needs no state of its own and counts an
 install by `install.sh` the same as an applied update; a mirror without the installed commit is
 checked first. Computed once per installed commit. No install.json, or one lacking a field → none, with the reason. The answer
 always carries `build`: what install.json does say (issue #409), shown above the list with the version, every
@@ -9317,7 +9327,8 @@ machine; a routing rule may still override it per repository, on the machine it 
   that waits for the other machines' lanes says that. A job already running there keeps its lane, and a
   job resuming there returns to its pane. The hold reason is the job's `holdReason`, shown in the UI;
   the attached machine's log line says it takes no new job and why.
-- **The repository, at each start** (`src/executors/herdr/job-worktree.ts`). A work tree that is the top
+- **The repository, at each start** (`src/executors/herdr/job-worktree.ts`). Since issue #431 only when that repository is
+  the job's ("Repository-agnostic lanes"): a work tree that is the top
   of a git repository — a checkout the owner keeps, as before — is used as it is: no clone is put in it,
   and each job gets its own worktree of it ("Each job its own git worktree"). Any other work tree (the
   jobs directory, a fresh box's) gets the job's repository when the job has one (a GitHub issue's,
@@ -13337,3 +13348,41 @@ scope, as every box job did before. A person who grants a job of a request card'
 A job on a person's own account (no box) can still read that home's files (`~/.ssh`, a gh login): only a box keeps them
 out ("Git through the hopper", residual risk).
 
+## Repository-agnostic lanes (issue #431, 2026-10-11)
+
+Job 7 of the pointed-job architecture (tracking issue #424). Requirement: a lane takes any job and gets a GitHub
+client and a work tree scoped to that job's target repository, so one lane runs jobs of different repositories one
+after another, each with the right clone, credentials and scope, and neither can touch the other's repository.
+
+**What was already so.** A lane is a slot on a machine, never a repository's. Each job gets its own way to GitHub:
+`hopper-gh` and git through the hopper's `/job/git/` proxy, both bound to the job's token and refused for any
+repository but the job's own (issue #652, "Git through the hopper"; `test/integration/git-proxy.test.ts` "refuses a
+push to another repository than the job's own"). The work tree follows the job's repository through the machine's
+`workTrees` map (issue #691), and a plain work tree gets the job's repository cloned in it (issue #361).
+
+**The gap, and the change.** A work tree that was the top of a git repository gave every job a worktree of that
+repository, whatever the job's own: on a machine whose work tree is a checkout of repository A, a job of
+repository B worked in A. Seen live: a job of one repository started in a worktree of another. Now the job
+worktree command (`src/executors/herdr/job-worktree.ts`) compares the work tree's `origin` with the job's
+repository (`owner/name`, in any case, as `mappedWorkTree` does):
+- the job's own repository, or a job that names none: as before, a worktree of the work tree (`made`);
+- another repository (or none at all): the job's repository is fetched, or cloned the first time, into the work
+  tree's scratch dir, `repoCheckoutOf` = `<work tree>/.hopper-scratch/repos/<owner>/<name>`, and the job gets its
+  worktree of that checkout, `<work tree>/.hopper-scratch/<job id>/<name>` (outcome `other`). The executor
+  records the checkout (`PaneState.checkout`) and names it in the prompt, as for issue #361's checkout.
+The checkout is under `.hopper-scratch`, which git ignores there, so the work tree's repository stays clean. The
+reap removes the job's worktree with its scratch dir and keeps the checkout for the next job of that repository;
+the sweep never touches it, as it touches only dirs named by a job id it knows (as `deps`). Owner and name both
+name the path, so two repositories with one name do not meet.
+
+**Not changed.** With job worktrees off, a repository work tree is used as it is (outcome `none`), as before: that
+option says to share the work tree. The print agents (codex, cursor-agent, opencode, omp) run with job worktrees
+off, so the same holds for them. The job record is still the queue's `Job`: the pointed-job record (#425) and the
+tracking layer (#426) are not built yet; when they are, a lane takes that record the same way, through the
+job's repository.
+
+Tests: `test/herdr/job-worktree.test.ts` "a work tree that is another repository (issue #431)" (real git: the
+clone in the scratch dir, the work tree untouched; one lane, two jobs of two repositories back to back, each in
+its own; a later job fetches; a checkout of another repository there is refused; the reap keeps the checkout; the
+job's own repository in any case as before), `test/herdr/executor-job-worktree.test.ts` (the executor's side over
+the fake herdr: the checkout saved and named in the prompt; the job's own repository unchanged).

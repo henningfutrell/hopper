@@ -8,7 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
-- A running job no longer fails when its box loses the link to the hopper for up to 10 minutes. The job waits on its lane, shows when it fails if the link does not come back, and goes on by itself when the link is back. The machine's card shows since when the machine is out of reach and how many jobs wait for it. A dead link is now found in seconds.
+- A machine whose work tree is a checkout of one repository now runs jobs of any other repository too: each such job gets its own copy of its repository, made there for it. Before, the job worked in the work tree's repository, which was the wrong one.
 - A source's next sync time on Sources is now the time it really syncs. While a sync runs, the card says it is syncing, and after it the countdown starts again from the true next time.
 - Click a bar or a question on the lane timeline, or a job's line in Live activity or Events, to open that job's own page: its state, lane, times, error and what happened to it.
 - Issues on the backburner no longer look gone: the Not taken menu entry and the Queue show how many there are, and each one shows its issue number, how long it has been on the backburner and who put it there.

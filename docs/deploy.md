@@ -914,10 +914,19 @@ bash scripts/promote.sh stable [commit]   # a commit of beta (default: its head)
 
 It refuses unless the commit is on the branch one step below (`stable` never takes a commit straight from
 `dev`), the move is a fast-forward of the steadier branch, and the commit's image built on the branch below
-(the `image` run, asked of `gh`). Then it pushes, as the maintainer, so the steadier branch's image build
+(the `image` run, asked of `gh`), and the commit has no What's new fragments left in `whats-new/`. Then it pushes, as the maintainer, so the steadier branch's image build
 starts. `beta` and `stable` therefore only ever hold what ran one step below; nothing is merged or committed
 on them. A fix for something found on `beta` or `stable` lands on `dev` like any change and is promoted from
 there. There is no schedule and nothing promotes on its own: the maintainer decides.
+
+**Assemble What's new first (issue #824).** Pull requests add their What's new lines as fragments in
+`whats-new/`, never in `WHATS-NEW.md`. Before `promote.sh beta`, move them into `WHATS-NEW.md` on `dev`:
+
+```sh
+node scripts/whats-new.ts assemble        # in a branch of dev; then open a pull request to dev and merge it
+```
+
+Then promote the merge of that pull request. The move keeps each line's text, so it brings no update news.
 
 **What a hopper updates to (issue #652).** A hopper offers its channel's head only when that commit is the merge of a
 pull request whose checks passed (asked of GitHub's API). Promote a merge commit of `dev` (`scripts/promote.sh` takes
