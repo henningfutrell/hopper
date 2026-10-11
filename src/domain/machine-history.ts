@@ -1,7 +1,8 @@
 // Machine resources over time (issue #560, design.md "Machine resources over time"): a machine's CPU, memory and
 // swap as its probe last read them, each reading kept as a machine sample, and what the resource graph reads.
 // Re-exported by types.ts.
-import type { UsageGap, UsageGraphView, UsagePoint } from './usage-history.ts';
+import type { LaneChange } from './lane-tuning.ts';
+import type { UsageGap, UsageGraphView, UsagePoint, UsageSeries } from './usage-history.ts';
 
 /** A machine's CPU, memory and swap as last read (src/client/resources.ts is the meter; the same shape). */
 export interface ResourceReading {
@@ -58,6 +59,13 @@ export interface MachineHistory {
   /** The history retention, shared with the usage samples. */
   retentionDays: number;
   series: ResourceSeries[];
+  /**
+   * One machine's graph only (issue #688, lane tuning's graph): the usage that limits it — the lines of its own usage
+   * readings and of a budget every machine shares — at the resource step.
+   */
+  usage?: UsageSeries[];
+  /** One machine's graph only: its lane changes in the range, oldest first. */
+  laneChanges?: LaneChange[];
 }
 
 /** The resource graph's default range: a day. */

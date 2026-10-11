@@ -1,13 +1,14 @@
 // The usage graph (issues #385, #502): every shown line drawn as the dashboard cards draw theirs (sparkline.tsx) —
 // a thin monotone line over a soft fill fading down — on a 0-100% axis over the stretch shown, each point at the
 // middle of its graph step. A gap breaks a line; a reset of a usage window is a short tick at the axis foot in the
-// line's colour; hovering (or a tap) reads every shown line at that step. Pinch, Ctrl/⌘ + scroll and a drag across
+// line's colour; a marked moment (issue #688: a lane change) is a dotted line down the graph in its line's colour;
+// hovering (or a tap) reads every shown line at that step, and names the marks there. Pinch, Ctrl/⌘ + scroll and a drag across
 // zoom (use-graph-zoom.ts). d3 does the maths; React draws the SVG.
 import { area, curveMonotoneX, line, scaleLinear, scaleTime, timeFormat } from 'd3';
 import { Fragment, useId, useMemo, useRef } from 'react';
 import { useGraphZoom } from '@/hooks/use-graph-zoom';
 import { useSize } from '@/hooks/use-size';
-import { DASH_ARRAY, lineSegments, valuesAt, type GraphLine, type GraphPoint, type Stretch } from '@/model/usage-history';
+import { DASH_ARRAY, lineSegments, marksAt, valuesAt, type GraphLine, type GraphPoint, type Stretch } from '@/model/usage-history';
 import { GridY, TimeAxis } from './axis';
 
 const M = { top: 10, right: 16, bottom: 22, left: 34 };
@@ -38,6 +39,7 @@ export function UsageGraph({ lines, hidden, from, to, stepMs, maxMs, onZoom, hei
   const span = stretch.to - stretch.from;
   const format = span <= DAY ? clock : span <= 4 * DAY ? weekdayClock : day;
   const hoverValues = hoverT === null ? [] : valuesAt(shown, hoverT, stepMs, hidden);
+  const hoverMarks = hoverT === null ? [] : marksAt(shown, hoverT, stepMs, hidden);
   const gradient = (color: string) => `${id}-${color.replace(/[^a-z0-9]/gi, '')}`;
   return (
     <div ref={ref} className="relative w-full select-none" style={{ height, touchAction: 'pan-y' }}>
@@ -62,6 +64,14 @@ export function UsageGraph({ lines, hidden, from, to, stepMs, maxMs, onZoom, hei
                   return rx >= 0 && rx <= iw ? (
                     <line key={r} data-usage-reset={r} x1={rx} x2={rx} y1={ih - 7} y2={ih} stroke={l.color} strokeOpacity={0.85} strokeWidth={1.5}>
                       <title>{`${l.label} reset ${dayClock(new Date(r))}`}</title>
+                    </line>
+                  ) : null;
+                })}
+                {(l.marks ?? []).map((m) => {
+                  const mx = x(Date.parse(m.at));
+                  return mx >= 0 && mx <= iw ? (
+                    <line key={`mark-${m.at}`} data-graph-mark={m.at} x1={mx} x2={mx} y1={0} y2={ih} stroke={l.color} strokeOpacity={0.7} strokeWidth={1.25} strokeDasharray="2 3">
+                      <title>{`${dayClock(new Date(m.at))} ${m.label}`}</title>
                     </line>
                   ) : null;
                 })}
@@ -96,6 +106,12 @@ export function UsageGraph({ lines, hidden, from, to, stepMs, maxMs, onZoom, hei
               </div>
             );
           }) : <div className="text-muted-foreground">no sample here</div>}
+          {hoverMarks.map(({ key, mark }) => (
+            <div key={`${key}-${mark.at}`} data-slot="usage-graph-mark" className="mt-1 flex items-start gap-2 border-t pt-1">
+              <LineSwatch line={{ color: lines.find((x) => x.key === key)!.color, dash: 'dotted' }} />
+              <span><span className="num text-muted-foreground">{clock(new Date(mark.at))}</span> {mark.label}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>

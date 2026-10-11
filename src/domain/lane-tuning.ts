@@ -106,6 +106,18 @@ export type LaneChange = { at: string; machineId: string; from: number; to: numb
   { kind: 'applied'; reason: string; by?: string } | { kind: 'undone'; by: string }
 );
 
+/** The event types a lane change is recorded as. */
+export const LANE_CHANGE_EVENTS = ['lanes.applied', 'lanes.undone'] as const;
+
+/** A `lanes.applied` or `lanes.undone` event as the lane change it records. */
+export function laneChangeOf(e: { at: string; type: string; data: unknown }): LaneChange {
+  const d = e.data as { machineId: string; from: number; to: number; reason?: string; by?: string };
+  const base = { at: e.at, machineId: d.machineId, from: d.from, to: d.to };
+  return e.type === 'lanes.applied'
+    ? { ...base, kind: 'applied', reason: d.reason ?? '', ...(d.by === undefined ? {} : { by: d.by }) }
+    : { ...base, kind: 'undone', by: d.by ?? '' };
+}
+
 /** `GET /api/lanes/plan`: every machine's lane recommendation, and the latest changes, newest first. */
 export interface LaneTuningPlan {
   at: string;

@@ -203,6 +203,8 @@ export interface UsageHistoryQuery {
   to: Date;
   stepMs: number;
   originMs: number;
+  /** Only the usage that limits this machine: its own readings and those of a budget every machine shares (issue #688). */
+  limiting?: string;
 }
 
 /** One user's lines of one unit and usage window, summed per graph step: summed again over every user for the instance usage totals. */
@@ -223,7 +225,7 @@ export interface UsageHistoryRepository {
 }
 
 /** The resource graph's query (issue #560): the usage graph's, and the one machine when it asks for one. */
-export interface MachineHistoryQuery extends UsageHistoryQuery {
+export interface MachineHistoryQuery extends Omit<UsageHistoryQuery, 'limiting'> {
   machineId?: string;
 }
 

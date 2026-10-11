@@ -9,7 +9,7 @@ import { jobCostGroups, jobCostKind, jobCostProfiles } from '../decider/job-cost
 import { laneActions, laneProgress, recommendLanes } from '../decider/lane-tuning.ts';
 import type { UserStore } from '../domain/ports.ts';
 import {
-  DEFAULT_LANE_TUNING, JOB_COST_WINDOW_DAYS, JOB_COSTS_LISTED, LANE_TUNING_WINDOW_DAYS, type JobCosts, MAX_TUNED_LANES, RESOURCE_PRESSURE, type LaneChange, type LaneRecommendation, type LaneTuning, type LaneTuningPlan,
+  DEFAULT_LANE_TUNING, JOB_COST_WINDOW_DAYS, LANE_CHANGE_EVENTS, laneChangeOf, JOB_COSTS_LISTED, LANE_TUNING_WINDOW_DAYS, type JobCosts, MAX_TUNED_LANES, RESOURCE_PRESSURE, type LaneRecommendation, type LaneTuning, type LaneTuningPlan,
 } from '../domain/types.ts';
 import { policyOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
@@ -43,14 +43,6 @@ export interface LaneTuningService {
 const tuningOf = (store: UserStore, machineId: string): LaneTuning => store.settings.getLaneTuning()[machineId] ?? DEFAULT_LANE_TUNING;
 const lanesText = (n: number): string => `${n} lane${n === 1 ? '' : 's'}`;
 
-function changeOf(e: { at: string; type: string; data: unknown }): LaneChange {
-  const d = e.data as { machineId: string; from: number; to: number; reason?: string; by?: string };
-  const base = { at: e.at, machineId: d.machineId, from: d.from, to: d.to };
-  return e.type === 'lanes.applied'
-    ? { ...base, kind: 'applied', reason: d.reason ?? '', ...(d.by === undefined ? {} : { by: d.by }) }
-    : { ...base, kind: 'undone', by: d.by ?? '' };
-}
-
 export function createLaneTuning(c: EngineContext): LaneTuningService {
   // The last recorded per machine: read from the event log once, so a restart does not record each machine again.
   let last: Map<string, { lanes: number; configured: number }> | undefined;
@@ -74,7 +66,7 @@ export function createLaneTuning(c: EngineContext): LaneTuningService {
     const at = now.toISOString();
     const policy = policyOf(c);
     const dismissals = c.store.settings.getLaneDismissals();
-    const changes = c.store.events.recent(CHANGES_READ, ['lanes.applied', 'lanes.undone']).map(changeOf);
+    const changes = c.store.events.recent(CHANGES_READ, [...LANE_CHANGE_EVENTS]).map(laneChangeOf);
     const from = new Date(now.getTime() - LANE_TUNING_WINDOW_DAYS * DAY_MS);
     const loads = c.store.machineHistory.laneLoad({ from, to: now, pressure: RESOURCE_PRESSURE });
     const progress = laneProgress(c.store.machineHistory.jobRuns({ from, to: now }));
