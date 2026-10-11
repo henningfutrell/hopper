@@ -190,6 +190,11 @@ describe('merge-order: Jev picks the head of the tending queue (issue #796)', ()
 });
 
 describe('intake-order: Jev picks which new item enters first (issue #796)', () => {
+  /** Every job ended: none is still at work when the app stops. */
+  const allEnded = (app: TestApp, count: number) => waitFor(async () => {
+    const jobs = (await app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs;
+    return jobs.length === count && jobs.every((j) => ['finished', 'failed'].includes(j.status));
+  }, { what: 'every job ended' });
   const queuedKeys = async (app: TestApp): Promise<string[]> => {
     const jobs = (await app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs;
     return (await app.events('types=job.queued')).map((e) => jobs.find((j) => j.id === e.jobId)!.source!.key);
@@ -207,6 +212,7 @@ describe('intake-order: Jev picks which new item enters first (issue #796)', () 
     const rules = ask.options.map((o) => o.id);
     expect(rules).toHaveLength(3);
     expect(await queuedKeys(app)).toEqual([rules[2], rules[0], rules[1]]);
+    await allEnded(app, 3);
   });
 
   it('shadow: the items enter in the source\'s order, and Jev\'s pick is compared with its first', async () => {
@@ -219,6 +225,7 @@ describe('intake-order: Jev picks which new item enters first (issue #796)', () 
     expect(await queuedKeys(app)).toEqual(rules);
     const compared = await waitFor(async () => (await app.events('types=minor_decision.compared')).find((e) => (e.data as { point: string }).point === 'intake-order'), { what: 'compared' });
     expect(compared.data).toMatchObject({ point: 'intake-order', pick: rules[1], actual: rules[0], agreed: false, decidedBy: 'rules' });
+    await allEnded(app, 2);
   });
 
   it('one new item: Jev is not asked', async () => {
@@ -228,5 +235,6 @@ describe('intake-order: Jev picks which new item enters first (issue #796)', () 
     gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
     await app.sync();
     expect(jev.asks.filter((x) => x.point === 'intake-order')).toEqual([]);
+    await allEnded(app, 1);
   });
 });

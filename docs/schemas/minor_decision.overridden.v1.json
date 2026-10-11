@@ -11,7 +11,9 @@
         "question-answer",
         "failure-assessment",
         "lane-count",
-        "job-machine"
+        "job-machine",
+        "intake-order",
+        "merge-order"
       ]
     },
     "pick": {

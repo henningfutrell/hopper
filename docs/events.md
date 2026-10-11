@@ -2171,12 +2171,12 @@ Version 1 (`docs/schemas/job.gate_passed.v1.json`). A person let a job held at t
 
 ## `minor_decision.picked`
 
-Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-answer`, `failure-assessment`, `lane-count`, `job-machine`) and picked one of its `options` with a `confidence` — or could not (`error`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
+Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-answer`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`) and picked one of its `options` with a `confidence` — or could not (`error`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
 
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` | yes |
+| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` | yes |
 | `by` | string | yes |
 | `options` | object[] | yes |
 | `pick` | string | no |
@@ -2217,12 +2217,12 @@ Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a de
 
 ## `minor_decision.compared`
 
-Version 1 (`docs/schemas/minor_decision.compared.v1.json`). What was decided after Jev's pick was not applied (issue #550): `actual`, by `decidedBy` (an escalation level, `human`, or `person` for a failed job), and whether it `agreed` with Jev's `pick`. Feeds the decision point's agreement rate.
+Version 1 (`docs/schemas/minor_decision.compared.v1.json`). What was decided after Jev's pick was not applied (issue #550): `actual`, by `decidedBy` (an escalation level, `human`, `person` for a failed job, or `rules` for an ordering the rules made without Jev, issue #796), and whether it `agreed` with Jev's `pick`. Feeds the decision point's agreement rate.
 
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` | yes |
+| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` | yes |
 | `pick` | string | yes |
 | `actual` | string | yes |
 | `agreed` | boolean | yes |
@@ -2246,7 +2246,7 @@ Version 1 (`docs/schemas/minor_decision.overridden.v1.json`). A person said what
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` | yes |
+| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` | yes |
 | `pick` | string | no |
 | `actual` | string | yes |
 
@@ -2265,7 +2265,7 @@ Version 1 (`docs/schemas/minor_decision.settings_changed.v1.json`). An admin cha
 
 | field | type | required |
 |---|---|---|
-| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` | yes |
+| `point` | `question-answer` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` | yes |
 | `from` | object | yes |
 | `to` | object | yes |
 

@@ -92,7 +92,7 @@ export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
     const pick = await ask(input);
     if (stopped) return { asked: false };
     // Decided while Jev was asked (a job placed before its pick came): not applied, and compared at once.
-    const settled = input.settled?.();
+    const settled = input.settled?.() ?? (input.rules !== undefined && notAppliedOf(s, pick, input.consequential) ? { actual: input.rules, by: 'rules' } : undefined);
     const notApplied = notAppliedOf(s, pick, input.consequential) ?? (settled ? 'too_late' : undefined);
     const pickId = randomUUID();
     const tags = { ...(input.jobId ? { jobId: input.jobId } : {}), ...(input.questionId ? { questionId: input.questionId } : {}) };

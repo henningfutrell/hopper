@@ -19,11 +19,16 @@
 // hopper followed pull requests is shown, merged and tended as a job's own. A throw is asked again next sync.
 // A pull request is followed to its end (issue #786): a failed job's is reconciled, followed and tended as a done job's —
 // but a failed tend's (`failedTend`), which waits on a person —, and a rebase tend is never capped, only `fix_checks`.
+// The tending queue (issue #796): after every follow of the sync, at most one tend starts per job repository, and none
+// while its head holds it (`queueHead`): a tend job at work, or a pull request on its way to the hopper's merge. The next
+// is the rules' first (`tendOrder`), or Jev's pick (`merge-order`, `tend-order.ts`).
 import type { JobSource, PullRequestActResult, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
+import { queueHead, repoOf, tendOrder, type TendDue } from '../domain/tending-queue.ts';
+import { pickHead } from './tend-order.ts';
 import { SourceError } from '../domain/ports.ts';
 import {
   failedTend, following, followsWhenEnded, judge, MAX_TENDS, rechecksMerge, reconcilable, tendBrief, tendsInRow, tendStep,
-  type ActingPerson, type FollowUp, type FoundPullRequest, type Job, type PullRequestAct, type PullRequestSeen, type Tended,
+  type ActingPerson, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestAct, type PullRequestSeen, type Tended,
 } from '../domain/types.ts';
 
 export interface AfterDoneContext {
@@ -43,6 +48,8 @@ export interface AfterDoneContext {
   failed(jobId: string, e: unknown): void;
   /** Run the job's item again with `brief`, by `tending` (issue #736): Run again's own path, off the report chain. */
   tend(jobId: string, brief: string): Promise<RerunResult>;
+  /** Jev first, for the head of a tending queue (issue #796); absent: the rules pick. */
+  jevFirst?: JevFirst;
 }
 
 const NOT_COMPLETE = /^not complete: /;
@@ -131,6 +138,22 @@ export function createAfterDone(c: AfterDoneContext) {
     store.events.append({ type: 'job.pull_request_tended', jobId, data: { pullRequest: due.url, step: due.step, nextJobId: r.job.id } });
   }
 
+  /**
+   * The next tend of each job repository whose tending queue is free (issue #796): of the source's jobs whose followed pull
+   * request needs tending, one per repository, the rules' first or Jev's pick.
+   */
+  async function tendNext(source: JobSource, listed: Job[]): Promise<void> {
+    const get = (id: string) => store.jobs.get(id);
+    const jobs = listed.map((j) => get(j.id) ?? j);
+    const due = jobs.filter((j) => c.finalReported(j)).flatMap((j): TendDue[] => { const d = tendDue(j); return d ? [{ jobId: j.id, pullRequest: d.url, step: d.step }] : []; });
+    const merges = (repo: string) => source.mergesOnReady?.(repo) ?? false;
+    for (const repo of new Set(due.map((d) => repoOf(get(d.jobId)!)))) {
+      if (repo === undefined || queueHead(repo, jobs, get, merges)) continue;
+      const head = await pickHead(c.jevFirst, repo, tendOrder(due.filter((d) => repoOf(get(d.jobId)!) === repo), get), get);
+      await tendIfDue(head.jobId).catch((e: unknown) => { c.failed(head.jobId, e); });
+    }
+  }
+
   /** May follow its item's open pull request (issues #763, #786): no failed tend, and the newest job of its item. */
   const adoptable = (j: Job) => reconcilable(j) && newestOfItem(j) && !failedTend(j, (id) => store.jobs.get(id));
 
@@ -165,16 +188,15 @@ export function createAfterDone(c: AfterDoneContext) {
       const jobs = listed.map((j) => store.jobs.get(j.id) ?? j);
       const run = (j: Job, fn: (s: JobSource, id: string) => Promise<void>) =>
         c.enqueue(j.id, () => fn(source, j.id).catch((e: unknown) => { c.failed(j.id, e); }));
-      // A tend runs after the follow, off the report chain: Run again takes that chain itself.
-      const followThenTend = async (id: string): Promise<void> => {
+      const followOf = async (id: string): Promise<void> => {
         const j = store.jobs.get(id);
-        if (!j || !followsWhenEnded(j) || !source.follow || !(following(j) || rechecks(j))) return;
-        await run(j, follow);
-        await tendIfDue(id).catch((e: unknown) => { c.failed(id, e); });
+        if (j && followsWhenEnded(j) && source.follow && (following(j) || rechecks(j))) await run(j, follow);
       };
       // A failed job that waits on a person is judged again first (issue #786: it may follow its pull request too).
       await Promise.all(jobs.filter((j) => c.finalReported(j)).map((j) =>
-        (waitsOnPerson(j) ? run(j, judgeAgain).then(() => followThenTend(j.id)) : followThenTend(j.id))));
+        (waitsOnPerson(j) ? run(j, judgeAgain).then(() => followOf(j.id)) : followOf(j.id))));
+      // The tends run after every follow, off the report chain (Run again takes that chain itself): one per repository.
+      await tendNext(source, listed);
     },
   };
 }
