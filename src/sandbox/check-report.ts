@@ -36,7 +36,7 @@ function bar(check: ReadOnlyCheck): string {
   const n = check.probes.length;
   const ok = check.probes.filter((p) => p.passed).length;
   const w = n === 0 ? 0 : Math.round((ok / n) * 600);
-  return `<svg viewBox="0 0 600 24" width="100%" height="24" role="img" aria-label="${ok} of ${n} probes passed">`
+  return `<svg viewBox="0 0 600 24" width="100%" height="24" preserveAspectRatio="none" role="img" aria-label="${ok} of ${n} probes passed">`
     + `<rect width="600" height="24" fill="${n === 0 ? '#888' : '#c62828'}"/><rect width="${w}" height="24" fill="#2e7d32"/></svg>`;
 }
 
@@ -54,14 +54,13 @@ export function checkReport(t: Template, check: ReadOnlyCheck): CheckReport {
 body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; color: #222; background: #fff; }
 table { border-collapse: collapse; width: 100%; } th, td { border-bottom: 1px solid #ddd; padding: 4px 6px; text-align: left; vertical-align: top; }
 pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; } tr.bad td:first-child { color: #c62828; font-weight: bold; }
-tr.ok td:first-child { color: #2e7d32; } .problem { color: #c62828; }
+tr.ok td:first-child { color: #2e7d32; }
 @media (prefers-color-scheme: dark) { body { color: #eee; background: #121212; } th, td { border-color: #333; } }
 </style></head><body>
 <h1>${escape(title)}</h1>
 <p><strong>${escape(summary)}</strong></p>
 ${bar(check)}
 <p>Checked at ${escape(check.at)}, template version ${escape(check.version)}. Each write must be refused, each read must work.</p>
-${check.problem ? `<p class="problem">${escape(check.problem)}</p>` : ''}
 <h2>Needs</h2><ul>${needs}</ul>
 <h2>Probes</h2>
 <table><thead><tr><th>Result</th><th>Probe</th><th>Asset</th><th>Expected</th><th>Outcome</th><th>Exit</th><th>Output (end)</th></tr></thead>
