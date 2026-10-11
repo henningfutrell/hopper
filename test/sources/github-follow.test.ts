@@ -166,6 +166,15 @@ describe('yolo mode and a pull request with no checks (issue #677)', () => {
     expect(gh.issue(REPO, 1)).toMatchObject({ state: 'closed', labels: ['hopper', 'hopper:done'] });
   });
 
+  it('a job whose item was neither of a trusted origin nor approved: yolo mode never merges it, checks passed or none (issue #652)', async () => {
+    for (const checks of ['passing', undefined] as const) {
+      const { gh, source, job } = await ended({ createdAt: LONG_AGO, ...(checks ? { checks } : {}) });
+      const { origin: _o, ...untrusted } = job.source!;
+      expect(await source.follow!({ ...job, source: untrusted })).toMatchObject({ outcome: 'open' });
+      expect(gh.calls.some((c) => c.method === 'merge')).toBe(false);
+    }
+  });
+
   it('no checks yet, pushed inside the grace window: it waits, so checks that start late are not missed', async () => {
     const { gh, source, job, pr } = await ended({ createdAt: LONG_AGO, headCommittedAt: JUST_NOW });
     const seen = await source.follow!(job);

@@ -57,9 +57,9 @@ describe('GitHub App source (in-memory fake at the seam)', () => {
     const { a } = await boot({ appKey: true, seams: { githubApp: gh }, doc: jobSourcesDoc({ github: false }) });
     expect(await status(a, 'github-app')).toMatchObject({ state: 'disabled', detail: expect.objectContaining({ paused: expect.stringMatching(/connect/i) }) });
     connectGitHub(a, [REPO]);
-    const issue = gh.createIssue({ repo: REPO, author: 'stranger', body: body({ op: 'sleep', ms: 10000 }), labels: ['hopper'] });
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'sleep', ms: 10000 }), labels: ['hopper'] });
     await a.sync();
-    expect(await jobFor(a, issue.url)).toMatchObject({ source: { assignee: 'owner', author: 'stranger' } });
+    expect(await jobFor(a, issue.url)).toMatchObject({ source: { assignee: 'owner', author: 'owner', origin: 'trusted' } });
   });
 
   it('enabled: false on both lists both disabled', async () => {

@@ -14,7 +14,8 @@
       "enum": [
         "intake",
         "backfill",
-        "accepted"
+        "accepted",
+        "approved"
       ]
     }
   },

@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type { IntakeActorSettings } from '../domain/intake-origin.ts';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
 import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, FailureSettings, LaneDismissals, LaneTuningSettings, MinorDecisionSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ReviewKind, ReviewSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, PhaseShiftSettings, TldrSettings, YoloModeSettings } from '../domain/types.ts';
@@ -210,6 +211,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setYoloMode(settings) {
       write('yoloMode', JSON.stringify({ on: settings.on, repos: settings.repos }));
+    },
+    getIntakeActors() {
+      const text = read('intakeActors');
+      return text === undefined ? undefined : JSON.parse(text) as IntakeActorSettings;
+    },
+    setIntakeActors(settings) {
+      write('intakeActors', JSON.stringify({ actors: settings.actors }));
     },
     getBackfills() {
       const text = read('backfills');

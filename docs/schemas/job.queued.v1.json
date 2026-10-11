@@ -123,6 +123,13 @@
           "items": {
             "type": "string"
           }
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "trusted",
+            "approved"
+          ]
         }
       },
       "required": [

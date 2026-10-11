@@ -10,67 +10,14 @@
 
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
 import { GitHubApiError } from './api.ts';
-import type { ChecksState } from '../../domain/pull-requests.ts';
-import type { BranchPullRequest, ClosingPullRequest, GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
+import type { BranchPullRequest, ClosingPullRequest, GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem, IssueEvent, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
-type Method = keyof GitHubApi;
+import type { FakeActor, FakeAppIdentity, FakeGitHub, Method, PullRequestInput } from './fake-types.ts';
 
-export interface FakeGitHub extends GitHubApi {
-  createIssue(o: { repo: string; title?: string; body?: string; author?: string; assignees?: string[]; labels?: string[] }): GitHubIssue;
-  /** Assign `login`, recorded as an `assigned` event at `at` (default the fake's clock). */
-  assign(repo: string, number: number, login: string, at?: string): void;
-  unassign(repo: string, number: number, login: string): void;
-  addComment(repo: string, number: number, author: string, body: string): GitHubComment;
-  /** Edit the issue's title or body as `editor`, at `at` (default now), kept on its timeline (issue #662). */
-  editIssue(repo: string, number: number, change: { title?: string; body?: string }, editor: string, at?: string): void;
-  /**
-   * Closed by hand or by a commit, no pull request: as `reason` (default completed), at `at` (default the
-   * fake's clock, 2026-10-02T09:00, before any test job is created).
-   */
-  closeIssue(repo: string, number: number, closedBy?: string, o?: { at?: string; reason?: 'completed' | 'not_planned' }): void;
-  /** A pull request (opened at createdAt) whose merge will close the issue; the issue stays open. */
-  openPullRequest(repo: string, number: number, pr: PullRequestInput): OpenPullRequest;
-  /** A pull request (opened at createdAt) that ships part of the issue: its body says "Part of #N"; the issue stays open. */
-  openPartPullRequest(repo: string, number: number, pr: PullRequestInput): OpenPullRequest;
-  /** A pull request (opened at createdAt) that only mentions the issue (issue #637): its body says "Refs #N", no closing keyword. */
-  openReferencingPullRequest(repo: string, number: number, pr: PullRequestInput): OpenPullRequest;
-  /** A pull request (opened at createdAt) that names no issue in its text, only on its branch `headRef` (issue #637). */
-  openUnlinkedPullRequest(repo: string, pr: PullRequestInput & { headRef: string }): OpenPullRequest;
-  /** Its head commit's checks now (issue #637); undefined: none. */
-  setChecks(url: string, checks: ChecksState | undefined): void;
-  /** Its base branch moved (issue #736): it has merge conflicts with it now, or not, with no push to it. */
-  setConflicting(url: string, conflicting: boolean): void;
-  /** A push to a pull request's branch (issue #618): a new head commit at `at`, with or without merge conflicts after it. */
-  pushToPullRequest(url: string, at: string, o?: { conflicting?: boolean }): void;
-  /** Mark an open draft pull request ready for review (issue #626). */
-  markReady(url: string): void;
-  /** Merge an open pull request (at `at`, default now): one that closes its issue closes it. */
-  mergePullRequest(url: string, at?: string): void;
-  /** Close an open pull request without a merge. */
-  closePullRequest(url: string): void;
-  /** The merge of a pull request (opened at createdAt) closes the issue; no open one is left. */
-  closeByPullRequest(repo: string, number: number, pr: { createdAt: string; mergedAt: string }): ClosingPullRequest;
-  deleteIssue(repo: string, number: number): void;
-  addLabel(repo: string, number: number, label: string): void;
-  removeLabel(repo: string, number: number, label: string): void;
-  setProjectItems(owner: string, number: number, items: { url: string; fields?: Record<string, string | number> }[] | Error): void;
-  /** The next call of `method` rejects with `error`. */
-  failNext(method: Method, error: Error): void;
-  issue(repo: string, number: number): GitHubIssue;
-  commentsOn(repo: string, number: number): GitHubComment[];
-  labelsIn(repo: string): string[];
-  /** App identity only: replace the repos the app is installed on. */
-  setInstalledRepos(repos: string[]): void;
-  readonly calls: { method: Method; args: unknown[] }[];
-}
+export type { FakeActor, FakeAppIdentity, FakeGitHub, PullRequestInput } from './fake-types.ts';
 
-/** A pull request to open: when, a draft or not, merge conflicts or not, and its head commit's time (default createdAt). */
-export interface PullRequestInput { createdAt: string; isDraft?: boolean; conflicting?: boolean; headCommittedAt?: string; checks?: ChecksState; headRef?: string; base?: string }
-
-export interface FakeAppIdentity {
-  botLogin: string;
-  installedRepos?: string[];
-}
+/** The app the fake's own writes go through (issue #652): a connected account's are marked with the hopper's app. */
+export const FAKE_HOPPER_APP = 'hopper-test-app';
 
 const notFound = (what: string) => new GitHubApiError(`gh: Not Found (HTTP 404): ${what}`, true, 404);
 
@@ -81,6 +28,14 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const comments = new Map<string, GitHubComment[]>();
   const assigned = new Map<string, { login: string; at: string }[]>();
   const edits = new Map<string, ItemEdit[]>();
+  const events = new Map<string, IssueEvent[]>();
+  /** Record a label or an assignment on the issue by `by` (issue #652). */
+  const happened = (k: string, e: { event: 'labeled'; label: string } | { event: 'assigned'; assignee: string }, by: FakeActor, at: string): void => {
+    const who = typeof by === 'string' ? { login: by } : by;
+    events.set(k, [...(events.get(k) ?? []), { ...e, at, actor: who.login, actorType: who.type ?? (/\[bot\]$/.test(who.login) ? 'Bot' : 'User'), ...(who.viaApp ? { viaApp: who.viaApp } : {}) }]);
+  };
+  /** The fake's own writes: as the app's bot, or as the connected account through the hopper's app. */
+  const self: FakeActor = o.app ? { login: o.app.botLogin, type: 'Bot', viaApp: FAKE_HOPPER_APP } : { login: o.login ?? 'owner', viaApp: FAKE_HOPPER_APP };
   const labels = new Map<string, Set<string>>();
   const closers = new Map<string, ClosingPullRequest>();
   /** Every pull request, by the issue it mentions: a closing one, or a part. */
@@ -165,7 +120,11 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       const i = find(repo, n);
       const missing = names.find((l) => !repoLabels(repo).has(l));
       if (missing) throw new GitHubApiError(`gh: label '${missing}' not found (HTTP 422)`, true, 422);
-      for (const l of names) if (!i.labels.includes(l)) i.labels.push(l);
+      for (const l of names) {
+        if (i.labels.includes(l)) continue;
+        i.labels.push(l);
+        happened(key(repo, n), { event: 'labeled', label: l }, self, stamp());
+      }
     },
     async removeLabels(repo, n, names) {
       enter('removeLabels', [repo, n, names]);
@@ -177,12 +136,19 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       find(repo, n);
       return (assigned.get(key(repo, n)) ?? []).filter((e) => e.login.toLowerCase() === login.toLowerCase()).map((e) => e.at).sort().at(-1);
     },
+    async issueEvents(repo, n) {
+      enter('issueEvents', [repo, n]);
+      find(repo, n);
+      return (events.get(key(repo, n)) ?? []).map((e) => ({ ...e }));
+    },
     async addAssignees(repo, n, logins) {
       enter('addAssignees', [repo, n, logins]);
       const i = find(repo, n);
       for (const login of logins) {
         if (!i.assignees.includes(login)) i.assignees.push(login);
-        assigned.set(key(repo, n), [...(assigned.get(key(repo, n)) ?? []), { login, at: stamp() }]);
+        const at = stamp();
+        assigned.set(key(repo, n), [...(assigned.get(key(repo, n)) ?? []), { login, at }]);
+        happened(key(repo, n), { event: 'assigned', assignee: login }, self, at);
       }
     },
     async postComment(repo, n, body) {
@@ -270,7 +236,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     ...api,
     setInstalledRepos(repos) { installed = [...repos]; },
     calls,
-    createIssue({ repo, title, body, author, assignees, labels: ls }) {
+    createIssue({ repo, title, body, author, assignees, labels: ls, labelledBy, assignedBy }) {
       const number = [...issues.values()].filter((i) => i.repo === repo).length + 1;
       for (const l of ls ?? []) repoLabels(repo).add(l);
       const issue: GitHubIssue = {
@@ -279,6 +245,8 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       };
       issues.set(key(repo, number), issue);
       assigned.set(key(repo, number), issue.assignees.map((login) => ({ login, at: issue.updatedAt })));
+      for (const label of issue.labels) happened(key(repo, number), { event: 'labeled', label }, labelledBy ?? issue.author, issue.updatedAt);
+      for (const login of issue.assignees) happened(key(repo, number), { event: 'assigned', assignee: login }, assignedBy ?? issue.author, issue.updatedAt);
       return copy(issue);
     },
     addComment(repo, n, author, body) {
@@ -317,14 +285,22 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       closers.set(key(repo, n), pr);
       return { ...pr };
     },
-    assign(repo, n, login, at) {
+    assign(repo, n, login, at, by) {
       const i = find(repo, n);
       if (!i.assignees.includes(login)) i.assignees.push(login);
-      assigned.set(key(repo, n), [...(assigned.get(key(repo, n)) ?? []), { login, at: at ?? new Date().toISOString() }]);
+      const when = at ?? new Date().toISOString();
+      assigned.set(key(repo, n), [...(assigned.get(key(repo, n)) ?? []), { login, at: when }]);
+      happened(key(repo, n), { event: 'assigned', assignee: login }, by ?? human, when);
     },
     unassign(repo, n, login) { const i = find(repo, n); i.assignees = i.assignees.filter((l) => l !== login); },
     deleteIssue(repo, n) { find(repo, n); issues.delete(key(repo, n)); },
-    addLabel(repo, n, label) { repoLabels(repo).add(label); const i = find(repo, n); if (!i.labels.includes(label)) i.labels.push(label); },
+    addLabel(repo, n, label, by) {
+      repoLabels(repo).add(label);
+      const i = find(repo, n);
+      if (i.labels.includes(label)) return;
+      i.labels.push(label);
+      happened(key(repo, n), { event: 'labeled', label }, by ?? human, new Date().toISOString());
+    },
     removeLabel(repo, n, label) { const i = find(repo, n); i.labels = i.labels.filter((l) => l !== label); },
     setProjectItems(owner, n, items) {
       projects.set(`${owner}/${n}`, items instanceof Error ? items : items.map((it, index) => ({ url: it.url, index, fields: { ...(it.fields ?? {}) } })));

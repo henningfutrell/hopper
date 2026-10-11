@@ -1,5 +1,6 @@
 // The GitHub JobSource: open issues labelled `hopper` and assigned to the user's connected account become
-// jobs, whoever filed them (issue #387);
+// jobs (issue #387) when their origin is trusted — written, labelled and assigned by the user's trusted actors — or a
+// person approved their text; any other is a request card (issue #652, origin.ts);
 // what happens to them goes back as labels only (no comment); closes and unlabels come
 // back as cancel signals; unassigning the account cancels a waiting job and flags a started one. `knownKeys` (wired by the sync loop) tells discover which claimed issues already have
 // a local job; without it every claimed issue is skipped, so nothing is ever re-run blind.
@@ -8,7 +9,8 @@
 // hopper comments by their marker; `app` writes as the app bot, scans only the repos the app is
 // installed on, and tells hopper comments by the bot author (marker secondary). Neither searches.
 
-import type { IntakeAction, IntakeActionResult, IntakeChange, IntakeContext, IntakeOutcome, OutsideRepo } from '../../domain/intake.ts';
+import type { IntakeAction, IntakeChange, IntakeContext, IntakeOutcome, IntakeTrust, OutsideRepo } from '../../domain/intake.ts';
+import { requestHash, type IntakeRequest } from '../../domain/intake-origin.ts';
 import type { Clock, JobSource, SourceItem } from '../../domain/ports.ts';
 import { CONNECTED_VIA, TERMINAL_STATUSES, type Account } from '../../domain/types.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
@@ -22,9 +24,10 @@ import { sendBack } from './rework.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, untrustedBlock } from './context.ts';
 import type { SourceMode } from './context.ts';
 import { NOT_ASSIGNED, discoverIssues, isAssignedTo, labelReason, type Rejection } from './discover.ts';
-import { HOLDER_PREFIX, LABEL_CLAIMED } from './labels.ts';
+import { intakeAct } from './intake-actions.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
+import { originsOf, REQUEST_REASON } from './origin.ts';
 import { reportToGitHub, takeBack, writeResolution } from './report.ts';
 
 /** What the source reads of its config. */
@@ -62,6 +65,8 @@ export interface GitHubSourceOptions {
   appInfo?: () => GitHubAppInfo | undefined;
   /** Claim holders, the intake migration and intake events (issue #440); absent: claims carry no holder and nothing is migrated. */
   intake?: IntakeContext;
+  /** The user's trusted actors and approvals (issue #652): an issue not of a trusted origin is a request card. */
+  trust: IntakeTrust;
   /** Whether a job on the repo may merge its own pull request (yolo mode, issue #579), read at each prompt; absent: never. */
   yoloMode?: (repo: string) => boolean;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. Absent: none. */
@@ -70,7 +75,6 @@ export interface GitHubSourceOptions {
 
 /** How often the repos outside the source's scope are listed (issue #440): one listing, at most every 10 minutes. */
 export const OUTSIDE_EVERY_MS = 10 * 60_000;
-export const NOT_IN_SCOPE = 'not in this source\'s scope';
 export const MIGRATION_RELEASED = 'released a claim with no holder recorded and no job in this hopper';
 export const MIGRATION_UNASSIGNED = 'not assigned to you: assign it to you to take it';
 
@@ -215,39 +219,23 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     }
   };
 
-  /** Assign to me, or release a claim (issue #440): only on items the last discover offered it for. */
-  const act = async (a: IntakeAction): Promise<IntakeActionResult> => {
-    const offered = new Map(outcomes.map((x) => [x.key, x]));
-    const assignee = o.assignee();
-    const done: string[] = [];
-    const failed: Record<string, string> = {};
-    for (const key of [...new Set(a.keys)]) {
-      const x = offered.get(key);
-      if (!x?.repo) { failed[key] = NOT_IN_SCOPE; continue; }
-      if (x.action !== a.kind) { failed[key] = `not offered: ${x.reason ?? 'taken'}`; continue; }
-      try {
-        if (a.kind === 'assign') {
-          if (!assignee) throw new Error('no GitHub account connected');
-          await api.addAssignees(x.repo, numberOf(key), [assignee]);
-        } else {
-          const holders = (listedLabels.get(key) ?? []).filter((l) => l.startsWith(HOLDER_PREFIX));
-          await api.removeLabels(x.repo, numberOf(key), [LABEL_CLAIMED, ...holders]);
-          o.intake?.record('source.claim_released', { source: o.name, key, by: 'user', reason: 'released in Sources' });
-        }
-        done.push(key);
-      } catch (err) {
-        failed[key] = (err as Error).message;
-      }
-    }
-    if (a.kind === 'assign' && done.length > 0) o.intake?.record('source.issues_assigned', { source: o.name, keys: done, assignee });
-    return { done, failed };
+  /**
+   * Approve a request card (issue #652): read the issue again; only when its title and body still hash as the person read
+   * them, its text — with the assignee's comments the job would see — is the item's approved snapshot. False: it changed.
+   */
+  const approve = async (repo: string, key: string, request: IntakeRequest | undefined, a: IntakeAction): Promise<boolean> => {
+    const issue = await api.getIssue(repo, numberOf(key));
+    if (!request || request.hash !== a.hash || requestHash(issue) !== a.hash) return false;
+    const item = await toItem(issue, new Set(), new Set(), priorityOf(issue, config, undefined), await botLogin(), o.assignee());
+    o.trust.approve(o.name, key, { title: issue.title, body: issue.body, comments: item.text?.comments ?? [] }, request, a.acting);
+    return true;
   };
 
   return {
     name: o.name,
     kind: o.kind ?? o.name,
     intake: () => outcomes.map((x) => ({ ...x })),
-    intakeAction: act,
+    intakeAction: (a) => intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, approve }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
@@ -295,8 +283,17 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       const urls = found.issues.map((i) => i.url);
       const known = o.knownKeys && urls.length > 0 ? o.knownKeys(urls) : new Set<string>();
       const rerun = o.rerunnable && urls.length > 0 ? o.rerunnable(urls) : new Set<string>();
+      // An issue whose job has not ended keeps it; any other is judged by its origin (issue #652).
+      const verdicts = await originsOf(api, o.trust, found.issues.filter((i) => !known.has(i.url) || rerun.has(i.url)), config.label, assignee);
+      const requests = new Map<string, IntakeRequest>();
       const items: SourceItem[] = [];
-      for (const issue of found.issues) items.push(await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), bot, assignee));
+      for (const issue of found.issues) {
+        const v = verdicts.get(issue.url);
+        if (v && 'request' in v) { requests.set(issue.url, v.request); continue; }
+        const item = await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), bot, assignee);
+        items.push(v ? { ...item, origin: v.origin } : item);
+      }
+      outcomes = outcomes.map((x) => { const r = requests.get(x.key); return r ? { ...x, reason: REQUEST_REASON, action: 'approve' as const, request: r } : x; });
       lastDiscoverAt = o.clock.now().toISOString();
       return items;
     },

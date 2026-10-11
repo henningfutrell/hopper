@@ -9,7 +9,7 @@ import type {
   Clock, EscalationLevel, ExecutorRegistry, PluginsView, QuestionService, ReviewServices, SourceRegistry,
   UserStore, WebhookDispatcher, CredentialMinter,
 } from '../domain/ports.ts';
-import { doneAtSource, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, overAtSource, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type VaultAccess, type User, type WebhookSubscription } from '../domain/types.ts';
+import { doneAtSource, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, overAtSource, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type VaultAccess, type IntakeAccess, type User, type WebhookSubscription } from '../domain/types.ts';
 import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -109,7 +109,7 @@ export interface UserRuntimeOptions {
    * Access (the instance's, issue #559): where the vault's gate approves a template's operation profiles (issue #584),
    * and what the vault asks before every mint (issue #580); `minter` mints (STS, the Kubernetes API).
    */
-  access?: VaultAccess; minter?: CredentialMinter;
+  access?: VaultAccess & IntakeAccess; minter?: CredentialMinter;
   /** The whole hopper's system secrets (issue #658): the sign-in realms', shown on the vault's page; its shared secrets (issue #718). */
   instanceSecrets?: SystemSecrets; sharedSecrets?: Parameters<typeof openUserVault>[0]['shared'];
 }
@@ -258,7 +258,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     defaultMachines: builtin.machines, defaultExecutors: builtin.executors,
     kit: createDetectionKit({ env: { ...o.env, ...cliEnv }, secret, secretName: (n) => `${user.secretPrefix}${n}` }),
     builtins: withSeams(seams),
-    jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow), connectedAccounts },
+    jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow, o.access && ((login, actors) => o.access!.decideIntakeActor(user.id, login, actors))), connectedAccounts },
     machineContext: { executors: () => executorNames(), target },
     executorContext: { client: clientNamed },
     intervalMs: o.pluginsConfigIntervalMs,

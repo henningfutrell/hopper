@@ -9,6 +9,7 @@ import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
+import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
 import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
 
@@ -214,10 +215,8 @@ export const EVENT_SCHEMAS = {
   'connected_account.renewal_failed': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), code: z.string() }),
   // A UI session of the user's ended (issue #439), and why: early logouts can be told apart.
   'ui_session.ended': strict({ reason: z.enum(SESSION_END_REASONS), realm: z.string() }),
-  // Intake (issue #440): a claim released, a source moved to the current intake rules, issues assigned to the user from Sources.
-  'source.claim_released': strict({ source: z.string(), key: z.string(), by: z.enum(['hopper', 'migration', 'user']), reason: z.string() }),
-  'source.intake_migrated': strict({ source: z.string(), changes: z.array(strict({ key: z.string(), change: z.string() })) }),
-  'source.issues_assigned': strict({ source: z.string(), keys: z.array(z.string()), assignee: z.string() }),
+  // Intake (issues #440, #652): src/events/intake-schemas.ts.
+  ...INTAKE_EVENT_SCHEMAS,
   // Logins (issue #476): a login a job or run waits on, handled apart from questions. `run`: the executor or escalation level.
   'auth.pending': strict({ ...login, expiresAt: z.iso.datetime(), intervalSec: z.number().int().positive().optional(), run: z.string(), questionId: z.string().optional(), renewed: z.boolean().optional(), ...priority }),
   'auth.completed': strict(login),

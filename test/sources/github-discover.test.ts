@@ -19,10 +19,12 @@ describe('GitHub source discover', () => {
     expect(gh.calls.filter((c) => c.method === 'listOpenIssues').map((c) => c.args)).toEqual([[REPO, 'hopper']]);
   });
 
-  it('takes an issue filed by anyone when it is assigned to the account (issue #387)', async () => {
+  it('takes an issue assigned to the account among others (issue #387); one a stranger filed is a request (issue #652)', async () => {
     const { gh, source } = setup();
-    gh.createIssue({ repo: REPO, author: 'stranger', assignees: ['someone', 'Owner'], labels: ['hopper'] });
-    expect((await source.discover()).map((i) => [i.author, i.assignee])).toEqual([['stranger', 'owner']]);
+    gh.createIssue({ repo: REPO, author: 'stranger', assignees: ['someone', 'Owner'], labels: ['hopper'], labelledBy: 'owner', assignedBy: 'owner' });
+    gh.createIssue({ repo: REPO, assignees: ['someone', 'Owner'], labels: ['hopper'] });
+    expect((await source.discover()).map((i) => [i.number, i.author, i.assignee])).toEqual([[2, 'owner', 'owner']]);
+    expect(source.intake?.().find((x) => x.action === 'approve')?.key).toBe(`https://github.com/${REPO}/issues/1`);
   });
 
   it('never takes an issue not assigned to the account, whoever filed it', async () => {

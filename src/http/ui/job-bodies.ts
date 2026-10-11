@@ -13,9 +13,15 @@ export const reworkBody = z.object({
 export const requeueBody = z.object({ freshSession: z.boolean().optional() }).strict();
 /** Ending a job's own wait (issue #483): the person's optional note, typed into its pane with it. */
 export const endWaitBody = z.object({ note: z.string().trim().max(2000, 'note must be at most 2000 characters').optional() }).strict();
-/** Assign to me, or release a claim, on items a job source listed (issue #440). */
+/**
+ * Assign to me, or release a claim, on items a job source listed (issue #440); approve a request card (issue #652): one
+ * item, with the hash of its title and body as the person read them.
+ */
 export const intakeActionBody = z.object({
-  kind: z.enum(['assign', 'release']),
+  kind: z.enum(['assign', 'release', 'approve']),
   keys: z.array(z.string().min(1)).min(1, 'name at least one item').max(100, 'at most 100 items at once'),
-}).strict();
+  hash: z.string().regex(/^[0-9a-f]{64}$/, 'a SHA-256, hex').optional(),
+}).strict()
+  .refine((b) => b.kind !== 'approve' || (b.keys.length === 1 && b.hash !== undefined), { message: 'approve names one item and its hash' })
+  .refine((b) => b.kind === 'approve' || b.hash === undefined, { message: 'only approve takes a hash' });
 export const sourceParams = z.object({ name: z.string().min(1) });

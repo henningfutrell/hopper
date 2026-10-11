@@ -1,6 +1,7 @@
 // The settings repositories' ports, apart from store.ts for its size (re-exported there): a user's settings and the
 // instance's. Each value is absent until set.
 
+import type { IntakeActorSettings } from './intake-origin.ts';
 import type { IntakeMigration } from './intake.ts';
 import type { ReadPolicy } from './read-policy.ts';
 import type {
@@ -81,6 +82,9 @@ export interface UserSettingsRepository {
   /** Yolo mode (issue #579): whether jobs may merge their own pull requests; absent: never set (off). */
   getYoloMode(): YoloModeSettings | undefined;
   setYoloMode(settings: YoloModeSettings): void;
+  /** The intake's trusted actors (issue #652); undefined: none named, so the connected login only. */
+  getIntakeActors(): IntakeActorSettings | undefined;
+  setIntakeActors(settings: IntakeActorSettings): void;
   /** The one-time backfills that completed on this store (issue #637: `done-check`), each with when. */
   getBackfills(): Record<string, string>;
   setBackfills(done: Record<string, string>): void;

@@ -97,6 +97,17 @@ type item
   relations
     define owner: [user]
     define can_accept_text: owner
+
+# A GitHub login, lowercased (issue #652): one who wrote, labelled or assigned an issue.
+type github_login
+
+# A user's intake (issue #652): whose acts on GitHub start the user's jobs. The hopper tells, at each check, the user's
+# trusted actors — the logins named in Settings → Intake, else the user's connected login. An issue is a job only when
+# its author, and whoever labelled and assigned it, may start jobs; any other is a request card a person approves.
+type intake
+  relations
+    define trusted_actor: [github_login]
+    define can_start_jobs: trusted_actor
 `;
 
 interface RelationMetadata { directly_related_user_types?: { type: string }[] }
@@ -117,6 +128,10 @@ const API_TOKEN_ASKED: readonly [type: string, relation: string][] = [['api_toke
 /** What the hopper tells and asks for items (issue #662): apart, so a model edited before them still decides mints. */
 const ITEM_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['item', 'owner', 'user']];
 const ITEM_ASKED: readonly [type: string, relation: string][] = [['item', 'can_accept_text']];
+
+/** What the hopper tells and asks for intake (issue #652): apart, so a model edited before them still decides mints. */
+const INTAKE_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['intake', 'trusted_actor', 'github_login']];
+const INTAKE_ASKED: readonly [type: string, relation: string][] = [['intake', 'can_start_jobs']];
 
 /** What the hopper writes (a relation and the type it accepts) and what it asks. */
 const WRITTEN: readonly [type: string, relation: string, accepts: string][] = [
@@ -169,6 +184,11 @@ export function apiTokenGaps(model: ModelJson): string[] {
 /** What the model lacks for items (issue #662); empty: accepting new text is decided. A gap here denies every acceptance, never a mint. */
 export function itemGaps(model: ModelJson): string[] {
   return gapsIn(model, ITEM_WRITTEN, ITEM_ASKED);
+}
+
+/** What the model lacks for intake (issue #652); empty: trusted actors are decided. A gap here makes every issue a request card, never denies a mint. */
+export function intakeGaps(model: ModelJson): string[] {
+  return gapsIn(model, INTAKE_WRITTEN, INTAKE_ASKED);
 }
 
 function gapsIn(model: ModelJson, written: typeof WRITTEN, asked: typeof ASKED): string[] {

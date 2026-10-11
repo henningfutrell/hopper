@@ -2,6 +2,7 @@
 // (design.md "Job sources"). Apart from ports.ts for its size; re-exported there.
 import type { ItemComment, ItemEdit, ItemText } from './item-snapshots.ts';
 import type { Parts } from './types.ts';
+import type { JobOrigin } from './intake-origin.ts';
 
 /** One eligible item a source offers. Becomes at most one job, deduped by `key`. */
 export interface SourceItem {
@@ -47,6 +48,11 @@ export interface SourceItem {
    * no snapshot of its items.
    */
   text?: { title: string; body: string; comments?: ItemComment[]; edits?: ItemEdit[] };
+  /**
+   * Where it came from (issue #652): its origin was trusted, or a person approved its request card. Absent: the source
+   * does not judge origins, or the item's job has not ended (it keeps its own).
+   */
+  origin?: JobOrigin;
 }
 
 /** A source as the host takes it: its name and kind, and how it renders an item from a text (`JobSource.withText`). */

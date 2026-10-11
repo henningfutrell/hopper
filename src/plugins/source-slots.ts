@@ -5,6 +5,7 @@
 // live since issue #18; one that cannot run lists no machine — never a guessed one). Each is known by
 // its instance name.
 import type { MachineSource, UsageSource } from '../domain/ports.ts';
+import { NO_INTAKE_TRUST } from '../domain/intake.ts';
 import type { Detection, InstanceSpec, InstanceStatus, Role } from '../domain/types.ts';
 import type { ConfiguredBackend, VaultBackend } from '../domain/vault.ts';
 import { instantiate, type SlotDeps } from './router-slot.ts';
@@ -13,7 +14,7 @@ import type { JobSourceContext, JobSourceInstance, RoleInstance } from './sdk.ts
 /** A job source's context where the host is given none (tests of the host alone): no jobs, no connected accounts. */
 export const NO_SOURCE_CONTEXT: JobSourceContext = {
   knownKeys: () => new Set(), rerunnable: () => new Set(), rejections: () => new Map(),
-  intake: () => undefined, yoloMode: () => false, jobArtifacts: () => [],
+  intake: () => undefined, intakeTrust: NO_INTAKE_TRUST, yoloMode: () => false, jobArtifacts: () => [],
   connectedAccounts: { account: () => undefined, ended: () => undefined, expired: () => false, token: () => Promise.reject(new Error('no connected accounts')), renew: () => Promise.reject(new Error('no connected accounts')), endpoints: () => ({ url: '', apiUrl: '' }), jobRepositories: () => [] },
 };
 

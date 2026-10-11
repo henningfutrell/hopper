@@ -64,6 +64,11 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'ui_session.ended': { reason: 'expired-idle', realm: 'corp' },
   'source.claim_released': { source: 'github-account', key: 'https://github.com/octocat/hello/issues/7', by: 'hopper', reason: 'claimed by this user of this hopper, with no job here' },
   'source.intake_migrated': { source: 'github-account', changes: [{ key: 'https://github.com/octocat/hello/issues/7', change: 'not assigned to you: assign it to you to take it' }] },
+  'source.request_approved': {
+    source: 'github-account', key: 'https://github.com/octocat/hello/issues/8', hash: 'a'.repeat(64), author: 'stranger', person: 'octocat', via: 'ui',
+    actors: [{ role: 'author', login: 'stranger', trusted: false }, { role: 'labelled', login: 'octocat', trusted: true }, { role: 'assigned', login: 'octocat', trusted: true }],
+  },
+  'intake.actors_changed': { from: [], to: ['octocat', 'teammate'], by: 'octocat' },
   'source.issues_assigned': { source: 'github-account', keys: ['https://github.com/octocat/hello/issues/7'], assignee: 'octocat' },
   'auth.pending': { loginId: 'l1', kind: 'device_code', tool: 'gh', expiresAt: '2026-10-08T18:15:00.000Z', run: 'herdr-claude' },
   'auth.completed': { loginId: 'l1', kind: 'device_code', tool: 'gh' },

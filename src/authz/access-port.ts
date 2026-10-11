@@ -16,7 +16,12 @@ export interface Access extends TemplateApprovals {
    * Whether the user may accept an item's new text (issue #662): OpenFGA's `item#can_accept_text`, the item's owner told at
    * the check. Not recorded: the acceptance's own event is. Denied when OpenFGA cannot be asked or the model lacks it.
    */
-  decideTextAcceptance(userId: string, item: { ownerId: string; key: string }): Promise<{ allowed: boolean; reason: string }>;
+  decideTextAcceptance(userId: string, item: { ownerId: string; key: string }): Promise<AccessAnswer>;
+  /**
+   * Whether GitHub login `login` may start the user's jobs (issue #652): OpenFGA's `intake#can_start_jobs`, the user's
+   * trusted actors told at the check. Not recorded. Denied, marked `unavailable`, when OpenFGA cannot be asked.
+   */
+  decideIntakeActor(userId: string, login: string, actors: readonly string[]): Promise<AccessAnswer>;
   /** Allowed or denied for the requester, why, and the relationship path; recorded. The vault calls it before every mint and renewal. */
   decideMint(request: MintRequest): Promise<MintDecision>;
   /** Whether a requester may change or read a system secret (issue #657): OpenFGA's `can_change` or `can_read`, with the owner and an admin told for that check only. Not recorded. */
@@ -38,5 +43,6 @@ export interface Access extends TemplateApprovals {
   /** Whether OpenFGA can be asked now, and why not (issue #696). */
   status(): AccessStatus;
   start(): void;
-  stop(): void;
+  /** No more pushes; resolves once the push in flight, if any, ended. */
+  stop(): Promise<void>;
 }

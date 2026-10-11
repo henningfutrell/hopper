@@ -12,7 +12,7 @@ import { createAccountGitHubApi } from './github/account/api.ts';
 import { GitHubApiError } from './github/api.ts';
 import type { Rejection } from './github/discover.ts';
 import type { JobArtifacts } from './github/completion.ts';
-import type { IntakeContext } from '../domain/intake.ts';
+import type { IntakeContext, IntakeTrust } from '../domain/intake.ts';
 import { createGitHubAppApi, loadGitHubApp, type GitHubAppLoad } from './github/app/index.ts';
 import type { GitHubApi } from './github/index.ts';
 import { createGitHubSource } from './github/index.ts';
@@ -46,6 +46,8 @@ export interface GitHubSourceDeps {
   accounts?: ConnectedAccountTokens;
   /** Claim holders, the intake migration and intake events for this source (issue #440). */
   intake?: IntakeContext | undefined;
+  /** The user's trusted actors and approved requests (issue #652). */
+  trust: IntakeTrust;
   /** The user's yolo mode for a repository (issue #579); absent: off. */
   yoloMode?: (repo: string) => boolean;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. */
@@ -65,7 +67,7 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
   const real = o.api ? undefined : createGitHubAppApi({ app, keyEnv: options.privateKeyEnv, clock: o.clock, ...(options.apiUrl ? { baseUrl: options.apiUrl } : {}) });
   const api: GitHubApi = o.api ?? real!;
   return createGitHubSource({
-    name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable,
+    name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable, trust: o.trust,
     ...(o.rejections ? { rejections: o.rejections } : {}), ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}), api, assignee,
     paused: () => appProblem(app()) ?? (assignee() ? undefined : NO_ASSIGNEE),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
@@ -99,7 +101,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       built = {
         key,
         source: createGitHubSource({
-          name: o.name, kind, mode: 'account', whoami: login, assignee: () => login, config, api, clock: o.clock,
+          name: o.name, kind, mode: 'account', whoami: login, assignee: () => login, config, api, clock: o.clock, trust: o.trust,
           knownKeys: o.knownKeys, rerunnable: o.rerunnable, ...(o.rejections ? { rejections: o.rejections } : {}),
           ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}),
         }),

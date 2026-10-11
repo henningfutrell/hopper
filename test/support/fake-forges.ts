@@ -318,10 +318,18 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const pm = /^pulls\/(\d+)$/.exec(rest);
       const pull = pm ? pulls.find((p) => p.repo === repo && p.number === Number(pm[1])) : undefined;
       if (r.method === 'GET' && pm) return pull ? { status: 200, body: restPull(pull) } : { status: 404, body: { message: 'Not Found' } };
-      const im = /^issues\/(\d+)(?:\/(comments|labels)(?:\/(.+))?)?$/.exec(rest);
+      const im = /^issues\/(\d+)(?:\/(comments|labels|events)(?:\/(.+))?)?$/.exec(rest);
       const issue = im ? find(repo, Number(im[1])) : undefined;
       if (!im || !issue) return { status: 404, body: { message: 'Not Found' } };
       if (r.method === 'GET' && !im[2]) return { status: 200, body: restIssue(issue) };
+      // Its labels and assignments, each by its author (issue #652: who added them is what intake trusts).
+      if (r.method === 'GET' && im[2] === 'events') {
+        const actor = { login: issue.author, type: 'User' };
+        return { status: 200, body: [
+          ...issue.labels.map((name) => ({ event: 'labeled', created_at: '2026-10-06T00:00:00Z', actor, label: { name } })),
+          ...(issue.assignees ?? [issue.author]).map((login) => ({ event: 'assigned', created_at: '2026-10-06T00:00:00Z', actor, assignee: { login } })),
+        ] };
+      }
       if (r.method === 'PATCH' && !im[2]) {
         if (r.body.state === 'closed') Object.assign(issue, { state: 'closed', stateReason: String(r.body.state_reason ?? 'completed') });
         return { status: 200, body: restIssue(issue) };

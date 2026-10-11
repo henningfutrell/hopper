@@ -339,7 +339,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     stop() {
       stopped ??= (async () => {
         updater.stop();
-        access.stop();
+        await access.stop();
         sandboxes.stop();
         // A link is an upgraded socket: the server does not track it, so it would hold the close open.
         links.closeAll();
