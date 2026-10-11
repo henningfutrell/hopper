@@ -1,9 +1,9 @@
 // The views, routed by URL hash so a link (#questions) and the back button work. A view may have
 // sections after a slash (#settings/routing): the view is the part before it. Each section (Questions, Proposals,
 // Research, Logins, Failures, Parked; issues #543, #565) is a view whose badge follows the one section rule (useSectionBadges).
-// Not taken (issue #798) is badged with the request cards waiting for approval, and apart with the issues on the backburner
-// (issue #808), so an issue kept out never looks gone.
-import { ChevronsUp, CircleDashed, Flame, FileCheck, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
+// Not taken (issue #798) is badged with the request cards waiting for approval. The job view (#job/<id>, issue #433) is a
+// route with no nav entry: timeline entries link to it.
+import { Briefcase, ChevronsUp, CircleDashed, FileCheck, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -14,7 +14,9 @@ import { onTheBackburner, requestsWaiting } from '@/model/intake';
 import { cn } from '@/lib/utils';
 
 export const VIEWS = ['overview', 'queue', 'not-taken', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
-export type View = (typeof VIEWS)[number];
+/** The routes: every view in the navigation, and the job view, which has no nav entry. */
+const ROUTES = [...VIEWS, 'job'] as const;
+export type View = (typeof ROUTES)[number];
 const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   overview: { label: 'Overview', icon: LayoutDashboard },
   queue: { label: 'Queue', icon: ListOrdered },
@@ -33,10 +35,11 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   machines: { label: 'Machines', icon: Server },
   usage: { label: 'Usage', icon: Gauge },
   settings: { label: 'Settings', icon: Settings },
+  job: { label: 'Job', icon: Briefcase },
 };
 
 const subscribe = (fn: () => void) => { window.addEventListener('hashchange', fn); return () => window.removeEventListener('hashchange', fn); };
-const read = (): View => { const h = window.location.hash.slice(1).split('/')[0]!; return (VIEWS as readonly string[]).includes(h) ? (h as View) : 'overview'; };
+const read = (): View => { const h = window.location.hash.slice(1).split('/')[0]!; return (ROUTES as readonly string[]).includes(h) ? (h as View) : 'overview'; };
 export const useView = (): View => useSyncExternalStore(subscribe, read);
 /** The section after the view in the hash (#settings/routing → routing), or ''. */
 const readSection = (): string => window.location.hash.slice(1).split('/')[1] ?? '';
