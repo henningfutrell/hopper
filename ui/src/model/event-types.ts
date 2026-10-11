@@ -33,7 +33,7 @@ const ALL: Record<EventType, true> = {
   'question.corrected': true, 'auto_answer.settings_changed': true, 'auto_park.settings_changed': true,
   'github_proxy.done': true, 'github_proxy.refused': true, 'github_proxy.failed': true,
   'vault.secret_set': true, 'vault.secret_removed': true, 'vault.secret_read': true, 'vault.secret_migrated': true, 'template.saved': true, 'template.removed': true, 'vault.approved': true, 'vault.revoked': true, 'template.profile_approved': true, 'vault.delivered': true, 'vault.refused': true, 'vault.minted': true, 'vault.mint_refused': true,
-  'vault.credential_asked': true, 'vault.credential_given': true, 'vault.credential_declined': true,
+  'vault.credential_asked': true, 'vault.credential_given': true, 'vault.credential_declined': true, 'vault.read_policy_set': true,
   'yolo_mode.changed': true, 'job.pull_request_merged': true, 'job.pull_request_closed': true, 'job.finish_briefed': true,
   'skill.listed': true, 'skill.loaded': true, 'skill.refused': true,
   'artifact.created': true, 'artifact.shared': true, 'artifact.share_revoked': true, 'artifact.removed': true, 'artifact.settings_changed': true, 'artifact.posted': true,

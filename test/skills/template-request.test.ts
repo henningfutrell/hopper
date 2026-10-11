@@ -19,8 +19,8 @@ describe('a template request\'s needs (issue #716)', () => {
     expect(needsOf('  ')).toMatch(/^name what the work needs/);
     expect(needsOf('delete/cluster/lab')).toContain('the operation is one of read, write, sync, apply');
     expect(needsOf('read/planet/mars')).toContain('the asset kind is one of');
-    expect(needsOf('read/cluster')).toContain('write <operation>/<kind>/<asset>');
-    expect(needsOf('read/cluster/la b')).toContain('write <operation>/<kind>/<asset>');
+    expect(needsOf('read/cluster')).toContain('write each need as <operation>/<kind>/<asset>');
+    expect(needsOf('read/cluster/la b')).toContain('write each need as <operation>/<kind>/<asset>');
     expect(needsOf(Array.from({ length: 17 }, (_, i) => `read/cluster/c${i}`).join(' '))).toContain('at most 16');
   });
 

@@ -61,7 +61,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection") and the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection") | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, the events (`service.ts`); a user's GitHub for it is `src/users/github-proxy.ts`, its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
-| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
@@ -8342,11 +8342,64 @@ running daemon, under a session the CLI mints for the one call and drops after i
   database's credentials can approve, as it could already through `config set` and the database itself.
 - **Roles.** The reads are `viewer`; every change is `admin`, the least role its route names.
 
-**Not built (carried on issue #718).** A template made on request from what a job needs, with read scope auto-approved
-inside a standing read policy; tools assembled per run; the read-only negative suite (#715) run before a new template's
+**Not built (carried on issue #718).** Tools assembled per run; the read-only negative suite (#715) run before a new template's
 first use; and a token-scoped API for agents. The last one contradicts "Operator actions from the CLI" (a mutating API
 token is a second door beside the UI session), so it needs a decision first. Shared secrets (issue #718, item 3) are
-built: `vault set <name> --shared` ("Shared secrets").
+built: `vault set <name> --shared` ("Shared secrets"). A template made on request, with read approved inside the read
+policy, is built ("Templates on request"); so is `template read-policy`.
+
+## Templates on request (issue #716, item 1, 2026-10-10)
+
+Owner's model (issue #716): you ask the hopper to make the template a job needs, and the hopper makes it. Before it, a
+template was only what a person saved on Settings → Vault, or with `hopper template save`. Owner, issue #718: jobs do
+not get write access over the API; they still ask the hopper. So a job asks through the skill request it already has
+(`POST /job/skill`, "Skills: what the hopper can set up for a box"), and the hopper decides.
+
+- **The ask.** `sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-account/123456789012" [--wait]`.
+  Each **need** is an operation profile, written as the CLI writes one, `<operation>/<kind>/<asset>`; split by spaces,
+  commas or lines; at most 16; each once. A need the hopper cannot read is a 400 that says how to write it.
+- **The template** (`requestTemplate`, `src/skills/template-request.ts`). Its name is `asked-` and 12 hex of a SHA-256
+  over the sorted needs: the same needs, in any order and from any job, get the same template, so a later job with the
+  same needs makes no second one. It runs the hopper's box image (`ghcr.io/henningfutrell/hopper:box-claude`), holds no
+  vault secret, and declares one operation profile per need. It is saved through the vault's own `saveTemplate`, by
+  `job <id>`: the same checks and the same `template.saved` event as a person's save. No secret goes in its scope: when a
+  job on its box loads a skill, the dynamic vault asks a person for that credential ("The dynamic vault"), and a person's
+  giving it approves only that one secret.
+- **The read policy** (`ReadPolicy`, `src/domain/read-policy.ts`; the user's settings, key `readPolicy`, no migration).
+  The assets the hopper approves read on with no person. Each entry is an asset as Access names it (`cluster/lab`), or
+  one that ends in `*` (`aws-account/*`, `namespace/lab/*`): every asset of that kind whose name starts with what is before
+  it. At most 64 entries. An admin sets it on Settings → Vault (panel **Read policy**), with `POST /ui/api/vault`
+  `set-read-policy` (`assets`; replaces it; empty clears it), or `hopper template read-policy set <entry>...`; each set is
+  `vault.read_policy_set`. `GET /api/vault` answers it as `readPolicy`. Empty, or never set: the hopper approves nothing.
+- **The approval.** The hopper approves the template with no person only when it makes it now and every need is a
+  `read` on an asset the policy holds: the vault's own `approveTemplate`, `by` **the read policy** (`vault.approved`,
+  `template.profile_approved` with that `by`). All or nothing: one need outside the policy, or one write, sync or apply
+  need, and the whole template waits for a person on Settings → Vault, as a template a person saved does. The policy
+  never approves a template again: one a person revoked waits for a person.
+- **A job never widens a template.** A template of that name whose profiles differ from the needs — a person changed it —
+  is a 409: the job is told to ask a person. A job never approves, revokes or removes one.
+- **The answer.** 200 when the template is approved, its image the approved one, and every profile approved in Access:
+  its name, who approved it, how a person starts a box of it (Machines → Add machine, or `hopper sandbox launch
+  --template <name>`), and the skill each need's asset loads on that box. Else 202 `waiting: template <name> waits for a
+  person in Settings → Vault: …`, with what waits and why the policy did not approve it; `--wait` opens a watch, and the
+  job stream ends it when a person approves (`vault.approved`, `template.profile_approved` ask it again).
+
+**Not built (carried on issue #716).** A job does not launch the box: a person or the CLI starts it. Tools assembled per
+run (item 2): every requested template runs the one box image. The read-only negative suite (#715) before a new
+template's first use (item 4). A need's credential is asked of a person when a job on the box first loads the skill;
+the template does not name a vault secret the user already has. Templates made on request are not removed when no job
+uses them.
+
+**Residual risk, stated.** Any job at work may make a template, one per distinct set of needs; it holds no secret and,
+outside the read policy, gives nothing until a person approves it. Inside the policy, a new template's boxes may read the
+assets the policy names: the policy is the admin's statement that this is fine, and it is empty by default.
+
+Tests: `test/integration/template-requests.test.ts` (the real daemon, the real `hopper-skill`, OpenFGA as a double: read
+needs inside the policy approved with no person and allowed by Access; the same needs again, the same template; a write
+need waits, and the job's `--wait` ends when a person approves; no policy, a read waits; a person's change is never
+widened back and a revoke is not approved again; needs it cannot read refused; the policy set, shown, an event, and an
+entry it cannot read refused), `test/skills/template-request.test.ts`, `test/integration/operator-cli-vault.test.ts`
+(`template read-policy`), `test/ui/vault-read-policy.test.ts`.
 
 ## Reserved lanes (issue #372, 2026-10-07)
 
@@ -9910,8 +9963,7 @@ Per-user stays the default; sharing is the hopper's admin's explicit act.
 each user's own template approval is the gate, as for that user's own secrets. The readers are user ids, not checked
 against the users the hopper has: an id of no user matches no one.
 
-**Not built (carried on issue #718).** A template made on request from what a job needs, with read scope auto-approved
-inside a standing read policy (item 1); tools assembled per run (item 2); a token-scoped mutating API so an agent does
+**Not built (carried on issue #718).** Tools assembled per run (item 2); a token-scoped mutating API so an agent does
 all of this over the API without a UI session (item 4); and the read-only negative suite run before a new template's
 first use (item 5), which waits on #715's suite.
 

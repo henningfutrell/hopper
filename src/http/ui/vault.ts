@@ -1,14 +1,16 @@
 // The vault's edits (issue #558, design.md "The vault"), an admin's: set a secret — a new one, or a new value or scope
 // for one —, or point one at where a vault backend keeps it (issue #585) —, or mark one a minting credential (issue #580) —, or remove it; save a template (its image, scope and operation profiles), remove it, approve it as it is now,
 // or approve one of its operation profiles explicitly (issue #584: the gate for a write, sync or apply profile); give or
-// decline a credential request (issue #583, "The dynamic vault"). Each answers the vault's view, never a value, and is not cached.
+// decline a credential request (issue #583, "The dynamic vault"); set the read policy (issue #716). Each answers the vault's view, never a value, and is not cached.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ASSET_KINDS, OPERATIONS } from '../../domain/access.ts';
 import { MINTS_FOR_KINDS } from '../../domain/minting.ts';
+import { readPolicyProblem } from '../../domain/read-policy.ts';
 import { CREDENTIAL_NOTE_MAX, VAULT_REFERENCE_MAX, VAULT_VALUE_MAX } from '../../domain/vault.ts';
 import { HttpError, parseWith } from '../errors.ts';
-import { holdsTemplate, vaultView, type Vault } from '../../vault/vault.ts';
+import { holdsTemplate, type Vault } from '../../vault/vault.ts';
+import { vaultAnswer } from '../vault.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
 import { identityName } from './sessions.ts';
 
@@ -46,6 +48,8 @@ export const vaultEditBody = z.discriminatedUnion('action', [
     note: z.string().max(CREDENTIAL_NOTE_MAX).optional(), scope: z.string().max(200).optional(), value: z.string().max(VAULT_VALUE_MAX).optional(),
   }),
   z.strictObject({ action: z.literal('decline-credential'), request: z.string().max(64), reason: z.string().max(CREDENTIAL_NOTE_MAX) }),
+  // The read policy (issue #716): the assets read is approved on with no person, for a template a job asks for.
+  z.strictObject({ action: z.literal('set-read-policy'), assets: z.array(z.string().max(220)).max(256) }),
 ]);
 
 const STATUS = { invalid: 400, not_found: 404, conflict: 409, unavailable: 503 } as const;
@@ -63,8 +67,19 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to change the vault');
     const by = identityName(s.identity);
-    const { vault } = o.tenant(req);
+    const parts = o.tenant(req);
+    const { vault } = parts;
     const edit = parseWith(vaultEditBody, req.body);
+    if (edit.action === 'set-read-policy') {
+      const assets = [...new Set(edit.assets.map((x) => x.trim()).filter((x) => x !== ''))];
+      const problem = readPolicyProblem(assets);
+      if (problem) throw new HttpError(400, problem);
+      parts.store.tx(() => {
+        parts.store.settings.setReadPolicy({ assets });
+        parts.store.events.append({ type: 'vault.read_policy_set', data: { assets, by } });
+      });
+      return await vaultAnswer(parts);
+    }
     const said = { ...('scope' in edit && edit.scope !== undefined ? { scope: edit.scope } : {}), ...('mints' in edit && edit.mints !== undefined ? { mints: edit.mints } : {}) };
     const r = edit.action === 'set' ? await vault.set({ name: edit.name, value: edit.value, ...said }, by)
       : edit.action === 'set-in-backend' ? await vault.set({ name: edit.name, backend: edit.backend, reference: edit.reference, ...said }, by)
@@ -77,7 +92,7 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
                   : edit.action === 'give-credential' ? await vault.give(edit.request, giveOf(edit), by)
                     : vault.decline(edit.request, edit.reason, by);
     if (!r.ok) throw new HttpError(STATUS[r.code], r.error);
-    return await vaultView(vault);
+    return await vaultAnswer(parts);
   });
 }
 

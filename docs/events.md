@@ -2799,6 +2799,25 @@ Version 1 (`docs/schemas/vault.credential_declined.v1.json`). A person declined 
 }
 ```
 
+## `vault.read_policy_set`
+
+Version 1 (`docs/schemas/vault.read_policy_set.v1.json`). An admin set the read policy (issue #716): the assets the hopper approves read on with no person, for a template a job asks for (`sandbox-template`). Write, sync and apply always wait for a person. Empty: the hopper approves nothing by itself.
+
+| field | type | required |
+|---|---|---|
+| `assets` | string[] | yes |
+| `by` | string | yes |
+
+```json
+{
+  "assets": [
+    "cluster/lab",
+    "aws-account/*"
+  ],
+  "by": "Ada"
+}
+```
+
 ## `yolo_mode.changed`
 
 Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode (issue #579): whether jobs may merge their own pull requests once the repo's checks pass — `on` for every job repository, `repos` per repository (`owner/repo`, lowercased), which wins. `from` and `to` the settings, `by` who changed them. Done never depends on it.
