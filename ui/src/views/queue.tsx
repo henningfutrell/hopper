@@ -7,7 +7,8 @@
 // jobs on their own wait, until what they wait for happens (issue #483). Each job card starts collapsed (issue #737), so the
 // jobs are easy to scan and compare: its issue, state, lane, pull request and its repository's yolo mode. A click opens one
 // card for its detail; Expand all and Collapse all open or close every card. Its actions stay on the card either way.
-import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronDown, ChevronsDownUp, ChevronsRight, ChevronsUpDown, ChevronUp, Hourglass, ListOrdered, Lock, Pause, ShieldCheck, SlidersHorizontal, Sparkles } from 'lucide-react';
+// The issues on the backburner are no jobs, so the Queue counts them and links to Not taken (issue #808): never gone.
+import { ArrowDown, ArrowUp, ArrowUpToLine, Check, ChevronDown, ChevronsDownUp, ChevronsRight, ChevronsUpDown, ChevronUp, Flame, Hourglass, ListOrdered, Lock, Pause, ShieldCheck, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { JobTitle, Since } from '@/components/job';
 import { RejectButton } from '@/components/reject';
@@ -17,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { get } from '@/lib/api';
 import { laneName } from '@/model/board';
+import { onTheBackburner } from '@/model/intake';
 import { COLLAPSED, accepting, cardOpen, moved, queueColumns, setAllCards, toggleCard } from '@/model/queue';
 import type { Job, PreSort, QueueGate, QueueGateMode, YoloModeView } from '@/model/wire';
 import { repoMerges } from '@/model/yolo-mode';
@@ -111,6 +113,7 @@ export function Queue() {
   const gate = useHopper((s) => s.gate);
   const presort = useHopper((s) => s.presort);
   const locked = useHopper((s) => s.locked);
+  const backburner = useHopper((s) => onTheBackburner(s.sources));
   const operate = useCanOperate();
   const { presorted, userOrder } = queueColumns(board.waiting, presort);
   const order = userOrder.map((j) => j.id);
@@ -125,7 +128,12 @@ export function Queue() {
     <div className="space-y-3">
       {/* Keyed by the saved limit: a new one resets the field. */}
       {gate && <GatePanel key={String(gate.autoAcceptPerHour)} gate={gate} presort={presort} />}
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {backburner > 0 && (
+          <a data-slot="queue-backburner" href="#not-taken" className="mr-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline">
+            <Flame className="size-3.5" aria-hidden />{backburner} {backburner === 1 ? 'issue' : 'issues'} on the backburner: not taken until you take {backburner === 1 ? 'it' : 'them'} off
+          </a>
+        )}
         <Button size="xs" variant="outline" data-slot="cards-toggle-all" onClick={() => setCards(setAllCards(!allOpen))}>
           {allOpen ? <><ChevronsDownUp />Collapse all</> : <><ChevronsUpDown />Expand all</>}
         </Button>

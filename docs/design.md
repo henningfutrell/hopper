@@ -9233,6 +9233,24 @@ backburner issues had no action; and "taken" showed for an issue whose job had a
   prefers the job as its store knows it. An ended job's issue shows "its job ended: <status>" in place of "taken" until
   the next sync says what became of it.
 
+## The backburner, always visible (issue #808, 2026-10-11)
+
+Owner report: 15 of 21 open labelled issues were on the backburner, and from the board they looked gone: a kept-out issue
+and a dropped one looked the same. Built on Not taken (issue #798), which lists them and has Take off the backburner.
+
+**As built:**
+- **Since when, and by whom.** An intake outcome on the backburner carries `backburner { since, by }`: the newest
+  `labeled` event of `hopper:backburner` (`src/sources/github/backburner.ts`). Each source reads an issue's events once
+  while the label stays, and forgets the issue when it leaves the backburner, so a sync reads only the issues new to it.
+  Events it cannot read leave the outcome without `backburner` (logged), and are read on the next sync. The label is a
+  person's (`labels.ts`); the hopper keeps no reason of its own, so "why" is the label, who set it and when.
+- **Counted where people look.** The Not taken nav entry has a second badge, dashed and muted, for the issues on the
+  backburner, apart from the request badge (`onTheBackburner`, `ui/src/model/intake.ts`). The Queue, which lists jobs,
+  links to Not taken with the same count.
+- **Distinct rows.** Every intake row shows its issue number. A backburner row has a dashed left edge and says
+  "on the backburner <age>, by <login>"; its group heading has the backburner icon. Never the word *parked*: that is a
+  job a person took out of its lane.
+
 ## Per-machine work trees (issue #361, 2026-10-08)
 
 Owner request: jobs failed when routed to a machine that did not have the configured work tree — four
