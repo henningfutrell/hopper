@@ -226,6 +226,8 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       }
       errors = 0;
     } catch (err) {
+      // The machine's link is down (issue #752): the engine holds the job until it is back. Only errors on a live link count.
+      if (herdr.linkDown?.()) return { kind: 'failed', error: `herdr: ${(err as Error).message}`, linkLost: true };
       if (++errors >= MAX_CONSECUTIVE_ERRORS) return { kind: 'failed', error: `herdr: ${(err as Error).message}` };
     }
     await w.sleep(w.pollMs, ctx.signal);

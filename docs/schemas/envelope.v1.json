@@ -32,6 +32,7 @@
         "job.cancelled",
         "job.requeued",
         "job.reattached",
+        "job.link_lost",
         "job.reprioritized",
         "job.respecified",
         "lane.opened",

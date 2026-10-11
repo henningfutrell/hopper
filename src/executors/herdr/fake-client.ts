@@ -173,6 +173,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
     },
     failNext(method, code) { failures.set(method, code); },
     setUnreachable(on) { unreachable = on; },
+    linkDown: () => unreachable,
     screen: (id) => paneScreen(panes.get(id), signedIn),
 
     async ensureWorkspace(label, cwd) {

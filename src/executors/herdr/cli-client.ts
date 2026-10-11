@@ -51,7 +51,10 @@ function failure(code: number, stderr: string, fallback: string): HerdrError {
 }
 
 export function createHerdrCliClient(o: CliOptions | ClientOptions): HerdrCliClient {
-  if ('client' in o) return withCalls('', viaClient(o.client), o.timeoutMs ?? DEFAULT_TIMEOUT_MS, clientShell(o.client));
+  if ('client' in o) {
+    const link = o.client.link;
+    return { ...withCalls('', viaClient(o.client), o.timeoutMs ?? DEFAULT_TIMEOUT_MS, clientShell(o.client)), linkDown: () => link()?.destroyed !== false };
+  }
   if (!o.session) throw new Error('herdr session is required (never the default session)');
   return withCalls(o.session, viaCli(o), o.timeoutMs ?? DEFAULT_TIMEOUT_MS, o.ssh ? sshShell(o.ssh) : localShell(o.userEnv));
 }

@@ -36,6 +36,8 @@ export interface EngineOptions {
   maxQuestions: number;
   /** After a restart, how long a running job whose machine does not answer yet stays running before it fails (issue #368). */
   reconnectGraceMs: number;
+  /** Once a running job's machine link drops, how long it is held before it fails (issue #752). Default 10 min. */
+  linkGraceMs?: number;
   /** A done job whose source finds it not done is asked again after this long, for GitHub's lag, before it fails (issue #637). Default 0: at once. */
   doneRecheckMs?: number;
   /** Skip executor cleanup on terminal outcomes (HOPPER_KEEP_PANES). */

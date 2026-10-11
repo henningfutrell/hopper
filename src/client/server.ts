@@ -24,7 +24,8 @@
 import { execFile } from 'node:child_process';
 import { statfsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { performServerHandshake, type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
+import { serveLink, type PingTiming } from './keepalive.ts';
+import { type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import { credentialOf } from './credential.ts';
 import { DISCOVER_TIMEOUT_MS, discoverArgv } from './discover.ts';
@@ -56,6 +57,8 @@ export interface ClientOptions {
   log?: (line: string) => void;
   /** Delays between dials; default 1 s, 2 s, 5 s, 10 s, then 30 s. */
   backoffMs?: readonly number[];
+  /** The link's keepalive (keepalive.ts, issue #752); default PING_TIMING. */
+  ping?: PingTiming;
   /** The directory this client's files are installed in: its release is read from it at start, and a load writes there. */
   installDir: string;
   /** A release was loaded into installDir: restart to run it. Called after the answer is sent. */
@@ -234,7 +237,7 @@ export function startClient(o: ClientOptions): Client {
     o.dial().then((socket) => {
       if (stopped) { socket.destroy(); close(); return; }
       link = socket;
-      const session = performServerHandshake(socket);
+      const session = serveLink(socket, () => { log('hopper-client: the hopper did not answer a PING; the link is dead'); socket.destroy(); }, o.ping);
       session.on('stream', (stream, headers) => {
         serve(o, nonces, releases, stream, headers).catch((e: unknown) => {
           log(`hopper-client: ${(e as Error).message}`);

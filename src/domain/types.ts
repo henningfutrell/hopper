@@ -7,7 +7,7 @@ import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
-import type { MachineHerdr } from './machines.ts';
+import type { JobMachineLink, MachineHerdr } from './machines.ts';
 import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
@@ -93,7 +93,7 @@ export interface JobSpec {
 export interface SpecFromConfig { executor: string; model?: string; cwd?: string; machineId?: MachineId; rule?: string }
 
 /** A job; its phase, switch and forks (issue #548) are declared in src/domain/phase.ts. */
-export interface Job extends JobPhaseFields {
+export interface Job extends JobPhaseFields, JobMachineLink {
   id: JobId;
   /** A follow-on of an accepted proposal (issue #651): the job, proposal and path it continues. */
   followOn?: FollowOnOf;

@@ -203,3 +203,12 @@ export interface DiskThresholds { belowGiB?: number; belowPercent?: number }
  * job's scratch dir there is reaped once it is `scratchMaxAgeHours` old (absent, 24).
  */
 export interface SweepSettings { everyMinutes?: number; scratchMaxAgeHours?: number }
+
+/** A job's side of its machine's link (issue #752, design.md "Link-lost hold"). */
+export interface JobMachineLink {
+  /**
+   * Set while the job is held because its machine's link dropped: it stays `running` on its lane until the link is back
+   * and its pane is alive, or it fails at `failsAt` (the link grace). `since`: when the link was found down.
+   */
+  linkLost?: { machine: string; since: string; failsAt: string };
+}

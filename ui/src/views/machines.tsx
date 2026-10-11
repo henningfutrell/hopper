@@ -12,11 +12,13 @@
 // draws its CPU over the last day, and opens its resource graph (issue #560, machine-resources.tsx). Each machine's lane
 // recommendation and its lane tuning settings sit under the machines (issue #688, lane-tuning.tsx). A sandbox box the
 // hopper could not stop or remove after its machine went is shown with the reason (issue #603, GET /api/sandboxes); a box
-// whose start check fails, with what it wrote (issue #708, sandbox-reach.tsx).
+// whose start check fails, with what it wrote (issue #708, sandbox-reach.tsx). A machine whose link dropped under a running
+// job says since when it is out of reach and that the job is held (issue #752, machine-away.tsx).
 import { Activity, Box, Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
+import { MachineAway } from '@/components/machine-away';
 import { ReadingGauge } from '@/components/reading';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge, TEXT } from '@/components/status';
@@ -104,6 +106,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   return (
     <Panel title={m.label || m.id} icon={Server} bodyClassName="space-y-4"
       action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
+      <MachineAway machine={m.id} />
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div><div className="text-[11px] text-muted-foreground">max lanes</div><div className="num text-lg font-semibold">{m.maxLanes}</div></div>
         <div><div className="text-[11px] text-muted-foreground">open</div><div className="num text-lg font-semibold">{m.lanes.length}</div></div>

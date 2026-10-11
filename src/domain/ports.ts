@@ -91,9 +91,10 @@ export type ExecutionOutcome =
   | { kind: 'finished'; result: unknown; partlyDone?: string }
   /**
    * `tail`: the pane or output tail at failure, codes hidden (issue #509): the assessor's evidence. `liveness`: a
-   * timeout's (issue #630), what the job showed of its progress then.
+   * timeout's (issue #630), what the job showed of its progress then. `linkLost` (issue #752): its machine's link dropped
+   * while its work was watched, so that work may live on there; the engine holds the job and reattaches it when the link is back.
    */
-  | { kind: 'failed'; error: string; tail?: string; liveness?: JobLiveness }
+  | { kind: 'failed'; error: string; tail?: string; liveness?: JobLiveness; linkLost?: true }
   /** The job is paused on a question. Its executor state (saveState) must allow resume. */
   | { kind: 'question'; question: ExecutionQuestion }
   /**
