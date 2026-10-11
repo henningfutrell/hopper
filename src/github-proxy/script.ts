@@ -1,6 +1,9 @@
 // `hopper-gh` (issue #563): the command a job runs to ask the hopper for a GitHub operation. Kept in the job's
 // credentials dir on its machine beside its proxy token, run as `sh "$HOPPER_GH" …`: POSIX sh and curl, nothing
-// else, so it works on any machine a job runs on. Its help is the whole manual, read only when a job needs it.
+// else, so it works on any machine a job runs on. Its help is the whole manual, read only when a job needs it. A 503
+// with Retry-After (the client door while the hopper is out of reach, issue #752) is waited out: `hcurl`.
+
+import { HCURL_SH } from './retry-after.ts';
 
 /** The variables a job asks through: the script, its token file, and the hopper's URL as its machine reaches it. */
 export const PROXY_SCRIPT_VARIABLE = 'HOPPER_GH';
@@ -77,7 +80,9 @@ while [ "$i" -lt "$n" ]; do
     *) set -- "$@" --data-urlencode "number=$a" ;;
   esac
 done
-printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")" | curl -sS --fail-with-body -H @- --data-urlencode "op=$op" "$@" "$HOPPER_URL${PROXY_PATH}"
+token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; }
+${HCURL_SH}
+hcurl -sS --fail-with-body -H @- --data-urlencode "op=$op" "$@" "$HOPPER_URL${PROXY_PATH}"
 code=$?
 echo
 [ "$code" -eq 0 ] || exit 1
