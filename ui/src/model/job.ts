@@ -1,6 +1,9 @@
 // How a job is named: its goal, and the issue it came from as `repo#n`.
 import type { Job } from './wire.ts';
 
+/** The job view of a job (issue #433): where every timeline entry about the job links. */
+export const jobHref = (jobId: string): string => `#job/${encodeURIComponent(jobId)}`;
+
 export const goalOf = (job: Job): string => job.spec.goal || job.source?.title || job.spec.executor;
 
 export function issueRef(job: Job): string | null {

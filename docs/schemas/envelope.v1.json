@@ -82,6 +82,8 @@
         "source.request_approved",
         "intake.actors_changed",
         "job.origin_judged",
+        "source.request_opened",
+        "source.backburner_lifted",
         "auth.pending",
         "auth.completed",
         "auth.expired",

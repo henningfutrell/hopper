@@ -27,7 +27,8 @@ import { NOT_ASSIGNED, discoverIssues, isAssignedTo, labelReason, type Rejection
 import { intakeAct } from './intake-actions.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
-import { originsOf, REQUEST_REASON } from './origin.ts';
+import { openRequests, originsOf, REQUEST_REASON } from './origin.ts';
+import { backburnerReader } from './backburner.ts';
 import { reportToGitHub, takeBack, writeResolution } from './report.ts';
 
 /** What the source reads of its config. */
@@ -101,6 +102,10 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   let installedRepos: string[] = [];
   let nothingToScan = false;
   const labelledRepos = new Set<string>();
+  /** The request cards this process saw opened, as `<key> <hash>`: the events are read once per text. */
+  const opened = new Set<string>();
+  /** Since when and by whom each issue is on the backburner (issue #808), read once while the label stays. */
+  const backburner = backburnerReader(api);
 
   /** App mode: the bot, once known (the app file, or the first sync). */
   let knownBot: string | undefined;
@@ -294,7 +299,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         const item = await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), bot, assignee);
         items.push(v ? { ...item, origin: v.origin } : item);
       }
-      outcomes = outcomes.map((x) => { const r = requests.get(x.key); return r ? { ...x, reason: REQUEST_REASON, action: 'approve' as const, request: r } : x; });
+      outcomes = outcomes.map((x) => { const r = requests.get(x.key); return r ? { ...x, reason: REQUEST_REASON, action: 'approve' as const, group: 'request' as const, request: r } : x; });
+      if (intake) openRequests(o.name, intake, requests, opened);
+      outcomes = await backburner(outcomes);
       lastDiscoverAt = o.clock.now().toISOString();
       return items;
     },

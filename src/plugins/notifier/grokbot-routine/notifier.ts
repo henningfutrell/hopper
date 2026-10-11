@@ -31,7 +31,7 @@ const retriable = (status: number) => status === 429 || status >= 500;
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function wanted(e: DomainEvent): boolean {
-  if (e.type === 'source.stalled' || e.type === 'connected_account.expired' || e.type === 'artifact.created') return true;
+  if (e.type === 'source.stalled' || e.type === 'connected_account.expired' || e.type === 'artifact.created' || e.type === 'source.request_opened') return true;
   if (e.type === 'job.finished' || e.type === 'job.failed') return true;
   if (e.type === 'auth.pending' || e.type === 'auth.expired') return true;
   return e.type === 'question.escalated_to_human';

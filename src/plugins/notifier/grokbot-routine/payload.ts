@@ -45,11 +45,15 @@ export function questionPayload(b: QuestionBody): Record<string, unknown> {
   };
 }
 
-/** A stop of intake (issue #358). `source` is the sender (the hopper): the job source's name goes as `sourceName`. */
+/**
+ * A stop of intake (issue #358), or a request card waiting for approval (issue #798). `source` is the sender (the hopper):
+ * the job source's name goes as `sourceName`.
+ */
 export function intakePayload(e: DomainEvent, job: Job | undefined): Record<string, unknown> {
   const b = base(e.type, e.at, job, e.jobId);
   if (e.type === 'source.stalled') return { ...b, sourceName: e.data.source, error: e.data.error, since: e.data.since };
   if (e.type === 'connected_account.expired') return { ...b, provider: e.data.provider, account: e.data.account, reason: e.data.reason };
+  if (e.type === 'source.request_opened') return { ...b, sourceName: e.data.source, issueUrl: e.data.key, author: e.data.author, why: e.data.why };
   return b;
 }
 

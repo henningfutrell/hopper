@@ -1222,6 +1222,46 @@ Version 1 (`docs/schemas/job.origin_judged.v1.json`). A job queued before origin
 }
 ```
 
+## `source.request_opened`
+
+Version 1 (`docs/schemas/source.request_opened.v1.json`). A new request card (issue #798): an open labelled issue assigned to the user that is not of a trusted origin, so it is no job until a person approves it (issue #652). `why` says why it is not trusted; `hash` is the hash of its title and body. Recorded once per item and text: an edit to its title or body opens it again. Never the text. It shows in Not taken, with Approve; the Grok Bot routine notifier posts it.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `hash` | string | yes |
+| `author` | string | yes |
+| `why` | string[] | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/issues/8",
+  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "author": "helper[bot]",
+  "why": [
+    "written by an app or a bot (helper[bot])"
+  ]
+}
+```
+
+## `source.backburner_lifted`
+
+Version 1 (`docs/schemas/source.backburner_lifted.v1.json`). A person took an item off the backburner from Not taken or Sources (issue #798): its `hopper:backburner` label was removed. The source syncs at once, so it is taken when nothing else keeps it out.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/issues/9"
+}
+```
+
 ## `auth.pending`
 
 Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`). `host` (issue #698): the host of the URL to open — what asks —, never its path or query. The Grok Bot routine notifier posts it (issue #698).

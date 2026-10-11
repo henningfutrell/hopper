@@ -31,6 +31,7 @@ function setup(o: { migration?: IntakeMigration; knownKeys?: (k: string[]) => Se
       migration: () => migration,
       migrated: (m) => { migration = m; },
       record: (type, data) => { events.push({ type, data }); },
+      requestOpened: (key, hash) => events.some((e) => e.type === 'source.request_opened' && e.data.key === key && e.data.hash === hash),
     },
   };
   const source = createGitHubSource(options);

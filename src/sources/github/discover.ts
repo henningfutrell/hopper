@@ -14,7 +14,7 @@
 // by repo. Never a search: the app never passes an empty list, and a connected account's source with none
 // chosen is paused (issue #321).
 
-import type { IntakeOutcome } from '../../domain/intake.ts';
+import type { IntakeOutcome, NotTakenGroup } from '../../domain/intake.ts';
 import type { Rejection } from '../../domain/rejection.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
@@ -151,8 +151,11 @@ function claimVerdict(i: GitHubIssue, scope: DiscoverScope, otherUser: boolean):
   return { kind: 'skip', reason: CLAIMED_NO_HOLDER, action: 'release' };
 }
 
+/** The not-taken group of a reason (issue #798); a request card's is set where its origin is judged (source.ts). */
+const GROUP_OF: Record<string, NotTakenGroup> = { [NOT_ASSIGNED]: 'not-assigned', [BACKBURNER]: 'backburner', [PR_READY]: 'pr-waiting', [PARTLY_DONE]: 'partly-done' };
+
 const outcome = (i: GitHubIssue, reason?: string, action?: IntakeOutcome['action']): IntakeOutcome => ({
-  key: i.url, title: i.title, repo: i.repo, ...(reason !== undefined ? { reason } : {}), ...(action ? { action } : {}),
+  key: i.url, title: i.title, repo: i.repo, ...(reason !== undefined ? { reason, group: GROUP_OF[reason] ?? 'other' } : {}), ...(action ? { action } : {}),
 });
 
 export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, scope: DiscoverScope): Promise<DiscoverResult> {
@@ -164,7 +167,7 @@ export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, sco
   const candidates: GitHubIssue[] = [];
   for (const i of issues) {
     const byLabel = labelReason(i, config.hopperName);
-    if (byLabel) reasons.set(i.url, { reason: byLabel });
+    if (byLabel) reasons.set(i.url, { reason: byLabel, ...(byLabel === BACKBURNER ? { action: 'unbackburner' as const } : {}) });
     else if (!isAssignedTo(i, scope.assignee)) reasons.set(i.url, { reason: NOT_ASSIGNED, action: 'assign' });
     else candidates.push(i);
   }

@@ -8,7 +8,7 @@
 // Feature: API tokens
 //   Scenario: a person mints a token, and an agent with it sets a secret, saves and approves a template and launches a box
 //     Given a hopper with a master key, a machine and OpenFGA
-//     When the admin mints an API token for 15 minutes in the UI
+//     When the admin mints an API token for 15 minutes in the UI, as a box token (issue #795: a launch is a box action)
 //     Then the token is answered once and listed with no value
 //     And with only `Authorization: Bearer <token>` — no UI session, no Origin — the agent sets a vault secret, saves and
 //       approves a template, and launches a sandbox box of it
@@ -76,9 +76,9 @@ describe('API tokens (issue #718)', () => {
     const { a, runtime } = await boot();
     const session = await a.login();
     const before = Date.now();
-    const minted = await mint(a, session, { minutes: 15 });
+    const minted = await mint(a, session, { minutes: 15, box: true });
     expect(minted.status).toBe(200);
-    expect(minted.body).toMatchObject({ label: 'grok-bot', role: 'admin', token: expect.stringMatching(TOKEN), id: expect.any(String) });
+    expect(minted.body).toMatchObject({ label: 'grok-bot', role: 'admin', box: true, token: expect.stringMatching(TOKEN), id: expect.any(String) });
     const expires = Date.parse(minted.body.expiresAt);
     expect(expires).toBeGreaterThan(before);
     expect(expires).toBeLessThanOrEqual(Date.now() + 15 * 60_000);

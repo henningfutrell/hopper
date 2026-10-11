@@ -83,8 +83,8 @@ async function agent(a: TestApp, method: 'GET' | 'POST', path: string, token: st
   return { status: r.status, text: r.text, body: r.text ? JSON.parse(r.text) : undefined };
 }
 
-async function apiToken(a: TestApp, session: string, role = 'admin'): Promise<string> {
-  const r = await a.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'grok-bot', role }, { token: session });
+async function apiToken(a: TestApp, session: string, role = 'admin', box = false): Promise<string> {
+  const r = await a.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'grok-bot', role, box }, { token: session });
   expect(r.status).toBe(200);
   return r.body.token;
 }
@@ -95,7 +95,7 @@ const asked = async (a: TestApp, token: string): Promise<TemplateView[]> =>
 describe('an agent asks the hopper for a template over the API (issue #718)', () => {
   it('read needs inside the read policy are approved with no person, checked read-only, and a box of it launches', async () => {
     const { a, runtime, session } = await boot(['cluster/lab', 'aws-role/123456789012/*']);
-    const token = await apiToken(a, session);
+    const token = await apiToken(a, session, 'admin', true);
 
     const r = await agent(a, 'POST', '/ui/api/vault', token, { action: 'request-template', needs: 'read/cluster/lab read/aws-role/123456789012/readonly' });
     expect(r.status, r.text).toBe(200);
@@ -130,7 +130,7 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
 
   it('a write need waits for a person: the template is saved, nothing of it approved, and no box launches', async () => {
     const { a, session } = await boot(['cluster/*']);
-    const token = await apiToken(a, session);
+    const token = await apiToken(a, session, 'admin', true);
     const r = await agent(a, 'POST', '/ui/api/vault', token, { action: 'request-template', needs: 'read/cluster/lab write/cluster/lab' });
     expect(r.status, r.text).toBe(200);
     const [made] = await asked(a, token);

@@ -35,6 +35,7 @@ const ALL: Record<EventType, true> = {
   'vault.secret_set': true, 'vault.secret_removed': true, 'vault.secret_read': true, 'vault.secret_migrated': true, 'vault.master_key_rotated': true, 'template.saved': true, 'template.removed': true, 'vault.approved': true, 'vault.revoked': true, 'template.profile_approved': true, 'template.checked': true, 'template.check_requested': true, 'vault.delivered': true, 'vault.refused': true, 'vault.minted': true, 'vault.mint_refused': true, 'vault.mint_tested': true, 'vault.check_minted': true, 'vault.check_mint_refused': true,
   'vault.credential_asked': true, 'vault.credential_given': true, 'vault.credential_declined': true, 'vault.read_policy_set': true, 'vault.grant_asked': true, 'vault.granted': true, 'vault.grant_revoked': true,
   'source.request_approved': true, 'intake.actors_changed': true, 'job.origin_judged': true,
+  'source.request_opened': true, 'source.backburner_lifted': true,
   'yolo_mode.changed': true, 'job.pull_request_merged': true, 'job.pull_request_closed': true, 'job.finish_briefed': true, 'job.pull_request_tended': true, 'job.pull_request_followed': true,
   'skill.listed': true, 'skill.loaded': true, 'skill.refused': true,
   'artifact.created': true, 'artifact.shared': true, 'artifact.share_revoked': true, 'artifact.removed': true, 'artifact.settings_changed': true, 'artifact.posted': true,

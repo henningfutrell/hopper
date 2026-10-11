@@ -5014,7 +5014,10 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   type that the UI does not subscribe to fails the UI typecheck.
 - **Views** (hash-routed): Overview (KPIs with sparklines, lane timeline, attention, lanes /
   waiting / ended, ended-per-hour chart, usage gauges, live activity), Questions, Decisions,
-  Events, Sources, Machines, Plugins (#13's panel, ported: "Settled in slice 7"), Webhooks. Charts read `/api/events?types=…&limit=5000`
+  Events, Sources, Machines, Plugins (#13's panel, ported: "Settled in slice 7"), Webhooks. The job view (`#job/<id>`, issue #433, no nav entry) is where every
+  timeline entry about a job links: lane timeline bars and question waits, and event lines with a job; it reads the job
+  store, else `GET /api/jobs/:id`, and shows the job's events from the log the UI holds. Tested through the rendered app:
+  `test/ui/job-links.test.ts`. Charts read `/api/events?types=…&limit=5000`
   (`HISTORY_TYPES`): lane spans are derived client-side, no new API; ended-per-hour counts the job store's ended jobs.
 - **Mutations unchanged**: cancel (now behind a confirm dialog), approve, answer, router mode (removed by issue #211),
   question close, plugins (options, select, rescan), logout — same `/ui/api/*` routes and session header.
@@ -6337,8 +6340,7 @@ machine"), so no new box tunnel; what was missing is reach to the hopper's API f
   limited it. It now has its own count of `SIGN_IN_RATE` (20 a minute) per caller, in its own Fastify context; 429 past
   it. A stranger through the tunnel uses up only their own count, never an agent's.
 - **Residual risk, stated.** The edge names the caller by the address ngrok sees; callers behind one address (a NAT, a
-  shared egress) share a count. Whether the API token alone may drive actions that run on a box, or a second factor is
-  needed, is still open on the issue.
+  shared egress) share a count. The auth boundary is decided: a box action needs a box token ("Box tokens" below).
 
 ## Self-update (issue #44, 2026-10-04)
 
@@ -9221,6 +9223,51 @@ the job repositories and suggest the others, M5 nothing to do (tenant migration 
 - **GitHub writes.** Assign to me is the second kind of issue write besides labels and Run again's reopen; it
   is the user's act from Sources, never the hopper's own.
 
+## Issues not taken, surfaced (issue #798, 2026-10-11)
+
+Owner report: a source said "26 open labelled issues: 8 taken, 18 not taken", and on a phone the 18 looked gone. Nothing
+was dropped, but the intake list sat in an inner scroll box (`max-h-[32rem] overflow-y-auto`) inside the scrolling page,
+with no groups or counts; request cards lived only inside the source's card in Sources, with no badge and no event; the
+backburner issues had no action; and "taken" showed for an issue whose job had already ended, until the next sync.
+
+**As built:**
+- **Not-taken groups.** Each outcome not taken carries `group` (`NotTakenGroup`, `src/domain/intake.ts`): `request`,
+  `not-assigned`, `backburner`, `pr-waiting` (`hopper:pr-ready`), `partly-done`, `other`. `discoverIssues` sets it from
+  the reason; `source.ts` sets `request` where it makes the request card. The UI groups by it (`ui/src/model/intake.ts`,
+  `IntakeGroups`), in that order, a count per group, and never in an inner scroll region: the page scrolls.
+- **Not taken, a view.** `#not-taken`, after Queue: per source, the issues not taken, grouped, with every action Sources
+  has. Its nav badge counts the request cards (`requestsWaiting`). Sources keeps the full intake, grouped the same way,
+  taken last. A request card has no job, so the Queue (which lists jobs) does not show it.
+- **Take off the backburner.** `unbackburner` on `POST /ui/api/sources/:name/intake` (operator; only on an outcome the last
+  sync offered it for): the `hopper:backburner` label goes, `source.backburner_lifted { source, key }`, and the source
+  syncs at once. A label write, like Release claim.
+- **`source.request_opened`.** A new request card records `{ source, key, hash, author, why }`, once per item and text
+  hash: `IntakeContext.requestOpened` reads the events, and the source keeps the ids it saw, so a restart or a second
+  sync records nothing new, and an edit to the title or body records it again. Never the text. The Grok Bot routine
+  notifier posts it (`sourceName`, `issueUrl`, `author`, `why`); webhook subscribers get it like any event.
+- **Live job status.** `SourceStatus.detail.intake` is the list as of the last sync, but each taken outcome's `jobId` and
+  `jobStatus` are read when the status is (`liveIntake`, `src/sources/intake-live.ts`, for `/api/sources` and each SSE emit). The UI
+  prefers the job as its store knows it. An ended job's issue shows "its job ended: <status>" in place of "taken" until
+  the next sync says what became of it.
+
+## The backburner, always visible (issue #808, 2026-10-11)
+
+Owner report: 15 of 21 open labelled issues were on the backburner, and from the board they looked gone: a kept-out issue
+and a dropped one looked the same. Built on Not taken (issue #798), which lists them and has Take off the backburner.
+
+**As built:**
+- **Since when, and by whom.** An intake outcome on the backburner carries `backburner { since, by }`: the newest
+  `labeled` event of `hopper:backburner` (`src/sources/github/backburner.ts`). Each source reads an issue's events once
+  while the label stays, and forgets the issue when it leaves the backburner, so a sync reads only the issues new to it.
+  Events it cannot read leave the outcome without `backburner` (logged), and are read on the next sync. The label is a
+  person's (`labels.ts`); the hopper keeps no reason of its own, so "why" is the label, who set it and when.
+- **Counted where people look.** The Not taken nav entry has a second badge, dashed and muted, for the issues on the
+  backburner, apart from the request badge (`onTheBackburner`, `ui/src/model/intake.ts`). The Queue, which lists jobs,
+  links to Not taken with the same count.
+- **Distinct rows.** Every intake row shows its issue number. A backburner row has a dashed left edge and says
+  "on the backburner <age>, by <login>"; its group heading has the backburner icon. Never the word *parked*: that is a
+  job a person took out of its lane.
+
 ## Per-machine work trees (issue #361, 2026-10-08)
 
 Owner request: jobs failed when routed to a machine that did not have the configured work tree — four
@@ -10830,6 +10877,8 @@ whose. A GitHub token on the exchange is any token of the account (as on the API
 which app it is for. The build before this one reads `Authorization` only as the API door, so on a downgrade it would ask
 GitHub about an API token sent to it (a token it then refuses); the token is useless there and ends within the hour.
 
+**Box actions** (issue #795): a box action needs a box token too ("Box tokens" below).
+
 **Not built.** Narrower scopes than a role (a token for the vault alone) are the model's to express today, by
 editing `api_token`'s relations; a per-token scope list waits for a caller that needs one. (The rest of issue #718 is built under issue #716: "Templates
 on request", "Tools assembled per run", "The read-only check"; its real-environment part is carried on #715.)
@@ -10839,6 +10888,56 @@ launches a box with the token alone; every route takes a token; the role cap, th
 token never reaches GitHub; Access denying `can_administer`; no OpenFGA, no mint; the gateway exchange; the CLI),
 `test/http/ui-sessions.test.ts` (the token's own end, its list and revoke, a reconcile never raises its role, renewal
 without a gateway check), `test/authz/model.test.ts` (the gaps), `test/ui/api-tokens.test.ts`.
+
+## Box tokens: the auth boundary for box actions (issue #795, 2026-10-11)
+
+Owner decision on the issue: the API token alone may read, hold and cancel; an action that runs on a box needs a **box
+token** — a separate capability, off by default, minted only by a person from a UI session, never by the sign-in exchange.
+So the token Grok Bot exchanges its own sign-in for, the one it keeps through the tunnel, cannot start work on a box.
+When it must, a person gives it a short-lived box token.
+
+- **What a box action is.** A route that starts a job, runs a command, approves or merges work, updates the hopper or a
+  client, or changes the work on a machine. The list is `BOX_ACTIONS` (`src/http/ui/box-actions.ts`), each with its kind;
+  a route not on it is no box action. Reads (every `GET /api/*`), holds (park, keep a job from its lane, mark a question
+  seen, close or dismiss it), cancels, rejects and settings are not box actions.
+
+  | Kind | Routes (`POST`) |
+  |------|-----------------|
+  | start a job | `/ui/api/jobs/:id/approve`, `rerun`, `rework`, `requeue`, `gate-pass`, `research`, `propose`; `/ui/api/sources/:name/intake`; `/ui/api/repo-checks/queue`; `/ui/api/failures/:id/retry`; `/ui/api/failures/problems/:id/release`; `/ui/api/questions/:id/research`, `propose`; each review decision but Reject all (`/ui/api/research/:id/accept`, `dig-deeper`, `steer`; `/ui/api/proposals/:id/accept`, `more-paths`, `steer`) |
+  | run a command | `/ui/api/blast-radius/discover`; `/ui/api/plugins` (an instance's options may hold a command) |
+  | approve or merge work | `/ui/api/pull-requests/merge` (Close PR is not: it runs nothing) |
+  | update the hopper or a client | `/ui/api/update` (a client updates with the hopper); `/ui/api/plugin-store` |
+  | change work on a machine | `/ui/api/questions/:id/answer`, `correct` (typed into the job's pane); `/ui/api/jobs/:id/end-wait`, `keep-original`, `accept-new-text`; `/ui/api/logins/:id/new-code`; `/ui/api/machines`, `machines/join`, `machines/sandbox`; `/ui/api/lanes/apply`, `lanes/undo` |
+
+  A new route that does any of these goes on the list in the same change. `test/integration/box-tokens.test.ts` walks
+  every `POST /ui/api/*` path with a token that is no box token: each listed one is refused for want of a box token, and
+  no other is.
+- **What a box token is.** An API token whose session row has `box` (`ui_sessions.box`, instance migration 36; every
+  token from before is no box token). Minted with `{ action: 'mint', label, role?, minutes?, box: true }` at
+  `POST /ui/api/api-tokens`, from a UI session only (an API token never mints one), or with the Box token box in
+  Settings → API tokens. The exchange (`POST /ui/auth/api-token`) refuses `box` (400): a sign-in the hopper only checks is
+  not a person at the UI. Listed with `box` (`GET /api/api-tokens`); the card says "box token". Its role, end and revoke
+  are those of any API token.
+- **How it is decided.** At a box action with an API token, after the role (`apiTokenAnswer`,
+  `src/http/ui/api-tokens.ts`): a token that is no box token is refused (403, `this is a box action: it needs a box
+  token…`) without asking OpenFGA; a box token is asked `api_token#can_run_on_box` (`decideBoxAction`), with its owner
+  told as `owner` and as `box_runner` — the hopper tells `box_runner` for a box token only. The default model:
+  `define box_runner: [user]`, `define can_run_on_box: box_runner and owner`. A user narrows it further in Settings →
+  Access. A mint with `box` asks it too, and drops the token when refused. The relations are checked apart
+  (`apiTokenBoxGaps`): a model edited before them refuses every box action, naming the gap, and decides everything else; a
+  model the hopper wrote is replaced by this build's default. A UI session is never asked: the person is there.
+- **Why not per-action confirmation.** A held action waiting on a person in the UI (path 3 on the issue) was not chosen:
+  the box token keeps an agent able to act unattended for as long as a person allows, an hour at most.
+
+**Residual risk, stated.** A box token in an agent's hands does every box action its role allows until it ends or is
+revoked: an hour at most. The boundary is the route list: a route that runs work on a box but is missing from it is open to
+any API token of the role. A downgrade to the build before reads no `box` column, so there every API token may again do
+what its role allows.
+
+Tests: `test/integration/box-tokens.test.ts` (no box token: reads, holds and cancels pass, every box action is refused; a
+box token launches a sandbox box; the exchange never mints one; every listed route exists and only those ask; a model
+without the relations refuses box actions only), `test/http/ui-sessions.test.ts` (the flag is kept and listed),
+`test/authz/model.test.ts` (the gaps), `test/ui/api-tokens.test.ts` (the card's line).
 
 ## Access: OpenFGA decides each mint (issue #559, 2026-10-09)
 

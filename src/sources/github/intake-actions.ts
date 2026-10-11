@@ -1,9 +1,10 @@
-// The intake actions a person takes from Sources (issues #440, #652): Assign to me, Release claim, and Approve on a request
-// card — each only on an item the source's last discover offered it for. Apart from source.ts for its size.
+// The intake actions a person takes from Sources (issues #440, #652, #798): Assign to me, Release claim, Approve on a request
+// card, and Take off the backburner — each only on an item the source's last discover offered it for. Apart from source.ts
+// for its size.
 import type { IntakeAction, IntakeActionResult, IntakeContext, IntakeOutcome } from '../../domain/intake.ts';
 import type { IntakeRequest } from '../../domain/intake-origin.ts';
 import type { GitHubApi } from './api.ts';
-import { HOLDER_PREFIX, LABEL_CLAIMED } from './labels.ts';
+import { HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED } from './labels.ts';
 
 export const NOT_IN_SCOPE = 'not in this source\'s scope';
 export const TEXT_CHANGED_SINCE_SHOWN = 'its title or body changed since it was shown: read it again';
@@ -37,6 +38,9 @@ export async function intakeAct(c: IntakeActionContext, a: IntakeAction): Promis
       } else if (a.kind === 'assign') {
         if (!c.assignee) throw new Error('no GitHub account connected');
         await c.api.addAssignees(x.repo, numberOf(key), [c.assignee]);
+      } else if (a.kind === 'unbackburner') {
+        await c.api.removeLabels(x.repo, numberOf(key), [LABEL_BACKBURNER]);
+        c.intake?.record('source.backburner_lifted', { source: c.source, key });
       } else {
         const holders = (c.listedLabels.get(key) ?? []).filter((l) => l.startsWith(HOLDER_PREFIX));
         await c.api.removeLabels(x.repo, numberOf(key), [LABEL_CLAIMED, ...holders]);

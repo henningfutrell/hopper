@@ -1,6 +1,8 @@
-// One event as one line: time, type (coloured by what ended or started), and its subject.
+// One event as one line: time, type (coloured by what ended or started), and its subject. An event about a job links to
+// its job view (issue #433); one with no job has no link.
 import { clock } from '@/model/format';
 import { subjectOf } from '@/model/board';
+import { jobHref } from '@/model/job';
 import { artifactCreatedDetail, revisedDetail } from '@/model/artifacts';
 import { pickedEventDetail } from '@/model/minor-decisions';
 import type { DomainEvent, MachineView } from '@/model/wire';
@@ -62,11 +64,12 @@ export function EventLine({ e, nameOf, machines, className }: { e: DomainEvent; 
   const detail = detailOf(e);
   const subject = subjectOf(e, nameOf, machines);
   return (
-    <div className={cn('grid grid-cols-[4.5rem_8.5rem_minmax(0,1fr)] items-baseline gap-2 text-xs', className)}>
+    <div data-event-seq={e.seq} className={cn('grid grid-cols-[4.5rem_8.5rem_minmax(0,1fr)] items-baseline gap-2 text-xs', className)}>
       <span className="num font-mono text-muted-foreground/80" title={e.at}>{clock(e.at)}</span>
       <span className={cn('truncate font-mono font-medium', TEXT[eventTone(e.type)])}>{e.type}</span>
       <span className="min-w-0 truncate" title={detail ? `${subject} — ${detail}` : subject}>
-        {subject}{detail && <span className="text-muted-foreground"> — {detail}</span>}
+        {e.jobId ? <a href={jobHref(e.jobId)} className="underline-offset-4 hover:underline">{subject}</a> : subject}
+        {detail && <span className="text-muted-foreground"> — {detail}</span>}
       </span>
     </div>
   );

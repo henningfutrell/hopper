@@ -18,7 +18,7 @@ import type { Clock, UiSessionRepository, UiSessionRow } from '../../domain/port
 import { API_TOKEN_PREFIX, lowerRole, type ActingPerson, type ApiTokenView, type Identity, type SessionEndReason, type SessionKind, type SessionLengths, type SessionUser, type UiRole } from '../../domain/types.ts';
 import { randomSecret } from './secret.ts';
 
-export interface UiSession { token: string; expiresAt: string; role: UiRole; identity: Identity; userId: string; kind: SessionKind; label?: string }
+export interface UiSession { token: string; expiresAt: string; role: UiRole; identity: Identity; userId: string; kind: SessionKind; label?: string; box?: true }
 
 /** A session that ended, and why. */
 export interface EndedSession { userId: string; identity: Identity; reason: SessionEndReason }
@@ -26,9 +26,9 @@ export interface EndedSession { userId: string; identity: Identity; reason: Sess
 export interface UiSessions {
   /**
    * A new session; `lastsMs` gives it a fixed end of its own, whatever the session lengths (the operator CLI's, an API
-   * token's). `api`: an API token (issue #718), with its label; its token starts with API_TOKEN_PREFIX.
+   * token's). `api`: an API token (issue #718), with its label; its token starts with API_TOKEN_PREFIX. `box`: a box token (issue #795).
    */
-  create(o: { role: UiRole; identity: Identity; userId: string; lastsMs?: number; api?: { label: string } }): UiSession;
+  create(o: { role: UiRole; identity: Identity; userId: string; lastsMs?: number; api?: { label: string; box?: boolean } }): UiSession;
   /** The user's live API tokens, oldest first; never a token. */
   apiTokens(userId: string): ApiTokenView[];
   /** End the user's API token with this id; false: the user has none such. */
@@ -136,7 +136,7 @@ export function createUiSessions(o: {
   };
   const view = (token: string, r: UiSessionRow): UiSession => ({
     token, expiresAt: new Date(endOf(r, lengths()).at).toISOString(), role: r.role, identity: r.identity, userId: r.userId,
-    kind: r.kind ?? 'ui', ...(r.label === undefined ? {} : { label: r.label }),
+    kind: r.kind ?? 'ui', ...(r.label === undefined ? {} : { label: r.label }), ...(r.box ? { box: true as const } : {}),
   });
   const liveApiTokens = (userId: string): UiSessionRow[] =>
     o.repo.all().filter((r) => r.kind === 'api' && r.userId === userId).map(live).filter((r): r is UiSessionRow => r !== undefined);
@@ -148,14 +148,14 @@ export function createUiSessions(o: {
       const row: UiSessionRow = {
         tokenHash: hashOf(token), startedAt: at, lastSeenAt: at, checkedAt: at, role, identity, userId,
         ...(lastsMs === undefined ? {} : { endsAt: new Date(now() + lastsMs).toISOString() }),
-        ...(api ? { kind: 'api' as const, label: api.label } : {}),
+        ...(api ? { kind: 'api' as const, label: api.label, ...(api.box ? { box: true as const } : {}) } : {}),
       };
       o.repo.create(row, new Date(absoluteEnd(row, lengths())).toISOString());
       return view(token, row);
     },
     apiTokens(userId) {
       return liveApiTokens(userId).map((r) => ({
-        id: apiTokenId(r.tokenHash), label: r.label ?? '', role: r.role, startedAt: r.startedAt, expiresAt: new Date(endOf(r, lengths()).at).toISOString(), lastUsedAt: r.lastSeenAt,
+        id: apiTokenId(r.tokenHash), label: r.label ?? '', role: r.role, box: r.box === true, startedAt: r.startedAt, expiresAt: new Date(endOf(r, lengths()).at).toISOString(), lastUsedAt: r.lastSeenAt,
       }));
     },
     revokeApiToken(userId, id) {

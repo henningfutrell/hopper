@@ -18,7 +18,7 @@ import { TERMINAL_STATUSES, isRerunnable, type DomainEvent, type JevFirst, type 
 import { offer } from './item-text.ts';
 import { intakeOrder } from './intake-order.ts';
 import { REMOVED, followSources, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
-import type { IntakeOutcome } from '../domain/intake.ts';
+import { liveIntake } from './intake-live.ts';
 import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
 import { createAfterDone } from './after-done.ts';
@@ -285,11 +285,12 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
     if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
-    // Every item the source listed, taken (with its job) or not (with its reason) — issue #440. None while paused.
+    // Every item the source listed, taken (with its job, read when the status is: `live`) or not (with its reason) — issue
+    // #440. None while paused.
     const intake = paused === undefined ? slot.source.intake?.() : undefined;
     st.detail = {
       ...slot.source.describe(),
-      ...(intake ? { intake: intake.map((x): IntakeOutcome => (x.reason === undefined ? withJob(x) : x)) } : {}),
+      ...(intake ? { intake } : {}),
       ...(paused !== undefined ? { paused } : {}),
       permanentErrors: jobs.filter((j) => flagsOf(j).permanentErrors?.length).length,
       reportRetries: slot.retrying.size,
@@ -321,9 +322,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return slot.chain;
   }
 
-  const withJob = (x: IntakeOutcome): IntakeOutcome => { const job = store.jobs.getBySourceKey(x.key); return job ? { ...x, jobId: job.id } : x; };
+  /** A status with each taken item's job as it is now (issue #798). */
+  const live = (st: SourceStatus): SourceStatus => liveIntake(st, (key) => store.jobs.getBySourceKey(key));
 
-  const emit = (slot: Slot) => { for (const l of listeners) l({ ...slot.status }); };
+  const emit = (slot: Slot) => { for (const l of listeners) l(live(slot.status)); };
 
   const writeBacks = createWriteBacks({
     store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: (jobId) => (running ? slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.source : undefined),
@@ -343,7 +345,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   });
 
   return {
-    statuses: () => [...slots.values()].map((s) => ({ ...s.status })),
+    statuses: () => [...slots.values()].map((s) => live(s.status)),
     onStatus(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     // Run again, Continue and Rework.
     ...rerunning,
