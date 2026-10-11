@@ -15,7 +15,12 @@ export type AttachedMachine = SshMachine | ContainerMachine | ClientMachine;
 export interface HerdrSide { version?: string; protocol?: number }
 
 /** An ssh target's herdr client (and the binary the hopper calls) and the herdr server of its session (issue #741). */
-export interface HerdrVersions { client?: HerdrSide & { binary?: string }; server?: HerdrSide }
+export interface HerdrVersions {
+  client?: HerdrSide & { binary?: string };
+  server?: HerdrSide;
+  /** The herdr the hopper owns there (issue #741): its version, whether every call runs it, and why not or what waits. */
+  owned?: { version?: string; inUse: boolean; note?: string };
+}
 
 /** A machine's herdr, as its snapshot (`MachineSnapshot`) carries it. */
 export interface MachineHerdr {

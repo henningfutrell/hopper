@@ -22,7 +22,7 @@ import { StatusBadge, TEXT } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
-import { clientReleaseText, clientUpdateLine, diskText, herdrText, kindOf, mayAddThisMachine, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
+import { clientReleaseText, clientUpdateLine, diskText, herdrText, kindOf, ownedHerdrText, mayAddThisMachine, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
 import { resourcesText } from '@/model/machine-history';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { CleanupProblem, MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit, ResourceSeries, SandboxesView } from '@/model/wire';
@@ -113,6 +113,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {m.docker && <Fact label="container (docker exec)">{m.docker}</Fact>}
         {m.herdr && <Fact label="herdr session">{m.herdr.session}</Fact>}
         {herdrText(m) && <Fact label="herdr"><span className={m.herdrProblem ? `font-semibold ${TEXT.warn}` : undefined}>{herdrText(m)}</span></Fact>}
+        {ownedHerdrText(m) && <Fact label="hopper's herdr">{ownedHerdrText(m)}</Fact>}
         {m.client && <Fact label="connection">client, dialled in</Fact>}
         {templateText(m) && <Fact label="template">{templateText(m)}</Fact>}
         {clientReleaseText(m.client) && <Fact label="client release">{clientReleaseText(m.client)}</Fact>}

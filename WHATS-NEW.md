@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- On a machine you reach over ssh, the hopper now puts its own copy of herdr there and uses it, so the herdr it calls always matches the herdr its jobs run in. When the herdr that runs the jobs there is another version, the hopper restarts it with its own copy once no job and no pane is open. If that herdr is the main process of a container, the hopper does not restart it: Machines tells you to update the container image.
 - The hopper's admin can now change the master key with one click on the Vault page, or one command. Every secret is locked again under the new key at once, with no restart, and the new key is shown one time to save. Use it if the key may have been seen.
 - The container setup no longer keeps any secret on disk: the files it makes at each start live in memory only, and the master key is only in your settings file. Before you update, put the master key in your settings file; the update stops until you do.
 - The Queue page now shows each job as a short card, so you can scan and compare jobs at a glance: the issue, its state, its lane and whether its repository merges by itself. Click a card to see its details, or open and close every card at once.

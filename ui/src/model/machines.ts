@@ -102,6 +102,14 @@ export function herdrText(m: MachineSnapshot): string | null {
   return sides.length ? sides.join(', ') : null;
 }
 
+/** The herdr the hopper owns on an ssh target (issue #741): its version, and whether every herdr call there runs it, or why not; null when not read. */
+export function ownedHerdrText(m: MachineSnapshot): string | null {
+  const o = m.herdr?.owned;
+  if (!o) return null;
+  const use = o.inUse ? 'in use' : `not in use${o.note ? `: ${o.note}` : ''}`;
+  return o.version ? `${o.version}, ${use}` : use;
+}
+
 /** An Edit form as typed: its name, lanes, executors, label, the details of its connection, and (ssh) whether it runs herdr. */
 export type MachineEditDraft = Pick<MachineDraft, 'name' | 'lanes' | 'executors' | 'label'> & { details: Record<string, string>; herdr: boolean };
 

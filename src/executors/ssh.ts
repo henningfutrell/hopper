@@ -63,6 +63,13 @@ export const shellQuote = (arg: string): string => `'${arg.replaceAll("'", "'\\'
  */
 export const REMOTE_PATH = 'PATH="$HOME/.local/bin:$PATH"';
 
+/**
+ * How a herdr call on an ssh target starts (issue #741): the hopper's own herdr, `~/.local/share/hopper/herdr/current/herdr`,
+ * when the hopper linked it there (src/machines/herdr-owned.ts: only while the session server takes it), else herdr by
+ * name as `REMOTE_PATH` finds it. The arguments follow, quoted.
+ */
+export const REMOTE_HERDR = 'h="$HOME/.local/share/hopper/herdr/current/herdr"; [ -x "$h" ] || { PATH="$HOME/.local/bin:$PATH"; h=herdr; }; exec "$h"';
+
 /** The user's ssh config, or none: never /etc/ssh (under the unit those files look foreign-owned). */
 export function userSshConfig(home = homedir()): string {
   const config = join(home, '.ssh', 'config');
