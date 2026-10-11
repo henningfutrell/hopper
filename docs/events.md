@@ -2655,6 +2655,43 @@ Version 1 (`docs/schemas/template.profile_approved.v1.json`). An operation profi
 }
 ```
 
+## `template.checked`
+
+Version 1 (`docs/schemas/template.checked.v1.json`). The read-only check of a template ended (issue #716): `passed`, or `failed` with the probes that failed and any problem. A template a job asked for with read needs only takes no box and no job until the check of its current version passed.
+
+| field | type | required |
+|---|---|---|
+| `template` | string | yes |
+| `state` | `passed` \| `failed` | yes |
+| `failed` | string[] | yes |
+| `problem` | string | no |
+
+```json
+{
+  "template": "asked-3f9a1c2b7d10",
+  "state": "failed",
+  "failed": [
+    "aws.iam-create-user on 123456789012 (allowed)"
+  ]
+}
+```
+
+## `template.check_requested`
+
+Version 1 (`docs/schemas/template.check_requested.v1.json`). A person asked for the read-only check of a template to run again (issue #716): its last check is dropped, and the next check pass runs one.
+
+| field | type | required |
+|---|---|---|
+| `template` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "template": "asked-3f9a1c2b7d10",
+  "by": "Ada"
+}
+```
+
 ## `vault.delivered`
 
 Version 1 (`docs/schemas/vault.delivered.v1.json`). A vault secret was delivered to a box, for a job at work on it (issue #558): sealed to the box client's own request, never in an environment or a file. The secret's name, the template, the machine and the job; never the value. `backend`: the vault backend it was read from at that moment (issue #585), when it is kept in one.

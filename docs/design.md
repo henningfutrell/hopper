@@ -8509,15 +8509,16 @@ not get write access over the API; they still ask the hopper. So a job asks thro
   never approves a template again: one a person revoked waits for a person.
 - **A job never widens a template.** A template of that name whose profiles differ from the needs — a person changed it —
   is a 409: the job is told to ask a person. A job never approves, revokes or removes one.
-- **The answer.** 200 when the template is approved, its image the approved one, and every profile approved in Access:
+- **The answer.** 200 when the template is approved, its image the approved one, every profile approved in Access, and
+  (a template of read needs only) its read-only check passed ("The read-only check"):
   its name, who approved it, how a person starts a box of it (Machines → Add machine, or `hopper sandbox launch
   --template <name>`), and the skill each need's asset loads on that box. Else 202 `waiting: template <name> waits for a
   person in Settings → Vault: …`, with what waits and why the policy did not approve it; `--wait` opens a watch, and the
-  job stream ends it when a person approves (`vault.approved`, `template.profile_approved` ask it again).
+  job stream ends it when a person approves (`vault.approved`, `template.profile_approved` ask it again). While the
+  check waits: 202 `waiting: template <name> is approved; waiting for the read-only check …`; `template.checked` asks again.
 
-**Not built (carried on issue #716).** A job does not launch the box: a person or the CLI starts it. The read-only
-negative suite (#715) before a new template's first use (item 4). (Tools assembled per run, item 2, are built: "Tools
-assembled per run".) A need's credential is asked of a person when a job on the box first loads the skill;
+**Not built (carried on issue #716).** A job does not launch the box: a person or the CLI starts it. (Tools assembled per
+run, item 2, and the read-only check, item 4, are built: "Tools assembled per run", "The read-only check".) A need's credential is asked of a person when a job on the box first loads the skill;
 the template does not name a vault secret the user already has. Templates made on request are not removed when no job
 uses them.
 
@@ -8584,6 +8585,84 @@ of no template; a build that fails leaves nothing), `test/adapters/podman-runtim
 `test/ui/vault.test.ts`. Checked by hand against rootless Podman 6.1: the image of the box image with all four built in
 about 20 s, a second build was skipped, the four tools ran as `agent` on a read-only root with every capability dropped,
 and a wrong sum failed the build with no image left.
+
+## The read-only check (issue #716, item 4, 2026-10-10)
+
+Owner's model (issue #716): a template made on request runs a negative suite before its first use: each write is
+refused. Owner's decision on the job's question: build the hook now, in a box of the template, with write probes per asset
+kind after #715, the result recorded and launch blocked while it is red; keep the probes pluggable so #715 adds or
+replaces them; test with doubles, and state the gap to a real environment.
+
+- **Which templates.** One a job asked for with read needs only (`Template.readOnly`, set by `requestTemplate`, kept
+  through every save). A template with a write, sync or apply need takes none: a person approves those profiles one by
+  one, and a check that writes are refused would fail by design. A template a person saved takes none.
+- **The gate.** Until the check of its current version (`check.version` = its `savedAt`) passed (`checkWait`,
+  `src/domain/read-only-check.ts`): a launch of it is a 409 that says why; a box of it that is attached takes no new job
+  (`approvalWait`, as for an approval); a job's template request answers 202. A save makes the check stale, so a changed
+  image, tool or profile is checked again.
+- **When it runs.** The check pass (`createCheckPass`, `src/sandbox/check.ts`) runs with the reconcile pass, every 10 s
+  and at start, one check at a time. A template is due when it takes a check, its image (and tools) are approved, and its
+  version has no check, or one still `running` (a hopper stopped mid-check). A failed check is not run again by itself: a
+  person runs it again (`POST /ui/api/vault` `check-template`, Settings → Vault **Run the check again**, `hopper template
+  check <name>`), which drops the check (`template.check_requested`) so the next pass runs one.
+- **The check box.** A one-shot container of the template's image with its tools (`boxImage`, as a box gets them), under
+  the sandbox flags (`ContainerSpec.script`: `sh -c` in place of the entrypoint, on a terminal, never restarted), on the
+  hopper's network, as the image's own non-root user, with a home volume made for it. It carries the label
+  `io.hopper.check`, not `io.hopper.box`: the reconcile pass leaves it, and the check pass removes one no run holds. It
+  is removed, with its volume, when the check ends. The runtime port has `wait(id, timeoutMs)` and `logs(id)` for it
+  (libpod frames its logs even on a terminal: `logText` takes the frames off). A check may run 30 minutes.
+- **The probes** (`PROBES`, `src/sandbox/probes.ts`), for each read need, by its asset's kind. A write must fail and say
+  it was refused in the tool's own words (`DENIAL`: `AccessDenied`, `UnauthorizedOperation`, `is forbidden`, …); a read
+  must exit 0. Each write leaves nothing when refused, and is a dry run where the service has one; a write that went
+  through runs its `cleanup`, and the check fails.
+  - `aws-account`, `aws-role`: read `aws sts get-caller-identity`; writes `ec2 create-tags --dry-run`, `ssm
+    put-parameter`, `iam create-user`, `sts assume-role` to another role of the account.
+  - `cluster`, `namespace` (`<cluster>/<ns>`): read `kubectl get ns` (or pods in the namespace), `helm list`; writes
+    `kubectl create namespace --dry-run=server`, `kubectl delete pod --dry-run=server`, `helm install --dry-run=server` of
+    a chart `helm create` makes. A server dry run still asks the API's authorization.
+  - `argocd-app`: read the Application; write a label patch with `--dry-run=server`.
+  - `terraform-workspace`: read `terraform plan` of a one-resource stack (an SSM parameter); write `terraform apply` of it,
+    once with `terraform` on `PATH` (a read-only wrapper there, when #715 adds one) and once with the real binary in
+    `$HOPPER_TOOLS` (`/opt/hopper-tools/bin`), past any wrapper.
+- **Pluggable.** A probe is data (`Probe`: id, kinds, tool, expect, a shell snippet with `$ASSET`, its own `denial`
+  words, a `cleanup`). A catalog (`ProbeCatalog`, `probeCatalog(probes)`) picks the probes for a template's needs;
+  `createSandboxes` takes `probes`, the hopper's catalog by default. #715 adds probes to `PROBES` or passes its own.
+- **The result** (`ReadOnlyCheck` on the template; a JSON body, no migration): `running`, then `passed` or `failed`, each
+  probe's outcome (`allowed`, `denied`, or `error`: it failed some other way, or did not run), its exit code and the last
+  500 characters of its output, and a `problem` when the box did not run. `template.checked` records each end, with the
+  probes that failed. Settings → Vault shows it on the template (**Read-only check**). A check that ran no probe fails.
+- **The script** (`checkScript`, `src/sandbox/check-script.ts`) writes each snippet to a file under `/tmp` (the box's only
+  writable place) and runs it alone under `timeout` (300 s), with its asset in `$ASSET`. It prints one line per probe,
+  `HOPPER-PROBE <n> <exit> <output in base64>`; `readResults` reads them, and a probe with no line did not run.
+
+**The gap to a real environment, stated.** The check box gets no vault secret and no minted credential: today a box gets
+a credential only when a job on it loads a skill, and the check runs no job. So against a real account or cluster the
+hopper's probes find no credential, every one is an `error`, and the check fails closed: a template of read needs on an
+AWS account, a cluster or a Terraform workspace takes no box until the check box is given the read credential its needs
+mint. That delivery (a read session or a `view` token minted for the check box, under Access), the terraform wrapper, a
+read-only state backend, `terraform destroy` and `state rm` against the workspace's real state, and the check on a
+schedule are #715's. A test stack of its own and a scratch bucket are not assumed: the probes use fixed names under
+`hopper-read-only-check`.
+
+**Not built.** The check on an attached machine's runtime (it runs on the hopper's own); the check on a schedule; the check
+of a template with secrets a person gave (#583): a secret given later does not make the check stale.
+
+**Residual risk, stated.** A probe that writes runs the write for real when the credential allows it (the dry runs do
+not): with a writable credential, `ssm put-parameter` and `iam create-user` make their resource and the cleanup deletes
+it. That is what the check exists to find, and it fails then. Every probe runs under the sandbox flags, as the box's user.
+
+Tests: `test/integration/read-only-check.test.ts` (the real daemon, the real `hopper-skill`, the runtime as a double whose
+one-shot containers run the real check script under `sh` with fake `aws`, `kubectl`, `helm` and `terraform`, OpenFGA as a
+double: a read-only credential passes and the job's wait ends with the template ready, a box of it then starts; a writable
+one fails, launch 409, until a person runs it again and it passes; a save makes it stale; a template with a write need, and
+one a person saved, take none; a check box no run holds is removed and its check runs again),
+`test/sandbox/check-script.test.ts` (the script under `sh`: every probe of every kind, the cleanup of a write that went
+through, terraform on `PATH` and past it, a probe with no line, a catalog of its own), `test/adapters/podman-runtime.test.ts`
+and `docker-runtime.test.ts` (the one-shot create body, `wait`, `logs` with and without frames),
+`test/integration/template-requests.test.ts`, `test/integration/operator-cli-vault.test.ts` (`template check`),
+`test/ui/vault.test.ts`. Against real rootless Podman, `test/adapters/podman-check.test.ts` (runs where
+`HOPPER_TEST_PODMAN_SOCKET` is set): a check box of the box image with `kubectl` added ran its probes as `agent` and was
+removed with its volume; with no credential in it, the hopper's own cluster probes were all `error`, and the check failed.
 
 ## Reserved lanes (issue #372, 2026-10-07)
 

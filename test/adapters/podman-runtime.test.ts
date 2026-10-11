@@ -11,6 +11,8 @@
 //   Scenario: inspect, list, start, stop and remove use the container id; gone is no error
 //   Scenario: volumes are made and removed by name; one that exists or is gone is no error
 //   Scenario: a rootful Podman is a problem; a reachable rootless one is none
+//   Scenario: a one-shot container runs its script on a terminal, never restarted; wait answers its exit code, logs its
+//     output with the frames taken off (issue #716)
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPodmanRuntime } from '../../src/sandbox/podman.ts';
 import { on, startFakeRuntimeApi, type FakeRuntimeApi } from '../support/fake-runtime-api.ts';
@@ -153,6 +155,24 @@ describe('the Podman container runtime', () => {
       on('POST', `${API}/build`, { status: 200, text: '{"stream":"STEP 2/4"}\n{"error":"sha256sum: WARNING: 1 computed checksum did NOT match"}\n' }),
     ]);
     await expect(createPodmanRuntime(api.socket).build('localhost/x:1', 'FROM x\n')).rejects.toThrow('podman could not build localhost/x:1: sha256sum: WARNING: 1 computed checksum did NOT match');
+  });
+
+  it('a one-shot container runs its script on a terminal, never restarted; wait answers its exit code, logs its output (issue #716)', async () => {
+    // libpod frames its logs even on a terminal: a stream byte, three zeros, a four-byte length, the bytes.
+    const frame = (s: string): string => `\u0001\u0000\u0000\u0000${String.fromCharCode(0, 0, 0, s.length)}${s}`;
+    api = await startFakeRuntimeApi([
+      on('POST', `${API}/containers/create`, { status: 201, body: { Id: 'c1' } }),
+      on('POST', `${API}/containers/c1/wait`, { status: 200, text: '3\n' }),
+      on('GET', `${API}/containers/c1/logs`, { status: 200, text: frame('HOPPER-PROBE 0 1 ') + frame('aGkK\r\n') }),
+    ]);
+    const rt = createPodmanRuntime(api.socket);
+    await rt.create({ ...spec, script: 'echo hi' });
+    expect(api.seen[0]!.body).toMatchObject({ entrypoint: ['/bin/sh'], command: ['-c', 'echo hi'], terminal: true, restart_policy: 'no', cap_drop: ['ALL'], read_only_filesystem: true });
+    expect(await rt.wait('c1', 5000)).toBe(3);
+    expect(api.seen[1]!.query.getAll('condition')).toEqual(['exited', 'stopped']);
+    expect(await rt.logs('c1')).toBe('HOPPER-PROBE 0 1 aGkK\r\n');
+    expect(api.seen[2]!.query.get('stdout')).toBe('true');
+    expect(api.seen[2]!.query.get('stderr')).toBe('true');
   });
 
   it('a rootful Podman is a problem; a reachable rootless one is none', async () => {

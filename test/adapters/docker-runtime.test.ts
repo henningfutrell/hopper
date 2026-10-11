@@ -36,6 +36,19 @@ describe('the Docker container runtime', () => {
     });
   });
 
+  it('a one-shot container runs its script on a TTY, never restarted; wait answers its exit code, logs its raw output (issue #716)', async () => {
+    api = await startFakeRuntimeApi([
+      on('POST', `${API}/containers/create`, { status: 201, body: { Id: 'd1' } }),
+      on('POST', `${API}/containers/d1/wait`, { status: 200, body: { StatusCode: 0 } }),
+      on('GET', `${API}/containers/d1/logs`, { status: 200, text: 'HOPPER-PROBE 0 0 aGkK\r\n' }),
+    ]);
+    const rt = createDockerRuntime(api.socket);
+    await rt.create({ ...spec, script: 'echo hi' });
+    expect(api.seen[0]!.body).toMatchObject({ Entrypoint: ['/bin/sh'], Cmd: ['-c', 'echo hi'], Tty: true, HostConfig: { RestartPolicy: { Name: 'no' }, CapDrop: ['ALL'], ReadonlyRootfs: true } });
+    expect(await rt.wait('d1', 5000)).toBe(0);
+    expect(await rt.logs('d1')).toBe('HOPPER-PROBE 0 0 aGkK\r\n');
+  });
+
   it('pull pulls only a missing image, and answers the user the image runs as', async () => {
     const image = encodeURIComponent(spec.image);
     let present = false;

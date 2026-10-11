@@ -169,6 +169,21 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(json<TemplateView[]>(await hopper(a, ['template', 'list']))).toEqual([]);
   });
 
+  it('runs a template\'s read-only check again; a template that takes none is refused (issue #716, item 4)', async () => {
+    const { a } = await boot();
+    await approvedKube(a);
+    expect(await hopper(a, ['template', 'check', 'kube'])).toMatchObject({ code: 2, err: expect.stringContaining('kube takes no read-only check') });
+    // As a job's request makes one: read needs only.
+    const vault = a.user().vault;
+    expect(await vault.saveTemplate({ name: 'asked', image: IMAGE, secrets: [], readOnly: true }, 'job 1')).toEqual({ ok: true });
+    const t = vault.view().templates.find((x) => x.name === 'asked')!;
+    expect(vault.recordCheck('asked', { version: t.savedAt, state: 'failed', at: t.savedAt, probes: [], problem: 'the check box did not run' })).toBe(true);
+    const r = await hopper(a, ['template', 'check', 'asked']);
+    expect(r.code, r.err).toBe(0);
+    expect(json<TemplateView[]>(r).find((x) => x.name === 'asked')).toMatchObject({ readOnly: true });
+    expect(json<TemplateView[]>(r).find((x) => x.name === 'asked')!.check).toBeUndefined();
+  });
+
   it('shows, sets and clears the read policy; an entry it cannot read is refused', async () => {
     const { a } = await boot();
     expect(json<string[]>(await hopper(a, ['template', 'read-policy']))).toEqual([]);

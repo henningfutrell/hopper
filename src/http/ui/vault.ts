@@ -1,7 +1,8 @@
 // The vault's edits (issue #558, design.md "The vault"), an admin's: set a secret — a new one, or a new value or scope
 // for one —, or point one at where a vault backend keeps it (issue #585) —, or mark one a minting credential (issue #580) —, or remove it; save a template (its image, scope and operation profiles), remove it, approve it as it is now,
 // or approve one of its operation profiles explicitly (issue #584: the gate for a write, sync or apply profile); give or
-// decline a credential request (issue #583, "The dynamic vault"); set the read policy (issue #716). Each answers the vault's view, never a value, and is not cached.
+// decline a credential request (issue #583, "The dynamic vault"); set the read policy (issue #716); run a template's
+// read-only check again (issue #716). Each answers the vault's view, never a value, and is not cached.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ASSET_KINDS, OPERATIONS } from '../../domain/access.ts';
@@ -42,6 +43,8 @@ export const vaultEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('approve-template'), name: z.string().max(64) }),
   z.strictObject({ action: z.literal('revoke-template'), name: z.string().max(64) }),
   z.strictObject({ action: z.literal('approve-profile'), name: z.string().max(64), ...profile }),
+  // The read-only check (issue #716): run it again on the template as it is now, at the next check pass.
+  z.strictObject({ action: z.literal('check-template'), name: z.string().max(64) }),
   // A credential request (issue #583): give a credential — a new value, or a secret the vault holds — or decline it.
   z.strictObject({
     action: z.literal('give-credential'), request: z.string().max(64), name: z.string().max(64), kind: z.string().max(40),
@@ -89,6 +92,7 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
               : edit.action === 'approve-template' ? await vault.approveTemplate(edit.name, by)
                 : edit.action === 'revoke-template' ? await vault.revokeTemplate(edit.name, by)
                 : edit.action === 'approve-profile' ? await vault.approveProfile(edit.name, { operation: edit.operation, asset: edit.asset }, by)
+                : edit.action === 'check-template' ? vault.checkTemplate(edit.name, by)
                   : edit.action === 'give-credential' ? await vault.give(edit.request, giveOf(edit), by)
                     : vault.decline(edit.request, edit.reason, by);
     if (!r.ok) throw new HttpError(STATUS[r.code], r.error);

@@ -141,6 +141,8 @@
         "vault.approved",
         "vault.revoked",
         "template.profile_approved",
+        "template.checked",
+        "template.check_requested",
         "vault.delivered",
         "vault.refused",
         "vault.minted",

@@ -8,7 +8,13 @@ export interface Answer { status: number; text: string }
 /** How long one call may take; a pull may take longer, so it passes its own. */
 export const CALL_MS = 30_000;
 
-export function socketCall(socket: string, method: string, path: string, body?: unknown, timeoutMs = CALL_MS): Promise<Answer> {
+export async function socketCall(socket: string, method: string, path: string, body?: unknown, timeoutMs = CALL_MS): Promise<Answer> {
+  const a = await socketBytes(socket, method, path, body, timeoutMs);
+  return { status: a.status, text: a.bytes.toString('utf8') };
+}
+
+/** One call, its answer as the bytes it came as: a container's logs (issue #716) carry binary frame headers. */
+export function socketBytes(socket: string, method: string, path: string, body?: unknown, timeoutMs = CALL_MS): Promise<{ status: number; bytes: Buffer }> {
   return new Promise((resolve, reject) => {
     // A Buffer is sent as it is, a tar (a build's context); anything else as JSON.
     const payload = body === undefined ? undefined : Buffer.isBuffer(body) ? body : JSON.stringify(body);
@@ -17,10 +23,9 @@ export function socketCall(socket: string, method: string, path: string, body?: 
       socketPath: socket, method, path, timeout: timeoutMs,
       headers: { host: 'localhost', ...(payload === undefined ? {} : { 'content-type': type, 'content-length': Buffer.byteLength(payload) }) },
     }, (res) => {
-      let text = '';
-      res.setEncoding('utf8');
-      res.on('data', (d: string) => { text += d; });
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, text }));
+      const chunks: Buffer[] = [];
+      res.on('data', (d: Buffer) => { chunks.push(d); });
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, bytes: Buffer.concat(chunks) }));
       res.on('error', reject);
     });
     req.on('timeout', () => req.destroy(new Error(`no answer to ${method} ${path} within ${Math.round(timeoutMs / 1000)} s`)));
@@ -80,4 +85,22 @@ export function containerfileTar(containerfile: string): Buffer {
   field(148, 8, `${sum.toString(8).padStart(6, '0')}\0 `);
   const pad = Buffer.alloc((512 - (data.length % 512)) % 512);
   return Buffer.concat([header, data, pad, Buffer.alloc(1024)]);
+}
+
+/**
+ * A container's logs as text (issue #716). Both APIs may send them as frames — a byte for the stream (0, 1 or 2), three
+ * zero bytes, a four-byte length, then that many bytes —, libpod even for a container on a terminal; Docker sends a
+ * terminal's as they are. Frames are joined in order; anything else is the text itself.
+ */
+export function logText(bytes: Buffer): string {
+  const framed = (at: number): boolean => at + 8 <= bytes.length && bytes[at]! <= 2 && bytes[at + 1] === 0 && bytes[at + 2] === 0 && bytes[at + 3] === 0;
+  if (!framed(0)) return bytes.toString('utf8');
+  const parts: Buffer[] = [];
+  let at = 0;
+  while (framed(at)) {
+    const len = bytes.readUInt32BE(at + 4);
+    parts.push(bytes.subarray(at + 8, at + 8 + len));
+    at += 8 + len;
+  }
+  return Buffer.concat(parts).toString('utf8');
 }

@@ -5,9 +5,11 @@
 // (the dynamic vault asks a person for each credential when a job on its box loads the skill, issue #583), and declares
 // one operation profile per need. The hopper approves it with no person only when it makes it now and every need is a
 // read the user's read policy holds; anything else waits for a person, as a template saved in the UI does. A job never
-// widens a template, approves one, or approves it again after a revoke.
+// widens a template, approves one, or approves it again after a revoke. A template of read needs only takes the
+// read-only check (issue #716, item 4; src/sandbox/check.ts) before its first box: until it passed, the job waits.
 import { createHash } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
+import { checkWait } from '../domain/read-only-check.ts';
 import { inReadPolicy, type ReadPolicy } from '../domain/read-policy.ts';
 import type { TemplateView } from '../domain/vault.ts';
 import { toolsForNeeds } from '../sandbox/tools.ts';
@@ -56,7 +58,7 @@ type Result = { ok: true } | { ok: false; code: string; error: string };
 /** One user's side: their templates, the vault's own save and approve, their read policy, the image a box runs. */
 export interface TemplateRequestUser {
   template(name: string): TemplateView | undefined;
-  save(t: { name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[] }, by: string): Promise<Result>;
+  save(t: { name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; readOnly: boolean }, by: string): Promise<Result>;
   approve(name: string, by: string): Promise<Result>;
   policy(): ReadPolicy | undefined;
   image: string;
@@ -92,7 +94,8 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
     return { status: 409, reason: `a person changed template ${name} since a job asked for it: a job does not change it back. Ask a person in Settings → Vault, or find another way.` };
   }
   if (!was) {
-    const saved = await u.save({ name, image: u.image, secrets: [], profiles: needs, tools: toolsForNeeds(needs) }, by);
+    const readOnly = needs.every((p) => p.operation === 'read');
+    const saved = await u.save({ name, image: u.image, secrets: [], profiles: needs, tools: toolsForNeeds(needs), readOnly }, by);
     if (!saved.ok) return { status: STATUS[saved.code] ?? 503, reason: saved.error };
     // The policy approves only a template it makes now, and only when every need is a read it holds.
     const outside = needs.filter((p) => p.operation !== 'read' || !inReadPolicy(u.policy(), p.asset));
@@ -109,6 +112,8 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
     const high = needs.filter((p) => p.operation !== 'read').map((p) => `${inWords(p)} changes the asset`);
     return { status: 202, text: `waiting: template ${name} waits for a person in Settings → Vault: ${waits.join('; ')}${[...policy, ...high].length ? ` (${[...policy, ...high].join('; ')})` : ''}.` };
   }
+  const checking = checkWait(t);
+  if (checking) return { status: 202, text: `waiting: template ${name} is approved; ${checking}. Each write it may make must be refused, each read must work.` };
   const who = t.approval?.by === READ_POLICY_APPROVER ? 'approved by the read policy' : 'approved by a person';
   return {
     status: 200,
