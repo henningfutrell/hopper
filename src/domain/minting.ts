@@ -18,6 +18,28 @@ export const AWS_SESSION_SECONDS = 900;
 export const KUBE_TOKEN_SECONDS = 600;
 /** The session policy a read session gets: AWS's managed read-only policy, so the session reads whatever the role may do. */
 export const AWS_READ_POLICY = 'arn:aws:iam::aws:policy/ReadOnlyAccess';
+/**
+ * The write actions a read session is denied (issue #715), in every service: an explicit deny wins over any allow, so
+ * a role whose own policy can write still gives a read session none of it. IAM's own writes that do not start with one
+ * of these words are named beside them.
+ */
+const DENIED_WRITES = [
+  '*:Create*', '*:Delete*', '*:Put*', '*:Update*', '*:Modify*',
+  'iam:Add*', 'iam:Attach*', 'iam:Change*', 'iam:Deactivate*', 'iam:Detach*', 'iam:Enable*', 'iam:PassRole', 'iam:Remove*',
+  'iam:Reset*', 'iam:Resync*', 'iam:Set*', 'iam:Tag*', 'iam:Untag*', 'iam:Upload*',
+];
+
+/**
+ * The inline session policy a read session gets beside `ReadOnlyAccess` (issue #715): explicit denies only — an allow
+ * here could add to what the managed policy gives. It denies every write above, and assuming any role but its own.
+ */
+export const awsReadDenyPolicy = (roleArn: string): string => JSON.stringify({
+  Version: '2012-10-17',
+  Statement: [
+    { Sid: 'HopperReadNoWrites', Effect: 'Deny', Action: DENIED_WRITES, Resource: '*' },
+    { Sid: 'HopperReadNoOtherRole', Effect: 'Deny', Action: ['sts:AssumeRole', 'sts:AssumeRoleWithSAML', 'sts:AssumeRoleWithWebIdentity'], NotResource: roleArn },
+  ],
+});
 /** Where a token for a whole cluster is minted: the service accounts `hopper-<operation>` live in this namespace. */
 export const KUBE_CLUSTER_NAMESPACE = 'hopper';
 
@@ -51,12 +73,12 @@ export interface KubeMintingCredential { server: string; token: string; certific
 
 /** What is minted for one profile: the AWS role and session policies, or the Kubernetes service account. */
 export type MintTarget =
-  | { kind: 'aws'; mintsFor: Asset; roleArn: string; policyArns: string[]; durationSeconds: number }
+  | { kind: 'aws'; mintsFor: Asset; roleArn: string; policyArns: string[]; policy?: string; durationSeconds: number }
   | { kind: 'kube'; mintsFor: Asset; namespace: string; serviceAccount: string; expirationSeconds: number };
 
 /**
  * What `kind` mints for the profile, or why it mints nothing for it. AWS: an `aws-role` (`<account>/<role>`) is assumed,
- * a read session under the read-only policy. Kubernetes: a `namespace` (`<cluster>/<ns>`) or a `cluster` asset gets a
+ * a read session under the read-only policy and the deny policy (issue #715). Kubernetes: a `namespace` (`<cluster>/<ns>`) or a `cluster` asset gets a
  * token for the service account `hopper-<operation>` in that namespace (or `hopper` for a cluster); its RBAC is the
  * cluster's.
  */
@@ -65,7 +87,9 @@ export function mintTarget(kind: MintKind, p: OperationProfile): MintTarget | st
   if (kind === 'aws') {
     const [account, role, ...rest] = name.split('/');
     if (assetKind !== 'aws-role' || !account || !role || rest.length) return `an aws credential is minted for an aws-role (aws-role/<account>/<role>), not ${assetKind}/${name}`;
-    return { kind, mintsFor: { kind: 'aws-account', name: account }, roleArn: `arn:aws:iam::${account}:role/${role}`, policyArns: p.operation === 'read' ? [AWS_READ_POLICY] : [], durationSeconds: AWS_SESSION_SECONDS };
+    const roleArn = `arn:aws:iam::${account}:role/${role}`;
+    const read = p.operation === 'read' ? { policyArns: [AWS_READ_POLICY], policy: awsReadDenyPolicy(roleArn) } : { policyArns: [] };
+    return { kind, mintsFor: { kind: 'aws-account', name: account }, roleArn, ...read, durationSeconds: AWS_SESSION_SECONDS };
   }
   const serviceAccount = `hopper-${p.operation}`;
   if (assetKind === 'cluster') return { kind, mintsFor: { kind: 'cluster', name }, namespace: KUBE_CLUSTER_NAMESPACE, serviceAccount, expirationSeconds: KUBE_TOKEN_SECONDS };
@@ -102,7 +126,7 @@ export const expiryOf = (m: Minted): string => (m.kind === 'aws' ? m.Expiration 
  * outside service answered; never with the minting credential in the message.
  */
 export interface CredentialMinter {
-  awsSession(credential: AwsMintingCredential, r: { roleArn: string; sessionName: string; policyArns: string[]; durationSeconds: number }): Promise<Extract<Minted, { kind: 'aws' }>>;
+  awsSession(credential: AwsMintingCredential, r: { roleArn: string; sessionName: string; policyArns: string[]; policy?: string | undefined; durationSeconds: number }): Promise<Extract<Minted, { kind: 'aws' }>>;
   kubeToken(credential: KubeMintingCredential, r: { namespace: string; serviceAccount: string; expirationSeconds: number }): Promise<Extract<Minted, { kind: 'kube' }>>;
   /** Who STS says the minted session is (`GetCallerIdentity`), asked at the credential's STS with the session's keys (issue #781). */
   awsCallerIdentity(credential: AwsMintingCredential, session: Extract<Minted, { kind: 'aws' }>): Promise<CallerIdentity>;

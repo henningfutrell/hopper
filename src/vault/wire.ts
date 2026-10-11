@@ -53,7 +53,7 @@ export const vaultOps = {
     user,
     credential: name,
     target: z.discriminatedUnion('kind', [
-      z.strictObject({ kind: z.literal('aws'), mintsFor: mintsFor, roleArn: z.string().max(300), policyArns: z.array(z.string().max(300)).max(10), durationSeconds: z.number().int().min(900).max(43200) }),
+      z.strictObject({ kind: z.literal('aws'), mintsFor: mintsFor, roleArn: z.string().max(300), policyArns: z.array(z.string().max(300)).max(10), policy: z.string().max(2048).optional(), durationSeconds: z.number().int().min(900).max(43200) }),
       z.strictObject({ kind: z.literal('kube'), mintsFor: mintsFor, namespace: z.string().max(253), serviceAccount: z.string().max(253), expirationSeconds: z.number().int().min(600).max(86400) }),
     ]),
     jobId: z.string().max(64),

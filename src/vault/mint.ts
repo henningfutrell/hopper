@@ -127,7 +127,7 @@ export function mintHere(o: { vault: Pick<VaultRepository, 'get'>; minter?: Cred
         const c = mintingCredentialOf('aws', read.value);
         if (typeof c === 'string') return { refused: `the minting credential ${name}: ${c}` };
         const sessionName = awsSessionName(c, jobId);
-        const minted = await o.minter.awsSession(c, { roleArn: target.roleArn, sessionName, policyArns: target.policyArns, durationSeconds: target.durationSeconds });
+        const minted = await o.minter.awsSession(c, { roleArn: target.roleArn, sessionName, policyArns: target.policyArns, policy: target.policy, durationSeconds: target.durationSeconds });
         const reach: MintReach = { kind: 'aws', region: awsRegionOf(c), ...(c.Endpoint ? { stsEndpoint: c.Endpoint } : {}) };
         return { minted, reach, sessionName, ...(identify ? { identity: await o.minter.awsCallerIdentity(c, minted) } : {}) };
       }

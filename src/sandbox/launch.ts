@@ -68,12 +68,15 @@ async function startChecked(c: LaunchContext, record: SandboxRecord): Promise<St
   }
 }
 
-/** The image a box runs, and its user: `base`, with `tools` added when it names any (issue #716), built once per base and set of tools. */
-export async function boxImage(runtime: ContainerRuntime, base: string, tools: readonly BoxTool[] | undefined): Promise<{ image: string; user: string }> {
+/**
+ * The image a box runs, and its user: `base`, with `tools` added when it names any (issue #716), built once per base and
+ * set of tools. `readOnly`: a read-only template's box, whose terraform runs through the read-only wrapper (issue #715).
+ */
+export async function boxImage(runtime: ContainerRuntime, base: string, tools: readonly BoxTool[] | undefined, readOnly?: boolean): Promise<{ image: string; user: string }> {
   const read = await runtime.pull(base);
   if (isRootUser(read.user)) throw new Error(`the image ${base} runs as root: a sandbox box runs as a non-root user (USER in its image)`);
   if (!tools?.length) return { image: base, user: read.user };
-  const built = toolsImage({ image: base, id: read.id }, tools);
+  const built = toolsImage({ image: base, id: read.id }, tools, { readOnly });
   await runtime.build(built.tag, built.containerfile);
   return { image: built.tag, user: (await runtime.pull(built.tag)).user };
 }
@@ -90,7 +93,7 @@ export async function launchBox(c: LaunchContext, userId: string, l: LaunchReque
   if (!resolved.ok) throw new LaunchRefused(400, resolved.error);
   const { params } = resolved;
 
-  const { image, user } = await boxImage(c.runtime, t?.image ?? `${BOX_IMAGE}:box-${l.agent}`, params.tools);
+  const { image, user } = await boxImage(c.runtime, t?.image ?? `${BOX_IMAGE}:box-${l.agent}`, params.tools, t?.readOnly);
 
   const stem = `hopper-sandbox-${t?.name ?? l.agent}`;
   const taken = new Set([...(await c.runtime.list()).map((x) => x.name), ...c.repo.list().map((r) => r.name)]);
