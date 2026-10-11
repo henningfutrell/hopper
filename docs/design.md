@@ -1243,7 +1243,8 @@ cleared, and `executor.reattach` watches the turn again from its saved anchor; n
 `interrupted while the link to machine <id> was down`. No answer within the link grace (`failsAt`; `HOPPER_LINK_GRACE_MS`, default 10 min) → failed
 `machine <id> did not reconnect within <n> s`; its cleanup cannot reach the machine, so it is deferred. Cancel, park and
 shutdown abort the hold as they abort a run; a job held at shutdown keeps `linkLost` and is recovered as above, which
-clears it. The lane stays busy for the hold, as for the wait at recovery. The hold adds no authority: the box keeps
+clears it. The lane stays busy for the hold, as for the wait at recovery. The UI shows the hold on the job's lane and its job page (*held: link lost*, when it fails) and on its machine's card
+(*out of reach since <time>, <n> job held*), in place of an idle look. The hold adds no authority: the box keeps
 only what it had, and every privileged step still needs a live hopper.
 
 **Cancel** of a `waiting_answer` job: question `cancelled`, `executor.cleanup`, job

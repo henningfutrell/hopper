@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Issue #752 in the Overview: a running job held because its machine's link dropped says so on its lane, with when
-// it fails if the link is not back; a job on a live link says nothing of it. Renders the whole app against a fake of
+// it fails if the link is not back; a job on a live link says nothing of it. Its machine says it is out of reach. Renders the whole app against a fake of
 // the daemon's HTTP surface and a fake SSE.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -31,7 +31,7 @@ function fakeDaemon() {
     '/api/machines': { machines: [{ id: 'm1', label: 'm1', maxLanes: 2, online: true, executors: ['test'], usage: [], lanes: [
       { id: 'm1/lane-1', machineId: 'm1', state: 'busy', jobId: 'r1', openedAt: minutesAgo(25) },
       { id: 'm1/lane-2', machineId: 'm1', state: 'busy', jobId: 'r2', openedAt: minutesAgo(5) },
-    ] }] },
+    ] }, { id: 'm2', label: 'm2', maxLanes: 1, online: true, executors: ['test'], usage: [], lanes: [] }] },
     '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] },
     '/api/questions': { questions: [] }, '/api/sources': { sources: [] },
@@ -86,5 +86,29 @@ describe('a job held through a link outage (issue #752)', () => {
     expect(held?.textContent).toContain('held: link lost 1m ago');
     expect(held?.textContent).toContain(`fails at ${clock(jobs[0]!.linkLost!.failsAt)}`);
     expect(document.querySelector('[data-job-group="running"][data-job-id="r2"] [data-link-lost]')).toBeNull();
+  });
+
+  it('its machine says out of reach since when, and that the job is held; a machine with no held job says nothing of it', async () => {
+    await boot();
+    await act(async () => { window.location.hash = '#machines'; });
+    const away = await vi.waitFor(() => {
+      const el = document.querySelector('[data-machine-away="m1"]');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(away.textContent).toContain(`out of reach since ${clock(jobs[0]!.linkLost!.since)}`);
+    expect(away.textContent).toContain('1 job held');
+    expect(document.querySelector('[data-machine-away="m2"]')).toBeNull();
+  });
+
+  it('its own job page says held: link lost too', async () => {
+    await boot();
+    await act(async () => { window.location.hash = '#job/r1'; });
+    const held = await vi.waitFor(() => {
+      const el = document.querySelector('[data-slot="job-view"] [data-link-lost]');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(held.textContent).toContain('held: link lost 1m ago');
   });
 });

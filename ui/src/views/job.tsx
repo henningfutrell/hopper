@@ -4,7 +4,7 @@
 import { ArrowLeft, Briefcase } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { EventLine } from '@/components/event-line';
-import { JobTitle } from '@/components/job';
+import { JobTitle, LinkLostFlag } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { get } from '@/lib/api';
@@ -64,6 +64,7 @@ export function JobView() {
               <JobTitle job={read.job} className="flex-1" />
               <StatusBadge status={read.job.status} />
             </div>
+            <LinkLostFlag job={read.job} />
             <Fact label="job">{read.job.id}</Fact>
             {read.job.laneId && <Fact label="lane">{laneName(read.job.laneId, machines)}</Fact>}
             <Fact label="created">{read.job.createdAt}</Fact>
