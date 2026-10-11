@@ -1,7 +1,8 @@
 // Issue #558: the Vault settings page's pure model. A secret is only its metadata: the page says what it is, who set
 // it and when — never a value — and checks a name before anything is sent.
 import { describe, expect, it } from 'vitest';
-import { approvalText, explicitApprovals, giveProblem, kindChoices, mintsOf, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
+import { BOX_TOOLS as SERVER_TOOLS } from '../../src/domain/sandboxes.ts';
+import { approvalText, BOX_TOOLS, toolsText, explicitApprovals, giveProblem, kindChoices, mintsOf, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
 
 describe('a vault secret on the page', () => {
   it('says its scope, who set it and who last changed it; never a value', () => {
@@ -116,5 +117,17 @@ describe('a credential request on the page (issue #583)', () => {
     expect(giveProblem({ name: 'example-api', kind: 'asked', note: '', value: '' }, request)).toMatch(/value/);
     expect(giveProblem({ name: 'example-api', kind: 'asked', note: '', value: '' }, { ...request, existing: ['example-api'] })).toBeUndefined();
     expect(giveProblem({ name: '1x', kind: 'asked', note: '', value: 'x' }, request)).toMatch(/letter/);
+  });
+});
+
+describe('a template\'s tools (issue #716)', () => {
+  it('the page offers the tools the server adds', () => {
+    expect([...BOX_TOOLS]).toEqual([...SERVER_TOOLS]);
+  });
+
+  it('says its tools, and which wait for approval', () => {
+    expect(toolsText({})).toBe('none');
+    expect(toolsText({ tools: ['helm', 'kubectl'] })).toBe('helm, kubectl');
+    expect(toolsText({ tools: ['aws', 'kubectl'], approval: { tools: ['kubectl'] } })).toBe('aws (waits), kubectl');
   });
 });

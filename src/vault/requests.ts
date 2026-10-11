@@ -6,7 +6,7 @@
 // request again after a restart.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
-import { CREDENTIAL_NOTE_MAX, CREDENTIAL_WHY_MAX, givesOf, VAULT_SECRET_NAME, type CredentialRequest, type VaultSecret } from '../domain/vault.ts';
+import { CREDENTIAL_NOTE_MAX, CREDENTIAL_WHY_MAX, givesOf, imageApproved, VAULT_SECRET_NAME, type CredentialRequest, type VaultSecret } from '../domain/vault.ts';
 
 /** The kind a person gives in their own words, whatever the skill. */
 export const OTHER_KIND = 'other';
@@ -131,7 +131,7 @@ export function createCredentialRequests(o: {
         vault.replace({ ...rest, skill: r.skill, kind: g.kind, ...(note ? { note } : {}) }, vault.sealed(s.id) ?? null);
         // The person gives it for this template's boxes: that approves the widening by this one secret, and nothing more.
         // A template never approved, or whose image changed, still waits for a person on Settings → Vault.
-        const approves = t.approval !== undefined && t.approval.image === t.image;
+        const approves = imageApproved(t);
         vault.saveTemplate({
           ...t, secrets: t.secrets.includes(g.name) ? t.secrets : [...t.secrets, g.name],
           ...(approves ? { approval: { ...t.approval!, secrets: [...new Set([...t.approval!.secrets, g.name])], by, at: now() } } : {}),

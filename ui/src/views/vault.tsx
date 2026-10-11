@@ -21,7 +21,7 @@ import { FIELD } from '@/components/plugin-form';
 import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/template-radius';
 import { Empty, Panel } from '@/components/panel';
 import { get, post, SessionRejected } from '@/lib/api';
-import { approvalText, DEFAULT_BOX_IMAGE, explicitApprovals, highRadius, keptText, mintsOf, nameProblem, profileText, referenceHint, secretFacts } from '@/model/vault';
+import { approvalText, DEFAULT_BOX_IMAGE, explicitApprovals, highRadius, keptText, mintsOf, nameProblem, profileText, referenceHint, secretFacts, toolsText } from '@/model/vault';
 import type { Asset, AssetKind, Operation, OperationProfile, SharedSecretView, TemplateView, VaultBackendView, VaultSecret, VaultView } from '@/model/wire';
 import { Label, ValueInput } from '@/components/vault-fields';
 import { useHopper } from '@/store';
@@ -29,11 +29,12 @@ import { AskedFor } from './vault-requests';
 import { SystemSecrets } from './vault-system';
 import { SharedSecrets } from './vault-shared';
 import { ReadPolicy } from './vault-read-policy';
+import { ToolsInput } from './vault-tools';
 import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
   | { action: 'set-in-backend'; name: string; scope?: string; backend: string; reference: string; mints?: Asset | null }
-  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[] } | { action: 'remove-template' | 'approve-template' | 'revoke-template'; name: string }
+  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[] } | { action: 'remove-template' | 'approve-template' | 'revoke-template'; name: string }
   | ({ action: 'approve-profile'; name: string } & OperationProfile)
   | { action: 'give-credential'; request: string; name: string; kind: string; note?: string; value?: string } | { action: 'decline-credential'; request: string; reason: string };
 export type VaultEdit = Edit;
@@ -179,11 +180,12 @@ function TemplateForm({ t, secrets: all, shared = [], busy, send, onDone }: { t?
   const [image, setImage] = useState(t?.image ?? DEFAULT_BOX_IMAGE);
   const [scope, setScope] = useState<string[]>(t?.secrets ?? []);
   const [profiles, setProfiles] = useState<OperationProfile[]>(t?.profiles ?? []);
+  const [tools, setTools] = useState<string[]>(t?.tools ?? []);
   const toggle = (n: string) => setScope(scope.includes(n) ? scope.filter((x) => x !== n) : [...scope, n]);
   return (
     <form className="space-y-3" onSubmit={async (e) => {
       e.preventDefault();
-      if (await send({ action: 'save-template', name: name.trim(), image: image.trim(), secrets: scope, profiles }, `${name.trim()}: saved`)) onDone();
+      if (await send({ action: 'save-template', name: name.trim(), image: image.trim(), secrets: scope, profiles, tools }, `${name.trim()}: saved`)) onDone();
     }}>
       {!t && (
         <label className="block space-y-1"><Label>Name — its boxes are named hopper-sandbox-&lt;name&gt;</Label>
@@ -203,8 +205,9 @@ function TemplateForm({ t, secrets: all, shared = [], busy, send, onDone }: { t?
           </div>
         )}
       </div>
+      <ToolsInput tools={tools} busy={busy} onChange={setTools} />
       <ProfilesInput profiles={profiles} busy={busy} onChange={setProfiles} />
-      <p className="text-xs text-muted-foreground">A new secret, a new image or a new profile waits for your approval before any box gets it. A profile you remove loses its approval.</p>
+      <p className="text-xs text-muted-foreground">A new secret, a new image, a change of tools or a new profile waits for your approval before any box gets it. A profile you remove loses its approval.</p>
       <div className="flex flex-wrap gap-2">
         <Button type="submit" disabled={busy || !name.trim() || !image.trim()}>Save template</Button>
         <Button type="button" variant="outline" disabled={busy} onClick={onDone}>Cancel</Button>
@@ -228,6 +231,7 @@ function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView
       <TemplateRadiusReasons radius={t.radius} />
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
         <dt className="text-muted-foreground">Image</dt><dd className="font-mono break-all">{t.image}</dd>
+        <dt className="text-muted-foreground">Tools</dt><dd className="font-mono break-words">{toolsText(t)}</dd>
         <dt className="text-muted-foreground">Scope</dt><dd className="font-mono break-words">{t.secrets.join(', ') || 'none'}</dd>
         <dt className="text-muted-foreground">Profiles</dt><dd className="font-mono break-words">{t.profiles.map((p) => `${profileText(p)}${t.pending.profiles.some((x) => sameProfile(x, p)) ? ' (waits)' : ''}`).join(', ') || 'none'}</dd>
         <dt className="text-muted-foreground">Gives now</dt><dd className="font-mono break-words">{t.gives.join(', ') || 'nothing'}</dd>
@@ -237,7 +241,7 @@ function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView
         <div className="flex flex-wrap gap-2">
           {waiting && (
             <Confirm title={`Approve ${t.name}?`} action="Approve" onConfirm={() => void send({ action: 'approve-template', name: t.name }, `${t.name}: approved`)}
-              description={<>Boxes from <span className="font-mono">{t.image}</span> may then ask for <span className="font-mono">{t.secrets.join(', ') || 'nothing'}</span>, whatever job runs in them{t.pending.profiles.some((p) => !highRadius(p)) ? <>, and read <span className="font-mono">{t.pending.profiles.filter((p) => !highRadius(p)).map(profileText).join(', ')}</span></> : null}. A write, sync or apply profile is not approved by this.</>}>
+              description={<>Boxes from <span className="font-mono">{t.image}</span>{t.tools?.length ? <> with <span className="font-mono">{t.tools.join(', ')}</span></> : null} may then ask for <span className="font-mono">{t.secrets.join(', ') || 'nothing'}</span>, whatever job runs in them{t.pending.profiles.some((p) => !highRadius(p)) ? <>, and read <span className="font-mono">{t.pending.profiles.filter((p) => !highRadius(p)).map(profileText).join(', ')}</span></> : null}. A write, sync or apply profile is not approved by this.</>}>
               <Button size="sm" disabled={!can || busy}><Check />Approve</Button>
             </Confirm>
           )}

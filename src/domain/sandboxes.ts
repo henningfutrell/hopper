@@ -35,8 +35,24 @@ export interface ContainerSpec {
   user: string;
 }
 
-/** What the hopper reads of an image: the user it runs as (`''`: none set, which is root). */
-export interface ImageInfo { user: string }
+/** What the hopper reads of an image: the user it runs as (`''`: none set, which is root), and its id when the runtime says. */
+export interface ImageInfo { user: string; id?: string }
+
+/**
+ * The tools the hopper adds to a box's image (issue #716, item 2): each from its own release, pinned, checked by its
+ * SHA-256 (src/sandbox/tools.ts). A template names the ones its boxes get; a launch gets them, or names fewer.
+ */
+export const BOX_TOOLS = ['aws', 'helm', 'kubectl', 'terraform'] as const;
+export type BoxTool = (typeof BOX_TOOLS)[number];
+
+/** Why these tools cannot be added: the first the hopper does not know. Undefined: they can. */
+export function toolsProblem(tools: readonly string[]): string | undefined {
+  const unknown = tools.find((x) => !(BOX_TOOLS as readonly string[]).includes(x));
+  return unknown === undefined ? undefined : `${unknown} is not a tool the hopper adds to a box: it adds ${BOX_TOOLS.join(', ')}`;
+}
+
+/** The tools, each once, in the catalog's order. */
+export const toolSet = (tools: readonly string[]): BoxTool[] => BOX_TOOLS.filter((x) => tools.includes(x));
 
 /** The container runtime port (issue #708): one per kind, the same calls. The hopper's sandbox module drives it. */
 export interface ContainerRuntime {
@@ -45,6 +61,8 @@ export interface ContainerRuntime {
   problem(): Promise<string | undefined>;
   /** Pull the image when it is not there yet; answers what the hopper reads of it. */
   pull(image: string): Promise<ImageInfo>;
+  /** Build the image `tag` from this Containerfile when no image of that tag is there yet (issue #716). */
+  build(tag: string, containerfile: string): Promise<void>;
   /** Make the volume; one that exists already is kept as it is. True: it made a new one. */
   createVolume(name: string, labels: Record<string, string>): Promise<boolean>;
   /** Remove the volume; one already gone is no error. */
@@ -97,6 +115,8 @@ export interface LaunchParams {
   ttlMinutes?: number;
   /** One of the template's operation profiles, `operation/kind/name`. */
   profile?: string;
+  /** Which of the template's tools the box gets (issue #716); absent: all of them. A box of no template: any tool. */
+  tools?: string[];
 }
 
 /** The parameters a launch ran with once the template's defaults filled them in: what the sandbox record keeps. */
@@ -109,6 +129,8 @@ export interface ResolvedParams {
   /** Absent: no time limit. */
   ttlMinutes?: number;
   profile?: string;
+  /** The tools added to its image (issue #716); absent: none. */
+  tools?: BoxTool[];
 }
 
 /** A sandbox record's state: `starting` until its client joins and a machine names it, then `ready`. */

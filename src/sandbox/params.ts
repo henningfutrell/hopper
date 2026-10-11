@@ -1,15 +1,15 @@
 // Launch parameters (issue #708): a template is a base skeleton — its image, its approved secrets, its operation
 // profiles, and the defaults and maximums of its limits —, and each launch fills in the rest within what it allows.
 // Pure. A parameter outside what the template allows is refused with what it allows, never clamped.
-import type { LaunchParams, LimitRange, ResolvedParams, TemplateLimits } from '../domain/sandboxes.ts';
+import { toolSet, toolsProblem, type LaunchParams, type LimitRange, type ResolvedParams, type TemplateLimits } from '../domain/sandboxes.ts';
 
 export { limitsProblem } from '../domain/sandboxes.ts';
 
 /** A box of no template, or of a template that sets no limits: what the hopper gives it. No time limit. */
 export const DEFAULT_LIMITS = { cpus: { default: 4, max: 8 }, memoryMb: { default: 8192, max: 16384 } } as const;
 
-/** What a launch reads of its template: its name, the secrets it gives now, its profiles' keys, its limits. */
-export interface LaunchTemplate { name: string; gives: string[]; profiles: string[]; limits?: TemplateLimits | undefined }
+/** What a launch reads of its template: its name, the secrets it gives now, its profiles' keys, its limits, its tools. */
+export interface LaunchTemplate { name: string; gives: string[]; profiles: string[]; limits?: TemplateLimits | undefined; tools?: string[] | undefined }
 
 export type Resolved = { ok: true; params: ResolvedParams } | { ok: false; error: string };
 
@@ -42,5 +42,17 @@ export function resolveParams(t: LaunchTemplate | undefined, p: LaunchParams): R
   if (p.profile !== undefined && !(t?.profiles ?? []).includes(p.profile)) {
     return fail(`${t ? who : 'a box of no template'} has no operation profile ${p.profile}: it has ${t?.profiles.join(', ') || 'none'}`);
   }
-  return { ok: true, params: { secrets, cpus, memoryMb, ...(ttlMinutes !== undefined ? { ttlMinutes } : {}), ...(p.profile !== undefined ? { profile: p.profile } : {}) } };
+  // Tools (issue #716): a template's are what a person approved with its image; a box of no template may name any.
+  const adds = t?.tools ?? [];
+  if (p.tools && !t) {
+    const problem = toolsProblem(p.tools);
+    if (problem) return fail(problem);
+  }
+  const outsideTools = (p.tools ?? []).filter((x) => t && !adds.includes(x));
+  if (outsideTools.length) return fail(`${who} does not add ${outsideTools.join(', ')}: it adds ${adds.join(', ') || 'no tool'}`);
+  const tools = toolSet(p.tools ?? adds);
+  return {
+    ok: true,
+    params: { secrets, cpus, memoryMb, ...(ttlMinutes !== undefined ? { ttlMinutes } : {}), ...(p.profile !== undefined ? { profile: p.profile } : {}), ...(tools.length ? { tools } : {}) },
+  };
 }

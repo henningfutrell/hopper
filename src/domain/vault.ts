@@ -2,7 +2,7 @@
 // in the user's store under the master key. The types every part shares: a secret is only ever its metadata.
 import type { Asset, OperationProfile } from './access.ts';
 import type { TemplateRadius } from './blast-radius.ts';
-import type { TemplateLimits } from './sandboxes.ts';
+import type { BoxTool, TemplateLimits } from './sandboxes.ts';
 
 /** A vault secret's name: a letter, then letters, digits, `_`, `.`, `-`; at most 64. */
 export const VAULT_SECRET_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
@@ -200,10 +200,23 @@ export interface Template {
    * its approval: limits narrow what a box may use, they give it nothing.
    */
   limits?: TemplateLimits;
+  /**
+   * The tools the hopper adds to its image for its boxes (issue #716; src/sandbox/tools.ts). Part of what its boxes run,
+   * so approved with its image: a change waits for a person as a new image does. Absent: none.
+   */
+  tools?: BoxTool[];
   savedBy: string;
   savedAt: string;
-  /** The last approval: the image and scope a person approved, who and when. Absent: never approved. */
-  approval?: { image: string; secrets: string[]; by: string; at: string };
+  /** The last approval: the image (and its tools) and scope a person approved, who and when. Absent: never approved. */
+  approval?: { image: string; tools?: BoxTool[]; secrets: string[]; by: string; at: string };
+}
+
+/** Whether the template runs what was approved: the image, with the same tools (issue #716). False when never approved. */
+export function imageApproved(t: Template): boolean {
+  const a = t.approval;
+  if (!a || a.image !== t.image) return false;
+  const was = a.tools ?? [], now = t.tools ?? [];
+  return was.length === now.length && was.every((x) => now.includes(x));
 }
 
 /** A template as the vault shows it: what waits for a person, what its boxes may be given now, and its blast radius. */
@@ -222,7 +235,7 @@ const sameProfile = (a: OperationProfile, b: OperationProfile): boolean => a.ope
 /** The secrets a template's boxes may be given now: its scope, as far as it was approved, while its image is the approved one. */
 export function givesOf(t: Template): string[] {
   const approved = t.approval?.secrets ?? [];
-  return t.approval?.image !== t.image ? [] : t.secrets.filter((s) => approved.includes(s));
+  return !imageApproved(t) ? [] : t.secrets.filter((s) => approved.includes(s));
 }
 
 /**
@@ -233,14 +246,14 @@ export function approvalWait(name: string, t: Template | undefined): string | un
   const wait = 'waiting for template approval';
   if (!t) return `${wait}: no template ${name} is saved`;
   if (!t.approval) return `${wait}: ${name} is not approved`;
-  if (t.approval.image !== t.image) return `${wait}: the image of ${name} changed since it was approved`;
+  if (!imageApproved(t)) return `${wait}: the image of ${name} changed since it was approved`;
   return undefined;
 }
 
 /** The template's view, with the profiles access approves it for (`approvedProfiles`) and its rating. */
 export function templateView(t: Template, approvedProfiles: readonly OperationProfile[], radius: TemplateRadius): TemplateView {
   const approved = t.approval?.secrets ?? [];
-  const image = t.approval?.image !== t.image;
+  const image = !imageApproved(t);
   const profiles = t.profiles ?? [];
   return {
     ...t, profiles,

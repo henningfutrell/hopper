@@ -3,11 +3,13 @@
 // src/sandbox/flags.ts's.
 import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
 import { dockerCreateBody, STOP_S } from './flags.ts';
-import { CALL_MS, labelFilter, ok, refusal as refused, socketCall, streamError, type Answer } from './socket-http.ts';
+import { CALL_MS, containerfileTar, labelFilter, ok, refusal as refused, socketCall, streamError, type Answer } from './socket-http.ts';
 
 /** Docker Engine 20.10 and later answer this version. */
 const API = '/v1.41';
 const PULL_MS = 15 * 60_000;
+/** A build fetches every tool it adds (issue #716). */
+const BUILD_MS = 30 * 60_000;
 
 interface Listed { Id?: string; Names?: string[]; Image?: string; Labels?: Record<string, string> | null; State?: string }
 interface Inspected { Id?: string; Name?: string; Config?: { Image?: string; Labels?: Record<string, string> | null }; State?: { Status?: string } }
@@ -46,7 +48,17 @@ export function createDockerRuntime(socket: string): ContainerRuntime {
         read = await readImage(image);
       }
       if (!ok(read)) throw refusal(`read the image ${image}`, read);
-      return { user: (JSON.parse(read.text) as { Config?: { User?: string } }).Config?.User ?? '' };
+      const img = JSON.parse(read.text) as { Id?: string; Config?: { User?: string } };
+      return { user: img.Config?.User ?? '', ...(img.Id ? { id: img.Id } : {}) };
+    },
+
+    async build(tag, containerfile) {
+      const read = await readImage(tag);
+      if (ok(read)) return;
+      if (read.status !== 404) throw refusal(`read the image ${tag}`, read);
+      const built = await call('POST', `/build?t=${enc(tag)}&dockerfile=Containerfile&rm=1`, containerfileTar(containerfile), BUILD_MS);
+      const failed = streamError(built.text);
+      if (!ok(built) || failed) throw new Error(`docker could not build ${tag}: ${failed ?? built.text.trim()}`);
     },
 
     async createVolume(name, labels) {

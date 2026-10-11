@@ -58,6 +58,17 @@ export const referenceHint = (plugin: string): string => REFERENCE_HINTS[plugin]
 /** The image a new template starts with: the published sandbox box. */
 export const DEFAULT_BOX_IMAGE = 'ghcr.io/henningfutrell/hopper:box-claude';
 
+/** The tools the hopper adds to a box's image (issue #716): the server's list (src/domain/sandboxes.ts BOX_TOOLS). */
+export const BOX_TOOLS = ['aws', 'helm', 'kubectl', 'terraform'] as const;
+
+/** A template's tools, with `(waits)` when its tools are not the approved ones; `none` without. */
+export function toolsText(t: { tools?: readonly string[]; approval?: { tools?: readonly string[] } }): string {
+  const now = t.tools ?? [];
+  if (now.length === 0) return 'none';
+  const was = t.approval?.tools ?? [];
+  return now.map((x) => (t.approval && !was.includes(x) ? `${x} (waits)` : x)).join(', ');
+}
+
 /** `write on cluster x`. */
 export const profileText = (p: OperationProfile): string => `${p.operation} on ${p.asset.kind} ${p.asset.name}`;
 

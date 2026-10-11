@@ -3,10 +3,12 @@
 // src/sandbox/flags.ts's: the sandbox flags are never a request's.
 import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
 import { libpodCreateBody, STOP_S } from './flags.ts';
-import { CALL_MS, labelFilter, ok, refusal as refused, socketCall, streamError, type Answer } from './socket-http.ts';
+import { CALL_MS, containerfileTar, labelFilter, ok, refusal as refused, socketCall, streamError, type Answer } from './socket-http.ts';
 
 const API = '/v5.0.0/libpod';
 const PULL_MS = 15 * 60_000;
+/** A build fetches every tool it adds (issue #716). */
+const BUILD_MS = 30 * 60_000;
 
 interface Listed { Id?: string; Names?: string[]; Image?: string; Labels?: Record<string, string> | null; State?: string }
 interface Inspected { Id?: string; Name?: string; ImageName?: string; Config?: { Image?: string; Labels?: Record<string, string> | null }; State?: { Status?: string } }
@@ -43,7 +45,17 @@ export function createPodmanRuntime(socket: string): ContainerRuntime {
       } else if (!ok(exists)) throw refusal(`look up the image ${image}`, exists);
       const read = await call('GET', `/images/${enc(image)}/json`);
       if (!ok(read)) throw refusal(`read the image ${image}`, read);
-      return { user: (JSON.parse(read.text) as { Config?: { User?: string } }).Config?.User ?? '' };
+      const img = JSON.parse(read.text) as { Id?: string; Config?: { User?: string } };
+      return { user: img.Config?.User ?? '', ...(img.Id ? { id: img.Id } : {}) };
+    },
+
+    async build(tag, containerfile) {
+      const exists = await call('GET', `/images/${enc(tag)}/exists`);
+      if (ok(exists)) return;
+      if (exists.status !== 404) throw refusal(`look up the image ${tag}`, exists);
+      const built = await call('POST', `/build?t=${enc(tag)}&dockerfile=Containerfile&layers=true&rm=true`, containerfileTar(containerfile), BUILD_MS);
+      const failed = streamError(built.text);
+      if (!ok(built) || failed) throw new Error(`podman could not build ${tag}: ${failed ?? built.text.trim()}`);
     },
 
     async createVolume(name, labels) {

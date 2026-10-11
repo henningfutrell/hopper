@@ -7,6 +7,7 @@ import type { SandboxRepository } from '../domain/store.ts';
 import type { TemplateView } from '../domain/vault.ts';
 import { isRootUser } from './flags.ts';
 import { resolveParams } from './params.ts';
+import { toolsImage } from './tools.ts';
 
 /** The label on every box the hopper launches: its value is the hopper's instance id. */
 export const BOX_LABEL = 'io.hopper.box';
@@ -45,18 +46,26 @@ const profileKey = (p: { operation: string; asset: { kind: string; name: string 
 export async function launchBox(c: LaunchContext, userId: string, l: LaunchRequest): Promise<SandboxRecord> {
   const t = l.template;
   if (t && (t.approval === undefined || t.pending.image)) throw new LaunchRefused(409, `the image of template ${t.name} is not approved: approve it in Settings → Vault first`);
-  const resolved = resolveParams(t && { name: t.name, gives: t.gives, profiles: t.profiles.map(profileKey), limits: t.limits }, l.params);
+  const resolved = resolveParams(t && { name: t.name, gives: t.gives, profiles: t.profiles.map(profileKey), limits: t.limits, tools: t.tools }, l.params);
   if (!resolved.ok) throw new LaunchRefused(400, resolved.error);
   const { params } = resolved;
 
-  const image = t?.image ?? `${BOX_IMAGE}:box-${l.agent}`;
-  const { user } = await c.runtime.pull(image);
-  if (isRootUser(user)) throw new Error(`the image ${image} runs as root: a sandbox box runs as a non-root user (USER in its image)`);
+  const base = t?.image ?? `${BOX_IMAGE}:box-${l.agent}`;
+  const read = await c.runtime.pull(base);
+  if (isRootUser(read.user)) throw new Error(`the image ${base} runs as root: a sandbox box runs as a non-root user (USER in its image)`);
+  // Tools (issue #716): the box runs the base image with them added, built once per base and set of tools.
+  let image = base;
+  if (params.tools) {
+    const built = toolsImage({ image: base, id: read.id }, params.tools);
+    await c.runtime.build(built.tag, built.containerfile);
+    image = built.tag;
+  }
+  const { user } = image === base ? read : await c.runtime.pull(image);
 
-  const base = `hopper-sandbox-${t?.name ?? l.agent}`;
+  const stem = `hopper-sandbox-${t?.name ?? l.agent}`;
   const taken = new Set([...(await c.runtime.list()).map((x) => x.name), ...c.repo.list().map((r) => r.name)]);
-  let name = base;
-  for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
+  let name = stem;
+  for (let n = 2; taken.has(name); n++) name = `${stem}-${n}`;
   const record: SandboxRecord = {
     id: c.id, userId, name, agent: l.agent, ...(t ? { template: { name: t.name, version: t.savedAt } } : {}), image, params,
     runtime: c.runtime.kind, machine: 'local', containerId: '', volume: `${name}-home`, keepHome: t?.limits?.keepHome ?? true,

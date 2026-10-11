@@ -24,6 +24,7 @@ export const launchParams = z.strictObject({
   memoryMb: z.number().int().positive().max(16 * 1024 * 1024).optional(),
   ttlMinutes: z.number().int().positive().max(366 * 24 * 60).optional(),
   profile: z.string().max(300).optional(),
+  tools: z.array(z.string().max(32)).max(16).optional(),
 });
 export const machineSandboxBody = z.strictObject({ agent: z.enum(BOX_AGENTS).default('claude'), template: z.string().min(1).max(64).optional(), params: launchParams.default({}) });
 

@@ -15,8 +15,9 @@ export const VAULT_USAGE = `  hopper vault                                      
   hopper template list                               the templates: image, secrets, operation profiles, what each gives and what waits
   hopper template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]...
                     [--cpus <default>:<max>] [--memory-mb <default>:<max>] [--ttl-minutes [<default>]:[<max>]] [--keep-home on|off]
-                                                     save a template; what is left out keeps what it has. A new scope, image or
-                                                     profile waits for approve
+                    [--tool aws|helm|kubectl|terraform]...
+                                                     save a template; what is left out keeps what it has. A new scope, image,
+                                                     tool or profile waits for approve
   hopper template approve <name>                     approve it as it is: its image, its secrets and its read profiles
   hopper template approve-profile <name> <operation>/<kind>/<asset>
                                                      approve one write, sync or apply profile explicitly
@@ -27,13 +28,15 @@ export const VAULT_USAGE = `  hopper vault                                      
                                                      template a job asks for; set replaces it, set with none clears it
   hopper sandbox list                                the user's sandbox boxes, and whether the hopper can start one now
   hopper sandbox launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>]
-                                                     start a sandbox box, of an approved template, within its limits`;
+                    [--tool <name>]...
+                                                     start a sandbox box, of an approved template, within its limits; with
+                                                     fewer of its tools, or any tool on a box of no template`;
 
 const VAULT_SET = 'vault set <name> [--scope <text>] [--shared [--reader <user id>]...] (the value on stdin, never as an argument)';
 const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared]`;
-const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off]';
+const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]...';
 const TEMPLATE_VERBS = 'template list | save <name> … | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | read-policy [set <entry>...]';
-const SANDBOX_VERBS = 'sandbox list | launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>]';
+const SANDBOX_VERBS = 'sandbox list | launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>] [--tool <name>]...';
 
 const edit = (body: Record<string, unknown>): Call => ({ role: 'admin', path: '/ui/api/vault', body: async () => body });
 
@@ -97,6 +100,7 @@ export function templateCall(args: string[]): Call {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     image: { type: 'string' }, secret: { type: 'string', multiple: true }, profile: { type: 'string', multiple: true },
     cpus: { type: 'string' }, 'memory-mb': { type: 'string' }, 'ttl-minutes': { type: 'string' }, 'keep-home': { type: 'string' },
+    tool: { type: 'string', multiple: true },
   } });
   const [verb, name, ...rest] = positionals;
   const flags = Object.keys(values).length > 0;
@@ -111,14 +115,14 @@ export function templateCall(args: string[]): Call {
     if (!name || rest.length > 0 || !values.image) throw usage(TEMPLATE_SAVE);
     const profiles = values.profile?.map(profileOf);
     const limits = limitsOf(values);
-    const { image, secret } = values;
+    const { image, secret, tool } = values;
     return {
       role: 'admin', path: '/ui/api/vault', pick: templatesOf,
       // The secrets left out keep the ones it has, as its profiles and limits do.
       body: async (get) => ({
         action: 'save-template', name, image,
         secrets: secret ?? templatesOf(await get('/api/vault')).find((x) => x.name === name)?.secrets ?? [],
-        ...(profiles ? { profiles } : {}), ...(limits ? { limits } : {}),
+        ...(profiles ? { profiles } : {}), ...(limits ? { limits } : {}), ...(tool ? { tools: tool } : {}),
       }),
     };
   }
@@ -132,7 +136,7 @@ export function templateCall(args: string[]): Call {
 export function sandboxCall(args: string[]): Call {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     template: { type: 'string' }, secret: { type: 'string', multiple: true }, cpus: { type: 'string' }, 'memory-mb': { type: 'string' },
-    'ttl-minutes': { type: 'string' }, profile: { type: 'string' },
+    'ttl-minutes': { type: 'string' }, profile: { type: 'string' }, tool: { type: 'string', multiple: true },
   } });
   const [verb, ...extra] = positionals;
   if (verb === 'list' && extra.length === 0 && Object.keys(values).length === 0) return { role: 'viewer', path: '/api/sandboxes' };
@@ -144,6 +148,7 @@ export function sandboxCall(args: string[]): Call {
   const params = {
     ...(values.secret ? { secrets: values.secret } : {}), ...(cpus === undefined ? {} : { cpus }), ...(memoryMb === undefined ? {} : { memoryMb }),
     ...(ttlMinutes === undefined ? {} : { ttlMinutes }), ...(values.profile === undefined ? {} : { profile: values.profile }),
+    ...(values.tool ? { tools: values.tool } : {}),
   };
   return { role: 'admin', path: '/ui/api/machines/sandbox', body: async () => ({ ...(values.template === undefined ? {} : { template: values.template }), params }) };
 }

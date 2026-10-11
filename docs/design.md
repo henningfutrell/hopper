@@ -8403,11 +8403,12 @@ running daemon, under a session the CLI mints for the one call and drops after i
   database's credentials can approve, as it could already through `config set` and the database itself.
 - **Roles.** The reads are `viewer`; every change is `admin`, the least role its route names.
 
-**Not built (carried on issue #718).** Tools assembled per run; the read-only negative suite (#715) run before a new template's
-first use; and a token-scoped API for agents. The last one contradicts "Operator actions from the CLI" (a mutating API
+**Not built (carried on issue #718).** The read-only negative suite (#715) run before a new template's first use; and a
+token-scoped API for agents. The last one contradicts "Operator actions from the CLI" (a mutating API
 token is a second door beside the UI session), so it needs a decision first. Shared secrets (issue #718, item 3) are
 built: `vault set <name> --shared` ("Shared secrets"). A template made on request, with read approved inside the read
-policy, is built ("Templates on request"); so is `template read-policy`.
+policy, is built ("Templates on request"); so is `template read-policy`. Tools assembled per run are built, with
+`template save --tool` and `sandbox launch --tool` ("Tools assembled per run").
 
 ## Templates on request (issue #716, item 1, 2026-10-10)
 
@@ -8445,9 +8446,9 @@ not get write access over the API; they still ask the hopper. So a job asks thro
   person in Settings → Vault: …`, with what waits and why the policy did not approve it; `--wait` opens a watch, and the
   job stream ends it when a person approves (`vault.approved`, `template.profile_approved` ask it again).
 
-**Not built (carried on issue #716).** A job does not launch the box: a person or the CLI starts it. Tools assembled per
-run (item 2): every requested template runs the one box image. The read-only negative suite (#715) before a new
-template's first use (item 4). A need's credential is asked of a person when a job on the box first loads the skill;
+**Not built (carried on issue #716).** A job does not launch the box: a person or the CLI starts it. The read-only
+negative suite (#715) before a new template's first use (item 4). (Tools assembled per run, item 2, are built: "Tools
+assembled per run".) A need's credential is asked of a person when a job on the box first loads the skill;
 the template does not name a vault secret the user already has. Templates made on request are not removed when no job
 uses them.
 
@@ -8461,6 +8462,59 @@ need waits, and the job's `--wait` ends when a person approves; no policy, a rea
 widened back and a revoke is not approved again; needs it cannot read refused; the policy set, shown, an event, and an
 entry it cannot read refused), `test/skills/template-request.test.ts`, `test/integration/operator-cli-vault.test.ts`
 (`template read-policy`), `test/ui/vault-read-policy.test.ts`.
+
+## Tools assembled per run (issue #716, item 2, 2026-10-10)
+
+Owner's model (issue #716): the hopper picks or composes the image with the tools a job asks for, instead of one fixed
+image per template. Before it, a box ran its template's image as it was, and every template made on request ran the one
+box image, with no `aws`, `kubectl`, `helm` or `terraform` in it.
+
+- **The catalog** (`BOX_TOOLS`, `src/domain/sandboxes.ts`; the recipes in `src/sandbox/tools.ts`): `aws`, `helm`,
+  `kubectl`, `terraform`. Each is one version, pinned, from the tool's own release (AWS CLI v2 from awscli.amazonaws.com,
+  Helm from get.helm.sh, kubectl from dl.k8s.io, Terraform from releases.hashicorp.com), with its SHA-256 for `amd64` and
+  `arm64`. The sums were taken from each project's published sums; the AWS CLI's from the archives, whose signatures were
+  checked against the AWS CLI team's key. A new version is a change to that file, reviewed like any other. A tool outside
+  the catalog is refused (400) with the ones the hopper adds.
+- **The image.** `toolsImage` writes a Containerfile: a fetch stage from Debian bookworm-slim, pinned by its index digest,
+  that downloads each tool, checks it with `sha256sum -c` and installs it under `/opt/hopper-tools` (one `RUN` per tool,
+  so a tool fetched for one image is a cached layer for the next); then the box's own image, with only `/opt/hopper-tools`
+  copied in and put first on `PATH`. Nothing else of the base changes: its user, its entrypoint, its labels; it adds the
+  label `io.hopper.tools`. A sum that does not match fails the build, and nothing starts.
+- **Built once.** Its tag is `localhost/hopper-box-tools:<16 hex>`, a SHA-256 of the Containerfile and the base image's
+  id: the same tools on the same base build once. The runtime port has `build(tag, containerfile)` (Podman's
+  `/libpod/build`, Docker's `/build`; the context is a tar of the one Containerfile, `containerfileTar`). It builds only
+  when no image of that tag is there. The image stays local: it is never pushed.
+- **A template's tools** (`Template.tools`). Saved with the template (`POST /ui/api/vault` `save-template` `tools`, Settings
+  → Vault **Tools**, `hopper template save --tool <name>`); a save that names none keeps the ones it has. They are part of
+  what its boxes run, so they are approved with its image (`approval.tools`, `imageApproved`): a change of tools waits for
+  a person as a new image does, and `template.saved` and `vault.approved` carry `tools`. Templates are a JSON body: an old
+  one has no `tools`, which is none. No migration.
+- **A launch's tools** (`params.tools`, `POST /ui/api/machines/sandbox`, `hopper sandbox launch --tool <name>`). A box of a
+  template gets all its tools, or the fewer the launch names; a tool it does not add is refused (400). A box of no template
+  may name any tool in the catalog: tools are software, not credentials. A launch with no tool runs the base image as
+  before. The sandbox record keeps the tools and the built image.
+- **A template made on request** gets the tools its needs use (`toolsForNeeds`): `cluster` and `namespace` → `kubectl`,
+  `helm`; `argocd-app` → `kubectl`; `aws-account` and `aws-role` → `aws`; `terraform-workspace` → `terraform`, `aws`. The
+  read policy approves them with the template, as it approves the box image: they are the hopper's own pinned software.
+  A template a job asked for before this has no tools, and a job does not add them (a job never widens a template).
+
+**Not built.** Removing old tools images: each new base or tool set leaves one in the runtime's storage, as pulled images
+do. A tool outside the four; a version per template. Tools on the Add machine form (the UI launch gets all the template's
+tools; the CLI and the API name fewer). A running box gets no new tools: launch another.
+
+**Residual risk, stated.** The build fetches from the four release hosts and Debian's mirrors with the runtime's network.
+A compromised release host cannot change what is installed (the sums are pinned here), but it can make the build fail.
+The tools run as the box's user, under the sandbox flags; what they can reach is what the box's credentials and network
+allow, unchanged.
+
+Tests: `test/sandbox/tools.test.ts` (the Containerfile, the tag, the catalog, the tools of each asset kind),
+`test/sandbox/params.test.ts`, `test/integration/sandbox-tools.test.ts` (the real daemon, the runtime as a double: a box of
+a template with tools runs the built image, built once; a change of tools waits for approval; tools outside refused; a box
+of no template; a build that fails leaves nothing), `test/adapters/podman-runtime.test.ts` and `docker-runtime.test.ts`
+(the build call), `test/integration/template-requests.test.ts`, `test/integration/operator-cli-vault.test.ts`,
+`test/ui/vault.test.ts`. Checked by hand against rootless Podman 6.1: the image of the box image with all four built in
+about 20 s, a second build was skipped, the four tools ran as `agent` on a read-only root with every capability dropped,
+and a wrong sum failed the build with no image left.
 
 ## Reserved lanes (issue #372, 2026-10-07)
 
@@ -10024,8 +10078,8 @@ Per-user stays the default; sharing is the hopper's admin's explicit act.
 each user's own template approval is the gate, as for that user's own secrets. The readers are user ids, not checked
 against the users the hopper has: an id of no user matches no one.
 
-**Not built (carried on issue #718).** Tools assembled per run (item 2); a token-scoped mutating API so an agent does
-all of this over the API without a UI session (item 4); and the read-only negative suite run before a new template's
+**Not built (carried on issue #718).** A token-scoped mutating API so an agent does all of this over the API without a
+UI session (item 4); and the read-only negative suite run before a new template's
 first use (item 5), which waits on #715's suite.
 
 Tests: `test/integration/shared-secrets.test.ts` (the real daemon, a real joined box and the real CLI: shared and listed
