@@ -129,7 +129,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   };
   const reconcile = (now?: Date): Promise<void> => (running ??= pass(now ?? o.clock.now()).finally(() => { running = undefined; }));
   const checkPass = o.runtime && o.checks
-    ? createCheckPass({ runtime: o.runtime, instanceId: o.instanceId, network: o.network, probes: o.probes ?? HOPPER_PROBES, clock: o.clock, logger: o.logger }, o.checks)
+    ? createCheckPass({ runtime: o.runtime, credentials: o.checks, instanceId: o.instanceId, network: o.network, probes: o.probes ?? HOPPER_PROBES, clock: o.clock, logger: o.logger }, o.checks)
     : undefined;
   let checking: Promise<void> | undefined;
   const check = (): Promise<void> => (checking ??= (checkPass?.() ?? Promise.resolve())

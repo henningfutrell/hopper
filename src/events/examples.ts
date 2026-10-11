@@ -170,6 +170,14 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     reason: 'Access denied it: template kube is not approved to write on namespace lab/web. write on namespace lab/web waits for a person\'s approval on Settings → Vault (the first-time gate)',
     decision: '6c1d2e3f-0000-4000-8000-000000000003',
   },
+  'vault.check_minted': {
+    kind: 'aws', operation: 'read', asset: { kind: 'aws-role', name: '123456789012/readonly' }, template: 'asked-0afb8cc6', check: 'hopper-check-asked-0afb8cc6-mgk2x0',
+    credential: 'AWS_LAB', decision: '6c1d2e3f-0000-4000-8000-000000000004', expiresAt: '2026-10-11T12:15:00.000Z',
+  },
+  'vault.check_mint_refused': {
+    mint: { kind: 'kube', operation: 'read', asset: { kind: 'cluster', name: 'lab' } }, template: 'asked-0afb8cc6', check: 'hopper-check-asked-0afb8cc6-mgk2x0',
+    reason: 'no minting credential mints for cluster lab: a person adds one on Settings → Vault', decision: '6c1d2e3f-0000-4000-8000-000000000005',
+  },
   'vault.mint_tested': {
     asset: { kind: 'aws-role', name: '123456789012/diag' }, credential: 'AWS_LAB', sessionName: 'hopper-mint-test',
     arn: 'arn:aws:sts::123456789012:assumed-role/diag/hopper-mint-test', expiresAt: '2026-10-09T12:15:00.000Z', by: 'Ada',

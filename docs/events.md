@@ -2912,6 +2912,66 @@ Version 1 (`docs/schemas/vault.mint_tested.v1.json`). A person tested an AWS min
 }
 ```
 
+## `vault.check_minted`
+
+Version 1 (`docs/schemas/vault.check_minted.v1.json`). The vault minted a short-lived read credential for a read-only check box of a template (issue #797): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the read need on the asset, from the minting credential named, after Access allowed the template it (`decision`, a decision of the check on Settings → Access). The check runs no job; `check` is its check box. Never the credential.
+
+| field | type | required |
+|---|---|---|
+| `kind` | `aws` \| `kube` | yes |
+| `operation` | `read` \| `write` \| `sync` \| `apply` | yes |
+| `asset` | object | yes |
+| `template` | string | yes |
+| `check` | string | yes |
+| `credential` | string | yes |
+| `decision` | string | yes |
+| `expiresAt` | string | yes |
+
+```json
+{
+  "kind": "aws",
+  "operation": "read",
+  "asset": {
+    "kind": "aws-role",
+    "name": "123456789012/readonly"
+  },
+  "template": "asked-0afb8cc6",
+  "check": "hopper-check-asked-0afb8cc6-mgk2x0",
+  "credential": "AWS_LAB",
+  "decision": "6c1d2e3f-0000-4000-8000-000000000004",
+  "expiresAt": "2026-10-11T12:15:00.000Z"
+}
+```
+
+## `vault.check_mint_refused`
+
+Version 1 (`docs/schemas/vault.check_mint_refused.v1.json`). A read-only check box of a template got no read credential for one read need (issue #797), and the check failed with the reason: the vault mints for none of the asset's kind (`mint.kind` absent), Access denied it, no minting credential covers the asset, or the outside service refused. `decision` when Access answered; never a value.
+
+| field | type | required |
+|---|---|---|
+| `mint` | object | yes |
+| `template` | string | yes |
+| `check` | string | yes |
+| `reason` | string | yes |
+| `decision` | string | no |
+
+```json
+{
+  "mint": {
+    "kind": "kube",
+    "operation": "read",
+    "asset": {
+      "kind": "cluster",
+      "name": "lab"
+    }
+  },
+  "template": "asked-0afb8cc6",
+  "check": "hopper-check-asked-0afb8cc6-mgk2x0",
+  "reason": "no minting credential mints for cluster lab: a person adds one on Settings → Vault",
+  "decision": "6c1d2e3f-0000-4000-8000-000000000005"
+}
+```
+
 ## `vault.credential_asked`
 
 Version 1 (`docs/schemas/vault.credential_asked.v1.json`). A job on a box loaded a skill whose credential its template does not give (issue #583), and the hopper asked a person for one: a credential request. The skill, the template, the machine, the job, and what the job said it needs it for. Once per job and request.

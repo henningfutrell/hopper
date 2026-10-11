@@ -1,7 +1,9 @@
 // Fake aws, kubectl, helm and terraform (issue #716, the read-only check): shell scripts in a temp dir that answer as the
 // real tools do under a read-only credential (every write refused, in each tool's own words) or a writable one (every
 // write goes through). Each call is logged to `calls`, so a test sees a cleanup run. `runScript` runs a check box's script
-// with them as its tools, as the container runtime double's one-shot containers do.
+// with them as its tools and the box's environment, as the container runtime double's one-shot containers do.
+// `credentials` (issue #797): aws then answers only with that minted session in its environment, and kubectl and helm only
+// with a kubeconfig that holds that token — else each fails as the real tool does with no credential.
 import { execFile } from 'node:child_process';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,6 +11,13 @@ import { dirname, join } from 'node:path';
 import type { ContainerSpec } from '../../src/domain/ports.ts';
 
 export type CloudMode = 'read-only' | 'writable';
+
+/** The minted credentials the tools take: an AWS session token, a Kubernetes token. */
+export interface FakeCredentials { awsSessionToken: string; kubeToken: string }
+
+const AWS_CREDENTIAL = `[ "$AWS_SESSION_TOKEN" = "$AWS_WANTS" ] && [ -n "$AWS_ACCESS_KEY_ID" ] || { echo 'Unable to locate credentials. You can configure credentials by running "aws configure".' >&2; exit 253; }`;
+const KUBE_CREDENTIAL = `[ -n "$KUBECONFIG" ] && grep -q "$KUBE_WANTS" "$KUBECONFIG" 2>/dev/null || { echo 'The connection to the server localhost:8080 was refused - did you specify the right host or port?' >&2; exit 1; }`;
+const CHECKS: Record<string, string> = { aws: AWS_CREDENTIAL, kubectl: KUBE_CREDENTIAL, helm: KUBE_CREDENTIAL };
 
 const TOOLS: Record<string, string> = {
   aws: `case "$*" in
@@ -44,7 +53,7 @@ export interface FakeCloudTools {
   cleanup(): void;
 }
 
-export function createFakeCloudTools(mode: CloudMode = 'read-only'): FakeCloudTools {
+export function createFakeCloudTools(mode: CloudMode = 'read-only', credentials?: FakeCredentials): FakeCloudTools {
   const dir = mkdtempSync(join(tmpdir(), 'fake-cloud-'));
   const log = join(dir, 'calls.log');
   writeFileSync(log, '');
@@ -52,7 +61,8 @@ export function createFakeCloudTools(mode: CloudMode = 'read-only'): FakeCloudTo
   setMode(mode);
   for (const [tool, body] of Object.entries(TOOLS)) {
     const path = join(dir, tool);
-    writeFileSync(path, `#!/bin/sh\nMODE=$(cat ${JSON.stringify(join(dir, 'mode'))})\necho "${tool} $*" >> ${JSON.stringify(log)}\n${body}\nexit 0\n`);
+    const check = credentials && CHECKS[tool] ? `AWS_WANTS=${credentials.awsSessionToken} KUBE_WANTS=${credentials.kubeToken}\n${CHECKS[tool]}\n` : '';
+    writeFileSync(path, `#!/bin/sh\nMODE=$(cat ${JSON.stringify(join(dir, 'mode'))})\necho "${tool} $*" >> ${JSON.stringify(log)}\n${check}${body}\nexit 0\n`);
     chmodSync(path, 0o755);
   }
   return {
@@ -61,7 +71,7 @@ export function createFakeCloudTools(mode: CloudMode = 'read-only'): FakeCloudTo
     runScript: (spec) => new Promise((resolve) => {
       const home = mkdtempSync(join(dir, 'box-'));
       // The tools first, then node's and the system's: the check needs sh, coreutils and base64 as a box has them.
-      const env = { PATH: `${dir}:${dirname(process.execPath)}:/usr/bin:/bin`, HOPPER_TOOLS: dir, HOPPER_CHECK_DIR: home };
+      const env = { ...spec.env, PATH: `${dir}:${dirname(process.execPath)}:/usr/bin:/bin`, HOPPER_TOOLS: dir, HOPPER_CHECK_DIR: home };
       execFile('sh', ['-c', spec.script ?? ''], { env, encoding: 'utf8' }, (err, stdout, stderr) => {
         resolve({ exit: err ? Number((err as { code?: number }).code ?? 1) : 0, output: stdout + stderr });
       });

@@ -47,6 +47,12 @@ export interface MintRequest {
   asset: Asset;
 }
 
+/**
+ * A read-only check's ask for a credential (issue #797): the check box `check` runs as `template` and runs no job, so
+ * Access is asked as for a live job of that template (as a trial is), and the decision is recorded as the check's.
+ */
+export interface CheckMintRequest { template: string; check: string; operation: Operation; asset: Asset }
+
 /** Who is live now, of one user, as the hopper writes it to OpenFGA: each live job with the machine it runs on, and each box with the template it joined as. */
 export interface LiveRequesters {
   userId: string;
@@ -75,10 +81,14 @@ export interface MintDecision {
   modelId?: string;
 }
 
-/** A recorded decision: the request with its answer, and the template the requester ran as. A check tried from Settings → Access is a `trial`, by whom. */
+/**
+ * A recorded decision: the request with its answer, and the template the requester ran as. A check tried from Settings →
+ * Access is a `trial`, by whom; a read-only check's mint (issue #797) is a `check`, by its check box.
+ */
 export interface AccessDecisionRecord extends MintDecision {
   requester?: Requester;
   trial?: { by: string };
+  check?: { box: string };
   template?: string;
   operation: Operation;
   asset: Asset;
@@ -183,6 +193,8 @@ export interface ApiTokenAsk { userId: string; tokenId: string; role: 'viewer' |
 /** What the vault reads of access (issue #580): the gate's approvals, and the decision it asks before every mint and renewal. */
 export interface VaultAccess extends TemplateApprovals {
   decideMint(request: MintRequest): Promise<MintDecision>;
+  /** Whether a read-only check box of the template gets the credential (issue #797): asked before each of its mints; recorded. */
+  decideCheckMint(request: CheckMintRequest): Promise<MintDecision>;
   /** Whether a requester may change or read a system secret (issue #657): OpenFGA's answer, asked each time; a deny when it cannot be had. */
   decideSystemSecret(ask: SystemSecretAsk): Promise<AccessAnswer>;
   /** Whether a user may read or change a shared secret (issue #718): OpenFGA's answer, the readers told at each ask; a deny when it cannot be had. */

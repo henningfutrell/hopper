@@ -87,10 +87,10 @@ export function probeCatalog(probes: readonly Probe[]): ProbeCatalog {
     runsFor(needs: readonly OperationProfile[]): ProbeRun[] {
       const seen = new Set<string>();
       return needs.flatMap((n) => probes.filter((p) => p.kinds.includes(n.asset.kind)).flatMap((probe) => {
-        const key = `${probe.id} ${n.asset.name}`;
+        const key = `${probe.id} ${n.asset.kind} ${n.asset.name}`;
         if (seen.has(key)) return [];
         seen.add(key);
-        return [{ probe, asset: n.asset.name }];
+        return [{ probe, kind: n.asset.kind, asset: n.asset.name }];
       }));
     },
   };

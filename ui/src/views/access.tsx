@@ -199,7 +199,7 @@ export function Access() {
             {view.decisions.map((d) => (
               <li key={d.id} data-decision={d.id} data-allowed={String(d.allowed)} className="space-y-0.5 border-b py-2 text-xs last:border-b-0">
                 <span className="num font-mono text-muted-foreground" title={d.at}>{clock(d.at)}</span>
-                {' '}<span className="text-muted-foreground">{d.trial ? `tried by ${d.trial.by}` : d.requester ? requesterText(d.requester) : ''}</span>
+                {' '}<span className="text-muted-foreground">{d.trial ? `tried by ${d.trial.by}` : d.check ? `read-only check ${d.check.box}` : d.requester ? requesterText(d.requester) : ''}</span>
                 <DecisionLine d={d} />
               </li>
             ))}

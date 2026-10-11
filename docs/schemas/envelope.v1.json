@@ -151,6 +151,8 @@
         "vault.minted",
         "vault.mint_refused",
         "vault.mint_tested",
+        "vault.check_minted",
+        "vault.check_mint_refused",
         "vault.credential_asked",
         "vault.credential_given",
         "vault.credential_declined",

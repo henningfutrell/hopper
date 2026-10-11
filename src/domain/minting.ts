@@ -30,6 +30,9 @@ export interface AwsMintingCredential {
   AccessKeyId: string; SecretAccessKey: string; SessionToken?: string; Region?: string; Endpoint?: string; SessionName?: string; SessionNamePrefix?: string;
 }
 
+/** The region the hopper asks STS in, and a check box's AWS CLI works in (issue #797): the credential's, else AWS's first. */
+export const awsRegionOf = (c: Pick<AwsMintingCredential, 'Region'>): string => c.Region ?? 'us-east-1';
+
 /** The characters STS takes in a role session name. */
 const SESSION_NAME_CHARS = /^[\w+=,.@-]+$/;
 /** The session name a mint for the job assumes the role with: STS takes at most 64 characters. */
@@ -76,6 +79,21 @@ export type Minted =
   | { kind: 'aws'; AccessKeyId: string; SecretAccessKey: string; SessionToken: string; Expiration: string }
   | { kind: 'kube'; token: string; expirationTimestamp: string };
 
+/**
+ * Where a minted credential is used, from its minting credential (issue #797): for AWS the region and the STS endpoint
+ * (when it is not AWS's), for Kubernetes the API server and its CA. No secret: what a read-only check box needs beside
+ * the credential to reach the account or cluster.
+ */
+export type MintReach =
+  | { kind: 'aws'; region: string; stsEndpoint?: string }
+  | { kind: 'kube'; server: string; certificateAuthorityData?: string };
+
+/** What the vault mints for read on an asset of this kind (issue #797): an AWS session for a role, a token for a cluster or a namespace; undefined: none. */
+export function mintKindFor(kind: AssetKind): MintKind | undefined {
+  if (kind === 'aws-role') return 'aws';
+  return kind === 'cluster' || kind === 'namespace' ? 'kube' : undefined;
+}
+
 /** When a minted credential expires. */
 export const expiryOf = (m: Minted): string => (m.kind === 'aws' ? m.Expiration : m.expirationTimestamp);
 
@@ -98,6 +116,9 @@ export interface CallerIdentity { arn: string; account: string; userId: string }
  * session is. Its session is named as a job's is, with `MINT_TEST_ID` in place of the job id.
  */
 export const MINT_TEST_ID = 'mint-test';
+
+/** A read-only check's mints (issue #797): an AWS session is named as a job's is, with this in place of the job id. */
+export const CHECK_MINT_ID = 'read-only-check';
 
 /** What a mint test answers: the role, what was asked of STS, and who STS says the session is. Never a key. */
 export interface MintTestResult {

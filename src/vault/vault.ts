@@ -4,6 +4,7 @@ import type { Clock, UserStore } from '../domain/ports.ts';
 import type { SystemSecretName, VaultView } from '../domain/vault.ts';
 import type { MintAsk } from './mint.ts';
 import type { MintTestAnswer } from './mint-test.ts';
+import type { CheckMintAnswer, CheckMintAsk } from './checks.ts';
 import { createCredentialRequests, type Asker, type CredentialAsk, type Give, type NeedAnswer } from './requests.ts';
 import type { SetSecret, VaultResult, VaultService } from './service.ts';
 import type { SharedSecrets } from './shared.ts';
@@ -27,6 +28,8 @@ export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTempla
   mint(ask: MintAsk, machineKey: string): Promise<{ value: string } | { refused: string }>;
   /** A person's mint test (issue #781): an AWS read session minted where the minting credential is, and who STS says it is. */
   testMint(asset: string, by: string): Promise<MintTestAnswer>;
+  /** A read-only check box's credential for one read need (issue #797), after Access, minted where the minting credential is. */
+  mintForCheck(ask: CheckMintAsk): Promise<CheckMintAnswer>;
   /**
    * A job on a box loaded a skill whose credential its template does not give (issue #583, the skill broker proved who
    * asks): a person is asked — a credential request, opened or joined — or the job is told they declined.
@@ -62,6 +65,7 @@ export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decl
   deliver: (ask, key) => v.deliver(ask, key),
   mint: (ask, key) => v.mint(ask, key),
   testMint: (asset, by) => v.testMint(asset, by),
+  mintForCheck: (ask) => v.mintForCheck(ask),
   saveTemplate: (t, by) => v.saveTemplate(t, by),
   removeTemplate: (name, by) => v.removeTemplate(name, by),
   approveTemplate: (name, by) => v.approveTemplate(name, by),

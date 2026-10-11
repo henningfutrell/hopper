@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- The read-only check of a template a job asked for now runs with real read access: the hopper makes a short read-only AWS session or Kubernetes token for each thing the template reads, after Access allows it. Reads can now pass, and a write is refused by AWS or the cluster itself. When the hopper cannot make one, the check fails and says what to add.
 - Your Grok Bot routine is now told when a job finishes or fails, so it no longer needs to check on its own.
 - The hopper's API can now be reached from anywhere through an optional ngrok tunnel, with no open port on your machine. Only the API goes through it, never the pages you sign in on. While the tunnel is up, your Grok Bot routine is told where to reach the hopper, and told again every few minutes.
 - Your TypeSafe API key (for Jev) and your webhook signing secrets can now stay in your own secret manager (HashiCorp Vault, 1Password or Bitwarden). On the Vault page, choose Keep in a vault backend. The hopper reads the secret there when it starts and every 5 minutes, and keeps no copy on disk.

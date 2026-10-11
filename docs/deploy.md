@@ -426,7 +426,43 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   want for that operation (for `hopper-read`, the `view` cluster role). Make an identity whose token may only
   `create` on `serviceaccounts/token` for those service accounts. In Settings → Vault, set a secret with *Mints for*
   `cluster/<name>` and the value `{"server": "https://…:6443", "token": "…", "certificateAuthorityData": "<base64 PEM>"}`.
-  Each token the hopper mints lives 10 minutes.
+  Each token the hopper mints lives 10 minutes. For read on a whole cluster, this sets up both service accounts in the
+  namespace `hopper` (for a namespace, put `hopper-read` and its binding in that namespace, and let the role below
+  reach it there):
+
+  ```yaml
+  apiVersion: v1
+  kind: Namespace
+  metadata: { name: hopper }
+  ---
+  apiVersion: v1
+  kind: ServiceAccount
+  metadata: { name: hopper-read, namespace: hopper }
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRoleBinding
+  metadata: { name: hopper-read-view }
+  roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: view }
+  subjects: [{ kind: ServiceAccount, name: hopper-read, namespace: hopper }]
+  ---
+  apiVersion: v1
+  kind: ServiceAccount
+  metadata: { name: hopper-minter, namespace: hopper }
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: Role
+  metadata: { name: hopper-minter, namespace: hopper }
+  rules: [{ apiGroups: [""], resources: [serviceaccounts/token], resourceNames: [hopper-read], verbs: [create] }]
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: RoleBinding
+  metadata: { name: hopper-minter, namespace: hopper }
+  roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: hopper-minter }
+  subjects: [{ kind: ServiceAccount, name: hopper-minter, namespace: hopper }]
+  ```
+
+  Then `kubectl -n hopper create token hopper-minter --duration=8760h` gives the minting credential's `token`; renew it
+  before it expires.
 - **AWS.** Make an IAM user (or role) that may only `sts:AssumeRole` the roles templates may reach. In Settings →
   Vault, set a secret with *Mints for* `aws-account/<id>` and the value `{"AccessKeyId": "…", "SecretAccessKey": "…"}`
   (optional `Region`, and `Endpoint` for an STS other than AWS's). Each session lives 15 minutes; a `read` session
@@ -442,6 +478,11 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   and no template lists it in its scope.
 - **A vault grant** is needed too: a job gets a minted credential only after a person grants it the vault
   (Settings → Vault, Vault grants).
+- **The read-only check** (issue #797) uses the same minting credentials: before a check box of a template of read
+  needs starts, the hopper mints a read session for each `aws-role` and a `hopper-read` token for each cluster or
+  namespace, and the box's probes run with them. A need with no minting credential fails the check and says which one
+  to add. The AWS session is named `hopper-read-only-check` (or `<prefix>read-only-check`, or the fixed `SessionName`).
+  Set `Region` in an AWS minting credential when the account's services are not in `us-east-1`.
 ## Optional services
 
 `compose.yaml` has required services and optional ones (issue #586). Nothing outside the stack is required.
