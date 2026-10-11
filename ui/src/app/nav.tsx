@@ -1,15 +1,16 @@
 // The views, routed by URL hash so a link (#questions) and the back button work. A view may have
 // sections after a slash (#settings/routing): the view is the part before it. Each section (Questions, Proposals,
 // Research, Logins, Failures, Parked; issues #543, #565) is a view whose badge follows the one section rule (useSectionBadges).
-// Not taken (issue #798) is badged with the request cards waiting for approval.
-import { ChevronsUp, CircleDashed, FileCheck, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
+// Not taken (issue #798) is badged with the request cards waiting for approval, and apart with the issues on the backburner
+// (issue #808), so an issue kept out never looks gone.
+import { ChevronsUp, CircleDashed, Flame, FileCheck, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useHopper } from '@/store';
 import { useAwaitingSort, useSectionBadges } from '@/store/selectors';
 import { SECTION_KINDS } from '@/model/sections';
-import { requestsWaiting } from '@/model/intake';
+import { onTheBackburner, requestsWaiting } from '@/model/intake';
 import { cn } from '@/lib/utils';
 
 export const VIEWS = ['overview', 'queue', 'not-taken', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
@@ -44,6 +45,7 @@ export const useSection = (): string => useSyncExternalStore(subscribe, readSect
 function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const failedSources = useHopper((s) => s.sources.filter((x) => x.state === 'error').length);
   const requests = useHopper((s) => requestsWaiting(s.sources));
+  const backburner = useHopper((s) => onTheBackburner(s.sources));
   const sorting = useAwaitingSort();
   // Every section's badge by the one rule; a high-priority item waiting (issue #535) marks it and says how many.
   const sections = useSectionBadges();
@@ -67,6 +69,12 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
               <span data-slot="nav-badge" data-high={b.high ? b.high : undefined} title={b.title}
                 className={cn('num ml-auto flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full px-1.5 text-[11px] font-semibold', b.cls, b.high && 'ring-2 ring-warn ring-offset-1 ring-offset-background')}>
                 {b.high ? <ChevronsUp className="size-3" aria-label="high priority" /> : null}{b.n}
+              </span>
+            )}
+            {v === 'not-taken' && backburner > 0 && (
+              <span data-slot="nav-badge-backburner" title={`${backburner} ${backburner === 1 ? 'issue' : 'issues'} on the backburner`}
+                className={cn('num flex h-5 min-w-5 items-center justify-center gap-0.5 rounded-full border border-dashed px-1.5 text-[11px] font-semibold text-muted-foreground', !(b && b.n > 0) && 'ml-auto')}>
+                <Flame className="size-3" aria-hidden />{backburner}
               </span>
             )}
           </a>

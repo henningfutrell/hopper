@@ -3,7 +3,8 @@
 // per user of a hopper), so a stale claim of the user's own is released and a live one of another hopper is
 // respected. The intake migration moves a source's existing items to these rules once, and lists what it changed.
 // An item not of a trusted origin (issue #652, intake-origin.ts) is not taken: it is a request card, which a person approves.
-// Each item not taken is in one not-taken group (issue #798), so the UI groups and counts them by why.
+// Each item not taken is in one not-taken group (issue #798), so the UI groups and counts them by why. An item on the
+// backburner says since when and by whom (issue #808), so it never looks dropped.
 import type { ItemText } from './item-snapshots.ts';
 import type { AccessAnswer } from './access.ts';
 import type { IntakeRequest } from './intake-origin.ts';
@@ -29,6 +30,14 @@ export interface IntakeOutcome {
   group?: NotTakenGroup;
   /** A request card (issue #652): what Approve approves. With `action: 'approve'`. */
   request?: IntakeRequest;
+  /** On the backburner (issue #808): since when and by whom, from its newest `labeled` event. Absent: not read. */
+  backburner?: BackburnerSince;
+}
+
+/** When an item went on the backburner, and who put it there (issue #808); a part absent: GitHub did not say. */
+export interface BackburnerSince {
+  since?: string;
+  by?: string;
 }
 
 /**

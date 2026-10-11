@@ -1,5 +1,6 @@
 // The issues a source did not take, grouped by why (issue #798): its not-taken group, in the order the UI lists them —
-// request cards first, as they wait for a person —, with a count per group. Sources lists the taken ones last.
+// request cards first, as they wait for a person —, with a count per group. Sources lists the taken ones last. The issues
+// on the backburner are counted apart (issue #808), so the nav and the Queue always show how many are kept out.
 import type { IntakeOutcome, NotTakenGroup } from '../../../src/domain/intake.ts';
 import type { JobStatus, SourceStatus } from './wire';
 
@@ -29,6 +30,12 @@ export function intakeGroups(items: IntakeOutcome[], o: { taken: boolean }): Int
 
 /** A source's intake outcomes, or none when it lists none. */
 export const intakeOf = (s: SourceStatus): IntakeOutcome[] => (Array.isArray(s.detail?.intake) ? s.detail.intake as IntakeOutcome[] : []);
+
+/** The issues on the backburner across the sources (issue #808): Not taken's second badge, and the Queue's link. */
+export const onTheBackburner = (sources: SourceStatus[]): number => sources.reduce((n, s) => n + intakeOf(s).filter((x) => groupOf(x) === 'backburner').length, 0);
+
+/** An issue's number from its key (a GitHub issue URL), or undefined for another kind of item (issue #808). */
+export const issueNumber = (key: string): number | undefined => { const m = /\/issues\/(\d+)$/.exec(key); return m ? Number(m[1]) : undefined; };
 
 /** The request cards waiting for approval across the sources: the Not taken badge. */
 export const requestsWaiting = (sources: SourceStatus[]): number => sources.reduce((n, s) => n + intakeOf(s).filter((x) => x.action === 'approve').length, 0);
