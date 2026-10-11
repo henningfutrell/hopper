@@ -7,6 +7,7 @@
 //   Scenario: a 503 with Retry-After, then the answer: the script waits, sends the request again, and prints the answer
 //   Scenario: the hopper stays out of reach: the script stops after a few tries, with the door's reason
 //   Scenario: a 500, or a 503 with no Retry-After, is never sent again
+//   Scenario: the job is told to keep its local work going and to wait to push while the hopper is out of reach
 import { execFile } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server, type ServerResponse } from 'node:http';
@@ -16,6 +17,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ARTIFACT_SCRIPT } from '../../src/artifacts/index.ts';
 import { PROXY_SCRIPT, RETRY_AFTER_TRIES } from '../../src/github-proxy/index.ts';
+import { OUT_OF_REACH_LINE, PROTOCOL_LINES } from '../../src/job-rules/index.ts';
 import { SKILL_SCRIPT } from '../../src/skills/index.ts';
 
 const servers: Server[] = [];
@@ -107,4 +109,14 @@ describe('a job\'s scripts obey Retry-After (issue #752)', () => {
       }
     });
   }
+});
+
+describe('the job\'s protocol while the hopper is out of reach (issue #752)', () => {
+  it('says: keep the local work going, wait to push, never sign in another way', () => {
+    expect(PROTOCOL_LINES).toContain(OUT_OF_REACH_LINE);
+    expect(OUT_OF_REACH_LINE).toContain('the hopper is out of reach since');
+    expect(OUT_OF_REACH_LINE).toContain('Keep the local work going: edit, build, test and commit.');
+    expect(OUT_OF_REACH_LINE).toContain('Wait to push');
+    expect(OUT_OF_REACH_LINE).toContain('Never sign in another way.');
+  });
 });
