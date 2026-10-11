@@ -27,6 +27,7 @@ import { ARTIFACT_REVISION_TABLES, ARTIFACT_TABLES } from './migration-artifacts
 import { BUG_REPORT_TABLE } from './bug-reports.ts';
 import { ISSUE_GRAPH_TABLES } from './issue-graph.ts';
 import { POINTED_JOB_TABLE } from './pointed-jobs.ts';
+import { GITHUB_WATCH_TABLE } from './github-watches.ts';
 import { itemSnapshotsBackfill } from './migration-item-snapshots.ts';
 import { commentHoldsReleased } from './migration-comment-holds.ts';
 import { originPendingBackfill } from './migration-origin-pending.ts';
@@ -315,13 +316,7 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   collapseFloodedLogins,
   // 28: The vault (issue #558): each secret's sealed value (`sealed`, never read into its metadata) beside its metadata.
   // A table only: the build before runs on it.
-  `CREATE TABLE vault_secrets (
-    seq BIGSERIAL PRIMARY KEY,
-    id TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL UNIQUE,
-    sealed TEXT NOT NULL,
-    body TEXT NOT NULL
-  )`,
+  'CREATE TABLE vault_secrets (seq BIGSERIAL PRIMARY KEY, id TEXT NOT NULL UNIQUE, name TEXT NOT NULL UNIQUE, sealed TEXT NOT NULL, body TEXT NOT NULL)',
   // 29: Templates (issue #558): an image and the vault secrets its boxes may ask for, with its last approval, in its
   // body. A table only: the build before runs on it.
   'CREATE TABLE templates (seq BIGSERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, body TEXT NOT NULL)',
@@ -356,6 +351,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   ISSUE_GRAPH_TABLES,
   // 43: Pointed jobs (issue #425): a table only; the jobs a store has read as pointed jobs. The build before runs on it.
   POINTED_JOB_TABLE,
+  // 44: GitHub watches (issue #427): each pointed job's last snapshot. A table only: the build before runs on it.
+  GITHUB_WATCH_TABLE,
 ];
 
 /** A user schema's version once migrated. */

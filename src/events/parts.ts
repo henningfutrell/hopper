@@ -119,6 +119,23 @@ export const pointedJobEvents = {
   'pointed_job.status_changed': strict({ id: z.string(), from: pointedJobStatus, to: pointedJobStatus, lane: z.string().optional(), by: z.string() }),
 };
 
+// GitHub watches (issue #427, src/github-watch/): what changed on a watched item at one poll, and the interval changed.
+const watchState = z.enum(['open', 'closed', 'merged']);
+const watchComment = strict({ id: z.number().int(), author: z.string(), at: z.string() });
+const watchSetChange = strict({ added: z.array(z.string()), removed: z.array(z.string()) });
+const watchChanges = strict({
+  state: strict({ from: watchState, to: watchState, reason: z.string().optional(), mergedAt: z.string().optional() }).optional(),
+  labels: watchSetChange.optional(),
+  comments: strict({ added: z.array(watchComment), removed: z.number().int().min(0) }).optional(),
+  reviews: strict({ added: z.array(watchComment.extend({ state: z.string() })) }).optional(),
+  linkedPullRequests: watchSetChange.optional(),
+});
+const watchSettings = strict({ intervalSeconds: z.number().int().min(1) });
+export const githubWatchEvents = {
+  'github_watch.changed': strict({ pointedJob: z.string(), repo: z.string(), pointer: strict({ kind: z.enum(POINTER_KINDS), number: z.number().int(), url: z.string() }), changes: watchChanges }),
+  'github_watch.settings_changed': strict({ from: watchSettings, to: watchSettings, by: z.string() }),
+};
+
 /** A job's task count (issue #794): done of total, 0 ≤ done ≤ total, total ≥ 1. */
 export const taskCount = strict({ done: z.number().int().min(0), total: z.number().int().min(1) })
   .refine((t) => t.done <= t.total, { message: 'done must not exceed total' });

@@ -3,7 +3,7 @@ import type { RateLimiterSettings } from '../domain/github-rate-limit.ts';
 import type { IntakeActorSettings } from '../domain/intake-origin.ts';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, ContributionSettings, DiscoveryRecord, FailureSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings } from '../domain/types.ts';
+import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, ContributionSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 import type { MasterKeyRotation } from '../domain/settings-store.ts';
@@ -209,6 +209,8 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     setTldr(settings) {
       write('tldr', JSON.stringify({ enabled: settings.enabled }));
     },
+    getGitHubWatch: () => { const t = read('githubWatch'); return t === undefined ? undefined : JSON.parse(t) as GitHubWatchSettings; },
+    setGitHubWatch: (s) => write('githubWatch', JSON.stringify({ intervalSeconds: s.intervalSeconds })),
     getYoloMode() {
       const text = read('yoloMode');
       return text === undefined ? undefined : JSON.parse(text) as YoloModeSettings;

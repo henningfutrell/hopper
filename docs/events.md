@@ -4189,3 +4189,66 @@ Version 1 (`docs/schemas/pointed_job.status_changed.v1.json`). A pointed job mov
   "by": "octocat"
 }
 ```
+
+## `github_watch.changed`
+
+Version 1 (`docs/schemas/github_watch.changed.v1.json`). A GitHub watch saw its pointed job's item change (issue #427): one event per poll that found a change, with every change of that poll in `changes` — `state` (`from`, `to`: `open`, `closed` or `merged`; `reason` GitHub's state reason; `mergedAt`), `labels` (`added`, `removed`), `comments` (`added`: `id`, `author`, `at`; `removed`: how many went), `reviews` (`added`: `id`, `author`, `state`, `at`), `linkedPullRequests` (`added`, `removed`, by URL). `pointedJob`, `repo`, `pointer`: what is watched. A poll that sees no change, and the first poll of a watch, record nothing. Never a comment's text.
+
+| field | type | required |
+|---|---|---|
+| `pointedJob` | string | yes |
+| `repo` | string | yes |
+| `pointer` | object | yes |
+| `changes` | object | yes |
+
+```json
+{
+  "pointedJob": "p1",
+  "repo": "octo-org/hello",
+  "pointer": {
+    "kind": "issue",
+    "number": 7,
+    "url": "https://github.com/octo-org/hello/issues/7"
+  },
+  "changes": {
+    "labels": {
+      "added": [
+        "ready"
+      ],
+      "removed": []
+    },
+    "comments": {
+      "added": [
+        {
+          "id": 1201,
+          "author": "octocat",
+          "at": "2026-10-11T12:00:00Z"
+        }
+      ],
+      "removed": 0
+    }
+  }
+}
+```
+
+## `github_watch.settings_changed`
+
+Version 1 (`docs/schemas/github_watch.settings_changed.v1.json`). A person changed how often the GitHub watches poll (issue #427): `from` and `to`, each `intervalSeconds`. The rounds start again at once on the new interval, with no restart.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "intervalSeconds": 60
+  },
+  "to": {
+    "intervalSeconds": 300
+  },
+  "by": "octocat"
+}
+```

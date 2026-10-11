@@ -62,6 +62,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
+| `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
@@ -13790,3 +13791,53 @@ table is left as it was. A job of no repository (a manual item, a plain API job)
 `POST /ui/api/pointed-jobs` (`pointed_job.created`, `source: api`) and `POST /ui/api/pointed-jobs/:id/transition`, operator,
 through the UI session or an API token. Neither starts a job, so neither is a box action.
 
+
+## GitHub watches (issue #427, 2026-10-11)
+
+Job 3 of the pointed-job architecture (tracking issue #424). Requirement: a watch per pointed job polls GitHub on an
+interval for its item — state, labels, comments, reviews, linked pull requests, merge —, compares it with the last
+stored snapshot, and records a typed event only on a change. The interval is a setting in the database, changed in the
+UI, applied without a restart.
+
+**What is watched.** Each pointed job (issue #425) that has not ended (`watched`: not `merged`, not `abandoned`), on its
+issue or pull request. The jobs the hopper already has, read as pointed jobs, are not: their pull request is followed
+already (`src/sources/github/follow.ts`). The service follows `pointed_job.created` and `pointed_job.status_changed`, so a
+new pointed job is watched at once and an ended one is dropped, with no restart.
+
+**A poll** (`src/github-watch/github.ts`). With the user's own GitHub connection (`githubProxy.watches`, as Report a bug
+and the repository checks): `GET /repos/{repo}/issues/{n}` — it answers a pull request too, with its merge — and every
+page of its timeline. Both through `makeRequest`, so the shared rate limiter (issue #436) paces them, and an unchanged
+page is a 304 from its ETag cache that costs no call. One REST read and one timeline page per poll, where GraphQL would
+be one call each time with no conditional request. The **watch snapshot** (`snapshotOf`): `state` `open`, `closed`
+(with GitHub's `state_reason`) or `merged` (with `mergedAt`); the labels; the comments and reviews by id, author and time
+— never their text —; the pull requests whose cross-reference is on the timeline, by URL.
+
+**Change** (`src/domain/github-watch.ts`, pure). `githubWatchChanges(before, after)`: a state change, labels added and
+removed, comments added and how many went, reviews added, linked pull requests added and removed — each part present only
+when it changed; nothing changed is `undefined`. Labels and links compare as sets, so GitHub's order changes nothing. A
+poll that found a change writes the new snapshot and one `github_watch.changed { pointedJob, repo, pointer, changes }` in
+one transaction; every change of that poll is in the one event. A poll with no change writes its time only. The first
+poll of a watch stores its snapshot and records nothing: there is nothing to compare. A failed poll keeps the snapshot,
+stores the problem on the watch (`error`, logged once per new problem) and records nothing; the next good poll clears
+it. No GitHub connection is such a problem.
+
+**Schedule** (`src/github-watch/service.ts`). Every watch of the user is on one poll schedule (`createPollSchedule`, issue
+#436): rounds of the interval, in batches of the shared limiter's `batchSize`, spread across the round. A new watch polls
+at once for its first snapshot. One poll of a watch at a time: its first poll and its round never compare against one
+snapshot twice. It starts and stops with the user's runtime.
+
+**Interval.** `intervalSeconds`, 10 to 86400, default 60: the user's setting (`githubWatch` in the user's settings), an
+admin's, Settings → GitHub watches (`POST /ui/api/github-watches`), `github_watch.settings_changed`. The schedule reads
+it at each round; a change also stops the rounds and starts them again at once, so the watches poll now and then on the
+new interval — a change from an hour to a minute does not wait out the hour. The same value records nothing.
+
+**Store.** Tenant migration 44: `github_watches`, one row per pointed job, its watch as JSON (`repo`, `pointer`,
+`snapshot`, `polledAt`, `changedAt`, `error`). A table only: the build before runs on it. The row stays after its
+pointed job ends, with its last snapshot.
+
+**API.** `GET /api/github-watches`: the settings and the watch of each pointed job that has not ended. Pull-based
+completion (issue #428) and resuming a parked job on a reply (issue #435) read `github_watch.changed`; nothing acts on
+it yet.
+
+**Dependency.** Built on the pointed job record (issue #425, PR #831) and the shared rate limiter's poll schedule (issue
+#436, PR #817), whose commits this change carries: it depends on both, and neither on it.

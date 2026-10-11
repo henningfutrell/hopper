@@ -12,7 +12,7 @@ import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
 import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts';
-import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, holdPlan, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, taskCount, vaultGrantEvents } from './parts.ts';
+import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, holdPlan, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, taskCount, vaultGrantEvents } from './parts.ts';
 
 const strict = z.strictObject;
 // A point from before (issue #679 removed `question-answer`) stays valid in the events that name it.
@@ -372,7 +372,7 @@ export const EVENT_SCHEMAS = {
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
   ...THREAD_ASK_EVENT_SCHEMAS,
-  ...bugReportEvents, ...repoChecksEvents, ...vaultGrantEvents, ...issueLineageEvents, ...rateLimiterEvents, ...contributionEvents, ...pointedJobEvents,
+  ...bugReportEvents, ...repoChecksEvents, ...vaultGrantEvents, ...issueLineageEvents, ...rateLimiterEvents, ...contributionEvents, ...pointedJobEvents, ...githubWatchEvents,
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({
