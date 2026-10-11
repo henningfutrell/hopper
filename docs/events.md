@@ -9,7 +9,7 @@ An additive (optional) field keeps the version; a removed, renamed or retyped fi
 
 Events stored before phase 3 read as v1 and are not re-validated.
 
-Stored events are never rewritten. Superseded versions stay readable and documented: `job.prioritized.v1`, `decision.made.v1`, `jev.mode_changed.v1`, `job.prioritized.v2`, `decision.made.v2`, `router.mode_changed.v1`, `question.escalated.v1`, `question.answered.v1`, `proposal.submitted.v1`, `proposal.escalated.v1`
+Stored events are never rewritten. Superseded versions stay readable and documented: `job.prioritized.v1`, `decision.made.v1`, `jev.mode_changed.v1`, `job.prioritized.v2`, `decision.made.v2`, `router.mode_changed.v1`, `job.progressed.v1`, `question.escalated.v1`, `question.answered.v1`, `proposal.submitted.v1`, `proposal.escalated.v1`
 (phase 5 renamed Jev → router: `jev.mode_changed` became `router.mode_changed`; slice 2 made question
 stages instance names: `question.escalated.target` and `question.answered.by` were `opus | fable | human` in v1;
 issue #211 removed the router mode: `router.mode_changed` is retired, and v3 of `job.prioritized` and
@@ -142,17 +142,20 @@ Version 1 (`docs/schemas/job.started.v1.json`). The executor began running a cla
 
 ## `job.progressed`
 
-Version 1 (`docs/schemas/job.progressed.v1.json`). An executor reported progress; at most one per job per 500 ms.
+Version 2 (`docs/schemas/job.progressed.v2.json`). An executor reported progress: a progress message, the job's task count (done of total), or both; at most one per job per 500 ms.
 
 | field | type | required |
 |---|---|---|
-| `progress` | number | yes |
 | `message` | string | no |
+| `tasks` | object | no |
 
 ```json
 {
-  "progress": 0.5,
-  "message": "half"
+  "message": "Running the checks",
+  "tasks": {
+    "done": 2,
+    "total": 5
+  }
 }
 ```
 

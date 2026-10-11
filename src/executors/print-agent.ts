@@ -20,6 +20,7 @@ import { DIALECTS, type PrintAgent } from './print-agents.ts';
 import { shellQuote, type SshAuth } from './ssh.ts';
 import { hideCodes } from '../logins/recognise.ts';
 import { watchRunOutput } from '../logins/run-output.ts';
+import { lastTaskCount } from '../domain/task-count.ts';
 
 /** The answer's tail kept for whoever answers a question. */
 const OUTPUT_CAP = 16000;
@@ -120,9 +121,9 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     const where = ctx.machine.id;
     try {
       const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], { ...o, dockerHost: () => { throw new Error('no docker'); } });
-      ctx.progress(0, `${label} ${chatId ? 'resumed' : 'started'} on ${where}`);
+      ctx.progress(`${label} ${chatId ? 'resumed' : 'started'} on ${where}`);
       // A device code the agent's tools print goes to the logins while the turn waits on it (issue #476).
-      const login = watchRunOutput(ctx.logins, { now: () => new Date() }, (line) => ctx.progress(0, line));
+      const login = watchRunOutput(ctx.logins, { now: () => new Date() }, (line) => ctx.progress(line));
       const r = await run(file, args, p.timeoutMs, ctx.signal, o.userEnv, login.feed).then((ran) => {
         login.end(ran === 'aborted' || ran === 'timeout' ? { ok: false, reason: ran === 'aborted' ? 'aborted' : 'timed out' } : ran.exitCode === 0 ? { ok: true } : { ok: false, reason: `exited ${ran.exitCode}` });
         return ran;
@@ -139,10 +140,13 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
       }
       if ('error' in answer) return { kind: 'failed', error: `${label} on ${where}: ${hidden(tail(answer.error))}` };
       if ('unreadable' in answer) return { kind: 'failed', error: `${label} on ${where} ${hidden(tail(answer.unreadable))}` };
+      // The last task count the turn wrote is the job's progress (issue #794).
+      const tasks = lastTaskCount(answer.text);
+      if (tasks) ctx.progress(undefined, tasks);
       const out = outcomeOf(hidden(answer.text), where, answer.session);
       if ('statusNote' in out) {
         // A status note opens no question (issue #163): the agent is nudged in the same session.
-        ctx.progress(0, out.statusNote);
+        ctx.progress(out.statusNote);
         if (notes >= NUDGES) return { kind: 'failed', error: `${label} answered ${notes + 1} times in a row without a marker: ${tail(out.statusNote)}` };
         return await turn(ctx, cwd, STATUS_NOTE_NUDGE, answer.session, notes + 1);
       }

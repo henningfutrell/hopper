@@ -14,7 +14,7 @@ export const EVENT_DOCS: Record<EventType, string> = {
   'job.approved': 'A human approved a job the router held (e.g. `ask_human`).',
   'job.claimed': 'A Decision assigned a job to a lane.',
   'job.started': 'The executor began running a claimed job.',
-  'job.progressed': 'An executor reported progress; at most one per job per 500 ms.',
+  'job.progressed': 'An executor reported progress: a progress message, the job\'s task count (done of total), or both; at most one per job per 500 ms.',
   'job.finished': 'A job ended successfully. `partlyDone` (issue #579): it ended partly done — the URL of its own pull request that ships part of its item ("Part of #N"); the next part runs once that is merged.',
   'job.failed': 'A job ended with an error. `priority`, `high` (issue #535): the job\'s live priority, and whether it is at or above the high-priority threshold. `tldr` (issue #569): for a long question, what a notification leads with — its TL;DR when written, else the agent\'s own summary; absent for a short one or with the TL;DR off.',
   'job.cancelled': 'A job was cancelled.',

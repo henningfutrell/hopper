@@ -48,6 +48,8 @@ export const LEGACY_EVENT_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
     starts: z.array(startPlan), holds: z.array(holdPlan), lanes: z.array(lanePlan), divergences: z.array(divergence),
   }),
   'router.mode_changed.v1': strict({ from: routerMode, to: routerMode }),
+  // Issue #794: progress is the job's task count, no more a fraction 0..1 of elapsed time.
+  'job.progressed.v1': strict({ progress: z.number().min(0).max(1), message: z.string().optional() }),
   'question.escalated.v1': strict({
     questionId: z.string(), target: answerTier, reason: z.string(), text: z.string(), jobId: z.string(),
     goal: z.string().optional(), answerUrl: z.string().optional(),

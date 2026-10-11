@@ -13,7 +13,7 @@ export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> =
   'job.held': {},
   'job.claimed': { attempts: '1' },
   'job.started': {},
-  'job.progressed': { progress: 'half' },
+  'job.progressed': { tasks: { done: 3, total: 2 } },
   'job.failed': { error: 7 },
   'job.cancelled': {},
   'job.requeued': { from: 'x' },

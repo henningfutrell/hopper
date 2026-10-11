@@ -2,15 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { createExecutorRegistry, createTestExecutor } from '../../src/executors/index.ts';
 import type { ExecutionContext } from '../../src/domain/ports.ts';
 import type { Job } from '../../src/domain/types.ts';
+import type { TaskCount } from '../../src/domain/task-count.ts';
 
 function ctxFor(payload: Record<string, unknown>, signal = new AbortController().signal) {
-  const progress: number[] = [];
+  const progress: (TaskCount | undefined)[] = [];
   const saved: Record<string, unknown>[] = [];
   const job: Job = {
     id: 'j1', spec: { executor: 'test', payload }, priority: 50, status: 'running', approved: false,
     createdAt: '', updatedAt: '', attempts: 1,
   };
-  const ctx: ExecutionContext = { job, laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['test'] }, signal, progress: (f) => progress.push(f), saveState: (s) => saved.push(s), workTree() {} };
+  const ctx: ExecutionContext = { job, laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['test'] }, signal, progress: (_m, tasks) => progress.push(tasks), saveState: (s) => saved.push(s), workTree() {} };
   return { ctx, progress, saved };
 }
 
@@ -28,12 +29,10 @@ describe('test executor', () => {
     expect(await ex.run(ctxFor({ op: 'fail' }).ctx)).toEqual({ kind: 'failed', error: 'failed on purpose' });
   });
 
-  it('sleep reports increasing progress and its result', async () => {
+  it('sleep reports its ten steps as a task count, done of 10, and its result', async () => {
     const { ctx, progress } = ctxFor({ op: 'sleep', ms: 100 });
     expect(await ex.run(ctx)).toEqual({ kind: 'finished', result: { slept: 100 } });
-    expect(progress.length).toBeGreaterThanOrEqual(3);
-    expect([...progress].sort((a, b) => a - b)).toEqual(progress);
-    expect(progress.every((p) => p > 0 && p <= 1)).toBe(true);
+    expect(progress).toEqual(Array.from({ length: 10 }, (_, i) => ({ done: i + 1, total: 10 })));
   });
 
   it('abort mid-sleep resolves aborted within 100 ms', async () => {

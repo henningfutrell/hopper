@@ -58,7 +58,17 @@ describe('event schemas', () => {
   });
 
   it('job.progressed accepts message undefined (in-memory emitters)', () => {
-    expect(validateEvent(event('job.progressed', { progress: 1, message: undefined })).ok).toBe(true);
+    expect(validateEvent(event('job.progressed', { message: undefined, tasks: { done: 1, total: 1 } })).ok).toBe(true);
+  });
+
+  // Issue #794: progress is a task count, never a fraction of time; a stored v1 event still reads.
+  it('job.progressed is v2: a task count, done of total, and no fraction', () => {
+    expect(EVENT_SCHEMA_VERSIONS['job.progressed']).toBe(2);
+    expect(validateEvent(event('job.progressed', { tasks: { done: 0, total: 3 } })).ok).toBe(true);
+    expect(validateEvent(event('job.progressed', { message: 'Reading files' })).ok).toBe(true);
+    expect(validateEvent(event('job.progressed', { progress: 0.5 })).ok).toBe(false);
+    expect(validateEvent(event('job.progressed', { tasks: { done: 1, total: 0 } })).ok).toBe(false);
+    expect(validateEvent({ ...event('job.progressed', { progress: 0.5, message: 'half' }), schemaVersion: 1 }).ok).toBe(true);
   });
 });
 
@@ -72,7 +82,7 @@ describe('superseded payload versions (stored events are never rewritten)', () =
     expect(EVENT_TYPES).not.toContain('router.mode_changed');
     expect(EVENT_TYPES).not.toContain('jev.mode_changed');
     expect(Object.keys(LEGACY_EVENT_SCHEMAS).sort()).toEqual([
-      'decision.made.v1', 'decision.made.v2', 'jev.mode_changed.v1', 'job.prioritized.v1', 'job.prioritized.v2',
+      'decision.made.v1', 'decision.made.v2', 'jev.mode_changed.v1', 'job.prioritized.v1', 'job.prioritized.v2', 'job.progressed.v1',
       'proposal.escalated.v1', 'proposal.submitted.v1', 'question.answered.v1', 'question.escalated.v1', 'router.mode_changed.v1',
     ]);
   });

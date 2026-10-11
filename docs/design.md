@@ -252,7 +252,8 @@ an ordinary job never does, whatever its priority (critical priority, above, is 
   `job.prioritized` with `{ advice, mode }`. A crash or requeue mid-classification is
   therefore retried, never lost.
 - **Claim** increments `attempts`. `job.progressed` is throttled to one event per job per
-  500 ms (the last one before finish is always emitted).
+  500 ms (the last one before finish is always emitted). A report leaves out what it does not change
+  (issue #794): a progress message alone keeps the job's `tasks`, and a held report merges into the next.
 - **Apply:** close idle lanes (`lane.closed`), mark drains, open lanes (`lane.opened`),
   then for each start: claim (`job.claimed`, lane busy), run executor (`job.started`),
   progress (`job.progressed`), outcome (`job.finished` / `job.failed`). Lane returns idle, or
@@ -449,7 +450,7 @@ own test directory.
 
 `executor: "test"`, payload `{ op: "sleep" | "echo" | "fail", ms?: number, message?: string }`.
 
-- `sleep` — waits `ms` (default 1000, max 600000), progress every ~10%, result `{ slept: ms }`.
+- `sleep` — waits `ms` (default 1000, max 600000) in 10 steps, each a task done (task count `i/10`), result `{ slept: ms }`.
 - `echo` — waits `ms` (default 0), result `{ echo: message }`.
 - `fail` — waits `ms` (default 0), outcome `{ ok: false, error: message ?? "failed on purpose" }`.
 - Abort at any point → `{ ok: false, error: "aborted" }` promptly (within 50 ms).
@@ -467,7 +468,7 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.approved` | `{}` |
 | `job.claimed` | `{ attempts, effectivePriority, reason }` |
 | `job.started` | `{ attempts }` |
-| `job.progressed` | `{ progress, message? }` — at most one per job per 500 ms |
+| `job.progressed` | v2 `{ message?, tasks?: { done, total } }` (issue #794; v1 `{ progress, message? }`, a fraction of elapsed time, still reads) — at most one per job per 500 ms |
 | `job.finished` | `{ result }` |
 | `job.failed` | `{ error }` |
 | `job.cancelled` | `{ reason }` |
@@ -537,7 +538,7 @@ the current list is "Settled in slice 4" → "Configuration (env), as of slice 5
 
 Job: `executor: "herdr-claude"`, payload
 `{ prompt: string (required, non-empty), cwd?: string (absolute or ~; default config
-HOPPER_CLAUDE_CWD), model?: string, expectedMs?: number, timeoutMs?: number }`.
+HOPPER_CLAUDE_CWD), model?: string, timeoutMs?: number }`.
 
 **herdr session.** hopper owns the named session of the herdr-claude instance's `session` option
 (default `hopper`), run headless by its own unit `hopper-herdr.service`
@@ -902,6 +903,7 @@ If your question needs research or a proposal before it can be answered, say so 
 When you are asked to research, do not do the work: research, then write a research report in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Question:, Findings:, Sources and evidence:, Confidence:, Open threads:, Next step: —. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.
 When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), as Markdown, as a set of alternative paths. Start with TL;DR: (one or two sentences) and Problem: (a short problem statement). Then write each path as a heading "Path N: <title>" with these lines: Summary:, Security:, Effort:, Risk:, Friction: (for the person), Creates: (the jobs, issues or research that continuing with it creates), and more detail in Markdown if needed. Then Recommended: the number of the path, or the numbers of a combination, and why in one or two sentences. If no change is needed or no viable path was found, write Paths: none — and the reason. End with Context: (what you read and relied on). Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_PROPOSAL. A person selects one or more paths to continue with; you are told the decision, or what to change.
 When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>. The user completes the login; then the command goes on and you continue.
+Keep a task list for the job: the tasks that take it to done. When you make the list, and each time a task completes, write a line containing only: HOPPER_TASKS <completed>/<total>, for example HOPPER_TASKS 2/5. When the list changes, write the new total. The hopper shows this count as the progress of the job.
 When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, and, if you can, one line: until: <how you will know it happened>. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait.
 When the job is completely finished, end your final message with a line containing only: HOPPER_DONE
 If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.
@@ -946,8 +948,10 @@ marker still on screen, a marker in backticks or bold. Then:
 
 Marker matching: a line equal to the marker after trimming whitespace and the `●`/`⎿`
 gutter. The prompt echo contains the markers mid-line only, never as a whole line.
-Progress: on change of the last non-empty assistant line, `ctx.progress(min(0.9,
-elapsed / expectedMs), line)` (`expectedMs` default 600000).
+Progress (issue #794): on change of the last non-empty assistant line, `ctx.progress(line)`; on a new **task
+count** in the turn (its last line `HOPPER_TASKS <done>/<total>`, `lastTaskCount`, `src/domain/task-count.ts`),
+`ctx.progress(undefined, tasks)`. The count line is never a progress message. No clock: before the job writes a
+count it has none, and the card shows an indeterminate bar.
 
 **Stopped on a question.** When a turn stops on a question (any `question` outcome) the monitor saves
 `parkedSeq` = the `state_change_seq` it saw, for `answeredInPane` ("Questions" → "Answered in
@@ -963,7 +967,7 @@ If `blocked` → `send-keys esc` first. `agent prompt <agent> <answer>`; then th
 pane may still be open: its herdr not reached (a client target not dialled in, ssh failing), or
 `pane close` refused for any reason but `pane_not_found` (a pane already gone resolves). The engine
 then defers it ("Deferred cleanup").
-The executor is `idempotent: false`. `timeoutMs` and the `expectedMs` progress clock apply
+The executor is `idempotent: false`. `timeoutMs` applies
 per `run`/`resume` call; time spent waiting for an answer does not count.
 
 ## Questions

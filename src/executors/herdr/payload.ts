@@ -4,7 +4,6 @@ import { homedir } from 'node:os';
 import { posix } from 'node:path';
 import { JOBS_DIR, type Job, type MachineSnapshot } from '../../domain/types.ts';
 
-export const DEFAULT_EXPECTED_MS = 600000;
 export const DEFAULT_TIMEOUT_MS = 3600000;
 
 export interface ClaudeJobPayload {
@@ -17,7 +16,6 @@ export interface ClaudeJobPayload {
   repo?: string;
   /** Extra environment for the job's tab (the executor adds HOPPER_JOB_ID). */
   env: Record<string, string>;
-  expectedMs: number;
   timeoutMs: number;
 }
 
@@ -37,11 +35,10 @@ function validateEnv(env: unknown): string | null {
 const pathLike = (v: unknown): v is string => typeof v === 'string' && (v.startsWith('/') || v === '~' || v.startsWith('~/'));
 
 export function validatePayload(payload: Record<string, unknown>): string | null {
-  const { prompt, cwd, model, env, expectedMs, timeoutMs } = payload;
+  const { prompt, cwd, model, env, timeoutMs } = payload;
   if (typeof prompt !== 'string' || prompt.trim() === '') return 'prompt must be a non-empty string';
   if (cwd !== undefined && !pathLike(cwd)) return 'cwd must be an absolute path or start with ~';
   if (model !== undefined && typeof model !== 'string') return 'model must be a string';
-  if (expectedMs !== undefined && !positive(expectedMs)) return 'expectedMs must be a positive number';
   if (timeoutMs !== undefined && !positive(timeoutMs)) return 'timeoutMs must be a positive number';
   return env === undefined ? null : validateEnv(env);
 }
@@ -86,7 +83,7 @@ export function mappedWorkTree(workTrees: Record<string, string> | undefined, re
 export function resolvePayload(job: Pick<Job, 'spec' | 'source' | 'forkOf'>, machine: Pick<MachineSnapshot, 'id' | 'workTree' | 'workTrees'>): ClaudeJobPayload {
   // A fork (issue #548) works in its parent's repository.
   const source = job.source ?? job.forkOf?.source;
-  const p = job.spec.payload as { prompt: string; cwd?: string; model?: string; env?: Record<string, string>; expectedMs?: number; timeoutMs?: number };
+  const p = job.spec.payload as { prompt: string; cwd?: string; model?: string; env?: Record<string, string>; timeoutMs?: number };
   const own = job.spec.machineId === machine.id ? p.cwd : undefined;
   const repo = source?.repo && source.kind.startsWith('github') ? source.repo : undefined;
   return {
@@ -96,7 +93,6 @@ export function resolvePayload(job: Pick<Job, 'spec' | 'source' | 'forkOf'>, mac
     model: p.model,
     ...(repo ? { repo } : {}),
     env: { ...(p.env ?? {}) },
-    expectedMs: p.expectedMs ?? DEFAULT_EXPECTED_MS,
     timeoutMs: p.timeoutMs ?? DEFAULT_TIMEOUT_MS,
   };
 }

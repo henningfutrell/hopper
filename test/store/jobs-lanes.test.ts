@@ -19,13 +19,13 @@ describe('jobs', () => {
     const s = t.open(t.url(), clock);
     const j = s.jobs.create(spec, 50);
     clock.set('2026-10-02T11:00:00.000Z');
-    const u = s.jobs.update(j.id, { status: 'held', holdReason: 'budget', result: { a: 1 }, progress: 0.5 });
-    expect(u).toMatchObject({ status: 'held', holdReason: 'budget', result: { a: 1 }, progress: 0.5 });
+    const u = s.jobs.update(j.id, { status: 'held', holdReason: 'budget', result: { a: 1 }, tasks: { done: 1, total: 2 } });
+    expect(u).toMatchObject({ status: 'held', holdReason: 'budget', result: { a: 1 }, tasks: { done: 1, total: 2 } });
     expect(u.updatedAt).toBe('2026-10-02T11:00:00.000Z');
     const c = s.jobs.update(j.id, { holdReason: undefined, result: undefined });
     expect(c.holdReason).toBeUndefined();
     expect('result' in c && c.result !== undefined).toBe(false);
-    expect(c.progress).toBe(0.5);
+    expect(c.tasks).toEqual({ done: 1, total: 2 });
     s.close();
   });
 

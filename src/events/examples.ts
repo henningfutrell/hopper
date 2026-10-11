@@ -13,7 +13,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.approved': {},
   'job.claimed': { attempts: 1, effectivePriority: 50, reason: 'idle lane' },
   'job.started': { attempts: 1 },
-  'job.progressed': { progress: 0.5, message: 'half' },
+  'job.progressed': { message: 'Running the checks', tasks: { done: 2, total: 5 } },
   'job.finished': { result: { ok: true } },
   'job.failed': { error: 'boom' },
   'job.cancelled': { reason: 'cancelled while queued' },

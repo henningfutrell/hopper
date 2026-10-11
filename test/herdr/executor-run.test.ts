@@ -20,7 +20,7 @@ describe('herdr-claude executor: shape and validation', () => {
 
   it.each([
     [{ prompt: 'go' }, null],
-    [{ prompt: 'go', cwd: '/abs', model: 'opus', expectedMs: 1000, timeoutMs: 5000 }, null],
+    [{ prompt: 'go', cwd: '/abs', model: 'opus', timeoutMs: 5000 }, null],
     [{ prompt: 'go', cwd: '~' }, null],
     [{ prompt: 'go', cwd: '~/x' }, null],
     [{}, 'prompt must be a non-empty string'],
@@ -29,7 +29,6 @@ describe('herdr-claude executor: shape and validation', () => {
     [{ prompt: 'go', cwd: 'rel/dir' }, 'cwd must be an absolute path or start with ~'],
     [{ prompt: 'go', cwd: 3 }, 'cwd must be an absolute path or start with ~'],
     [{ prompt: 'go', model: 1 }, 'model must be a string'],
-    [{ prompt: 'go', expectedMs: 0 }, 'expectedMs must be a positive number'],
     [{ prompt: 'go', timeoutMs: -1 }, 'timeoutMs must be a positive number'],
     [{ prompt: 'go', timeoutMs: 'x' }, 'timeoutMs must be a positive number'],
     [{ prompt: 'go', env: { HOPPER_REPO: 'o/r', _X1: '' } }, null],
@@ -225,14 +224,23 @@ describe('herdr-claude executor: run', () => {
     expect(herdr.closed).toEqual(['w1:p1']);
   });
 
-  it('reports progress on each new assistant line, capped at 0.9 and non-decreasing', async () => {
+  it('reports each new assistant line as progress, with no fraction of time', async () => {
     const { executor } = setup({ turns: [{ steps: ['● Reading files', '● Writing hello.txt'], ...DONE }] });
-    const { ctx, progress } = contextFor(jobWith({ prompt: 'go', expectedMs: 2000 }));
+    const { ctx, progress } = contextFor(jobWith({ prompt: 'go' }));
     await executor.run(ctx);
-    const messages = progress.map((p) => p.message);
-    expect(messages).toEqual(expect.arrayContaining(['Reading files', 'Writing hello.txt']));
-    expect(progress.every((p) => p.fraction >= 0 && p.fraction <= 0.9)).toBe(true);
-    expect(progress.map((p) => p.fraction)).toEqual([...progress.map((p) => p.fraction)].sort((a, b) => a - b));
+    expect(progress.map((p) => p.message)).toEqual(expect.arrayContaining(['Reading files', 'Writing hello.txt']));
+    expect(progress.every((p) => p.tasks === undefined)).toBe(true);
+  });
+
+  // Issue #794: progress is the job's task count, x/y, as the job writes it; none before its task list.
+  it('reports the task count each time the job writes a new one; the count line is no progress message', async () => {
+    const steps = ['● Reading files', '● HOPPER_TASKS 0/3', '● Wrote the test', '● HOPPER_TASKS 1/3', '● Writing hello.txt', '● HOPPER_TASKS 2/3'];
+    const { executor } = setup({ turns: [{ steps, ...DONE }] });
+    const { ctx, progress } = contextFor(jobWith({ prompt: 'go' }));
+    await executor.run(ctx);
+    expect(progress.find((p) => p.message === 'Reading files')).toEqual({ message: 'Reading files' });
+    expect(progress.filter((p) => p.tasks).map((p) => p.tasks)).toEqual([{ done: 0, total: 3 }, { done: 1, total: 3 }, { done: 2, total: 3 }]);
+    expect(progress.map((p) => p.message)).not.toContain('HOPPER_TASKS 1/3');
   });
 
   it('maps its lane to its pane while running', async () => {

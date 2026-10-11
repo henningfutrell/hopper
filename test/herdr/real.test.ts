@@ -108,7 +108,7 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
         const { ctx } = contextFor(jobWith({ prompt: 'unused' }, { id }), `local/lane-${i}`);
         const state = await openPane(deps, ctx, dir, {});
         panes.push(state.paneId);
-        return startClaude(deps, ctx, state, { prompt: 'unused', cwd: dir, env: {}, expectedMs: 1, timeoutMs: 1 });
+        return startClaude(deps, ctx, state, { prompt: 'unused', cwd: dir, env: {}, timeoutMs: 1 });
       }));
       expect(outcomes).toEqual(ids.map(() => null));
       expect(new Set(panes).size).toBe(ids.length);

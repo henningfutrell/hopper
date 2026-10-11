@@ -16,7 +16,7 @@ export default {
       validate: (payload) => (typeof payload.prompt === 'string' ? null : 'payload.prompt must be a string'),
       // Must resolve, never reject: report a failure as { kind: 'failed', error }.
       async run(run) {
-        run.progress(1, 'echoed');
+        run.progress('echoed', { done: 1, total: 1 });
         return { kind: 'finished', result: { echoed: `${options.prefix}${String(run.job.spec.payload.prompt)}` } };
       },
     };
