@@ -1,6 +1,6 @@
 // What a user's job sources learn of the user's store (design.md "Plugin contract"): which source keys have a
 // local job, may be re-run or were rejected (issue #387), and, per source, the claim holder, the intake
-// migration and intake events (issue #440), the user's intake trust (issue #652), the user's yolo mode (issue #579), and a job's artifacts (issue #673). The connected accounts are added by the runtime.
+// migration and intake events (issue #440), the user's intake trust (issue #652), the user's yolo mode (issue #579), a job's artifacts (issue #673), and the issue graph (issue #437). The connected accounts are added by the runtime.
 import type { JobSourceContext } from '../plugins/sdk.ts';
 import type { UserStore } from '../domain/store.ts';
 import { DEFAULT_YOLO_MODE, isRerunnable, yoloModeFor } from '../domain/types.ts';
@@ -24,6 +24,7 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
     }),
     intakeTrust: storeIntakeTrust(store, decideActor),
     yoloMode: (repo) => yoloModeFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),
+    issueGraph: store.issueGraph,
     jobArtifacts: (jobId) => store.artifacts.list({ jobId }).map((a) => ({ id: a.id, ...(a.issue ? { issue: a.issue.url } : {}) })),
   };
 }

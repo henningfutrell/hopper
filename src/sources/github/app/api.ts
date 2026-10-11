@@ -8,7 +8,7 @@ import type { GitHubApi } from '../api.ts';
 import { createAuth } from './auth.ts';
 import type { AppAuth } from './auth.ts';
 import type { GitHubApp, GitHubAppLoad } from './config.ts';
-import { closingPullRequest, issueEdits, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from './graphql.ts';
+import { closingPullRequest, issueEdits, issuePlace, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from './graphql.ts';
 import { makeRequest, paginate, splitRepo, statusOf, toApiError } from './http.ts';
 import * as rest from './rest.ts';
 
@@ -124,6 +124,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
     subIssues: (repo, number) => call(`sub-issues of ${repo}#${number}`, async (l) => rest.subIssues(req, await tokenFor(l, repo), repo, number)),
     listComments: (repo, number) => call(`comments ${repo}#${number}`, async (l) => rest.listComments(req, await tokenFor(l, repo), repo, number)),
     issueEdits: (repo, number) => call(`edits of ${repo}#${number}`, async (l) => issueEdits(req, await tokenFor(l, repo), repo, number)),
+    issuePlace: (repo, number) => call(`place of ${repo}#${number}`, async (l) => issuePlace(req, await tokenFor(l, repo), repo, number)),
     ensureLabel: (repo, name, color, description) => call(`label ${repo} ${name}`, async (l) =>
       rest.ensureLabel(req, await tokenFor(l, repo), repo, name, color, description)),
     addLabels: (repo, number, labels) => call(`add labels ${repo}#${number}`, async (l) => rest.addLabels(req, await tokenFor(l, repo), repo, number, labels)),

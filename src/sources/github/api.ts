@@ -5,6 +5,7 @@
 
 import type { ChecksState } from '../../domain/pull-requests.ts';
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
+import type { IssuePlace } from '../../domain/issue-graph.ts';
 
 export interface GitHubIssue {
   /** owner/repo */
@@ -126,6 +127,8 @@ export interface GitHubApi {
   listComments(repo: string, number: number): Promise<GitHubComment[]>;
   /** Who edited the issue's title or body, and when, from its timeline (issue #662), oldest first. Absent: not read. */
   issueEdits?(repo: string, number: number): Promise<ItemEdit[]>;
+  /** The issue's place for the issue graph (issue #437): owner, Projects, linked issues and pull requests. Absent: not read. */
+  issuePlace?(repo: string, number: number): Promise<IssuePlace>;
   /** Throws a permanent GitHubApiError mentioning `read:project` when that scope is missing. */
   projectItems(owner: string, number: number): Promise<GitHubProjectItem[]>;
   ensureLabel(repo: string, name: string, color: string, description: string): Promise<void>;

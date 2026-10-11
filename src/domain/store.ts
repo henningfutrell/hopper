@@ -488,6 +488,8 @@ export interface UserStore {
   itemSnapshots: ItemSnapshotRepository;
   vaultGrants: VaultGrantRepository;
   bugReports: BugReportRepository;
+  /** The issue graph (issue #437): store only, nothing reads it yet. */
+  issueGraph: import('./issue-graph.ts').IssueGraphRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;

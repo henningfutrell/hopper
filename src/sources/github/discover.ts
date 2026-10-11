@@ -56,6 +56,8 @@ export interface DiscoverResult {
   outcomes: IntakeOutcome[];
   /** The labels of every issue listed, by URL. */
   listed: Map<string, string[]>;
+  /** Every open labelled issue listed, taken or not: what the issue graph keeps (issue #437). */
+  seen: GitHubIssue[];
   released: Released[];
   /** The intake migration ran in this pass: it was asked for and every repo was listed. */
   migrated: boolean;
@@ -205,6 +207,7 @@ export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, sco
     repoErrors,
     outcomes: issues.map((i) => { const r = reasons.get(i.url); return outcome(i, r?.reason, r?.action); }),
     listed,
+    seen: issues,
     released,
     migrated,
   };

@@ -3,7 +3,7 @@
 // (`organization_projects: read`); user-owned projects need a personal token, so for those this
 // ends in a permanent error and the source falls back to labels (projectErrors). Also: the pull
 // request that closed an issue, the open ones whose merge will close it, a pull request by its number, and the open
-// pull requests of a repository (closer.ts).
+// pull requests of a repository (closer.ts). And an issue's place for the issue graph (issue-place.ts, issue #437).
 
 import type { BranchPullRequest, ClosingPullRequest, GitHubProjectItem, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from '../api.ts';
 import { GitHubApiError } from '../api.ts';
@@ -12,6 +12,8 @@ import {
   CLOSING_PULL_REQUEST_QUERY, OPEN_PULL_REQUESTS_QUERY, OPEN_REPO_PULL_REQUESTS_QUERY, PULL_REQUEST_QUERY, REFERENCING_PULL_REQUESTS_QUERY, closingPullRequestFrom, openPullRequestsFrom, pullRequestFrom,
   referencingPullRequestsFrom, repoPullRequestsFrom,
 } from '../closer.ts';
+import { ISSUE_PLACE_QUERY, issuePlaceFrom } from '../issue-place.ts';
+import type { IssuePlace } from '../../../domain/issue-graph.ts';
 import { splitRepo } from './http.ts';
 import type { Request } from './http.ts';
 
@@ -159,4 +161,10 @@ export async function issueEdits(req: Request, token: string, repo: string, numb
   const { owner, repo: name } = splitRepo(repo);
   const r = await req('POST /graphql', { query: ISSUE_EDITS_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` } });
   return issueEditsFrom(r.data);
+}
+
+export async function issuePlace(req: Request, token: string, repo: string, number: number): Promise<IssuePlace> {
+  const { owner, repo: name } = splitRepo(repo);
+  const r = await req('POST /graphql', { query: ISSUE_PLACE_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` } });
+  return issuePlaceFrom(r.data, `place of ${repo}#${number}`);
 }

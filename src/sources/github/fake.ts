@@ -13,6 +13,7 @@ import { GitHubApiError } from './api.ts';
 import type { BranchPullRequest, ClosingPullRequest, GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem, IssueEvent, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
 import type { FakeActor, FakeAppIdentity, FakeGitHub, Method, PullRequestInput } from './fake-types.ts';
+import { fakeIssuePlace } from './fake-issue-place.ts';
 
 export type { FakeActor, FakeAppIdentity, FakeGitHub, PullRequestInput } from './fake-types.ts';
 
@@ -122,6 +123,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       if (!p) throw new GitHubApiError(`project ${owner}/${n} not found`, true, 404);
       return p.map((i) => ({ ...i, fields: { ...i.fields } }));
     },
+    async issuePlace(repo, n) { enter('issuePlace', [repo, n]); return fakeIssuePlace({ issues, subIssues, pulls, projects }, find(repo, n)); },
     async ensureLabel(repo, name, color, description) { enter('ensureLabel', [repo, name, color, description]); repoLabels(repo).add(name); },
     async addLabels(repo, n, names) {
       enter('addLabels', [repo, n, names]);
@@ -267,8 +269,8 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     editIssue(repo, n, change, editor, at = new Date().toISOString()) {
       const i = find(repo, n);
       const made: ItemEdit[] = [];
-      if (change.title !== undefined) { i.title = change.title; made.push({ what: 'title', editor, at }); }
-      if (change.body !== undefined) { i.body = change.body; made.push({ what: 'body', editor, at }); }
+      if (change.title !== undefined) { i.title = change.title; i.updatedAt = at; made.push({ what: 'title', editor, at }); }
+      if (change.body !== undefined) { i.body = change.body; i.updatedAt = at; made.push({ what: 'body', editor, at }); }
       edits.set(key(repo, n), [...(edits.get(key(repo, n)) ?? []), ...made]);
     },
     closeIssue(repo, n, closedBy, c = {}) {

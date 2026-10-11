@@ -29,11 +29,12 @@ import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
 import { openRequests, originsOf, REQUEST_REASON } from './origin.ts';
 import { backburnerReader } from './backburner.ts';
+import { recordIssueGraph, type IssueGraphRecorder } from './graph.ts';
 import { reportToGitHub, takeBack, writeResolution } from './report.ts';
 
 /** What the source reads of its config. */
 export type GitHubSourceSettings = Pick<GitHubSourceConfig,
-  'repos' | 'label' | 'hopperName' | 'priorityLabels' | 'defaultPriority' | 'executor' | 'model' | 'recentComments' | 'projects'
+  'repos' | 'label' | 'hopperName' | 'priorityLabels' | 'defaultPriority' | 'executor' | 'model' | 'recentComments' | 'projects' | 'issueGraph' | 'graphRefreshMinutes'
 >;
 
 /** The app's identity as the adapter knows it (its `appStatus()` fits), or undefined. */
@@ -72,6 +73,8 @@ export interface GitHubSourceOptions {
   yoloMode?: (repo: string) => boolean;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. Absent: none. */
   jobArtifacts?: JobArtifacts;
+  /** The user's issue graph (issue #437): each listed issue's place is kept there. Absent: none is kept. */
+  issueGraph?: IssueGraphRecorder;
 }
 
 /** How often the repos outside the source's scope are listed (issue #440): one listing, at most every 10 minutes. */
@@ -92,6 +95,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   let repoErrors: Record<string, string> = {};
   let projectErrors: Record<string, string> = {};
   let checkErrors: Record<string, string> = {};
+  let graphErrors: Record<string, string> = {};
   let outcomes: IntakeOutcome[] = [];
   /** The labels of each issue the last discover listed, by URL: what a release removes. */
   let listedLabels = new Map<string, string[]>();
@@ -254,6 +258,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...(outsideError ? { outsideError } : {}),
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),
+        ...(Object.keys(graphErrors).length ? { graphErrors } : {}),
         ...(lastDiscoverAt ? { lastDiscoverAt } : {}),
       };
     },
@@ -302,6 +307,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       outcomes = outcomes.map((x) => { const r = requests.get(x.key); return r ? { ...x, reason: REQUEST_REASON, action: 'approve' as const, group: 'request' as const, request: r } : x; });
       if (intake) openRequests(o.name, intake, requests, opened);
       outcomes = await backburner(outcomes);
+      if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
       lastDiscoverAt = o.clock.now().toISOString();
       return items;
     },

@@ -12,6 +12,7 @@ import { createAccountGitHubApi } from './github/account/api.ts';
 import { GitHubApiError } from './github/api.ts';
 import type { Rejection } from './github/discover.ts';
 import type { JobArtifacts } from './github/completion.ts';
+import type { IssueGraphRecorder } from './github/graph.ts';
 import type { IntakeContext, IntakeTrust } from '../domain/intake.ts';
 import { createGitHubAppApi, loadGitHubApp, type GitHubAppLoad } from './github/app/index.ts';
 import type { GitHubApi } from './github/index.ts';
@@ -52,6 +53,8 @@ export interface GitHubSourceDeps {
   yoloMode?: (repo: string) => boolean;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. */
   jobArtifacts?: JobArtifacts;
+  /** The user's issue graph (issue #437). */
+  issueGraph?: IssueGraphRecorder;
 }
 
 /**
@@ -69,6 +72,7 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
   return createGitHubSource({
     name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable, trust: o.trust,
     ...(o.rejections ? { rejections: o.rejections } : {}), ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}), api, assignee,
+    ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}),
     paused: () => appProblem(app()) ?? (assignee() ? undefined : NO_ASSIGNEE),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
   });
@@ -104,6 +108,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
           name: o.name, kind, mode: 'account', whoami: login, assignee: () => login, config, api, clock: o.clock, trust: o.trust,
           knownKeys: o.knownKeys, rerunnable: o.rerunnable, ...(o.rejections ? { rejections: o.rejections } : {}),
           ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}),
+          ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}),
         }),
       };
     }

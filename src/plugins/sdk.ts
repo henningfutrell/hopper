@@ -11,6 +11,7 @@ import type { VaultBackend } from '../domain/vault.ts';
 import type { ClientTransport } from '../executors/client.ts';
 import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, RaisedBy, Role, UsageReading } from '../domain/types.ts';
 import type { Rejection } from '../domain/rejection.ts';
+import type { IssueGraphRepository } from '../domain/issue-graph.ts';
 
 export type {
   Advice, AdviceAction, AnswerRequest, AttachedMachine, Clock, ConnectedAccountTokens, Detection, DomainEvent, EscalationLevel, ExecutionContext, LevelReply,
@@ -169,6 +170,8 @@ export interface JobSourceContext {
   yoloMode(repo: string): boolean;
   /** The artifacts a job made (issue #673): each one's id and the URL of the issue it is linked to. */
   jobArtifacts(jobId: string): { id: string; issue?: string }[];
+  /** The user's issue graph (issue #437): a source keeps the place of each issue it sees there. Store only. */
+  issueGraph: Pick<IssueGraphRepository, 'record' | 'lastRead'>;
 }
 
 export type { OptionChoice };
