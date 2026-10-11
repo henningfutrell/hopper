@@ -7,6 +7,8 @@
 //   Scenario: more than the max is refused, naming the parameter and the max
 //   Scenario: a secret outside the template's approved secrets is refused
 //   Scenario: a profile the template does not declare is refused
+//   Scenario: a launch gets the template's tools, or names fewer of them; a tool outside them is refused (issue #716)
+//   Scenario: a box of no template may name any tool the hopper adds
 //   Scenario: a box of no template gets the hopper's defaults
 //   Scenario: a template's limits must have each default within its max
 import { describe, expect, it } from 'vitest';
@@ -49,6 +51,20 @@ describe('launch parameters', () => {
     expect(resolveParams(kube, { profile: 'write/cluster/prod' })).toEqual({
       ok: false, error: 'the template kube has no operation profile write/cluster/prod: it has read/cluster/prod',
     });
+  });
+
+  it('a launch gets the template\'s tools, or names fewer of them; a tool outside them is refused (issue #716)', () => {
+    const tools = { ...kube, tools: ['aws', 'kubectl'] };
+    expect(resolveParams(tools, {})).toMatchObject({ ok: true, params: { tools: ['aws', 'kubectl'] } });
+    expect(resolveParams(tools, { tools: ['kubectl', 'kubectl'] })).toMatchObject({ ok: true, params: { tools: ['kubectl'] } });
+    expect(resolveParams(tools, { tools: [] })).toEqual({ ok: true, params: { secrets: kube.gives, cpus: 1, memoryMb: 1024, ttlMinutes: 60 } });
+    expect(resolveParams(tools, { tools: ['helm'] })).toEqual({ ok: false, error: 'the template kube does not add helm: it adds aws, kubectl' });
+    expect(resolveParams(kube, { tools: ['helm'] })).toEqual({ ok: false, error: 'the template kube does not add helm: it adds no tool' });
+  });
+
+  it('a box of no template may name any tool the hopper adds', () => {
+    expect(resolveParams(undefined, { tools: ['terraform', 'aws'] })).toMatchObject({ ok: true, params: { tools: ['aws', 'terraform'] } });
+    expect(resolveParams(undefined, { tools: ['nmap'] })).toEqual({ ok: false, error: 'nmap is not a tool the hopper adds to a box: it adds aws, helm, kubectl, terraform' });
   });
 
   it('a box of no template gets the hopper\'s defaults, and no time limit', () => {

@@ -28,7 +28,7 @@ export async function startFakeRuntimeApi(handlers: Handler[] = []): Promise<Fak
     req.on('data', (d: string) => { raw += d; });
     req.on('end', () => {
       const url = new URL(req.url ?? '/', 'http://localhost');
-      const seen: SeenRequest = { method: req.method ?? '', path: url.pathname, query: url.searchParams, body: raw ? JSON.parse(raw) : undefined };
+      const seen: SeenRequest = { method: req.method ?? '', path: url.pathname, query: url.searchParams, body: raw ? (String(req.headers['content-type']).includes('json') ? JSON.parse(raw) : raw) : undefined };
       api.seen.push(seen);
       const reply = api.handlers.map((h) => h(seen)).find((r) => r !== undefined) ?? { status: 404, body: { message: 'no such thing' } };
       res.writeHead(reply.status, { 'content-type': 'application/json' });

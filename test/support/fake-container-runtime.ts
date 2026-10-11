@@ -8,6 +8,12 @@ export interface FakeContainerRuntime extends ContainerRuntime {
   /** By name. */
   boxes: Map<string, FakeContainer>;
   volumes: Set<string>;
+  /** The images it built (issue #716), by tag: the Containerfile of each. */
+  images: Map<string, string>;
+  /** How many builds it ran: a build of an image that is there already runs none. */
+  builds: number;
+  /** Set: every build fails with this reason. */
+  buildFails?: string;
   /** The user each image runs as; an image not named runs as `agent`. */
   imageUsers: Map<string, string>;
   /** Set: why the runtime cannot be used. */
@@ -25,7 +31,7 @@ export function createFakeContainerRuntime(kind: RuntimeKind = 'podman'): FakeCo
   const byId = (id: string): FakeContainer | undefined => [...e.boxes.values()].find((c) => c.id === id || c.spec.name === id);
   const info = (c: FakeContainer): ContainerInfo => ({ id: c.id, name: c.spec.name, image: c.spec.image, labels: { ...c.spec.labels }, state: c.state });
   const e: FakeContainerRuntime = {
-    kind, boxes: new Map(), volumes: new Set(), imageUsers: new Map(),
+    kind, boxes: new Map(), volumes: new Set(), imageUsers: new Map(), images: new Map(), builds: 0,
     put(spec) {
       const id = `ctr${++n}`;
       e.boxes.set(spec.name, { id, spec: structuredClone(spec), state: 'running' });
@@ -33,7 +39,13 @@ export function createFakeContainerRuntime(kind: RuntimeKind = 'podman'): FakeCo
       return id;
     },
     async problem() { return e.down; },
-    async pull(image) { return { user: e.imageUsers.get(image) ?? 'agent' }; },
+    async pull(image) { return { user: e.imageUsers.get(image) ?? 'agent', id: `sha256:${image}` }; },
+    async build(tag, containerfile) {
+      if (e.images.has(tag)) return;
+      if (e.buildFails) throw new Error(e.buildFails);
+      e.images.set(tag, containerfile);
+      e.builds++;
+    },
     async createVolume(name) { const made = !e.volumes.has(name); e.volumes.add(name); return made; },
     async removeVolume(name) { e.volumes.delete(name); },
     async create(spec) {

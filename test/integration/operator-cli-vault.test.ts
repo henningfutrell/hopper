@@ -22,6 +22,7 @@
 //   Scenario: a sandbox box of an approved template is launched with parameters, and listed
 //   Scenario: a parameter outside the template's limits is refused with the daemon's reason; nothing starts
 //   Scenario: revoke and remove a template
+//   Scenario: a template's tools are saved with --tool, and a launch names fewer of them (issue #716, item 2)
 //   Scenario: the read policy is shown, set and cleared (issue #716, item 1); an entry it cannot read is refused
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
@@ -145,6 +146,19 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(await hopper(a, ['sandbox', 'launch', '--template', 'kube', '--cpus', '8'])).toMatchObject({ code: 2, err: expect.stringContaining('at most 4') });
     expect(await hopper(a, ['sandbox', 'launch', '--template', 'kube', '--cpus', 'many'])).toMatchObject({ code: 2, err: expect.stringContaining('--cpus') });
     expect(runtime.boxes.size).toBe(0);
+  });
+
+  it('saves a template\'s tools with --tool, and a launch names fewer of them (issue #716, item 2)', async () => {
+    const { a, runtime } = await boot();
+    const saved = kube(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--tool', 'kubectl', '--tool', 'helm']));
+    expect(saved).toMatchObject({ tools: ['helm', 'kubectl'], pending: { image: true } });
+    expect((await hopper(a, ['template', 'approve', 'kube'])).code).toBe(0);
+    // A save that names no tool keeps the ones it has.
+    expect(kube(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE]))).toMatchObject({ tools: ['helm', 'kubectl'], pending: { image: false } });
+    const r = await hopper(a, ['sandbox', 'launch', '--template', 'kube', '--tool', 'kubectl']);
+    expect(r).toMatchObject({ code: 0 });
+    expect(runtime.images.get(runtime.boxes.get(json<{ container: string }>(r).container)!.spec.image)).toContain('io.hopper.tools="kubectl"');
+    expect(await hopper(a, ['sandbox', 'launch', '--template', 'kube', '--tool', 'aws'])).toMatchObject({ code: 2, err: expect.stringContaining('does not add aws') });
   });
 
   it('revokes and removes a template', async () => {

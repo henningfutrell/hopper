@@ -2522,12 +2522,13 @@ Version 1 (`docs/schemas/vault.secret_migrated.v1.json`). One of the hopper's ow
 
 ## `template.saved`
 
-Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584), and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
+Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image, the tools the hopper adds to it (issue #716), and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584), and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
 
 | field | type | required |
 |---|---|---|
 | `template` | string | yes |
 | `image` | string | yes |
+| `tools` | string[] | no |
 | `secrets` | string[] | yes |
 | `profiles` | object[] | no |
 | `by` | string | yes |
@@ -2570,12 +2571,13 @@ Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (iss
 
 ## `vault.approved`
 
-Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not.
+Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not.
 
 | field | type | required |
 |---|---|---|
 | `template` | string | yes |
 | `image` | string | yes |
+| `tools` | string[] | no |
 | `secrets` | string[] | yes |
 | `by` | string | yes |
 

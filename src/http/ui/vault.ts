@@ -36,7 +36,7 @@ export const vaultEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('remove'), name: z.string().max(64) }),
   z.strictObject({
     action: z.literal('save-template'), name: z.string().max(64), image: z.string().max(300), secrets: z.array(z.string().max(64)).max(256),
-    profiles: z.array(z.strictObject(profile)).max(256).optional(), limits: templateLimits.optional(),
+    profiles: z.array(z.strictObject(profile)).max(256).optional(), limits: templateLimits.optional(), tools: z.array(z.string().max(32)).max(16).optional(),
   }),
   z.strictObject({ action: z.literal('remove-template'), name: z.string().max(64) }),
   z.strictObject({ action: z.literal('approve-template'), name: z.string().max(64) }),

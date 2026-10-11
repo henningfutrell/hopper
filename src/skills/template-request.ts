@@ -1,14 +1,16 @@
 // A template request (issue #716, design.md "Templates on request"): a running job asks the hopper for the sandbox
 // template its work needs — `sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-account/ID"` — and
 // the hopper makes it. The template is named from the needs alone, so the same needs get the same template; it runs the
-// hopper's box image, holds no vault secret (the dynamic vault asks a person for each credential when a job on its box
-// loads the skill, issue #583), and declares one operation profile per need. The hopper approves it with no person only
-// when it makes it now and every need is a read the user's read policy holds; anything else waits for a person, as a
-// template saved in the UI does. A job never widens a template, approves one, or approves it again after a revoke.
+// hopper's box image with the tools its needs use (issue #716, item 2: src/sandbox/tools.ts), holds no vault secret
+// (the dynamic vault asks a person for each credential when a job on its box loads the skill, issue #583), and declares
+// one operation profile per need. The hopper approves it with no person only when it makes it now and every need is a
+// read the user's read policy holds; anything else waits for a person, as a template saved in the UI does. A job never
+// widens a template, approves one, or approves it again after a revoke.
 import { createHash } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
 import { inReadPolicy, type ReadPolicy } from '../domain/read-policy.ts';
 import type { TemplateView } from '../domain/vault.ts';
+import { toolsForNeeds } from '../sandbox/tools.ts';
 import { SKILLS } from './catalog.ts';
 
 /** The skill name a job asks for a template by. */
@@ -54,7 +56,7 @@ type Result = { ok: true } | { ok: false; code: string; error: string };
 /** One user's side: their templates, the vault's own save and approve, their read policy, the image a box runs. */
 export interface TemplateRequestUser {
   template(name: string): TemplateView | undefined;
-  save(t: { name: string; image: string; secrets: string[]; profiles: OperationProfile[] }, by: string): Promise<Result>;
+  save(t: { name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[] }, by: string): Promise<Result>;
   approve(name: string, by: string): Promise<Result>;
   policy(): ReadPolicy | undefined;
   image: string;
@@ -90,7 +92,7 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
     return { status: 409, reason: `a person changed template ${name} since a job asked for it: a job does not change it back. Ask a person in Settings → Vault, or find another way.` };
   }
   if (!was) {
-    const saved = await u.save({ name, image: u.image, secrets: [], profiles: needs }, by);
+    const saved = await u.save({ name, image: u.image, secrets: [], profiles: needs, tools: toolsForNeeds(needs) }, by);
     if (!saved.ok) return { status: STATUS[saved.code] ?? 503, reason: saved.error };
     // The policy approves only a template it makes now, and only when every need is a read it holds.
     const outside = needs.filter((p) => p.operation !== 'read' || !inReadPolicy(u.policy(), p.asset));
