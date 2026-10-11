@@ -84,8 +84,8 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     // Postgres makes it, before the database starts; the hopper waits for a healthy Postgres and only reads.
     expect(postgres.command?.join('\n')).toContain('/dev/urandom');
     expect(postgres.command?.join('\n')).toMatch(/exec docker-entrypoint\.sh postgres/);
-    expect(postgres.volumes).toContainEqual(expect.objectContaining({ source: 'secrets', target: '/run/hopper-secrets' }));
-    expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: 'secrets', target: '/run/hopper-secrets', read_only: true }));
+    expect(postgres.volumes).toContainEqual(expect.objectContaining({ source: 'runtime-secrets', target: '/run/hopper-secrets' }));
+    expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: 'runtime-secrets', target: '/run/hopper-secrets', read_only: true }));
     expect(hopper.depends_on?.postgres?.condition).toBe('service_healthy');
   });
 
@@ -94,12 +94,20 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(hopper.environment?.HOPPER_MASTER_KEY_FILE).toBeUndefined();
     const key = 'ab'.repeat(32);
     expect(svc(render(`HOPPER_MASTER_KEY=${key}\n`), 'hopper').environment?.HOPPER_MASTER_KEY).toBe(key);
-    expect(hopper.environment?.HOPPER_TOKEN_KEY_FILE).toBe('/run/hopper-secrets/token_key');
+    expect(hopper.environment?.HOPPER_TOKEN_KEY_FILE).toBeUndefined();
     const script = postgres.command!.join('\n');
     expect(script).not.toMatch(/token_key/);
   });
 
-  it('sets the database password again at each start: a lost secrets volume does not lock the hopper out of its database (issue #659)', () => {
+  it('keeps no secret in a persistent volume: the files Postgres makes are in memory (tmpfs), made again after a full stop (issue #659)', () => {
+    expect(r.volumes.secrets).toBeUndefined();
+    expect(r.volumes['runtime-secrets']).toMatchObject({ driver_opts: { type: 'tmpfs', device: 'tmpfs' } });
+    // Each start remakes what is missing; nothing there must outlive the stack.
+    const script = postgres.command!.join('\n');
+    for (const f of ['postgres_password', 'openfga_key', 'vault_key']) expect(script).toMatch(new RegExp(`\\[ -s \\$\\$?s/${f} \\] \\|\\| head -c`));
+  });
+
+  it('sets the database password again at each start: a fresh set of start files does not lock the hopper out of its database (issue #659)', () => {
     const script = postgres.command!.join('\n');
     expect(script).toMatch(/ALTER ROLE hopper PASSWORD/);
     // Healthy only once the password is set: the hopper never meets the old one.
@@ -130,7 +138,7 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(script).toMatch(/chown -R 65532:65532 \$\$?s\/openfga/);
     expect(script).toContain('CREATE SCHEMA IF NOT EXISTS openfga');
     for (const s of [openfga, migrate]) {
-      expect(s.volumes).toContainEqual(expect.objectContaining({ source: 'secrets', target: '/run/hopper-secrets', read_only: true }));
+      expect(s.volumes).toContainEqual(expect.objectContaining({ source: 'runtime-secrets', target: '/run/hopper-secrets', read_only: true }));
       expect(s.depends_on?.postgres?.condition).toBe('service_healthy');
     }
   });
@@ -153,7 +161,7 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
 
   it('keeps the hopper\'s home in a volume: herdr and claude sign-ins and job checkouts survive a rebuild', () => {
     expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: 'home', target: '/home/node' }));
-    expect(Object.keys(r.volumes).sort()).toEqual(['home', 'postgres', 'secrets', 'vault-token']);
+    expect(Object.keys(r.volumes).sort()).toEqual(['home', 'postgres', 'runtime-secrets', 'vault-token']);
   });
 });
 
@@ -302,10 +310,11 @@ describe('optional services (issue #586): each behind a compose profile, none re
     const vault = svc(on, 'hopper-vault');
     const hopper = svc(on, 'hopper');
     expect(vault.environment).toMatchObject({
-      HOPPER_DATABASE_URL_FILE: '/run/hopper-secrets/database_url', HOPPER_MASTER_KEY: '', HOPPER_TOKEN_KEY_FILE: '/run/hopper-secrets/token_key',
+      HOPPER_DATABASE_URL_FILE: '/run/hopper-secrets/database_url', HOPPER_MASTER_KEY: '',
       HOPPER_VAULT_KEY_FILE: '/run/hopper-secrets/vault_key', HOPPER_KMS_URL: 'http://kms:8080',
     });
-    expect(vault.volumes).toContainEqual(expect.objectContaining({ source: 'secrets', target: '/run/hopper-secrets', read_only: true }));
+    expect(vault.environment?.HOPPER_TOKEN_KEY_FILE).toBeUndefined();
+    expect(vault.volumes).toContainEqual(expect.objectContaining({ source: 'runtime-secrets', target: '/run/hopper-secrets', read_only: true }));
     expect(vault.depends_on?.postgres?.condition).toBe('service_healthy');
     expect(hopper.environment).toMatchObject({ HOPPER_VAULT_URL: 'http://hopper-vault:4791', HOPPER_VAULT_KEY_FILE: '/run/hopper-secrets/vault_key' });
     const script = svc(on, 'postgres').command!.join('\n');
