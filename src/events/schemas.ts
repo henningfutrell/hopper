@@ -11,7 +11,7 @@ import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
-import { advice, adviceAction, bugReportEvents, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, repoChecksEvents, startPlan, taskCount, vaultGrantEvents } from './parts.ts';
+import { advice, adviceAction, answerHold, bugReportEvents, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, repoChecksEvents, startPlan, taskCount, vaultGrantEvents } from './parts.ts';
 
 const strict = z.strictObject;
 const decisionPoint = z.enum(DECISION_POINTS);
@@ -29,11 +29,6 @@ const stage = z.string().min(1);
 const acting = { person: z.string(), via: z.enum(ACTION_VIAS) };
 const actingIfPerson = { person: acting.person.optional(), via: acting.via.optional() };
 const raisedBy = strict({ machineId: z.string(), name: z.string().optional(), laneId: z.string().optional() }).optional();
-/** One hold on a level's answer (issue #679, `AnswerHold`). */
-const answerHold = strict({
-  reason: z.enum(['guard', 'high_priority', 'auto_answer_off', 'low_confidence']), by: z.enum(['risk', 'guard']).optional(),
-  guards: z.array(z.string()).optional(), confidence: z.enum(CONFIDENCES).optional(), threshold: z.enum(CONFIDENCES).optional(),
-});
 
 /**
  * A review section's events (issues #537, #543), the same for every one: a job asked for one, the item and each version

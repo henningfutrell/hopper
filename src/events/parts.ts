@@ -2,6 +2,7 @@
 // (legacy.ts).
 import { z } from 'zod';
 import { JOB_ORIGINS } from '../domain/intake-origin.ts';
+import { CONFIDENCES } from '../domain/types.ts';
 
 const strict = z.strictObject;
 
@@ -92,3 +93,9 @@ export const vaultGrantEvents = {
 /** A job's task count (issue #794): done of total, 0 ≤ done ≤ total, total ≥ 1. */
 export const taskCount = strict({ done: z.number().int().min(0), total: z.number().int().min(1) })
   .refine((t) => t.done <= t.total, { message: 'done must not exceed total' });
+
+/** One hold on a level's answer (issue #679, `AnswerHold`). */
+export const answerHold = strict({
+  reason: z.enum(['guard', 'high_priority', 'auto_answer_off', 'low_confidence']), by: z.enum(['risk', 'guard']).optional(),
+  guards: z.array(z.string()).optional(), confidence: z.enum(CONFIDENCES).optional(), threshold: z.enum(CONFIDENCES).optional(),
+});
