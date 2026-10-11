@@ -142,7 +142,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   accessRoutes(app, { access: o.access, instanceAdmin });
   clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan });
   // A running job asks the hopper for GitHub (issue #563), with its own proxy token.
-  const github = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock });
+  const github = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock, updater: o.updater });
   jobGitRoutes(app, { tenants: o.tenants });
   // A machine's probe asks where it reaches the hopper (issue #698).
   jobAddressRoutes(app);
