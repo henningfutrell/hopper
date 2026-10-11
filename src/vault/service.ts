@@ -17,6 +17,7 @@ import { mintsForProblem } from '../domain/minting.ts';
 import { limitsProblem, toolSet, toolsProblem, type TemplateLimits } from '../domain/sandboxes.ts';
 import { AT_WORK, boxAsk, clientOf, launchedOf, launchRefusal, type ClientTarget } from './box.ts';
 import { createMinting, mintHere, type MintAsk, type MintFrom } from './mint.ts';
+import { createMintTest, type MintTestAnswer } from './mint-test.ts';
 import { systemReadRefusal } from './system-read.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS, type RadiusRules, type TemplateRadius } from '../domain/blast-radius.ts';
 import { givesOf, isSystemSecret, templateView, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type TemplateView, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
@@ -76,6 +77,8 @@ export interface VaultService extends TemplateChecks {
   mint(ask: MintAsk, machineKey: string, from?: MintFrom): Promise<{ value: string } | { refused: string }>;
   /** Mints from the minting credential `name` for `target`, here: its value opened or read in its backend, then STS or the Kubernetes API. */
   mintFrom: MintFrom;
+  /** A person's mint test (issue #781): an AWS read session for `asset` (`aws-role/<account>/<role>`), and who STS says it is. */
+  testMint(asset: string, by: string, from?: MintFrom): Promise<MintTestAnswer>;
   /** Each template's scope as its rating reads it, with this user's blast-radius rules: what access rates it from (issue #584). */
   templateScopes(): { name: string; scope: TemplateScope; rules: RadiusRules }[];
   /** Seals again, under the current key, every secret an older key sealed. How many it sealed again. */
@@ -173,6 +176,8 @@ export function createVaultService(o: {
     store: o.store, userId: o.userId ?? '', clock: o.clock,
     ...(o.access ? { access: o.access } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}),
   });
+
+  const testMint = createMintTest({ store: o.store });
 
   function scopeOf(machine: string): { template?: string; secrets: string[] } {
     const m = clientOf(o.targets, (x) => x.name === machine);
@@ -368,6 +373,7 @@ export function createVaultService(o: {
 
     mint: (ask, machineKey, from) => mint(ask, machineKey, from ?? mintFrom),
     mintFrom,
+    testMint: (asset, by, from) => testMint(asset, by, from ?? mintFrom),
 
     ...templateChecks(o.store),
     resealAll: () => resealRows({ vault, sealer, mine: (name) => !isSystemSecret(name), what: 'vault secret', logger: o.logger }),

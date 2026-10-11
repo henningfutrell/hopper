@@ -2884,6 +2884,34 @@ Version 1 (`docs/schemas/vault.mint_refused.v1.json`). A box asked the vault to 
 }
 ```
 
+## `vault.mint_tested`
+
+Version 1 (`docs/schemas/vault.mint_tested.v1.json`). A person tested an AWS minting credential (issue #781, `hopper vault mint-test`): the vault minted a read session for the `aws-role`, as for a job, and asked STS who it is. `arn` is the role the session assumed, with `sessionName`; `reason` when no session was minted or STS refused. Never a key.
+
+| field | type | required |
+|---|---|---|
+| `asset` | object \| string | yes |
+| `credential` | string | no |
+| `sessionName` | string | no |
+| `arn` | string | no |
+| `expiresAt` | string | no |
+| `reason` | string | no |
+| `by` | string | yes |
+
+```json
+{
+  "asset": {
+    "kind": "aws-role",
+    "name": "123456789012/diag"
+  },
+  "credential": "AWS_LAB",
+  "sessionName": "hopper-mint-test",
+  "arn": "arn:aws:sts::123456789012:assumed-role/diag/hopper-mint-test",
+  "expiresAt": "2026-10-09T12:15:00.000Z",
+  "by": "Ada"
+}
+```
+
 ## `vault.credential_asked`
 
 Version 1 (`docs/schemas/vault.credential_asked.v1.json`). A job on a box loaded a skill whose credential its template does not give (issue #583), and the hopper asked a person for one: a credential request. The skill, the template, the machine, the job, and what the job said it needs it for. Once per job and request.
