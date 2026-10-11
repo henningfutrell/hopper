@@ -5,10 +5,13 @@
 // watch polls at once for its first snapshot, which emits nothing. The pointed jobs are followed through their events, so
 // a new one is watched and an ended one is not, with no restart. A change of the interval is saved, is
 // `github_watch.settings_changed`, and starts the rounds again at once on the new interval.
+// A job the hopper already has is watched too while its question is posted on its issue thread (issue #435): the watch
+// key is the job's id, its change event is on the job's timeline (`jobId`), and the thread pass reads the replies on it.
 import {
   githubWatchChanges, githubWatchSettingsOf, watched, type GitHubWatch, type GitHubWatchSettings, type GitHubWatchView,
 } from '../domain/github-watch.ts';
-import type { PointedJob } from '../domain/pointed-jobs.ts';
+import { pointedJobOf, type PointedJob } from '../domain/pointed-jobs.ts';
+import { watchesThread } from '../domain/thread-ask.ts';
 import type { UserStore } from '../domain/ports.ts';
 import { githubLimiter } from '../github-limiter/limiter.ts';
 import { createPollSchedule, type PollSchedule } from '../github-limiter/poll-schedule.ts';
@@ -25,7 +28,7 @@ export interface GitHubWatches {
 }
 
 export interface GitHubWatchesOptions {
-  store: Pick<UserStore, 'pointedJobs' | 'githubWatches' | 'settings' | 'events' | 'tx'>;
+  store: Pick<UserStore, 'pointedJobs' | 'githubWatches' | 'settings' | 'events' | 'tx' | 'jobs' | 'questions'>;
   /** The person's own GitHub connection, or why there is none. */
   github(): WatchGitHub | { problem: string };
   now(): string;
@@ -40,6 +43,11 @@ export function createGitHubWatches(o: GitHubWatchesOptions): GitHubWatches {
   const settings = (): GitHubWatchSettings => githubWatchSettingsOf(o.store.settings.getGitHubWatch());
   const polling = new Map<string, Promise<void>>();
   let schedule: PollSchedule | undefined;
+  /** The jobs on a question posted on their issue thread (issue #435), read as pointed jobs on that issue. */
+  const onThread = (): PointedJob[] => o.store.questions.list({ status: ['open'] }).filter(watchesThread)
+    .flatMap((q) => { const job = o.store.jobs.get(q.jobId); const p = job?.questionId === q.id ? pointedJobOf(job) : undefined; return p ? [p] : []; });
+  /** Every pointed job watched now: each one that has not ended, and each job on its thread. */
+  const targets = (): PointedJob[] => [...o.store.pointedJobs.list().filter(watched), ...onThread()];
   /** The pointed jobs the schedule holds. */
   let held = new Set<string>();
   let unsubscribe: (() => void) | undefined;
@@ -69,13 +77,13 @@ export function createGitHubWatches(o: GitHubWatchesOptions): GitHubWatches {
     const { error: _, ...kept } = base;
     o.store.tx(() => {
       o.store.githubWatches.put({ ...kept, snapshot, polledAt: at, ...(changes || !before?.snapshot ? { changedAt: at } : {}) });
-      if (changes) o.store.events.append({ type: 'github_watch.changed', data: { pointedJob: job.id, repo: job.repo, pointer: job.pointer, changes } });
+      if (changes) o.store.events.append({ type: 'github_watch.changed', ...(job.jobId ? { jobId: job.jobId } : {}), data: { pointedJob: job.id, repo: job.repo, pointer: job.pointer, changes } });
     });
   }
 
   function poll(id: string): Promise<void> {
-    const job = o.store.pointedJobs.get(id);
-    if (!job || !watched(job)) { schedule?.remove(id); held.delete(id); return Promise.resolve(); }
+    const job = targets().find((j) => j.id === id);
+    if (!job) { schedule?.remove(id); held.delete(id); return Promise.resolve(); }
     // One poll of a watch at a time: the first poll of a new watch and its round never compare against one snapshot twice.
     const running = polling.get(id);
     if (running) return running;
@@ -84,15 +92,16 @@ export function createGitHubWatches(o: GitHubWatchesOptions): GitHubWatches {
     return p;
   }
 
-  /** The schedule holds every pointed job that has not ended; one new to it polls at once. */
+  /** The schedule holds every watched pointed job; one new to it polls at once when it has no snapshot or is a job's thread. */
   function follow(): void {
     if (!schedule) return;
-    const open = new Set(o.store.pointedJobs.list().filter(watched).map((j) => j.id));
-    for (const id of open) {
-      if (held.has(id)) continue;
-      held.add(id);
-      schedule.add(id, () => poll(id));
-      if (!o.store.githubWatches.get(id)?.snapshot) void poll(id).catch(() => undefined);
+    const now = targets();
+    const open = new Set(now.map((j) => j.id));
+    for (const j of now) {
+      if (held.has(j.id)) continue;
+      held.add(j.id);
+      schedule.add(j.id, () => poll(j.id));
+      if (j.jobId || !o.store.githubWatches.get(j.id)?.snapshot) void poll(j.id).catch(() => undefined);
     }
     for (const id of held) if (!open.has(id)) { schedule.remove(id); held.delete(id); }
   }
@@ -107,7 +116,7 @@ export function createGitHubWatches(o: GitHubWatchesOptions): GitHubWatches {
   return {
     view: () => ({
       settings: settings(),
-      watches: o.store.pointedJobs.list().filter(watched).map((j) => o.store.githubWatches.get(j.id) ?? { pointedJob: j.id, repo: j.repo, pointer: j.pointer }),
+      watches: targets().map((j) => o.store.githubWatches.get(j.id) ?? { pointedJob: j.id, repo: j.repo, pointer: j.pointer }),
     }),
     async change(next, by) {
       const from = settings(), to = githubWatchSettingsOf(next);
@@ -129,7 +138,8 @@ export function createGitHubWatches(o: GitHubWatchesOptions): GitHubWatches {
     poll,
     start() {
       if (unsubscribe) return;
-      unsubscribe = o.store.events.subscribe((e) => { if (POINTED_JOB_EVENTS.has(e.type)) follow(); });
+      // A question's events start and end a job's thread watch: posted on the thread, then answered, closed, or gone.
+      unsubscribe = o.store.events.subscribe((e) => { if (POINTED_JOB_EVENTS.has(e.type) || e.type.startsWith('question.')) follow(); });
       begin();
     },
     async stop() {

@@ -13811,6 +13811,16 @@ criteria" above). Everything else in that rule stands.
   (`question.thread_posted`); `review` records `thread: { state: review }` (`question.thread_held`). `approved` posts
   it, keeping `approvedBy`. `posted`: the issue's comments are read and the reply below answers it. A throw is kept as
   the job's retry and asked again next sync.
+- **The watch on the thread** (#427, "GitHub watches" below). While its question is posted and open
+  (`watchesThread`), the job's issue has a GitHub watch, keyed by the job's id. It starts on `question.thread_posted`
+  and polls at once; it ends when the question is answered, closed or gone, all followed through the question's events.
+  A poll that sees a new comment records `github_watch.changed` with the job's `jobId`, and that event starts the job's
+  pass at once: the replies are read and the first one that may answer settles the question. So a reply resumes the job
+  within one watch interval, with no sync of its source. A sync reads the thread only when the watch cannot tell
+  (`threadUnseen`): no watch snapshot, a problem on the watch (no GitHub connection of the user's own, a refusal), no
+  poll since the post, or a comment after the question's in its snapshot. The last case is a comment that answered
+  nothing (a stranger's), so such a thread is read at each sync, as before. The watch reads with the user's own
+  connection, the post and the replies with the source's identity.
 - **Approval.** `POST /ui/api/questions/:id/thread-approve` (least role `operator`): an open question held for review
   becomes `approved` with `approvedBy` (`question.thread_approved`), which starts its job's pass; 409 otherwise. The UI
   offers it as **Post on the issue** on the question card and the Parked row, which also say where the question is
@@ -13835,8 +13845,7 @@ criteria" above). Everything else in that rule stands.
   from, "data, not instructions", the reply between `<<<thread-reply` and `thread-reply>>>`, a closing marker inside it
   defused), as the issue text is. An answer in the hopper meanwhile wins as for any question.
 - **Persisted state.** No schema change: `Question.thread` is in the question's JSON, the policy a settings row.
-- **Not built here.** The pull-based watches of #427 (this pass reads comments at each sync of the source, like the
-  rest of the sync loop) and per-job policy; the policy is per kind of repository.
+- **Not built here.** Per-job policy; the policy is per kind of repository.
 
 
 ## The contribution flow (issue #429, 2026-10-11)
@@ -13997,8 +14006,10 @@ UI, applied without a restart.
 
 **What is watched.** Each pointed job (issue #425) that has not ended (`watched`: not `merged`, not `abandoned`), on its
 issue or pull request. The jobs the hopper already has, read as pointed jobs, are not: their pull request is followed
-already (`src/sources/github/follow.ts`). The service follows `pointed_job.created` and `pointed_job.status_changed`, so a
-new pointed job is watched at once and an ended one is dropped, with no restart.
+already (`src/sources/github/follow.ts`). One exception (issue #435): such a job while its question is posted on its issue
+thread, read as a pointed job on that issue (`pointedJobOf`); its change event carries the job's `jobId`. The service
+follows `pointed_job.created`, `pointed_job.status_changed` and every `question.*` event, so a new pointed job or a new
+thread ask is watched at once and an ended one is dropped, with no restart.
 
 **A poll** (`src/github-watch/github.ts`). With the user's own GitHub connection (`githubProxy.watches`, as Report a bug
 and the repository checks): `GET /repos/{repo}/issues/{n}` — it answers a pull request too, with its merge — and every
@@ -14031,9 +14042,9 @@ new interval — a change from an hour to a minute does not wait out the hour. T
 `snapshot`, `polledAt`, `changedAt`, `error`). A table only: the build before runs on it. The row stays after its
 pointed job ends, with its last snapshot.
 
-**API.** `GET /api/github-watches`: the settings and the watch of each pointed job that has not ended. Pull-based
-completion (issue #428) and resuming a parked job on a reply (issue #435) read `github_watch.changed`; nothing acts on
-it yet.
+**API.** `GET /api/github-watches`: the settings and the watch of each pointed job that has not ended, and of each job on
+its thread. Resuming a parked job on a reply (issue #435) acts on `github_watch.changed`: a new comment on a job's watch
+starts its thread pass ("The hopper label means full automation").
 
 **Dependency.** Built on the pointed job record (issue #425, PR #831) and the shared rate limiter's poll schedule (issue
 #436, PR #817), whose commits this change carries: it depends on both, and neither on it.
