@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { bullets } from './whats-new.ts';
+import { bullets, type Notes, WHATS_NEW_DIR, WHATS_NEW_FILE } from './whats-new.ts';
 
 const exec = promisify(execFile);
 const TIMEOUT_MS = 120_000;
@@ -24,8 +24,13 @@ export interface GitMirror {
   count(from: string, to: string): Promise<number>;
   /** The text of `path` at `commit`, or undefined when it has no such file. */
   read(commit: string, path: string): Promise<string | undefined>;
-  /** Along the first-parent line ending at `commit`, each commit that added `- ` lines to `path`: when, and those lines, newest first. */
-  added(commit: string, path: string): Promise<{ commit: string; at: string; lines: string[] }[]>;
+  /** The names of the files in folder `dir` at `commit`; none when it has no such folder. */
+  list(commit: string, dir: string): Promise<string[]>;
+  /**
+   * Along the first-parent line ending at `commit`, each commit that added `- ` lines to `paths`: when, and those
+   * lines, newest first. A line the same commit removed elsewhere in `paths` only moved (issue #824): not added.
+   */
+  added(commit: string, paths: string[]): Promise<{ commit: string; at: string; lines: string[] }[]>;
   /** The tree of `commit`, unpacked into `dir` (created). */
   extract(commit: string, dir: string): Promise<void>;
 }
@@ -69,13 +74,21 @@ export function createGitMirror(dir: string): GitMirror {
     async read(commit, path) {
       return (await this.has(commit)) ? git('show', `${commit}:${path}`).catch(() => undefined) : undefined;
     },
-    async added(commit, path) {
+    async list(commit, dir) {
+      if (!(await this.has(commit))) return [];
+      const out = await git('ls-tree', '--name-only', commit, `${dir}/`).catch(() => '');
+      return out.split('\n').filter(Boolean).map((p) => p.slice(dir.length + 1));
+    },
+    async added(commit, paths) {
       // First parent only: a merged pull request is one version, dated when it landed.
-      const log = await git('log', '--first-parent', '--diff-merges=first-parent', '-p', '--unified=0', '--format=%x00%H %cI', commit, '--', path);
+      const log = await git('log', '--first-parent', '--diff-merges=first-parent', '-p', '--unified=0', '--format=%x00%H %cI', commit, '--', ...paths);
+      const changed = (diff: string[], sign: string): string[] =>
+        bullets(diff.filter((l) => l.startsWith(sign) && !l.startsWith(sign.repeat(3))).map((l) => l.slice(1)).join('\n'));
       return log.split('\0').flatMap((chunk) => {
         const [head = '', ...diff] = chunk.split('\n');
         const [sha, at] = head.split(' ');
-        const lines = bullets(diff.filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1)).join('\n'));
+        const moved = new Set(changed(diff, '-'));
+        const lines = changed(diff, '+').filter((l) => !moved.has(l));
         return sha && at && lines.length ? [{ commit: sha, at, lines }] : [];
       });
     },
@@ -91,4 +104,11 @@ export function createGitMirror(dir: string): GitMirror {
       }
     },
   };
+}
+
+/** What's new at `commit` of the mirror: WHATS-NEW.md and the fragments of `whats-new/` (issue #824). */
+export async function notesAt(mirror: GitMirror, commit: string): Promise<Notes> {
+  const names = (await mirror.list(commit, WHATS_NEW_DIR)).filter((n) => n.endsWith('.md'));
+  const fragments = await Promise.all(names.map(async (name) => ({ name, text: (await mirror.read(commit, `${WHATS_NEW_DIR}/${name}`)) ?? '' })));
+  return { file: (await mirror.read(commit, WHATS_NEW_FILE)) ?? '', fragments };
 }

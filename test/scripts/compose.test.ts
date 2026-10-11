@@ -189,8 +189,9 @@ describe('compose.yaml with a .env beside it', () => {
 describe('the image is not a machine (issue #141)', () => {
   const dockerfile = readFileSync(join(ROOT, 'Dockerfile'), 'utf8');
 
-  it('carries WHATS-NEW.md, so the Updates panel says what the running version brought (issue #165)', () => {
+  it('carries WHATS-NEW.md and whats-new/, so the Updates panel says what the running version brought (issues #165, #824)', () => {
     expect(dockerfile).toMatch(/^COPY WHATS-NEW\.md \.\/$/m);
+    expect(dockerfile).toMatch(/^COPY whats-new \.\/whats-new$/m);
   });
 
   it('carries its compose.yaml, so an update fetches the compose file of the image it updates to (issue #697)', () => {

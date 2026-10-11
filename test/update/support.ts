@@ -19,6 +19,8 @@ export interface Upstream {
   commit(subject: string, content?: string): string;
   /** Write WHATS-NEW.md with these bullets, newest first, for the next commit. */
   whatsNew(bullets: string[]): void;
+  /** Write the fragment whats-new/`name` with these bullets for the next commit; none deletes it (issue #824). */
+  fragment(name: string, bullets?: string[]): void;
 }
 
 export function tempDir(prefix: string): string {
@@ -38,10 +40,15 @@ export function createUpstream(root: string): Upstream {
       return git(dir, 'rev-parse', 'HEAD');
     },
     whatsNew(bullets) { writeFileSync(join(dir, 'WHATS-NEW.md'), `# What's new\n\n${bullets.map((b) => `- ${b}\n`).join('')}`); },
+    fragment(name, bullets) {
+      mkdirSync(join(dir, 'whats-new'), { recursive: true });
+      if (bullets) writeFileSync(join(dir, 'whats-new', name), bullets.map((b) => `- ${b}\n`).join(''));
+      else rmSync(join(dir, 'whats-new', name));
+    },
   };
 }
 
-/** An install dir: install.json naming `commit` of `repo`, and the app as built (app.txt, src/main.ts, WHATS-NEW.md when the commit has one). `kind` `image`: the copy an image build bakes in (issue #409). */
+/** An install dir: install.json naming `commit` of `repo`, and the app as built (app.txt, src/main.ts, WHATS-NEW.md and whats-new/ when the commit has them). `kind` `image`: the copy an image build bakes in (issue #409). */
 export function createInstall(root: string, repo: string, commit: string, branch = 'stable', kind: InstallInfo['kind'] = 'install'): string {
   const appDir = join(root, 'app');
   mkdirSync(join(appDir, 'src'), { recursive: true });
@@ -51,6 +58,10 @@ export function createInstall(root: string, repo: string, commit: string, branch
   writeFileSync(join(appDir, 'src', 'main.ts'), 'export {};\n');
   const notes = git(repo, 'ls-tree', '--name-only', commit, 'WHATS-NEW.md').trim();
   if (notes) writeFileSync(join(appDir, 'WHATS-NEW.md'), git(repo, 'show', `${commit}:WHATS-NEW.md`));
+  for (const path of git(repo, 'ls-tree', '--name-only', commit, 'whats-new/').split('\n').filter(Boolean)) {
+    mkdirSync(join(appDir, 'whats-new'), { recursive: true });
+    writeFileSync(join(appDir, path), git(repo, 'show', `${commit}:${path}`));
+  }
   return appDir;
 }
 

@@ -138,10 +138,14 @@ hopper's note naming the job and the request by id only, and gets no label or as
   by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
   The GitHub Pages site is built too (`npm run build:site` → `site/dist`, gitignored), for Pages only,
   never served by the daemon; it takes its look from `ui/src/index.css` and nothing of `src/`.
-- **What's new.** A change people who use the hopper would notice adds one line at the top of
-  `WHATS-NEW.md`, in the same change: plain words for a non-technical reader, what they can now do
-  or what now works. No issue or PR numbers, hashes, file names or code words; never edit a
-  released line (the update notice shows the lines the installed version lacks). Internal-only
-  changes add none. `docs/design.md` "Self-update".
+- **What's new.** A change people who use the hopper would notice adds one line in a new file
+  `whats-new/<issue number>.md` (a fragment), in the same change. **Never edit `WHATS-NEW.md`
+  directly**: every open pull request would conflict on its top line (issue #824). The line: `- `,
+  then plain words for a non-technical reader, what they can now do or what now works. No issue or
+  PR numbers, hashes, file names or code words; never edit a released line (the update notice shows
+  the lines the installed version lacks). Internal-only changes add none. The pull request check
+  (`node scripts/whats-new.ts check HEAD^1`) refuses a direct edit; `node scripts/whats-new.ts
+  assemble` moves the fragments into `WHATS-NEW.md` before a promotion to beta (`whats-new/README.md`,
+  `docs/design.md` "Self-update").
 - Gates: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:ui` — all exit 0
   (`npm run check` runs all four).
