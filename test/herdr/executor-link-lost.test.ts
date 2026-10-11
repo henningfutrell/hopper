@@ -13,7 +13,7 @@ describe('herdr-claude executor: the machine\'s link drops mid-turn (issue #752)
     const { herdr, executor } = setup({ turns: [LONG] });
     const { ctx } = contextFor(jobWith({ prompt: 'go' }));
     const plain = ctx.progress;
-    ctx.progress = (f, m) => { plain(f, m); if (m?.includes('plank 3')) herdr.setUnreachable(true); };
+    ctx.progress = (m, t) => { plain(m, t); if (m?.includes('plank 3')) herdr.setUnreachable(true); };
     expect(await executor.run(ctx)).toMatchObject({ kind: 'failed', error: 'herdr: client is not dialled in', linkLost: true });
     expect(herdr.closed).toEqual([]);
   });
@@ -22,7 +22,7 @@ describe('herdr-claude executor: the machine\'s link drops mid-turn (issue #752)
     const { herdr, executor } = setup({ turns: [LONG] });
     const { ctx } = contextFor(jobWith({ prompt: 'go' }));
     const plain = ctx.progress;
-    ctx.progress = (f, m) => { plain(f, m); if (m?.includes('plank 3')) herdr.failNext('read', 'boom'); };
+    ctx.progress = (m, t) => { plain(m, t); if (m?.includes('plank 3')) herdr.failNext('read', 'boom'); };
     const outcome = await executor.run(ctx);
     expect(outcome).toMatchObject({ kind: 'finished' });
     expect(outcome).not.toHaveProperty('linkLost');
