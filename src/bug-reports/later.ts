@@ -19,7 +19,8 @@ export interface ReportSender {
   /** Send the kept reports, then read the state of the filed ones; the reports after, newest first. */
   refresh(): Promise<BugReport[]>;
   start(): void;
-  stop(): void;
+  /** Ends the timer, then waits for a pass in flight: the user's runtime closes its store after this. */
+  stop(): Promise<void>;
 }
 
 export function createReportSender(o: {
@@ -74,6 +75,10 @@ export function createReportSender(o: {
       timer ??= setInterval(run, o.everyMs ?? REPORT_SEND_MS);
       timer.unref();
     },
-    stop() { if (timer) clearInterval(timer); timer = undefined; },
+    async stop() {
+      if (timer) clearInterval(timer);
+      timer = undefined;
+      await running?.catch(() => undefined);
+    },
   };
 }

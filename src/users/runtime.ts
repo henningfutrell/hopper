@@ -401,7 +401,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     },
     stop() {
       stopped ??= (async () => {
-        jobStream.stop(); proxy.githubProxy.bugReports.stop();
+        jobStream.stop(); await proxy.githubProxy.bugReports.stop();
         await failures.stop();
         minorDecisions.stop(); await tldrs.stop();
         await sync.stop();
