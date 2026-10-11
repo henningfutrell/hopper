@@ -77,3 +77,19 @@ export function told(slot: Slot, previous: string | undefined, o: { clock: Clock
   slot.failing.stalled = true;
   o.events.append({ type: 'source.stalled', data: { source: name, kind: slot.source.kind, error: st.lastError ?? '', since: slot.failing.since } });
 }
+
+/**
+ * A source's status detail after a sync: its own facts; every item it listed, taken (with its job, read when the status
+ * is: `live`) or not (with its reason) — issue #440 —, none while paused; and its report troubles.
+ */
+export function detailOf(slot: Slot, paused: string | undefined, permanentErrors: number): Record<string, unknown> {
+  const intake = paused === undefined ? slot.source.intake?.() : undefined;
+  return {
+    ...slot.source.describe(),
+    ...(intake ? { intake } : {}),
+    ...(paused !== undefined ? { paused } : {}),
+    permanentErrors,
+    reportRetries: slot.retrying.size,
+    ...(slot.notRerun.length ? { notRerun: slot.notRerun } : {}),
+  };
+}
