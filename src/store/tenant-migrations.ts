@@ -26,6 +26,7 @@ import { JOB_STREAM_TABLES } from './migration-job-stream.ts';
 import { ARTIFACT_REVISION_TABLES, ARTIFACT_TABLES } from './migration-artifacts.ts';
 import { itemSnapshotsBackfill } from './migration-item-snapshots.ts';
 import { commentHoldsReleased } from './migration-comment-holds.ts';
+import { originPendingBackfill } from './migration-origin-pending.ts';
 import { laneRecommendationsOnly } from './migration-lane-recommendations.ts';
 import { newerStore } from './migrations.ts';
 
@@ -339,8 +340,7 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   noOpusLevel,
   // 34: Artifacts (issue #624): what jobs make for a person to see, their content, and their shares.
   ARTIFACT_TABLES,
-  // 35: Item snapshots (issue #662): the approved text of each source item, backfilled from its first job. A table only:
-  // the build before runs on it.
+  // 35: Item snapshots (issue #662): each item's approved text, from its first job. A table: the build before runs on it.
   itemSnapshotsBackfill,
   // 36: Artifact revisions (issue #675); the artifact row stays the latest, so the build before runs on it.
   ARTIFACT_REVISION_TABLES,
@@ -348,6 +348,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   commentHoldsReleased,
   // 38: Lane tuning recommends, an admin applies (issue #688): the lanes active mode applied become configured lanes.
   laneRecommendationsOnly,
+  // 39: Queued GitHub jobs with no origin wait for it (issue #652, the backfill); the build before ignores the flag.
+  originPendingBackfill,
 ];
 
 /** A user schema's version once migrated. */
@@ -357,14 +359,12 @@ export const TENANT_SCHEMA_VERSION = TENANT_BASE_VERSION + TENANT_MIGRATIONS.len
 export const quoteIdent = (name: string): string => `"${name.replaceAll('"', '""')}"`;
 
 /** A user's schema: `u_<id>` beside the `public` instance schema, else `<instance schema>_u_<id>`. */
-export const userSchemaName = (instanceSchema: string, userId: string): string =>
-  (instanceSchema === 'public' ? `u_${userId}` : `${instanceSchema}_u_${userId}`);
+export const userSchemaName = (instanceSchema: string, userId: string): string => (instanceSchema === 'public' ? `u_${userId}` : `${instanceSchema}_u_${userId}`);
 
 function step(db: Db, m: Migration, record: () => void): void {
   db.exec('BEGIN');
   try {
-    if (typeof m === 'string') db.exec(m);
-    else m(db);
+    if (typeof m === 'string') db.exec(m); else m(db);
     record();
     db.exec('COMMIT');
   } catch (e) {

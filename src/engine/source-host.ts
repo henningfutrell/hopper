@@ -194,6 +194,13 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         const job = store.jobs.get(jobId);
         if (!job || TERMINAL_STATUSES.includes(job.status)) return false;
         let changed = false;
+        // A job queued before origins were judged (issue #652, the backfill): its issue is offered once it is of a trusted
+        // origin or a person approved it; the job takes that origin, and its hold goes.
+        if (job.originPending && item.origin && job.source) {
+          store.jobs.update(jobId, { originPending: undefined, source: { ...job.source, origin: item.origin } });
+          store.events.append({ type: 'job.origin_judged', jobId, data: { key: item.key, origin: item.origin } });
+          changed = true;
+        }
         // Only a job that has not started: a started one resumes in the pane and work tree it ran in.
         // Its item's text changed while it waits (issue #662): held, its text kept. The task text is never refreshed.
         if (refreshText(c, job, item, source)) changed = true;

@@ -12,6 +12,9 @@ export const AWAITING_ACCEPTANCE = 'awaiting acceptance';
 /** Its item's text changed since the snapshot (issue #662): a person keeps the original, accepts the new text, or cancels it. */
 export const TEXT_CHANGED = 'its item changed since the snapshot: keep the original, accept the new text, or cancel';
 
+/** Queued before origins were judged (issue #652): nothing starts it until its issue is of a trusted origin or approved. */
+export const ORIGIN_PENDING = 'queued before trusted origins: held until its issue is judged — approve its request card in Sources, or cancel it';
+
 /** Pure: same inputs, same Decision. `inputs.at` is the clock; `decisionId` is supplied. */
 export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const { policy, machines, lanes } = inputs;
@@ -57,6 +60,11 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const advice: Divergence[] = [];
   const candidates: Candidate[] = [];
   for (const job of waiting) {
+    if (job.originPending) {
+      // Before every other judgement: no approval or acceptance starts a job whose issue nobody trusted or approved.
+      hold.push({ jobId: job.id, reason: ORIGIN_PENDING });
+      continue;
+    }
     if (job.textChange) {
       // Before every other judgement: no approval or acceptance starts a job whose item's text nobody approved.
       hold.push({ jobId: job.id, reason: TEXT_CHANGED });

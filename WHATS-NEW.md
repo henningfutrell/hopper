@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Jobs that were already in the queue before the hopper checked who wrote, labelled and assigned an issue are now checked too, when the update starts. A job of an issue you or your trusted people made runs as before. Any other waits, and its issue shows as a request in Sources: approve it there and the job runs, or cancel the job.
 - The Pull requests page warns you about a repository that has no checks, where yolo mode merges code that nothing tested. One button queues a job that adds the checks, or you can dismiss the advice for that repository. The command line shows the same.
 - On Machines, each machine's graph now shows its lanes in use together with its CPU, memory and disk and the plan usage that limits it, so you can see what more lanes cost. Each lane change applied or undone is marked on the graph; point at the mark to read who made it and why.
 - Give an issue the label "hopper:specialty" to let its job elbow in: when every lane is full, it may start one lane past a machine's lane cap. The lane board shows the extra lane, and the machine goes back to its cap when the job ends.

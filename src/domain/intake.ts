@@ -93,6 +93,8 @@ export interface IntakeTrust {
   approve(source: string, key: string, text: ItemText, request: IntakeRequest, acting: ActingPerson | undefined): void;
   /** Whether this hopper assigned the item to the user (Sources, Assign to me): that assignment is the user's own act. */
   assignedHere(key: string): boolean;
+  /** Whether the item's job waits for its origin (`Job.originPending`, the backfill): its issue is judged though it has a job. */
+  originPending(key: string): boolean;
 }
 
 /** Access's answer where it cannot be asked: OpenFGA is not set up, so no login is a trusted actor. */
@@ -104,4 +106,5 @@ export const NO_INTAKE_TRUST: IntakeTrust = {
   approvedText: () => undefined,
   approve: () => { throw new Error('no user store keeps approvals here'); },
   assignedHere: () => false,
+  originPending: () => false,
 };

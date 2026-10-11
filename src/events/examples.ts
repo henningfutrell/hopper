@@ -69,6 +69,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     actors: [{ role: 'author', login: 'stranger', trusted: false }, { role: 'labelled', login: 'octocat', trusted: true }, { role: 'assigned', login: 'octocat', trusted: true }],
   },
   'intake.actors_changed': { from: [], to: ['octocat', 'teammate'], by: 'octocat' },
+  'job.origin_judged': { key: 'https://github.com/octo-org/hello/issues/7', origin: 'approved' },
   'source.issues_assigned': { source: 'github-account', keys: ['https://github.com/octocat/hello/issues/7'], assignee: 'octocat' },
   'auth.pending': { loginId: 'l1', kind: 'device_code', tool: 'gh', expiresAt: '2026-10-08T18:15:00.000Z', run: 'herdr-claude' },
   'auth.completed': { loginId: 'l1', kind: 'device_code', tool: 'gh' },

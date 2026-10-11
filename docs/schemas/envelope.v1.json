@@ -80,6 +80,7 @@
         "source.issues_assigned",
         "source.request_approved",
         "intake.actors_changed",
+        "job.origin_judged",
         "auth.pending",
         "auth.completed",
         "auth.expired",

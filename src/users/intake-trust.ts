@@ -42,5 +42,6 @@ export function storeIntakeTrust(store: UserStore, decide: DecideIntakeActor | u
       });
     },
     assignedHere: (key) => assignedKeys(store).has(key),
+    originPending: (key) => store.jobs.getBySourceKey(key)?.originPending === true,
   };
 }

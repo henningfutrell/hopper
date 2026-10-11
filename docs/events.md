@@ -1168,6 +1168,22 @@ Version 1 (`docs/schemas/intake.actors_changed.v1.json`). The user's trusted act
 }
 ```
 
+## `job.origin_judged`
+
+Version 1 (`docs/schemas/job.origin_judged.v1.json`). A job queued before origins were judged (issue #652, the backfill: tenant migration 39) got its item's origin: its issue is of a trusted origin (`trusted`), or a person approved its request card (`approved`). Its hold for its origin ends. Until then the job does not start.
+
+| field | type | required |
+|---|---|---|
+| `key` | string | yes |
+| `origin` | `trusted` \| `approved` | yes |
+
+```json
+{
+  "key": "https://github.com/octo-org/hello/issues/7",
+  "origin": "approved"
+}
+```
+
 ## `auth.pending`
 
 Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
@@ -3495,7 +3511,7 @@ Version 1 (`docs/schemas/item.new_text_accepted.v1.json`). The owner accepted an
 
 ## `lanes.recommended`
 
-Version 1 (`docs/schemas/lanes.recommended.v1.json`). A machine's lane recommendation changed (issue #688): the `lanes` it can run, from its resource history (`headroom`, the most lanes it ran without resource pressure, and what each lane's cost leaves room for) and the usage it burns (`usage`: `free`, `near` the soft limit, past the `soft` limit, at the `hard` limit), within its bounds, next to the `configured` lanes the decider uses. `reason` in plain words; `confidence` 0..1 from the history it stands on. Recorded, not applied: an admin applies it. Recorded when the recommended or the configured lanes change. `mode` (`shadow`) only in one recorded while active mode was there.
+Version 1 (`docs/schemas/lanes.recommended.v1.json`). A machine's lane recommendation changed (issue #688): the `lanes` it can run, from its resource history (`headroom`, the most lanes it ran without resource pressure or slow progress, and what each lane's cost leaves room for) and the usage it burns (`usage`: `free`, `near` the soft limit, past the `soft` limit, at the `hard` limit), within its bounds, next to the `configured` lanes the decider uses. `reason` in plain words; `confidence` 0..1 from the history it stands on. Recorded, not applied: an admin applies it. Recorded when the recommended or the configured lanes change. `mode` (`shadow`) only in one recorded while active mode was there.
 
 | field | type | required |
 |---|---|---|

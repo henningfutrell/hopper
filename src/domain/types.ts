@@ -119,6 +119,12 @@ export interface Job extends JobPhaseFields {
   textChange?: TextChange;
   /** A person kept the original text of its changed item: that live text holds it no more (issue #662). */
   originalKept?: OriginalKept;
+  /**
+   * Set while its item's origin is not judged (issue #652, the backfill): a job of a GitHub source queued before origins
+   * were judged (tenant migration 39). Held until a sync finds its issue of a trusted origin, or a person approves its
+   * request card; then its `source.origin` is set and this goes.
+   */
+  originPending?: true;
   /** The job's place in the user order (0 first): set when the user orders the queue; ranked jobs run before the rest. */
   userRank?: number;
   laneId?: LaneId;
