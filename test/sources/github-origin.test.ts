@@ -123,4 +123,24 @@ describe('GitHub source: request cards (issue #652)', () => {
     await source.discover();
     expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash: 'a'.repeat(64) })).toEqual({ done: [], failed: { [url(1)]: 'not offered: taken' } });
   });
+
+  it('a job queued before origins were judged is judged at the next sync (issue #652, the backfill)', async () => {
+    const pending = [url(1), url(2)];
+    const trust = testTrust(undefined, { pending });
+    const { gh, source } = setup({}, { trust, knownKeys: (keys) => new Set(keys.filter((k) => pending.includes(k))) });
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    gh.createIssue({ repo: REPO, author: 'stranger', title: 'Do it', body: 'Change the CI.', labels: ['hopper'] });
+    const items = await source.discover();
+    expect(items.map((i) => [i.number, i.origin])).toEqual([[1, 'trusted']]);
+    expect(source.intake!().find((x) => x.key === url(2))).toMatchObject({ reason: REQUEST_REASON, action: 'approve', request: { author: 'stranger' } });
+  });
+
+  it('a job not pending is not judged again: its issue is offered as it is', async () => {
+    const trust = testTrust();
+    const { gh, source } = setup({}, { trust, knownKeys: (keys) => new Set(keys) });
+    gh.createIssue({ repo: REPO, author: 'stranger', labels: ['hopper'] });
+    const items = await source.discover();
+    expect(items.map((i) => [i.number, i.origin])).toEqual([[1, undefined]]);
+    expect(trust.asked).toEqual([]);
+  });
 });

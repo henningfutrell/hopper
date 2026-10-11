@@ -29,7 +29,7 @@ export interface TestTrust extends IntakeTrust {
   asked: string[][];
 }
 
-export function testTrust(logins?: string[], o: { assignedHere?: string[] | ((key: string) => boolean) } = {}): TestTrust {
+export function testTrust(logins?: string[], o: { assignedHere?: string[] | ((key: string) => boolean); pending?: string[] } = {}): TestTrust {
   const approvals: TestTrust['approvals'] = new Map();
   const asked: string[][] = [];
   return {
@@ -42,6 +42,7 @@ export function testTrust(logins?: string[], o: { assignedHere?: string[] | ((ke
     approvedText: (key) => { const a = approvals.get(key); return a && { title: a.text.title, body: a.text.body }; },
     approve: (source, key, text, request) => { approvals.set(key, { text, request, source }); },
     assignedHere: (key) => (typeof o.assignedHere === 'function' ? o.assignedHere(key) : (o.assignedHere ?? []).includes(key)),
+    originPending: (key) => (o.pending ?? []).includes(key),
   };
 }
 
