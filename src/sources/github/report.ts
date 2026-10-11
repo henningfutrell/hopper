@@ -80,13 +80,19 @@ async function finished(ctx: ReportContext, job: Job, repo: string, number: numb
   return { ...state, ...(own ? { pullRequest: own.url } : {}), follow: 'open' };
 }
 
-/** The newest ready pull request that closes the issue, else one that references it, else one on a branch named for it. */
+/**
+ * The newest ready pull request that closes the issue, else one that references it, else one on a branch named for it.
+ * Never a part (issue #721): it ships part of the issue, on whatever branch.
+ */
 async function readyPullRequest(api: GitHubApi, repo: string, number: number): Promise<{ url: string } | undefined> {
   const ready = <P extends { isDraft: boolean; conflicting: boolean; createdAt: string }>(prs: P[]): P | undefined =>
     prs.filter((pr) => !pr.isDraft && !pr.conflicting).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-  return ready(await api.openClosingPullRequests(repo, number))
-    ?? ready((await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase() && !isPartOf(pr, repo, number)))
-    ?? ready((await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number)));
+  const closing = ready(await api.openClosingPullRequests(repo, number));
+  if (closing) return closing;
+  const mentions = (await api.referencingPullRequests(repo, number)).filter((pr) => pr.repo.toLowerCase() === repo.toLowerCase());
+  const parts = new Set(mentions.filter((pr) => isPartOf(pr, repo, number)).map((pr) => pr.url));
+  return ready(mentions.filter((pr) => pr.state === 'open' && !parts.has(pr.url)))
+    ?? ready((await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number) && !parts.has(pr.url)));
 }
 
 async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise<State> {

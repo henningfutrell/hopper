@@ -1,12 +1,13 @@
 // After done (issue #579), the sync loop's half, at each sync of a source, on each job's report chain. A finished job
 // whose pull request its report kept to follow is asked of its source (`JobSource.follow`): merged or closed without a
 // merge is recorded (`job.pull_request_merged`, `job.pull_request_closed`) with the source state it leaves; still open,
-// what was seen of it is kept, with no event (issue #637). And a job
+// what was seen of it is kept, with no event (issue #637). A merge recorded as the whole item before issue #721 is asked
+// once more (`rechecksMerge`), for the newest job of its item only: a part after all is recorded again as a part. And a job
 // that failed only for want of a merged pull request — `not complete:`, from before a pull request was done — and still
 // waits on a person is judged again: done or partly done now, it is finished (its hand-off closes on `job.finished`) and
 // its end reported again, so its issue loses `hopper:failed`. A throw is kept as a retry and asked again next sync.
 import type { JobSource, SourceHost, UserStore } from '../domain/ports.ts';
-import { following, judge, type Job } from '../domain/types.ts';
+import { following, judge, rechecksMerge, type Job } from '../domain/types.ts';
 
 export interface AfterDoneContext {
   store: Pick<UserStore, 'jobs' | 'events' | 'handoffs'>;
@@ -28,13 +29,16 @@ const NOT_COMPLETE = /^not complete: /;
 export function createAfterDone(c: AfterDoneContext) {
   const { store } = c;
 
+  /** Only the newest job of its item is checked again: an older one's merge never takes off a later job's `hopper:done`. */
+  const rechecks = (j: Job) => rechecksMerge(j) && (!j.source || store.jobs.getBySourceKey(j.source.key)?.id === j.id);
+
   async function follow(source: JobSource, jobId: string): Promise<void> {
     const job = store.jobs.get(jobId);
-    if (!job || !following(job)) return;
+    if (!job || !(following(job) || rechecks(job))) return;
     const r = await source.follow!(job);
     if (!r) return;
     c.setSource(jobId, r.state);
-    if (r.outcome === 'open') return;
+    if (r.outcome === 'open' || r.outcome === 'checked') return;
     store.events.append({
       type: r.outcome === 'merged' ? 'job.pull_request_merged' : 'job.pull_request_closed', jobId,
       data: { pullRequest: r.pullRequest, part: r.part, ...(r.byHopper ? { byHopper: true } : {}) },
@@ -57,7 +61,7 @@ export function createAfterDone(c: AfterDoneContext) {
       const run = (j: Job, fn: (s: JobSource, id: string) => Promise<void>) =>
         c.enqueue(j.id, () => fn(source, j.id).catch((e: unknown) => { c.failed(j.id, e); }));
       await Promise.all(jobs.filter((j) => c.finalReported(j)).flatMap((j) =>
-        (j.status === 'finished' && source.follow && following(j) ? [run(j, follow)] : waitsOnPerson(j) ? [run(j, judgeAgain)] : [])));
+        (j.status === 'finished' && source.follow && (following(j) || rechecks(j)) ? [run(j, follow)] : waitsOnPerson(j) ? [run(j, judgeAgain)] : [])));
     },
   };
 }

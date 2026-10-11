@@ -111,7 +111,7 @@ describe('following the pull request', () => {
   it('merged: the item is done — hopper:done in place of hopper:pr-ready; following ends', async () => {
     const { gh, source, job, pr } = await ended();
     gh.mergePullRequest(pr.url);
-    expect(await source.follow!(job)).toEqual({ outcome: 'merged', pullRequest: pr.url, part: false, state: { pullRequest: pr.url, follow: 'merged' } });
+    expect(await source.follow!(job)).toEqual({ outcome: 'merged', pullRequest: pr.url, part: false, state: { pullRequest: pr.url, follow: 'merged', mergeChecked: true } });
     expect(gh.issue(REPO, 1)).toMatchObject({ state: 'closed', labels: ['hopper', 'hopper:done'] });
   });
 

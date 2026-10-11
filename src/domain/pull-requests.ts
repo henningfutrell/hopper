@@ -68,8 +68,11 @@ export const readyToMerge = (seen: PullRequestSeen, now: number): boolean =>
   !seen.draft && !seen.conflicting && (seen.checks === 'passing' || noChecksSettled(seen, now));
 
 export interface FollowUp {
-  /** Open: it still waits, and what was seen of it changed (`state.seen`). Merged, or closed without a merge. */
-  outcome: 'open' | 'merged' | 'closed';
+  /**
+   * Open: it still waits, and what was seen of it changed (`state.seen`). Merged, or closed without a merge. Checked: a
+   * merge recorded before issue #721 closed the item after all; only the state changes (`state.mergeChecked`).
+   */
+  outcome: 'open' | 'merged' | 'closed' | 'checked';
   pullRequest: string;
   /** Merged by the hopper itself (issue #637): yolo mode on for its repository, and it was ready. */
   byHopper?: boolean;
@@ -142,3 +145,12 @@ export async function doneAtSource(source: { notComplete?: NotComplete } | undef
 
 /** A source state that names an ended job's pull request still to follow (issue #579). */
 export const following = (job: Job): boolean => (job.sourceState?.source as { follow?: unknown } | undefined)?.follow === 'open';
+
+/**
+ * Whether a finished job's merge is checked once more (issue #721): recorded as the whole item — merged, no part — and not
+ * checked yet. Before issue #721 a merged part on a branch named for the issue was recorded as the whole item.
+ */
+export const rechecksMerge = (job: Job): boolean => {
+  const s = job.sourceState?.source as { follow?: unknown; part?: unknown; mergeChecked?: unknown } | undefined;
+  return s?.follow === 'merged' && s.part !== true && s.mergeChecked !== true;
+};

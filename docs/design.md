@@ -1819,7 +1819,9 @@ left to push all ended failed. For the GitHub sources (`src/sources/github/compl
    whole (partly done, below). A merge before the job, on an issue still open, is work the job was asked to redo: not done.
    An open pull request of the repo that names the issue **only on its branch** (`namesIssue`: `issue-N`, `issue_N`,
    `issueN` anywhere, or `N-…` at the start or after a slash; not `fix-N`), ready for review, counts the same
-   (`GitHubApi.openPullRequests`, the newest 100 open; asked only on a miss): no cross-reference shows it.
+   (`GitHubApi.openPullRequests`, the newest 100 open; asked only on a miss): no cross-reference shows it. A pull request
+   on such a branch whose body says `Part of #N` is still a part, never the whole (issue #721: a part on `issue-N-…`
+   ended the job as the whole issue, and its merge put `hopper:done` on an issue with work left).
 3. The issue **asks to update the pull requests it names** (`asksToUpdate`: its title, or a line of its body, starts with
    bring / rebase / update / refresh / fix the conflicts and names a pull request): each pull request it names in its own
    repo (`#N` or its URL, at most 10 asked, `GitHubApi.pullRequest`; a number that is an issue counts for nothing) is
@@ -1896,8 +1898,17 @@ its source asks again where it is (`JobSource.follow`), on the job's report chai
 | the pull request | then |
 |------------------|------|
 | still open | what is seen of it — a draft, merge conflicts, its checks, when it opened — kept in its source state (`seen`), no event (issue #637); with yolo mode on for its repository and it ready, the hopper merges it: then as merged, `byHopper: true` on the event. A refused merge (405, 409, no access) is kept on it (`mergeError`) and asked again next sync; a transient error is a report retry. Neither fails the job nor makes a failure record |
-| merged — the issue closed as complete by it, or the pull request merged | `job.pull_request_merged`; `hopper:pr-ready` → `hopper:done`. A part: `hopper:partly-done` only comes off, so the next sync offers the issue again and a new job takes the next part |
+| merged, and it closed the issue — the issue closed as completed, or its body closes the issue with a closing keyword (`closesByKeyword`: close/closes/closed, fix/fixes/fixed, resolve/resolves/resolved, then `#N`, `owner/repo#N` or the issue's URL) and does not say `Part of #N` | `job.pull_request_merged`; `hopper:pr-ready` → `hopper:done`; `mergeChecked: true` in its source state |
+| merged, and it did not close the issue — a part, a mention (`Refs #N`), a pull request named for the issue only on its branch | a part (issue #721), whatever the report took it for: `job.pull_request_merged` with `part: true`; `hopper:partly-done` and `hopper:pr-ready` only come off, so the next sync offers the issue again and a new job takes the next part. Only a merge that closes the issue, or the last part's, puts `hopper:done` on it |
 | closed without a merge | `job.pull_request_closed`; → `hopper:pr-closed`, which keeps the issue out until a person removes it (then it runs again) |
+
+**The merge re-check** (issue #721). Before it, a merged part on a branch named for its issue was recorded as the whole
+issue (`follow: merged`, no `part`), and `hopper:done` stopped the hopper from working the rest. Each sync, the newest job
+of its item whose merge is so recorded and not checked yet (`rechecksMerge`: `follow: merged`, no `part`, no
+`mergeChecked`) is asked once by the same rule. Closed by it: `mergeChecked: true`, nothing else (`FollowUp` outcome
+`checked`, no event). Not: it was a part — `hopper:done` comes off, `part: true`, `job.pull_request_merged` with
+`part: true` — and the next sync offers the issue again. An older job of the item is never asked: its merge must not
+take off a `hopper:done` that a later job, or a person, set.
 
 The issue closes when the pull request merges, by whoever merges it, as GitHub does; the hopper still never closes one.
 A pull request the report could not name is followed only to its merge. A throw is a report retry, asked again next

@@ -120,7 +120,8 @@ async function artifactMissing(api: GitHubApi, job: Job, artifacts: JobArtifacts
  * - a pull request of its repo that closes or references the issue — opened by the job or before it, by any author —
  *   open and ready for review, or merged since the job began; one that ships only part of it ("Part of #N") is a part,
  *   not the whole (`partlyDone`);
- * - an open pull request of its repo on a branch named for the issue (`namesIssue`), ready for review;
+ * - an open pull request of its repo on a branch named for the issue (`namesIssue`), ready for review, unless it ships a
+ *   part (issue #721);
  * - an issue that asks to update the pull requests it names (`asksToUpdate`): each of them free of merge conflicts, or
  *   merged, at any time; the job need not have pushed;
  * - an issue whose deliverable is an artifact (`isArtifactDeliverable`, issue #673): an artifact the job made, linked
@@ -140,14 +141,17 @@ export async function notComplete(api: GitHubApi, job: Job, artifacts?: JobArtif
     if (isReady(pr)) return undefined;
     found.set(pr.url, { ...pr, state: 'open' });
   }
+  const parts = new Set<string>();
   for (const pr of await api.referencingPullRequests(repo, number)) {
-    if (pr.repo.toLowerCase() !== repo.toLowerCase() || isPartOf(pr, repo, number)) continue;
+    if (pr.repo.toLowerCase() !== repo.toLowerCase()) continue;
+    if (isPartOf(pr, repo, number)) { parts.add(pr.url); continue; }
     if (pr.state === 'open' ? isReady(pr) : pr.state === 'merged' && mergedSince(pr, job)) return undefined;
     if (!found.has(pr.url)) found.set(pr.url, pr);
   }
-  // A pull request that names the issue only on its branch (issue #637): no cross-reference shows it.
+  // A pull request that names the issue only on its branch (issue #637): no cross-reference shows it. A part on such a
+  // branch is still a part (issue #721).
   for (const pr of await api.openPullRequests(repo)) {
-    if (!namesIssue(pr.headRef, number) || found.has(pr.url)) continue;
+    if (!namesIssue(pr.headRef, number) || found.has(pr.url) || parts.has(pr.url)) continue;
     if (isReady(pr)) return undefined;
     found.set(pr.url, { ...pr, state: 'open' });
   }
@@ -185,6 +189,16 @@ export async function unfinishedPullRequest(api: GitHubApi, job: Job): Promise<U
 /** A pull request that ships part of issue `n` of `repo` (issue #579): its own repo, its body saying "Part of #n". */
 export const isPartOf = (pr: ReferencingPullRequest, repo: string, n: number): boolean =>
   pr.repo.toLowerCase() === repo.toLowerCase() && new RegExp(`\\bpart of #${n}\\b`, 'i').test(pr.body);
+
+/**
+ * A pull request body that closes issue `n` of `repo` with one of GitHub's closing keywords (issue #721): close, closes,
+ * closed, fix, fixes, fixed, resolve, resolves or resolved, then `#n`, `repo#n` or the issue's URL.
+ */
+export function closesByKeyword(body: string, repo: string, n: number): boolean {
+  const escaped = repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const target = `(?:#|${escaped}#|https://github\\.com/${escaped}/issues/)${n}(?!\\d)`;
+  return new RegExp(`\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s*:?\\s+${target}`, 'i').test(body);
+}
 
 /**
  * The job's own pull request that ships part of its issue (issue #579): open, ready for review and free of merge
