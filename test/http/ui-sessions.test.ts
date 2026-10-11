@@ -308,7 +308,7 @@ describe('an API token', () => {
     const plain = sessions.create({ role: 'operator', identity: ada, userId: 'u1', lastsMs: 15 * 60_000, api: { label: 'ci' } });
     expect(sessions.find(box.token)).toMatchObject({ kind: 'api', box: true });
     expect(sessions.find(plain.token)?.box).toBeUndefined();
-    expect(sessions.apiTokens('u1').map((t) => [t.label, t.box])).toEqual([['grok-bot', true], ['ci', false]]);
+    expect(sessions.apiTokens('u1').map((t) => [t.label, t.box]).sort()).toEqual([['ci', false], ['grok-bot', true]]);
   });
 
   it('keeps the role it was minted with at most: a reconcile lowers it, never raises it', () => {

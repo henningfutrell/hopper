@@ -8,10 +8,13 @@
 //   Scenario: a token without box reads, holds and cancels, but every box action is refused with the reason
 //   Scenario: a person mints a box token; with it an agent launches a sandbox box
 //   Scenario: the sign-in exchange never mints a box token
+//   Scenario: the operator CLI mints a box token with --box
 //   Scenario: every listed box action is a route the hopper serves, and no other route asks for a box token
 //   Scenario: a model edited before box tokens refuses box actions only
 import { afterEach, describe, expect, it } from 'vitest';
+import { runCli, type CliIo } from '../../src/cli.ts';
 import { BOX_ACTIONS } from '../../src/http/ui/box-actions.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
 import { writeConfig } from '../support/files.ts';
@@ -101,9 +104,10 @@ describe('box tokens (issue #795)', () => {
     const plain = (await mint(a, session)).body as { id: string; box: boolean };
     expect(plain.box).toBe(false);
     const listed = await a.api('GET', '/api/api-tokens', undefined, { 'x-hopper-session': session });
-    expect(listed.body.tokens).toEqual([
+    expect(listed.body.tokens).toHaveLength(2);
+    expect(listed.body.tokens).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: minted.body.id, box: true }), expect.objectContaining({ id: plain.id, box: false }),
-    ]);
+    ]));
 
     const token = minted.body.token as string;
     await template(a, token);
@@ -133,6 +137,23 @@ describe('box tokens (issue #795)', () => {
     const refused = await agent(a, 'POST', '/ui/api/jobs/nope/approve', r.body.token, {});
     expect(refused.status).toBe(403);
     expect(refused.body.error).toMatch(BOX_REFUSAL);
+  });
+
+  it('the operator CLI mints a box token with --box', async () => {
+    const { a } = await boot();
+    const out: string[] = [];
+    const io: CliIo = { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => '', out: (x) => out.push(x), err: () => undefined };
+    const mintCli = async (extra: string[]) => {
+      out.length = 0;
+      expect(await runCli(['token', 'mint', '--label', 'grok-bot', '--role', 'operator', ...extra, '--url', a.url], io)).toBe(0);
+      return JSON.parse(out.join('')) as { token: string; box: boolean };
+    };
+    const box = await mintCli(['--box']);
+    expect(box.box).toBe(true);
+    expect((await agent(a, 'POST', '/ui/api/jobs/nope/approve', box.token, {})).body.error ?? '').not.toMatch(BOX_REFUSAL);
+    const plain = await mintCli([]);
+    expect(plain.box).toBe(false);
+    expect((await agent(a, 'POST', '/ui/api/jobs/nope/approve', plain.token, {})).body.error).toMatch(BOX_REFUSAL);
   });
 
   it('every listed box action is a route the hopper serves, and no other route asks for a box token', async () => {

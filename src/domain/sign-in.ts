@@ -23,7 +23,8 @@ export const API_TOKEN_DEFAULT_MINUTES = 15;
 export const API_TOKEN_MAX_MINUTES = 60;
 
 /** An API token as it is listed: never the token. `id`: the start of the token's hash, what a revoke names. */
-export interface ApiTokenView { id: string; label: string; role: UiRole; startedAt: string; expiresAt: string; lastUsedAt: string }
+/** `box`: a box token (issue #795), which alone may do box actions. */
+export interface ApiTokenView { id: string; label: string; role: UiRole; box: boolean; startedAt: string; expiresAt: string; lastUsedAt: string }
 /** A new API token: the token itself, answered once, in the answer that made it. */
 export interface ApiTokenMinted extends ApiTokenView { token: string }
 

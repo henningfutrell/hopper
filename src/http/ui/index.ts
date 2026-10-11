@@ -19,12 +19,13 @@ import { writeRules } from '../../questions/index.ts';
 import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
 import { usageGraphViewBody } from '../usage-history.ts';
 import { mutationRefusal, sessionIn } from './guard.ts';
-import { registerApiTokenRoutes } from './api-tokens.ts';
+import { apiTokenAnswer, registerApiTokenRoutes } from './api-tokens.ts';
+import { isBoxAction } from './box-actions.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
 import { registerMachineJoinRoutes } from './machine-join.ts';
 import { registerInstanceRoutes } from './instance.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
-import { apiTokenIdOf, identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
+import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
 import { registerSignInRoutes, type CallerOf } from './sign-in.ts';
 import { answerBody } from './job-bodies.ts';
 import { questionView } from '../questions.ts';
@@ -194,11 +195,14 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     instanceAdmin: o.instanceAdmin,
   });
 
-  /** Why Access refuses the request's API token the role it needs (issue #718), or undefined: allowed, or no API token. */
+  /**
+   * Why Access refuses the request's API token the role it needs (issue #718), or a box action (issue #795: a box token
+   * only, and `can_run_on_box`), or undefined: allowed, or no API token.
+   */
   const tokenRefusal = async (req: FastifyRequest, reply: FastifyReply, needs: UiRole): Promise<unknown> => {
     const s = sessionOf(req)!;
     if (s.kind !== 'api') return undefined;
-    const d = await o.access.decideApiToken({ userId: s.userId, tokenId: apiTokenIdOf(s.token), role: needs });
+    const d = await apiTokenAnswer(o.access, s, needs, isBoxAction(req.routeOptions.url));
     if (d.allowed) return undefined;
     if (d.unavailable) return reply.code(503).send({ error: `${ACCESS_UNAVAILABLE}: ${d.reason}` });
     return refuse(req, reply, `the API token may not do this: ${d.reason}`);

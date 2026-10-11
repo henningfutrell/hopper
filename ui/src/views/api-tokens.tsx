@@ -1,6 +1,8 @@
 // Settings → API tokens (issue #718): a person mints a short-lived token for an agent that acts for them over the API —
 // every action the UI has, with a role no higher than theirs, for an hour at most, and Access decides each use. The token
-// is shown once, here, right after the mint. The list shows each live token's label, role and end; Revoke ends one.
+// is shown once, here, right after the mint. The list shows each live token's label, role and end; Revoke ends one. A box
+// token (issue #795) is the only kind that may do a box action: start a job, run a command, approve or merge, update, or
+// change the work on a machine. It is minted only here, never by an agent's own sign-in.
 import { KeySquare, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -14,7 +16,7 @@ import { apiTokenLine, mintableRoles } from '@/model/api-tokens';
 import type { ApiTokenMinted, ApiTokenView, UiRole } from '@/model/wire';
 import { useHopper } from '@/store';
 
-type Edit = { action: 'mint'; label: string; role: UiRole; minutes: number } | { action: 'revoke'; id: string };
+type Edit = { action: 'mint'; label: string; role: UiRole; minutes: number; box: boolean } | { action: 'revoke'; id: string };
 
 export function ApiTokens() {
   const role = useHopper((s) => s.user?.role);
@@ -25,6 +27,7 @@ export function ApiTokens() {
   const [label, setLabel] = useState('');
   const [as, setAs] = useState<UiRole | undefined>();
   const [minutes, setMinutes] = useState(15);
+  const [box, setBox] = useState(false);
   const roles = mintableRoles(role);
   const reload = () => get<{ tokens: ApiTokenView[] }>('/api/api-tokens').then((r) => setTokens(r.tokens), (e: Error) => toast.error(e.message));
   useEffect(() => { void reload(); }, []);
@@ -33,7 +36,7 @@ export function ApiTokens() {
     setBusy(true);
     try {
       const r = await post<ApiTokenMinted | { tokens: ApiTokenView[] }>('/ui/api/api-tokens', edit);
-      if ('token' in r) { setMinted(r); setAdding(false); setLabel(''); await reload(); } else setTokens(r.tokens);
+      if ('token' in r) { setMinted(r); setAdding(false); setLabel(''); setBox(false); await reload(); } else setTokens(r.tokens);
     } catch (e) {
       if (e instanceof SessionRejected) useHopper.setState({ authed: false });
       toast.error((e as Error).message);
@@ -45,7 +48,7 @@ export function ApiTokens() {
   return (
     <Panel title="API tokens" icon={KeySquare} count={tokens.length || ''} bodyClassName="space-y-3"
       action={!adding && roles.length ? <Button size="sm" onClick={() => setAdding(true)} disabled={busy}><Plus />Mint token</Button> : undefined}>
-      <p className="text-sm text-muted-foreground">A token lets an agent act for you over the API: everything you can do here, with the role you give it, for an hour at most. Send it as <code>Authorization: Bearer &lt;token&gt;</code>. Access decides each use. An agent with a sign-in of its own can exchange it for a token instead.</p>
+      <p className="text-sm text-muted-foreground">A token lets an agent act for you over the API: everything you can do here, with the role you give it, for an hour at most. Send it as <code>Authorization: Bearer &lt;token&gt;</code>. Access decides each use. An agent with a sign-in of its own can exchange it for a token instead, but never for a box token.</p>
       {minted && (
         <div className="space-y-2 rounded-md border border-warn p-3">
           <p className="text-sm font-medium">{minted.label}: copy the token now. It is not shown again.</p>
@@ -54,7 +57,7 @@ export function ApiTokens() {
         </div>
       )}
       {adding && (
-        <form className="space-y-3 rounded-md border p-3" onSubmit={(e) => { e.preventDefault(); void send({ action: 'mint', label: label.trim(), role: as ?? roles[roles.length - 1]!, minutes }); }}>
+        <form className="space-y-3 rounded-md border p-3" onSubmit={(e) => { e.preventDefault(); void send({ action: 'mint', label: label.trim(), role: as ?? roles[roles.length - 1]!, minutes, box }); }}>
           <label className="block space-y-1"><Label>Label — who or what uses it</Label>
             <Input className="h-9 text-sm" value={label} required maxLength={64} placeholder="Grok Bot" onChange={(e) => setLabel(e.target.value)} /></label>
           <label className="block space-y-1"><Label>Role — at most yours</Label>
@@ -63,6 +66,10 @@ export function ApiTokens() {
             </select></label>
           <label className="block space-y-1"><Label>Lifetime in minutes — 1 to 60</Label>
             <Input className="h-9 w-24 text-sm" type="number" min={1} max={60} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} /></label>
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-1" name="box" checked={box} disabled={busy} onChange={(e) => setBox(e.target.checked)} />
+            <span>Box token — it may also start jobs, run commands, approve or merge, update, and change the work on a machine. Without it the token does everything else its role allows: reads, holds, cancels and settings.</span>
+          </label>
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={busy || !label.trim() || minutes < 1 || minutes > 60}>Mint token</Button>
             <Button type="button" variant="outline" disabled={busy} onClick={() => setAdding(false)}>Cancel</Button>

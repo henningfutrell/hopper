@@ -10,6 +10,6 @@ const when = (iso: string): string => new Date(iso).toLocaleString([], { dateSty
 /** The roles a person with `role` may give a token: theirs and the ones below it. */
 export const mintableRoles = (role: UiRole | undefined): UiRole[] => (role ? ROLES.slice(0, ROLES.indexOf(role) + 1) : []);
 
-/** The card's line: its role, when it ends, and when it was last used. */
+/** The card's line: its role, whether it is a box token (issue #795), when it ends, and when it was last used. */
 export const apiTokenLine = (t: ApiTokenView): string =>
-  `${t.role} · ends ${when(t.expiresAt)}${t.lastUsedAt === t.startedAt ? ' · not used yet' : ` · last used ${when(t.lastUsedAt)}`}`;
+  `${t.role}${t.box ? ' · box token' : ''} · ends ${when(t.expiresAt)}${t.lastUsedAt === t.startedAt ? ' · not used yet' : ` · last used ${when(t.lastUsedAt)}`}`;

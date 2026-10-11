@@ -267,8 +267,8 @@ export interface MachineHistoryRepository {
 export interface UiSessionRow {
   tokenHash: string; startedAt: string; lastSeenAt: string; checkedAt: string; endsAt?: string;
   role: UiRole; identity: Identity; userId: string;
-  /** An API token (issue #718) and its label; absent: a UI session. */
-  kind?: 'api'; label?: string;
+  /** An API token (issue #718) and its label; absent: a UI session. `box`: a box token (issue #795). */
+  kind?: 'api'; label?: string; box?: true;
 }
 
 /** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. Which have ended is the caller's to decide. */

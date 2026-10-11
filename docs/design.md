@@ -6323,8 +6323,7 @@ machine"), so no new box tunnel; what was missing is reach to the hopper's API f
   limited it. It now has its own count of `SIGN_IN_RATE` (20 a minute) per caller, in its own Fastify context; 429 past
   it. A stranger through the tunnel uses up only their own count, never an agent's.
 - **Residual risk, stated.** The edge names the caller by the address ngrok sees; callers behind one address (a NAT, a
-  shared egress) share a count. Whether the API token alone may drive actions that run on a box, or a second factor is
-  needed, is still open on the issue.
+  shared egress) share a count. The auth boundary is decided: a box action needs a box token ("Box tokens" below).
 
 ## Self-update (issue #44, 2026-10-04)
 
@@ -10843,6 +10842,8 @@ whose. A GitHub token on the exchange is any token of the account (as on the API
 which app it is for. The build before this one reads `Authorization` only as the API door, so on a downgrade it would ask
 GitHub about an API token sent to it (a token it then refuses); the token is useless there and ends within the hour.
 
+**Box actions** (issue #795): a box action needs a box token too ("Box tokens" below).
+
 **Not built.** Narrower scopes than a role (a token for the vault alone) are the model's to express today, by
 editing `api_token`'s relations; a per-token scope list waits for a caller that needs one. (The rest of issue #718 is built under issue #716: "Templates
 on request", "Tools assembled per run", "The read-only check"; its real-environment part is carried on #715.)
@@ -10852,6 +10853,56 @@ launches a box with the token alone; every route takes a token; the role cap, th
 token never reaches GitHub; Access denying `can_administer`; no OpenFGA, no mint; the gateway exchange; the CLI),
 `test/http/ui-sessions.test.ts` (the token's own end, its list and revoke, a reconcile never raises its role, renewal
 without a gateway check), `test/authz/model.test.ts` (the gaps), `test/ui/api-tokens.test.ts`.
+
+## Box tokens: the auth boundary for box actions (issue #795, 2026-10-11)
+
+Owner decision on the issue: the API token alone may read, hold and cancel; an action that runs on a box needs a **box
+token** — a separate capability, off by default, minted only by a person from a UI session, never by the sign-in exchange.
+So the token Grok Bot exchanges its own sign-in for, the one it keeps through the tunnel, cannot start work on a box.
+When it must, a person gives it a short-lived box token.
+
+- **What a box action is.** A route that starts a job, runs a command, approves or merges work, updates the hopper or a
+  client, or changes the work on a machine. The list is `BOX_ACTIONS` (`src/http/ui/box-actions.ts`), each with its kind;
+  a route not on it is no box action. Reads (every `GET /api/*`), holds (park, keep a job from its lane, mark a question
+  seen, close or dismiss it), cancels, rejects and settings are not box actions.
+
+  | Kind | Routes (`POST`) |
+  |------|-----------------|
+  | start a job | `/ui/api/jobs/:id/approve`, `rerun`, `rework`, `requeue`, `gate-pass`, `research`, `propose`; `/ui/api/sources/:name/intake`; `/ui/api/repo-checks/queue`; `/ui/api/failures/:id/retry`; `/ui/api/failures/problems/:id/release`; `/ui/api/questions/:id/research`, `propose`; each review decision but Reject all (`/ui/api/research/:id/accept`, `dig-deeper`, `steer`; `/ui/api/proposals/:id/accept`, `more-paths`, `steer`) |
+  | run a command | `/ui/api/blast-radius/discover`; `/ui/api/plugins` (an instance's options may hold a command) |
+  | approve or merge work | `/ui/api/pull-requests/merge` (Close PR is not: it runs nothing) |
+  | update the hopper or a client | `/ui/api/update` (a client updates with the hopper); `/ui/api/plugin-store` |
+  | change work on a machine | `/ui/api/questions/:id/answer`, `correct` (typed into the job's pane); `/ui/api/jobs/:id/end-wait`, `keep-original`, `accept-new-text`; `/ui/api/logins/:id/new-code`; `/ui/api/machines`, `machines/join`, `machines/sandbox`; `/ui/api/lanes/apply`, `lanes/undo` |
+
+  A new route that does any of these goes on the list in the same change. `test/integration/box-tokens.test.ts` walks
+  every `POST /ui/api/*` path with a token that is no box token: each listed one is refused for want of a box token, and
+  no other is.
+- **What a box token is.** An API token whose session row has `box` (`ui_sessions.box`, instance migration 36; every
+  token from before is no box token). Minted with `{ action: 'mint', label, role?, minutes?, box: true }` at
+  `POST /ui/api/api-tokens`, from a UI session only (an API token never mints one), or with the Box token box in
+  Settings → API tokens. The exchange (`POST /ui/auth/api-token`) refuses `box` (400): a sign-in the hopper only checks is
+  not a person at the UI. Listed with `box` (`GET /api/api-tokens`); the card says "box token". Its role, end and revoke
+  are those of any API token.
+- **How it is decided.** At a box action with an API token, after the role (`apiTokenAnswer`,
+  `src/http/ui/api-tokens.ts`): a token that is no box token is refused (403, `this is a box action: it needs a box
+  token…`) without asking OpenFGA; a box token is asked `api_token#can_run_on_box` (`decideBoxAction`), with its owner
+  told as `owner` and as `box_runner` — the hopper tells `box_runner` for a box token only. The default model:
+  `define box_runner: [user]`, `define can_run_on_box: box_runner and owner`. A user narrows it further in Settings →
+  Access. A mint with `box` asks it too, and drops the token when refused. The relations are checked apart
+  (`apiTokenBoxGaps`): a model edited before them refuses every box action, naming the gap, and decides everything else; a
+  model the hopper wrote is replaced by this build's default. A UI session is never asked: the person is there.
+- **Why not per-action confirmation.** A held action waiting on a person in the UI (path 3 on the issue) was not chosen:
+  the box token keeps an agent able to act unattended for as long as a person allows, an hour at most.
+
+**Residual risk, stated.** A box token in an agent's hands does every box action its role allows until it ends or is
+revoked: an hour at most. The boundary is the route list: a route that runs work on a box but is missing from it is open to
+any API token of the role. A downgrade to the build before reads no `box` column, so there every API token may again do
+what its role allows.
+
+Tests: `test/integration/box-tokens.test.ts` (no box token: reads, holds and cancels pass, every box action is refused; a
+box token launches a sandbox box; the exchange never mints one; every listed route exists and only those ask; a model
+without the relations refuses box actions only), `test/http/ui-sessions.test.ts` (the flag is kept and listed),
+`test/authz/model.test.ts` (the gaps), `test/ui/api-tokens.test.ts` (the card's line).
 
 ## Access: OpenFGA decides each mint (issue #559, 2026-10-09)
 

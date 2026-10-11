@@ -3,7 +3,7 @@
 // that explains an allow.
 import { createHash } from 'node:crypto';
 import {
-  OPERATIONS, ASSET_KINDS, type ApiTokenAsk, type LiveRequesters, type SharedSecretAsk, type SystemSecretAsk, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
+  OPERATIONS, ASSET_KINDS, type ApiTokenAsk, type ApiTokenBoxAsk, type LiveRequesters, type SharedSecretAsk, type SystemSecretAsk, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
 } from '../domain/types.ts';
 
 export const templateObject = (template: string): string => `template:${template}`;
@@ -101,6 +101,16 @@ export function apiTokenCheck(ask: ApiTokenAsk): { tuple: RelationshipTuple; con
   const object = `api_token:${ask.userId}/${ask.tokenId}`;
   const subject = userObject(ask.userId);
   return { tuple: { subject, relation: API_TOKEN_RELATIONS[ask.role], object }, contextual: [{ subject, relation: 'owner', object }] };
+}
+
+/** The check for a box action with an API token (issue #795): `can_run_on_box`, the owner told, and `box_runner` for a box token only. */
+export function apiTokenBoxCheck(ask: ApiTokenBoxAsk): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = `api_token:${ask.userId}/${ask.tokenId}`;
+  const subject = userObject(ask.userId);
+  return {
+    tuple: { subject, relation: 'can_run_on_box', object },
+    contextual: [{ subject, relation: 'owner', object }, ...(ask.box ? [{ subject, relation: 'box_runner', object }] : [])],
+  };
 }
 export const assetObject = (t: Asset): string => `asset:${t.kind}/${t.name}`;
 

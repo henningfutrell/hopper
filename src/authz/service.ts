@@ -13,8 +13,8 @@ import {
   profileProblem, TEMPLATE_NAME, type RadiusRules,
   type AccessDecisionRecord, type AccessModelView, type AccessStatus, type Approval, type MintDecision, type MintRequest, type RevokedApproval, type Asset,
 } from '../domain/types.ts';
-import { apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, intakeGaps, itemGaps, modelGaps, sharedSecretGaps, systemSecretGaps, vaultGrantGaps, type ModelJson } from './model.ts';
-import { apiTokenCheck, approvalTuples, artifactObject, intakeActorCheck, itemObject, linkObject, profileOf, relationshipPath, requesterObject, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, userObject, vaultGrantObject } from './objects.ts';
+import { apiTokenBoxGaps, apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, intakeGaps, itemGaps, modelGaps, sharedSecretGaps, systemSecretGaps, vaultGrantGaps, type ModelJson } from './model.ts';
+import { apiTokenBoxCheck, apiTokenCheck, approvalTuples, artifactObject, intakeActorCheck, itemObject, linkObject, profileOf, relationshipPath, requesterObject, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, userObject, vaultGrantObject } from './objects.ts';
 import { requesterCopy, requesterRows, requesterText, standing, templateOnPath } from './requesters.ts';
 
 /** A job is live while it is claimed, running, waiting on an answer or on its own wait (issue #483): parked, operator-led, ended or not yet started, it gets nothing. */
@@ -89,7 +89,7 @@ export function createAccess(o: AccessOptions): Access {
   };
   const artifactGapsOf = gapsMemo(artifactGaps), systemGapsOf = gapsMemo(systemSecretGaps);
   const itemGapsOf = gapsMemo(itemGaps), vaultGrantGapsOf = gapsMemo(vaultGrantGaps);
-  const sharedGapsOf = gapsMemo(sharedSecretGaps), apiTokenGapsOf = gapsMemo(apiTokenGaps), intakeGapsOf = gapsMemo(intakeGaps);
+  const sharedGapsOf = gapsMemo(sharedSecretGaps), apiTokenGapsOf = gapsMemo(apiTokenGaps), intakeGapsOf = gapsMemo(intakeGaps), boxGapsOf = gapsMemo(apiTokenBoxGaps);
 
   const model = (): AccessModelView => {
     const m = o.repo.model() ?? o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
@@ -98,7 +98,7 @@ export function createAccess(o: AccessOptions): Access {
   /** A model the hopper wrote and nobody edited, without a relation this build writes: the default of this build, a new version. */
   const upgradeModel = (): void => {
     const m = o.repo.model();
-    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length + itemGapsOf(m.dsl).length + sharedGapsOf(m.dsl).length + apiTokenGapsOf(m.dsl).length + intakeGapsOf(m.dsl).length + vaultGrantGapsOf(m.dsl).length === 0) return;
+    if (!m || m.writtenBy !== SYSTEM || m.dsl === DEFAULT_ACCESS_MODEL || gapsOf(m.dsl).length + artifactGapsOf(m.dsl).length + systemGapsOf(m.dsl).length + itemGapsOf(m.dsl).length + sharedGapsOf(m.dsl).length + apiTokenGapsOf(m.dsl).length + boxGapsOf(m.dsl).length + intakeGapsOf(m.dsl).length + vaultGrantGapsOf(m.dsl).length === 0) return;
     o.repo.addModel(DEFAULT_ACCESS_MODEL, SYSTEM, now());
     o.logger.warn('hopper: access: the access model the hopper wrote lacked the requester relations (issue #581): the default model is saved as a new version');
   };
@@ -238,6 +238,7 @@ export function createAccess(o: AccessOptions): Access {
     decideSystemSecret: (ask) => may('system secrets', systemGapsOf, systemSecretCheck(ask), (t) => `${ask.action} ${t.object}`),
     decideSharedSecret: (ask) => may('shared secrets', sharedGapsOf, sharedSecretCheck(ask), (t) => `${ask.action} ${t.object}`),
     decideApiToken: (ask) => may('API tokens', apiTokenGapsOf, apiTokenCheck(ask), (t) => `use the token for ${t.relation}`),
+    decideBoxAction: (ask) => may('box actions', boxGapsOf, apiTokenBoxCheck(ask), (t) => `use the token for ${t.relation}`),
     decideTextAcceptance(userId, item) {
       const object = itemObject(item);
       return checkOnce('accepting new text', itemGapsOf(model().dsl), { subject: userObject(userId), relation: 'can_accept_text', object },

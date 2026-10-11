@@ -189,6 +189,8 @@ export interface SharedSecretAsk {
  * (`viewer`), act as an operator, or as an admin — for the request at hand. The token's owner is told at each ask.
  */
 export interface ApiTokenAsk { userId: string; tokenId: string; role: 'viewer' | 'operator' | 'admin' }
+/** An ask about a box action with an API token (issue #795): `box` — whether it is a box token — is told at each ask. */
+export interface ApiTokenBoxAsk { userId: string; tokenId: string; box: boolean }
 
 /** What the vault reads of access (issue #580): the gate's approvals, and the decision it asks before every mint and renewal. */
 export interface VaultAccess extends TemplateApprovals {

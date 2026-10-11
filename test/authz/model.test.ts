@@ -40,7 +40,7 @@ describe('the access model', () => {
 
   it('a model edited before box tokens (issue #795) still decides API tokens; only box actions are then refused', () => {
     const before = DEFAULT_ACCESS_MODEL.replace(/\n *define box_runner: \[user\]\n *define can_run_on_box: [^\n]*/, '');
-    expect(before).not.toContain('can_run_on_box');
+    expect(before).not.toContain('define can_run_on_box');
     const json = compileAccessModel(before);
     expect(apiTokenGaps(json)).toEqual([]);
     expect(apiTokenBoxGaps(json)).toEqual(['api_token#box_runner', 'api_token#can_run_on_box']);

@@ -513,7 +513,8 @@ priority lanes, the blast-radius gate, usage limits — and what to do in each: 
 
 The API: `GET /api/*` reads, free on loopback, and with a UI session (`x-hopper-session`) or an API token
 (`Authorization: Bearer hopper_at_…`) from anywhere else; the only changes are `POST /ui/api/*`, behind a UI session or
-an API token whose role allows them.
+an API token whose role allows them. A box action (start a job, run a command, merge, update, change a machine) needs a
+box token, which only a person mints.
 The OpenAPI document is `/docs/openapi.json` (or `.yaml`).
 
 ## Read on
