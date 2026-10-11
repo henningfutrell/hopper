@@ -51,6 +51,14 @@ esac`,
     mkdir -p .terraform ;;
   plan) echo 'Plan: 1 to add, 0 to change, 0 to destroy.' ;;
   apply) if [ "$MODE" = read-only ]; then echo 'Error: creating SSM Parameter: AccessDeniedException: User is not authorized to perform: ssm:PutParameter' >&2; exit 1; fi ;;
+  destroy) case " $* " in
+    # With no refresh, each resource its state holds is deleted. A refresh first finds the account holds no parameter.
+    *" -refresh=false "*) if grep -q '"aws_ssm_parameter"' terraform.tfstate 2>/dev/null; then
+        if [ "$MODE" = read-only ]; then echo 'Error: deleting SSM Parameter (/hopper/read-only-check): AccessDeniedException: User is not authorized to perform: ssm:DeleteParameter with an explicit deny in a session policy' >&2; exit 1; fi
+        echo 'Destroy complete! Resources: 1 destroyed.'; exit 0
+      fi ;;
+    esac
+    echo 'No changes. No objects need to be destroyed.' ;;
 esac`,
 };
 
