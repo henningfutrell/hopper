@@ -16,15 +16,23 @@ const ORDER = Object.keys(INTAKE_GROUP_LABEL) as IntakeGroupKind[];
 export interface IntakeGroup {
   kind: IntakeGroupKind;
   items: IntakeOutcome[];
+  /** What its heading counts: the request cards still waiting for approval in Needs approval, else every item. */
+  count: number;
 }
 
 /** The group of one outcome: taken, or the group the daemon named. */
 export const groupOf = (x: IntakeOutcome): IntakeGroupKind => (x.reason === undefined ? 'taken' : x.group ?? 'other');
 
-/** The non-empty groups of these outcomes, in order; `taken: false` leaves the taken ones out. */
-export function intakeGroups(items: IntakeOutcome[], o: { taken: boolean }): IntakeGroup[] {
+/** The non-empty groups of these outcomes, in order; `taken: false` leaves the taken ones out. An item in `kept` (a request
+ *  card a person approves or approved from this page, issue #811) stays in Needs approval, where it was, whatever the sync
+ *  made of it: the list does not move under the person who acted. */
+export function intakeGroups(items: IntakeOutcome[], o: { taken: boolean; kept?: ReadonlySet<string> }): IntakeGroup[] {
+  const of = (x: IntakeOutcome): IntakeGroupKind => (o.kept?.has(x.key) ? 'request' : groupOf(x));
   return ORDER.filter((k) => o.taken || k !== 'taken')
-    .map((kind) => ({ kind, items: items.filter((x) => groupOf(x) === kind) }))
+    .map((kind) => {
+      const listed = items.filter((x) => of(x) === kind);
+      return { kind, items: listed, count: kind === 'request' ? listed.filter((x) => x.action === 'approve').length : listed.length };
+    })
     .filter((g) => g.items.length > 0);
 }
 

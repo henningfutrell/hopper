@@ -10,7 +10,8 @@ import { GhLink } from '@/components/job';
 import { IntakeGroups } from '@/components/intake-groups';
 import type { IntakeMigration, IntakeOutcome, OutsideRepo } from '../../../src/domain/intake.ts';
 import type { SourceStatus } from '@/model/wire';
-import { act } from '@/store';
+import { actFor } from '@/store';
+import { intakeRefusal } from '@/store/intake';
 import { useCanAdmin, useCanOperate } from '@/store/selectors';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -66,7 +67,7 @@ export function SourceIntake({ s, addRepository }: { s: SourceStatus; addReposit
           <span data-intake-summary>{plural(items.length, 'open labelled issue')}: {taken.length} taken, {items.length - taken.length} not taken</span>
           {canOperate && assignable.length > 1 && (
             <Button size="xs" variant="outline" title="Assigns every labelled issue not assigned to you to your GitHub account"
-              onClick={() => void act(`/ui/api/sources/${encodeURIComponent(s.name)}/intake`, { kind: 'assign', keys: assignable }, 'Assigned to you')}>
+              onClick={() => void actFor(`/ui/api/sources/${encodeURIComponent(s.name)}/intake`, { kind: 'assign', keys: assignable }, 'Assigned to you', intakeRefusal(assignable))}>
               <Hand />Assign all {assignable.length} to me
             </Button>
           )}
