@@ -9224,14 +9224,52 @@ with two, fail with the reason and run no box), `test/vault/read-session-policy.
 matches it: each state and lock write denied, each read left). The fake terraform answers only with the minted session
 now, as the real AWS provider does.
 
-**What stays of #715 (part 3 on).** `destroy` and `state rm` past the wrapper against the workspace's real state: the
+**Part 3: providers from the image's mirror (2026-10-11).** Issue #715 asks for a plugin cache that is pre-baked or
+read-only, with no arbitrary provider downloads. Before, `init` in a read-only box downloaded any provider from the
+registry.
+
+- **The mirror** (`PROVIDER_MIRROR`, `/opt/hopper-tools/providers`). A read-only image with terraform holds the AWS
+  provider (`AWS_PROVIDER`, `src/sandbox/tools.ts`) in a filesystem mirror, in its packed layout: the release's zip under
+  `registry.terraform.io/hashicorp/aws/`. It is pinned and checked by its SHA-256 in the fetch stage, as each tool is, and
+  a new release is a change there. The box's user cannot write the mirror (it is root's, from the image).
+- **The CLI config** (`TERRAFORM_CLI_CONFIG`, `src/sandbox/terraform-wrapper.ts`, at `/opt/hopper-tools/terraform.rc`).
+  Its `provider_installation` has the mirror and nothing else: no `direct` block, no network mirror. So terraform asks no
+  registry, and `init` of a provider the image does not hold fails with `was not found in any of the search locations`.
+  The image sets `TF_CLI_CONFIG_FILE` to it, so the real binary in `$HOPPER_TOOLS` reads it too, and the wrapper sets it
+  again before each command, so a caller cannot name another one through the wrapper.
+- **The wrapper refuses `providers lock` and `providers mirror`**: both ask the registry past the CLI config (`lock`
+  rewrites the lock file too). `providers` and `providers schema` still run.
+- **Its probe** (`terraform.provider-download`, `src/sandbox/probes.ts`). `init` of a stack that needs `hashicorp/null`,
+  terraform on PATH, must fail. `hashicorp/null` is small and real: with the registry in reach and no mirror, `init`
+  installs it, and the probe fails. A box with no mirror config fails it.
+
+Considered and not built: a read-only plugin cache (`TF_PLUGIN_CACHE_DIR` on a directory the box cannot write) — a cache
+does not stop a download, it only keeps one; more providers or more versions of the AWS provider — no case asks for one
+yet, and each one is a large download in every read-only image.
+
+Friction, stated: a workspace whose configuration needs another provider, or whose `.terraform.lock.hcl` or version
+constraint asks for another version of the AWS provider, cannot `init` in a read-only box. Its `plan` fails with the
+error above, and the person adds that provider to the image (a reviewed change in `src/sandbox/tools.ts`).
+
+Tests: `test/sandbox/tools.test.ts` (a read-only image fetches the provider, checks its sum, keeps it in the mirror, writes
+the CLI config and sets `TF_CLI_CONFIG_FILE`; a plain one does none of it), `test/sandbox/terraform-wrapper.test.ts` (each
+command runs with the image's CLI config, whatever the caller set; `providers lock` and `mirror` refused),
+`test/sandbox/check-script.test.ts` (the new probe passes with the mirror, and fails with none). The fake terraform finds
+only the providers its mirror holds when `TF_CLI_CONFIG_FILE` names one. Checked by hand: the read-only image of a Debian
+base with `terraform` built with rootless Podman, its network open; as the box's user, `init` installed `hashicorp/aws`
+6.68.0 from the mirror; `hashicorp/null` was not found, through the wrapper with `TF_CLI_CONFIG_FILE=/dev/null` given and
+past it; `providers lock` and `mirror` were refused; the mirror could not be written.
+
+**What stays of #715 (part 4 on).** `destroy` and `state rm` past the wrapper against the workspace's real state: the
 probes plan and apply a one-resource stack with local state, so the IAM layer is proved for `apply` only; a probe on the
-real backend needs the workspace's backend configuration, which the hopper does not hold. A pre-baked or
-read-only provider cache. Egress limited to the AWS, Kubernetes and GitHub endpoints (the check box and boxes run on the
-hopper's network today). The suite's result as a job artifact: it is on the template and in `template.checked` today.
+real backend needs the workspace's backend configuration, which the hopper does not hold. Egress limited to the AWS,
+Kubernetes and GitHub endpoints (the check box and boxes run on the hopper's network today). The suite's result as a job
+artifact: it is on the template and in `template.checked` today.
 
 **Residual risk, stated.** The wrapper is one layer: anything in the box can run `$HOPPER_TOOLS/terraform` past it, by
-design, and the deny policy is what refuses then. `*:Create*` and its kind match by the action's name: a write whose name
+design, and the deny policy is what refuses then. Past the wrapper, a process can also unset `TF_CLI_CONFIG_FILE` and
+download a provider: the mirror stops the downloads terraform makes through the wrapper and by default, not every
+download a box can make, until egress is limited. `*:Create*` and its kind match by the action's name: a write whose name
 starts with another word (`s3:Restore*`, `ec2:Run*`, `lambda:Invoke*`) is not in the deny policy, and is refused only
 when `ReadOnlyAccess` does not allow it — which it does not, as it allows only reads. The deny policy is a guard against
 a role whose own policy and a later change to `ReadOnlyAccess` could otherwise widen a session. It is checked against
