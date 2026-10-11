@@ -6,10 +6,15 @@
 // Feature: the read session's deny policy
 //   Scenario: a read session carries ReadOnlyAccess and an inline policy that denies every write and every other role
 //   Scenario: a write session carries neither
+//   Scenario: terraform's state backend is read-only under a read session: it reads the state, and writes no state and no lock
 import { describe, expect, it } from 'vitest';
 import { AWS_READ_POLICY, mintTarget } from '../../src/domain/minting.ts';
 
 interface Statement { Effect: string; Action?: string[]; NotAction?: string[]; Resource?: string; NotResource?: string }
+
+/** Whether an IAM action pattern (`*` and `?`, case-insensitive, as IAM matches them) matches the action. */
+const matches = (pattern: string, action: string): boolean =>
+  new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*').replaceAll('?', '.')}$`, 'i').test(action);
 
 const target = (operation: 'read' | 'write') => mintTarget('aws', { operation, asset: { kind: 'aws-role', name: '123456789012/diag' } });
 
@@ -36,5 +41,16 @@ describe('the read session\'s deny policy (issue #715)', () => {
     if (typeof t === 'string' || t.kind !== 'aws') throw new Error(String(t));
     expect(t.policyArns).toEqual([]);
     expect(t.policy).toBeUndefined();
+  });
+
+  it('terraform\'s state backend is read-only under a read session: it reads the state, and writes no state and no lock', () => {
+    const t = target('read');
+    if (typeof t === 'string' || t.kind !== 'aws') throw new Error(String(t));
+    const denied = (JSON.parse(t.policy!) as { Statement: Statement[] }).Statement.flatMap((s) => s.Action ?? []);
+    const isDenied = (action: string): boolean => denied.some((p) => matches(p, action));
+    // The S3 backend's state writes, and its lock: a DynamoDB item, or (use_lockfile) an S3 object.
+    for (const write of ['s3:PutObject', 's3:DeleteObject', 'dynamodb:PutItem', 'dynamodb:DeleteItem', 'dynamodb:UpdateItem']) expect(isDenied(write), write).toBe(true);
+    // What plan, show, output and state list read: ReadOnlyAccess allows them, and the deny policy leaves them.
+    for (const read of ['s3:GetObject', 's3:ListBucket', 's3:GetBucketVersioning', 'dynamodb:GetItem', 'dynamodb:DescribeTable']) expect(isDenied(read), read).toBe(false);
   });
 });
