@@ -9338,10 +9338,32 @@ job's with the summary and each probe, `template.checked` and the template name 
 runs the check again: the same artifact, revision 2, the failure in its summary; a template a person asked for keeps no
 artifact), `test/ui/vault.test.ts` (the link only for the current version's check).
 
-**What stays of #715 (part 5 on).** `destroy` and `state rm` past the wrapper against the workspace's real state: the
-probes plan and apply a one-resource stack with local state, so the IAM layer is proved for `apply` only; a probe on the
-real backend needs the workspace's backend configuration, which the hopper does not hold. Egress limited to the AWS,
-Kubernetes and GitHub endpoints (the check box and boxes run on the hopper's network today).
+**Part 5: `destroy` past the wrapper (2026-10-11).** Issue #715 asks for `destroy` to be refused by the wrapper and,
+with the wrapper bypassed, by IAM. Part 1 proved the IAM layer for `apply` only: past the wrapper, a `destroy` of the
+probe stack found nothing in its state to delete, so it asked the account nothing.
+
+- **The probe** (`terraform.destroy-direct`, `src/sandbox/probes.ts`). The probe stack again, in a directory of its own
+  (`$HOME/tf-held`), with a local state the probe writes that holds the stack's SSM parameter. Then
+  `"$HOPPER_TOOLS/terraform" destroy -refresh=false`. With no refresh, terraform does not first read the parameter, so
+  it sends `ssm:DeleteParameter` whether or not the parameter exists, and the account must refuse it (the deny policy's
+  `*:Delete*`). Allowed, the provider deletes the parameter, or gets `ParameterNotFound` and ends with no error: in
+  both cases the probe fails. With a refresh, a missing parameter leaves the state empty and nothing is asked: the
+  probe would pass with a writable credential.
+- **No cleanup.** A delete that went through removed only the check's own parameter, which nothing else uses.
+
+Checked by hand: the probe's script, under Terraform 1.13 with the AWS provider 6.68.0, its SSM endpoint a local fake:
+the hand-written state was taken and the destroy sent `DeleteParameter`; an `AccessDeniedException` answer failed it in
+words the check reads as a refusal; a `ParameterNotFound` answer ended `Destroy complete! Resources: 1 destroyed.`, exit 0.
+
+Tests: `test/sandbox/check-script.test.ts` (refused under a read-only credential with the wrapper and with none; allowed
+under a writable one; the fake terraform deletes what a state holds only with no refresh),
+`test/integration/read-only-check-terraform.test.ts` (the probe with the workspace's read session, refused).
+
+**What stays of #715 (part 6 on).** `state rm` past the wrapper against the workspace's real state: with local state it
+is a file write that no IAM policy sees, and a probe on the real backend needs the workspace's backend configuration,
+which the hopper does not hold. Egress limited to the AWS, Kubernetes and GitHub endpoints (the check box and boxes run
+on the hopper's network today). Both need a decision: a backend for the template's workspace need, and an egress
+allowlist (#315's open question).
 
 **Residual risk, stated.** The wrapper is one layer: anything in the box can run `$HOPPER_TOOLS/terraform` past it, by
 design, and the deny policy is what refuses then. Past the wrapper, a process can also unset `TF_CLI_CONFIG_FILE` and

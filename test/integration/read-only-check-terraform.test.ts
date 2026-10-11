@@ -27,7 +27,7 @@ describe('a terraform workspace in the read-only check (issue #715)', () => {
     expect((await a.events()).filter((e) => e.type === 'vault.check_minted').map((e) => (e.data as { asset: unknown }).asset)).toEqual([{ kind: 'aws-role', name: `${ACCOUNT}/readonly` }]);
     const probes = t.check!.probes.filter((p) => p.asset === 'shop-prod');
     expect(probes.map((p) => [p.id, p.outcome])).toEqual(expect.arrayContaining([
-      ['terraform.plan', 'allowed'], ['terraform.apply', 'denied'], ['terraform.apply-direct', 'denied'], ['terraform.state-rm', 'denied'], ['terraform.destroy', 'denied'],
+      ['terraform.plan', 'allowed'], ['terraform.apply', 'denied'], ['terraform.apply-direct', 'denied'], ['terraform.destroy-direct', 'denied'], ['terraform.state-rm', 'denied'], ['terraform.destroy', 'denied'],
     ]));
     // apply past the wrapper reached the real binary with the session, and the account refused it.
     expect(probes.find((p) => p.id === 'terraform.apply-direct')!.output).toContain('AccessDenied');

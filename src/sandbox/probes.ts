@@ -25,6 +25,19 @@ resource "aws_ssm_parameter" "hopper_read_only_check" {
 TF
 [ -d .terraform ] || "$HOPPER_TOOLS/terraform" init -input=false -no-color >/dev/null`;
 
+/**
+ * The stack again, in a directory of its own, with a state that holds its parameter: `destroy` past the wrapper deletes
+ * what the state holds. The parameter need not exist. With no refresh, terraform does not first read it from the
+ * account, so the delete reaches the account, which must refuse it. Allowed, the provider deletes it, or finds nothing
+ * to delete and ends without an error: either way the probe fails.
+ */
+const HELD = `${STACK}
+mkdir -p "$HOME/tf-held" && cp main.tf "$HOME/tf-held/" && cd "$HOME/tf-held" || exit 1
+cat > terraform.tfstate <<'STATE'
+{"version":4,"terraform_version":"1.0.0","serial":1,"lineage":"hopper-read-only-check","outputs":{},"resources":[{"mode":"managed","type":"aws_ssm_parameter","name":"hopper_read_only_check","provider":"provider[\\"registry.terraform.io/hashicorp/aws\\"]","instances":[{"schema_version":0,"attributes":{"id":"/hopper/read-only-check","name":"/hopper/read-only-check","type":"String","value":"hopper"}}]}]}
+STATE
+[ -d .terraform ] || "$HOPPER_TOOLS/terraform" init -input=false -no-color >/dev/null`;
+
 /** The terraform writes the read-only wrapper refuses (issue #715): id, what it tries, and the command. */
 const WRAPPED: readonly (readonly [string, string, string])[] = [
   ['destroy', 'destroy the stack', 'destroy -auto-approve -input=false -lock=false -no-color'],
@@ -92,8 +105,13 @@ export const PROBES: readonly Probe[] = [
     script: `${STACK}\n"$HOPPER_TOOLS/terraform" apply -auto-approve -input=false -lock=false -no-color`,
     cleanup: `${STACK}\n"$HOPPER_TOOLS/terraform" destroy -auto-approve -input=false -lock=false -no-color`,
   },
+  {
+    // Issue #715: destroy past the wrapper is refused by the account too, as apply is.
+    id: 'terraform.destroy-direct', title: 'destroy a parameter held in state (the real binary, past any wrapper)', kinds: ['terraform-workspace'], tool: 'terraform', expect: 'denied',
+    script: `${HELD}\n"$HOPPER_TOOLS/terraform" destroy -auto-approve -input=false -lock=false -refresh=false -no-color`,
+  },
   // Issue #715: each state or infrastructure write terraform has, on PATH, is refused by the read-only wrapper before it
-  // reaches the account or the state. Past the wrapper, `apply-direct` above shows the account refuses on its own.
+  // reaches the account or the state. Past the wrapper, `apply-direct` and `destroy-direct` above show the account refuses on its own.
   ...WRAPPED.map(([id, title, command]): Probe => ({
     id: `terraform.${id}`, title: `${title} (terraform on PATH)`, kinds: ['terraform-workspace'], tool: 'terraform', expect: 'denied',
     script: `${STACK}\nterraform ${command}`,
