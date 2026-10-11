@@ -32,7 +32,7 @@ import { SharedSecrets } from './vault-shared';
 import { ReadPolicy } from './vault-read-policy';
 import { ToolsInput } from './vault-tools';
 import { MasterKeyRotation } from '@/app/master-key';
-import { CheckAgain, CheckRow } from './vault-check';
+import { CheckAgain, GateRows } from './vault-check';
 import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
@@ -238,8 +238,7 @@ function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView
         <dt className="text-muted-foreground">Scope</dt><dd className="font-mono break-words">{t.secrets.join(', ') || 'none'}</dd>
         <dt className="text-muted-foreground">Profiles</dt><dd className="font-mono break-words">{t.profiles.map((p) => `${profileText(p)}${t.pending.profiles.some((x) => sameProfile(x, p)) ? ' (waits)' : ''}`).join(', ') || 'none'}</dd>
         <dt className="text-muted-foreground">Gives now</dt><dd className="font-mono break-words">{t.gives.join(', ') || 'nothing'}</dd>
-        <CheckRow t={t} />
-        {t.approval && <><dt className="text-muted-foreground">Approved by</dt><dd className="break-words">{t.approval.by} · {new Date(t.approval.at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</dd></>}
+        <GateRows t={t} />
       </dl>
       {editing ? <TemplateForm t={t} secrets={secrets} shared={shared} busy={busy} send={send} onDone={() => setEditing(false)} /> : (
         <div className="flex flex-wrap gap-2">
