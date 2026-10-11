@@ -6173,9 +6173,11 @@ providers (no redirect, no flow, no ticket); `none` and `password` are reserved 
   role (null when off) and the account's current role (null when removed).
 - **Rate limit.** Every route that needs no session to start one — `POST /ui/login`, `/ui/auth/*`
   — is registered in one Fastify child context behind `@fastify/rate-limit`: 20 requests a minute
-  per client address (`SIGN_IN_RATE`, in memory), then 429. Behind a reverse proxy every client is
-  the proxy's address, so the limit is shared there (`trustProxy` stays off: a forwarded header
-  would let a client pick its own key); a public deploy limits per client at the proxy.
+  per client address (`SIGN_IN_RATE`, in memory), then 429. `POST /ui/auth/api-token` has its own count
+  of the same (issue #795). Behind a reverse proxy every client is the proxy's address, so the limit is
+  shared there (`trustProxy` stays off: a forwarded header would let a client pick its own key); a
+  public deploy limits per client at the proxy. One exception: through the **tunnel**, the address its
+  edge names in `x-hopper-caller`, read from the tunnel agent alone ("The tunnel").
 
 **Residual risk, stated.** `none` with `operator` or `admin` hands those powers to whoever reaches
 the port or the proxy; it is only as safe as what stands in front. Password sign-in has no lockout
@@ -6226,10 +6228,18 @@ machine"), so no new box tunnel; what was missing is reach to the hopper's API f
   endpoint's `public_url` has the public URL's origin. Down: no answer, not 2xx, no endpoint, or only endpoints at other
   URLs — logged once per change, with why. `url()` is the public URL while up; each user's runtime passes it to its
   notifiers as `NotifierEvents.reach`. Stopped, and its ask in flight settled, with the server.
-- **Residual risk, stated.** `trustProxy` stays off: every tunnel caller shares one address for the sign-in rate limit
-  (`SIGN_IN_RATE`, 20 a minute), so callers from many addresses can delay an agent's token exchange; the edge limit is
-  per address. Whether the API token alone may drive actions that run on a box, or a second factor is needed, is still
-  open on the issue.
+- **The caller behind the tunnel** (second part of the issue). Every request through the tunnel comes from one peer, the
+  agent. The edge first drops an `x-hopper-caller` header the caller sent, then sets it to the caller's address
+  (`conn.client_ip`). The hopper reads it only from the agent: each ask of the tunnel watch also looks up the addresses of
+  `HOPPER_TUNNEL_API`'s host (`isAgent`). `tunnelCaller` keys the sign-in limit: from the agent, the one address the
+  header names; else, or with no single address named, the peer's own address. A LAN peer cannot pick its count with the
+  header. `trustProxy` stays off: nothing else reads a forwarded address, and the Host guard is unchanged.
+- **The exchange has the sign-in limit.** `POST /ui/auth/api-token` was outside it: through the tunnel, only the edge
+  limited it. It now has its own count of `SIGN_IN_RATE` (20 a minute) per caller, in its own Fastify context; 429 past
+  it. A stranger through the tunnel uses up only their own count, never an agent's.
+- **Residual risk, stated.** The edge names the caller by the address ngrok sees; callers behind one address (a NAT, a
+  shared egress) share a count. Whether the API token alone may drive actions that run on a box, or a second factor is
+  needed, is still open on the issue.
 
 ## Self-update (issue #44, 2026-10-04)
 

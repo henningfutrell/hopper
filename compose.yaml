@@ -214,7 +214,9 @@ services:
   # It forwards to http://hopper over the `tunnel` network, which only the hopper shares, never to the hopper's loopback:
   # an internet request is a public request (the API only with a session or an API token), and no box reaches the agent's
   # local API. Its edge lets only the API through (/api/ but the event stream, /ui/api/, /ui/auth/api-token): never the UI,
-  # its sign-in pages or the installer; and it limits each caller's requests a minute. The hopper asks the agent's local API
+  # its sign-in pages or the installer; and it limits each caller's requests a minute. It names each caller to the hopper in
+  # `x-hopper-caller` (one a caller sent is dropped), which the hopper reads from this agent alone, so its own sign-in limit
+  # counts each caller, not the agent (docs/design.md "The tunnel"). The hopper asks the agent's local API
   # whether the public URL is up (HOPPER_TUNNEL_API), and tells a Grok Bot routine where it is reached.
   tunnel:
     profiles: [tunnel]
@@ -232,6 +234,15 @@ services:
         p=/var/lib/ngrok/hopper-policy.yml
         cat > $$p <<'EOF'
         on_http_request:
+          - actions:
+              - type: remove-headers
+                config:
+                  headers:
+                    - x-hopper-caller
+              - type: add-headers
+                config:
+                  headers:
+                    x-hopper-caller: "$${conn.client_ip}"
           - expressions:
               - "!(req.url.path.startsWith('/api/') || req.url.path.startsWith('/ui/api/') || req.url.path == '/ui/auth/api-token') || req.url.path.startsWith('/api/events/stream')"
             actions:

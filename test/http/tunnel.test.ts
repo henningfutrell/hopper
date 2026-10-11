@@ -3,7 +3,7 @@
 // another URL — is down. It only reads: the Host guard never takes a URL the agent reports. A loopback fake agent.
 import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
-import { watchTunnel, type TunnelWatch } from '../../src/http/tunnel.ts';
+import { tunnelCaller, watchTunnel, type TunnelWatch } from '../../src/http/tunnel.ts';
 import { waitFor } from '../support/wait.ts';
 
 let server: Server | undefined;
@@ -80,5 +80,26 @@ describe('the tunnel watch', () => {
     watch = watchTunnel({ api: 'http://127.0.0.1:1', publicUrl: 'https://h.example', logger: log, everyMs: 20 });
     await waitFor(() => log.lines.some((l) => l.startsWith('warn')), { what: 'a warning' });
     expect(watch.url()).toBeUndefined();
+  });
+});
+
+describe('tunnelCaller: who a request counts as for the sign-in limit', () => {
+  const caller = tunnelCaller({ isAgent: (peer) => peer === '10.89.1.2' });
+  const req = (ip: string, named?: string | string[]) => ({ ip, headers: named === undefined ? {} : { 'x-hopper-caller': named } });
+
+  it('from the tunnel agent: the address its edge names', () => {
+    expect(caller(req('10.89.1.2', '203.0.113.5'))).toBe('203.0.113.5');
+    expect(caller(req('10.89.1.2', ' 2001:db8::1 '))).toBe('2001:db8::1');
+    expect(caller(req('10.89.1.2', '::ffff:203.0.113.5'))).toBe('203.0.113.5');
+  });
+
+  it('from the tunnel agent with no single address named: the agent\'s own address', () => {
+    for (const named of [undefined, '', 'h.example', '203.0.113.5, 198.51.100.7', ['203.0.113.5', '198.51.100.7']]) {
+      expect(caller(req('10.89.1.2', named))).toBe('10.89.1.2');
+    }
+  });
+
+  it('from any other peer: its own address, whatever it names', () => {
+    expect(caller(req('192.168.1.9', '203.0.113.5'))).toBe('192.168.1.9');
   });
 });

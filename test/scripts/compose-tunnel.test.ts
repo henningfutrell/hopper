@@ -78,4 +78,12 @@ describe('the tunnel (issue #795): profile `tunnel`, an ngrok agent that forward
     expect(script).toMatch(/type: rate-limit/);
     expect(script).toMatch(/conn\.client_ip/);
   });
+
+  it('names each caller to the hopper in x-hopper-caller, first dropping one the caller sent', () => {
+    const drop = script.indexOf('type: remove-headers'), set = script.indexOf('type: add-headers');
+    expect(drop).toBeGreaterThan(-1);
+    expect(set).toBeGreaterThan(drop);
+    expect(script.slice(drop, set)).toMatch(/- x-hopper-caller/);
+    expect(script.slice(set)).toMatch(/x-hopper-caller: "\$\$?\{conn\.client_ip\}"/);
+  });
 });
