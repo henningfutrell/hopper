@@ -93,3 +93,16 @@ export function checkWait(t: CheckedTemplate): string | undefined {
   const failed = [...failedProbes(c), ...(c.problem ? [c.problem] : [])];
   return `${wait}: it failed (${failed.join('; ')}). A person runs it again in Settings → Vault, or with hopper template check ${t.name}`;
 }
+
+/**
+ * The read need whose AWS read session a terraform workspace's probes run with (issue #715): the template's one aws-role
+ * read need, as the workspace's provider and its state backend are read with that role. Or why there is none: no such
+ * need, or more than one, as the hopper cannot tell which role a workspace uses.
+ */
+export function workspaceRole(needs: readonly OperationProfile[]): OperationProfile | string {
+  const roles = needs.filter((n) => n.operation === 'read' && n.asset.kind === 'aws-role');
+  if (roles.length === 1) return roles[0]!;
+  const has = "a terraform workspace is read with the AWS read session of the template's aws-role read need, and the template has";
+  if (roles.length === 0) return `${has} none: ask for read on the aws-role its provider and state are read with`;
+  return `${has} ${roles.length} (${roles.map((r) => r.asset.name).join(', ')}): ask for one`;
+}
