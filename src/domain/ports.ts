@@ -678,7 +678,7 @@ export type IntakeActionOutcome =
   | { ok: false; reason: 'not_found' | 'conflict'; message: string };
 
 /** Who asks for an ended job's item to run again: the user, or the failure assessor (issue #509). */
-export type RerunBy = 'user' | 'assessor';
+export type RerunBy = 'user' | 'assessor' | 'tending';
 
 export type RerunResult =
   | { ok: true; job: Job }

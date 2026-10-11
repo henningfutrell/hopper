@@ -331,7 +331,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     store, host, enqueue, finalReported: (j) => flagsOf(j).finalReported === true, sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
     setSource: (jobId, source) => { const j = store.jobs.get(jobId); if (j) write(jobId, flagsOf(j), source); },
     reportAgain: (jobId) => { const j = store.jobs.get(jobId); const slot = slots.get(j?.source?.source ?? ''); if (!j || !slot) return; write(jobId, { ...flagsOf(j), finalReported: false }); void queueReport(slot, jobId); },
-    failed: (jobId, e) => { slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.retrying.set(jobId, message(e)); },
+    failed: (jobId, e) => { slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.retrying.set(jobId, message(e)); }, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief),
   });
 
   const rerunning = createRerun({

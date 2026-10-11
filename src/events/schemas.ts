@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS } from '../domain/types.ts';
+import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
@@ -194,7 +194,7 @@ export const EVENT_SCHEMAS = {
   'job.claimed_by_operator': strict({}),
   // Run again (a re-run, issue #313): the user gave a failed job's item back to its source to run again.
   // `assessor` (issue #509): the failure assessor ran it again — a retry, a redirect, a release of a held job.
-  'job.rerun': strict({ by: z.enum(['user', 'assessor']), ...actingIfPerson }),
+  'job.rerun': strict({ by: z.enum(['user', 'assessor', 'tending']), ...actingIfPerson }),
   // A person sent the job's open pull request back for rework (issue #724): the new job reworks it, told the notes.
   'job.rework_requested': strict({ pullRequest: z.string(), notes: z.string(), nextJobId: z.string(), ...actingIfPerson }),
   // A locked entry dismissed (issue #355): the failed job stays failed, out of the queue.
@@ -311,6 +311,7 @@ export const EVENT_SCHEMAS = {
   'job.pull_request_closed': strict({ pullRequest: z.string(), part: z.boolean(), ...actingIfPerson }),
   // The job's own pull request was left with merge conflicts or as a draft (issue #626): the job goes on with the fixed brief.
   'job.finish_briefed': strict({ pullRequest: z.string(), step: z.enum(FINISH_STEPS) }),
+  'job.pull_request_tended': strict({ pullRequest: z.string(), step: z.enum(TEND_STEPS), nextJobId: z.string() }),
   // Yolo mode (issue #579): the settings before and after, and who changed them.
   'yolo_mode.changed': strict({ from: yoloMode, to: yoloMode, by: z.string() }),
   'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean(), rotated: z.boolean().optional(), backend: z.string().optional(), mints: asset.optional() }),

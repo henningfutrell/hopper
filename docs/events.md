@@ -734,11 +734,11 @@ Version 1 (`docs/schemas/job.claimed_by_operator.v1.json`). An operator claimed 
 
 ## `job.rerun`
 
-Version 1 (`docs/schemas/job.rerun.v1.json`). The user (`by: "user"`), or the failure assessor (`by: "assessor"`: a retry, a redirect, a held job released — issue #509), asked for an ended job's item to run again (UI Run again, a re-run): its source gave the item back (on GitHub: a closed issue reopened, the end labels gone) and the new job was queued in the same step, its `job.queued` just before this event and its `rerunOf` this job. The ended job is kept as it ended; a failed one is no longer a locked entry. A person's run again from Failures — a failure's Retry, a hand-off's I fixed it, or Continue in a new job — names who: `person`, and the way, `via` `ui` or `cli` (issue #623).
+Version 1 (`docs/schemas/job.rerun.v1.json`). The user (`by: "user"`), or the failure assessor (`by: "assessor"`: a retry, a redirect, a held job released — issue #509), or the hopper's tending of a waiting pull request (`by: "tending"`: merge conflicts or failing checks, issue #736; `job.pull_request_tended` follows), asked for an ended job's item to run again (UI Run again, a re-run): its source gave the item back (on GitHub: a closed issue reopened, the end labels gone) and the new job was queued in the same step, its `job.queued` just before this event and its `rerunOf` this job. The ended job is kept as it ended; a failed one is no longer a locked entry. A person's run again from Failures — a failure's Retry, a hand-off's I fixed it, or Continue in a new job — names who: `person`, and the way, `via` `ui` or `cli` (issue #623).
 
 | field | type | required |
 |---|---|---|
-| `by` | `user` \| `assessor` | yes |
+| `by` | `user` \| `assessor` \| `tending` | yes |
 | `person` | string | no |
 | `via` | `ui` \| `cli` | no |
 
@@ -2907,17 +2907,35 @@ Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pul
 
 ## `job.finish_briefed`
 
-Version 1 (`docs/schemas/job.finish_briefed.v1.json`). A job that ended done left its own pull request with merge conflicts or as a draft (issue #626): one fixed step finishes it, so the job goes on in its own session with that step's fixed brief, in place of a failure and a hand-off. `step`: `rebase` (onto its base branch; merge conflicts come first) or `mark_ready` (a draft, marked ready for review). At most two per run; then the job is judged as any other.
+Version 1 (`docs/schemas/job.finish_briefed.v1.json`). A job that ended done left its own pull request with merge conflicts, failing checks or as a draft (issues #626, #736): one fixed step finishes it, so the job goes on in its own session with that step's fixed brief, in place of a failure and a hand-off. `step`: `rebase` (onto its base branch; merge conflicts come first), `fix_checks` (its failing checks, issue #736) or `mark_ready` (a draft, marked ready for review). At most three per run; then the job is judged as any other.
 
 | field | type | required |
 |---|---|---|
 | `pullRequest` | string | yes |
-| `step` | `rebase` \| `mark_ready` | yes |
+| `step` | `rebase` \| `fix_checks` \| `mark_ready` | yes |
 
 ```json
 {
   "pullRequest": "https://github.com/owner/repo/pull/14",
   "step": "rebase"
+}
+```
+
+## `job.pull_request_tended`
+
+Version 1 (`docs/schemas/job.pull_request_tended.v1.json`). A PR waiting job's pull request got merge conflicts with its base branch, or failing checks, while it waited (issue #736): the hopper ran its item again (`job.rerun`, by `tending`) with the tend brief, so a new job brings the same pull request back to ready, and this job follows it no more. `step`: `rebase` or `fix_checks`. `nextJobId`: the new job. At most three tends in a row of one pull request; then it waits on a person.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `step` | `rebase` \| `fix_checks` | yes |
+| `nextJobId` | string | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "step": "rebase",
+  "nextJobId": "j2"
 }
 ```
 
