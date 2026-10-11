@@ -78,6 +78,8 @@ export function createAccess(o: AccessOptions): Access {
   // Something in the database OpenFGA may not hold yet: nothing is asked of OpenFGA until it is pushed.
   let dirty = true;
   let running: Promise<void> | undefined;
+  // Stopped: nothing more is pushed, so nothing touches the store the daemon closes next.
+  let stopped = false;
   let timer: NodeJS.Timeout | undefined;
   let watch: NodeJS.Timeout | undefined;
   // Who is live, as last pushed: a check asks OpenFGA only once it holds who is live now.
@@ -145,7 +147,7 @@ export function createAccess(o: AccessOptions): Access {
 
   const sync = (): Promise<void> => {
     const server = o.server;
-    if (!server) return Promise.resolve();
+    if (!server || stopped) return Promise.resolve();
     // One push at a time; a change made while one runs is pushed by the next.
     running ??= (async () => {
       dirty = false;
@@ -333,11 +335,13 @@ export function createAccess(o: AccessOptions): Access {
       }, REQUESTERS_CHECK_MS);
       watch.unref();
     },
-    stop() {
+    async stop() {
+      stopped = true;
       if (timer) clearInterval(timer);
       if (watch) clearInterval(watch);
       timer = undefined;
       watch = undefined;
+      await running;
     },
   };
 }

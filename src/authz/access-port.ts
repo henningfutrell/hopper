@@ -43,5 +43,6 @@ export interface Access extends TemplateApprovals {
   /** Whether OpenFGA can be asked now, and why not (issue #696). */
   status(): AccessStatus;
   start(): void;
-  stop(): void;
+  /** No more pushes; resolves once the push in flight, if any, ended. */
+  stop(): Promise<void>;
 }
