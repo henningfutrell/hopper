@@ -1,7 +1,8 @@
 // Reconciling the Pull requests list with GitHub (issue #763): a done job that follows no pull request — it ended before
 // the hopper followed one, or its follow ended — and whose item has an open pull request on GitHub follows that pull
 // request from the next sync on. It shows on the Pull requests list, and is followed and tended as a job's own is: yolo
-// mode merges it once it is ready. An open pull request of an issue that is closed is not followed. Real daemon, real
+// mode merges it once it is ready. An open pull request of an issue closed as not planned is not followed; one of an
+// issue closed as completed, or of a failed job, is (issue #786): a pull request is followed until it is merged or closed. Real daemon, real
 // database; the in-memory fake GitHub at the GitHubApi seam.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job, PullRequestsView } from '../../src/domain/types.ts';
@@ -83,11 +84,11 @@ describe('reconciling open pull requests with GitHub (issue #763)', () => {
     expect(await followOf(app, part.job.id)).toMatchObject({ follow: 'open', pullRequest: part.url, part: true });
   });
 
-  it('an open pull request of a closed issue is not followed, and a job that follows its own is left as it is', async () => {
+  it('an open pull request of an issue closed as not planned is not followed, and a job that follows its own is left as it is', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
     const closed = await doneNotFollowing(gh, app, (n) => gh.openPullRequest(REPO, n, { createdAt: now() }).url);
-    gh.closeIssue(REPO, closed.issue.number, 'owner', { at: now() });
+    gh.closeIssue(REPO, closed.issue.number, 'owner', { at: now(), reason: 'not_planned' });
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
     app.scripted.ships((j) => { if (j.source?.key === issue.url) gh.openPullRequest(REPO, issue.number, { createdAt: now() }); });
     await app.sync();
@@ -97,5 +98,61 @@ describe('reconciling open pull requests with GitHub (issue #763)', () => {
     await app.sync();
     expect((await followOf(app, closed.job.id))?.follow).toBeUndefined();
     expect(await app.events('types=job.pull_request_followed')).toEqual([]);
+  });
+});
+
+describe('a pull request is followed to its end, whatever its issue (issue #786)', () => {
+  it('an open part of an issue closed as completed is followed, and yolo mode merges it', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { issue, job, url } = await doneNotFollowing(gh, app, (n) => gh.openPartPullRequest(REPO, n, { createdAt: now(), checks: 'pending' }).url);
+    gh.closeIssue(REPO, issue.number, 'owner', { at: now() });
+    await app.sync();
+    await waitFor(async () => (await followOf(app, job.id))?.follow === 'open', { what: 'the part followed' });
+    expect(await followOf(app, job.id)).toMatchObject({ follow: 'open', pullRequest: url, part: true });
+    expect(await cardOf(app, job.id)).toMatchObject({ state: 'open', pullRequest: { url } });
+
+    const token = await app.login();
+    expect((await app.ui('/ui/api/yolo-mode', { repos: { [REPO]: true } }, { token })).status).toBe(200);
+    gh.setChecks(url, 'passing');
+    await app.sync();
+    await waitFor(async () => (await followOf(app, job.id))?.follow === 'merged', { what: 'the hopper merged it' });
+  });
+
+  it('a failed job\'s open pull request is followed: it shows on the list, and merge conflicts are tended', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { issue, job, url } = await doneNotFollowing(gh, app, (n) => gh.openPullRequest(REPO, n, { createdAt: now(), checks: 'pending' }).url);
+    app.user().store.jobs.update(job.id, { status: 'failed', error: 'the agent stopped' });
+    app.scripted.ships((j) => { if (j.source?.key === issue.url) gh.pushToPullRequest(url, now()); });
+    await app.sync();
+    await waitFor(async () => (await followOf(app, job.id))?.follow === 'open', { what: 'the failed job follows its pull request' });
+    expect(await cardOf(app, job.id)).toMatchObject({ state: 'open', pullRequest: { url } });
+
+    gh.setConflicting(url, true);
+    await app.sync();
+    await waitFor(async () => (await followOf(app, job.id))?.follow === 'tended', { what: 'tended' });
+    expect((await app.events('types=job.pull_request_tended')).map((e) => [e.jobId, (e.data as { step: string }).step])).toEqual([[job.id, 'rebase']]);
+  });
+
+  it('a tend job that failed is not followed again: it waits on a person', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { issue, job, url } = await doneNotFollowing(gh, app, (n) => gh.openPullRequest(REPO, n, { createdAt: now() }).url);
+    await app.sync();
+    await waitFor(async () => (await followOf(app, job.id))?.follow === 'open', { what: 'followed again' });
+    // Each later run pushes nothing: the tend cannot resolve the conflicts.
+    app.scripted.ships(() => undefined);
+    gh.setConflicting(url, true);
+    await app.sync();
+    const tender = await waitFor(async () => {
+      const js = (await app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.filter((j) => j.source?.key === issue.url && j.id !== job.id);
+      return js[0];
+    }, { what: 'the tend job' });
+    await app.waitForStatus(tender.id, 'failed');
+    await app.sync();
+    await app.sync();
+    expect((await followOf(app, tender.id))?.follow).toBeUndefined();
+    expect(await app.events('types=job.pull_request_followed')).toHaveLength(1);
   });
 });

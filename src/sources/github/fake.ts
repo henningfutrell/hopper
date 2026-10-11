@@ -51,7 +51,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   };
   const openPull = (repo: string, n: number, o: PullRequestInput, closes: boolean, says = closes ? 'Closes' : 'Part of'): OpenPullRequest => {
     find(repo, n);
-    return addPull(repo, key(repo, n), o, closes, `${says} #${n}`);
+    return addPull(repo, key(repo, n), o, closes, o.body ?? `${says} #${n}`);
   };
   /** As the port answers a pull request: without the fake's own fields. */
   const shown = ({ url, createdAt, isDraft, conflicting, headCommittedAt, checks }: OpenPullRequest): OpenPullRequest =>

@@ -59,6 +59,15 @@ describe('done from GitHub state (issue #637)', () => {
     expect(await source.notComplete!(job)).toBeUndefined();
   });
 
+  it.each([
+    ['closes another issue', 'Closes #9\n\nIt depends on #1.'],
+    ['ships part of another issue', 'Part of #9\n\nSee #1 for the parts count.'],
+  ])('a pull request that %s and only mentions this one is that issue\'s work, not this one\'s (issue #786)', async (_n, text) => {
+    const { gh, source, job } = withIssue();
+    gh.openReferencingPullRequest(REPO, 1, { createdAt: AFTER, body: text });
+    expect(await source.notComplete!(job)).toBeDefined();
+  });
+
   it('a pull request that references the issue, merged before the job began while the issue stays open, is not the job\'s work', async () => {
     const { gh, source, job } = withIssue();
     const pr = gh.openReferencingPullRequest(REPO, 1, { createdAt: BEFORE });
