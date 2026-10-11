@@ -49,3 +49,8 @@ export function StatusBadge({ status, label, tone, title, className }: { status:
     </span>
   );
 }
+
+/** A repository's yolo mode (issue #579): whether its jobs' pull requests merge once the checks pass. */
+export const YoloBadge = ({ on }: { on: boolean }) => (
+  <StatusBadge status={on ? 'yolo-on' : 'yolo-off'} label={on ? 'yolo on' : 'yolo off'} tone={on ? 'warn' : 'muted'} />
+);

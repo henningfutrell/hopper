@@ -7400,6 +7400,13 @@ Waiting panel links an unaccepted job to it. Since issue #201 the gate names the
 sorter** link to Settings → Routing, and the Queue nav entry carries a badge counting the jobs waiting on
 the pre-sort (`awaitingSort`, `ui/src/model/queue.ts`); the Routing view's Queue sorter panel says it is
 the pre-sort and links back.
+Since issue #737 each **job card** in both columns starts collapsed, so the jobs are easy to scan and compare:
+its issue (with its pull request's state and its parts done, as `JobTitle` shows them), its state, its lane (`no lane
+yet` until it starts) and its repository's yolo mode (`GET /api/yolo-mode`, read once by the view; `repoMerges`). A click
+on the card's head or its chevron opens that card alone for its detail (priority, advice, how long it waits, the
+pre-sort's rejection, why it is held); **Expand all** and **Collapse all** open or close every card (`CardsOpen`, `ui/src/model/queue.ts`).
+Which cards are open is the view's own state, never stored: a new visit starts collapsed. A card's actions and its
+text change show whether it is open or not, since those are what the queue is worked with.
 
 ## Config in the database: no config files (issue #198, 2026-10-05)
 
