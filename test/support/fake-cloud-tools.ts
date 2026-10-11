@@ -7,6 +7,7 @@
 // Issue #715: the read-only terraform wrapper is first on PATH, as in a read-only template's image, with the fake
 // terraform as the real binary in HOPPER_TOOLS behind it; `wrapper: false` leaves it out. With the wrapper, the image's
 // provider mirror is there too: TF_CLI_CONFIG_FILE names it, and init finds only hashicorp/aws, as the real terraform does.
+// After an init with -backend-config (an S3 backend), a state push writes to the bucket: refused under a read-only credential.
 import { execFile } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -48,7 +49,9 @@ esac`,
         [ -d "$(dirname "$TF_CLI_CONFIG_FILE")/providers/registry.terraform.io/$s" ] || { echo "Error: Failed to query available provider packages: provider registry.terraform.io/$s was not found in any of the search locations" >&2; exit 1; }
       done
     fi
-    mkdir -p .terraform ;;
+    mkdir -p .terraform
+    # An S3 backend (issue #715): init with -backend-config keeps it, and a state push then writes to the bucket.
+    case " $* " in *" -backend-config="*) touch .terraform/s3-backend ;; esac ;;
   plan) echo 'Plan: 1 to add, 0 to change, 0 to destroy.' ;;
   apply) if [ "$MODE" = read-only ]; then echo 'Error: creating SSM Parameter: AccessDeniedException: User is not authorized to perform: ssm:PutParameter' >&2; exit 1; fi ;;
   destroy) case " $* " in
@@ -59,6 +62,9 @@ esac`,
       fi ;;
     esac
     echo 'No changes. No objects need to be destroyed.' ;;
+  state) if [ "$2" = push ] && [ -f .terraform/s3-backend ] && [ "$MODE" = read-only ]; then
+      echo 'Failed to persist state: failed to upload state: operation error S3: PutObject, https response error StatusCode: 403, RequestID: 1, HostID: , api error AccessDenied: User: arn:aws:sts::123456789012:assumed-role/hopper-read/s is not authorized to perform: s3:PutObject with an explicit deny in a session policy' >&2; exit 1
+    fi ;;
 esac`,
 };
 

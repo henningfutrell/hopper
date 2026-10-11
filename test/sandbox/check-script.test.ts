@@ -10,7 +10,10 @@ const tools: FakeCloudTools[] = [];
 afterEach(() => { for (const t of tools.splice(0)) t.cleanup(); });
 
 const read = (kind: OperationProfile['asset']['kind'], name: string): OperationProfile => ({ operation: 'read', asset: { kind, name } });
-const EVERY_KIND = [read('aws-account', '123456789012'), read('aws-role', '123456789012/hopper-read'), read('cluster', 'lab'), read('namespace', 'lab/shop'), read('argocd-app', 'shop'), read('terraform-workspace', 'shop-prod')];
+/** A terraform workspace need with its state backend (issue #715): the bucket its state is in, under `env/prod`. */
+const WORKSPACE: OperationProfile = { ...read('terraform-workspace', 'shop-prod'), backend: { bucket: 'shop-state', region: 'eu-west-1', keyPrefix: 'env/prod' } };
+const PROBE_KEY = 'env/prod/hopper-read-only-check/terraform.tfstate';
+const EVERY_KIND = [read('aws-account', '123456789012'), read('aws-role', '123456789012/hopper-read'), read('cluster', 'lab'), read('namespace', 'lab/shop'), read('argocd-app', 'shop'), WORKSPACE];
 
 async function run(mode: 'read-only' | 'writable', needs: OperationProfile[]) {
   const fake = createFakeCloudTools(mode);
@@ -44,6 +47,9 @@ describe('the read-only check script (issue #716)', () => {
     expect(writes.filter((r) => r.passed).every((r) => r.id.startsWith('terraform.') && !r.id.endsWith('-direct') && ownRefusal(r))).toBe(true);
     expect(results.find((r) => r.id === 'terraform.apply-direct')).toMatchObject({ outcome: 'allowed', passed: false });
     expect(results.find((r) => r.id === 'terraform.destroy-direct')).toMatchObject({ outcome: 'allowed', passed: false });
+    // The state push to the probe key went through: it fails, and the cleanup deletes that key, and only that key (issue #715).
+    expect(results.find((r) => r.id === 'terraform.state-push-direct')).toMatchObject({ outcome: 'allowed', passed: false });
+    expect(fake.calls().filter((c) => c.startsWith('aws s3api'))).toEqual([`aws s3api delete-object --bucket shop-state --key ${PROBE_KEY}`]);
     // A dry run that would work, and a delete of nothing, fail in their own words: an error, not a refusal.
     expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'error', passed: false });
     expect(results.find((r) => r.id === 'kube.delete-pod')).toMatchObject({ outcome: 'error', passed: false });
@@ -55,9 +61,9 @@ describe('the read-only check script (issue #716)', () => {
   });
 
   it('terraform is probed on PATH and as the real binary, past any wrapper', async () => {
-    const { results, fake } = await run('read-only', [read('terraform-workspace', 'shop-prod')]);
+    const { results, fake } = await run('read-only', [WORKSPACE]);
     expect(results.map((r) => r.id)).toEqual([
-      'terraform.plan', 'terraform.apply', 'terraform.apply-direct', 'terraform.destroy-direct', 'terraform.destroy', 'terraform.import', 'terraform.state-rm',
+      'terraform.plan', 'terraform.apply', 'terraform.apply-direct', 'terraform.destroy-direct', 'terraform.state-push-direct', 'terraform.destroy', 'terraform.import', 'terraform.state-rm',
       'terraform.state-mv', 'terraform.state-push', 'terraform.taint', 'terraform.force-unlock', 'terraform.workspace-new', 'terraform.workspace-delete',
       'terraform.provider-download',
     ]);
@@ -71,17 +77,42 @@ describe('the read-only check script (issue #716)', () => {
     // The wrapper's refusals never ran the real binary: the one destroy is the one past it.
     expect(fake.calls().filter((c) => /^terraform (destroy|import|state|taint|force-unlock|workspace)/.test(c))).toEqual([
       'terraform destroy -auto-approve -input=false -lock=false -refresh=false -no-color',
+      'terraform state push -lock=false probe.tfstate',
     ]);
+    // The state push past the wrapper (issue #715): the workspace's bucket, at the check's own key, refused by the account.
+    expect(results.find((r) => r.id === 'terraform.state-push-direct')).toMatchObject({ outcome: 'denied', passed: true });
+    expect(results.find((r) => r.id === 'terraform.state-push-direct')!.output).toMatch(/PutObject[\s\S]*AccessDenied/);
+    expect(fake.calls()).toContain(`terraform init -input=false -no-color -reconfigure -backend-config=bucket=shop-state -backend-config=key=${PROBE_KEY} -backend-config=region=eu-west-1`);
+    // Never the workspace's own state: each backend key the check names is the probe key.
+    const keys = fake.calls().flatMap((c) => [...c.matchAll(/-backend-config=key=(\S+)/g)].map((m) => m[1]));
+    expect(keys).toEqual([PROBE_KEY]);
     expect(results.find((r) => r.id === 'terraform.state-rm')).toMatchObject({ outcome: 'denied', expect: 'denied' });
     // A provider the image's mirror does not hold is not downloaded: init finds it nowhere (issue #715).
     expect(results.find((r) => r.id === 'terraform.provider-download')).toMatchObject({ outcome: 'denied', passed: true });
     expect(results.find((r) => r.id === 'terraform.provider-download')!.output).toContain('hashicorp/null was not found in any of the search locations');
   });
 
+  it('a workspace need with no state backend: the state push past the wrapper is not run, and it does not pass (issue #715)', async () => {
+    const { results, fake } = await run('read-only', [read('terraform-workspace', 'shop-prod')]);
+    expect(results.find((r) => r.id === 'terraform.state-push-direct')).toEqual({
+      id: 'terraform.state-push-direct', asset: 'shop-prod', expect: 'denied', outcome: 'not-run', passed: false,
+      output: 'not run: no backend configured. A person sets the state backend of terraform-workspace shop-prod (its bucket, region and key prefix) in Settings → Vault',
+    });
+    // The other probes run as before; nothing asked the account to push a state.
+    expect(results.filter((r) => r.id !== 'terraform.state-push-direct').every((r) => r.passed)).toBe(true);
+    expect(fake.calls().filter((c) => c.startsWith('terraform state') || c.includes('-backend-config'))).toEqual([]);
+  });
+
+  it('a workspace need with no key prefix: the probe key is at the bucket\'s top, under hopper-read-only-check/ (issue #715)', async () => {
+    const { results, fake } = await run('read-only', [{ ...read('terraform-workspace', 'shop-prod'), backend: { bucket: 'shop-state', region: 'eu-west-1' } }]);
+    expect(results.find((r) => r.id === 'terraform.state-push-direct')).toMatchObject({ outcome: 'denied', passed: true });
+    expect(fake.calls().flatMap((c) => [...c.matchAll(/-backend-config=key=(\S+)/g)].map((m) => m[1]))).toEqual(['hopper-read-only-check/terraform.tfstate']);
+  });
+
   it('with no wrapper on PATH, the wrapper\'s probes fail: that layer is missing (issue #715)', async () => {
     const fake = createFakeCloudTools('read-only', undefined, { wrapper: false });
     tools.push(fake);
-    const runs = HOPPER_PROBES.runsFor([read('terraform-workspace', 'shop-prod')]);
+    const runs = HOPPER_PROBES.runsFor([WORKSPACE]);
     const r = await fake.runScript({ name: 'c', image: 'i', network: 'n', volume: 'v', env: {}, labels: {}, limits: { cpus: 1, memoryMb: 1 }, user: 'agent', script: checkScript(runs) });
     const results = readResults(runs, r.output);
     expect(results.find((x) => x.id === 'terraform.destroy')).toMatchObject({ outcome: 'allowed', passed: false });
@@ -92,6 +123,7 @@ describe('the read-only check script (issue #716)', () => {
     expect(results.find((x) => x.id === 'terraform.apply')).toMatchObject({ outcome: 'denied', passed: true });
     expect(results.find((x) => x.id === 'terraform.apply-direct')).toMatchObject({ outcome: 'denied', passed: true });
     expect(results.find((x) => x.id === 'terraform.destroy-direct')).toMatchObject({ outcome: 'denied', passed: true });
+    expect(results.find((x) => x.id === 'terraform.state-push-direct')).toMatchObject({ outcome: 'denied', passed: true });
   });
 
   it('a probe with no line did not run; a failure that is not a refusal is an error', () => {
