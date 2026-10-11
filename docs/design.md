@@ -9526,6 +9526,13 @@ left the format — reads as **one path** (`single`): titled by its Goal or its 
 tradeoffs, the whole text as its Markdown. A version stored before #651 has no `paths`; `pathsOf` reads its one path from
 its text, and the routes answer every version with its paths. No stored row changes.
 
+**Fields as agents write them** (#755, `src/domain/path-fields.ts`). Several fields on one line
+(`**Security:** x. **Effort:** y.`) each read as their own field: a new label starts after the end of a sentence or after
+emphasis. A labelled line the format does not name, one capitalised word such as `Role:`, is kept as one of the path's
+`otherFields`, unless it is a heading or a plain bullet: `- Hopper side: ...` under `Summary:` stays part of the summary.
+The card shows the title and the recommended badge, the TL;DR as Markdown, each tradeoff and other field as a labelled row
+(its words as Markdown), then Creates and the Details expander. A version stored before #755 keeps its paths as read then.
+
 **Structure** (the pre-check, #631): a path that leaves out a part, a set with no recommended path, zero paths with no
 reason, or a document not written as paths, each one fixed line.
 

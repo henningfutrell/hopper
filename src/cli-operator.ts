@@ -228,7 +228,7 @@ function pathsBrief(p: ReviewItemView) {
   return {
     id: p.id, jobId: p.jobId, status: p.status, stage: p.stage, version: v.number, title: p.source?.title, tldr: v.sections.tldr, problem: v.sections.problem,
     paths: set.paths.map((x) => ({
-      id: x.id, title: x.title, summary: x.summary, tradeoffs: x.tradeoffs, creates: x.creates,
+      id: x.id, title: x.title, summary: x.summary, tradeoffs: x.tradeoffs, ...(x.otherFields ? { otherFields: x.otherFields } : {}), creates: x.creates,
       ...(x.recommended ? { recommended: true } : {}), ...(x.addedBy ? { addedBy: x.addedBy } : {}), ...(x.notViable ? { notViable: x.notViable } : {}),
     })),
     ...(set.recommendation ? { recommendation: set.recommendation } : {}), ...(set.none !== undefined ? { none: set.none } : {}),
