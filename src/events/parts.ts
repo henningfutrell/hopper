@@ -2,7 +2,7 @@
 // (legacy.ts).
 import { z } from 'zod';
 import { JOB_ORIGINS } from '../domain/intake-origin.ts';
-import { CONFIDENCES } from '../domain/types.ts';
+import { CONFIDENCES, RISK_CATEGORIES, RISK_LEVELS } from '../domain/types.ts';
 
 const strict = z.strictObject;
 
@@ -108,4 +108,9 @@ export const taskCount = strict({ done: z.number().int().min(0), total: z.number
 export const answerHold = strict({
   reason: z.enum(['guard', 'high_priority', 'auto_answer_off', 'low_confidence']), by: z.enum(['risk', 'guard']).optional(),
   guards: z.array(z.string()).optional(), confidence: z.enum(CONFIDENCES).optional(), threshold: z.enum(CONFIDENCES).optional(),
+  // The Decider's risk hold (issue #679, `DeciderRiskHold`).
+  decider: strict({
+    risk: z.enum(RISK_LEVELS).optional(), categories: z.array(z.enum(RISK_CATEGORIES)).optional(), confidence: z.number().min(0).max(1).optional(),
+    threshold: z.number().min(0).max(1), error: z.string().optional(),
+  }).optional(),
 });

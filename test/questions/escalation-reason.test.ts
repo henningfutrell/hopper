@@ -23,6 +23,8 @@ describe('the escalation reason', () => {
       guards: [{ name: 'credentials', describe: 'credentials, secrets, passwords, keys or tokens' }],
       holds: [{ reason: 'guard', by: 'risk', guards: [{ name: 'credentials', describe: 'credentials, secrets, passwords, keys or tokens' }] }],
       recommendation: { by: 'fable', answer: 'Go ahead and rotate the api key', confidence: 'high' },
+      // No Decider: the keyword risk rules checked the answer (issue #679), and the card says so.
+      riskCheck: { by: 'rules' },
     });
   });
 
@@ -37,7 +39,7 @@ describe('the escalation reason', () => {
     const r = rig({ levels: { fable: () => ({ ...ANSWERED, confidence: 'medium' }) } });
     expect(await escalationOf(r)).toEqual({
       reason: 'low_confidence', holds: [{ reason: 'low_confidence', confidence: 'medium', threshold: 'high' }],
-      recommendation: { by: 'fable', answer: 'use postgres', confidence: 'medium' },
+      recommendation: { by: 'fable', answer: 'use postgres', confidence: 'medium' }, riskCheck: { by: 'rules' },
     });
   });
 
@@ -53,7 +55,7 @@ describe('the escalation reason', () => {
 
   it('a lower level\'s answer stays the recommendation when the top level fails', async () => {
     const r = rig({ levels: { jr: () => ({ ...ANSWERED, confidence: 'low' }), fable: () => ({ nope: true }) } });
-    expect(await escalationOf(r)).toEqual({ reason: 'no_answer', recommendation: { by: 'jr', answer: 'use postgres', confidence: 'low' } });
+    expect(await escalationOf(r)).toEqual({ reason: 'no_answer', recommendation: { by: 'jr', answer: 'use postgres', confidence: 'low' }, riskCheck: { by: 'rules' } });
   });
 
   it('auto-answer off and a high-priority job have their own reasons', async () => {

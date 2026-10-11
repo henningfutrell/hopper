@@ -49,7 +49,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place, and a done-check miss's look again before it is assessed (`done-at-source.ts`, issue #637), the done-check backfill (`backfill.ts`, issue #637), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
-| `src/minor-decisions/` | decider calls through Jev first (issue #550, "Decider calls"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, a question's listed options (`options.ts`), what makes a decision consequential (`guard.ts`, over the question risk rules), the view from the events (`view.ts`), the user's TypeSafe API key — checked, kept in the vault's system scope, imported once from the variable (`typesafe-key.ts`, issue #657); all but `jev.ts`, `service.ts` and `typesafe-key.ts` pure. Its ports (`JevChooser`, `JevFirst`) are in `src/domain/minor-decisions.ts`; the question pipeline (`src/questions/jev-first.ts`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
+| `src/minor-decisions/` | decider calls through Jev first (issue #550, "Decider calls"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice, or several in one call, through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, the risk call on a level's answer (`risk.ts`, issue #679), a call's ceiling (`deadline.ts`), what makes a decision consequential and which of it are the guards (`guard.ts`, over the question risk rules), the view from the events (`view.ts`), the user's TypeSafe API key — checked, kept in the vault's system scope, imported once from the variable (`typesafe-key.ts`, issue #657); all but `jev.ts`, `service.ts`, `risk.ts` and `typesafe-key.ts` pure. Its ports (`JevChooser`, `JevFirst`, `QuestionRisk`) are in `src/domain/minor-decisions.ts`; the question pipeline (the risk call, `QuestionRisk`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
 | `src/tldr/` | the TL;DR (issue #569, "TL;DR"): its rules — the text a card's TL;DR is written from, which cards get one, the prompt, the answer made plain text, the agent's summary as the fallback, which stored one a card shows (`text.ts`, pure but for the hash) —, the sweep that writes them (`service.ts`), its model: Claude Haiku through the `claude` CLI and the sweep with it (`haiku.ts`, composed by the user runtime alone) | engine, http, executors, decider; plugins but in `haiku.ts` |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
@@ -532,7 +532,7 @@ the current list is "Settled in slice 4" → "Configuration (env), as of slice 5
 | dir | owns | must not import |
 |-----|------|-----------------|
 | `src/executors/herdr/` | `herdr-claude` executor: herdr CLI client (port + real adapter), screen protocol parser, pane lifecycle | engine, http, store, questions |
-| `src/questions/` | the question pipeline: `QuestionService` (the fixed answers (`fixed-answers.ts`, issue #629), Jev first (`jev-first.ts`), the escalation levels, lowest first → risk rules on an answer → auto-answer, issue #632 → accepted or human; timers, recovery; a person's correction of an auto-answer), risk rules, rules-file loader, the fake double at the `EscalationLevel` seam. The levels themselves are plugins (`src/plugins/`, issue #134) | engine internals, http, executors, plugins |
+| `src/questions/` | the question pipeline: `QuestionService` (the fixed answers (`fixed-answers.ts`, issue #629), the escalation levels, lowest first → the risk check on an answer (the Decider's risk call, else the risk rules, issue #679) → auto-answer, issue #632 → accepted or human; the confidence spread (`calibration.ts`, issue #679); timers, recovery; a person's correction of an auto-answer), risk rules, rules-file loader, the fake double at the `EscalationLevel` seam. The levels themselves are plugins (`src/plugins/`, issue #134) | engine internals, http, executors, plugins |
 
 ## herdr-claude executor
 
@@ -2704,8 +2704,8 @@ A question climbs the escalation levels (plugins.yaml `escalationLevels`, lowest
 as far as it needs: a simple question is settled at the first level; the more complex it is, the
 higher it climbs; above the top level is the owner.
 
-**Fixed answers first** (issue #629, `src/questions/fixed-answers.ts`). Before Jev first and the levels, a question whose
-answer the facts fix is answered without a model, and Jev and the levels are not asked:
+**Fixed answers first** (issue #629, `src/questions/fixed-answers.ts`). Before the levels, a question whose
+answer the facts fix is answered without a model, and the levels are not asked:
 
 - **Allowed dialogs.** A permission dialog read off the screen (`detectedBy: blocked`) that asks to edit
   (`Edit file`, `Create file`, `Write file`, `Overwrite file`) or read (`Read file`) one file, where the file is inside the
@@ -2718,7 +2718,7 @@ answer the facts fix is answered without a model, and Jev and the levels are not
 
 The risk rules run on the question and the fixed answer, as on a level's: a hit sends the question to the owner, the
 fixed answer on the trail as a recommendation. The attempt is `tier: fixed`, `role: fixed`; `question.answered` names
-`by: fixed`. A question no fixed answer fits goes on to Jev first and the levels as before.
+`by: fixed`. A question no fixed answer fits goes on to the levels as before.
 
 1. Each level gets the full request — question, job prompt, goal, rules file, the trail so far
    (earlier runs, and the levels below with their recommendations) and its place,
@@ -2736,21 +2736,44 @@ fixed answer on the trail as a recommendation. The attempt is `tier: fixed`, `ro
    reads issue bodies and runs with `--dangerously-skip-permissions`; it may try to talk a level
    out of escalating — the fail-closed contract and the risk rules are the containment, and every
    level's prompt fences the untrusted parts.
-2. Risk rules run on the question and the answer to be typed; a hit sends the question to the
-   owner, past every level above — no model approves what the rules guard.
+2. **The risk check** (issue #679) runs on the question and the answer to be typed; a risk sends the question
+   to the owner, past every level above. For every answer a level gives without escalating, the Decider makes
+   one typed **risk call** (`src/minor-decisions/risk.ts`, decision point `question-risk`): over the question,
+   the answer, the level and the job's goal — never what the keyword rules matched —, `{ risk: none | low | real,
+   categories: [credentials | destructive | publish | pay | permissions | ci | data | other], confidence }`, one
+   TypeSafe call (a choice for the risk, a yes-or-no choice per kind). **Active**, it replaces the keyword risk
+   rules: `real`, or a `confidence` below the point's threshold, holds the question (a hold with `decider`: the
+   risk, the kinds, the confidence and the threshold); `none` or `low`, sure enough, does not. A Decider that
+   fails or times out holds it too (fail closed), with its `error`. **In shadow, off, or with no TypeSafe API
+   key**, the keyword risk rules (`src/questions/risk.ts`, with their negation handling) decide, and a shadow
+   decision is only recorded. Each call is a pick on the Decider page, compared at once with what the keyword
+   rules said (`real` when one matched, else `none`; `low` agrees with `none`), so the disagreements show before
+   the point is flipped to active. The attempt keeps `riskRules` (the keyword hits, always) and `riskCheck`
+   (`by: rules | decider`, `shadow`, the `decision` or the `error`); the escalation keeps the recommending
+   attempt's `riskCheck`, and the card says when the keyword rules checked it ("Risk checked by keyword rules;
+   set up the Decider for better checks."). **The guards stay deterministic and always hold**, whatever the
+   Decider says: the risk rules `delete`, `deploy`, `spend` and `send-message`, permissions, and a machine the
+   blast-radius gate keeps (`guardsOf`, `src/minor-decisions/guard.ts`).
 3. **Auto-answer** (issue #632, `src/questions/auto-answer.ts`) decides whether the answer goes into
-   the job with no person. The holds, strongest first: the risk rules (step 2); the consequential guard
-   (`src/minor-decisions/guard.ts`: permissions, a machine the blast-radius gate keeps); a high-priority
+   the job with no person. The holds, strongest first: the risk check (step 2); the guards
+   (`src/minor-decisions/guard.ts`: with the keyword rules, permissions and a machine the blast-radius gate keeps,
+   as the rules name the rest; with the Decider, every guard of step 2); a high-priority
    job, only with **hold high-priority questions** on (`holdHighPriority`, issue #679, default off: only
    risk and guard cases hold a confident answer); auto-answer off, where the answer is only a
    recommendation; a `confidence` (`low`, `medium`, `high`) below the threshold. No confidence meets no
    threshold. Every hold is checked and recorded (issue #679), not only the first: `holds` on the attempt
-   and in `question.escalated_to_human`, each `{ reason, by?, guards?, confidence?, threshold? }`; `keptBy`
+   and in `question.escalated_to_human`, each `{ reason, by?, guards?, confidence?, threshold?, decider? }`; `keptBy`
    is the strongest (risk, then guard). Below the threshold only, at a lower level, the question climbs to
    the next level; any other hold, or the top level, sends it to a person. The settings are the user's
    (`autoAnswer`, default on at `high`, high-priority questions not held; a record from before issue #679
    reads as not held), read at every question, changed at `POST /ui/api/auto-answer`
    (`auto_answer.settings_changed`) and shown in Settings → Question gates.
+   **Confidence calibration** (issue #679, `src/questions/calibration.ts`). The confidence a level gives with an
+   answer it does not escalate is on its attempt. Settings → Question gates shows each level's spread over the
+   last 30 days (`autoAnswer.calibration`: `high`, `medium`, `low`, `none`, `below` the threshold), and flags a
+   level when most of its answers fall below the threshold: its answers then seldom go into a job by themselves.
+   The level prompt says that an answer the context, the rules or plain practice settle, not escalated, is `high`,
+   and that a level does not lower its confidence for what hopper's own risk checks and guards decide.
 4. Accepted → the answer is typed into the pane; `answeredBy` names the level, and `question.answered`
    carries `auto: true` and the confidence. Past the top level, or with no levels → the human.
 
@@ -2778,8 +2801,9 @@ and re-queue it. A job that ended cannot get one, and the route refuses it. The 
 over the last 30 days — the auto-answers, the corrected ones and the share kept — are in
 `GET /api/question-gates` `autoAnswer.stats`, so the threshold can be tuned.
 
-**The ladder.** Rules, Jev, then the escalation levels, then a person. Jev first takes a question that
-lists its options (issue #550); the levels are pluggable and their order is the plugins config's, moved
+**The ladder.** Rules, then the escalation levels, then a person. The Decider answers no question (issue #679:
+Jev first, which took a question that listed its options, issue #550, is gone; its `question-answer` point stays
+only in old events); it makes the risk call on a level's answer (step 2). The levels are pluggable and their order is the plugins config's, moved
 in Settings → Question gates; an install adds levels where it wants them. The built-in ladder is one
 level, the frontier model (issue #632): a lower Opus level gave answers like the Fable level's, at more
 cost and time. Tenant migration 33 (`src/store/migration-no-opus-level.ts`) drops the Opus level from a

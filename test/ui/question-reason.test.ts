@@ -50,6 +50,13 @@ describe('why a question came to a person', () => {
     expect(b.textContent).toMatch(/Fable says: Go ahead/);
   });
 
+  it('issue #679: a card the keyword rules checked says so, with a link to set up the Decider', async () => {
+    await boot({ authed: true, attempts: [fableSaysGo], escalation: { ...guard, riskCheck: { by: 'rules' } } });
+    const note = await vi.waitFor(() => { const x = banner()?.querySelector('[data-slot="risk-check-note"]'); expect(x).toBeTruthy(); return x!; });
+    expect(note.textContent).toMatch(/Risk checked by keyword rules; set up the Decider for better checks\./);
+    expect(note.querySelector('a')?.getAttribute('href')).toBe('#settings/decider');
+  });
+
   it('the trail no longer shows "(no rules yet)"', async () => {
     await boot({ authed: true, attempts: [fableSaysGo], escalation: guard });
     await vi.waitFor(() => expect(card()!.textContent).toContain('fine'));

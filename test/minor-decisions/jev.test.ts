@@ -21,7 +21,7 @@ function jev(env: Record<string, string | undefined>) {
   return { j, out };
 }
 const ASK = {
-  point: 'question-answer' as const, instructions: 'Pick the safest option.', state: { question: 'Which?' },
+  point: 'failure-assessment' as const, instructions: 'Pick the safest option.', state: { question: 'Which?' },
   options: [{ id: '1', label: 'keep it' }, { id: '2', label: 'rename it' }],
 };
 
@@ -71,5 +71,23 @@ describe('Jev through TypeSafe', () => {
   it('a python that cannot run is an answer, never a throw', async () => {
     const j = createJev({ python: '/nonexistent/python', timeoutMs: 5000, key: () => 'ts-test', env: { PATH: process.env.PATH } });
     expect(await j.pick(ASK)).toMatchObject({ ok: false });
+  });
+
+  it('several choices in one call (issue #679): one Choice each, keyed by option id; a pick and a confidence for each', async () => {
+    const { j, out } = jev({ TYPESAFE_API_KEY: 'ts-test' });
+    const r = await j.choose({
+      instructions: 'Judge the risk.', state: { question: 'May I rotate the token?' },
+      choices: {
+        risk: { instructions: 'How risky?', options: [{ id: 'none', label: 'no risk' }, { id: 'real', label: 'a real risk' }] },
+        credentials: { instructions: 'Credentials?', options: [{ id: 'no', label: 'no' }, { id: 'yes', label: 'yes' }] },
+      },
+    });
+    expect(r).toEqual({ ok: true, picks: { risk: { pick: 'none', confidence: 0.9 }, credentials: { pick: 'no', confidence: 0.9 } } });
+    expect(JSON.parse(readFileSync(out, 'utf8'))).toMatchObject({ questions: ['credentials', 'risk'], state: { question: 'May I rotate the token?' } });
+  });
+
+  it('several choices without a key: not available, never a throw', async () => {
+    const { j } = jev({});
+    expect(await j.choose({ instructions: 'x', state: {}, choices: { risk: { instructions: 'x', options: [{ id: 'none', label: 'none' }] } } })).toEqual({ ok: false, why: 'Jev is off until a TypeSafe API key is set' });
   });
 });

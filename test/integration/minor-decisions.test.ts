@@ -1,10 +1,10 @@
 // Decider calls through Jev first (issue #550), end to end: the real daemon and database, Jev as a double at its
-// seam (`seams.jev`), escalation levels as doubles. A question that lists its options and a failure no rule explains
-// ask Jev first. In shadow (the default) Jev's pick is recorded and compared with what was decided after it; active,
-// a confident pick that nothing makes consequential is applied, and anything else goes on as before. Every pick is an
-// event on its job; a person overrides one; the agreement rates show per decision point. Without Jev nothing is asked.
+// seam (`seams.jev`), escalation levels as doubles. A failure no rule explains asks Jev first; a level's answer to a
+// question gets Jev's risk call (issue #679). In shadow (the default) Jev's decision is recorded and compared with what was
+// decided; active, it is applied as each point says, and anything else goes on as before. Every pick is an event on its
+// job; a person overrides one; the agreement rates show per decision point. Without Jev nothing is asked.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { DomainEvent, JevChooser, JevPick, MinorDecisionAsk, MinorDecisionsView } from '../../src/domain/types.ts';
+import type { DomainEvent, JevChoices, JevChoicesAsk, JevChooser, JevPick, MinorDecisionAsk, MinorDecisionsView, RiskCategory, RiskLevel } from '../../src/domain/types.ts';
 import { createFakeLevel } from '../../src/questions/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
@@ -18,16 +18,25 @@ afterEach(async () => {
   cleanup?.();
 });
 
-/** Jev as a double: picks what `answer` says, records every ask. */
-function fakeJev(answer: (ask: MinorDecisionAsk) => JevPick): JevChooser & { asks: MinorDecisionAsk[] } {
+/** Jev as a double: picks what `answer` says, makes the risk call `risk` says (default: none, sure), records every ask. */
+function fakeJev(answer: (ask: MinorDecisionAsk) => JevPick, risk: (ask: JevChoicesAsk) => JevChoices = () => riskPicks('none', [], 0.95)): JevChooser & { asks: MinorDecisionAsk[]; risks: JevChoicesAsk[] } {
   const asks: MinorDecisionAsk[] = [];
+  const risks: JevChoicesAsk[] = [];
   return {
-    asks,
+    asks, risks,
     available: () => ({ available: true }),
     pick: async (ask) => { asks.push(ask); return answer(ask); },
+    choose: async (ask) => { risks.push(ask); return risk(ask); },
     check: async () => ({ ok: true }),
   };
 }
+
+/** Jev's risk call answering `risk` with these kinds, at `confidence`. */
+function riskPicks(risk: RiskLevel, categories: RiskCategory[], confidence: number): JevChoices {
+  const kinds = ['credentials', 'destructive', 'publish', 'pay', 'permissions', 'ci', 'data', 'other'] as const;
+  return { ok: true, picks: { risk: { pick: risk, confidence }, ...Object.fromEntries(kinds.map((k) => [k, { pick: categories.includes(k) ? 'yes' : 'no', confidence }])) } };
+}
+const NO_PICK = () => ({ ok: false as const, why: 'unused' });
 
 /** A level that answers every question with `answer`, and counts its calls. */
 function level(answer: string) {
@@ -44,7 +53,7 @@ async function start(seams: Parameters<typeof startTestApp>[0]['seams']): Promis
 
 const ask = (message: string) => ({ op: 'ask', message });
 const fail = (message: string) => ({ op: 'fail', message, ms: 0 });
-const PICK = 'Which name should the new module take?\n1. ledger\n2. journal\n3. book';
+const QUESTION = 'This CI step uses no secrets. May I add it?';
 const view = async (a: TestApp) => (await a.api<MinorDecisionsView>('GET', '/api/minor-decisions')).body;
 const ofType = async (a: TestApp, type: string, jobId: string): Promise<DomainEvent[]> =>
   (await a.events(`types=${type}&limit=1000`)).filter((e) => e.jobId === jobId);
@@ -55,99 +64,66 @@ async function setPoint(a: TestApp, token: string, point: string, patch: Record<
   return r.body;
 }
 
-describe('a question that lists its options, in shadow (the default)', () => {
-  it('Jev picks first and is only recorded; the level answers; the pick is compared with its answer', async () => {
-    const jev = fakeJev(() => ({ ok: true, pick: '2', confidence: 0.93 }));
-    const l = level('2');
+describe('the risk call on a level\'s answer (issue #679), in shadow (the default)', () => {
+  it('Jev\'s risk decision is recorded next to the keyword rules, which decide; the two are compared at once', async () => {
+    const jev = fakeJev(NO_PICK, () => riskPicks('real', ['credentials', 'ci'], 0.93));
+    const l = level('yes');
     const a = await start({ jev, levels: [l.level] });
-    const job = await a.pull(ask(PICK), { title: 'add the module' });
-    const done = await a.waitForStatus(job.id, 'finished');
-    expect(done.result).toEqual({ answer: '2' });
-    expect(jev.asks).toHaveLength(1);
-    expect(jev.asks[0]).toMatchObject({ point: 'question-answer', options: [{ id: '1', label: 'ledger' }, { id: '2', label: 'journal' }, { id: '3', label: 'book' }] });
-    expect(l.calls).toHaveLength(1);
+    const job = await a.pull(ask(QUESTION), { title: 'add the step' });
+    expect((await a.waitForStatus(job.id, 'finished')).result).toEqual({ answer: 'yes' });
+    expect(jev.risks).toHaveLength(1);
+    expect(jev.risks[0]!.state).toEqual({ question: QUESTION, answer: 'yes', level: 'level-1', goal: expect.any(String) });
+    expect(Object.keys(jev.risks[0]!.choices)).toEqual(['risk', 'credentials', 'destructive', 'publish', 'pay', 'permissions', 'ci', 'data', 'other']);
     const [picked] = await ofType(a, 'minor_decision.picked', job.id);
-    expect(picked!.data).toMatchObject({ point: 'question-answer', by: 'jev', pick: '2', confidence: 0.93, mode: 'shadow', applied: false, notApplied: 'shadow' });
+    expect(picked!.data).toMatchObject({ point: 'question-risk', by: 'jev', pick: 'real', categories: ['credentials', 'ci'], confidence: 0.93, mode: 'shadow', applied: false, notApplied: 'shadow' });
+    const [compared] = await ofType(a, 'minor_decision.compared', job.id);
+    expect(compared!.data).toMatchObject({ pickId: picked!.data.pickId, pick: 'real', actual: 'none', agreed: false, decidedBy: 'rules' });
     const [q] = await a.questionsOf(job.id);
-    expect(q).toMatchObject({ answeredBy: 'level-1' });
-    // On the question's trail: Jev's pick first, then the level that answered.
-    expect(q!.attempts.map((x) => [x.tier, x.role, x.outcome])).toEqual([['jev', 'jev', 'escalated'], ['level-1', 'level', 'accepted']]);
-    const compared = await waitFor(async () => (await ofType(a, 'minor_decision.compared', job.id))[0]);
-    expect(compared.data).toMatchObject({ pickId: picked!.data.pickId, pick: '2', actual: '2', agreed: true, decidedBy: 'level-1' });
+    expect(q!.attempts[0]).toMatchObject({ riskCheck: { by: 'rules', shadow: true, decision: { risk: 'real', categories: ['credentials', 'ci'], confidence: 0.93 } } });
     const v = await view(a);
-    expect(v.jev).toEqual({ available: true });
-    expect(v.points.find((p) => p.point === 'question-answer')).toMatchObject({ mode: 'shadow', asked: 1, picked: 1, applied: 0, compared: 1, agreed: 1, agreement: 1 });
-    expect(v.recent[0]).toMatchObject({ point: 'question-answer', jobId: job.id, pick: '2', actual: '2', agreed: true, applied: false });
-  });
-
-  it('a question without listed options is not a decider call: Jev is not asked', async () => {
-    const jev = fakeJev(() => ({ ok: true, pick: '1', confidence: 1 }));
-    const a = await start({ jev, levels: [level('blue').level] });
-    const job = await a.pull(ask('Which colour?'));
-    await a.waitForStatus(job.id, 'finished');
-    expect(jev.asks).toHaveLength(0);
-    expect(await ofType(a, 'minor_decision.picked', job.id)).toEqual([]);
+    expect(v.points.find((p) => p.point === 'question-risk')).toMatchObject({ mode: 'shadow', asked: 1, picked: 1, applied: 0, compared: 1, agreed: 0, agreement: 0 });
+    expect(v.recent[0]).toMatchObject({ point: 'question-risk', questionId: q!.id, pick: 'real', categories: ['credentials', 'ci'], actual: 'none', agreed: false });
   });
 });
 
-describe('a question, active', () => {
-  it('a confident pick is the answer: no level is asked, the job resumes with it', async () => {
-    const jev = fakeJev(() => ({ ok: true, pick: '3', confidence: 0.97 }));
-    const l = level('1');
-    const a = await start({ jev, levels: [l.level] });
-    const token = await a.login();
-    // Settings live in the database and apply without a restart.
-    expect(await setPoint(a, token, 'question-answer', { mode: 'active', threshold: 0.9 })).toMatchObject({ mode: 'active', threshold: 0.9 });
-    const job = await a.pull(ask(PICK));
-    const done = await a.waitForStatus(job.id, 'finished');
-    expect(done.result).toEqual({ answer: '3' });
-    expect(l.calls).toHaveLength(0);
-    const [q] = await a.questionsOf(job.id);
-    expect(q).toMatchObject({ status: 'answered', answeredBy: 'jev', answer: '3' });
+describe('the risk call, active: it replaces the keyword risk rules', () => {
+  it('"uses no secrets": no risk, sure, so the level\'s answer goes into the job', async () => {
+    const jev = fakeJev(NO_PICK, () => riskPicks('none', [], 0.95));
+    const a = await start({ jev, levels: [level('yes').level] });
+    await setPoint(a, await a.login(), 'question-risk', { mode: 'active', threshold: 0.9 });
+    const job = await a.pull(ask(QUESTION));
+    expect((await a.waitForStatus(job.id, 'finished')).result).toEqual({ answer: 'yes' });
     const [picked] = await ofType(a, 'minor_decision.picked', job.id);
-    expect(picked!.data).toMatchObject({ applied: true, mode: 'active', threshold: 0.9 });
-    expect((await ofType(a, 'question.answered', job.id))[0]!.data).toMatchObject({ by: 'jev', answer: '3' });
-    expect((await a.events('types=minor_decision.settings_changed&limit=10'))[0]!.data).toMatchObject({ point: 'question-answer', to: { mode: 'active', threshold: 0.9 } });
+    expect(picked!.data).toMatchObject({ point: 'question-risk', pick: 'none', applied: true, mode: 'active', threshold: 0.9 });
   });
 
-  it('below the threshold the question escalates as before', async () => {
-    const jev = fakeJev(() => ({ ok: true, pick: '3', confidence: 0.6 }));
-    const l = level('1');
-    const a = await start({ jev, levels: [l.level] });
-    await setPoint(a, await a.login(), 'question-answer', { mode: 'active' });
-    const job = await a.pull(ask(PICK));
-    expect((await a.waitForStatus(job.id, 'finished')).result).toEqual({ answer: '1' });
-    expect(l.calls).toHaveLength(1);
-    const [picked] = await ofType(a, 'minor_decision.picked', job.id);
-    expect(picked!.data).toMatchObject({ applied: false, notApplied: 'below_threshold' });
-    const compared = await waitFor(async () => (await ofType(a, 'minor_decision.compared', job.id))[0]);
-    expect(compared.data).toMatchObject({ pick: '3', actual: '1', agreed: false });
-  });
-
-  it('never for a consequential action: an option that deletes escalates, whatever Jev says', async () => {
-    const jev = fakeJev(() => ({ ok: true, pick: '1', confidence: 0.99 }));
-    const l = level('2');
-    const a = await start({ jev, levels: [l.level] });
-    await setPoint(a, await a.login(), 'question-answer', { mode: 'active' });
-    const job = await a.pull(ask('The old branch is merged. What now?\n1. Delete the branch\n2. Leave it'));
-    // The level is asked; the risk rules then send the question to a person, as they always did.
+  it('"rotate the GitHub token": a real credentials risk sends it to a person, the kinds on the escalation', async () => {
+    const jev = fakeJev(NO_PICK, () => riskPicks('real', ['credentials'], 0.97));
+    const a = await start({ jev, levels: [level('yes').level] });
+    await setPoint(a, await a.login(), 'question-risk', { mode: 'active' });
+    const job = await a.pull(ask('May I rotate the GitHub token?'));
     const [q] = await waitFor(async () => { const qs = await a.questionsOf(job.id); return qs[0]?.tier === 'human' ? qs : undefined; }, { what: 'the question with a person' });
-    expect(q!.status).toBe('open');
-    expect(l.calls).toHaveLength(1);
-    const [picked] = await ofType(a, 'minor_decision.picked', job.id);
-    expect(picked!.data).toMatchObject({ applied: false, notApplied: 'consequential', consequential: ['delete'] });
+    expect(q).toMatchObject({ status: 'open', keptBy: 'risk', escalation: { reason: 'guard', holds: [{ reason: 'guard', by: 'risk', decider: { risk: 'real', categories: ['credentials'], confidence: 0.97, threshold: 0.85 } }] } });
+    expect((await ofType(a, 'question.escalated_to_human', job.id))[0]!.data).toMatchObject({ holds: [expect.objectContaining({ decider: expect.objectContaining({ categories: ['credentials'] }) })] });
   });
 
-  it('Jev failing is no answer: the question goes on to the level', async () => {
-    const jev = fakeJev(() => ({ ok: false, why: 'TypeSafe answered 503' }));
-    const l = level('1');
-    const a = await start({ jev, levels: [l.level] });
-    await setPoint(a, await a.login(), 'question-answer', { mode: 'active' });
-    const job = await a.pull(ask(PICK));
-    await a.waitForStatus(job.id, 'finished');
-    expect(l.calls).toHaveLength(1);
-    const [picked] = await ofType(a, 'minor_decision.picked', job.id);
-    expect(picked!.data).toMatchObject({ applied: false, notApplied: 'no_pick', error: 'TypeSafe answered 503' });
+  it('Jev failing holds the question (fail closed), and says why', async () => {
+    const jev = fakeJev(NO_PICK, () => ({ ok: false, why: 'TypeSafe answered 503' }));
+    const a = await start({ jev, levels: [level('yes').level] });
+    await setPoint(a, await a.login(), 'question-risk', { mode: 'active' });
+    const job = await a.pull(ask(QUESTION));
+    const [q] = await waitFor(async () => { const qs = await a.questionsOf(job.id); return qs[0]?.tier === 'human' ? qs : undefined; }, { what: 'the question with a person' });
+    expect(q!.escalation).toMatchObject({ holds: [{ by: 'risk', decider: { error: 'TypeSafe answered 503' } }], riskCheck: { by: 'decider', error: 'TypeSafe answered 503' } });
+    expect((await ofType(a, 'minor_decision.picked', job.id))[0]!.data).toMatchObject({ applied: false, notApplied: 'no_pick', error: 'TypeSafe answered 503' });
+  });
+
+  it('the guards always hold: deleting goes to a person, whatever Jev says', async () => {
+    const jev = fakeJev(NO_PICK, () => riskPicks('none', [], 0.99));
+    const a = await start({ jev, levels: [level('yes').level] });
+    await setPoint(a, await a.login(), 'question-risk', { mode: 'active' });
+    const job = await a.pull(ask('The old branch is merged. Shall I delete it?'));
+    const [q] = await waitFor(async () => { const qs = await a.questionsOf(job.id); return qs[0]?.tier === 'human' ? qs : undefined; }, { what: 'the question with a person' });
+    expect(q).toMatchObject({ keptBy: 'guard', escalation: { holds: [{ reason: 'guard', by: 'guard', guards: [expect.objectContaining({ name: 'delete' })] }] } });
   });
 });
 
@@ -207,19 +183,19 @@ describe('a failed job no rule explains', () => {
 
 describe('overrides and the view', () => {
   it('a person overrides a pick: it counts as a disagreement, and is on the job\'s events', async () => {
-    const jev = fakeJev(() => ({ ok: true, pick: '1', confidence: 0.99 }));
-    const a = await start({ jev, levels: [level('1').level] });
+    const jev = fakeJev(NO_PICK, () => riskPicks('none', [], 0.99));
+    const a = await start({ jev, levels: [level('yes').level] });
     const token = await a.login();
-    await setPoint(a, token, 'question-answer', { mode: 'active' });
-    const job = await a.pull(ask(PICK));
+    await setPoint(a, token, 'question-risk', { mode: 'active' });
+    const job = await a.pull(ask(QUESTION));
     await a.waitForStatus(job.id, 'finished');
     const [picked] = await ofType(a, 'minor_decision.picked', job.id);
-    const r = await a.ui(`/ui/api/minor-decisions/picks/${picked!.data.pickId as string}/override`, { actual: '2' }, { token });
+    const r = await a.ui(`/ui/api/minor-decisions/picks/${picked!.data.pickId as string}/override`, { actual: 'real' }, { token });
     expect(r.status).toBe(200);
-    expect((await ofType(a, 'minor_decision.overridden', job.id))[0]!.data).toMatchObject({ pick: '1', actual: '2' });
+    expect((await ofType(a, 'minor_decision.overridden', job.id))[0]!.data).toMatchObject({ pick: 'none', actual: 'real' });
     const v = await view(a);
-    expect(v.points.find((p) => p.point === 'question-answer')).toMatchObject({ applied: 1, compared: 1, agreed: 0, agreement: 0, overridden: 1 });
-    expect(v.recent[0]).toMatchObject({ actual: '2', overridden: true, agreed: false });
+    expect(v.points.find((p) => p.point === 'question-risk')).toMatchObject({ applied: 1, compared: 1, agreed: 0, agreement: 0, overridden: 1 });
+    expect(v.recent[0]).toMatchObject({ actual: 'real', overridden: true, agreed: false });
     // An option the decision did not offer is refused.
     expect((await a.ui(`/ui/api/minor-decisions/picks/${picked!.data.pickId as string}/override`, { actual: '9' }, { token })).status).toBe(400);
     expect((await a.ui('/ui/api/minor-decisions/picks/nope/override', { actual: '1' }, { token })).status).toBe(404);
@@ -228,34 +204,37 @@ describe('overrides and the view', () => {
   it('settings: refuses what is not a mode or a threshold', async () => {
     const a = await start({ jev: fakeJev(() => ({ ok: false, why: 'unused' })) });
     const token = await a.login();
-    expect((await a.ui('/ui/api/minor-decisions/points/question-answer', { mode: 'loud' }, { token })).status).toBe(400);
-    expect((await a.ui('/ui/api/minor-decisions/points/question-answer', { threshold: 1.5 }, { token })).status).toBe(400);
+    expect((await a.ui('/ui/api/minor-decisions/points/question-risk', { mode: 'loud' }, { token })).status).toBe(400);
+    expect((await a.ui('/ui/api/minor-decisions/points/question-risk', { threshold: 1.5 }, { token })).status).toBe(400);
+    // The point Jev answered questions at is gone (issue #679): the Decider is not a question answerer.
+    expect((await a.ui('/ui/api/minor-decisions/points/question-answer', { mode: 'off' }, { token })).status).toBe(404);
     expect((await a.ui('/ui/api/minor-decisions/points/nowhere', { mode: 'off' }, { token })).status).toBe(404);
     const v = await view(a);
     expect(v.points.map((p) => [p.point, p.mode, p.threshold])).toEqual([
-      ['question-answer', 'shadow', 0.85], ['failure-assessment', 'shadow', 0.85], ['lane-count', 'shadow', 0.85], ['job-machine', 'shadow', 0.85],
+      ['question-risk', 'shadow', 0.85], ['failure-assessment', 'shadow', 0.85], ['lane-count', 'shadow', 0.85], ['job-machine', 'shadow', 0.85],
       ['intake-order', 'shadow', 0.85], ['merge-order', 'shadow', 0.85],
     ]);
   });
 
   it('off: Jev is not asked', async () => {
-    const jev = fakeJev(() => ({ ok: true, pick: '1', confidence: 1 }));
-    const a = await start({ jev, levels: [level('1').level] });
-    await setPoint(a, await a.login(), 'question-answer', { mode: 'off' });
-    const job = await a.pull(ask(PICK));
+    const jev = fakeJev(NO_PICK, () => riskPicks('real', ['credentials'], 1));
+    const a = await start({ jev, levels: [level('yes').level] });
+    await setPoint(a, await a.login(), 'question-risk', { mode: 'off' });
+    const job = await a.pull(ask(QUESTION));
     await a.waitForStatus(job.id, 'finished');
-    expect(jev.asks).toHaveLength(0);
+    expect(jev.risks).toHaveLength(0);
   });
 });
 
 describe('without the TypeSafe key', () => {
-  it('nothing is asked and nothing recorded; the view says why', async () => {
-    const l = level('1');
+  it('nothing is asked and nothing recorded; the keyword rules check the answer, and the view says why', async () => {
+    const l = level('yes');
     const a = await start({ levels: [l.level] });
-    const job = await a.pull(ask(PICK));
-    await a.waitForStatus(job.id, 'finished');
+    const job = await a.pull(ask(QUESTION));
+    expect((await a.waitForStatus(job.id, 'finished')).result).toEqual({ answer: 'yes' });
     expect(l.calls).toHaveLength(1);
     expect(await ofType(a, 'minor_decision.picked', job.id)).toEqual([]);
+    expect((await a.questionsOf(job.id))[0]!.attempts[0]).toMatchObject({ riskRules: [], riskCheck: { by: 'rules' } });
     expect((await view(a)).jev).toMatchObject({ available: false, why: 'Jev is off until a TypeSafe API key is set' });
   });
 });

@@ -4,8 +4,13 @@
 // pick at or above the point's threshold is applied, and below it the decision goes on as before.
 
 /** Where the hopper makes a decider call. */
-export const DECISION_POINTS = ['question-answer', 'failure-assessment', 'lane-count', 'job-machine', 'intake-order', 'merge-order'] as const;
+export const DECISION_POINTS = ['question-risk', 'failure-assessment', 'lane-count', 'job-machine', 'intake-order', 'merge-order'] as const;
 export type DecisionPoint = typeof DECISION_POINTS[number];
+/**
+ * A point the hopper no longer asks at, which events from before still name: `question-answer`, Jev picking a question's
+ * listed option before the levels (issue #550), removed by issue #679 — the Decider is not a question answerer.
+ */
+export const EVENT_DECISION_POINTS = [...DECISION_POINTS, 'question-answer'] as const;
 
 /** off: Jev is not asked. shadow: Jev's pick is recorded next to what was decided. active: a confident pick is applied. */
 export const MINOR_DECISION_MODES = ['off', 'shadow', 'active'] as const;
@@ -21,7 +26,7 @@ export type MinorDecisionSettings = Record<DecisionPoint, DecisionPointSettings>
 
 /** Every point starts in shadow: Jev decides nothing until a person flips a point that proved reliable. */
 export const DEFAULT_MINOR_DECISION_SETTINGS: MinorDecisionSettings = {
-  'question-answer': { mode: 'shadow', threshold: 0.85 },
+  'question-risk': { mode: 'shadow', threshold: 0.85 },
   'failure-assessment': { mode: 'shadow', threshold: 0.85 },
   'lane-count': { mode: 'shadow', threshold: 0.85 },
   'job-machine': { mode: 'shadow', threshold: 0.85 },
@@ -31,9 +36,9 @@ export const DEFAULT_MINOR_DECISION_SETTINGS: MinorDecisionSettings = {
 
 /** What each point is, in plain words (issue #217): the UI's labels. */
 export const DECISION_POINT_TEXT: Readonly<Record<DecisionPoint, { label: string; describe: string }>> = {
-  'question-answer': {
-    label: 'Answering a question with listed options',
-    describe: 'A job asks a question that lists its options. Jev picks one before any escalation level is asked.',
+  'question-risk': {
+    label: 'The risk in a question and its answer',
+    describe: 'An escalation level answers a question. Jev says how risky the question and the answer are (none, low or real) and of which kinds. Active, its check replaces the keyword risk rules: a real risk, or a check that is not sure enough, sends the question to a person. The guards always hold.',
   },
   'failure-assessment': {
     label: 'A failed job no rule explains',
@@ -73,6 +78,53 @@ export interface MinorDecisionAsk {
 /** Jev's answer: the option it picks and its confidence; or why it could not answer. */
 export type JevPick = { ok: true; pick: string; confidence: number } | { ok: false; why: string };
 
+/** Several choices Jev makes in one call (issue #679), each over its own options, by name; the facts and `instructions` are shared. */
+export interface JevChoicesAsk {
+  instructions: string;
+  state: Record<string, unknown>;
+  choices: Readonly<Record<string, { instructions: string; options: readonly MinorDecisionOption[] }>>;
+}
+
+/** Jev's pick for each choice, by name; or why it could not answer. */
+export type JevChoices = { ok: true; picks: Record<string, { pick: string; confidence: number }> } | { ok: false; why: string };
+
+// ---- The risk call (issue #679) ----------------------------------------------------------------
+
+/** How risky a question and the answer to it are, as the Decider says. */
+export const RISK_LEVELS = ['none', 'low', 'real'] as const;
+export type RiskLevel = typeof RISK_LEVELS[number];
+/** The kinds of risk the Decider names. */
+export const RISK_CATEGORIES = ['credentials', 'destructive', 'publish', 'pay', 'permissions', 'ci', 'data', 'other'] as const;
+export type RiskCategory = typeof RISK_CATEGORIES[number];
+
+/** The Decider's typed risk decision on a question and a level's answer to it: the risk, its kinds, and how sure (0..1). */
+export interface RiskDecision { risk: RiskLevel; categories: RiskCategory[]; confidence: number }
+
+/** What the risk call is asked: the question, the level's answer, the job's goal, and what the keyword risk rules matched. */
+export interface QuestionRiskInput {
+  jobId: string;
+  questionId: string;
+  question: string;
+  answer: string;
+  level: string;
+  goal: string;
+  /** The keyword risk rules that matched: what the Decider is compared with. */
+  rules: readonly string[];
+}
+
+/**
+ * What the risk call did. Not asked: the point is off, or Jev is off (no TypeSafe API key) — the keyword risk rules
+ * decide. Asked: its decision, or why there is none, the point's mode and threshold; only an active point's result is used.
+ */
+export type QuestionRiskOutcome =
+  | { asked: false; why: string }
+  | { asked: true; mode: 'shadow' | 'active'; threshold: number; decision?: RiskDecision; error?: string };
+
+/** The Decider's risk call on a question a level answered (issue #679). Never throws. */
+export interface QuestionRisk {
+  risk(input: QuestionRiskInput): Promise<QuestionRiskOutcome>;
+}
+
 /** Why a pick was not applied. `too_late`: the decision was made before Jev answered. */
 export const NOT_APPLIED = ['shadow', 'below_threshold', 'consequential', 'no_pick', 'too_late'] as const;
 export type NotApplied = typeof NOT_APPLIED[number];
@@ -89,6 +141,8 @@ export interface MinorDecisionPickView {
   options: MinorDecisionOption[];
   /** Absent: Jev could not answer (`error`). */
   pick?: string;
+  /** A risk call's kinds of risk (`question-risk`, issue #679). */
+  categories?: RiskCategory[];
   confidence?: number;
   error?: string;
   mode: MinorDecisionMode;
@@ -160,6 +214,8 @@ export interface JevChooser {
   /** Whether Jev can be asked now, and why not: read on every call, so a key set later is used at once. */
   available(): { available: boolean; why?: string };
   pick(ask: MinorDecisionAsk, signal?: AbortSignal): Promise<JevPick>;
+  /** Several choices in one call (issue #679: the risk call). */
+  choose(ask: JevChoicesAsk, signal?: AbortSignal): Promise<JevChoices>;
   /** One cheap TypeSafe call with `key`, whatever key is stored (issue #657): whether TypeSafe takes it. Never throws; `why` never carries the key. */
   check(key: string): Promise<{ ok: true } | { ok: false; why: string }>;
 }

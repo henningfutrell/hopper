@@ -17,7 +17,13 @@ const GATES = {
     { name: 'delete', describe: 'deleting or wiping things' },
     { name: 'deploy', describe: 'deploying or publishing' },
   ],
-  autoAnswer: { enabled: true, threshold: 'high', holdHighPriority: false, stats: { windowDays: 30, answered: 4, corrected: 1, agreement: 0.75 } },
+  autoAnswer: {
+    enabled: true, threshold: 'high', holdHighPriority: false, stats: { windowDays: 30, answered: 4, corrected: 1, agreement: 0.75 },
+    calibration: [
+      { level: 'opus', high: 3, medium: 0, low: 0, none: 0, total: 3, below: 0, flagged: false },
+      { level: 'fable', high: 1, medium: 2, low: 0, none: 1, total: 4, below: 3, flagged: true },
+    ],
+  },
 };
 const claudeSchema = {
   type: 'object',
@@ -158,6 +164,16 @@ describe('question gates panel', () => {
     await click(toggle);
     await vi.waitFor(() => expect(daemon.calls.find((c) => c.path === '/ui/api/auto-answer')?.body).toEqual({ holdHighPriority: true }));
     expect(box.textContent).not.toMatch(/high-priority jobs always come to you/);
+  });
+
+  it('issue #679: each level\'s confidence spread; a level whose answers mostly fall below the threshold is flagged', async () => {
+    await boot();
+    const box = panel()!.querySelector('[data-slot="confidence-spread"]')!;
+    expect(box.textContent).toContain('opus: 3 high · 0 medium · 0 low · 0 none — 0 of 3 below high');
+    expect(box.textContent).toContain('fable: 1 high · 2 medium · 0 low · 1 none — 3 of 4 below high');
+    const flagged = [...box.querySelectorAll('[data-flagged="true"]')];
+    expect(flagged.map((f) => f.getAttribute('data-level'))).toEqual(['fable']);
+    expect(flagged[0]!.textContent).toMatch(/Most of fable's answers fall below the threshold/);
   });
 
   it('Save posts the draft with the version it was based on', async () => {

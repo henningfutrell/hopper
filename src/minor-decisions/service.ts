@@ -5,14 +5,16 @@
 // its job. What is decided after a pick that was not applied is compared with it — a question's answer, a
 // person's action on a hand-off, the machine a job got, an admin's act on a lane recommendation —, and a person may override any pick: the agreement rates a person flips a point to
 // active on. Without Jev (no TypeSafe API key, issue #657) nothing is asked and nothing recorded: each decision is made as before.
+// The risk call on a level's answer (issue #679) is a typed decision of its own, in ./risk.ts; the Decider answers no question.
 import { randomUUID } from 'node:crypto';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import {
   DECISION_POINTS, DEFAULT_MINOR_DECISION_SETTINGS, MINOR_DECISION_WINDOW_DAYS, type DecisionPoint, type DecisionPointPatch, type DecisionPointSettings,
   type DomainEvent, type JevChooser, type JevPick, type MinorDecisionInput, type MinorDecisionOutcome, type MinorDecisionPickView,
-  type MinorDecisionSettings, type JevFirst, type MinorDecisionsView, type NotApplied, type TypesafeKeyView,
+  type MinorDecisionSettings, type JevFirst, type MinorDecisionsView, type NotApplied, type QuestionRisk, type TypesafeKeyView,
 } from '../domain/types.ts';
-import { optionNamed } from './options.ts';
+import { withDeadline } from './deadline.ts';
+import { askRisk } from './risk.ts';
 import { picksOf, viewOf, VIEW_EVENT_TYPES } from './view.ts';
 
 export interface MinorDecisionsOptions {
@@ -28,7 +30,7 @@ export interface MinorDecisionsOptions {
 
 export type OverrideResult = { ok: true; value: MinorDecisionPickView } | { ok: false; reason: 'not_found' | 'invalid'; message: string };
 
-export interface MinorDecisions extends JevFirst {
+export interface MinorDecisions extends JevFirst, QuestionRisk {
   /** Follow what is decided after a pick. Once. */
   start(): void;
   stop(): void;
@@ -41,15 +43,13 @@ export interface MinorDecisions extends JevFirst {
 }
 
 const DAY_MS = 86_400_000;
-/** A free-text answer, kept as what was decided, at most this long. */
-const ACTUAL_MAX = 200;
 /** What a person's end of a hand-off says the failed job needed. */
 const HANDOFF_ACTUAL: Readonly<Record<string, string>> = {
   run_again: 'retry', continued: 'retry', cleared: 'person', done_by_hand: 'person', wont_do: 'person',
 };
 
 /** The events what is decided after a pick is read from. */
-const FOLLOWED: ReadonlySet<string> = new Set(['question.answered', 'handoff.closed', 'job.claimed', 'lanes.applied', 'lanes.dismissed']);
+const FOLLOWED: ReadonlySet<string> = new Set(['handoff.closed', 'job.claimed', 'lanes.applied', 'lanes.dismissed']);
 
 export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
   const { store, clock } = o;
@@ -64,18 +64,9 @@ export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
     store.events.between(VIEW_EVENT_TYPES, new Date(clock.now().getTime() - MINOR_DECISION_WINDOW_DAYS * DAY_MS).toISOString());
   const picks = () => picksOf(windowEvents());
 
-  async function ask(input: MinorDecisionInput): Promise<JevPick> {
-    let timer: NodeJS.Timeout | undefined;
-    const ac = new AbortController();
-    const timeout = new Promise<JevPick>((resolve) => {
-      timer = setTimeout(() => { ac.abort(); resolve({ ok: false, why: `no pick within ${o.timeoutMs} ms` }); }, o.timeoutMs);
-    });
-    try {
-      const { point, instructions, options, state } = input;
-      return await Promise.race([o.jev.pick({ point, instructions, options, state }, ac.signal).catch((e: unknown) => ({ ok: false as const, why: e instanceof Error ? e.message : String(e) })), timeout]);
-    } finally {
-      clearTimeout(timer);
-    }
+  function ask(input: MinorDecisionInput): Promise<JevPick> {
+    const { point, instructions, options, state } = input;
+    return withDeadline(o.timeoutMs, (signal) => o.jev.pick({ point, instructions, options, state }, signal), { ok: false, why: `no pick within ${o.timeoutMs} ms` });
   }
 
   function notAppliedOf(s: DecisionPointSettings, pick: JevPick, consequential: readonly string[]): NotApplied | undefined {
@@ -134,10 +125,7 @@ export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
 
   function follow(e: DomainEvent): void {
     const d = e.data as Record<string, unknown>;
-    if (e.type === 'question.answered' && d.by !== 'jev' && typeof d.answer === 'string' && e.questionId) {
-      const answer = d.answer;
-      compare((p) => p.point === 'question-answer' && p.questionId === e.questionId, (p) => optionNamed(p.options, answer) ?? answer.slice(0, ACTUAL_MAX), String(d.by));
-    } else if (e.type === 'handoff.closed' && e.jobId && typeof d.end === 'string' && HANDOFF_ACTUAL[d.end]) {
+    if (e.type === 'handoff.closed' && e.jobId && typeof d.end === 'string' && HANDOFF_ACTUAL[d.end]) {
       const actual = HANDOFF_ACTUAL[d.end];
       compare((p) => p.point === 'failure-assessment' && p.jobId === e.jobId, () => actual, 'person');
     } else if (e.type === 'job.claimed' && e.jobId && e.machineId) {
@@ -154,6 +142,13 @@ export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
     decide: (input) => decide(input).catch((e: unknown) => {
       o.logger.warn(`hopper: a decider call at ${input.point} failed: ${e instanceof Error ? e.message : String(e)}`);
       return { asked: false };
+    }),
+    // Fail closed (issue #679): a risk call that breaks is an error, which an active point holds the question for.
+    risk: (input) => askRisk({ store, jev: o.jev, settings: () => settings()['question-risk'], timeoutMs: o.timeoutMs, stopped: () => stopped }, input).catch((e: unknown) => {
+      const why = e instanceof Error ? e.message : String(e);
+      o.logger.warn(`hopper: the risk call failed: ${why}`);
+      const s = settings()['question-risk'];
+      return s.mode === 'off' ? { asked: false as const, why } : { asked: true as const, mode: s.mode, threshold: s.threshold, error: why };
     }),
     start() {
       unsubscribe ??= store.events.subscribe((e) => {

@@ -13,7 +13,7 @@ export interface ToHuman { reason: EscalationReason; guards?: string[]; kept?: Q
 /** Why a question climbs past a level: the text on the trail and events, and the reason a person is told if it was the top one. */
 export interface Climb { why: string; reason: EscalationReason }
 
-/** The roles whose answer on the trail is a recommendation to a person. */
+/** The roles whose answer on the trail is a recommendation to a person (`jev`: on trails from before issue #679). */
 const RECOMMENDS = new Set(['level', 'jev', 'fixed']);
 
 /** The escalation for `q` as its trail is now, sent to a person for `to`. */
@@ -24,5 +24,7 @@ export function escalationOf(q: Question, to: ToHuman): Escalation {
     ...(to.guards && to.guards.length > 0 ? { guards: to.guards.map(guardHit) } : {}),
     ...(to.holds && to.holds.length > 0 ? { holds: to.holds.map(({ guards, ...h }): EscalationHold => ({ ...h, ...(guards ? { guards: guards.map(guardHit) } : {}) })) } : {}),
     ...(last ? { recommendation: { by: last.tier, answer: last.answer!, ...(last.confidence ? { confidence: last.confidence } : {}) } } : {}),
+    // How that answer was checked for risk (issue #679): the card says when the keyword rules did it.
+    ...(last?.riskCheck ? { riskCheck: last.riskCheck } : {}),
   };
 }

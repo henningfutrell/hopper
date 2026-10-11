@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { environmentNote, keyStatus, MODE_TEXT, pickDecided, pickSummary, pickedEventDetail, rate } from '../../ui/src/model/minor-decisions.ts';
 
 const base = {
-  pickId: 'p1', at: '2026-10-09T10:00:00.000Z', point: 'question-answer' as const, options: [{ id: '1', label: 'ledger' }, { id: '2', label: 'journal' }],
+  pickId: 'p1', at: '2026-10-09T10:00:00.000Z', point: 'failure-assessment' as const, options: [{ id: '1', label: 'ledger' }, { id: '2', label: 'journal' }],
   mode: 'shadow' as const, threshold: 0.85, applied: false,
 };
 
@@ -22,6 +22,9 @@ describe('decider calls model', () => {
     expect(pickSummary({ ...base, pick: '1', confidence: 0.99, mode: 'active', applied: true })).toBe('ledger (1) at 99% — applied');
     expect(pickSummary({ ...base, error: 'TypeSafe answered 503', notApplied: 'no_pick' })).toBe('no pick: TypeSafe answered 503');
     expect(pickSummary({ ...base, pick: '2', confidence: 0.9, mode: 'active', notApplied: 'too_late' })).toBe('journal (2) at 90% — too late: decided before Jev answered');
+    // A risk call's kinds (issue #679), after the risk it picked.
+    expect(pickSummary({ ...base, options: [{ id: 'real', label: 'a real risk' }], pick: 'real', categories: ['credentials', 'ci'], confidence: 0.9, notApplied: 'shadow' }))
+      .toBe('a real risk (real) (credentials, ci) at 90% — recorded only');
   });
 
   it('pickDecided: what was decided, by whom, and whether Jev agreed', () => {

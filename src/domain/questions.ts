@@ -1,5 +1,6 @@
 // The question's types (design.md "Question pipeline"), apart from types.ts for its size; re-exported there.
 import type { Confidence, QuestionCorrection } from './auto-answer.ts';
+import type { RiskCategory, RiskDecision, RiskLevel } from './minor-decisions.ts';
 import type { AttemptPhaseFields, QuestionPhaseFields } from './phase.ts';
 import type { Tldr } from './tldr.ts';
 import type { JobId, LaneId, MachineId } from './types.ts';
@@ -36,6 +37,8 @@ export interface QuestionAttempt extends AttemptPhaseFields {
   confidence?: Confidence;
   /** Risk patterns that matched the question or the answer to be typed, independent of any model. */
   riskRules?: string[];
+  /** How the answer was checked for risk (issue #679): the keyword risk rules or the Decider, and the Decider's decision. */
+  riskCheck?: RiskCheck;
   /** Everything that held the level's answer back from the job (issue #679), strongest first; absent: nothing held it. */
   holds?: AnswerHold[];
   reason?: string;
@@ -66,7 +69,22 @@ export interface AnswerHold {
   guards?: string[];
   confidence?: Confidence;
   threshold?: Confidence;
+  /** A risk hold the Decider made (issue #679), in place of `guards`: what it decided, or why it could not. */
+  decider?: DeciderRiskHold;
 }
+
+/**
+ * The Decider holds an answer for its risk (issue #679): a `real` risk and its `categories`, a `confidence` (0..1) below
+ * its `threshold`, or an `error` — it failed or timed out, and the question is held to be safe.
+ */
+export interface DeciderRiskHold { risk?: RiskLevel; categories?: RiskCategory[]; confidence?: number; threshold: number; error?: string }
+
+/**
+ * How a level's answer was checked for risk (issue #679). `rules`: the keyword risk rules decided — the Decider is off,
+ * has no TypeSafe API key, or is in shadow (`shadow`: its decision is only recorded). `decider`: the Decider decided. Its
+ * `decision`, or the `error` it failed with, when it was asked.
+ */
+export interface RiskCheck { by: 'rules' | 'decider'; shadow?: boolean; decision?: RiskDecision; error?: string }
 
 /** A hold as a person is told it: each guard with what it catches. */
 export type EscalationHold = Omit<AnswerHold, 'guards'> & { guards?: GuardHit[] };
@@ -83,6 +101,8 @@ export interface Escalation {
   holds?: EscalationHold[];
   /** The last answer a level, Jev or the fixed answers gave on the trail: who, what, and how sure. */
   recommendation?: { by: string; answer: string; confidence?: Confidence };
+  /** How that answer was checked for risk (issue #679). Absent: it was not (no level answered, or before this was recorded). */
+  riskCheck?: RiskCheck;
 }
 
 /**

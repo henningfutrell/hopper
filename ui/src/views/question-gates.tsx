@@ -13,7 +13,7 @@ import { AddInstance, InstanceForm, pluginEditsUnsaved, sendPluginsEdit } from '
 import { StatusBadge } from '@/components/status';
 import { get, post, SessionRejected } from '@/lib/api';
 import { Switch } from '@/components/ui/switch';
-import { agreementLine } from '@/model/auto-answer';
+import { agreementLine, spreadLine } from '@/model/auto-answer';
 import { DRAFT_KEY, escalationMachineChoices, gateChain, readDraft, rulesEditor, RULES_MAX_BYTES, type Gate, type StoredDraft } from '@/model/question-gates';
 import type { AutoAnswerView, Confidence, PluginsReport, QuestionGatesView, RulesView } from '@/model/wire';
 import { refreshPlugins, useHopper } from '@/store';
@@ -130,7 +130,8 @@ const CONFIDENCE_CHOICES: Confidence[] = ['low', 'medium', 'high'];
 /**
  * Auto-answer (issue #632): whether a level's answer goes into the job with no person, the least confidence it needs, and
  * the agreement stats the threshold is tuned on, and whether high-priority jobs' questions come to the person (issue #679,
- * off by default). The hard limits stay whatever is set here.
+ * off by default). The hard limits stay whatever is set here. Under it, each level's confidence spread (issue #679): a
+ * level whose answers mostly fall below the threshold is flagged, as the threshold is then seldom met.
  */
 function AutoAnswer({ view, onSaved }: { view: AutoAnswerView; onSaved: (v: AutoAnswerView) => void }) {
   const authed = useCanAdmin();
@@ -163,9 +164,20 @@ function AutoAnswer({ view, onSaved }: { view: AutoAnswerView; onSaved: (v: Auto
         {view.enabled
           ? 'A level that does not escalate, at or above this confidence, answers the job with no person. A lower level below it sends the question up; the top level below it sends it to you.'
           : 'Off: a level\'s answer is a recommendation, and you answer every question.'}
-        {' '}Risk rules and consequential actions always come to you{view.holdHighPriority ? ', and so do high-priority jobs' : ''}.
+        {' '}A risk the Decider or the risk rules find, and the guards, always come to you{view.holdHighPriority ? ', and so do high-priority jobs' : ''}.
       </div>
       <div className="num text-muted-foreground">{agreementLine(view.stats)}</div>
+      {view.calibration.length > 0 && (
+        <div data-slot="confidence-spread" className="space-y-0.5">
+          <div className="text-muted-foreground">Confidence of the answers each level did not escalate, in {view.stats.windowDays} days:</div>
+          {view.calibration.map((c) => (
+            <div key={c.level} data-level={c.level} data-flagged={c.flagged} className={c.flagged ? 'text-warn' : 'num text-muted-foreground'}>
+              <span className="num">{spreadLine(c, view.threshold)}</span>
+              {c.flagged && <span> — Most of {c.level}'s answers fall below the threshold, so they seldom go into a job by themselves.</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
