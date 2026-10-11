@@ -2,19 +2,22 @@
 // with an API token, as a running job does with `sandbox-template` (issue #716, design.md "Templates on request"). The
 // hopper writes the template from the needs — the box image, the tools the needs use, no vault secret, one operation
 // profile per need — through the same path as a job's request, and approves it with no person only when every need is a
-// read inside the user's read policy. Real daemon, real HTTP server, real CLI; OpenFGA and the container runtime are
-// doubles at their ports.
+// read inside the user's read policy. A template of read needs only then takes the read-only check (issue #716, item 4)
+// before its first box. Real daemon, real HTTP server, real CLI; OpenFGA and the container runtime are doubles at their
+// ports, and the runtime's check box runs the check's real script with fake cloud tools under a read-only credential.
 //
 // Feature: an agent asks the hopper for a template over the API
-//   Scenario: read needs inside the read policy are approved with no person, and a box of the template launches
+//   Scenario: read needs inside the read policy are approved with no person, checked read-only, and a box of it launches
 //     Given the read policy holds cluster/lab and aws-account/*
 //     And an agent holds an API token of the admin
 //     When the agent posts `request-template` with the needs "read/cluster/lab read/aws-account/123456789012"
-//     Then the answer is the vault's view, with `request`: the template's name, ready, and the skills its box loads
+//     Then the answer is the vault's view, with `request`: the template's name, not ready, waiting for the read-only check
 //     And the vault holds the template: the box image, the tools its needs use, no secret, the two read profiles,
 //       approved by the read policy
+//     And a box of it is refused until the check passed
+//     When the check pass runs, and every write is refused while every read works
+//     Then the same needs again, in another order, get the same template, ready, with the skills its box loads
 //     And the agent launches a box of it with the same token
-//     And the same needs again, in another order, get the same template
 //   Scenario: a write need waits for a person: the template is saved, nothing of it approved, and no box launches
 //   Scenario: needs the hopper cannot read are refused, saying how to write them; a viewer's token is refused for its role
 //   Scenario: the operator CLI asks for a template
@@ -24,6 +27,7 @@ import type { TemplateView, VaultView } from '../../src/domain/types.ts';
 import { TOOLS_IMAGE } from '../../src/sandbox/tools.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
+import { createFakeCloudTools } from '../support/fake-cloud-tools.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
 import { rawRequest } from '../support/http.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -45,7 +49,10 @@ afterEach(async () => {
 async function boot(policy?: string[]): Promise<{ a: TestApp; runtime: FakeContainerRuntime; session: string }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
+  const cloud = createFakeCloudTools('read-only');
+  cleanups.push(cloud.cleanup);
   const runtime = createFakeContainerRuntime();
+  runtime.runScript = cloud.runScript;
   t = await startTestApp({
     dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, plugins: { machines: lanes(1) },
     seams: { containerRuntime: runtime, authorizationServer: createFakeAuthorizationServer() },
@@ -77,7 +84,7 @@ const asked = async (a: TestApp, token: string): Promise<TemplateView[]> =>
   ((await agent(a, 'GET', '/api/vault', token)).body as VaultView).templates.filter((x) => x.name.startsWith('asked-'));
 
 describe('an agent asks the hopper for a template over the API (issue #718)', () => {
-  it('read needs inside the read policy are approved with no person, and a box of the template launches', async () => {
+  it('read needs inside the read policy are approved with no person, checked read-only, and a box of it launches', async () => {
     const { a, runtime, session } = await boot(['cluster/lab', 'aws-account/*']);
     const token = await apiToken(a, session);
 
@@ -88,18 +95,28 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
       image: BOX, tools: ['aws', 'helm', 'kubectl'], secrets: [], profiles: [LAB_READ, AWS_READ],
       approval: { by: 'the read policy' }, pending: { secrets: [], image: false, profiles: [] },
     });
-    expect(r.body.request).toMatchObject({ template: made!.name, ready: true });
-    expect(r.body.request.text).toContain('approved by the read policy');
-    expect(r.body.request.text).toContain('sh "$HOPPER_SKILL" kube-diagnostics cluster/lab');
+    expect(made!.readOnly).toBe(true);
+    expect(r.body.request).toMatchObject({ template: made!.name, ready: false });
+    expect(r.body.request.text).toContain(`waiting: template ${made!.name} is approved; waiting for the read-only check`);
     expect(r.body.templates).toEqual(expect.arrayContaining([expect.objectContaining({ name: made!.name })]));
+    const early = await agent(a, 'POST', '/ui/api/machines/sandbox', token, { template: made!.name, params: {} });
+    expect(early.status, early.text).toBe(409);
+
+    // The read-only check: every write refused, every read works.
+    await a.app.sandboxes.check();
+    const [checked] = await asked(a, token);
+    expect(checked!.check).toMatchObject({ state: 'passed' });
+    expect(checked!.check!.probes.every((p) => p.passed)).toBe(true);
+
+    const again = await agent(a, 'POST', '/ui/api/vault', token, { action: 'request-template', needs: 'read/aws-account/123456789012, read/cluster/lab' });
+    expect(again.body.request).toMatchObject({ template: made!.name, ready: true });
+    expect(again.body.request.text).toContain('approved by the read policy');
+    expect(again.body.request.text).toContain('sh "$HOPPER_SKILL" kube-diagnostics cluster/lab');
+    expect((await asked(a, token)).length).toBe(1);
 
     const launch = await agent(a, 'POST', '/ui/api/machines/sandbox', token, { template: made!.name, params: {} });
     expect(launch.status, launch.text).toBe(200);
     expect(runtime.boxes.get(launch.body.container as string)?.spec.image).toMatch(new RegExp(`^${TOOLS_IMAGE}:`));
-
-    const again = await agent(a, 'POST', '/ui/api/vault', token, { action: 'request-template', needs: 'read/aws-account/123456789012, read/cluster/lab' });
-    expect(again.body.request).toMatchObject({ template: made!.name, ready: true });
-    expect((await asked(a, token)).length).toBe(1);
   });
 
   it('a write need waits for a person: the template is saved, nothing of it approved, and no box launches', async () => {
@@ -144,7 +161,7 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
     };
     const r = await hopper(['template', 'request', '--needs', 'read/cluster/lab']);
     expect(r.code, r.err).toBe(0);
-    expect(JSON.parse(r.out)).toMatchObject({ template: expect.stringMatching(/^asked-[0-9a-f]{12}$/), ready: true });
+    expect(JSON.parse(r.out)).toMatchObject({ template: expect.stringMatching(/^asked-[0-9a-f]{12}$/), ready: false, text: expect.stringContaining('read-only check') });
     expect(await hopper(['template', 'request'])).toMatchObject({ code: 2, err: expect.stringContaining('--needs') });
   });
 });
