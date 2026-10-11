@@ -8,8 +8,10 @@
 //   Scenario: the same tools in any order give the same image; other tools or another base give another
 //   Scenario: a tool the hopper does not add is refused, naming the ones it adds
 //   Scenario: the tools a need's asset kind uses
+//   Scenario: a read-only template's image puts the read-only terraform wrapper first on PATH (issue #715)
 import { describe, expect, it } from 'vitest';
 import { BOX_TOOLS, toolsProblem } from '../../src/domain/sandboxes.ts';
+import { TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
 import { TOOLS_IMAGE, toolsForNeeds, toolsImage } from '../../src/sandbox/tools.ts';
 
 const BASE = { image: 'ghcr.io/henningfutrell/hopper:box-claude', id: 'sha256:base1' };
@@ -56,5 +58,20 @@ describe('the tools image (issue #716)', () => {
     expect(toolsForNeeds([need('aws-account'), need('namespace')])).toEqual(['aws', 'helm', 'kubectl']);
     expect(toolsForNeeds([need('terraform-workspace')])).toEqual(['aws', 'terraform']);
     expect(toolsForNeeds([need('argocd-app')])).toEqual(['kubectl']);
+  });
+
+  it('a read-only template\'s image puts the read-only terraform wrapper first on PATH (issue #715)', () => {
+    const ro = toolsImage(BASE, ['terraform', 'aws'], { readOnly: true });
+    const b64 = Buffer.from(TERRAFORM_WRAPPER).toString('base64');
+    expect(ro.containerfile).toContain(`echo ${b64} | base64 -d > /opt/hopper-tools/read-only/terraform && chmod 755 /opt/hopper-tools/read-only/terraform`);
+    expect(ro.containerfile).toContain('ENV PATH=/opt/hopper-tools/read-only:/opt/hopper-tools/bin:${PATH}');
+    // The real binary stays where the check's probes call it past the wrapper.
+    expect(ro.containerfile).toContain('/opt/hopper-tools/bin/terraform');
+    // Another image: a template that is not read-only, or one with no terraform, gets no wrapper.
+    const plain = toolsImage(BASE, ['terraform', 'aws']);
+    expect(plain.containerfile).not.toContain('read-only');
+    expect(plain.tag).not.toBe(ro.tag);
+    expect(toolsImage(BASE, ['aws'], { readOnly: true }).containerfile).not.toContain('read-only');
+    expect(toolsImage(BASE, ['aws'], { readOnly: true }).tag).toBe(toolsImage(BASE, ['aws']).tag);
   });
 });
