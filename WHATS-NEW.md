@@ -8,6 +8,7 @@ words, starting with `- `. Say what they can now do or what now works. No issue 
 numbers, no commit hashes, no file names, no code words. Never edit a line once released: the
 update notice would show it again as new.
 
+- Lane tuning can now run in active mode per machine: the hopper sets the machine's lanes from its own history, within the least and most lanes you set. Machines shows each change with its reason, and an admin can undo the last change.
 - A sandbox box can now have aws, kubectl, helm and terraform added when it starts. Pick the tools on a template in the Vault page, or name them when you start a box from the command line. The hopper adds each tool from its own release and checks it first. A template a job asks for gets the tools its work needs.
 - On a machine you reach over ssh, the hopper now uses the herdr that herdr itself installed and updates, not an older copy elsewhere on the machine. When the herdr there is too old for its session, Machines shows both versions and says so, and jobs go to another machine or wait with the reason, instead of failing one after another.
 - When the hopper merges a pull request that does not close its issue, and the pull request is not one part of the issue, the hopper now closes the issue itself and leaves a comment with a link to the pull request.

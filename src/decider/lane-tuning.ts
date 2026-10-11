@@ -1,9 +1,10 @@
 // Lane tuning (issue #688, design.md "Lane tuning"): the deterministic rules. Lane headroom from a machine's lane
 // load — the most lanes in use its history shows without resource pressure, plus what each lane's measured cost leaves
-// room for —, and the lane recommendation: the headroom below the soft limit, never more than the configured lanes
-// near it or past it, within the machine's bounds. Pure, like the rest of the decider.
+// room for —, and the lane recommendation: the headroom below the soft limit, never more than the lanes in use near it
+// or past it, within the machine's bounds. Active mode: the lanes in use, and when a recommendation is applied. Pure,
+// like the rest of the decider.
 import {
-  LANE_TUNING_WINDOW_DAYS, type LaneLoad, type LaneRecommendation, type LaneTuning, type LaneUsageBand,
+  LANE_TUNING_WINDOW_DAYS, MIN_APPLY_CONFIDENCE, type AppliedLanes, type LaneLoad, type LaneRecommendation, type LaneTuning, type LaneUsageBand,
 } from '../domain/types.ts';
 
 /** A lane count counts once the machine ran it this many samples (minutes). */
@@ -95,28 +96,49 @@ export interface LaneTuningInput {
   soft: number;
   hard: number;
   tuning: LaneTuning;
+  /** The lanes the decider uses now (`lanesInUse`); absent: the configured lanes. */
+  inUse?: number;
+}
+
+const clamp = (n: number, t: LaneTuning): number => Math.min(t.maxLanes, Math.max(t.minLanes, n));
+
+/** The lanes the decider uses: in active mode with auto-tune on, the applied lanes within the bounds; else the configured lanes. */
+export function lanesInUse(configured: number, tuning: LaneTuning, applied: AppliedLanes | undefined): number {
+  return tuning.mode === 'active' && tuning.autoTune && applied ? clamp(applied.lanes, tuning) : configured;
+}
+
+/**
+ * The change active mode applies for a recommendation, or undefined: none in shadow, with auto-tune off, offline, with
+ * no headroom known or less than MIN_APPLY_CONFIDENCE, when the lanes are already in use, or when they are the lanes an
+ * admin undid.
+ */
+export function laneChange(r: LaneRecommendation, applied: AppliedLanes | undefined): { from: number; to: number } | undefined {
+  if (r.tuning.mode !== 'active' || !r.tuning.autoTune || !r.online || r.headroom === undefined || r.confidence < MIN_APPLY_CONFIDENCE) return undefined;
+  if (r.lanes === r.inUse || (applied?.undone && applied.from === r.lanes)) return undefined;
+  return { from: r.inUse, to: r.lanes };
 }
 
 /** A machine's lane recommendation. */
 export function recommendLanes(o: LaneTuningInput): LaneRecommendation {
   const { machine: m, tuning } = o;
   const usage = laneUsageBand(o.usedFrac, o.soft, o.hard);
+  const inUse = o.inUse ?? m.maxLanes;
   const base = {
-    machineId: m.id, ...(m.label ? { label: m.label } : {}), online: m.online, configured: m.maxLanes, usedFrac: o.usedFrac, usage, tuning,
+    machineId: m.id, ...(m.label ? { label: m.label } : {}), online: m.online, configured: m.maxLanes, inUse, usedFrac: o.usedFrac, usage, tuning,
   };
-  const stay = (reason: string): LaneRecommendation => ({ ...base, lanes: m.maxLanes, reason, confidence: 0 });
+  const stay = (reason: string): LaneRecommendation => ({ ...base, lanes: inUse, reason, confidence: 0 });
   if (!tuning.autoTune) return stay('auto-tune is off for this machine');
-  if (!m.online) return stay('offline: the configured lanes stay');
+  if (!m.online) return stay(`offline: the ${inUse === m.maxLanes ? 'configured' : 'applied'} lanes stay`);
   const h = laneHeadroom(o.loads.filter((l) => l.machineId === m.id));
   if (!h) return stay(`not enough history: no lane count of 1 or more ran for ${MIN_LANE_SAMPLES} minutes in the last ${LANE_TUNING_WINDOW_DAYS} days`);
   let lanes = h.lanes;
   let reason = h.why;
   if (usage !== 'free') {
-    lanes = Math.min(lanes, m.maxLanes);
+    lanes = Math.min(lanes, inUse);
     const limit = usage === 'hard' ? `the hard limit ${pct(o.hard)}` : `the soft limit ${pct(o.soft)}`;
     reason += `; usage ${pct(o.usedFrac)} ${USAGE_TEXT[usage]} ${limit}: no lanes added; high-priority work keeps its lanes`;
   }
-  const bounded = Math.min(tuning.maxLanes, Math.max(tuning.minLanes, lanes));
+  const bounded = clamp(lanes, tuning);
   if (bounded !== lanes) reason += `; kept within the bounds ${tuning.minLanes} to ${tuning.maxLanes}`;
   return { ...base, lanes: bounded, headroom: h.lanes, reason, confidence: Math.round(Math.min(1, h.samples / FULL_CONFIDENCE_SAMPLES) * 100) / 100 };
 }

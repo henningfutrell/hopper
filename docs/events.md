@@ -3367,7 +3367,7 @@ Version 1 (`docs/schemas/lanes.recommended.v1.json`). A machine's lane recommend
 
 ## `lanes.tuning_changed`
 
-Version 1 (`docs/schemas/lanes.tuning_changed.v1.json`). An admin changed a machine's lane tuning settings (issue #688): auto-tune on or off, and the least and most lanes a recommendation may name. `from` and `to`, and `by`.
+Version 1 (`docs/schemas/lanes.tuning_changed.v1.json`). An admin changed a machine's lane tuning settings (issue #688): auto-tune on or off, the least and most lanes a recommendation may name, and the `mode` (`shadow`: recommend only; `active`: apply; absent in a change saved before active mode: shadow). `from` and `to`, and `by`.
 
 | field | type | required |
 |---|---|---|
@@ -3382,13 +3382,59 @@ Version 1 (`docs/schemas/lanes.tuning_changed.v1.json`). An admin changed a mach
   "from": {
     "autoTune": true,
     "minLanes": 1,
-    "maxLanes": 8
+    "maxLanes": 8,
+    "mode": "shadow"
   },
   "to": {
     "autoTune": true,
     "minLanes": 1,
-    "maxLanes": 3
+    "maxLanes": 8,
+    "mode": "active"
   },
+  "by": "admin"
+}
+```
+
+## `lanes.applied`
+
+Version 1 (`docs/schemas/lanes.applied.v1.json`). Active mode applied a machine's lane recommendation (issue #688): the lanes the decider uses for it went `from` → `to`, within its bounds; `configured` the lanes it is configured with. `reason` in plain words, `confidence` 0..1 from the history it stands on. An admin can undo it.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `from` | integer | yes |
+| `to` | integer | yes |
+| `configured` | integer | yes |
+| `reason` | string | yes |
+| `confidence` | number | yes |
+
+```json
+{
+  "machineId": "laptop",
+  "from": 2,
+  "to": 4,
+  "configured": 2,
+  "reason": "no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more",
+  "confidence": 1
+}
+```
+
+## `lanes.undone`
+
+Version 1 (`docs/schemas/lanes.undone.v1.json`). An admin undid the last lane change active mode applied to a machine (issue #688): its lanes went back `from` → `to`. Those lanes are not applied again until the recommendation moves. `by`: who.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `from` | integer | yes |
+| `to` | integer | yes |
+| `by` | string | yes |
+
+```json
+{
+  "machineId": "laptop",
+  "from": 4,
+  "to": 2,
   "by": "admin"
 }
 ```

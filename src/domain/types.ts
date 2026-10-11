@@ -29,8 +29,7 @@ export type JobStatus =
   | 'operator_led' // claimed by an operator, worked by hand outside the hopper; holds no lane, never run (issue #318)
   | 'parked' // taken out of its lane by a person (issue #501): no lane, no pane, no agent; its work tree and agent session kept until re-queued
   | 'waiting_on' // its own wait (issue #483): it waits on something it named; holds no lane; its pane stays open; no question
-  | 'finished' | 'failed' | 'cancelled'
-  | 'rejected'; // turned away at the queue gate: kept, never run
+  | 'finished' | 'failed' | 'cancelled' | 'rejected'; // rejected: turned away at the queue gate, kept, never run
 
 /**
  * The jobs directory (issue #314): the default work tree, below the home of the job's machine. A job never
@@ -265,8 +264,10 @@ export interface Lane {
 export interface MachineSnapshot extends MachineHerdr {
   id: MachineId;
   label: string;
-  /** Hard ceiling on lanes this machine may run. */
+  /** Hard ceiling on lanes this machine may run: in the engine, the lanes lane tuning applied in active mode (issue #688). */
   maxLanes: number;
+  /** The lanes it is configured with, when lane tuning applied others in active mode (issue #688). Absent: `maxLanes`. */
+  configuredLanes?: number;
   /** Lanes kept for jobs pinned to it (issue #372): jobs with no machine pin use at most its lane cap less these. Absent: 0. */
   reservedLanes?: number;
   online: boolean;

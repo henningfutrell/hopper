@@ -22,7 +22,7 @@ import { createPriorityLanes, type PriorityLanes } from './priority-lanes.ts';
 import { DISCOVER_CHECK_MS, createBlastRadius, type BlastRadius } from './blast-radius.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
 import { createPhaseShifts, type PhaseShifts } from './phase-shifts.ts';
-import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
+import { createLaneTuning, tunedMachines, type LaneTuningService } from './lane-tuning.ts';
 
 export { EngineError } from './errors.ts';
 export type { EngineOptions } from './context.ts';
@@ -43,7 +43,7 @@ const SHUTDOWN_WAIT_MS = 5000;
  * a lane, and one sent back or accepted on to the next section requeues its job (issues #537, #543); a discovery that
  * changed a machine, new blast-radius settings and a job let through the gate change which machines a job may take
  * (issue #542); a fork queued or a job switched from its question re-queued changes the queue (issue #548); a template
- * saved or removed, a profile approved and a vault secret set or removed change a template's rating, so its boxes' (issue #605). */
+ * saved or removed, a profile approved and a vault secret set or removed change a template's rating, so its boxes' (issue #605); lanes applied or undone, or a lane tuning setting, change a machine's lanes (issue #688). */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
@@ -52,6 +52,7 @@ const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   ...REVIEW_KINDS.flatMap((k) => (['submitted', 'revision_requested', 'accepted'] as const).map((s) => `${REVIEW_SECTIONS[k].prefix}.${s}` as EventType)),
   'machine.discovered', 'blast_radius.settings_changed', 'vault.approved', 'vault.revoked', 'job.gate_passed', 'job.forked',
   'template.saved', 'template.removed', 'template.profile_approved', 'vault.secret_set', 'vault.secret_removed',
+  'lanes.applied', 'lanes.undone', 'lanes.tuning_changed',
 ]);
 
 export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands, Queries, AnswerHandlers, ReviewHandlers {
@@ -99,7 +100,7 @@ export function createEngine(o: EngineOptions): Engine {
   }, (e) => console.error('decision failed', e));
 
   const c: EngineContext = {
-    store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines,
+    store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: tunedMachines(store, o.machines),
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
     questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, doneRecheckMs: o.doneRecheckMs ?? 0, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems,
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}),

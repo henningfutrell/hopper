@@ -31,7 +31,7 @@ export const EVENT_TYPES = [
   'tldr.written', 'tldr.settings_changed',
   'artifact.revised', 'artifact.revision_pinned', 'artifact.revision_removed',
   'item.snapshot_recorded', 'item.changed_since_snapshot', 'item.original_kept', 'item.new_text_accepted',
-  'lanes.recommended', 'lanes.tuning_changed',
+  'lanes.recommended', 'lanes.tuning_changed', 'lanes.applied', 'lanes.undone',
   'bug_report.filed', 'bug_report.failed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
@@ -72,6 +72,6 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'tldr.written': 1, 'tldr.settings_changed': 1,
   'artifact.revised': 1, 'artifact.revision_pinned': 1, 'artifact.revision_removed': 1,
   'item.snapshot_recorded': 1, 'item.changed_since_snapshot': 1, 'item.original_kept': 1, 'item.new_text_accepted': 1,
-  'lanes.recommended': 1, 'lanes.tuning_changed': 1,
+  'lanes.recommended': 1, 'lanes.tuning_changed': 1, 'lanes.applied': 1, 'lanes.undone': 1,
   'bug_report.filed': 1, 'bug_report.failed': 1,
 };
