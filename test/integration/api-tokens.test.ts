@@ -84,12 +84,12 @@ describe('API tokens (issue #718)', () => {
     expect(expires).toBeLessThanOrEqual(Date.now() + 15 * 60_000);
     const token = minted.body.token as string;
 
-    // Listed, never with the token; the token is no UI session the UI can sign in with.
+    // Listed, never with the token; the token is no UI session: in the session header it acts for nobody.
     const listed = await a.api('GET', '/api/api-tokens', undefined, { 'x-hopper-session': session });
     expect(listed.status).toBe(200);
     expect(listed.body.tokens).toEqual([expect.objectContaining({ id: minted.body.id, label: 'grok-bot', role: 'admin', expiresAt: minted.body.expiresAt })]);
     expect(JSON.stringify(listed.body)).not.toContain(token);
-    expect((await a.api('GET', '/api/queue', undefined, { 'x-hopper-session': token })).status).toBe(401);
+    expect((await a.ui('/ui/api/queue/order', { jobIds: [] }, { token })).status).toBe(403);
 
     // The agent: the token alone.
     expect((await agent(a, 'POST', '/ui/api/vault', token, { action: 'set', name: 'KUBE_TOKEN', value: VALUE })).status).toBe(200);
@@ -142,7 +142,7 @@ describe('API tokens (issue #718)', () => {
     const session = await a.login();
     const minted = (await mint(a, session)).body as { token: string; id: string };
     expect((await agent(a, 'GET', '/api/queue', minted.token)).status).toBe(200);
-    const revoked = await a.ui('/ui/api/api-tokens', { action: 'revoke', id: minted.id }, { token: session });
+    const revoked = await a.ui<{ tokens: unknown[] }>('/ui/api/api-tokens', { action: 'revoke', id: minted.id }, { token: session });
     expect(revoked.status).toBe(200);
     expect(revoked.body.tokens).toEqual([]);
     expect((await agent(a, 'GET', '/api/queue', minted.token)).status).toBe(401);
@@ -174,7 +174,7 @@ describe('API tokens (issue #718)', () => {
   it('without OpenFGA, no API token is minted', async () => {
     const { a } = await boot({ openFga: false });
     const r = await mint(a, await a.login());
-    expect(r.status).toBe(403);
+    expect(r.status).toBe(503);
     expect(r.body.error).toMatch(/OpenFGA/);
   });
 

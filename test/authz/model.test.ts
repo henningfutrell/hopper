@@ -3,18 +3,27 @@
 // Issue #581: the requesters — a user owns a job, a job runs on a machine, a machine is an instance of a template — are
 // tuples the hopper writes from who is live, and the path from a requester to an asset names each step.
 import { describe, expect, it } from 'vitest';
-import { artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, itemGaps, modelGaps, sharedSecretGaps, systemSecretGaps } from '../../src/authz/model.ts';
+import { apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, itemGaps, modelGaps, sharedSecretGaps, systemSecretGaps } from '../../src/authz/model.ts';
 import { shareTuples, profileId, profileOf, assetObject, approvalTuples, machineObject, relationshipPath, requesterObject, requesterTuples } from '../../src/authz/objects.ts';
 
 describe('the access model', () => {
   it('compiles the default model with no gap', () => {
     const json = compileAccessModel(DEFAULT_ACCESS_MODEL);
-    expect(json.type_definitions.map((t) => t.type).sort()).toEqual(['artifact', 'asset', 'item', 'job', 'link', 'machine', 'operation_profile', 'shared_secret', 'system_secret', 'template', 'user']);
+    expect(json.type_definitions.map((t) => t.type).sort()).toEqual(['api_token', 'artifact', 'asset', 'item', 'job', 'link', 'machine', 'operation_profile', 'shared_secret', 'system_secret', 'template', 'user']);
     expect(modelGaps(json)).toEqual([]);
     expect(artifactGaps(json)).toEqual([]);
     expect(systemSecretGaps(json)).toEqual([]);
     expect(sharedSecretGaps(json)).toEqual([]);
     expect(itemGaps(json)).toEqual([]);
+    expect(apiTokenGaps(json)).toEqual([]);
+  });
+
+  it('a model edited before API tokens (issue #718) still decides mints; it names what API tokens need', () => {
+    const before = DEFAULT_ACCESS_MODEL.replace(/\n# An API token \(issue #718\)[\s\S]*?define can_administer: owner\n/, '\n');
+    expect(before).not.toContain('api_token');
+    const json = compileAccessModel(before);
+    expect(modelGaps(json)).toEqual([]);
+    expect(apiTokenGaps(json)).toEqual(['api_token#owner', 'api_token#can_view', 'api_token#can_operate', 'api_token#can_administer']);
   });
 
   it('a model edited before the system scope (issue #657) still decides mints; its system secret gaps are apart', () => {

@@ -3,7 +3,7 @@
 import type { z } from 'zod';
 import type { UiRole } from '../domain/types.ts';
 
-export type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Research' | 'Logins' | 'Failures' | 'Decider' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Vault' | 'Events' | 'Self-update' | 'Users' | 'Sign-in' | 'Access' | 'Bug reports';
+export type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Research' | 'Logins' | 'Failures' | 'Decider' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Vault' | 'Events' | 'Self-update' | 'Users' | 'Sign-in' | 'Access' | 'API tokens' | 'Bug reports';
 
 export interface Operation {
   method: 'get' | 'post';
@@ -44,6 +44,7 @@ export const TAGS: Record<Tag, string> = {
   'Self-update': 'The install and the update repository.',
   Users: 'The people one hopper works for, each with their own work, kept apart.',
   'Sign-in': 'UI sessions: sign-in, the session, logout.',
+  'API tokens': 'Short-lived tokens an agent acts through the API with, as its user (issue #718): mint, list, revoke, and exchange a sign-in for one.',
   Access: 'OpenFGA decides each credential a job is given: the approvals, the access model, and every decision.',
   'Bug reports': 'Report a bug: a report on the hopper, with its redacted context, filed on the hopper\'s own repository as the person who sends it.',
 };

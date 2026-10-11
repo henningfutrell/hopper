@@ -27,7 +27,8 @@
       "type": "string",
       "enum": [
         "ui",
-        "cli"
+        "cli",
+        "api"
       ]
     },
     "note": {

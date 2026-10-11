@@ -80,6 +80,17 @@ type shared_secret
     define can_change: admin
     define can_read: reader
 
+# An API token (issue #718): a short-lived token a user, or an agent acting for them, acts through the API with. At each use
+# the hopper tells its owner and asks the relation of the role the request needs: a read (can_view), an operator's action
+# (can_operate), or an admin's (can_administer). The role the token was minted with is checked apart; this is the user's
+# own say over what their tokens may do: edit a relation to narrow it.
+type api_token
+  relations
+    define owner: [user]
+    define can_view: owner
+    define can_operate: owner
+    define can_administer: owner
+
 # A source item jobs run (issue #662): a GitHub issue. The hopper tells, at each check, the user whose hopper takes it as its
 # owner. Only who may accept new text replaces the text the item's jobs run.
 type item
@@ -98,6 +109,10 @@ export interface ModelJson {
 export function compileAccessModel(dsl: string): ModelJson {
   return transformer.transformDSLToJSONObject(dsl) as unknown as ModelJson;
 }
+
+/** What the hopper tells and asks for API tokens (issue #718): apart, so a model edited before them still decides mints. */
+const API_TOKEN_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['api_token', 'owner', 'user']];
+const API_TOKEN_ASKED: readonly [type: string, relation: string][] = [['api_token', 'can_view'], ['api_token', 'can_operate'], ['api_token', 'can_administer']];
 
 /** What the hopper tells and asks for items (issue #662): apart, so a model edited before them still decides mints. */
 const ITEM_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['item', 'owner', 'user']];
@@ -144,6 +159,11 @@ export function systemSecretGaps(model: ModelJson): string[] {
 /** What the model lacks for shared secrets (issue #718); empty: they are decided. A gap here denies every change and read, never a mint. */
 export function sharedSecretGaps(model: ModelJson): string[] {
   return gapsIn(model, SHARED_SECRET_WRITTEN, SHARED_SECRET_ASKED);
+}
+
+/** What the model lacks for API tokens (issue #718); empty: their uses are decided. A gap here denies every use, never a mint. */
+export function apiTokenGaps(model: ModelJson): string[] {
+  return gapsIn(model, API_TOKEN_WRITTEN, API_TOKEN_ASKED);
 }
 
 /** What the model lacks for items (issue #662); empty: accepting new text is decided. A gap here denies every acceptance, never a mint. */

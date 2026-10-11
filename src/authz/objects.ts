@@ -3,7 +3,7 @@
 // that explains an allow.
 import { createHash } from 'node:crypto';
 import {
-  OPERATIONS, ASSET_KINDS, type LiveRequesters, type SharedSecretAsk, type SystemSecretAsk, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
+  OPERATIONS, ASSET_KINDS, type ApiTokenAsk, type LiveRequesters, type SharedSecretAsk, type SystemSecretAsk, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
 } from '../domain/types.ts';
 
 export const templateObject = (template: string): string => `template:${template}`;
@@ -78,6 +78,15 @@ export function sharedSecretCheck(ask: SharedSecretAsk): { tuple: RelationshipTu
       ...(ask.admin ? [{ subject, relation: 'admin', object }] : []),
     ],
   };
+}
+/** The relation an API token's use asks for each role (issue #718). */
+export const API_TOKEN_RELATIONS = { viewer: 'can_view', operator: 'can_operate', admin: 'can_administer' } as const;
+
+/** The check for a use of an API token (issue #718): the relation of its role, of the user; the user told as its owner. */
+export function apiTokenCheck(ask: ApiTokenAsk): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = `api_token:${ask.userId}/${ask.tokenId}`;
+  const subject = userObject(ask.userId);
+  return { tuple: { subject, relation: API_TOKEN_RELATIONS[ask.role], object }, contextual: [{ subject, relation: 'owner', object }] };
 }
 export const assetObject = (t: Asset): string => `asset:${t.kind}/${t.name}`;
 

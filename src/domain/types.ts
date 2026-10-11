@@ -516,8 +516,8 @@ export type { JobRulesView } from './job-rules.ts';
 
 // ---- Sign-in: src/domain/sign-in.ts (re-exported here) ------------------------------------
 
-export type { Identity, PersonView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionEndReason, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole } from './sign-in.ts';
-export { DEFAULT_SESSION_LENGTHS, DEVICE_REALM_TYPES, FORM_REALM_TYPES, MAX_SESSION_HOURS, REALM_TYPES, REDIRECT_REALM_TYPES, SESSION_END_REASONS, UI_ROLES, roleAllows } from './sign-in.ts';
+export type { ApiTokenMinted, ApiTokenView, Identity, PersonView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionEndReason, SessionKind, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole } from './sign-in.ts';
+export { API_TOKEN_DEFAULT_MINUTES, API_TOKEN_MAX_MINUTES, API_TOKEN_PREFIX, DEFAULT_SESSION_LENGTHS, DEVICE_REALM_TYPES, FORM_REALM_TYPES, MAX_SESSION_HOURS, REALM_TYPES, REDIRECT_REALM_TYPES, SESSION_END_REASONS, UI_ROLES, lowerRole, roleAllows } from './sign-in.ts';
 
 // ---- Users (issue #158): src/domain/users.ts (re-exported here) ---------------------------
 

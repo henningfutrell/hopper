@@ -61,8 +61,12 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   content is served off `/api/`, at `/artifact-content/` (a URL a read signed for one viewer, for an hour) and `/artifact-link/`
   (a public link), under a sandbox policy; they change nothing. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
-  exact Origin, same-origin, JSON — else 403) whose UI role allows it; a new mutation goes there and
-  nowhere else, and names its least UI role. `docs/design.md` "UI session and mutations" and
+  exact Origin, same-origin, JSON — else 403) or an **API token** (issue #718, `docs/design.md` "API tokens":
+  `Authorization: Bearer hopper_at_…`, JSON; a session of kind `api`, kept hashed, an hour at most, its role no higher than
+  its minter's, minted from a UI session or exchanged at `POST /ui/auth/api-token` for a sign-in the API door accepts, never
+  by another API token; Access decides each use, `api_token#can_view|can_operate|can_administer`) whose UI role allows it; a
+  new mutation goes there and nowhere else, and names its least UI role, so every action a person has in the UI an agent has
+  over the API. A job's own proxy token is no API token: a job asks the hopper, never acts on the vault or a box itself. `docs/design.md` "UI session and mutations" and
   "Sign-in: realms" state the residual risk.
 - **Sign-in fails closed.** An invalid sign-in config stops the daemon; an identity no role rule
   matches gets no session; sign-in is never a plugin (`docs/design.md` "Sign-in"). Every sign-in

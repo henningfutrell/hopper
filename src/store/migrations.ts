@@ -199,6 +199,9 @@ const MIGRATIONS: readonly Migration[] = [
   // 34: the sandbox records (issue #708): one row per sandbox box the hopper launched, which its sandbox module
   // reconciles from. A table only: the build before never reads it, and keeps the boxes it finds by their labels.
   'CREATE TABLE IF NOT EXISTS sandboxes (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL, body TEXT NOT NULL);',
+  // 35: API tokens (issue #718): a session row of kind `api`, with its label. The build before reads every row as a UI
+  // session, and an API token comes in `Authorization`, which it never reads as one: there it signs nobody in.
+  "ALTER TABLE ui_sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'ui'; ALTER TABLE ui_sessions ADD COLUMN label TEXT;",
 ];
 
 /** Each recorded access decision's `job` becomes its `requester`, of kind job; the rest of the record is kept. */
