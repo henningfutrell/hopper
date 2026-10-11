@@ -1,6 +1,6 @@
 // One engine pass: gather inputs → decide() → skip a no-op → apply in one transaction.
 import { decide } from '../decider/index.ts';
-import type { CleanupDue, Decision, DecisionInputs, Job, Lane, LaneId } from '../domain/types.ts';
+import type { CleanupDue, Decision, DecisionInputs, ExpectedCost, Job, Lane, LaneId } from '../domain/types.ts';
 import { nowIso, policyOf, type EngineContext } from './context.ts';
 import type { PriorityLanes } from './priority-lanes.ts';
 import type { BlastRadius } from './blast-radius.ts';
@@ -13,11 +13,15 @@ export interface Claim { jobId: string; laneId: LaneId }
 const WAITING = ['queued', 'held'] as const;
 const RUNNING = ['claimed', 'running'] as const;
 
-async function gather(c: EngineContext, trigger: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius): Promise<() => DecisionInputs> {
+/** A job's expected cost, where one is known (issue #688). */
+export type ExpectedCostOf = (job: Job) => ExpectedCost | undefined;
+
+async function gather(c: EngineContext, trigger: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf): Promise<() => DecisionInputs> {
   const [machines, ...readings] = await Promise.all([c.machines.list(), ...c.usage().map((u) => u.poll())]);
   // Store reads happen after the awaits, synchronously with decide and apply: no interleaving.
   return () => {
     const waiting = oldestFirst(c.store.jobs.list({ status: [...WAITING] }));
+    const expectedCosts = expectedOf(waiting, expected);
     return {
       at: nowIso(c),
       trigger,
@@ -32,12 +36,19 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       problems: c.problems(),
       priorityLanes: priorityLanes.input(machines),
       blastRadius: blastRadius.input(machines),
+      ...(expectedCosts ? { expectedCosts } : {}),
       policy: policyOf(c),
     };
   };
 }
 
 const oldestFirst = (jobs: Job[]): Job[] => [...jobs].reverse();
+
+/** Each waiting job's expected cost, where one is known; undefined when none is. A job resuming returns to its pane: none. */
+function expectedOf(waiting: readonly Job[], expected: ExpectedCostOf): Record<string, ExpectedCost> | undefined {
+  const known = waiting.flatMap((j) => { const e = j.pendingAnswer === undefined ? expected(j) : undefined; return e ? [[j.id, e] as const] : []; });
+  return known.length ? Object.fromEntries(known) : undefined;
+}
 
 /** A Decision that changes nothing is not recorded (design.md "The decider"). */
 export function isNoOp(d: Decision): boolean {
@@ -110,8 +121,8 @@ function freeStrandedLanes(c: EngineContext): void {
 }
 
 /** Returns the claims whose executors the caller must start, outside the transaction. */
-export async function decisionStep(c: EngineContext, trigger: string, decisionId: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius): Promise<Claim[]> {
-  const inputs = await gather(c, trigger, cleanupDue, priorityLanes, blastRadius);
+export async function decisionStep(c: EngineContext, trigger: string, decisionId: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf): Promise<Claim[]> {
+  const inputs = await gather(c, trigger, cleanupDue, priorityLanes, blastRadius, expected);
   if (c.stopping()) return [];
   freeStrandedLanes(c);
   autoAccept(c);

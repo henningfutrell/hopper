@@ -122,7 +122,9 @@ same Decision. Algorithm, in order:
 6. **Order.** Admissible jobs by effective priority desc, then `createdAt` asc, then `id`.
 7. **Assign.** For each job in order: candidate machines = online, run its executor, match
    its pin, `busy(m) + assigned(m) < cap(m)`; a job not pinned to `m` also needs
-   `unpinned(m) < cap(m) - reservedLanes(m)` ("Reserved lanes", issue #372). Pick the one with the most
+   `unpinned(m) < cap(m) - reservedLanes(m)` ("Reserved lanes", issue #372). A job with an **expected cost**
+   keeps only the candidates where it fits, when one does ("Lane tuning", placement by expected cost, issue #688).
+   Pick the one with the most
    **placement pressure** when reset-aware placement is on ("Usage pacing"), then the most remaining
    room for that job, then the lowest machine id. No candidate, and the job's priority at or above the
    **critical priority**: it may take one lane past its caps ("Usage pacing"). Use an existing idle, non-draining lane if one is unassigned, else
@@ -12154,8 +12156,20 @@ a week dashed and an informational one dotted and hidden, as on the usage graph;
 the graph in the lanes colour (`GraphLine.marks`), named in the hover box when the pointer is within half a step of it
 (`marksAt`): `Applied: 2 → 4 lanes, by <who>. <reason>`, `Undone: 4 → 2 lanes, by <who>`.
 
+**Placement by expected cost** (part 7 of the issue; `src/decider/placement-cost.ts`, pure). A waiting job's **expected
+cost** (`ExpectedCost`) is the job cost group it falls in: its repository's group, else its job cost kind's, with 3 jobs or
+more (`MIN_EXPECTED_COST_JOBS`) and a CPU or memory figure; else it has none. The engine reads the groups again with
+each lane recommendation record (every minute) and at `GET /api/lanes/costs`, and keeps them in memory
+(`engine.laneTuning.expected`); a Decision never reads the runs. `DecisionInputs.expectedCosts` holds each waiting job's
+expected cost (none for a job resuming in its pane), so a stored Decision shows what it read. In step 7 ("The decider"),
+of the machines a job may go to, the ones where its expected cost **fits** go first: the machine's last resource reading
+plus the expected costs this Decision placed there before, plus the job's own — its memory peak and its average CPU —,
+stays below resource pressure (memory 90%, CPU 95%, `RESOURCE_PRESSURE`). A machine with no reading, or a figure it does
+not read, fits. When it fits nowhere, every machine stays: the cost is a preference, never a hold, and the job is placed
+as before. The start reason names it: `expected cost (repo o/r, 4 jobs): memory peak 3 GiB, CPU 12%`, with `, fits no
+machine` when so. A priority lane, placement pressure and the most room still choose among the machines where it fits.
+
 **Not built yet** (left for the next parts of issue #688):
-- **Placement by expected cost**: the job cost profile of a job's group as an input to the machine it goes to.
 - **The Decider** (issue #550) as a decision point for the lane count and the job's machine, with these rules as its
   fallback, and lane reliability (issue #535) among its inputs.
 
@@ -12168,7 +12182,10 @@ and refusals, the record once per change after a resource record and no lanes ch
 lanes in the plugins config, the decider and the usage report, its refusals, Dismiss until the recommendation moves,
 Undo and its refusals after a hand edit, `hopper lanes plan`, `tune`, `apply`, `dismiss`, `undo`),
 `test/store/tenant-migration-38.test.ts` (the applied lanes become configured lanes; the mode goes),
-`test/decider/job-costs.test.ts` (job cost kind, a profile per finished or failed job, runs added up, groups),
+`test/decider/placement-cost.test.ts` (the expected cost: the repository's group, else the kind's, too few jobs; a
+machine passed over for memory or CPU, one with no reading kept, the jobs placed before in the Decision counted, fits no
+machine), `test/integration/placement-cost.test.ts` (the real daemon: with no history the old order; with seeded runs
+the job goes where its memory peak fits, and says so), `test/decider/job-costs.test.ts` (job cost kind, a profile per finished or failed job, runs added up, groups),
 `test/integration/job-costs.test.ts` (the real daemon: a run's share net of the baseline, its usage burned, a parked job
 left out, `hopper lanes costs`), `test/integration/machine-history.test.ts` (one machine's graph: the usage that limits it, its lane changes in
 range; every machine's graph carries neither), `test/ui/machine-history.test.ts` (the usage lines and the lane change marks),

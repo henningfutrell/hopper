@@ -94,3 +94,18 @@ export interface JobCosts {
   jobs: JobCostProfile[];
   groups: Record<JobCostGrouping, JobCostGroup[]>;
 }
+
+/** A job cost group gives a waiting job its expected cost only with at least this many jobs. */
+export const MIN_EXPECTED_COST_JOBS = 3;
+
+/**
+ * A waiting job's expected cost (placement by expected cost): the job cost group it falls in — its repository's, else
+ * its job cost kind's — with at least `MIN_EXPECTED_COST_JOBS` jobs. One lane's share of CPU and memory, as the group's.
+ */
+export interface ExpectedCost {
+  group: 'repo' | 'kind';
+  key: string;
+  jobs: number;
+  cpu?: ResourceCost;
+  memoryBytes?: ResourceCost;
+}

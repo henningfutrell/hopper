@@ -39,7 +39,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       reasons.push(`${machine.id} ${e.executor}: ${Math.round(e.usedFrac * 100)}% used, lane cap ${e.cap} of ${machine.maxLanes} (${e.band})`);
     }
     return {
-      machine, cap, band, usedFrac, assigned: 0, overCap: 0,
+      machine, cap, band, usedFrac, assigned: 0, overCap: 0, placed: { memoryBytes: 0, cpu: 0 },
       occupied: held.length,
       problems: (inputs.problems ?? []).filter((b) => b.machineId === undefined || b.machineId === machine.id),
       // A lane whose job is unknown counts as unpinned: the reserve stays free (issue #372).
@@ -96,7 +96,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   }
 
   if (inputs.queueOrder) reasons.push(`queue order by ${inputs.queueOrder.sorter}`);
-  const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states, policy, inputs.priorityLanes);
+  const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states, policy, inputs.priorityLanes, inputs.expectedCosts);
   const priorityOf = new Map(inputs.running.map((j) => [j.id, j.priority]));
   const specialty = new Set(inputs.running.filter(isSpecialty).map((j) => j.id));
 

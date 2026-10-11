@@ -96,7 +96,7 @@ export function createEngine(o: EngineOptions): Engine {
   let unsubscribe: (() => void) | undefined;
 
   const serial = createSerial(async (reason) => {
-    const claims = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius);
+    const claims = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius, laneTuning.expected);
     for (const claim of claims) runner.start(claim);
   }, (e) => console.error('decision failed', e));
 
@@ -119,6 +119,7 @@ export function createEngine(o: EngineOptions): Engine {
   const priorityLanes = createPriorityLanes(c);
   const blastRadius = createBlastRadius(c);
   const phaseShifts = createPhaseShifts(c);
+  const laneTuning = createLaneTuning(c);
 
   return {
     get executorNames() { return o.executors.names(); },
@@ -129,7 +130,7 @@ export function createEngine(o: EngineOptions): Engine {
     sourceHost: createSourceHost(c, commands),
     priorityLanes,
     blastRadius,
-    laneTuning: createLaneTuning(c),
+    laneTuning,
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
     ...createUsageLimitCommands(c),
