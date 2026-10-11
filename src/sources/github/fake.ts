@@ -38,6 +38,8 @@ export interface FakeGitHub extends GitHubApi {
   openUnlinkedPullRequest(repo: string, pr: PullRequestInput & { headRef: string }): OpenPullRequest;
   /** Its head commit's checks now (issue #637); undefined: none. */
   setChecks(url: string, checks: ChecksState | undefined): void;
+  /** Its base branch moved (issue #736): it has merge conflicts with it now, or not, with no push to it. */
+  setConflicting(url: string, conflicting: boolean): void;
   /** A push to a pull request's branch (issue #618): a new head commit at `at`, with or without merge conflicts after it. */
   pushToPullRequest(url: string, at: string, o?: { conflicting?: boolean }): void;
   /** Mark an open draft pull request ready for review (issue #626). */
@@ -309,6 +311,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
     closePullRequest(url) { pull(url).state = 'closed'; },
     markReady(url) { pull(url).isDraft = false; },
+    setConflicting(url, conflicting) { pull(url).conflicting = conflicting; },
     pushToPullRequest(url, at, o = {}) {
       const p = pull(url);
       p.headCommittedAt = at;
