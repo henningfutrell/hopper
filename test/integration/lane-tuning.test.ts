@@ -58,6 +58,26 @@ function seed(a: TestApp, minutes = 20): void {
   a.user().store.machineHistory.record(samples);
 }
 
+/**
+ * Runs in the seeded minutes: four at 1 lane in use (minutes 20 to 39) that finished, and four at 2 lanes (minutes 40
+ * to 59) that failed.
+ */
+function seedRuns(a: TestApp): void {
+  const store = a.user().store;
+  const start = Date.now() - 24 * 60 * MIN;
+  const iso = (min: number) => new Date(start + min * MIN).toISOString();
+  store.tx(() => {
+    for (const [i, from, end] of [[0, 20, 'finished'], [1, 24, 'finished'], [2, 28, 'finished'], [3, 32, 'finished'], [4, 40, 'failed'], [5, 41, 'failed'], [6, 46, 'failed'], [7, 50, 'failed']] as const) {
+      const job = store.jobs.create({ executor: 'test', payload: {}, machineId: 'nowhere' }, 50, { source: 'github', kind: 'github', key: `https://github.com/o/r/issues/${i}`, repo: 'o/r', number: i });
+      store.jobs.update(job.id, { status: end });
+      store.events.append({ type: 'job.claimed', jobId: job.id, machineId: 'laptop', laneId: 'laptop:1', at: iso(from), data: { attempts: 1, effectivePriority: 50, reason: 'test' } });
+      store.events.append(end === 'finished'
+        ? { type: 'job.finished', jobId: job.id, laneId: 'laptop:1', at: iso(from + 3), data: { result: 'ok' } }
+        : { type: 'job.failed', jobId: job.id, laneId: 'laptop:1', at: iso(from + 3), data: { error: 'boom' } });
+    }
+  });
+}
+
 const plan = async (a: TestApp) => {
   const r = await a.api<LaneTuningPlan>('GET', '/api/lanes/plan');
   expect(r.status).toBe(200);
@@ -83,6 +103,16 @@ describe('lane tuning', () => {
       machineId: 'laptop', label: 'arch-laptop', online: true, configured: 2, lanes: 4, headroom: 4, confidence: 0.33, usedFrac: 0, usage: 'free',
       tuning: { autoTune: true, minLanes: 1, maxLanes: 8 }, apply: { to: 4 },
       reason: 'no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more',
+    });
+  });
+
+  it('slow progress: runs at 2 lanes in use fail far more often than at 1, so 1 lane', async () => {
+    const a = await boot();
+    seed(a);
+    seedRuns(a);
+    expect(await laptop(a)).toMatchObject({
+      configured: 2, lanes: 1, headroom: 1, confidence: 0.33, apply: { to: 1 },
+      reason: 'slow progress at 2 lanes in use (4 of 4 runs failed; 0 of 4 at fewer lanes): 1 lane runs without it',
     });
   });
 
