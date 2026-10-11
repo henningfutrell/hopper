@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { mintLinkKey } from '../../src/client/link.ts';
 import type { Job, NewEvent } from '../../src/domain/types.ts';
 import {
-  checkRequest, createGitHubProxy, createProxyLimiter, holdsProxyToken, parseProxyToken, PROXY_LIMITS, proxyRequest, proxyToken,
+  checkRequest, createGitHubProxy, createProxyLimiter, filedNote, holdsProxyToken, parseProxyToken, PROXY_LIMITS, proxyRequest, proxyToken,
   type ProxyRequest, type ProxyUser,
 } from '../../src/github-proxy/index.ts';
 
@@ -84,6 +84,32 @@ describe('who may ask what', () => {
   it('nobody: a repository the hopper does not work on', () => {
     expect(checkRequest({ ...create, repo: 'else/where' }, own, repos)).toEqual({ ok: false, reason: 'else/where is not one of the repositories the hopper works on, so it does nothing there for a job' });
     expect(checkRequest(create, own, [])).toMatchObject({ ok: false });
+  });
+});
+
+describe('issue lineage: an issue a job files is a child of the job\'s issue (issue #729)', () => {
+  const repos = ['octo/tools', 'octo/site'];
+  const required: ProxyRequest = { op: 'issue.create', repo: 'octo/site', title: 't', body: 'b', required: true };
+
+  it('a request may mark the issue a required child; from a form it comes as text', () => {
+    expect(proxyRequest.parse({ op: 'issue.create', repo: 'o/r', title: 't', body: 'b', required: 'true' })).toEqual({ op: 'issue.create', repo: 'o/r', title: 't', body: 'b', required: true });
+    expect(proxyRequest.safeParse({ op: 'issue.comment', repo: 'o/r', number: 1, body: 'b', required: 'true' }).success).toBe(false);
+  });
+
+  it('only the hopper\'s own job with an issue of its own files a required child', () => {
+    expect(checkRequest(required, { jobId: 'j', own: true, repo: 'octo/tools', issue: 7 }, repos)).toEqual({ ok: true });
+    expect(checkRequest(required, { jobId: 'j', own: true, repo: 'octo/tools' }, repos))
+      .toEqual({ ok: false, reason: 'a required child is a child of the job\'s own issue, and this job has none: file it with no --required' });
+    expect(checkRequest(required, { jobId: 'j', own: false, repo: 'guest/own', issue: 7 }, repos))
+      .toEqual({ ok: false, reason: 'a job of another user files no required child: file it with no --required' });
+  });
+
+  it('the filed issue names its parent: a follow-up, or a required child that keeps the parent from done', () => {
+    expect(filedNote('job-1', 'r1', { repo: 'octo/tools', number: 7, required: false })).toBe(
+      '\n\n---\nFollow-up of octo/tools#7.\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
+    expect(filedNote('job-1', 'r1', { repo: 'octo/tools', number: 7, required: true })).toBe(
+      '\n\n---\nRequired child of octo/tools#7: that issue is not done while this one is open.\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
+    expect(filedNote('job-1', 'r1')).toBe('\n\n---\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
   });
 });
 

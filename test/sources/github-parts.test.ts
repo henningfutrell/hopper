@@ -1,11 +1,12 @@
 // Declared parts (issue #729). An issue declares its parts as a checklist under a heading "Parts". A part is done when
 // its box is ticked, and each merged "Part of #N" pull request ticks one more: done is the larger of the two, never more
-// than the parts. A part that names an issue is a required child: it is done only when that issue is closed. An issue with
-// no checklist "Parts" declares its GitHub sub-issues as its parts: a closed sub-issue is a done part. The job's prompt
+// than the parts. A part that names an issue is a required child: it is done only when that issue is closed. An issue's
+// GitHub sub-issues are parts too (a job's required child is one): a closed sub-issue is a done part, and one a checklist
+// item names counts once. The job's prompt
 // says how many parts are done, and the job card shows it (x/y). When a merged part makes every declared part done, the
 // issue is done (`hopper:done`): it is not offered again.
 import { describe, expect, it } from 'vitest';
-import { issueFrom } from '../../src/sources/github/app/rest.ts';
+import { issueFrom, subIssueFrom } from '../../src/sources/github/app/rest.ts';
 import { declaredParts } from '../../src/sources/github/parts.ts';
 import { REPO, discoverOne, jobForIssue, setup } from './fixtures/github-support.ts';
 
@@ -157,10 +158,33 @@ describe('sub-issues as declared parts', () => {
     expect(item.prompt).toContain('its sub-issues');
   });
 
-  it('a checklist "Parts" wins over sub-issues', async () => {
+  it('beside a checklist "Parts", each sub-issue no item names is a part too; one an item names counts once', async () => {
     const { gh, source } = withSubIssues();
-    gh.editIssue(REPO, 1, { body: '## Parts\n- [ ] one' }, 'owner');
-    expect((await discoverOne(source)).parts).toEqual({ done: 0, total: 1 });
+    gh.editIssue(REPO, 1, { body: '## Parts\n- [x] one\n- [ ] #3 the fix' }, 'owner');
+    expect((await discoverOne(source)).parts).toEqual({ done: 1, total: 3 });
+    gh.closeIssue(REPO, 2);
+    expect((await discoverOne(source)).parts).toEqual({ done: 2, total: 3 });
+    gh.closeIssue(REPO, 3);
+    expect((await discoverOne(source)).parts).toEqual({ done: 3, total: 3 });
+  });
+
+  it('beside a checklist, sub-issues that cannot be listed count as GitHub sums them up', async () => {
+    const { gh, source } = withSubIssues();
+    gh.editIssue(REPO, 1, { body: '## Parts\n- [x] one\n- [ ] #3 the fix' }, 'owner');
+    gh.closeIssue(REPO, 2);
+    gh.failNext('subIssues', new Error('gh: Service Unavailable (HTTP 503)'));
+    expect((await discoverOne(source)).parts).toEqual({ done: 2, total: 4 });
+  });
+
+  it('a merged part leaves the issue to do while a sub-issue no checklist item names is open (a job\'s required child)', async () => {
+    const { gh, source } = withSubIssues();
+    gh.editIssue(REPO, 1, { body: '## Parts\n- [ ] one\n- [ ] #3 the fix' }, 'owner');
+    gh.closeIssue(REPO, 3);
+    const pr = gh.openPartPullRequest(REPO, 1, { createdAt: AFTER });
+    gh.mergePullRequest(pr.url);
+    const job = jobForIssue(1, { status: 'finished', partlyDone: pr.url, sourceState: { source: { pullRequest: pr.url, follow: 'open', part: true } } });
+    expect(await source.follow!(job)).toMatchObject({ outcome: 'merged', part: true, state: { parts: { done: 2, total: 3 } } });
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
   });
 
   it('a merged part makes the issue done only when every sub-issue is closed', async () => {
@@ -188,5 +212,10 @@ describe('the REST issue', () => {
     expect(issueFrom({ ...rest, sub_issues_summary: { total: 3, completed: 1, percent_completed: 33 } }, REPO).subIssues).toEqual({ total: 3, closed: 1 });
     expect(issueFrom({ ...rest, sub_issues_summary: { total: 0, completed: 0, percent_completed: 0 } }, REPO).subIssues).toBeUndefined();
     expect(issueFrom(rest, REPO).subIssues).toBeUndefined();
+  });
+
+  it('a sub-issue, as GitHub lists it: its repository from its repository_url, its number and state', () => {
+    expect(subIssueFrom({ ...rest, state: 'closed', repository_url: 'https://api.github.com/repos/other/repo' }, REPO)).toEqual({ repo: 'other/repo', number: 1, state: 'closed' });
+    expect(subIssueFrom(rest, REPO)).toEqual({ repo: REPO, number: 1, state: 'open' });
   });
 });
