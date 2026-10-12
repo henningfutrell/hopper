@@ -1,11 +1,12 @@
 # The check on every pull request (issue #672): `pr / test`. Yolo mode merges a pull request only once a check
 # passed on it (issue #652: no checks is not passing), and this is the check. Every gate of AGENTS.md: typecheck,
-# lint, the UI build (`gates`) and the tests, in three shards to stay well under 10 minutes (`shard`); `test`
-# passes only when all of them passed, so it is the one check to require. The tests that need a host service a
+# lint, the UI build (`gates`) and the tests, in eight shards (`shard`) so the whole check takes about 4 minutes (issue
+# #949); `test` passes only when all of them passed, so it is the one check to require. The tests that need a host service a
 # clean runner does not give (containers they start themselves, a real sshd, LDAP, a vault) are left out
 # (test/support/host-services.ts); the suite's own Postgres still starts through testcontainers. Read-only and
 # with no secrets, so a fork's pull request is safe: `pull_request`, never `pull_request_target`. `gates` also checks
 # What's new (issue #824): the checkout is the merge of the pull request into its base, so `HEAD^1` is the base.
+# node_modules is cached per package-lock.json (issue #949): a job with a cache hit runs no `npm ci`.
 name: pr
 
 on:
@@ -32,7 +33,13 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - id: deps
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node24-${{ hashFiles('package-lock.json') }}
       - run: npm ci
+        if: steps.deps.outputs.cache-hit != 'true'
       # Only on a pull request into dev: a promotion (dev to beta, beta to stable) carries lines already folded into
       # WHATS-NEW.md on dev, which the check would read as direct edits.
       - run: node scripts/whats-new.ts check HEAD^1
@@ -47,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -56,8 +63,15 @@ jobs:
           cache: npm
       # The ssh stand-ins (test/herdr/fake-ssh-bin.mjs) run under PATH=/usr/bin:/bin, as on a host with node there.
       - run: sudo ln -sf "$(command -v node)" /usr/bin/node
+      - id: deps
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node24-${{ hashFiles('package-lock.json') }}
       - run: npm ci
-      - run: npm test -- --shard=${{ matrix.shard }}/3
+        if: steps.deps.outputs.cache-hit != 'true'
+      # Two workers per core: most of a test's time is a wait (the database, a timer), not the CPU (issue #949).
+      - run: npm test -- --shard=${{ matrix.shard }}/8 --maxWorkers=$(( $(nproc) * 2 ))
         env:
           HOPPER_TEST_HOST_SERVICES: '0'
 

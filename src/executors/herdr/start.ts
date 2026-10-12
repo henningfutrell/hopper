@@ -126,6 +126,8 @@ export interface StartDeps {
   clock: Clock;
   sleep: Sleep;
   pollMs: number;
+  /** How long Claude's input box stays on screen at startup before Claude is taken as ready; default PROMPT_STEADY_MS (startup.ts). */
+  promptSteadyMs?: number;
   claudeArgs: string[];
   trustWorkdir: boolean;
   /** Claude starts with every permission granted: its warning about that is accepted at startup. */

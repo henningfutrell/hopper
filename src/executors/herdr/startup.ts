@@ -16,7 +16,7 @@ export const MAX_STARTUP_SCREENS = 8;
 const READY_GRACE_MS = 5000;
 /**
  * How long Claude's input box stays on screen before Claude is taken as ready: it draws the box before it says it is
- * not signed in (seen live, issue #533).
+ * not signed in (seen live, issue #533). The default of the executor's `promptSteadyMs`.
  */
 const PROMPT_STEADY_MS = 2000;
 /** How long seeding Claude's config may take. */
@@ -28,7 +28,7 @@ export const policyOf = (d: Pick<StartDeps, 'trustWorkdir' | 'yolo' | 'unattende
 });
 
 /**
- * Wait until Claude is up: its input box on screen (`promptShown`) for PROMPT_STEADY_MS — herdr calls Claude idle and
+ * Wait until Claude is up: its input box on screen (`promptShown`) for `promptSteadyMs` — herdr calls Claude idle and
  * ready at its first-run theme picker (issue #533), so herdr's word alone is never enough. Each screen before it is
  * decided on by its text (`startupStep`), never by herdr's `state_change_seq`, which does not move between Claude's
  * startup dialogs; the screen just answered is not answered again. A screen the hopper may not answer, or Claude not
@@ -52,7 +52,7 @@ export async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: Pane
     if (!agent) return { kind: 'failed', error: 'claude exited at startup' };
     const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
     if (promptShown(screen)) {
-      if (notSignedIn(screen) || ++promptPolls > polls(PROMPT_STEADY_MS)) return null;
+      if (notSignedIn(screen) || ++promptPolls > polls(d.promptSteadyMs ?? PROMPT_STEADY_MS)) return null;
     } else {
       promptPolls = 0;
       const step = screen === answered ? undefined : startupStep(screen, policy);

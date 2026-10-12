@@ -15,7 +15,7 @@ const WAIT = {
   background: { work: '1 shell', polls: 1_000_000 },
 };
 const DONE = { output: ['● Access granted. Pushed.', '  HOPPER_DONE'] };
-const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 300 } }];
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 300, promptSteadyMs: 100 } }];
 const item = { executor: 'herdr-claude', prompt: 'Fix the bug', cwd: '/tmp', env: {} };
 
 async function start(herdr: FakeHerdrClient): Promise<TestApp> {
