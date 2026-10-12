@@ -27,6 +27,7 @@ import { ARTIFACT_REVISION_TABLES, ARTIFACT_TABLES } from './migration-artifacts
 import { BUG_REPORT_TABLE } from './bug-reports.ts';
 import { INFRA_PLAN_TABLES } from './infra-plans.ts';
 import { OUT_OF_BAND_TABLES } from './out-of-band.ts';
+import { DIRECT_JOB_TABLE } from './direct-jobs.ts';
 import { ISSUE_GRAPH_TABLES } from './issue-graph.ts';
 import { POINTED_JOB_TABLE } from './pointed-jobs.ts';
 import { GITHUB_WATCH_TABLE } from './github-watches.ts';
@@ -356,7 +357,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   // 46: Infra plans (issue #870): each plan a job recorded, and a person's approval of it. Tables only: the build before runs on it.
   INFRA_PLAN_TABLES,
   // 47: Out-of-band changes (issue #871): each change a job's check reported, a person's mark, the controller identities. Tables only: the build before runs on it.
-  OUT_OF_BAND_TABLES,
+  // 48: Direct jobs (issue #901): each job a person submitted straight to the hopper. A table only: the build before runs on it.
+  OUT_OF_BAND_TABLES, DIRECT_JOB_TABLE,
 ];
 
 /** A user schema's version once migrated. */

@@ -1,6 +1,7 @@
 // Payload building blocks shared by the current schemas (schemas.ts) and the superseded ones
 // (legacy.ts).
 import { z } from 'zod';
+import { ACTION_VIAS } from '../domain/failures.ts';
 import { JOB_ORIGINS } from '../domain/intake-origin.ts';
 import { POINTED_JOB_STATUSES, POINTER_KINDS } from '../domain/pointed-jobs.ts';
 import { CONFIDENCES, RISK_CATEGORIES, RISK_LEVELS } from '../domain/types.ts';
@@ -123,6 +124,8 @@ const pointedJobStatus = z.enum(POINTED_JOB_STATUSES);
 export const pointedJobEvents = {
   'pointed_job.created': strict({ id: z.string(), repo: z.string(), pointer: strict({ kind: z.enum(POINTER_KINDS), number: z.number().int(), url: z.string() }), source: z.string(), by: z.string() }),
   'pointed_job.status_changed': strict({ id: z.string(), from: pointedJobStatus, to: pointedJobStatus, lane: z.string().optional(), by: z.string() }),
+  // Direct jobs (issue #901, src/direct-jobs/): who submitted one and what they authorized; never its title or brief.
+  'direct_job.submitted': strict({ id: z.string(), by: z.string(), via: z.enum(ACTION_VIAS), labels: z.array(z.string()), authorizations: z.array(z.string()), repo: z.string().optional() }),
 };
 
 // GitHub watches (issue #427, src/github-watch/): what changed on a watched item at one poll, and the interval changed.

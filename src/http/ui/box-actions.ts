@@ -25,6 +25,7 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/jobs/:id/requeue', kind: 'start a job' },
   { route: '/ui/api/jobs/:id/gate-pass', kind: 'start a job' },
   { route: '/ui/api/sources/:name/intake', kind: 'start a job' },
+  { route: '/ui/api/direct-jobs', kind: 'start a job' }, // issue #901
   { route: '/ui/api/repo-checks/queue', kind: 'start a job' },
   { route: '/ui/api/failures/:id/retry', kind: 'start a job' },
   { route: '/ui/api/failures/problems/:id/release', kind: 'start a job' },

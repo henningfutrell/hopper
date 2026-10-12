@@ -4304,6 +4304,33 @@ Version 1 (`docs/schemas/github_watch.settings_changed.v1.json`). A person chang
 }
 ```
 
+## `direct_job.submitted`
+
+Version 1 (`docs/schemas/direct_job.submitted.v1.json`). A person submitted a direct job (issue #901): `id` the direct job, `by` who and `via` the way (`ui`, `api` for an API token, `cli`), its routing `labels`, the `authorizations` they gave it, and `repo` when its work may open a pull request there. Its job is queued in the same transaction (`job.queued`, source `direct`). Never its title or brief: those stay on the record.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `by` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+| `labels` | string[] | yes |
+| `authorizations` | string[] | yes |
+| `repo` | string | no |
+
+```json
+{
+  "id": "d1",
+  "by": "octocat",
+  "via": "api",
+  "labels": [
+    "sme:identity"
+  ],
+  "authorizations": [
+    "keycloak:otp-reset"
+  ]
+}
+```
+
 ## `infra.plan_recorded`
 
 Version 1 (`docs/schemas/infra.plan_recorded.v1.json`). A job recorded a plan of an infrastructure change (issue #870): what made it (`tool`), the asset an apply of it is minted a credential for, the workspace or app it changes (`target`), the repository, branch (`ref`) and commit it was made at, its pull request, the read profile it was made with (`read`), the job's issue, whether a saved plan file came with it (`file`), when it goes stale (`expiresAt`), and its `summary` (issue #870 part 2): what it changes in plain words, its `level` (`low` or `high`), its risk callouts (`destroy`, `iam`, `prod`, `data`, `network`), and whether it `failed` a check (a new AWS resource without the MAP tag: nobody approves such a plan). Never its text or its file. A plan is never changed once kept.
