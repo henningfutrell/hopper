@@ -1,10 +1,10 @@
-// Issue #870: a box of a template that is not read-only has the plan-gate terraform wrapper first on PATH. terraform
+// Issue #870: a box of a template that is not read-only has the apply wrapper first on PATH. terraform
 // applies only the saved plan file of a plan the hopper recorded: the wrapper fetches that file from the hopper, with the
 // job's proxy token, and gives it to the real binary. A plan file the caller names must be the same file, by its SHA-256.
 // Every other command that changes infrastructure or state is refused: it has no plan. Run by a real `sh` and `curl`,
 // with a fake real binary that logs what it was given, and a fake hopper on loopback.
 //
-// Feature: the plan-gate terraform wrapper
+// Feature: the apply wrapper
 //   Scenario: the commands that change nothing go to the real binary as they were given
 //   Scenario: an apply with no plan named is refused, and the real binary is not run
 //   Scenario: an apply runs the plan's saved file, fetched from the hopper with the job's token
@@ -19,7 +19,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PLAN_GATE_REFUSAL, TERRAFORM_PLAN_GATE } from '../../src/sandbox/terraform-wrapper.ts';
+import { APPLY_WRAPPER_REFUSAL, TERRAFORM_APPLY_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
 
 const PLAN = '3f2b8a7c-1d4e-4f6a-9b0c-2d3e4f5a6b7c';
 const FILE = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 1, 2, 255]);
@@ -49,7 +49,7 @@ async function hopper(): Promise<{ url: string; asked: string[] }> {
 interface Ran { code: number; stderr: string; real: string[]; applied: Buffer[] }
 
 function setup(url = 'http://127.0.0.1:1'): { dir: string; run(args: string[], env?: Record<string, string>): Promise<Ran> } {
-  const dir = mkdtempSync(join(tmpdir(), 'tf-plan-gate-'));
+  const dir = mkdtempSync(join(tmpdir(), 'tf-apply-wrapper-'));
   dirs.push(dir);
   const log = join(dir, 'real.log');
   writeFileSync(log, '');
@@ -60,10 +60,10 @@ function setup(url = 'http://127.0.0.1:1'): { dir: string; run(args: string[], e
   writeFileSync(join(dir, 'bin', 'terraform'), `#!/bin/sh
 printf '%s|' "$@" >> ${JSON.stringify(log)}
 printf '%s\\n' "\${TF_CLI_ARGS-unset}" >> ${JSON.stringify(log)}
-if [ "$1" = apply ]; then for a; do case $a in -*) ;; apply) ;; *) cp "$a" ${JSON.stringify(join(dir, 'applied'))}/$(date +%s%N) ;; esac; done; fi
+seen=; for a; do case $a in apply) seen=1 ;; -*) ;; *) [ -n "$seen" ] && cp "$a" ${JSON.stringify(join(dir, 'applied'))}/$(date +%s%N) ;; esac; done; true
 `);
   chmodSync(join(dir, 'bin', 'terraform'), 0o755);
-  writeFileSync(join(dir, 'terraform'), TERRAFORM_PLAN_GATE);
+  writeFileSync(join(dir, 'terraform'), TERRAFORM_APPLY_WRAPPER);
   chmodSync(join(dir, 'terraform'), 0o755);
   writeFileSync(join(dir, 'token'), `${TOKEN}\n`);
   return {
@@ -82,7 +82,7 @@ if [ "$1" = apply ]; then for a; do case $a in -*) ;; apply) ;; *) cp "$a" ${JSO
 
 const readdir = (d: string): string[] => readdirSync(d).sort();
 
-describe('the plan-gate terraform wrapper (issue #870)', () => {
+describe('the apply wrapper (issue #870)', () => {
   it('the commands that change nothing go to the real binary as they were given', async () => {
     const w = setup();
     const runs = [['version'], ['init', '-input=false'], ['plan', '-out=tf.plan'], ['plan', '-destroy', '-out', 'tf.plan'], ['show', '-json', 'tf.plan'], ['validate'], ['output'], ['state', 'list'], ['state', 'pull'], ['workspace', 'select', 'uat'], ['-chdir=stack', 'plan']];
@@ -98,7 +98,7 @@ describe('the plan-gate terraform wrapper (issue #870)', () => {
     for (const args of [['apply'], ['apply', '-auto-approve'], ['apply', 'tf.plan'], ['-chdir=stack', 'apply', '-auto-approve']]) {
       const r = await w.run(args);
       expect(r.code, args.join(' ')).not.toBe(0);
-      expect(r.stderr).toContain(`terraform apply: ${PLAN_GATE_REFUSAL}`);
+      expect(r.stderr).toContain(`terraform apply: ${APPLY_WRAPPER_REFUSAL}`);
       expect(r.stderr).toMatch(/no apply without a plan/);
       expect(r.stderr).toContain('HOPPER_PLAN');
     }
@@ -135,7 +135,7 @@ describe('the plan-gate terraform wrapper (issue #870)', () => {
     writeFileSync(join(w.dir, 'other.plan'), Buffer.from('another plan'));
     const r = await w.run(['apply', 'other.plan'], { HOPPER_PLAN: PLAN });
     expect(r.code).not.toBe(0);
-    expect(r.stderr).toContain(`terraform apply: ${PLAN_GATE_REFUSAL}`);
+    expect(r.stderr).toContain(`terraform apply: ${APPLY_WRAPPER_REFUSAL}`);
     expect(r.stderr).toMatch(/other\.plan is not the saved plan file of plan 3f2b8a7c/);
     expect((await w.run(['apply', 'missing.plan'], { HOPPER_PLAN: PLAN })).stderr).toMatch(/missing\.plan cannot be read/);
     expect((await w.run(['apply', 'a.plan', 'b.plan'], { HOPPER_PLAN: PLAN })).stderr).toMatch(/one plan file/);
@@ -147,7 +147,7 @@ describe('the plan-gate terraform wrapper (issue #870)', () => {
     const w = setup(h.url);
     const unknown = await w.run(['apply'], { HOPPER_PLAN: '00000000-0000-4000-8000-000000000000' });
     expect(unknown.code).not.toBe(0);
-    expect(unknown.stderr).toContain(`terraform apply: ${PLAN_GATE_REFUSAL}`);
+    expect(unknown.stderr).toContain(`terraform apply: ${APPLY_WRAPPER_REFUSAL}`);
     expect(unknown.stderr).toMatch(/the hopper gives no saved plan file for plan 00000000-0000-4000-8000-000000000000 \(404\): no: no plan/);
     writeFileSync(join(w.dir, 'token'), 'another-token\n');
     expect((await w.run(['apply'], { HOPPER_PLAN: PLAN })).stderr).toMatch(/\(401\)/);
@@ -163,7 +163,7 @@ describe('the plan-gate terraform wrapper (issue #870)', () => {
     for (const flag of ['-destroy', '-refresh-only', '-replace=aws_instance.a', '-target=aws_instance.a', '-var=a=b', '-var-file=x.tfvars', '-state=other', '-backup=x']) {
       const r = await w.run(['apply', flag], { HOPPER_PLAN: PLAN });
       expect(r.code, flag).not.toBe(0);
-      expect(r.stderr, flag).toContain(`terraform apply ${flag}: ${PLAN_GATE_REFUSAL}`);
+      expect(r.stderr, flag).toContain(`terraform apply ${flag}: ${APPLY_WRAPPER_REFUSAL}`);
     }
     expect((await w.run(['version'])).real).toEqual(['version|unset']);
     expect(h.asked).toEqual([]);
@@ -179,9 +179,9 @@ describe('the plan-gate terraform wrapper (issue #870)', () => {
     for (const args of writes) {
       const r = await w.run(args, { HOPPER_PLAN: PLAN });
       expect(r.code, args.join(' ')).not.toBe(0);
-      expect(r.stderr, args.join(' ')).toContain(PLAN_GATE_REFUSAL);
+      expect(r.stderr, args.join(' ')).toContain(APPLY_WRAPPER_REFUSAL);
     }
-    expect((await w.run(['destroy'])).stderr).toMatch(/terraform destroy: refused by the plan gate\. .*plan -destroy/);
+    expect((await w.run(['destroy'])).stderr).toMatch(/terraform destroy: refused by the apply wrapper\. .*plan -destroy/);
     expect((await w.run(['version'])).real).toEqual(['version|unset']);
   });
 });

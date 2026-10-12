@@ -120,6 +120,18 @@ export function planInputProblem(p: PlanInput): string | undefined {
   return undefined;
 }
 
+/** The read profile of a credential the vault minted for `asset`, as a plan names it: `read/<kind>/<asset>`. */
+export const readProfileOf = (asset: Asset): string => `read/${asset.kind}/${asset.name}`;
+
+/**
+ * Why a plan's `read` is not a read credential the vault minted for its job (`minted`, as `readProfileOf` says each), or
+ * undefined (part 5). A plan that names none is kept: the job may have planned with a vault secret.
+ */
+export function readRefusal(read: string | undefined, minted: readonly string[]): string | undefined {
+  if (read === undefined || minted.includes(read)) return undefined;
+  return `read names ${read}, but the vault minted this job no such read credential (it minted ${minted.length ? minted.join(', ') : 'none'}): a plan names the read credential it was made with`;
+}
+
 const sameAsset = (a: Asset, b: Asset): boolean => a.kind === b.kind && a.name === b.name;
 
 /**
