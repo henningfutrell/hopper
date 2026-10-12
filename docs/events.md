@@ -4452,6 +4452,7 @@ Version 1 (`docs/schemas/infra.controllers_changed.v1.json`). An admin changed t
   "by": "Ada"
 }
 ```
+
 ## `api_grant.minted`
 
 Version 1 (`docs/schemas/api_grant.minted.v1.json`). A person minted a grant for an agent (issue #881): its id, `label`, `holder`, `role`, `scopes`, whether its tokens are box tokens (`box`), its fixed end (`endsAt`, null: none) and how long its API tokens live (`tokenMinutes`). Never a token.
