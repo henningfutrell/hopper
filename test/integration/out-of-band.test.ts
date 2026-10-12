@@ -123,7 +123,7 @@ describe('out-of-band changes', () => {
   it('holds a write by the credential minted for an approved plan, while it was valid, in band', async () => {
     const { a, session, dir, token, job } = await boot();
     const plan = (await asJob(a, job, '/job/infra-plans', {
-      tool: 'terraform', asset: ROLE, target: 'uat-network', repo: 'octo/infra', ref: 'issue-1', commit: A, text: 'Plan: 1 to add, 0 to change, 0 to destroy.',
+      tool: 'helm', asset: ROLE, target: 'web', repo: 'octo/infra', ref: 'issue-1', commit: A, text: 'default, web, Deployment (apps) has changed:\n-  replicas: 3\n+  replicas: 4',
     })).json.plan as InfraPlan;
     await a.ui('/ui/api/infra-plans', { action: 'approve', plan: plan.id }, { token: session });
     const minted = await helper(dir, ['aws', 'apply', ROLE, '--plan', plan.id], token);
