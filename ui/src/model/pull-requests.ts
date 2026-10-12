@@ -44,8 +44,14 @@ export const yoloNote = (on: boolean): string => on
   ? 'On: the hopper merges a ready pull request when its checks pass, or when it has no checks.'
   : 'Off: a ready pull request waits for a person to merge it.';
 
-/** The body that turns yolo mode on or off for one repository. */
-export const yoloToggle = (repo: string, on: boolean): { repos: Record<string, boolean> } => ({ repos: { [repo]: on } });
+
+/** The open pull requests with merge conflicts (issue #897): each waits for a person to fix or close it. None for no answer. */
+export const conflictedPullRequests = (v: PullRequestsView | undefined): number =>
+  Array.isArray(v?.repos) ? v.repos.reduce((n, r) => n + r.pullRequests.filter((c) => c.state === 'open' && c.mergeable === 'conflicts').length, 0) : 0;
+
+/** The header's line for them; '' when none. */
+export const conflictsLine = (n: number): string =>
+  n === 0 ? '' : `${n} ${n === 1 ? 'pull request has' : 'pull requests have'} merge conflicts: fix ${n === 1 ? 'it' : 'them'}, or close ${n === 1 ? 'it' : 'them'}`;
 
 export const hasCards = (v: PullRequestsView): boolean => v.repos.some((r) => r.pullRequests.length > 0);
 

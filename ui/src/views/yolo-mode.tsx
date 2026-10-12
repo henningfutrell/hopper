@@ -1,6 +1,7 @@
 // Yolo mode (issue #579), in Settings, an admin's: whether jobs merge their own pull requests once the repo's checks
 // pass — off unless turned on, for every job repository or per repository. The warning says what it allows; the
-// summary says what is on now. Saved to the daemon, read for each job's prompt from then on, without a restart.
+// summary says what is on now. Saved to the daemon, read for each job's prompt from then on, without a restart. This is
+// yolo mode's one switch (issue #897): the header and Pull requests show it and link here.
 import { TriangleAlert, Zap } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -11,6 +12,7 @@ import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
 import type { YoloModeView } from '@/model/wire';
 import { YOLO_WARNING, yoloPatch, yoloRows, yoloSummary, type YoloDraft, type YoloSetting } from '@/model/yolo-mode';
 import { useHopper } from '@/store';
+import { setPolled } from '@/store/polled';
 
 const SETTING_LABEL: Record<YoloSetting, (on: boolean) => string> = {
   default: (on) => `As above (${on ? 'merges' : 'does not merge'})`,
@@ -71,7 +73,7 @@ export function YoloMode() {
   useEffect(() => { get<YoloModeView>('/api/yolo-mode').then((v) => { if (typeof v?.on === 'boolean' && Array.isArray(v.choices?.repos)) setView(v); }, () => {}); }, []);
   return (
     <Panel title="Yolo mode" icon={Zap} className="max-w-3xl">
-      {view ? <Form key={JSON.stringify(view)} view={view} onSaved={setView} /> : <p className="text-sm text-muted-foreground">Loading…</p>}
+      {view ? <Form key={JSON.stringify(view)} view={view} onSaved={(v) => { setView(v); setPolled('/api/yolo-mode', v); }} /> : <p className="text-sm text-muted-foreground">Loading…</p>}
     </Panel>
   );
 }

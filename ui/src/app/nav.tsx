@@ -4,7 +4,8 @@
 // The Jobs view (issue #434) has a card per job. Needs you (issue #897) comes first: its badge counts every decision that waits on a
 // person. Intake (issue #897; it was Not taken, issue #798) is badged with the request cards waiting for approval, Access requests
 // with what jobs on boxes wait for. An old link (#not-taken) opens the view it became (MOVED). The job view (#job/<id>, issue #433) is a
-// route with no nav entry: timeline entries link to it. Infra (issue #896) holds plans, applies and out-of-band changes.
+// route with no nav entry: timeline entries link to it. Infra (issue #896) holds plans, applies and out-of-band changes, and is badged
+// with the plans that wait for an admin; Pull requests with the ones that have merge conflicts (issue #897).
 // The entries are in nav groups (issue #906, model/nav-groups.ts): a collapsed group shows its entries' badges as one. Needs you is
 // pinned above them, never collapsed: its badge already sums other entries', so no group sums it again.
 import { BellRing, Briefcase, ChevronDown, ChevronsUp, CircleDashed, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, ShieldQuestion, Telescope, type LucideIcon } from 'lucide-react';
@@ -80,13 +81,18 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const sections = useSectionBadges();
   const rows = useNeedsYou();
   const total = needsYouTotal(rows);
-  const access = rows.find((r) => r.kind === 'access')!.n;
+  const n = (k: (typeof rows)[number]['kind']): number => rows.find((r) => r.kind === k)!.n;
+  const access = n('access');
+  const plans = n('plans');
+  const conflicts = n('pull-requests');
   const badge: Partial<Record<View, NavBadge>> = {
     queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
     'needs-you': { n: total.n, high: total.high, cls: 'bg-warn text-background', title: `${total.n} ${total.n === 1 ? 'decision waits' : 'decisions wait'} on you` },
     intake: { n: requests, cls: 'bg-warn text-background', title: `${requests} ${requests === 1 ? 'request waits' : 'requests wait'} for approval` },
     'access-requests': { n: access, cls: 'bg-warn text-background', title: `${access} ${access === 1 ? 'access request waits' : 'access requests wait'} on you` },
     ...sections,
+    infra: { n: plans, cls: 'bg-warn text-background', title: `${plans} ${plans === 1 ? 'plan waits' : 'plans wait'} for an admin to approve` },
+    'pull-requests': { n: conflicts, cls: 'bg-bad text-background', title: `${conflicts} ${conflicts === 1 ? 'pull request has' : 'pull requests have'} merge conflicts` },
     sources: { n: failedSources, cls: 'bg-bad text-background' },
   };
   const collapsed = useNavCollapsed();

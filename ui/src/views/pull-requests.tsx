@@ -1,6 +1,7 @@
 // Pull requests (issue #637): every hopper pull request that waits — a done job's, followed after its end, or one closed
-// without a merge — grouped per job repository, with the repository's yolo mode and, for an admin, a switch that turns
-// it on or off. The header says how many repositories have yolo mode on, and where merging waits. Read from
+// without a merge — grouped per job repository, with the repository's yolo mode and a link to its one switch in Settings →
+// Yolo mode (issue #897). The header says how many repositories have yolo mode on, where merging waits, and how many have
+// merge conflicts (issue #897; the nav badge counts them too). Read from
 // `GET /api/pull-requests`, again every few seconds and after a change. An open card has Merge now and Close PR for an
 // operator (issue #677), each confirmed once, and Send back for rework (issue #724): with notes, the pull request becomes
 // a draft and a new job reworks it. A repository with no checks (issue #677, `GET /api/repo-checks`) is named in the
@@ -12,16 +13,16 @@ import { Confirm } from '@/components/confirm';
 import { Empty, Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { StatusBadge, YoloBadge, type Tone } from '@/components/status';
-import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { usePoll } from '@/hooks/use-poll';
 import { useNow } from '@/hooks/use-now';
 import { get } from '@/lib/api';
 import { ago } from '@/model/format';
-import { CHECKS_TEXT, MERGEABLE_TEXT, closeQuestion, closesText, mergeQuestion, hasCards, noChecksLine, noChecksNote, waitingLine, waitsText, yoloLine, yoloNote, yoloToggle } from '@/model/pull-requests';
+import { CHECKS_TEXT, MERGEABLE_TEXT, closeQuestion, closesText, conflictedPullRequests, conflictsLine, mergeQuestion, hasCards, noChecksLine, noChecksNote, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
 import type { PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '@/model/wire';
 import { act } from '@/store';
-import { useCanAdmin, useCanOperate } from '@/store/selectors';
+import { setPolled } from '@/store/polled';
+import { useCanOperate } from '@/store/selectors';
 
 const POLL_MS = 10_000;
 
@@ -137,24 +138,16 @@ function NoChecks({ r, onChanged }: { r: RepoChecks; onChanged: () => void }) {
 }
 
 function RepoGroup({ group, checks, onChanged }: { group: PullRequestsView['repos'][number]; checks?: RepoChecks; onChanged: () => void }) {
-  const admin = useCanAdmin();
-  const [busy, setBusy] = useState(false);
-  const toggle = async (on: boolean) => {
-    setBusy(true);
-    await act('/ui/api/yolo-mode', yoloToggle(group.repo, on), `Yolo mode ${on ? 'on' : 'off'} for ${group.repo}`);
-    setBusy(false);
-    onChanged();
-  };
   return (
     <section data-repo={group.repo}>
       <Panel title={group.repo} icon={GitPullRequest} count={group.pullRequests.length || ''} bodyClassName="p-0"
         action={<>
           {checks?.state === 'no checks' && <StatusBadge status="no-checks" label="no checks" tone="warn" />}
           <YoloBadge on={group.yolo} />
-          <Switch checked={group.yolo} disabled={!admin || busy} aria-label={`Yolo mode for ${group.repo}`}
-            title={admin ? undefined : 'Only an admin changes yolo mode'} onCheckedChange={(on) => void toggle(on)} />
         </>}>
-        <p data-slot="yolo-note" className="border-b px-4 py-2 text-xs text-muted-foreground">{yoloNote(group.yolo)}</p>
+        <p data-slot="yolo-note" className="border-b px-4 py-2 text-xs text-muted-foreground">
+          {yoloNote(group.yolo)} <a data-slot="yolo-settings" href="#settings/yolo-mode" className="underline">Change it in Settings → Yolo mode</a>
+        </p>
         {checks?.state === 'no checks' && <NoChecks r={checks} onChanged={onChanged} />}
         {group.pullRequests.length
           ? <ul className="divide-y">{group.pullRequests.map((c) => <Card key={c.jobId} c={c} onChanged={onChanged} />)}</ul>
@@ -168,7 +161,9 @@ export function PullRequests() {
   const [view, setView] = useState<PullRequestsView | undefined>();
   const [checks, setChecks] = useState<RepoChecksView>({ repos: [] });
   const load = useCallback(async () => {
-    setView(await get<PullRequestsView>('/api/pull-requests'));
+    const v = await get<PullRequestsView>('/api/pull-requests');
+    setView(v);
+    setPolled('/api/pull-requests', v);
     // The checks are read in the background on the daemon: a failed read leaves the last answer.
     const c = await get<RepoChecksView>('/api/repo-checks').catch(() => undefined);
     if (Array.isArray(c?.repos)) setChecks(c);
@@ -182,6 +177,7 @@ export function PullRequests() {
         <div className="space-y-1 text-sm">
           <p data-slot="pr-yolo-line">{yoloLine(view)}</p>
           <p data-slot="pr-waiting-line" className="text-muted-foreground">{waitingLine(view)}</p>
+          {conflictsLine(conflictedPullRequests(view)) && <p data-slot="pr-conflicts-line" className="font-medium text-bad">{conflictsLine(conflictedPullRequests(view))}</p>}
           {noChecksLine(checks) && <p data-slot="pr-no-checks-line" className="text-warn">{noChecksLine(checks)}</p>}
           {!hasCards(view) && <p data-slot="pr-empty" className="text-muted-foreground">No pull request waits.</p>}
         </div>
