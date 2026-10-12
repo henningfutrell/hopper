@@ -2,8 +2,8 @@
 // human terms — Plan, Building it (attempt 2 of 3), Ready for review, Merged, Waiting on you: approve the plan — with no
 // pull request number in it; whether it waits on the person; what comes next; and a job tree summed up in one line.
 // Pure: the graph and the parts list call it with what they already read.
-import type { JobGraphPullRequest, JobStage } from './job-graph.ts';
-import type { JobStatus } from './types.ts';
+import type { JobGraphEdge, JobGraphNode, JobGraphPullRequest, JobStage, JobTree } from './job-graph.ts';
+import type { Job, JobStatus } from './types.ts';
 
 /** What the words of a node are made from: its kind and stage, and for a job, its status, phase, attempt and pull request. */
 export interface Worded {
@@ -101,4 +101,36 @@ export function summaryWords(pieces: readonly Piece[], waiting: number): string 
   if (failed) bits.push(`${failed} failed`);
   bits.push(waiting ? `${waiting} waiting on you` : 'nothing waiting on you');
   return `${bits.join(', ')}.`;
+}
+
+/** A job's run in the chain of runs again of its issue: 1, plus each earlier failed run it redoes (a next part is no new attempt). */
+export function attemptIn(job: Job, byId: ReadonlyMap<string, Job>): number {
+  let n = 1;
+  for (let prev = job.rerunOf, seen = new Set([job.id]); prev && byId.get(prev)?.status === 'failed' && !seen.has(prev); prev = byId.get(prev)!.rerunOf) { seen.add(prev); n++; }
+  return n;
+}
+
+/**
+ * A tree in one line: its pieces are its issues (its jobs, when it has none); a piece is being redone when its newest
+ * job runs a failed one again. What waits on you: its questions and hand-offs, and its jobs waiting on a plan or report.
+ */
+export function treeSummary(t: Omit<JobTree, 'summary'>, nodes: ReadonlyMap<string, JobGraphNode>, edges: readonly JobGraphEdge[], newestOf: ReadonlyMap<string, Job>, byId: ReadonlyMap<string, Job>): string {
+  const members = t.nodes.map((id) => nodes.get(id)!);
+  const issues = members.filter((n) => n.kind === 'issue');
+  const redone = (job: Job | undefined) => job?.rerunOf !== undefined && byId.get(job.rerunOf)?.status === 'failed';
+  const pieces: Piece[] = (issues.length ? issues : members.filter((n) => n.kind === 'job'))
+    .map((n) => ({ stage: n.stage, redone: redone(n.kind === 'issue' ? newestOf.get(n.id) : byId.get(n.jobId!)), you: n.waitsOnYou === true }));
+  const asking = new Set(edges.filter((e) => e.kind === 'asks' || e.kind === 'hands_off').map((e) => e.from));
+  const waiting = members.filter((n) => n.waitsOnYou && n.kind !== 'issue' && !asking.has(n.id)).length;
+  return summaryWords(pieces, waiting);
+}
+
+/** Each node's words (issue #935): an issue says what its newest job says. */
+export function wordNodes(nodes: ReadonlyMap<string, JobGraphNode>, newestOf: ReadonlyMap<string, Job>): void {
+  for (const n of nodes.values()) {
+    const newest = n.kind === 'issue' ? newestOf.get(n.id) : undefined;
+    const worded = newest ? nodes.get(`job:${newest.id}`)! : n;
+    n.stageText = stageWords(worded);
+    if (waitsOnYou(worded)) n.waitsOnYou = true;
+  }
 }

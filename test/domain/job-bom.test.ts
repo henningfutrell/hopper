@@ -87,7 +87,7 @@ describe('a job\'s parts list (issue #935)', () => {
     const bom = jobBom(input({ events: [
       event('infra.plan_recorded', { plan: 'pl1', tool: 'terraform', asset, target: 'network', repo: 'acme/app', ref: 'b', commit: 'c', file: false, expiresAt: 'x' }),
       event('infra.plan_recorded', { plan: 'pl2', tool: 'terraform', asset, target: 'dns', repo: 'acme/app', ref: 'b', commit: 'c', file: false, expiresAt: 'x' }),
-      event('infra.plan_approved', { plan: 'pl1', tool: 'terraform', asset, target: 'network', by: 'admin' }, { jobId: undefined }),
+      event('infra.plan_approved', { plan: 'pl1', tool: 'terraform', asset, target: 'network', by: 'admin' }),
       event('vault.minted', { kind: 'aws', operation: 'read', asset, template: 't', machine: 'm1', job: 'j1', credential: 'c1', decision: 'd', expiresAt: '2026-10-01T03:00:00.000Z', renewal: false }),
       event('infra.out_of_band_recorded', { change: 'oob1', source: 's', key: 'k', target: 'dns', what: 'a record changed by hand', at: '2026-10-01T00:00:00.000Z' }),
       event('vault.grant_asked', { job: 'j1', key: ISSUE, name: 'aws read prod' }),

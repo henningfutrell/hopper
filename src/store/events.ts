@@ -49,9 +49,10 @@ export function createEventLog(c: StoreContext, inTx: () => boolean): EventLogIn
       const sql = `SELECT * FROM events WHERE seq > ? ORDER BY seq ${limit !== undefined ? 'LIMIT ?' : ''}`;
       return (limit !== undefined ? c.db.all(sql, afterSeq, limit) : c.db.all(sql, afterSeq)).map(toEvent);
     },
-    recent(limit = 100, types) {
-      const where = types?.length ? `WHERE type IN (${types.map(() => '?').join(',')})` : '';
-      return c.db.all(`SELECT * FROM events ${where} ORDER BY seq DESC LIMIT ?`, ...(types ?? []), limit).map(toEvent);
+    recent(limit = 100, types, jobId) {
+      const where = [...(types?.length ? [`type IN (${types.map(() => '?').join(',')})`] : []), ...(jobId !== undefined ? ['job_id = ?'] : [])];
+      const args = [...(types?.length ? types : []), ...(jobId !== undefined ? [jobId] : [])];
+      return c.db.all(`SELECT * FROM events ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY seq DESC LIMIT ?`, ...args, limit).map(toEvent);
     },
     between(types, since) {
       if (types.length === 0) return [];
@@ -60,9 +61,6 @@ export function createEventLog(c: StoreContext, inTx: () => boolean): EventLogIn
     lastOfJobs(jobIds) {
       if (jobIds.length === 0) return [];
       return c.db.all(`SELECT DISTINCT ON (job_id) * FROM events WHERE job_id IN (${jobIds.map(() => '?').join(',')}) ORDER BY job_id, seq DESC`, ...jobIds).map(toEvent);
-    },
-    ofJob(jobId, limit) {
-      return c.db.all('SELECT * FROM (SELECT * FROM events WHERE job_id = ? ORDER BY seq DESC LIMIT ?) e ORDER BY seq', jobId, limit).map(toEvent);
     },
     subscribe(l) {
       listeners.add(l);

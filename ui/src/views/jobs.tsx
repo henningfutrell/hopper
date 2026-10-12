@@ -31,9 +31,9 @@ import { useHopper } from '@/store';
 const EMPTY: JobGraph = { nodes: [], edges: [], trees: [], stages: {} };
 type Mode = 'graph' | 'list';
 
-function StageBadge({ stage }: { stage: JobStage }) {
+function StageBadge({ stage, text }: { stage: JobStage; text?: string }) {
   const s = stageInfo(stage);
-  return <StatusBadge status={stage} label={s.label} tone={s.tone} title={s.title} />;
+  return <StatusBadge status={stage} label={text || s.label} tone={s.tone} title={s.title} />;
 }
 
 const prLabel = (url: string): string => { const n = /\/pull\/(\d+)/.exec(url)?.[1]; return n ? `PR #${n}` : 'its pull request'; };
@@ -52,7 +52,7 @@ const issueOf = (n: JobGraphNode): string | undefined => (n.repo && n.number !==
 interface RowProps { node: JobGraphNode; lane: string; last: DomainEvent | undefined; since: string | undefined }
 
 const same = (a: RowProps, b: RowProps): boolean =>
-  a.node.id === b.node.id && a.node.stage === b.node.stage && a.node.status === b.node.status && a.node.stageSince === b.node.stageSince
+  a.node.id === b.node.id && a.node.stage === b.node.stage && a.node.stageText === b.node.stageText && a.node.status === b.node.status && a.node.stageSince === b.node.stageSince
   && a.node.tasks?.done === b.node.tasks?.done && a.node.tasks?.total === b.node.tasks?.total && a.lane === b.lane && a.last?.seq === b.last?.seq
   && a.since === b.since && JSON.stringify(a.node.pullRequest) === JSON.stringify(b.node.pullRequest);
 
@@ -64,7 +64,7 @@ const JobRow = memo(function JobRow({ node, lane, last, since }: RowProps) {
       <div className="flex items-start gap-2">
         <a href={jobHref(node.jobId!)} className="min-w-0 flex-1 truncate text-sm font-medium underline-offset-4 hover:underline" title={`${node.label}\njob ${node.jobId}`}>{node.label}</a>
         {node.tasks && <span data-slot="card-tasks" className="num shrink-0 font-mono text-xs text-muted-foreground" title="tasks done of its task list">{tasksText(node)}</span>}
-        <span data-slot="card-stage"><StageBadge stage={node.stage} /></span>
+        <span data-slot="card-stage"><StageBadge stage={node.stage} text={node.stageText} /></span>
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <span data-slot="card-issue" className="font-mono">{issue ? <GhLink url={node.url}>{issue}</GhLink> : 'no issue'}</span>
@@ -137,18 +137,20 @@ const NodeBox = memo(function NodeBox({ node, x, y, blocking, selected, onSelect
   const tone = stageInfo(node.stage).tone;
   const kind = KIND_TEXT[node.kind];
   const tasks = tasksText(node);
+  const ref = issueOf(node);
   return (
     <g data-slot="graph-node" data-node-id={node.id} data-kind={node.kind} data-stage={node.stage} data-blocking={blocking ? '' : undefined}
-      transform={`translate(${x},${y})`} className="cursor-pointer" role="button" tabIndex={0} aria-label={`${kind} ${node.label}, ${stageInfo(node.stage).label}`}
+      transform={`translate(${x},${y})`} className="cursor-pointer" role="button" tabIndex={0} aria-label={`${kind} ${node.label}, ${node.stageText}`}
       onClick={() => onSelect(node.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(node.id); } }}>
-      <title>{`${node.label}\n${kind} · ${stageInfo(node.stage).label}${tasks ? ` · tasks ${tasks}` : ''}${blocking ? '\nblocks its root' : ''}`}</title>
+      <title>{`${node.label}${ref ? ` (${ref})` : ''}\n${kind} · ${node.stageText}${tasks ? ` · tasks ${tasks}` : ''}${blocking ? '\nnot settled yet: its tree waits on it' : ''}`}</title>
       {blocking && <rect x={-3} y={-3} width={NODE_W + 6} height={NODE_H + 6} rx={9} fill="none" stroke="var(--bad)" strokeWidth={1.5} strokeDasharray="3 2" />}
       <rect width={NODE_W} height={NODE_H} rx={RADIUS[node.kind]} fill="var(--card)"
         stroke={selected ? 'var(--foreground)' : COLOR[tone]} strokeWidth={selected ? 2 : 1.25} strokeDasharray={node.stage === 'no_job' ? '4 3' : undefined} />
       <rect width={5} height={NODE_H} rx={2} fill={COLOR[tone]} />
-      <text x={12} y={17} fontSize={11} fill="var(--foreground)" fontWeight={500}>{short(node.label, tasks ? 22 : 28)}</text>
-      {tasks && <text x={NODE_W - 8} y={17} fontSize={11} textAnchor="end" fill="var(--muted-foreground)" fontFamily="var(--font-mono, monospace)">{tasks}</text>}
-      <text x={12} y={34} fontSize={10} fill={COLOR[tone]}>{`${kind} · ${stageInfo(node.stage).label}`}</text>
+      <text data-slot="graph-node-title" x={12} y={16} fontSize={11} fill="var(--foreground)" fontWeight={500}>{short(node.label, tasks ? 24 : 30)}</text>
+      {tasks && <text x={NODE_W - 8} y={16} fontSize={11} textAnchor="end" fill="var(--muted-foreground)" fontFamily="var(--font-mono, monospace)">{tasks}</text>}
+      <text x={12} y={30} fontSize={9} fill="var(--muted-foreground)" fontFamily="var(--font-mono, monospace)">{ref && <tspan data-slot="graph-node-ref">{ref}</tspan>}{`${ref ? ' · ' : ''}${kind}`}</text>
+      <text data-slot="graph-node-stage" x={12} y={45} fontSize={10} fill={COLOR[tone]}>{short(node.stageText, 34)}</text>
     </g>
   );
 });
@@ -176,7 +178,7 @@ function TreeGraph({ graph, tree, selected, onSelect }: { graph: JobGraph; tree:
               <path key={`${e.from} ${e.kind} ${e.to}`} data-slot="graph-edge" data-kind={e.kind} data-blocking={hot ? '' : undefined}
                 d={`M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}`} fill="none"
                 stroke={hot ? 'var(--bad)' : COLOR[style.tone]} strokeOpacity={hot ? 0.9 : 0.6} strokeWidth={hot ? 2.25 : 1.25} strokeDasharray={style.dash}>
-                <title>{`${byId.get(e.from)?.label ?? e.from} → ${EDGE_TEXT[e.kind]} → ${byId.get(e.to)?.label ?? e.to}`}</title>
+                <title>{`${byId.get(e.from)?.label ?? e.from} ${EDGE_TEXT[e.kind]} ${byId.get(e.to)?.label ?? e.to}`}</title>
               </path>
             );
           })}
@@ -200,7 +202,7 @@ function NodeDetails({ graph, id, laneOf, now, onClose }: { graph: JobGraph; id:
     <div data-slot="graph-node-details" data-node-id={id} className="space-y-1.5 rounded-lg border bg-muted/30 px-3 py-2.5 text-xs">
       <div className="flex items-start gap-2">
         <span className="min-w-0 flex-1 text-sm font-medium">{node.jobId ? <a href={jobHref(node.jobId)} className="underline-offset-4 hover:underline">{node.label}</a> : node.url ? <GhLink url={node.url}>{node.label}</GhLink> : node.label}</span>
-        <StageBadge stage={node.stage} />
+        <StageBadge stage={node.stage} text={node.stageText} />
         <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground" aria-label="Close the details">✕</button>
       </div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted-foreground">
@@ -234,9 +236,7 @@ function TreeSection({ graph, tree, open, onToggle, selected, onSelect, children
       <button type="button" onClick={onToggle} aria-expanded={open} className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left hover:bg-muted/40">
         {open ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
         <span className="min-w-0 flex-1 truncate text-sm font-medium" title={root.label}>{root.label}</span>
-        <span data-slot="job-tree-blocking" className={cn('shrink-0 text-xs', tree.blocking.length ? TEXT.bad : TEXT.ok)}>
-          {tree.blocking.length ? `${tree.blocking.length} blocking` : 'nothing blocks it'}
-        </span>
+        <span data-slot="job-tree-summary" className={cn('shrink-0 text-xs', tree.summary.includes('waiting on you') && !tree.summary.includes('nothing waiting') ? TEXT.question : 'text-muted-foreground')}>{tree.summary}</span>
         <span className="flex shrink-0 gap-1">
           {STAGES.filter((s) => tree.stages[s.stage]).map((s) => <StatusBadge key={s.stage} status={s.stage} tone={s.tone} label={`${tree.stages[s.stage]} ${s.label}`} />)}
         </span>
@@ -251,8 +251,8 @@ function Legend() {
   return (
     <div data-slot="jobs-graph-legend" className="flex flex-wrap gap-x-3 gap-y-1 px-1 text-[11px] text-muted-foreground">
       <span>rounded: job · square corners: pull request · between: issue</span>
-      <span className={TEXT.bad}>dashed red ring and bold red line: what blocks the root</span>
-      <span>hover a line for what it means</span>
+      <span className={TEXT.bad}>dashed red ring and bold red line: not settled yet, on the way to the top of the tree</span>
+      <span>hover a line to read it as a sentence</span>
     </div>
   );
 }

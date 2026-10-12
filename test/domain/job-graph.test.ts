@@ -46,7 +46,7 @@ describe('the job graph (issue #900)', () => {
     ] });
     expect(node(g, jobNodeId('run'))).toMatchObject({ kind: 'job', stage: 'running', tasks: { done: 2, total: 5 }, laneId: 'm1/lane-1', stageSince: '2026-10-02T01:00:00.000Z', repo: 'acme/app', number: 1 });
     expect(node(g, jobNodeId('pr'))).toMatchObject({ stage: 'pr_open', stageSince: '2026-10-02T02:00:00.000Z', pullRequest: { url: PR(7), state: 'open', checks: 'failing', conflicting: true } });
-    expect(node(g, pullRequestNodeId(PR(7)))).toMatchObject({ kind: 'pull_request', label: 'issue 2', number: 7, stage: 'pr_open' });
+    expect(node(g, pullRequestNodeId(PR(7)))).toMatchObject({ kind: 'pull_request', label: 'goal pr', number: 7, stage: 'pr_open' });
     expect(g.stages).toEqual({ running: 1, pr_open: 1 });
   });
 

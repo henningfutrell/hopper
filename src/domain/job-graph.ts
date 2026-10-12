@@ -9,7 +9,7 @@
 // connected nodes is one **job tree**, named by its root, with what blocks the root marked. Pure: no I/O, no clock — the
 // route reads the jobs, the lineage links, the issue graph and the open questions and hand-offs, and passes them in.
 import type { GraphEdge, GraphNode } from './issue-graph.ts';
-import { stageWords, summaryWords, waitsOnYou, type Piece } from './job-words.ts';
+import { attemptIn, treeSummary, wordNodes } from './job-words.ts';
 import { phaseOf } from './phase.ts';
 import type { ChecksState } from './pull-requests.ts';
 import type { TaskCount } from './task-count.ts';
@@ -69,8 +69,7 @@ export interface JobGraphNode {
   /** A job's phase when it is not the work itself: `proposal` or `research`. */
   phase?: string;
   /** A job's run in the chain of runs again of its issue (1 the first), and how many the failure settings allow. */
-  attempt?: number;
-  attempts?: number;
+  attempt?: number; attempts?: number;
   /** owner/name, when the node has one. */
   repo?: string;
   /** The issue or pull request number. */
@@ -233,19 +232,13 @@ export function jobGraph(input: JobGraphInput): JobGraph {
   const byId = new Map(jobs.map((j) => [j.id, j]));
   // Each issue's newest job: the issue reads its stage, its words, and whether a run again redoes a failed run.
   const newestOf = new Map<string, Job>();
-  const attemptOf = (job: Job): number => {
-    let n = 1;
-    for (let prev = job.rerunOf, seen = new Set([job.id]); prev && byId.has(prev) && !seen.has(prev); prev = byId.get(prev)!.rerunOf) { seen.add(prev); n++; }
-    return n;
-  };
   // The issue nodes, from the jobs: each issue takes the stage and parts of its newest job.
   for (const job of jobs) {
     const s = job.source;
     const stage = stageOf(job);
     const pr = pullRequestOf(job);
     const id = jobNodeId(job.id);
-    const phase = phaseOf(job);
-    const attempt = attemptOf(job);
+    const phase = phaseOf(job), attempt = attemptIn(job, byId);
     nodes.set(id, {
       id, kind: 'job', label: job.spec.goal || s?.title || job.spec.executor, stage, stageText: '', jobId: job.id, status: job.status,
       stageSince: stageSinceOf(job), ...(phase !== 'work' ? { phase } : {}),
@@ -355,32 +348,13 @@ export function jobGraph(input: JobGraphInput): JobGraph {
   }
 
   // The words (issue #935): an issue says what its newest job says.
-  for (const n of nodes.values()) {
-    const newest = n.kind === 'issue' ? newestOf.get(n.id) : undefined;
-    const worded = newest ? nodes.get(jobNodeId(newest.id))! : n;
-    n.stageText = stageWords(worded);
-    if (waitsOnYou(worded)) n.waitsOnYou = true;
-  }
+  wordNodes(nodes, newestOf);
   const allNodes = [...nodes.values()];
   const allEdges = [...edges.values()];
   const trees = treesOf(allNodes, allEdges).map((t) => ({ ...t, summary: treeSummary(t, nodes, allEdges, newestOf, byId) }));
   return { nodes: allNodes, edges: allEdges, trees, stages: countStages(allNodes) };
 }
 
-/**
- * A tree in one line: its pieces are its issues (its jobs, when it has none); a piece is being redone when its newest
- * job runs a failed one again. What waits on you: its questions and hand-offs, and its jobs waiting on a plan or report.
- */
-function treeSummary(t: Omit<JobTree, 'summary'>, nodes: ReadonlyMap<string, JobGraphNode>, edges: readonly JobGraphEdge[], newestOf: ReadonlyMap<string, Job>, byId: ReadonlyMap<string, Job>): string {
-  const members = t.nodes.map((id) => nodes.get(id)!);
-  const issues = members.filter((n) => n.kind === 'issue');
-  const redone = (job: Job | undefined) => job?.rerunOf !== undefined && byId.get(job.rerunOf)?.status === 'failed';
-  const pieces: Piece[] = (issues.length ? issues : members.filter((n) => n.kind === 'job'))
-    .map((n) => ({ stage: n.stage, redone: redone(n.kind === 'issue' ? newestOf.get(n.id) : byId.get(n.jobId!)), you: n.waitsOnYou === true }));
-  const asking = new Set(edges.filter((e) => e.kind === 'asks' || e.kind === 'hands_off').map((e) => e.from));
-  const waiting = members.filter((n) => n.waitsOnYou && n.kind !== 'issue' && !asking.has(n.id)).length;
-  return summaryWords(pieces, waiting);
-}
 
 const countStages = (nodes: readonly JobGraphNode[]): Partial<Record<JobStage, number>> => {
   const out: Partial<Record<JobStage, number>> = {};

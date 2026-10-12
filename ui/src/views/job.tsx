@@ -1,6 +1,10 @@
-// The job view (issue #433): one job, at #job/<id>, where every timeline entry about a job links — a lane timeline bar
-// or question wait, and an event line with a job. The job as the store holds it (the queue's jobs and locked entries),
-// else read once from /api/jobs/:id; its state, lane, times and error; and its events, from the event log the UI holds.
+// The job view (issues #433, #935): one job, at #job/<id>, where every timeline entry about a job links — a lane timeline
+// bar or question wait, an event line with a job, a job in the Jobs view. The job as the store holds it (the queue's jobs
+// and locked entries), else read once from /api/jobs/:id; its state, lane, times and error. Then its parts list (GET
+// /api/jobs/:id/bom, job-bom.tsx), in the order a person reads it: a plain-words header — what was asked, where it
+// stands, what is next — with what waits on the person pinned under it; the job's own graph, a node per part; the
+// timeline of everything that happened, newest first (the parts list's events and the ones the UI holds); and the parts
+// as a filterable table. A new event of the job reads the parts list again.
 import { ArrowLeft, Briefcase } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { EventLine } from '@/components/event-line';
@@ -13,6 +17,7 @@ import type { DomainEvent, Job } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useJobName } from '@/store/selectors';
 import { useSection } from '@/app/nav';
+import { BomGraph, BomTable, JobHeader, useJobBom, WaitingPinned } from './job-bom';
 
 type Read = { state: 'reading' } | { state: 'found'; job: Job } | { state: 'none' };
 
@@ -31,16 +36,18 @@ function useJob(id: string): Read {
   return read?.id === id ? read.read : { state: 'reading' };
 }
 
-/** The job's events the UI holds, newest first: the recent events and the chart history, each once. */
-function useJobEvents(id: string): DomainEvent[] {
+/** The job's events, newest first: the parts list's, the recent events and the chart history, each once. */
+function useJobEvents(id: string, read: readonly DomainEvent[]): DomainEvent[] {
   const events = useHopper((s) => s.events);
   const history = useHopper((s) => s.history);
   return useMemo(() => {
     const bySeq = new Map<number, DomainEvent>();
-    for (const e of [...events, ...history]) if (e.jobId === id) bySeq.set(e.seq, e);
+    for (const e of [...read, ...events, ...history]) if (e.jobId === id) bySeq.set(e.seq, e);
     return [...bySeq.values()].sort((a, b) => b.seq - a.seq);
-  }, [events, history, id]);
+  }, [read, events, history, id]);
 }
+
+const NONE: DomainEvent[] = [];
 
 const Fact = ({ label, children }: { label: string; children: React.ReactNode }) => (
   <div className="flex gap-2 text-xs"><span className="w-20 shrink-0 text-muted-foreground">{label}</span><span className="min-w-0 break-words">{children}</span></div>
@@ -49,13 +56,20 @@ const Fact = ({ label, children }: { label: string; children: React.ReactNode })
 export function JobView() {
   const id = decodeURIComponent(useSection());
   const read = useJob(id);
-  const events = useJobEvents(id);
+  const bom = useJobBom(id);
+  const events = useJobEvents(id, bom?.events ?? NONE);
   const machines = useHopper((s) => s.machines);
   const nameOf = useJobName();
   const back = <a href="#overview" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3" />Overview</a>;
   return (
     <div data-slot="job-view" data-job-id={id} className="space-y-3">
-      <Panel title="Job" icon={Briefcase} action={back} bodyClassName="space-y-2">
+      {bom && (
+        <Panel title="Where it stands" icon={Briefcase} action={back} bodyClassName="space-y-2">
+          <JobHeader bom={bom} />
+          <WaitingPinned bom={bom} />
+        </Panel>
+      )}
+      <Panel title="Job" icon={bom ? undefined : Briefcase} action={bom ? undefined : back} bodyClassName="space-y-2">
         {read.state === 'reading' && <Empty>reading the job…</Empty>}
         {read.state === 'none' && <Empty>No job {id}: the hopper does not know it.</Empty>}
         {read.state === 'found' && (
@@ -79,9 +93,13 @@ export function JobView() {
           </>
         )}
       </Panel>
-      <Panel title="Its events" count={events.length} bodyClassName="space-y-1 font-mono">
-        {events.length ? events.map((e) => <EventLine key={e.seq} e={e} nameOf={nameOf} machines={machines} />) : <Empty>no events of this job in the UI's log</Empty>}
+      {bom && <Panel title="Its parts" count={bom.parts.length} bodyClassName="p-3"><BomGraph bom={bom} title={read.state === 'found' ? read.job.spec.goal || id : id} /></Panel>}
+      <Panel title="Timeline" count={events.length} bodyClassName="space-y-1 font-mono">
+        <div data-slot="job-timeline" className="space-y-1">
+          {events.length ? events.map((e) => <EventLine key={e.seq} e={e} nameOf={nameOf} machines={machines} />) : <Empty>no events of this job yet</Empty>}
+        </div>
       </Panel>
+      {bom && <Panel title="Parts list" bodyClassName="p-3"><BomTable bom={bom} /></Panel>}
     </div>
   );
 }

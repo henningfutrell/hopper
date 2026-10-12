@@ -10,44 +10,77 @@ Each job is in one stage. The counts at the top show how many jobs are in each s
 
 | Stage | What it means |
 |---|---|
-| queued | The job waits for a lane. A held job is queued too. |
-| running | An agent works on the job now. |
-| waiting | The job waits on a person or on the outside world: a question, an operator, a parked job, or its own wait. |
-| PR open | The job is finished and its pull request is open. |
-| partly done | The job shipped part of its issue. The rest runs when its pull request merges. |
-| done | The job is finished. Its pull request merged, or it had none. |
-| failed | The job failed. |
-| cancelled | The job was cancelled, or the queue gate turned it away. |
+| Queued | The job waits for a lane. A held job is queued too. |
+| Building it | An agent works on the job now. |
+| Waiting | The job waits on a person or on the outside world: a question, an operator, a parked job, or its own wait. |
+| Ready for review | The job is finished and its pull request is open. |
+| Part shipped | The job shipped part of its issue. The rest runs when its pull request merges. |
+| Done | The job is finished. Its pull request merged, or it had none. |
+| Failed | The job failed. |
+| Cancelled | The job was cancelled, or the queue gate turned it away. |
 
-An issue that no job works on yet shows as **no job**.
+An issue that no job works on yet shows as **Not started**.
+
+Each node and each card also says in plain words where it stands. For example:
+
+- **Plan** or **Research**: the job writes a plan or a research report.
+- **Building it (attempt 2 of 3)**: the job runs again after a failed run. The second number is the retries the failure settings allow, plus one.
+- **Waiting on you: answer a question**, **approve the plan**, **accept the research**, or **take it over**.
+- **Checks failed**, **Has merge conflicts** or **Draft**: the job is finished, and its pull request needs this first.
+- **Merged**: the job's pull request merged.
 
 ### The graph
 
 The graph is the default mode. It shows each group of connected work as one **job tree**, named by its root. The root is usually the first issue.
 
-- A node is a job, an issue, a pull request, an open question or an open hand-off. Its colour is its stage. A question or a hand-off is a pill shape, in the **waiting** stage: it waits on a person. A job node shows its task count as `x/y` when the job keeps a task list.
-- A line between two nodes has a type. Hover a line to read it.
+- A node is a job, an issue, a pull request, an open question or an open hand-off. It shows its title first. Under the title, in small type, it shows its repository and number, and its kind. Under that, it shows where it stands in plain words. Its colour is its stage. A question or a hand-off is a pill shape: it waits on you. A job node shows its task count as `x/y` when the job keeps a task list.
+- A line between two nodes reads as a sentence, from the first node to the second. Hover a line to read it.
 
-| Line | What it means |
+| Line | Read it as |
 |---|---|
-| sub-issue | An issue to its sub-issue: a GitHub sub-issue, or a required issue a job filed. |
-| follow-up | An issue to a follow-up issue a job filed. |
-| job of | An issue to a job that works on it. |
-| next part | A partly done job to the job that runs the rest of its issue. |
-| run again | A job to the job that runs its issue again. |
-| spawned | A job to a separate research or proposal job made from one of its questions. |
-| plan → apply | A proposal's job to the job that carries out the path a person picked. |
-| opened | A job to its pull request. |
-| waits on merge | A partly done job to its pull request. The rest of the issue waits on this merge. |
-| closes | A pull request to the issue its merge closes. |
-| blocked by | An issue to an issue that blocks it: GitHub's "blocked by" link. |
-| stacked on | A pull request to the open pull request whose branch it is based on. It can merge only after that one. |
-| asks | A job to its open question. |
-| hands off | A failed job to its open hand-off in **Needs a person**. |
+| has the sub-issue | An issue has a sub-issue: a GitHub sub-issue, or a required issue a job filed. |
+| led to the follow-up | An issue led to a follow-up issue that a job filed. |
+| is being worked on by | An issue is being worked on by a job. |
+| continues in | A partly done job continues in the job that runs the rest of its issue. |
+| is being redone as | A job is being redone as the job that runs its issue again. |
+| branched off into | A job branched off into a separate research or proposal job, made from one of its questions. |
+| planned the work of | A proposal's job planned the work of the job that carries out the path a person picked. |
+| produced | A job produced its pull request. |
+| is waiting on the merge of | A partly done job is waiting on the merge of its pull request. Then the rest of the issue runs. |
+| closes | A pull request closes the issue when it merges. |
+| needs this first: | An issue needs another issue first: GitHub's "blocked by" link. Only this line says that something blocks. |
+| goes in after | A pull request goes in after the open pull request whose branch it is based on. |
+| is waiting on your answer to | A job is waiting on your answer to its open question. |
+| is waiting on you to take over: | A failed job is waiting on you to take over its hand-off in **Needs a person**. |
 
-**What blocks the root.** A node that is not done yet, and every node on the way from the root to it, has a dashed red ring. The lines to it are bold and red. The tree's header says how many nodes block it. A tree that nothing blocks starts folded when there are other trees. Select its header to open or fold it.
+**The summary line.** Each tree's header says in one line how its pieces stand. For example: "3 of 4 pieces shipped, 1 being redone, nothing waiting on you." A piece is an issue of the tree. A piece is being redone when a new job runs it again after a failed run.
+
+**Not settled yet.** A node that is not done yet, and every node on the way from the root to it, has a dashed red ring. The lines to it are bold and red. A tree with no such node starts folded when there are other trees. Select its header to open or fold it.
 
 Select a node to read its details: its stage, status, task count, lane, time in stage, pull request and checks, and its lines to other nodes. Select the job's name to open its job page. For a question or a hand-off, the name opens the page of its job.
+
+### The job page
+
+Select a job's name to open its page. The page shows, from the top:
+
+1. **Where it stands**: what was asked, where it stands, and what is next, in plain words, with a one-line summary. Under it, everything that waits on you is pinned, with a link to where you act on it.
+2. **Its parts**: the job's own graph. The job is at the left. Each group of parts comes next, and each part is a node in its group. Select a part to open its page.
+3. **Timeline**: everything that happened to the job, newest first.
+4. **Parts list**: every part as a table. Filter it by group, by status, or by words in the part.
+
+The parts list is everything the job touched or made:
+
+| Group | Parts |
+|---|---|
+| What was asked | The issue, the follow-up issues the job filed, and rework a person asked for. |
+| Work | Each run, the task list, the lane, the time it took, and the jobs that ran it again or ran its next part. |
+| Code | The pull request, its checks, its branch, and its merge. |
+| Outputs | Its artifacts and each revision, and its plan or research report. |
+| Infra | Its infra plans and their approvals, each credential minted for it with what it may do, drift it found, and a vault grant it asked for. |
+| Decisions | Each question and who answered it (a person, or a level such as rules or a model), overrides, and its hand-off. |
+| Machines and sandboxes | Each machine it ran on, and each Windows sandbox step. |
+
+Each part shows its status: waiting on you, running, open, done, failed, cancelled, or recorded (a fact, such as a branch or a lane). The page reads the parts again each time the job has a new event, so running parts stay live.
 
 ### The list
 
@@ -62,9 +95,10 @@ Select **List** for a row per job, the latest stage change first. A row shows:
 ## How to use it
 
 - To see what blocks a big piece of work, open its tree in the graph and follow the red lines from the root.
-- To find the work that waits on you, look for the question and hand-off nodes. They block their root until a person answers or resolves them. Then open the **Questions** or **Needs a person** section.
+- To find the work that waits on you, read each tree's summary line, or look for the nodes that say **Waiting on you**. Then open the **Questions** or **Needs a person** section, or the job's page.
 - To see one repository only, select it in **Repository**. The counts then show that repository only.
-- To check partly done work, select the **partly done** count and open each pull request it names.
+- To check partly done work, select the **Part shipped** count and open each pull request it names.
+- To see everything one job did, open its page and read its parts list.
 
 The view updates live. A job that changes stage moves with no reload.
 
@@ -78,7 +112,7 @@ The view updates live. A job that changes stage moves with no reload.
 
 ## For agents: the API
 
-`GET /api/jobs/graph` gives the same data as the view: `nodes`, typed `edges`, `trees` (each with its `root` and the nodes that block it, `blocking`) and `stages` (how many jobs are in each stage). An API token needs the scope `jobs:read`. See [The operator CLI and the API](cli-and-api.md) and [API tokens and grants](api-tokens.md).
+`GET /api/jobs/graph` gives the same data as the view: `nodes` (each with its `label`, its `stageText` in plain words, and `waitsOnYou`), typed `edges`, `trees` (each with its `root`, its `summary` line, and the nodes not settled yet, `blocking`) and `stages` (how many jobs are in each stage). `GET /api/jobs/<id>/bom` gives a job's page: its `header`, `summary`, `parts` (each with its `group`, `status`, and its page `href` or GitHub `url`) and `events`, newest first. An API token needs the scope `jobs:read`. See [The operator CLI and the API](cli-and-api.md) and [API tokens and grants](api-tokens.md).
 
 ## Limits and troubleshooting
 

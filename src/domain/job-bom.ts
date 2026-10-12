@@ -44,7 +44,7 @@ export interface JobBom {
 
 export interface JobBomInput {
   job: Job;
-  /** The job's events, in any order. Infra plan approvals of its plans may come with no job. */
+  /** The job's events, in any order: an approval of its infra plan is on its timeline too. */
   events: readonly DomainEvent[];
   questions: readonly Question[];
   handoff?: Handoff;
@@ -213,7 +213,7 @@ const RANK = new Map<BomGroup, number>(BOM_GROUPS.map((g, i) => [g, i]));
 export function jobBom(input: JobBomInput): JobBom {
   const { job, now } = input;
   const events = [...input.events].sort((a, b) => a.seq - b.seq);
-  const own = events.filter((e) => e.jobId === job.id || e.jobId === undefined);
+  const own = events.filter((e) => e.jobId === job.id);
   const parts = [
     ...asked(job, own), ...work(job, own, input.related, now), ...code(job, own), ...outputs(job, own, input.artifacts),
     ...infra(own), ...decisions(input.questions, own, input.handoff),
@@ -232,7 +232,7 @@ export function jobBom(input: JobBomInput): JobBom {
     header: { asked: s?.repo && s.number !== undefined ? `${title} (${s.repo}#${s.number})` : title, stands: stageWords(worded), next: nextWords(worded, job.tasks) },
     summary: summaryOf(ordered, waitsOnYou(worded)),
     parts: ordered,
-    events: events.filter((e) => e.jobId === job.id).reverse(),
+    events: [...own].reverse(),
   };
 }
 

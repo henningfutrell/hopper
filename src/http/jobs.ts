@@ -94,20 +94,18 @@ export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     return jobGraph({ jobs: [...jobs.values()], links, issueGraph: { nodes: store.issueGraph.nodes(), edges: store.issueGraph.edges() }, questions, handoffs, maxAttempts });
   });
 
-  // A job's parts list (issue #935): its events, questions, hand-off and artifacts, the approvals of its infra plans, and
-  // the jobs that ran it again or forked from it.
+  // A job's parts list (issue #935): its events (an approval of its infra plan among them), questions, hand-off and
+  // artifacts, and the jobs that ran it again or forked from it.
   app.get('/api/jobs/:id/bom', async (req) => {
     const { id } = parseWith(idParams, req.params);
     const { store } = o.tenant(req);
     const job = store.jobs.get(id);
     if (!job) throw new HttpError(404, `job ${id} not found`);
-    const events = store.events.ofJob(id, BOM_EVENTS);
-    const plans = new Set(events.filter((e) => e.type === 'infra.plan_recorded').map((e) => (e.data as { plan?: unknown }).plan));
-    const approvals = plans.size ? store.events.recent(GRAPH_LINKS, ['infra.plan_approved']).filter((e) => plans.has((e.data as { plan?: unknown }).plan) && e.jobId === undefined) : [];
+    const events = store.events.recent(BOM_EVENTS, undefined, id);
     const related = store.jobs.list({ limit: BOM_JOBS }).filter((j) => j.rerunOf === id || j.forkOf?.jobId === id);
     const handoff = store.handoffs.forJob(id);
     return jobBom({
-      job, events: [...events, ...approvals], questions: store.questions.list({ jobId: id }), artifacts: store.artifacts.list({ jobId: id }),
+      job, events, questions: store.questions.list({ jobId: id }), artifacts: store.artifacts.list({ jobId: id }),
       related, now: new Date().toISOString(), ...(handoff ? { handoff } : {}),
     });
   });
