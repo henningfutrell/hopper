@@ -10,9 +10,10 @@
 //   Scenario: the tools a need's asset kind uses
 //   Scenario: a read-only template's image puts the read-only terraform wrapper first on PATH (issue #715)
 //   Scenario: a read-only template's image holds the AWS provider in a mirror terraform installs only from (issue #715)
+//   Scenario: any other image with terraform puts the plan-gate wrapper first on PATH (issue #870)
 import { describe, expect, it } from 'vitest';
 import { BOX_TOOLS, toolsProblem } from '../../src/domain/sandboxes.ts';
-import { TERRAFORM_CLI_CONFIG, TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
+import { TERRAFORM_CLI_CONFIG, TERRAFORM_PLAN_GATE, TERRAFORM_WRAPPER } from '../../src/sandbox/terraform-wrapper.ts';
 import { TOOLS_IMAGE, toolsForNeeds, toolsImage } from '../../src/sandbox/tools.ts';
 
 const BASE = { image: 'ghcr.io/henningfutrell/hopper:box-claude', id: 'sha256:base1' };
@@ -71,6 +72,7 @@ describe('the tools image (issue #716)', () => {
     // Another image: a template that is not read-only, or one with no terraform, gets no wrapper.
     const plain = toolsImage(BASE, ['terraform', 'aws']);
     expect(plain.containerfile).not.toContain('read-only');
+    expect(ro.containerfile).not.toContain('plan-gate');
     expect(plain.tag).not.toBe(ro.tag);
     expect(toolsImage(BASE, ['aws'], { readOnly: true }).containerfile).not.toContain('read-only');
     expect(toolsImage(BASE, ['aws'], { readOnly: true }).tag).toBe(toolsImage(BASE, ['aws']).tag);
@@ -95,5 +97,16 @@ describe('the tools image (issue #716)', () => {
     const plain = toolsImage(BASE, ['terraform', 'aws']).containerfile;
     expect(plain).not.toContain('terraform-provider-aws');
     expect(plain).not.toContain('TF_CLI_CONFIG_FILE');
+  });
+
+  it('any other image with terraform puts the plan-gate wrapper first on PATH (issue #870)', () => {
+    const write = toolsImage(BASE, ['terraform', 'aws']);
+    const b64 = Buffer.from(TERRAFORM_PLAN_GATE).toString('base64');
+    expect(write.containerfile).toContain(`echo ${b64} | base64 -d > /opt/hopper-tools/plan-gate/terraform && chmod 755 /opt/hopper-tools/plan-gate/terraform`);
+    expect(write.containerfile).toContain('ENV PATH=/opt/hopper-tools/plan-gate:/opt/hopper-tools/bin:${PATH}');
+    // terraform installs providers as it does by default there: the mirror is a read-only image's.
+    expect(write.containerfile).not.toContain('TF_CLI_CONFIG_FILE');
+    // An image with no terraform gets no wrapper.
+    expect(toolsImage(BASE, ['aws', 'kubectl']).containerfile).not.toContain('plan-gate');
   });
 });
