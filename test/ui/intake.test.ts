@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-// Issue #440 in the UI, against a fake of the daemon's HTTP surface. Sources lists every open labelled issue
-// its GitHub connection listed: taken, or the one reason it was not, with Assign to me (one, or all) and Release
-// claim where the source offers them; what the intake migration changed, once; and the repos outside the job
-// repositories with issues for the user, each with Add, which saves the job repositories with it. The Overview's
+// Issue #440 in the UI, against a fake of the daemon's HTTP surface. Intake (issue #897; Sources until then) lists every
+// open labelled issue its GitHub connection listed: taken, or the one reason it was not, with Assign to me (one, or all)
+// and Release claim where the source offers them. Sources keeps what the intake migration changed, once, and the repos
+// outside the job repositories with issues for the user, each with Add, which saves the job repositories with it. The Overview's
 // idle lanes say why they are idle, from the latest Decision. A request card (issue #652) shows the text as read, who
 // wrote, labelled and assigned it, and why; Approve sends its hash; a changed one shows the change.
 import { act, createElement } from 'react';
@@ -103,9 +103,9 @@ const row = (key: string) => intake()!.querySelector<HTMLElement>(`[data-intake-
 const button = (el: ParentNode, text: string) => [...el.querySelectorAll('button')].find((b) => b.textContent === text);
 const click = async (b: HTMLButtonElement | undefined) => { await act(async () => { b!.click(); }); };
 
-describe('Sources: what intake did with each labelled issue (issue #440)', () => {
+describe('Intake: what intake did with each labelled issue (issues #440, #897)', () => {
   it('each issue is taken or says why, with the action the source offers', async () => {
-    await boot('#sources');
+    await boot('#intake');
     await vi.waitFor(() => expect(intake()).not.toBeNull());
     expect(intake()!.querySelector('[data-intake-summary]')?.textContent).toBe('7 open labelled issues: 1 taken, 6 not taken');
     expect(row(url(1)).textContent).toContain('taken');
@@ -124,7 +124,7 @@ describe('Sources: what intake did with each labelled issue (issue #440)', () =>
   });
 
   it('a request card (issue #652): the text as plain text, who did what, why; Approve sends the hash it shows', async () => {
-    await boot('#sources');
+    await boot('#intake');
     await vi.waitFor(() => expect(intake()).not.toBeNull());
     const card = row(url(7)).querySelector<HTMLElement>('[data-slot="request-card"]')!;
     expect(card.querySelector('[data-slot="request-why"]')!.textContent).toBe('written by stranger, not a trusted actor');
@@ -139,7 +139,7 @@ describe('Sources: what intake did with each labelled issue (issue #440)', () =>
   });
 
   it('a request changed since a person approved it shows the change line by line', async () => {
-    await boot('#sources');
+    await boot('#intake');
     await vi.waitFor(() => expect(intake()).not.toBeNull());
     const card = row(url(8)).querySelector<HTMLElement>('[data-slot="request-card"]')!;
     const diff = card.querySelector('[data-slot="body-diff"]')!;
@@ -151,8 +151,8 @@ describe('Sources: what intake did with each labelled issue (issue #440)', () =>
 
   it('lists what the intake migration changed', async () => {
     await boot('#sources');
-    await vi.waitFor(() => expect(intake()?.querySelector('[data-intake-migration]')).not.toBeNull());
-    const m = intake()!.querySelector('[data-intake-migration]')!;
+    await vi.waitFor(() => expect(document.querySelector('[data-intake-migration]')).not.toBeNull());
+    const m = document.querySelector('[data-intake-migration]')!;
     expect(m.textContent).toContain('1 change');
     expect(m.textContent).toContain('released a claim with no holder recorded and no job in this hopper');
   });

@@ -90,7 +90,7 @@ export function createCredentialRequests(o: {
       }
       const t = vault.template(template);
       const pending = t ? t.secrets.filter((n) => !givesOf(t).includes(n)).map((n) => vault.get(n)).find((s) => s?.skill === ask.skill) : undefined;
-      if (pending) return { waiting: `the user gave ${pending.name} for ${ask.title}; template ${template} waits for a person's approval in Settings → Vault.` };
+      if (pending) return { waiting: `the user gave ${pending.name} for ${ask.title}; template ${template} waits for a person's approval on Access requests.` };
       prune();
       const at = now();
       const why = oneLine(ask.why, CREDENTIAL_WHY_MAX);

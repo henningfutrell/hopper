@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
-// Issue #798 in the UI, against a fake of the daemon's HTTP surface. The issues a source did not take have their own view,
-// Not taken, badged with the request cards waiting for approval: each source's issues grouped by why, with a count per
-// group, no inner scroll box, Approve on a request card and Take off the backburner on a backburner issue. Sources groups
-// its intake the same way. A taken issue whose job has ended says so, not "taken". Issue #808: the issues on the backburner
-// are counted in the nav and from the Queue, and each says its number, since when and by whom it is on the backburner.
+// Issue #798 in the UI, against a fake of the daemon's HTTP surface. The issues a source listed have their own view, Intake
+// (issue #897; Not taken until then), badged with the request cards waiting for approval: each source's issues grouped by
+// why, with a count per group, taken last, no inner scroll box, Approve on a request card and Take off the backburner on a
+// backburner issue. A taken issue whose job has ended says so, not "taken". Issue #808: the issues on the backburner are
+// counted in the nav and from the Queue, and each says its number, since when and by whom it is on the backburner.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -99,34 +99,34 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const view = () => document.querySelector<HTMLElement>('[data-not-taken="github-account"]');
+const view = () => document.querySelector<HTMLElement>('[data-intake="github-account"]');
 const group = (el: ParentNode, g: string) => el.querySelector<HTMLElement>(`[data-intake-group="${g}"]`)!;
 const row = (el: ParentNode, key: string) => el.querySelector<HTMLElement>(`[data-intake-item="${key}"]`)!;
 const button = (el: ParentNode, text: string) => [...el.querySelectorAll('button')].find((b) => b.textContent === text);
 const click = async (b: HTMLButtonElement | undefined) => { await act(async () => { b!.click(); }); };
 const navLink = (hash: string) => document.querySelector<HTMLElement>(`nav a[href="${hash}"]`)!;
 
-describe('Not taken: the issues a source did not take, grouped by why (issue #798)', () => {
+describe('Intake: the issues a source listed, grouped by why (issues #798, #897)', () => {
   it('the nav entry is badged with the request cards waiting for approval', async () => {
     await boot('#overview');
-    await vi.waitFor(() => expect(navLink('#not-taken').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2'));
-    expect(navLink('#not-taken').textContent).toContain('Not taken');
+    await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2'));
+    expect(navLink('#intake').textContent).toContain('Intake');
   });
 
-  it('groups every issue not taken by why, with counts, requests first, and lists no taken one', async () => {
-    await boot('#not-taken');
+  it('groups every issue by why, with counts, requests first, taken last', async () => {
+    await boot('#intake');
     await vi.waitFor(() => expect(view()).not.toBeNull());
     const groups = [...view()!.querySelectorAll<HTMLElement>('[data-intake-group]')].map((g) => g.getAttribute('data-intake-group'));
-    expect(groups).toEqual(['request', 'not-assigned', 'backburner', 'pr-waiting', 'partly-done', 'other']);
+    expect(groups).toEqual(['request', 'not-assigned', 'backburner', 'pr-waiting', 'partly-done', 'other', 'taken']);
     const count = (g: string) => group(view()!, g).querySelector('[data-intake-group-count]')!.textContent;
     expect([count('request'), count('backburner'), count('pr-waiting')]).toEqual(['2', '2', '1']);
     expect(group(view()!, 'request').textContent).toContain('Needs approval');
-    expect(row(view()!, url(1))).toBeNull();
+    expect(row(view()!, url(1)).textContent).toContain('taken');
     expect(view()!.querySelector('.overflow-y-auto')).toBeNull();
   });
 
   it('Approve on a request card and Take off the backburner act from the view', async () => {
-    await boot('#not-taken');
+    await boot('#intake');
     await vi.waitFor(() => expect(view()).not.toBeNull());
     await click(button(row(view()!, url(9)), 'Approve'));
     await click(button(row(view()!, url(4)), 'Take off the backburner'));
@@ -138,9 +138,9 @@ describe('Not taken: the issues a source did not take, grouped by why (issue #79
   });
 });
 
-describe('Sources: intake grouped, no inner scroll box, a taken issue whose job ended (issue #798)', () => {
-  it('groups the issues the same way, taken last, with no nested scroll region', async () => {
-    await boot('#sources');
+describe('Intake: no inner scroll box, a taken issue whose job ended (issue #798)', () => {
+  it('groups the issues, taken last, with no nested scroll region', async () => {
+    await boot('#intake');
     const intake = () => document.querySelector<HTMLElement>('[data-intake="github-account"]');
     await vi.waitFor(() => expect(intake()).not.toBeNull());
     const groups = [...intake()!.querySelectorAll<HTMLElement>('[data-intake-group]')].map((g) => g.getAttribute('data-intake-group'));
@@ -155,15 +155,15 @@ describe('Sources: intake grouped, no inner scroll box, a taken issue whose job 
 describe('the backburner is always visible (issue #808)', () => {
   it('the nav entry also counts the issues on the backburner, apart from the requests', async () => {
     await boot('#overview');
-    await vi.waitFor(() => expect(navLink('#not-taken').querySelector('[data-slot="nav-badge-backburner"]')?.textContent).toBe('2'));
-    expect(navLink('#not-taken').querySelector('[data-slot="nav-badge-backburner"]')!.getAttribute('title')).toBe('2 issues on the backburner');
-    expect(navLink('#not-taken').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2');
+    await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge-backburner"]')?.textContent).toBe('2'));
+    expect(navLink('#intake').querySelector('[data-slot="nav-badge-backburner"]')!.getAttribute('title')).toBe('2 issues on the backburner');
+    expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2');
   });
 
   it('each row says its issue number; a backburner row says since when and by whom, and looks unlike a taken one', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: Date.parse('2026-10-11T09:00:00.000Z') });
     try {
-      await boot('#not-taken');
+      await boot('#intake');
       await vi.waitFor(() => expect(view()).not.toBeNull());
     } finally { vi.useRealTimers(); }
     expect(row(view()!, url(3)).textContent).toContain('#3');
@@ -179,7 +179,7 @@ describe('the backburner is always visible (issue #808)', () => {
     await boot('#queue');
     const link = () => document.querySelector<HTMLAnchorElement>('[data-slot="queue-backburner"]');
     await vi.waitFor(() => expect(link()).not.toBeNull());
-    expect(link()!.getAttribute('href')).toBe('#not-taken');
+    expect(link()!.getAttribute('href')).toBe('#intake');
     expect(link()!.textContent).toContain('2 issues on the backburner');
   });
 });
@@ -191,8 +191,7 @@ describe('Approve on a request card: it shows at once, says how it ended, and ke
   const groupOf = (el: HTMLElement) => el.closest('[data-intake-group]')!.getAttribute('data-intake-group');
 
   it.each([
-    ['Sources', '#sources', () => document.querySelector<HTMLElement>('[data-intake="github-account"]')],
-    ['Not taken', '#not-taken', view],
+    ['Intake', '#intake', view],
   ])('%s: the button waits at once, sends once, and the approved issue stays where it was, with focus', async (_name, hash, list) => {
     await boot(hash);
     let release!: () => void;
@@ -223,7 +222,7 @@ describe('Approve on a request card: it shows at once, says how it ended, and ke
   });
 
   it('a refused approval says why on the card, and the card stays with Approve', async () => {
-    await boot('#not-taken');
+    await boot('#intake');
     answer = (body) => ({ done: [], failed: { [body.keys[0]!]: 'its title or body changed since it was shown: read it again' } });
     await vi.waitFor(() => expect(view()).not.toBeNull());
     await click(button(row(view()!, url(9)), 'Approve'));

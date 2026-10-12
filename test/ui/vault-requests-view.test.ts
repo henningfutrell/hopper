@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings → Vault, "Asked for" (issue #583), rendered in happy-dom inside the whole app against a fake of the daemon's
+// Access requests (issue #897; Settings → Vault until then), "Asked for" (issue #583), rendered in happy-dom inside the whole app against a fake of the daemon's
 // HTTP surface: a credential request a job on a box opened shows who waits and why, how to get the credential, and the
 // kinds the skill takes, the suggested one first; the value is a password field; Give posts the kind, the name and the
 // value; something else needs the person's words first; Decline posts the reason.
@@ -53,7 +53,7 @@ let root: Root | undefined;
 async function boot() {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#settings/vault';
+  window.location.hash = '#access-requests';
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
   const daemon = fakeDaemon();
@@ -83,7 +83,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('Settings → Vault: a credential a job asked for (issue #583)', () => {
+describe('Access requests: a credential a job asked for (issue #583)', () => {
   it('shows who waits and why, how to get one, and the kinds, the suggested first; Give posts the kind, name and value', async () => {
     const daemon = await boot();
     const c = card()!;

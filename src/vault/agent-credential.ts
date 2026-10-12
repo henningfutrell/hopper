@@ -32,7 +32,7 @@ export function agentCredentials(store: Pick<UserStore, 'vault' | 'events'>, val
         return { refused: reason };
       };
       // Checked before the launch's scope: a template whose agent credential waits for approval starts no box at all.
-      if (!givesOf(t).includes(name)) return refuse(`${t.name} is not approved for its agent credential ${name}: approve it in Settings → Vault, or name no agent credential`);
+      if (!givesOf(t).includes(name)) return refuse(`${t.name} is not approved for its agent credential ${name}: approve it on Access requests, or name no agent credential`);
       if (!ask.secrets.includes(name)) return { none: true };
       const secret = vault.get(name);
       if (!secret) return refuse(`the vault holds no secret ${name}`);

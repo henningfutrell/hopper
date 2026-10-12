@@ -39,13 +39,13 @@ export function intakeGroups(items: IntakeOutcome[], o: { taken: boolean; kept?:
 /** A source's intake outcomes, or none when it lists none. */
 export const intakeOf = (s: SourceStatus): IntakeOutcome[] => (Array.isArray(s.detail?.intake) ? s.detail.intake as IntakeOutcome[] : []);
 
-/** The issues on the backburner across the sources (issue #808): Not taken's second badge, and the Queue's link. */
+/** The issues on the backburner across the sources (issue #808): Intake's second badge, and the Queue's link. */
 export const onTheBackburner = (sources: SourceStatus[]): number => sources.reduce((n, s) => n + intakeOf(s).filter((x) => groupOf(x) === 'backburner').length, 0);
 
 /** An issue's number from its key (a GitHub issue URL), or undefined for another kind of item (issue #808). */
 export const issueNumber = (key: string): number | undefined => { const m = /\/issues\/(\d+)$/.exec(key); return m ? Number(m[1]) : undefined; };
 
-/** The request cards waiting for approval across the sources: the Not taken badge. */
+/** The request cards waiting for approval across the sources: the Intake badge. */
 export const requestsWaiting = (sources: SourceStatus[]): number => sources.reduce((n, s) => n + intakeOf(s).filter((x) => x.action === 'approve').length, 0);
 
 const ENDED: readonly JobStatus[] = ['finished', 'failed', 'cancelled', 'rejected'];

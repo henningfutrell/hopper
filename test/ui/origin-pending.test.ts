@@ -78,12 +78,12 @@ afterEach(async () => {
 const row = () => document.querySelector('[data-job-group="waiting"][data-job-id="h1"]');
 
 describe('a job held for its origin (issue #652)', () => {
-  it('offers no Approve, says why, and links to Sources', async () => {
+  it('offers no Approve, says why, and links to Intake', async () => {
     await boot('admin', '#overview');
     expect(row()).not.toBeNull();
     expect(buttonIn(row()!, 'Approve')).toBeUndefined();
     expect(row()!.textContent).toContain('queued before trusted origins');
-    const link = row()!.querySelector('a[href="#sources"]');
-    expect(link?.textContent).toContain('approve in Sources');
+    const link = row()!.querySelector('a[href="#intake"]');
+    expect(link?.textContent).toContain('approve in Intake');
   });
 });
