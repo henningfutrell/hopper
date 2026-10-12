@@ -3,8 +3,8 @@
 // A fake ssh and scp for the Windows step host's tests (issue #731): it records each call in $FAKE_WIN_DIR/calls.jsonl,
 // answers `ssh -G`, keeps the "host's" files under $FAKE_WIN_DIR/host/<drive>/<path>, and "runs" a step script: it
 // prints a log line on stdout and one on stderr, writes outputs.tar when the script packs outputs, and exits with
-// $FAKE_WIN_EXIT. With $FAKE_WIN_HANG set, a step never ends on its own.
-import { appendFileSync, copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
+// $FAKE_WIN_EXIT. A step script that reads secrets has its stdin kept in $FAKE_WIN_DIR/stdin.txt. With $FAKE_WIN_HANG set, a step never ends on its own.
+import { appendFileSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
 const dir = process.env.FAKE_WIN_DIR;
@@ -31,6 +31,8 @@ if (scp) {
 const script = Buffer.from(args.at(-1).split(' ').at(-1), 'base64').toString('utf16le');
 appendFileSync(join(dir, 'scripts.txt'), `${script}\n----\n`);
 if (script.includes('-File')) {
+  // A step that takes secrets reads them from stdin: what came is kept, to be checked.
+  if (script.includes('[Console]::In.ReadToEnd()')) writeFileSync(join(dir, 'stdin.txt'), readFileSync(0));
   process.stdout.write('building App.sln\n');
   process.stderr.write('warning CS0168\n');
   const pack = /tar -cf '([^']+)'/.exec(script);

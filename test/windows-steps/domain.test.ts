@@ -11,6 +11,10 @@ describe('Windows hosts', () => {
     expect(windowsHostsOf(undefined)).toEqual([]);
   });
 
+  it('a host may name the vault secrets its steps may be given', () => {
+    expect(windowsHostsProblem({ hosts: [{ ...HOST, secrets: ['NUGET_TOKEN', 'signing.pfx-pass'] }] })).toBeUndefined();
+  });
+
   it.each([
     [{ hosts: [{ ...HOST, name: 'Build Host' }] }, 'name is lower case'],
     [{ hosts: [{ ...HOST, ssh: '-oProxyCommand=evil' }] }, 'ssh is a plain'],
@@ -22,6 +26,11 @@ describe('Windows hosts', () => {
     [{ hosts: [HOST, HOST] }, 'two Windows hosts are named build-host'],
     [{ hosts: [{ ...HOST, shell: 'cmd' }] }, 'no field shell'],
     [{ list: [] }, 'the Windows hosts are'],
+    [{ hosts: [{ ...HOST, secrets: 'NUGET_TOKEN' }] }, 'secrets is a list of vault secret names'],
+    [{ hosts: [{ ...HOST, secrets: ['system/github'] }] }, 'secrets is a list of vault secret names'],
+    [{ hosts: [{ ...HOST, secrets: ['shared/x'] }] }, 'secrets is a list of vault secret names'],
+    [{ hosts: [{ ...HOST, secrets: ['A', 'A'] }] }, 'names A twice'],
+    [{ hosts: [{ ...HOST, secrets: Array.from({ length: 33 }, (_, i) => `S${i}`) }] }, 'at most 32 secrets'],
   ])('%j is refused: %s', (value, why) => {
     expect(windowsHostsProblem(value)).toContain(why);
     expect(windowsHostsOf(value)).toEqual([]);
@@ -37,7 +46,8 @@ describe('Windows hosts', () => {
 describe('a step request', () => {
   it('takes a host, a command, a timeout and outputs relative to the working directory', () => {
     expect(stepRequestOf({ host: 'build-host', command: 'msbuild App.sln', outputs: ['bin\\Release', 'logs/build.log'] }))
-      .toEqual({ host: 'build-host', command: 'msbuild App.sln', timeoutSeconds: STEP_DEFAULT_TIMEOUT_S, outputs: ['bin\\Release', 'logs/build.log'] });
+      .toEqual({ host: 'build-host', command: 'msbuild App.sln', timeoutSeconds: STEP_DEFAULT_TIMEOUT_S, outputs: ['bin\\Release', 'logs/build.log'], secrets: [] });
+    expect(stepRequestOf({ host: 'h', command: 'dir', outputs: [], secrets: ['NUGET_TOKEN', 'NUGET_TOKEN', 'SIGN_PASS'] })).toMatchObject({ secrets: ['NUGET_TOKEN', 'SIGN_PASS'] });
     expect(stepRequestOf({ host: 'h', command: 'dir', timeout: '60', outputs: [] })).toMatchObject({ timeoutSeconds: 60 });
   });
 
@@ -53,6 +63,9 @@ describe('a step request', () => {
     [{ host: 'h', command: 'dir', outputs: ['/etc'] }, 'is not a path relative'],
     [{ host: 'h', command: 'dir', outputs: ["a'b"] }, 'is not a path relative'],
     [{ host: 'h', command: 'dir', outputs: ['*.dll'] }, 'is not a path relative'],
+    [{ host: 'h', command: 'dir', outputs: [], secrets: ['system/github'] }, 'is not a vault secret name'],
+    [{ host: 'h', command: 'dir', outputs: [], secrets: ['A=B'] }, 'is not a vault secret name'],
+    [{ host: 'h', command: 'dir', outputs: [], secrets: Array.from({ length: 17 }, (_, i) => `S${i}`) }, 'at most 16 secrets'],
   ])('%j is refused: %s', (fields, why) => {
     const r = stepRequestOf(fields);
     expect('problem' in r && r.problem).toContain(why);
