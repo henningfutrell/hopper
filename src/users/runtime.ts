@@ -227,7 +227,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     reachedAt: (m) => ('client' in m ? o.links.dialledAt(user.id, m.client.key) : 0),
     probe: seams.machineProbe
       ?? ((m) => ('client' in m
-        ? keepClient(clientTransport(m.name, m.client.key), () => jobsOnMachine(m.name).length > 0).then((p) => withClientWorkTree(clientTransport(m.name, m.client.key), m.workTree, p))
+        ? keepClient(clientTransport(m.name, m.client.key), () => jobsOnMachine(m.name)).then((p) => withClientWorkTree(clientTransport(m.name, m.client.key), m.workTree, p))
         : 'docker' in m
           ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) }).then((online) => ({ online }))
           // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323);

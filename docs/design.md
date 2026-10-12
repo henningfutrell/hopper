@@ -14202,3 +14202,39 @@ a clock, not a ticking age, so no card renders each second.
 Tests: `test/integration/job-last-events.test.ts` (real database and HTTP: one event per job, the newest; none with no
 job), `test/ui/jobs-view-model.test.ts` (filters, order, choices, last event), `test/ui/jobs-view.test.ts` (the whole app
 over a fake daemon: the card's facts, both filters, a status change from the stream with 250 jobs).
+
+## The isolation stop (issue #752, 2026-10-11)
+
+Issue #752 asks that a box cut off from the hopper degrade safely. This part is the box's own time limit: a client target
+that cannot hear the hopper for long stops acting on the authority the hopper gave it, since the hopper can no longer
+check it.
+
+**Hearing the hopper** (`src/client/isolation.ts`). The client counts the hopper heard at each request the hopper signed
+(verified, any route) and at each keepalive PING the hopper's end of the link answers ("Link-lost hold",
+`src/client/keepalive.ts`: every 5 s, one PING out at a time). The watch sends no PING of its own; it checks every 15 s.
+A half-open link, where the hopper is gone but the socket is not closed, answers no PING, so it is not heard; the
+keepalive drops it within 10 s.
+
+**Which jobs.** Each `/release` probe (every 30 s, and at once after a dial-in) carries `{ jobs }`: the ids of the jobs
+the hopper has at work on that machine. The client keeps the last list. It stops only those: never a process of another
+hopper's, or of a job the hopper did not name, on the same account. A client that restarts while cut off knows no jobs,
+and stops none.
+
+**The stop.** Not heard for the **max isolation** (`HOPPER_CLIENT_MAX_ISOLATION_MS` in the client's environment, default
+30 min; `0` turns it off), the client runs the reap for each named job with no scratch dir: the job's scope and every
+process carrying its `HOPPER_JOB_ID` stop; its scratch dir, its repositories and its credentials dir stay. It forgets
+the list, so it stops each job once. It records `{ jobId, at, cutOffMs }`.
+
+**The report.** The next `/release` answer carries `isolationStops`, each stop once. The client release keeper logs a
+warning per stop: `client <machine>: stopped job <id> at <time>, cut off from the hopper for <n> s`. The job's end stays
+the hopper's: its pane is gone, so a link-lost hold or a restart's reattach finds it not alive and fails it, or it has
+failed already; its cleanup, deferred while the machine was out of reach, reaps it then.
+
+**Why longer than the link grace.** A stop that comes too early loses the agent's session. The link grace
+(`HOPPER_LINK_GRACE_MS`, 10 min by default) lets the hopper decide first in the normal case: it holds the job, then fails
+it. The max isolation (30 min) is the box's own limit for when the hopper cannot. Set it longer than the link grace.
+
+**Residual risk.** A box cut off for less than the max isolation goes on with what it holds: the job's short-lived
+credentials, and its open session. A stop that fails (the reap times out) is logged and not tried again. Old clients
+ignore `jobs` and say no stops.
+

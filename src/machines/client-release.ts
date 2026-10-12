@@ -7,7 +7,9 @@
 // that is restarting. A load that has not taken after three tries is not tried again: the probe says why
 // (`client.update.problem`), and Machines shows it with the line that reinstalls the client. A client older
 // than releases answers no release: it stays online and is reported once, to be added again with Add machine.
-// Each line is logged once per machine.
+// Each line is logged once per machine. Each probe names the jobs running there; a client cut off from the hopper
+// longer than its max isolation stops them, and the probe after its link is back logs each stop (issue #752).
+// The stopped job's own end is the hopper's as before: its pane is gone, so it fails, and its cleanup reaps it.
 import type { ClientRelease } from '../client/release.ts';
 import { ClientError, clientRunningRelease, clientWorkTree, loadClientRelease, type ClientTransport } from '../executors/client.ts';
 import { DEFAULT_WORK_TREE } from '../client/work-tree.ts';
@@ -16,7 +18,8 @@ import { bridgeRelease, fixedNamesOf } from './client-bridge.ts';
 
 interface Logger { info(line: string): void; warn(line: string): void }
 
-export type ClientReleaseKeeper = (t: ClientTransport, busy: () => boolean) => Promise<MachineProbe>;
+/** `jobs`: the jobs running on the machine now; while any runs, no release is loaded. */
+export type ClientReleaseKeeper = (t: ClientTransport, jobs: () => string[]) => Promise<MachineProbe>;
 
 /** Loads of the hopper's release onto a client still on another, before the hopper stops and says so. */
 const MAX_LOADS = 3;
@@ -53,15 +56,16 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
     say(t.machine, `hopper: client ${t.machine}: runs release ${running}, which checks a fixed file list: loaded the bridge to release ${ours}; it restarts twice to run it`);
   }
 
-  return async (t, busy) => {
+  return async (t, jobs) => {
     if (!(await probeClient(t))) return { online: false };
     let answer: Awaited<ReturnType<typeof clientRunningRelease>>;
     try {
-      answer = await clientRunningRelease(t);
+      answer = await clientRunningRelease(t, jobs());
     } catch (e) {
       say(t.machine, `hopper: client ${t.machine} runs no client release (${(e as Error).message}): add it again with Add machine`, true);
       return { online: true, client: { current: false } };
     }
+    for (const s of answer.isolationStops ?? []) o.logger.warn(`hopper: client ${t.machine}: stopped job ${s.jobId} at ${s.at}, cut off from the hopper for ${Math.round(s.cutOffMs / 1000)} s`);
     const running = answer.release;
     const vault = { ...(answer.vault ? { vault: answer.vault } : {}), ...(answer.door ? { door: answer.door } : {}) };
     const home = { ...(answer.home ? { home: answer.home } : {}), ...(answer.disk ? { disk: answer.disk } : {}), ...(answer.resources ? { resources: answer.resources } : {}) };
@@ -77,7 +81,7 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
       say(t.machine, `hopper: client ${t.machine}: cannot update: ${problem}; reinstall it (Machines shows the line)`, true);
       return { online: true, client: { release: running, current: false, update: { problem }, ...vault }, ...home };
     }
-    if (busy()) {
+    if (jobs().length > 0) {
       say(t.machine, `hopper: client ${t.machine}: runs release ${running}, the hopper's is ${ours}; loading it once no job runs there`);
     } else {
       tried.loads += 1;
