@@ -146,7 +146,7 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
   it('needs the hopper cannot read are refused, saying how; a viewer\'s token is refused for its role', async () => {
     const { a, session } = await boot(['cluster/*']);
     const token = await apiToken(a, session);
-    for (const needs of ['', 'read cluster lab', 'delete/cluster/lab', 'read/planet/mars']) {
+    for (const needs of ['', 'look at the pods', 'delete/cluster/lab', 'read/planet/mars']) {
       const r = await agent(a, 'POST', '/ui/api/vault', token, { action: 'request-template', needs });
       expect(r.status, `${needs}: ${r.text}`).toBe(400);
       expect(r.text).toContain('read/cluster/NAME');

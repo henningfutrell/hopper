@@ -65,7 +65,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
-| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
@@ -9018,7 +9018,8 @@ not get write access over the API; they still ask the hopper. So a job asks thro
 
 - **The ask.** `sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-account/123456789012" [--wait]`.
   Each **need** is an operation profile, written as the CLI writes one, `<operation>/<kind>/<asset>`; split by spaces,
-  commas or lines; at most 16; each once. A need the hopper cannot read is a 400 that says how to write it.
+  commas or lines; at most 16; each once. A line can also be plain words ("Needs in words"). A need the hopper cannot
+  read is a 400 that says how to write it.
 - **The template** (`requestTemplate`, `src/skills/template-request.ts`). Its name is `asked-` and 12 hex of a SHA-256
   over the sorted needs: the same needs, in any order and from any job, get the same template, so a later job with the
   same needs makes no second one. It runs the hopper's box image (`ghcr.io/henningfutrell/hopper:box-claude`), holds no
@@ -9106,11 +9107,51 @@ person could only write a whole template by hand.
   shown, so a person asks only for what they saw. The new template is then in Templates, where a person approves what
   waits, as for any template.
 
-**Not built.** Needs inferred from free text: a person still writes each need as an operation profile.
+Needs in plain words: "Needs in words".
 
 Tests: `test/skills/template-preview.test.ts`, `test/ui/vault-template-request.test.ts`,
 `test/integration/template-request-api.test.ts` (the preview over an API token: what it shows, nothing saved, `exists`
 after a request, 400 for needs it cannot read, 403 for a viewer).
+
+## Needs in words (issue #708, part 11, 2026-10-12)
+
+Owner's model (issue #708): a person writes what a box must do, and the hopper works out the needs; the secret scope is
+derived and shown for approval, never typed by hand. Before it, every template request (a job's, the API's, the CLI's,
+the page's) took only needs written out, `read/cluster/lab`.
+
+- **The reader** (`needsFromWords`, `src/skills/needs-in-words.ts`, pure). One line of plain words gives needs:
+  - **Assets** are a kind word, then the name: `cluster NAME`, `namespace NAME`, `workspace NAME` (a terraform
+    workspace), `account ID` (an AWS account), `role NAME` (an AWS role), `Argo CD app NAME` (also `argocd app`). `named`,
+    `called` or `is` may stand between them. A namespace takes the one cluster the line names (`namespace web on cluster
+    lab` is `namespace lab/web`), a role the one account (`role ReadOnly in account 1234…` is `aws-role 1234…/ReadOnly`);
+    that cluster or account is then no need of its own. `namespace lab/web` and `role 1234…/ReadOnly` are read as they are.
+  - **Operations** are the words for them, each with its -s, -ed and -ing forms, and each part of a command such as
+    `get-caller-identity`: read words (`get`, `list`, `describe`, `plan`, `logs`, `show`, …), `apply` and `deploy`
+    (apply), `sync` (sync), and change words (`delete`, `restart`, `install`, `upgrade`, `scale`, `exec`, …: write). Each
+    asset of the line gets each operation the line says. A change word just after `not`, `never`, `no` or `don't` says
+    no change.
+  - **Refused, with what to write:** a line that names no asset, a kind word with no name, a name an asset may not have,
+    a namespace or role with no single cluster or account to go in, and a line that says no operation. The reader never
+    makes a need the words did not name: no read is guessed when no read word is there.
+- **Where it applies** (`needsOf`, `src/skills/template-request.ts`). Each line of a request is either needs written out
+  (every word holds a `/`; the refusals of "Templates on request" are unchanged) or plain words. Both kinds mix in one
+  request; the needs merge, each once, at most 16. So a job's `sandbox-template --needs`, `request-template`,
+  `preview-template` and `hopper template request` all take words, and the same needs in words or written out make the
+  same template.
+- **Why a fixed set of words, and no model.** The needs decide what a box may be given. A model's reading can change from
+  one call to the next, and text in the request could steer it. A fixed reader is the same each time, and nothing in the
+  words can make it give more than the words name. The cost: words it does not know are refused, and a person writes
+  those as needs. The preview on the page shows the needs it read before anything is made ("Template requests on the
+  page"), and a change still waits for a person, so a reading that goes wide is caught before it gives anything.
+
+**Not built.** A tool name alone names no asset (`kubectl get pods` needs `on cluster NAME`). A word the reader does not
+know is not suggested.
+
+Tests: `test/skills/needs-in-words.test.ts` (the reader: assets, a namespace in its cluster, a role in its account,
+operations, `not`, the refusals; mixed lines; the preview), `test/integration/template-request-api.test.ts` (words over
+an API token: the same template as the needs written out; words that name no asset, 400),
+`test/integration/template-requests.test.ts` (a job's `--needs` in words gets the same template; unreadable words
+refused).
 
 ## Tools assembled per run (issue #716, item 2, 2026-10-10)
 

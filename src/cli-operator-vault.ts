@@ -36,7 +36,8 @@ export const VAULT_USAGE = `  hopper vault                                      
                                                      read needs only): its boxes wait until it passed
   hopper template request --needs "<operation>/<kind>/<asset> ..."
                                                      ask for the template the needs name, as a job does: approved with no
-                                                     person only when each need is a read the read policy holds
+                                                     person only when each need is a read the read policy holds; a line
+                                                     of needs can be plain words (get pods on cluster lab)
   hopper template read-policy [set [<kind>/<asset>|<kind>/<prefix>*]...]
                                                      the read policy: the assets read is approved on with no person, for a
                                                      template a job asks for; set replaces it, set with none clears it
@@ -50,7 +51,7 @@ const VAULT_SET = 'vault set <name> [--scope <text>] [--shared [--reader <user i
 const VAULT_MINT_TEST = 'vault mint-test aws-role/<account>/<role>|cluster/<name>';
 const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared] | hopper ${VAULT_MINT_TEST}`;
 const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]... [--agent-credential <secret>|none]';
-const TEMPLATE_REQUEST = 'template request --needs "<operation>/<kind>/<asset> ..."';
+const TEMPLATE_REQUEST = 'template request --needs "<operation>/<kind>/<asset> ..." (or plain words, one line each: "get pods on cluster lab")';
 const TEMPLATE_VERBS = 'template list | save <name> … | request --needs <needs> | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | check <name> | read-policy [set <entry>...]';
 const SANDBOX_VERBS = 'sandbox list | launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>] [--tool <name>]...';
 

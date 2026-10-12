@@ -12,6 +12,8 @@ describe('needs read from plain words (issue #708)', () => {
     expect(needsFromWords('kubectl get pods on cluster lab')).toEqual([read('cluster', 'lab')]);
     expect(needsFromWords('Run terraform plan on workspace net-prod.')).toEqual([read('terraform-workspace', 'net-prod')]);
     expect(needsFromWords('aws s3 ls in account 123456789012')).toEqual([read('aws-account', '123456789012')]);
+    expect(needsFromWords('aws ec2 describe-instances in account 123456789012')).toEqual([read('aws-account', '123456789012')]);
+    expect(needsFromWords('aws s3api delete-bucket in account 123456789012')).toEqual([{ operation: 'write', asset: { kind: 'aws-account', name: '123456789012' } }]);
     expect(needsFromWords('show the Argo CD app billing')).toEqual([read('argocd-app', 'billing')]);
     expect(needsFromWords('list the pods of the cluster named lab and of the cluster called stage')).toEqual([read('cluster', 'lab'), read('cluster', 'stage')]);
   });
@@ -43,7 +45,7 @@ describe('needs read from plain words (issue #708)', () => {
     expect(needsFromWords('get pods on the cluster')).toMatch(/cluster: say its name/);
     expect(needsFromWords('do things on cluster lab')).toMatch(/say what the box does on cluster lab/);
     expect(needsFromWords('read namespace web')).toMatch(/namespace web: say its cluster/);
-    expect(needsFromWords('read namespace web on cluster a and cluster b')).toMatch(/namespace web: say its cluster/);
+    expect(needsFromWords('read namespace web on cluster lab and cluster stage')).toMatch(/namespace web: say its cluster/);
     expect(needsFromWords('read role ReadOnly')).toMatch(/role ReadOnly: say its account/);
     expect(needsFromWords('read cluster la$b')).toMatch(/cluster la\$b: an asset name/);
   });

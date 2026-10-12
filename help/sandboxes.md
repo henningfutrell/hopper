@@ -139,11 +139,23 @@ A running job can ask the hopper for the template its work needs:
 sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-account/123456789012" --wait
 ```
 
-Each **need** is `<operation>/<kind>/<asset>`, at most 16. The hopper makes the template `asked-<hash>` from the needs: the box image, the tools the needs use, no vault secret, and one operation profile per need. The same needs always get the same template.
+Each **need** is `<operation>/<kind>/<asset>`, at most 16. You can also write a line in plain words, for example `kubectl get pods in namespace web on cluster lab` (see **Needs in plain words** below). The hopper makes the template `asked-<hash>` from the needs: the box image, the tools the needs use, no vault secret, and one operation profile per need. The same needs always get the same template.
 
 The hopper approves it with no person only when it makes it now and every need is a `read` on an asset the **read policy** holds. Anything else waits for a person on **Settings → Vault**. A job never widens, approves or re-approves a template. A job does not start the box: a person or the command line does.
 
-An admin can ask for a template the same way on **Settings → Vault**, panel **Template request**. Write the needs, one per line, and select **Show the template**. The hopper shows the template it makes from them before it makes it: its name, its image, its tools, its needs, and who approves it. When it waits for a person, the panel says why. Then select **Ask for it**. If you change the needs, show the template again before you ask for it.
+An admin can ask for a template the same way on **Settings → Vault**, panel **Template request**. Write what the box must do, one line each, in plain words or as needs, and select **Show the template**. The hopper shows the template it makes from them before it makes it: its name, its image, its tools, its needs, and who approves it. When it waits for a person, the panel says why. Then select **Ask for it**. If you change the needs, show the template again before you ask for it.
+
+### Needs in plain words
+
+A line in plain words names the assets and what the box does on them. The hopper reads it with a fixed set of words, so the same words always give the same needs. Show the template first: it lists the needs that the hopper read.
+
+- **The asset:** a kind word, then the name. `cluster lab`, `namespace web`, `workspace network` (Terraform), `account 123456789012` (AWS), `role ReadOnly` (AWS), `Argo CD app billing`.
+- **A namespace** goes in the cluster that the line names: `namespace web on cluster lab`. Or write `namespace lab/web`.
+- **A role** goes in the account that the line names: `role ReadOnly in account 123456789012`.
+- **What the box does:** a read word (`get`, `list`, `describe`, `logs`, `plan`, `show`) gives read. `apply` or `deploy` gives apply. `sync` gives sync. A change word (`delete`, `restart`, `install`, `upgrade`, `scale`) gives write. A command such as `get-caller-identity` counts too.
+- A change word after `not` or `never` gives no change: `get pods on cluster lab, never delete them` is read only.
+- The hopper refuses a line that names no asset or says nothing that the box does. Write that need as `<operation>/<kind>/<asset>`.
+- A change always waits for a person, as for a need you write out.
 
 ### The read policy
 

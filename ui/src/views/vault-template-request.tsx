@@ -1,5 +1,5 @@
-// Settings → Vault, the template request (issue #708, part 9): an admin writes what the box must do — its needs, one operation
-// profile each, as a job's `sandbox-template --needs` says them — and the hopper shows the template it makes from them
+// Settings → Vault, the template request (issue #708, part 9): an admin writes what the box must do — in plain words, or its
+// needs, one operation profile each, as a job's `sandbox-template --needs` says them — and the hopper shows the template it makes from them
 // before it is made (`preview-template`): its name, its image, the tools its needs use, no vault secret, and who approves
 // it. Ask for it then makes it (`request-template`), the same path as a job's request. Changed needs are shown again
 // before it is asked for, so what is asked for is what was shown.
@@ -66,11 +66,11 @@ export function TemplateRequest({ onView }: { onView: (v: VaultView) => void }) 
   });
   return (
     <Panel title="Template request" icon={Hammer} bodyClassName="space-y-3">
-      <p className="text-sm text-muted-foreground">Write what a box must do, and the hopper makes its template: the box image with the tools that work uses, one operation profile per need, and no secret. You see the template before it is made. A job asks for one the same way.</p>
+      <p className="text-sm text-muted-foreground">Write what a box must do, in plain words, and the hopper makes its template: the box image with the tools that work uses, one operation profile per need, and no secret. You see the needs it read and the template before it is made. A job asks for one the same way.</p>
       <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); void show(); }}>
-        <label className="block space-y-1"><Label>One need per line — operation/kind/asset (read/cluster/lab)</Label>
+        <label className="block space-y-1"><Label>One line each — plain words (get pods on cluster lab) or a need (read/cluster/lab)</Label>
           <Textarea className="font-mono text-sm" rows={4} value={needs} autoCapitalize="off" autoCorrect="off" spellCheck={false}
-            placeholder={'read/cluster/lab\nread/aws-account/123456789012'} onChange={(e) => { setNeeds(e.target.value); setShown(null); }} /></label>
+            placeholder={'kubectl get pods in namespace web on cluster lab\nterraform plan on workspace network\nread/aws-account/123456789012'} onChange={(e) => { setNeeds(e.target.value); setShown(null); }} /></label>
         <div className="flex flex-wrap gap-2">
           <Button type="submit" variant="outline" disabled={busy || needs.trim() === ''}><Eye />Show the template</Button>
           {shown && <Button type="button" disabled={busy || shown.exists === 'changed'} onClick={() => void ask()}>Ask for it</Button>}
