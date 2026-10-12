@@ -9240,7 +9240,9 @@ replaces them; test with doubles, and state the gap to a real environment.
   it was refused in the tool's own words (`DENIAL`: `AccessDenied`, `UnauthorizedOperation`, `is forbidden`, …); a read
   must exit 0. Each write leaves nothing when refused, and is a dry run where the service has one; a write that went
   through runs its `cleanup`, and the check fails.
-  - `aws-account`, `aws-role`: read `aws sts get-caller-identity`; writes `ec2 create-tags --dry-run`, `ssm
+  - `aws-account`, `aws-role`: read `aws sts get-caller-identity`; writes `ec2 create-tags --dry-run` on a VPC
+    `ec2 describe-vpcs` finds (`ec2 create-vpc --dry-run` with none: EC2 looks up a VPC before the dry run asks the
+    authorization, so a VPC the account does not hold answers NotFound, never a refusal, issue #882), `ssm
     put-parameter`, `iam create-user`, `sts assume-role` to another role of the account.
   - `cluster`, `namespace` (`<cluster>/<ns>`): read `kubectl get ns` (or pods in the namespace), `helm list`; writes
     `kubectl create namespace --dry-run=server`, `kubectl delete pod --dry-run=server`, and the install of a chart `helm
