@@ -262,4 +262,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'api_grant.reuse_detected': { grant: '3f9a0c2e5b7d1e48', label: 'Grok Bot', holder: 'grok-bot', from: '203.0.113.7' },
   'api_grant.revoked': { grant: '3f9a0c2e5b7d1e48', label: 'Grok Bot', holder: 'grok-bot', reason: 'reuse-detected' },
   'api_tokens.settings_changed': { tokenMinutes: 10 },
+  'step.started': { step: '5f0c1d2e-0000-4000-8000-000000000731', host: 'build-host', command: 'msbuild App.sln /p:Configuration=Release', timeoutSeconds: 1800, inputsBytes: 5242880, outputs: ['src/App/bin/Release'] },
+  'step.finished': { step: '5f0c1d2e-0000-4000-8000-000000000731', host: 'build-host', exit: 0, seconds: 94, outputsBytes: 1048576 },
+  'step.refused': { reason: 'the hopper has no Windows host build. It has: build-host.', host: 'build' },
 };

@@ -5,8 +5,7 @@ import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.t
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness,
-  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread,
+  Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread,
 } from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
@@ -790,6 +789,10 @@ export interface ConnectedAccountTokens {
 // ---- Sandbox boxes the hopper launches: src/domain/sandboxes.ts (re-exported here, one vocabulary) ----
 
 export type * from './sandboxes.ts';
+
+// ---- Windows sandbox steps (issue #731): the host a step runs on, src/domain/windows-steps.ts ----
+
+export type { WindowsStepHost } from './windows-steps.ts';
 
 // ---- Persistence: src/domain/store.ts (re-exported here, one vocabulary) ----------------
 

@@ -3,7 +3,7 @@
 // risk rules), the question history, the decider (issue #550; named Decider in issue #661), auto-park (issue #650), the issue thread (issue #435), the TL;DR (issue #569), the job rules (issue #172), the intake's trusted actors (issue #652), yolo mode (issue #579), the GitHub rate limit (issue #436), remote access (issue #880), Contribution (issue #429), GitHub watches (issue #427), artifacts (issue #624), Your reports (issue #694), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
 // sign-in (issue #185), API tokens (issue #718), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the version. A moved section's old hash (#settings/minor-decisions) is replaced by its new one.
-import { Bug, CirclePause, Eye, FolderOpen, Gauge, GitFork, Globe, Grid3x3, History, Info, KeyRound, KeySquare, ListChecks, LockKeyhole, MessagesSquare, Puzzle, Route, Scale, ScrollText, ShieldCheck, TextQuote, Ticket, type LucideIcon, UserCheck, Users as UsersIcon, Webhook, Zap } from 'lucide-react';
+import { Bug, CirclePause, Eye, FolderOpen, Gauge, GitFork, Globe, Grid3x3, History, Info, KeyRound, KeySquare, ListChecks, LockKeyhole, MessagesSquare, MonitorCog, Puzzle, Route, Scale, ScrollText, ShieldCheck, TextQuote, Ticket, type LucideIcon, UserCheck, Users as UsersIcon, Webhook, Zap } from 'lucide-react';
 import { useEffect } from 'react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
@@ -31,10 +31,11 @@ import { Users } from '@/views/users';
 import { Vault } from '@/views/vault';
 import { VersionHistory } from '@/views/version-history';
 import { Webhooks } from '@/views/webhooks';
+import { WindowsHosts } from '@/views/windows-hosts';
 import { YoloMode } from '@/views/yolo-mode';
 import { IntakeActors } from '@/views/intake-actors';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'history', 'decider', 'auto-park', 'thread-ask', 'tldr', 'job-rules', 'intake', 'yolo-mode', 'github-rate-limit', 'remote-access', 'contribution', 'github-watches', 'artifacts', 'reports', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'api-tokens', 'access', 'permissions'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'history', 'decider', 'auto-park', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'intake', 'yolo-mode', 'github-rate-limit', 'remote-access', 'contribution', 'github-watches', 'artifacts', 'reports', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'api-tokens', 'access', 'permissions'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -46,6 +47,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   'thread-ask': { label: 'Issue thread', icon: MessagesSquare, view: ThreadAsk },
   tldr: { label: 'TL;DR', icon: TextQuote, view: TldrSettings },
   'job-rules': { label: 'Job rules', icon: ListChecks, view: JobRules },
+  'windows-hosts': { label: 'Windows hosts', icon: MonitorCog, view: WindowsHosts },
   intake: { label: 'Intake', icon: UserCheck, view: IntakeActors },
   'yolo-mode': { label: 'Yolo mode', icon: Zap, view: YoloMode },
   'github-rate-limit': { label: 'GitHub rate limit', icon: Gauge, view: GitHubRateLimiter },

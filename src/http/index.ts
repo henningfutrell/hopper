@@ -26,6 +26,7 @@ import { jobGitHubRoutes } from './job-github.ts';
 import { jobGitRoutes } from './job-git.ts';
 import { jobAddressRoutes } from './job-address.ts';
 import { jobSkillRoutes } from './job-skill.ts';
+import { jobStepRoutes } from './job-step.ts';
 import { jobStreamRoutes } from './job-stream.ts';
 import { pluginStoreRoutes } from './plugin-store.ts';
 import { jobRulesRoutes } from './job-rules.ts';
@@ -197,6 +198,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const artifactEdge = createArtifactEdge({ clock: o.clock, lan: o.lan, port: o.port, tenants: o.tenants });
   jobArtifactRoutes(app, { tenants: o.tenants, edge: artifactEdge, github });
   jobInfraPlanRoutes(app, { tenants: o.tenants }); // Infra plans (issue #870), with the same token
+  jobStepRoutes(app, { tenants: o.tenants }); // Windows sandbox steps (issue #731), with the same token
   artifactRoutes(app, { ...tenant, tenants: o.tenants, access: o.access, edge: artifactEdge, clock: o.clock });
   staticRoutes(app, o.uiDir);
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));

@@ -34,6 +34,7 @@ import type { UiSessions } from './ui/sessions.ts';
 import type { SecretProblem } from './webhooks.ts';
 import type { UserMachineLink } from '../users/runtime.ts';
 import type { UserGitHubProxy } from '../users/github-proxy.ts';
+import type { WindowsSteps } from '../windows-steps/index.ts';
 import type { UsageRecorder } from '../usage/history.ts';
 import type { ResourceRecorder } from '../machines/history.ts';
 
@@ -79,6 +80,8 @@ export interface TenantParts {
   machineHistory: Pick<ResourceRecorder, 'onRecorded'>;
   /** The GitHub proxy's view of the user (issue #563): their jobs asking, their GitHub connection. */
   githubProxy: UserGitHubProxy;
+  /** Windows sandbox steps (issue #731): the user's Windows hosts, and their jobs' steps on them. */
+  windowsSteps: WindowsSteps;
 }
 
 /** The users and their running parts. */

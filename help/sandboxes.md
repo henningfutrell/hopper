@@ -197,6 +197,16 @@ To prove that, the check needs the workspace's **state backend**: the S3 bucket 
 - A box that it cannot remove shows on **Machines** under *Sandbox boxes not removed*. The hopper tries again.
 - It builds an image with the template's tools once per base image and set of tools, as `localhost/hopper-box-tools:<hash>`.
 
+## Windows sandbox steps
+
+No hopper client, lane or agent runs on Windows. When a job needs Windows for one step (a .NET Framework build, a Windows app's tests), it asks the hopper to run that step on a **Windows host**:
+
+1. On the Windows computer, turn on OpenSSH Server and give one account the hopper's public key in its authorized keys (the hopper shows its key when you add an ssh machine). Windows PowerShell must be there.
+2. In **Settings → Windows hosts**, add the host: a name, `user@host`, and the working directory every step runs in. Read its host key, compare the fingerprint with the host's own, and pin it.
+3. A job runs `sh "$HOPPER_STEP" run NAME --input src --command "msbuild App.sln" --output bin`. The hopper copies the inputs into the working directory, runs the command in PowerShell there, streams its output back, then gives the exit code and the outputs.
+
+One step runs on a host at a time. A step gets no credential and no GitHub token. The job's timeline shows each step: its host, command, exit code and time.
+
 ## Limits and troubleshooting
 
 - **The start check fails** with `the hopper does not answer at <address>`: the rest is curl's own words from inside the box. `Could not resolve host`: the name is not known on that network. `Failed to connect`: nothing listens there. `403` or `421`: the hopper refused the box; check `HOPPER_LAN_PEERS` and `HOPPER_LAN_NAMES`.

@@ -19,6 +19,7 @@ import type { MachineLinks } from '../machines/links.ts';
 import type { MachineJoin } from '../plugins/attached-edit.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
+import { createSshStepHost, createWindowsSteps, readWindowsHosts, type WindowsSteps } from '../windows-steps/index.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
 import { createClientReleaseKeeper, createOwnedHerdrKeeper, createTargetPool, probeOwnedHerdr, withClientWorkTree, probeContainer, probeSsh } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
@@ -167,6 +168,7 @@ export interface UserRuntime {
   machineHistory: ResourceRecorder;
   /** The GitHub proxy's view of this user (issue #563). */
   githubProxy: UserGitHubProxy;
+  windowsSteps: WindowsSteps; // issue #731: a job's step run on a Windows host the user set up
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */
@@ -379,9 +381,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them; lane tuning (issue #688) after new samples.
   const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), afterMachineRecord: () => engine.laneTuning.record(), store, clock, logger });
   const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
+  // Windows sandbox steps (issue #731): the user's Windows hosts read at each step; over ssh with the hopper's own key.
+  const windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }) });
   let started = false, stopped: Promise<void> | undefined;
   return {
-    jobStream, artifacts, githubProxy: proxy.githubProxy,
+    jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
@@ -394,8 +398,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       await engine.start();
       await failures.backfill.once(); // the done-check backfill (issue #637), before the sync and the assessor judge the same failures
       sync.start();
-      history.start(); minorDecisions.start(); tldrs.start();
-      failures.start();
+      history.start(); minorDecisions.start(); tldrs.start(); failures.start();
       connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
       jobStream.start(); proxy.githubProxy.bugReports.start(); proxy.githubProxy.watches.start(); // Report a bug's kept reports (issue #694), the GitHub watches (issue #427)
     },
@@ -405,13 +408,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         await failures.stop();
         minorDecisions.stop(); await tldrs.stop();
         await sync.stop();
-        history.stop();
-        connectedAccounts.stop();
+        history.stop(); connectedAccounts.stop();
         await questions.stop();
         await Promise.all(REVIEW_KINDS.map((k) => reviews[k].stop()));
         await engine.stop();
-        await dispatcher.stop();
-        await host.stopNotifiers();
+        await dispatcher.stop(); await host.stopNotifiers();
         stopFailureLog();
         host.stop(); stopBackendReads();
         store.close();

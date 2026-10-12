@@ -68,7 +68,11 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   job's artifacts (issue #624, `docs/design.md` "Artifacts"): `/job/artifacts`, with the job's proxy token, puts, shares, revokes
   and removes that user's artifacts, each an event on the job's timeline; it changes no job, question, webhook or setting. Their
   content is served off `/api/`, at `/artifact-content/` (a URL a read signed for one viewer, for an hour) and `/artifact-link/`
-  (a public link), under a sandbox policy; they change nothing. Every other mutation is the UI's
+  (a public link), under a sandbox policy; they change nothing. A running job's Windows sandbox step (issue #731,
+  `docs/design.md` "Windows sandbox steps"): `GET`/`POST /job/step` and `GET /job/step/:id`, with the job's proxy token,
+  run one step on a Windows host the user set up, over ssh with the hopper's own key and the host's pinned key, and answer
+  its output, exit code and outputs; it changes no job, question, webhook or setting, only records the step. A Windows host
+  is a config record (`windows-hosts`), set through the UI session or the operator CLI. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) or an **API token** (issue #718, `docs/design.md` "API tokens":
   `Authorization: Bearer hopper_at_…`, JSON; a session of kind `api`, kept hashed, the admin's API-token lifetime at most
