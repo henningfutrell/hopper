@@ -5,11 +5,11 @@
 // carries out its path, a job to its pull request, and a partly done job to the pull request whose merge lets the rest run;
 // an issue to an issue that blocks it, a pull request to the one whose branch it is based on, and a job to its open
 // question or hand-off, which are nodes too: each waits on a person. Each node has its **stage**: queued, running, waiting, PR open, partly done, done, failed or cancelled — and an issue no
-// job works yet, no job. Each group of
+// job works yet, no job. A pull request the hopper tended lists each tend attempt, oldest first (issue #927). Each group of
 // connected nodes is one **job tree**, named by its root, with what blocks the root marked. Pure: no I/O, no clock — the
 // route reads the jobs, the lineage links, the issue graph and the open questions and hand-offs, and passes them in.
 import type { GraphEdge, GraphNode } from './issue-graph.ts';
-import type { ChecksState } from './pull-requests.ts';
+import type { ChecksState, Tended, TendStep } from './pull-requests.ts';
 import type { TaskCount } from './task-count.ts';
 import type { Job, JobStatus } from './types.ts';
 
@@ -75,7 +75,12 @@ export interface JobGraphNode {
   partlyDone?: { pullRequest: string; afterMerge: string };
   /** An issue's parts, as its newest job last saw them (issue #729). */
   parts?: { done: number; total: number };
+  /** A pull request's node: each tend of it (issue #927), oldest first. Absent: never tended. */
+  tends?: JobGraphTend[];
 }
+
+/** One tend of a pull request (issue #927): the job the hopper ran to take the step, its status, and when it started and ended. */
+export interface JobGraphTend { jobId: string; step: TendStep; status: JobStatus; startedAt?: string; endedAt?: string }
 
 export interface JobGraphEdge { from: string; to: string; kind: JobGraphEdgeKind }
 
@@ -116,7 +121,7 @@ export interface JobGraphInput {
 }
 
 interface Followed {
-  pullRequest?: string; follow?: string; parts?: unknown;
+  pullRequest?: string; follow?: string; parts?: unknown; tended?: Tended;
   seen?: { checks?: ChecksState | 'none'; draft?: boolean; conflicting?: boolean; base?: string; headRef?: string };
 }
 
@@ -189,6 +194,9 @@ const partsOf = (job: Job): { done: number; total: number } | undefined => {
 
 const ref = (repo: string, number: number): string => `${repo}#${number}`;
 
+/** A followed pull request's states while it is open: followed, not followed yet, or handed to a tend or a rework (issue #927). */
+const STILL_OPEN: readonly string[] = ['open', 'unknown', 'tended', 'reworked'];
+
 /** The job graph of `input`. Deterministic: the same input gives the same nodes, edges and trees, in the same order. */
 export function jobGraph(input: JobGraphInput): JobGraph {
   const nodes = new Map<string, JobGraphNode>();
@@ -231,7 +239,17 @@ export function jobGraph(input: JobGraphInput): JobGraph {
       const parts = partsOf(job);
       issueNode(s.repo, s.number, { label: s.title ? `${ref(s.repo, s.number)} ${s.title}` : ref(s.repo, s.number), stage, ...(s.url ? { url: s.url } : {}), ...(parts ? { parts } : {}) });
     }
-    if (pr) prNode(pr, pr.state === 'merged' ? 'done' : pr.state === 'open' || pr.state === 'unknown' ? (waitsOnMerge(job) ? 'partly_done' : 'pr_open') : 'cancelled');
+    if (pr) prNode(pr, pr.state === 'merged' ? 'done' : STILL_OPEN.includes(pr.state) ? (waitsOnMerge(job) ? 'partly_done' : 'pr_open') : 'cancelled');
+  }
+  // The tends (issue #927): each job a tend handed its job's pull request to, on that pull request's node.
+  for (const job of jobs) {
+    const t = followedOf(job).tended;
+    const next = t ? byId.get(t.nextJobId) : undefined;
+    const pr = t ? nodes.get(pullRequestNodeId(t.pullRequest)) : undefined;
+    if (!t || !next || !pr) continue;
+    const tend: JobGraphTend = { jobId: next.id, step: t.step, status: next.status,
+      ...(next.startedAt ? { startedAt: next.startedAt } : {}), ...(next.finishedAt ? { endedAt: next.finishedAt } : {}) };
+    nodes.set(pr.id, { ...pr, tends: [...pr.tends ?? [], tend] });
   }
 
   // The lineage links (issue #729) add the issues they name; the issue graph (issue #437) adds sub-issues and closers of

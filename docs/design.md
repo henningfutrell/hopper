@@ -1965,8 +1965,22 @@ by the hopper, so a tend holds the queue only while its job works. Each reposito
 
 What the hopper does about each pull request that needs tending shows on its card in Pull requests (issue #927,
 `PullRequestCard.queue`, `gaveUp`): "the hopper tends it next", "held behind #N" with why (a job works on it, or it waits
-for its checks to merge), or "the hopper gave up" with why (its checks still fail after `MAX_TENDS` fixes). A stall is never
-silent. A pull request the hopper gave up on is also a row line in Needs you, with why (`gaveUpLines`,
+for its checks to merge), or "the hopper gave up" with why (its checks still fail after `MAX_TENDS` fixes, or its tend job
+failed: then why is that job's own reason, `Job.error`, on one line, at most 300 characters). A stall is never silent.
+Every other open card says what the hopper does now, too (`doingText`, `ui/src/model/pull-requests.ts`): its tend job's step
+("the hopper rebases it onto dev: job N works on it now", `PullRequestCard.tendStep`), the merge it waits to make ("merges
+it when its checks pass", "on its next sync", "tries the merge again on each sync"), or nothing, and who acts then (yolo mode
+off, checks it may not read, a draft).
+
+**Conflicts a rebase sends to a person** (issue #927, `tendBrief`). A rebase tend resolves the small conflicts itself:
+imports, call sites, type updates, and lines both sides added to a list (a `WHATS-NEW.md` line). Only when both sides change
+the design of the same thing, and it cannot keep the intent of both, does it fail, naming the files, what each side does,
+and the choice a person must make. That reason is the card's "gave up" line and its Needs you line.
+
+**Tend attempts on the job graph** (issue #927, `JobGraphNode.tends`). A pull request's node lists each tend of it, oldest
+first: the step, its job, that job's status, and when it started and ended, read from the jobs on each read of the graph,
+so it is live. The node details of the Jobs view show them, each linked to its job. A pull request handed to a tend or a
+rework (`follow: tended`, `reworked`) stays open on the graph. A pull request the hopper gave up on is also a row line in Needs you, with why (`gaveUpLines`,
 `ui/src/model/pull-requests.ts`): the Pull requests row and its nav badge count those, not the ones with merge conflicts,
 which the hopper rebases itself.
 

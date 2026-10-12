@@ -182,11 +182,21 @@ export const tendStep = (seen: PullRequestSeen | undefined): TendStep | undefine
  */
 export function tendBrief(pullRequest: string, step: TendStep, checks: TendChecks = {}): string {
   return [`The hopper runs this issue again to tend its open pull request ${pullRequest}.`,
-    `Work on the branch of ${pullRequest}.`, ...stepLines({ pullRequest, step }), ...(step === 'fix_checks' ? checkLines(checks) : []),
+    `Work on the branch of ${pullRequest}.`, ...stepLines({ pullRequest, step }), ...(step === 'fix_checks' ? checkLines(checks) : REBASE_LINES),
     'Do not open a new pull request.',
     'If you cannot resolve a conflict or fix a check, end the job as failed. Say which files or checks, and why.',
     'Then end the job as done.'].join('\n');
 }
+
+/**
+ * What a rebase tend is told of its conflicts (issue #927): it resolves the small ones itself; only a design-level one goes to
+ * a person, and its failure states the choice, which the Pull requests list and Needs you show.
+ */
+const REBASE_LINES = [
+  'Resolve small conflicts yourself: imports, call sites, type updates, and lines that both sides added to a list.',
+  'If both sides change the design of the same thing and you cannot keep the intent of both, end the job as failed.',
+  'Name the files, say what each side does, and state the choice a person must make.',
+];
 
 /**
  * What a `fix_checks` tend is told of its checks (issue #927): the checks that failed, as the follow read them, and whether
