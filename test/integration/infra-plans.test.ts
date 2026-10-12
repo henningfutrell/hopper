@@ -24,6 +24,10 @@
 //   Scenario: a plan for another asset, and a plan that is not whole, are refused
 //   Scenario: each plan is kept with its summary in plain words: Infra lists it, the timeline says it
 //   Scenario: a new AWS resource without the MAP tag fails the plan: kept and shown, nobody approves it, nothing applies it
+//
+// Feature: approval by risk (part 3)
+//   Scenario: an operator approves a low-risk uat plan; a prod plan only an admin approves
+//   Scenario: with auto-approve on, the hopper approves a low-risk uat plan when it is kept, and says so; a prod plan waits
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { InfraPlan, PlanApply, PlanView } from '../../src/domain/infra-plans.ts';
@@ -34,6 +38,7 @@ import { fakeSts, type FakeApi } from '../support/fake-mint-apis.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { boxes, helper, runningJob } from '../support/vault-box.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
+import { rawRequest } from '../support/http.ts';
 
 const ACCOUNT = '123456789012';
 const ROLE = `aws-role/${ACCOUNT}/deploy`;
@@ -216,5 +221,63 @@ describe('no apply without a plan', () => {
     expect(refused.code).not.toBe(0);
     expect(refused.stderr).toMatch(/failed its checks/);
     expect(sts.seen).toHaveLength(0);
+  });
+
+  /** An operator's box token (issue #795): an agent that may approve work, as an operator. */
+  async function operatorToken(a: TestApp, session: string): Promise<string> {
+    const r = await a.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'operator', role: 'operator', box: true }, { token: session });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    return r.body.token;
+  }
+  const asOperator = async (a: TestApp, token: string, body: unknown): Promise<{ status: number; text: string }> => rawRequest(a.url, {
+    method: 'POST', path: '/ui/api/infra-plans', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const PROD = { ...PLAN, target: 'prod-network' };
+
+  it('lets an operator approve a low-risk uat plan; only an admin approves a prod plan', async () => {
+    const { a, session, job } = await boot();
+    const operator = await operatorToken(a, session);
+    const low = await record(a, job);
+    const prod = await record(a, job, PROD);
+    const listed = (await a.api<{ plans: PlanView[] }>('GET', '/api/infra-plans', undefined, { 'x-hopper-session': session })).body.plans;
+    expect(listed.find((p) => p.id === low.id)!.approver).toEqual({ who: 'operator', why: 'low risk, in uat only' });
+    expect(listed.find((p) => p.id === prod.id)!.approver).toEqual({ who: 'admin', why: 'high risk: prod' });
+
+    expect((await asOperator(a, operator, { action: 'approve', plan: low.id })).status).toBe(200);
+    const refused = await asOperator(a, operator, { action: 'approve', plan: prod.id });
+    expect(refused.status).toBe(403);
+    expect(refused.text).toMatch(/is high risk: prod: only an admin approves it/);
+    expect((await a.ui('/ui/api/infra-plans', { action: 'approve', plan: prod.id }, { token: session })).status).toBe(200);
+    expect((await a.events()).filter((e) => e.type === 'infra.plan_approved').map((e) => e.data)).toEqual([
+      expect.objectContaining({ plan: low.id, level: 'low' }), expect.objectContaining({ plan: prod.id, level: 'high' }),
+    ]);
+  });
+
+  it('with auto-approve on, approves a low-risk uat plan when it is kept and says so; a prod plan still waits for an admin', async () => {
+    const { a, session, dir, token, sts, job } = await boot();
+    const operator = await operatorToken(a, session);
+    expect((await rawRequest(a.url, { method: 'POST', path: '/ui/api/infra-plans/settings', headers: { authorization: `Bearer ${operator}`, 'content-type': 'application/json' }, body: JSON.stringify({ autoApprove: true }) })).status).toBe(403);
+    const on = await a.ui<{ settings: { autoApprove: boolean } }>('/ui/api/infra-plans/settings', { autoApprove: true }, { token: session });
+    expect(on.status).toBe(200);
+    expect(on.body.settings).toEqual({ autoApprove: true });
+    expect((await a.events()).find((e) => e.type === 'infra.settings_changed')).toMatchObject({ data: { from: { autoApprove: false }, to: { autoApprove: true }, by: expect.any(String) } });
+
+    const said = await asJob(a, job, 'POST', '/job/infra-plans', PLAN);
+    expect(said.status).toBe(201);
+    const low = said.json.plan as PlanView;
+    expect(low.approval).toMatchObject({ plan: low.id, by: 'the hopper', auto: true });
+    const prod = await record(a, job, PROD);
+    expect(prod).not.toHaveProperty('approval');
+
+    const listed = (await a.api<{ plans: PlanView[]; settings: { autoApprove: boolean } }>('GET', '/api/infra-plans', undefined, { 'x-hopper-session': session })).body;
+    expect(listed.settings).toEqual({ autoApprove: true });
+    expect(listed.plans.find((p) => p.id === low.id)!.approval).toMatchObject({ auto: true });
+    expect(listed.plans.find((p) => p.id === prod.id)!.approval).toBeUndefined();
+    expect((await a.events()).filter((e) => e.type === 'infra.plan_approved').map((e) => e.data)).toEqual([expect.objectContaining({ plan: low.id, by: 'the hopper', auto: true, level: 'low' })]);
+
+    const minted = await helper(dir, ['aws', 'apply', ROLE, '--plan', low.id], token);
+    expect(minted.code, minted.stderr).toBe(0);
+    expect(sts.seen).toHaveLength(1);
+    expect((await helper(dir, ['aws', 'apply', ROLE, '--plan', prod.id], token)).stderr).toMatch(/is not approved/);
   });
 });
