@@ -6,7 +6,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { StackResources } from '../../src/domain/types.ts';
+import type { StackHistory, StackResources } from '../../src/domain/types.ts';
 
 type El = ReturnType<typeof createElement>;
 let root: Root | undefined;
@@ -34,13 +34,25 @@ const READ: StackResources = {
   openfga: { checks: 400, errors: 6, meanMs: 1.25 },
 };
 
+const at = (m: number) => new Date(NOW - m * 60_000).toISOString();
+const HISTORY: StackHistory = {
+  view: { range: { preset: '24h' } }, from: at(24 * 60), to: at(0), stepMs: 15 * 60_000, retentionDays: 30,
+  series: [
+    { service: 'postgres', group: 'stack', metric: 'cpu', points: [{ at: at(30), usedFrac: 0.1 }, { at: at(15), usedFrac: 0.2 }], gaps: [] },
+    { service: 'postgres', group: 'stack', metric: 'connections', points: [{ at: at(30), usedFrac: 0.12 }], gaps: [] },
+    { service: 'openfga', group: 'stack', metric: 'check-errors', points: [{ at: at(30), usedFrac: 0.01 }], gaps: [] },
+    { service: 'hopper-sandbox-claude', group: 'sandbox', metric: 'cpu', points: [{ at: at(30), usedFrac: 0.5 }], gaps: [] },
+  ],
+};
+
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
 async function render(read: StackResources | { status: number; error: string } = READ) {
   localStorage.setItem('jh_session', 'a'.repeat(64));
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
-  vi.stubGlobal('fetch', vi.fn(async () => ('status' in read
-    ? new Response(JSON.stringify({ error: read.error }), { status: read.status, headers: { 'content-type': 'application/json' } })
-    : new Response(JSON.stringify(read), { status: 200, headers: { 'content-type': 'application/json' } }))));
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => ('status' in read ? json({ error: read.error }, read.status)
+    : String(url).startsWith('/api/resources/history') ? json(HISTORY) : json(read))));
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   const store = '../../ui/src/store/index.ts';
@@ -55,6 +67,7 @@ async function render(read: StackResources | { status: number; error: string } =
 const rows = () => [...document.querySelectorAll('[data-slot="container-row"]')].map((r) => r.textContent ?? '');
 const postgres = () => document.querySelector('[data-slot="postgres-reading"]')?.textContent ?? '';
 const openfga = () => document.querySelector('[data-slot="openfga-reading"]')?.textContent ?? '';
+const legend = () => [...document.querySelectorAll('[data-slot="usage-graph-legend"] button')].map((b) => [b.textContent ?? '', b.getAttribute('aria-pressed')]);
 
 afterEach(async () => {
   await act(async () => { root?.unmount(); });
@@ -111,6 +124,14 @@ describe('the Resources page', () => {
     expect(document.body.textContent).toContain('the hopper is given no container runtime socket');
     expect(postgres()).toContain('pg_stat_statements is not installed');
     expect(document.body.textContent).toContain('the hopper is given no OpenFGA');
+  });
+
+  it('shows the stack over time: a line per service and metric; a sandbox box\'s hidden at first', async () => {
+    await render();
+    expect(document.body.textContent).toContain('Stack resources over time');
+    expect(legend()).toEqual([
+      ['postgres · CPU', 'true'], ['postgres · connections', 'true'], ['openfga · failed checks', 'true'], ['hopper-sandbox-claude · CPU', 'false'],
+    ]);
   });
 
   it('a read the daemon refuses says why', async () => {
