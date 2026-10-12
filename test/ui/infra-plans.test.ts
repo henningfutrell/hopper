@@ -2,7 +2,7 @@
 // from which commit — its state: waiting for a person, approved and still current, stale, or failed a check — and its
 // explainer.
 import { describe, expect, it } from 'vitest';
-import { applyLine, askedLine, infraTimeline, planApprove, planExplainer, planHeadline, planState } from '../../ui/src/model/infra-plans.ts';
+import { applyLine, askedLine, infraTimeline, planApprove, planExplainer, planHeadline, planState, watchersFrom, watchersText } from '../../ui/src/model/infra-plans.ts';
 import type { OutOfBandView, PlanApply, PlanSummary, PlanView } from '../../src/domain/types.ts';
 
 const plan: PlanView = {
@@ -101,5 +101,20 @@ describe('the applies and drift timeline', () => {
 describe('an agent\'s ask on a plan (issue #909)', () => {
   it('says who asked through the API, and that approving it here confirms it', () => {
     expect(askedLine({ asker: 'Grok Bot', at: '2026-10-12T10:10:00.000Z' })).toBe('Grok Bot asked to approve this through the API at 2026-10-12T10:10:00.000Z. An API token does not approve a high-risk plan: approve it here to confirm it.');
+  });
+});
+
+describe('the environment watchers as a person types them (issue #870 part 4)', () => {
+  it('reads one environment a line: its name, a colon, the watchers split by commas', () => {
+    expect(watchersFrom('prod: prod-owner, ops-lead\n\n * : ops-lead\nuat:qa-team,')).toEqual({ prod: ['prod-owner', 'ops-lead'], '*': ['ops-lead'], uat: ['qa-team'] });
+    expect(watchersFrom('')).toEqual({});
+  });
+
+  it('says a line it cannot read, so nothing is saved by mistake', () => {
+    expect(watchersFrom('prod prod-owner')).toBe('line 1 has no colon: write the environment, a colon, then the watchers');
+  });
+
+  it('writes the watchers back as a person types them', () => {
+    expect(watchersText({ '*': ['ops-lead'], prod: ['prod-owner', 'ops-lead'] })).toBe('*: ops-lead\nprod: prod-owner, ops-lead');
   });
 });
