@@ -55,7 +55,7 @@ describe('the checks of a pull request (issue #927)', () => {
     const [test, lint] = pullRequestFrom(r, 'pull request')?.failedChecks ?? [];
     expect(test?.reported).toEqual([
       'test/store/database.test.ts:42: connects again after the server drops the connection: AssertionError: expected 1 to be 2',
-      `src/b.ts:7: ${'x'.repeat(497)}...`,
+      `src/b.ts:7: ${'x'.repeat(485)}...`,
     ]);
     expect(lint?.reported).toHaveLength(5);
     expect(lint?.reported?.[0]).toBe('src/c.ts:1: error 0');

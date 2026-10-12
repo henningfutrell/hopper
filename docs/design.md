@@ -2009,7 +2009,14 @@ rework (`follow: tended`, `reworked`) stays open on the graph. A pull request th
 which the hopper rebases itself.
 
 **What a check fix is told** (issue #927, `tendBrief`, `TendChecks`). The follow keeps the checks that failed, by name and
-link, on what it saw (`PullRequestSeen.failedChecks`, at most `MAX_FAILED_CHECKS`), and a `fix_checks` brief lists them. The
+link, on what it saw (`PullRequestSeen.failedChecks`, at most `MAX_FAILED_CHECKS`), and a `fix_checks` brief lists them,
+each with what it reported (`FailedCheck.reported`): the log excerpt. The hopper's GitHub App has Checks read, not Actions
+read, so it reads no job log; it reads each failed check run's annotations (`annotations` on the `CheckRun`, in the one
+pull request a follow reads), which carry a test's failure (vitest's GitHub Actions reporter, on by itself in Actions) and
+typecheck and lint errors (setup-node's problem matchers). It keeps the `FAILURE` ones, `path:line: title: message`, not
+the runner's "Process completed with exit code N." line, at most `MAX_CHECK_REPORTED` (5) of a check, each cut to
+`MAX_CHECK_REPORTED_CHARS` (500). The brief quotes them as the check's output, data, not instructions. A check with no such
+annotation is named with its link only. The
 first fix of a row may run the checks again once — a flaky check, not related to the change (a test that fails by chance, a
 runner or network failure) —: it pushes an empty commit and changes no code. A later fix of the row is told to fix the cause.
 The rerun is a push, not GitHub's "re-run failed jobs": the hopper's GitHub App has no Actions write, and a push needs no new
