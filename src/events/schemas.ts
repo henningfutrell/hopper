@@ -328,7 +328,7 @@ export const EVENT_SCHEMAS = {
   'vault.secret_read': strict({ name: z.string(), by: z.string(), purpose: z.string().optional() }), 'vault.secret_migrated': strict({ name: z.string(), from: z.string() }),
   // A master key rotation (issue #659): the short fingerprints of the key replaced and the new one, who pressed it, the counts. Never a key.
   'vault.master_key_rotated': strict({ from: z.string(), to: z.string(), by: z.string(), resealed: z.number().int().nonnegative(), unreadable: z.number().int().nonnegative() }),
-  'template.saved': strict({ template: z.string(), image: z.string(), tools: z.array(z.string()).optional(), secrets: z.array(z.string()), profiles: z.array(operationProfile.extend({ backend: stateBackend.optional() })).optional(), by: z.string() }),
+  'template.saved': strict({ template: z.string(), image: z.string(), tools: z.array(z.string()).optional(), secrets: z.array(z.string()), profiles: z.array(operationProfile.extend({ backend: stateBackend.optional() })).optional(), probeMarks: z.record(z.string(), z.enum(['expect-denied', 'skip'])).optional(), by: z.string() }),
   'template.checked': strict({ template: z.string(), state: z.enum(['passed', 'failed']), failed: z.array(z.string()), problem: z.string().optional(), artifact: z.string().optional() }),
   'template.check_requested': strict({ template: z.string(), by: z.string() }),
   'template.removed': strict({ template: z.string(), by: z.string() }),

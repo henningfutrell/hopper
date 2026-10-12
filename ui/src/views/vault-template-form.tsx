@@ -16,6 +16,7 @@ import { ToolsInput } from './vault-tools';
 import { AgentCredentialInput } from './vault-agent-credential';
 import { agentCredentialOf } from '@/model/vault-agent-credential';
 import { BackendsInput } from './vault-state-backend';
+import { ProbeMarksInput } from './vault-probe-marks';
 import type { Send } from './vault';
 
 const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply'];
@@ -70,13 +71,14 @@ export function TemplateForm({ t, secrets: all, shared = [], busy, send, onDone 
   const [tools, setTools] = useState<string[]>(t?.tools ?? []);
   const [limits, setLimits] = useState(limitsDraft(t?.limits));
   const [credential, setCredential] = useState(t?.agentCredential ?? '');
+  const [marks, setMarks] = useState<Record<string, string>>(t?.probeMarks ?? {});
   const saved = templateLimits(limits);
   const toggle = (n: string) => setScope(scope.includes(n) ? scope.filter((x) => x !== n) : [...scope, n]);
   return (
     <form className="space-y-3" onSubmit={async (e) => {
       e.preventDefault();
       if (!saved.ok) return;
-      if (await send({ action: 'save-template', name: name.trim(), image: image.trim(), secrets: scope, profiles, tools, limits: saved.limits, agentCredential: agentCredentialOf(credential, scope) }, `${name.trim()}: saved`)) onDone();
+      if (await send({ action: 'save-template', name: name.trim(), image: image.trim(), secrets: scope, profiles, tools, limits: saved.limits, agentCredential: agentCredentialOf(credential, scope), ...(t?.readOnly ? { probeMarks: marks } : {}) }, `${name.trim()}: saved`)) onDone();
     }}>
       {!t && (
         <label className="block space-y-1"><Label>Name — its boxes are named hopper-sandbox-&lt;name&gt;</Label>
@@ -100,6 +102,7 @@ export function TemplateForm({ t, secrets: all, shared = [], busy, send, onDone 
       <ToolsInput tools={tools} busy={busy} onChange={setTools} />
       <ProfilesInput profiles={profiles} busy={busy} onChange={setProfiles} />
       <BackendsInput key={profiles.filter((p) => p.asset.kind === 'terraform-workspace').map((p) => p.asset.name).join(' ')} profiles={profiles} busy={busy} onChange={setProfiles} />
+      {t?.readOnly && <ProbeMarksInput t={t} marks={marks} busy={busy} onChange={setMarks} />}
       <LimitsInput draft={limits} busy={busy} problem={saved.ok ? undefined : saved.error} onChange={setLimits} />
       <p className="text-xs text-muted-foreground">A new secret, a new image, a change of tools or a new profile waits for your approval before any box gets it. A profile you remove loses its approval. Limits apply to the next box with no approval: they give a box nothing.</p>
       <div className="flex flex-wrap gap-2">

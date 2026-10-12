@@ -50,7 +50,7 @@ export const VAULT_USAGE = `  hopper vault                                      
 const VAULT_SET = 'vault set <name> [--scope <text>] [--shared [--reader <user id>]...] (the value on stdin, never as an argument)';
 const VAULT_MINT_TEST = 'vault mint-test aws-role/<account>/<role>|cluster/<name>';
 const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared] | hopper ${VAULT_MINT_TEST}`;
-const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]... [--agent-credential <secret>|none]';
+const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]... [--agent-credential <secret>|none] [--mark <probe>=expect-denied|skip|none]...';
 const TEMPLATE_REQUEST = 'template request --needs "<operation>/<kind>/<asset> ..." (or plain words, one line each: "get pods on cluster lab")';
 const TEMPLATE_VERBS = 'template list | save <name> … | request --needs <needs> | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | check <name> | read-policy [set <entry>...]';
 const SANDBOX_VERBS = 'sandbox list | launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>] [--tool <name>]...';
@@ -137,11 +137,29 @@ function limitsOf(values: { cpus?: string | undefined; 'memory-mb'?: string | un
 const templatesOf = (v: unknown) => (v as VaultView).templates;
 const readPolicyOf = (v: unknown) => (v as VaultView).readPolicy ?? [];
 
+/** One `--mark <probe>=<mark>` (issue #916): the probe and its mark, `none` to drop it. The vault checks the probe and the mark. */
+function markOf(s: string): [string, string] {
+  const at = s.lastIndexOf('=');
+  if (at <= 0 || at === s.length - 1) throw usage(TEMPLATE_SAVE);
+  return [s.slice(0, at), s.slice(at + 1)];
+}
+
+/** The template's probe marks with these changed: the ones it has, each named one set, or dropped by `none`. */
+function withMarks(had: Readonly<Record<string, string>>, marks: readonly [string, string][]): Record<string, string> {
+  const out = { ...had };
+  for (const [probe, mark] of marks) {
+    if (mark === 'none') delete out[probe];
+    else out[probe] = mark;
+  }
+  return out;
+}
+
 export function templateCall(args: string[]): Call {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     image: { type: 'string' }, secret: { type: 'string', multiple: true }, profile: { type: 'string', multiple: true }, backend: { type: 'string', multiple: true },
     cpus: { type: 'string' }, 'memory-mb': { type: 'string' }, 'ttl-minutes': { type: 'string' }, 'keep-home': { type: 'string' },
     tool: { type: 'string', multiple: true }, needs: { type: 'string' }, 'agent-credential': { type: 'string' },
+    mark: { type: 'string', multiple: true },
   } });
   const [verb, name, ...rest] = positionals;
   const flags = Object.keys(values).length > 0;
@@ -162,8 +180,9 @@ export function templateCall(args: string[]): Call {
     if (!name || rest.length > 0 || !values.image || values.needs !== undefined) throw usage(TEMPLATE_SAVE);
     const profiles = values.profile?.map(profileOf);
     const limits = limitsOf(values);
-    const { image, secret, tool, backend, 'agent-credential': credential } = values;
+    const { image, secret, tool, backend, 'agent-credential': credential, mark } = values;
     backend?.forEach(backendOf);
+    const marks = mark?.map(markOf);
     return {
       role: 'admin', path: '/ui/api/vault', pick: templatesOf,
       // The secrets left out keep the ones it has, as its profiles, their backends and limits do.
@@ -174,6 +193,7 @@ export function templateCall(args: string[]): Call {
           action: 'save-template', name, image, secrets: secret ?? was?.secrets ?? [],
           ...(declared ? { profiles: withBackends(declared, was?.profiles ?? [], backend ?? []) } : {}), ...(limits ? { limits } : {}), ...(tool ? { tools: tool } : {}),
           ...(credential !== undefined ? { agentCredential: credential === 'none' ? null : credential } : {}),
+          ...(marks ? { probeMarks: withMarks(was?.probeMarks ?? {}, marks) } : {}),
         };
       },
     };
