@@ -15578,7 +15578,7 @@ end as of any job's. The operator CLI: `hopper job submit --title … (--brief �
 
 **Residual risk, stated.** `job.queued` carries the job's spec, and so its prompt — the brief —, as for every job: a
 webhook subscription to `job.queued` delivers it to the subscriber. The authorizations are told to the job and recorded;
-they do not yet make vault grants.
+the one that makes a vault grant is part 3, below.
 
 **In the UI (part 2).** The view Direct jobs (`#direct-jobs`, in the Jobs nav group; `ui/src/views/direct-jobs.tsx`,
 `ui/src/model/direct-jobs.ts`) has the submit form, for an operator or admin only: title, brief, labels (split at commas),
@@ -15588,8 +15588,20 @@ record says `via: ui`. Below it, every direct job from `GET /api/direct-jobs`, r
 questions with a link to Questions, where a person answers them, its result and its error, and a link to its job view.
 A viewer reads the list and gets no form. Nothing the view sends goes to GitHub.
 
-**Not built yet (the next parts).** Authorizations that become the job's vault grants; notifying the requester by name,
-beyond the notifiers.
+**The vault authorization (part 3).** The authorization `vault` (`VAULT_AUTHORIZATION`) is the submitter's **vault
+grant** ("Vault grants") for the direct job's item, `direct:<id>`. The route fixes the id first, and Access decides the
+grant for that item as for Grant on Settings → Vault: OpenFGA `vault_grant#can_grant` for the person signed in, the user
+whose jobs these are as `owner`. Refused: 403; OpenFGA not asked: 503. Either way nothing is kept: no record, no
+`direct_job.submitted`, no job. Allowed: the submit's one transaction also keeps the grant (`by`: the submitter, `job`: its
+first job) and appends `vault.granted { job, key, by }`, so the audit names who authorized the vault, as for a person's
+Grant. Run again keeps it (the grant is the item's); Revoke on Settings → Vault takes it back. The template's approved
+scope still bounds what the job gets, and the job's box still asks through the vault's checks: the grant widens nothing.
+Its prompt says `vault: granted by the submitter`, or `vault: not granted`. Every other authorization stays words told to
+the job and recorded: the hopper has no grant to make of them. Why one reserved word, and no field of its own: a vault
+grant is per item, never per secret ("Vault grants", residual risk), so the submitter's choice is yes or no, and the
+authorizations list is where the submitter already says what the job may reach.
+
+**Not built yet (the next part).** Notifying the requester by name, beyond the notifiers.
 
 ## Checkpoints and resume elsewhere (issue #921, 2026-10-12)
 

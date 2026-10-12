@@ -36,6 +36,15 @@ export interface DirectJob extends DirectJobInput {
   submittedAt: string;
 }
 
+/**
+ * The authorization that grants the direct job's item the vault (design.md "Direct jobs", part 3): the submitter's own
+ * vault grant, made at submit after Access, as a person's Grant on Settings → Vault.
+ */
+export const VAULT_AUTHORIZATION = 'vault';
+
+/** Whether the submission authorizes the vault. */
+export const authorizesVault = (d: Pick<DirectJobInput, 'authorizations'>): boolean => d.authorizations.includes(VAULT_AUTHORIZATION);
+
 /** The executor a direct job runs on when it names none: the GitHub source's default too. */
 export const DEFAULT_DIRECT_EXECUTOR = 'herdr-claude';
 export const DEFAULT_DIRECT_PRIORITY = 50;
@@ -69,7 +78,8 @@ export function directJobView(d: DirectJob, job: Job | undefined, questions: Dir
 
 /** The direct jobs' store. */
 export interface DirectJobRepository {
-  add(input: Omit<DirectJob, 'id'>): DirectJob;
+  /** Keeps it under `id`; absent: a new id. */
+  add(input: Omit<DirectJob, 'id'>, id?: string): DirectJob;
   get(id: string): DirectJob | undefined;
   /** Newest first. */
   list(): DirectJob[];
