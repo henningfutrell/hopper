@@ -243,6 +243,8 @@ export interface ScopePermission {
   routes: string[];
   /** The least UI role its routes need: a grant of a lower role gets 403 there. */
   role: UiRole;
+  /** The route scope this is one action of (issue #909: `vault:edit` for `vault:edit.approve-template`); absent: a route's own. */
+  parent?: string;
   /** One of its routes is a box action: only a box grant's tokens may use it. */
   box: boolean;
 }

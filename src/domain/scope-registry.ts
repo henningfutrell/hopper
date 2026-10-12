@@ -3,13 +3,22 @@
 // covers, the least role they need and whether one is a box action —, and the presets, each a named set of scopes. Built
 // from the routes themselves (./token-scopes.ts names their scopes), so a new route's scope shows up with no edit here: an
 // area no section names goes under "Other". Pure: the HTTP layer gives the routes and what a box action is.
-import { scopeAllows, scopeOfRoute } from './token-scopes.ts';
+import { actionWord, scopeAllows, scopeOfAction, scopeOfRoute } from './token-scopes.ts';
 import { roleAllows, type ScopePermission, type ScopePreset, type ScopeRegistry, type ScopeSection, type UiRole } from './sign-in.ts';
 
 export type { ScopePermission, ScopePreset, ScopeRegistry, ScopeSection };
 
-/** A route as the API reference lists it. */
-export interface RegistryRoute { method: string; path: string; summary: string; role?: UiRole }
+/**
+ * A route as the API reference lists it. `actions`: the field of its body that names what it does (`action`, `kind`)
+ * and the actions it may name, when it names more than one (issue #909): each gets a scope of its own.
+ */
+export interface RegistryRoute { method: string; path: string; summary: string; role?: UiRole; actions?: { field: string; values: string[] } }
+
+/** An action's plain words: `approve-template` → `Approve template`. */
+const actionWords = (action: string): string => {
+  const words = actionWord(action).replace(/-+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
 
 /** The sections, in order, and the route areas each holds. An area not named here goes under OTHER. */
 export const SCOPE_SECTIONS: readonly { id: string; title: string; description: string; areas: readonly string[] }[] = [
@@ -44,21 +53,31 @@ const lower = (a: UiRole, b: UiRole): UiRole => (roleAllows(b, a) ? a : b);
 /** The registry of the routes: one permission per scope, in its section; the presets with their box flag. */
 export function scopeRegistry(routes: readonly RegistryRoute[], isBoxAction: (route: string) => boolean): ScopeRegistry {
   const byScope = new Map<string, ScopePermission & { summaries: Set<string> }>();
+  const add = (scope: string, route: string, summary: string, role: UiRole, box: boolean, parent?: string): void => {
+    const p = byScope.get(scope) ?? { scope, description: '', routes: [], role, ...(parent === undefined ? {} : { parent }), box: false, summaries: new Set<string>() };
+    p.routes.push(route);
+    p.summaries.add(summary);
+    p.role = lower(p.role, role);
+    p.box ||= box;
+    byScope.set(scope, p);
+  };
   for (const r of routes) {
     const method = r.method.toUpperCase();
     const scope = scopeOfRoute(method, r.path);
     if (scope === undefined) continue;
     const role = r.role ?? 'viewer';
-    const p = byScope.get(scope) ?? { scope, description: '', routes: [], role, box: false, summaries: new Set<string>() };
-    p.routes.push(`${method} ${r.path}`);
-    p.summaries.add(r.summary);
-    p.role = lower(p.role, role);
-    p.box ||= method === 'POST' && isBoxAction(r.path);
-    byScope.set(scope, p);
+    const box = method === 'POST' && isBoxAction(r.path);
+    add(scope, `${method} ${r.path}`, r.summary, role, box);
+    for (const a of r.actions?.values ?? []) add(scopeOfAction(scope, a), `${method} ${r.path} (${r.actions!.field}: ${a})`, `${actionWords(a)} (${r.summary})`, role, box, scope);
   }
-  const permissions = [...byScope.values()].sort((a, b) => a.scope.localeCompare(b.scope))
-    .map(({ summaries, ...p }) => ({ ...p, description: [...summaries].join('; ') }));
-  const sectionOf = (scope: string): string => MOVED[scope] ?? SCOPE_SECTIONS.find((s) => s.areas.includes(scope.split(':')[0]!))?.id ?? OTHER.id;
+  const all = [...byScope.values()].map(({ summaries, ...p }) => ({ ...p, description: [...summaries].join('; ') }));
+  // Each route's scope, then its actions' under it.
+  const permissions = all.filter((p) => p.parent === undefined).sort((a, b) => a.scope.localeCompare(b.scope))
+    .flatMap((p) => [p, ...all.filter((q) => q.parent === p.scope).sort((a, b) => a.scope.localeCompare(b.scope))]);
+  const sectionOf = (scope: string): string => {
+    const route = byScope.get(scope)?.parent ?? scope;
+    return MOVED[route] ?? SCOPE_SECTIONS.find((s) => s.areas.includes(route.split(':')[0]!))?.id ?? OTHER.id;
+  };
   const sections = [...SCOPE_SECTIONS, OTHER]
     .map(({ id, title, description }) => ({ id, title, description, permissions: permissions.filter((p) => sectionOf(p.scope) === id) }))
     .filter((s) => s.permissions.length > 0);
@@ -69,5 +88,5 @@ export function scopeRegistry(routes: readonly RegistryRoute[], isBoxAction: (ro
 /** The preset of that id, or undefined. */
 export const presetOf = (registry: ScopeRegistry, id: string): ScopePreset | undefined => registry.presets.find((p) => p.id === id);
 
-/** Every scope a route needs, sorted. */
+/** Every scope a route, or one of its actions, needs, sorted. */
 export const scopesOf = (registry: ScopeRegistry): string[] => registry.sections.flatMap((s) => s.permissions.map((p) => p.scope)).sort();

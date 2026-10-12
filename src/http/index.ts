@@ -39,7 +39,7 @@ import { sectionRoutes } from './sections.ts';
 import { questionRoutes } from './questions.ts';
 import { createRealmsAdmin, realmRoutes } from './realms.ts';
 import { createApiGrants } from './ui/api-grants.ts';
-import { routeScopeRegistry } from './scopes.ts';
+import { actionFields, routeScopeRegistry } from './scopes.ts';
 import { sourceRoutes } from './sources.ts';
 import { sseRoutes } from './sse.ts';
 import { stateRoutes } from './state.ts';
@@ -140,7 +140,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const g = grants.reconcile(o.signIn.roleOf);
   if (g.dropped + g.changed > 0) console.warn(`hopper: the sign-in config applied to grants: ${g.dropped} ended, ${g.changed} lowered`);
   installHostGuard(app, { port: o.port, lan: o.lan, sessions });
-  installTenancy(app, { tenants: o.tenants, sessions, grants, signIn: o.signIn, access: o.access, port: o.port, lan: o.lan });
+  installTenancy(app, { tenants: o.tenants, sessions, grants, signIn: o.signIn, access: o.access, port: o.port, lan: o.lan, actionField: actionFields() });
   const tenant = { tenant: (req: Parameters<typeof tenantOf>[1]) => tenantOf(o.tenants, req) };
   apiReferenceRoutes(app, o.version);
   helpRoutes(app, o.version);

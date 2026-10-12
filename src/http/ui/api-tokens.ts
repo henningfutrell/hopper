@@ -15,7 +15,7 @@ import {
   API_TOKEN_MINUTES, ACCESS_UNAVAILABLE, GRANT_DEFAULT_DAYS, GRANT_IDLE_DAYS, GRANT_MAX_DAYS, REFRESH_TOKEN_PREFIX, UI_ROLES, roleAllows,
   type AccessAnswer, type ApiGrantMinted, type ApiGrantView, type ApiTokenMinted, type ApiTokenSettings, type ApiTokenView, type Identity, type UiRole,
 } from '../../domain/types.ts';
-import { scopeAllows, scopeOfRoute, scopeProblem } from '../../domain/token-scopes.ts';
+import { scopeAllows, scopeAllowsSome, scopeOfAction, scopeOfRoute, scopeProblem } from '../../domain/token-scopes.ts';
 import { presetOf, scopesOf, type ScopeRegistry } from '../../domain/scope-registry.ts';
 import type { Access } from '../../authz/service.ts';
 import { HttpError, parseWith } from '../errors.ts';
@@ -54,7 +54,7 @@ export const tokenRefreshBody = z.strictObject({ refresh: z.string().startsWith(
 
 const LIFETIME = `the admin's API-token lifetime (Settings → API tokens: ${API_TOKEN_MINUTES.min}–${API_TOKEN_MINUTES.max} minutes, default ${API_TOKEN_MINUTES.default}), or less (\`minutes\`)`;
 const USE = 'Send it as `Authorization: Bearer <token>` on any `GET /api/*` or `POST /ui/api/*` route: it acts as a UI session of its user with its role would, with no Origin needed, and Access (`api_token#can_view`, `can_operate` or `can_administer`, for the role the route needs) decides each use. A box action (issue #795: a route that starts a job, runs a command, approves or merges work, updates the hopper or a client, or changes the work on a machine; the list is `src/http/ui/box-actions.ts`) needs a box token and `api_token#can_run_on_box` too: any other token gets 403.';
-const SCOPES = 'A grant\'s token may use only the routes its `scopes` cover (issue #881): a read `GET /api/<area>/…` needs `<area>:read`, a mutation `POST /ui/api/<area>/…/<act>` needs `<area>:<act>` (`<area>:edit` for `POST /ui/api/<area>`); a scope is `<area>:<act>`, `<area>:*`, `*:<act>` or `*`. `preset` (issue #909) names a preset of `GET /api/scopes`: the grant holds its scopes and `scopes`, and is a box grant when the preset is and `box` is not given. 400 for a scope that covers no route, or a preset that is not there; at least one scope.';
+const SCOPES = 'A grant\'s token may use only the routes its `scopes` cover (issue #881): a read `GET /api/<area>/…` needs `<area>:read`, a mutation `POST /ui/api/<area>/…/<act>` needs `<area>:<act>` (`<area>:edit` for `POST /ui/api/<area>`); a scope is `<area>:<act>`, `<area>:*`, `*:<act>` or `*`. A route whose body names one of several actions (`action`, or `kind`) has a scope for each too (issue #909): `<area>:<act>.<action>`, e.g. `vault:edit.approve-template`; the route\'s scope covers them all. `preset` (issue #909) names a preset of `GET /api/scopes`: the grant holds its scopes and `scopes`, and is a box grant when the preset is and `box` is not given. 400 for a scope that covers no route, or a preset that is not there; at least one scope.';
 
 export const API_TOKEN_OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/api-tokens', tag: 'API tokens', summary: 'List grants and API tokens', description: 'The request\'s user\'s live grants (issue #881: id, label, holder, role, scopes, box, created, fixed end or none, idle end, last used and from where) and the live API tokens an exchange made (issue #718); never a token. `scopes`: every scope a route needs. `settings`: the API-token lifetime and its bounds.', returns: '`{ grants: ApiGrantView[], tokens: ApiTokenView[], scopes: string[], settings: ApiTokenSettings }`' },
@@ -91,7 +91,8 @@ export async function apiTokenAnswer(
 /**
  * Why a grant's API token may not use the route (issue #881), or undefined: it may, or it is no grant's. Deny by
  * default: a route that names no scope, or one the grant's scopes do not cover, is refused; so is any route once the
- * grant ended.
+ * grant ended. At the door the body is not read yet: a grant that holds only some of the route's actions' scopes (issue
+ * #909) passes here, and `grantActionRefusal` checks the action the body names.
  */
 export function grantScopeRefusal(grants: Pick<ApiGrants, 'live'>, s: Pick<UiSession, 'grantId'>, method: string, route: string | undefined): string | undefined {
   if (s.grantId === undefined) return undefined;
@@ -99,6 +100,20 @@ export function grantScopeRefusal(grants: Pick<ApiGrants, 'live'>, s: Pick<UiSes
   if (!g) return 'its grant ended or was revoked';
   const needs = route === undefined ? undefined : scopeOfRoute(method, route);
   if (needs === undefined) return 'this route takes no scope: a grant\'s token may not use it';
+  return scopeAllowsSome(g.scopes, needs) ? undefined : `its grant's scopes do not cover ${needs}`;
+}
+
+/**
+ * Why a grant's API token may not do what the body asks of the route (issue #909), or undefined: it may, or it is no
+ * grant's. `action`: what the body's action field names; absent or not a string: the route's own scope is needed.
+ */
+export function grantActionRefusal(grants: Pick<ApiGrants, 'live'>, s: Pick<UiSession, 'grantId'>, method: string, route: string | undefined, action: unknown): string | undefined {
+  if (s.grantId === undefined) return undefined;
+  const g = grants.live(s.grantId);
+  if (!g) return 'its grant ended or was revoked';
+  const scope = route === undefined ? undefined : scopeOfRoute(method, route);
+  if (scope === undefined) return 'this route takes no scope: a grant\'s token may not use it';
+  const needs = typeof action === 'string' && action !== '' ? scopeOfAction(scope, action) : scope;
   return scopeAllows(g.scopes, needs) ? undefined : `its grant's scopes do not cover ${needs}`;
 }
 

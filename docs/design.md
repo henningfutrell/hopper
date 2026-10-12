@@ -11771,12 +11771,24 @@ with its plain description and the routes it covers, generated from the registry
 - **Risk guards kept.** A box action still needs the box flag, its scope and `api_token#can_run_on_box`; Access decides
   each use by role. The `agent-approvals` preset leaves infra plans and vault templates out.
 
-**Not built** (follow-ups of #909): a per-item confirmation by a person (a notification to tap) for a high-risk or
-production plan and for a write credential, approved by a grant's token; scopes per `action` of a route whose body names
-it (`vault:edit` covers every vault change, `infra-plans:edit` the plan approval).
+**Action scopes** (part 2 of #909). A route whose body names one of several actions — a discriminated union, or an
+object whose `action` or `kind` is one of a set (`bodyActions`, `src/http/scopes.ts`, read from the operation's zod body)
+— has a scope for each action, `<route scope>.<action>` (`vault:edit.approve-template`, `sources:intake.approve`; the
+action lower case, any other character a hyphen). The route's scope covers them all, so a grant made before holds what it
+held. The registry lists each action's scope right under its route's, with `parent`, its routes as `POST <path>
+(<field>: <action>)`, and a description from the action's words and the route's summary; the form indents them, and a
+tick of the route's box takes the place of its actions' boxes. Two checks: the door (`grantScopeRefusal`, before the body
+is read) lets a grant through when it holds the route's scope or one of its actions'; once the body is read, a
+`preHandler` of `installTenancy` (`grantActionRefusal`) needs the scope of the action the body names, or the route's own
+when it names none, and refuses with 403 naming that scope. A route with one action (`infra-plans`: approve) has only its
+route's scope.
 
-Tests: `test/domain/scope-registry.test.ts`, `test/integration/token-grants.test.ts` (a grant from a preset),
-`test/ui/api-tokens.test.ts`, `test/ui/scope-checklist.test.ts`.
+**Not built** (follow-up of #909): a per-item confirmation by a person (a notification to tap) for a high-risk or
+production plan and for a write credential, approved by a grant's token.
+
+Tests: `test/domain/scope-registry.test.ts`, `test/domain/token-scopes.test.ts`, `test/integration/token-grants.test.ts`
+(a grant from a preset; a grant that holds one action of a route), `test/ui/api-tokens.test.ts`,
+`test/ui/scope-checklist.test.ts`.
 
 ## Access: OpenFGA decides each mint (issue #559, 2026-10-09)
 
