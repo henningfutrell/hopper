@@ -1,6 +1,6 @@
 # Resources
 
-**Resources** is a page in the main menu, in the group Sources & machines. It shows what each part of the hopper's own stack uses now. Only the hopper's admin can read it.
+**Resources** is a page in the main menu, in the group Sources & machines. It shows what each part of the hopper's own stack uses now, and how its database and OpenFGA do. Only the hopper's admin can read it.
 
 The page reads again every 10 seconds while it is open.
 
@@ -32,6 +32,15 @@ The hopper reads its Postgres directly:
 - **Locks**: lock requests that wait now.
 - **Transactions**: how many are open longer than 5 minutes, and how long the oldest open one is open.
 - **Statement latency**: the mean time of a statement, from `pg_stat_statements`. The compose file loads it. Another Postgres shows why there is none.
+
+## OpenFGA
+
+The hopper reads OpenFGA's own metrics, on port 2112 of the OpenFGA host:
+
+- **Check latency**: the mean time of a check, as OpenFGA measures it. OpenFGA counts whole milliseconds, so fast checks give a mean below 1 ms.
+- **Errors**: how many checks failed, and their share of all checks.
+
+Both count since OpenFGA started. Without OpenFGA, or when its metrics do not answer, the page says why.
 
 ## Through the API
 

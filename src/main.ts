@@ -37,7 +37,7 @@ import { createRuntimes } from './users/runtimes.ts';
 import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxBoxesFor, sandboxClientsOf } from './users/sandbox-boxes.ts';
 import { mintJoinCode } from './machines/join-code.ts';
-import { selectRuntime } from './sandbox/runtime.ts'; import { createStackResources, meterFor } from './stack-resources/index.ts';
+import { selectRuntime } from './sandbox/runtime.ts'; import { createOpenFgaMeter, createStackResources, meterFor, openFgaMetricsUrl } from './stack-resources/index.ts';
 import { cachedSandboxes, createSandboxes, hopperAddress, hopperNetwork, launchScopes, ownContainer, usersAgentCredentials, usersTemplates, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
@@ -85,8 +85,9 @@ export interface AppSeams extends UserSeams {
   /** OpenFGA (issue #559); default the server HOPPER_OPENFGA_URL names, else none. */
   authorizationServer?: AuthorizationServer;
   /** The container runtime (issue #708); default the one src/sandbox/runtime.ts selects from the config, else none. What reads
-   * the stack's containers (issue #947); default the meter on the sandbox runtime's socket, else none. */
-  containerRuntime?: ContainerRuntime; containerMeter?: import('./domain/stack-resources.ts').ContainerMeter;
+   * the stack's containers (issue #947); default the meter on the sandbox runtime's socket, else none. And what reads
+   * OpenFGA's checks; default its metrics endpoint beside HOPPER_OPENFGA_URL, else none. */
+  containerRuntime?: ContainerRuntime; containerMeter?: import('./domain/stack-resources.ts').ContainerMeter; openFgaMeter?: import('./domain/stack-resources.ts').OpenFgaMeter;
   /** How long a sandbox launch waits for the box's start check (issue #708); default START_CHECK_MS. */
   startCheckMs?: number;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
@@ -110,7 +111,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, startCheckMs: _check, ...shared } = seams;
+  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, openFgaMeter: _fgaMeter, startCheckMs: _check, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -296,8 +297,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const server = createServer({
     // The stack against the compose file of this version (issue #697): checked at start, and at each GET /api/update/drift.
     // The shared GitHub rate limiter (issue #436): every GitHub call of this process goes through it, with the saved settings.
-    // Stack resources (issue #947): the containers through the sandbox runtime's socket, Postgres through the store.
-    instance, clock, version: VERSION, pluginStore, updater, buildDir: appDir, access, sandboxes, masterKey: masterKeyStatus, rateLimiter: createRateLimiterControl({ settings: store.settings, events: runtimes.events }), stackResources: createStackResources({ meter: seams.containerMeter ?? meterFor({ config, instanceId: instance.settings.instanceId(), self: ownContainer(config.localMachine) }), database: store.databaseStats, clock }), stackDrift: startStackDrift({ appDir, env, logger, probe: seams.update?.stackProbe ?? createStackProbe({ vaultUrl: config.vaultUrl }) }),
+    // Stack resources (issue #947): the containers through the runtime's socket, Postgres through the store, OpenFGA its metrics.
+    instance, clock, version: VERSION, pluginStore, updater, buildDir: appDir, access, sandboxes, masterKey: masterKeyStatus, rateLimiter: createRateLimiterControl({ settings: store.settings, events: runtimes.events }), stackResources: createStackResources({ meter: seams.containerMeter ?? meterFor({ config, instanceId: instance.settings.instanceId(), self: ownContainer(config.localMachine) }), openfga: seams.openFgaMeter ?? (config.openFgaUrl ? createOpenFgaMeter({ url: openFgaMetricsUrl(config.openFgaUrl) }) : undefined), database: store.databaseStats, clock }), stackDrift: startStackDrift({ appDir, env, logger, probe: seams.update?.stackProbe ?? createStackProbe({ vaultUrl: config.vaultUrl }) }),
     tenants: {
       user: (id) => runtimes.get(id),
       list: () => instance.users.list(),

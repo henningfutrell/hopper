@@ -31,6 +31,7 @@ const READ: StackResources = {
     connections: { active: 3, total: 12, max: 100 }, databaseBytes: 80 * MiB, cacheHitFrac: 0.987, locksWaiting: 1, longTransactions: 0,
     oldestTransactionS: 4, statements: { calls: 1200, meanMs: 0.42 },
   },
+  openfga: { checks: 400, errors: 6, meanMs: 1.25 },
 };
 
 async function render(read: StackResources | { status: number; error: string } = READ) {
@@ -53,6 +54,7 @@ async function render(read: StackResources | { status: number; error: string } =
 
 const rows = () => [...document.querySelectorAll('[data-slot="container-row"]')].map((r) => r.textContent ?? '');
 const postgres = () => document.querySelector('[data-slot="postgres-reading"]')?.textContent ?? '';
+const openfga = () => document.querySelector('[data-slot="openfga-reading"]')?.textContent ?? '';
 
 afterEach(async () => {
   await act(async () => { root?.unmount(); });
@@ -92,10 +94,23 @@ describe('the Resources page', () => {
     expect(text).toContain('0.42 ms mean over 1200 statements');
   });
 
-  it('says why the containers or the statement latency cannot be read', async () => {
-    await render({ ...READ, containers: { problem: 'the hopper is given no container runtime socket' }, postgres: { ...READ.postgres, statements: { problem: 'pg_stat_statements is not installed' } } as StackResources['postgres'] });
+  it('shows OpenFGA: the mean check time and the share of checks that failed', async () => {
+    await render();
+    const text = openfga();
+    expect(text).toContain('1.25 ms mean over 400 checks');
+    expect(text).toContain('6 of 400 checks failed (1.5%)');
+  });
+
+  it('OpenFGA before any check says so', async () => {
+    await render({ ...READ, openfga: { checks: 0, errors: 0 } });
+    expect(openfga()).toContain('no checks yet');
+  });
+
+  it('says why the containers, the statement latency or OpenFGA cannot be read', async () => {
+    await render({ ...READ, containers: { problem: 'the hopper is given no container runtime socket' }, postgres: { ...READ.postgres, statements: { problem: 'pg_stat_statements is not installed' } } as StackResources['postgres'], openfga: { problem: 'the hopper is given no OpenFGA' } });
     expect(document.body.textContent).toContain('the hopper is given no container runtime socket');
     expect(postgres()).toContain('pg_stat_statements is not installed');
+    expect(document.body.textContent).toContain('the hopper is given no OpenFGA');
   });
 
   it('a read the daemon refuses says why', async () => {

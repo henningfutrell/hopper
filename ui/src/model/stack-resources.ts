@@ -1,6 +1,6 @@
 // Stack resources in words (issue #947, design.md "Stack resources"): each container's CPU, memory, network, disk,
-// restarts and uptime, and the hopper's Postgres, as the Resources page writes them. Pure: `now` is passed in.
-import type { ContainerReading, PostgresReading } from '@/model/wire';
+// restarts and uptime, the hopper's Postgres, and OpenFGA's checks, as the Resources page writes them. Pure: `now` is passed in.
+import type { ContainerReading, OpenFgaReading, PostgresReading } from '@/model/wire';
 import { duration } from './format';
 
 const UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB'] as const;
@@ -14,6 +14,7 @@ export function sizeText(bytes: number): string {
 }
 
 const cores = (n: number): string => String(Math.round(n * 100) / 100);
+const ms = cores;
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
 
 /** CPU cores busy, against the quota when one is set; while it runs with no reading yet, it is measured at the next read. */
@@ -74,6 +75,16 @@ export function postgresLines(p: PostgresReading): { label: string; text: string
         p.oldestTransactionS !== undefined ? `oldest open ${duration(p.oldestTransactionS)}` : '',
       ].filter(Boolean).join('; '),
     },
-    { label: 'Statement latency', text: 'problem' in s ? s.problem : `${Math.round(s.meanMs * 100) / 100} ms mean over ${s.calls} statements` },
+    { label: 'Statement latency', text: 'problem' in s ? s.problem : `${ms(s.meanMs)} ms mean over ${s.calls} statements` },
+  ];
+}
+
+
+/** OpenFGA's checks since it started, one line per reading. */
+export function openFgaLines(f: OpenFgaReading): { label: string; text: string }[] {
+  if (f.checks === 0) return [{ label: 'Checks', text: 'no checks yet' }];
+  return [
+    { label: 'Check latency', text: f.meanMs === undefined ? 'no check time yet' : `${ms(f.meanMs)} ms mean over ${f.checks} checks` },
+    { label: 'Errors', text: f.errors === 0 ? `no failed checks of ${f.checks}` : `${f.errors} of ${f.checks} checks failed (${(Math.round((f.errors / f.checks) * 1000) / 10).toFixed(1)}%)` },
   ];
 }
