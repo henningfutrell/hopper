@@ -245,10 +245,9 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const usedNow = grants.find((g) => r.auth.endsWith(` ${g.access}`));
       if (usedNow) usedNow.used = ++tick;
       const path = r.path.slice('/api/v3'.length);
-      const checks = repoChecksRoute(forge?.repoChecks, r.method, path, r.body);
+      // A repository's checks (issue #677); the accounts GitHub knows (issue #930).
+      const checks = repoChecksRoute(forge?.repoChecks, r.method, path, r.body) ?? peopleRoute(forge, base, issues, r.method, path, r.query);
       if (checks) return checks;
-      const people = peopleRoute(forge, base, issues, r.method, path, r.query);
-      if (people) return people;
       if (r.method === 'GET' && path === '/user') return { status: 200, body: { id: idOf(login), login, name: `${login} name` } };
       if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] };
       if (r.method === 'GET' && path === '/user/installations') {

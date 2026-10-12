@@ -258,8 +258,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       issues.set(key(repo, number), issue);
       if (parent !== undefined) subIssues.set(key(repo, parent), [...(subIssues.get(key(repo, parent)) ?? []), key(repo, number)]);
       assigned.set(key(repo, number), issue.assignees.map((login) => ({ login, at: issue.updatedAt })));
-      const byAuthor: FakeActor = { login: issue.author, ...(authorId !== undefined ? { id: authorId } : {}) };
-      for (const label of issue.labels) happened(key(repo, number), { event: 'labeled', label }, labelledBy ?? byAuthor, issue.updatedAt);
+      const byAuthor: FakeActor = { login: issue.author, ...(authorId !== undefined ? { id: authorId } : {}) }; for (const label of issue.labels) happened(key(repo, number), { event: 'labeled', label }, labelledBy ?? byAuthor, issue.updatedAt);
       for (const login of issue.assignees) happened(key(repo, number), { event: 'assigned', assignee: login }, assignedBy ?? byAuthor, issue.updatedAt);
       return copy(issue);
     },
