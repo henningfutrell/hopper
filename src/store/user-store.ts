@@ -4,6 +4,7 @@ import { USER_CONFIG, type Clock, type IdGen, type UserStore } from '../domain/p
 import { createArtifactRepository } from './artifacts.ts';
 import { createBugReportRepository } from './bug-reports.ts';
 import { createInfraPlanRepository } from './infra-plans.ts';
+import { createOutOfBandRepository } from './out-of-band.ts';
 import { createContext } from './context.ts';
 import { openDb } from './db.ts';
 import { createDecisionRepository } from './decisions.ts';
@@ -65,6 +66,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     jobStream,
     artifacts: createArtifactRepository(ctx),
     infraPlans: createInfraPlanRepository(ctx),
+    outOfBand: createOutOfBandRepository(ctx),
     questions: createQuestionRepository(ctx),
     reviews: { proposal: createReviewItemRepository(ctx, 'proposal'), research: createReviewItemRepository(ctx, 'research') },
     logins: createLoginRepository(ctx),

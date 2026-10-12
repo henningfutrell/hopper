@@ -68,7 +68,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
-| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts` | engine, http, store, plugins, executors, decider |
+| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`; its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
@@ -14599,6 +14599,61 @@ words, the callouts, the level; the MAP tag check on new resources only), `test/
 plan refused, approved or not), `test/integration/infra-plans.test.ts` (the summary kept, listed and on the timeline; a
 plan without the MAP tag kept and listed, its approval a 409, its apply refused and STS not asked; a terraform plan with
 no JSON a 400), `test/ui/infra-plans.test.ts` (the failed state, the explainer).
+
+## Out-of-band changes (issue #871, part 1, 2026-10-12)
+
+Follow-on to issue #870 (no apply without a plan). Goal: **track** infrastructure changes that did not come through IaC or
+GitOps. Generic by the issue's rule: the hopper never classifies an action and keeps no per-action rule.
+
+- **The rule** (`judge`, `src/domain/out-of-band.ts`, pure). A write is **out of band** unless a **controller identity**
+  or a **plan-bound apply credential** made it. Drift is out of band by itself: a GitOps app out of sync (`gitops`), a
+  non-empty `terraform plan` on unchanged code (`terraform-plan`). An audit-log write (`cloudtrail`, `kube-audit`) is
+  judged by its principal only: in band when it matches a controller identity, or is the principal of a credential the
+  vault minted for an approved plan and the write fell inside that credential's life; out of band otherwise, whatever
+  the action.
+- **Plan-bound apply credentials.** `vault.minted` now names `principal`: who the credential writes as, as an audit log
+  names it (`mintPrincipal`): an AWS session `arn:<partition>:sts::<account>:assumed-role/<role>/<session name>` (the
+  role's path dropped, as CloudTrail drops it), a Kubernetes token `system:serviceaccount:<namespace>:<service account>`,
+  an EKS token its role's session. A `vault.minted` with a `plan` and a `principal` is a plan-bound apply credential from
+  its event's time to its `expiresAt`; the rule reads them from the event log (two hours before the earliest signal).
+- **Controller identities**: the principals whose writes are GitOps's (an Argo CD or Flux controller's service account,
+  an Atlantis role), one user's list (`infra_controllers`), a trailing `*` naming a group; `*` alone is refused, since
+  then nothing is out of band. Set by an admin on Infra changes, or `POST /ui/api/out-of-band`
+  `{ action: "controllers", identities }`; `infra.controllers_changed`.
+- **Signals come from a job's read-only check**: `POST /job/infra-signals`, with its proxy token, JSON `{ signals }`, 1
+  to 500 each time. A signal: `source`, `key` (its own id: CloudTrail's `eventID`, the audit log's `auditID`; for
+  drift, what drifted), `target` (what changed), `what` (the action in the source's words), `who` (the principal;
+  required for an audit-log signal), `at`, and `detail` (the record, the diff, the plan text; at most 64 KiB). The check
+  keeps only writes; it runs with the read credentials jobs get by default. A signal that is not whole refuses the whole
+  report (400, saying which and why). The answer counts what was recorded, what was in band and why, and what was
+  reported before.
+- **An out-of-band change is a record of its own** (`OutOfBandChange`; tenant migration 47, `infra_out_of_band`), never
+  changed once kept: the signal, the job whose check reported it, and when. Reported again, it is not kept twice: an
+  audit-log write once ever (by its source and key), drift once while it is not marked; drift found again after its
+  mark is a new change.
+- **Never silent.** Each one is `infra.out_of_band_recorded` on the reporting job's timeline: the Grok Bot routine sends
+  it (body adds `change`, `signal`, `target`, `what`, `who`, `happenedAt`), and webhook subscribers get it as any event.
+- **A person marks it** on Settings → Vault, panel **Out-of-band changes** (every change, newest first, with who, what,
+  when, the signal and its detail), or `POST /ui/api/out-of-band` `{ action: "mark", change, mark, reason? }` (admin):
+  `adopted` (brought back into git), `reverted`, or `accepted` with a reason. The mark is a row of its own
+  (`infra_out_of_band_marks`), once (a second is a 409); `infra.out_of_band_marked`. Tracking only: the hopper reverts
+  nothing.
+
+**Not built here (the next parts of #871).** The scheduled check itself: a recurring read-only job that reads Argo CD's
+or Flux's sync status, runs `terraform plan -detailed-exitcode` on the default branch, and reads CloudTrail and the
+Kubernetes audit log since its last run, then reports what it found here. The hopper has no schedule for jobs yet. An
+outside collector's report (an API token, not a job's proxy token).
+
+**Residual risk, stated.** The hopper judges what a check reports; a check that does not report a write leaves it
+untracked. A plan-bound credential's principal is in band for its whole life, so a write it made that the plan did not
+hold is not out of band here: issue #870's residual risk. A shared Kubernetes service account (`hopper-apply`) is in band
+for every write in a plan-bound token's life, whichever box made it.
+
+Tests: `test/domain/out-of-band.test.ts` (the rule, the signal, the marks, the principal of a mint, pure),
+`test/integration/out-of-band.test.ts` (the real daemon, a joined box, STS and GitHub faked: drift and a console write
+recorded, each an event; a controller's write and the write of the credential minted for an approved plan in band;
+nothing recorded twice; marks once; refusals), `test/plugins/grokbot-intake.test.ts` (the notification),
+`test/ui/out-of-band.test.ts`.
 
 ## Git efficiency (issue #858 part 1, 2026-10-12)
 
