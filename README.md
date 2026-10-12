@@ -80,14 +80,15 @@ curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml      # compose.
 podman compose up -d
 # open http://localhost:4790/ and sign in with GitHub: the first person to do so is the admin
 # save the master key it shows once (the UI banner only, never the log) in your password manager, then:
-echo 'HOPPER_MASTER_KEY=<the 64 hex digits>' >> .env && podman compose up -d --force-recreate --no-deps hopper
+read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY             # paste it; never in a file
+podman compose up -d --force-recreate --no-deps hopper               # give the key again at each up that recreates it
 podman compose exec hopper claude                                    # once: /login, then /exit
 # then Sources → GitHub account: choose the repositories jobs may come from
 systemctl --user enable podman-restart.service                        # once: start it again after a reboot
 ```
 
-The container is not a machine: jobs run on attached machines ("Add machines"). Settings and secrets: a
-`.env` beside `compose.yaml` (`.env.example`). Upgrade: you do it, the hopper never updates a container (`docs/deploy.md` "Upgrade": the channel is the image tag; every image carries its own `compose.yaml`: `podman run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update podman > hopper-update.sh`, read it, `sh hopper-update.sh` — the whole stack, never the hopper alone; then optionally `podman image prune -f --filter label=org.opencontainers.image.title=hopper`). Never edit `compose.yaml`: your settings go in `.env` (`HOPPER_BIND=0.0.0.0` for a LAN install) or `compose.override.yaml`.
+The container is not a machine: jobs run on attached machines ("Add machines"). No `.env`: the hopper keeps its
+settings and secrets itself, set in the UI; the master key and what compose needs are given at launch. Upgrade: you do it, the hopper never updates a container (`docs/deploy.md` "Upgrade": the channel is the image tag; every image carries its own `compose.yaml`: `podman run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update podman > hopper-update.sh`, read it, `sh hopper-update.sh` — the whole stack, never the hopper alone; then optionally `podman image prune -f --filter label=org.opencontainers.image.title=hopper`). Never edit `compose.yaml`: give a setting it names at launch (`export HOPPER_BIND=0.0.0.0` for a LAN install; the next update writes it into `compose.yaml`), the rest in `compose.override.yaml`.
 Details: `docs/deploy.md` "In containers, with Podman".
 
 The other ways each need a Postgres URL; the bundled one is `deploy/compose.yaml`.
@@ -216,7 +217,8 @@ hopper only. One App, one key, one hopper.
 
    GitHub shows a prefilled "Create GitHub App" page; click create. The script writes the key into
    `~/.config/hopper/daemon.env` as `GITHUB_APP_PRIVATE_KEY` and prints the App's `appId`, `slug`
-   and install link. In containers, add `--secrets-file .env` (in the folder of `compose.yaml`).
+   and install link. In containers, add `--secrets-file <a file of your own>` (mode 600, not `.env`), then name
+   `GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}` in `compose.override.yaml` and give its value at launch.
 2. Install it: open the printed install link and pick the repositories it may read. Those are the
    only repositories it takes jobs from.
 3. In the UI, Settings → Plugins → Job sources, open the `github-app` instance and set `appId` and
@@ -440,8 +442,8 @@ A job never waits on a key press at Claude's startup. On each herdr-claude insta
 Settings → Plugins) seeds Claude's config where the machine has none — a fresh container's empty home starts with no
 first-run screen — and answers Claude's first-run screens (theme, the machine's API key, notices) with their defaults.
 A screen the hopper has no default for, or Claude not signed in, comes to you as a question with the screen; your
-answer picks its option. In a container, give Claude its credential as `CLAUDE_CODE_OAUTH_TOKEN` in `.env`
-(docs/deploy.md).
+answer picks its option. In a container, give Claude its credential as `CLAUDE_CODE_OAUTH_TOKEN`: name it in `compose.override.yaml`
+(`CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}`) and give it at launch (docs/deploy.md).
 
 To run Claude with no screen at all, switch the `claude` executor on under **Shipped plugins**: Claude Code in print
 mode, one run per turn, on this host or an ssh target, as `cursor-agent` runs (steps above). A question it asks is

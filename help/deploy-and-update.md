@@ -21,6 +21,7 @@ The `compose.yaml` has required services and optional services.
 | `openfga-migrate` | yes | Brings OpenFGA's tables up to date, then stops. |
 | `hopper-vault` | no (profile `hopper-vault`) | The vault in a container of its own. |
 | `kms` | no (profile `kms`) | A local KMS that wraps the vault's data key. |
+| `tunnel` | yes | Remote access through ngrok. It runs no ngrok until you turn remote access on. See [Remote access](remote-access.md). |
 | `vault` | no (profile `vault`) | HashiCorp Vault, a vault backend. See [Vault](vault.md). |
 
 A plain `podman compose up -d` starts only the required services. Without an optional service, the hopper starts and works. The vault then runs in the hopper, under the master key.
@@ -40,12 +41,14 @@ Without OpenFGA, the hopper denies every credential. A banner on every page says
 3. Open `http://localhost:4790/`. Sign in with GitHub. The first person to sign in is the admin. There is no starting account or password.
 4. Save the master key now. The banner shows it once, to the admin only: click **Show the key (once)**. The key is never in the log.
 5. Put the key in your password manager. Then click **I saved it**.
-6. Add the key to `.env` beside `compose.yaml`, and recreate the hopper:
+6. Give the key at launch, and recreate the hopper. Do not put it in a file:
 
    ```sh
-   echo 'HOPPER_MASTER_KEY=<the 64 hex digits>' >> .env
+   read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY
    podman compose up -d --force-recreate --no-deps hopper
    ```
+
+   `read -rs` shows nothing and keeps the key out of your shell history. Paste the 64 hex digits, then press Enter.
 
 7. Sign in to Claude Code in the container one time: `podman compose exec hopper claude`, then `/login`, then `/exit`.
 8. Make the stack start after a reboot. Do this one time:
@@ -59,21 +62,26 @@ Docker works the same: use `docker compose` in place of `podman compose`.
 
 ## Change settings
 
-Do not edit `compose.yaml`. Each update replaces it.
+Do not edit `compose.yaml`. Each update replaces it. Do not make a `.env` file: the hopper uses none. The hopper keeps its own settings and secrets, and you set them in the UI. Remote access, sign-in, webhooks and vault secrets are all in Settings.
 
-1. Put your settings in `.env` beside `compose.yaml`. Examples: `HOPPER_PORT` moves the UI port, and `HOPPER_BIND=0.0.0.0` publishes the UI on every interface for a LAN install.
-2. Put what `.env` cannot hold (a service of your own, a host folder mounted into a service) in `compose.override.yaml`. Compose reads it beside `compose.yaml`.
+A setting that compose itself needs is given at launch, in the environment of the compose command:
+
+1. Export the setting. Examples: `export HOPPER_PORT=4800` moves the UI port, and `export HOPPER_BIND=0.0.0.0` publishes the UI on every interface for a LAN install.
+2. Give the master key too (`read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY`): the hopper is recreated.
 3. Recreate the stack: `podman compose up -d`.
+4. The next update writes the setting into `compose.yaml` as the default of its variable, so you do not give it again.
 
-To turn on an optional service, add these lines to `.env`, then run `podman compose up -d`:
+Put what `compose.yaml` does not name (a service of your own, a host folder mounted into a service) in `compose.override.yaml`. Compose reads it beside `compose.yaml`. Never put a secret in it: name the variable only (`ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}`), and give its value at launch.
 
-| You want | `.env` lines |
+To turn on an optional service, give these settings at launch, then run `podman compose up -d`:
+
+| You want | Settings |
 |---|---|
 | The vault in a container of its own | `COMPOSE_PROFILES=hopper-vault` and `HOPPER_VAULT_URL=http://hopper-vault:4791` |
 | That, with a local KMS | `COMPOSE_PROFILES=hopper-vault,kms`, `HOPPER_VAULT_URL=http://hopper-vault:4791` and `HOPPER_KMS_URL=http://kms:8080` |
 | A local KMS, with the vault in the hopper | `COMPOSE_PROFILES=kms` and `HOPPER_KMS_URL=http://kms:8080` |
 
-To turn a service off, remove its lines and run `podman compose up -d --remove-orphans`.
+To turn a service off, give the settings without it and run `podman compose up -d --remove-orphans`. When an update already wrote them into `compose.yaml`, give the new value (for example `COMPOSE_PROFILES=`) and run the update again.
 
 ## The master key
 
@@ -99,7 +107,7 @@ Rotate the key when it may have been seen. Only the hopper's admin can rotate it
 1. Open Settings → Vault → Master key, and click **Rotate the master key**. Or run `podman compose exec hopper hopper master-key rotate`.
 2. The hopper seals every secret again under a new key, in one transaction. It keeps running, with no restart.
 3. Save the new key in your password manager. The UI or the command shows it once.
-4. Put the new key in `.env` as `HOPPER_MASTER_KEY` before the next start. A start with the old key is refused.
+4. Give the new key at launch as `HOPPER_MASTER_KEY` at the next start. A start with the old key is refused.
 5. Click **I saved it**. Delete the old key from every place it was written.
 
 With the vault in a container of its own, the one-click rotation is refused. Rotate at launch instead: give the new key as `HOPPER_MASTER_KEY` and the old key as `HOPPER_MASTER_KEY_PREVIOUS`, recreate `hopper` and `hopper-vault`, then remove `HOPPER_MASTER_KEY_PREVIOUS` and recreate them again. The steps are in docs/deploy.md, "Rotating the master key".
@@ -124,7 +132,7 @@ For a container install, the channel is also the image tag: `ghcr.io/henningfutr
 
 You update a container install. The hopper never updates its own container, and it has no Update now or Auto-update there. Each image carries the compose file of its version. The update script puts that file in and starts the whole stack.
 
-1. Make sure `.env` has `HOPPER_MASTER_KEY`. The script stops if the running hopper made its key at this start and `.env` does not have it.
+1. Have the master key ready. The script takes it from the running hopper. It stops if the running hopper made its key at this start: then save the key from the UI, and give it at launch when you run the script (`read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY`).
 2. Look at the update notice. It says how many running jobs a restart would end. Wait until there are none.
 3. In the folder that holds `compose.yaml`, make the update script from the image of your channel:
 
@@ -147,15 +155,18 @@ You update a container install. The hopper never updates its own container, and 
 
 The script does these steps in order, and stops at the first step that fails:
 
-1. Checks `.env` for the master key.
-2. Backs up the database (`hopper-backup-<time>.dump`), `compose.yaml` and `.env`.
+1. Reads the launch settings: the master key and other secrets, from its own environment, an old `.env` (one time, to move it), or the running hopper. It writes the key to no file.
+2. Backs up the database (`hopper-backup-<time>.dump`), `compose.yaml`, `compose.override.yaml` and an old `.env`.
 3. Pulls the image.
-4. Moves your own settings from the old `compose.yaml` to `.env` and `compose.override.yaml`, and sets `HOPPER_IMAGE`.
-5. Puts in the compose file of the new version.
-6. Pulls and recreates the whole stack.
-7. Checks that the hopper and OpenFGA answer.
+4. Makes the compose file of the new version, with your own settings as the defaults of its variables and `HOPPER_IMAGE` the new image. What it does not name goes to `compose.override.yaml`. It shows both changes.
+5. Pulls the images of the whole stack.
+6. Stops the old stack.
+7. Puts the new files in, removes the old `.env`, and starts the whole stack. A service that is new in the version is made.
+8. Checks that the hopper and OpenFGA answer.
 
-When it stops, its last line says why and how to go back. Fix the cause and run the script again.
+When step 7 or 8 fails, the script puts the old files back and starts the old stack again. Its last line says so. Fix the cause and run the script again.
+
+**An install with a `.env` from before.** The first update moves it. Its settings go into `compose.yaml` and `compose.override.yaml`, and its secrets are given at launch. The script removes `.env` and keeps a backup, `.env.bak-<commit>`. The backup holds the master key: save the key in your password manager, then delete the backup. From then on, give the key at launch for each `podman compose up` that recreates the hopper. The next update takes it from the running hopper.
 
 To change the channel, run the update with the image of the new channel. Then pick the same channel in Settings → Version.
 
@@ -196,8 +207,8 @@ To update by hand, run the install line again.
 | What | Where | How to keep it |
 |---|---|---|
 | Everything the hopper keeps (jobs, settings, sealed secrets) | The Postgres database | `podman compose exec -T postgres pg_dump -U hopper -d hopper -Fc > hopper-backup.dump` |
-| The master key | Your password manager, and `.env` or `daemon.env` | Keep it apart from the database backups. |
-| Your settings | `.env` and `compose.override.yaml`, or `~/.config/hopper/daemon.env` | Copy the files. |
+| The master key | Your password manager (a container install keeps it in no file), or `daemon.env` | Keep it apart from the database backups. |
+| Your settings | Settings in the UI (in the database), `compose.yaml` and `compose.override.yaml`, or `~/.config/hopper/daemon.env` | Copy the files. |
 | The Claude sign-in and git identity | The `home` volume | Sign in again if you lose it. |
 | The KMS keys | The `kms` volume | Back it up with the database. Without it, values sealed under a data key are lost. |
 
@@ -217,7 +228,7 @@ podman compose exec -T postgres pg_restore -U hopper -d hopper --clean < hopper-
 |---|---|
 | The UI does not open | Run `podman compose ps`. Check that `postgres`, `openfga` and `hopper` run. Read `podman compose logs hopper`. |
 | `the master key does not match this database` | Give the key this database was set up with. After a rotation, give the new key. |
-| A "Limited" banner | Put `HOPPER_MASTER_KEY` in `.env` and recreate the hopper. |
+| A "Limited" banner | Give `HOPPER_MASTER_KEY` at launch and recreate the hopper (`podman compose up -d --force-recreate --no-deps hopper`). |
 | "Access checks are off" | OpenFGA does not run. Run the update script, or `podman compose up -d`. Read `podman compose logs openfga openfga-migrate`. |
 | "This hopper's stack differs from the compose file of its version" | Run the update script with the image the hopper runs. |
 | The hopper stops at start and names two schema versions | The database is from a newer version. Run that newer version again, or restore a backup from before it. |

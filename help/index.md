@@ -10,9 +10,11 @@ These pages tell you how the hopper works and how to use it, for the version you
 - [Questions and deciders](questions.md)
 - [Pull requests](pull-requests.md)
 - [The vault](vault.md)
+- [Remote access](remote-access.md)
 - [Sandbox boxes](sandboxes.md)
 - [Artifacts](artifacts.md)
 - [The operator CLI and the API](cli-and-api.md)
+- [API tokens and grants](api-tokens.md)
 
 ## Where to read these pages
 

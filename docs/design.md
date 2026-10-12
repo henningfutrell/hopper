@@ -6545,6 +6545,39 @@ it or rotate its token.
   in that container and the hopper's, and in memory on the host. A restart of the hopper reads the key file again; a full
   stop of the stack makes a new key.
 
+### No .env; the update starts what is new and rolls back (issue #894, 2026-10-12)
+
+The issue: compose read a `.env` beside `compose.yaml` and passed all of it to the hopper, so the master key and other
+secrets sat in a file on the host, beside the stack they open. The update script recreated the stack with
+`up -d --force-recreate`, which podman-compose cannot do for a service that has no container yet: a release that added
+`tunnel` left the whole stack down, with no way back but by hand.
+
+- **No `.env`.** The shipped `compose.yaml` has no `env_file`. The hopper keeps its settings and secrets itself, set in
+  the UI and kept in the database and the vault. Nothing tells a person to put a setting or a secret in `.env`.
+- **The master key is given at launch**, in the environment compose starts with, never in a file:
+  `HOPPER_MASTER_KEY: ${HOPPER_MASTER_KEY:-}` (and `HOPPER_MASTER_KEY_PREVIOUS` during a rotation). Without shell history:
+  `read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY`. A container keeps the key it was started with; each `up` that
+  recreates the hopper needs it again. The update script takes it from its shell, else an old `.env` (once), else the
+  running hopper's container, and writes it nowhere.
+- **Compose's own settings persist in `compose.yaml`.** A variable `compose.yaml` names (`HOPPER_PORT`, `HOPPER_BIND`,
+  `HOPPER_IMAGE`, `HOPPER_LAN_NAMES`, `HOPPER_LAN_PEERS`, `HOPPER_PUBLIC_URL`, `COMPOSE_PROFILES`, `HOPPER_VAULT_URL`,
+  `HOPPER_KMS_URL`, …) is given at launch, and the update writes it into the new file as that variable's default
+  (`${HOPPER_BIND:-0.0.0.0}`): the script passes its own `HOPPER_*` and `COMPOSE_PROFILES` settings, secrets left out, to
+  `hopper update carry` as `HOPPER_UPDATE_LAUNCH`, which wins over an old `.env`, which wins over the old file. These stay
+  process settings for now, not settings in the database: compose needs some of them before the hopper runs (the published
+  port, the image), and moving the rest into the UI is work of its own. `COMPOSE_PROFILES` turns its services on in the file itself and stays the hopper's default,
+  which the drift check reads. A setting the file does not name goes to `compose.override.yaml`
+  (`services.hopper.environment`); a secret there only by reference, `${NAME:-}`, given at launch.
+- **The update stops, then starts.** Eight steps ("Self-update" → the shipped compose file): `compose down`, then a plain
+  `compose up -d`, which starts a new service as any other.
+- **It rolls back by itself.** When the start or the health check fails, the script stops the stack, puts the old
+  `compose.yaml`, `compose.override.yaml` and `.env` back, and starts the old stack. The database is not restored: a
+  migration leaves a store the build before still runs on ("Persisted state is the user's").
+- **Residual risk, stated.** A person who runs `compose up` without the master key in the environment recreates the
+  hopper limited: nothing is lost, and the key is given again. The `.env.bak-*` backup holds the key until the person
+  deletes it. Compose itself still interpolates a `.env` a person makes by hand: the hopper cannot forbid it; the update
+  removes it.
+
 ## Self-update (issue #44, 2026-10-04)
 
 The hopper knows when a newer version exists, says what changed, and applies it without losing a
@@ -6592,42 +6625,54 @@ update is **the update script**: `hopper update <podman|podman-compose|docker> [
 no database) prints it (`src/update/update-script.ts`); it is run from the image to update to —
 `podman run --rm --pull=always <image> hopper update podman > hopper-update.sh`, then `sh hopper-update.sh` in the folder
 of `compose.yaml` — so the compose file it puts in is always the target's. `--image` defaults to the published image
-of install.json's branch. The script, POSIX `sh`, in order: refuses a folder with no `compose.yaml`; stops when `.env`
-lacks `HOPPER_MASTER_KEY` and `hopper master-key status` of the running hopper says the key was made at this start
-(`generated`, `old-token-key`: a recreate would lose it), and says so when the status cannot be read; backs up the
-database (`pg_dump -Fc` to `hopper-backup-<time>.dump`), `compose.yaml` (`compose.yaml.bak-<the old stamp's commit, else
-the time>`) and `.env`, under `umask 077`; pulls the image; runs `hopper update carry` in it (`--network none`, the old
-`compose.yaml` on stdin; `src/update/compose-carry.ts`), which answers the `.env` lines that keep what the install
-changed in the file — the first published port's address as `HOPPER_BIND` (none: every interface, `0.0.0.0`), a fixed
-published port as `HOPPER_PORT`, and each hopper setting written in place or under another default than the
-new compose file's; appends each line
-whose name `.env` lacks, and sets `HOPPER_IMAGE` to the image; then runs `hopper update override` the same way, with the
-install's own `compose.override.yaml` in `HOPPER_UPDATE_OVERRIDE`, which answers that file with what `.env` cannot hold added —
-a service the new file lacks and the hopper never shipped, with the top-level volumes it names; a host path mounted into a
-service (a shipped file mounts only named volumes); a key of a service no shipped file ever set; the install's own project
-`name` (another would start the stack on new, empty volumes) — its comments kept, nothing
-it has replaced, each move named; the script backs the old one up as `compose.override.yaml.bak-<commit>`, shows the diff and
-writes it (nothing moves: nothing written); writes the image's `compose.yaml` and shows the
-`diff -u`; then `compose pull` and `compose up -d --force-recreate` for the whole stack (never `--no-deps`); and checks
-that the hopper answers `/api/health` and OpenFGA `/healthz`, from inside the hopper's container. A failing step after
-the backups says how to go back (the backups, then `up -d --force-recreate`). The compose file's own settings, so it can
-be replaced whole: the published port's address is `HOPPER_BIND` (default `127.0.0.1`), beside `HOPPER_PORT`. The
+of install.json's branch. The script, POSIX `sh`, under `umask 077`, in eight steps (issue #894): refuses a folder with no
+`compose.yaml`; (1) reads the launch settings — its own shell, an old `.env` once (its lines, the shell's winning, as in
+compose), and the running hopper's `HOPPER_MASTER_KEY` (`compose exec -T hopper printenv`) —, and stops when the key is
+given nowhere and `hopper master-key status` of the running hopper says it was made at this start (`generated`,
+`old-token-key`: a recreate would lose it), and says so when the status cannot be read; (2) backs up the database
+(`pg_dump -Fc` to `hopper-backup-<time>.dump`), `compose.yaml` (`compose.yaml.bak-<the old stamp's commit, else the
+time>`), `compose.override.yaml` and an old `.env` (`*.bak-<the same>`); (3) pulls the image; (4) runs `hopper update carry
+--image <ref>` in it (`--network none`, the old `compose.yaml` on stdin, the old `.env` in `HOPPER_UPDATE_ENV`;
+`src/update/compose-carry.ts` `carryCompose`), which answers the new `compose.yaml`: the image's own, with what the install
+set as the defaults of the file's own variables — the first published port's address as `HOPPER_BIND` (none: every
+interface, `0.0.0.0`), a fixed published port as `HOPPER_PORT`, each hopper setting written in place or under another
+default than the new file's, the old `.env`'s lines (which win, as compose read them last), and the image as
+`HOPPER_IMAGE`'s; `COMPOSE_PROFILES` turns its services on in the file (their `profiles:` line removed) and stays the
+hopper's `COMPOSE_PROFILES` default; a secret (`isSecretName`: KEY, TOKEN, SECRET or PASSWORD, not `_FILE`, `_URL`, `_API`)
+is never written. Then `hopper update override` the same way (`carryOverride`), with the install's own
+`compose.override.yaml` in `HOPPER_UPDATE_OVERRIDE`, which answers that file with what `compose.yaml` cannot name added —
+a hopper setting the new file does not name (`services.hopper.environment`; a secret only as `${NAME:-}`); a service the
+new file lacks and the hopper never shipped, with the top-level volumes it names; a host path mounted into a service (a
+shipped file mounts only named volumes); a key of a service no shipped file ever set; the install's own project `name`
+(another would start the stack on new, empty volumes) — its comments kept, nothing it has replaced, each move named. Both
+are written as `.next` files, each with its `diff -u`; each secret they name with an empty default is taken from the shell,
+else from the running hopper. (5) `compose pull` of the whole stack, on the `.next` files; (6) `compose down` (a failure is
+a note: a box on the hopper's network keeps the network); (7) the new files put in, the old `.env` removed, and a plain
+`compose up -d` — never `--force-recreate`: podman-compose cannot force-recreate a service that has no container yet, so a
+release that added a service (`tunnel`) left the whole stack down —, never `--no-deps`; (8) checks that the hopper answers
+`/api/health` and OpenFGA `/healthz`, from inside the hopper's container. A failure in steps 1–4 changes nothing but the
+backups. **A failure in step 7 or 8 rolls back by itself**: `compose down`, the old `compose.yaml`,
+`compose.override.yaml` (or none) and `.env` put back, `compose up -d` of the old stack, and it says whether the old stack
+runs again. The database is not restored: a migration leaves a store the build before still runs on. After a success it
+says the old `.env` is gone and its backup holds the master key, to be saved and deleted. The compose file's own
+settings, so it can be replaced whole: the published port's address is `HOPPER_BIND` (default `127.0.0.1`), beside `HOPPER_PORT`. The
 notice's commands are the script's two lines and the prune. **The agent update skill** (`src/update/update-skill.ts`):
-the same update as steps for an agent — the compose file of the image updated to, always; never the hopper service alone; settings in
-`.env` or `compose.override.yaml`, never in `compose.yaml` — served as Markdown at `GET /api/update/skill` and printed by
+the same update as steps for an agent — the compose file of the image updated to, always; never the hopper service alone; settings
+given at launch or in `compose.override.yaml`, never edited into `compose.yaml` — served as Markdown at `GET /api/update/skill` and printed by
 `hopper update skill`.
 
 **The stack against its compose file (issue #697).** An update that recreated the hopper service alone left the stack on
 an old compose file with nothing to say so. A container hopper now checks: `src/update/drift.ts` `checkStack` compares the
 stack it runs in with the compose file its own image ships with, through the `StackProbe` port (`src/update/stack-probe.ts`)
 — it sees only from inside its container, never the container runtime: (1) each service that must run — every service
-but `hopper`, with no profile or a profile `COMPOSE_PROFILES` turns on (compose passes `.env` into the hopper), and not
+but `hopper`, with no profile or a profile `COMPOSE_PROFILES` turns on (the hopper service's environment names it, so the
+hopper reads the value compose ran with), and not
 restarted only on failure (`openfga-migrate` runs once) — by its name on the compose network (`dns.lookup`, 3 s); (2) the
 settings the file's `hopper` service gives its container, by name, against the hopper's environment (compose sets a
 `${X:-}` default as an empty value, so a name the environment lacks means an older compose file); (3) the commit
 `hopper-vault` answers at `/health` (its build's, from install.json) against the hopper's, when it runs. Each gap is a
 `StackGap` (`service`, `setting`, `version`) with what it turns off. `GET /api/update/drift` answers a `StackDrift`, with
-`image` — `HOPPER_IMAGE` from `.env`, else the published image of install.json's branch — that the fix, the update
+`image` — `HOPPER_IMAGE` from the hopper's own environment (compose.yaml names it there), else the published image of install.json's branch — that the fix, the update
 script, is made from; `unchecked` with the reason for an install, or a build that ships no compose file. The check runs
 at start (a gap is a warning line in the log, with the fix) and at each read. The UI reads it once signed in and each
 minute, and shows one banner over every view (`ui/src/app/drift.tsx`): the gaps, what each turns off, and the fix for the
@@ -6777,7 +6822,7 @@ with no host install path.
 `compose.yaml` at the root, served by the install page beside `install.sh`. Three services: `secrets`
 (once per start; the database password is made on the first one and kept in a volume, each file
 readable only by its one reader), `postgres` (no host port), `hopper` (built from the public repository,
-or `HOPPER_SOURCE`). Settings and secrets come from an optional `.env` beside it. Since issue
+or `HOPPER_SOURCE`). Settings and secrets came from an optional `.env` beside it (none since issue #894). Since issue
 #125 the hopper is the published image, the `secrets` service is folded into `postgres`, and Podman is
 the recommended runtime ("The published image, with Podman" below). Operating detail: `docs/deploy.md`
 "In containers, with Podman".
@@ -7164,7 +7209,7 @@ shared by the services while any of them runs, gone after a full stop, made agai
 the database password again each time, so the database keeps working. No `token_key` is made or read: the old
 `secrets` volume of an install from before is no longer mounted, and `HOPPER_TOKEN_KEY_FILE` is gone from the compose
 file (the update script refuses to update a hopper whose key is still the old token key, and the carry never moves a
-variable naming one of the compose file's own start files into `.env`). Recreating the hopper anywhere with the same
+variable naming one of the compose file's own start files into the new file's defaults). Recreating the hopper anywhere with the same
 database and `HOPPER_MASTER_KEY` keeps every secret.
 
 #### Rotating the master key
@@ -12380,7 +12425,7 @@ asks the vault server (`src/vault/remote.ts`). Unset, the vault runs in the hopp
   are no longer one transaction.
 - **Not running, or the wrong key**: the view carries the problem ("not reachable", "refused the hopper"), an edit
   answers 503, an ask is refused and recorded (`vault.refused`). Nothing else in the hopper waits on the vault.
-- **Its key provider** is chosen in the vault container: the master key (`HOPPER_MASTER_KEY` from `.env`, the hopper's own,
+- **Its key provider** is chosen in the vault container: the master key (`HOPPER_MASTER_KEY` given at launch, the hopper's own,
   checked against the database's fingerprint, issue #659), or
   the KMS's data key with `HOPPER_KMS_URL`. The hopper's master key still seals what the hopper owns itself (webhook
   signing secrets, the GitHub connection's tokens).

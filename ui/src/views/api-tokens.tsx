@@ -87,7 +87,8 @@ export function ApiTokens() {
   return (
     <Panel title="API tokens" icon={KeySquare} count={count || ''} bodyClassName="space-y-3"
       action={!adding && roles.length ? <Button size="sm" onClick={() => setAdding(true)} disabled={busy}><Plus />Mint grant</Button> : undefined}>
-      <p className="text-sm text-muted-foreground">A grant lets an agent act for you over the API, unattended: the routes its scopes name, with the role you give it. The agent trades its refresh token at <code>POST /ui/auth/token/refresh</code> for an API token that lives {settings?.tokenMinutes ?? 10} minutes, and gets a new refresh token each time: it must keep the new one. A refresh token sent twice ends the grant at once. A grant ends when you revoke it, when it is not used for 30 days, or at its end. Send the API token as <code>Authorization: Bearer &lt;token&gt;</code>. Access decides each use.</p>
+      <p className="text-sm text-muted-foreground">A grant lets an agent act for you over the API, unattended: the routes its scopes name, with the role you give it. The agent trades its refresh token at <code>POST /ui/auth/token/refresh</code> for an API token that lives {settings?.tokenMinutes ?? 10} minutes, and gets a new refresh token each time: it must keep the new one. A refresh token sent twice ends the grant at once. A grant ends when you revoke it, when it is not used for 30 days, or at its end. Send the API token as <code>Authorization: Bearer &lt;token&gt;</code>. Access decides each use.{' '}
+        <a className="underline" href="/help/api-tokens" target="_blank" rel="noopener">Help: API tokens and grants</a></p>
       {instanceAdmin && settings && (
         <form className="flex flex-wrap items-end gap-2 rounded-md border p-3" onSubmit={(e) => { e.preventDefault(); void saveLifetime(); }}>
           <label className="block space-y-1"><Label>API-token lifetime in minutes — {settings.min} to {settings.max}</Label>
