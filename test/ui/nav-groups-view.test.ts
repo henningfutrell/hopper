@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Issue #906: the main menu's entries in nav groups, rendered inside the whole app against a fake of the daemon's HTTP
 // surface. Every entry is in one group. A collapsed group hides its entries and shows their badges as one; open, each
-// entry shows its own. Which groups are collapsed is kept per browser and holds in the sidebar and the mobile drawer.
+// entry shows its own. Needs you is pinned above the groups. Which groups are collapsed is kept per browser and holds in the sidebar and the mobile drawer.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -70,10 +70,11 @@ afterEach(async () => {
 });
 
 describe('the nav groups', () => {
-  it('put every view of the navigation in exactly one group', async () => {
+  it('put every view of the navigation in exactly one group, or pinned above them: only Needs you, whose badge already sums others\'', async () => {
     const nav = '../../ui/src/app/nav.tsx';
-    const { VIEWS, NAV_GROUPS } = (await import(nav)) as { VIEWS: readonly string[]; NAV_GROUPS: readonly { id: string; views: readonly string[] }[] };
-    const placed = NAV_GROUPS.flatMap((g) => g.views);
+    const { VIEWS, NAV_GROUPS, NAV_PINNED } = (await import(nav)) as { VIEWS: readonly string[]; NAV_PINNED: readonly string[]; NAV_GROUPS: readonly { id: string; views: readonly string[] }[] };
+    expect(NAV_PINNED).toEqual(['needs-you']);
+    const placed = [...NAV_PINNED, ...NAV_GROUPS.flatMap((g) => g.views)];
     expect([...placed].sort()).toEqual([...VIEWS].sort());
     expect(new Set(placed).size).toBe(placed.length);
   });
@@ -106,7 +107,7 @@ describe('the nav groups', () => {
     await boot('["jobs"]');
     await vi.waitFor(() => expect(groupBadge('aside', 'jobs')?.textContent).toBe('2'));
     expect(queueLink('aside')).toBeNull();
-    expect(toggle('aside', 'needs-you').getAttribute('aria-expanded')).toBe('true');
+    expect(toggle('aside', 'waiting').getAttribute('aria-expanded')).toBe('true');
   });
 
   it('the mobile drawer shows the same groups, collapsed the same, with the same badges', async () => {
