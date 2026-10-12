@@ -19,6 +19,8 @@ import type { GitHubApi } from './github/index.ts';
 import { createGitHubSource } from './github/index.ts';
 import { gitHubThread } from './github/thread.ts';
 import { passReads } from './github/pass-reads.ts';
+import { gitAnswers } from './github/git-answers.ts';
+import type { GitMirrors } from '../git-mirror/mirrors.ts';
 import { sourceConfig, type GitHubAccountOptions, type GitHubAppOptions } from './config.ts';
 
 export const APP_MISSING = 'no GitHub App configured';
@@ -57,6 +59,8 @@ export interface GitHubSourceDeps {
   jobArtifacts?: JobArtifacts;
   /** The user's issue graph (issue #437). */
   issueGraph?: IssueGraphRecorder;
+  /** The user's mirrors of the job repositories (issue #858): git says whether a pull request has conflicts. Absent: GitHub says. */
+  gitMirrors?: GitMirrors;
 }
 
 /**
@@ -70,8 +74,9 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
   });
   const assignee = () => o.accounts?.account('github');
   const real = o.api ? undefined : createGitHubAppApi({ app, keyEnv: options.privateKeyEnv, clock: o.clock, ...(options.apiUrl ? { baseUrl: options.apiUrl } : {}) });
-  // One read per sync pass (issue #822): the source reads through `reads.api`, and each sync is one `reads.pass`.
-  const reads = passReads(o.api ?? real!, o.name);
+  // One read per sync pass (issue #822): the source reads through `reads.api`, and each sync is one `reads.pass`. Conflicts
+  // from the mirror (issue #858), inside it, so a pass shares git's answer as it shares GitHub's.
+  const reads = passReads(gitAnswers(o.api ?? real!, o.gitMirrors), o.name);
   const api = reads.api;
   const source = createGitHubSource({
     name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable, trust: o.trust,
@@ -98,8 +103,8 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
   const token = async (): Promise<string> => {
     try { return await accounts.token(provider); } catch (err) { throw new GitHubApiError((err as Error).message, false); }
   };
-  // One read per sync pass (issue #822), across a rebuild of the source too.
-  const reads = passReads(o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token, renew: (refused) => accounts.renew(provider, refused) }), o.name);
+  // One read per sync pass (issue #822), across a rebuild of the source too; conflicts from the mirror (issue #858).
+  const reads = passReads(gitAnswers(o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token, renew: (refused) => accounts.renew(provider, refused) }), o.gitMirrors), o.name);
   const api = reads.api;
   let built: { key: string; source: JobSource } | undefined;
   const current = (): JobSource | undefined => {

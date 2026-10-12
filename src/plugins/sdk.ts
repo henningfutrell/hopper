@@ -12,6 +12,7 @@ import type { ClientTransport } from '../executors/client.ts';
 import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, RaisedBy, Role, UsageReading } from '../domain/types.ts';
 import type { Rejection } from '../domain/rejection.ts';
 import type { IssueGraphRepository } from '../domain/issue-graph.ts';
+import type { GitMirrors } from '../git-mirror/mirrors.ts';
 
 export type {
   Advice, AdviceAction, AnswerRequest, AttachedMachine, Clock, ConnectedAccountTokens, Detection, DomainEvent, EscalationLevel, ExecutionContext, LevelReply,
@@ -172,6 +173,8 @@ export interface JobSourceContext {
   jobArtifacts(jobId: string): { id: string; issue?: string }[];
   /** The user's issue graph (issue #437): a source keeps the place of each issue it sees there. Store only. */
   issueGraph: Pick<IssueGraphRepository, 'record' | 'lastRead'>;
+  /** The user's mirrors of the job repositories (issue #858): whether a pull request has conflicts, as git says. Absent: none. */
+  gitMirrors?: GitMirrors;
 }
 
 export type { OptionChoice };

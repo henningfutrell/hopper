@@ -3,7 +3,7 @@
 // account's token instead of an installation token.
 // `token()` is asked at every call: a disconnect or a new connection applies at once. A token GitHub refuses
 // (401) is renewed (`renew`, issue #358) and the call made once more with the new one.
-import { GitHubApiError, isPermanent } from '../api.ts';
+import { GitHubApiError, isPermanent, webOriginOf } from '../api.ts';
 import type { GitHubApi } from '../api.ts';
 import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../app/graphql.ts';
 import { batchGraphQL } from '../app/graphql-batch.ts';
@@ -71,5 +71,6 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     merge: (repo, number) => call(`merge ${repo}#${number}`, (t) => rest.mergePullRequest(req, t, repo, number)),
     closeWithoutMerge: (repo, number) => call(`close ${repo}#${number}`, (t) => rest.closePullRequest(req, t, repo, number)),
     toDraft: (repo, number) => call(`draft ${repo}#${number}`, (t) => rest.convertToDraft(req, t, repo, number)),
+    gitRemote: (repo) => call(`git of ${repo}`, async (t) => ({ url: `${webOriginOf(o.apiUrl)}/${repo}.git`, token: t })),
   };
 }

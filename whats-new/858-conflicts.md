@@ -1,0 +1,1 @@
+- The hopper now finds merge conflicts in pull requests itself. A pull request with conflicts shows them at once, and the hopper does not try to merge it.

@@ -62,6 +62,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
+| `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
@@ -14566,7 +14567,7 @@ repository is used as it is; only its fetch is targeted now.
 **Left for later parts.** Step 3, one fetch per repository per sync pass (the daemon runs no git yet; a mirror on the
 daemon's side, the broker answering fetches from it), with a job start skipping its fetch when the pass already fetched;
 step 4, conflicts and mergeability from `git merge-tree --write-tree` and `git merge-base --is-ancestor` in place of GraphQL
-`mergeable`. Both change only what the counts above show is hot.
+`mergeable`. Both change only what the counts above show is hot. Part 2 below does them.
 
 Tests: `test/github-limiter/traffic.test.ts` (through the real `makeRequest` and limiter against a fake GitHub: the line per
 pass, routes per template, GraphQL per read, between passes once, two passes at once, a failed pass),
@@ -14576,3 +14577,58 @@ and `job-worktree-other-repository.test.ts` (real git, the origin served over a 
 mirror bare and blobless with its branches under `refs/remotes/origin`, a later job fetching the default branch only, an extra
 job adding only its worktree, a pushed branch reaped as pushed, a mirror of another repository refused, worktrees off as
 before), `test/herdr/executor-job-worktree.test.ts` (the mirror saved and named in the prompt with the new rule).
+
+## Git efficiency, part 2 (issue #858, 2026-10-12)
+
+Steps 3 and 4 of the issue. Before: whether a pull request had merge conflicts came only from GitHub's GraphQL `mergeable`,
+which GitHub computes later: a pull request it had not computed yet read as mergeable, and a merge of it was tried and
+refused. Each job start on a machine ran its own fetch, also when another start there had fetched a moment before.
+
+**The hopper's mirror** (`src/git-mirror/mirrors.ts`). One bare, blobless git repository per job repository per user:
+`<user's work dir>/git-mirrors/<owner>/<name>.git`. Per user, so no user's answer comes from objects fetched with another
+user's credential. Made by `git init --bare` as a partial clone of `origin` (`extensions.partialClone`,
+`remote.origin.partialclonefilter blob:none`), in `<path>.hopper-init-<pid>` and then moved in. Scratch only: a fetch makes
+it again; nothing in it is the user's state.
+- **One fetch per repository per sync pass.** The first question of a pass about a repository fetches it, and every later
+  one in the pass waits on that fetch: `git fetch --quiet --prune --no-tags --filter=blob:none origin
+  +refs/heads/<base>:refs/remotes/origin/<base> +refs/pull/*/head:refs/remotes/origin/pull/*`. `<base>` is the base of the
+  pull request asked about first, in practice the default branch. `refs/pull/*/head` gives every pull request's head,
+  a fork's too, with no API call to list them; a closed one's head never moves, so a later fetch moves only what changed.
+  Which pass is the traffic count's pass id (`GitHubTraffic.passId`). The fetch is counted, `by hopper` in the pass line.
+- **The credential.** The source's own: an installation token of the app, or the connected account's token
+  (`GitHubApi.gitRemote`, each adapter's). Given to git in its environment as an `http.extraHeader`
+  (`GIT_CONFIG_COUNT`), never on a command line, never logged. The remote is GitHub's web origin of the adapter's API base.
+- **Conflicts from git.** `git merge-tree --write-tree refs/remotes/origin/<base> <head>`: exit 0 clean, 1 conflicts. A
+  blob that git needs for a file both sides changed comes on demand from `origin`; a merge where only one side changed a
+  file reads none.
+- **Git cannot say**, and GitHub's answer stays: outside a sync pass; a fetch that failed (said once in the log, `hopper:
+  git mirror of <repo>: …`, never the token); a pull request on another base than the one fetched; a head that is not the
+  one the pass fetched (GraphQL `headRefOid`), so a push after the fetch is never answered from an old head; git failing.
+
+**Git answers** (`src/sources/github/git-answers.ts`). A decorator of the `GitHubApi` port, under the pass reads
+(`passReads(gitAnswers(adapter, mirrors))`), so a pass shares git's answer as it shares GitHub's: each open pull request
+that `openClosingPullRequests`, `referencingPullRequests`, `pullRequest` and `openPullRequests` tell gets `conflicting` from
+the mirror. The done-check (`completion.ts`), PR tending (`follow.ts`, `tending-queue.ts`) and the Pull requests list all
+read through them, so all three take git's answer with no change of their own. The pull request reads ask GraphQL for
+`headRefOid` and `baseRefName` too (`closer.ts`), fields of reads made anyway. `mergeable` stays in those reads as the
+fallback; no call is made for it, then or before: it rides on reads the pass makes for drafts, checks and states.
+
+**One fetch per pass at a job start** (`src/executors/herdr/job-worktree.ts` `passFetches`). A job start that fetched its
+work tree's repository, on its machine, in the newest sync pass leaves the next start there nothing to fetch: the job
+worktree command gets `$6` 0, and the worktree starts at what that fetch got. Keyed by machine, work tree and repository;
+one per process, so every lane shares it. Before the first pass every start fetches. A mirror just cloned is not fetched
+again either.
+
+**Not done, and why.**
+- **The broker answering fetches from the mirror.** A job's fetch is of its own machine's repository mirror, which a start
+  fetches once per pass already; the hopper's mirror is on the daemon's machine. Answering git's smart HTTP from it means
+  serving `upload-pack` in the daemon, for fetches the counts do not show as hot. Not built until they do.
+- **Ancestry from `git merge-base --is-ancestor`.** No part of the hopper asks GitHub whether one commit is an ancestor of
+  another, so there is nothing to replace.
+
+Tests: `test/git-mirror/mirrors.test.ts` (real git, the origin over `file://` with its pull request heads at
+`refs/pull/<n>/head`: clean and conflicting from merge-tree, the mirror bare and blobless, one fetch per pass and one more
+in the next, nothing outside a pass, a head that moved, another base, a failed fetch said without the token),
+`test/sources/github-git-answers.test.ts` (the port's four reads through the real pass reads take git's conflicts, the
+repository fetched once in the pass; GitHub's answer outside a pass and with no git), `test/herdr/job-worktree.test.ts`
+(a later start in the pass fetches nothing; the tracker by machine, work tree and repository).
