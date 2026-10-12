@@ -62,6 +62,8 @@ export interface OpenPullRequest {
   headOid?: string;
   /** The branch it merges into (issue #677); absent: GitHub did not say. */
   base?: string;
+  /** Its head branch (issue #900: a pull request based on it is stacked on it); absent: GitHub did not say. */
+  headRef?: string;
 }
 
 /** A pull request by its number (issue #618): one an issue names to update, in any state. */

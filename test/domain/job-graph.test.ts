@@ -152,7 +152,7 @@ describe('the job graph (issue #900)', () => {
         { id: 'q1', jobId: 'asks', text: 'Which database should the cache use? Options follow.', since: '2026-10-02T03:00:00.000Z' },
         { id: 'q2', jobId: 'gone', text: 'no job here', since: '2026-10-02T03:00:00.000Z' },
       ],
-      handoffs: [{ id: 'h1', jobId: 'broke', summary: 'The build fails on a missing secret.', since: '2026-10-02T04:00:00.000Z' }],
+      handoffs: [{ id: 'h1', jobId: 'broke', text: 'The build fails on a missing secret.', since: '2026-10-02T04:00:00.000Z' }],
     });
     expect(node(g, questionNodeId('q1'))).toMatchObject({ kind: 'question', stage: 'waiting', label: 'Which database should the cache use? Options follow.', stageSince: '2026-10-02T03:00:00.000Z', jobId: 'asks' });
     expect(node(g, handoffNodeId('h1'))).toMatchObject({ kind: 'handoff', stage: 'waiting', label: 'The build fails on a missing secret.', jobId: 'broke' });

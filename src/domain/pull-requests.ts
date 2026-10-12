@@ -77,6 +77,8 @@ export interface PullRequestSeen {
   pushedAt?: string;
   /** The branch it merges into (issue #677: "conflicts with dev"). */
   base?: string;
+  /** Its head branch (issue #900): a pull request whose base it is, is stacked on it. */
+  headRef?: string;
   mergeError?: string;
 }
 

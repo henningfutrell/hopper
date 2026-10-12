@@ -102,7 +102,7 @@ describe('following the pull request', () => {
   it('still open: no label changes; what is seen of it is kept once (issue #637), then nothing while it stays the same', async () => {
     const { gh, source, job, pr } = await ended();
     const seen = await source.follow!(job);
-    expect(seen).toEqual({ outcome: 'open', pullRequest: pr.url, part: false, state: { pullRequest: pr.url, follow: 'open', seen: { draft: false, conflicting: false, checks: 'none', openedAt: pr.createdAt, pushedAt: pr.createdAt, base: 'dev', headRef: 'branch-2' } } });
+    expect(seen).toEqual({ outcome: 'open', pullRequest: pr.url, part: false, state: { pullRequest: pr.url, follow: 'open', seen: { draft: false, conflicting: false, checks: 'none', openedAt: pr.createdAt, pushedAt: pr.createdAt, base: 'dev', headRef: `branch-${pr.url.slice(pr.url.lastIndexOf('/') + 1)}` } } });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
     expect(await source.follow!({ ...job, sourceState: { ...job.sourceState, source: seen!.state } })).toBeUndefined();
     expect(gh.calls.some((c) => c.method === 'merge')).toBe(false);

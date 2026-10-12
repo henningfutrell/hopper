@@ -15,7 +15,7 @@ import {
   crossReferencesFrom, referencingPullRequestsFrom, repoPullRequestsFrom,
 } from '../closer.ts';
 import type { IssueCrossReferences } from '../../../domain/cross-references.ts';
-import { ISSUE_PLACE_QUERY, issuePlaceFrom } from '../issue-place.ts';
+import { ISSUE_PLACE_QUERY, ISSUE_PLACE_QUERY_NO_BLOCKED_BY, issuePlaceFrom, noBlockedBy } from '../issue-place.ts';
 import type { IssuePlace } from '../../../domain/issue-graph.ts';
 import { splitRepo } from './http.ts';
 import type { Request } from './http.ts';
@@ -153,6 +153,8 @@ export async function issueEdits(ask: AskGraphQL, token: string, repo: string, n
   return issueEditsFrom(await ask(token, ISSUE_EDITS_QUERY, repo, number));
 }
 
+/** An issue's place; a GitHub with no issue dependencies is asked again without them (issue #900). */
 export async function issuePlace(ask: AskGraphQL, token: string, repo: string, number: number): Promise<IssuePlace> {
-  return issuePlaceFrom(await ask(token, ISSUE_PLACE_QUERY, repo, number), `place of ${repo}#${number}`);
+  const body = await ask(token, ISSUE_PLACE_QUERY, repo, number);
+  return issuePlaceFrom(noBlockedBy(body) ? await ask(token, ISSUE_PLACE_QUERY_NO_BLOCKED_BY, repo, number) : body, `place of ${repo}#${number}`);
 }

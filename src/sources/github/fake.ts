@@ -201,7 +201,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       enter('pullRequest', [repo, n]);
       const p = pulls.find((x) => x.url === `https://github.com/${repo}/pull/${n}`);
       if (!p) return undefined;
-      const { issue: _i, closes: _c, body: _b, repo: _r, headRef: _h, ...pr } = p;
+      const { issue: _i, closes: _c, body: _b, repo: _r, ...pr } = p;
       return { ...pr } satisfies NumberedPullRequest;
     },
     async openPullRequests(repo) {
