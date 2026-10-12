@@ -15495,8 +15495,16 @@ end as of any job's. The operator CLI: `hopper job submit --title â€¦ (--brief â
 webhook subscription to `job.queued` delivers it to the subscriber. The authorizations are told to the job and recorded;
 they do not yet make vault grants.
 
-**Not built yet (the next parts).** A submit form in the UI; authorizations that become the job's vault grants;
-notifying the requester by name, beyond the notifiers.
+**In the UI (part 2).** The view Direct jobs (`#direct-jobs`, in the Jobs nav group; `ui/src/views/direct-jobs.tsx`,
+`ui/src/model/direct-jobs.ts`) has the submit form, for an operator or admin only: title, brief, labels (split at commas),
+authorizations (one per line), repository and priority. It sends `POST /ui/api/direct-jobs` through the UI session, so the
+record says `via: ui`. Below it, every direct job from `GET /api/direct-jobs`, read when shown and every 15 s: its state
+(its job's status, or how many questions wait), who submitted it and the way, its labels and authorizations, its open
+questions with a link to Questions, where a person answers them, its result and its error, and a link to its job view.
+A viewer reads the list and gets no form. Nothing the view sends goes to GitHub.
+
+**Not built yet (the next parts).** Authorizations that become the job's vault grants; notifying the requester by name,
+beyond the notifiers.
 
 ## Checkpoints and resume elsewhere (issue #921, 2026-10-12)
 

@@ -117,3 +117,4 @@ export interface WebhooksView {
 export type { RateBucket, RateLimiterSettings, RateLimiterView } from '../../../src/domain/github-rate-limit.ts';
 export type { RemoteAccessChange, RemoteAccessState, RemoteAccessStatus, RemoteAccessView } from '../../../src/domain/remote-access.ts';
 export type { GitHubWatch, GitHubWatchSettings, GitHubWatchView } from '../../../src/domain/github-watch.ts';
+export type { DirectJob, DirectJobInput, DirectJobQuestion, DirectJobView } from '../../../src/domain/direct-jobs.ts';
