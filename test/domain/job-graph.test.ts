@@ -41,10 +41,10 @@ describe('the stage of a job (issue #900)', () => {
 describe('the job graph (issue #900)', () => {
   it('a job node carries its stage, tasks, lane, time in stage and pull request with its checks', () => {
     const g = jobGraph({ jobs: [
-      job('run', 'running', { tasks: { done: 2, total: 5 }, laneId: 'm1/lane-1', machineId: 'm1', startedAt: '2026-10-02T01:00:00.000Z' }, 1),
+      job('run', 'running', { tasks: { done: 2, total: 5 }, laneId: 'm1/lane-1', startedAt: '2026-10-02T01:00:00.000Z' }, 1),
       job('pr', 'finished', { finishedAt: '2026-10-02T02:00:00.000Z', ...followed(PR(7), 'open', { checks: 'failing', draft: false, conflicting: true }) }, 2),
     ] });
-    expect(node(g, jobNodeId('run'))).toMatchObject({ kind: 'job', stage: 'running', tasks: { done: 2, total: 5 }, laneId: 'm1/lane-1', machineId: 'm1', stageSince: '2026-10-02T01:00:00.000Z', repo: 'acme/app', number: 1 });
+    expect(node(g, jobNodeId('run'))).toMatchObject({ kind: 'job', stage: 'running', tasks: { done: 2, total: 5 }, laneId: 'm1/lane-1', stageSince: '2026-10-02T01:00:00.000Z', repo: 'acme/app', number: 1 });
     expect(node(g, jobNodeId('pr'))).toMatchObject({ stage: 'pr_open', stageSince: '2026-10-02T02:00:00.000Z', pullRequest: { url: PR(7), state: 'open', checks: 'failing', conflicting: true } });
     expect(node(g, pullRequestNodeId(PR(7)))).toMatchObject({ kind: 'pull_request', label: 'PR #7', stage: 'pr_open' });
     expect(g.stages).toEqual({ running: 1, pr_open: 1 });
