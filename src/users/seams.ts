@@ -1,5 +1,5 @@
 // The doubles a user's runtime takes at its ports.ts seams (issue #158), for integration tests. Production passes none.
-import type { EscalationLevel, Executor, JobSource, PluginsView, Router, SettableUsageSource } from '../domain/ports.ts';
+import type { EscalationLevel, Executor, JobSource, PluginsView, Router, SettableUsageSource, WindowsStepHost } from '../domain/ports.ts';
 import { BUILTIN_PLUGINS } from '../plugins/builtin.ts';
 import { herdrClaudePlugin } from '../plugins/executor/herdr-claude/index.ts';
 import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
@@ -45,6 +45,8 @@ export interface UserSeams {
   jobStream?: { inlineMax?: number };
   /** Replaces the TL;DR's model (issue #569; default Claude Haiku through the `claude` CLI). */
   tldrWriter?: TldrWriter;
+  /** Replaces the Windows host a step runs on (issue #731; default ssh and scp to the host). */
+  windowsStepHost?: WindowsStepHost;
 }
 
 /** The built-in plugins with the seams (tests) in place of the herdr CLI and the GitHub adapters, and the user's herdr session as herdr-claude's default. */

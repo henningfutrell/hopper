@@ -1,1 +1,0 @@
-- In a read-only box, Terraform now installs its AWS provider from the box itself and downloads no other provider. The box's read-only check proves it.

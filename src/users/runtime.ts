@@ -19,6 +19,7 @@ import type { MachineLinks } from '../machines/links.ts';
 import type { MachineJoin } from '../plugins/attached-edit.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
+import { createSshStepHost, createWindowsSteps, readWindowsHosts, type WindowsSteps } from '../windows-steps/index.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
 import { createClientReleaseKeeper, createOwnedHerdrKeeper, createTargetPool, probeOwnedHerdr, withClientWorkTree, probeContainer, probeSsh } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
@@ -167,6 +168,7 @@ export interface UserRuntime {
   machineHistory: ResourceRecorder;
   /** The GitHub proxy's view of this user (issue #563). */
   githubProxy: UserGitHubProxy;
+  windowsSteps: WindowsSteps; // issue #731: a job's step run on a Windows host the user set up
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */
@@ -264,7 +266,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     defaultMachines: builtin.machines, defaultExecutors: builtin.executors,
     kit: createDetectionKit({ env: { ...o.env, ...cliEnv }, secret, secretName: (n) => `${user.secretPrefix}${n}` }),
     builtins: withSeams(seams),
-    jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow, o.access && ((login, actors) => o.access!.decideIntakeActor(user.id, login, actors))), connectedAccounts },
+    jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow, o.access && ((login, actors) => o.access!.decideIntakeActor(user.id, login, actors)), { dataDir, logger }), connectedAccounts },
     machineContext: { executors: () => executorNames(), target },
     executorContext: { client: clientNamed },
     intervalMs: o.pluginsConfigIntervalMs,
@@ -333,7 +335,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => withLaunch(vaultTargets(host.targets()), o.launchScopes?.(user.id)), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends(), plans: proxy.githubProxy.infraPlans, ...(o.sharedSecrets ? { shared: o.sharedSecrets } : {}) }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
   const engine: Engine = createEngine({
     store, clock, executors, router, questions, reviews, logins, queueSorter: host.queueSorter,
-    routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
+    routing: { rules: () => host.routingRules(), machines: () => host.machineIds() }, configuredMachines: () => host.configuredMachineIds(),
     ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
     // Every machine follows the plugins config without a restart (issues #18, #74); the pinned host keys with it.
     machines: { list: () => { pinned(host.targets()); return host.machines().list(); } },
@@ -375,13 +377,15 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const stopFailureLog = logFailures(store);
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
-  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => o.uiUrl(`question-${id}`), loginsUrl: () => o.uiUrl('logins'), highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), ...(o.reach ? { reach: o.reach } : {}) });
+  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => o.uiUrl(`question-${id}`), loginsUrl: () => o.uiUrl('logins'), infraUrl: () => o.uiUrl('infra'), highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), ...(o.reach ? { reach: o.reach } : {}) });
   // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them; lane tuning (issue #688) after new samples.
   const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), afterMachineRecord: () => engine.laneTuning.record(), store, clock, logger });
   const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
+  // Windows sandbox steps (issue #731): the user's Windows hosts read at each step; over ssh with the hopper's own key.
+  const windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }) });
   let started = false, stopped: Promise<void> | undefined;
   return {
-    jobStream, artifacts, githubProxy: proxy.githubProxy,
+    jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
@@ -394,8 +398,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       await engine.start();
       await failures.backfill.once(); // the done-check backfill (issue #637), before the sync and the assessor judge the same failures
       sync.start();
-      history.start(); minorDecisions.start(); tldrs.start();
-      failures.start();
+      history.start(); minorDecisions.start(); tldrs.start(); failures.start();
       connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
       jobStream.start(); proxy.githubProxy.bugReports.start(); proxy.githubProxy.watches.start(); // Report a bug's kept reports (issue #694), the GitHub watches (issue #427)
     },
@@ -405,13 +408,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         await failures.stop();
         minorDecisions.stop(); await tldrs.stop();
         await sync.stop();
-        history.stop();
-        connectedAccounts.stop();
+        history.stop(); connectedAccounts.stop();
         await questions.stop();
         await Promise.all(REVIEW_KINDS.map((k) => reviews[k].stop()));
         await engine.stop();
-        await dispatcher.stop();
-        await host.stopNotifiers();
+        await dispatcher.stop(); await host.stopNotifiers();
         stopFailureLog();
         host.stop(); stopBackendReads();
         store.close();

@@ -203,6 +203,10 @@ const MIGRATIONS: readonly Migration[] = [
   // 36: box tokens (issue #795): an API token a person minted with `box`, which alone may do box actions. Every token
   // there is is no box token. The build before never reads the column: there every API token may do what its role allows.
   'ALTER TABLE ui_sessions ADD COLUMN box INTEGER NOT NULL DEFAULT 0;',
+  // 37: grants (issue #881): a grant a person minted for an agent, its refresh tokens (only their hashes; a rotated one
+  // kept for reuse detection), and the grant each API token was refreshed from. Tables and a column only: the build
+  // before never reads them, and reads such an API token as one of its own until it ends (15 minutes at most).
+  'CREATE TABLE IF NOT EXISTS api_grants (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS api_grant_tokens (token_hash TEXT PRIMARY KEY, grant_id TEXT NOT NULL, issued_at TEXT NOT NULL, rotated_at TEXT); CREATE INDEX IF NOT EXISTS api_grant_tokens_grant ON api_grant_tokens (grant_id); ALTER TABLE ui_sessions ADD COLUMN grant_id TEXT;',
 ];
 
 /** Each recorded access decision's `job` becomes its `requester`, of kind job; the rest of the record is kept. */

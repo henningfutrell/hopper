@@ -13,6 +13,7 @@ export interface FakeShellOptions {
   origins?: Record<string, string>;
   worktreeFails?: boolean;
   unusableDirs?: string[];
+  restore?: 'restored' | 'kept' | 'failed';
 }
 
 export function shellSays(command: string, o: FakeShellOptions, scoped: boolean): ShellSaid {
@@ -20,19 +21,20 @@ export function shellSays(command: string, o: FakeShellOptions, scoped: boolean)
   // nothing; without, it says none. Asked where it runs, it says whether that is the scope.
   if (command.includes('exec systemd-run --user --scope')) return o.scopes ? { lines: [], scoped: true } : { lines: ['hopper-scope-none'] };
   if (command.startsWith('case "$(cat /proc/self/cgroup')) return { lines: [`hopper-scope-${scoped ? 'entered' : 'outside'}`] };
+  // Restoring a checkpoint (issue #921, checkpoint.ts): its outcome, as two printf words.
+  if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-restore ')) return { lines: [`hopper-restore-${o.restore ?? 'restored'}`] };
   // Sharing dependencies (shared-deps.ts): its outcome.
   if (command.startsWith("sh -c '") && command.includes('.hopper-scratch/deps')) return { lines: [`hopper-deps-${o.deps ?? 'none'}`] };
   // A job worktree command (job-worktree.ts): `cd 'work tree' && { printf … worktree running; o=$(sh -c '…' hopper-worktree 'a' 'b' 'repo' 'url' '1' …`,
-  // that it runs (issue #518), then its outcome, two printf words each: made in a repository's top, other when that
-  // top is a checkout of another repository than the job's (issue #431), else checkout when the job names a
-  // repository (issue #361); none with job worktrees off.
+  // that it runs (issue #518), then its outcome, two printf words each: made in the top of the job's repository, else
+  // mirror when the job names a repository (issues #361, #431, #858); none with job worktrees off.
   const worktree = /^cd '([^']*)' && \{ printf 'hopper-%s-%s\\n' worktree running; o=\$\(sh -c '.*' hopper-worktree '[^']*' '[^']*' '([^']*)' '[^']*' '([01])'/s.exec(command);
   if (worktree) {
     const [, tree, repo, on] = worktree;
     const top = (o.repositories ?? []).includes(tree!);
     const origin = o.origins?.[tree!];
     const own = !repo || !origin || origin.toLowerCase() === repo.toLowerCase();
-    const found = top ? (own ? 'made' : 'other') : repo ? 'checkout' : 'none';
+    const found = top && own ? 'made' : repo ? 'mirror' : 'none';
     const outcome = on !== '1' || found === 'none' ? 'none' : o.worktreeFails ? 'unmade' : found;
     return { lines: ['hopper-worktree-running', ...(outcome === 'unmade' ? ['fatal: could not create work tree dir: Permission denied'] : []), `hopper-job-worktree-${outcome}`] };
   }

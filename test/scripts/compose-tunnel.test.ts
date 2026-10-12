@@ -1,6 +1,8 @@
-// The tunnel (issue #795): the compose profile `tunnel` runs an ngrok agent that forwards HOPPER_PUBLIC_URL to the hopper over
-// a network only the two share, lets only the API through at the edge, and limits each caller there. Asserted on the
-// rendered form compose runs (`docker compose config`), from an empty directory, as test/scripts/compose.test.ts does.
+// The tunnel (issues #795, #880): the compose service `tunnel` runs an ngrok agent that forwards the remote access URL to the
+// hopper over a network only the two share, lets only the API through at the edge, and limits each caller there. It holds
+// nothing: it asks the hopper for its URL and authtoken (set in the UI) with a key made in memory at each start of the
+// stack, in a volume no other internet-facing part mounts. Asserted on the rendered form compose runs (`docker compose
+// config`), from an empty directory, as test/scripts/compose.test.ts does.
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -19,8 +21,9 @@ interface Service {
   ports?: unknown[];
   networks?: Record<string, unknown>;
   depends_on?: Record<string, unknown>;
+  volumes?: { source?: string; target: string; read_only?: boolean }[];
 }
-interface Rendered { services: Record<string, Service>; networks?: Record<string, { name?: string }> }
+interface Rendered { services: Record<string, Service>; networks?: Record<string, { name?: string }>; volumes?: Record<string, unknown> }
 
 function render(dotenv?: string): Rendered {
   const dir = mkdtempSync(join(tmpdir(), 'jh-compose-tunnel-'));
@@ -37,43 +40,59 @@ const svc = (r: Rendered, name: string): Service => {
   return s;
 };
 
-describe('the tunnel (issue #795): profile `tunnel`, an ngrok agent that forwards the public URL to the hopper', () => {
-  const plain = render();
-  const on = render('COMPOSE_PROFILES=tunnel\nNGROK_AUTHTOKEN=t0ken\nHOPPER_PUBLIC_URL=https://h.example.ngrok.app\nHOPPER_TUNNEL_API=http://tunnel:4040\n');
-  const tunnel = svc(on, 'tunnel');
+describe('the tunnel (issues #795, #880): an ngrok agent that forwards the remote access URL to the hopper', () => {
+  const r = render();
+  const tunnel = svc(r, 'tunnel');
   const script = tunnel.command!.join('\n');
 
-  it('is off by default: a plain `compose up` starts no tunnel, and the hopper asks no tunnel agent', () => {
-    expect(Object.keys(plain.services)).not.toContain('tunnel');
-    expect(svc(plain, 'hopper').environment?.HOPPER_TUNNEL_API).toBeUndefined();
-    expect(svc(on, 'hopper').environment?.HOPPER_TUNNEL_API).toBe('http://tunnel:4040');
+  it('runs in a plain `compose up`, with no line in .env: remote access is turned on in the UI', () => {
+    expect(Object.keys(r.services)).toContain('tunnel');
+    expect(svc(r, 'hopper').environment).toMatchObject({ HOPPER_TUNNEL_API: 'http://tunnel:4040', HOPPER_TUNNEL_KEY_FILE: '/run/hopper-tunnel/key' });
+  });
+
+  it('holds no token and no URL: nothing from .env reaches it but the port', () => {
+    const on = svc(render('NGROK_AUTHTOKEN=t0ken\nHOPPER_PUBLIC_URL=https://h.example.ngrok.app\n'), 'tunnel');
+    expect(Object.keys(on.environment ?? {})).toEqual(['HOPPER_PORT']);
+    expect(JSON.stringify(on)).not.toContain('t0ken');
   });
 
   it('runs a pinned ngrok image, restarted unless stopped, on no host port, and nothing waits on it', () => {
     expect(tunnel.image).toMatch(/^docker\.io\/ngrok\/ngrok:\d+\.\d+\.\d+/);
     expect(tunnel.restart).toBe('unless-stopped');
     expect(tunnel.ports ?? []).toEqual([]);
-    for (const name of ['hopper', 'postgres', 'openfga']) expect(Object.keys(svc(on, name).depends_on ?? {})).not.toContain('tunnel');
+    for (const name of ['hopper', 'postgres', 'openfga']) expect(Object.keys(svc(r, name).depends_on ?? {})).not.toContain('tunnel');
   });
 
   it('is on its own network with the hopper alone, never the hopper\'s loopback: an internet request is never a local one', () => {
     expect(Object.keys(tunnel.networks ?? {})).toEqual(['tunnel']);
     expect(tunnel.network_mode).toBeUndefined();
-    expect(on.networks?.tunnel).toMatchObject({ name: 'hopper_tunnel' });
+    expect(r.networks?.tunnel).toMatchObject({ name: 'hopper_tunnel' });
     expect(script).toMatch(/ngrok [^\n]*http "?http:\/\/hopper:\$\$?\{?HOPPER_PORT/);
     expect(script).not.toMatch(/127\.0\.0\.1|localhost|host-header/);
   });
 
-  it('forwards at HOPPER_PUBLIC_URL, with the authtoken from .env, and refuses to start without either', () => {
-    expect(tunnel.environment).toMatchObject({ NGROK_AUTHTOKEN: 't0ken', HOPPER_PUBLIC_URL: 'https://h.example.ngrok.app' });
-    expect(script).toMatch(/--url "?\$\$?\{?HOPPER_PUBLIC_URL/);
-    expect(script).toMatch(/NGROK_AUTHTOKEN:\?/);
-    expect(script).toMatch(/HOPPER_PUBLIC_URL:\?/);
+  it('asks the hopper for its settings with the key in memory, which it shares with the hopper alone', () => {
+    expect(r.volumes?.['tunnel-key']).toMatchObject({ driver_opts: { type: 'tmpfs', device: 'tmpfs' } });
+    expect(tunnel.volumes).toEqual([expect.objectContaining({ source: 'tunnel-key', target: '/run/hopper-tunnel', read_only: true })]);
+    for (const [name, s] of Object.entries(r.services)) {
+      const mounts = (s.volumes ?? []).filter((v) => v.source === 'tunnel-key').length;
+      expect(mounts, name).toBe(['hopper', 'postgres', 'tunnel'].includes(name) ? 1 : 0);
+    }
+    expect(svc(r, 'postgres').command!.join('\n')).toMatch(/\/run\/hopper-tunnel\/key/);
+    expect(script).toMatch(/wget [^\n]*authorization: Bearer \$\$?key[^\n]*\/tunnel\/agent|wget [^\n]*authorization: Bearer \$\$?key[^\n]*\$\$?a/);
+    expect(script).toMatch(/a="http:\/\/hopper:\$\$?\{HOPPER_PORT\}\/tunnel\/agent"/);
+  });
+
+  it('gives ngrok the token in its environment only, never on its command line or in a file, and masks it in the log', () => {
+    expect(script).toMatch(/NGROK_AUTHTOKEN=\$\$?tok ngrok /);
+    expect(script).not.toMatch(/--authtoken|config add-authtoken/);
+    expect(script).toMatch(/gsub\(ENVIRON\["T"\], "\[authtoken\]"\)/);
+    expect(script).toMatch(/--url "?\$\$?url/);
   });
 
   it('lets only the API through at the edge, never the UI, the sign-in pages or the event stream, and limits each caller', () => {
     expect(script).toMatch(/--traffic-policy-file/);
-    for (const path of ["'/api/'", "'/ui/api/'", "'/ui/auth/api-token'", "'/api/events/stream'"]) expect(script).toContain(path);
+    for (const path of ["'/api/'", "'/ui/api/'", "'/ui/auth/api-token'", "'/ui/auth/token/refresh'", "'/api/events/stream'"]) expect(script).toContain(path);
     expect(script).toMatch(/type: custom-response/);
     expect(script).toMatch(/type: rate-limit/);
     expect(script).toMatch(/conn\.client_ip/);

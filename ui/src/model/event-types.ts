@@ -17,7 +17,7 @@ const ALL: Record<EventType, true> = {
   'job.dismissed': true,
   'job.unassigned': true, 'job.reassigned': true,
   'job.work_kept': true, 'job.work_removed': true, 'job.cleanup_deferred': true, 'job.cleaned_up': true,
-  'job.parked': true, 'job.unparked': true, 'job.continued': true, 'job.waiting': true, 'job.wait_ended': true,
+  'job.parked': true, 'job.unparked': true, 'job.continued': true, 'job.waiting': true, 'job.wait_ended': true, 'job.checkpointed': true,
   'source.stalled': true, 'connected_account.expired': true, 'connected_account.renewed': true, 'connected_account.renewal_failed': true, 'ui_session.ended': true,
   'source.claim_released': true, 'source.intake_migrated': true, 'source.issues_assigned': true,
   'auth.pending': true, 'auth.completed': true, 'auth.expired': true, 'auth.cancelled': true, 'auth.failed': true,
@@ -30,7 +30,7 @@ const ALL: Record<EventType, true> = {
   'machine.discovered': true, 'machine.discovery_failed': true, 'machine.radius_grew': true, 'machine.actor_mismatch': true, 'blast_radius.settings_changed': true, 'job.gate_passed': true,
   'minor_decision.picked': true, 'minor_decision.compared': true, 'minor_decision.overridden': true, 'minor_decision.settings_changed': true,
   'job.phase_changed': true, 'job.forked': true, 'job.fork_resolved': true, 'phase_shifts.settings_changed': true,
-  'question.corrected': true, 'auto_answer.settings_changed': true, 'auto_park.settings_changed': true, 'github_rate_limiter.settings_changed': true,
+  'question.corrected': true, 'auto_answer.settings_changed': true, 'auto_park.settings_changed': true, 'github_rate_limiter.settings_changed': true, 'remote_access.changed': true,
   'question.thread_held': true, 'question.thread_approved': true, 'question.thread_posted': true, 'thread_ask.settings_changed': true,
   'github_proxy.done': true, 'github_proxy.refused': true, 'github_proxy.failed': true,
   'vault.secret_set': true, 'vault.secret_removed': true, 'vault.secret_read': true, 'vault.secret_migrated': true, 'vault.master_key_rotated': true, 'template.saved': true, 'template.removed': true, 'vault.approved': true, 'vault.revoked': true, 'template.profile_approved': true, 'template.checked': true, 'template.check_requested': true, 'vault.delivered': true, 'vault.agent_credential_given': true, 'vault.refused': true, 'vault.minted': true, 'vault.mint_refused': true, 'vault.mint_tested': true, 'vault.check_minted': true, 'vault.check_mint_refused': true,
@@ -39,6 +39,7 @@ const ALL: Record<EventType, true> = {
   'source.request_opened': true, 'source.backburner_lifted': true,
   'yolo_mode.changed': true, 'job.pull_request_merged': true, 'job.pull_request_closed': true, 'job.pull_request_abandoned': true, 'job.finish_briefed': true, 'job.pull_request_tended': true, 'job.pull_request_followed': true,
   'skill.listed': true, 'skill.loaded': true, 'skill.refused': true,
+  'step.started': true, 'step.finished': true, 'step.refused': true, 'vault.step_delivered': true, 'vault.step_refused': true,
   'artifact.created': true, 'artifact.shared': true, 'artifact.share_revoked': true, 'artifact.removed': true, 'artifact.settings_changed': true, 'artifact.posted': true,
   'tldr.written': true, 'tldr.settings_changed': true,
   'artifact.revised': true, 'artifact.revision_pinned': true, 'artifact.revision_removed': true,
@@ -47,7 +48,8 @@ const ALL: Record<EventType, true> = {
   'bug_report.filed': true, 'bug_report.failed': true, 'bug_report.kept': true,
   'repo_checks.job_queued': true, 'repo_checks.dismissed': true, 'job.child_issue_filed': true, 'contribution.changed': true,
   'pointed_job.created': true, 'pointed_job.status_changed': true, 'github_watch.changed': true, 'github_watch.settings_changed': true,
-  'infra.plan_recorded': true, 'infra.plan_approved': true,
+  'infra.plan_recorded': true, 'infra.plan_approved': true, 'infra.out_of_band_recorded': true, 'infra.out_of_band_marked': true, 'infra.controllers_changed': true,
+  'api_grant.minted': true, 'api_grant.refreshed': true, 'api_grant.reuse_detected': true, 'api_grant.revoked': true, 'api_tokens.settings_changed': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 

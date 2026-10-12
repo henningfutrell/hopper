@@ -78,7 +78,7 @@ describe('Grok Bot routine: where the hopper is reached (hopper.reachable)', () 
     await waitFor(() => r.hits.length >= 1, { what: 'the announce' });
     expect(r.hits[0]).toEqual({
       source: 'hopper', kind: 'hopper.reachable', at: '2026-10-11T16:01:00.000Z', reason: 'start',
-      url: 'https://hopper.example.ngrok.app', apiTokenUrl: 'https://hopper.example.ngrok.app/ui/auth/api-token', heartbeatSeconds: 0.3,
+      url: 'https://hopper.example.ngrok.app', apiTokenUrl: 'https://hopper.example.ngrok.app/ui/auth/api-token', tokenRefreshUrl: 'https://hopper.example.ngrok.app/ui/auth/token/refresh', heartbeatSeconds: 0.3,
     });
     expect(r.auth[0]).toBe('Bearer k');
   });

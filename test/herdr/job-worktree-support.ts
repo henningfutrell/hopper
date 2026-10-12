@@ -38,3 +38,9 @@ export function repository(): { root: string; tree: string; origin: string } {
   git(join(root, 'other'), 'push', '--quiet', 'origin', 'main');
   return { root, tree, origin };
 }
+
+/** A bare repository as GitHub serves one (issue #858): over a URL, so a clone is not local, with blob filters allowed. */
+export function served(bare: string): string {
+  git(bare, 'config', 'uploadpack.allowFilter', 'true');
+  return `file://${bare}`;
+}

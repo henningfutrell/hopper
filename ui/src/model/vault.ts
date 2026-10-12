@@ -1,7 +1,7 @@
 // The Vault settings page's model (issue #558): what a secret's card says — its scope, who set it and when, who last
 // changed it — and whether a name is one the hopper takes. A secret here is only its metadata: there is no value to show.
 // A secret kept in a vault backend (issue #585) says where: the backend and the reference read there at each use.
-import type { Asset, CredentialRequest, OperationProfile, TemplateRadius, TemplateView, VaultSecret } from './wire.ts';
+import type { Asset, CredentialRequest, OperationProfile, TemplateRadius, TemplateView, VaultSecret, VaultView } from './wire.ts';
 
 /** The hopper's rule for a vault secret's name (src/domain/vault.ts). */
 const NAME = /^[A-Za-z][A-Za-z0-9_.-]*$/;
@@ -84,6 +84,14 @@ export const highRadius = (p: OperationProfile): boolean => HIGH.includes(p.oper
 /** The template's profiles that wait for their own explicit approval: approving the template does not approve them. */
 export const explicitApprovals = (t: TemplateView): OperationProfile[] => t.pending.profiles.filter(highRadius);
 
+/** A template waits for a person (issue #897, Access requests): never approved, or a new image, secret or profile waits. */
+export const templateWaits = (t: TemplateView): boolean =>
+  !t.approval || t.pending.image || t.pending.secrets.length > 0 || t.pending.profiles.length > 0;
+
+/** What jobs on boxes wait on a person for (issue #897): credential requests, vault grant asks, and templates that wait. */
+export const accessRequestsWaiting = (v: VaultView | null): number =>
+  v === null ? 0 : (v.requests?.length ?? 0) + (v.grantAsks?.length ?? 0) + v.templates.filter(templateWaits).length;
+
 /** What a template's card says of its approval: approved, or what waits for a person. */
 export function approvalText(t: TemplateView): string {
   if (!t.approval) return 'not approved yet: its boxes take no job and get nothing from the vault';
@@ -120,14 +128,32 @@ export function giveProblem(g: { name: string; kind: string; note: string; value
  * The read-only check of a template in words (issue #716): none when it takes none; else whether the check of its
  * current version passed, failed (with the probes that failed), runs, or has not run. `waits`: its boxes wait for it.
  */
-export function checkText(t: { readOnly?: boolean; savedAt: string; check?: { version: string; state: string; probes: { id: string; asset: string; outcome: string; passed: boolean }[]; problem?: string; artifact?: string } }): { text: string; waits: boolean; report?: string } | undefined {
+export function checkText(t: { readOnly?: boolean; savedAt: string; check?: { version: string; state: string; probes: { id: string; asset: string; outcome: string; passed: boolean; mark?: string }[]; problem?: string; artifact?: string } }): { text: string; waits: boolean; report?: string } | undefined {
   if (!t.readOnly) return undefined;
   const c = t.check?.version === t.savedAt ? t.check : undefined;
   if (!c) return { text: 'not run on this version yet: it runs once the template is approved', waits: true };
   if (c.state === 'running') return { text: 'runs now', waits: true };
   // Its report, an artifact of the job that asked for the template (issue #715).
   const report = c.artifact ? { report: `#artifacts/${c.artifact}` } : {};
-  if (c.state === 'passed') return { text: `passed: ${c.probes.length} probes, every write refused, every read worked`, waits: false, ...report };
+  // Probes a person marked (issue #916): a read that must be refused, or one not run.
+  const marked = c.probes.filter((p) => p.mark).map((p) => `${p.id} on ${p.asset} (${p.mark})`);
+  if (c.state === 'passed') return { text: `passed: ${c.probes.length} probes, every write refused, every read worked${marked.length ? `, as the template marks ${marked.join('; ')}` : ''}`, waits: false, ...report };
   const failed = c.probes.filter((p) => !p.passed).map((p) => `${p.id} on ${p.asset} (${p.outcome})`);
   return { text: `failed: ${[...failed, ...(c.problem ? [c.problem] : [])].join('; ')}`, waits: true, ...report };
+}
+
+/** A template's probe marks in words (issue #916): `<probe> <mark>`, or none. */
+export const probeMarksText = (marks: Readonly<Record<string, string>> | undefined): string[] => Object.entries(marks ?? {}).map(([probe, mark]) => `${probe} ${mark}`);
+
+/** The choices for a read probe's mark (issue #916): none, the read must work; or a mark. */
+export const PROBE_MARK_CHOICES: readonly { value: string; label: string }[] = [
+  { value: '', label: 'must work' },
+  { value: 'expect-denied', label: 'expect-denied: must be refused' },
+  { value: 'skip', label: 'skip: not run' },
+];
+
+/** The read probes a person can mark (issue #916): the ones the template's last check ran as reads, and the ones it marks. */
+export function markableProbes(t: { check?: { probes: { id: string; expect: string; mark?: string }[] } }, marks: Readonly<Record<string, string>>): string[] {
+  const read = (t.check?.probes ?? []).filter((p) => p.expect === 'allowed' || p.mark).map((p) => p.id);
+  return [...new Set([...read, ...Object.keys(marks)])].sort();
 }

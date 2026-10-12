@@ -6,6 +6,8 @@ import { POINTED_JOB_STATUSES, POINTER_KINDS } from '../domain/pointed-jobs.ts';
 import { CONFIDENCES, RISK_CATEGORIES, RISK_LEVELS } from '../domain/types.ts';
 // Infra plans (issue #870): their own file, spread with the other features' events.
 export { INFRA_PLAN_EVENT_SCHEMAS as infraPlanEvents } from './infra-plan-schemas.ts';
+export { API_GRANT_EVENT_SCHEMAS as apiGrantEvents } from './api-grant-schemas.ts';
+export { WINDOWS_STEP_EVENT_SCHEMAS as windowsStepEvents } from './windows-step-schemas.ts';
 
 const strict = z.strictObject;
 
@@ -103,15 +105,17 @@ export const issueLineageEvents = {
 // Vault grants (issue #652, src/vault/grants.ts): a job on a box asked the vault with no grant, a person granted its item
 // the vault, a person took the grant back. Never a value.
 export const vaultGrantEvents = {
-  'vault.grant_asked': strict({ job: z.string(), key: z.string(), machine: z.string(), template: z.string(), name: z.string() }),
+  'vault.grant_asked': strict({ job: z.string(), key: z.string(), machine: z.string().optional(), template: z.string().optional(), windowsHost: z.string().optional(), name: z.string() }),
   'vault.granted': strict({ job: z.string(), key: z.string(), by: z.string() }),
   'vault.grant_revoked': strict({ job: z.string(), key: z.string(), by: z.string() }),
 };
 
 // The shared rate limiter (issue #436): the hopper's admin changed its settings.
+const remoteAccessSettings = strict({ enabled: z.boolean(), domain: z.string().optional(), restartedAt: z.string().optional() });
 const rateLimiterSettings = strict({ slowBelowPercent: z.number().int().min(0).max(100), reserve: z.number().int().min(0), batchSize: z.number().int().min(1) });
 export const rateLimiterEvents = {
   'github_rate_limiter.settings_changed': strict({ from: rateLimiterSettings, to: rateLimiterSettings, by: z.string() }),
+  'remote_access.changed': strict({ from: remoteAccessSettings, to: remoteAccessSettings, authtoken: z.enum(['set', 'removed']).optional(), by: z.string() }),
 };
 
 // Pointed jobs (issue #425, src/http/ui/pointed-jobs.ts): a pointed job made, and each move of its status.

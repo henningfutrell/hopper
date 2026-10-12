@@ -8,13 +8,14 @@ import type { Job } from './types.ts';
 export interface VaultGrant { key: string; job: string; by: string; at: string }
 
 /**
- * A job on a box that asked the vault with no grant: the job, its item's key, its box and template, what it asked for
- * (a secret's name, or `<kind> <operation> <asset>` for a mint), first asked when. Kept in the hopper's memory only.
+ * A job that asked the vault with no grant: the job, its item's key, where it asked from — its box and template, or the
+ * Windows host its step runs on (issue #731) —, what it asked for (a secret's name, or `<kind> <operation> <asset>` for a
+ * mint), first asked when. Kept in the hopper's memory only.
  */
-export interface VaultGrantAsk { job: string; key: string; machine: string; template: string; names: string[]; askedAt: string }
+export interface VaultGrantAsk { job: string; key: string; machine?: string; template?: string; windowsHost?: string; names: string[]; askedAt: string }
 
 /** What a grant is kept for: the job's item (its source key); a job of no source, the job itself. */
 export const grantKeyOf = (job: Pick<Job, 'id' | 'source'>): string => job.source?.key ?? job.id;
 
 /** Why a job with no grant gets nothing: what the job is told, and what `vault.refused` records. */
-export const noGrant = (job: string): string => `job ${job.slice(0, 8)} has no vault grant: a person grants it the vault on the Vault page (Settings → Vault), then ask again`;
+export const noGrant = (job: string): string => `job ${job.slice(0, 8)} has no vault grant: a person grants it the vault on Access requests, then ask again`;

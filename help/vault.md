@@ -15,7 +15,7 @@ The vault is part of the hopper. It holds:
 
 The vault is write-only. No page, no API answer and no log shows a value, to any role. The page shows only who set a secret, when, and where it was last used.
 
-Open the vault at **Settings → Vault**. Every user can read the page. An admin edits secrets, templates and the read policy. An operator can grant and revoke the vault for a job.
+Open the vault at **Settings → Vault**. Every user can read the page. An admin edits secrets, templates and the read policy there. What jobs wait on a person for — credentials, vault grants and template approvals — is on **Access requests**, in the navigation. An operator can grant and revoke the vault for a job there.
 
 ## Who gets a secret
 
@@ -65,8 +65,8 @@ The hopper reads the value there each time a job asks, and keeps no copy. A wron
 
 A job on a box gets nothing from the vault until a person grants it. This is the **vault grant**.
 
-1. A job asks the vault. The hopper refuses it and tells the job: `has no vault grant: a person grants it the vault on the Vault page (Settings → Vault), then ask again`.
-2. **Settings → Vault** shows the panel **Vault grants**, with a card *Grant this job the vault*. The card shows the job, its box and template, what it asked for, and its item.
+1. A job asks the vault. The hopper refuses it and tells the job: `has no vault grant: a person grants it the vault on Access requests, then ask again`.
+2. **Access requests** shows the panel **Vault grants**, with a card *Grant this job the vault*. The card shows the job, its box and template, what it asked for, and its item.
 3. Click **Grant**. The job asks again and gets what its template gives.
 
 The grant is kept for the job's item, so **Run again** and **Rework** keep it. Each grant shows who granted it. Click **Revoke** to take it back.
@@ -98,7 +98,7 @@ sh "$HOPPER_SKILL" kube-diagnostics                       # a skill the hopper k
 sh "$HOPPER_SKILL" SERVICE --credential "an API token, read-only" --why "read the build logs" --wait
 ```
 
-The request shows on **Settings → Vault**, panel **Asked for**. The card says which jobs wait, why, and how to get the credential. An admin then:
+The request shows on **Access requests**, panel **Asked for**. The card says which jobs wait, why, and how to get the credential. An admin then:
 
 - picks what to give (the first kind is the hopper's suggestion; any kind works, also one in your own words),
 - types a vault secret name and the value, and clicks **Give**; or

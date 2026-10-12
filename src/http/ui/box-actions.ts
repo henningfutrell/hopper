@@ -1,5 +1,6 @@
 // Box actions (issue #795, design.md "API tokens" Box actions): the routes an API token may use only when it is a box
-// token — minted with `box: true` from a person's UI session, never by the sign-in exchange — and Access allows
+// token — the API token of a grant minted with `box: true` from a person's UI session (issue #881), never by the
+// sign-in exchange — and Access allows
 // `api_token#can_run_on_box`. A box action starts a job, runs a command, approves or merges work, updates the hopper or a
 // client, or changes the work on a machine. Reads, holds and cancels are not: any API token of the role does them. A UI
 // session is never asked: the person is there. The list is the boundary; a route that is not on it is no box action.
@@ -43,6 +44,8 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/machines', kind: 'change work on a machine' },
   { route: '/ui/api/machines/join', kind: 'change work on a machine' },
   { route: '/ui/api/machines/sandbox', kind: 'change work on a machine' },
+  // Issue #731: where a job's Windows sandbox steps run, with the hopper's own ssh key.
+  { route: '/ui/api/windows-hosts', kind: 'change work on a machine' },
   { route: '/ui/api/lanes/apply', kind: 'change work on a machine' },
   { route: '/ui/api/lanes/undo', kind: 'change work on a machine' },
 ];
@@ -53,4 +56,4 @@ const ROUTES = new Set(BOX_ACTIONS.map((b) => b.route));
 export const isBoxAction = (route: string | undefined): boolean => route !== undefined && ROUTES.has(route);
 
 /** Why an API token that is no box token is refused a box action. */
-export const NOT_A_BOX_TOKEN = 'this is a box action: it needs a box token, an API token a person mints with box: true from a UI session (Settings → API tokens, or POST /ui/api/api-tokens)';
+export const NOT_A_BOX_TOKEN = 'this is a box action: it needs a box token, the API token of a grant a person mints with box: true from a UI session (Settings → API tokens, or POST /ui/api/api-tokens)';

@@ -21,6 +21,7 @@ import { createUsageLimitCommands, type UsageLimitCommands } from './usage-limit
 import { createPriorityLanes, type PriorityLanes } from './priority-lanes.ts';
 import { DISCOVER_CHECK_MS, createBlastRadius, type BlastRadius } from './blast-radius.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
+import { CHECKPOINT_CHECK_MS, createCheckpoints, type Checkpoints } from './checkpoints.ts';
 import { createPhaseShifts, type PhaseShifts } from './phase-shifts.ts';
 import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
 import { createPlacementPicks } from './lane-calls.ts';
@@ -33,6 +34,7 @@ export type { PriorityLanes, PriorityLaneSettingsPatch } from './priority-lanes.
 export type { BlastRadius, BlastRadiusSettingsPatch } from './blast-radius.ts';
 export type { PhaseShifts, PhaseShiftSettingsPatch, ShiftRequest, ShiftResult } from './phase-shifts.ts';
 export type { LaneTuningPatch, LaneTuningService } from './lane-tuning.ts';
+export type { Checkpoints } from './checkpoints.ts';
 
 const SHUTDOWN_WAIT_MS = 5000;
 
@@ -79,6 +81,8 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   readonly blastRadius: BlastRadius;
   /** Lane tuning (issue #688): every machine's lane recommendation, recorded; an admin's apply, dismiss and undo; each machine's settings. */
   readonly laneTuning: LaneTuningService;
+  /** Job checkpoints (issue #921): a pass every minute takes those due; a park takes one. */
+  readonly checkpoints: Checkpoints;
   /** Recover from a previous run (jobs — reattaching live ones, waiting for machines not reachable yet —, then questions), ask the router, take the first Decision, start the tick. */
   start(): Promise<void>;
   /** Abort running executors (≤ 5 s) and stop deciding. The caller closes the store. */
@@ -94,6 +98,8 @@ export function createEngine(o: EngineOptions): Engine {
   let autoParking = false;
   let sweepTimer: NodeJS.Timeout | undefined;
   let discoverTimer: NodeJS.Timeout | undefined;
+  let checkpointTimer: NodeJS.Timeout | undefined;
+  let checkpointing = false;
   let unsubscribe: (() => void) | undefined;
 
   const serial = createSerial(async (reason) => {
@@ -102,7 +108,7 @@ export function createEngine(o: EngineOptions): Engine {
   }, (e) => console.error('decision failed', e));
 
   const c: EngineContext = {
-    store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines,
+    store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines, configuredMachines: o.configuredMachines ?? (() => undefined),
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
     questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems,
     machineLanes: o.machineLanes ?? (() => Promise.reject(new EngineError('conflict', 'a machine\'s lanes cannot be set here'))),
@@ -118,6 +124,8 @@ export function createEngine(o: EngineOptions): Engine {
   const commands = createCommands(c, runner, cleanups);
   const paneAnswers = createPaneAnswers(c, (claim) => runner.reattach(claim));
   const sweep = createSweep(c);
+  const checkpoints = createCheckpoints(c);
+  c.checkpoints = checkpoints;
   const priorityLanes = createPriorityLanes(c);
   const blastRadius = createBlastRadius(c);
   const phaseShifts = createPhaseShifts(c);
@@ -136,6 +144,7 @@ export function createEngine(o: EngineOptions): Engine {
     priorityLanes,
     blastRadius,
     laneTuning,
+    checkpoints,
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
     ...createUsageLimitCommands(c),
@@ -151,6 +160,12 @@ export function createEngine(o: EngineOptions): Engine {
       sweepTimer = setInterval(() => { void sweep.run(); }, o.sweepCheckMs ?? SWEEP_CHECK_MS);
       // Discovery (issue #542): each machine again every `everyMinutes`; one that comes online, at the next Decision.
       discoverTimer = setInterval(() => { void blastRadius.run(); }, DISCOVER_CHECK_MS);
+      // Checkpoints (issue #921): one pass at a time; a pass still reading machines skips this one.
+      checkpointTimer = setInterval(() => {
+        if (checkpointing) return;
+        checkpointing = true;
+        void checkpoints.run().catch((e: unknown) => console.error('hopper: checkpoints failed', e)).finally(() => { checkpointing = false; });
+      }, CHECKPOINT_CHECK_MS);
       // Deferred before this start (issue #371): tried again now, and on every tick.
       cleanups.retry();
       for (const claim of recovered.reattach) runner.reattach(claim);
@@ -194,6 +209,7 @@ export function createEngine(o: EngineOptions): Engine {
       if (timer) clearInterval(timer);
       if (sweepTimer) clearInterval(sweepTimer);
       if (discoverTimer) clearInterval(discoverTimer);
+      if (checkpointTimer) clearInterval(checkpointTimer);
       unsubscribe?.();
       await runner.stopAll(SHUTDOWN_WAIT_MS);
       // In-flight classifications are not awaited: they write nothing once stopping.

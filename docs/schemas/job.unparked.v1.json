@@ -8,6 +8,10 @@
         "queued",
         "waiting_answer"
       ]
+    },
+    "elsewhere": {
+      "type": "boolean",
+      "const": true
     }
   },
   "required": [

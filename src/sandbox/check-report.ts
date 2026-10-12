@@ -5,7 +5,7 @@
 // a person's) is a new revision of it. A template no job asked for gets none. The page runs no script and loads nothing:
 // every text a probe wrote is escaped.
 import { isRefusal, type UserArtifacts } from '../artifacts/service.ts';
-import { failedProbes, type ProbeResult, type ReadOnlyCheck } from '../domain/read-only-check.ts';
+import { failedProbes, markedProbes, type ProbeResult, type ReadOnlyCheck } from '../domain/read-only-check.ts';
 import type { Job } from '../domain/types.ts';
 import type { Template } from '../domain/vault.ts';
 
@@ -21,7 +21,11 @@ const probes = (n: number): string => `${n} probe${n === 1 ? '' : 's'}`;
 
 /** The one line that says how the check ended. */
 function summaryOf(check: ReadOnlyCheck): string {
-  if (check.state === 'passed') return `passed: ${probes(check.probes.length)}, every write refused, every read worked`;
+  if (check.state === 'passed') {
+    // Probes a person marked (issue #916): a read that must be refused, or one not run.
+    const marked = markedProbes(check);
+    return `passed: ${probes(check.probes.length)}, every write refused, every read worked${marked.length ? `, as the template marks ${marked.join('; ')}` : ''}`;
+  }
   if (check.state === 'running') return 'runs now';
   const failed = failedProbes(check);
   const parts = [
@@ -40,8 +44,9 @@ function bar(check: ReadOnlyCheck): string {
     + `<rect width="600" height="24" fill="${n === 0 ? '#888' : '#c62828'}"/><rect width="${w}" height="24" fill="#2e7d32"/></svg>`;
 }
 
-const row = (p: ProbeResult): string => `<tr class="${p.passed ? 'ok' : 'bad'}"><td>${p.passed ? 'pass' : p.outcome === 'not-run' ? 'NOT RUN' : 'FAIL'}</td><td>${escape(p.id)}</td><td>${escape(p.asset)}</td>`
-  + `<td>${p.expect}</td><td>${p.outcome}</td><td>${p.exit ?? 'did not run'}</td><td><pre>${escape(p.output)}</pre>${p.note ? `<p class="note">${escape(p.note)}</p>` : ''}</td></tr>`;
+const result = (p: ProbeResult): string => (p.outcome === 'skipped' ? 'skip' : p.passed ? 'pass' : p.outcome === 'not-run' ? 'NOT RUN' : 'FAIL');
+const row = (p: ProbeResult): string => `<tr class="${p.passed ? 'ok' : 'bad'}"><td>${result(p)}</td><td>${escape(p.id)}</td><td>${escape(p.asset)}</td>`
+  + `<td>${p.expect}${p.mark ? ` (marked ${p.mark})` : ''}</td><td>${p.outcome}</td><td>${p.exit ?? 'did not run'}</td><td><pre>${escape(p.output)}</pre>${p.note ? `<p class="note">${escape(p.note)}</p>` : ''}</td></tr>`;
 
 /** The report of one ended check of the template. Pure. */
 export function checkReport(t: Template, check: ReadOnlyCheck): CheckReport {
@@ -60,7 +65,7 @@ tr.ok td:first-child { color: #2e7d32; } p.note { margin: 4px 0 0; font-style: i
 <h1>${escape(title)}</h1>
 <p><strong>${escape(summary)}</strong></p>
 ${bar(check)}
-<p>Checked at ${escape(check.at)}, template version ${escape(check.version)}. Each write must be refused, each read must work.</p>
+<p>Checked at ${escape(check.at)}, template version ${escape(check.version)}. Each write must be refused, each read must work, except a read the template marks: <code>expect-denied</code> must be refused, <code>skip</code> is not run.</p>
 <h2>Needs</h2><ul>${needs}</ul>
 <h2>Probes</h2>
 <table><thead><tr><th>Result</th><th>Probe</th><th>Asset</th><th>Expected</th><th>Outcome</th><th>Exit</th><th>Output (end)</th></tr></thead>

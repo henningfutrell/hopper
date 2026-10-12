@@ -3,7 +3,7 @@
 import type { z } from 'zod';
 import type { UiRole } from '../domain/types.ts';
 
-export type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Research' | 'Logins' | 'Failures' | 'Decider' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Vault' | 'Events' | 'Self-update' | 'Users' | 'Sign-in' | 'Access' | 'API tokens' | 'Bug reports';
+export type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Research' | 'Logins' | 'Failures' | 'Decider' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Vault' | 'Infra' | 'Events' | 'Self-update' | 'Users' | 'Sign-in' | 'Access' | 'API tokens' | 'Bug reports' | 'Remote access';
 
 export interface Operation {
   method: 'get' | 'post';
@@ -40,11 +40,13 @@ export const TAGS: Record<Tag, string> = {
   'Plugins and routing': 'Which plugin instance fills which role, and the routing rules.',
   Webhooks: 'Subscribers to the event log, kept in the database.',
   Vault: 'Write-only secrets for jobs: set once, never read back. The master key every kept secret is sealed under: given at launch, never from a file or a volume.',
+  Infra: 'Plans and applies of infrastructure changes (issues #870, #896): the plans jobs recorded, their approval, the applies minted against them, and the out-of-band changes (issue #871). The Infra view in the UI.',
   Events: 'The event log, read back or streamed.',
   'Self-update': 'The install and the update repository.',
   Users: 'The people one hopper works for, each with their own work, kept apart.',
   'Sign-in': 'UI sessions: sign-in, the session, logout.',
   'API tokens': 'Short-lived tokens an agent acts through the API with, as its user (issue #718): mint, list, revoke, and exchange a sign-in for one.',
   Access: 'OpenFGA decides each credential a job is given: the approvals, the access model, and every decision.',
+  'Remote access': 'The tunnel that reaches the hopper\'s API from anywhere (issue #880): its ngrok authtoken and domain, set here and kept in the hopper\'s vault, and whether it is up.',
   'Bug reports': 'Report a bug: a report on the hopper, with its redacted context, filed on the hopper\'s own repository as the person who sends it.',
 };

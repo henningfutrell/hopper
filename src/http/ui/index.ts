@@ -38,13 +38,15 @@ import type { Access } from '../../authz/service.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
 import { knownTemplate } from './vault.ts';
 
-/** The master key's status (issue #659): the one reveal, a person's word that they saved it; the shared GitHub rate limiter's settings (issue #436). */
-export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceRoutes>[1], 'masterKey' | 'rateLimiter'> {
+/** The master key's status (issue #659): the one reveal, a person's word that they saved it; the shared GitHub rate limiter's settings (issue #436); remote access (issue #880). */
+export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceRoutes>[1], 'masterKey' | 'rateLimiter' | 'remoteAccess'> {
   /** The request's user's parts (the session's user). */
   tenant: (req: FastifyRequest) => TenantParts;
   tenants: Tenants;
   instance: Pick<InstanceStore, 'loginCodes' | 'joinCodes' | 'users'>;
   sessions: UiSessions;
+  /** Grants (issue #881), and every scope a route needs. */
+  grants: import('./api-grants.ts').ApiGrants; scopeRegistry: import('../../domain/scope-registry.ts').ScopeRegistry;
   signIn: SignIn;
   /** Settings → Sign-in: the sign-in config's realms (issue #185). */
   realms: RealmsAdmin;
@@ -201,7 +203,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   const tokenRefusal = async (req: FastifyRequest, reply: FastifyReply, needs: UiRole): Promise<unknown> => {
     const s = sessionOf(req)!;
     if (s.kind !== 'api') return undefined;
-    const d = await apiTokenAnswer(o.access, s, needs, isBoxAction(req.routeOptions.url));
+    const d = await apiTokenAnswer(o.access, s, needs, isBoxAction(req.routeOptions.url), { grants: o.grants, method: req.method, route: req.routeOptions.url });
     if (d.allowed) return undefined;
     if (d.unavailable) return reply.code(503).send({ error: `${ACCESS_UNAVAILABLE}: ${d.reason}` });
     return refuse(req, reply, `the API token may not do this: ${d.reason}`);
@@ -316,7 +318,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   registerAutoAnswerRoutes(app, { operator, admin, tenant: o.tenant, clock: o.clock });
   registerAccessRoutes(app, { instance, access: o.access, by: (req) => userName(sessionOf(req)!) });
   registerSharedSecretRoutes(app, { instance, tenant: o.tenant });
-  registerApiTokenRoutes(app, { allow, sessions, sessionOf, access: o.access, tenants: o.tenants, signIn, caller: o.caller });
+  registerApiTokenRoutes(app, { allow, instance, sessions, grants: o.grants, registry: o.scopeRegistry, sessionOf, access: o.access, tenants: o.tenants, signIn, caller: o.caller });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
   // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.
@@ -352,8 +354,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.report;
   });
 
-  // Self-update, the master key and the shared GitHub rate limiter (issues #44, #659, #436): the hopper's admin's alone.
-  registerInstanceRoutes(app, { instance, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, by: (req) => userName(sessionOf(req)!) });
+  // Self-update, the master key, the shared GitHub rate limiter and remote access (issues #44, #659, #436, #880): the hopper's admin's alone.
+  registerInstanceRoutes(app, { instance, instanceAdmin: o.instanceAdmin, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, by: (req) => userName(sessionOf(req)!) });
 
   // design.md "Connected accounts": answers the provider's new GET /api/connected-accounts status — the
   // device code once the provider shows it. The user's own accounts: their session's user alone.

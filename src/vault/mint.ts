@@ -13,6 +13,7 @@ import { awsRegionOf, awsSessionName, mintingCredentialOf } from '../domain/mint
 import type { CredentialMinter, VaultRepository } from '../domain/ports.ts';
 import { AT_WORK, boxAsk, type BoxAskOptions } from './box.ts';
 import { mintEks } from './eks.ts';
+import { mintPrincipal } from '../domain/out-of-band.ts';
 
 /** `plan` (issue #870): the plan an operation that changes infrastructure applies. */
 export interface MintAsk { mint: MintKind; operation: string; asset: string; plan?: string; token: string }
@@ -56,7 +57,7 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
   const denied = (template: string, profile: OperationProfile, d: MintDecision): string => {
     const declared = (vault.template(template)?.profiles ?? []).some((p) => sameProfile(p, profile));
     const approved = (o.access?.approvedProfiles(template) ?? []).some((p) => sameProfile(p, profile));
-    if (declared && !approved) return `Access denied it: ${d.reason}. ${profileInWords(profile)} waits for a person's approval on Settings → Vault (the first-time gate)`;
+    if (declared && !approved) return `Access denied it: ${d.reason}. ${profileInWords(profile)} waits for a person's approval on Access requests (the first-time gate)`;
     if (!declared) return `Access denied it: ${d.reason}. ${template} does not declare ${profileInWords(profile)}: a person adds it to the template on Settings → Vault, then approves it`;
     return `Access denied it: ${d.reason}`;
   };
@@ -104,6 +105,8 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     const made = await from(credential.name, target, job.id);
     if ('refused' in made) return refuse(made.refused, decision);
     const out = made.minted;
+    // Who the credential writes as (issue #871): an audit-log write by it, while it is valid, is the plan's apply.
+    const principal = principalOf(target, made);
     // A vault backend's read (issue #585) or the vault's container (issue #586) takes a while: the job must still be at work.
     const still = o.store.jobs.get(job.id)?.status;
     if (!still || !AT_WORK.includes(still)) return refuse(`the job is not at work (${still ?? 'no such job'}): the vault mints only while it runs`, decision);
@@ -116,12 +119,19 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
       if (now?.id === credential.id) vault.replace({ ...now, lastUsed: { at, machine: machine.name, job: job.id } }, vault.sealed(now.id) ?? null);
       events.append({
         type: 'vault.minted', jobId: job.id, machineId: machine.name,
-        data: { kind: ask.mint, operation: profile.operation, asset, template: machine.template, machine: machine.name, job: job.id, credential: credential.name, decision: decision.id, expiresAt: expiryOf(out), renewal, ...plan },
+        data: { kind: ask.mint, operation: profile.operation, asset, template: machine.template, machine: machine.name, job: job.id, credential: credential.name, decision: decision.id, expiresAt: expiryOf(out), renewal, ...plan, ...(principal ? { principal } : {}) },
       });
     });
     const { kind: _kind, ...answer } = out;
     return { value: JSON.stringify(answer) };
   };
+}
+
+/** Who a minted credential writes as, as an audit log names it (issue #871): an EKS token as its role's session. */
+function principalOf(target: MintTarget, made: Pick<MintedFrom, 'roleArn' | 'sessionName'>): string | undefined {
+  if (target.kind === 'kube' && !made.roleArn) return mintPrincipal({ kind: 'kube', namespace: target.namespace, serviceAccount: target.serviceAccount });
+  const roleArn = target.kind === 'aws' ? target.roleArn : made.roleArn;
+  return roleArn && made.sessionName ? mintPrincipal({ kind: 'aws', roleArn, sessionName: made.sessionName }) : undefined;
 }
 
 /**

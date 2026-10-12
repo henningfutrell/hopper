@@ -1,6 +1,7 @@
 // Who is asking (design.md "Reaching the UI across the LAN", "Sign-in: realms"). A
 // request is local (loopback peer, Host 127.0.0.1:<port> or localhost:<port>), LAN (Host a LAN name
-// with the port) or public (Host the public URL's host, as a reverse proxy passes it on); a LAN or
+// with the port) or public (Host the public URL's host, as a reverse proxy passes it on, or the remote access
+// domain while remote access is on, as the tunnel passes it on: issue #880); a LAN or
 // public request comes from loopback or a LAN peer range. A LAN peer naming a loopback Host is a LAN
 // request: a port a container publishes on its host's loopback arrives that way (issue #119). Anything else is refused: another Host is
 // 421 (DNS rebinding), another peer is 403. A LAN or public request reads /api/ only with a UI session.
@@ -13,14 +14,19 @@ export interface Lan {
   peers: readonly string[];
   /** HOPPER_PUBLIC_URL's origin (`https://hopper.example.com`), or undefined. */
   publicUrl?: string | undefined;
+  /** The remote access URL (`https://<domain>`, issue #880) while remote access is on, read at each request; undefined: off. */
+  tunnelUrl?: () => string | undefined;
 }
 
 export type Reach = { reach: 'local' | 'lan' | 'public' } | { refuse: 403 | 421; why: string };
 
 export const loopbackHosts = (port: number): string[] => [`127.0.0.1:${port}`, `localhost:${port}`];
 export const lanHosts = (port: number, lan: Lan): string[] => lan.names.map((n) => `${n}:${port}`);
-/** The public URL's Host header value (its host, with the port only when it is not the scheme's default). */
-export const publicHosts = (lan: Lan): string[] => (lan.publicUrl ? [new URL(lan.publicUrl).host] : []);
+/** The public URL's and the remote access URL's Host header values (each host, with the port only when it is not the scheme's default). */
+export const publicHosts = (lan: Lan): string[] => [lan.publicUrl, lan.tunnelUrl?.()].filter((u) => u !== undefined).map((u) => new URL(u).host);
+/** The origin a public request with Host `host` reached: the public URL's or the remote access URL's; undefined: neither. */
+export const publicOriginOf = (lan: Lan, host: string): string | undefined =>
+  [lan.publicUrl, lan.tunnelUrl?.()].find((u) => u !== undefined && new URL(u).host === host.toLowerCase());
 /** Every Origin a UI page may post from. */
 export const uiOrigins = (port: number, lan: Lan): string[] =>
   [...[...loopbackHosts(port), ...lanHosts(port, lan)].map((h) => `http://${h}`), ...(lan.publicUrl ? [lan.publicUrl] : [])];

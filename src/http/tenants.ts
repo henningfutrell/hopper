@@ -27,12 +27,14 @@ import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { HttpError } from './errors.ts';
 import { atApiDoor, requestSession } from './host-guard.ts';
 import { apiTokenIn } from './ui/guard.ts';
-import { apiTokenIdOf } from './ui/sessions.ts';
+import { accessIdOf, grantActionRefusal, grantScopeRefusal } from './ui/api-tokens.ts';
+import type { ApiGrants } from './ui/api-grants.ts';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
 import type { UiSessions } from './ui/sessions.ts';
 import type { SecretProblem } from './webhooks.ts';
 import type { UserMachineLink } from '../users/runtime.ts';
 import type { UserGitHubProxy } from '../users/github-proxy.ts';
+import type { WindowsSteps } from '../windows-steps/index.ts';
 import type { UsageRecorder } from '../usage/history.ts';
 import type { ResourceRecorder } from '../machines/history.ts';
 
@@ -78,6 +80,8 @@ export interface TenantParts {
   machineHistory: Pick<ResourceRecorder, 'onRecorded'>;
   /** The GitHub proxy's view of the user (issue #563): their jobs asking, their GitHub connection. */
   githubProxy: UserGitHubProxy;
+  /** Windows sandbox steps (issue #731): the user's Windows hosts, and their jobs' steps on them. */
+  windowsSteps: WindowsSteps;
 }
 
 /** The users and their running parts. */
@@ -101,6 +105,8 @@ const roles = new WeakMap<FastifyRequest, UiRole>();
 const identities = new WeakMap<FastifyRequest, Identity>();
 /** Whether the request's session is an API token (issue #718); absent: no session. */
 const kinds = new WeakMap<FastifyRequest, SessionKind>();
+/** An API token's label (its grant's, issue #881): who acts, when the token is an agent's (issue #871 part 2). */
+const labels = new WeakMap<FastifyRequest, string>();
 
 /** What a refused API token, or one that names no live session, is told. */
 export const API_TOKEN_GONE = 'the API token is unknown, revoked or expired';
@@ -119,21 +125,30 @@ export function createApiDoor(o: { tenants: Tenants; signIn: Pick<SignIn, 'check
   };
 }
 
-export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sessions: UiSessions; signIn: Pick<SignIn, 'checkToken'>; access: Pick<Access, 'decideApiToken'>; port: () => number; lan: Lan }): void {
+export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sessions: UiSessions; grants: Pick<ApiGrants, 'live'>; signIn: Pick<SignIn, 'checkToken'>; access: Pick<Access, 'decideApiToken'>; port: () => number; lan: Lan;
+  /** The field of a POST route's body that names its action (issue #909), by the route as registered; undefined: none. */
+  actionField: (route: string) => string | undefined;
+}): void {
   const peers = peerList(o.lan.peers);
   const throughApiDoor = createApiDoor(o);
   app.addHook('onRequest', async (req, reply) => {
     const session = requestSession(req, o.sessions);
     if (session) {
-      // An API token's read: Access decides it (a mutation's is decided by its guard, for the role the route needs).
+      // An API token's read: its grant's scopes (issue #881), then Access decide it (a mutation's is decided by its guard).
       if (session.kind === 'api' && req.method === 'GET' && req.url.startsWith('/api/')) {
-        const d = await o.access.decideApiToken({ userId: session.userId, tokenId: apiTokenIdOf(session.token), role: 'viewer' });
+        const outOfScope = grantScopeRefusal(o.grants, session, req.method, req.routeOptions.url);
+        if (outOfScope !== undefined) {
+          console.warn(`hopper: API token refused for ${req.method} ${req.url.split('?')[0]}: ${outOfScope}`);
+          return reply.code(403).send({ error: `the API token may not read this: ${outOfScope}` });
+        }
+        const d = await o.access.decideApiToken({ userId: session.userId, tokenId: accessIdOf(session), role: 'viewer' });
         if (!d.allowed) {
           console.warn(`hopper: API token refused for ${req.method} ${req.url.split('?')[0]}: ${d.reason}`);
           return reply.code(403).send({ error: `the API token may not read: ${d.reason}` });
         }
       }
       users.set(req, session.userId); roles.set(req, session.role); identities.set(req, session.identity); kinds.set(req, session.kind);
+      if (session.kind === 'api' && session.label !== undefined) labels.set(req, session.label);
       return;
     }
     if (atApiDoor(req)) {
@@ -151,6 +166,20 @@ export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sess
     if (!('reach' in r) || r.reach !== 'local') return;
     const all = o.tenants.list();
     if (all.length === 1) users.set(req, all[0]!.id);
+  });
+  // A grant's mutation that names one of its route's actions (issue #909): once the body is read, the grant's scopes
+  // must cover that action, or the whole route. The door let the grant through on a part of the route's actions.
+  app.addHook('preHandler', async (req, reply) => {
+    if (req.method !== 'POST' || kinds.get(req) !== 'api') return;
+    const route = req.routeOptions.url;
+    const field = route === undefined ? undefined : o.actionField(route);
+    if (field === undefined) return;
+    const session = requestSession(req, o.sessions);
+    if (!session) return;
+    const outOfScope = grantActionRefusal(o.grants, session, req.method, route, (req.body as Record<string, unknown> | undefined)?.[field]);
+    if (outOfScope === undefined) return;
+    console.warn(`hopper: API token refused for ${req.method} ${req.url.split('?')[0]}: ${outOfScope}`);
+    return reply.code(403).send({ error: `the API token may not do this: ${outOfScope}` });
   });
 }
 
@@ -171,14 +200,15 @@ export const roleOfRequest = (req: FastifyRequest): UiRole | undefined => roles.
 
 /**
  * The request's session or token as the instance admin check reads it (issue #240); undefined: neither. `kind`: the
- * session's (an API token's is `api`); absent for a sign-in's token on the API door.
+ * session's (an API token's is `api`); absent for a sign-in's token on the API door. `label`: an API token's.
  */
-export function signedInOf(req: FastifyRequest): { role: UiRole; identity: Identity; userId: string; kind?: SessionKind } | undefined {
+export function signedInOf(req: FastifyRequest): { role: UiRole; identity: Identity; userId: string; kind?: SessionKind; label?: string } | undefined {
   const role = roles.get(req);
   const identity = identities.get(req);
   const userId = users.get(req);
   const kind = kinds.get(req);
-  return role === undefined || identity === undefined || userId === undefined ? undefined : { role, identity, userId, ...(kind ? { kind } : {}) };
+  const label = labels.get(req);
+  return role === undefined || identity === undefined || userId === undefined ? undefined : { role, identity, userId, ...(kind ? { kind } : {}), ...(label !== undefined ? { label } : {}) };
 }
 
 const notLinked = (who: Identity, via: 'gateway' | 'github'): string => via === 'github'

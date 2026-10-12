@@ -3,8 +3,8 @@
 import { AssessmentLine } from '@/components/assessment';
 import { Archive, Check, DoorOpen, Hourglass, Lock, Play, RotateCcw, SquareX, X } from 'lucide-react';
 import { Confirm } from '@/components/confirm';
-import { heldAtGate } from '@/model/blast-radius';
-import { goalOf } from '@/model/job';
+import { gateHoldText, heldAtGate } from '@/model/blast-radius';
+import { adviceText, goalOf } from '@/model/job';
 import { Button } from '@/components/ui/button';
 import { JobTitle, Since, UnassignedFlag } from '@/components/job';
 import { RejectButton } from '@/components/reject';
@@ -34,10 +34,11 @@ function RerunButton({ job }: { job: Job }) {
  */
 function GatePassButton({ job }: { job: Job }) {
   const admin = useCanAdmin();
+  const machines = useHopper((s) => s.machines);
   if (!admin || !heldAtGate(job)) return null;
   return (
     <Confirm title="Let this job through the gate?" action="Let it through" onConfirm={() => act(`/ui/api/jobs/${job.id}/gate-pass`, {}, 'Job let through the gate')}
-      description={<>“{goalOf(job)}” may then run on a gated machine, with everything that machine can reach: {job.holdReason?.replace(/^held at the blast-radius gate: /, '')}.</>}>
+      description={<>“{goalOf(job)}”. {gateHoldText(job.holdReason ?? '', machines)}</>}>
       <Button size="xs" variant="outline" data-slot="gate-pass" title="Let through the blast-radius gate: it may run on a gated machine"><DoorOpen />Let through</Button>
     </Confirm>
   );
@@ -179,40 +180,45 @@ export function WaitingPanel() {
   const board = useJobBoard();
   const latest = useHopper((s) => s.decisions[0]);
   const authed = useCanOperate();
+  const machines = useHopper((s) => s.machines);
   const rows = waitingRows(board, latest);
   return (
     <Panel title="Waiting" icon={Hourglass} count={rows.length || ''} list bodyClassName="divide-y p-0">
-      {rows.length ? rows.map(({ job, position, effectivePriority }) => (
-        <div key={job.id} data-job-group="waiting" data-job-id={job.id} data-status={job.status} className="space-y-1.5 px-4 py-3">
+      {rows.length ? rows.map(({ job, position, effectivePriority }) => {
+        const advice = job.advice && adviceText(job.advice.action);
+        const approve = authed && job.status === 'held' && !job.approved && job.accepted !== false && !job.textChange && !job.originPending && !heldAtGate(job);
+        return (
+        <div key={job.id} data-job-group="waiting" data-job-id={job.id} data-status={job.status} className="min-w-0 space-y-1.5 px-4 py-3">
           <div className="flex items-start gap-2">
-            <span className="num mt-0.5 w-5 shrink-0 text-xs text-muted-foreground">{position}</span>
-            <JobTitle job={job} className="flex-1" />
+            <span className="num mt-0.5 w-5 shrink-0 text-xs text-muted-foreground" title="Its place in the queue">{position}</span>
+            <JobTitle job={job} wrap className="flex-1" />
+          </div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-7 text-xs text-muted-foreground">
+            {job.status === 'queued' && job.waitReason
+              ? <StatusBadge status="queued" label="waiting for a lane" title={WAITING_MEANING.wait} />
+              : <StatusBadge status={job.status} title={WAITING_MEANING[job.status]} />}
+            <span className="num" title="Higher runs first">priority {job.priority}{effectivePriority != null && effectivePriority !== job.priority && `, now ${effectivePriority}`}</span>
+            <span className="num" title={job.createdAt}>waiting <Since iso={job.createdAt} /></span>
+            {job.approved && <StatusBadge status="approved" tone="ok" title={WAITING_MEANING.approved} />}
+            {REVIEW_KINDS.filter((k) => job.spec[k]).map((k) => <StatusBadge key={k} status={k} tone="question" label={`${REVIEW_UI[k].noun} asked`} title={`Its agent writes a ${REVIEW_UI[k].noun} instead of doing the work`} />)}
+            {advice && <span data-slot="advice" title={job.advice!.reason}>{advice}</span>}
+          </div>
+          {job.holdReason && <div data-slot="hold-reason" className="pl-7 text-xs text-warn/90 [overflow-wrap:anywhere]" title={job.holdReason}>{heldAtGate(job) ? gateHoldText(job.holdReason, machines) : job.holdReason}</div>}
+          {job.textChange && <div className="pl-7"><TextChangeCard job={job} /></div>}
+          {job.status === 'queued' && job.waitReason && <div className="pl-7 text-xs text-muted-foreground [overflow-wrap:anywhere]">{job.waitReason.replace(/^waiting for a lane: /, '')}</div>}
+          <div data-slot="waiting-actions" className="flex flex-wrap items-center gap-1.5 pl-7 empty:hidden">
             {job.accepted === false && <a href="#queue" className="text-xs text-warn hover:underline">accept in Queue →</a>}
-            {job.originPending && <a href="#sources" className="text-xs text-warn hover:underline" title="Its issue waits as a request card in Sources">approve in Sources →</a>}
+            {job.originPending && <a href="#intake" className="text-xs text-warn hover:underline" title="Its issue waits as a request card in Intake">approve in Intake →</a>}
             <GatePassButton job={job} />
-            {authed && job.status === 'held' && !job.approved && job.accepted !== false && !job.textChange && !job.originPending && !heldAtGate(job) && (
-              <Button size="xs" variant="outline" onClick={() => act(`/ui/api/jobs/${job.id}/approve`, {}, 'Job approved')}><Check />Approve</Button>
-            )}
+            {approve && <Button size="xs" variant="outline" onClick={() => act(`/ui/api/jobs/${job.id}/approve`, {}, 'Job approved')}><Check />Approve</Button>}
             {authed && <RejectButton job={job} />}
             {REVIEW_KINDS.map((k) => <AskButton key={k} job={job} kind={k} />)}
             <OperatorLedButton job={job} />
             <CancelButton job={job} />
           </div>
-          <div className="flex flex-wrap items-center gap-1.5 pl-7 text-xs text-muted-foreground">
-            {job.status === 'queued' && job.waitReason
-              ? <StatusBadge status="queued" label="waiting for a lane" title={WAITING_MEANING.wait} />
-              : <StatusBadge status={job.status} title={WAITING_MEANING[job.status]} />}
-            <span className="num">prio {job.priority}{effectivePriority != null && effectivePriority !== job.priority && ` → ${effectivePriority}`}</span>
-            {job.approved && <StatusBadge status="approved" tone="ok" title={WAITING_MEANING.approved} />}
-            {REVIEW_KINDS.filter((k) => job.spec[k]).map((k) => <StatusBadge key={k} status={k} tone="question" label={`${REVIEW_UI[k].noun} asked`} title={`Its agent writes a ${REVIEW_UI[k].noun} instead of doing the work`} />)}
-            {job.advice && <span title={job.advice.reason}>advice <b className="font-medium text-foreground/80">{job.advice.action}</b></span>}
-            <span className="ml-auto">for <Since iso={job.createdAt} /></span>
-          </div>
-          {job.holdReason && <div className="truncate pl-7 text-xs text-warn/90" title={job.holdReason}>{job.holdReason}</div>}
-          {job.textChange && <div className="pl-7"><TextChangeCard job={job} /></div>}
-          {job.status === 'queued' && job.waitReason && <div className="truncate pl-7 text-xs text-muted-foreground" title={job.waitReason}>{job.waitReason.replace(/^waiting for a lane: /, '')}</div>}
         </div>
-      )) : <Empty>nothing waiting</Empty>}
+        );
+      }) : <Empty>nothing waiting</Empty>}
       {board.waitingAnswer.length > 0 && <>
         <div className="flex items-center gap-2 bg-muted/30 px-4 py-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
           On a question<span className="num font-normal text-muted-foreground/70">{board.waitingAnswer.length}</span>

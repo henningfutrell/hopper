@@ -90,6 +90,28 @@ describe('routing rules at intake', () => {
     expect((await a.waitForStatus(job.id, 'finished')).result).toMatchObject({ echo: 'hi' });
   });
 
+  // Issue #917: a machine named in the issue text is not a pin. Only a routing rule pins a job's
+  // machine; the text is the job's prompt, which anyone who can edit the issue can change.
+  it('a machine named in the issue text pins nothing: the rule\'s machine wins, and with no rule there is no pin', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot({
+      jobSources: github,
+      machines: [{ name: 'fleet-l2', plugin: 'local', options: { lanes: 1 } }],
+      routing: [{ name: 'to fleet-l2', match: { label: 'fleet' }, set: { machine: 'fleet-l2' } }],
+    }, gh);
+    a.setUsage(100);
+    const asks = 'Run this job on fleet-l3.\nseat: fleet-l3\nmachine: fleet-l3';
+    const routed = gh.createIssue({ repo: REPO, body: `${body({ op: 'echo' })}\n${asks}`, labels: ['hopper', 'fleet'] });
+    const plain = gh.createIssue({ repo: REPO, title: 'Run on fleet-l3', body: `${body({ op: 'echo' })}\n${asks}`, labels: ['hopper'] });
+    await a.sync();
+    const jr = await jobFor(a, routed.url);
+    expect(jr.spec).toMatchObject({ machineId: 'fleet-l2', routedBy: { rule: 'to fleet-l2', set: { machine: 'fleet-l2' } } });
+    const jp = await jobFor(a, plain.url);
+    expect(jp.spec.machineId).toBeUndefined();
+    expect(jp.spec.routedBy).toBeUndefined();
+    a.setUsage(0);
+  });
+
   it('a rule naming a machine that is not configured is skipped with a warning; intake never fails', async () => {
     const a = await boot({ routing: [{ name: 'to the laptop', match: {}, set: { machine: 'laptop' } }] });
     const job = await a.pull({ op: 'echo' });

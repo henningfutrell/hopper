@@ -24,6 +24,7 @@ const OFF: Record<string, string> = {
   'hopper-vault': 'the vault: secrets cannot be read, set or given to jobs',
   kms: 'the vault\'s KMS: secrets sealed under its data key cannot be opened',
   vault: 'secrets kept in the HashiCorp Vault vault backend',
+  tunnel: 'remote access: the tunnel set in Settings → Remote access does not start',
 };
 
 /** A service restarted only when it fails runs once and exits (openfga-migrate): no name on the network once it is done. */

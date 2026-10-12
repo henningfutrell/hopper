@@ -46,14 +46,20 @@ export function questionPayload(b: QuestionBody): Record<string, unknown> {
 }
 
 /**
- * A stop of intake (issue #358), or a request card waiting for approval (issue #798). `source` is the sender (the hopper):
+ * A stop of intake (issue #358), a request card waiting for approval (issue #798), or an out-of-band change (issue #871). `source` is the sender (the hopper):
  * the job source's name goes as `sourceName`.
  */
-export function intakePayload(e: DomainEvent, job: Job | undefined): Record<string, unknown> {
+export function intakePayload(e: DomainEvent, job: Job | undefined, infraUrl?: string): Record<string, unknown> {
   const b = base(e.type, e.at, job, e.jobId);
   if (e.type === 'source.stalled') return { ...b, sourceName: e.data.source, error: e.data.error, since: e.data.since };
   if (e.type === 'connected_account.expired') return { ...b, provider: e.data.provider, account: e.data.account, reason: e.data.reason };
   if (e.type === 'source.request_opened') return { ...b, sourceName: e.data.source, issueUrl: e.data.key, author: e.data.author, why: e.data.why };
+  // An out-of-band infrastructure change (issue #871): never silent. `signal` is where it was found; `source` stays the sender;
+  // `infraUrl` is the Infra page, where a person marks it.
+  if (e.type === 'infra.out_of_band_recorded') {
+    const d = e.data as { change: string; source: string; target: string; what: string; who?: string; at: string };
+    return { ...b, change: d.change, signal: d.source, target: d.target, what: d.what, who: d.who ?? null, happenedAt: d.at, ...(infraUrl ? { infraUrl } : {}) };
+  }
   return b;
 }
 
@@ -76,12 +82,13 @@ export function jobPayload(e: DomainEvent, job: Job | undefined): Record<string,
 }
 
 /**
- * Where the hopper is reached from outside (issue #795): its public URL while the tunnel is up, and where an agent exchanges
- * its sign-in for an API token there. `reason`: start, change (a new URL), recovery (up again after down), heartbeat. Sent
+ * Where the hopper is reached from outside (issues #795, #880): the remote access URL while the tunnel is up, where an agent
+ * exchanges its sign-in for an API token there, and where it trades a grant's refresh token (issue #881). `reason`: start,
+ * change (a new URL), recovery (up again after down), heartbeat. Sent
  * again every `heartbeatSeconds`: a receiver that hears none for longer holds the URL as stale.
  */
 export function reachablePayload(url: string, reason: 'start' | 'change' | 'recovery' | 'heartbeat', at: string, heartbeatMs: number): Record<string, unknown> {
-  return { source: 'hopper', kind: 'hopper.reachable', at, reason, url, apiTokenUrl: `${url}/ui/auth/api-token`, heartbeatSeconds: heartbeatMs / 1000 };
+  return { source: 'hopper', kind: 'hopper.reachable', at, reason, url, apiTokenUrl: `${url}/ui/auth/api-token`, tokenRefreshUrl: `${url}/ui/auth/token/refresh`, heartbeatSeconds: heartbeatMs / 1000 };
 }
 
 /**

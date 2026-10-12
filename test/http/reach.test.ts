@@ -1,7 +1,7 @@
 // Who may ask what (design.md "Reaching the UI across the LAN"): a request is local or LAN by its
 // peer address and Host, and a LAN request needs a UI session for every /api/ route.
 import { describe, expect, it } from 'vitest';
-import { classifyRequest, type Lan } from '../../src/http/reach.ts';
+import { classifyRequest, publicHosts, publicOriginOf, type Lan } from '../../src/http/reach.ts';
 
 const PORT = 4790;
 const lan: Lan = { names: ['server', '192.0.2.29'], peers: ['192.0.2.0/24', '100.64.0.0/10'] };
@@ -46,5 +46,30 @@ describe('classifyRequest', () => {
       expect(classifyRequest({ host, peer: '127.0.0.1' }, PORT, lan), host).toMatchObject({ refuse: 421 });
     }
     expect(classifyRequest({ host: `server:${PORT}`, peer: '127.0.0.1' }, PORT, off)).toMatchObject({ refuse: 421 });
+  });
+});
+
+// Remote access (issue #880): the tunnel's domain is set in the UI, so the Host guard reads it at each request. While
+// remote access is on, its host is a public request's Host; off, it is any other name: 421.
+describe('the remote access domain', () => {
+  let url: string | undefined;
+  const tunnel = { names: [], peers: ['10.0.0.0/8'], tunnelUrl: () => url };
+
+  it('is a public request\'s Host from a LAN peer while remote access is on, and 421 once it is off', () => {
+    url = 'https://h.example.ngrok.app';
+    expect(classifyRequest({ host: 'h.example.ngrok.app', peer: '10.89.1.2' }, PORT, tunnel)).toEqual({ reach: 'public' });
+    expect(publicHosts(tunnel)).toEqual(['h.example.ngrok.app']);
+    expect(publicOriginOf(tunnel, 'H.example.ngrok.app')).toBe('https://h.example.ngrok.app');
+    url = undefined;
+    expect(classifyRequest({ host: 'h.example.ngrok.app', peer: '10.89.1.2' }, PORT, tunnel)).toMatchObject({ refuse: 421 });
+    expect(publicOriginOf(tunnel, 'h.example.ngrok.app')).toBeUndefined();
+  });
+
+  it('stands beside the public URL: each is a public request\'s Host, and each its own origin', () => {
+    url = 'https://h.example.ngrok.app';
+    const both = { ...tunnel, publicUrl: 'https://hopper.example.com' };
+    expect(publicHosts(both)).toEqual(['hopper.example.com', 'h.example.ngrok.app']);
+    expect(publicOriginOf(both, 'hopper.example.com')).toBe('https://hopper.example.com');
+    expect(classifyRequest({ host: 'hopper.example.com', peer: '10.89.1.2' }, PORT, both)).toEqual({ reach: 'public' });
   });
 });

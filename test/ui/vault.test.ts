@@ -2,7 +2,7 @@
 // it and when — never a value — and checks a name before anything is sent.
 import { describe, expect, it } from 'vitest';
 import { BOX_TOOLS as SERVER_TOOLS } from '../../src/domain/sandboxes.ts';
-import { approvalText, BOX_TOOLS, checkText, toolsText, explicitApprovals, giveProblem, kindChoices, mintsOf, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
+import { approvalText, BOX_TOOLS, checkText, markableProbes, probeMarksText, toolsText, explicitApprovals, giveProblem, kindChoices, mintsOf, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
 
 describe('a vault secret on the page', () => {
   it('says its scope, who set it and who last changed it; never a value', () => {
@@ -146,6 +146,16 @@ describe('a template\'s read-only check on the page (issue #716)', () => {
       .toEqual({ text: 'passed: 1 probes, every write refused, every read worked', waits: false });
     expect(checkText({ readOnly: true, savedAt: at, check: { version: at, state: 'failed', probes: [probe('kube.get', true, 'allowed'), probe('kube.create-namespace', false, 'allowed')], problem: 'it ran out of time' } }))
       .toEqual({ text: 'failed: kube.create-namespace on lab (allowed); it ran out of time', waits: true });
+  });
+  it('names the probes the template marks (issue #916), and offers each read probe for a mark', () => {
+    const helm = { ...probe('helm.list', true, 'denied'), mark: 'expect-denied' };
+    expect(checkText({ readOnly: true, savedAt: at, check: { version: at, state: 'passed', probes: [probe('kube.get', true, 'allowed'), helm] } }))
+      .toEqual({ text: 'passed: 2 probes, every write refused, every read worked, as the template marks helm.list on lab (expect-denied)', waits: false });
+    expect(probeMarksText({ 'helm.list': 'expect-denied' })).toEqual(['helm.list expect-denied']);
+    expect(probeMarksText(undefined)).toEqual([]);
+    const probes = [{ id: 'kube.get', expect: 'allowed' }, { id: 'kube.create-namespace', expect: 'denied' }, { id: 'helm.list', expect: 'denied', mark: 'expect-denied' }];
+    expect(markableProbes({ check: { probes } }, {})).toEqual(['helm.list', 'kube.get']);
+    expect(markableProbes({}, { 'argocd.get': 'skip' })).toEqual(['argocd.get']);
   });
   it('links the report of the current version\'s check (issue #715)', () => {
     expect(checkText({ readOnly: true, savedAt: at, check: { version: at, state: 'passed', probes: [probe('kube.get', true, 'allowed')], artifact: 'a-1' } }))

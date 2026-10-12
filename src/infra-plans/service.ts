@@ -4,8 +4,10 @@
 // head is read on GitHub at each ask, so a plan made before the code moved is never applied.
 import { createHash, randomUUID } from 'node:crypto';
 import type { OperationProfile } from '../domain/access.ts';
+import { changesOf } from '../domain/infra-plan-changes.ts';
+import { summarize } from '../domain/infra-plan-summary.ts';
 import {
-  applyRefusal, headRefusal, planInputProblem, PLAN_FILE_MAX, PLAN_ID, PLAN_TTL_MINUTES, type InfraPlan, type PlanApproval, type PlanInput, type PlanView,
+  applyRefusal, failedChecks, headRefusal, planInputProblem, PLAN_FILE_MAX, PLAN_ID, PLAN_TTL_MINUTES, type InfraPlan, type PlanApply, type PlanApproval, type PlanInput, type PlanView,
 } from '../domain/infra-plans.ts';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
@@ -19,6 +21,8 @@ export interface InfraPlans {
   get(id: string): InfraPlan | undefined;
   file(id: string): Buffer | undefined;
   list(): PlanView[];
+  /** The applies of the plans `list` answers, newest first: each credential the vault minted naming one of them. */
+  applies(plans: PlanView[]): PlanApply[];
   approval(id: string): PlanApproval | undefined;
   approve(id: string, by: string): PlanView | PlanRefusal;
   /** Why the vault mints nothing for `profile` on `planId`, or undefined: a read, or a current approved plan of the asset. */
@@ -32,7 +36,7 @@ export interface InfraPlansOptions {
   head(repo: string, ref: string): Promise<string>;
 }
 
-/** How many plans Infra changes lists. */
+/** How many plans Infra lists. */
 const LIST_MAX = 200;
 
 export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
@@ -47,9 +51,14 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
       const problem = planInputProblem(input);
       if (problem) return { status: 400, no: problem };
       if (file && (file.length === 0 || file.length > PLAN_FILE_MAX)) return { status: 400, no: `the plan file must be 1 to ${PLAN_FILE_MAX} bytes` };
+      const changes = changesOf(input.tool, input.text, input.json);
+      if (typeof changes === 'string') return { status: 400, no: changes };
+      const { json: _json, ...said } = input;
+      const target = input.target.trim();
+      const summary = summarize(input.tool, changes, { target, asset: input.asset });
       const now = o.clock.now();
       const plan: InfraPlan = {
-        id: randomUUID(), ...input, target: input.target.trim(), job: job.id, ...(job.source?.url ? { issue: job.source.url } : {}),
+        id: randomUUID(), ...said, target, summary, job: job.id, ...(job.source?.url ? { issue: job.source.url } : {}),
         ...(file ? { file: { size: file.length, sha256: createHash('sha256').update(file).digest('hex') } } : {}),
         createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + PLAN_TTL_MINUTES * 60_000).toISOString(),
       };
@@ -61,6 +70,7 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
             plan: plan.id, tool: plan.tool, asset: plan.asset, target: plan.target, repo: plan.repo, ref: plan.ref, commit: plan.commit,
             ...(plan.pullRequest !== undefined ? { pullRequest: plan.pullRequest } : {}), ...(plan.read ? { read: plan.read } : {}),
             ...(plan.issue ? { issue: plan.issue } : {}), file: file !== undefined, expiresAt: plan.expiresAt,
+            summary: { words: summary.words, level: summary.level, risks: summary.risks.map((r) => r.risk), failed: summary.failed },
           },
         });
       });
@@ -69,11 +79,22 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
     get: (id) => (PLAN_ID.test(id) ? plans.get(id) : undefined),
     file: (id) => (PLAN_ID.test(id) ? plans.file(id) : undefined),
     list: () => plans.list(LIST_MAX),
+    applies(listed) {
+      if (listed.length === 0) return [];
+      const ids = new Set(listed.map((p) => p.id));
+      const since = listed.reduce((min, p) => (p.createdAt < min ? p.createdAt : min), listed[0]!.createdAt);
+      return o.store.events.between(['vault.minted'], since).flatMap((e): PlanApply[] => {
+        const d = e.data as { plan?: string; operation: string; asset: PlanApply['asset']; job: string; expiresAt: string; renewal?: boolean };
+        return d.plan && ids.has(d.plan) ? [{ plan: d.plan, at: e.at, operation: d.operation, asset: d.asset, job: d.job, expiresAt: d.expiresAt, renewal: d.renewal === true }] : [];
+      }).reverse();
+    },
     approval: (id) => plans.approval(id),
     approve(id, by) {
       const plan = PLAN_ID.test(id) ? plans.get(id) : undefined;
       if (!plan) return { status: 404, no: `no plan ${id}` };
       if (plans.approval(id)) return { status: 409, no: `plan ${id} is approved already` };
+      const failed = failedChecks(plan);
+      if (failed) return { status: 409, no: `plan ${id} failed its checks, so nobody approves it: ${failed}` };
       o.store.tx(() => {
         plans.approve({ plan: id, by, at: o.clock.now().toISOString() });
         o.store.events.append({ type: 'infra.plan_approved', jobId: plan.job, data: { plan: id, tool: plan.tool, asset: plan.asset, target: plan.target, by } });

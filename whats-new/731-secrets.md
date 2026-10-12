@@ -1,0 +1,1 @@
+- A step on a Windows computer can now use a secret from your vault, such as a package key. Name the secrets each Windows computer may use in Settings → Windows hosts. The step gets the secret only after you grant the job the vault, and its output hides the secret.

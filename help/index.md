@@ -5,14 +5,20 @@ These pages tell you how the hopper works and how to use it, for the version you
 ## The pages
 
 - [Run and update the hopper](deploy-and-update.md)
+- [Needs you: what waits on you](needs-you.md)
+- [The main menu](navigation.md)
 - [How issues become jobs](intake.md)
+- [The Jobs view](jobs.md)
 - [Lanes](lanes.md)
 - [Questions and deciders](questions.md)
 - [Pull requests](pull-requests.md)
+- [Infra: plans and out-of-band changes](infra.md)
 - [The vault](vault.md)
+- [Remote access](remote-access.md)
 - [Sandbox boxes](sandboxes.md)
 - [Artifacts](artifacts.md)
 - [The operator CLI and the API](cli-and-api.md)
+- [API tokens and grants](api-tokens.md)
 
 ## Where to read these pages
 

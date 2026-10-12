@@ -85,7 +85,7 @@ async function agent(a: TestApp, method: 'GET' | 'POST', path: string, token: st
 }
 
 async function apiToken(a: TestApp, session: string, role = 'admin', box = false): Promise<string> {
-  const r = await a.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'grok-bot', role, box }, { token: session });
+  const r = await a.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'grok-bot', scopes: ['*'], role, box }, { token: session });
   expect(r.status).toBe(200);
   return r.body.token;
 }
@@ -138,7 +138,7 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
     expect(made).toMatchObject({ profiles: [LAB_READ, LAB_WRITE], pending: { image: true } });
     expect(made!.approval).toBeUndefined();
     expect(r.body.request).toMatchObject({ template: made!.name, ready: false });
-    expect(r.body.request.text).toMatch(/^waiting: template asked-[0-9a-f]+ waits for a person in Settings → Vault/);
+    expect(r.body.request.text).toMatch(/^waiting: template asked-[0-9a-f]+ waits for a person on Access requests/);
     expect(r.body.request.text).toContain('write on cluster lab changes the asset');
     expect((await agent(a, 'POST', '/ui/api/machines/sandbox', token, { template: made!.name, params: {} })).status).not.toBe(200);
   });

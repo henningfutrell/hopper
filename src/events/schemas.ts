@@ -12,7 +12,7 @@ import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
 import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts';
-import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, holdPlan, infraPlanEvents, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents } from './parts.ts';
+import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, holdPlan, infraPlanEvents, apiGrantEvents, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents, windowsStepEvents } from './parts.ts';
 
 const strict = z.strictObject;
 // A point from before (issue #679 removed `question-answer`) stays valid in the events that name it.
@@ -131,7 +131,9 @@ export const EVENT_SCHEMAS = {
   'job.cancelled': strict({ reason: z.string() }),
   'job.requeued': strict({ from: z.string(), reason: z.string() }),
   'job.parked': strict({ from: z.enum(['running', 'waiting_answer']), machineId: z.string().optional(), auto: z.literal(true).optional(), why: z.string().optional() }),
-  'job.unparked': strict({ to: z.enum(['queued', 'waiting_answer']) }),
+  // `elsewhere` (issue #921, additive): picked up to resume on another machine from its checkpoint. `job.checkpointed`
+  // (issue #921): a checkpoint taken on `machineId`; `bytes` compressed, whether it holds the agent session, the commits not pushed.
+  'job.unparked': strict({ to: z.enum(['queued', 'waiting_answer']), elsewhere: z.literal(true).optional() }), 'job.checkpointed': strict({ machineId: z.string(), bytes: z.number().int(), session: z.boolean(), commits: z.number().int() }),
   // A person's Continue names its hand-off (issue #551); the assessor's, its failure record (issue #630).
   'job.continued': strict({ handoffId: z.string().optional(), recordId: z.string().optional() }),
   'job.reattached': strict({ reason: z.string() }),
@@ -328,7 +330,7 @@ export const EVENT_SCHEMAS = {
   'vault.secret_read': strict({ name: z.string(), by: z.string(), purpose: z.string().optional() }), 'vault.secret_migrated': strict({ name: z.string(), from: z.string() }),
   // A master key rotation (issue #659): the short fingerprints of the key replaced and the new one, who pressed it, the counts. Never a key.
   'vault.master_key_rotated': strict({ from: z.string(), to: z.string(), by: z.string(), resealed: z.number().int().nonnegative(), unreadable: z.number().int().nonnegative() }),
-  'template.saved': strict({ template: z.string(), image: z.string(), tools: z.array(z.string()).optional(), secrets: z.array(z.string()), profiles: z.array(operationProfile.extend({ backend: stateBackend.optional() })).optional(), by: z.string() }),
+  'template.saved': strict({ template: z.string(), image: z.string(), tools: z.array(z.string()).optional(), secrets: z.array(z.string()), profiles: z.array(operationProfile.extend({ backend: stateBackend.optional() })).optional(), probeMarks: z.record(z.string(), z.enum(['expect-denied', 'skip'])).optional(), by: z.string() }),
   'template.checked': strict({ template: z.string(), state: z.enum(['passed', 'failed']), failed: z.array(z.string()), problem: z.string().optional(), artifact: z.string().optional() }),
   'template.check_requested': strict({ template: z.string(), by: z.string() }),
   'template.removed': strict({ template: z.string(), by: z.string() }),
@@ -339,7 +341,7 @@ export const EVENT_SCHEMAS = {
   // A launch's agent credential (issue #708, part 10): given to a box at its launch, before it runs a job. Never the value.
   'vault.agent_credential_given': strict({ name: z.string(), template: z.string(), box: z.string(), backend: z.string().optional() }),
   'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), backend: z.string().optional(), reason: z.string() }),
-  'vault.minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), machine: z.string(), job: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string(), renewal: z.boolean(), plan: z.string().optional() }),
+  'vault.minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), machine: z.string(), job: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string(), renewal: z.boolean(), plan: z.string().optional(), principal: z.string().optional() }),
   'vault.mint_refused': strict({ mint: strict({ kind: z.enum(MINT_KINDS), operation: z.string(), asset: z.union([asset, z.string()]) }), machine: z.string(), template: z.string().optional(), job: z.string().optional(), reason: z.string(), decision: z.string().optional(), }),
   // A read-only check's mints (issue #797): for the check box of a template, which runs no job. Never a credential.
   'vault.check_minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), check: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string() }),
@@ -370,7 +372,7 @@ export const EVENT_SCHEMAS = {
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
   ...THREAD_ASK_EVENT_SCHEMAS,
-  ...bugReportEvents, ...repoChecksEvents, ...vaultGrantEvents, ...issueLineageEvents, ...rateLimiterEvents, ...contributionEvents, ...pointedJobEvents, ...githubWatchEvents, ...infraPlanEvents,
+  ...bugReportEvents, ...repoChecksEvents, ...vaultGrantEvents, ...issueLineageEvents, ...rateLimiterEvents, ...contributionEvents, ...pointedJobEvents, ...githubWatchEvents, ...infraPlanEvents, ...apiGrantEvents, ...windowsStepEvents,
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

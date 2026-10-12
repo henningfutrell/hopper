@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Your reports (issue #694), in Settings, rendered against a fake of the daemon's HTTP: each report with its state —
+// Your reports (issue #694), its own view (issue #897), rendered against a fake of the daemon's HTTP: each report with its state —
 // waiting with why, open or closed with its link —, newest first; Refresh sends the kept ones and reads the states.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';

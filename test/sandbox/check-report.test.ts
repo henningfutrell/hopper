@@ -52,6 +52,15 @@ describe('the read-only check\'s report (issue #715)', () => {
     const passed = checkReport(template, { ...check, state: 'passed', probes: [check.probes[0]!], problem: undefined as never });
     expect(passed.summary).toBe('passed: 1 probe, every write refused, every read worked');
 
+    // A read probe the template marks (issue #916): the summary names it, and its row says what it expected and why.
+    const marked = checkReport(template, { ...check, state: 'passed', problem: undefined as never, probes: [check.probes[0]!,
+      { id: 'helm.list', asset: 'lab', expect: 'denied', mark: 'expect-denied', outcome: 'denied', passed: true, exit: 1, output: 'secrets is forbidden' },
+      { id: 'kube.get', asset: 'lab', expect: 'allowed', mark: 'skip', outcome: 'skipped', passed: true, output: 'not run: the template marks it skip' },
+    ] });
+    expect(marked.summary).toBe('passed: 3 probes, every write refused, every read worked, as the template marks helm.list on lab (expect-denied); kube.get on lab (skip)');
+    expect(marked.content.toString('utf8')).toContain('<td>pass</td><td>helm.list</td><td>lab</td><td>denied (marked expect-denied)</td>');
+    expect(marked.content.toString('utf8')).toContain('<td>skip</td><td>kube.get</td>');
+
     // A probe the check did not run (issue #715: a workspace with no state backend) is not a pass: its row says NOT RUN and why.
     const notRun = checkReport(template, { ...check, problem: undefined as never, probes: [check.probes[0]!, {
       id: 'terraform.state-push-direct', asset: 'shop-prod', expect: 'denied', outcome: 'not-run', passed: false, output: 'not run: no backend configured.',

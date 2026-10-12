@@ -1,0 +1,215 @@
+// One user's Windows sandbox steps (issue #731, design.md "Windows sandbox steps"): a running job's step checked against
+// the user's Windows hosts, run on its host one at a time, stopped at its timeout or when the job goes, recorded on the
+// job's timeline, and its result kept for the job to fetch — an hour, then swept. A step's vault secrets (each one its
+// host gives, and the vault gives after the job's grant) go to the step only, and are masked in the log the job reads.
+// The host itself is the port (`WindowsStepHost`): ssh in production, a double in tests.
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import type { WindowsStepHost } from '../domain/ports.ts';
+import type { Job, NewEvent } from '../domain/types.ts';
+import { stepRequestOf, type StepRequest, type StepResult, type WindowsHost } from '../domain/windows-steps.ts';
+
+/** How long a step's result and outputs are kept for the job to fetch. */
+export const STEP_KEEP_MS = 60 * 60 * 1000;
+/** The most of a step's command an event keeps. */
+const COMMAND_IN_EVENT = 300;
+
+export interface WindowsStepsOptions {
+  /** The user's Windows hosts now: a change applies to the next step. */
+  hosts(): WindowsHost[];
+  host: WindowsStepHost;
+  /** Where each step's own directory goes on this machine: the hopper's work dir (scratch). */
+  dir: string;
+  record(event: NewEvent): void;
+  log(line: string): void;
+  /** A vault secret's value for `job`'s step on `host` (the vault's grant and checks), or why not. Absent: no step gets one. */
+  secret?(ask: { name: string; job: string; host: string }): Promise<{ value: string } | { refused: string }>;
+  newId?: () => string;
+  keepMs?: number;
+}
+
+/** A step's fields as the job sent them. */
+export interface StepFields { host?: string; command?: string; timeout?: string; outputs: string[]; secrets?: string[] }
+
+/** A step checked and given its own directory: the route puts the inputs in `inputsFile`, then runs it. */
+export interface StepStart {
+  id: string;
+  request: StepRequest;
+  inputsFile: string;
+  /** Run it: `log` gets its output as it comes; `signal` aborts (the job's request gone). */
+  run(o: { inputsBytes: number; log(chunk: string): void; signal: AbortSignal }): Promise<StepResult>;
+  /** The inputs were refused (too large, cut off): the directory goes. */
+  drop(reason: string): void;
+}
+
+export interface WindowsSteps {
+  hosts(): WindowsHost[];
+  /** Check `fields` for `job`, and get its secrets: a step to run, or a no with its HTTP status. A no is a `step.refused` event. */
+  start(job: Job, fields: StepFields): Promise<StepStart | { status: number; no: string }>;
+  /** A step's result, with its outputs tar when it has one; undefined: no step of this job's by that id, or swept. */
+  result(job: Job, id: string): { result: StepResult; outputs?: string } | undefined;
+  /** Remove results older than the keep. */
+  sweep(): void;
+}
+
+const ID = /^[a-f0-9-]{36}$/;
+
+export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
+  const newId = o.newId ?? (() => randomUUID());
+  const keepMs = o.keepMs ?? STEP_KEEP_MS;
+  /** The tail of each host's queue: a step starts when the one before it on that host has ended. */
+  const queues = new Map<string, Promise<unknown>>();
+  const results = new Map<string, { jobId: string; result: StepResult; at: number }>();
+  const dirOf = (id: string) => join(o.dir, id);
+
+  const refuse = (job: Job, status: number, no: string, host?: string) => {
+    o.record({ type: 'step.refused', jobId: job.id, data: { reason: no, ...(host ? { host } : {}) } });
+    return { status, no };
+  };
+
+  const sweep = () => {
+    const now = Date.now();
+    for (const [id, r] of results) if (now - r.at > keepMs) { results.delete(id); rmSync(dirOf(id), { recursive: true, force: true }); }
+    // A directory no result names (a hopper restarted mid-step) goes once it is old.
+    let names: string[];
+    try { names = readdirSync(o.dir); } catch { return; }
+    for (const name of names) {
+      if (results.has(name)) continue;
+      try { if (now - statSync(dirOf(name)).mtimeMs > keepMs) rmSync(dirOf(name), { recursive: true, force: true }); } catch { /* gone */ }
+    }
+  };
+
+  return {
+    hosts: () => o.hosts(),
+    sweep,
+
+    async start(job, fields) {
+      sweep();
+      const request = stepRequestOf(fields);
+      if ('problem' in request) return refuse(job, 400, request.problem, fields.host);
+      const host = o.hosts().find((h) => h.name === request.host);
+      if (!host) {
+        const names = o.hosts().map((h) => h.name);
+        return refuse(job, 404, `the hopper has no Windows host ${request.host}. ${names.length ? `It has: ${names.join(', ')}.` : 'It has none: a person adds one in Settings → Windows hosts.'}`, request.host);
+      }
+      const gives = host.secrets ?? [];
+      const outside = request.secrets.find((n) => !gives.includes(n));
+      if (outside !== undefined) {
+        return refuse(job, 403, `${host.name} does not give ${outside} to its steps: ${gives.length ? `it gives ${gives.join(', ')}` : 'it gives none'}. A person adds a secret to the host in Settings → Windows hosts.`, host.name);
+      }
+      // Read now, before the inputs come: a no costs the job no upload. Held in memory for this step only.
+      const secrets: Record<string, string> = {};
+      for (const name of request.secrets) {
+        const r = o.secret ? await o.secret({ name, job: job.id, host: host.name }) : { refused: 'the hopper gives no vault secret to a step here' };
+        if ('refused' in r) return refuse(job, 403, `${name}: ${r.refused}`, host.name);
+        secrets[name] = r.value;
+      }
+      const id = newId();
+      const dir = dirOf(id);
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      return {
+        id, request, inputsFile: join(dir, 'inputs.tar'),
+        drop(reason) {
+          rmSync(dir, { recursive: true, force: true });
+          refuse(job, 400, reason, host.name);
+        },
+        async run({ inputsBytes, log: toJob, signal }) {
+          const masked = maskSecrets(Object.values(secrets), toJob);
+          const log = masked.write;
+          const before = queues.get(host.name);
+          const stop = new AbortController();
+          const onGone = () => stop.abort();
+          signal.addEventListener('abort', onGone, { once: true });
+          let timedOut = false;
+          const mine = (async () => {
+            if (before) {
+              log(`hopper-step: waiting for ${host.name}: another step runs there\n`);
+              await before.catch(() => undefined);
+            }
+            if (stop.signal.aborted) return { exit: 255, problem: 'stopped before it started' } satisfies StepResult;
+            const started = Date.now();
+            o.record({ type: 'step.started', jobId: job.id, data: {
+              step: id, host: host.name, command: request.command.slice(0, COMMAND_IN_EVENT), timeoutSeconds: request.timeoutSeconds,
+              inputsBytes, outputs: request.outputs, ...(request.secrets.length ? { secrets: request.secrets } : {}),
+            } });
+            const timer = setTimeout(() => { timedOut = true; stop.abort(); }, request.timeoutSeconds * 1000);
+            let result: StepResult;
+            try {
+              result = await o.host.run(host, { id, command: request.command, dir, inputs: inputsBytes > 0, outputs: request.outputs, ...(request.secrets.length ? { secrets } : {}) }, { log, signal: stop.signal });
+            } finally {
+              clearTimeout(timer);
+              masked.end();
+            }
+            if (timedOut) result = { ...result, problem: `timed out after ${request.timeoutSeconds} s` };
+            else if (signal.aborted) result = { ...result, problem: 'the job stopped waiting for it' };
+            o.record({ type: 'step.finished', jobId: job.id, data: {
+              step: id, host: host.name, exit: result.exit, seconds: Math.round((Date.now() - started) / 1000),
+              ...(result.outputsBytes !== undefined ? { outputsBytes: result.outputsBytes } : {}), ...(result.problem ? { problem: result.problem } : {}),
+            } });
+            return result;
+          })();
+          queues.set(host.name, mine);
+          try {
+            const result = await mine;
+            results.set(id, { jobId: job.id, result, at: Date.now() });
+            // The inputs and the step's script are not kept: only what the job may still fetch.
+            for (const f of ['inputs.tar', 'step.ps1']) rmSync(join(dir, f), { force: true });
+            return result;
+          } catch (e) {
+            o.log(`hopper: windows step ${id} on ${host.name}: ${(e as Error).message}`);
+            const result = { exit: 255, problem: (e as Error).message };
+            results.set(id, { jobId: job.id, result, at: Date.now() });
+            return result;
+          } finally {
+            signal.removeEventListener('abort', onGone);
+            if (queues.get(host.name) === mine) queues.delete(host.name);
+            for (const k of Object.keys(secrets)) delete secrets[k];
+          }
+        },
+      };
+    },
+
+    result(job, id) {
+      if (!ID.test(id)) return undefined;
+      const r = results.get(id);
+      if (!r || r.jobId !== job.id) return undefined;
+      const outputs = join(dirOf(id), 'outputs.tar');
+      return { result: r.result, ...(r.result.outputsBytes !== undefined ? { outputs } : {}) };
+    },
+  };
+}
+
+/** What stands in for a secret's value in the log the job reads. */
+export const MASK = '***';
+
+/**
+ * The step's log as the job reads it: each secret's value replaced by `MASK`, also when a value is split across two
+ * chunks — the tail that could start a value is held back until the next chunk, or `end`. Best effort: a value the
+ * step changes (encodes, reverses) is not found.
+ */
+export function maskSecrets(values: readonly string[], out: (chunk: string) => void): { write(chunk: string): void; end(): void } {
+  const secrets = values.filter((v) => v.length > 0).sort((x, y) => y.length - x.length);
+  if (secrets.length === 0) return { write: out, end: () => undefined };
+  const longest = secrets[0]!.length;
+  let held = '';
+  const mask = (s: string): string => secrets.reduce((acc, v) => acc.split(v).join(MASK), s);
+  return {
+    write(chunk) {
+      const text = mask(held + chunk);
+      // Hold back the longest tail that is the start of some value: the next chunk may finish it.
+      let keep = 0;
+      for (let n = Math.min(longest - 1, text.length); n > 0; n--) {
+        const tail = text.slice(text.length - n);
+        if (secrets.some((v) => v.startsWith(tail))) { keep = n; break; }
+      }
+      held = text.slice(text.length - keep);
+      const now = text.slice(0, text.length - keep);
+      if (now) out(now);
+    },
+    end() {
+      if (held) out(held);
+      held = '';
+    },
+  };
+}

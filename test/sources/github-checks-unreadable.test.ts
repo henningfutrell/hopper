@@ -28,8 +28,8 @@ describe('a pull request query whose checks the app may not read (issue #855)', 
   it('the open pull requests that close an issue, and a pull request by its number: kept, checks unknown', () => {
     const closing = { data: { repository: { issue: { closedByPullRequestsReferences: { nodes: [pr] } } } }, errors: [forbidden(['repository', 'issue', 'closedByPullRequestsReferences', 'nodes', 0])] };
     expect(openPullRequestsFrom(closing, 'closing')).toMatchObject([{ url: URL, checks: 'unknown' }]);
-    const numbered = { data: { repository: { issueOrPullRequest: { __typename: 'PullRequest', ...pr, baseRefName: 'dev' } } }, errors: [forbidden(['repository', 'issueOrPullRequest'])] };
-    expect(pullRequestFrom(numbered, 'pull request')).toMatchObject({ url: URL, base: 'dev', checks: 'unknown' });
+    const numbered = { data: { repository: { issueOrPullRequest: { __typename: 'PullRequest', ...pr, baseRefName: 'dev', headRefName: 'issue-1' } } }, errors: [forbidden(['repository', 'issueOrPullRequest'])] };
+    expect(pullRequestFrom(numbered, 'pull request')).toMatchObject({ url: URL, base: 'dev', headRef: 'issue-1', checks: 'unknown' });
   });
 
   it('checks the app may read: as GitHub says them; no rollup and no error: no checks', () => {

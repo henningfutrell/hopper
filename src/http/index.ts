@@ -19,13 +19,16 @@ import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
 import { connectedAccountsRoutes } from './connected-accounts.ts';
 import { installHostGuard } from './host-guard.ts';
-import type { Lan } from './reach.ts';
+import { classifyRequest, peerList, type Lan } from './reach.ts';
+import { tunnelAgentRoutes, type RemoteAccess } from './remote-access.ts';
 import { jobRoutes } from './jobs.ts';
 import { jobGitHubRoutes } from './job-github.ts';
 import { jobGitRoutes } from './job-git.ts';
 import { jobAddressRoutes } from './job-address.ts';
 import { jobSkillRoutes } from './job-skill.ts';
+import { jobStepRoutes } from './job-step.ts';
 import { jobStreamRoutes } from './job-stream.ts';
+import { jobCheckpointRoutes } from './job-checkpoint.ts';
 import { pluginStoreRoutes } from './plugin-store.ts';
 import { jobRulesRoutes } from './job-rules.ts';
 import { questionGatesRoutes } from './question-gates.ts';
@@ -36,6 +39,8 @@ import { reviewRoutes } from './reviews.ts';
 import { sectionRoutes } from './sections.ts';
 import { questionRoutes } from './questions.ts';
 import { createRealmsAdmin, realmRoutes } from './realms.ts';
+import { createApiGrants } from './ui/api-grants.ts';
+import { actionFields, routeScopeRegistry } from './scopes.ts';
 import { sourceRoutes } from './sources.ts';
 import { sseRoutes } from './sse.ts';
 import { stateRoutes } from './state.ts';
@@ -62,10 +67,11 @@ import { webhookRoutes } from './webhooks.ts';
 
 export type { TenantParts, Tenants } from './tenants.ts';
 export { tunnelCaller, watchTunnel, type TunnelWatch } from './tunnel.ts';
+export { createRemoteAccess, type RemoteAccess } from './remote-access.ts';
 
 export interface ServerOptions {
   /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */
-  instance: Pick<InstanceStore, 'uiSessions' | 'loginCodes' | 'joinCodes' | 'users' | 'identities' | 'signInConfig' | 'settings' | 'tx'>;
+  instance: Pick<InstanceStore, 'uiSessions' | 'apiGrants' | 'loginCodes' | 'joinCodes' | 'users' | 'identities' | 'signInConfig' | 'settings' | 'tx'>;
   /** Every user's running parts (issue #158): a tenant route reads and changes the request's user's. */
   tenants: Tenants;
   /** The plugin store (the instance's): GET /api/plugin-store, POST /ui/api/plugin-store. */
@@ -84,6 +90,8 @@ export interface ServerOptions {
   masterKey: MasterKeyStatus;
   /** The shared GitHub rate limiter's settings (issue #436): GET /api/github-rate-limiter, POST /ui/api/github-rate-limiter. */
   rateLimiter: RateLimiterControl;
+  /** Remote access (issue #880): GET /api/remote-access, POST /ui/api/remote-access, and the tunnel service's GET /tunnel/agent. */
+  remoteAccess: RemoteAccess;
   clock: Clock;
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
@@ -121,8 +129,19 @@ export function createServer(o: ServerOptions): FastifyInstance {
   // The sign-in config may have changed since the sessions were made: a realm removed or off, or a rule, ends them.
   const r = sessions.reconcile(o.signIn.roleOf);
   if (r.dropped + r.changed > 0) console.warn(`hopper: the sign-in config applied to stored UI sessions: ${r.dropped} ended, ${r.changed} changed role`);
+  // Grants (issue #881): each mint, refresh, reuse and end is logged and is an event of its user's, which notifiers pass on.
+  const grants = createApiGrants({
+    repo: o.instance.apiGrants, sessions, clock: o.clock, roleOf: o.signIn.roleOf,
+    recorded: (userId, e) => {
+      if (e.type === 'api_grant.reuse_detected') console.warn(`hopper: grant ${e.data.grant} (${e.data.label}) of user ${userId}: a spent refresh token was sent again; the grant is revoked`);
+      if (e.type === 'api_grant.revoked') console.warn(`hopper: grant ${e.data.grant} (${e.data.label}) of user ${userId} ended (${e.data.reason})`);
+      o.tenants.user(userId)?.store.events.append(e);
+    },
+  });
+  const g = grants.reconcile(o.signIn.roleOf);
+  if (g.dropped + g.changed > 0) console.warn(`hopper: the sign-in config applied to grants: ${g.dropped} ended, ${g.changed} lowered`);
   installHostGuard(app, { port: o.port, lan: o.lan, sessions });
-  installTenancy(app, { tenants: o.tenants, sessions, signIn: o.signIn, access: o.access, port: o.port, lan: o.lan });
+  installTenancy(app, { tenants: o.tenants, sessions, grants, signIn: o.signIn, access: o.access, port: o.port, lan: o.lan, actionField: actionFields() });
   const tenant = { tenant: (req: Parameters<typeof tenantOf>[1]) => tenantOf(o.tenants, req) };
   apiReferenceRoutes(app, o.version);
   helpRoutes(app, o.version);
@@ -141,7 +160,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   bugReportReadRoutes(app, tenant); // Your reports (issue #694)
   pointedJobReadRoutes(app, tenant); // Pointed jobs (issue #425)
   githubWatchReadRoutes(app, tenant); // GitHub watches (issue #427)
-  infraPlanReadRoutes(app, tenant); // Infra changes (issue #870)
+  infraPlanReadRoutes(app, tenant); // Infra (issue #870)
   sourceRoutes(app, tenant);
   accountRoutes(app, tenant);
   connectedAccountsRoutes(app, tenant);
@@ -155,15 +174,22 @@ export function createServer(o: ServerOptions): FastifyInstance {
   instanceRoutes(app, { tenants: o.tenants, clock: o.clock, instanceAdmin });
   usageHistoryRoutes(app, { ...tenant, tenants: o.tenants, clock: o.clock, instanceAdmin });
   machineHistoryRoutes(app, { ...tenant, clock: o.clock });
-  const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions });
+  const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions, grants });
   realmRoutes(app, { realms, instanceAdmin });
   accessRoutes(app, { access: o.access, instanceAdmin });
   clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan });
   // A running job asks the hopper for GitHub (issue #563), with its own proxy token.
   const github = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock, updater: o.updater });
   jobGitRoutes(app, { tenants: o.tenants });
+  jobCheckpointRoutes(app, { tenants: o.tenants });
   // A machine's probe asks where it reaches the hopper (issue #698).
   jobAddressRoutes(app);
+  // The tunnel service asks for its settings (issue #880), with its preshared key; never through the tunnel.
+  const peers = peerList(o.lan.peers);
+  tunnelAgentRoutes(app, { remoteAccess: o.remoteAccess, isPublic: (req) => {
+    const r = classifyRequest({ host: req.headers.host, peer: req.socket.remoteAddress }, o.port(), o.lan, peers);
+    return !('reach' in r) || r.reach === 'public';
+  } });
   // A running job asks the hopper what it can set up, and loads one skill (issue #582), with the same token.
   const skillWaits = jobSkillRoutes(app, { tenants: o.tenants, access: o.access });
   // A running job subscribes to its job stream (issue #613), with the same token: what it waits on is asked again.
@@ -173,12 +199,13 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const artifactEdge = createArtifactEdge({ clock: o.clock, lan: o.lan, port: o.port, tenants: o.tenants });
   jobArtifactRoutes(app, { tenants: o.tenants, edge: artifactEdge, github });
   jobInfraPlanRoutes(app, { tenants: o.tenants }); // Infra plans (issue #870), with the same token
+  jobStepRoutes(app, { tenants: o.tenants }); // Windows sandbox steps (issue #731), with the same token
   artifactRoutes(app, { ...tenant, tenants: o.tenants, access: o.access, edge: artifactEdge, clock: o.clock });
   staticRoutes(app, o.uiDir);
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
-    ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
-    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter,
+    ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
+    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess,
   });
   return app;
 }

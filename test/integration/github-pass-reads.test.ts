@@ -77,6 +77,8 @@ describe('one read per sync pass (issue #822)', () => {
     const [first] = await followed(gh, app);
     await app.sync();
     gh.closeIssue(REPO, first!.number, 'owner', { at: now(), reason: 'completed' });
+    // Its pull request still open is followed to its end (issue #927): closed, the follow ends.
+    gh.closePullRequest(((await jobFor(app, first!.url)).sourceState?.source as { pullRequest: string }).pullRequest);
     gh.calls.length = 0;
     await app.sync();
     await waitFor(() => gh.issue(REPO, first!.number).labels.includes('hopper:done'), { what: 'hopper:done' });

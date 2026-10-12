@@ -14,6 +14,9 @@
     "template": {
       "type": "string"
     },
+    "windowsHost": {
+      "type": "string"
+    },
     "name": {
       "type": "string"
     }
@@ -21,8 +24,6 @@
   "required": [
     "job",
     "key",
-    "machine",
-    "template",
     "name"
   ],
   "additionalProperties": false

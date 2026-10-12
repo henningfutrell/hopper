@@ -1,0 +1,1 @@
+- A pull request stays followed until it is merged or closed, even when its issue was closed first, so the hopper still fixes its conflicts.

@@ -66,9 +66,15 @@ const NS = 'ns=default; case "$ASSET" in */*) ns="${ASSET#*/}" ;; esac';
 export const PROBES: readonly Probe[] = [
   { id: 'aws.caller-identity', title: 'read who the session is', kinds: AWS, tool: 'aws', expect: 'allowed', script: 'aws sts get-caller-identity' },
   {
-    id: 'aws.ec2-create-tags', title: 'tag a VPC (a dry run)', kinds: AWS, tool: 'aws', expect: 'denied',
-    // A dry run that would work answers DryRunOperation, and fails: that is not a refusal.
-    script: 'aws ec2 create-tags --dry-run --resources vpc-00000000 --tags Key=hopper-read-only-check,Value=1',
+    id: 'aws.ec2-create-tags', title: 'tag a VPC of the account, or with none make one (a dry run)', kinds: AWS, tool: 'aws', expect: 'denied',
+    // A dry run that would work answers DryRunOperation, and fails: that is not a refusal. Issue #882: EC2 looks up the
+    // VPC before the dry run asks the authorization, so a VPC the account does not hold answers NotFound, never a
+    // refusal. The probe tags a VPC the account holds; with none in the region, it makes one, as a dry run.
+    script: `vpc=$(aws ec2 describe-vpcs --query 'Vpcs[0].VpcId' --output text) || exit 1
+case "$vpc" in
+  vpc-*) aws ec2 create-tags --dry-run --resources "$vpc" --tags Key=hopper-read-only-check,Value=1 ;;
+  *) aws ec2 create-vpc --dry-run --cidr-block 10.255.0.0/16 ;;
+esac`,
   },
   {
     id: 'aws.ssm-put-parameter', title: 'write an SSM parameter', kinds: AWS, tool: 'aws', expect: 'denied',

@@ -19,7 +19,7 @@
 // did not close the issue and ships no part ("Part of #N"), the hopper closes the issue as completed, with one comment
 // that links the pull request, and the item is done. A merge a person made on GitHub stays as issue #721 has it.
 // Pull-based completion (issue #428): the item is resolved upstream, the hopper only follows. Closed as completed, it is
-// merged, as above. Closed as not planned while its pull request is still open, or none is found yet: abandoned — followed
+// merged, as above — unless the followed pull request is still open on GitHub: it is followed to its end (issues #786, #927). Closed as not planned while its pull request is still open, or none is found yet: abandoned — followed
 // no more, never merged, its pull request left as it is; the waiting labels come off and no end label goes on. A person's
 // act still goes through. Reopened with that pull request open, reconciling follows it again (issue #763).
 
@@ -59,17 +59,28 @@ async function openPullRequestOf(api: GitHubApi, repo: string, number: number): 
   return branch && { url: branch.url, part: false };
 }
 
-/** Where the pull request is now; undefined: it cannot be told yet (none named nor found, and nothing merged). */
-async function stateOf(api: GitHubApi, repo: string, number: number, s: Followed): Promise<{ state: PullState; url: string } | undefined> {
-  if (!s.part) {
-    const closer = await api.closingPullRequest(repo, number);
-    if (isClosedAsCompleted(await api.getIssue(repo, number), closer)) return { state: 'merged', url: closer?.url ?? s.pullRequest ?? '' };
-  }
+/** Where the named pull request is now; undefined: none is named, or a part names it no more. */
+async function namedStateOf(api: GitHubApi, repo: string, number: number, s: Followed): Promise<{ state: PullState; url: string } | undefined> {
   if (!s.pullRequest) return undefined;
   const mention = (await api.referencingPullRequests(repo, number)).find((pr) => pr.url === s.pullRequest);
   if (mention) return s.part && !isPartOf(mention, repo, number) ? undefined : { state: mention.state, url: mention.url };
   // Not a mention (issue #637: a pull request named for the issue only on its branch): asked by its number.
   return { state: (await api.pullRequest(repo, numberOf(s.pullRequest)))?.state ?? 'closed', url: s.pullRequest };
+}
+
+/**
+ * Where the pull request is now; undefined: it cannot be told yet (none named nor found, and nothing merged). The named pull
+ * request still open on GitHub is open, whatever its issue (issues #786, #927): an issue closed as completed under it does
+ * not make it merged, or reconciling follows it again at each sync and it is never tended.
+ */
+async function stateOf(api: GitHubApi, repo: string, number: number, s: Followed): Promise<{ state: PullState; url: string } | undefined> {
+  const named = await namedStateOf(api, repo, number, s);
+  if (named?.state === 'open') return named;
+  if (!s.part) {
+    const closer = await api.closingPullRequest(repo, number);
+    if (isClosedAsCompleted(await api.getIssue(repo, number), closer)) return { state: 'merged', url: closer?.url ?? s.pullRequest ?? '' };
+  }
+  return named;
 }
 
 /**
@@ -91,6 +102,7 @@ async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRe
   const pushedAt = pr.headCommittedAt && pr.headCommittedAt > pr.createdAt ? pr.headCommittedAt : pr.createdAt;
   const seen: PullRequestSeen = {
     draft: pr.isDraft, conflicting: pr.conflicting, checks: pr.checks ?? 'none', openedAt: pr.createdAt, pushedAt, ...(pr.base ? { base: pr.base } : {}),
+    ...(pr.headRef ? { headRef: pr.headRef } : {}),
   };
   const now = (ctx.clock?.now() ?? new Date()).getTime();
   // Whatever its job's origin (issue #805): the trust decision was made when the job ran, before its pull request.

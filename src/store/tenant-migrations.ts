@@ -26,8 +26,10 @@ import { JOB_STREAM_TABLES } from './migration-job-stream.ts';
 import { ARTIFACT_REVISION_TABLES, ARTIFACT_TABLES } from './migration-artifacts.ts';
 import { BUG_REPORT_TABLE } from './bug-reports.ts';
 import { INFRA_PLAN_TABLES } from './infra-plans.ts';
+import { OUT_OF_BAND_TABLES } from './out-of-band.ts';
 import { ISSUE_GRAPH_TABLES } from './issue-graph.ts';
 import { POINTED_JOB_TABLE } from './pointed-jobs.ts';
+import { CHECKPOINT_TABLE } from './checkpoints.ts';
 import { GITHUB_WATCH_TABLE } from './github-watches.ts';
 import { itemSnapshotsBackfill } from './migration-item-snapshots.ts';
 import { commentHoldsReleased } from './migration-comment-holds.ts';
@@ -354,16 +356,16 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   'CREATE INDEX IF NOT EXISTS events_job ON events (job_id, seq)',
   // 46: Infra plans (issue #870): each plan a job recorded, and a person's approval of it. Tables only: the build before runs on it.
   INFRA_PLAN_TABLES,
+  // 47: Out-of-band changes (issue #871): each change a job's check reported, a person's mark, the controller identities. Tables only: the build before runs on it.
+  OUT_OF_BAND_TABLES,
+  // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
+  CHECKPOINT_TABLE,
 ];
 
 /** A user schema's version once migrated. */
 export const TENANT_SCHEMA_VERSION = TENANT_BASE_VERSION + TENANT_MIGRATIONS.length;
 
-/** `"name"`, quotes doubled: an identifier safe in SQL. */
-export const quoteIdent = (name: string): string => `"${name.replaceAll('"', '""')}"`;
-
-/** A user's schema: `u_<id>` beside the `public` instance schema, else `<instance schema>_u_<id>`. */
-export const userSchemaName = (instanceSchema: string, userId: string): string => (instanceSchema === 'public' ? `u_${userId}` : `${instanceSchema}_u_${userId}`);
+export { quoteIdent, userSchemaName } from './schema-names.ts';
 
 function step(db: Db, m: Migration, record: () => void): void {
   db.exec('BEGIN');

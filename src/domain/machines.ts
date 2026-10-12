@@ -3,6 +3,8 @@
 // machine is a machine-source instance of the `ssh`, `docker` or `client` plugin (issue #74).
 import type { MachineSnapshot } from './types.ts';
 import type { RuntimeKind, SandboxRecord } from './sandboxes.ts';
+// A Windows host (issue #731) is reached over ssh as an ssh target is, but runs only steps: src/domain/windows-steps.ts.
+export type { WindowsHost, WindowsHostsView } from './windows-steps.ts';
 /**
  * An attached machine as its machine-source instance names it (design.md "Attached machines",
  * "Container targets", "Client targets"): a target reached over ssh, with its own herdr; a container

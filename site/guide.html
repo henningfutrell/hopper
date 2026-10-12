@@ -57,6 +57,7 @@ from your issues (<a href="install.html">Install guide</a>). The words used here
 <li><a href="#failures">Failures: the assessor and problems</a></li>
 <li><a href="#client-update">How a computer's client updates</a></li>
 <li><a href="#usage">Usage limits</a></li>
+<li><a href="#infra">Infra: plans, applies and drift</a></li>
 </ol>
 
 <h2 id="research">Research reports</h2>
@@ -475,6 +476,38 @@ apply at once and win over <code>HOPPER_SOFT_LIMIT</code> and <code>HOPPER_HARD_
 Others see the graph without handles.</p>
 <p>The Overview's <em>Usage over time</em> graph shows each account's session and week usage as lines; the Usage view's
 <em>Usage history</em> keeps 90 days by default.</p>
+
+<h2 id="infra">Infra: plans, applies and drift</h2>
+<p>hopper applies no infrastructure change without a plan. Everything about plans shows on <strong>Infra</strong>, in the
+menu. Every panel there shows always: while it loads, when it cannot load (with <strong>Try again</strong>), and when it is
+empty.</p>
+<h3>Plans</h3>
+<p>A job records the plan of each change before it applies it: the <code>terraform plan</code> (with its saved plan file),
+the <code>helm diff</code>, or the Argo CD diff, with the repository, branch and commit it was made at. It sends the plan to
+<code>POST /job/infra-plans</code>. Until a job does, the panel says <em>No plans yet</em>.</p>
+<p>Each plan shows what it changes in plain words, its risk (<em>low</em> or <em>high</em>), its risk callouts (destroys,
+IAM, prod, data, network), its blast radius and its checks. <strong>Show the plan</strong> opens the raw plan. Its state is
+one of these:</p>
+<div class="table-wrap"><table class="stack">
+<tr><th>State</th><th>What it means</th></tr>
+<tr><td><strong>Waits for an admin to approve it</strong></td><td>An admin presses <strong>Approve</strong>. A job never approves a plan.</td></tr>
+<tr><td><strong>Approved</strong></td><td>Until it is stale, the vault mints the credential for an apply that names it, when its branch is still at the plan's commit.</td></tr>
+<tr><td><strong>Stale</strong></td><td>A plan is stale one hour after it was made. Nothing applies it. The job plans again.</td></tr>
+<tr><td><strong>Failed its checks</strong></td><td>For example, a new AWS resource without the MAP tag. Nobody approves it. The job fixes the code and plans again.</td></tr>
+</table></div>
+<p>Under each plan, each apply shows: the operation, the asset, the job that asked, and until when the credential is valid.
+hopper never shows the credential.</p>
+<h3>Applies and drift</h3>
+<p>One timeline, newest first: each plan recorded and approved, each apply, each drift (a GitOps app out of sync, a
+non-empty <code>terraform plan</code> on unchanged code), each out-of-band write, and each mark a person set.</p>
+<h3>Out-of-band changes</h3>
+<p>A job's read-only check reports what it finds to <code>POST /job/infra-signals</code>; a collector outside hopper reports with an API token to <code>POST /ui/api/out-of-band/signals</code>. A change that no controller identity
+and no credential minted for an approved plan made is an out-of-band change. Each one goes to the notifiers. An admin marks
+it <strong>Adopted</strong> (brought back into git), <strong>Reverted</strong>, or <strong>Accept</strong> with a reason.
+hopper reverts nothing. An admin also sets the controller identities here: the principals whose writes are GitOps's, one
+per line; a trailing <code>*</code> names a group.</p>
+<p class="note">The same reads and acts are in the API, under the Infra tag: <code>GET /api/infra-plans</code>,
+<code>GET /api/out-of-band</code>, <code>POST /ui/api/infra-plans</code> and <code>POST /ui/api/out-of-band</code>.</p>
 </main>
 
 <footer class="border-t border-border">

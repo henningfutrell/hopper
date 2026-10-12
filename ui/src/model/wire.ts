@@ -2,6 +2,7 @@
 // type-only imports: the wire contract has one definition, and nothing of src/ is bundled.
 import type {
   AttachedMachine, Decision, DomainEvent, HostKeyOffer, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachineSnapshot, MachinesConfig, SandboxesView, CleanupProblem, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
+  WindowsHost, WindowsHostsView,
   Question, QuestionAttempt, QuestionGatesView, RaisedBy, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
   WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, StackDrift, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
@@ -19,16 +20,18 @@ import type {
   ForkParent, ForkQuestion, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionFork, QuestionShifts, ShiftMode, ShiftThen,
   AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, AutoParkSettings, ThreadAsk, ThreadAskPolicy, ThreadAskSettings, Confidence, AnswerHold, Escalation, EscalationHold, EscalationReason, GuardHit,
   ConfidenceSpread, DeciderRiskHold, RiskCategory, RiskCheck, RiskDecision,
-  ApiTokenMinted, ApiTokenView, CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplatePreview, TemplateView, VaultBackendView, VaultSecret, VaultView, PlanView, YoloModeSettings, YoloModeView, ContributionSettings, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksQueued, RepoChecksView,
+  ApiGrantMinted, ApiGrantView, ApiTokenSettings, ApiTokenMinted, ApiTokenView, ScopePermission, ScopePreset, ScopeRegistry, ScopeSection, CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplatePreview, TemplateView, VaultBackendView, VaultSecret, VaultView, InfraPlan, PlanApply, PlanView, OutOfBandMark, OutOfBandView, YoloModeSettings, YoloModeView, ContributionSettings, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksQueued, RepoChecksView,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
   Artifact, ArtifactKind, ArtifactRevision, ArtifactRevisionView, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
   Tldr, TldrSettings,
   ItemComment, ItemEdit, TextChange,
   MasterKeyRotated, MasterKeyView,
+  JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobStage, JobTree,
 } from '../../../src/domain/types.ts';
 
 export type {
   AttachedMachine, Decision, DomainEvent, HostKeyOffer, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachinesConfig, SandboxesView, CleanupProblem, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
+  WindowsHost, WindowsHostsView,
   Question, QuestionAttempt, QuestionGatesView, RaisedBy, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
   WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, StackDrift, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
@@ -46,9 +49,10 @@ export type {
   ForkParent, ForkQuestion, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionFork, QuestionShifts, ShiftMode, ShiftThen,
   AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, AutoParkSettings, ThreadAsk, ThreadAskPolicy, ThreadAskSettings, Confidence, AnswerHold, Escalation, EscalationHold, EscalationReason, GuardHit,
   ConfidenceSpread, DeciderRiskHold, RiskCategory, RiskCheck, RiskDecision,
-  ApiTokenMinted, ApiTokenView, CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplatePreview, TemplateView, VaultBackendView, VaultSecret, VaultView, PlanView, YoloModeSettings, YoloModeView, ContributionSettings, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksQueued, RepoChecksView,
+  ApiGrantMinted, ApiGrantView, ApiTokenSettings, ApiTokenMinted, ApiTokenView, ScopePermission, ScopePreset, ScopeRegistry, ScopeSection, CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplatePreview, TemplateView, VaultBackendView, VaultSecret, VaultView, InfraPlan, PlanApply, PlanView, OutOfBandMark, OutOfBandView, YoloModeSettings, YoloModeView, ContributionSettings, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksQueued, RepoChecksView,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
   MasterKeyRotated, MasterKeyView,
+  JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobStage, JobTree,
   Artifact, ArtifactKind, ArtifactRevision, ArtifactRevisionView, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
   Tldr, TldrSettings,
   ItemComment, ItemEdit, TextChange,
@@ -109,4 +113,5 @@ export interface WebhooksView {
 }
 
 export type { RateBucket, RateLimiterSettings, RateLimiterView } from '../../../src/domain/github-rate-limit.ts';
+export type { RemoteAccessChange, RemoteAccessState, RemoteAccessStatus, RemoteAccessView } from '../../../src/domain/remote-access.ts';
 export type { GitHubWatch, GitHubWatchSettings, GitHubWatchView } from '../../../src/domain/github-watch.ts';

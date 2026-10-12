@@ -1,7 +1,7 @@
 // What the fake herdr client simulates (fake-client.ts): Claude's turns and startup dialogs, the pane's shell,
 // and herdr's own ways, and what a test reads and drives of it. Test support only.
 import type { Survey } from '../../domain/ports.ts';
-import type { DiscoveryFacts } from '../../domain/types.ts';
+import type { CheckpointCapture, DiscoveryFacts } from '../../domain/types.ts';
 import type { HerdrClient } from './client.ts';
 
 /** One scripted turn of Claude's: what it shows while working and when it ends, and how it ends. */
@@ -92,6 +92,10 @@ export interface FakeHerdrOptions {
   discovery?: DiscoveryFacts;
   /** What the reach check says on the machine (issue #695): why it cannot reach the hopper. Default it reaches it. */
   unreached?: string;
+  /** What a checkpoint finds on the machine (issue #921). Default none taken. */
+  checkpoint?: CheckpointCapture;
+  /** What the restore of a checkpoint in a pane says (issue #921). Default `restored`. */
+  restore?: 'restored' | 'kept' | 'failed';
   /** The machine runs a systemd user manager: the pane's shell enters the job's scope (issue #410). Default no systemd. */
   scopes?: boolean;
   /** Claude stays up through ctrl+c, so it never exits before its pane closes. */
@@ -148,6 +152,10 @@ export interface FakeHerdrClient extends HerdrClient {
   readonly reaps: { jobId: string; scratch?: string; keep?: boolean }[];
   /** Each credential file kept on the machine through its connection (issue #441), in order. */
   readonly credentials: { jobId: string; dir: string; file: string; content: string; make?: boolean }[];
+  /** Each checkpoint taken through the machine's connection (issue #921). */
+  readonly checkpoints: { jobId: string; worktree: string; session: string }[];
+  /** Each restore command typed into a pane (issue #921). */
+  readonly restores: string[];
   addTurns(...turns: FakeTurn[]): void;
   /** Claude is signed in on the machine from now on (`notSignedIn`). */
   signIn(): void;

@@ -4,6 +4,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CheckCredential, OperationProfile, Probe } from '../../src/domain/types.ts';
+import { markRuns, type ProbeMarks } from '../../src/domain/read-only-check.ts';
 import { checkEnv, checkScript, readResults } from '../../src/sandbox/check-script.ts';
 import { HELM_LIST_NOTE, HOPPER_PROBES, PROBES, probeCatalog } from '../../src/sandbox/probes.ts';
 import { createFakeCloudTools, type FakeCloudTools } from '../support/fake-cloud-tools.ts';
@@ -214,7 +215,25 @@ esac`);
     const { results, fake } = await run('read-only', [read('aws-role', '123456789012/hopper-read')]);
     expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'denied', passed: true });
     expect(results.find((r) => r.id === 'aws.ec2-create-tags')!.output).toContain('UnauthorizedOperation');
-    expect(fake.calls().filter((c) => c.startsWith('aws ec2'))).toEqual(['aws ec2 create-tags --dry-run --resources vpc-00000000 --tags Key=hopper-read-only-check,Value=1']);
+    expect(fake.calls().filter((c) => c.startsWith('aws ec2'))).toEqual([
+      "aws ec2 describe-vpcs --query Vpcs[0].VpcId --output text",
+      'aws ec2 create-tags --dry-run --resources vpc-0a1b2c3d4e5f60718 --tags Key=hopper-read-only-check,Value=1',
+    ]);
+  });
+
+  // Issue #882: EC2 looks up the VPC before its dry run asks the authorization, so a VPC the account does not hold
+  // answers NotFound and never a refusal. The probe tags a VPC the account holds; with none, it makes one, as a dry run.
+  it('the EC2 write tags a VPC the account holds, or with no VPC makes one, as a dry run: a refusal passes it', async () => {
+    const { results, fake } = await runWith('aws', `case "$*" in
+  *describe-vpcs*) echo None ;;
+  *"create-vpc --dry-run"*) echo 'An error occurred (UnauthorizedOperation) when calling the CreateVpc operation: You are not authorized to perform this operation.' >&2; exit 254 ;;
+  *) exit 1 ;;
+esac`, [read('aws-account', '123456789012')]);
+    expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'denied', passed: true });
+    expect(fake.calls().filter((c) => c.startsWith('aws ec2'))).toEqual([
+      'aws ec2 describe-vpcs --query Vpcs[0].VpcId --output text',
+      'aws ec2 create-vpc --dry-run --cidr-block 10.255.0.0/16',
+    ]);
   });
 
   it('helm list refused on a view role: it fails, and its result says a view role cannot read the secrets helm keeps releases in', async () => {
@@ -230,5 +249,60 @@ esac`);
     const { results: ok } = await run('read-only', CLUSTER);
     expect(ok.find((r) => r.id === 'helm.list')).toMatchObject({ passed: true });
     expect(ok.find((r) => r.id === 'helm.list')!.note).toBeUndefined();
+  });
+});
+
+describe('probe marks on a read probe (issue #916)', () => {
+  const CLUSTER = [read('cluster', 'lab')];
+  const FORBIDDEN = 'Error: list: failed to list: secrets is forbidden: User "system:serviceaccount:hopper:view" cannot list resource "secrets"';
+  /** Runs the hopper's probes for a cluster with these marks; `list`: how helm list answers, else the fake's own. */
+  async function runMarked(marks: ProbeMarks, mode: 'read-only' | 'writable' = 'read-only', list?: string) {
+    const fake = createFakeCloudTools(mode);
+    tools.push(fake);
+    if (list !== undefined) {
+      writeFileSync(join(fake.dir, 'helm'), `#!/bin/sh\necho "helm $*" >> ${JSON.stringify(join(fake.dir, 'calls.log'))}\ncase "$1" in
+  list) ${list} ;;
+  create) mkdir -p "$2" ;;
+  template) printf '%s\\n' '---' 'apiVersion: apps/v1' 'kind: Deployment' 'metadata:' '  name: hopper-read-only-check-chart' ;;
+esac\n`);
+    }
+    const runs = markRuns(HOPPER_PROBES.runsFor(CLUSTER), marks);
+    const r = await fake.runScript({ name: 'c', image: 'i', network: 'n', volume: 'v', env: {}, labels: {}, limits: { cpus: 1, memoryMb: 1 }, user: 'agent', script: checkScript(runs) });
+    return { results: readResults(runs, r.output), fake };
+  }
+  const forbidden = `echo '${FORBIDDEN}' >&2; exit 1`;
+
+  it('helm list marked expect-denied and refused on a view role: it passes, and the whole set passes', async () => {
+    const { results } = await runMarked({ 'helm.list': 'expect-denied' }, 'read-only', forbidden);
+    expect(results.find((r) => r.id === 'helm.list')).toMatchObject({ expect: 'denied', mark: 'expect-denied', outcome: 'denied', passed: true });
+    expect(results.find((r) => r.id === 'helm.list')!.note).toBeUndefined();
+    expect(results.filter((r) => !r.passed)).toEqual([]);
+  });
+
+  it('helm list marked expect-denied that works: the read was not refused, and it fails', async () => {
+    const { results } = await runMarked({ 'helm.list': 'expect-denied' });
+    expect(results.find((r) => r.id === 'helm.list')).toMatchObject({ expect: 'denied', outcome: 'allowed', passed: false, exit: 0 });
+  });
+
+  it('helm list marked expect-denied that fails for another reason: an error, and it fails', async () => {
+    const { results } = await runMarked({ 'helm.list': 'expect-denied' }, 'read-only', "echo 'Error: Kubernetes cluster unreachable: dial tcp: lookup lab' >&2; exit 1");
+    expect(results.find((r) => r.id === 'helm.list')).toMatchObject({ expect: 'denied', outcome: 'error', passed: false });
+  });
+
+  it('helm list marked skip is not run, and passes as skipped', async () => {
+    const { results, fake } = await runMarked({ 'helm.list': 'skip' }, 'read-only', forbidden);
+    expect(results.find((r) => r.id === 'helm.list')).toMatchObject({ mark: 'skip', outcome: 'skipped', passed: true, output: 'not run: the template marks it skip' });
+    expect(results.find((r) => r.id === 'helm.list')!.exit).toBeUndefined();
+    expect(fake.calls().filter((c) => c.startsWith('helm list'))).toEqual([]);
+    expect(results.filter((r) => !r.passed)).toEqual([]);
+  });
+
+  it('with helm list marked, a write that goes through still fails the check', async () => {
+    const { results } = await runMarked({ 'helm.list': 'expect-denied', 'helm.install': 'skip' }, 'writable', forbidden);
+    expect(results.find((r) => r.id === 'helm.list')).toMatchObject({ passed: true });
+    expect(results.find((r) => r.id === 'kube.create-namespace')).toMatchObject({ outcome: 'allowed', passed: false });
+    // A mark on a write probe changes nothing: it runs, and the write that went through fails it.
+    expect(results.find((r) => r.id === 'helm.install')).toMatchObject({ outcome: 'allowed', passed: false });
+    expect(results.find((r) => r.id === 'helm.install')!.mark).toBeUndefined();
   });
 });

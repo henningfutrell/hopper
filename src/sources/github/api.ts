@@ -7,6 +7,7 @@ import type { ChecksState } from '../../domain/pull-requests.ts';
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
 import type { IssueCrossReferences } from '../../domain/cross-references.ts';
 import type { IssuePlace } from '../../domain/issue-graph.ts';
+import type { GitRemote } from '../../git-mirror/mirrors.ts';
 
 export interface GitHubIssue {
   /** owner/repo */
@@ -45,7 +46,10 @@ export interface OpenPullRequest {
   url: string;
   createdAt: string;
   isDraft: boolean;
-  /** GitHub says it cannot merge as it stands (`mergeable: CONFLICTING`); not yet computed counts as not. */
+  /**
+   * It cannot merge as it stands: as the hopper's mirror says (`git merge-tree`, issue #858), else as GitHub says
+   * (`mergeable: CONFLICTING`; not yet computed counts as not).
+   */
   conflicting: boolean;
   /**
    * When its head commit was committed (issue #618): a push that rebases or updates it makes a new head commit. A job
@@ -54,6 +58,12 @@ export interface OpenPullRequest {
   headCommittedAt?: string;
   /** Its head commit's checks (issue #637, GitHub's status check rollup); absent: it has none. */
   checks?: ChecksState;
+  /** Its head commit (issue #858: what the mirror merges); absent: GitHub did not say. */
+  headOid?: string;
+  /** The branch it merges into (issue #677); absent: GitHub did not say. */
+  base?: string;
+  /** Its head branch (issue #900: a pull request based on it is stacked on it); absent: GitHub did not say. */
+  headRef?: string;
 }
 
 /** A pull request by its number (issue #618): one an issue names to update, in any state. */
@@ -61,8 +71,6 @@ export interface NumberedPullRequest extends OpenPullRequest {
   state: 'open' | 'closed' | 'merged';
   /** When it was merged; absent unless merged. */
   mergedAt?: string;
-  /** The branch it merges into (issue #677); absent: GitHub did not say. */
-  base?: string;
 }
 
 /** An open pull request of a repository, with its branch (issue #637) and its body (issue #763: the issue it closes). */
@@ -123,6 +131,10 @@ export interface GitHubProjectItem {
   /** Field values by key as gh returns them (lowercased names). */
   fields: Record<string, string | number>;
 }
+
+/** GitHub's web origin, where its git is, from its REST API base (`https://api.github.com`, `<url>/api/v3` for GitHub Enterprise). */
+export const webOriginOf = (apiUrl: string): string =>
+  apiUrl.replace(/\/+$/, '') === 'https://api.github.com' ? 'https://github.com' : apiUrl.replace(/\/+$/, '').replace(/\/api\/v3$/, '');
 
 export interface GitHubApi {
   listOpenIssues(repo: string, label: string): Promise<GitHubIssue[]>;
@@ -198,6 +210,8 @@ export interface GitHubApi {
    * Present ⇒ hopper comments are identified by this author (the marker is a secondary check).
    */
   botLogin?(): Promise<string>;
+  /** Where git fetches `repo` and the token it fetches with, this adapter's own (issue #858: the hopper's mirror). Absent: no mirror. */
+  gitRemote?(repo: string): Promise<GitRemote>;
   /** Every repo (owner/repo) the app is installed on, across installations: the allowlist. */
   listInstalledRepos?(): Promise<{ repo: string; installationId: number }[]>;
 }

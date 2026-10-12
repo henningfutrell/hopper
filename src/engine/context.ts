@@ -3,6 +3,7 @@ import type {
 } from '../domain/ports.ts';
 import { jobPriorityTag, type CredentialRequest, type DeciderPolicy, type JevFirst, type TemplateRadius, type Job, type MachineSnapshot, type PriorityTag, type ProblemBlock, type Verdict } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
+import type { Checkpoints } from './checkpoints.ts';
 
 export interface EngineOptions {
   store: UserStore;
@@ -11,6 +12,8 @@ export interface EngineOptions {
   idGen?: IdGen;
   executors: ExecutorRegistry;
   machines: MachineSource;
+  /** The machine names in the plugins config (issue #919), undefined while it has an error: one gone from it is retired. Absent: none is. */
+  configuredMachines?: () => readonly string[] | undefined;
   /** Every usage source the decider reads now: they follow the plugins config live (issue #356). Include `fakeUsage` here too when present. */
   usage: () => UsageSource[];
   /** The hand-settable source tests drive through `setFakeUsage`, when one is composed. */
@@ -73,6 +76,8 @@ export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' 
   trigger(reason: string): void;
   /** True once stop() began: nothing may write to the store after this. */
   stopping(): boolean;
+  /** The job checkpoints (issue #921); set once the engine made them. */
+  checkpoints?: Checkpoints;
 }
 
 export const nowIso = (c: { clock: Clock }): string => c.clock.now().toISOString();

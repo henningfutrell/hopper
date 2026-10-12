@@ -4,6 +4,7 @@ import { USER_CONFIG, type Clock, type IdGen, type UserStore } from '../domain/p
 import { createArtifactRepository } from './artifacts.ts';
 import { createBugReportRepository } from './bug-reports.ts';
 import { createInfraPlanRepository } from './infra-plans.ts';
+import { createOutOfBandRepository } from './out-of-band.ts';
 import { createContext } from './context.ts';
 import { openDb } from './db.ts';
 import { createDecisionRepository } from './decisions.ts';
@@ -20,6 +21,7 @@ import { createIssueGraphRepository } from './issue-graph.ts';
 import { createVaultGrantRepository } from './vault-grants.ts';
 import { createLoginRepository } from './logins.ts';
 import { createPointedJobRepository } from './pointed-jobs.ts';
+import { createCheckpointRepository } from './checkpoints.ts';
 import { createGitHubWatchRepository } from './github-watches.ts';
 import { createReviewItemRepository } from './review-items.ts';
 import { createQuestionRepository } from './questions.ts';
@@ -65,6 +67,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     jobStream,
     artifacts: createArtifactRepository(ctx),
     infraPlans: createInfraPlanRepository(ctx),
+    outOfBand: createOutOfBandRepository(ctx),
     questions: createQuestionRepository(ctx),
     reviews: { proposal: createReviewItemRepository(ctx, 'proposal'), research: createReviewItemRepository(ctx, 'research') },
     logins: createLoginRepository(ctx),
@@ -77,6 +80,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     issueGraph: createIssueGraphRepository(ctx),
     pointedJobs: createPointedJobRepository(ctx),
     githubWatches: createGitHubWatchRepository(ctx),
+    checkpoints: createCheckpointRepository(ctx),
     settings: createUserSettingsRepository(ctx),
     connectedAccounts: createConnectedAccountRepository(ctx),
     usageHistory: createUsageHistoryRepository(ctx),

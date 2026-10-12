@@ -20,6 +20,15 @@ const WAITS_TEXT: Record<MergeWait, string> = {
 export const waitsText = (c: Pick<PullRequestCard, 'waits' | 'base'>): string =>
   !c.waits ? '' : c.waits === 'conflicts' && c.base ? `conflicts with ${c.base}` : WAITS_TEXT[c.waits];
 
+/** What the hopper does about a card that needs tending (issue #927): tends it next, holds it behind another, or gave up; '' for none. */
+export function doingText(c: Pick<PullRequestCard, 'queue' | 'gaveUp'>): string {
+  if (c.gaveUp) return `the hopper gave up: ${c.gaveUp}`;
+  if (!c.queue) return '';
+  if ('next' in c.queue) return 'the hopper tends it next';
+  const { pullRequest, why } = c.queue.held;
+  return `held behind #${pullRequest}, ${why === 'tending' ? 'which a job works on now' : 'which waits for its checks to merge'}`;
+}
+
 export function waitingLine(v: PullRequestsView): string {
   if (v.waiting.length === 0) return 'merging waits: nothing';
   return `merging waits: ${v.waiting.map((w) => `${prs(w.count)} in ${w.repo} (${WAITS_TEXT[w.reason]})`).join(', ')}`;
@@ -44,8 +53,14 @@ export const yoloNote = (on: boolean): string => on
   ? 'On: the hopper merges a ready pull request when its checks pass, or when it has no checks.'
   : 'Off: a ready pull request waits for a person to merge it.';
 
-/** The body that turns yolo mode on or off for one repository. */
-export const yoloToggle = (repo: string, on: boolean): { repos: Record<string, boolean> } => ({ repos: { [repo]: on } });
+
+/** The open pull requests with merge conflicts (issue #897): each waits for a person to fix or close it. None for no answer. */
+export const conflictedPullRequests = (v: PullRequestsView | undefined): number =>
+  Array.isArray(v?.repos) ? v.repos.reduce((n, r) => n + r.pullRequests.filter((c) => c.state === 'open' && c.mergeable === 'conflicts').length, 0) : 0;
+
+/** The header's line for them; '' when none. */
+export const conflictsLine = (n: number): string =>
+  n === 0 ? '' : `${n} ${n === 1 ? 'pull request has' : 'pull requests have'} merge conflicts: fix ${n === 1 ? 'it' : 'them'}, or close ${n === 1 ? 'it' : 'them'}`;
 
 export const hasCards = (v: PullRequestsView): boolean => v.repos.some((r) => r.pullRequests.length > 0);
 

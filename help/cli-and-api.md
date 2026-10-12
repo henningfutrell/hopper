@@ -107,75 +107,13 @@ See [Lanes and lane tuning](lanes.md) and [Artifacts](artifacts.md).
 | `hopper master-key status` | Where the master key came from, and its fingerprint. Never the key. |
 | `hopper master-key rotate` | Make a new master key. It is printed one time: save it. |
 | `hopper typesafe-key [set\|remove]` | Jev's TypeSafe API key. |
-| `hopper token mint\|list\|revoke …` | API tokens (below). |
+| `hopper token mint\|list\|scopes\|revoke\|revoke-all …` | Grants and API tokens. See [API tokens and grants](api-tokens.md). |
 
 See [Vault](vault.md) and [Sandboxes](sandboxes.md).
 
 ## API tokens
 
-An **API token** lets an agent act for you over the API. It can do everything you can do in the UI, with the role you give it.
-
-- It starts with `hopper_at_`.
-- It lasts 15 minutes by default, and one hour at most.
-- Its role is `viewer`, `operator` or `admin`, and never higher than the role of who made it.
-- The access service (OpenFGA) decides each use. When it does not run, no token is made (503).
-- The hopper keeps only its hash. You see the token one time, when it is made.
-- An API token cannot make another API token.
-- Only a **box token** can do a box action: start a job, run a command, approve or merge work, update the hopper, or change the work on a machine (answer a question, end a wait, add a machine, apply lanes). Any other token can read, hold, cancel and change settings, but gets `403` on a box action. See [Box tokens](#box-tokens).
-
-### Make a token in the UI
-
-1. Open **Settings → API tokens**.
-2. Select **Mint token**.
-3. Fill in **Label — who or what uses it**, the **Role — at most yours**, and the **Lifetime in minutes — 1 to 60**. Tick **Box token** only when the agent must do box actions.
-4. Select **Mint token**.
-5. Copy the token now. It is not shown again.
-
-The list shows each live token's label, role and end. **Revoke** ends one at once.
-
-### Make a token from the command line
-
-```sh
-hopper token mint --label "nightly report" --role operator --minutes 30
-hopper token mint --label "Grok Bot" --role operator --minutes 30 --box
-hopper token list
-hopper token revoke <id>
-```
-
-`--role` is `admin` when you leave it out. A token made this way also ends when the hopper restarts or its sign-in settings change.
-
-### Exchange a sign-in for a token
-
-An agent with no UI session can exchange a sign-in for a token. It sends a token the hopper already accepts for reads: a GitHub token of your connected account, or the JWT an auth gateway forwards.
-
-```sh
-curl -X POST http://localhost:4790/ui/auth/api-token \
-  -H "Authorization: Bearer $(gh auth token)" \
-  -H 'content-type: application/json' \
-  -d '{"label": "my agent", "minutes": 30}'
-```
-
-The answer holds `token`. The role is at most the one your sign-in settings give that account. The account must have signed in to the hopper before: this makes no new user. An exchange never gives a box token: `"box": true` gets `400`.
-
-### Box tokens
-
-A box token is an API token that may also do box actions. Only a person makes one: in **Settings → API tokens** (tick **Box token**), with `hopper token mint --box`, or with `"box": true` at `POST /ui/api/api-tokens` from a signed-in session. The token list says `box token` for each one.
-
-- The access service decides each box action too (`api_token#can_run_on_box`). You can narrow it in **Settings → Access**.
-- A token without box gets `403` on a box action: `this is a box action: it needs a box token`.
-- Give an agent a box token only for the time it needs one. It ends after one hour at most.
-
-### Use a token
-
-Send it in the `Authorization` header on any `GET /api/*` read and any `POST /ui/api/*` change:
-
-```sh
-curl -H "Authorization: Bearer $HOPPER_TOKEN" http://localhost:4790/api/queue
-curl -X POST -H "Authorization: Bearer $HOPPER_TOKEN" -H 'content-type: application/json' \
-  -d '{"repos": {"owner/repo": true}}' http://localhost:4790/ui/api/yolo-mode
-```
-
-A change needs a JSON body. Events record the action with `via: api`, under your name.
+An agent or a service on another machine uses the API with a short-lived API token, from a grant you make one time. [API tokens and grants](api-tokens.md) tells you how to make, refresh and revoke a grant, the scopes, box grants, and the API-token lifetime.
 
 ## How the API works
 

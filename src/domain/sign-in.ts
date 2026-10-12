@@ -18,15 +18,47 @@ export const lowerRole = (a: UiRole, b: UiRole): UiRole => (roleAllows(a, b) ? b
 export type SessionKind = 'ui' | 'api';
 /** An API token starts with this, so the API door never takes it for a GitHub token and sends it to GitHub. */
 export const API_TOKEN_PREFIX = 'hopper_at_';
-/** How long an API token lives when the mint names no length, and at most (issue #718: short-lived). */
-export const API_TOKEN_DEFAULT_MINUTES = 15;
-export const API_TOKEN_MAX_MINUTES = 60;
+/**
+ * How long an API token lives (issue #881): the admin's setting (Settings → API tokens), from `min` to `max` minutes,
+ * `default` until set. A grant may ask for less at its mint, never more than the setting.
+ */
+export const API_TOKEN_MINUTES = { min: 5, max: 15, default: 10 } as const;
 
 /** An API token as it is listed: never the token. `id`: the start of the token's hash, what a revoke names. */
 /** `box`: a box token (issue #795), which alone may do box actions. */
 export interface ApiTokenView { id: string; label: string; role: UiRole; box: boolean; startedAt: string; expiresAt: string; lastUsedAt: string }
 /** A new API token: the token itself, answered once, in the answer that made it. */
 export interface ApiTokenMinted extends ApiTokenView { token: string }
+
+/** A refresh token starts with this (issue #881): it is neither an API token nor a sign-in's token. */
+export const REFRESH_TOKEN_PREFIX = 'hopper_rt_';
+/** A grant dies when no refresh used it for this many days (issue #881). */
+export const GRANT_IDLE_DAYS = 30;
+/** How many days a grant lives at most when its mint names none, and the most a mint may name (issue #881). */
+export const GRANT_DEFAULT_DAYS = 90;
+export const GRANT_MAX_DAYS = 365;
+/** How long a refresh token just rotated still answers the same pair, for a refresh retried after a network blip (issue #881). */
+export const REFRESH_GRACE_MS = 30_000;
+
+/**
+ * A **grant** (issue #881) as it is listed: never a token. A person mints it once for an agent (`holder`); the agent
+ * trades its refresh token for short-lived API tokens, each refresh rotating it. `scopes`: the routes its access
+ * tokens may use (src/domain/token-scopes.ts). `endsAt`: null — no fixed end (an admin's choice). `idleEndsAt`: when it
+ * dies if no refresh uses it. `tokenMinutes`: its own API-token lifetime, when it asked for less than the setting.
+ */
+export interface ApiGrantView {
+  id: string; label: string; holder?: string; role: UiRole; box: boolean; scopes: string[];
+  createdAt: string; endsAt: string | null; idleEndsAt: string; lastUsedAt?: string; lastUsedFrom?: string; tokenMinutes?: number;
+}
+/** A new API token for a grant, and the grant's next refresh token: both answered once (issue #881). */
+export interface ApiTokenRefreshed { grant: string; token: string; expiresAt: string; refresh: string }
+/** A new grant: its view and its first pair (issue #881). `warning`: it has no fixed end. */
+export interface ApiGrantMinted extends ApiTokenRefreshed { view: ApiGrantView; warning?: string }
+/** Why a grant ended (issue #881, the `api_grant.revoked` event). */
+export type GrantEndReason = 'revoked' | 'revoked-all' | 'reuse-detected' | 'expired-idle' | 'expired-absolute' | 'realm-changed' | 'refused';
+export const GRANT_END_REASONS: readonly GrantEndReason[] = ['revoked', 'revoked-all', 'reuse-detected', 'expired-idle', 'expired-absolute', 'realm-changed', 'refused'];
+/** The admin's API token settings (issue #881): the API-token lifetime, and its bounds. */
+export interface ApiTokenSettings { tokenMinutes: number; min: number; max: number }
 
 /** The realm types the sign-in config offers. `local` (the login code) and `none` (no sign-in) are not realms. */
 export type RealmType = 'ldap' | 'oidc' | 'github' | 'saml' | 'gateway';
@@ -200,3 +232,34 @@ export interface SessionView {
     required: boolean;
   };
 }
+
+// The scope registry (issue #909, ./scope-registry.ts builds it): what `GET /api/scopes` answers.
+/** One scope as the registry shows it. */
+export interface ScopePermission {
+  scope: string;
+  /** What it lets an agent do, in plain words: the summaries of its routes. */
+  description: string;
+  /** The routes it covers: `POST /ui/api/jobs/:id/approve`. */
+  routes: string[];
+  /** The least UI role its routes need: a grant of a lower role gets 403 there. */
+  role: UiRole;
+  /** The route scope this is one action of (issue #909: `vault:edit` for `vault:edit.approve-template`); absent: a route's own. */
+  parent?: string;
+  /** One of its routes is a box action: only a box grant's tokens may use it. */
+  box: boolean;
+}
+
+export interface ScopeSection { id: string; title: string; description: string; permissions: ScopePermission[] }
+
+/** A named set of scopes, picked with one click or by its id (`preset` at the mint, `hopper token mint --preset`). */
+export interface ScopePreset {
+  id: string;
+  label: string;
+  /** What a grant of it can do, in plain words. */
+  description: string;
+  scopes: string[];
+  /** Its scopes cover a box action: it is minted as a box grant. */
+  box: boolean;
+}
+
+export interface ScopeRegistry { sections: ScopeSection[]; presets: ScopePreset[] }

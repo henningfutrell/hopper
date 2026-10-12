@@ -31,7 +31,7 @@ import { FAVICON_LINK } from './static.ts';
 
 /** What the share page's frame lets an HTML or SVG artifact do: the UI's own (ui/src/model/artifacts.ts FRAME_SANDBOX). */
 const FRAME_SANDBOX = 'allow-scripts allow-popups allow-downloads';
-import { publicHosts, uiOrigins, type Lan } from './reach.ts';
+import { publicOriginOf, uiOrigins, type Lan } from './reach.ts';
 import { signedInOf, userIdOf, type TenantParts, type Tenants } from './tenants.ts';
 import { CLI_REALM } from './ui/sessions.ts';
 
@@ -70,8 +70,9 @@ export function createArtifactEdge(o: { clock: Clock; lan: Lan; port: () => numb
     base: (t) => artifactBase({ linkBase: t.artifacts.settings().linkBase, publicUrl: o.lan.publicUrl, lanNames: o.lan.names, port: o.port() }),
     baseOf(req) {
       const host = (req.headers.host ?? '').toLowerCase();
-      // The Host guard let it in: it is loopback, a LAN name or the public URL's host.
-      if (o.lan.publicUrl && publicHosts(o.lan).includes(host)) return new URL(o.lan.publicUrl).origin;
+      // The Host guard let it in: it is loopback, a LAN name, the public URL's host or the remote access domain.
+      const pub = publicOriginOf(o.lan, host);
+      if (pub) return pub;
       return host ? `http://${host}` : `http://127.0.0.1:${o.port()}`;
     },
     viewBase: (req, t) => (signedInOf(req)?.identity.realm === CLI_REALM ? edge.base(t) : edge.baseOf(req)),

@@ -4,6 +4,9 @@
 // the next is tended against the new base: one rebase per merge, never a rebase of the whole backlog that each merge
 // breaks again. The rules' order: the highest priority first, then the oldest pull request. Jev may pick the head
 // (`merge-order`). Pure.
+// Nothing holds it for good (issue #927): a pull request on its way to the merge holds it only while it is seen ready, or
+// its checks run within `PENDING_HOLD_MS` of its last push. Not seen yet, checks the hopper cannot read, or checks that
+// stay pending hold nothing: the pull requests behind it are tended.
 import { following, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Job } from './types.ts';
 
@@ -12,6 +15,9 @@ export interface TendDue { jobId: string; pullRequest: string; step: TendStep }
 
 /** What holds a repository's tending queue: a tend job works on the pull request, or the hopper is to merge it. */
 export interface QueueHead { pullRequest: string; why: 'tending' | 'merging' }
+
+/** How long a pull request whose checks run holds its repository's tending queue after its last push (issue #927). */
+export const PENDING_HOLD_MS = 30 * 60_000;
 
 interface Followed { pullRequest?: string; follow?: string; seen?: PullRequestSeen; tended?: Tended }
 
@@ -32,25 +38,33 @@ function tending(job: Job, get: (id: string) => Job | undefined): string | undef
 }
 
 /**
- * On its way to the hopper's merge: followed, yolo mode on for its repository (`merges`), whatever its job's origin (issue
- * #805), and — as last seen — no draft, no merge conflicts, no failing checks and no refused merge. Not seen yet counts: the next
- * follow sees it.
+ * Seen on its way to the merge now (issue #927): no draft, no merge conflicts, no refused merge, and its checks passed, or
+ * it has none (the grace window, then the merge), or they run within `PENDING_HOLD_MS` of its last push.
  */
-function merging(job: Job, merges: (repo: string) => boolean): string | undefined {
-  const f = followedOf(job);
-  if (!following(job) || !f.pullRequest || !merges(job.source!.repo!)) return undefined;
-  const s = f.seen;
-  return !s || (!s.draft && !s.conflicting && s.checks !== 'failing' && s.mergeError === undefined) ? f.pullRequest : undefined;
+function soonMerged(s: PullRequestSeen, now: number): boolean {
+  if (s.draft || s.conflicting || s.mergeError !== undefined) return false;
+  if (s.checks === 'passing' || s.checks === 'none') return true;
+  return s.checks === 'pending' && s.pushedAt !== undefined && now - Date.parse(s.pushedAt) < PENDING_HOLD_MS;
 }
 
-/** What holds `repo`'s tending queue now, of `jobs`; undefined: it is free, and the next may be tended. */
-export function queueHead(repo: string, jobs: readonly Job[], get: (id: string) => Job | undefined, merges: (repo: string) => boolean): QueueHead | undefined {
+/**
+ * On its way to the hopper's merge: followed, yolo mode on for its repository (`merges`), whatever its job's origin (issue
+ * #805), and seen soon merged (issue #927).
+ */
+function merging(job: Job, merges: (repo: string) => boolean, now: number): string | undefined {
+  const f = followedOf(job);
+  if (!following(job) || !f.pullRequest || !merges(job.source!.repo!)) return undefined;
+  return f.seen && soonMerged(f.seen, now) ? f.pullRequest : undefined;
+}
+
+/** What holds `repo`'s tending queue at `now` (ms), of `jobs`; undefined: it is free, and the next may be tended. */
+export function queueHead(repo: string, jobs: readonly Job[], get: (id: string) => Job | undefined, merges: (repo: string) => boolean, now: number): QueueHead | undefined {
   for (const job of jobs.filter((j) => repoOf(j) === repo)) {
     const t = tending(job, get);
     if (t) return { pullRequest: t, why: 'tending' };
   }
   for (const job of jobs.filter((j) => repoOf(j) === repo)) {
-    const m = merging(job, merges);
+    const m = merging(job, merges, now);
     if (m) return { pullRequest: m, why: 'merging' };
   }
   return undefined;

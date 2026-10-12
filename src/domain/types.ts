@@ -8,6 +8,7 @@ import type { DeciderPolicy } from './decider-policy.ts';
 import type { UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
 import type { JobMachineLink, MachineHerdr } from './machines.ts';
+import type { ParkedElsewhere } from './checkpoints.ts';
 import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
@@ -170,15 +171,21 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * Set when the job was parked (issue #501): its pane and agent ended, its work tree and agent session kept,
    * `from` the status it was parked from. Kept through the re-queue until the resumed run records an outcome:
    * that claim reopens the session instead of typing into a pane. `auto` (issue #650): auto-park parked it, `why` says
-   * so, and the answer to its question re-queues it with no pick up.
+   * so, and the answer to its question re-queues it with no pick up. `elsewhere` (issue #921): a person picked it up to
+   * resume elsewhere — not pinned to its machine, its claim rebuilds its work tree from its checkpoint where it runs.
    */
-  parked?: { at: string; from: 'running' | 'waiting_answer'; auto?: true; why?: string };
+  parked?: { at: string; from: 'running' | 'waiting_answer'; auto?: true; why?: string; elsewhere?: ParkedElsewhere };
   /**
    * Set when a person continued this failed job from Needs a person (issue #551): queued again with its failure and
    * their note pending, pinned to its machine. As for a parked job, kept until the resumed run records an outcome:
    * that claim reopens its agent session in its work tree. `handoffId`: the hand-off it resolved.
    */
   continued?: { at: string } & ContinuedBy;
+  /**
+   * Its latest checkpoint (issue #921): its agent session and its work not pushed, copied from its machine while it ran.
+   * The patch and the session are in the store's checkpoints.
+   */
+  checkpoint?: import('./checkpoints.ts').JobCheckpoint;
   /** Set while the job waits on something it named (issue #483, status `waiting_on`): what, how it will know, since when. */
   wait?: JobWait;
   /** What its source and routing rules last gave the spec (issue #375): a part differing from it was set by hand. Absent: the spec. */
@@ -413,6 +420,7 @@ export interface Decision {
 
 // ---- Events ------------------------------------------------------------------------
 export * from './event-types.ts';
+export * from './checkpoints.ts';
 
 export interface DomainEvent<T = Record<string, unknown>> {
   /** Monotonic, assigned by the store on append. */
@@ -453,23 +461,8 @@ export interface WebhookSubscription {
   createdAt: string;
 }
 
-export type { WebhooksEdit } from './webhooks.ts';
+export type { DeliveryStatus, WebhookDelivery, WebhooksEdit } from './webhooks.ts';
 
-export type DeliveryStatus = 'pending' | 'retrying' | 'delivered' | 'failed';
-
-export interface WebhookDelivery {
-  id: string;
-  subscriptionId: string;
-  eventSeq: number;
-  eventType: EventType;
-  status: DeliveryStatus;
-  attempts: number;
-  lastStatusCode?: number;
-  lastError?: string;
-  nextAttemptAt?: string;
-  createdAt: string;
-  updatedAt: string;
-}
 
 // ---- Questions: src/domain/questions.ts (re-exported here) ----------------------------
 
@@ -479,11 +472,10 @@ export { ESCALATION_REASONS } from './questions.ts';
 // ---- Sources: src/domain/sources.ts (re-exported here) ------------------------------------
 
 export type { SourceStatus } from './sources.ts';
-export type { TaskCount } from './task-count.ts';
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
-export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, type ClientMachine, type SandboxesView, type ConfiguredMachine, type ContainerMachine, type HerdrSide, type HerdrVersions, type MachineHerdr, type HostKeyOffer, type HostKeyOfferOutcome, type MachineDefaults, type MachineDefaultsEdit, type MachineEdit, type SshMachine, type MachineEditOutcome, type MachinesConfig } from './machines.ts';
+export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, type ClientMachine, type SandboxesView, type ConfiguredMachine, type ContainerMachine, type HerdrSide, type HerdrVersions, type MachineHerdr, type HostKeyOffer, type HostKeyOfferOutcome, type MachineDefaults, type MachineDefaultsEdit, type MachineEdit, type SshMachine, type MachineEditOutcome, type MachinesConfig, type WindowsHost, type WindowsHostsView } from './machines.ts';
 
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
@@ -523,6 +515,7 @@ export * from './state-backend.ts';
 export * from './artifacts.ts';
 export * from './tldr.ts';
 export * from './pointed-jobs.ts';
+export * from './job-graph.ts';
 export * from './github-watch.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
@@ -535,8 +528,8 @@ export type { JobRulesView } from './job-rules.ts';
 
 // ---- Sign-in: src/domain/sign-in.ts (re-exported here) ------------------------------------
 
-export type { ApiTokenMinted, ApiTokenView, Identity, PersonView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionEndReason, SessionKind, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole } from './sign-in.ts';
-export { API_TOKEN_DEFAULT_MINUTES, API_TOKEN_MAX_MINUTES, API_TOKEN_PREFIX, DEFAULT_SESSION_LENGTHS, DEVICE_REALM_TYPES, FORM_REALM_TYPES, MAX_SESSION_HOURS, REALM_TYPES, REDIRECT_REALM_TYPES, SESSION_END_REASONS, UI_ROLES, lowerRole, roleAllows } from './sign-in.ts';
+export type { ApiGrantMinted, ApiGrantView, ApiTokenMinted, ApiTokenRefreshed, ApiTokenSettings, ApiTokenView, GrantEndReason, ScopePermission, ScopePreset, ScopeRegistry, ScopeSection, Identity, PersonView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionEndReason, SessionKind, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole } from './sign-in.ts';
+export { API_TOKEN_MINUTES, API_TOKEN_PREFIX, GRANT_DEFAULT_DAYS, GRANT_END_REASONS, GRANT_IDLE_DAYS, GRANT_MAX_DAYS, REFRESH_GRACE_MS, REFRESH_TOKEN_PREFIX, DEFAULT_SESSION_LENGTHS, DEVICE_REALM_TYPES, FORM_REALM_TYPES, MAX_SESSION_HOURS, REALM_TYPES, REDIRECT_REALM_TYPES, SESSION_END_REASONS, UI_ROLES, lowerRole, roleAllows } from './sign-in.ts';
 
 // ---- Users (issue #158): src/domain/users.ts (re-exported here) ---------------------------
 

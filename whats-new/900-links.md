@@ -1,0 +1,1 @@
+- The Jobs view graph now also shows the issues that block an issue, pull requests that build on another pull request, and each open question or hand-off that waits on you.

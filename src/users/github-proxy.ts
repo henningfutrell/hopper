@@ -3,6 +3,7 @@
 // reaches it, and git's way to the hopper (issue #652) —, the check of a token a job shows, and this user's GitHub
 // connection, which the hopper acts with for every job when this is its oldest user, and for this user's own jobs' git.
 import { createInfraPlans, type InfraPlans } from '../infra-plans/service.ts';
+import { createOutOfBandChanges, type OutOfBandChanges } from '../infra-plans/out-of-band.ts';
 import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
 import { DEFAULT_CONTRIBUTION, type Job, type MachineSnapshot, type User } from '../domain/types.ts';
 import { createReportGitHub, createReportSender, type ReportGitHub, type ReportSender } from '../bug-reports/index.ts';
@@ -11,6 +12,7 @@ import { createGitHubWatches, createWatchGitHub, type GitHubWatches } from '../g
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts';
 import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
+import { STEP_SCRIPT, STEP_SCRIPT_FILE, STEP_SCRIPT_VARIABLE } from '../windows-steps/script.ts';
 import {
   createProxyApi, holdsProxyToken, jobGitConfig, type GitUser, proxyToken, PROXY_SCRIPT, PROXY_SCRIPT_FILE, PROXY_SCRIPT_VARIABLE, PROXY_TOKEN_FILE, PROXY_TOKEN_VARIABLE,
   PROXY_URL_VARIABLE, type ProxyConnection, type ProxyUser,
@@ -34,6 +36,8 @@ export interface UserGitHubProxy {
    * because the gate reads each plan's branch head on GitHub with this user's connection.
    */
   infraPlans: InfraPlans;
+  /** The out-of-band changes (issue #871): what this user's jobs' checks report, a person's marks, the controller identities. */
+  outOfBand: OutOfBandChanges;
 }
 
 export interface UserGitHubProxyOptions {
@@ -77,9 +81,9 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       return {
         url,
         // `hopper-skill` (issue #582) asks with the same token: what the hopper can set up for this box; `hopper-artifact`
-        // (issue #624) puts what the job makes for a person to see.
-        files: { [PROXY_TOKEN_FILE]: proxyToken(o.linkPrivateKey, o.user.id, job.id), [PROXY_SCRIPT_FILE]: PROXY_SCRIPT, [SKILL_SCRIPT_FILE]: SKILL_SCRIPT, [ARTIFACT_SCRIPT_FILE]: ARTIFACT_SCRIPT },
-        paths: { [PROXY_TOKEN_VARIABLE]: PROXY_TOKEN_FILE, [PROXY_SCRIPT_VARIABLE]: PROXY_SCRIPT_FILE, [SKILL_SCRIPT_VARIABLE]: SKILL_SCRIPT_FILE, [ARTIFACT_SCRIPT_VARIABLE]: ARTIFACT_SCRIPT_FILE },
+        // (issue #624) puts what the job makes for a person to see; `hopper-step` (issue #731) runs one step on a Windows host.
+        files: { [PROXY_TOKEN_FILE]: proxyToken(o.linkPrivateKey, o.user.id, job.id), [PROXY_SCRIPT_FILE]: PROXY_SCRIPT, [SKILL_SCRIPT_FILE]: SKILL_SCRIPT, [ARTIFACT_SCRIPT_FILE]: ARTIFACT_SCRIPT, [STEP_SCRIPT_FILE]: STEP_SCRIPT },
+        paths: { [PROXY_TOKEN_VARIABLE]: PROXY_TOKEN_FILE, [PROXY_SCRIPT_VARIABLE]: PROXY_SCRIPT_FILE, [SKILL_SCRIPT_VARIABLE]: SKILL_SCRIPT_FILE, [ARTIFACT_SCRIPT_VARIABLE]: ARTIFACT_SCRIPT_FILE, [STEP_SCRIPT_VARIABLE]: STEP_SCRIPT_FILE },
         // The vault's helper (issue #558), where the machine's client serves one and the machine is a box of a template:
         // the vault gives nothing to any other machine (issue #652). It asks with this job's proxy token.
         // git's way to GitHub, through the hopper (issue #652): the job holds no GitHub token.
@@ -105,6 +109,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
           return api().head(repo, ref);
         },
       }),
+      outOfBand: createOutOfBandChanges({ store: o.store, clock: o.clock }),
       watches: createGitHubWatches({
         store: o.store, now: () => o.clock.now().toISOString(), log: (l) => o.logger.warn(l),
         github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatchGitHub(mine())),

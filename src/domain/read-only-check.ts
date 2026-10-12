@@ -40,7 +40,40 @@ export interface Probe {
  * A probe for one asset: what the check runs. `kind` is the asset's kind: it picks the credential the probe runs with.
  * `vars`: more of its environment. `notRun`: why it is not run (issue #715); it does not pass then.
  */
-export interface ProbeRun { probe: Probe; kind: AssetKind; asset: string; vars?: Record<string, string>; notRun?: string }
+export interface ProbeRun { probe: Probe; kind: AssetKind; asset: string; vars?: Record<string, string>; notRun?: string; mark?: ProbeMark }
+
+/**
+ * A person's mark on one read probe of a template (issue #916): `expect-denied`, the read must be refused, as a credential
+ * that is right refuses it (`helm.list` on a view role, which cannot read the secrets helm keeps its releases in); `skip`,
+ * the check does not run it. A write probe takes no mark: each write must be refused, always.
+ */
+export type ProbeMark = 'expect-denied' | 'skip';
+export const PROBE_MARKS: readonly ProbeMark[] = ['expect-denied', 'skip'];
+/** A template's probe marks, by probe id. */
+export type ProbeMarks = Record<string, ProbeMark>;
+/** At most this many marks on a template. */
+export const PROBE_MARKS_MAX = 64;
+
+/** Why these marks cannot be kept on a template, with the probes of `catalog`; undefined when they can. */
+export function probeMarksProblem(marks: Readonly<Record<string, string>>, catalog: readonly Pick<Probe, 'id' | 'expect'>[]): string | undefined {
+  const ids = Object.keys(marks);
+  if (ids.length > PROBE_MARKS_MAX) return `a template holds at most ${PROBE_MARKS_MAX} probe marks`;
+  for (const id of ids) {
+    const mark = marks[id]!;
+    if (!(PROBE_MARKS as readonly string[]).includes(mark)) return `${mark} is no probe mark: ${PROBE_MARKS.join(' or ')}`;
+    const probe = catalog.find((p) => p.id === id);
+    if (!probe) return `${id} is no probe: mark one of ${catalog.filter((p) => p.expect === 'allowed').map((p) => p.id).join(', ')}`;
+    if (probe.expect === 'denied') return `${id} is a write probe: a write must be refused always, so it takes no mark`;
+  }
+  return undefined;
+}
+
+/** The runs with the template's marks: a mark applies to a read probe only, so a mark on a write probe changes nothing. */
+export const markRuns = (runs: readonly ProbeRun[], marks: ProbeMarks | undefined): ProbeRun[] =>
+  runs.map((r) => {
+    const mark = marks?.[r.probe.id];
+    return mark && r.probe.expect === 'allowed' && (PROBE_MARKS as readonly string[]).includes(mark) ? { ...r, mark } : r;
+  });
 
 /**
  * The read credential a check box gets for one need (issue #797), minted for it: the environment its probes on that asset
@@ -53,14 +86,18 @@ export interface ProbeCatalog { runsFor(needs: readonly OperationProfile[]): Pro
 
 /**
  * What a probe did: `allowed` (exit 0), `denied` (failed with a refusal), `error` (failed some other way, or did not run),
- * `not-run` (the check did not run it, as it lacks what it needs: unproven, never passed; issue #715).
+ * `not-run` (the check did not run it, as it lacks what it needs: unproven, never passed; issue #715), `skipped` (a
+ * person marked it `skip`: not run, and passed; issue #916).
  */
-export type ProbeOutcome = 'allowed' | 'denied' | 'error' | 'not-run';
+export type ProbeOutcome = 'allowed' | 'denied' | 'error' | 'not-run' | 'skipped';
 
 export interface ProbeResult {
   id: string;
   asset: string;
+  /** What it expected: its probe's, or `denied` when the template marks it `expect-denied`. */
   expect: ProbeExpect;
+  /** The template's mark on it (issue #916). */
+  mark?: ProbeMark;
   outcome: ProbeOutcome;
   passed: boolean;
   /** Its exit code; absent: it did not run. */
@@ -92,6 +129,9 @@ export interface ReadOnlyCheck {
 
 /** Whether a template must pass a read-only check: one a job asked for with read needs only. */
 export interface CheckedTemplate { name: string; savedAt: string; readOnly?: boolean; check?: ReadOnlyCheck }
+
+/** The marked probes of a check, in words: `<id> on <asset> (<mark>)`. */
+export const markedProbes = (c: ReadOnlyCheck): string[] => c.probes.filter((p) => p.mark).map((p) => `${p.id} on ${p.asset} (${p.mark})`);
 
 /** The check of the template's current version; undefined when there is none. */
 export const currentCheck = (t: CheckedTemplate): ReadOnlyCheck | undefined => (t.check?.version === t.savedAt ? t.check : undefined);

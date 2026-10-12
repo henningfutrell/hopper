@@ -27,6 +27,7 @@
 //   Scenario: the read policy is shown, set and cleared (issue #716, item 1); an entry it cannot read is refused
 //   Scenario: a template's agent credential is saved with --agent-credential, kept by a later save, and dropped with none;
 //     a launch then starts the box signed in (issue #708, part 10)
+//   Scenario: a read probe is marked with --mark, a later save keeps the marks, none drops one; a write probe takes no mark (issue #916)
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import type { TemplateView } from '../../src/domain/types.ts';
@@ -177,6 +178,17 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(r.out).not.toContain(token);
     expect(kube(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--agent-credential', 'none']))!.agentCredential).toBeUndefined();
     expect(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--agent-credential', 'OTHER'])).toMatchObject({ code: 2, err: expect.stringContaining('not one of the template\'s secrets') });
+  });
+
+  it('marks a read probe with --mark; a later save keeps the marks, none drops one, and a write probe takes none (issue #916)', async () => {
+    const { a } = await boot();
+    const marks = (r: Awaited<ReturnType<typeof hopper>>) => kube(r)!.probeMarks;
+    expect(marks(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--mark', 'helm.list=expect-denied', '--mark', 'kube.get=skip']))).toEqual({ 'helm.list': 'expect-denied', 'kube.get': 'skip' });
+    expect(marks(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE]))).toEqual({ 'helm.list': 'expect-denied', 'kube.get': 'skip' });
+    expect(marks(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--mark', 'kube.get=none']))).toEqual({ 'helm.list': 'expect-denied' });
+    expect(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--mark', 'helm.install=skip'])).toMatchObject({ code: 2, err: expect.stringContaining('helm.install is a write probe') });
+    expect(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--mark', 'helm.list'])).toMatchObject({ code: 2 });
+    expect(marks(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--mark', 'helm.list=none']))).toBeUndefined();
   });
 
   it('saves a terraform workspace\'s state backend with --backend, and a later save keeps it (issue #715)', async () => {

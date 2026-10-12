@@ -36,7 +36,7 @@ describe('the read session\'s deny policy (issue #715)', () => {
     const denied = policy.Statement.flatMap((s) => s.Action ?? []);
     const isDenied = (action: string): boolean => denied.some((p) => matches(p, action));
     // The writes the read-only check's probes try (src/sandbox/probes.ts), and IAM's.
-    for (const write of ['ec2:CreateTags', 'ssm:PutParameter', 'ssm:DeleteParameter', 'iam:CreateUser', 'iam:AttachRolePolicy', 'iam:DetachRolePolicy', 'iam:PassRole', 'iam:TagRole']) expect(isDenied(write), write).toBe(true);
+    for (const write of ['ec2:CreateTags', 'ec2:CreateVpc', 'ssm:PutParameter', 'ssm:DeleteParameter', 'iam:CreateUser', 'iam:AttachRolePolicy', 'iam:DetachRolePolicy', 'iam:PassRole', 'iam:TagRole']) expect(isDenied(write), write).toBe(true);
     for (const read of ['sts:GetCallerIdentity', 'ec2:DescribeVpcs', 'ssm:GetParameter', 'iam:GetRole', 'iam:ListRoles']) expect(isDenied(read), read).toBe(false);
     const roles = policy.Statement.find((s) => s.Action?.includes('sts:AssumeRole'))!;
     expect(roles.NotResource).toBe('arn:aws:iam::123456789012:role/diag');

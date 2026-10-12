@@ -132,7 +132,7 @@ describe('a launched box\'s agent is signed in from the vault', () => {
 
     const r = await launch(a, session);
     expect(r.status).toBe(409);
-    expect(r.body.error).toMatch(/kube is not approved for its agent credential CLAUDE: approve it in Settings → Vault/);
+    expect(r.body.error).toMatch(/kube is not approved for its agent credential CLAUDE: approve it on Access requests/);
     expect(runtime.boxes.size).toBe(0);
     expect(runtime.volumes.size).toBe(0);
     expect(a.app.instance.sandboxes.list()).toEqual([]);

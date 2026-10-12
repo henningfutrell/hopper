@@ -3,9 +3,11 @@
 // works on (issue #763: the tended job follows it no more, but it is still open), grouped per job repository with its yolo mode; and the header: how many repositories have yolo mode on, and where merging waits. A
 // merged one drops off. Only the newest job of an item counts: a job run again since is not waiting. Pure: built from the
 // jobs as their follow-ups last saw them (`PullRequestSeen`), never from GitHub at read time, and the time now (the
-// no-checks grace window, issue #677).
+// no-checks grace window, issue #677). A card that needs tending says what the hopper does about it (issue #927): tended
+// next, held behind the head of its repository's tending queue, or given up on, and why.
 import type { Job } from './types.ts';
-import { followsWhenEnded, noChecksSettled, readyToMerge, type PullRequestSeen, type Tended } from './pull-requests.ts';
+import { followsWhenEnded, MAX_TENDS, noChecksSettled, readyToMerge, tendsInRow, type PullRequestSeen, type Tended } from './pull-requests.ts';
+import { queueHead, type QueueHead } from './tending-queue.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 
 // The list's repositories with no checks (issue #677) are their own module; re-exported here, as the list is in types.ts.
@@ -51,6 +53,13 @@ export interface PullRequestCard {
   mergeError?: string;
   /** Its item's tend job, which works on it now or failed to (issue #763): no Merge now or Close PR meanwhile. */
   tendJobId?: string;
+  /**
+   * One with merge conflicts or failing checks (issue #927): tended next, or held behind the pull request that holds its
+   * repository's tending queue, and why.
+   */
+  queue?: { next: true } | { held: { pullRequest: number; why: QueueHead['why'] } };
+  /** The hopper tends it no more, and why (issue #927): it waits on a person. */
+  gaveUp?: string;
 }
 
 export interface PullRequestsView {
@@ -116,16 +125,43 @@ function cardOf(job: Job, yolo: boolean, now: number, tendJob: Job | undefined):
   };
 }
 
-/** The list: `jobs` the finished ones to look at, `newest` the newest job of an item, `repos` the job repositories, `now` in ms. */
-export function pullRequestList(jobs: Job[], newest: (key: string) => Job | undefined, yolo: YoloModeSettings, repos: string[], now: number): PullRequestsView {
+/** Why the hopper tends the job's pull request no more (issue #927): its checks were fixed `MAX_TENDS` times in a row. */
+function gaveUpOn(job: Job, card: PullRequestCard, get: (id: string) => Job | undefined): string | undefined {
+  if (card.waits !== 'checks failing' || !card.pullRequest || tendsInRow(job, card.pullRequest.url, get) < MAX_TENDS) return undefined;
+  return `checks still fail after ${MAX_TENDS} fixes: a person must look at them`;
+}
+
+/**
+ * What the hopper does about each card that needs tending (issue #927): gave up, or its place in its repository's tending
+ * queue — next, or held behind the queue's head.
+ */
+function withQueue(cards: PullRequestCard[], waiting: Job[], tendJobs: Job[], repo: string, yolo: boolean, now: number, get: (id: string) => Job | undefined): PullRequestCard[] {
+  const head = queueHead(repo.toLowerCase(), [...waiting, ...tendJobs], get, () => yolo, now);
+  return cards.map((c) => {
+    if (c.state !== 'open' || (c.waits !== 'conflicts' && c.waits !== 'checks failing')) return c;
+    const job = waiting.find((j) => j.id === c.jobId)!;
+    const gaveUp = gaveUpOn(job, c, get);
+    if (gaveUp) return { ...c, gaveUp };
+    const held = head && head.pullRequest !== c.pullRequest?.url;
+    return { ...c, queue: held ? { held: { pullRequest: numberOf(head.pullRequest), why: head.why } } : { next: true } };
+  });
+}
+
+/**
+ * The list: `jobs` the finished ones to look at, `newest` the newest job of an item, `repos` the job repositories, `now` in
+ * ms, `get` a job by id (a tend's chain, issue #927).
+ */
+export function pullRequestList(jobs: Job[], newest: (key: string) => Job | undefined, yolo: YoloModeSettings, repos: string[], now: number, get: (id: string) => Job | undefined): PullRequestsView {
   const waiting = jobs.filter((j) => waitsOnPullRequest(j, newest));
   const names: string[] = [];
   for (const r of [...repos, ...waiting.map((j) => j.source!.repo!)]) if (!names.some((n) => n.toLowerCase() === r.toLowerCase())) names.push(r);
   const groups = names.map((repo) => {
     const on = yoloModeFor(yolo, repo);
-    const cards = waiting.filter((j) => j.source!.repo!.toLowerCase() === repo.toLowerCase()).map((j) => cardOf(j, on, now, tendJobOf(j, newest)))
+    const here = waiting.filter((j) => j.source!.repo!.toLowerCase() === repo.toLowerCase());
+    const tendJobs = here.flatMap((j) => tendJobOf(j, newest) ?? []);
+    const cards = here.map((j) => cardOf(j, on, now, tendJobOf(j, newest)))
       .sort((a, b) => (a.openedAt ?? a.since ?? '').localeCompare(b.openedAt ?? b.since ?? '') || a.jobId.localeCompare(b.jobId));
-    return { repo, yolo: on, pullRequests: cards };
+    return { repo, yolo: on, pullRequests: withQueue(cards, here, tendJobs, repo, on, now, get) };
   });
   const counts = new Map<string, { repo: string; count: number; reason: MergeWait }>();
   for (const c of groups.flatMap((g) => g.pullRequests)) {

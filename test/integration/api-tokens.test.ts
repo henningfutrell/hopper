@@ -8,12 +8,12 @@
 // Feature: API tokens
 //   Scenario: a person mints a token, and an agent with it sets a secret, saves and approves a template and launches a box
 //     Given a hopper with a master key, a machine and OpenFGA
-//     When the admin mints an API token for 15 minutes in the UI, as a box token (issue #795: a launch is a box action)
-//     Then the token is answered once and listed with no value
+//     When the admin mints a grant in the UI, as a box grant (issue #795: a launch is a box action; issue #881: a grant)
+//     Then its access token and refresh token are answered once, and the grant is listed with neither
 //     And with only `Authorization: Bearer <token>` — no UI session, no Origin — the agent sets a vault secret, saves and
 //       approves a template, and launches a sandbox box of it
 //   Scenario: every POST /ui/api/* route takes an API token: a refusal is the role's, never the session's or the Origin's
-//   Scenario: a token acts with the role it was minted with, at most an hour, and never mints a token
+//   Scenario: a token acts with the role it was minted with, for the admin's lifetime at most, and never mints a token
 //   Scenario: revoked, a token is refused; a token the hopper never made is refused and never sent to GitHub
 //   Scenario: Access decides each use: a model that denies can_administer refuses the token's admin actions only
 //   Scenario: without OpenFGA, no API token is minted
@@ -67,7 +67,7 @@ async function agent(a: TestApp, method: 'GET' | 'POST', path: string, token: st
 }
 
 async function mint(a: TestApp, session: string, body: Record<string, unknown> = {}): Promise<Answer> {
-  const r = await a.ui('/ui/api/api-tokens', { action: 'mint', label: 'grok-bot', ...body }, { token: session });
+  const r = await a.ui('/ui/api/api-tokens', { action: 'mint', label: 'grok-bot', scopes: ['*'], ...body }, { token: session });
   return { status: r.status, body: r.body, text: JSON.stringify(r.body) };
 }
 
@@ -76,19 +76,21 @@ describe('API tokens (issue #718)', () => {
     const { a, runtime } = await boot();
     const session = await a.login();
     const before = Date.now();
-    const minted = await mint(a, session, { minutes: 15, box: true });
+    const minted = await mint(a, session, { minutes: 10, box: true });
     expect(minted.status).toBe(200);
-    expect(minted.body).toMatchObject({ label: 'grok-bot', role: 'admin', box: true, token: expect.stringMatching(TOKEN), id: expect.any(String) });
+    expect(minted.body).toMatchObject({ view: { label: 'grok-bot', role: 'admin', box: true }, token: expect.stringMatching(TOKEN), refresh: expect.any(String), grant: expect.any(String) });
     const expires = Date.parse(minted.body.expiresAt);
     expect(expires).toBeGreaterThan(before);
-    expect(expires).toBeLessThanOrEqual(Date.now() + 15 * 60_000);
+    expect(expires).toBeLessThanOrEqual(Date.now() + 10 * 60_000);
     const token = minted.body.token as string;
 
-    // Listed, never with the token; the token is no UI session: in the session header it acts for nobody.
+    // Listed, never with a token; the token is no UI session: in the session header it acts for nobody.
     const listed = await a.api('GET', '/api/api-tokens', undefined, { 'x-hopper-session': session });
     expect(listed.status).toBe(200);
-    expect(listed.body.tokens).toEqual([expect.objectContaining({ id: minted.body.id, label: 'grok-bot', role: 'admin', expiresAt: minted.body.expiresAt })]);
+    expect(listed.body.grants).toEqual([expect.objectContaining({ id: minted.body.grant, label: 'grok-bot', role: 'admin', box: true })]);
+    expect(listed.body.tokens).toEqual([]);
     expect(JSON.stringify(listed.body)).not.toContain(token);
+    expect(JSON.stringify(listed.body)).not.toContain(minted.body.refresh);
     expect((await a.ui('/ui/api/queue/order', { jobIds: [] }, { token })).status).toBe(403);
 
     // The agent: the token alone.
@@ -122,7 +124,7 @@ describe('API tokens (issue #718)', () => {
     expect((await agent(a, 'GET', '/api/queue', viewer)).status).toBe(401);
   });
 
-  it('a token acts with the role it was minted with, lives an hour at most, and never mints a token', async () => {
+  it('a token acts with the role it was minted with, lives the admin\'s lifetime at most, and never mints a token', async () => {
     const { a } = await boot();
     const session = await a.login();
     const operator = (await mint(a, session, { role: 'operator' })).body.token as string;
@@ -131,7 +133,9 @@ describe('API tokens (issue #718)', () => {
     expect(refused.body).toMatchObject({ needs: 'admin' });
     expect((await agent(a, 'POST', '/ui/api/queue/order', operator, { jobIds: [] })).status).toBe(200);
 
-    expect((await mint(a, session, { minutes: 61 })).status).toBe(400);
+    expect((await mint(a, session, { minutes: 16 })).status).toBe(400);
+    // Above the admin's lifetime (10 minutes by default), though in the bounds.
+    expect((await mint(a, session, { minutes: 12 })).body.error).toMatch(/at most 10 minutes/);
     const chained = await agent(a, 'POST', '/ui/api/api-tokens', operator, { action: 'mint', label: 'again' });
     expect(chained.status).toBe(403);
     expect(chained.body.error).toMatch(/API token/);
@@ -140,11 +144,11 @@ describe('API tokens (issue #718)', () => {
   it('a revoked token is refused; a token the hopper never made is refused and never sent to GitHub', async () => {
     const { a } = await boot();
     const session = await a.login();
-    const minted = (await mint(a, session)).body as { token: string; id: string };
+    const minted = (await mint(a, session)).body as { token: string; grant: string };
     expect((await agent(a, 'GET', '/api/queue', minted.token)).status).toBe(200);
-    const revoked = await a.ui<{ tokens: unknown[] }>('/ui/api/api-tokens', { action: 'revoke', id: minted.id }, { token: session });
+    const revoked = await a.ui<{ grants: unknown[] }>('/ui/api/api-tokens', { action: 'revoke', id: minted.grant }, { token: session });
     expect(revoked.status).toBe(200);
-    expect(revoked.body.tokens).toEqual([]);
+    expect(revoked.body.grants).toEqual([]);
     expect((await agent(a, 'GET', '/api/queue', minted.token)).status).toBe(401);
     expect((await agent(a, 'POST', '/ui/api/queue/order', minted.token, { jobIds: [] })).status).toBe(403);
 
@@ -213,18 +217,21 @@ describe('API tokens (issue #718)', () => {
       const code = await runCli([...argv, '--url', a.url], io);
       return { code, out: out.join(''), err: err.join('') };
     };
-    const minted = await hopper(['token', 'mint', '--label', 'grok-bot', '--role', 'operator', '--minutes', '10']);
+    const minted = await hopper(['token', 'mint', '--label', 'grok-bot', '--scope', 'queue:*', '--scope', '*:read', '--role', 'operator', '--minutes', '5']);
     expect(minted).toMatchObject({ code: 0 });
-    const m = JSON.parse(minted.out) as { token: string; id: string; role: string };
-    expect(m).toMatchObject({ role: 'operator', token: expect.stringMatching(TOKEN) });
+    const m = JSON.parse(minted.out) as { token: string; refresh: string; grant: string; view: { role: string } };
+    expect(m).toMatchObject({ view: { role: 'operator', scopes: ['*:read', 'queue:*'] }, token: expect.stringMatching(TOKEN) });
     expect((await agent(a, 'POST', '/ui/api/queue/order', m.token, { jobIds: [] })).status).toBe(200);
+    // A grant the CLI minted outlives the CLI's own session: its refresh token works after the call.
+    expect((await rawRequest(a.url, { method: 'POST', path: '/ui/auth/token/refresh', body: JSON.stringify({ refresh: m.refresh }), headers: { 'content-type': 'application/json' } })).status).toBe(200);
 
     const list = await hopper(['token', 'list']);
     expect(list.code).toBe(0);
-    expect(JSON.parse(list.out).tokens).toEqual([expect.objectContaining({ id: m.id, label: 'grok-bot', role: 'operator' })]);
+    expect(JSON.parse(list.out).grants).toEqual([expect.objectContaining({ id: m.grant, label: 'grok-bot', role: 'operator' })]);
     expect(list.out).not.toContain(m.token);
-    expect((await hopper(['token', 'revoke', m.id])).code).toBe(0);
+    expect((await hopper(['token', 'revoke', m.grant])).code).toBe(0);
     expect((await agent(a, 'GET', '/api/queue', m.token)).status).toBe(401);
     expect(await hopper(['token', 'mint'])).toMatchObject({ code: 2, err: expect.stringContaining('--label') });
+    expect(await hopper(['token', 'mint', '--label', 'x'])).toMatchObject({ code: 2, err: expect.stringContaining('--scope') });
   });
 });

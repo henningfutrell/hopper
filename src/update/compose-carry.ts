@@ -1,13 +1,15 @@
 // What an install changed in its compose.yaml, moved out of it (issue #697): the compose file the image ships with replaces it whole at
-// each update, so the install's own settings live in .env — the published port's bind address (HOPPER_BIND) and port, and
-// the hopper's settings it set in place or with another default than the new file's (`hopper update carry`). What .env cannot
-// hold moves to compose.override.yaml, which compose reads beside it (`hopper update override`): a service of the install's
-// own with the volumes it names, a host folder mounted into a service, a key of a service the hopper never sets, and the
-// project name, when the install gave its own. The
-// update script runs both.
+// each update. The install's own settings — the published port's bind address (HOPPER_BIND) and port, and the hopper's
+// settings it set in place or with another default than the new file's — and the lines of an old `.env` become the defaults
+// of the new compose.yaml's own variables (`hopper update carry`, issue #894: no `.env`, so compose reads no file but its
+// compose files). What compose.yaml cannot name moves to compose.override.yaml, which compose reads beside it (`hopper update
+// override`): a service of the install's own with the volumes it names, a host folder mounted into a service, a key of a
+// service the hopper never sets, a setting compose.yaml does not name, and the project name, when the install gave its own.
+// A secret is in no file: the master key and every other secret are given at launch. The update script runs both.
+import { parseEnv } from 'node:util';
 import { isMap, parse, parseDocument, type Document } from 'yaml';
 
-/** The `.env` lines to add, in order, and what a person must move by hand. */
+/** The settings to keep, as `KEY=value` lines in order, and what a person must move by hand. */
 export interface Carried {
   env: string[];
   notes: string[];
@@ -79,12 +81,17 @@ function publishedPort(s: Service): { host: string | undefined; published: strin
 
 const literal = (v: string): boolean => !v.includes('$');
 
+/** A port part's value: itself, or the default of the variable it is (what an earlier update set, issue #894). */
+const resolved = (part: string): string => VARIABLE.exec(part)?.[2] ?? part;
+
 function carryPort(s: Service, add: (line: string) => void): void {
   const port = publishedPort(s);
   if (!port) return;
-  if (port.host === undefined) add('HOPPER_BIND=0.0.0.0');
-  else if (literal(port.host) && port.host !== LOOPBACK) add(`HOPPER_BIND=${port.host}`);
-  if (literal(port.published) && port.published !== DEFAULT_PORT) add(`HOPPER_PORT=${port.published}`);
+  const host = port.host === undefined ? undefined : resolved(port.host);
+  const published = resolved(port.published);
+  if (host === undefined) add('HOPPER_BIND=0.0.0.0');
+  else if (literal(host) && host !== LOOPBACK) add(`HOPPER_BIND=${host}`);
+  if (literal(published) && published !== DEFAULT_PORT) add(`HOPPER_PORT=${published}`);
 }
 
 /** A setting the install gave in place, or under another default than the new compose file's: its value, else undefined. */
@@ -119,8 +126,70 @@ export function carryLocalSettings(oldText: string, newText: string): Carried {
   return { env, notes: [] };
 }
 
+/** The new compose.yaml and the hopper settings it cannot name, for compose.override.yaml (`carryOverride`'s `env`). */
+export interface CarriedCompose {
+  compose: string;
+  overrideEnv: Record<string, string>;
+  notes: string[];
+}
+
+const MASTER_KEY = 'HOPPER_MASTER_KEY';
+/** A secret's name: never written to a file, given at launch (issue #894). A path to one, or a URL, is no secret. */
+export const isSecretName = (key: string): boolean => /KEY|TOKEN|SECRET|PASSWORD/.test(key) && !/_(FILE|URL|API)$/.test(key);
+/** A value safe as a variable's default inside the file's quoted strings. */
+const SAFE_DEFAULT = /^[A-Za-z0-9._:/@,+=%-]*$/;
+/** `${KEY}`, `${KEY:-…}` or `${KEY-…}`, not escaped as `$${…}` (a shell's own variable in a command). */
+const variableOf = (key: string): RegExp => new RegExp(`(?<!\\$)\\$\\{${key}(?::?-[^}]*)?\\}`, 'g');
+/** `profiles: [a, b]` of a service, as the shipped file writes it. */
+const PROFILES_LINE = /^ {4}profiles: \[([^\]]*)\]\n/gm;
+
+/**
+ * The compose.yaml an update puts in: `shipped` (the image's own) with what the install set — in `old` (its compose.yaml)
+ * and in `dotenv` (its old `.env`, which wins, as compose read it last) — as the defaults of the file's own variables, and
+ * `image` as HOPPER_IMAGE's; `launch` (the settings the update was launched with, `KEY=value` lines) wins over both, as
+ * it did in compose. COMPOSE_PROFILES turns its services on in the file. A secret is in no file: a launch setting.
+ */
+export function carryCompose(o: { old: string; shipped: string; dotenv: string; launch?: string; image: string }): CarriedCompose {
+  const local = carryLocalSettings(o.old, o.shipped);
+  const values = new Map<string, string>();
+  for (const line of local.env) values.set(line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1));
+  const notes = [...local.notes];
+  for (const [what, text] of [['.env', o.dotenv], ['the launch settings', o.launch ?? '']] as const) {
+    let read: Record<string, string> = {};
+    try {
+      read = parseEnv(text) as Record<string, string>;
+    } catch (e) {
+      notes.push(`${what} not read (${(e as Error).message}): nothing moved from it`);
+    }
+    for (const [k, v] of Object.entries(read)) if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) values.set(k, v);
+  }
+  values.set('HOPPER_IMAGE', o.image);
+  let compose = o.shipped;
+  const overrideEnv: Record<string, string> = {};
+  for (const [key, value] of values) {
+    const named = variableOf(key).test(compose);
+    if (isSecretName(key)) {
+      if (!named) overrideEnv[key] = `\${${key}:-}`;
+      notes.push(`${key}: in no file: give it at launch${key === MASTER_KEY ? ' (the update takes it from .env or the running hopper)' : ''}`);
+      continue;
+    }
+    if (key === 'COMPOSE_PROFILES') {
+      const on = new Set(value.split(',').map((p) => p.trim()).filter(Boolean));
+      compose = compose.replace(PROFILES_LINE, (line, list: string) => (list.split(',').some((p) => on.has(p.trim())) ? '' : line));
+    }
+    if (named && SAFE_DEFAULT.test(value)) {
+      compose = compose.replace(variableOf(key), `\${${key}:-${value}}`);
+      if (key !== 'HOPPER_IMAGE') notes.push(`${key}: set in compose.yaml`);
+    } else {
+      overrideEnv[key] = value.replaceAll('$', '$$$$');
+      notes.push(`${key}: moved to compose.override.yaml`);
+    }
+  }
+  return { compose, overrideEnv, notes };
+}
+
 /** Every service a hopper compose.yaml has shipped: one the new file lacks is the hopper's, retired, never the install's. */
-const SHIPPED_SERVICES = new Set(['postgres', 'hopper', 'secrets', 'openfga', 'openfga-migrate', 'hopper-vault', 'kms', 'vault']);
+const SHIPPED_SERVICES = new Set(['postgres', 'hopper', 'secrets', 'openfga', 'openfga-migrate', 'hopper-vault', 'kms', 'vault', 'tunnel']);
 /** Every key a shipped service has set: the hopper's to change, so never carried. */
 const SHIPPED_KEYS = new Set(['build', 'command', 'depends_on', 'entrypoint', 'env_file', 'environment', 'healthcheck', 'image', 'ports', 'profiles', 'restart', 'user', 'volumes', 'working_dir']);
 /** A volume entry that mounts a host folder or file: the install's own, as a shipped file mounts only named volumes. */
@@ -148,7 +217,7 @@ function namedVolumes(services: Record<string, unknown>[], declared: Record<stri
  * update puts in) cannot: `overrideText` (the install's own override, if any) with what moves added, its comments kept;
  * nothing it already has is replaced.
  */
-export function carryOverride(oldText: string, newText: string, overrideText: string | undefined): CarriedOverride {
+export function carryOverride(oldText: string, newText: string, overrideText: string | undefined, env: Record<string, string> = {}): CarriedOverride {
   const old = services(oldText);
   if (typeof old === 'string') return { override: undefined, notes: [`the old compose.yaml was not read (${old}): nothing moved to ${OVERRIDE}`] };
   const nextDoc = parse(newText) as { name?: unknown; services?: Record<string, Record<string, unknown>>; volumes?: Record<string, unknown> } | null;
@@ -203,6 +272,12 @@ export function carryOverride(oldText: string, newText: string, overrideText: st
   }
   for (const volume of namedVolumes(movedServices, nextDoc?.volumes ?? {})) {
     put(['volumes', volume], null, `volume ${volume}`, `volume ${volume}`);
+  }
+  // The hopper's settings compose.yaml does not name (`carryCompose`); `carryCompose` names each.
+  for (const [key, value] of Object.entries(env)) {
+    if (has(['services', 'hopper', 'environment', key])) { notes.push(`hopper: ${key}: ${OVERRIDE} has it already, kept`); continue; }
+    doc.setIn(['services', 'hopper', 'environment', key], doc.createNode(value));
+    moved = true;
   }
   if (!moved) return { override: undefined, notes };
   if (overrideText === undefined || !overrideText.trim()) doc.commentBefore = HEADER;

@@ -1,0 +1,1 @@
+- An agent's grant can now allow one action only, such as approving request cards or vault templates, and nothing else on that page. The grant form lists each action under its permission.

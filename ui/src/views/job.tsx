@@ -8,7 +8,7 @@ import { JobTitle, LinkLostFlag } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { get } from '@/lib/api';
-import { laneName } from '@/model/board';
+import { laneName, machineName } from '@/model/board';
 import type { DomainEvent, Job } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useJobName } from '@/store/selectors';
@@ -70,6 +70,11 @@ export function JobView() {
             <Fact label="created">{read.job.createdAt}</Fact>
             {read.job.startedAt && <Fact label="started">{read.job.startedAt}</Fact>}
             {read.job.finishedAt && <Fact label="ended">{read.job.finishedAt}</Fact>}
+            {read.job.checkpoint && (
+              <Fact label="checkpoint">
+                <span data-slot="checkpoint">{read.job.checkpoint.at} on {machineName(read.job.checkpoint.machineId, machines)}, {Math.ceil(read.job.checkpoint.bytes / 1024)} KiB{read.job.checkpoint.session ? '' : ', no agent session'}{read.job.checkpoint.commits.length ? `, ${read.job.checkpoint.commits.length} commits not pushed` : ''}</span>
+              </Fact>
+            )}
             {read.job.error && <Fact label="error"><span className="text-bad">{read.job.error}</span></Fact>}
           </>
         )}

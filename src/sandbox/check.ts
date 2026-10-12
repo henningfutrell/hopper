@@ -15,7 +15,7 @@
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import type { CheckCredential, ProbeCatalog, ReadOnlyCheck } from '../domain/read-only-check.ts';
-import { currentCheck, workspaceRole } from '../domain/read-only-check.ts';
+import { currentCheck, markRuns, workspaceRole } from '../domain/read-only-check.ts';
 import type { ContainerRuntime, ResourceLimits } from '../domain/sandboxes.ts';
 import { imageApproved, type Template } from '../domain/vault.ts';
 import { keepReport, type ReportUser } from './check-report.ts';
@@ -125,7 +125,8 @@ async function credentialsFor(c: CheckContext, userId: string, t: Template, name
 /** One check of the template's current version, in a check box; the box and its volume are removed after it. */
 export async function runCheck(c: CheckContext, userId: string, t: Template, name: string): Promise<ReadOnlyCheck> {
   const needs = (t.profiles ?? []).filter((p) => p.operation === 'read');
-  const runs = c.probes.runsFor(needs);
+  // A person's marks on its read probes (issue #916): an expected refusal, or a probe not run.
+  const runs = markRuns(c.probes.runsFor(needs), t.probeMarks);
   const ended = (state: 'passed' | 'failed', probes: ReadOnlyCheck['probes'], problem?: string): ReadOnlyCheck =>
     ({ version: t.savedAt, state, at: c.clock.now().toISOString(), probes, ...(problem ? { problem } : {}) });
   if (runs.length === 0) return ended('failed', [], 'no probe checks its needs: it cannot pass');

@@ -933,15 +933,17 @@ Version 1 (`docs/schemas/job.parked.v1.json`). A person, or auto-park (issue #65
 
 ## `job.unparked`
 
-Version 1 (`docs/schemas/job.unparked.v1.json`). A person re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again.
+Version 1 (`docs/schemas/job.unparked.v1.json`). A person re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again. `elsewhere` (issue #921): picked up to resume on another machine from its checkpoint: it is not pinned to its machine, and its claim rebuilds its work tree from the checkpoint on the machine it gets and resumes its agent session there.
 
 | field | type | required |
 |---|---|---|
 | `to` | `queued` \| `waiting_answer` | yes |
+| `elsewhere` | boolean | no |
 
 ```json
 {
-  "to": "queued"
+  "to": "queued",
+  "elsewhere": true
 }
 ```
 
@@ -989,6 +991,26 @@ Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wa
 {
   "by": "person",
   "note": "Write access is granted."
+}
+```
+
+## `job.checkpointed`
+
+Version 1 (`docs/schemas/job.checkpointed.v1.json`). A checkpoint of a job at work, or of one just parked, was taken and kept (issue #921): its agent session and its work not pushed, read on `machineId`, scrubbed of secrets. `bytes`: its size compressed. `session`: whether it holds the agent session (without it, the job cannot resume elsewhere). `commits`: the commits not pushed then. Only the latest checkpoint of a job is kept.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `bytes` | integer | yes |
+| `session` | boolean | yes |
+| `commits` | integer | yes |
+
+```json
+{
+  "machineId": "laptop",
+  "bytes": 48213,
+  "session": true,
+  "commits": 2
 }
 ```
 
@@ -2564,6 +2586,31 @@ Version 1 (`docs/schemas/github_rate_limiter.settings_changed.v1.json`). The hop
 }
 ```
 
+## `remote_access.changed`
+
+Version 1 (`docs/schemas/remote_access.changed.v1.json`). The hopper's admin changed remote access (issue #880): the tunnel on or off (`enabled`) the domain reserved at ngrok (`domain`) and when the admin last started the tunnel again (`restartedAt`), `from` and `to`; `authtoken`: the ngrok authtoken was `set` or `removed` (never its value: it is the system secret `remote-access.ngrok-authtoken`). `by` is `hopper` when a start moved NGROK_AUTHTOKEN from the environment. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `authtoken` | `set` \| `removed` | no |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "enabled": false
+  },
+  "to": {
+    "enabled": true,
+    "domain": "hopper.example.ngrok.app"
+  },
+  "authtoken": "set",
+  "by": "admin"
+}
+```
+
 ## `question.thread_held`
 
 Version 1 (`docs/schemas/question.thread_held.v1.json`). A question at the human stage of a GitHub job waits on a person before it goes on its issue thread (issue #435): the policy for the repository (`otherRepos` or `ownRepos`) is `review`. Approve it to post it; an answer in the hopper works as before.
@@ -2809,7 +2856,7 @@ Version 1 (`docs/schemas/vault.master_key_rotated.v1.json`). The hopper's admin 
 
 ## `template.saved`
 
-Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image, the tools the hopper adds to it (issue #716), and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584) — a `terraform-workspace` profile with its state `backend` (`bucket`, `region`, `keyPrefix`; issue #715), which the read-only check probes and no approval covers —, and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
+Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image, the tools the hopper adds to it (issue #716), and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584) — a `terraform-workspace` profile with its state `backend` (`bucket`, `region`, `keyPrefix`; issue #715), which the read-only check probes and no approval covers —, its `probeMarks` when it has any (issue #916: a read probe of the read-only check marked `expect-denied` or `skip`), and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
 
 | field | type | required |
 |---|---|---|
@@ -2818,6 +2865,7 @@ Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #
 | `tools` | string[] | no |
 | `secrets` | string[] | yes |
 | `profiles` | object[] | no |
+| `probeMarks` | object | no |
 | `by` | string | yes |
 
 ```json
@@ -3005,7 +3053,7 @@ Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret
 
 ## `vault.minted`
 
-Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Settings → Access); `renewal` when the job had one for that profile before. `plan` (issue #870): the approved, current plan an operation that changes infrastructure named. Never the credential.
+Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Settings → Access); `renewal` when the job had one for that profile before. `plan` (issue #870): the approved, current plan an operation that changes infrastructure named. `principal` (issue #871): who the credential writes as, as an audit log names it (the assumed role's session, the service account), so a write it made while valid is not out of band. Never the credential.
 
 | field | type | required |
 |---|---|---|
@@ -3020,6 +3068,7 @@ Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived 
 | `expiresAt` | string | yes |
 | `renewal` | boolean | yes |
 | `plan` | string | no |
+| `principal` | string | no |
 
 ```json
 {
@@ -3035,7 +3084,8 @@ Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived 
   "credential": "KUBE_LAB",
   "decision": "6c1d2e3f-0000-4000-8000-000000000002",
   "expiresAt": "2026-10-09T12:10:00.000Z",
-  "renewal": false
+  "renewal": false,
+  "principal": "system:serviceaccount:web:hopper-read"
 }
 ```
 
@@ -3065,7 +3115,7 @@ Version 1 (`docs/schemas/vault.mint_refused.v1.json`). A box asked the vault to 
   "machine": "hopper-sandbox-kube",
   "template": "kube",
   "job": "f3b1c2d4-0000-4000-8000-000000000001",
-  "reason": "Access denied it: template kube is not approved to write on namespace lab/web. write on namespace lab/web waits for a person's approval on Settings → Vault (the first-time gate)",
+  "reason": "Access denied it: template kube is not approved to write on namespace lab/web. write on namespace lab/web waits for a person's approval on Access requests (the first-time gate)",
   "decision": "6c1d2e3f-0000-4000-8000-000000000003"
 }
 ```
@@ -3279,14 +3329,15 @@ Version 1 (`docs/schemas/vault.read_policy_set.v1.json`). An admin set the read 
 
 ## `vault.grant_asked`
 
-Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the vault for a secret or a minted credential, and its item has no vault grant (issue #652): it was refused, and the hopper asked a person to grant it the vault (Settings → Vault). The job, its item's key, the machine, the template, and the first thing it asked for (a secret's name, or `<kind> <operation> <asset>`). Once per job.
+Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the vault for a secret or a minted credential, or a job's Windows sandbox step asked for a vault secret (issue #731), and its item has no vault grant (issue #652): it was refused, and the hopper asked a person to grant it the vault (Settings → Vault). The job, its item's key, the machine and the template (a box), or the `windowsHost` (a step), and the first thing it asked for (a secret's name, or `<kind> <operation> <asset>`). Once per job.
 
 | field | type | required |
 |---|---|---|
 | `job` | string | yes |
 | `key` | string | yes |
-| `machine` | string | yes |
-| `template` | string | yes |
+| `machine` | string | no |
+| `template` | string | no |
+| `windowsHost` | string | no |
 | `name` | string | yes |
 
 ```json
@@ -4278,7 +4329,7 @@ Version 1 (`docs/schemas/github_watch.settings_changed.v1.json`). A person chang
 
 ## `infra.plan_recorded`
 
-Version 1 (`docs/schemas/infra.plan_recorded.v1.json`). A job recorded a plan of an infrastructure change (issue #870): what made it (`tool`), the asset an apply of it is minted a credential for, the workspace or app it changes (`target`), the repository, branch (`ref`) and commit it was made at, its pull request, the read profile it was made with (`read`), the job's issue, whether a saved plan file came with it (`file`), and when it goes stale (`expiresAt`). Never its text or its file. A plan is never changed once kept.
+Version 1 (`docs/schemas/infra.plan_recorded.v1.json`). A job recorded a plan of an infrastructure change (issue #870): what made it (`tool`), the asset an apply of it is minted a credential for, the workspace or app it changes (`target`), the repository, branch (`ref`) and commit it was made at, its pull request, the read profile it was made with (`read`), the job's issue, whether a saved plan file came with it (`file`), when it goes stale (`expiresAt`), and its `summary` (issue #870 part 2): what it changes in plain words, its `level` (`low` or `high`), its risk callouts (`destroy`, `iam`, `prod`, `data`, `network`), and whether it `failed` a check (a new AWS resource without the MAP tag: nobody approves such a plan). Never its text or its file. A plan is never changed once kept.
 
 | field | type | required |
 |---|---|---|
@@ -4294,6 +4345,7 @@ Version 1 (`docs/schemas/infra.plan_recorded.v1.json`). A job recorded a plan of
 | `issue` | string | no |
 | `file` | boolean | yes |
 | `expiresAt` | string | yes |
+| `summary` | object | no |
 
 ```json
 {
@@ -4311,13 +4363,21 @@ Version 1 (`docs/schemas/infra.plan_recorded.v1.json`). A job recorded a plan of
   "read": "read/aws-role/123456789012/readonly",
   "issue": "https://github.com/octo-org/infra/issues/12",
   "file": true,
-  "expiresAt": "2026-10-12T11:00:00.000Z"
+  "expiresAt": "2026-10-12T11:00:00.000Z",
+  "summary": {
+    "words": "Adds 2 security group rules in uat; changes nothing in prod; destroys nothing",
+    "level": "low",
+    "risks": [
+      "network"
+    ],
+    "failed": false
+  }
 }
 ```
 
 ## `infra.plan_approved`
 
-Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan of an infrastructure change (issue #870), on Infra changes: until the plan is stale, an apply that names it, made at the commit its branch is at, is minted the credential it asks. On the timeline of the job that recorded the plan.
+Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan of an infrastructure change (issue #870), on Infra: until the plan is stale, an apply that names it, made at the commit its branch is at, is minted the credential it asks. On the timeline of the job that recorded the plan.
 
 | field | type | required |
 |---|---|---|
@@ -4337,5 +4397,291 @@ Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan
   },
   "target": "uat-network",
   "by": "Ada"
+}
+```
+
+## `infra.out_of_band_recorded`
+
+Version 1 (`docs/schemas/infra.out_of_band_recorded.v1.json`). A read-only check — a job's, or an outside collector's with an API token (part 2) — reported an infrastructure change that did not come through IaC or GitOps (issue #871): drift (`gitops`: an app out of sync; `terraform-plan`: a non-empty plan on unchanged code) or an audit-log write (`cloudtrail`, `kube-audit`) by a principal that is no controller identity and no plan-bound apply credential. What changed (`target`), the action in the source's words (`what`), who (`who`), when (`at`), the signal's own id (`key`), and who reported it: the job whose check did and its issue, or the collector (`reporter`, its API token's label), then on no job's timeline. Never the signal's detail. On Infra until a person marks it; the notifiers send it.
+
+| field | type | required |
+|---|---|---|
+| `change` | string | yes |
+| `source` | `gitops` \| `terraform-plan` \| `cloudtrail` \| `kube-audit` | yes |
+| `key` | string | yes |
+| `target` | string | yes |
+| `what` | string | yes |
+| `who` | string | no |
+| `at` | string | yes |
+| `job` | string | no |
+| `issue` | string | no |
+| `reporter` | string | no |
+
+```json
+{
+  "change": "5d2c7a10-0000-4000-8000-000000000871",
+  "source": "cloudtrail",
+  "key": "6f0e8d2a-1b3c-4d5e-9f00-0a1b2c3d4e5f",
+  "target": "sg-0abc1234",
+  "what": "ec2:AuthorizeSecurityGroupIngress",
+  "who": "arn:aws:sts::123456789012:assumed-role/Admin/console",
+  "at": "2026-10-12T09:41:00Z",
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "issue": "https://github.com/octo-org/infra/issues/20"
+}
+```
+
+## `infra.out_of_band_marked`
+
+Version 1 (`docs/schemas/infra.out_of_band_marked.v1.json`). A person marked an out-of-band change on Infra (issue #871): `adopted` (brought back into git), `reverted`, or `accepted` with its `reason`. Tracking only: the hopper reverts nothing. On the timeline of the job whose check reported the change.
+
+| field | type | required |
+|---|---|---|
+| `change` | string | yes |
+| `source` | `gitops` \| `terraform-plan` \| `cloudtrail` \| `kube-audit` | yes |
+| `target` | string | yes |
+| `what` | string | yes |
+| `mark` | `adopted` \| `reverted` \| `accepted` | yes |
+| `reason` | string | no |
+| `by` | string | yes |
+
+```json
+{
+  "change": "5d2c7a10-0000-4000-8000-000000000871",
+  "source": "cloudtrail",
+  "target": "sg-0abc1234",
+  "what": "ec2:AuthorizeSecurityGroupIngress",
+  "mark": "accepted",
+  "reason": "break-glass fix during the outage; the rule goes into git next",
+  "by": "Ada"
+}
+```
+
+## `infra.controllers_changed`
+
+Version 1 (`docs/schemas/infra.controllers_changed.v1.json`). An admin changed the controller identities (issue #871): the principals whose writes are GitOps's, not out of band. A trailing `*` names a group. `from` and `to` are the whole lists.
+
+| field | type | required |
+|---|---|---|
+| `from` | string[] | yes |
+| `to` | string[] | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": [],
+  "to": [
+    "system:serviceaccount:argocd:argocd-application-controller",
+    "arn:aws:sts::123456789012:assumed-role/atlantis/*"
+  ],
+  "by": "Ada"
+}
+```
+
+## `api_grant.minted`
+
+Version 1 (`docs/schemas/api_grant.minted.v1.json`). A person minted a grant for an agent (issue #881): its id, `label`, `holder`, `role`, `scopes`, whether its tokens are box tokens (`box`), its fixed end (`endsAt`, null: none) and how long its API tokens live (`tokenMinutes`). Never a token.
+
+| field | type | required |
+|---|---|---|
+| `grant` | string | yes |
+| `label` | string | yes |
+| `holder` | string | no |
+| `role` | `viewer` \| `operator` \| `admin` | yes |
+| `scopes` | string[] | yes |
+| `box` | boolean | yes |
+| `endsAt` | string \| null | yes |
+| `tokenMinutes` | integer | yes |
+
+```json
+{
+  "grant": "3f9a0c2e5b7d1e48",
+  "label": "Grok Bot",
+  "holder": "grok-bot",
+  "role": "operator",
+  "scopes": [
+    "questions:answer",
+    "sources:intake",
+    "*:read"
+  ],
+  "box": true,
+  "endsAt": "2027-01-10T09:00:00.000Z",
+  "tokenMinutes": 10
+}
+```
+
+## `api_grant.refreshed`
+
+Version 1 (`docs/schemas/api_grant.refreshed.v1.json`). An agent traded a grant's refresh token for a new API token and a new refresh token (issue #881): `from` is the caller, as the sign-in limit counts it. Never a token.
+
+| field | type | required |
+|---|---|---|
+| `grant` | string | yes |
+| `from` | string | yes |
+
+```json
+{
+  "grant": "3f9a0c2e5b7d1e48",
+  "from": "127.0.0.1"
+}
+```
+
+## `api_grant.reuse_detected`
+
+Version 1 (`docs/schemas/api_grant.reuse_detected.v1.json`). A refresh token already spent was sent again after the grace period (issue #881): it may be stolen, so the grant was revoked at once (`api_grant.revoked`, reason `reuse-detected`). `from`: who sent it. Subscribe a notifier to this to be told.
+
+| field | type | required |
+|---|---|---|
+| `grant` | string | yes |
+| `label` | string | yes |
+| `holder` | string | no |
+| `from` | string | yes |
+
+```json
+{
+  "grant": "3f9a0c2e5b7d1e48",
+  "label": "Grok Bot",
+  "holder": "grok-bot",
+  "from": "203.0.113.7"
+}
+```
+
+## `api_grant.revoked`
+
+Version 1 (`docs/schemas/api_grant.revoked.v1.json`). A grant ended, and every API token of it (issue #881). `reason`: `revoked` (a person revoked it), `revoked-all` (a person revoked every grant), `reuse-detected` (a spent refresh token sent again), `expired-idle` (no refresh for 30 days), `expired-absolute` (its fixed end passed), `realm-changed` (its minter's sign-in grants no role any more), or `refused` (Access refused it at its mint).
+
+| field | type | required |
+|---|---|---|
+| `grant` | string | yes |
+| `label` | string | yes |
+| `holder` | string | no |
+| `reason` | `revoked` \| `revoked-all` \| `reuse-detected` \| `expired-idle` \| `expired-absolute` \| `realm-changed` \| `refused` | yes |
+
+```json
+{
+  "grant": "3f9a0c2e5b7d1e48",
+  "label": "Grok Bot",
+  "holder": "grok-bot",
+  "reason": "reuse-detected"
+}
+```
+
+## `api_tokens.settings_changed`
+
+Version 1 (`docs/schemas/api_tokens.settings_changed.v1.json`). The hopper's admin changed how long an API token lives (issue #881): `tokenMinutes`. API tokens issued after it live that long; those there are keep their own ends. In the admin's log.
+
+| field | type | required |
+|---|---|---|
+| `tokenMinutes` | integer | yes |
+
+```json
+{
+  "tokenMinutes": 10
+}
+```
+
+## `step.started`
+
+Version 1 (`docs/schemas/step.started.v1.json`). A running job's Windows sandbox step started on its Windows host (issue #731): `step` its id, the `host`, its `command` (at most 300 characters), its timeout, the size of the inputs it sent and the `outputs` it asked back. Never its output.
+
+| field | type | required |
+|---|---|---|
+| `step` | string | yes |
+| `host` | string | yes |
+| `command` | string | yes |
+| `timeoutSeconds` | integer | yes |
+| `inputsBytes` | integer | yes |
+| `outputs` | string[] | yes |
+| `secrets` | string[] | no |
+
+```json
+{
+  "step": "5f0c1d2e-0000-4000-8000-000000000731",
+  "host": "build-host",
+  "command": "msbuild App.sln /p:Configuration=Release",
+  "timeoutSeconds": 1800,
+  "inputsBytes": 5242880,
+  "outputs": [
+    "src/App/bin/Release"
+  ]
+}
+```
+
+## `step.finished`
+
+Version 1 (`docs/schemas/step.finished.v1.json`). A Windows sandbox step ended (issue #731): its `exit` code and how long it ran; `outputsBytes` when its outputs came back; `problem` when the hopper could not run it, stopped it (its timeout, or the job stopped waiting) or could not bring its outputs back.
+
+| field | type | required |
+|---|---|---|
+| `step` | string | yes |
+| `host` | string | yes |
+| `exit` | integer | yes |
+| `seconds` | integer | yes |
+| `outputsBytes` | integer | no |
+| `problem` | string | no |
+
+```json
+{
+  "step": "5f0c1d2e-0000-4000-8000-000000000731",
+  "host": "build-host",
+  "exit": 0,
+  "seconds": 94,
+  "outputsBytes": 1048576
+}
+```
+
+## `step.refused`
+
+Version 1 (`docs/schemas/step.refused.v1.json`). A running job asked for a Windows sandbox step and was told no (issue #731), with `reason`: no such Windows host, a bad command, timeout or output, inputs too large, a secret the host does not give, or a vault secret the vault refused.
+
+| field | type | required |
+|---|---|---|
+| `reason` | string | yes |
+| `host` | string | no |
+
+```json
+{
+  "reason": "the hopper has no Windows host build. It has: build-host.",
+  "host": "build"
+}
+```
+
+## `vault.step_delivered`
+
+Version 1 (`docs/schemas/vault.step_delivered.v1.json`). A vault secret was given to a running job's Windows sandbox step (issue #731): on the step's ssh connection to the Windows `host`, into the step's environment only, never to the job, a file or an argument. The secret's name, the host and the job; never the value. `backend`: the vault backend it was read from, when it is kept in one.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `host` | string | yes |
+| `job` | string | yes |
+| `backend` | string | no |
+
+```json
+{
+  "name": "NUGET_TOKEN",
+  "host": "build-host",
+  "job": "f3b1c2d4-0000-4000-8000-000000000001"
+}
+```
+
+## `vault.step_refused`
+
+Version 1 (`docs/schemas/vault.step_refused.v1.json`). A running job's Windows sandbox step asked for a vault secret and the vault refused (issue #731): the job has no vault grant (a grant ask is opened), it is not at work, the vault holds no such secret, it is a minting credential, or it cannot be opened or read. `reason` says which; never a value.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `host` | string | yes |
+| `job` | string | yes |
+| `backend` | string | no |
+| `reason` | string | yes |
+
+```json
+{
+  "name": "NUGET_TOKEN",
+  "host": "build-host",
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "reason": "job f3b1c2d4 has no vault grant: a person grants it the vault on the Vault page (Settings → Vault), then ask again"
 }
 ```

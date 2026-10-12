@@ -1,5 +1,5 @@
 // The Grok Bot routine webhook (design.md "Grok Bot routine webhook"): one POST per question that
-// reaches the human (`question.escalated_to_human`, issue #481: never a level hop or a re-notification), per stop of intake (issue #358: `source.stalled`, `connected_account.expired`), per new artifact (issue #673: `artifact.created`, with its link), per job end (issue #795: `job.finished`, `job.failed`), and per login a job waits on (issue #698: `auth.pending`, a new code too, and `auth.expired`, never its URL or code), the URL and key read from the runtime at each use.
+// reaches the human (`question.escalated_to_human`, issue #481: never a level hop or a re-notification), per stop of intake (issue #358: `source.stalled`, `connected_account.expired`), per new artifact (issue #673: `artifact.created`, with its link), per job end (issue #795: `job.finished`, `job.failed`), and per login a job waits on (issue #698: `auth.pending`, a new code too, and `auth.expired`, never its URL or code), per out-of-band infrastructure change (issue #871: `infra.out_of_band_recorded`), the URL and key read from the runtime at each use.
 // Issue #795: `hopper.reachable` says where the hopper is reached from outside while its tunnel is up — at start, on a new
 // URL, on recovery, and on a heartbeat — so the receiver never has to poll for it.
 // Issue #378: the questions already open at the human are offered once each when the routine becomes
@@ -33,7 +33,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 function wanted(e: DomainEvent): boolean {
   if (e.type === 'source.stalled' || e.type === 'connected_account.expired' || e.type === 'artifact.created' || e.type === 'source.request_opened') return true;
   if (e.type === 'job.finished' || e.type === 'job.failed') return true;
-  if (e.type === 'auth.pending' || e.type === 'auth.expired') return true;
+  if (e.type === 'auth.pending' || e.type === 'auth.expired' || e.type === 'infra.out_of_band_recorded') return true;
   return e.type === 'question.escalated_to_human';
 }
 
@@ -112,7 +112,7 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
       if (e.type === 'job.finished' || e.type === 'job.failed') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), jobPayload(e, job));
       if (e.type === 'auth.pending' || e.type === 'auth.expired') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), loginPayload(e, job, clock.now(), feed?.loginsUrl?.()));
       if (e.type === 'artifact.created') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), artifactPayload(e, job, feed?.artifactUrl?.(String(e.data.artifact))));
-      if (e.type !== 'question.escalated_to_human') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), intakePayload(e, job));
+      if (e.type !== 'question.escalated_to_human') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), intakePayload(e, job, e.type === 'infra.out_of_band_recorded' ? feed?.infraUrl?.() : undefined));
       const q = feed?.question(e.data.questionId as string);
       if (!q || sent.has(q.id) || 'problem' in routine()) return false;
       return sendQuestion(q, false, e.at);

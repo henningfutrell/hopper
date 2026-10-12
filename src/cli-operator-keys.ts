@@ -1,8 +1,8 @@
 // The keys from the command line. The TypeSafe API key (issue #657): read from stdin, never an argument. The master key's
 // status (issue #685, design.md "The master key"): where the running daemon's key came from, its fingerprint, and whether a
 // previous key is set; never the key. Its rotation (issue #659, "Rotating the master key"): the one answer that carries a
-// key — the new one, once, to stdout, never to the log. API tokens (issue #718, design.md "API tokens"): mint one for an
-// agent — a box token with --box (issue #795) —, list them, revoke one; the token is printed once, by the mint.
+// key — the new one, once, to stdout, never to the log. Grants (issue #881, design.md "Grants and refresh tokens"): mint one
+// for an agent — box tokens with --box (issue #795) —, list them, revoke one or all; its tokens are printed once, by the mint.
 import { parseArgs } from 'node:util';
 import { UI_ROLES, type MasterKeyRotated, type MasterKeyView, type UiRole } from './domain/types.ts';
 import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
@@ -53,27 +53,54 @@ export function typesafeKeyCall(args: string[], stdin: () => string): Call {
   return { role: 'operator', path: '/ui/api/typesafe-key', body: async () => ({ action: 'set', value }) };
 }
 
-export const TOKEN_USAGE = `  hopper token mint --label <who uses it> [--role viewer|operator|admin] [--minutes <1-60>] [--box]
-                                                     mint an API token for an agent: printed once; it ends at the next restart or
-                                                     sign-in change, as the CLI's own session does; --box: a box token, the only
-                                                     kind that may do a box action (start a job, run a command, merge, update)
-  hopper token list                                  the user's live API tokens: id, label, role, when each ends; never a token
-  hopper token revoke <id>                           end one`;
+export const TOKEN_USAGE = `  hopper token mint --label <who uses it> (--preset <id> | --scope <scope>) [--scope <scope> ...] [--holder <who keeps it>]
+                    [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box]
+                                                     mint a grant for an agent (issue #881): its refresh token and first access
+                                                     token printed once. The agent trades the refresh token at
+                                                     POST /ui/auth/token/refresh, each time for a new one. --scope: <area>:<act>,
+                                                     <area>:*, *:<act> or *; --preset: a preset's scopes, and its box flag
+                                                     unless --box (hopper token scopes names both); --no-expiry: an
+                                                     admin's grant with no fixed end; --box: its tokens may do a box action
+                                                     (start a job, run a command, merge, update)
+  hopper token scopes                                every scope a grant may hold, by area, with what it does, and the presets
+  hopper token list                                  the user's live grants and exchanged API tokens, and the scopes there are;
+                                                     never a token
+  hopper token revoke <id>                           end one grant or API token, and every API token of it
+  hopper token revoke-all                            end every grant and API token of the user`;
 
-const TOKEN_MINT = 'token mint --label <who uses it> [--role viewer|operator|admin] [--minutes <1-60>] [--box]';
+const TOKEN_MINT = 'token mint --label <who uses it> (--preset <id> | --scope <scope>) [--scope <scope> ...] [--holder <who keeps it>] [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box]';
 
-/** `hopper token mint|list|revoke`: `POST /ui/api/api-tokens` and `GET /api/api-tokens`, under a session of the role minted (admin by default). */
+const whole = (flag: string, v: string | undefined): number | undefined => {
+  if (v === undefined) return undefined;
+  const n = Number(v);
+  if (!Number.isInteger(n)) throw new OperatorRefusal(`--${flag} ${v}: a whole number`);
+  return n;
+};
+
+/** `hopper token mint|list|revoke|revoke-all`: `POST /ui/api/api-tokens` and `GET /api/api-tokens`, under a session of the role minted (admin by default). */
 export function tokenCall(args: string[]): Call {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { label: { type: 'string' }, role: { type: 'string' }, minutes: { type: 'string' }, box: { type: 'boolean' } } });
+  const { values, positionals } = parseArgs({
+    args, allowPositionals: true,
+    options: { label: { type: 'string' }, holder: { type: 'string' }, scope: { type: 'string', multiple: true }, preset: { type: 'string' }, role: { type: 'string' }, days: { type: 'string' }, 'no-expiry': { type: 'boolean' }, minutes: { type: 'string' }, box: { type: 'boolean' } },
+  });
   const [verb, ...rest] = positionals;
   const flags = Object.keys(values).length > 0;
   if (verb === 'list' && rest.length === 0 && !flags) return { role: 'viewer', path: '/api/api-tokens' };
+  if (verb === 'scopes' && rest.length === 0 && !flags) return { role: 'viewer', path: '/api/scopes' };
   if (verb === 'revoke' && rest.length === 1 && !flags) return { role: 'viewer', path: '/ui/api/api-tokens', body: async () => ({ action: 'revoke', id: rest[0] }) };
-  if (verb !== 'mint' || rest.length > 0) throw usage(`${TOKEN_MINT} | hopper token list | hopper token revoke <id>`);
-  if (!values.label?.trim()) throw usage(TOKEN_MINT);
+  if (verb === 'revoke-all' && rest.length === 0 && !flags) return { role: 'viewer', path: '/ui/api/api-tokens', body: async () => ({ action: 'revoke-all' }) };
+  if (verb !== 'mint' || rest.length > 0) throw usage(`${TOKEN_MINT} | hopper token list | hopper token scopes | hopper token revoke <id> | hopper token revoke-all`);
+  if (!values.label?.trim() || (!values.scope?.length && !values.preset)) throw usage(TOKEN_MINT);
   if (values.role !== undefined && !(UI_ROLES as readonly string[]).includes(values.role)) throw new OperatorRefusal(`--role ${values.role}: one of ${UI_ROLES.join(', ')}`);
-  const minutes = values.minutes === undefined ? undefined : Number(values.minutes);
-  if (minutes !== undefined && !Number.isInteger(minutes)) throw new OperatorRefusal(`--minutes ${values.minutes}: a whole number of minutes`);
+  if (values.days !== undefined && values['no-expiry']) throw new OperatorRefusal('--days and --no-expiry: name one');
+  const minutes = whole('minutes', values.minutes);
+  const days = values['no-expiry'] ? null : whole('days', values.days);
   const role = (values.role ?? 'admin') as UiRole;
-  return { role, path: '/ui/api/api-tokens', body: async () => ({ action: 'mint', label: values.label, role, ...(minutes === undefined ? {} : { minutes }), ...(values.box ? { box: true } : {}) }) };
+  return {
+    role, path: '/ui/api/api-tokens',
+    body: async () => ({
+      action: 'mint', label: values.label, ...(values.scope?.length ? { scopes: values.scope } : {}), ...(values.preset ? { preset: values.preset } : {}), role, ...(values.holder === undefined ? {} : { holder: values.holder }),
+      ...(days === undefined ? {} : { days }), ...(minutes === undefined ? {} : { minutes }), ...(values.box ? { box: true } : {}),
+    }),
+  };
 }

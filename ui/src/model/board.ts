@@ -67,6 +67,9 @@ export const canPark = (job: Job, parkingExecutors: readonly string[]): boolean 
 /** A parked job with no agent session to resume (issue #530): picked up, it starts a fresh one, and asks first. */
 export const startsFresh = (job: Job): boolean => job.status === 'parked' && job.agentSession === undefined;
 
+/** A parked job that may resume elsewhere (issue #921): its last checkpoint holds its agent session. */
+export const canResumeElsewhere = (job: Job): boolean => job.status === 'parked' && job.agentSession !== undefined && job.checkpoint?.session === true;
+
 /** The Parked section's order (issue #565): high-priority jobs first, then the longest parked on top. */
 export const parkedOrder = (jobs: readonly Job[], threshold: number | null): Job[] =>
   highFirst([...jobs].sort((a, b) => (a.parked?.at ?? a.updatedAt).localeCompare(b.parked?.at ?? b.updatedAt)), (j) => isHighJob(j, threshold));

@@ -1,17 +1,15 @@
 // The store's ports (design.md "Database", "Users: one hopper, separate users"): the repositories, a
 // user's store and the instance store. Re-exported from ports.ts.
 
-import type { AccessRepository } from './access.ts';
 import type { JobStreamRepository } from './job-stream.ts';
 import type { ArtifactRepository } from './artifacts.ts';
 import type { VaultRepository } from './vault.ts';
 import type { SandboxRecord } from './sandboxes.ts';
-import type { ItemSnapshot } from './item-snapshots.ts';
 import type { VaultGrant } from './vault-grants.ts';
 import type { BugReportRepository } from './bug-reports.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type { DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
-  Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User, UsageSample, UsageSeries, UsageTotalSeries, GitHubWatchRepository, PointedJobRepository, FailureOutcome, FailureRecord, Handoff, Problem, ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries } from './types.ts';
+  Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User, UsageSample, UsageSeries, UsageTotalSeries, GitHubWatchRepository, PointedJobRepository, FailureOutcome, FailureRecord, Handoff, Problem, ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries, ItemSnapshot, AccessRepository, CheckpointRepository } from './types.ts';
 
 // Report a bug (issue #694): its repository sits beside its record.
 export type { BugReportRepository } from './bug-reports.ts';
@@ -266,7 +264,8 @@ export interface UiSessionRow {
   tokenHash: string; startedAt: string; lastSeenAt: string; checkedAt: string; endsAt?: string;
   role: UiRole; identity: Identity; userId: string;
   /** An API token (issue #718) and its label; absent: a UI session. `box`: a box token (issue #795). */
-  kind?: 'api'; label?: string; box?: true;
+  /** `grantId`: the grant an API token was refreshed from (issue #881); absent: no grant's (an exchange, or minted before). */
+  kind?: 'api'; label?: string; box?: true; grantId?: string;
 }
 
 /** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. Which have ended is the caller's to decide. */
@@ -319,9 +318,9 @@ export interface SandboxRepository {
 
 /**
  * The config records the store holds (design.md "Config in the database", issue #198): a user's
- * `plugins`, `rules` and `job-rules`, and the instance's `sign-in`. No config lives in a file.
+ * `plugins`, `rules`, `job-rules` and `windows-hosts` (issue #731), and the instance's `sign-in`. No config lives in a file.
  */
-export const USER_CONFIG = ['plugins', 'rules', 'job-rules'] as const;
+export const USER_CONFIG = ['plugins', 'rules', 'job-rules', 'windows-hosts'] as const;
 export const INSTANCE_CONFIG = ['sign-in'] as const;
 export const CONFIG_NAMES = [...USER_CONFIG, ...INSTANCE_CONFIG] as const;
 export type UserConfigName = (typeof USER_CONFIG)[number];
@@ -478,6 +477,8 @@ export interface UserStore {
   artifacts: ArtifactRepository;
   /** The infra plans jobs record, and their approvals (issue #870). */
   infraPlans: import('./infra-plans.ts').InfraPlanRepository;
+  /** The out-of-band infrastructure changes jobs' checks report, their marks, and the controller identities (issue #871). */
+  outOfBand: import('./out-of-band.ts').OutOfBandRepository;
   questions: QuestionRepository;
   /** Each review section's items, by kind: proposals (issue #537), research reports (issue #543). */
   reviews: Readonly<Record<ReviewKind, ReviewItemRepository>>;
@@ -494,6 +495,8 @@ export interface UserStore {
   pointedJobs: PointedJobRepository;
   /** GitHub watches (issue #427): each pointed job's last snapshot. */
   githubWatches: GitHubWatchRepository;
+  /** Each job's latest checkpoint (issue #921): its patch and agent session, scrubbed. */
+  checkpoints: CheckpointRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;
@@ -521,7 +524,8 @@ export interface MasterKeyResealed {
 export interface InstanceStore {
   users: UserRepository;
   identities: IdentityLinks;
-  uiSessions: UiSessionRepository;
+  /** The UI sessions and API tokens; the grants and their refresh tokens (issue #881). */
+  uiSessions: UiSessionRepository; apiGrants: import('./api-grants.ts').ApiGrantRepository;
   loginCodes: LoginCodeRepository;
   joinCodes: JoinCodeRepository;
   /** The sandbox records (issue #708). */

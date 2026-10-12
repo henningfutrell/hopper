@@ -79,3 +79,49 @@ export function maskAddresses(text: string): string {
   for (const [pattern, mask] of ADDRESS_PATTERNS) result = result.replace(pattern, mask);
   return result;
 }
+
+/**
+ * The secret patterns a checkpoint is scrubbed of besides GitHub tokens and 32-byte keys (issue #921): a private key
+ * block (PEM or OpenSSH, its lines as text or as `\n` in JSON), an AWS access key id, an Anthropic or OpenAI API key,
+ * and a Slack token.
+ */
+const SECRET_PATTERNS: [RegExp, string][] = [
+  [/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/g, '[private key, masked]'],
+  [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, '[AWS access key, masked]'],
+  [/\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/g, '[API key, masked]'],
+  [/\bxox[abposr]-[A-Za-z0-9-]{10,}/g, '[Slack token, masked]'],
+];
+
+/** `text` with GitHub tokens, 32-byte keys, private keys, cloud and API keys masked (issue #921). */
+export function maskSecrets(text: string): string {
+  let result = text;
+  for (const [pattern, mask] of SECRET_PATTERNS) result = result.replace(pattern, mask);
+  return maskKeys(maskGitHubTokens(result));
+}
+
+/** Every string inside a JSON value masked. */
+const maskJson = (v: unknown): unknown => {
+  if (typeof v === 'string') return maskSecrets(v);
+  if (Array.isArray(v)) return v.map(maskJson);
+  if (v !== null && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, maskJson(x)]));
+  return v;
+};
+
+/**
+ * An agent session's log (JSON lines), scrubbed for a checkpoint (issue #921): the strings in each line masked, so
+ * every line stays JSON its agent reads; a line that is not JSON masked as text.
+ */
+export function scrubSessionLog(text: string): string {
+  return text.split('\n').map((line) => {
+    if (!line.trim()) return line;
+    try { return JSON.stringify(maskJson(JSON.parse(line))); } catch { return maskSecrets(line); }
+  }).join('\n');
+}
+
+/**
+ * A patch scrubbed for a checkpoint (issue #921): only the lines it adds are masked. A context or removed line is the
+ * base's, as it is on the remote; masking it would keep the patch from applying there.
+ */
+export function scrubPatch(text: string): string {
+  return text.split('\n').map((line) => (line.startsWith('+') && !line.startsWith('+++ ') ? maskSecrets(line) : line)).join('\n');
+}

@@ -14,6 +14,8 @@ export const GITHUB_API = 'https://api.github.com';
 export const RELEASE_RETRY_MS = 5 * 60_000;
 /** A check run's conclusions that count as passed; at least one must be `success`. */
 const PASSED = new Set(['success', 'neutral', 'skipped']);
+/** The message GitHub gives the merge commit of pull request N. */
+const MERGE_MESSAGE = /^Merge pull request #(\d+) /;
 const GITHUB_REPO = /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/;
 
 interface Pull { number: number; html_url: string; merged_at: string | null; merge_commit_sha: string | null; head: { sha: string } }
@@ -81,8 +83,20 @@ export function createReleaseCheck(o: {
     return tokenCaller(account)(async (token) => {
       const headers = { authorization: `token ${token}` };
       const pulls = (await req('GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls', { ...gh, commit_sha: commit, headers })).data as Pull[];
-      const pr = pulls.find((p) => p.merged_at && p.merge_commit_sha === commit);
-      if (!pr) return { verdict: { passed: false, reason: `${short(commit)} is not the merge of a pull request` }, settled: true };
+      const isMerge = (p: Pull | undefined): p is Pull => !!p && !!p.merged_at && p.merge_commit_sha === commit;
+      let pr = pulls.find(isMerge);
+      if (!pr) {
+        // GitHub's commit-to-pull-request answer lags a merge, and can name only a later pull request that holds the
+        // commit (a promotion). A two-parent "Merge pull request #N" commit is checked against pull N itself (issue #913).
+        const c = (await req('GET /repos/{owner}/{repo}/commits/{ref}', { ...gh, ref: commit, headers })).data as { commit: { message: string }; parents: unknown[] };
+        const n = MERGE_MESSAGE.exec(c.commit.message)?.[1];
+        if (n && c.parents.length === 2) {
+          const named = (await req('GET /repos/{owner}/{repo}/pulls/{pull_number}', { ...gh, pull_number: Number(n), headers })).data as Pull;
+          if (isMerge(named)) pr = named;
+        }
+      }
+      // Not settled: an answer that lags may name the pull request later.
+      if (!pr) return { verdict: { passed: false, reason: `${short(commit)} is not the merge of a pull request` }, settled: false };
       const runs = (await req('GET /repos/{owner}/{repo}/commits/{ref}/check-runs', { ...gh, ref: pr.head.sha, per_page: 100, headers })).data as { check_runs: Run[] };
       return checksVerdict({ number: pr.number, url: pr.html_url }, runs.check_runs);
     }, (err) => (err instanceof Error ? err : new Error(String(err))));

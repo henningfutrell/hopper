@@ -24,6 +24,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'job.rerun': 'warn', 'job.pull_request_tended': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
   'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad', 'job.child_issue_filed': 'ok',
   'skill.loaded': 'ok', 'skill.refused': 'warn',
+  'step.refused': 'warn', 'vault.step_delivered': 'ok', 'vault.step_refused': 'warn',
   'artifact.posted': 'ok', 'artifact.revised': 'ok',
   'lanes.recommended': 'warn', 'lanes.tuning_changed': 'warn', 'lanes.applied': 'warn', 'lanes.undone': 'warn', 'lanes.dismissed': 'warn',
   'bug_report.filed': 'ok', 'bug_report.failed': 'bad',
@@ -49,6 +50,12 @@ export function detailOf(e: DomainEvent): string {
   if (e.type === 'skill.listed') return 'asked what the hopper can set up';
   if (e.type === 'skill.loaded') return `loaded ${String(d.skill)}${typeof d.asset === 'string' ? ` for ${d.asset}` : ''}`;
   if (e.type === 'skill.refused') return `${String(d.skill)}: no: ${String(d.reason)}`;
+  // Windows sandbox steps (issue #731): on which host, what ran, how it ended.
+  if (e.type === 'step.started') return `on ${String(d.host)}: ${String(d.command)}`;
+  if (e.type === 'step.finished') return `on ${String(d.host)}: exit ${String(d.exit)} after ${String(d.seconds)} s${typeof d.problem === 'string' ? `; ${d.problem}` : ''}`;
+  if (e.type === 'step.refused') return `no: ${String(d.reason)}`;
+  if (e.type === 'vault.step_delivered') return `${String(d.name)} given to a step on ${String(d.host)}`;
+  if (e.type === 'vault.step_refused') return `${String(d.name)} for a step on ${String(d.host)}: no: ${String(d.reason)}`;
   // An artifact shown to its owner (issue #673): where its link was posted, or why not.
   if (e.type === 'artifact.posted') return `${String(d.title)}: ${typeof d.comment === 'string' ? `posted on the issue, ${d.comment}` : typeof d.error === 'string' ? `not posted: ${d.error}` : 'no issue to post on'}`;
   if (e.type === 'artifact.created') return artifactCreatedDetail(d);
