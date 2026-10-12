@@ -4902,7 +4902,8 @@ hand, and the hopper never saw that container. This is the path #704's machines 
 - **Keeping in step, per machine.** A reconcile pass runs per runtime: the hopper's own, then each `(user, machine)`
   that holds a recorded box, listing that user's boxes there (`io.hopper.box` and `io.hopper.user`). A machine that
   cannot be listed now — not dialled in — keeps its boxes and their records, past their time limit too; the pass on its
-  next dial-in checks them. Remove uses the runtime's forced remove, which also takes a container stuck stopping.
+  next dial-in checks them. Remove asks the box to stop, then uses the runtime's forced remove. A container stuck
+  stopping refuses the stop; that refusal does not hold the forced remove back, so the box still goes.
 - **A machine that hangs up is not dialled in.** The upgraded link socket is half-open: a client that closed its end
   left the hopper's end open until the hopper stopped, so the machine still looked dialled in. `MachineLinks` now
   closes its end when the client ends the link.
@@ -4914,7 +4915,8 @@ hand, and the hopper never saw that container. This is the path #704's machines 
 machine's Podman a libpod double, `test/support/fake-libpod.ts`): a box launched on a client target runs in its
 Podman with the sandbox flags and the sandbox label, dialling the hopper where the machine did, and the hopper's own
 runtime is not touched; a machine that is no client target is 400 and one that hung up is 409; the box is `ready` once
-it joins and goes at its time limit; a machine away keeps its boxes, and they are checked when it dials in again.
+it joins and goes at its time limit, a box stuck stopping too; a machine away keeps its boxes, and they are checked
+when it dials in again.
 `test/client/runtime.test.ts`: which runtime, a call carried and answered, a create without a flag or with a mount of
 the machine refused (Podman and Docker), a container or volume not the hopper's refused, a route outside the adapters'
 refused. `test/adapters/remote-runtime.test.ts`: a box's whole life through the client with the same create body, and

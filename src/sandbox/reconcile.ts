@@ -1,12 +1,13 @@
 // Keeping the boxes in step (issue #708), from the sandbox records, every 10 s and at start. Per record: past its time
-// limit, it is stopped and removed at once; its container gone, the record goes; a machine names it, it is `ready` (its
-// client reported back); a live join code waits for it, it stays `starting`; else it is idle, and removed once it is
-// found so twice in a row (a join's config write may lag one check). A user whose machines cannot be read now keeps all
-// their boxes. A container with the hopper's label and no record (a box from before the records, or a launch cut off)
-// is taken on as a record when a machine names it, else removed the same way. Removing keeps the home volume unless the
-// record says otherwise: it may hold an agent's sign-in. One pass checks one runtime: the hopper's own, or one user's
-// client target's (the remote runtime), each against the records of the boxes on it. Each pass runs every box's start
-// check again, in the box: a box whose check fails is `unreachable`, never `ready`, and the hopper says why, once.
+// limit, it is stopped and removed at once (a stop it refuses does not hold the forced remove back); its container
+// gone, the record goes; a machine names it, it is `ready` (its client reported back); a live join code waits for it,
+// it stays `starting`; else it is idle, and removed once it is found so twice in a row (a join's config write may lag
+// one check). A user whose machines cannot be read now keeps all their boxes. A container with the hopper's label and
+// no record (a box from before the records, or a launch cut off) is taken on as a record when a machine names it, else
+// removed the same way. Removing keeps the home volume unless the record says otherwise: it may hold an agent's
+// sign-in. One pass checks one runtime: the hopper's own, or one user's client target's (the remote runtime), each
+// against the records of the boxes on it. Each pass runs every box's start check again, in the box: a box whose check
+// fails is `unreachable`, never `ready`, and the hopper says why, once.
 import type { CleanupProblem } from '../domain/machines.ts';
 import type { ContainerInfo, ContainerRuntime, SandboxRecord } from '../domain/sandboxes.ts';
 import type { SandboxRepository } from '../domain/store.ts';
@@ -43,7 +44,8 @@ export async function reconcilePass(c: ReconcileContext, problems: Problems, unc
 
   const remove = async (name: string, id: string, userId: string, volume: string | undefined, why: string, recordId?: string): Promise<void> => {
     try {
-      await c.runtime.stop(id);
+      // A box stuck "Stopping" refuses the stop; the remove is forced, so it takes the box all the same.
+      await c.runtime.stop(id).catch(() => undefined);
       await c.runtime.remove(id);
       if (volume) await c.runtime.removeVolume(volume);
       if (recordId) c.repo.remove(recordId);
