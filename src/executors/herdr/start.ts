@@ -8,7 +8,7 @@ import { HerdrError, type HerdrClient } from './client.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { abortReason, tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
-import { JOB_WORKTREE_MARK, JOB_WORKTREE_RUNNING, checkoutOf, checkoutWorktreeOf, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand, repoCheckoutOf } from './job-worktree.ts';
+import { JOB_WORKTREE_MARK, JOB_WORKTREE_RUNNING, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand, mirrorOf, mirrorWorktreeOf } from './job-worktree.ts';
 import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from './job-scope.ts';
 import { DEPS_MARK, depsOutcome, shareDepsCommand } from './shared-deps.ts';
 import { scopeUnitOf } from '../../client/server.ts';
@@ -73,7 +73,7 @@ export interface PaneState {
   cwd: string;
   /** The job's own git worktree of `cwd` or of `checkout`, in its scratch dir, where Claude runs (issue #379). Absent: Claude runs in `cwd`. */
   jobWorktree?: string;
-  /** The checkout of the job's repository in `cwd` its worktree was made of, when `cwd` is no repository (issue #361). */
+  /** The mirror of the job's repository its worktree was made of, when `cwd` is not the job's repository (issues #361, #858). */
   checkout?: string;
   /** The systemd user scope the pane's shell runs in (issue #410). Absent: the machine has none; the reap goes by HOPPER_JOB_ID. */
   scope?: string;
@@ -252,9 +252,9 @@ async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Pr
 }
 
 /**
- * Make the job its own git worktree and move the pane's shell into it (issues #379, #361, #431): of the work
- * tree when that is the top of the job's git repository; else of the checkout of the job's repository in it,
- * or in its scratch dir when it is another repository's top, fetched or cloned there first. `s` then names it, saved, and it is reported as the job's work tree.
+ * Make the job its own git worktree and move the pane's shell into it (issues #379, #361, #431, #858): of the work
+ * tree when that is the top of the job's git repository; else of the mirror of the job's repository in the work
+ * tree's scratch dir, fetched or cloned there first. `s` then names it, saved, and it is reported as the job's work tree.
  * With job worktrees off, only the checkout is made, and the job runs in the work tree. Git refusing fails
  * the job with what it said. The command says first that it runs: a shell that lost or mangled it (issue
  * #518, a zsh whose start-up files were busy) gets the line cleared and the command typed again, and one
@@ -262,7 +262,7 @@ async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Pr
  * the first one made and enters it.
  */
 async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneState, repo: string | undefined): Promise<ExecutionOutcome | StartTimedOut | null> {
-  if (repo) ctx.progress(`fetching or cloning ${repo} in the work tree`);
+  if (repo) ctx.progress(`fetching or cloning ${repo}'s mirror in the work tree`);
   const command = makeJobWorktreeCommand(s.cwd, ctx.job.id, { ...(repo ? { repo } : {}), worktrees: d.jobWorktrees });
   for (let typed = 1; ; typed++) {
     await d.herdr.runInPane(s.paneId, command);
@@ -277,14 +277,14 @@ async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneStat
   if (ctx.signal.aborted) return null;
   const { found: outcome, screen } = await awaitOnScreen(d, ctx, s.paneId, JOB_WORKTREE_MARK, jobWorktreeOutcome, JOB_WORKTREE_WAIT_MS);
   if (outcome === 'none' || ctx.signal.aborted) return null;
-  const ofCheckout = (outcome === 'checkout' || outcome === 'other') && repo;
-  const path = ofCheckout ? checkoutWorktreeOf(s.cwd, ctx.job.id, repo) : jobWorktreeOf(s.cwd, ctx.job.id);
-  if (outcome !== 'made' && !ofCheckout) {
+  const ofMirror = outcome === 'mirror' && repo;
+  const path = ofMirror ? mirrorWorktreeOf(s.cwd, ctx.job.id, repo) : jobWorktreeOf(s.cwd, ctx.job.id);
+  if (outcome !== 'made' && !ofMirror) {
     return { kind: 'failed', error: outcome === 'unmade' ? `the job worktree ${path} could not be made on ${ctx.machine.id}: ${tail(screen, 10)}`
       : `pane ${s.paneId} never made the job worktree within ${JOB_WORKTREE_WAIT_MS} ms: ${tail(screen, 10)}` };
   }
   s.jobWorktree = path;
-  if (ofCheckout) s.checkout = outcome === 'other' ? repoCheckoutOf(s.cwd, repo) : checkoutOf(s.cwd, repo);
+  if (ofMirror) s.checkout = mirrorOf(s.cwd, repo);
   ctx.saveState({ ...s });
   ctx.workTree(path);
   return null;
