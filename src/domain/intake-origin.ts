@@ -55,6 +55,25 @@ export interface GitHubAccount {
  */
 export interface IntakeActorSettings { actors: string[]; accounts?: GitHubAccount[] }
 
+/** Where the trusted actor picker found an account (issue #930), in the order it shows them. */
+export const CANDIDATE_FROM = ['connected', 'collaborator', 'member', 'author', 'hopper-user', 'api-token'] as const;
+export type CandidateFrom = typeof CANDIDATE_FROM[number];
+
+/** An account the picker offers, and where it found it. */
+export interface ActorCandidate extends GitHubAccount { from: CandidateFrom[] }
+
+/** GET /api/intake-actors/candidates: the accounts offered, by login; and what could not be read, one line each. */
+export interface ActorCandidates { candidates: ActorCandidate[]; problems: string[] }
+
+/** GET /api/intake-actors: the accounts named by id, the logins named before ids (to pick again), and the connected login. */
+export interface IntakeActorsView {
+  accounts: GitHubAccount[];
+  /** Logins kept before issue #930, with no id: they count by login until the list is saved again. */
+  unresolved: string[];
+  /** The connected login, the one trusted actor while none is named; null: no GitHub connected. */
+  connected: string | null;
+}
+
 /** One who did an act on GitHub, or a trusted actor: a login, and its GitHub user id when known. */
 export interface ActorRef { login: string; id?: number }
 

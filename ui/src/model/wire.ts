@@ -26,6 +26,7 @@ import type {
   Tldr, TldrSettings,
   ItemComment, ItemEdit, TextChange,
   MasterKeyRotated, MasterKeyView,
+  ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView,
   JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobStage, JobTree,
 } from '../../../src/domain/types.ts';
 
@@ -52,6 +53,7 @@ export type {
   ApiGrantMinted, ApiGrantView, ApiTokenSettings, ApiTokenMinted, ApiTokenView, ScopePermission, ScopePreset, ScopeRegistry, ScopeSection, CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplatePreview, TemplateView, VaultBackendView, VaultSecret, VaultView, InfraPlan, PlanApply, PlanView, OutOfBandMark, OutOfBandView, YoloModeSettings, YoloModeView, ContributionSettings, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksQueued, RepoChecksView,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
   MasterKeyRotated, MasterKeyView,
+  ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView,
   JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobStage, JobTree,
   Artifact, ArtifactKind, ArtifactRevision, ArtifactRevisionView, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
   Tldr, TldrSettings,

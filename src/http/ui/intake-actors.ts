@@ -6,7 +6,7 @@
 // is ever kept. The same reads and the save are the API's, so an agent picks as a person does.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { GitHubAccount, IntakeActorSettings } from '../../domain/intake-origin.ts';
+import type { IntakeActorSettings, IntakeActorsView } from '../../domain/intake-origin.ts';
 import { actorCandidates, ActorsGitHubError, IntakeActorsRefused, resolveActors, type ActorsGitHub } from '../../intake-actors/index.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
@@ -19,15 +19,6 @@ type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<
 const login = z.string().trim().regex(/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/, 'a GitHub login');
 export const intakeActorsBody = z.strictObject({ ids: z.array(z.number().int().positive()).max(50, 'at most 50 trusted actors') });
 export const intakeActorLookupQuery = z.strictObject({ login });
-
-/** Settings → Intake as read: the accounts named by id, the logins named before ids (to pick again), and the connected login. */
-export interface IntakeActorsView {
-  accounts: GitHubAccount[];
-  /** Logins kept before issue #930, with no id: they count by login until the list is saved again. */
-  unresolved: string[];
-  /** The connected login, the one trusted actor while none is named; null: no GitHub connected. */
-  connected: string | null;
-}
 
 const named = (t: Pick<TenantParts, 'store'>): IntakeActorSettings => t.store.settings.getIntakeActors() ?? { actors: [] };
 

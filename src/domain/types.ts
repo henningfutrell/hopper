@@ -487,6 +487,8 @@ export * from './lane-tuning.ts';
 export type { CleanupDue, DeciderPolicy };
 export * from './plugins.ts';
 export * from './item-snapshots.ts';
+// The trusted actor picker's views (issue #930): types only, as intake-origin.ts reads node:crypto.
+export type { ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView } from './intake-origin.ts';
 
 // ---- Queue gate (issue #159): src/domain/queue-gate.ts (re-exported here) ---------------
 

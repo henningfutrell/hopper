@@ -2,17 +2,8 @@
 // connected account, the job repositories' collaborators, their organizations' members, the authors of their newest
 // issues, and the hopper's own users and API token holders by their connected GitHub —, and the check of the ids a
 // person saves: each one an account GitHub knows, and a person's, never an app's, a bot's or an organization's.
-import type { GitHubAccount } from '../domain/intake-origin.ts';
+import { CANDIDATE_FROM, type ActorCandidate, type ActorCandidates, type CandidateFrom, type GitHubAccount } from '../domain/intake-origin.ts';
 import type { ActorsGitHub } from './github.ts';
-
-/** Where the picker found an account, in the order it shows them. */
-export const CANDIDATE_FROM = ['connected', 'collaborator', 'member', 'author', 'hopper-user', 'api-token'] as const;
-export type CandidateFrom = typeof CANDIDATE_FROM[number];
-
-export interface ActorCandidate extends GitHubAccount { from: CandidateFrom[] }
-
-/** The accounts offered, by login; and what could not be read, one line each. */
-export interface ActorCandidates { candidates: ActorCandidate[]; problems: string[] }
 
 /** At most this many job repositories are read for candidates. */
 export const CANDIDATE_REPOS = 20;

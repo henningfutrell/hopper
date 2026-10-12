@@ -15,9 +15,9 @@ let VIEW: { accounts: unknown[]; unresolved: string[]; connected: string | null 
 let root: Root | undefined;
 const posts: { path: string; body: unknown }[] = [];
 
-async function boot(role: 'admin' | 'viewer', view = VIEW) {
+async function boot(role: 'admin' | 'viewer', start = VIEW) {
   posts.length = 0;
-  VIEW = view;
+  VIEW = start;
   localStorage.setItem('jh_session', 'a'.repeat(64));
   const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   vi.stubGlobal('fetch', vi.fn(async (input: string, init: RequestInit = {}) => {
@@ -42,10 +42,10 @@ async function boot(role: 'admin' | 'viewer', view = VIEW) {
   document.body.innerHTML = '<div id="root"></div>';
   vi.resetModules();
   const store = '../../ui/src/store/index.ts';
-  const view = '../../ui/src/views/intake-actors.tsx';
+  const viewPath = '../../ui/src/views/intake-actors.tsx';
   const { useHopper } = (await import(store)) as { useHopper: { setState(s: unknown): void } };
   useHopper.setState({ authed: true, user: { role, realm: 'local', name: 'someone' } });
-  const { IntakeActors } = (await import(view)) as { IntakeActors: () => ReturnType<typeof createElement> };
+  const { IntakeActors } = (await import(viewPath)) as { IntakeActors: () => ReturnType<typeof createElement> };
   await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(IntakeActors)); });
   await settle();
 }

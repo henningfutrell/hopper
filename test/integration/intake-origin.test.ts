@@ -1,5 +1,5 @@
 // Trusted origin and request cards end to end (issue #652), through the real daemon, the fake GitHub at its seam and
-// the OpenFGA double: an issue a stranger wrote is a request card in Sources and no job; a person approves its text, and
+// the OpenFGA double: an issue a stranger wrote is a request card in Intake and no job; a person approves its text, and
 // the job runs that text; an edit before the job is made shows the card again; without OpenFGA nobody is a trusted actor
 // and nothing can be approved. Naming the trusted actors in Settings → Intake: intake-actor-picker.test.ts (issue #930).
 import { afterEach, describe, expect, it } from 'vitest';
