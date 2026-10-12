@@ -15415,7 +15415,7 @@ in Needs you, a global yolo indicator, and the duplicates of the question, decid
 ## Needs you, part 2: plans, conflicts, and yolo mode's one switch (issue #897, 2026-10-12)
 
 **As built:**
-- **Two more rows.** Needs you counts the Infra plans that wait for an admin (`plansWaiting`, `ui/src/model/infra-plans.ts`:
+- **Two more rows.** Needs you counts the Infra plans that wait for a person to approve them (`plansWaiting`, `ui/src/model/infra-plans.ts`:
   not approved, no failed check, not stale) and the open pull requests with merge conflicts (`conflictedPullRequests`,
   `ui/src/model/pull-requests.ts`). The Infra nav entry is badged with the first, Pull requests with the second (red), and
   the Pull requests header says how many conflict.
