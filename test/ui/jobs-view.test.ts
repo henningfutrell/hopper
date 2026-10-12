@@ -199,8 +199,10 @@ describe('the Jobs view (issue #434)', () => {
     jobs = [pointed(1, 'waiting_answer')];
     questions = [{ id: 'q1', jobId: 'job-1', text: 'Which store should the cache use?', since: '2026-10-01T02:00:00Z' }];
     await boot('graph');
-    const tree = await vi.waitFor(() => document.querySelector<HTMLElement>('[data-slot="job-tree"][data-root="issue:acme/site#1"]')!);
-    const node = tree.querySelector<SVGElement>('[data-slot="graph-node"][data-node-id="question:q1"]')!;
+    const at = '[data-slot="job-tree"][data-root="issue:acme/site#1"] [data-slot="graph-node"][data-node-id="question:q1"]';
+    await vi.waitFor(() => expect(document.querySelector(at)).not.toBeNull());
+    const tree = document.querySelector<HTMLElement>('[data-slot="job-tree"][data-root="issue:acme/site#1"]')!;
+    const node = document.querySelector<SVGElement>(at)!;
     expect(node.dataset.kind).toBe('question');
     expect(node.dataset.blocking).toBe('');
     expect(node.textContent).toContain('question · waiting');
