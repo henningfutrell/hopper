@@ -22,6 +22,7 @@ import { createVaultGrantRepository } from './vault-grants.ts';
 import { createLoginRepository } from './logins.ts';
 import { createPointedJobRepository } from './pointed-jobs.ts';
 import { createDirectJobRepository } from './direct-jobs.ts';
+import { createPromotionRepository } from './promotions.ts';
 import { createCheckpointRepository } from './checkpoints.ts';
 import { createGitHubWatchRepository } from './github-watches.ts';
 import { createReviewItemRepository } from './review-items.ts';
@@ -81,6 +82,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     issueGraph: createIssueGraphRepository(ctx),
     pointedJobs: createPointedJobRepository(ctx),
     directJobs: createDirectJobRepository(ctx),
+    promotions: createPromotionRepository(ctx),
     githubWatches: createGitHubWatchRepository(ctx),
     checkpoints: createCheckpointRepository(ctx),
     settings: createUserSettingsRepository(ctx),

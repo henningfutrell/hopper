@@ -213,6 +213,8 @@
         "github_watch.changed",
         "github_watch.settings_changed",
         "direct_job.submitted",
+        "direct_job.promoted",
+        "direct_job.promotion_revoked",
         "infra.plan_recorded",
         "infra.plan_approved",
         "infra.out_of_band_recorded",

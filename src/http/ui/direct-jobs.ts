@@ -22,14 +22,15 @@ export const directJobBody = z.strictObject({
   repo: z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo').max(200).optional(),
   executor: z.string().min(1).max(200).optional(),
   priority: z.number().int().min(0).max(100).optional(),
+  promoteWhenDone: z.boolean().optional(),
 });
 
-const VIEW = '`DirectJob`: `id`, `title`, `brief`, `labels`, `authorizations`, `repo`, `executor`, `priority`, `submittedBy` (`person`, `via`: ui, api or cli), `submittedAt`, and `job` once it has one: `id`, `status`, `result`, `error`, `finishedAt`, `questions` (its open questions: `id`, `text`, `tier`, `askedAt`; answer one with `POST /ui/api/questions/:id/answer`)';
+const VIEW = '`DirectJob`: `id`, `title`, `brief`, `labels`, `authorizations`, `repo`, `executor`, `priority`, `promoteWhenDone`, `submittedBy` (`person`, `via`: ui, api or cli), `submittedAt`, `artifacts` (its job\'s, private in the hopper: `id`, `title`, `summary`, `kind`, `revision`, `url`), `promotion` (its live promotion to GitHub: `repo`, `kind`, `number`, `url`, `artifacts` as linked, `promotedBy`, `promotedAt`, `updatedAt`, `stale`: the artifacts changed since), `offer` (`asked` or `suggested`: its job finished and it is not promoted), and `job` once it has one: `id`, `status`, `result`, `error`, `finishedAt`, `questions` (its open questions: `id`, `text`, `tier`, `askedAt`; answer one with `POST /ui/api/questions/:id/answer`)';
 
 export const DIRECT_JOB_OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/direct-jobs', tag: 'Jobs', summary: 'Direct jobs', description: 'Issue #901: every job a person submitted straight to the hopper, newest first, each with its newest job as it stands now. Not cached.', returns: `\`{ directJobs: DirectJob[] }\`; ${VIEW}` },
   { method: 'get', path: '/api/direct-jobs/:id', tag: 'Jobs', summary: 'One direct job', description: 'Issue #901: the direct job and its newest job: its status, its result once it ended, its error, its open questions. How a requester reads the result back.', returns: VIEW, errors: [404] },
-  { method: 'post', path: '/ui/api/direct-jobs', tag: 'Jobs', summary: 'Submit a direct job', description: 'Issue #901: a job with no GitHub issue. `title`, `brief` (what to do), routing `labels` (the routing rules match them, as an issue\'s), `authorizations` (what the submitter authorizes it to do or reach), `repo` (`owner/name`, the one repository its work may open a pull request on; absent: none), `executor` (default `herdr-claude`), `priority` (0–100, default 50). The brief and the results stay in the hopper: nothing goes to GitHub unless its work opens a pull request on `repo`. Its job is queued at once, from the job source `direct`, and waits at the queue gate as any job. `direct_job.submitted` records who submitted it and what they authorized. A box action: an API token needs to be a box token.', role: 'operator', body: directJobBody, returns: `\`{ directJob: DirectJob, job?: Job }\`; ${VIEW}` },
+  { method: 'post', path: '/ui/api/direct-jobs', tag: 'Jobs', summary: 'Submit a direct job', description: 'Issue #901: a job with no GitHub issue. `title`, `brief` (what to do), routing `labels` (the routing rules match them, as an issue\'s), `authorizations` (what the submitter authorizes it to do or reach), `repo` (`owner/name`, the one repository its work may open a pull request on; absent: none), `executor` (default `herdr-claude`), `priority` (0–100, default 50), `promoteWhenDone` (issue #946: offer its promotion to GitHub once it finished; nothing is posted without a person\'s confirmed preview). The brief and the results stay in the hopper: nothing goes to GitHub unless its work opens a pull request on `repo`. Its job is queued at once, from the job source `direct`, and waits at the queue gate as any job. `direct_job.submitted` records who submitted it and what they authorized. A box action: an API token needs to be a box token.', role: 'operator', body: directJobBody, returns: `\`{ directJob: DirectJob, job?: Job }\`; ${VIEW}` },
 ];
 
 /** The direct jobs' reads (issue #901), beside the other `/api/` reads. */
@@ -55,6 +56,7 @@ export function registerDirectJobRoutes(app: FastifyInstance, o: { operator: Gua
     return o.tenant(req).directJobs.submit({
       title: b.title, brief: b.brief, labels: b.labels, authorizations: b.authorizations,
       ...(b.repo ? { repo: b.repo } : {}), ...(b.executor ? { executor: b.executor } : {}), ...(b.priority !== undefined ? { priority: b.priority } : {}),
+      ...(b.promoteWhenDone ? { promoteWhenDone: true } : {}),
     }, actingOf(s));
   });
 }

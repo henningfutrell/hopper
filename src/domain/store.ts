@@ -492,7 +492,7 @@ export interface UserStore {
   /** The issue graph (issue #437): store only, nothing reads it yet. */
   issueGraph: import('./issue-graph.ts').IssueGraphRepository;
   /** Pointed jobs (issue #425); direct jobs (issue #901): what a person submitted straight to the hopper. */
-  pointedJobs: PointedJobRepository; directJobs: import('./direct-jobs.ts').DirectJobRepository;
+  pointedJobs: PointedJobRepository; directJobs: import('./direct-jobs.ts').DirectJobRepository; promotions: import('./promotions.ts').PromotionRepository;
   /** GitHub watches (issue #427): each pointed job's last snapshot. */
   githubWatches: GitHubWatchRepository;
   /** Each job's latest checkpoint (issue #921): its patch and agent session, scrubbed. */

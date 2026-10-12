@@ -1,8 +1,9 @@
 // Direct jobs (issue #901, design.md "Direct jobs"), a view of its own (#direct-jobs): a person submits a job straight to
 // the hopper — a title, a brief, routing labels, what they authorize, and the one repository its work may open a pull
 // request on —, with no GitHub issue behind it. The list reads each direct job back, newest first, with its job's state,
-// its open questions (answered in Questions), its result and its error. The brief and the results stay in the hopper.
-// The form only for an operator or admin: the daemon refuses the rest. Read when shown, and every 15 s.
+// its open questions (answered in Questions), its result, its error and its artifacts. The brief and the results stay in
+// the hopper until a person promotes them to GitHub (issue #946, direct-job-promotion.tsx); one offered for promotion is
+// pinned at the top. The form only for an operator or admin: the daemon refuses the rest. Read when shown, and every 15 s.
 import { Send, Zap } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
@@ -14,10 +15,11 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { usePoll } from '@/hooks/use-poll';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import { directDraftProblem, directJobRequest, directJobState, emptyDirectDraft, resultText, submittedLine, type DirectJobDraft } from '@/model/direct-jobs';
+import { directDraftProblem, directJobRequest, directJobState, emptyDirectDraft, offeredFirst, resultText, submittedLine, type DirectJobDraft } from '@/model/direct-jobs';
 import type { DirectJobView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanOperate } from '@/store/selectors';
+import { Promotion } from './direct-job-promotion';
 
 const POLL_MS = 15_000;
 
@@ -33,7 +35,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 function SubmitForm({ onSubmitted }: { onSubmitted: () => void }) {
   const [draft, setDraft] = useState<DirectJobDraft>(emptyDirectDraft);
   const [busy, setBusy] = useState(false);
-  const set = (k: keyof DirectJobDraft) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft((d) => ({ ...d, [k]: e.target.value }));
+  const set = (k: Exclude<keyof DirectJobDraft, 'promoteWhenDone'>) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft((d) => ({ ...d, [k]: e.target.value }));
   const problem = directDraftProblem(draft);
   const submit = async () => {
     setBusy(true);
@@ -65,6 +67,10 @@ function SubmitForm({ onSubmitted }: { onSubmitted: () => void }) {
         </Field>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <Field label="Priority" hint="0–100, optional"><Input aria-label="Priority" className="w-24" inputMode="numeric" value={draft.priority} onChange={set('priority')} placeholder="50" /></Field>
+          <label className="flex items-center gap-2 text-xs">
+            <input type="checkbox" aria-label="Offer to promote it to GitHub when done" checked={draft.promoteWhenDone} onChange={(e) => setDraft((d) => ({ ...d, promoteWhenDone: e.target.checked }))} />
+            Offer to promote it to GitHub when done
+          </label>
           <div className="flex items-center gap-3">
             {problem && <span data-slot="direct-job-problem" className="text-xs text-muted-foreground">{problem}</span>}
             <Button type="submit" size="sm" disabled={busy || problem !== undefined}><Send />Submit</Button>
@@ -75,7 +81,7 @@ function SubmitForm({ onSubmitted }: { onSubmitted: () => void }) {
   );
 }
 
-function Row({ d }: { d: DirectJobView }) {
+function Row({ d, canOperate, onChanged }: { d: DirectJobView; canOperate: boolean; onChanged: () => void }) {
   const state = directJobState(d);
   const result = resultText(d.job?.result);
   return (
@@ -105,6 +111,14 @@ function Row({ d }: { d: DirectJobView }) {
       )}
       {result !== undefined && <pre data-slot="direct-job-result" className="max-h-48 overflow-auto rounded-md bg-muted/50 p-2 text-xs whitespace-pre-wrap">{result}</pre>}
       {d.job?.error && <p className="text-xs text-bad">{d.job.error}</p>}
+      {d.artifacts.length > 0 && (
+        <ul data-slot="direct-job-artifacts" className="grid gap-0.5 text-xs">
+          {d.artifacts.map((a) => (
+            <li key={a.id}><a className="underline" href={`#artifacts/${a.id}`}>{a.title}</a>{a.summary ? ` — ${a.summary}` : ''} <span className="text-muted-foreground">({a.kind}, revision {a.revision})</span></li>
+          ))}
+        </ul>
+      )}
+      <Promotion d={d} canOperate={canOperate} onChanged={onChanged} />
     </li>
   );
 }
@@ -125,7 +139,7 @@ export function DirectJobs() {
           ? <Empty>loading</Empty>
           : list.length === 0
             ? <Empty>No direct jobs yet.</Empty>
-            : <ul>{list.map((d) => <Row key={d.id} d={d} />)}</ul>}
+            : <ul>{offeredFirst(list).map((d) => <Row key={d.id} d={d} canOperate={canOperate} onChanged={() => { load().catch(() => {}); }} />)}</ul>}
       </Panel>
     </div>
   );

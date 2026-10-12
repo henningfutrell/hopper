@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "repo": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "issue",
+        "comment"
+      ]
+    },
+    "number": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "url": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    },
+    "artifacts": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "update": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "repo",
+    "kind",
+    "number",
+    "url",
+    "by",
+    "artifacts",
+    "update"
+  ],
+  "additionalProperties": false
+}

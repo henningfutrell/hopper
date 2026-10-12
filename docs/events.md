@@ -4354,6 +4354,56 @@ Version 1 (`docs/schemas/direct_job.submitted.v1.json`). A person submitted a di
 }
 ```
 
+## `direct_job.promoted`
+
+Version 1 (`docs/schemas/direct_job.promoted.v1.json`). A person promoted a direct job to GitHub (issue #946), with their own GitHub connection: `id` the direct job, `repo`, `kind` (`issue`: a new issue, or `comment` on the issue `number`), `number`, `url`, `by` who, `artifacts` how many were linked, and `update` true when it edited what an earlier promotion posted. Never the text.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `repo` | string | yes |
+| `kind` | `issue` \| `comment` | yes |
+| `number` | integer | yes |
+| `url` | string | yes |
+| `by` | string | yes |
+| `artifacts` | integer | yes |
+| `update` | boolean | yes |
+
+```json
+{
+  "id": "d1",
+  "repo": "octo-org/ops",
+  "kind": "issue",
+  "number": 12,
+  "url": "https://github.com/octo-org/ops/issues/12",
+  "by": "octocat",
+  "artifacts": 1,
+  "update": false
+}
+```
+
+## `direct_job.promotion_revoked`
+
+Version 1 (`docs/schemas/direct_job.promotion_revoked.v1.json`). A person revoked the promotion of a direct job (issue #946): `id`, `repo`, `kind`, `number`, `by`. The link in the hopper ends; GitHub keeps what was posted.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `repo` | string | yes |
+| `kind` | `issue` \| `comment` | yes |
+| `number` | integer | yes |
+| `by` | string | yes |
+
+```json
+{
+  "id": "d1",
+  "repo": "octo-org/ops",
+  "kind": "issue",
+  "number": 12,
+  "by": "octocat"
+}
+```
+
 ## `infra.plan_recorded`
 
 Version 1 (`docs/schemas/infra.plan_recorded.v1.json`). A job recorded a plan of an infrastructure change (issue #870): what made it (`tool`), the asset an apply of it is minted a credential for, the workspace or app it changes (`target`), the repository, branch (`ref`) and commit it was made at, its pull request, the read profile it was made with (`read`), the job's issue, whether a saved plan file came with it (`file`), when it goes stale (`expiresAt`), and its `summary` (issue #870 part 2): what it changes in plain words, its `level` (`low` or `high`), its risk callouts (`destroy`, `iam`, `prod`, `data`, `network`), and whether it `failed` a check (a new AWS resource without the MAP tag: nobody approves such a plan). Never its text or its file. A plan is never changed once kept. The notifiers send it, with the watchers of its environments (part 4).
