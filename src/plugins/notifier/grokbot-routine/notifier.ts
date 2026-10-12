@@ -112,7 +112,7 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
       if (e.type === 'job.finished' || e.type === 'job.failed') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), jobPayload(e, job));
       if (e.type === 'auth.pending' || e.type === 'auth.expired') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), loginPayload(e, job, clock.now(), feed?.loginsUrl?.()));
       if (e.type === 'artifact.created') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), artifactPayload(e, job, feed?.artifactUrl?.(String(e.data.artifact))));
-      if (e.type !== 'question.escalated_to_human') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), intakePayload(e, job));
+      if (e.type !== 'question.escalated_to_human') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), intakePayload(e, job, e.type === 'infra.out_of_band_recorded' ? feed?.infraUrl?.() : undefined));
       const q = feed?.question(e.data.questionId as string);
       if (!q || sent.has(q.id) || 'problem' in routine()) return false;
       return sendQuestion(q, false, e.at);

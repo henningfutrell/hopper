@@ -1,7 +1,7 @@
 // Out-of-band changes in the UI (ui/src/model/out-of-band.ts, issue #871), pure: each change in one line — where it was
 // found, what changed, who did it — and its state: open until a person marks it, then the mark and why.
 import { describe, expect, it } from 'vitest';
-import { changeHeadline, changeState, controllersFrom, reportedBy } from '../../ui/src/model/out-of-band.ts';
+import { changeHeadline, changeState, changesUnmarked, controllersFrom, reportedBy } from '../../ui/src/model/out-of-band.ts';
 import type { OutOfBandView } from '../../src/domain/types.ts';
 
 const change: OutOfBandView = {
@@ -31,5 +31,12 @@ describe('the out-of-band changes model', () => {
 
   it('reads controller identities one per line', () => {
     expect(controllersFrom(' system:serviceaccount:argocd:*\n\n arn:aws:sts::123456789012:assumed-role/atlantis/* \n')).toEqual(['system:serviceaccount:argocd:*', 'arn:aws:sts::123456789012:assumed-role/atlantis/*']);
+  });
+
+  it('counts the changes no one marked (the Infra badge); none for no answer yet', () => {
+    const marked = { ...change, id: 'c2', marked: { change: 'c2', mark: 'reverted' as const, by: 'Ada', at: '2026-10-12T11:00:00Z' } };
+    expect(changesUnmarked({ changes: [change, marked, { ...change, id: 'c3' }] })).toBe(2);
+    expect(changesUnmarked(undefined)).toBe(0);
+    expect(changesUnmarked({})).toBe(0);
   });
 });

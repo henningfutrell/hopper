@@ -1,10 +1,10 @@
-// Reads of the daemon that the nav, Needs you and the header share (issue #897): the pull requests, the infra plans, and
-// yolo mode. Each path is read once when first used, again every POLL_MS while anything shows it, and again after an event
+// Reads of the daemon that the nav, Needs you and the header share (issue #897): the pull requests, the infra plans, the
+// out-of-band changes (issue #871), and yolo mode. Each path is read once when first used, again every POLL_MS while anything shows it, and again after an event
 // whose type starts with one of the given prefixes. A failed read keeps the last answer; until one comes, there is none.
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { get } from '@/lib/api';
-import type { PlanView, PullRequestsView, YoloModeView } from '@/model/wire';
+import type { OutOfBandView, PlanView, PullRequestsView, YoloModeView } from '@/model/wire';
 import { useHopper } from './index';
 
 const POLL_MS = 30_000;
@@ -36,7 +36,8 @@ function usePolled<T>(path: string, events: readonly string[] = NO_EVENTS): T | 
   return usePolledStore((s) => s[path]) as T | undefined;
 }
 
-/** The three shared reads, each with the events after which it is read again; a plan is recorded with no event. */
+/** The shared reads, each with the events after which it is read again; a plan is recorded with no event. */
 export const usePullRequestsView = (): PullRequestsView | undefined => usePolled('/api/pull-requests', ['job.pull_request_', 'yolo_mode.']);
 export const useInfraPlans = (): { plans: PlanView[] } | undefined => usePolled('/api/infra-plans');
+export const useOutOfBand = (): { changes: OutOfBandView[] } | undefined => usePolled('/api/out-of-band', ['infra.out_of_band_']);
 export const useYoloMode = (): YoloModeView | undefined => usePolled('/api/yolo-mode', ['yolo_mode.']);
