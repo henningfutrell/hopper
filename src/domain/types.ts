@@ -479,7 +479,6 @@ export { ESCALATION_REASONS } from './questions.ts';
 // ---- Sources: src/domain/sources.ts (re-exported here) ------------------------------------
 
 export type { SourceStatus } from './sources.ts';
-export type { TaskCount } from './task-count.ts';
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
@@ -523,6 +522,7 @@ export * from './state-backend.ts';
 export * from './artifacts.ts';
 export * from './tldr.ts';
 export * from './pointed-jobs.ts';
+export * from './job-graph.ts';
 export * from './github-watch.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
