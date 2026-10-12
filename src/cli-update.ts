@@ -1,10 +1,11 @@
 // `hopper update` (issue #697, design.md "Self-update"): the one update of a container install, from the image to update
 // to. Needs no database: it is run as `podman run --rm <image> hopper update <tool>` on the host, and prints what the
-// host runs. `carry` and `override` are the script's own steps: the .env lines that keep an old compose.yaml's own
-// settings, and the compose.override.yaml that keeps what .env cannot hold (the install's own one in HOPPER_UPDATE_OVERRIDE).
+// host runs. `carry` and `override` are the script's own steps (issue #894): the new compose.yaml, with the settings of
+// the old one on stdin, of an old .env (HOPPER_UPDATE_ENV) and of the launch (HOPPER_UPDATE_LAUNCH) as its variables' defaults, and the compose.override.yaml
+// that keeps what compose.yaml cannot name (the install's own one in HOPPER_UPDATE_OVERRIDE).
 import { parseArgs } from 'node:util';
 import type { CliIo } from './cli.ts';
-import { carryLocalSettings, carryOverride } from './update/compose-carry.ts';
+import { carryCompose, carryOverride } from './update/compose-carry.ts';
 import { readInstallInfo } from './update/install.ts';
 import { BUILD_DIR, readShippedCompose } from './update/shipped-compose.ts';
 import { COMPOSE_TOOLS, IMAGE_REF, isComposeTool, PUBLISHED_IMAGE, updateScript } from './update/update-script.ts';
@@ -27,16 +28,18 @@ export function runUpdate(args: string[], io: CliIo, appDir = BUILD_DIR): number
   const read = readShippedCompose(appDir);
   if (!read.ok) return fail(read.reason, 1);
   if (what === 'compose') { io.out(read.shipped.compose); return 0; }
-  if (what === 'carry') {
-    const carried = carryLocalSettings(io.stdin(), read.shipped.compose);
-    for (const note of carried.notes) io.err(`hopper update: note: ${note}\n`);
-    io.out(carried.env.map((l) => `${l}\n`).join(''));
-    return 0;
-  }
-  if (what === 'override') {
-    const carried = carryOverride(io.stdin(), read.shipped.compose, io.env.HOPPER_UPDATE_OVERRIDE || undefined);
-    for (const note of carried.notes) io.err(`hopper update: ${note}\n`);
-    if (carried.override !== undefined) io.out(carried.override);
+  if (what === 'carry' || what === 'override') {
+    if (!values.image || !IMAGE_REF.test(values.image)) return fail(`${what} needs --image <ref>, the image updated to`);
+    const old = io.stdin();
+    const carried = carryCompose({ old, shipped: read.shipped.compose, dotenv: io.env.HOPPER_UPDATE_ENV ?? '', launch: io.env.HOPPER_UPDATE_LAUNCH ?? '', image: values.image });
+    if (what === 'carry') {
+      for (const note of carried.notes) io.err(`hopper update: ${note}\n`);
+      io.out(carried.compose);
+      return 0;
+    }
+    const override = carryOverride(old, carried.compose, io.env.HOPPER_UPDATE_OVERRIDE || undefined, carried.overrideEnv);
+    for (const note of override.notes) io.err(`hopper update: ${note}\n`);
+    if (override.override !== undefined) io.out(override.override);
     return 0;
   }
   if (!isComposeTool(what)) return fail(`unknown tool ${what}; one of ${COMPOSE_TOOLS.join(', ')}`);

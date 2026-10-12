@@ -5,7 +5,7 @@
 // Asserted on the rendered form compose runs (`docker compose config`, the provider `podman compose`
 // uses too), from an empty directory: the file as downloaded.
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -26,14 +26,18 @@ interface Service {
 }
 interface Rendered { name: string; services: Record<string, Service & { networks?: Record<string, unknown> }>; volumes: Record<string, unknown>; networks?: Record<string, { name?: string; external?: boolean }> }
 
-/** `docker compose config` of compose.yaml copied alone into a fresh directory, with `.env` when given (and compose.sandboxes.yaml as compose.override.yaml, `override`). */
-function render(dotenv?: string, env: Record<string, string> = {}, override = false): Rendered {
+/**
+ * `docker compose config` of compose.yaml copied alone into a fresh directory, with `launch` (`KEY=value` lines) in the
+ * environment compose is launched with — never a `.env` file (issue #894) — and compose.sandboxes.yaml as
+ * compose.override.yaml (`override`).
+ */
+function render(launch?: string, env: Record<string, string> = {}, override = false): Rendered {
   const dir = mkdtempSync(join(tmpdir(), 'jh-compose-'));
   copyFileSync(join(ROOT, 'compose.yaml'), join(dir, 'compose.yaml'));
   if (override) copyFileSync(join(ROOT, 'compose.sandboxes.yaml'), join(dir, 'compose.override.yaml'));
-  if (dotenv !== undefined) writeFileSync(join(dir, '.env'), dotenv);
+  const given = Object.fromEntries((launch ?? '').split('\n').filter(Boolean).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
   const out = spawnSync('docker', ['compose', 'config', '--format', 'json'], {
-    cwd: dir, encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: dir, ...env },
+    cwd: dir, encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: dir, ...given, ...env },
   });
   expect(out.status, out.stderr).toBe(0);
   return JSON.parse(out.stdout) as Rendered;
@@ -92,8 +96,8 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(hopper.depends_on?.postgres?.condition).toBe('service_healthy');
   });
 
-  it('keeps no master key in a volume: the hopper reads HOPPER_MASTER_KEY from .env, and the old token_key only to move it (issue #659)', () => {
-    expect(hopper.environment?.HOPPER_MASTER_KEY).toBeUndefined();
+  it('keeps no master key in a volume or a file: the hopper reads HOPPER_MASTER_KEY from the launch, and the old token_key only to move it (issues #659, #894)', () => {
+    expect(hopper.environment?.HOPPER_MASTER_KEY ?? '').toBe('');
     expect(hopper.environment?.HOPPER_MASTER_KEY_FILE).toBeUndefined();
     const key = 'ab'.repeat(32);
     expect(svc(render(`HOPPER_MASTER_KEY=${key}\n`), 'hopper').environment?.HOPPER_MASTER_KEY).toBe(key);
@@ -168,11 +172,15 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
   });
 });
 
-describe('compose.yaml with a .env beside it', () => {
-  it('passes its settings and secrets to the hopper', () => {
-    const hopper = svc(render('HOPPER_PUBLIC_URL=https://hopper.example.com\nCLAUDE_CODE_OAUTH_TOKEN=t0\n'), 'hopper');
+describe('compose.yaml with settings given at launch (issue #894: no .env)', () => {
+  it('reads no env_file: the hopper gets only the settings the file names', () => {
+    const raw = readFileSync(join(ROOT, 'compose.yaml'), 'utf8');
+    expect(raw).not.toMatch(/^\s*env_file:/m);
+    const hopper = svc(render('HOPPER_PUBLIC_URL=https://hopper.example.com\nCLAUDE_CODE_OAUTH_TOKEN=t0\nCOMPOSE_PROFILES=kms\n'), 'hopper');
     expect(hopper.environment?.HOPPER_PUBLIC_URL).toBe('https://hopper.example.com');
-    expect(hopper.environment?.CLAUDE_CODE_OAUTH_TOKEN).toBe('t0');
+    expect(hopper.environment?.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    // The drift check reads the profiles the stack was started with (src/update/drift.ts).
+    expect(hopper.environment?.COMPOSE_PROFILES).toBe('kms');
   });
 
   it('moves the UI port on both sides, so the Host the browser sends names the daemon\'s port; runs another image', () => {

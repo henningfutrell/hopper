@@ -40,7 +40,8 @@ function Form({ view, onSaved }: { view: RemoteAccessView; onSaved: (v: RemoteAc
       <p data-slot="remote-access-status" className={`font-medium ${STATE_TONE[view.status.state]}`}>{remoteAccessStatusLine(view)}</p>
       <p className="text-xs text-muted-foreground">
         An ngrok tunnel lets an agent (Grok Bot) reach the hopper&apos;s API from anywhere, with no open port on this machine. Only the API goes
-        through it, and each caller is rate limited. The tunnel service in the hopper&apos;s compose stack asks for these settings every 10 s.
+        through it, and each caller is rate limited. The tunnel service in the hopper&apos;s compose stack asks for these settings every 10 s.{' '}
+        <a className="underline" href="/help/remote-access" target="_blank" rel="noopener">Help: Remote access</a>
       </p>
       {!view.service && <p role="note" className="text-xs text-amber-600">This hopper runs no tunnel service. The compose stack runs one: see docs/deploy.md &quot;Remote access&quot;.</p>}
       {view.problem && <p role="alert" className="text-xs text-destructive">{view.problem}</p>}
