@@ -15111,3 +15111,18 @@ in Needs you, a global yolo indicator, and the duplicates of the question, decid
 
 **Left for later parts:** the duplicates of the question, decider and auto-park controls in Settings, and Settings → Your
 reports and Question history, if they stay actionable.
+
+## Needs you, part 3: Settings keeps configuration only (issue #897, 2026-10-12)
+
+**As built:**
+- **Decider picks on Decisions.** The newest picks, each with Override, left Settings → Decider for the Decisions page, in
+  a panel that always renders (`DeciderPicks`, `ui/src/views/minor-decisions.tsx`). Settings → Decider keeps the decision
+  points, the TypeSafe API key, and a link to Decisions. Both read `GET /api/minor-decisions`; no route changed.
+- **Question history on Questions.** It holds Correct, so it left Settings for a section of Questions:
+  `#questions/history`, a tab beside the open questions. `#questions` alone still holds only the open questions (#151).
+- **Your reports is its own view** (`#reports`, nav group Jobs). It holds no decision, but it is no configuration either.
+- **Old links.** `#settings/history` and `#settings/reports` are replaced by their new hashes (`LEFT`,
+  `ui/src/views/settings.tsx`).
+- **No duplicates found for auto-park or the issue thread.** Auto-park and the issue thread are configuration, set only in
+  Settings; Parked and Questions show a job's state (`ThreadState`), not their settings. The phase-shift settings on
+  Questions and the failures settings on Failures are configuration with one home each, so they stay.

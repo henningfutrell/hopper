@@ -89,6 +89,8 @@ Each point has a mode in **Settings → Decider**:
 
 Jev never decides a consequential choice: one that deletes, deploys or publishes, force-pushes, spends money, touches credentials, sends a message, changes permissions, or runs on a gated machine. Its pick is recorded as consequential and not applied. Jev never answers a question: it only checks the risk of a level's answer.
 
+Each pick shows on **Decisions**, in the panel **Decider picks**: its options, what Jev picked and how sure it was, and what was decided. Select **Override** to say what it should have been. An override counts in the agreement rate.
+
 Jev needs your TypeSafe API key. Set it in **Settings → Decider**, or with `hopper typesafe-key set` (it reads the key from standard input). Without a key, Jev is off and every decision is made as before.
 
 ## How to use it
@@ -128,7 +130,7 @@ hopper question dismiss <question-id>
 
 ### Correct an auto-answer
 
-1. Open **Settings → Question history**.
+1. Open **Questions** and select the **History** tab.
 2. Find the auto-answered question and select **Correct**.
 3. Type the right answer and select **Send correction**.
 
@@ -180,7 +182,7 @@ Ask for one with the label `hopper:research` or `hopper:proposal`, a `Research` 
 - It tells you of a question that reaches you, through your notifiers and webhooks, and again every 15 minutes while it waits (`HOPPER_HUMAN_RENOTIFY_MS`).
 - It parks the job when its question waits on you too long (30 minutes by default, **Settings → Auto-park**). The lane is free again. A question a risk rule or the guard sent to you never parks its job.
 - It reuses your answer when the same question comes again on the same issue.
-- It keeps every handled question in **Settings → Question history**, in its own database. It sends a question to GitHub only to ask it on the issue thread, as **Settings → Issue thread** allows.
+- It keeps every handled question in **Questions → History**, in its own database. It sends a question to GitHub only to ask it on the issue thread, as **Settings → Issue thread** allows.
 
 ## Limits and troubleshooting
 
