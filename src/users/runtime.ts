@@ -335,7 +335,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => withLaunch(vaultTargets(host.targets()), o.launchScopes?.(user.id)), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends(), plans: proxy.githubProxy.infraPlans, ...(o.sharedSecrets ? { shared: o.sharedSecrets } : {}) }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
   const engine: Engine = createEngine({
     store, clock, executors, router, questions, reviews, logins, queueSorter: host.queueSorter,
-    routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
+    routing: { rules: () => host.routingRules(), machines: () => host.machineIds() }, configuredMachines: () => host.configuredMachineIds(),
     ...(seams.fakeUsage ? { fakeUsage: seams.fakeUsage } : {}),
     // Every machine follows the plugins config without a restart (issues #18, #74); the pinned host keys with it.
     machines: { list: () => { pinned(host.targets()); return host.machines().list(); } },
@@ -377,12 +377,12 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const stopFailureLog = logFailures(store);
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
-  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => o.uiUrl(`question-${id}`), loginsUrl: () => o.uiUrl('logins'), highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), ...(o.reach ? { reach: o.reach } : {}) });
+  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => o.uiUrl(`question-${id}`), loginsUrl: () => o.uiUrl('logins'), infraUrl: () => o.uiUrl('infra'), highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), ...(o.reach ? { reach: o.reach } : {}) });
   // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them; lane tuning (issue #688) after new samples.
   const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), afterMachineRecord: () => engine.laneTuning.record(), store, clock, logger });
   const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
   // Windows sandbox steps (issue #731): the user's Windows hosts read at each step; over ssh with the hopper's own key.
-  const windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }) });
+  const windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }) });
   let started = false, stopped: Promise<void> | undefined;
   return {
     jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps,

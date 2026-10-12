@@ -1,4 +1,5 @@
-// Decisions, newest first: each one's starts, holds, lane plans, divergences and reasons.
+// Decisions, newest first: each one's starts, holds, lane plans, divergences and reasons. Below them, the decider's picks
+// (issue #897): their one home, with Override.
 import { ChevronRight, Scale } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Empty, Panel } from '@/components/panel';
@@ -8,6 +9,7 @@ import { clock } from '@/model/format';
 import type { Decision } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useJobName } from '@/store/selectors';
+import { DeciderPicks } from '@/views/minor-decisions';
 
 function Section({ title, children }: { title: string; children: React.ReactNode[] }) {
   if (!children.length) return null;
@@ -46,8 +48,11 @@ function DecisionRow({ d }: { d: Decision }) {
 export function Decisions() {
   const decisions = useHopper((s) => s.decisions);
   return (
-    <Panel title="Decisions" icon={Scale} count={decisions.length || ''} bodyClassName="p-0">
-      {decisions.length ? decisions.map((d) => <DecisionRow key={d.id} d={d} />) : <Empty>no decisions yet</Empty>}
-    </Panel>
+    <div className="space-y-3">
+      <Panel title="Decisions" icon={Scale} count={decisions.length || ''} bodyClassName="p-0">
+        {decisions.length ? decisions.map((d) => <DecisionRow key={d.id} d={d} />) : <Empty>no decisions yet</Empty>}
+      </Panel>
+      <DeciderPicks />
+    </div>
   );
 }

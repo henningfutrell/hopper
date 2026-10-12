@@ -3,8 +3,9 @@
 // must wait; or why it cannot be parked). A level's recommendation on the trail is sent in one click, Use answer, by
 // the same route as Send answer; the card says in place whether it was sent, or why not with Retry (issue #459). A 403 on a mutation drops the UI to logged out: the landing
 // page (issue #213). Shown, the owner's
-// questions are marked seen (the nav badge clears). The header names the machine that raised the question (issue #485). Only the open questions: the question history and
-// the question gates are in Settings (issue #151). A session whose UI role cannot act (viewer) sees a
+// questions are marked seen (the nav badge clears). The header names the machine that raised the question (issue #485). #questions holds only the open
+// questions; the question history is its own section, #questions/history (issue #897: it left Settings, as it holds Correct), and the question gates are in
+// Settings (issue #151). A session whose UI role cannot act (viewer) sees a
 // notice instead of the box. One order, the API's: high-priority jobs' questions first (issue #535), tagged, then oldest
 // first, the longest waiting on top (issue #450).
 // Research this and Propose this (issue #548): a phase shift — a fork, or a switch of the whole job — where the server
@@ -42,6 +43,9 @@ import { useCanAdmin, useCanOperate, useJobIndex, useQuestions } from '@/store/s
 import { ParkButton } from '@/views/overview/lanes';
 import { PhaseShiftSettingsPanel, QuestionForks, ShiftActions } from '@/views/phase-shifts';
 import { ReportBugButton } from '@/app/bug-report';
+import { useSection } from '@/app/nav';
+import { cn } from '@/lib/utils';
+import { QuestionHistory } from '@/views/question-history';
 
 const Mark = ({ ok }: { ok: boolean }) => <span className={ok ? 'text-ok' : 'text-bad'}>{ok ? '✓' : '✗'}</span>;
 
@@ -194,7 +198,7 @@ function ReasonFilter({ counts, total, value, onChange }: {
   );
 }
 
-export function Questions() {
+function OpenQuestions() {
   const questions = useQuestions();
   const [reason, setReason] = useState<EscalationReason | undefined>(undefined);
   const counts = useMemo(() => reasonCounts(questions), [questions]);
@@ -220,6 +224,28 @@ export function Questions() {
           <ArrowDown />{below} new below
         </Button>
       )}
+    </div>
+  );
+}
+
+const TABS = [{ hash: '#questions', label: 'Open', section: '' }, { hash: '#questions/history', label: 'History', section: 'history' }] as const;
+
+/** The open questions (#questions), or the question history (#questions/history). */
+export function Questions() {
+  const history = useSection() === 'history';
+  return (
+    <div className="space-y-3">
+      <nav data-slot="questions-nav" aria-label="Questions sections" className="flex gap-1">
+        {TABS.map((t) => {
+          const current = (t.section === 'history') === history;
+          return (
+            <a key={t.hash} href={t.hash} aria-current={current ? 'page' : undefined}
+              className={cn('flex h-8 items-center rounded-md border px-3 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground',
+                current && 'border-foreground/20 bg-muted text-foreground')}>{t.label}</a>
+          );
+        })}
+      </nav>
+      {history ? <QuestionHistory /> : <OpenQuestions />}
     </div>
   );
 }

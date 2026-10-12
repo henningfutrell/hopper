@@ -19,6 +19,7 @@ import { AT_WORK, boxAsk, clientOf, launchedOf, launchRefusal, type ClientTarget
 import { createMinting, mintHere, type MintAsk, type MintFrom, type MintingOptions } from './mint.ts';
 import { createMintTest, type MintTestAnswer } from './mint-test.ts';
 import { systemReadRefusal } from './system-read.ts';
+import { stepDelivery, type StepDelivery } from './step-delivery.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS, type RadiusRules, type TemplateRadius } from '../domain/blast-radius.ts';
 import { givesOf, isSystemSecret, templateView, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type TemplateView, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
 import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/template.ts';
@@ -32,7 +33,7 @@ export { vaultContext };
 
 export type VaultResult = { ok: true } | { ok: false; code: 'invalid' | 'not_found' | 'conflict' | 'unavailable'; error: string };
 
-export interface VaultService extends TemplateChecks, AgentCredentials {
+export interface VaultService extends TemplateChecks, AgentCredentials, StepDelivery {
   view(): VaultView;
   /**
    * Sets a secret, or a new value or scope for one: sealed, never kept or answered in clear. Or (issue #585) points it at
@@ -375,10 +376,9 @@ export function createVaultService(o: {
     },
 
     mint: (ask, machineKey, from) => mint(ask, machineKey, from ?? mintFrom),
-    mintFrom,
-    testMint: (asset, by, from) => testMint(asset, by, from ?? mintFrom),
+    mintFrom, testMint: (asset, by, from) => testMint(asset, by, from ?? mintFrom),
 
-    ...templateChecks(o.store, { access: o.access, mintFrom }), ...agentCredentials(o.store, valueOf),
+    ...templateChecks(o.store, { access: o.access, mintFrom }), ...agentCredentials(o.store, valueOf), ...stepDelivery(o.store, o.clock, valueOf),
     resealAll: () => resealRows({ vault, sealer, mine: (name) => !isSystemSecret(name), what: 'vault secret', logger: o.logger }),
   };
 }

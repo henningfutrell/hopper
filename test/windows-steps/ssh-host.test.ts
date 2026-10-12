@@ -66,6 +66,21 @@ describe('the Windows step host over ssh', () => {
     expect(cleanup).toContain('Remove-Item');
   });
 
+  it('gives the step its secrets on the run call\'s stdin only: never in an argument, a copied file or another call', async () => {
+    const d = stepDir(false);
+    const r = await host().run(HOST, { id: 's5', command: 'nuget push', dir: d, inputs: false, outputs: [], secrets: { NUGET_TOKEN: 'never-in-argv' } }, { log: () => undefined, signal: new AbortController().signal });
+    expect(r).toEqual({ exit: 0 });
+    expect(readFileSync(join(dir, 'stdin.txt'), 'utf8')).toBe(`NUGET_TOKEN=${Buffer.from('never-in-argv').toString('base64')}\n`);
+    const encoded = Buffer.from('never-in-argv').toString('base64');
+    for (const c of calls()) for (const a of c.args) {
+      const decoded = a.startsWith('powershell ') ? Buffer.from(a.split(' ').at(-1)!, 'base64').toString('utf16le') : a;
+      expect(decoded).not.toContain('never-in-argv');
+      expect(decoded).not.toContain(encoded);
+    }
+    expect(readFileSync(join(dir, 'host', 'C', 'work', 'app', '.hopper-step', 'step.ps1'), 'utf8')).not.toContain('never-in-argv');
+    expect(scripts()[1]).toContain('[Console]::In.ReadToEnd()');
+  });
+
   it('copies no inputs when there are none, and says so when the outputs do not come back', async () => {
     const d = stepDir(false);
     const r = await host().run(HOST, { id: 's2', command: 'dir', dir: d, inputs: false, outputs: [] }, { log: () => undefined, signal: new AbortController().signal });

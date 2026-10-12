@@ -13,9 +13,9 @@ export function windowsHostsView(config: ConfigRecords): WindowsHostsView {
 
 export type WindowsHostsWrite = { ok: true; view: WindowsHostsView } | { ok: false; code: 'invalid' | 'conflict'; error: string };
 
-/** Replace the hosts with `hosts` if the record is still at `version`. A label left empty is dropped. */
+/** Replace the hosts with `hosts` if the record is still at `version`. A label left empty, or no secrets, is dropped. */
 export function writeWindowsHosts(config: ConfigRecords, hosts: WindowsHost[], version: string): WindowsHostsWrite {
-  const value = { hosts: hosts.map(({ label, ...h }) => (label?.trim() ? { ...h, label: label.trim() } : h)) };
+  const value = { hosts: hosts.map(({ label, secrets, ...h }) => ({ ...h, ...(label?.trim() ? { label: label.trim() } : {}), ...(secrets?.length ? { secrets } : {}) })) };
   const problem = windowsHostsProblem(value);
   if (problem) return { ok: false, code: 'invalid', error: problem };
   if (!config.write(WINDOWS_HOSTS, value, version)) return { ok: false, code: 'conflict', error: 'the Windows hosts changed since they were read; reload and edit again' };

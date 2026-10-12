@@ -102,7 +102,7 @@ export function createEngine(o: EngineOptions): Engine {
   }, (e) => console.error('decision failed', e));
 
   const c: EngineContext = {
-    store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines,
+    store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines, configuredMachines: o.configuredMachines ?? (() => undefined),
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
     questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems,
     machineLanes: o.machineLanes ?? (() => Promise.reject(new EngineError('conflict', 'a machine\'s lanes cannot be set here'))),

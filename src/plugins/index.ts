@@ -286,6 +286,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     reload: enqueue,
     routingRules: () => [...(configured?.routing ?? [])],
     machineIds,
+    configuredMachineIds: () => (config.error || !configured ? undefined : configured.machines.map((m) => m.name)),
     routing: routingConfig.report,
     editRouting: routingConfig.edit,
     notifierAction: (name, action) => runNotifierAction(host.notifiers(), name, action),

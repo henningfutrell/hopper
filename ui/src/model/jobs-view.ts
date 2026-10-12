@@ -4,7 +4,7 @@
 // row also shows its last event — the newest of what GET /api/jobs/last-events answered and the events the stream
 // brought since.
 import { hierarchy, tree as d3tree } from 'd3';
-import type { DomainEvent, JobGraph, JobGraphEdgeKind, JobGraphNode, JobStage, JobTree } from './wire.ts';
+import type { DomainEvent, JobGraph, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobStage, JobTree } from './wire.ts';
 
 /** A colour of the status palette (components/status.tsx `Tone`): the model names it, the view paints it. */
 export type Tone = 'busy' | 'ok' | 'bad' | 'warn' | 'question' | 'operator' | 'muted';
@@ -28,7 +28,11 @@ export const stageInfo = (stage: JobStage) => BY_STAGE.get(stage)!;
 export const EDGE_TEXT: Record<JobGraphEdgeKind, string> = {
   parent: 'sub-issue', follow_up: 'follow-up', works: 'job of', next_part: 'next part', rerun: 'run again',
   spawned: 'spawned', plan_apply: 'plan → apply', opened: 'opened', waits_on_merge: 'waits on merge', closes: 'closes',
+  blocked_by: 'blocked by', stacked_on: 'stacked on', asks: 'asks', hands_off: 'hands off',
 };
+
+/** Each node kind in plain words. */
+export const KIND_TEXT: Record<JobGraphNodeKind, string> = { job: 'job', issue: 'issue', pull_request: 'pull request', question: 'question', handoff: 'hand-off' };
 
 /** The Jobs view's filters: `null` shows every stage or repository. */
 export interface JobsFilter { stage: JobStage | null; repo: string | null }
@@ -91,7 +95,7 @@ export const NODE_H = 44;
 const COL = NODE_W + 56;
 const ROW = NODE_H + 14;
 
-const KIND_RANK = { issue: 0, job: 1, pull_request: 2 } as const;
+const KIND_RANK: Record<JobGraphNodeKind, number> = { issue: 0, job: 1, pull_request: 2, question: 3, handoff: 4 };
 
 /**
  * A tree laid out left to right from its root (d3's tidy tree): each node under the first node that reaches it, along

@@ -68,6 +68,19 @@ describe('layoutTree', () => {
     expect(layout.width).toBeGreaterThan(NODE_W);
     for (const p of layout.placed) expect(p.y).toBeGreaterThanOrEqual(0);
   });
+
+  it('places a question, a hand-off and a blocking issue too, and lists only jobs as rows (issue #900)', () => {
+    const g = jobGraph({
+      jobs: [job('w', 'waiting_answer', 'acme/app', '2026-10-01T10:00:00Z')],
+      questions: [{ id: 'q1', jobId: 'w', text: 'Which one?', since: '2026-10-01T10:30:00Z' }],
+      handoffs: [{ id: 'h1', jobId: 'w', text: 'Needs a person.', since: '2026-10-01T10:40:00Z' }],
+    });
+    const t = g.trees[0]!;
+    expect(layoutTree(g, t).placed.map((p) => p.id).sort()).toEqual([...t.nodes].sort());
+    expect(t.nodes).toEqual(expect.arrayContaining(['question:q1', 'handoff:h1']));
+    expect(jobRows(g, NO_FILTER).map((n) => n.id)).toEqual(['job:w']);
+    expect(stageCounts(g, null)).toEqual({ waiting: 1 });
+  });
 });
 
 describe('pullRequestText', () => {

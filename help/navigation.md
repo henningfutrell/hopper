@@ -11,7 +11,7 @@ The menu puts the other pages in groups. Each group has a heading.
 | Group | Pages |
 |---|---|
 | Waiting on you | Intake, Access requests, Questions, Proposals, Research, Logins, Failures, Parked |
-| Jobs | Overview, Jobs, Queue, Pull requests, Artifacts, Decisions, Events |
+| Jobs | Overview, Jobs, Queue, Pull requests, Artifacts, Decisions, Events, Your reports |
 | Infra | Infra |
 | Sources & machines | Sources, Machines, Usage |
 | Settings | Settings |

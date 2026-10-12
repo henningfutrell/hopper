@@ -22,7 +22,7 @@ import { laneName } from '@/model/board';
 import { clock, elapsed } from '@/model/format';
 import { jobHref } from '@/model/job';
 import {
-  EDGE_TEXT, filterChoices, jobRows, lastEvents, layoutTree, NO_FILTER, NODE_H, NODE_W, pullRequestText, pullRequestTone, shownTrees, stageCounts, stageInfo,
+  EDGE_TEXT, filterChoices, KIND_TEXT, jobRows, lastEvents, layoutTree, NO_FILTER, NODE_H, NODE_W, pullRequestText, pullRequestTone, shownTrees, stageCounts, stageInfo,
   STAGES, tasksText, type JobsFilter,
 } from '@/model/jobs-view';
 import type { DomainEvent, JobGraph, JobGraphEdge, JobGraphNode, JobStage, JobTree } from '@/model/wire';
@@ -125,13 +125,17 @@ const EDGE_STYLE: Record<JobGraphEdge['kind'], { dash?: string; tone: Tone }> = 
   parent: { tone: 'muted' }, follow_up: { dash: '2 3', tone: 'muted' }, works: { tone: 'muted' },
   next_part: { tone: 'operator' }, rerun: { dash: '4 3', tone: 'muted' }, spawned: { dash: '4 3', tone: 'question' },
   plan_apply: { tone: 'busy' }, opened: { tone: 'muted' }, waits_on_merge: { dash: '6 3', tone: 'operator' }, closes: { dash: '2 3', tone: 'ok' },
+  blocked_by: { dash: '6 3', tone: 'bad' }, stacked_on: { dash: '6 3', tone: 'warn' }, asks: { tone: 'question' }, hands_off: { tone: 'bad' },
 };
+
+/** A node's corners: an issue's soft, a job's round, a pull request's square, a question's and a hand-off's a pill. */
+const RADIUS: Record<JobGraphNode['kind'], number> = { issue: 6, job: 10, pull_request: 2, question: NODE_H / 2, handoff: NODE_H / 2 };
 
 const short = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 const NodeBox = memo(function NodeBox({ node, x, y, blocking, selected, onSelect }: { node: JobGraphNode; x: number; y: number; blocking: boolean; selected: boolean; onSelect: (id: string) => void }) {
   const tone = stageInfo(node.stage).tone;
-  const kind = node.kind === 'job' ? 'job' : node.kind === 'issue' ? 'issue' : 'pull request';
+  const kind = KIND_TEXT[node.kind];
   const tasks = tasksText(node);
   return (
     <g data-slot="graph-node" data-node-id={node.id} data-kind={node.kind} data-stage={node.stage} data-blocking={blocking ? '' : undefined}
@@ -139,7 +143,7 @@ const NodeBox = memo(function NodeBox({ node, x, y, blocking, selected, onSelect
       onClick={() => onSelect(node.id)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(node.id); } }}>
       <title>{`${node.label}\n${kind} · ${stageInfo(node.stage).label}${tasks ? ` · tasks ${tasks}` : ''}${blocking ? '\nblocks its root' : ''}`}</title>
       {blocking && <rect x={-3} y={-3} width={NODE_W + 6} height={NODE_H + 6} rx={9} fill="none" stroke="var(--bad)" strokeWidth={1.5} strokeDasharray="3 2" />}
-      <rect width={NODE_W} height={NODE_H} rx={node.kind === 'issue' ? 6 : node.kind === 'job' ? 10 : 2} fill="var(--card)"
+      <rect width={NODE_W} height={NODE_H} rx={RADIUS[node.kind]} fill="var(--card)"
         stroke={selected ? 'var(--foreground)' : COLOR[tone]} strokeWidth={selected ? 2 : 1.25} strokeDasharray={node.stage === 'no_job' ? '4 3' : undefined} />
       <rect width={5} height={NODE_H} rx={2} fill={COLOR[tone]} />
       <text x={12} y={17} fontSize={11} fill="var(--foreground)" fontWeight={500}>{short(node.label, tasks ? 22 : 28)}</text>
@@ -195,12 +199,12 @@ function NodeDetails({ graph, id, laneOf, now, onClose }: { graph: JobGraph; id:
   return (
     <div data-slot="graph-node-details" data-node-id={id} className="space-y-1.5 rounded-lg border bg-muted/30 px-3 py-2.5 text-xs">
       <div className="flex items-start gap-2">
-        <span className="min-w-0 flex-1 text-sm font-medium">{node.kind === 'job' && node.jobId ? <a href={jobHref(node.jobId)} className="underline-offset-4 hover:underline">{node.label}</a> : node.url ? <GhLink url={node.url}>{node.label}</GhLink> : node.label}</span>
+        <span className="min-w-0 flex-1 text-sm font-medium">{node.jobId ? <a href={jobHref(node.jobId)} className="underline-offset-4 hover:underline">{node.label}</a> : node.url ? <GhLink url={node.url}>{node.label}</GhLink> : node.label}</span>
         <StageBadge stage={node.stage} />
         <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground" aria-label="Close the details">✕</button>
       </div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted-foreground">
-        <dt>kind</dt><dd>{node.kind.replace('_', ' ')}</dd>
+        <dt>kind</dt><dd>{KIND_TEXT[node.kind]}</dd>
         {issue && <><dt>issue</dt><dd className="font-mono">{node.url ? <GhLink url={node.url}>{issue}</GhLink> : issue}</dd></>}
         {node.status && <><dt>status</dt><dd>{node.status.replace('_', ' ')}</dd></>}
         {node.tasks && <><dt>tasks</dt><dd className="font-mono">{tasksText(node)}</dd></>}

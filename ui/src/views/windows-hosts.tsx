@@ -1,7 +1,7 @@
 // Windows hosts (issue #731): where a job's Windows sandbox steps run — `sh "$HOPPER_STEP" run NAME` on a Linux
 // machine, one step at a time per host, over ssh, in PowerShell, in the host's working directory. Each host is a name,
-// an ssh destination, the host key a person confirmed from its fingerprint, and the working directory. The whole list
-// is saved against the version read (POST /ui/api/windows-hosts); the next step reads it. A section of Settings.
+// an ssh destination, the host key a person confirmed from its fingerprint, the working directory, and the vault secrets
+// its steps may be given (names; each step also needs the job's vault grant). The whole list is saved against the version read (POST /ui/api/windows-hosts); the next step reads it. A section of Settings.
 import { MonitorCog } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -14,8 +14,10 @@ import type { HostKeyOffer, WindowsHost, WindowsHostsView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
 
-interface Draft { name: string; ssh: string; workDir: string; label: string }
-const EMPTY: Draft = { name: '', ssh: '', workDir: '', label: '' };
+interface Draft { name: string; ssh: string; workDir: string; label: string; secrets: string }
+const EMPTY: Draft = { name: '', ssh: '', workDir: '', label: '', secrets: '' };
+/** The secret names a draft holds: split at commas and spaces, each once. */
+const secretNames = (text: string): string[] => [...new Set(text.split(/[\s,]+/).filter(Boolean))];
 
 function Field({ label, hint, children }: { label: string; hint?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -31,7 +33,7 @@ function Field({ label, hint, children }: { label: string; hint?: React.ReactNod
 function HostForm({ view, editing, onSaved, onCancel, save }: {
   view: WindowsHostsView; editing: WindowsHost | undefined; onSaved: () => void; onCancel: () => void; save: (hosts: WindowsHost[], done: string) => Promise<boolean>;
 }) {
-  const [d, setD] = useState<Draft>(() => (editing ? { name: editing.name, ssh: editing.ssh, workDir: editing.workDir, label: editing.label ?? '' } : EMPTY));
+  const [d, setD] = useState<Draft>(() => (editing ? { name: editing.name, ssh: editing.ssh, workDir: editing.workDir, label: editing.label ?? '', secrets: (editing.secrets ?? []).join(', ') } : EMPTY));
   const [offer, setOffer] = useState<HostKeyOffer | null>(null);
   const [busy, setBusy] = useState(false);
   const set = (over: Partial<Draft>) => { setD((x) => ({ ...x, ...over })); if (over.ssh !== undefined) setOffer(null); };
@@ -39,7 +41,8 @@ function HostForm({ view, editing, onSaved, onCancel, save }: {
   const taken = !editing && view.hosts.some((h) => h.name === d.name.trim());
   const ready = d.name.trim() !== '' && d.ssh.trim() !== '' && d.workDir.trim() !== '' && !taken;
   const write = async (hostKey: string) => {
-    const host: WindowsHost = { name: d.name.trim(), ssh: d.ssh.trim(), hostKey, workDir: d.workDir.trim(), ...(d.label.trim() ? { label: d.label.trim() } : {}) };
+    const secrets = secretNames(d.secrets);
+    const host: WindowsHost = { name: d.name.trim(), ssh: d.ssh.trim(), hostKey, workDir: d.workDir.trim(), ...(d.label.trim() ? { label: d.label.trim() } : {}), ...(secrets.length ? { secrets } : {}) };
     const hosts = editing ? view.hosts.map((h) => (h.name === editing.name ? host : h)) : [...view.hosts, host];
     if (await save(hosts, editing ? `Saved ${host.name}` : `Added ${host.name}`)) onSaved();
   };
@@ -71,6 +74,9 @@ function HostForm({ view, editing, onSaved, onCancel, save }: {
         </Field>
         <Field label="label" hint="optional; what the host is for">
           <Input className="h-9" value={d.label} disabled={busy} placeholder=".NET Framework builds" onChange={(e) => set({ label: e.target.value })} />
+        </Field>
+        <Field label="vault secrets" hint="optional; names of your vault secrets a step here may ask for (--secret NAME). Each step also needs the job's vault grant.">
+          <Input data-slot="windows-host-secrets" className="h-9 font-mono" value={d.secrets} disabled={busy} autoCapitalize="none" spellCheck={false} placeholder="NUGET_TOKEN, SIGN_PASS" onChange={(e) => set({ secrets: e.target.value })} />
         </Field>
       </div>
       {confirming && (
@@ -123,6 +129,7 @@ export function WindowsHosts() {
                   <span className="font-mono text-xs text-muted-foreground">{h.ssh}</span>
                   <span className="font-mono text-xs text-muted-foreground">{h.workDir}</span>
                   {h.label && <span className="text-xs text-muted-foreground">{h.label}</span>}
+                  {h.secrets?.length ? <span className="font-mono text-xs text-muted-foreground">secrets: {h.secrets.join(', ')}</span> : null}
                   {authed && (
                     <span className="ml-auto flex gap-1">
                       <Button size="sm" variant="ghost" onClick={() => setForm({ editing: h })}>Edit</Button>

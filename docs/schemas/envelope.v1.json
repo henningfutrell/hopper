@@ -224,6 +224,8 @@
         "step.started",
         "step.finished",
         "step.refused",
+        "vault.step_delivered",
+        "vault.step_refused",
         "jev.mode_changed",
         "router.mode_changed"
       ]

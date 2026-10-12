@@ -100,6 +100,8 @@ export interface PluginHost {
   routingRules(): RoutingRule[];
   /** The machine ids running now (every machine-source instance that runs): what intake routes to. */
   machineIds(): string[];
+  /** The machine names in the plugins config as loaded (issue #919); undefined while the config has an error. */
+  configuredMachineIds(): string[] | undefined;
   /** GET /api/routing. */
   routing(): RoutingReport;
   /** POST /ui/api/routing: the whole list; applied (re-read) before it resolves. */
