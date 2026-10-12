@@ -2,7 +2,7 @@
 
 import { homedir } from 'node:os';
 import { posix } from 'node:path';
-import { JOBS_DIR, type Job, type MachineSnapshot } from '../../domain/types.ts';
+import { JOBS_DIR, sourceItemOf, type Job, type MachineSnapshot } from '../../domain/types.ts';
 
 export const DEFAULT_TIMEOUT_MS = 3600000;
 
@@ -80,9 +80,9 @@ export function mappedWorkTree(workTrees: Record<string, string> | undefined, re
  * It keeps its `~`: workTreeOn resolves it on the lane's machine. `repo`: the job's GitHub repository, if
  * any: fetched or cloned in a work tree that is no repository (job-worktree.ts).
  */
-export function resolvePayload(job: Pick<Job, 'spec' | 'source' | 'forkOf'>, machine: Pick<MachineSnapshot, 'id' | 'workTree' | 'workTrees'>): ClaudeJobPayload {
-  // A fork (issue #548) works in its parent's repository.
-  const source = job.source ?? job.forkOf?.source;
+export function resolvePayload(job: Pick<Job, 'spec' | 'source' | 'forkOf' | 'followOn'>, machine: Pick<MachineSnapshot, 'id' | 'workTree' | 'workTrees'>): ClaudeJobPayload {
+  // A fork (issue #548), or a follow-on queued before issue #859, works in its parent's repository.
+  const source = sourceItemOf(job);
   const p = job.spec.payload as { prompt: string; cwd?: string; model?: string; env?: Record<string, string>; timeoutMs?: number };
   const own = job.spec.machineId === machine.id ? p.cwd : undefined;
   const repo = source?.repo && source.kind.startsWith('github') ? source.repo : undefined;

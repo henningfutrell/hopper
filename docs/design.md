@@ -10663,12 +10663,17 @@ selection is 400.
 **Follow-ons** (`createFollowOns`, `src/engine/follow-ons.ts`). Accepted with paths selected, outside a fork (whose
 result answers its parent's question, the selected paths named in it) and a switch that goes on (whose job is told the
 selected paths), each path continues as its own **follow-on** job, in the tx of the decision: the parent's spec without
-its asks, its priority, accepted at once, `followOn { jobId, proposalId, pathId, title, text, note, siblings, source }`;
-`job.queued` with `followOn`, then `proposal.followed_on` on the parent's timeline. A follow-on is told its path after its
-job rules (`followOnBrief`): the path as written, the person's note, and the other selected paths, which run as their
-own jobs. Like a fork, it has no source of its own; the sync never reports it to the parent's item. `signOff.selected`
-keeps each path with its job; the parent ends `finished`, its result `{ proposal: { id, version, decision, followOns: [{
-path, jobId }] } }`. Paths not selected stay on the version as the record. Follow-ons are jobs only: the hopper files no
+its asks, its priority, accepted at once, `followOn { jobId, proposalId, pathId, title, text, note, siblings }`;
+`job.queued` with `source` and `followOn`, then `proposal.followed_on` on the parent's timeline. A follow-on is told its
+path after its job rules (`followOnBrief`): the path as written, the person's note, and the other selected paths, which
+run as their own jobs. It has the parent's source as its own (#859): it pushes and opens its pull request on the
+parent's repository, the sync reports it to the parent's item, it is done only as any job of that item is (its pull
+request), and that pull request is followed, tended and merged as any job's. A follow-on queued before #859 kept the
+parent's item only as `followOn.source`; `sourceItemOf` still reads it for its repository. `signOff.selected` keeps each
+path with its job; the parent ends `finished`, its result `{ proposal: { id, version, decision, followOns: [{ path, jobId
+}] } }`. That parent (`handedToFollowOns`) leaves its item as it is, claimed: its end marks no issue ready or done, and
+it follows and is reconciled with no pull request — its follow-ons do the work, and only a pull request one of them
+opens makes the item done. Paths not selected stay on the version as the record. Follow-ons are jobs only: the hopper files no
 issue (GitHub text is neutral, and the hopper opens no issue of its own).
 
 **API and CLI.** `ReviewItemView.followOns`: each follow-on with its job's live status (as `QuestionView.forks`, #570).
