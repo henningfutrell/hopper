@@ -84,7 +84,7 @@ export const SKILLS: readonly Skill[] = [
   {
     // Issue #716: the template a job's work needs, made by the hopper (src/skills/template-request.ts answers it).
     name: 'sandbox-template',
-    line: 'a sandbox template for what the work needs (--needs "read/cluster/NAME read/aws-account/ID", or plain words: "get pods on cluster NAME")',
+    line: 'a sandbox template for what the work needs (--needs "get pods on cluster NAME" or "read/cluster/NAME")',
     text: 'sandbox-template: sh "$HOPPER_SKILL" sandbox-template --needs "<operation>/<kind>/<asset> ..." [--wait]',
   },
   {
