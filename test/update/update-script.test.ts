@@ -34,11 +34,15 @@ async function cli(argv: string[]) {
  * `run … <image> hopper …` as this checkout's CLI. It keeps the stack's containers in `.containers`, as podman-compose
  * does: `down` removes them, `up -d` makes one for each service of compose.yaml, and `up -d --force-recreate` fails on a
  * service that has none yet. `STUB_FAIL_NEW` fails `up -d` on a compose.yaml an update put in; `STUB_UNHEALTHY` fails the
- * health check.
+ * health check. `STUB_NO_SOCKET` makes `podman compose` act as docker-compose with Podman's socket off: it sees no stack
+ * unless PODMAN_COMPOSE_PROVIDER names one (issue #924).
  */
 function stubTool(bin: string, tool: string): void {
   writeFileSync(join(bin, tool), `#!/bin/sh
 printf '%s\\n' "$*" >> "$STUB_LOG"
+if [ "$1" = compose ] && [ -n "\${STUB_NO_SOCKET:-}" ] && [ -z "\${PODMAN_COMPOSE_PROVIDER:-}" ]; then
+  echo "failed to connect to the docker API" >&2; exit 1
+fi
 services() { sed -n '/^services:/,/^[a-z]/s/^  \\([a-z][a-z0-9-]*\\):$/\\1/p' compose.yaml; }
 [ "$1" != compose ] || shift
 case "$*" in
@@ -46,10 +50,11 @@ case "$*" in
   "exec -T hopper hopper master-key status") [ -n "\${STUB_MASTER_KEY:-}" ] || exit 1; printf '%s\\n' "$STUB_MASTER_KEY" ;;
   "exec -T hopper printenv "*) v=$(printf '%s\\n' "\${STUB_RUNNING:-}" | sed -n "s/^$5=//p"); [ -n "$v" ] || exit 1; printf '%s\\n' "$v" ;;
   "exec -T hopper node"*) [ -z "\${STUB_UNHEALTHY:-}" ] || ! head -1 compose.yaml | grep -q '^# hopper version' || exit 1 ;;
+  "ps -q") cat .containers ;;
   down) : > .containers ;;
   "up -d --force-recreate") for s in $(services); do grep -qx "$s" .containers || { echo "no container 'hopper_\${s}_1'" >&2; exit 1; }; done ;;
   "up -d") if [ -n "\${STUB_FAIL_NEW:-}" ] && head -1 compose.yaml | grep -q '^# hopper version'; then exit 1; fi
-    printf '%s\\n' "HOPPER_MASTER_KEY=\${HOPPER_MASTER_KEY:-}" > .launched; services > .containers ;;
+    printf '%s\\n' "HOPPER_MASTER_KEY=\${HOPPER_MASTER_KEY:-}" > .launched; printf '%s\\n' "\${PODMAN_COMPOSE_PROVIDER:-}" > .provider; services > .containers ;;
   run\\ *) while [ "$1" != hopper ]; do shift; done; shift; exec '${process.execPath}' '${join(ROOT, 'src', 'cli.ts')}' "$@" ;;
 esac
 exit 0
@@ -77,6 +82,7 @@ async function update(dir: string, o: { tool?: string; masterKey?: string; env?:
   mkdirSync(bin);
   stubTool(bin, tool.startsWith('docker') ? 'docker' : tool === 'podman-compose' ? 'podman-compose' : 'podman');
   if (tool === 'podman-compose') stubTool(bin, 'podman');
+  if (tool === 'podman') stubTool(bin, 'podman-compose');
   const log = join(dir, '.calls');
   writeFileSync(log, '');
   // The old stack runs: a container for each service of its compose.yaml.
@@ -130,6 +136,7 @@ describe('hopper update: the compose file the image ships with, the whole stack 
     const asked = r.calls.filter((c) => c.startsWith('compose exec -T hopper printenv'));
     expect(asked).not.toContain('compose exec -T hopper printenv HOPPER_MASTER_KEY');
     expect(r.calls).toEqual([
+      'compose ps -q',
       'compose exec -T postgres pg_dump -U hopper -d hopper -Fc',
       `pull ${IMAGE}`,
       `run --rm -i --network none -e HOPPER_UPDATE_ENV -e HOPPER_UPDATE_LAUNCH ${IMAGE} hopper update carry --image ${IMAGE}`,
@@ -240,6 +247,30 @@ describe('hopper update: the compose file the image ships with, the whole stack 
       expect(r.status, r.out).toBe(0);
       expect(r.calls.filter((c) => c.endsWith('up -d') || c.endsWith('down'))).toEqual(tool === 'docker' ? ['compose down', 'compose up -d'] : ['down', 'up -d']);
     }
+  });
+
+  it('uses podman-compose when the provider podman compose picks does not reach the stack (issue #924)', async () => {
+    const dir = install(SHIPPED, `HOPPER_MASTER_KEY=${KEY}\n`);
+    const r = await update(dir, { env: { STUB_NO_SOCKET: '1' } });
+    expect(r.status, r.out).toBe(0);
+    expect(r.out).toMatch(/the stack answers to podman-compose.*PODMAN_COMPOSE_PROVIDER=.*\/\.bin\/podman-compose/);
+    expect(read(dir, '.provider')).toMatch(/\/\.bin\/podman-compose\n$/);
+    expect(r.calls.slice(0, 2)).toEqual(['compose ps -q', 'ps -q']);
+    expect(r.calls).toContain('compose down');
+  });
+
+  it('keeps the provider podman compose picks when it reaches the stack, and one given', async () => {
+    const dir = install(SHIPPED, `HOPPER_MASTER_KEY=${KEY}\n`);
+    const r = await update(dir);
+    expect(r.status, r.out).toBe(0);
+    expect(read(dir, '.provider')).toBe('\n');
+    expect(r.calls).not.toContain('ps -q');
+
+    const given = install(SHIPPED, `HOPPER_MASTER_KEY=${KEY}\n`);
+    const g = await update(given, { env: { STUB_NO_SOCKET: '1', PODMAN_COMPOSE_PROVIDER: '/opt/compose' } });
+    expect(g.status, g.out).toBe(0);
+    expect(read(given, '.provider')).toBe('/opt/compose\n');
+    expect(g.calls).not.toContain('compose ps -q');
   });
 
   it('refuses a tool it does not know, and an image it is not given', async () => {
