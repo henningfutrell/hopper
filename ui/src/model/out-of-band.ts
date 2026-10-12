@@ -24,5 +24,9 @@ export function changeState(c: OutOfBandView): ChangeState {
   return { kind: 'marked', words: `${MARKED[mark]} by ${by}${reason ? `: ${reason}` : ''}` };
 }
 
+/** The changes no one marked yet (the Infra badge); none for an answer with no changes. */
+export const changesUnmarked = (v: { changes?: OutOfBandView[] } | undefined): number =>
+  Array.isArray(v?.changes) ? v.changes.filter((c) => !c.marked).length : 0;
+
 /** The controller identities in a text a person typed: one per line, blank lines dropped. */
 export const controllersFrom = (text: string): string[] => text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
