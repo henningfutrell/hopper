@@ -13699,8 +13699,11 @@ is set up, and an admin can bypass it. So the updater checks the commit itself b
 **The release check** (`src/update/release-check.ts`, the `ReleaseCheck` port). When the channel's head is newer than the
 install, the updater asks whether it is the merge of a pull request whose checks passed, before it says anything:
 
-1. `GET /repos/{r}/commits/{sha}/pulls`: a pull request with `merged_at` whose `merge_commit_sha` is the head. None: the
-   head is a direct push, or a pull request's own commit, and it is **held**.
+1. `GET /repos/{r}/commits/{sha}/pulls`: a pull request with `merged_at` whose `merge_commit_sha` is the head. This
+   answer lags a merge (it can be empty for a minute or more), and it can name only a later pull request that holds the
+   commit (a promotion from `dev` to `beta`). So when it names none (issue #913): `GET /repos/{r}/commits/{sha}`, and a
+   head with two parents whose message starts "Merge pull request #N " is checked against `GET /repos/{r}/pulls/N`, the
+   same way. Still none: the head is a direct push, or a pull request's own commit, and it is **held**.
 2. `GET /repos/{r}/commits/{head of that pull request}/check-runs`: every check run completed, each `success`, `neutral`
    or `skipped`, at least one `success`. No check runs: held ("no checks is not passing", as for yolo mode). A check that
    failed or has not finished: held, with its name.
@@ -13712,8 +13715,8 @@ exceeded for <address>". The token is the GitHub connection of the oldest user w
 GitHub refuses it (`tokenCaller`, as the GitHub proxy). The calls go through the shared rate limiter ("The shared rate
 limiter"), so they are conditional and paced like every other call. No such connection: the update is held with why, and
 GitHub is not asked. An update repository not on github.com, or GitHub not answering, holds the update: it is not offered
-when it cannot be checked. A settled answer (passed, or not the merge of a pull request) is kept for the commit; another
-is asked again after five minutes. GitHub refusing for the rate (403 or 429 with no calls left, or `retry-after`) holds
+when it cannot be checked. A passed answer is kept for the commit; any other, "not the merge of a pull request" too (issue
+#913), is asked again after five minutes. GitHub refusing for the rate (403 or 429 with no calls left, or `retry-after`) holds
 the update until GitHub's reset time, with "GitHub rate-limited the hopper: it asks about <commit> again at HH:MM UTC" as
 the reason, and GitHub is not asked again before then.
 
