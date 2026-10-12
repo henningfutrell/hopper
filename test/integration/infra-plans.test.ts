@@ -247,6 +247,8 @@ describe('no apply without a plan', () => {
     const refused = await asOperator(a, operator, { action: 'approve', plan: prod.id });
     expect(refused.status).toBe(403);
     expect(refused.text).toMatch(/is high risk: prod: only an admin approves it/);
+    // Issue #909: a token whose role may not approve the plan asks no person either.
+    expect((await a.events()).filter((e) => e.type === 'approval.confirmation_asked')).toEqual([]);
     expect((await a.ui('/ui/api/infra-plans', { action: 'approve', plan: prod.id }, { token: session })).status).toBe(200);
     expect((await a.events()).filter((e) => e.type === 'infra.plan_approved').map((e) => e.data)).toEqual([
       expect.objectContaining({ plan: low.id, level: 'low' }), expect.objectContaining({ plan: prod.id, level: 'high' }),
