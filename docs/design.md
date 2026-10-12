@@ -5991,6 +5991,13 @@ routing:
   (yaml Document API; comments and other sections stay byte for byte), atomically, with mode 600,
   then reloads before it answers. 400: invalid rule or unknown target. 409: stale version, or
   plugins.yaml invalid. Pure matching: `src/routing/`.
+- **The issue text is not read** (issue #917). A machine named in the item's body (a "seat", "run
+  on <machine>", `machine: <machine>`) pins nothing. Only a rule's `set.machine` pins a job's machine;
+  a `title` match can see a machine name in the title, but only as a rule written for it. Without a
+  pin the decider places the job on any machine it may go to (a placement pick first, issue #688).
+  Why: the body is the job's prompt, and anyone who can edit the issue can change it, so it does
+  not choose where a job runs. To send an issue to a machine, write a rule that matches its label.
+  The UI's Routing rules panel says so. Regression check: `test/integration/routing.test.ts`.
 
 **UI.** A "Routing" nav item with three panels: Router (current advice and fallback reason, mode
 buttons, picker, options form), Queue sorter (picker with each plugin's description, options form),
