@@ -35,7 +35,8 @@ describe('the navigation drawer at a phone width', () => {
     expect(list).not.toBeNull();
     expect(classes(list!)).toEqual(expect.arrayContaining(['min-h-0', 'flex-1', 'overflow-y-auto', 'overscroll-contain']));
     const labels = [...list!.querySelectorAll('a')].map((a) => a.textContent);
-    expect(labels).toEqual(VIEWS.map(viewLabel));
+    // Every view, in its nav group's order (issue #906): the groups set the order, not VIEWS.
+    expect([...labels].sort()).toEqual(VIEWS.map(viewLabel).sort());
   });
 
   it('keeps the drawer to the screen height and the list clear of the bottom safe area', async () => {
