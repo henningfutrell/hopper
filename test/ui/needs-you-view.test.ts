@@ -30,11 +30,21 @@ const VAULT = {
   grantAsks: [{ job: 'f3b1c2d4-0000-4000-8000-000000000001', key: url(7), machine: 'box-1', template: 'web', names: ['KUBE_TOKEN'], askedAt: '2026-10-11T12:00:00.000Z' }],
   grants: [],
 };
+const PULL_REQUESTS = { yolo: { on: 1, total: 2 }, waiting: [], repos: [{ repo: 'octo-user/hopper', yolo: true, pullRequests: [
+  { jobId: 'j-5', repo: 'octo-user/hopper', issue: { number: 5, url: url(5) }, pullRequest: { number: 6, url: 'https://github.com/octo-user/hopper/pull/6' }, part: false, state: 'open', checks: 'passing', mergeable: 'conflicts', draft: false, yolo: true, waits: 'conflicts' },
+] }] };
+const PLAN = {
+  id: 'p1', tool: 'terraform', asset: { kind: 'aws-account', name: 'lab' }, target: 'lab', repo: 'octo-user/infra', ref: 'main', commit: 'c'.repeat(40),
+  read: 'read', job: 'j-7', file: { size: 1, sha256: 'a'.repeat(64) }, createdAt: '2026-10-12T00:00:00.000Z', expiresAt: '2099-01-01T00:00:00.000Z',
+};
+const YOLO = { on: false, repos: { 'octo-user/hopper': true }, choices: { repos: ['octo-user/hopper', 'octo-user/infra'] } };
 const EMPTY_VAULT = { secrets: [], backends: [], shared: [], readPolicy: [], templates: [], requests: [], grantAsks: [], grants: [] };
 
 const posts: { path: string; body: unknown }[] = [];
 let sources: unknown[] = SOURCES;
 let vault: unknown = VAULT;
+let pullRequests: unknown = PULL_REQUESTS;
+let plans: unknown = { plans: [PLAN], applies: [] };
 
 function fakeDaemon() {
   const routes: Record<string, unknown> = {
@@ -58,6 +68,9 @@ function fakeDaemon() {
       return json(200, path === '/ui/api/vault' ? { ...VAULT, templates: [{ ...TEMPLATE, approval: { by: 'admin', at: '2026-10-12T00:00:00.000Z', image: TEMPLATE.image, secrets: TEMPLATE.secrets } }] } : { done: [], failed: {} });
     }
     if (path === '/api/sources') return json(200, { sources });
+    if (path === '/api/pull-requests') return json(200, pullRequests);
+    if (path === '/api/infra-plans') return json(200, plans);
+    if (path === '/api/yolo-mode') return json(200, YOLO);
     if (path === '/api/vault') return vault === undefined ? json(404, { error: 'not found' }) : json(200, vault);
     return path in routes ? json(200, routes[path]) : json(404, { error: 'not found' });
   });
@@ -72,7 +85,7 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-async function boot(hash: string, o: { sources?: unknown[]; vault?: unknown } = {}) {
+async function boot(hash: string, o: { sources?: unknown[]; vault?: unknown; pullRequests?: unknown; plans?: unknown } = {}) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   window.location.hash = hash;
@@ -81,6 +94,8 @@ async function boot(hash: string, o: { sources?: unknown[]; vault?: unknown } = 
   posts.length = 0;
   sources = o.sources ?? SOURCES;
   vault = 'vault' in o ? o.vault : VAULT;
+  pullRequests = o.pullRequests ?? PULL_REQUESTS;
+  plans = o.plans ?? { plans: [PLAN], applies: [] };
   vi.stubGlobal('fetch', fakeDaemon());
   vi.stubGlobal('EventSource', FakeEventSource);
   vi.resetModules();
@@ -107,8 +122,15 @@ describe('the nav: Needs you first, Intake and Access requests top-level, each w
     expect(document.querySelector('nav a')!.getAttribute('href')).toBe('#needs-you');
     expect(navLink('#needs-you')!.textContent).toContain('Needs you');
     expect(badge('#intake')).toBe('1');
-    expect(badge('#needs-you')).toBe('4');
+    await vi.waitFor(() => expect(badge('#needs-you')).toBe('6'));
     expect(navLink('#not-taken')).toBeNull();
+  });
+
+  it('Infra is badged with the plans that wait, Pull requests with the ones that have merge conflicts', async () => {
+    await boot('#overview');
+    await vi.waitFor(() => expect(badge('#pull-requests')).toBe('1'));
+    await vi.waitFor(() => expect(badge('#infra')).toBe('1'));
+    expect(navLink('#pull-requests')!.querySelector('[data-slot="nav-badge"]')!.getAttribute('title')).toBe('1 pull request has merge conflicts');
   });
 
   it('an old #not-taken link opens Intake', async () => {
@@ -126,14 +148,28 @@ describe('Needs you lists every kind with its count and links to its home (issue
     expect(row('intake')!.querySelector('a')!.getAttribute('href')).toBe('#intake');
     expect(row('access')!.querySelector('a')!.getAttribute('href')).toBe('#access-requests');
     expect(row('questions')!.querySelector('[data-needs-you-count]')!.textContent).toBe('0');
+    await vi.waitFor(() => expect(row('plans')?.querySelector('[data-needs-you-count]')?.textContent).toBe('1'));
+    expect(row('plans')!.querySelector('a')!.getAttribute('href')).toBe('#infra');
+    await vi.waitFor(() => expect(row('pull-requests')?.querySelector('[data-needs-you-count]')?.textContent).toBe('1'));
+    expect(row('pull-requests')!.querySelector('a')!.getAttribute('href')).toBe('#pull-requests');
+  });
+});
+
+describe('the header shows yolo mode on every screen, and links to its one switch (issue #897)', () => {
+  it('says where it is on, and opens Settings → Yolo mode', async () => {
+    await boot('#overview');
+    const yolo = () => document.querySelector<HTMLAnchorElement>('header [data-yolo]');
+    await vi.waitFor(() => expect(yolo()?.textContent).toBe('yolo on: 1 of 2 repos'));
+    expect(yolo()!.getAttribute('href')).toBe('#settings/yolo-mode');
+    expect(yolo()!.getAttribute('data-yolo')).toBe('on');
   });
 });
 
 describe('empty states: every page renders when nothing waits (issue #897)', () => {
   it('Needs you says nothing waits, and still lists what would show', async () => {
-    await boot('#needs-you', { sources: [], vault: EMPTY_VAULT });
+    await boot('#needs-you', { sources: [], vault: EMPTY_VAULT, pullRequests: { yolo: { on: 0, total: 0 }, waiting: [], repos: [] }, plans: { plans: [], applies: [] } });
     await vi.waitFor(() => expect(main().textContent).toContain('Nothing waits on you'));
-    expect(document.querySelectorAll('[data-needs-you]').length).toBe(8);
+    expect(document.querySelectorAll('[data-needs-you]').length).toBe(10);
   });
 
   it('Intake with no source says what will show there', async () => {
