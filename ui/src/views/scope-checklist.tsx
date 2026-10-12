@@ -1,7 +1,8 @@
 // The scopes of a grant as a person picks them (issue #909): the presets, each one click that ticks its boxes and says in
 // plain words what it can do, then every scope of the registry (GET /api/scopes) as a box, in sections by area of work,
 // always open — so the form is also a map of all the hopper can do. Each box shows what it lets an agent do, the routes
-// it covers, the least role they need, and whether it is a box action. Nothing is typed.
+// it covers, the least role they need, and whether it is a box action. A route that does one of several actions has a box
+// for each action under its own: the route's box ticks them all, an action's box only that one. Nothing is typed.
 import { Label } from '@/components/vault-fields';
 import { Button } from '@/components/ui/button';
 import { boxPermissions, permissionsOf, presetOfScopes, scopeTicked, toggleScope } from '@/model/api-tokens';
@@ -40,7 +41,7 @@ export function ScopeChecklist({ registry, scopes, onChange, role, disabled }: {
           <p className="text-xs text-muted-foreground">{s.description}</p>
           <ul className="space-y-1">
             {s.permissions.map((p) => (
-              <li key={p.scope}>
+              <li key={p.scope} className={p.parent !== undefined ? 'ml-6' : undefined}>
                 <label className="flex items-start gap-2 text-sm">
                   <input type="checkbox" className="mt-1" name={`scope-${p.scope}`} checked={scopeTicked(scopes, p.scope)}
                     onChange={(e) => onChange(toggleScope(scopes, p.scope, e.target.checked, known))} />

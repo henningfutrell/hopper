@@ -24,14 +24,15 @@ export const grantLine = (g: ApiGrantView): string => [
 ].join(' · ');
 
 /**
- * Whether the pattern covers the scope: `<area>:<act>`, `<area>:*`, `*:<act>` or `*`. The same rule as the server's
+ * Whether the pattern covers the scope: `<area>:<act>`, `<area>:*`, `*:<act>` or `*`; a route's scope covers each of its
+ * actions' (`vault:edit` covers `vault:edit.approve-template`). The same rule as the server's
  * (src/domain/token-scopes.ts), which the UI may not import at runtime.
  */
 const covers = (pattern: string, scope: string): boolean => {
   if (pattern === '*') return true;
   const [area, act] = pattern.split(':');
-  const [needArea, needAct] = scope.split(':');
-  return (area === '*' || area === needArea) && (act === '*' || act === needAct);
+  const [needArea, needAct = ''] = scope.split(':');
+  return (area === '*' || area === needArea) && (act === '*' || act === needAct || needAct.startsWith(`${act}.`));
 };
 
 /** Whether the patterns cover the scope: its box is ticked. */
@@ -41,18 +42,23 @@ export const scopeTicked = (patterns: readonly string[], scope: string): boolean
 export const permissionsOf = (registry: ScopeRegistry): ScopePermission[] => registry.sections.flatMap((s) => s.permissions);
 
 /**
- * The patterns after a person ticks or clears one scope's box. A tick adds the scope. A clear takes it out; a wildcard
- * that covered it gives way to the registry's scopes it covered, less the cleared one.
+ * The patterns after a person ticks or clears one scope's box. A tick adds the scope, in place of the scopes it covers
+ * (a route's scope, of its actions'). A clear takes it out, with the scopes it covers; a wildcard or route scope that
+ * covered it gives way to the registry's scopes it covered, less the cleared one and those that cover it.
  */
 export function toggleScope(patterns: readonly string[], scope: string, on: boolean, known: readonly string[]): string[] {
-  if (on) return scopeTicked(patterns, scope) ? [...patterns] : [...patterns, scope];
-  const kept = patterns.flatMap((p) => (p === scope ? [] : covers(p, scope) ? known.filter((k) => covers(p, k)) : [p]));
-  return [...new Set(kept)].filter((p) => p !== scope);
+  if (on) return scopeTicked(patterns, scope) ? [...patterns] : [...patterns.filter((p) => !covers(scope, p)), scope];
+  const kept = [...new Set(patterns.flatMap((p) => (!covers(p, scope) ? [p] : known.filter((k) => covers(p, k) && !covers(k, scope)))))]
+    .filter((p) => !covers(scope, p));
+  return kept.filter((p) => !kept.some((q) => q !== p && covers(q, p)));
 }
 
-/** The ticked permissions that are box actions: with any, the grant is a box grant (issue #795). */
+/**
+ * The ticked permissions that are box actions: with any, the grant is a box grant (issue #795). An action's is named
+ * only when its route's scope is not ticked as well.
+ */
 export const boxPermissions = (patterns: readonly string[], registry: ScopeRegistry): ScopePermission[] =>
-  permissionsOf(registry).filter((p) => p.box && scopeTicked(patterns, p.scope));
+  permissionsOf(registry).filter((p) => p.box && scopeTicked(patterns, p.scope) && !(p.parent !== undefined && scopeTicked(patterns, p.parent)));
 
 /** The preset the patterns are, as a set, or undefined. */
 export const presetOfScopes = (patterns: readonly string[], registry: ScopeRegistry): string | undefined =>
