@@ -2764,7 +2764,9 @@ event; in-memory only.
   the human, once each (`offered: true`). Configured already at start: nothing is re-sent on a restart.
   The UI's **Send open questions** sends every open one again, on each press.
 - Request: `Authorization: Bearer <key>`, JSON body `{ source: 'hopper', kind, at, jobId, issueTitle,
-  issueUrl }` (title/url from the job's source ref, else null); a question's `kind` is
+  issueUrl }` (title/url from the job's source ref, else null); a notice about a direct job (issue #901, "Direct jobs" part
+  4) also carries `directJob` (its id) and `submitter` (who submitted it, the job's source `author`; null when not known),
+  so the receiver tells that person; a question's `kind` is
   `question.escalated_to_human` (issue #481; `question.escalated` before) and it adds `question` (the agent's Markdown
   source, as written, and `questionFormat: 'markdown'`, issue #569), `questionId, answerUrl?` and what the job already
   knows, so a receiver can route and rank it without calling back
@@ -15609,7 +15611,15 @@ the job and recorded: the hopper has no grant to make of them. Why one reserved 
 grant is per item, never per secret ("Vault grants", residual risk), so the submitter's choice is yes or no, and the
 authorizations list is where the submitter already says what the job may reach.
 
-**Not built yet (the next part).** Notifying the requester by name, beyond the notifiers.
+**The submitter by name (part 4).** Every Grok Bot routine notice about a direct job's job — its question at the human,
+its end (`job.finished` with the result, `job.failed` with the error), a login it waits on, an artifact it made, a plan of
+an infrastructure change — carries `directJob` (the id) and `submitter` (the person who submitted it: the job's source
+`author`, the record's `submittedBy.person`), so the receiver tells that person, and an agent reads the result back with
+`GET /api/direct-jobs/:id`. A job of any other source carries neither. Why the notifier, and no channel of the hopper's
+own: the hopper holds no address of a person (no mail, no chat id), and a notifier is already where the hopper tells
+someone outside; the receiver maps the name to its own channel. In the hopper, the submitter reads the job back in Direct
+jobs, as before. Residual risk, stated: as for every job, the notice carries the title (`issueTitle`) and, at the end,
+the result; a person who configures the routine trusts its receiver with them, as with `job.queued` above.
 
 ## Checkpoints and resume elsewhere (issue #921, 2026-10-12)
 

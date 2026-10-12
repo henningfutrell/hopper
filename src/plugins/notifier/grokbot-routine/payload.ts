@@ -4,10 +4,20 @@
 // snapshot, not where its job is now), the priority and whether it is high priority (issue #535), the issue's labels, repo and number, what
 // detected the question, and how long it has been open. The question is the agent's Markdown source (issue #569), led by
 // its TL;DR when it is long. A login (issue #698) carries what asks and what waits, never its URL or code.
+// A direct job's notice (issue #901) names the direct job and its submitter, the person who submitted it, so the receiver
+// tells that person.
+import { DIRECT_SOURCE } from '../../../domain/direct-jobs.ts';
 import type { DomainEvent, InfraPlanNotice, Job, Question } from '../../sdk.ts';
 
+/** A direct job's id and submitter; nothing for a job of any other source. */
+const directOf = (job: Job | undefined) => {
+  const s = job?.source;
+  if (s?.kind !== DIRECT_SOURCE || !s.key.startsWith(`${DIRECT_SOURCE}:`)) return {};
+  return { directJob: s.key.slice(DIRECT_SOURCE.length + 1), submitter: s.author ?? null };
+};
+
 const base = (kind: string, at: string, job: Job | undefined, jobId: string | undefined) => ({
-  source: 'hopper', kind, at, jobId: jobId ?? null, issueTitle: job?.source?.title ?? null, issueUrl: job?.source?.url ?? null,
+  source: 'hopper', kind, at, jobId: jobId ?? null, ...directOf(job), issueTitle: job?.source?.title ?? null, issueUrl: job?.source?.url ?? null,
 });
 
 export interface QuestionBody {

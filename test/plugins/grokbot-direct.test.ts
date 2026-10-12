@@ -1,4 +1,4 @@
-// The Grok Bot routine names a direct job's requester (issue #901, part 4): every notice about a direct job — its question,
+// The Grok Bot routine names a direct job's submitter (issue #901, part 4): every notice about a direct job — its question,
 // its end, a login it waits on, an artifact it made — says which direct job it is and who submitted it, so the receiver
 // tells that person. A job of any other source carries neither.
 import { describe, expect, it } from 'vitest';
@@ -26,20 +26,20 @@ const bodies = (job: Job) => [
   artifactPayload(event('artifact.created', { artifact: 'a1', title: 'Report', type: 'text/html', size: 10 }), job, undefined),
 ];
 
-describe('Grok Bot routine: a direct job\'s notice names its requester (issue #901)', () => {
-  it('every notice of a direct job carries the direct job and its requester', () => {
-    for (const body of bodies(direct)) expect(body).toMatchObject({ directJob: 'd1', requester: 'ops-lead' });
+describe('Grok Bot routine: a direct job\'s notice names its submitter (issue #901)', () => {
+  it('every notice of a direct job carries the direct job and its submitter', () => {
+    for (const body of bodies(direct)) expect(body).toMatchObject({ directJob: 'd1', submitter: 'ops-lead' });
   });
 
   it('a job of another source carries neither', () => {
     for (const body of bodies(github)) {
       expect('directJob' in body).toBe(false);
-      expect('requester' in body).toBe(false);
+      expect('submitter' in body).toBe(false);
     }
   });
 
-  it('a direct job with no author known: requester null', () => {
+  it('a direct job with no author known: submitter null', () => {
     const anon = { ...direct, source: { ...direct.source, author: undefined } } as unknown as Job;
-    expect(jobPayload(event('job.finished', {}), anon)).toMatchObject({ directJob: 'd1', requester: null });
+    expect(jobPayload(event('job.finished', {}), anon)).toMatchObject({ directJob: 'd1', submitter: null });
   });
 });
