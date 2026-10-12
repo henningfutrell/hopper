@@ -14606,6 +14606,53 @@ Tests: `test/integration/job-last-events.test.ts` (real database and HTTP: one e
 job), `test/ui/jobs-view-model.test.ts` (filters, order, choices, last event), `test/ui/jobs-view.test.ts` (the whole app
 over a fake daemon: the card's facts, both filters, a status change from the stream with 250 jobs).
 
+## The job graph (issue #900, 2026-10-12)
+
+Requirement (issue #900): the Jobs view is the at-a-glance tracker, apart from the Overview's health summary. Each job's
+stage — partly done among them, which the status alone did not show —, its task progress, lane, time in stage, pull request
+and checks; counts per stage; filters by repository and stage. Then the scope change on the issue: jobs form a graph
+(parent and sub-issues, follow-ups, partly done remainders, plan to apply, forks from questions), so the primary mode is a
+graph, with the tree by root issue, a node's details on select and what blocks a root marked; a list stays as the second
+mode; the API gives the graph (issue #718's parity).
+
+**The model** (`src/domain/job-graph.ts`, pure). `stageOf(job)` maps a status to a **job stage**; a finished job is
+`partly_done` while its `partlyDone` pull request is not merged (its source's `follow` is not `merged`, `closed` or
+`abandoned`), `pr_open` while its own pull request's `follow` is `open`, else `done`. `stageSinceOf` is the time in stage:
+`createdAt` for queued, `startedAt` for running, `wait.since` or `parked.at` for waiting, `finishedAt` for the rest — what
+the record holds, no new field. `jobGraph({ jobs, links, issueGraph })` makes the nodes (jobs, issues, pull requests) and
+the typed edges (glossary "Job graph"), and `treesOf` the **job trees**: each connected group, rooted at a node no edge
+leads into (an issue first); a node **blocks** the root when it is not `done` or `cancelled`, or leads to one that is not
+(a depth-first walk that counts a cycle once). An issue takes the stage of its newest job; an issue no job works is
+`no_job`, or `done` when the issue graph read it closed.
+
+**Where the edges come from.** Nothing new is recorded: `rerunOf` (`next_part` when the job before is partly done, else
+`rerun`), `forkOf` (`spawned`), `followOn` (`plan_apply`), the job's source state (`opened`, `waits_on_merge`), the
+`job.child_issue_filed` events (`parent` for a required child, else `follow_up`), and the issue graph (issue #437:
+`sub_issue_of` gives `parent`, `closes` gives `closes`) — read here for the first time, for the issues the graph already
+has and nothing beyond them. GitHub's "blocked by" relation is not read: the hopper keeps no record of it.
+
+**The route.** `GET /api/jobs/graph` (`src/http/jobs.ts`), the user's own: the jobs `/api/queue` holds, the followed jobs
+whose pull request is open (at most 500, so a partly done job that ended days ago still shows), and the jobs these come
+from, five steps back along `rerunOf`, `forkOf` and `followOn`; the newest 5000 lineage links; the whole issue graph. A
+read, so an API token needs `jobs:read` (issue #881's scope rule). Made on each read, never kept.
+
+**The view** (`ui/src/views/jobs.tsx`, `ui/src/model/jobs-view.ts`). It reads the graph when it opens and again,
+debounced, each time the store's jobs change — the store already reads the queue after each event, so nothing new is on
+the wire. A tree is laid out left to right with d3's tidy tree (`hierarchy`, `tree`; d3 is already the UI's chart
+library): each node under the first node that reaches it along an edge either way, so every node has a place, and every
+edge is drawn over it. A tree with nothing blocking it starts folded when other trees show. The list keeps #434's cards,
+memoised on what they show, with the time in stage at minute resolution, so a card renders again at most once a minute.
+
+**Dropped, and why.** A node per job only, with its issue on it, was simpler, but an issue with two jobs (a partly done
+part and the next) and an issue no job works yet (a follow-up) then had no place. A force layout reads worse for trees
+and moves on each read. Help: `help/jobs.md`.
+
+Tests: `test/domain/job-graph.test.ts` (stages, each edge kind, trees, blocking, a cycle), `test/integration/job-graph.test.ts`
+(real database and HTTP: a partly done job, the next part, a filed issue, the empty graph), `test/ui/jobs-view-model.test.ts`
+(rows, trees, choices, counts, the layout, a pull request in words), `test/ui/jobs-view.test.ts` (the whole app over a fake
+daemon: the graph mode, a node's details, the list's facts, partly done, counts and filters, a live stage change with 250
+jobs, the empty states).
+
 ## Infra plans: no apply without a plan (issue #870, part 1, 2026-10-12)
 
 Owner's principle (issue #870): no apply without a plan. Plans and infrastructure changes never slide under the radar:
