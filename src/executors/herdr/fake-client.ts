@@ -158,7 +158,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
 
   const fake: FakeHerdrClient = {
     session: o.session,
-    calls: [], prompts: [], keys: [], texts: [], closed: [], agentStarts: [], reaps: [], credentials: [], seeds: [],
+    calls: [], prompts: [], keys: [], texts: [], closed: [], agentStarts: [], reaps: [], credentials: [], checkpoints: [], restores: [], seeds: [],
     addTurns: (...more) => { turns.push(...more); },
     signIn: () => { signedIn = true; },
     dropPrompts: (count) => { droppedPrompts = count; },
@@ -297,6 +297,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
         p.lines.push(`$ ${command}`, seed.line, '$ ');
         return;
       }
+      if (command.includes(' hopper-restore ')) fake.restores.push(command);
       const said = shellSays(command, o, p.scoped === true);
       if (said.scoped) p.scoped = true;
       if (o.worktreeLag && command.includes(' hopper-worktree ')) {

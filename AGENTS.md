@@ -58,7 +58,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   it makes it now and the user's **read policy** holds every need as a read; it never approves anything else. A template of
   read needs only takes no box until its read-only check passed (issue #716, `docs/design.md` "The read-only check"). A running job's
   stream (issue #613, `docs/design.md` "The job stream"): `GET /job/stream` and `GET /job/stream/results/:seq`, with the
-  job's proxy token, serve the job its own stream events and results, kept in the database; they change nothing. A machine's address check (issue #698,
+  job's proxy token, serve the job its own stream events and results, kept in the database; they change nothing. A job resuming
+  elsewhere (issue #921, `docs/design.md` "Checkpoints and resume elsewhere"): `GET /job/checkpoint/patch|session`, with the
+  job's proxy token, serves that job its own checkpoint, scrubbed, only while it runs resuming elsewhere; it changes nothing. A machine's address check (issue #698,
   `docs/design.md` "GitHub through the hopper"): `GET /job/address` answers 204 to anyone the Host guard lets in, so an ssh
   target's probe learns which of the hopper's addresses its jobs reach; it changes and records nothing. The tunnel
   service's ask (issue #880, `docs/design.md` "Remote access"): `GET /tunnel/agent`, with the preshared key the compose

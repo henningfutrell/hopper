@@ -39,8 +39,9 @@ export interface Commands {
   /**
    * Re-queue a parked job (issue #501): pinned to its machine, its claim resumes its agent session; with its question open, it waits on it again.
    * A job with no agent session only with `freshSession` (issue #530): its claim starts a fresh one in its kept work tree.
+   * `elsewhere` (issue #921): not pinned to its machine; its claim rebuilds its work from its checkpoint where it runs.
    */
-  requeue(id: string, o?: { freshSession?: boolean }): Job;
+  requeue(id: string, o?: { freshSession?: boolean; elsewhere?: boolean }): Job;
   /**
    * End a job's own wait (issue #483), a person's act: it is queued again, pinned to its machine, and told in its pane that what it
    * waited for has happened, with `note`. Conflict unless it is `waiting_on`.
@@ -128,7 +129,7 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
     },
 
     requeue(id, o = {}) {
-      const next = store.tx(() => recordUnpark(c, id, o.freshSession === true));
+      const next = store.tx(() => recordUnpark(c, id, o.freshSession === true, o.elsewhere === true));
       if (next.status === 'waiting_answer' && next.questionId) c.questions.unparked(next.questionId);
       return next;
     },

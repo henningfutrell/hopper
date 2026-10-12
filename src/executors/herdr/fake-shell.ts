@@ -13,6 +13,7 @@ export interface FakeShellOptions {
   origins?: Record<string, string>;
   worktreeFails?: boolean;
   unusableDirs?: string[];
+  restore?: 'restored' | 'kept' | 'failed';
 }
 
 export function shellSays(command: string, o: FakeShellOptions, scoped: boolean): ShellSaid {
@@ -20,6 +21,8 @@ export function shellSays(command: string, o: FakeShellOptions, scoped: boolean)
   // nothing; without, it says none. Asked where it runs, it says whether that is the scope.
   if (command.includes('exec systemd-run --user --scope')) return o.scopes ? { lines: [], scoped: true } : { lines: ['hopper-scope-none'] };
   if (command.startsWith('case "$(cat /proc/self/cgroup')) return { lines: [`hopper-scope-${scoped ? 'entered' : 'outside'}`] };
+  // Restoring a checkpoint (issue #921, checkpoint.ts): its outcome, as two printf words.
+  if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-restore ')) return { lines: [`hopper-restore-${o.restore ?? 'restored'}`] };
   // Sharing dependencies (shared-deps.ts): its outcome.
   if (command.startsWith("sh -c '") && command.includes('.hopper-scratch/deps')) return { lines: [`hopper-deps-${o.deps ?? 'none'}`] };
   // A job worktree command (job-worktree.ts): `cd 'work tree' && { printf … worktree running; o=$(sh -c '…' hopper-worktree 'a' 'b' 'repo' 'url' '1' …`,

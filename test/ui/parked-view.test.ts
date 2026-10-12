@@ -172,6 +172,23 @@ describe('the Parked section', () => {
     expect(daemon.posts).toEqual([{ path: '/ui/api/questions/q-night/answer', body: { answer: 'Blue.' } }]);
   });
 
+  it('shows the last checkpoint; Resume elsewhere, confirmed, picks the job up on any machine (issue #921)', async () => {
+    const checkpoint = { at: '2026-10-09T11:50:00.000Z', machineId: 'desk', branch: 'hopper/9', base: 'b'.repeat(40), head: 'c'.repeat(40), commits: ['ccccccc Patch it'], bytes: 2048, session: true };
+    await boot('admin', '#parked', {
+      parked: [job('moved', 5, 50, 'Move the box', parked('2026-10-09T11:55:00.000Z', { agentSession: '33333333-3333-3333-3333-333333333333', checkpoint }))],
+    });
+    expect(row('moved').querySelector('[data-slot="checkpoint"]')!.textContent).toMatch(/^checkpoint .* ago$/);
+    expect(row('later').querySelector('[data-slot="checkpoint"]')).toBeNull();
+    expect(buttonIn(row('later'), 'Resume elsewhere')).toBeUndefined();
+    await act(async () => { buttonIn(row('moved'), 'Resume elsewhere')!.click(); });
+    await settle();
+    const dialog = document.querySelector('[role="alertdialog"]')!;
+    expect(dialog.textContent).toContain('1 commit not pushed');
+    await act(async () => { [...dialog.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Resume elsewhere')!.click(); });
+    await settle();
+    expect(daemon.posts).toEqual([{ path: '/ui/api/jobs/moved/requeue', body: { elsewhere: true } }]);
+  });
+
   it('a viewer reads only', async () => {
     await boot('viewer', '#parked');
     expect(document.querySelectorAll('[data-parked-job]')).toHaveLength(2);

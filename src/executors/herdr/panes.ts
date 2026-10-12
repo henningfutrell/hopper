@@ -1,7 +1,7 @@
 // The panes the herdr-claude executor holds (docs/design.md "Phase 2" → "herdr-claude executor"): which herdr a
 // pane lives on, the pane a lane holds, the executor state that names it, and a timeout's liveness. Pure; no I/O.
-import type { ExecutionContext, Reaped } from '../../domain/ports.ts';
-import type { Job, JobLiveness } from '../../domain/types.ts';
+import type { ExecutionContext, ExecutionOutcome, Reaped } from '../../domain/ports.ts';
+import type { Job, JobLiveness, LaneId } from '../../domain/types.ts';
 import type { Sleep } from './monitor.ts';
 import type { PaneState } from './start.ts';
 
@@ -59,3 +59,11 @@ export interface HeldPane extends PaneOn { jobId: string; agentName: string; cwd
 
 export const samePane = (a: PaneOn, b: PaneOn): boolean => a.paneId === b.paneId && a.ssh === b.ssh && a.client?.machine === b.client?.machine
   && (a.ssh !== undefined || a.client !== undefined || a.session === b.session);
+
+/** The refusal when the pane is already mapped to another lane in `lanes`; a lane never shares a pane. */
+export function heldElsewhere(lanes: ReadonlyMap<LaneId, PaneOn>, laneId: LaneId, pane: PaneOn): ExecutionOutcome | null {
+  for (const [lane, held] of lanes) {
+    if (samePane(held, pane) && lane !== laneId) return { kind: 'failed', error: `herdr: pane ${pane.paneId} is already held by lane ${lane}` };
+  }
+  return null;
+}

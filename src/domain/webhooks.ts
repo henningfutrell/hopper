@@ -1,4 +1,5 @@
 // Webhook types beside types.ts (re-exported from it).
+import type { EventType } from './event-types.ts';
 
 /**
  * A UI edit of the webhook subscriptions (POST /ui/api/webhooks, issue #18): one row of the store's
@@ -13,3 +14,19 @@ export type WebhooksEdit =
   | { action: 'replace'; name: string; secret: string }
   | { action: 'rotate'; name: string }
   | { action: 'remove'; name: string };
+
+export type DeliveryStatus = 'pending' | 'retrying' | 'delivered' | 'failed';
+
+export interface WebhookDelivery {
+  id: string;
+  subscriptionId: string;
+  eventSeq: number;
+  eventType: EventType;
+  status: DeliveryStatus;
+  attempts: number;
+  lastStatusCode?: number;
+  lastError?: string;
+  nextAttemptAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -933,15 +933,17 @@ Version 1 (`docs/schemas/job.parked.v1.json`). A person, or auto-park (issue #65
 
 ## `job.unparked`
 
-Version 1 (`docs/schemas/job.unparked.v1.json`). A person re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again.
+Version 1 (`docs/schemas/job.unparked.v1.json`). A person re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again. `elsewhere` (issue #921): picked up to resume on another machine from its checkpoint: it is not pinned to its machine, and its claim rebuilds its work tree from the checkpoint on the machine it gets and resumes its agent session there.
 
 | field | type | required |
 |---|---|---|
 | `to` | `queued` \| `waiting_answer` | yes |
+| `elsewhere` | boolean | no |
 
 ```json
 {
-  "to": "queued"
+  "to": "queued",
+  "elsewhere": true
 }
 ```
 
@@ -989,6 +991,26 @@ Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wa
 {
   "by": "person",
   "note": "Write access is granted."
+}
+```
+
+## `job.checkpointed`
+
+Version 1 (`docs/schemas/job.checkpointed.v1.json`). A checkpoint of a job at work, or of one just parked, was taken and kept (issue #921): its agent session and its work not pushed, read on `machineId`, scrubbed of secrets. `bytes`: its size compressed. `session`: whether it holds the agent session (without it, the job cannot resume elsewhere). `commits`: the commits not pushed then. Only the latest checkpoint of a job is kept.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `bytes` | integer | yes |
+| `session` | boolean | yes |
+| `commits` | integer | yes |
+
+```json
+{
+  "machineId": "laptop",
+  "bytes": 48213,
+  "session": true,
+  "commits": 2
 }
 ```
 

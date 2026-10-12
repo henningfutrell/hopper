@@ -71,6 +71,7 @@
         "job.continued",
         "job.waiting",
         "job.wait_ended",
+        "job.checkpointed",
         "source.stalled",
         "connected_account.expired",
         "connected_account.renewed",

@@ -1,7 +1,6 @@
 // The store's ports (design.md "Database", "Users: one hopper, separate users"): the repositories, a
 // user's store and the instance store. Re-exported from ports.ts.
 
-import type { AccessRepository } from './access.ts';
 import type { JobStreamRepository } from './job-stream.ts';
 import type { ArtifactRepository } from './artifacts.ts';
 import type { VaultRepository } from './vault.ts';
@@ -10,7 +9,7 @@ import type { VaultGrant } from './vault-grants.ts';
 import type { BugReportRepository } from './bug-reports.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type { DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
-  Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User, UsageSample, UsageSeries, UsageTotalSeries, GitHubWatchRepository, PointedJobRepository, FailureOutcome, FailureRecord, Handoff, Problem, ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries, ItemSnapshot } from './types.ts';
+  Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User, UsageSample, UsageSeries, UsageTotalSeries, GitHubWatchRepository, PointedJobRepository, FailureOutcome, FailureRecord, Handoff, Problem, ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries, ItemSnapshot, AccessRepository, CheckpointRepository } from './types.ts';
 
 // Report a bug (issue #694): its repository sits beside its record.
 export type { BugReportRepository } from './bug-reports.ts';
@@ -496,6 +495,8 @@ export interface UserStore {
   pointedJobs: PointedJobRepository;
   /** GitHub watches (issue #427): each pointed job's last snapshot. */
   githubWatches: GitHubWatchRepository;
+  /** Each job's latest checkpoint (issue #921): its patch and agent session, scrubbed. */
+  checkpoints: CheckpointRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;
