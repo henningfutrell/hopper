@@ -172,7 +172,7 @@ describe('git through the hopper (issue #652)', () => {
     expect((await git(['push', '--quiet', 'origin', 'HEAD:refs/heads/issue-7-fix'], work)).code).toBe(0);
     await githubTraffic.pass('probe', async () => undefined);
     const lines = logged.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('hopper: GitHub traffic of sync pass'));
-    const fetches = lines.join('\n').match(new RegExp(`octo/tools (\\d+); by job ${job.id.slice(0, 8)} (\\d+)`, 'g')) ?? [];
+    const fetches = lines.join('\n').match(new RegExp(`octo/tools (\\d+); by ${job.id.slice(0, 8)} (\\d+)`, 'g')) ?? [];
     const sum = fetches.map((f) => Number(/octo\/tools (\d+)/.exec(f)![1])).reduce((a, b) => a + b, 0);
     expect(sum).toBe(2);
   });
