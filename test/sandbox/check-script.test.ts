@@ -4,6 +4,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CheckCredential, OperationProfile, Probe } from '../../src/domain/types.ts';
+import { markRuns, type ProbeMarks } from '../../src/domain/read-only-check.ts';
 import { checkEnv, checkScript, readResults } from '../../src/sandbox/check-script.ts';
 import { HELM_LIST_NOTE, HOPPER_PROBES, PROBES, probeCatalog } from '../../src/sandbox/probes.ts';
 import { createFakeCloudTools, type FakeCloudTools } from '../support/fake-cloud-tools.ts';
@@ -248,5 +249,60 @@ esac`);
     const { results: ok } = await run('read-only', CLUSTER);
     expect(ok.find((r) => r.id === 'helm.list')).toMatchObject({ passed: true });
     expect(ok.find((r) => r.id === 'helm.list')!.note).toBeUndefined();
+  });
+});
+
+describe('probe marks on a read probe (issue #916)', () => {
+  const CLUSTER = [read('cluster', 'lab')];
+  const FORBIDDEN = 'Error: list: failed to list: secrets is forbidden: User "system:serviceaccount:hopper:view" cannot list resource "secrets"';
+  /** Runs the hopper's probes for a cluster with these marks; `list`: how helm list answers, else the fake's own. */
+  async function runMarked(marks: ProbeMarks, mode: 'read-only' | 'writable' = 'read-only', list?: string) {
+    const fake = createFakeCloudTools(mode);
+    tools.push(fake);
+    if (list !== undefined) {
+      writeFileSync(join(fake.dir, 'helm'), `#!/bin/sh\necho "helm $*" >> ${JSON.stringify(join(fake.dir, 'calls.log'))}\ncase "$1" in
+  list) ${list} ;;
+  create) mkdir -p "$2" ;;
+  template) printf '%s\\n' '---' 'apiVersion: apps/v1' 'kind: Deployment' 'metadata:' '  name: hopper-read-only-check-chart' ;;
+esac\n`);
+    }
+    const runs = markRuns(HOPPER_PROBES.runsFor(CLUSTER), marks);
+    const r = await fake.runScript({ name: 'c', image: 'i', network: 'n', volume: 'v', env: {}, labels: {}, limits: { cpus: 1, memoryMb: 1 }, user: 'agent', script: checkScript(runs) });
+    return { results: readResults(runs, r.output), fake };
+  }
+  const forbidden = `echo '${FORBIDDEN}' >&2; exit 1`;
+
+  it('helm list marked expect-denied and refused on a view role: it passes, and the whole set passes', async () => {
+    const { results } = await runMarked({ 'helm.list': 'expect-denied' }, 'read-only', forbidden);
+    expect(results.find((r) => r.id === 'helm.list')).toMatchObject({ expect: 'denied', mark: 'expect-denied', outcome: 'denied', passed: true });
+    expect(results.find((r) => r.id === 'helm.list')!.note).toBeUndefined();
+    expect(results.filter((r) => !r.passed)).toEqual([]);
+  });
+
+  it('helm list marked expect-denied that works: the read was not refused, and it fails', async () => {
+    const { results } = await runMarked({ 'helm.list': 'expect-denied' });
+    expect(results.find((r) => r.id === 'helm.list')).toMatchObject({ expect: 'denied', outcome: 'allowed', passed: false, exit: 0 });
+  });
+
+  it('helm list marked expect-denied that fails for another reason: an error, and it fails', async () => {
+    const { results } = await runMarked({ 'helm.list': 'expect-denied' }, 'read-only', "echo 'Error: Kubernetes cluster unreachable: dial tcp: lookup lab' >&2; exit 1");
+    expect(results.find((r) => r.id === 'helm.list')).toMatchObject({ expect: 'denied', outcome: 'error', passed: false });
+  });
+
+  it('helm list marked skip is not run, and passes as skipped', async () => {
+    const { results, fake } = await runMarked({ 'helm.list': 'skip' }, 'read-only', forbidden);
+    expect(results.find((r) => r.id === 'helm.list')).toMatchObject({ mark: 'skip', outcome: 'skipped', passed: true, output: 'not run: the template marks it skip' });
+    expect(results.find((r) => r.id === 'helm.list')!.exit).toBeUndefined();
+    expect(fake.calls().filter((c) => c.startsWith('helm list'))).toEqual([]);
+    expect(results.filter((r) => !r.passed)).toEqual([]);
+  });
+
+  it('with helm list marked, a write that goes through still fails the check', async () => {
+    const { results } = await runMarked({ 'helm.list': 'expect-denied', 'helm.install': 'skip' }, 'writable', forbidden);
+    expect(results.find((r) => r.id === 'helm.list')).toMatchObject({ passed: true });
+    expect(results.find((r) => r.id === 'kube.create-namespace')).toMatchObject({ outcome: 'allowed', passed: false });
+    // A mark on a write probe changes nothing: it runs, and the write that went through fails it.
+    expect(results.find((r) => r.id === 'helm.install')).toMatchObject({ outcome: 'allowed', passed: false });
+    expect(results.find((r) => r.id === 'helm.install')!.mark).toBeUndefined();
   });
 });

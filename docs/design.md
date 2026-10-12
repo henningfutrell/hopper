@@ -9489,7 +9489,7 @@ replaces them; test with doubles, and state the gap to a real environment.
   - `helm list` reads the Secrets helm keeps its releases in. The built-in `view` role cannot read Secrets, so on a view
     role `helm list` is Forbidden and its probe fails: that is expected, and the probe passes only with read access to
     Secrets. A probe can carry a `note` for such a case; a result that did not pass carries it, and the report shows it
-    under the output (issue #869).
+    under the output (issue #869). A person marks it `expect-denied` on such a template (issue #916, "Probe marks").
   - `argocd-app`: read the Application; write a label patch with `--dry-run=server`.
   - `terraform-workspace`: read `terraform plan` of a one-resource stack (an SSM parameter); write `terraform apply` of it,
     once with `terraform` on `PATH` (a read-only wrapper there, when #715 adds one) and once with the real binary in
@@ -9575,6 +9575,44 @@ and `docker-runtime.test.ts` (the one-shot create body, `wait`, `logs` with and 
 `HOPPER_TEST_PODMAN_SOCKET` is set): a check box of the box image with `kubectl` added ran its probes as `agent` and was
 removed with its volume; with a token minted for a cluster no server answers at, the hopper's own cluster probes were
 all `error`, kubectl asked the server its kubeconfig names, and the check failed.
+
+## Probe marks (issue #916, 2026-10-12)
+
+Reported from a real run: a template of read on a cluster, with a view role, failed its read-only check on `helm.list`
+alone. The view role correctly cannot read Secrets, so `helm list` is Forbidden: that refusal is right for the
+credential, but every probe failure failed the whole set, and the template took no box.
+
+- **The mark** (`Template.probeMarks`, `ProbeMark`, `src/domain/read-only-check.ts`). A template keeps a person's mark on
+  each of its read probes, by probe id: `expect-denied` (the read must be refused) or `skip` (the check does not run it).
+  One mark applies to the probe on every asset of the template.
+- **Only read probes.** A write probe takes no mark (`probeMarksProblem`, 400): each write must be refused, always. A mark
+  can only make the check ask for less access, never let a write through. `markRuns` also ignores a mark on a write probe,
+  so a mark that a later catalog makes a write probe changes nothing.
+- **What the check does** (`readResults`, `src/sandbox/check-script.ts`). A probe marked `expect-denied` expects
+  `denied`: it passes only when it fails with a refusal (`DENIAL`). It fails when the read works (`allowed`) or fails for
+  another reason (`error`). A probe marked `skip` is not in the check box's script; its result is `skipped` and passed.
+  Every write probe runs as before, so a write that goes through still fails the check. The result carries the `mark`;
+  the check report and Settings → Vault name each marked probe.
+- **How a person marks a probe.** Only a person, through a save of the template (`POST /ui/api/vault` `save-template`,
+  admin role): `probeMarks`, an object of probe id → mark, replaces the marks; absent keeps them; `{}` drops them all. In
+  Settings → Vault, edit the template: each read probe its last check ran has a mark (**must work**, **expect-denied**,
+  **skip**). On the operator CLI: `hopper template save <name> --image <image> --mark helm.list=expect-denied`; each
+  `--mark` changes one probe, `<probe>=none` drops its mark, and the other marks stay. A job's template request never
+  sets or changes a mark.
+- **A save makes the check stale.** The mark is part of the template's version, so the check runs again. The save keeps
+  the approval, as the image and tools are the same. `template.saved` records the marks.
+- **Kept in the template's JSON.** A new optional field: no migration. A template saved before has no marks.
+
+**Residual risk, stated.** `skip` leaves a read unproven. A read probe only proves the credential works, so a skipped
+read never lets a write through; the box can still fail at that read in its job.
+
+**Verification.** `test/domain/probe-marks.test.ts` (which marks a template keeps; a mark on a write probe changes
+nothing), `test/sandbox/check-script.test.ts` (under `sh`: `helm.list` marked `expect-denied` and refused passes and the
+set passes; it fails when the read works or fails for another reason; `skip` runs no `helm list`; a writable credential
+still fails the writes), `test/integration/read-only-check.test.ts` (the real daemon: a view role fails the check on
+`helm.list`, a mark on a write probe is a 400, the mark makes the next check pass, a later save and the job's request keep
+it, and a writable credential still fails the check), `test/integration/operator-cli-vault.test.ts` (`--mark`),
+`test/sandbox/check-report.test.ts`, `test/ui/vault.test.ts`.
 
 ## A read-only infra box (issue #715, part 1, 2026-10-11)
 

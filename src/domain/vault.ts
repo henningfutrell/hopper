@@ -3,7 +3,7 @@
 import type { VaultGrant, VaultGrantAsk } from './vault-grants.ts';
 import type { Asset, OperationProfile } from './access.ts';
 import type { TemplateRadius } from './blast-radius.ts';
-import { checkWait, type ReadOnlyCheck } from './read-only-check.ts';
+import { checkWait, type ProbeMarks, type ReadOnlyCheck } from './read-only-check.ts';
 
 export * from './read-only-check.ts';
 // Infra plans (issue #870) sit beside the vault: an apply's credential is minted only for one.
@@ -251,6 +251,11 @@ export interface Template {
    * a box of it starts with, signed in, when its launch's scope holds it. Given only as far as its secrets are approved.
    */
   agentCredential?: string;
+  /**
+   * A person's marks on its read probes (issue #916): a probe marked `expect-denied` passes only when its read is refused,
+   * one marked `skip` is not run. Set only by a person's save; kept through every other save. Absent: none.
+   */
+  probeMarks?: ProbeMarks;
   /** The last read-only check, of the version it names (src/domain/read-only-check.ts). A save makes it stale. */
   check?: ReadOnlyCheck;
   savedBy: string;

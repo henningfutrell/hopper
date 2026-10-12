@@ -67,8 +67,8 @@ function credentialFor(run: ProbeRun, credentials: readonly CheckCredential[]): 
 
 /** The script a check box runs for these probes, each with the credential minted for its asset (`checkEnv` gives the box them). */
 export function checkScript(runs: readonly ProbeRun[], credentials: readonly CheckCredential[] = []): string {
-  // A probe that is not run (issue #715) writes no line: its result says why.
-  const steps = runs.flatMap((r, n) => (r.notRun !== undefined ? [] : [step(r, n, credentials)]));
+  // A probe that is not run (issue #715), or that the template marks `skip` (issue #916), writes no line: its result says why.
+  const steps = runs.flatMap((r, n) => (r.notRun !== undefined || r.mark === 'skip' ? [] : [step(r, n, credentials)]));
   return `# Made by the hopper (issue #716): the read-only check. Each write must be refused, each read must work.
 export HOME="\${HOPPER_CHECK_DIR:-/tmp/hopper-check}" HOPPER_TOOLS="\${HOPPER_TOOLS:-${TOOLS_DIR}}"
 mkdir -p "$HOME" && cd "$HOME" || exit 1
@@ -108,13 +108,15 @@ export function readResults(runs: readonly ProbeRun[], logs: string): ProbeResul
     if (m) lines.set(Number(m[1]), { exit: Number(m[2]), output: Buffer.from(m[3]!, 'base64').toString('utf8') });
   }
   return runs.map((run, n): ProbeResult => {
-    const base = { id: run.probe.id, asset: run.asset, expect: run.probe.expect };
+    // A probe the template marks `expect-denied` (issue #916) expects a refusal: it passes only when its read is refused.
+    const base = { id: run.probe.id, asset: run.asset, expect: run.mark === 'expect-denied' ? 'denied' as const : run.probe.expect, ...(run.mark ? { mark: run.mark } : {}) };
     const note = run.probe.note !== undefined ? { note: run.probe.note } : {};
     if (run.notRun !== undefined) return { ...base, outcome: 'not-run', passed: false, output: run.notRun, ...note };
+    if (run.mark === 'skip') return { ...base, outcome: 'skipped', passed: true, output: 'not run: the template marks it skip' };
     const got = lines.get(n);
     if (!got) return { ...base, outcome: 'error', passed: false, output: 'it did not run', ...note };
     const outcome = outcomeOf(run, got.exit, got.output);
-    const passed = outcome === run.probe.expect;
+    const passed = outcome === base.expect;
     return { ...base, outcome, passed, exit: got.exit, output: got.output.trim().slice(-PROBE_OUTPUT_MAX), ...(passed ? {} : note) };
   });
 }
