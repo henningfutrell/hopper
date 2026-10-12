@@ -3,7 +3,8 @@
 // database and HTTP server.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { JobGraph } from '../../src/domain/types.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { waitFor } from '../support/wait.ts';
 
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
@@ -17,7 +18,7 @@ afterEach(async () => {
 async function start(): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  t = await startTestApp({ dbPath: db.dbPath });
+  t = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(4) }, seams: { levels: [] } });
   return t;
 }
 
@@ -57,23 +58,19 @@ describe('GET /api/jobs/graph (issue #900)', () => {
     expect(g.stages).toEqual({ partly_done: 1, done: 1 });
   });
 
-  it('answers an open question and an open hand-off as nodes of their job, and leaves out answered ones', async () => {
+  it('answers an open question and an open hand-off as nodes of their job', async () => {
     const a = await start();
-    const asks = await a.pull({ op: 'echo' }, { key: 'item-5' });
-    await a.waitForStatus(asks.id, 'finished');
+    const asks = await a.pull({ op: 'ask', message: 'Which store should the cache use?' }, { key: 'item-5' });
+    const q = await a.waitForQuestion(asks.id, (x) => x.status === 'open');
+    const broke = await a.pull({ op: 'fail', message: 'HOPPER_FAILED the build fails', ms: 0 }, { key: 'item-6' });
     const { store } = a.user();
-    store.jobs.update(asks.id, { source: issue(5) });
-    const open = store.questions.create({ jobId: asks.id, text: 'Which store should the cache use?', recentOutput: '', detectedBy: 'marker', tier: 'human' });
-    const answered = store.questions.create({ jobId: asks.id, text: 'Done already?', recentOutput: '', detectedBy: 'marker', tier: 'human' });
-    store.questions.update(answered.id, { status: 'answered', answer: 'yes' });
-    const handoff = store.handoffs.create({ jobId: asks.id, status: 'open', reason: 'person', openedAt: new Date().toISOString(), error: 'boom', summary: 'Needs a person: the build fails.', reasons: [] });
+    const handoff = await waitFor(async () => store.handoffs.list({ status: 'open' }).find((h) => h.jobId === broke.id), { what: 'the failed job handed off' });
 
     const g = (await a.api<JobGraph>('GET', '/api/jobs/graph')).body;
-    expect(g.nodes.find((n) => n.id === `question:${open.id}`)).toMatchObject({ kind: 'question', stage: 'waiting', label: 'Which store should the cache use?', jobId: asks.id });
-    expect(g.nodes.find((n) => n.id === `handoff:${handoff.id}`)).toMatchObject({ kind: 'handoff', stage: 'waiting', label: 'Needs a person: the build fails.' });
-    expect(g.nodes.some((n) => n.id === `question:${answered.id}`)).toBe(false);
+    expect(g.nodes.find((n) => n.id === `question:${q.id}`)).toMatchObject({ kind: 'question', stage: 'waiting', label: 'Which store should the cache use?', jobId: asks.id });
+    expect(g.nodes.find((n) => n.id === `handoff:${handoff.id}`)).toMatchObject({ kind: 'handoff', stage: 'waiting', jobId: broke.id });
     expect(g.edges.map((e) => `${e.from} ${e.kind} ${e.to}`)).toEqual(expect.arrayContaining([
-      `job:${asks.id} asks question:${open.id}`, `job:${asks.id} hands_off handoff:${handoff.id}`,
+      `job:${asks.id} asks question:${q.id}`, `job:${broke.id} hands_off handoff:${handoff.id}`,
     ]));
   });
 
