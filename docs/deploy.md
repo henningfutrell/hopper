@@ -287,6 +287,9 @@ is only in the hopper's environment, given at launch.
     ```
 
     (`hopper update podman-compose` for podman-compose without `podman compose`; `--image <ref>` for another image.)
+    `podman compose` runs docker-compose when it finds it, and docker-compose reaches Podman only through its socket.
+    So when the provider `podman compose` picks sees no stack and podman-compose sees it, the script uses podman-compose
+    (`PODMAN_COMPOSE_PROVIDER`, issue #924). A `PODMAN_COMPOSE_PROVIDER` given at launch is kept.
     In order, the script:
     1. reads the launch settings: its own shell, an old `.env` once (to move it), and the running hopper's master key.
        It stops when the running hopper made its key at this start and the key is given nowhere (a recreate would lose

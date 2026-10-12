@@ -4,6 +4,9 @@
 // required services and settings from ever arriving. The update notice and the agent update skill give the same command.
 // It stops the old stack and starts the new one (issue #894: podman-compose cannot force-recreate a service that has no
 // container yet), and puts the old stack back when a step after the stop fails. It writes no .env and puts no secret in a file.
+// `podman compose` runs whichever provider it finds first, docker-compose before podman-compose; docker-compose reaches
+// Podman only through its socket. So for the podman tool the script uses podman-compose when the provider podman picks
+// sees no stack and podman-compose sees one (issue #924), unless PODMAN_COMPOSE_PROVIDER names one already.
 import type { ShippedCompose } from '../domain/types.ts';
 import { VERSION_STAMP } from './shipped-compose.ts';
 
@@ -25,6 +28,17 @@ const COMPOSE: Record<ComposeTool, string> = { podman: 'podman compose', 'podman
 /** The command that makes the script from `image` (the update notice's first line). */
 export const makeScriptCommand = (tool: ComposeTool, image: string): string =>
   `${RUNTIME[tool]} run --rm --pull=always ${image} hopper update ${tool} > ${UPDATE_SCRIPT_FILE}`;
+
+/** For `podman compose`: the provider the stack answers to (issue #924). Empty for the other tools. */
+const PROVIDER = `# podman compose runs docker-compose when it finds it, and docker-compose sees no stack when Podman's socket is off
+# (issue #924): then use podman-compose, when it sees the stack. A PODMAN_COMPOSE_PROVIDER given is kept.
+if [ -z "\${PODMAN_COMPOSE_PROVIDER:-}" ] && provider=$(command -v podman-compose) \\
+  && [ -z "$(podman compose ps -q 2>/dev/null)" ] && [ -n "$("$provider" ps -q 2>/dev/null)" ]; then
+  PODMAN_COMPOSE_PROVIDER=$provider; export PODMAN_COMPOSE_PROVIDER
+  say "podman compose: the stack answers to podman-compose, not to the provider podman picks: PODMAN_COMPOSE_PROVIDER=$provider"
+fi
+unset provider
+`;
 
 const HEALTH = "fetch('http://127.0.0.1:'+(process.env.HOPPER_PORT||4790)+'/api/health').then((r)=>process.exit(r.ok?0:1),()=>process.exit(1))";
 const OPENFGA = "fetch((process.env.HOPPER_OPENFGA_URL||'http://openfga:8080')+'/healthz').then((r)=>process.exit(r.ok?0:1),()=>process.exit(1))";
@@ -54,7 +68,7 @@ fail() { say "$*" >&2; exit 1; }
 running() { compose exec -T hopper printenv "$1" 2>/dev/null; }
 
 [ -f compose.yaml ] || fail "no compose.yaml here: run this in the folder that holds the hopper's compose.yaml"
-stamp=$(date -u +%Y%m%dT%H%M%SZ)
+${o.tool === 'podman' ? PROVIDER : ''}stamp=$(date -u +%Y%m%dT%H%M%SZ)
 # The image is the one this script names: compose.yaml names it after the update.
 unset HOPPER_IMAGE
 
