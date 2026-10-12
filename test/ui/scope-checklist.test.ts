@@ -18,7 +18,7 @@ async function render(scopes: string[], onChange: (s: string[]) => void, role = 
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   const path = '../../ui/src/views/scope-checklist.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
-  const { ScopeChecklist } = (await import(path)) as { ScopeChecklist: (p: object) => ReturnType<typeof createElement> };
+  const { ScopeChecklist } = (await import(path)) as { ScopeChecklist: (p: Record<string, unknown>) => ReturnType<typeof createElement> };
   await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(ScopeChecklist, { registry, scopes, onChange, role, disabled: false })); });
   return document.getElementById('root')!;
 }
