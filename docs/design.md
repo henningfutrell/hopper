@@ -15235,7 +15235,9 @@ Who approves a plan follows its risk. Before this, an admin approved every plan,
   Each comes with `why` in words: `low risk, in uat only`, `high risk: destroys, IAM and identity, prod`, `low risk, but
   not in uat only: in dev`.
 - **Approve** (`POST /ui/api/infra-plans`) takes an operator now; the service (`approveRefusal`) answers a 403 that says
-  why when the plan's approver is an admin and the session's role is not. Still a box action.
+  why when the plan's approver is an admin and the session's role is not. Still a box action. An API token whose role
+  may approve a plan that is not low risk still approves nothing: a person confirms it (issue #909, "A person confirms
+  what an agent asks"). A token whose role may not gets the 403, and no person is asked.
 - **Auto-approve** (`InfraPlanSettings { autoApprove }`, the user's settings key `infraPlans`, off by default):
   `POST /ui/api/infra-plans/settings` (admin, a box action: it approves work), `infra.settings_changed { from, to, by }`.
   On, `record` approves a plan whose approver is `operator` in the same transaction: an approval row of its own
