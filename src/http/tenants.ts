@@ -11,6 +11,7 @@
 // what it may do beyond is exchange itself for an API token (issue #718, src/http/api-tokens.ts). An API token is a
 // session (src/http/ui/sessions.ts) and reads as its user, once Access allows its read (`api_token#can_view`).
 import type { DirectJobs } from '../direct-jobs/index.ts';
+import type { UserSearch } from '../search/index.ts';
 import type { Vault } from '../vault/vault.ts';
 import type { JobStream } from '../job-stream/index.ts';
 import type { UserArtifacts } from '../artifacts/index.ts';
@@ -85,6 +86,8 @@ export interface TenantParts {
   windowsSteps: WindowsSteps;
   /** Direct jobs (issue #901): jobs a person submits straight to the hopper, with no GitHub issue. */
   directJobs: DirectJobs;
+  /** Search (issue #945): the user's index and the permission-checked search. */
+  search: UserSearch;
 }
 
 /** The users and their running parts. */

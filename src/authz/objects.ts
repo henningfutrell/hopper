@@ -37,6 +37,19 @@ export const artifactObject = (a: { userId: string; id: string }): string => `ar
 export const itemObject = (i: { ownerId: string; key: string }): string => `item:${i.ownerId}/${createHash('sha256').update(i.key).digest('hex')}`;
 /** The vault grant of a user's item (issue #652): its key hashed, as an item's. */
 export const vaultGrantObject = (g: { ownerId: string; key: string }): string => `vault_grant:${g.ownerId}/${createHash('sha256').update(g.key).digest('hex')}`;
+/** A search hit (issue #945): the user whose work it is, its type and its id there. */
+export const searchHitObject = (h: { ownerId: string; type: string; ref: string }): string => `search_hit:${h.ownerId}/${h.type}/${encodeURIComponent(h.ref)}`;
+/** The check whether a user may see a search hit (issue #945): its owner, and every user unless it is private, told for this check only. */
+export function searchHitCheck(viewerId: string, hit: { ownerId: string; type: string; ref: string; private: boolean }): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = searchHitObject(hit);
+  return {
+    tuple: { subject: userObject(viewerId), relation: 'can_view', object },
+    contextual: [
+      { subject: userObject(hit.ownerId), relation: 'owner', object },
+      ...(hit.private ? [] : [{ subject: 'user:*', relation: 'reader', object }]),
+    ],
+  };
+}
 /** A GitHub login (issue #652), lowercased: GitHub logins compare without case. */
 export const githubLoginObject = (login: string): string => `github_login:${encodeURIComponent(login.toLowerCase())}`;
 /** A user's intake (issue #652). */

@@ -495,8 +495,8 @@ export interface UserStore {
   pointedJobs: PointedJobRepository; directJobs: import('./direct-jobs.ts').DirectJobRepository;
   /** GitHub watches (issue #427): each pointed job's last snapshot. */
   githubWatches: GitHubWatchRepository;
-  /** Each job's latest checkpoint (issue #921): its patch and agent session, scrubbed. */
-  checkpoints: CheckpointRepository;
+  /** Each job's latest checkpoint (issue #921): its patch and agent session, scrubbed; pending index updates (issue #945): the documents search writes again once Solr takes them. */
+  checkpoints: CheckpointRepository; searchPending: import('./search.ts').SearchPendingRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;

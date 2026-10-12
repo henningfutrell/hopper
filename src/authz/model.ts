@@ -121,6 +121,15 @@ type vault_grant
   relations
     define owner: [user]
     define can_grant: owner
+
+# A search hit (issue #945): a document search found, such as a job. At each search the hopper tells the user whose work it
+# is as its owner and, for a hit that is not private, every user (user:*) as a reader. A direct job's hit (issue #901) is
+# private: only its owner sees it.
+type search_hit
+  relations
+    define owner: [user]
+    define reader: [user, user:*]
+    define can_view: owner or reader
 `;
 
 interface RelationMetadata { directly_related_user_types?: { type: string }[] }
@@ -163,6 +172,10 @@ const ASKED: readonly [type: string, relation: string][] = OPERATIONS.map((op) =
 /** What the hopper tells and asks for vault grants (issue #652): apart, so a model edited before them still decides mints. */
 const VAULT_GRANT_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['vault_grant', 'owner', 'user']];
 const VAULT_GRANT_ASKED: readonly [type: string, relation: string][] = [['vault_grant', 'can_grant']];
+
+/** What the hopper tells and asks for search hits (issue #945): apart, so a model edited before them still decides mints. */
+const SEARCH_HIT_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['search_hit', 'owner', 'user'], ['search_hit', 'reader', 'user']];
+const SEARCH_HIT_ASKED: readonly [type: string, relation: string][] = [['search_hit', 'can_view']];
 
 /** What the hopper writes and asks for artifacts (issue #624): apart, so a model edited before them still decides mints. */
 const ARTIFACT_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['artifact', 'viewer', 'user'], ['artifact', 'viewer', 'link']];
@@ -219,6 +232,11 @@ export function intakeGaps(model: ModelJson): string[] {
 /** What the model lacks for vault grants (issue #652); empty: grants are decided. A gap here denies every grant, never a mint. */
 export function vaultGrantGaps(model: ModelJson): string[] {
   return gapsIn(model, VAULT_GRANT_WRITTEN, VAULT_GRANT_ASKED);
+}
+
+/** What the model lacks for search hits (issue #945); empty: hits are decided. A gap here hides every hit, never denies a mint. */
+export function searchHitGaps(model: ModelJson): string[] {
+  return gapsIn(model, SEARCH_HIT_WRITTEN, SEARCH_HIT_ASKED);
 }
 
 function gapsIn(model: ModelJson, written: typeof WRITTEN, asked: typeof ASKED): string[] {

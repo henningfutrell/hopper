@@ -27,6 +27,12 @@ export interface Access extends TemplateApprovals {
    * owner told at the check. Not recorded: the grant's own event is. Denied, marked `unavailable`, when OpenFGA cannot be asked.
    */
   decideVaultGrant(userId: string, grant: { ownerId: string; key: string }): Promise<AccessAnswer>;
+  /**
+   * Whether the user may see a search hit (issue #945): OpenFGA's `search_hit#can_view`, its owner told at the check and,
+   * unless it is private (a direct job's), every user as a reader. Not recorded. Denied, marked `unavailable`, when
+   * OpenFGA cannot be asked.
+   */
+  decideSearchHit(viewerId: string, hit: { ownerId: string; type: string; ref: string; private: boolean }): Promise<AccessAnswer>;
   /** Allowed or denied for the requester, why, and the relationship path; recorded. The vault calls it before every mint and renewal. */
   decideMint(request: MintRequest): Promise<MintDecision>;
   /** Allowed or denied for a read-only check box of the template (issue #797), asked as for a live job of it; recorded as the check's. */
