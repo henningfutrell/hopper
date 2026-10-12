@@ -22,7 +22,7 @@ When a lane is free, the hopper takes the waiting jobs in queue order. For each 
 
 Of those machines, it picks the one with the most room. When two or more machines can take a job, other rules can come first: a free priority lane, the job's expected cost, the usage reset time, or Jev's pick (see below).
 
-When no machine has room, the job **waits** for a lane. It stays queued, and its reason names the lane cap that stops it, for example `waiting for a lane: machine desk's lane cap is 4, all 4 in use`. The Overview's Waiting list shows the reason.
+When no machine has room, the job **waits** for a lane. It stays queued, and its reason names the lane cap that stops it, for example `waiting for a lane: machine desk's lane cap is 4, all 4 in use`. The Dashboard's Waiting list shows the reason.
 
 ## Set the lanes of a machine
 
@@ -78,7 +78,7 @@ Set them in the **Priority lanes** panel on **Machines** (admin):
 | **Runs to be ranked** | The runs a lane needs before it is ranked. |
 | **While a high-priority job waits** | *only it takes a priority lane* (default), or *default jobs take one too*: then only low-priority jobs leave it. A priority lane is held only while a high-priority job waits for one and could run on that machine. While none waits, any job takes a priority lane, after the other lanes of that machine. When the high-priority job ends, its lane is open to any job again. |
 
-To choose the lanes yourself, tick them and select **Use these lanes**. **Choose by reliability** goes back to the hopper's choice. The Overview's **Lanes** panel marks each priority lane.
+To choose the lanes yourself, tick them and select **Use these lanes**. **Choose by reliability** goes back to the hopper's choice. The Dashboard's **Lanes** panel marks each priority lane.
 
 ## Specialty jobs elbow in
 
@@ -94,7 +94,7 @@ A specialty job first gets a lane like any other job. Only when it fits on no ma
 - shows no resource pressure: CPU less than 95% busy and memory less than 90% used,
 - has fewer lanes past its cap than its `elbowIns` option allows.
 
-The lane past the cap drains first. It closes when the specialty job ends, and the machine is back at its cap. Nothing is stopped. The Overview's **Lanes** panel shows the lane as `elbow-in · over the cap`, and the machine as, for example, `7/6 lanes in use · 1 over the cap`.
+The lane past the cap drains first. It closes when the specialty job ends, and the machine is back at its cap. Nothing is stopped. The Dashboard's **Lanes** panel shows the lane as `elbow-in · over the cap`, and the machine as, for example, `7/6 lanes in use · 1 over the cap`.
 
 Priority does not make a job a specialty job. Only the label does.
 

@@ -1,5 +1,5 @@
-// The overview layout (issue #73): which overview panels show, in what order, how wide (thirds of
-// the row), and each panel's settings. The viewer's, kept per browser (hooks/use-overview-layout.ts).
+// The dashboard layout (issue #73): which dashboard panels show, in what order, how wide (thirds of
+// the row), and each panel's settings. The viewer's, kept per browser (hooks/use-dashboard-layout.ts).
 // The viewer rearranges it as they see fit (issue #86): movePanel steps, placePanel drops.
 // Pure: reading a stored layout never throws and never loses a panel — a field it cannot use takes
 // its default, a panel it does not know goes, a panel the stored layout lacks comes back at the end.
@@ -12,7 +12,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   ended: 'Ended', throughput: 'Ended per hour', usage: 'Usage', usageHistory: 'Usage over time', live: 'Live activity',
 };
 
-/** Thirds of the overview's row; on a narrow screen every panel takes the whole row. */
+/** Thirds of the dashboard's row; on a narrow screen every panel takes the whole row. */
 export const PANEL_WIDTHS = [1, 2, 3] as const;
 export type PanelWidth = typeof PANEL_WIDTHS[number];
 export const WIDTH_NAMES: Record<PanelWidth, string> = { 1: 'One third', 2: 'Two thirds', 3: 'Full width' };
@@ -25,7 +25,7 @@ export type TimelineWindow = typeof TIMELINE_WINDOWS[number];
 export const THROUGHPUT_HOURS = [6, 12, 24] as const;
 export const LIVE_EVENTS = [5, 10, 14, 25, 50] as const;
 
-export interface OverviewSettings {
+export interface DashboardSettings {
   timelineWindow: TimelineWindow;
   throughputHours: typeof THROUGHPUT_HOURS[number];
   liveEvents: typeof LIVE_EVENTS[number];
@@ -33,11 +33,11 @@ export interface OverviewSettings {
   usageSource?: string;
 }
 
-export interface OverviewLayout { panels: PanelPlacement[]; settings: OverviewSettings }
+export interface DashboardLayout { panels: PanelPlacement[]; settings: DashboardSettings }
 
 const WIDTH: Record<PanelId, PanelWidth> = { kpis: 3, timeline: 2, attention: 1, lanes: 1, waiting: 1, ended: 1, throughput: 2, usage: 1, usageHistory: 3, live: 3 };
 
-export const DEFAULT_LAYOUT: OverviewLayout = {
+export const DEFAULT_LAYOUT: DashboardLayout = {
   panels: PANEL_IDS.map((id) => ({ id, shown: true, width: WIDTH[id] })),
   settings: { timelineWindow: '1h', throughputHours: 24, liveEvents: 14 },
 };
@@ -50,7 +50,7 @@ function placementOf(v: Record<string, unknown>, id: PanelId): PanelPlacement {
 }
 
 /** The layout a browser stored (`null`: nothing stored). */
-export function parseLayout(text: string | null): OverviewLayout {
+export function parseLayout(text: string | null): DashboardLayout {
   if (text === null) return DEFAULT_LAYOUT;
   let raw: unknown;
   try { raw = JSON.parse(text); } catch { return DEFAULT_LAYOUT; }
@@ -77,7 +77,7 @@ export function parseLayout(text: string | null): OverviewLayout {
 }
 
 /** Swaps the panel with its neighbour before (-1) or after (1); at either end it stays. */
-export function movePanel(l: OverviewLayout, id: PanelId, by: -1 | 1): OverviewLayout {
+export function movePanel(l: DashboardLayout, id: PanelId, by: -1 | 1): DashboardLayout {
   const i = l.panels.findIndex((p) => p.id === id);
   const j = i + by;
   if (i < 0 || j < 0 || j >= l.panels.length) return l;
@@ -86,17 +86,17 @@ export function movePanel(l: OverviewLayout, id: PanelId, by: -1 | 1): OverviewL
   return { ...l, panels };
 }
 
-export function setPanel(l: OverviewLayout, id: PanelId, patch: Partial<Omit<PanelPlacement, 'id'>>): OverviewLayout {
+export function setPanel(l: DashboardLayout, id: PanelId, patch: Partial<Omit<PanelPlacement, 'id'>>): DashboardLayout {
   return { ...l, panels: l.panels.map((p) => p.id === id ? { ...p, ...patch } : p) };
 }
 
-export function setSetting<K extends keyof OverviewSettings>(l: OverviewLayout, key: K, value: OverviewSettings[K]): OverviewLayout {
+export function setSetting<K extends keyof DashboardSettings>(l: DashboardLayout, key: K, value: DashboardSettings[K]): DashboardLayout {
   return { ...l, settings: { ...l.settings, [key]: value } };
 }
 
 /** The panel dropped on another takes its place (issue #86): in front of it when it came from
  *  after, behind it when it came from before. Dropped on itself or on an unknown panel, it stays. */
-export function placePanel(l: OverviewLayout, id: PanelId, at: PanelId): OverviewLayout {
+export function placePanel(l: DashboardLayout, id: PanelId, at: PanelId): DashboardLayout {
   const i = l.panels.findIndex((p) => p.id === id);
   const j = l.panels.findIndex((p) => p.id === at);
   if (i < 0 || j < 0 || i === j) return l;

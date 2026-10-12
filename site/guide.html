@@ -214,7 +214,7 @@ rated high; only a job let through the gate runs there</em>. It gets through whe
 <ul>
 <li>it matches a rule an admin set: <em>Pass: labels</em> (for example <code>hopper:actor</code>), <em>Pass: repos</em>, or
 <em>Pass: priority from</em>. All three are empty at first, so until a rule is set only a person lets a job through; or</li>
-<li>an admin presses <strong>Let through</strong> on the held job in the Overview and confirms. It is placed at the next
+<li>an admin presses <strong>Let through</strong> on the held job in the Dashboard and confirms. It is placed at the next
 decision.</li>
 </ul>
 <h3>Flags</h3>
@@ -311,8 +311,8 @@ cleanup never removes them.</p>
 <h3>Park</h3>
 <p>Press <strong>Park</strong> (operator), then <strong>Park job</strong>, on:</p>
 <ul>
-<li>a running job in the Overview's Lanes,</li>
-<li>a job in the <em>On a question</em> group of the Overview's waiting list, or</li>
+<li>a running job in the Dashboard's Lanes,</li>
+<li>a job in the <em>On a question</em> group of the Dashboard's waiting list, or</li>
 <li>a question card in Questions.</li>
 </ul>
 <p>Some executors cannot park (the print-mode ones); such a job says <em>cannot park</em> and why.</p>
@@ -321,7 +321,7 @@ cleanup never removes them.</p>
 questions that need an answer now. Parked lists one short row per job: its issue, its machine, how long it has been parked,
 the first line of its question, and whether it <em>resumes its session</em> or <em>starts fresh</em>. High-priority jobs come
 first. Parked's count in the menu reminds you of them. Open a row to read the whole question. Its question never expires, and
-you can still answer it: the answer is kept for when the job comes back. The Overview and the Queue list parked jobs too. A
+you can still answer it: the answer is kept for when the job comes back. The Dashboard and the Queue list parked jobs too. A
 login it waited on fails. There is no time limit.</p>
 <h3>Auto-park</h3>
 <p>A question that waits on you for too long parks its job by itself, so the job does not keep its machine busy, for example
@@ -359,7 +359,7 @@ job.</p>
 <h3>Priority lanes</h3>
 <p>hopper keeps its most reliable lanes for high-priority jobs. The <strong>Priority lanes</strong> panel on
 <strong>Machines</strong> shows each lane's rank, reliability, median start time and why it was or was not chosen; the
-Overview marks a priority lane with a star.</p>
+Dashboard marks a priority lane with a star.</p>
 <ul>
 <li><strong>How they are chosen</strong>: by reliability, the share of a lane's runs over the last 14 days that ended without a
 lane fault, newer runs counting more. A lane needs 5 runs and an online machine to be ranked. A priority lane is replaced only by
@@ -474,7 +474,7 @@ graph, or uses the arrow keys), sees the lanes each machine would have, and pres
 <strong>Undo</strong> drops unsaved changes; <strong>Defaults</strong> goes back to the environment's values. Saved limits
 apply at once and win over <code>HOPPER_SOFT_LIMIT</code> and <code>HOPPER_HARD_LIMIT</code>; the panel says which applies.
 Others see the graph without handles.</p>
-<p>The Overview's <em>Usage over time</em> graph shows each account's session and week usage as lines; the Usage view's
+<p>The Dashboard's <em>Usage over time</em> graph shows each account's session and week usage as lines; the Usage view's
 <em>Usage history</em> keeps 90 days by default.</p>
 
 <h2 id="infra">Infra: plans, applies and drift</h2>

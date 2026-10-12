@@ -1,6 +1,6 @@
 # Needs you: what waits on you
 
-**Needs you** is the first entry in the navigation. It shows every decision that waits on a person, by kind, with a count for each. Each row opens the one page where you act on that kind.
+**Needs you** is the second entry in the navigation, after the **Dashboard**. It shows every decision that waits on a person, by kind, with a count for each. Each row opens the one page where you act on that kind.
 
 ## What it is
 

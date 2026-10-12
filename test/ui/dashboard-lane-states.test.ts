@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Issue #381: the Overview's lanes and waiting list say what is really happening. A lane whose job
+// Issue #381: the Dashboard's lanes and waiting list say what is really happening. A lane whose job
 // still runs shows busy — one that closes after it says so in neutral words; its bar is its task count
 // (issue #794), indeterminate before it has one; a job waiting for capacity reads "waiting for a lane", not held, with the
 // limit that binds; and every state badge in both panels says what it means on hover.
@@ -55,7 +55,7 @@ let root: Root | undefined;
 async function boot() {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#overview';
+  window.location.hash = '#dashboard';
   localStorage.clear();
   vi.stubGlobal('fetch', fakeDaemon());
   vi.stubGlobal('EventSource', FakeEventSource);
@@ -76,7 +76,7 @@ const lane = (jobId: string) => document.querySelector<HTMLElement>(`[data-lane-
 const waiting = (jobId: string) => document.querySelector<HTMLElement>(`[data-job-group="waiting"][data-job-id="${jobId}"]`)!;
 const badges = (el: HTMLElement) => [...el.querySelectorAll<HTMLElement>('[data-slot="status-badge"]')];
 
-describe('Overview lane and queue states', () => {
+describe('Dashboard lane and queue states', () => {
   it('a lane that closes after its running job shows busy and says it closes after this job, not draining', async () => {
     await boot();
     const card = lane('r1');

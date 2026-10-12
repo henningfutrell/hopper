@@ -4,14 +4,17 @@ The main menu is the list of pages on the left of the UI. On a phone, select the
 
 ## The groups
 
-**Needs you** is always at the top, above the groups. Its badge counts every decision that waits on you. See [Needs you](needs-you.md).
+Two pages are always at the top, above the groups:
+
+- **Dashboard** is first. It shows the whole system at a glance: running jobs, lanes, waiting jobs, finished and failed jobs, the lane timeline and what needs attention. The UI opens on it. An old link to the Overview opens the Dashboard.
+- **Needs you** is second. Its badge counts every decision that waits on you. See [Needs you](needs-you.md).
 
 The menu puts the other pages in groups. Each group has a heading.
 
 | Group | Pages |
 |---|---|
 | Waiting on you | Intake, Access requests, Questions, Proposals, Research, Logins, Failures, Parked |
-| Jobs | Overview, Jobs, Queue, Pull requests, Artifacts, Decisions, Events, Your reports |
+| Jobs | Jobs, Queue, Direct jobs, Pull requests, Artifacts, Decisions, Events, Your reports |
 | Infra | Infra |
 | Sources & machines | Sources, Machines, Usage, Resources |
 | Settings | Settings |

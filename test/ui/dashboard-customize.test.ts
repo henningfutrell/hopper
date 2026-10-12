@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-// Issue #73: the overview is customizable and configurable. A viewer shows or hides each overview
-// panel, moves it, sets its width and its settings from Customize; the browser keeps that overview
-// layout, and the next load shows it. Reset brings back the default. The overview renders inside
+// Issue #73: the dashboard is customizable and configurable. A viewer shows or hides each dashboard
+// panel, moves it, sets its width and its settings from Customize; the browser keeps that dashboard
+// layout, and the next load shows it. Reset brings back the default. The dashboard renders inside
 // the whole app against a fake of the daemon's HTTP surface and a fake SSE.
 import { createElement } from 'react';
 import { act } from 'react';
@@ -42,7 +42,7 @@ let root: Root | undefined;
 async function boot(stored?: string) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#overview';
+  window.location.hash = '#dashboard';
   localStorage.clear();
   if (stored !== undefined) localStorage.setItem(KEY, stored);
   vi.stubGlobal('fetch', fakeDaemon());
@@ -51,7 +51,7 @@ async function boot(stored?: string) {
   const app = '../../ui/src/app/app.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { App } = (await import(app)) as { App: () => ReturnType<typeof createElement> };
   await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(App)); });
-  await vi.waitFor(() => expect(document.querySelector('[data-overview-panel]')).not.toBeNull());
+  await vi.waitFor(() => expect(document.querySelector('[data-dashboard-panel]')).not.toBeNull());
 }
 
 async function reload() {
@@ -60,8 +60,8 @@ async function reload() {
   await boot(stored);
 }
 
-const shown = () => [...document.querySelectorAll<HTMLElement>('[data-overview-panel]')].map((e) => e.dataset.overviewPanel);
-const panel = (id: string) => document.querySelector<HTMLElement>(`[data-overview-panel="${id}"]`);
+const shown = () => [...document.querySelectorAll<HTMLElement>('[data-dashboard-panel]')].map((e) => e.dataset.dashboardPanel);
+const panel = (id: string) => document.querySelector<HTMLElement>(`[data-dashboard-panel="${id}"]`);
 const row = (id: string) => document.querySelector<HTMLElement>(`[data-customize-panel="${id}"]`)!;
 const stored = () => JSON.parse(localStorage.getItem(KEY) ?? 'null') as { panels: { id: string; shown: boolean; width: number }[]; settings: Record<string, unknown> } | null;
 
@@ -93,13 +93,13 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe('Overview layout', () => {
-  it('nothing stored: every overview panel, in the default order', async () => {
+describe('Dashboard layout', () => {
+  it('nothing stored: every dashboard panel, in the default order', async () => {
     await boot();
     expect(shown()).toEqual(DEFAULT_ORDER);
   });
 
-  it('what the browser stored is what the overview shows: hidden panels gone, order and widths kept', async () => {
+  it('what the browser stored is what the dashboard shows: hidden panels gone, order and widths kept', async () => {
     const panels = DEFAULT_ORDER.map((id) => ({ id, shown: id !== 'live', width: id === 'kpis' ? 3 : 1 }));
     await boot(JSON.stringify({ panels: [panels[7], ...panels.filter((_, i) => i !== 7)], settings: {} }));
     expect(shown()).toEqual(['usage', ...DEFAULT_ORDER.filter((id) => id !== 'usage' && id !== 'live')]);
@@ -107,7 +107,7 @@ describe('Overview layout', () => {
     expect(panel('kpis')!.className).toContain('col-span-3');
   });
 
-  it('a stored layout that will not parse: the default overview, not an empty page', async () => {
+  it('a stored layout that will not parse: the default dashboard, not an empty page', async () => {
     await boot('{"panels":');
     expect(shown()).toEqual(DEFAULT_ORDER);
   });
@@ -150,9 +150,9 @@ describe('Overview layout', () => {
   });
 });
 
-// Issue #86: the overview can be rearranged as seen fit — panels dragged on the Overview itself, or
+// Issue #86: the dashboard can be rearranged as seen fit — panels dragged on the Dashboard itself, or
 // rows dragged in Customize, go where they are dropped.
-describe('Rearranging the overview', () => {
+describe('Rearranging the dashboard', () => {
   it('Arrange: a panel dragged onto another takes its place; a reload keeps the order', async () => {
     await boot();
     expect(panel('live')!.getAttribute('draggable')).not.toBe('true');

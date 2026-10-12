@@ -15,7 +15,7 @@ export const TOUR: Feature[] = [
   {
     shot: 'queue', icon: SquareKanban, title: 'The queue and its lanes',
     text: 'Every job waiting, held or running, in the order the hopper takes them. Each lane shows what a machine is doing now.',
-    alt: 'The hopper overview: nine lanes on four machines running jobs at once, the lane timeline, and the waiting queue with held jobs.',
+    alt: 'The hopper dashboard: nine lanes on four machines running jobs at once, the lane timeline, and the waiting queue with held jobs.',
   },
   {
     shot: 'job', icon: ListChecks, title: 'Follow every job as it works',

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-// Issue #45: the overview's cards and its lists read one job store, so each card's number is the
+// Issue #45: the dashboard's cards and its lists read one job store, so each card's number is the
 // number of rows in the list it names — on load, and again after the stream reports a change. The
-// overview renders inside the whole app against a fake of the daemon's HTTP surface and a fake SSE.
+// dashboard renders inside the whole app against a fake of the daemon's HTTP surface and a fake SSE.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -57,7 +57,7 @@ let root: Root | undefined;
 async function boot(jobs: Job[]) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#overview';
+  window.location.hash = '#dashboard';
   localStorage.clear();
   const daemon = fakeDaemon(jobs);
   vi.stubGlobal('fetch', daemon.fetch);
@@ -91,7 +91,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe('Overview cards and lists', () => {
+describe('Dashboard cards and lists', () => {
   it('one job on a question and none queued: the Waiting card and the Waiting list both say 0, On a question both say 1', async () => {
     await boot([job('q1', 'waiting_answer', { questionId: 'qq' })]);
     const m = cardsAndLists();

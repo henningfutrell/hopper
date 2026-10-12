@@ -1302,9 +1302,10 @@ issue #477) follows the same rule: it counts what is pending and clears only whe
 share which are collapsed, kept per browser (`jh_nav_collapsed`). A collapsed group's heading shows its
 entries' badges as one (`groupBadges`, `ui/src/model/nav-groups.ts`): the counts and the high-priority
 counts summed, the most urgent colour (bad, warn, question, plain, quiet), each entry and its count in the
-title, and the backburner count summed on its own. Open, each entry shows its own badge. Needs you is
-pinned above the groups (`NAV_PINNED`), never collapsed: its badge already sums other entries', and a group
-that held it would count those twice. A view of the navigation neither pinned nor in a group fails the typecheck.
+title, and the backburner count summed on its own. Open, each entry shows its own badge. The Dashboard and
+Needs you, in that order, are pinned above the groups (`NAV_PINNED`), never collapsed. The Dashboard (issue #951)
+covers the whole system, not only jobs, and the UI opens on it; it was the Overview, and `#overview` still opens it
+(`MOVED`). Needs you's badge already sums other entries', and a group that held it would count those twice. A view of the navigation neither pinned nor in a group fails the typecheck.
 
 **Question history** (issue #37): every question stays in the `questions` table with its text,
 trail, answer and status; nothing prunes it. Settings' Question history (issue #151) lists handled ones (status not
@@ -1704,7 +1705,7 @@ Run again or a human clearing the marker made it.
 
 **Locked entries** (issue #355). A failed job does not drop out of the queue: the newest job of its
 item, failed and not dismissed, is a **locked entry** (`isLocked`, `src/domain/locked.ts`), listed in
-`/api/queue` `locked`, highest priority first, then oldest — under the Overview's Waiting jobs and in the
+`/api/queue` `locked`, highest priority first, then oldest — under the Dashboard's Waiting jobs and in the
 Queue view's Locked panel, with its failure, the job it runs again (`rerunOf`), Run again and Dismiss.
 Its status stays `failed`: the decider never sees it, so it takes no lane and no budget, and nothing
 else that reads `failed` (the Ended list, the cards, the webhooks, the source's `hopper:failed`)
@@ -3651,7 +3652,7 @@ target has none. It is **low** below 5 GiB free or below a tenth free, whichever
 machine's own thresholds (issue #410): the `local`, `ssh` and `client` machine-source options
 `diskLowBelowGiB` (default 5) and `diskLowBelowPercent` (default 10). The source judges each reading
 by the thresholds as they are at that list, so a change in Plugins applies at the next Decision. The
-Machines view shows it on each card ("disk (home)", and a `disk low` badge), and the Overview's
+Machines view shows it on each card ("disk (home)", and a `disk low` badge), and the Dashboard's
 Attention panel lists each machine running low, once per machine. **A machine whose disk is low takes no
 new job** (issue #410, the decider's `fits`, `src/decider/assign.ts`): a job goes to another machine
 that runs its executor; when none can take it for that reason alone, it is held with the reason
@@ -4436,7 +4437,7 @@ pull request. Names are formal (#318's naming note): **operator-led**, never the
   job's own (opened at or after the job was created), as for any job.
 - **Not done.** An issue closed by a person as not planned (closed as completed is done, "Done is a pull request"), the label removed, or the issue gone cancels it, as for any job
   (`check()`); so does Cancel in the UI, which takes the claim off the issue.
-- **Where it shows.** `/api/queue` `operatorLed`; the Overview's Waiting panel lists them under
+- **Where it shows.** `/api/queue` `operatorLed`; the Dashboard's Waiting panel lists them under
   *Operator-led*, with the button *Operator-led* on each waiting job; the lane timeline draws each one on a
   row of its own, `operator-led`, from the claim to its end, in the operator tone while it lasts, and the
   "lanes in use" spark leaves it out; the event lines show `job.claimed_by_operator` in the same tone; the
@@ -5352,7 +5353,7 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   — the KPI cards, the lanes, waiting, on-a-question and ended lists, the attention panel, the
   ended-per-hour chart, the lane timeline — derives from it through `jobBoard`
   (`ui/src/model/board.ts`), whose `GROUP` is the one map from status to *job group*. A card is
-  the length of the list it names; `test/ui/overview-counts.test.ts` renders the overview and
+  the length of the list it names; `test/ui/dashboard-counts.test.ts` renders the dashboard and
   checks each card against its list, before and after a stream event. Lane spans come from the
   event log, but the job store wins: a span of a job no longer running ends with the job, and a
   running job with no start in the log gets its span from `startedAt`. A span that ended on a question
@@ -5364,7 +5365,7 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   and debounces a `/api/queue` + `/api/machines` refresh (150 ms). One shared 1 s clock drives
   every ticking label. `ui/src/model/event-types.ts` is a `Record<EventType, true>`: a new event
   type that the UI does not subscribe to fails the UI typecheck.
-- **Views** (hash-routed): Overview (KPIs with sparklines, lane timeline, attention, lanes /
+- **Views** (hash-routed): Dashboard (KPIs with sparklines, lane timeline, attention, lanes /
   waiting / ended, ended-per-hour chart, usage gauges, live activity), Questions, Decisions,
   Events, Sources, Machines, Plugins (#13's panel, ported: "Settled in slice 7"), Webhooks. The job view (`#job/<id>`, issue #433, no nav entry) is where every
   timeline entry about a job links: lane timeline bars and question waits, and event lines with a job; it reads the job
@@ -5374,24 +5375,24 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
 - **Mutations unchanged**: cancel (now behind a confirm dialog), approve, answer, router mode (removed by issue #211),
   question close, plugins (options, select, rescan), logout — same `/ui/api/*` routes and session header.
 - **Theme.** Dark by default, light by toggle, remembered in `localStorage` (`jh_theme`).
-- **Overview layout** (issue #73). The Overview's panels are laid out on one three-column grid by the
-  viewer's overview layout (`ui/src/model/overview-layout.ts`, pure): each overview panel shown or
+- **Dashboard layout** (issue #73). The Dashboard's panels are laid out on one three-column grid by the
+  viewer's dashboard layout (`ui/src/model/dashboard-layout.ts`, pure): each dashboard panel shown or
   hidden, its place in the order, its width in thirds of the row, and the settings a panel has (lane
   timeline window, ended-per-hour hours 6/12/24 — the job store holds 24 h of ended jobs — and the
-  number of live activity events). Customize (a sheet on the Overview) changes it; every change applies
-  at once. Kept per browser in `localStorage` (`jh_overview`, `ui/src/hooks/use-overview-layout.ts`),
+  number of live activity events). Customize (a sheet on the Dashboard) changes it; every change applies
+  at once. Kept per browser in `localStorage` (`jh_overview`, `ui/src/hooks/use-dashboard-layout.ts`),
   like the theme: a viewer preference, so no route, no role and nothing in the database. Owner decision:
   per browser, not per user or per hopper. A stored layout is read leniently — a field it cannot use
   takes its default, an unknown panel goes, a panel added since comes back at the end, shown — so a new
   panel needs no migration of what browsers stored. Reset removes the key. Tested through the rendered
-  app: `test/ui/overview-customize.test.ts`.
-- **List boxes are bounded** (issue #84). An overview panel fills its grid cell, so the panels of one
+  app: `test/ui/dashboard-customize.test.ts`.
+- **List boxes are bounded** (issue #84). A dashboard panel fills its grid cell, so the panels of one
   row line up. A list box (attention, lanes, waiting, ended, live activity) holds its list in a body of
   one height bound (`max-h-96`, at every screen width) and scrolls past it, so one long list does not
   stretch its row and leave its neighbours ragged. `Panel` `list` in `ui/src/components/panel.tsx`.
-  Tested through the rendered app: `test/ui/overview-list-boxes.test.ts`.
+  Tested through the rendered app: `test/ui/dashboard-list-boxes.test.ts`.
 - **Dismissed notices** (issue #83). Each Attention item and the update notice has a Dismiss button
-  (X); toasts have a close button. A dismissed notice is kept per browser like the overview layout
+  (X); toasts have a close button. A dismissed notice is kept per browser like the dashboard layout
   (`localStorage` `jh_dismissed`, `ui/src/model/dismissed.ts` pure, `ui/src/hooks/use-dismissed.ts`):
   a viewer preference, so no route, no role, nothing in the database, and it changes nothing at the
   daemon — dismissing a question's Attention item leaves the question open. The notice key names one
@@ -5400,14 +5401,14 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   occurrence shows too. Question and failed-job keys keep the newest 200. Attention's header offers
   *N dismissed · show* to bring its items back; a dismissed update notice still leaves the dot on the
   header version. Tested through the rendered app: `test/ui/attention-dismiss.test.ts`.
-- **Rearranging the overview** (issue #86). Arrange on the Overview covers each shown panel; a panel
+- **Rearranging the dashboard** (issue #86). Arrange on the Dashboard covers each shown panel; a panel
   dragged onto another takes its place (`placePanel`: in front of it from after, behind it from
   before), and Move earlier / Move later step it past its shown neighbours, skipping hidden ones —
   the way without a pointer. Done ends it; outside Arrange no panel drags, so charts and text keep
   their pointer. Customize rows drag the same way. Both use the browser's own drag and drop
   (`ui/src/hooks/use-drag-to-place.ts`), no library: the platform does it, and a library's pointer
   sensors need layout the rendered-app tests (happy-dom) do not have. Same layout, same key: no
-  migration. Tested in `test/ui/overview-customize.test.ts` and `test/ui/overview-layout.test.ts`.
+  migration. Tested in `test/ui/dashboard-customize.test.ts` and `test/ui/dashboard-layout.test.ts`.
 
 ## Reaching the UI across the LAN (issue #16, 2026-10-03)
 
@@ -5656,10 +5657,10 @@ installer adds `- { name: claude, plugin: claude-plan }`. A restart role, as bef
 **UI.** A **Usage** view (`ui/src/views/usage.tsx`, model `ui/src/model/usage.ts`, tested from
 `test/ui/usage.test.ts`): Accounts, Lane effect (limits, per machine used %, cap of max lanes,
 band), and per usage source its state line and one gauge per window with "resets in" and a "does
-not throttle" tag on informational ones. The Overview's usage gauges and the Machines view read
-the same readings; with more than one usage source the Overview's Usage panel shows one account's
+not throttle" tag on informational ones. The Dashboard's usage gauges and the Machines view read
+the same readings; with more than one usage source the Dashboard's Usage panel shows one account's
 readings at a time — a tab per usage source, the account's identity above its gauges, the choice
-kept in the overview layout (`usageSource`, issue #85) (`/api/usage`, polled every 30-60 s and refreshed with every event: a usage
+kept in the dashboard layout (`usageSource`, issue #85) (`/api/usage`, polled every 30-60 s and refreshed with every event: a usage
 source reads without emitting events).
 
 **Tests never run the real claude.** `test/support/isolate.ts` puts a guard `claude` first on PATH
@@ -6893,7 +6894,7 @@ container tool this browser chose. When OpenFGA is one of them the OpenFGA banne
 once; what needs Access stays off with its reason, as #696 made it. Not compared: a service of the install's own, and the
 versions of OpenFGA and Postgres (nothing from inside the container answers them).
 
-**The notice is one line (issue #521).** Above the overview it holds the headline, *What's new*, *How to update*
+**The notice is one line (issue #521).** Above the dashboard it holds the headline, *What's new*, *How to update*
 (an image install) or *Update now* (an install), and Dismiss. What's new and How to update open below the line,
 one at a time and closed by default; the commands, the restart-blocker note and the tag mismatch live behind How
 to update, as they do in Settings → Version, never as a standing block.
@@ -8276,7 +8277,7 @@ the engine.
 **UI.** A Queue view: the gate (mode buttons, the hourly limit; admin), then two columns — **Pre-sorted**
 (unaccepted jobs in the pre-sort's order, each marked with the pre-sort's rejection if any; Accept moves
 a job to the end of the user order, Accept pre-sort takes them all, Reject) and **Your order** (accepted
-waiting jobs in queue order; up, down, to the top — within the job's priority —, Reject). Columns stack below `lg`. The Overview's
+waiting jobs in queue order; up, down, to the top — within the job's priority —, Reject). Columns stack below `lg`. The Dashboard's
 Waiting panel links an unaccepted job to it. Since issue #201 the gate names the queue sorter that makes the pre-sort, with a **Set up the
 sorter** link to Settings → Routing, and the Queue nav entry carries a badge counting the jobs waiting on
 the pre-sort (`awaitingSort`, `ui/src/model/queue.ts`); the Routing view's Queue sorter panel says it is
@@ -9057,7 +9058,7 @@ the message, no job, no other credential), `test/store/tenant-migration-14.test.
 
 ## Usage history (issue #385, 2026-10-07)
 
-Owner request: a usage-over-time graph on the Overview, and usage history recorded so it has data. Before,
+Owner request: a usage-over-time graph on the Dashboard, and usage history recorded so it has data. Before,
 a usage source reported its current reading only; nothing was kept.
 
 **Recording.** Each user runtime runs a **recorder** (`src/usage/history.ts`): every minute it polls every
@@ -9090,8 +9091,8 @@ answers per line (source, machine, usage window):
   earlier `resetsAt`: the moment the window rolled over. A drop to 0 then reads as a reset, not lost data.
 - **account**: the identity of the newest sample's account in the range.
 
-**UI.** The overview panel *Usage over time* (`usageHistory`, full row, after Usage;
-`ui/src/views/overview/usage-history.tsx` over `ui/src/components/usage-graph-card.tsx`,
+**UI.** The dashboard panel *Usage over time* (`usageHistory`, full row, after Usage;
+`ui/src/views/dashboard/usage-history.tsx` over `ui/src/components/usage-graph-card.tsx`,
 `ui/src/charts/usage-history.tsx`, model `ui/src/model/usage-history.ts`). One line per series, drawn as
 the KPI cards' sparklines (monotone 1.5 px stroke over a gradient fill fading down). The legend names each
 line `<account> · <window>` (no account: the source, and its machine); the lines of one account share a
@@ -9185,7 +9186,7 @@ are answered in the UI — so no allowlist decides answers.
 
 **Reject.** `POST /ui/api/jobs/:id/reject` takes an optional `{ reason }` (≤ 500 characters): the job ends
 `rejected` with it as its error and in `job.rejected` (none: `rejected by the user`). Offered on every
-waiting job in the Queue view and in the Overview's Waiting list, in a dialog with the reason field. On
+waiting job in the Queue view and in the Dashboard's Waiting list, in a dialog with the reason field. On
 GitHub the rejection writes nothing: the claim label goes, no `hopper:rejected`, no comment, never a close
 and no unassignment (D1 and D9 of `docs/assignment.md` are open). A shared label would turn the issue away
 for every user and every hopper on the repo. Instead the source asks the host which items' newest job was
@@ -10040,7 +10041,7 @@ the job repositories and suggest the others, M5 nothing to do (tenant migration 
 - **Why a lane is idle.** Each Decision's lane plan carries `idle` when the machine leaves lanes unused
   (`idleReason`, `src/decider/lanes.ts`): its lane count is 0, offline, home not known, disk low, usage pacing
   (lane cap below its lanes), reserved lanes, waiting jobs that cannot run there, every waiting job held (the
-  queue gate is `awaiting acceptance`), or no job waiting. The Overview's idle lanes and empty lane slots show
+  queue gate is `awaiting acceptance`), or no job waiting. The Dashboard's idle lanes and empty lane slots show
   it. A waiting job already said why (`holdReason`, `waitReason`). `decision.made` v3 gains the optional
   field; v1 and v2 keep their old lane plan (`legacyLanePlan`).
 - **GitHub writes.** Assign to me is the second kind of issue write besides labels and Run again's reopen; it
@@ -10444,7 +10445,7 @@ Retry; the profile and the known causes (an admin names a signature, or forgets 
 /api/failures` gives each problem and failure its `actions`, `{ ok }` or `{ ok: false, why }`, and the routes
 refuse with the same reasons: the view offers only what is taken, and the role (operator for the actions, admin
 for settings and causes) is checked by the UI session guard as for every mutation. A failed job's assessment shows
-under its error in the Queue and the Overview.
+under its error in the Queue and the Dashboard.
 
 Open decisions taken conservatively, each one entry to change: no model judges a failure (rules only; an unclear
 one goes to a person); every automatic action on by default, each switchable; retries move to another machine
@@ -10698,7 +10699,7 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   job. Park only where `canPark` (`ui/src/model/board.ts`, from `parkingExecutors`) says the daemon takes it;
   on a running job or one on a question it does not apply to, the job says why instead (`parkRefusal`).
   Pick up of a job that starts fresh asks first, saying it starts a fresh session in the kept work tree with
-  its question and answer as context. Only for a role that operates. The Overview's Waiting panel and the Queue view list parked jobs in their own group
+  its question and answer as context. Only for a role that operates. The Dashboard's Waiting panel and the Queue view list parked jobs in their own group
   (`/api/queue` `parked`); the Waiting card says how many are parked; they are never running and on no lane.
 - **The Parked section** (issue #565, `ui/src/views/parked.tsx`). Parked jobs have their own place, a section like
   Questions, Logins and Failures (`SECTIONS.parked`, events `job.parked` and `job.unparked`): one compact row per
@@ -10729,7 +10730,7 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   itself. **Its answer picks it up**: the answer (or a close) to an auto-parked job's question re-queues it in the
   same transaction (`onAnswered` → `recordUnpark`): `queued`, its priority as it was, pinned to its machine, and its
   claim resumes its agent session there with the answer; no Pick up. The Parked row offers **Answer** in place of
-  Answer and pick up, and the Parked row and the Overview's parked row show `why`. A job a person parked keeps the
+  Answer and pick up, and the Parked row and the Dashboard's parked row show `why`. A job a person parked keeps the
   answer until it is picked up, as before.
 - **Settings.** Who may park is the operator role, as for cancel, and roles apply live. Auto-park's timeouts above;
   no limit for parked jobs.
@@ -10879,7 +10880,7 @@ with its figures, rank and reason, `measuredAt`, `switchMargin`.
 
 **UI.** Machines: the Priority lanes panel — a sentence of the settings, every lane's reliability, start time, last
 day, rank and why, the priority lanes marked; an admin edits the settings, ticks lanes and Use these lanes, or Choose
-by reliability. Overview: the Lanes panel marks the priority lanes and names those not open.
+by reliability. Dashboard: the Lanes panel marks the priority lanes and names those not open.
 
 **Owner decisions taken as defaults** (all settings, changed live on Machines): D1 a fixed count, 1; D2 keep-free, with
 share as the other choice — no park-and-yield; D3 a low job never takes a priority lane (revised by #788: it leaves one only while a high-priority job waits
@@ -11119,7 +11120,7 @@ discovery runs at the next Decision after it comes online.
 
 **Let through** (`POST /ui/api/jobs/:id/gate-pass`, admin — it widens what the job may reach): only a job held at the
 gate (409 otherwise); `gatePass { at }`, `job.gate_passed { reason }`, and it is placed at the next Decision. The
-Overview's Waiting panel shows the hold as every hold, and for an admin **Let through**, behind a confirmation that
+Dashboard's Waiting panel shows the hold as every hold, and for an admin **Let through**, behind a confirmation that
 names what the machine is rated; Approve is not offered for a job held at the gate (approving would not move it), and a
 role the server refuses sees no button.
 
@@ -11345,7 +11346,7 @@ this**, next to Send answer, Park, Close and Dismiss, each with an optional note
 **Phase** (`src/domain/phase.ts`): a job is in one — `work`, `research` or `proposal` (`JOB_PHASES`). `Job.phase` is set
 by a shift; absent, `phaseOf` derives it from the spec (a job asked for research is in research; one asked for a
 proposal, or that reached its proposal, in proposal; else work). Every route that answers a job names it (`withPhase`:
-`/api/queue`, `/api/jobs`, the shift routes), and the UI shows it wherever a job is named (`JobTitle`: Overview, Queue,
+`/api/queue`, `/api/jobs`, the shift routes), and the UI shows it wherever a job is named (`JobTitle`: Dashboard, Queue,
 Questions, the sections), unless it is `work`.
 
 **Fork** (`mode: fork`): a separate job asked for research or a proposal about the aspect — the parent's spec with that
@@ -12441,7 +12442,7 @@ migration 29, a table only), the last approval in its body.
   snapshot carries `template: { name, waiting }` (`approvalWait`, src/domain/vault.ts, read at every machine list), and
   the decider holds a job from it as from a machine whose work tree is not usable (`templateHolds`, src/decider/assign.ts).
   A job that can run nowhere else is held with the reason (`job.held`, on its timeline); the box's lanes stay idle with
-  the reason (the Overview's lanes). Machines says "waiting for template approval". `approve-template` opens it: the
+  the reason (the Dashboard's lanes). Machines says "waiting for template approval". `approve-template` opens it: the
   next Decision places jobs there (`vault.approved` wakes the engine). A widened scope does not close it: its boxes keep
   working on what was approved. A job resuming in its pane there returns to it; a job running there keeps running.
 - **Revoked at once.** `revoke-template` (`POST /ui/api/vault`, Settings → Vault → Revoke) drops the template's approval
@@ -13508,8 +13509,8 @@ person's question list as if it needed an answer), or ended failed though it was
 - **Live job.** A `waiting_on` job's processes still run on its machine (its background poll): it is in every "at work" list —
   credentials renewed, the GitHub proxy, skills, the vault, the job stream, artifacts, Access, the sweep and the rename guard
   keep it as live — and in `jobsOnMachine`.
-- **UI.** The Overview's Waiting panel lists the jobs on their own wait in their own group ("On its own wait"), and the Queue
-  view in its own panel (`WaitingOnRows`, `ui/src/views/overview/queue.tsx`): what it waits for, how it will know, its machine,
+- **UI.** The Dashboard's Waiting panel lists the jobs on their own wait in their own group ("On its own wait"), and the Queue
+  view in its own panel (`WaitingOnRows`, `ui/src/views/dashboard/queue.tsx`): what it waits for, how it will know, its machine,
   since when; **End the wait** (operators) and Cancel. It is no question: not in Questions, its badge or Attention. The Waiting
   card counts it in its line. The lane timeline ends a span at `job.waiting`.
 - **Not built.** Parking a job on its own wait; a check the hopper runs itself (the job's own background poll covers it); a
@@ -13549,7 +13550,7 @@ check at intake. Now the text a job runs is the item's **snapshot**, and a live 
 - **Who edited it.** When the text changed, the sync loop asks the source's timeline (`JobSource.editsSince`, GitHub:
   GraphQL `userContentEdits` for the body and `RenamedTitleEvent` for the title, the newest 50 of each) for the edits since
   the snapshot (`sources/item-text.ts` `withEdits`). A timeline that cannot be read leaves them empty; the job still holds.
-- **The card** (`ui/src/components/text-change.tsx`, in the Overview's Waiting panel and the Queue view): the title
+- **The card** (`ui/src/components/text-change.tsx`, in the Dashboard's Waiting panel and the Queue view): the title
   change, the body's lines removed and added (the `diff` library), the new assignee comments — not in the prompt unless
   accepted —, who edited it, and three ways on:
   - **Rerun the original** — `POST /ui/api/jobs/:id/keep-original` (operator; `hopper job keep-original <id>`): the hold
@@ -14954,7 +14955,7 @@ ignore `jobs` and say no stops.
 
 ## The job graph (issue #900, 2026-10-12)
 
-Requirement (issue #900): the Jobs view is the at-a-glance tracker, apart from the Overview's health summary. Each job's
+Requirement (issue #900): the Jobs view is the at-a-glance tracker, apart from the Dashboard's health summary. Each job's
 stage — partly done among them, which the status alone did not show —, its task progress, lane, time in stage, pull request
 and checks; counts per stage; filters by repository and stage. Then the scope change on the issue: jobs form a graph
 (parent and sub-issues, follow-ups, partly done remainders, plan to apply, forks from questions), so the primary mode is a
@@ -15479,7 +15480,7 @@ rendered nothing when empty, so a person could not tell the feature was there.
 **As built:**
 - **One home each.** Every decision that waits on a person has one top-level page, where it is acted on. A buried copy
   is removed or becomes a link to that page. Settings, Sources and the vault keep configuration.
-- **Needs you.** `#needs-you`, the first nav entry (`ui/src/views/needs-you.tsx`): a row per kind — Intake, Access
+- **Needs you.** `#needs-you`, the nav entry after the Dashboard (`ui/src/views/needs-you.tsx`): a row per kind — Intake, Access
   requests, Questions, Proposals, Research, Logins, Failures, the pre-sort — with its count, its high-priority count
   (#535) and a link to its home (`needsYouRows`, `ui/src/model/needs-you.ts`; `useNeedsYou`, `ui/src/store/needs-you.ts`).
   Its nav badge is the sum. Parked jobs have no row: they wait to be picked up, not for a decision; Parked keeps its

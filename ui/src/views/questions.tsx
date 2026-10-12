@@ -40,7 +40,7 @@ import { HighTag } from '@/components/priority';
 import { useReadingPosition } from '@/lib/reading-position';
 import { act, actFor, markSeen, refreshQuestions, useHopper } from '@/store';
 import { useCanAdmin, useCanOperate, useJobIndex, useQuestions } from '@/store/selectors';
-import { ParkButton } from '@/views/overview/lanes';
+import { ParkButton } from '@/views/dashboard/lanes';
 import { PhaseShiftSettingsPanel, QuestionForks, ShiftActions } from '@/views/phase-shifts';
 import { ReportBugButton } from '@/app/bug-report';
 import { useSection } from '@/app/nav';

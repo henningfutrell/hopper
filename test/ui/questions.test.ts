@@ -186,30 +186,30 @@ describe("the levels' recommendations on an escalated question", () => {
 describe('the Questions badge', () => {
   // Issue #499: the badge counts what waits on the owner, not what they have not looked at yet.
   it('counts the open questions at the human stage; opening Questions marks them seen and the badge stays', async () => {
-    const daemon = await boot({ authed: true, hash: '#overview' });
+    const daemon = await boot({ authed: true, hash: '#dashboard' });
     await vi.waitFor(() => expect(badge()?.textContent).toBe('1'));
     expect(daemon.calls.some((c) => c.path.endsWith('/seen'))).toBe(false);
     await act(async () => { window.location.hash = '#questions'; window.dispatchEvent(new HashChangeEvent('hashchange')); });
     await vi.waitFor(() => expect(daemon.calls.some((c) => c.path === `/ui/api/questions/${question.id}/seen` && c.method === 'POST')).toBe(true));
     await vi.waitFor(() => expect(daemon.open.seenAt).toBeDefined());
-    await act(async () => { window.location.hash = '#overview'; window.dispatchEvent(new HashChangeEvent('hashchange')); });
+    await act(async () => { window.location.hash = '#dashboard'; window.dispatchEvent(new HashChangeEvent('hashchange')); });
     expect(badge()?.textContent).toBe('1');
   });
 
   it('a question already seen still counts on a fresh load', async () => {
-    await boot({ authed: true, hash: '#overview', seenAt: '2026-10-03T20:01:00.000Z' });
+    await boot({ authed: true, hash: '#dashboard', seenAt: '2026-10-03T20:01:00.000Z' });
     await vi.waitFor(() => expect(badge()?.textContent).toBe('1'));
   });
 
   it('a question still with an escalation level does not count: it does not wait on the owner yet', async () => {
-    await boot({ authed: true, hash: '#overview', tier: 'opus' });
+    await boot({ authed: true, hash: '#dashboard', tier: 'opus' });
     await vi.waitFor(() => expect(document.querySelector('a[href="#questions"]')).not.toBeNull());
     await new Promise((r) => setTimeout(r, 50));
     expect(badge()).toBeNull();
   });
 
   it('clears only when none is open, and comes back when one is raised: live, from the stream, no reload', async () => {
-    const daemon = await boot({ authed: true, hash: '#overview', seenAt: '2026-10-03T20:01:00.000Z' });
+    const daemon = await boot({ authed: true, hash: '#dashboard', seenAt: '2026-10-03T20:01:00.000Z' });
     await vi.waitFor(() => expect(badge()?.textContent).toBe('1'));
     daemon.setOpen([]);
     await emit('question.answered');
