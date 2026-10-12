@@ -34,6 +34,7 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/plugins', kind: 'run a command' },
   { route: '/ui/api/pull-requests/merge', kind: 'approve or merge work' },
   { route: '/ui/api/infra-plans', kind: 'approve or merge work' },
+  { route: '/ui/api/infra-plans/settings', kind: 'approve or merge work' },
   { route: '/ui/api/update', kind: 'update the hopper or a client' },
   { route: '/ui/api/plugin-store', kind: 'update the hopper or a client' },
   { route: '/ui/api/questions/:id/answer', kind: 'change work on a machine' },

@@ -7,7 +7,7 @@ import { checkWait, type ProbeMarks, type ReadOnlyCheck } from './read-only-chec
 
 export * from './read-only-check.ts';
 // Infra plans (issue #870) sit beside the vault: an apply's credential is minted only for one.
-export type { InfraPlan, PlanApply, PlanApproval, PlanTool, PlanView } from './infra-plans.ts';
+export type { InfraPlan, InfraPlanSettings, PlanApply, PlanApproval, PlanApprover, PlanTool, PlanView } from './infra-plans.ts';
 export type { PlanCheck, PlanLevel, PlanRisk, PlanSummary, RiskCallout } from './infra-plan-summary.ts';
 export type { Mark, OutOfBandChange, OutOfBandMark, OutOfBandView, SignalSource } from './out-of-band.ts';
 import type { BoxTool, TemplateLimits } from './sandboxes.ts';

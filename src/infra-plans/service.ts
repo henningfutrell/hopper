@@ -1,36 +1,46 @@
 // Infra plans (issue #870, design.md "Infra plans: no apply without a plan"): one user's plans of infrastructure changes.
 // A job records a plan; a person approves it; the vault asks the gate before it mints any credential that can change
 // infrastructure. Each record and approval is an event on the timeline of the job that recorded the plan. The branch's
-// head is read on GitHub at each ask, so a plan made before the code moved is never applied.
+// head is read on GitHub at each ask, so a plan made before the code moved is never applied. Approval by risk (part 3):
+// an operator approves a low-risk uat plan, or the hopper does when the plan is kept and auto-approve is on; an admin
+// approves any other; nobody approves a plan that failed a check.
 import { createHash, randomUUID } from 'node:crypto';
 import type { OperationProfile } from '../domain/access.ts';
 import { changesOf } from '../domain/infra-plan-changes.ts';
 import { summarize } from '../domain/infra-plan-summary.ts';
 import {
-  applyRefusal, failedChecks, headRefusal, planInputProblem, PLAN_FILE_MAX, PLAN_ID, PLAN_TTL_MINUTES, type InfraPlan, type PlanApply, type PlanApproval, type PlanInput, type PlanView,
+  applyRefusal, approveRefusal, approverOf, AUTO_APPROVER, DEFAULT_INFRA_PLAN_SETTINGS, headRefusal, planInputProblem, PLAN_FILE_MAX, PLAN_ID, PLAN_TTL_MINUTES,
+  type InfraPlan, type InfraPlanSettings, type KeptPlanView, type PlanApply, type PlanApproval, type PlanInput, type PlanView,
 } from '../domain/infra-plans.ts';
+import type { UiRole } from '../domain/sign-in.ts';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
 
 /** A no, with the HTTP status it answers. */
-export interface PlanRefusal { status: 400 | 404 | 409; no: string }
+export interface PlanRefusal { status: 400 | 403 | 404 | 409; no: string }
 export const isPlanRefusal = (v: unknown): v is PlanRefusal => typeof v === 'object' && v !== null && 'no' in v;
 
 export interface InfraPlans {
-  record(job: Job, input: PlanInput, file?: Buffer): InfraPlan | PlanRefusal;
+  /** Keep a job's plan; with auto-approve on, a plan an operator may approve is approved by the hopper in the same step. */
+  record(job: Job, input: PlanInput, file?: Buffer): { plan: InfraPlan; view: PlanView } | PlanRefusal;
   get(id: string): InfraPlan | undefined;
+  /** One plan as the hopper shows it, with its text. */
+  view(id: string): (PlanView & { text: string }) | undefined;
   file(id: string): Buffer | undefined;
   list(): PlanView[];
   /** The applies of the plans `list` answers, newest first: each credential the vault minted naming one of them. */
   applies(plans: PlanView[]): PlanApply[];
   approval(id: string): PlanApproval | undefined;
-  approve(id: string, by: string): PlanView | PlanRefusal;
+  /** A person of `role` approves the plan: a 403 when its risk needs a higher role (approverOf). */
+  approve(id: string, by: string, role: UiRole): PlanView | PlanRefusal;
+  settings(): InfraPlanSettings;
+  setSettings(to: InfraPlanSettings, by: string): InfraPlanSettings;
   /** Why the vault mints nothing for `profile` on `planId`, or undefined: a read, or a current approved plan of the asset. */
   gate(profile: OperationProfile, planId: string | undefined): Promise<string | undefined>;
 }
 
 export interface InfraPlansOptions {
-  store: Pick<UserStore, 'infraPlans' | 'events' | 'tx'>;
+  store: Pick<UserStore, 'infraPlans' | 'events' | 'tx' | 'settings'>;
   clock: Clock;
   /** The commit `ref` of `repo` is at now, on GitHub; throws, saying why, when it cannot be read. */
   head(repo: string, ref: string): Promise<string>;
@@ -41,10 +51,20 @@ const LIST_MAX = 200;
 
 export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
   const plans = o.store.infraPlans;
+  const withApprover = (p: KeptPlanView): PlanView => ({ ...p, approver: approverOf(p) });
   const viewOf = (p: InfraPlan): PlanView => {
     const { text: _text, ...view } = p;
     const approval = plans.approval(p.id);
-    return { ...view, ...(approval ? { approval } : {}) };
+    return withApprover({ ...view, ...(approval ? { approval } : {}) });
+  };
+  const settings = (): InfraPlanSettings => o.store.settings.getInfraPlans() ?? DEFAULT_INFRA_PLAN_SETTINGS;
+  /** The approval row and its event, in the caller's transaction. */
+  const approveNow = (plan: InfraPlan, approval: PlanApproval): void => {
+    plans.approve(approval);
+    o.store.events.append({
+      type: 'infra.plan_approved', jobId: plan.job,
+      data: { plan: plan.id, tool: plan.tool, asset: plan.asset, target: plan.target, by: approval.by, ...(approval.auto ? { auto: true } : {}), ...(plan.summary ? { level: plan.summary.level } : {}) },
+    });
   };
   return {
     record(job, input, file) {
@@ -73,12 +93,18 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
             summary: { words: summary.words, level: summary.level, risks: summary.risks.map((r) => r.risk), failed: summary.failed },
           },
         });
+        // Auto-approve: still an approval of its own and an event, so the plan shows in the feed and nothing is silent.
+        if (settings().autoApprove && approverOf(plan).who === 'operator') approveNow(plan, { plan: plan.id, by: AUTO_APPROVER, at: now.toISOString(), auto: true });
       });
-      return plan;
+      return { plan, view: viewOf(plan) };
     },
     get: (id) => (PLAN_ID.test(id) ? plans.get(id) : undefined),
+    view(id) {
+      const plan = PLAN_ID.test(id) ? plans.get(id) : undefined;
+      return plan ? { ...viewOf(plan), text: plan.text } : undefined;
+    },
     file: (id) => (PLAN_ID.test(id) ? plans.file(id) : undefined),
-    list: () => plans.list(LIST_MAX),
+    list: () => plans.list(LIST_MAX).map(withApprover),
     applies(listed) {
       if (listed.length === 0) return [];
       const ids = new Set(listed.map((p) => p.id));
@@ -89,17 +115,24 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
       }).reverse();
     },
     approval: (id) => plans.approval(id),
-    approve(id, by) {
+    approve(id, by, role) {
       const plan = PLAN_ID.test(id) ? plans.get(id) : undefined;
       if (!plan) return { status: 404, no: `no plan ${id}` };
       if (plans.approval(id)) return { status: 409, no: `plan ${id} is approved already` };
-      const failed = failedChecks(plan);
-      if (failed) return { status: 409, no: `plan ${id} failed its checks, so nobody approves it: ${failed}` };
-      o.store.tx(() => {
-        plans.approve({ plan: id, by, at: o.clock.now().toISOString() });
-        o.store.events.append({ type: 'infra.plan_approved', jobId: plan.job, data: { plan: id, tool: plan.tool, asset: plan.asset, target: plan.target, by } });
-      });
+      const no = approveRefusal(plan, role);
+      if (no) return { status: approverOf(plan).who === 'nobody' ? 409 : 403, no };
+      o.store.tx(() => approveNow(plan, { plan: id, by, at: o.clock.now().toISOString() }));
       return viewOf(plan);
+    },
+    settings,
+    setSettings(to, by) {
+      o.store.tx(() => {
+        const from = settings();
+        if (from.autoApprove === to.autoApprove) return;
+        o.store.settings.setInfraPlans(to);
+        o.store.events.append({ type: 'infra.settings_changed', data: { from, to, by } });
+      });
+      return settings();
     },
     async gate(profile, planId) {
       const plan = planId !== undefined && PLAN_ID.test(planId) ? plans.get(planId) : undefined;

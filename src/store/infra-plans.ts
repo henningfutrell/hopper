@@ -1,7 +1,7 @@
 // Infra plans (issue #870, tenant migration 46): one row each, never updated — what the job said and when, as JSON, its
 // text and its saved plan file in columns of their own, so a list reads neither. A person's approval is a row of its
 // own table, so approving a plan changes no plan. The file crosses the store's text-only parameters as base64.
-import type { InfraPlan, InfraPlanRepository, PlanApproval, PlanView } from '../domain/infra-plans.ts';
+import type { InfraPlan, InfraPlanRepository, KeptPlanView, PlanApproval } from '../domain/infra-plans.ts';
 import { parse, type StoreContext } from './context.ts';
 
 export const INFRA_PLAN_TABLES = `
@@ -28,8 +28,8 @@ export function createInfraPlanRepository(c: StoreContext): InfraPlanRepository 
       return r ? Buffer.from(r.file as string, 'base64') : undefined;
     },
     list: (limit) => c.db.all(`SELECT p.body, a.body AS approval FROM infra_plans p LEFT JOIN infra_plan_approvals a ON a.plan_id = p.id
-      ORDER BY p.created_at DESC, p.seq DESC LIMIT ?`, limit).map((r): PlanView => ({
-      ...parse<PlanView>(r.body), ...(r.approval !== null ? { approval: parse<PlanApproval>(r.approval) } : {}),
+      ORDER BY p.created_at DESC, p.seq DESC LIMIT ?`, limit).map((r): KeptPlanView => ({
+      ...parse<KeptPlanView>(r.body), ...(r.approval !== null ? { approval: parse<PlanApproval>(r.approval) } : {}),
     })),
     approve(a) {
       c.db.run('INSERT INTO infra_plan_approvals (plan_id, body) VALUES (?, ?)', a.plan, JSON.stringify(a));
