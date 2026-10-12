@@ -85,7 +85,7 @@ async function agent(a: TestApp, method: 'GET' | 'POST', path: string, token: st
 }
 
 async function apiToken(a: TestApp, session: string, role = 'admin', box = false): Promise<string> {
-  const r = await a.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'grok-bot', role, box }, { token: session });
+  const r = await a.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'grok-bot', scopes: ['*'], role, box }, { token: session });
   expect(r.status).toBe(200);
   return r.body.token;
 }

@@ -92,7 +92,7 @@ describe('the tunnel (issues #795, #880): an ngrok agent that forwards the remot
 
   it('lets only the API through at the edge, never the UI, the sign-in pages or the event stream, and limits each caller', () => {
     expect(script).toMatch(/--traffic-policy-file/);
-    for (const path of ["'/api/'", "'/ui/api/'", "'/ui/auth/api-token'", "'/api/events/stream'"]) expect(script).toContain(path);
+    for (const path of ["'/api/'", "'/ui/api/'", "'/ui/auth/api-token'", "'/ui/auth/token/refresh'", "'/api/events/stream'"]) expect(script).toContain(path);
     expect(script).toMatch(/type: custom-response/);
     expect(script).toMatch(/type: rate-limit/);
     expect(script).toMatch(/conn\.client_ip/);
