@@ -72,7 +72,8 @@ describe('trusted actors from GitHub (issue #930)', () => {
     forge.tokens.set('test-account-token', 'owner');
     expect((await a.ui('/ui/api/api-tokens', { action: 'mint', label: 'agent', scopes: ['*'] }, { token })).status).toBe(200);
 
-    const r = await a.api('GET', '/api/intake-actors/candidates');
+    // With more than one user, a read names its user by a session.
+    const r = await a.api('GET', '/api/intake-actors/candidates', undefined, { 'x-hopper-session': token });
     expect(r.status).toBe(200);
     expect(r.body.problems).toEqual([]);
     expect(r.body.candidates).toEqual([

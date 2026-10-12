@@ -17,6 +17,8 @@ export interface GitHubIssue {
   title: string;
   body: string;
   author: string;
+  /** The author's GitHub user id (issue #930: trust is by id); absent when GitHub did not say. */
+  authorId?: number;
   /** The logins the issue is assigned to (issue #387: intake is by label and assignee). */
   assignees: string[];
   labels: string[];
@@ -113,6 +115,8 @@ export interface IssueEvent {
   at: string;
   /** Who did it; empty when GitHub did not say. */
   actor: string;
+  /** Their GitHub user id (issue #930); absent when GitHub did not say. */
+  actorId?: number;
   /** GitHub's type of the actor (`User`, `Bot`, …); absent when GitHub did not say. */
   actorType?: string;
   /** The app it was done through (`performed_via_github_app`), by its slug; absent: none. */

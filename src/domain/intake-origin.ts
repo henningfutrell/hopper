@@ -1,6 +1,7 @@
 // Trusted origin and request cards (issue #652, design.md "Trusted origin and request cards"): an issue becomes a job
 // only when its author, whoever added the label the hopper takes it by and whoever assigned it to the user are the
-// user's trusted actors — the logins named in Settings → Intake, else the user's connected login — and no job filed it.
+// user's trusted actors — the GitHub accounts named in Settings → Intake, by user id (issue #930), else the user's
+// connected login — and no job filed it.
 // Apps and bots never are trusted actors. Any other open labelled issue assigned to the user is a request card: a person
 // reads its title and body and approves them, and the job runs that approved text. Pure.
 import { createHash } from 'node:crypto';
@@ -13,6 +14,8 @@ export interface OriginActor {
   role: OriginRole;
   /** Who did it; absent when the issue's events do not say (the label or the assignment not found). */
   login?: string;
+  /** Their GitHub user id (issue #930); absent when GitHub did not say. */
+  id?: number;
   /** The app or bot that did it: never a trusted actor. */
   app?: string;
   trusted: boolean;
@@ -36,8 +39,24 @@ export interface IntakeRequest {
   approved?: { title: string; body: string };
 }
 
-/** The intake's trusted actors, as Settings → Intake keeps them; absent: the user's connected login only. */
-export interface IntakeActorSettings { actors: string[] }
+/** A GitHub account as GitHub answers it (issue #930): its user id, which a rename keeps, its login now, its type and avatar. */
+export interface GitHubAccount {
+  id: number;
+  login: string;
+  /** GitHub's type: `User`, `Bot`, `Organization`, `Mannequin`. Only a `User` is a trusted actor. */
+  type: string;
+  avatarUrl?: string;
+}
+
+/**
+ * The intake's trusted actors, as Settings → Intake keeps them; absent: the user's connected login only. `accounts`: by
+ * GitHub user id (issue #930). `actors`: their logins, lowercased, which the build before #930 reads; a list kept then has
+ * only these, and counts by login until it is saved again.
+ */
+export interface IntakeActorSettings { actors: string[]; accounts?: GitHubAccount[] }
+
+/** One who did an act on GitHub, or a trusted actor: a login, and its GitHub user id when known. */
+export interface ActorRef { login: string; id?: number }
 
 /** The hopper's note under an issue a job filed through it (src/github-proxy/policy.ts `filedNote`). */
 export const FILED_BY_JOB = /\n---\nFiled through hopper for job `[^`]+`/;
@@ -52,10 +71,32 @@ export function requestHash(t: { title: string; body: string }): string {
 /** A GitHub login that is a bot or an app's (`name[bot]`). */
 export const isBotLogin = (login: string): boolean => /\[bot\]$/i.test(login);
 
-/** The trusted actors in force: the ones named, else the connected login. Lowercased, sorted, once each. */
-export function trustedActors(s: IntakeActorSettings | undefined, connected: string): string[] {
-  const named = s?.actors.length ? s.actors : [connected];
-  return [...new Set(named.map((a) => a.trim().toLowerCase()).filter((a) => a !== ''))].sort();
+const ref = (login: string, id: number | undefined): ActorRef => ({ login: login.trim().toLowerCase(), ...(id !== undefined ? { id } : {}) });
+
+/**
+ * The trusted actors in force: the accounts named, by id (issue #930); else the logins named before ids; else the
+ * connected login. Logins lowercased, sorted by login, once each.
+ */
+export function trustedActors(s: IntakeActorSettings | undefined, connected: ActorRef): ActorRef[] {
+  const named = s?.accounts?.length ? s.accounts.map((a) => ref(a.login, a.id))
+    : s?.actors.length ? s.actors.map((a) => ref(a, undefined))
+      : [ref(connected.login, connected.id)];
+  const once = new Map(named.filter((a) => a.login !== '').map((a) => [a.id !== undefined ? `#${a.id}` : a.login, a]));
+  return [...once.values()].sort((a, b) => a.login.localeCompare(b.login));
+}
+
+/**
+ * The logins Access is told as the trusted actors when it decides `act` (issue #930): a trusted actor of the act's id is
+ * told by the act's login, as its account is named now; a trusted actor whose login the act has but whose id is another
+ * is not told, as that login now names another account. An id not known on either side compares by login.
+ */
+export function toldFor(actors: readonly ActorRef[], act: ActorRef): string[] {
+  const login = act.login.toLowerCase();
+  return [...new Set(actors.flatMap((a) => {
+    if (a.id === undefined || act.id === undefined) return [a.login];
+    if (a.id === act.id) return [login];
+    return a.login === login ? [] : [a.login];
+  }))].sort();
 }
 
 const ROLE_TEXT: Record<OriginRole, string> = { author: 'written', labelled: 'labelled', assigned: 'assigned' };

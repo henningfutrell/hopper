@@ -217,7 +217,10 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     getContribution() { const text = read('contribution'); return text === undefined ? undefined : JSON.parse(text) as ContributionSettings; },
     setContribution(settings) { write('contribution', JSON.stringify({ on: settings.on })); },
     getIntakeActors() { const text = read('intakeActors'); return text === undefined ? undefined : JSON.parse(text) as IntakeActorSettings; },
-    setIntakeActors(settings) { write('intakeActors', JSON.stringify({ actors: settings.actors })); },
+    // `actors` stays the logins (issue #930): the build before ids reads them; `accounts` holds each one's GitHub user id.
+    setIntakeActors(settings) {
+      write('intakeActors', JSON.stringify({ actors: settings.actors, ...(settings.accounts ? { accounts: settings.accounts.map((a) => ({ id: a.id, login: a.login, type: a.type, ...(a.avatarUrl ? { avatarUrl: a.avatarUrl } : {}) })) } : {}) }));
+    },
     getRepoChecksDismissed() {
       const text = read('repoChecksDismissed');
       return text === undefined ? [] : JSON.parse(text) as string[];

@@ -7,7 +7,7 @@
 // backburner says since when and by whom (issue #808), so it never looks dropped.
 import type { ItemText } from './item-snapshots.ts';
 import type { AccessAnswer } from './access.ts';
-import type { IntakeRequest } from './intake-origin.ts';
+import type { ActorRef, IntakeRequest } from './intake-origin.ts';
 import type { ActingPerson } from './failures.ts';
 import type { JobStatus } from './types.ts';
 
@@ -109,10 +109,11 @@ export interface IntakeContext {
 /** What a job source asks of the user's intake to judge an item's origin (issue #652): kept by the user's store, decided by Access. */
 export interface IntakeTrust {
   /**
-   * Whether each GitHub login may start the user's jobs (issue #652): Access's answer (OpenFGA), the user's trusted actors
-   * told — those named in Settings → Intake, else `connected`. A login denied or not asked is no trusted actor.
+   * Whether each who did an act may start the user's jobs (issue #652), by lowercased login: Access's answer (OpenFGA), the
+   * user's trusted actors told — those named in Settings → Intake, by GitHub user id (issue #930), else `connected`. A
+   * login denied or not asked is no trusted actor.
    */
-  trusted(logins: string[], connected: string): Promise<Map<string, AccessAnswer>>;
+  trusted(acts: ActorRef[], connected: string): Promise<Map<string, AccessAnswer>>;
   /** The title and body a person approved for the item (an approved request card or accepted new text), or undefined. */
   approvedText(key: string): { title: string; body: string } | undefined;
   /** Record a person's approval of a source's request card: the item's snapshot is its text, and `source.request_approved`. */
@@ -128,7 +129,7 @@ export const NO_INTAKE_ACCESS: AccessAnswer = { allowed: false, reason: 'OpenFGA
 
 /** Intake with no user store (a host tested alone): nobody is a trusted actor, nothing is approved, nothing can be. */
 export const NO_INTAKE_TRUST: IntakeTrust = {
-  trusted: async (logins) => new Map(logins.map((l) => [l.toLowerCase(), NO_INTAKE_ACCESS])),
+  trusted: async (acts) => new Map(acts.map((a) => [a.login.toLowerCase(), NO_INTAKE_ACCESS])),
   approvedText: () => undefined,
   approve: () => { throw new Error('no user store keeps approvals here'); },
   assignedHere: () => false,
