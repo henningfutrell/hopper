@@ -1,1 +1,0 @@
-- The read-only check of a box that reads Terraform now proves that the cloud account refuses a state write that goes around the box's Terraform guard. Set the workspace's state backend on the template: until then, the check does not pass.
