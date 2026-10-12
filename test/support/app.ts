@@ -222,7 +222,8 @@ export async function startTestApp(o: {
       s.add(item);
       await app.user(userId).sources.syncNow(s.name);
       const jobs = (await api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000', undefined, await as(userId))).body.jobs;
-      const found = jobs.find((j) => j.source?.key === item.key);
+      // The item's own job: a proposal's follow-ons share its source (issue #859).
+      const found = jobs.find((j) => j.source?.key === item.key && !j.followOn);
       if (!found) throw new Error(`no job was pulled for ${item.key}`);
       return found;
     },

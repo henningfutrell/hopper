@@ -10,7 +10,7 @@
 // as its own repository is, under the same ref check.
 import { Readable } from 'node:stream';
 import { gunzipSync } from 'node:zlib';
-import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
+import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
 import type { RepoFacts } from './api.ts';
 import { checkPush, gitPath, receivePackCommands, type GitService, type RefUpdate } from './git.ts';
 import { CONTRIBUTION_OFF } from './policy.ts';
@@ -72,8 +72,8 @@ const UNAUTHORIZED = text(401, 'refused: the token is not a job\'s of this hoppe
 
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
-/** A job's own repository: its source's, or for a fork its parent's (issue #548). */
-const repoOf = (job: Job): string | undefined => job.source?.repo ?? job.forkOf?.source?.repo;
+/** A job's own repository: its source item's (`sourceItemOf`: a fork's or an older follow-on's is its parent's). */
+const repoOf = (job: Job): string | undefined => sourceItemOf(job)?.repo;
 
 const pkt = (s: string | Buffer): Buffer => {
   const b = typeof s === 'string' ? Buffer.from(s) : s;

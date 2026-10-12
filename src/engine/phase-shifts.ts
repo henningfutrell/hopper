@@ -6,7 +6,7 @@
 // phase. Each is one transaction with the question; the settings are read at each shift, so a change applies at once.
 // A fork shows on its question (issue #570), and a second fork of its kind waits until it ends. Answered without it,
 // the question's answer is kept on the fork, which is told it at its next start; its parent is told the fork still runs.
-import { REVIEW_SECTIONS, backToWorkBrief, DEFAULT_PHASE_SHIFT_SETTINGS, forkAnswer, forkAnsweredBrief, forkRunningBrief, phaseOf, switchBrief, thenChoices,
+import { REVIEW_SECTIONS, backToWorkBrief, DEFAULT_PHASE_SHIFT_SETTINGS, forkAnswer, forkAnsweredBrief, forkRunningBrief, phaseOf, sourceItemOf, switchBrief, thenChoices,
   type ForkOf, type Job, type JobPhase, type JobSpec, type PhaseShiftSettings, type PhaseShiftSettingsView, type Question, type QuestionShifts,
   type ReviewItem, type ReviewKind, type ShiftMode } from '../domain/types.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
@@ -77,7 +77,7 @@ export function createPhaseShifts(c: EngineContext): PhaseShifts {
   function forkJob(q: Question, parent: Job, to: ReviewKind, note: string | undefined, by: string): { fork: Job; parked: boolean } {
     const { proposal: _p, research: _r, ...rest } = parent.spec;
     const spec: JobSpec = { ...rest, [REVIEW_SECTIONS[to].specFlag]: true };
-    const source = parent.source ?? parent.forkOf?.source;
+    const source = sourceItemOf(parent);
     const forkOf: ForkOf = {
       jobId: parent.id, questionId: q.id, kind: to, ...(note ? { note } : {}), question: q.text,
       ...(source ? { source: { source: source.source, key: source.key, kind: source.kind, ...(source.url ? { url: source.url } : {}), ...(source.title ? { title: source.title } : {}), ...(source.repo ? { repo: source.repo } : {}) } } : {}),

@@ -18,7 +18,7 @@
 import { SourceError } from '../../domain/ports.ts';
 import { RerunRefused } from '../../domain/rerun-refused.ts';
 import type { SourceReport } from '../../domain/ports.ts';
-import type { HandoffResolution, Job } from '../../domain/types.ts';
+import { handedToFollowOns, type HandoffResolution, type Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_READY, LABEL_REJECTED, holderLabel } from './labels.ts';
@@ -62,8 +62,11 @@ async function settle(ctx: ReportContext, repo: string, number: number, add: str
  * A done job's end on its issue (issue #579). A part: `hopper:partly-done`, its pull request kept to follow. The issue
  * closed as complete already: `hopper:done`. Else its pull request waits for review: `hopper:pr-ready`, the job's own
  * open pull request kept to follow (`follow.ts`). `hopper:failed` goes too: a failed job found done later ends here.
+ * A proposal's job whose follow-ons go on with its work (issue #859) leaves the issue as it is, claimed, and follows
+ * nothing: its follow-ons report the issue's end, and only a pull request one of them opens can make it done.
  */
 async function finished(ctx: ReportContext, job: Job, repo: string, number: number, state: State): Promise<State> {
+  if (handedToFollowOns(job)) return state;
   const issue = await ctx.api.getIssue(repo, number);
   const also = issue.labels.includes(LABEL_FAILED) ? [LABEL_FAILED] : [];
   if (job.partlyDone) {

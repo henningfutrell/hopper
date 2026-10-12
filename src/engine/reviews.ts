@@ -11,7 +11,7 @@
 import type { ExecutionReport } from '../domain/ports.ts';
 import { raisedBy } from '../domain/raised-by.ts';
 import {
-  asksOfSpec, REVIEW_KINDS, REVIEW_SECTIONS, reviewDocument, type EventType,
+  asksOfSpec, REVIEW_KINDS, REVIEW_SECTIONS, reviewDocument, sourceItemOf, type EventType,
   type Job, type Lane, type LaneId, type MachineSnapshot, type ReviewItem, type ReviewKind, type ReviewVersion,
 } from '../domain/types.ts';
 import type { Cleanup } from './cleanup.ts';
@@ -56,7 +56,7 @@ export function recordReport(c: EngineContext, job: Job, lane: Lane | undefined,
   } else {
     const raised = raisedBy({ laneId, resumeOn: job.resumeOn, pin: job.spec.machineId, machines: new Map(machine ? [[machine.id, machine.label]] : []) });
     // A fork's item came from its parent's item (issue #548); one written in a switched phase, from the job's question.
-    const from = job.source ?? job.forkOf?.source;
+    const from = sourceItemOf(job);
     const source = from ? { key: from.key, url: from.url, title: from.title } : undefined;
     p = items.create({
       jobId: job.id, stage, version: version(1), ...(raised ? { raisedBy: raised } : {}), ...(source ? { source } : {}),
