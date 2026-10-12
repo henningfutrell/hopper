@@ -193,6 +193,12 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
     const again = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'read/cluster/lab' });
     expect(again.body.preview).toMatchObject({ template: shown.body.preview.template, exists: 'same' });
 
+    const words = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'kubectl get pods on cluster lab' });
+    expect(words.body.preview).toMatchObject({ template: shown.body.preview.template, needs: ['read on cluster lab'], exists: 'same' });
+    const vague = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'look at the pods' });
+    expect(vague.status).toBe(400);
+    expect(vague.text).toContain('names no asset');
+
     const bad = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'delete/cluster/lab' });
     expect(bad.status).toBe(400);
     expect(bad.text).toContain('the operation is one of');
