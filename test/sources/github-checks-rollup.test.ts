@@ -42,4 +42,24 @@ describe('the checks of a pull request (issue #927)', () => {
     expect(pullRequestFrom(many, 'pull request')?.failedChecks).toHaveLength(10);
     expect(pullRequestFrom(withRollup({ state: 'SUCCESS' }), 'pull request')?.failedChecks).toBeUndefined();
   });
+
+  it('keeps what a failed check run reported (its failure annotations), not the runner\'s exit line, at most five, cut short', () => {
+    const at = (path: string, line: number, message: string, annotationLevel = 'FAILURE', title?: string) =>
+      ({ path, location: { start: { line } }, message, annotationLevel, ...(title ? { title } : {}) });
+    const r = withRollup({ state: 'FAILURE', contexts: contexts({ __typename: 'CheckRun', name: 'test (1)', conclusion: 'FAILURE', annotations: { nodes: [
+      at('test/store/database.test.ts', 42, 'AssertionError: expected 1 to be 2', 'FAILURE', 'connects again after the server drops the connection'),
+      at('.github', 0, 'Process completed with exit code 1.'),
+      at('src/a.ts', 3, 'a notice', 'NOTICE'),
+      at('src/b.ts', 7, 'x'.repeat(2000)),
+    ] } }, { __typename: 'CheckRun', name: 'lint', conclusion: 'FAILURE', annotations: { nodes: Array.from({ length: 7 }, (_, i) => at('src/c.ts', i + 1, `error ${i}`)) } }) });
+    const [test, lint] = pullRequestFrom(r, 'pull request')?.failedChecks ?? [];
+    expect(test?.reported).toEqual([
+      'test/store/database.test.ts:42: connects again after the server drops the connection: AssertionError: expected 1 to be 2',
+      `src/b.ts:7: ${'x'.repeat(497)}...`,
+    ]);
+    expect(lint?.reported).toHaveLength(5);
+    expect(lint?.reported?.[0]).toBe('src/c.ts:1: error 0');
+    const none = withRollup({ state: 'FAILURE', contexts: contexts({ __typename: 'CheckRun', name: 'gates', conclusion: 'FAILURE', annotations: { nodes: [at('.github', 0, 'Process completed with exit code 2.')] } }) });
+    expect(pullRequestFrom(none, 'pull request')?.failedChecks).toEqual([{ name: 'gates' }]);
+  });
 });
