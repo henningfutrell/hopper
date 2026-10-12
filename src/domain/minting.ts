@@ -19,12 +19,16 @@ export const KUBE_TOKEN_SECONDS = 600;
 /** The session policy a read session gets: AWS's managed read-only policy, so the session reads whatever the role may do. */
 export const AWS_READ_POLICY = 'arn:aws:iam::aws:policy/ReadOnlyAccess';
 /**
- * The write actions a read session is denied (issue #715), in every service: an explicit deny wins over any allow, so
- * a role whose own policy can write still gives a read session none of it. IAM's own writes that do not start with one
- * of these words are named beside them.
+ * The write actions a read session is denied (issues #715, #853), by name, in the services an infra read touches most.
+ * IAM takes no wildcard in a service prefix (`*:Create*` makes STS refuse the whole AssumeRole), so each service is
+ * named, and STS takes at most 2048 characters of inline session policy, so the list is short. The cap on every other
+ * service is `ReadOnlyAccess`: a session gets only what both the role and its session policies allow. IAM's own writes
+ * that do not start with one of the verbs are named beside them.
  */
+const WRITE_VERBS = ['Create*', 'Delete*', 'Put*', 'Update*', 'Modify*'];
+const WRITE_DENIED_SERVICES = ['iam', 's3', 'dynamodb', 'ec2', 'ssm', 'rds', 'lambda', 'ecs', 'eks', 'kms', 'secretsmanager', 'cloudformation'];
 const DENIED_WRITES = [
-  '*:Create*', '*:Delete*', '*:Put*', '*:Update*', '*:Modify*',
+  ...WRITE_DENIED_SERVICES.flatMap((service) => WRITE_VERBS.map((verb) => `${service}:${verb}`)),
   'iam:Add*', 'iam:Attach*', 'iam:Change*', 'iam:Deactivate*', 'iam:Detach*', 'iam:Enable*', 'iam:PassRole', 'iam:Remove*',
   'iam:Reset*', 'iam:Resync*', 'iam:Set*', 'iam:Tag*', 'iam:Untag*', 'iam:Upload*',
 ];
