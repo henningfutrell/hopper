@@ -7,6 +7,7 @@ import { CONFIDENCES, RISK_CATEGORIES, RISK_LEVELS } from '../domain/types.ts';
 // Infra plans (issue #870): their own file, spread with the other features' events.
 export { INFRA_PLAN_EVENT_SCHEMAS as infraPlanEvents } from './infra-plan-schemas.ts';
 export { API_GRANT_EVENT_SCHEMAS as apiGrantEvents } from './api-grant-schemas.ts';
+export { WINDOWS_STEP_EVENT_SCHEMAS as windowsStepEvents } from './windows-step-schemas.ts';
 
 const strict = z.strictObject;
 

@@ -39,6 +39,7 @@ const ALL: Record<EventType, true> = {
   'source.request_opened': true, 'source.backburner_lifted': true,
   'yolo_mode.changed': true, 'job.pull_request_merged': true, 'job.pull_request_closed': true, 'job.pull_request_abandoned': true, 'job.finish_briefed': true, 'job.pull_request_tended': true, 'job.pull_request_followed': true,
   'skill.listed': true, 'skill.loaded': true, 'skill.refused': true,
+  'step.started': true, 'step.finished': true, 'step.refused': true,
   'artifact.created': true, 'artifact.shared': true, 'artifact.share_revoked': true, 'artifact.removed': true, 'artifact.settings_changed': true, 'artifact.posted': true,
   'tldr.written': true, 'tldr.settings_changed': true,
   'artifact.revised': true, 'artifact.revision_pinned': true, 'artifact.revision_removed': true,

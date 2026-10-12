@@ -4554,3 +4554,68 @@ Version 1 (`docs/schemas/api_tokens.settings_changed.v1.json`). The hopper's adm
   "tokenMinutes": 10
 }
 ```
+
+## `step.started`
+
+Version 1 (`docs/schemas/step.started.v1.json`). A running job's Windows sandbox step started on its Windows host (issue #731): `step` its id, the `host`, its `command` (at most 300 characters), its timeout, the size of the inputs it sent and the `outputs` it asked back. Never its output.
+
+| field | type | required |
+|---|---|---|
+| `step` | string | yes |
+| `host` | string | yes |
+| `command` | string | yes |
+| `timeoutSeconds` | integer | yes |
+| `inputsBytes` | integer | yes |
+| `outputs` | string[] | yes |
+
+```json
+{
+  "step": "5f0c1d2e-0000-4000-8000-000000000731",
+  "host": "build-host",
+  "command": "msbuild App.sln /p:Configuration=Release",
+  "timeoutSeconds": 1800,
+  "inputsBytes": 5242880,
+  "outputs": [
+    "src/App/bin/Release"
+  ]
+}
+```
+
+## `step.finished`
+
+Version 1 (`docs/schemas/step.finished.v1.json`). A Windows sandbox step ended (issue #731): its `exit` code and how long it ran; `outputsBytes` when its outputs came back; `problem` when the hopper could not run it, stopped it (its timeout, or the job stopped waiting) or could not bring its outputs back.
+
+| field | type | required |
+|---|---|---|
+| `step` | string | yes |
+| `host` | string | yes |
+| `exit` | integer | yes |
+| `seconds` | integer | yes |
+| `outputsBytes` | integer | no |
+| `problem` | string | no |
+
+```json
+{
+  "step": "5f0c1d2e-0000-4000-8000-000000000731",
+  "host": "build-host",
+  "exit": 0,
+  "seconds": 94,
+  "outputsBytes": 1048576
+}
+```
+
+## `step.refused`
+
+Version 1 (`docs/schemas/step.refused.v1.json`). A running job asked for a Windows sandbox step and was told no (issue #731), with `reason`: no such Windows host, a bad command, timeout or output, or inputs too large.
+
+| field | type | required |
+|---|---|---|
+| `reason` | string | yes |
+| `host` | string | no |
+
+```json
+{
+  "reason": "the hopper has no Windows host build. It has: build-host.",
+  "host": "build"
+}
+```

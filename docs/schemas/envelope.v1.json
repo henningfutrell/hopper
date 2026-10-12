@@ -221,6 +221,9 @@
         "api_grant.reuse_detected",
         "api_grant.revoked",
         "api_tokens.settings_changed",
+        "step.started",
+        "step.finished",
+        "step.refused",
         "jev.mode_changed",
         "router.mode_changed"
       ]

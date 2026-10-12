@@ -7,6 +7,7 @@
 import type { AssetKind, Operation } from '../domain/access.ts';
 import { ARTIFACT_HELP } from '../artifacts/script.ts';
 import { PROXY_HELP } from '../github-proxy/script.ts';
+import { STEP_HELP } from '../windows-steps/script.ts';
 
 /** How the link's credential reaches the tool: the form of the vault's helper (`$HOPPER_SECRET <form> NAME`). */
 export type LinkForm = 'kube' | 'aws';
@@ -58,7 +59,7 @@ If AWS refuses, the keys or their policy are wrong. Say so; do not look for anot
 export const SKILLS: readonly Skill[] = [
   {
     name: 'github',
-    line: 'file and read GitHub issues and pull requests through the hopper, with no login here',
+    line: 'file and read GitHub issues and pull requests, with no login here',
     text: PROXY_HELP,
   },
   {
@@ -90,8 +91,14 @@ export const SKILLS: readonly Skill[] = [
   {
     // Issue #624: what a job makes for a person to see. Needs no access: the job's own token is enough.
     name: 'artifacts',
-    line: 'put a visual (a diagram, a chart, a graph, drawn in SVG) on the hopper for a person to see, and share it',
+    line: 'put a visual (a diagram, a chart) on the hopper for a person to see',
     text: ARTIFACT_HELP,
+  },
+  {
+    // Issue #731: one step on a Windows host, run by the hopper over ssh; `hopper-step` (src/windows-steps/script.ts).
+    name: 'windows-step',
+    line: 'run one step on a Windows host (a build, tests)',
+    text: STEP_HELP,
   },
   {
     // Issue #782: the hopper's help pages, for this version (src/help/book.ts answers it, the page its asset).

@@ -44,6 +44,8 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/machines', kind: 'change work on a machine' },
   { route: '/ui/api/machines/join', kind: 'change work on a machine' },
   { route: '/ui/api/machines/sandbox', kind: 'change work on a machine' },
+  // Issue #731: where a job's Windows sandbox steps run, with the hopper's own ssh key.
+  { route: '/ui/api/windows-hosts', kind: 'change work on a machine' },
   { route: '/ui/api/lanes/apply', kind: 'change work on a machine' },
   { route: '/ui/api/lanes/undo', kind: 'change work on a machine' },
 ];

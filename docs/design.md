@@ -66,6 +66,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
+| `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per host, stopped at the timeout, recorded, results kept an hour (`service.ts`), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`; its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` | engine, http, store, plugins, executors, decider |
@@ -4557,6 +4558,75 @@ path. A native client (Node.js for Windows, MSYS or Git Bash) failed every job w
 
 Tests: `test/client/link.test.ts` (the platforms), `test/integration/machine-join.test.ts` (a `win32` join refused
 with the WSL text, the code still good), `test/scripts/install-page.test.ts` (the WSL machine steps).
+
+## Windows sandbox steps (issue #731, 2026-10-12)
+
+Owner direction (2026-10-11, rescoped 2026-10-12): Windows work runs as **Windows sandbox steps** that a job on a Linux
+machine asks the hopper for. No hopper client, lane, worktree or agent runs on Windows, so it fits "Windows: only inside
+WSL" (issue #704). The job keeps its work tree, its GitHub (through the hopper) and its agent on Linux; only the one step
+that needs Windows — a .NET Framework build, a Windows app's tests, a packing step — runs on a **Windows host**.
+
+**A Windows host** is an entry of the user's config record `windows-hosts` (`{ "hosts": [...] }`, `src/domain/windows-steps.ts`):
+a `name` a job uses, a plain `ssh` destination (`user@host`), its pinned `hostKey`, and an absolute `workDir` (the
+working directory every step runs in), with an optional `label`. The host needs OpenSSH with key auth and Windows
+PowerShell; the hopper's public key goes into that account's authorized keys. Edited in Settings → Windows hosts (`GET
+/api/windows-hosts`, `POST /ui/api/windows-hosts`, admin, the whole list against the version read) or with `hopper
+config set windows-hosts`. The edit is a box action (issue #795, "Box tokens"): it says where commands run with the
+hopper's key, as a machine's edit does. A host's key is read with the machines' own `POST /ui/api/machines/host-key`, and a person
+pins it after comparing the fingerprint. Read at each step: an edit applies without a restart. The checks keep every
+value safe to put in a PowerShell single-quoted string and an scp path: no quote, no `..`, no shell character.
+
+**The way in** is the job's own: `hopper-step` (`src/windows-steps/script.ts`) beside `hopper-gh` and `hopper-skill` in the
+job's credentials dir, `HOPPER_STEP` its path, asking with the job's **proxy token** (issue #563) on `HOPPER_URL`. Its
+full help is the `windows-step` skill's text, so the catalog grows by one line and no protocol line is added.
+
+| call | what happens |
+|------|--------------|
+| `sh "$HOPPER_STEP" hosts` | `GET /job/step`: the user's hosts, `name  workDir  label` per line |
+| `sh "$HOPPER_STEP" run HOST (--command TEXT \| --script FILE) [--input PATH]... [--output PATH]... [--timeout S] [--into DIR]` | `POST /job/step?host=&command=&timeout=&output=…` with the inputs as a tar body (`application/x-tar`, streamed to a file, at most 1 GiB); 200 streams the step's output as it comes, the step's id in `x-hopper-step`. Then `GET /job/step/:id`: the outputs tar, `x-hopper-step-exit`, and `x-hopper-step-problem` when the hopper could not run it, stopped it or could not bring the outputs back |
+
+The script exits with the step's own exit code, or `125` with the reason on stderr when the hopper did not run the
+step, stopped it, or could not bring it all back. `--command` travels in the URL, so it is at most 4 KiB; `--script FILE`
+goes with the inputs, as `.hopper-step/script.ps1`, and runs from there.
+
+**One step on the host** (`src/windows-steps/ssh-host.ts`), reached as an ssh target is ("Target authentication"): the
+hopper's own key (or the mounted one), public-key authentication only, the hardened options, nothing forwarded, and the
+host's pinned key only — one known_hosts file per Windows host, `<work dir>/ssh/windows/<name>.known_hosts`, written
+before each step. Every remote command is `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass
+-EncodedCommand <base64 of UTF-16LE>`, so the host's default shell (PowerShell or cmd) cannot change it
+(`src/windows-steps/powershell.ts`). In order:
+
+1. ssh: the working directory must exist; the scratch directory `<workDir>\.hopper-step` is made empty.
+2. scp: the inputs tar and `step.ps1` (the job's command, UTF-8 with a byte order mark, so Windows PowerShell 5.1 reads
+   it as UTF-8) into the scratch directory.
+3. ssh: in the working directory, Windows' own `tar -xf` extracts the inputs (it refuses absolute paths and `..`); the
+   step runs as `powershell -File step.ps1`, its stdout and stderr streamed back; the outputs that are there are packed
+   with `tar -cf`, a missing one said on stderr; the exit code is the step's (`$LASTEXITCODE`, or 1 when its last
+   statement failed).
+4. scp: `outputs.tar` back, when the step asked for outputs.
+5. ssh: the scratch directory is removed, whatever came before. The inputs stay in the working directory: that is
+   where the build runs.
+
+**The service** (`src/windows-steps/service.ts`): one step at a time per host — a step waits while another runs there,
+and its log says so; its timeout (default 30 minutes, at most 4 hours) and the job's request ending both stop it (the
+ssh process is killed; the next step's prepare clears what is left); its result and outputs are kept an hour for the job
+to fetch, then swept. On the job's timeline: `step.started` (host, command up to 300 characters, timeout, inputs size,
+outputs), `step.finished` (exit, seconds, outputs size, problem) and `step.refused` (reason). Never the step's output.
+
+**Credentials and GitHub.** A step gets no credential and no GitHub token. GitHub stays on the Linux machine, through the
+hopper (issues #563, #652). The vault's delivery for one step only is not built yet: it is the open part of issue #731.
+
+**Retired:** the native Windows client lane and the `hopper:win` routing to it. No code of the hopper holds them: they
+are a person's machine and routing rule, removed in Settings → Machines and Settings → Routing.
+
+**Not built.** Vault secrets delivered to a step; a step's output on the job stream (the response carries it); more than
+one step at a time on one host; a host reached through a jump host.
+
+Tests: `test/windows-steps/domain.test.ts` (a host's and a step's checks), `test/windows-steps/powershell.test.ts` (the
+scripts and their encoding), `test/windows-steps/ssh-host.test.ts` (fake ssh and scp record each call: the hardening, the
+host's own pin, the order, the copies, a stop, the cleanup), `test/integration/windows-steps.test.ts` (the real daemon and
+`hopper-step`, a double at the `WindowsStepHost` seam: hosts, a run with its log, exit code and outputs, a script, the
+noes, a timeout, the edit), `test/ui/windows-hosts.test.ts` (add with the host key confirmed, remove).
 
 ## Sandbox boxes the hopper launches (issue #603, 2026-10-09)
 
@@ -11441,7 +11511,7 @@ When it must, a person gives it a short-lived box token.
   | run a command | `/ui/api/blast-radius/discover`; `/ui/api/plugins` (an instance's options may hold a command) |
   | approve or merge work | `/ui/api/pull-requests/merge` (Close PR is not: it runs nothing) |
   | update the hopper or a client | `/ui/api/update` (a client updates with the hopper); `/ui/api/plugin-store` |
-  | change work on a machine | `/ui/api/questions/:id/answer`, `correct` (typed into the job's pane); `/ui/api/jobs/:id/end-wait`, `keep-original`, `accept-new-text`; `/ui/api/logins/:id/new-code`; `/ui/api/machines`, `machines/join`, `machines/sandbox`; `/ui/api/lanes/apply`, `lanes/undo` |
+  | change work on a machine | `/ui/api/questions/:id/answer`, `correct` (typed into the job's pane); `/ui/api/jobs/:id/end-wait`, `keep-original`, `accept-new-text`; `/ui/api/logins/:id/new-code`; `/ui/api/machines`, `machines/join`, `machines/sandbox`; `/ui/api/windows-hosts` (issue #731); `/ui/api/lanes/apply`, `lanes/undo` |
 
   A new route that does any of these goes on the list in the same change. `test/integration/box-tokens.test.ts` walks
   every `POST /ui/api/*` path with a token that is no box token: each listed one is refused for want of a box token, and

@@ -129,8 +129,8 @@ function controlPath(controlDir: string, d: { user: string; hostname: string; po
   return Buffer.byteLength(path) + CONTROL_SUFFIX <= SOCKET_PATH_MAX ? path : undefined;
 }
 
-/** ssh's argv running one remote shell command on the target, authenticated as above. Throws when it cannot be. */
-export function sshArgv(t: SshTransport, command: string): string[] {
+/** The options every connection to the target carries, authenticated as above, and where it goes. Throws when it cannot be. */
+function connection(t: SshTransport): { options: string[]; d: Destination } {
   if (!TARGET.test(t.target)) throw new Error(`bad ssh target: ${JSON.stringify(t.target)}`);
   const auth = t.auth();
   const d = resolveDestination(t.bin ?? 'ssh', t.target);
@@ -141,12 +141,32 @@ export function sshArgv(t: SshTransport, command: string): string[] {
   }
   const control = t.controlDir ? controlPath(t.controlDir, d) : undefined;
   const shared = control ? ['-o', 'ControlMaster=auto', '-o', `ControlPath=${control}`, '-o', 'ControlPersist=60'] : [];
-  return [
-    '-F', '/dev/null', ...HARDENED_SSH_OPTIONS.flatMap((o) => ['-o', o]),
-    ...keys.flatMap((k) => ['-i', plainPath('ssh key', k)]),
-    '-o', `UserKnownHostsFile=${plainPath('known_hosts', auth.knownHostsFile)}`, '-o', `HostKeyAlias=${t.target}`,
-    ...shared, '-p', d.port, '-l', d.user, '--', d.hostname, command,
-  ];
+  return {
+    d,
+    options: [
+      '-F', '/dev/null', ...HARDENED_SSH_OPTIONS.flatMap((o) => ['-o', o]),
+      ...keys.flatMap((k) => ['-i', plainPath('ssh key', k)]),
+      '-o', `UserKnownHostsFile=${plainPath('known_hosts', auth.knownHostsFile)}`, '-o', `HostKeyAlias=${t.target}`,
+      ...shared,
+    ],
+  };
+}
+
+/** ssh's argv running one remote shell command on the target, authenticated as above. Throws when it cannot be. */
+export function sshArgv(t: SshTransport, command: string): string[] {
+  const { options, d } = connection(t);
+  return [...options, '-p', d.port, '-l', d.user, '--', d.hostname, command];
+}
+
+/**
+ * scp's argv copying between this machine and the target (issue #731), authenticated as ssh is. `to: true` copies the
+ * local `from` paths into the remote `remote`; else the remote `remote` into the local `local`. Throws when it cannot be.
+ */
+export function scpArgv(t: SshTransport, o: { to: true; from: string[]; remote: string } | { to: false; remote: string; local: string }): string[] {
+  const { options, d } = connection(t);
+  const host = d.hostname.includes(':') ? `[${d.hostname}]` : d.hostname;
+  const remote = `${d.user}@${host}:${o.remote}`;
+  return [...options, '-q', '-P', d.port, '--', ...(o.to ? [...o.from, remote] : [remote, o.local])];
 }
 
 /** Where the pinned host keys are written: `<dataDir>/ssh/known_hosts`. */
