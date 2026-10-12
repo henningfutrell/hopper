@@ -52,6 +52,12 @@ const WRAPPED: readonly (readonly [string, string, string])[] = [
   ['workspace-delete', 'delete a workspace', 'workspace delete -lock=false hopper-read-only-check'],
 ];
 
+/**
+ * Why `helm.list` can fail on a view role (issue #869): helm keeps each release in a Secret, so listing releases reads
+ * secrets, which the built-in `view` role does not grant. A Forbidden there is expected for such a credential.
+ */
+export const HELM_LIST_NOTE = 'helm list reads the secrets helm keeps its releases in. A view role cannot read secrets, so a Forbidden here is expected on such a credential: the probe passes only with read access to secrets';
+
 const AWS = ['aws-account', 'aws-role'] as const;
 const KUBE = ['cluster', 'namespace'] as const;
 /** The namespace a probe on a `namespace` asset acts in; a cluster's probes act in `default`. */
@@ -85,10 +91,22 @@ export const PROBES: readonly Probe[] = [
     // Allowed, it answers NotFound: that is not a refusal.
     script: `${NS}\nkubectl delete pod hopper-read-only-check -n "$ns" --dry-run=server`,
   },
-  { id: 'helm.list', title: 'list releases', kinds: KUBE, tool: 'helm', expect: 'allowed', script: `${NS}\ncase "$ASSET" in */*) helm list -n "$ns" ;; *) helm list -A ;; esac` },
   {
-    id: 'helm.install', title: 'install a chart (a server dry run)', kinds: KUBE, tool: 'helm', expect: 'denied',
-    script: `${NS}\ncd "$HOME" && { [ -d chart ] || helm create chart >/dev/null; } || exit 1\nhelm install hopper-read-only-check ./chart -n "$ns" --dry-run=server`,
+    id: 'helm.list', title: 'list releases', kinds: KUBE, tool: 'helm', expect: 'allowed', note: HELM_LIST_NOTE,
+    script: `${NS}\ncase "$ASSET" in */*) helm list -n "$ns" ;; *) helm list -A ;; esac`,
+  },
+  {
+    // Issue #869: `helm install --dry-run=server` renders the chart and creates nothing, so it never asks the API's
+    // authorization for the writes and ends 0 on a view role. The chart helm renders is created with kubectl's server dry
+    // run, which asks the authorization of each object. One object created fails the probe, even when others are refused.
+    id: 'helm.install', title: 'install a chart (its objects, a server dry run)', kinds: KUBE, tool: 'helm', expect: 'denied',
+    script: `${NS}
+cd "$HOME" && { [ -d chart ] || helm create chart >/dev/null; } || exit 1
+helm template hopper-read-only-check ./chart -n "$ns" > chart.yaml || exit 1
+out=$(kubectl create -n "$ns" --dry-run=server -f chart.yaml 2>&1); code=$?
+printf '%s\\n' "$out"
+case "$out" in *'(server dry run)'*) exit 0 ;; esac
+exit "$code"`,
   },
   { id: 'argocd.get', title: 'read the application', kinds: ['argocd-app'], tool: 'kubectl', expect: 'allowed', script: 'kubectl get applications.argoproj.io "$ASSET" -n argocd' },
   {

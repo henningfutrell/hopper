@@ -41,7 +41,7 @@ function bar(check: ReadOnlyCheck): string {
 }
 
 const row = (p: ProbeResult): string => `<tr class="${p.passed ? 'ok' : 'bad'}"><td>${p.passed ? 'pass' : p.outcome === 'not-run' ? 'NOT RUN' : 'FAIL'}</td><td>${escape(p.id)}</td><td>${escape(p.asset)}</td>`
-  + `<td>${p.expect}</td><td>${p.outcome}</td><td>${p.exit ?? 'did not run'}</td><td><pre>${escape(p.output)}</pre></td></tr>`;
+  + `<td>${p.expect}</td><td>${p.outcome}</td><td>${p.exit ?? 'did not run'}</td><td><pre>${escape(p.output)}</pre>${p.note ? `<p class="note">${escape(p.note)}</p>` : ''}</td></tr>`;
 
 /** The report of one ended check of the template. Pure. */
 export function checkReport(t: Template, check: ReadOnlyCheck): CheckReport {
@@ -54,7 +54,7 @@ export function checkReport(t: Template, check: ReadOnlyCheck): CheckReport {
 body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; color: #222; background: #fff; }
 table { border-collapse: collapse; width: 100%; } th, td { border-bottom: 1px solid #ddd; padding: 4px 6px; text-align: left; vertical-align: top; }
 pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; } tr.bad td:first-child { color: #c62828; font-weight: bold; }
-tr.ok td:first-child { color: #2e7d32; }
+tr.ok td:first-child { color: #2e7d32; } p.note { margin: 4px 0 0; font-style: italic; }
 @media (prefers-color-scheme: dark) { body { color: #eee; background: #121212; } th, td { border-color: #333; } }
 </style></head><body>
 <h1>${escape(title)}</h1>

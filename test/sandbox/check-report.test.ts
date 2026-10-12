@@ -5,6 +5,7 @@
 //
 // Feature: the read-only check's report
 //   Scenario: the report shows each probe, escapes what a probe wrote, and draws a summary
+//     And a failed probe's note says why it can fail on a credential that is right (issue #869)
 //   Scenario: the check pass keeps each ended check's report and names its artifact on the check
 //   Scenario: a report that cannot be kept leaves the check as it is
 import { afterEach, describe, expect, it } from 'vitest';
@@ -58,6 +59,12 @@ describe('the read-only check\'s report (issue #715)', () => {
     expect(notRun.summary).toBe('failed: 1 of 2 probes failed (terraform.state-push-direct on shop-prod (not-run))');
     expect(notRun.content.toString('utf8')).toContain('<td>NOT RUN</td><td>terraform.state-push-direct</td>');
     expect(notRun.content.toString('utf8')).toContain('not run: no backend configured.');
+
+    // A failed probe's note (issue #869) is under its output, escaped.
+    const noted = checkReport(template, { ...check, problem: undefined as never, probes: [{
+      id: 'helm.list', asset: 'lab', expect: 'allowed', outcome: 'denied', passed: false, exit: 1, output: 'secrets is forbidden', note: 'a view role cannot read <secrets>',
+    }] });
+    expect(noted.content.toString('utf8')).toContain('<pre>secrets is forbidden</pre><p class="note">a view role cannot read &lt;secrets&gt;</p>');
   });
 
   function setup(report: CheckTemplates['report']) {
