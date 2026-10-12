@@ -71,6 +71,15 @@ describe('a job\'s parts list (issue #935)', () => {
     expect(bom.parts.find((p) => p.kind === 'merge')).toMatchObject({ group: 'code', label: 'Merged by the hopper', status: 'done' });
   });
 
+  it('lists its checkpoints under machines, and the commits its latest checkpoint names under code', () => {
+    const bom = jobBom(input({
+      job: job('running', { checkpoint: { at: '2026-10-01T00:50:00.000Z', machineId: 'm1', branch: 'issue-7', base: 'a', head: 'b', commits: ['abc1234 Add the cache', 'def5678 Test the cache'], bytes: 2048, session: true } }),
+      events: [event('job.checkpointed', { machineId: 'm1', bytes: 2048, session: true, commits: 2 })],
+    }));
+    expect(bom.parts.find((p) => p.kind === 'checkpoint')).toMatchObject({ group: 'machines', label: 'Checkpoint on m1', detail: '2 commits, with its session', status: 'recorded' });
+    expect(bom.parts.filter((p) => p.kind === 'commit').map((p) => [p.id, p.label])).toEqual([['commit:abc1234', 'Add the cache'], ['commit:def5678', 'Test the cache']]);
+  });
+
   it('lists the outputs: its artifacts and their revisions, and its report', () => {
     const bom = jobBom(input({
       job: job('waiting_answer', { proposalId: 'p1' }),
