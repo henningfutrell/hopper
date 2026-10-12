@@ -864,7 +864,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   `https://github.com/<owner/name>.git` the first time, then makes the job worktree
   `<work tree>/.hopper-scratch/<job id>/<name>` of the checkout the same way, enters it and prints
   `hopper-job-worktree-checkout`; the pane state keeps the checkout as `checkout`, and the footer names
-  it as what the worktree is of. Neither: `hopper-job-worktree-none`, and the job runs in its work tree. Git refusing:
+  it as what the worktree is of. Since issue #858 the checkout is a **repository mirror** in the work tree's scratch dir,
+  the fetch is of the default branch only, and the outcome is `hopper-job-worktree-mirror` ("Git efficiency" below).
+  Neither: `hopper-job-worktree-none`, and the job runs in its work tree. Git refusing:
   `hopper-job-worktree-unmade`, the job fails at once with what git said, pane closed. The worktree
   ends with the job through the reap: in the scratch dir, it is removed with it (`git worktree
   remove`, so the repository keeps no entry) unless it holds uncommitted or unpushed work, which is
@@ -9793,7 +9795,9 @@ machine; a routing rule may still override it per repository, on the machine it 
   of a git repository — a checkout the owner keeps, as before — is used as it is: no clone is put in it,
   and each job gets its own worktree of it ("Each job its own git worktree"). Any other work tree (the
   jobs directory, a fresh box's) gets the job's repository when the job has one (a GitHub issue's,
-  `job.source.repo`): the job worktree command fetches the **checkout** `<work tree>/<name>`, whose
+  `job.source.repo`): the job worktree command fetches the **checkout** `<work tree>/<name>` (since issue #858 the
+  **repository mirror** `<work tree>/.hopper-scratch/repos/<owner>/<name>.git`, "Git efficiency"; the checkout only
+  with `jobWorktrees` off), whose
   `origin` must be that repository, or clones it there from `https://github.com/<owner/name>.git` the
   first time (into `<name>.hopper-clone-<pid>`, then moved in, so two jobs cloning at once leave one),
   and makes the job's worktree of it, `<work tree>/.hopper-scratch/<job id>/<name>`. Git takes github.com
@@ -13872,7 +13876,8 @@ worktree command (`src/executors/herdr/job-worktree.ts`) compares the work tree'
 repository (`owner/name`, in any case, as `mappedWorkTree` does):
 - the job's own repository, or a job that names none: as before, a worktree of the work tree (`made`);
 - another repository (or none at all): the job's repository is fetched, or cloned the first time, into the work
-  tree's scratch dir, `repoCheckoutOf` = `<work tree>/.hopper-scratch/repos/<owner>/<name>`, and the job gets its
+  tree's scratch dir, `repoCheckoutOf` = `<work tree>/.hopper-scratch/repos/<owner>/<name>` (since issue #858 the
+  repository mirror `mirrorOf`, `<name>.git` there, outcome `mirror`: "Git efficiency"), and the job gets its
   worktree of that checkout, `<work tree>/.hopper-scratch/<job id>/<name>` (outcome `other`). The executor
   records the checkout (`PaneState.checkout`) and names it in the prompt, as for issue #361's checkout.
 The checkout is under `.hopper-scratch`, which git ignores there, so the work tree's repository stays clean. The
@@ -14461,3 +14466,65 @@ words, the callouts, the level; the MAP tag check on new resources only), `test/
 plan refused, approved or not), `test/integration/infra-plans.test.ts` (the summary kept, listed and on the timeline; a
 plan without the MAP tag kept and listed, its approval a 409, its apply refused and STS not asked; a terraform plan with
 no JSON a 400), `test/ui/infra-plans.test.ts` (the failed state, the explainer).
+
+## Git efficiency (issue #858 part 1, 2026-10-12)
+
+The git half of issue #822. Before: a job in a work tree that was not its repository got a full `git clone` of it (in
+`<work tree>/<name>`, or `.hopper-scratch/repos/<owner>/<name>`), and each job start ran a `git fetch` of every ref, with no
+`--prune` and no filter. Nothing counted git fetches, and the GitHub API had lifetime counts only. Part 1 does steps 0 to 2
+of the issue; steps 3 and 4 are later parts.
+
+**GitHub traffic per sync pass** (step 0, `src/github-limiter/traffic.ts`). Measured first: each sync pass of a GitHub source
+logs one line, `hopper: GitHub traffic of sync pass <source>: REST <n> (<route> <n>, …), GraphQL <n> (<read> <n>, …), git
+fetches <n> (<owner/name> <n>, …; by job <job id's first 8> <n>, …)`.
+- The shared limiter's hook counts every call it lets go (a deferred call is not made, so not counted): a REST call by method
+  and Octokit's route template (`GET /repos/{owner}/{repo}/issues/{issue_number}`), so one route is one count whatever the
+  repository; a page link by its path without the query. A GraphQL call by the `GitHubApi` read or write that made it
+  (`passReads` runs each in `traffic.read`), else its operation name, else its first two fields (`repository.issue`). A batched
+  GraphQL request (`graphql-batch.ts`) counts once, under the read that scheduled it first.
+- The git proxy counts each fetch that goes to GitHub, for its repository and its job: git asks for the refs once per fetch or
+  clone (`GET info/refs?service=git-upload-pack`), so that ask is the fetch. A push is not a fetch. The fetch at a job's start
+  goes through the proxy too, so it is counted.
+- Which pass a call counts for is an `AsyncLocalStorage` context, as for the pass reads: two sources' passes at once count each
+  its own. A call outside any pass (a job's git fetch, a job's own GitHub request, a GitHub watch) is counted "between passes",
+  and the next pass that ends adds it to its line, once. A failed pass logs its line too.
+- Counts only, in memory, logged and forgotten: nothing is kept, no event, no UI.
+
+**The repository mirror** (step 1, `src/executors/herdr/job-worktree.ts`). One bare, blobless clone of each repository per
+work tree: `<work tree>/.hopper-scratch/repos/<owner>/<name>.git` (`mirrorOf`), for a work tree that is no repository and for
+one that is another repository's top alike. Made by `git clone --bare --filter=blob:none`; its branches are then moved from
+`refs/heads/*` to `refs/remotes/origin/*`, `remote.origin.fetch` set to `+refs/heads/*:refs/remotes/origin/*`, and
+`refs/remotes/origin/HEAD` to the default branch. So a job's worktree of it (`git worktree add --detach … origin/<default>`)
+has the remote's branches where a clone has them: a branch the job pushes is `refs/remotes/origin/<branch>` in the mirror,
+and the reap (`--not --remotes`) reads it as pushed. Blobs come on demand, when a worktree checks a file out. An extra job
+adds only its worktree. The mirror's `origin` must be the job's repository; another is refused (`unmade`, "is not a mirror
+of"). Cloned into `<mirror>.hopper-clone-<pid>` and moved in, so two jobs cloning at once leave one. The outcome is
+`hopper-job-worktree-mirror` (replacing `checkout` and `other`), and `PaneState.checkout` names the mirror, which the
+footer names as what the worktree is of. The old checkouts are no longer used; nothing removes them.
+
+**Targeted fetch** (step 2). A job start that makes a worktree fetches the default branch only, pruned:
+`git fetch --quiet --prune origin <default branch>` (the branch from `refs/remotes/origin/HEAD`), with `--filter=blob:none` in
+a mirror. A repository that knows no default branch fetches as it is set up. The job's own branch is not fetched at the start:
+it has none yet, and a run again finds its worktree and fetches nothing.
+
+**Job rules.** The `[hopper job worktree]` line adds: fetch and push through the worktree's origin only; never clone the
+repository again and never add a remote of your own, such as an ssh one. A clone over the job's own ssh remote went around
+the hopper and left full clones behind.
+
+**Not changed.** With job worktrees off (the print agents), a work tree that is no repository still gets the full checkout
+`<work tree>/<name>`, and the job runs beside it: there is no worktree to make of a mirror. A work tree that is the job's own
+repository is used as it is; only its fetch is targeted now.
+
+**Left for later parts.** Step 3, one fetch per repository per sync pass (the daemon runs no git yet; a mirror on the
+daemon's side, the broker answering fetches from it), with a job start skipping its fetch when the pass already fetched;
+step 4, conflicts and mergeability from `git merge-tree --write-tree` and `git merge-base --is-ancestor` in place of GraphQL
+`mergeable`. Both change only what the counts above show is hot.
+
+Tests: `test/github-limiter/traffic.test.ts` (through the real `makeRequest` and limiter against a fake GitHub: the line per
+pass, routes per template, GraphQL per read, between passes once, two passes at once, a failed pass),
+`test/sources/github-pass-reads.test.ts` (a read asked once is counted once, under its name),
+`test/integration/git-proxy.test.ts` "counts each fetch of a job" (real git through the real proxy), `test/herdr/job-worktree.test.ts`
+and `job-worktree-other-repository.test.ts` (real git, the origin served over a `file://` URL with blob filters allowed: the
+mirror bare and blobless with its branches under `refs/remotes/origin`, a later job fetching the default branch only, an extra
+job adding only its worktree, a pushed branch reaped as pushed, a mirror of another repository refused, worktrees off as
+before), `test/herdr/executor-job-worktree.test.ts` (the mirror saved and named in the prompt with the new rule).

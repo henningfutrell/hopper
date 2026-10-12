@@ -7,6 +7,7 @@
 // ETag of the answer kept for it, per credential, media type and URL (`If-None-Match`): a 304 costs no call and is answered from the cache.
 // A call made with `deferAfterMs` (the job sources', issue #822) that would wait longer is not made: it throws
 // GitHubRateLimited with the time it may go, so a sync pass ends and says when, instead of holding to the reset.
+// Each call let go is counted for the sync pass it is made in (issue #858, `traffic.ts`).
 import { createHash } from 'node:crypto';
 import { setTimeout as sleepMs } from 'node:timers/promises';
 import type { request as octokitRequest } from '@octokit/request';
@@ -14,6 +15,7 @@ import {
   DEFAULT_RATE_LIMITER, bucketFromHeaders, holdAfter, resourceOf, waitBefore,
   type RateBucket, type RateLimiterSettings, type RateLimiterView,
 } from '../domain/github-rate-limit.ts';
+import { githubTraffic, type GitHubTraffic } from './traffic.ts';
 
 type Request = typeof octokitRequest;
 type Options = ReturnType<Request['endpoint']['merge']>;
@@ -47,8 +49,9 @@ type Headers = Record<string, string | number | undefined>;
 const DEFAULT_CACHE_SIZE = 2000;
 
 export function createGitHubLimiter(o: {
-  now?: () => number; sleep?: (ms: number) => Promise<void>; cacheSize?: number; settings?: RateLimiterSettings;
+  now?: () => number; sleep?: (ms: number) => Promise<void>; cacheSize?: number; settings?: RateLimiterSettings; traffic?: GitHubTraffic;
 } = {}): GitHubLimiter {
+  const traffic = o.traffic ?? githubTraffic;
   const now = o.now ?? Date.now;
   const sleep = o.sleep ?? ((ms: number) => sleepMs(ms).then(() => undefined));
   const cacheSize = o.cacheSize ?? DEFAULT_CACHE_SIZE;
@@ -135,6 +138,8 @@ export function createGitHubLimiter(o: {
     const send = cached ? { ...options, headers: { ...options.headers, 'if-none-match': cached.etag } } : options;
 
     const counted = await admit(key, call);
+    // Octokit's merged options keep the route's template (`/repos/{owner}/{repo}/issues`): one route, whatever the repository.
+    traffic.call(parsed.method, String(options.url ?? parsed.url), (options as { query?: unknown }).query);
     let done!: () => void;
     if (!counted) probes.set(key, new Promise<void>((r) => { done = r; }));
     try {

@@ -7,7 +7,8 @@
 // `.failed`, op `git.push`); a fetch is not. The contribution flow (issue #429): a job whose user cannot push to its own
 // repository is refused before GitHub refuses it, with what to do; with the user's Contribution on, the job's fork — a
 // fork of its own repository in the user's account, as GitHub says — is pushed to and fetched with the user's connection
-// as its own repository is, under the same ref check.
+// as its own repository is, under the same ref check. Each fetch that goes to GitHub is counted for the job and the
+// repository (issue #858, `traffic.ts`): git asks for the refs once per fetch or clone, so that ask is the fetch.
 import { Readable } from 'node:stream';
 import { gunzipSync } from 'node:zlib';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
@@ -16,6 +17,7 @@ import { checkPush, gitPath, receivePackCommands, type GitService, type RefUpdat
 import { CONTRIBUTION_OFF } from './policy.ts';
 import { parseProxyToken } from './token.ts';
 import type { ProxyUser } from './broker.ts';
+import { githubTraffic, type GitHubTraffic } from '../github-limiter/traffic.ts';
 
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 
@@ -61,6 +63,8 @@ export interface GitProxyOptions {
   newId?: () => string;
   /** GitHub, as git reaches it; tests give the fake's. Default: the global fetch. */
   fetch?: typeof fetch;
+  /** Where its fetches are counted; the process's own unless a test gives one. */
+  traffic?: GitHubTraffic;
 }
 
 const BASIC = /^Basic\s+(\S+)$/i;
@@ -95,6 +99,7 @@ function refusedReport(body: Buffer, commands: readonly RefUpdate[], reason: str
 export function createGitProxy(o: GitProxyOptions) {
   const call = o.fetch ?? fetch;
   const newId = o.newId ?? (() => crypto.randomUUID());
+  const traffic = o.traffic ?? githubTraffic;
 
   /** The request on GitHub; a token GitHub refuses is renewed once and the request made again. */
   async function forward(r: GitRequest, at: { repo: string; service: GitService; advertise: boolean }, git: GitConnection, withToken: boolean): Promise<GitAnswer> {
@@ -187,6 +192,7 @@ export function createGitProxy(o: GitProxyOptions) {
           return refusedReport(plain, refs, allowed.reason);
         }
       }
+      if (!push && at.advertise) traffic.gitFetch(at.repo, job.id);
       try {
         const answer = await forward(r, at, git, usedHere || fork);
         if (push && !at.advertise) {

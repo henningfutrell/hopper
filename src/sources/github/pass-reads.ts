@@ -3,8 +3,10 @@
 // follow of each job read the same issues and pull requests; the GraphQL ones are POSTs, which the shared rate limiter's
 // ETag cache cannot answer. A write to a repository drops what the open passes read of it, and every read not of one
 // repository, so a pass never acts on what it changed itself. A read that failed is not kept. Outside a pass — a
-// job's end, reported when it happens — and in the next pass, every read goes to GitHub.
+// job's end, reported when it happens — and in the next pass, every read goes to GitHub. Each pass is counted (issue
+// #858, `traffic.ts`): what it asked of GitHub, each GraphQL call under the read or write that made it, one line when it ends.
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { githubTraffic, type GitHubTraffic } from '../../github-limiter/traffic.ts';
 import type { GitHubApi } from './api.ts';
 
 const READS = [
@@ -32,7 +34,8 @@ export interface PassReads {
   pass<T>(run: () => Promise<T>): Promise<T>;
 }
 
-export function passReads(api: GitHubApi): PassReads {
+/** `source`: the source's name, which its pass line names. `traffic`: the process's own unless a test gives one. */
+export function passReads(api: GitHubApi, source: string, traffic: GitHubTraffic = githubTraffic): PassReads {
   const current = new AsyncLocalStorage<Pass>();
   const open = new Set<Pass>();
   const port = api as unknown as Record<string, Method | undefined>;
@@ -40,38 +43,40 @@ export function passReads(api: GitHubApi): PassReads {
 
   const read = (name: string, fn: Method): Method => (...args) => {
     const pass = current.getStore();
-    if (!pass || !open.has(pass)) return fn(...args);
+    if (!pass || !open.has(pass)) return traffic.read(name, () => fn(...args));
     const key = `${name} ${JSON.stringify(args)}`;
     const was = pass.get(key);
     if (was) return was.answer;
-    const answer = fn(...args);
+    const answer = traffic.read(name, () => fn(...args));
     pass.set(key, { repo: UNSCOPED.has(name) ? undefined : String(args[0]), answer });
     answer.catch(() => { if (pass.get(key)?.answer === answer) pass.delete(key); });
     return answer;
   };
 
   // Dropped when the write starts and again when it ends: a read made while it was under way may hold the old answer.
-  const write = (fn: Method): Method => (...args) => {
+  const write = (name: string, fn: Method): Method => (...args) => {
     const repo = String(args[0]);
     const drop = () => { for (const pass of open) for (const [key, kept] of pass) if (kept.repo === undefined || kept.repo === repo) pass.delete(key); };
     drop();
-    return fn(...args).finally(drop);
+    return traffic.read(name, () => fn(...args)).finally(drop);
   };
 
   for (const name of READS) { const fn = port[name]; if (fn) out[name] = read(name, fn.bind(api)); }
-  for (const name of WRITES) { const fn = port[name]; if (fn) out[name] = write(fn.bind(api)); }
+  for (const name of WRITES) { const fn = port[name]; if (fn) out[name] = write(name, fn.bind(api)); }
   if (api.botLogin) out.botLogin = api.botLogin.bind(api);
 
   return {
     api: out as unknown as GitHubApi,
-    async pass(run) {
-      const pass: Pass = new Map();
-      open.add(pass);
-      try {
-        return await current.run(pass, run);
-      } finally {
-        open.delete(pass);
-      }
+    pass(run) {
+      return traffic.pass(source, async () => {
+        const pass: Pass = new Map();
+        open.add(pass);
+        try {
+          return await current.run(pass, run);
+        } finally {
+          open.delete(pass);
+        }
+      });
     },
   };
 }

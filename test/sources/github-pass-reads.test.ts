@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { GitHubApiError } from '../../src/sources/github/api.ts';
 import { createFakeGitHub } from '../../src/sources/index.ts';
 import { passReads } from '../../src/sources/github/pass-reads.ts';
+import { createGitHubTraffic } from '../../src/github-limiter/traffic.ts';
 
 const REPO = 'owner/repo';
 const OTHER = 'owner/other';
@@ -13,7 +14,7 @@ describe('pass reads (issue #822)', () => {
   it('inside a pass, the same read is asked once, two reads at the same time included', async () => {
     const gh = createFakeGitHub();
     const issue = gh.createIssue({ repo: REPO, body: 'b', labels: ['hopper'] });
-    const r = passReads(gh);
+    const r = passReads(gh, 'test');
     await r.pass(async () => {
       const [a, b] = await Promise.all([r.api.getIssue(REPO, issue.number), r.api.getIssue(REPO, issue.number)]);
       expect(b).toEqual(a);
@@ -26,7 +27,7 @@ describe('pass reads (issue #822)', () => {
     const gh = createFakeGitHub();
     const issue = gh.createIssue({ repo: REPO, body: 'b', labels: ['hopper'] });
     const other = gh.createIssue({ repo: OTHER, body: 'b', labels: ['hopper'] });
-    const r = passReads(gh);
+    const r = passReads(gh, 'test');
     await r.pass(async () => {
       await r.api.getIssue(REPO, issue.number);
       await r.api.getIssue(OTHER, other.number);
@@ -40,7 +41,7 @@ describe('pass reads (issue #822)', () => {
   it('outside a pass, and in the next pass, every read goes to GitHub', async () => {
     const gh = createFakeGitHub();
     const issue = gh.createIssue({ repo: REPO, body: 'b', labels: ['hopper'] });
-    const r = passReads(gh);
+    const r = passReads(gh, 'test');
     await r.api.getIssue(REPO, issue.number);
     await r.api.getIssue(REPO, issue.number);
     await r.pass(() => r.api.getIssue(REPO, issue.number));
@@ -52,7 +53,7 @@ describe('pass reads (issue #822)', () => {
     const gh = createFakeGitHub();
     const issue = gh.createIssue({ repo: REPO, body: 'b', labels: ['hopper'] });
     gh.failNext('getIssue', new GitHubApiError('get: timeout', false));
-    const r = passReads(gh);
+    const r = passReads(gh, 'test');
     await r.pass(async () => {
       await expect(r.api.getIssue(REPO, issue.number)).rejects.toThrow('timeout');
       expect((await r.api.getIssue(REPO, issue.number)).number).toBe(issue.number);
@@ -62,8 +63,24 @@ describe('pass reads (issue #822)', () => {
 
   it('keeps an adapter without the optional reads without them', () => {
     const gh = createFakeGitHub();
-    expect(passReads(gh).api.botLogin).toBeUndefined();
-    expect(passReads(gh).api.listInstalledRepos).toBeUndefined();
-    expect(passReads(gh).api.listAssignedIssues).toBeTypeOf('function');
+    expect(passReads(gh, 'test').api.botLogin).toBeUndefined();
+    expect(passReads(gh, 'test').api.listInstalledRepos).toBeUndefined();
+    expect(passReads(gh, 'test').api.listAssignedIssues).toBeTypeOf('function');
+  });
+
+  it('each pass logs its GitHub traffic, a GraphQL call counted under the read that made it, a read asked once counted once (issue #858)', async () => {
+    const gh = createFakeGitHub();
+    const issue = gh.createIssue({ repo: REPO, body: 'b', labels: ['hopper'] });
+    const lines: string[] = [];
+    const traffic = createGitHubTraffic({ log: (l) => lines.push(l) });
+    // The fake answers as GitHub would; each read is one GraphQL call, as the limiter counts it.
+    const getIssue = gh.getIssue.bind(gh);
+    gh.getIssue = (...args) => { traffic.call('POST', '/graphql', '{ repository { issue { title } } }'); return getIssue(...args); };
+    const r = passReads(gh, 'github-app', traffic);
+    await r.pass(async () => {
+      await r.api.getIssue(REPO, issue.number);
+      await r.api.getIssue(REPO, issue.number);
+    });
+    expect(lines).toEqual(['hopper: GitHub traffic of sync pass github-app: REST 0, GraphQL 1 (getIssue 1), git fetches 0']);
   });
 });
