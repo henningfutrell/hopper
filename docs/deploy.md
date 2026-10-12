@@ -567,9 +567,10 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
 
 `compose.yaml` has required services and optional ones (issue #586). Nothing outside the stack is required.
 
-- **Required**: `postgres`, `hopper`, `openfga` (and `openfga-migrate`, which runs once). A plain
-  `podman compose up -d` starts only these, and the vault works: it runs in the hopper, under the master key.
-- **Optional**: `hopper-vault`, `kms`, `vault` and `tunnel`, each behind a compose profile of the same name. The hopper
+- **Required**: `postgres`, `hopper`, `openfga` (and `openfga-migrate`, which runs once), and `tunnel`, which runs no
+  ngrok until remote access is turned on in the UI ("Remote access" below). A plain `podman compose up -d` starts only
+  these, and the vault works: it runs in the hopper, under the master key.
+- **Optional**: `hopper-vault`, `kms` and `vault`, each behind a compose profile of the same name. The hopper
   starts and works without them. No required service depends on them, and none is on a host port. `vault` is HashiCorp
   Vault, a vault backend ("Vault backends" below); the others are here.
 
@@ -580,7 +581,6 @@ Turn them on with lines in the `.env` file beside `compose.yaml`, then run `podm
 | The vault in a container of its own | `COMPOSE_PROFILES=hopper-vault` and `HOPPER_VAULT_URL=http://hopper-vault:4791` |
 | That, with a local KMS | `COMPOSE_PROFILES=hopper-vault,kms`, `HOPPER_VAULT_URL=http://hopper-vault:4791` and `HOPPER_KMS_URL=http://kms:8080` |
 | A local KMS, with the vault in the hopper | `COMPOSE_PROFILES=kms` and `HOPPER_KMS_URL=http://kms:8080` |
-| The API reached from anywhere, through an ngrok tunnel | `COMPOSE_PROFILES=tunnel`, `NGROK_AUTHTOKEN`, `HOPPER_PUBLIC_URL` and `HOPPER_TUNNEL_API=http://tunnel:4040` ("The tunnel" below) |
 
 Check: Settings → Vault (http://127.0.0.1:4790/#settings/vault) shows no problem. `podman compose ps` lists
 `hopper-vault` and `kms` as running. To turn a service off, remove its lines and run
@@ -620,53 +620,63 @@ first ask. Its keys are in the `kms` volume.
   the KMS again at the next request; a vault in the hopper asks again at the next restart.
 - local-kms checks no credentials. A KMS that checks them (AWS KMS) is not supported yet.
 
-### The tunnel (`tunnel`)
+### Remote access (the `tunnel` service)
 
-An ngrok agent forwards the hopper's public URL to its API (issue #795). An agent that acts for you (Grok Bot) then
-reaches the hopper from anywhere, with an API token ("API tokens" in docs/design.md). This machine needs no inbound port
-and no public address: the agent dials out to ngrok. The hopper tells your Grok Bot routine where it is reached.
+An ngrok tunnel forwards a domain you reserve at ngrok to the hopper's API (issues #795, #880). An agent that acts for
+you (Grok Bot) then reaches the hopper from anywhere, with an API token ("API tokens" in docs/design.md). This machine
+needs no inbound port and no public address: the tunnel dials out to ngrok. The hopper tells your Grok Bot routine where
+it is reached. You set it up in the UI. You edit no file on the host, so you can do it from a phone.
 
-1. In the ngrok dashboard (https://dashboard.ngrok.com/domains), reserve a domain. Copy your authtoken from
+1. In the ngrok dashboard, reserve a domain: https://dashboard.ngrok.com/domains. Copy your authtoken from
    https://dashboard.ngrok.com/get-started/your-authtoken.
-2. Add these lines to `.env`, beside `compose.yaml`:
-   ```
-   COMPOSE_PROFILES=tunnel
-   NGROK_AUTHTOKEN=<your authtoken>
-   HOPPER_PUBLIC_URL=https://<the reserved domain>
-   HOPPER_TUNNEL_API=http://tunnel:4040
-   ```
-   Keep other profiles in the same line, comma-separated (`COMPOSE_PROFILES=hopper-vault,tunnel`).
-3. Run `podman compose up -d`.
+2. Open Settings → Remote access (http://127.0.0.1:4790/#settings/remote-access) as the hopper's admin. Type the domain
+   and paste the authtoken. Select Save.
+3. Turn Remote access on.
 
-Check: `podman compose logs hopper` shows `the tunnel is up: https://<the reserved domain>`.
-`curl -s -o /dev/null -w '%{http_code}\n' https://<the reserved domain>/api/jobs` answers `401` (the API, with no
-token) and `https://<the reserved domain>/` answers `404` (the UI is not on the tunnel).
+The `tunnel` service of the compose stack asks the hopper for these settings every 10 s, so the tunnel starts within
+10 s. Check: Settings → Remote access says `Up: agents reach the hopper's API at https://<the reserved domain>`.
+`curl -s -o /dev/null -w '%{http_code}\n' https://<the reserved domain>/api/jobs` answers `401` (the API, with no token)
+and `https://<the reserved domain>/` answers `404` (the UI is not on the tunnel). The same page turns it off, starts it
+again (Restart the tunnel) and replaces the authtoken. An admin's API token does the same at `POST /ui/api/remote-access`
+(the API reference at `/docs/`, tag Remote access).
+
+When it is not up, the page says why:
+
+- **No tunnel service**: the `tunnel` service does not ask for its settings. Run `podman compose up -d` beside
+  `compose.yaml`. An install from before issue #880 needs its new `compose.yaml` (the update does it).
+- **Down**: ngrok refused to start (a refused authtoken, a domain in use), with the ngrok error code and its page; or the
+  tunnel has no endpoint at the domain yet. `podman compose logs tunnel` shows ngrok's log, with the authtoken masked.
 
 What it does, and what it keeps out:
 
+- **No secret on the host.** The authtoken is kept sealed in the hopper's vault (Settings → Vault lists it, never its
+  value). The `tunnel` service holds nothing: it asks the hopper with a key that `postgres` makes in memory at each start
+  of the stack (the `tunnel-key` volume), and gives the token to ngrok in its environment only.
 - **Its own network.** The tunnel forwards to `http://hopper:<port>` over the `hopper_tunnel` network, which only the
   hopper shares. It never forwards to the hopper's loopback: an internet request is a **public request**, which reads
   the API only with a session or an API token. No box the hopper starts is on that network, so none reaches the ngrok
   agent's local API.
 - **Only the API at the edge.** ngrok answers `404` for every path but `/api/`, `/ui/api/` and `/ui/auth/api-token`,
-  and for the event stream (`/api/events/stream`, whose session is in the query). The UI, its sign-in pages and the
-  installer stay off the internet.
+  and for the event stream (`/api/events/stream`, whose session is in the query). The UI, its sign-in pages, the
+  installer and the tunnel service's own ask stay off the internet.
 - **A limit per caller at the edge.** 120 requests a minute per address, and 5 API-token exchanges a minute per address.
 - **A limit per caller in the hopper.** The edge names each caller's address to the hopper (`x-hopper-caller`, after it
   drops one the caller sent). The hopper reads that header only from the ngrok agent, so its sign-in limit (20 a minute,
   the API-token exchange on its own count) counts each caller. A stranger cannot use up your agent's exchanges.
-- **The URL must be fixed.** The Host guard takes `HOPPER_PUBLIC_URL` only. A random URL that changes at each start
-  does not pass it: the log says so (`the tunnel's endpoint is not HOPPER_PUBLIC_URL`), and nothing is announced.
+- **The URL is fixed.** The Host guard takes the domain from Settings → Remote access only, while remote access is on.
 - **Grok Bot is told.** While the tunnel is up, the Grok Bot routine gets `hopper.reachable` with the URL: at start,
   when the tunnel comes back, and every 5 minutes (docs/design.md "Grok Bot routine webhook").
 - **No box action without a box token.** The token an agent gets for its own sign-in reads, holds and cancels. To let it
   start jobs, answer questions, merge, update or change a machine, mint a box token for it in Settings → API tokens (tick
   Box token), for an hour at most (docs/design.md "Box tokens").
 
-Residual risk, stated: callers behind one address (a NAT, a shared egress) share one count of each limit. The ngrok log
-shows the authtoken when ngrok refuses it.
+**An install from before** (`.env` with `COMPOSE_PROFILES=tunnel`, `NGROK_AUTHTOKEN` and `HOPPER_PUBLIC_URL`): at its
+first start with this version, the hopper moves the authtoken into its vault, takes the domain from `HOPPER_PUBLIC_URL`
+and turns remote access on, once (the log says so). Then remove `NGROK_AUTHTOKEN`, `HOPPER_TUNNEL_API` and `tunnel` from
+`COMPOSE_PROFILES` in `.env`. Keep `HOPPER_PUBLIC_URL` only if a reverse proxy also serves the UI at it.
 
-To turn it off: remove the four lines and run `podman compose up -d --remove-orphans`.
+Residual risk, stated: callers behind one address (a NAT, a shared egress) share one count of each limit. The `tunnel`
+container holds the authtoken in memory while ngrok runs.
 
 ## Sandbox boxes the hopper starts
 

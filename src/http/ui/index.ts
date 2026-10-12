@@ -38,8 +38,8 @@ import type { Access } from '../../authz/service.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
 import { knownTemplate } from './vault.ts';
 
-/** The master key's status (issue #659): the one reveal, a person's word that they saved it; the shared GitHub rate limiter's settings (issue #436). */
-export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceRoutes>[1], 'masterKey' | 'rateLimiter'> {
+/** The master key's status (issue #659): the one reveal, a person's word that they saved it; the shared GitHub rate limiter's settings (issue #436); remote access (issue #880). */
+export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceRoutes>[1], 'masterKey' | 'rateLimiter' | 'remoteAccess'> {
   /** The request's user's parts (the session's user). */
   tenant: (req: FastifyRequest) => TenantParts;
   tenants: Tenants;
@@ -352,8 +352,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.report;
   });
 
-  // Self-update, the master key and the shared GitHub rate limiter (issues #44, #659, #436): the hopper's admin's alone.
-  registerInstanceRoutes(app, { instance, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, by: (req) => userName(sessionOf(req)!) });
+  // Self-update, the master key, the shared GitHub rate limiter and remote access (issues #44, #659, #436, #880): the hopper's admin's alone.
+  registerInstanceRoutes(app, { instance, instanceAdmin: o.instanceAdmin, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, by: (req) => userName(sessionOf(req)!) });
 
   // design.md "Connected accounts": answers the provider's new GET /api/connected-accounts status — the
   // device code once the provider shows it. The user's own accounts: their session's user alone.

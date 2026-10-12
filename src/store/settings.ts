@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import type { RateLimiterSettings } from '../domain/github-rate-limit.ts';
+import type { RemoteAccessSettings } from '../domain/remote-access.ts';
 import type { IntakeActorSettings } from '../domain/intake-origin.ts';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
@@ -302,5 +303,10 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
       return text === undefined ? undefined : JSON.parse(text) as MasterKeyRotation;
     },
     setMasterKeyRotation: (rotation) => write('masterKeyRotation', JSON.stringify({ from: rotation.from, at: rotation.at })),
+    getRemoteAccess() {
+      const text = read('remoteAccess');
+      return text === undefined ? undefined : JSON.parse(text) as RemoteAccessSettings;
+    },
+    setRemoteAccess: (s) => write('remoteAccess', JSON.stringify({ enabled: s.enabled, ...(s.domain ? { domain: s.domain } : {}), ...(s.restartedAt ? { restartedAt: s.restartedAt } : {}) })),
   };
 }

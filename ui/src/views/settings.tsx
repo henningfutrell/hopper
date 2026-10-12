@@ -1,9 +1,9 @@
 // Settings (issue #151): the configuration plane, one view with a section per part — the version (issue #165)
 // and the version history (issue #246) first (issue #363), then the question gates (escalation levels, standing rules,
-// risk rules), the question history, the decider (issue #550; named Decider in issue #661), auto-park (issue #650), the issue thread (issue #435), the TL;DR (issue #569), the job rules (issue #172), the intake's trusted actors (issue #652), yolo mode (issue #579), the GitHub rate limit (issue #436), Contribution (issue #429), GitHub watches (issue #427), artifacts (issue #624), Your reports (issue #694), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
+// risk rules), the question history, the decider (issue #550; named Decider in issue #661), auto-park (issue #650), the issue thread (issue #435), the TL;DR (issue #569), the job rules (issue #172), the intake's trusted actors (issue #652), yolo mode (issue #579), the GitHub rate limit (issue #436), remote access (issue #880), Contribution (issue #429), GitHub watches (issue #427), artifacts (issue #624), Your reports (issue #694), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
 // sign-in (issue #185), API tokens (issue #718), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the version. A moved section's old hash (#settings/minor-decisions) is replaced by its new one.
-import { Bug, CirclePause, Eye, FolderOpen, Gauge, GitFork, Grid3x3, History, Info, KeyRound, KeySquare, ListChecks, LockKeyhole, MessagesSquare, Puzzle, Route, Scale, ScrollText, ShieldCheck, TextQuote, Ticket, type LucideIcon, UserCheck, Users as UsersIcon, Webhook, Zap } from 'lucide-react';
+import { Bug, CirclePause, Eye, FolderOpen, Gauge, GitFork, Globe, Grid3x3, History, Info, KeyRound, KeySquare, ListChecks, LockKeyhole, MessagesSquare, Puzzle, Route, Scale, ScrollText, ShieldCheck, TextQuote, Ticket, type LucideIcon, UserCheck, Users as UsersIcon, Webhook, Zap } from 'lucide-react';
 import { useEffect } from 'react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
@@ -23,6 +23,7 @@ import { Plugins } from '@/views/plugins';
 import { QuestionGates } from '@/views/question-gates';
 import { QuestionHistory } from '@/views/question-history';
 import { Realms } from '@/views/realms';
+import { RemoteAccess } from '@/views/remote-access';
 import { Routing } from '@/views/routing';
 import { ThreadAsk } from '@/views/thread-ask';
 import { TldrSettings } from '@/views/tldr-settings';
@@ -33,7 +34,7 @@ import { Webhooks } from '@/views/webhooks';
 import { YoloMode } from '@/views/yolo-mode';
 import { IntakeActors } from '@/views/intake-actors';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'history', 'decider', 'auto-park', 'thread-ask', 'tldr', 'job-rules', 'intake', 'yolo-mode', 'github-rate-limit', 'contribution', 'github-watches', 'artifacts', 'reports', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'api-tokens', 'access', 'permissions'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'history', 'decider', 'auto-park', 'thread-ask', 'tldr', 'job-rules', 'intake', 'yolo-mode', 'github-rate-limit', 'remote-access', 'contribution', 'github-watches', 'artifacts', 'reports', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'api-tokens', 'access', 'permissions'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -48,6 +49,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   intake: { label: 'Intake', icon: UserCheck, view: IntakeActors },
   'yolo-mode': { label: 'Yolo mode', icon: Zap, view: YoloMode },
   'github-rate-limit': { label: 'GitHub rate limit', icon: Gauge, view: GitHubRateLimiter },
+  'remote-access': { label: 'Remote access', icon: Globe, view: RemoteAccess },
   contribution: { label: 'Contribution', icon: GitFork, view: Contribution },
   'github-watches': { label: 'GitHub watches', icon: Eye, view: GitHubWatches },
   artifacts: { label: 'Artifacts', icon: FolderOpen, view: ArtifactSettings },

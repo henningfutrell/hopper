@@ -11,6 +11,7 @@ export function systemSecretTitle(s: Pick<SystemSecretView, 'name' | 'kind'>): s
   if (s.kind === 'artifact') return 'Artifact content URL signing key';
   if (s.kind === 'connected-account') return s.name.endsWith('.refresh-token') ? 'GitHub connection: refresh token' : 'GitHub connection: access token';
   if (s.kind === 'webhook') return 'Webhook signing secret';
+  if (s.kind === 'remote-access') return 'Remote access: ngrok authtoken';
   const [, realm, setting] = s.name.split('.');
   return `Sign-in realm ${realm ?? ''}: ${setting === 'bindPassword' ? 'bind password' : 'client secret'}`;
 }
@@ -21,6 +22,7 @@ export function systemSecretWhere(s: Pick<SystemSecretView, 'kind'>): string {
   if (s.kind === 'artifact') return 'Made by the hopper on the first artifact link';
   if (s.kind === 'connected-account') return 'Sources: renewed by the hopper';
   if (s.kind === 'webhook') return 'Settings → Webhooks';
+  if (s.kind === 'remote-access') return 'Settings → Remote access';
   return 'Settings → Sign-in';
 }
 

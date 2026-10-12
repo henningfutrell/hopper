@@ -1,17 +1,23 @@
-// The tunnel watch (issue #795, design.md "The tunnel"): the compose profile `tunnel` runs an ngrok agent that forwards
-// HOPPER_PUBLIC_URL to the hopper. The hopper asks that agent's local API (HOPPER_TUNNEL_API, on a network only the two of
-// them share) every few seconds whether its endpoint at the public URL is up, so a notifier can say where the hopper is
-// reached (`hopper.reachable`). It only reads: the Host guard takes HOPPER_PUBLIC_URL alone, never a URL the agent reports.
-// Each ask also looks up the agent's addresses: every request through the tunnel comes from the agent, and its edge names
-// the caller in `x-hopper-caller`, so the sign-in limit counts each caller, not the agent (`tunnelCaller`).
+// The tunnel watch (issues #795, #880, design.md "The tunnel", "Remote access"): the compose service `tunnel` runs an ngrok
+// agent that forwards the remote access URL (`https://<domain>`, set in the UI) to the hopper. While remote access is on,
+// the hopper asks that agent's local API (HOPPER_TUNNEL_API, on a network only the two of them share) every few seconds
+// whether its endpoint at that URL is up, so a notifier can say where the hopper is reached (`hopper.reachable`) and
+// Settings → Remote access can say why it is not. It only reads: the Host guard takes the URL from the settings alone,
+// never a URL the agent reports. Each ask also looks up the agent's addresses: every request through the tunnel comes
+// from the agent, and its edge names the caller in `x-hopper-caller`, so the sign-in limit counts each caller, not the
+// agent (`tunnelCaller`).
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
 export interface TunnelWatch {
-  /** HOPPER_PUBLIC_URL while the tunnel's endpoint there is up; undefined when it is down, or there is no tunnel. */
+  /** The remote access URL while the tunnel's endpoint there is up; undefined when it is down, off, or there is no tunnel. */
   url(): string | undefined;
+  /** Why the tunnel is down, from the last ask; undefined when it is up, off, or not asked yet. */
+  reason(): string | undefined;
   /** Whether a peer address is the tunnel agent's, as HOPPER_TUNNEL_API's host resolved at the last ask. */
   isAgent(peer: string): boolean;
+  /** Asks now, not at the next tick (one ask in flight is enough): a change of the settings shows at once. */
+  askNow(): void;
   /** Stops asking; settles an ask in flight. */
   stop(): Promise<void>;
 }
@@ -19,7 +25,8 @@ export interface TunnelWatch {
 export interface TunnelWatchOptions {
   /** HOPPER_TUNNEL_API: the agent's local API (`http://tunnel:4040`). Undefined: no tunnel, nothing asked. */
   api: string | undefined;
-  publicUrl: string | undefined;
+  /** The remote access URL while remote access is on (read at each ask); undefined: off, nothing asked. */
+  url: () => string | undefined;
   logger: { info(m: string): void; warn(m: string): void };
   /** How often to ask. Default 10 s. */
   everyMs?: number;
@@ -63,33 +70,43 @@ async function ask(api: string, publicUrl: string): Promise<{ up: string } | { d
   const urls = (Array.isArray(body?.tunnels) ? body.tunnels : []).map((t) => originOf(t.public_url)).filter((u) => u !== undefined);
   if (urls.includes(publicUrl)) return { up: publicUrl };
   if (urls.length === 0) return { down: 'the tunnel agent has no endpoint (not signed in to ngrok yet, or reconnecting)' };
-  return { down: `the tunnel's endpoint is not HOPPER_PUBLIC_URL (${publicUrl}): ${urls.join(', ')}; the Host guard refuses it` };
+  return { down: `the tunnel's endpoint is not the remote access URL (${publicUrl}): ${urls.join(', ')}; the Host guard refuses it` };
 }
 
 export function watchTunnel(o: TunnelWatchOptions): TunnelWatch {
-  const { api, publicUrl, logger } = o;
-  if (!api || !publicUrl) return { url: () => undefined, isAgent: () => false, stop: async () => undefined };
+  const { api, logger } = o;
+  if (!api) return { url: () => undefined, reason: () => undefined, isAgent: () => false, askNow: () => undefined, stop: async () => undefined };
   let up: string | undefined;
+  let down: string | undefined;
   let agent = new Set<string>();
   let last = '';
   let pass: Promise<void> | undefined;
   const check = async (): Promise<void> => {
     agent = await addressesOf(new URL(api).hostname);
-    const r = await ask(api, publicUrl);
-    up = 'up' in r ? r.up : undefined;
-    const now = 'up' in r ? `up ${r.up}` : `down ${r.down}`;
+    const publicUrl = o.url();
+    const r = publicUrl === undefined ? undefined : await ask(api, publicUrl);
+    // Turned off or changed while the ask was in flight: the next ask says.
+    if (publicUrl !== o.url()) return;
+    up = r && 'up' in r ? r.up : undefined;
+    down = r && 'down' in r ? r.down : undefined;
+    const now = r === undefined ? 'off' : 'up' in r ? `up ${r.up}` : `down ${r.down}`;
     if (now === last) return;
     last = now;
-    if ('up' in r) logger.info(`hopper: the tunnel is up: ${r.up}`);
+    if (r === undefined) logger.info('hopper: remote access is off: the tunnel watch asks nothing');
+    else if ('up' in r) logger.info(`hopper: the tunnel is up: ${r.up}`);
     else logger.warn(`hopper: the tunnel is down: ${r.down}`);
   };
   const tick = (): void => { pass ??= check().finally(() => { pass = undefined; }); };
   tick();
   const timer = setInterval(tick, o.everyMs ?? EVERY_MS);
   timer.unref();
+  // Read through the settings now: a URL turned off or changed is not up a moment longer.
+  const current = (): boolean => up !== undefined && up === o.url();
   return {
-    url: () => up,
+    url: () => (current() ? up : undefined),
+    reason: () => (o.url() === undefined ? undefined : down),
     isAgent: (peer) => agent.has(unmapped(peer)),
+    askNow: tick,
     async stop() {
       clearInterval(timer);
       await pass;

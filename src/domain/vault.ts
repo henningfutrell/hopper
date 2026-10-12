@@ -25,12 +25,15 @@ export const VAULT_REFERENCE_MAX = 500;
  * GitHub connection's access and refresh tokens and their webhook subscriptions' signing secrets; for the whole hopper
  * (the instance's vault), its sign-in realms' secrets. Each is a row of a vault's table named `system/<name>` — a name no
  * vault secret can take —, sealed as any other; but it is none of the vault's own secrets: not listed, in no template,
- * never given to a job or minted from. Only the hopper opens one, in its own process.
+ * never given to a job, a machine or a box, or minted from. Only the hopper opens one, in its own process; one exception, the
+ * tunnel's authtoken (issue #880), which the hopper answers to the tunnel service alone ("Remote access").
  */
 /** The TypeSafe API key (issue #657), the key a user's artifact content URLs are signed under (issue #673), the GitHub
- * connection's tokens, each webhook's signing secret and each sign-in realm's secret (issue #658). */
+ * connection's tokens, each webhook's signing secret, each sign-in realm's secret (issue #658) and the tunnel's ngrok
+ * authtoken (issue #880). */
 export type SystemSecretName =
   | 'typesafe-api-key'
+  | 'remote-access.ngrok-authtoken'
   | 'artifact-content-key'
   | `connected-account.${'github'}.${'access-token' | 'refresh-token'}`
   | `webhook.${string}.signing-secret`
@@ -72,10 +75,10 @@ export interface SharedSecretView {
 }
 
 /** The kinds of system secret, by what the hopper keeps them for. */
-export type SystemSecretKind = 'typesafe' | 'artifact' | 'connected-account' | 'webhook' | 'sign-in';
+export type SystemSecretKind = 'typesafe' | 'artifact' | 'connected-account' | 'webhook' | 'sign-in' | 'remote-access';
 export const systemSecretKind = (name: string): SystemSecretKind =>
   name.startsWith('connected-account.') ? 'connected-account' : name.startsWith('webhook.') ? 'webhook' : name.startsWith('sign-in.') ? 'sign-in'
-    : name === 'artifact-content-key' ? 'artifact' : 'typesafe';
+    : name.startsWith('remote-access.') ? 'remote-access' : name === 'artifact-content-key' ? 'artifact' : 'typesafe';
 
 /**
  * Why a system secret may not be kept in a vault backend (issue #658, requirement 6), or undefined when it may. The
@@ -87,7 +90,7 @@ export function systemBackendRefusal(name: string): string | undefined {
   if (name === 'typesafe-api-key' || /^webhook\.[^.]+\.signing-secret$/.test(name)) return undefined;
   const kind = systemSecretKind(name);
   if (kind === 'typesafe' || kind === 'webhook') return `${name} is no system secret`;
-  const why = kind === 'sign-in' ? 'it is the whole hopper\'s, and a vault backend is one user\'s plugin' : 'the hopper writes it itself, and a vault backend only reads';
+  const why = kind === 'sign-in' || kind === 'remote-access' ? 'it is the whole hopper\'s, and a vault backend is one user\'s plugin' : 'the hopper writes it itself, and a vault backend only reads';
   return `${name} stays in the hopper: ${why}`;
 }
 

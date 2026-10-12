@@ -109,9 +109,11 @@ export const vaultGrantEvents = {
 };
 
 // The shared rate limiter (issue #436): the hopper's admin changed its settings.
+const remoteAccessSettings = strict({ enabled: z.boolean(), domain: z.string().optional(), restartedAt: z.string().optional() });
 const rateLimiterSettings = strict({ slowBelowPercent: z.number().int().min(0).max(100), reserve: z.number().int().min(0), batchSize: z.number().int().min(1) });
 export const rateLimiterEvents = {
   'github_rate_limiter.settings_changed': strict({ from: rateLimiterSettings, to: rateLimiterSettings, by: z.string() }),
+  'remote_access.changed': strict({ from: remoteAccessSettings, to: remoteAccessSettings, authtoken: z.enum(['set', 'removed']).optional(), by: z.string() }),
 };
 
 // Pointed jobs (issue #425, src/http/ui/pointed-jobs.ts): a pointed job made, and each move of its status.

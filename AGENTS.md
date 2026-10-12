@@ -32,7 +32,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   (`docs/design.md` "Reaching the UI across the LAN", issue #16). No route creates or changes a job, question, webhook or setting except
   through the UI session below: jobs come only from job sources; webhook subscriptions are rows in the
   database and nothing else (issue #78), which the UI session may edit (`POST /ui/api/webhooks`, issue #18). Every request passes the Host guard
-  (`127.0.0.1:<port>` / `localhost:<port>` / a LAN name with the port / the public URL's host, else 421). One exception, a
+  (`127.0.0.1:<port>` / `localhost:<port>` / a LAN name with the port / the public URL's host / the remote access domain while remote access is on (issue #880), else 421). One exception, a
   machine's (issue #308, `docs/design.md` "Joining a machine"): `POST /client/join` adds the one client target a join
   code names — the code minted through an admin's UI session or the operator CLI, kept hashed, spent by the join — and
   a machine's dial-in (`GET /client/connect`, signed with its client token) changes nothing. A running job's (issue #563,
@@ -60,7 +60,11 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   stream (issue #613, `docs/design.md` "The job stream"): `GET /job/stream` and `GET /job/stream/results/:seq`, with the
   job's proxy token, serve the job its own stream events and results, kept in the database; they change nothing. A machine's address check (issue #698,
   `docs/design.md` "GitHub through the hopper"): `GET /job/address` answers 204 to anyone the Host guard lets in, so an ssh
-  target's probe learns which of the hopper's addresses its jobs reach; it changes and records nothing. A running
+  target's probe learns which of the hopper's addresses its jobs reach; it changes and records nothing. The tunnel
+  service's ask (issue #880, `docs/design.md` "Remote access"): `GET /tunnel/agent`, with the preshared key the compose
+  stack makes in memory (`HOPPER_TUNNEL_KEY`), never as a public request, answers the remote access URL and the ngrok
+  authtoken while remote access is on; it changes no job, question, webhook or setting, only records in memory when the
+  service asked and what it said of ngrok. Remote access itself is set only through the UI session, by the hopper's admin. A running
   job's artifacts (issue #624, `docs/design.md` "Artifacts"): `/job/artifacts`, with the job's proxy token, puts, shares, revokes
   and removes that user's artifacts, each an event on the job's timeline; it changes no job, question, webhook or setting. Their
   content is served off `/api/`, at `/artifact-content/` (a URL a read signed for one viewer, for an hour) and `/artifact-link/`
@@ -113,10 +117,13 @@ hopper's note naming the job and the request by id only, and gets no label or as
   hashed. **Every secret the hopper owns for itself is a system secret** (issues #657, #658, `docs/design.md`
   "The vault's system scope"): the GitHub connection's access and refresh tokens, each webhook signing secret and each
   user's TypeSafe API key in that user's vault, each sign-in realm's `clientSecret` or `bindPassword` (set in the UI or
-  from the `HOPPER_SIGN_IN_*` environment) in the instance's vault — rows named `system/<name>`, sealed, written only
+  from the `HOPPER_SIGN_IN_*` environment) and the tunnel's ngrok authtoken (issue #880, set in Settings → Remote access,
+  never in `.env`) in the instance's vault — rows named `system/<name>`, sealed, written only
   through `SystemSecrets.keep` (src/vault/system.ts), each set, replace, rotation, removal, move and read an event with no
   value, shown with its audit trail on Settings → Vault, and never given to a job, a machine or a box: OpenFGA
-  (`system_secret#can_read`) denies them, and the vault refuses them whatever it answers. None is kept in clear: without
+  (`system_secret#can_read`) denies them, and the vault refuses them whatever it answers. One is answered by a route: the
+  ngrok authtoken, to the tunnel service alone (`GET /tunnel/agent` above), which holds it in ngrok's environment only, never
+  in a file. None is kept in clear: without
   the master key (limited, issue #659) none is kept or opened, and a realm's secret given meanwhile stays in the `sign-in`
   record until the next start with the key moves it. The master key itself stays outside every vault (given at launch). Kept in that user's schema, never answered by any route but its public half: the
   **hopper's ssh key** (issue #293: the hopper runs in ephemeral containers with no durable `~/.ssh`), minted
