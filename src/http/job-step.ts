@@ -3,14 +3,15 @@
 // `Authorization: Bearer <the job's proxy token>`, honoured only while its job is at work.
 //
 //   GET  /job/step                     the user's Windows hosts, one per line
-//   POST /job/step?host=&command=&timeout=&output=...
+//   POST /job/step?host=&command=&timeout=&output=...&secret=...
 //                                      the inputs as the body (a tar, application/x-tar; empty: none). 200: the step's
 //                                      output, streamed as it comes, its id in `x-hopper-step`; else `no: <reason>`
 //   GET  /job/step/:id                 the step's outputs (a tar; empty: none), its exit code in `x-hopper-step-exit`,
 //                                      and the hopper's problem, if any, in `x-hopper-step-problem`
 //
 // It changes no job, question, webhook or setting: a step runs on a Windows host the user set up, and is recorded on the
-// job's timeline (`step.started`, `step.finished`, `step.refused`).
+// job's timeline (`step.started`, `step.finished`, `step.refused`). A `secret` the host gives goes to the step, after the
+// job's vault grant; never in an answer to the job.
 import { createReadStream, createWriteStream } from 'node:fs';
 import { PassThrough, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -73,7 +74,7 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants }): vo
       const hosts = who.t.windowsSteps.hosts();
       const text = hosts.length === 0
         ? 'The hopper has no Windows host: a person adds one in Settings → Windows hosts.\n'
-        : hosts.map((h) => `${h.name}  ${h.workDir}${h.label ? `  ${h.label}` : ''}\n`).join('');
+        : hosts.map((h) => `${h.name}  ${h.workDir}${h.label ? `  ${h.label}` : ''}${h.secrets?.length ? `  secrets: ${h.secrets.join(', ')}` : ''}\n`).join('');
       return reply.type('text/plain; charset=utf-8').send(text);
     });
 
@@ -84,8 +85,8 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants }): vo
       const host = one(query.host);
       const command = one(query.command);
       const timeout = one(query.timeout);
-      const start = who.t.windowsSteps.start(who.job, {
-        ...(host !== undefined ? { host } : {}), ...(command !== undefined ? { command } : {}), ...(timeout !== undefined ? { timeout } : {}), outputs: all(query.output),
+      const start = await who.t.windowsSteps.start(who.job, {
+        ...(host !== undefined ? { host } : {}), ...(command !== undefined ? { command } : {}), ...(timeout !== undefined ? { timeout } : {}), outputs: all(query.output), secrets: all(query.secret),
       });
       if ('no' in start) return no(reply, start.status, start.no);
       const kept = await keep(req, start.inputsFile, STEP_INPUTS_MAX_BYTES);

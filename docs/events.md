@@ -3306,14 +3306,15 @@ Version 1 (`docs/schemas/vault.read_policy_set.v1.json`). An admin set the read 
 
 ## `vault.grant_asked`
 
-Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the vault for a secret or a minted credential, and its item has no vault grant (issue #652): it was refused, and the hopper asked a person to grant it the vault (Settings → Vault). The job, its item's key, the machine, the template, and the first thing it asked for (a secret's name, or `<kind> <operation> <asset>`). Once per job.
+Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the vault for a secret or a minted credential, or a job's Windows sandbox step asked for a vault secret (issue #731), and its item has no vault grant (issue #652): it was refused, and the hopper asked a person to grant it the vault (Settings → Vault). The job, its item's key, the machine and the template (a box), or the `windowsHost` (a step), and the first thing it asked for (a secret's name, or `<kind> <operation> <asset>`). Once per job.
 
 | field | type | required |
 |---|---|---|
 | `job` | string | yes |
 | `key` | string | yes |
-| `machine` | string | yes |
-| `template` | string | yes |
+| `machine` | string | no |
+| `template` | string | no |
+| `windowsHost` | string | no |
 | `name` | string | yes |
 
 ```json
@@ -4568,6 +4569,7 @@ Version 1 (`docs/schemas/step.started.v1.json`). A running job's Windows sandbox
 | `timeoutSeconds` | integer | yes |
 | `inputsBytes` | integer | yes |
 | `outputs` | string[] | yes |
+| `secrets` | string[] | no |
 
 ```json
 {
@@ -4607,7 +4609,7 @@ Version 1 (`docs/schemas/step.finished.v1.json`). A Windows sandbox step ended (
 
 ## `step.refused`
 
-Version 1 (`docs/schemas/step.refused.v1.json`). A running job asked for a Windows sandbox step and was told no (issue #731), with `reason`: no such Windows host, a bad command, timeout or output, or inputs too large.
+Version 1 (`docs/schemas/step.refused.v1.json`). A running job asked for a Windows sandbox step and was told no (issue #731), with `reason`: no such Windows host, a bad command, timeout or output, inputs too large, a secret the host does not give, or a vault secret the vault refused.
 
 | field | type | required |
 |---|---|---|
@@ -4618,5 +4620,45 @@ Version 1 (`docs/schemas/step.refused.v1.json`). A running job asked for a Windo
 {
   "reason": "the hopper has no Windows host build. It has: build-host.",
   "host": "build"
+}
+```
+
+## `vault.step_delivered`
+
+Version 1 (`docs/schemas/vault.step_delivered.v1.json`). A vault secret was given to a running job's Windows sandbox step (issue #731): on the step's ssh connection to the Windows `host`, into the step's environment only, never to the job, a file or an argument. The secret's name, the host and the job; never the value. `backend`: the vault backend it was read from, when it is kept in one.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `host` | string | yes |
+| `job` | string | yes |
+| `backend` | string | no |
+
+```json
+{
+  "name": "NUGET_TOKEN",
+  "host": "build-host",
+  "job": "f3b1c2d4-0000-4000-8000-000000000001"
+}
+```
+
+## `vault.step_refused`
+
+Version 1 (`docs/schemas/vault.step_refused.v1.json`). A running job's Windows sandbox step asked for a vault secret and the vault refused (issue #731): the job has no vault grant (a grant ask is opened), it is not at work, the vault holds no such secret, it is a minting credential, or it cannot be opened or read. `reason` says which; never a value.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `host` | string | yes |
+| `job` | string | yes |
+| `backend` | string | no |
+| `reason` | string | yes |
+
+```json
+{
+  "name": "NUGET_TOKEN",
+  "host": "build-host",
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "reason": "job f3b1c2d4 has no vault grant: a person grants it the vault on the Vault page (Settings → Vault), then ask again"
 }
 ```

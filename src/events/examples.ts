@@ -276,4 +276,6 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'step.started': { step: '5f0c1d2e-0000-4000-8000-000000000731', host: 'build-host', command: 'msbuild App.sln /p:Configuration=Release', timeoutSeconds: 1800, inputsBytes: 5242880, outputs: ['src/App/bin/Release'] },
   'step.finished': { step: '5f0c1d2e-0000-4000-8000-000000000731', host: 'build-host', exit: 0, seconds: 94, outputsBytes: 1048576 },
   'step.refused': { reason: 'the hopper has no Windows host build. It has: build-host.', host: 'build' },
+  'vault.step_delivered': { name: 'NUGET_TOKEN', host: 'build-host', job: 'f3b1c2d4-0000-4000-8000-000000000001' },
+  'vault.step_refused': { name: 'NUGET_TOKEN', host: 'build-host', job: 'f3b1c2d4-0000-4000-8000-000000000001', reason: 'job f3b1c2d4 has no vault grant: a person grants it the vault on the Vault page (Settings → Vault), then ask again' },
 };
