@@ -47,6 +47,7 @@ const ALL: Record<EventType, true> = {
   'bug_report.filed': true, 'bug_report.failed': true, 'bug_report.kept': true,
   'repo_checks.job_queued': true, 'repo_checks.dismissed': true, 'job.child_issue_filed': true, 'contribution.changed': true,
   'pointed_job.created': true, 'pointed_job.status_changed': true, 'github_watch.changed': true, 'github_watch.settings_changed': true,
+  'infra.plan_recorded': true, 'infra.plan_approved': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 

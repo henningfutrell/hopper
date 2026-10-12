@@ -152,7 +152,7 @@ describe('the broker when the hopper cannot act', () => {
     let asked = 0;
     const proxy = createGitHubProxy({
       user: () => user, limiter: { take: () => 'over' }, log: () => {},
-      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => ({ perform: async () => { asked++; return { number: 1, url: 'u' }; }, repo: async () => { throw new Error('not read'); } }) } }),
+      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => ({ perform: async () => { asked++; return { number: 1, url: 'u' }; }, repo: async () => { throw new Error('not read'); }, head: async () => { throw new Error('not read'); } }) } }),
     });
     expect(await proxy.handle(bearer, create)).toMatchObject({ status: 429, body: { error: 'refused: over' } });
     expect(asked).toBe(0);

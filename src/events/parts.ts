@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { JOB_ORIGINS } from '../domain/intake-origin.ts';
 import { POINTED_JOB_STATUSES, POINTER_KINDS } from '../domain/pointed-jobs.ts';
 import { CONFIDENCES, RISK_CATEGORIES, RISK_LEVELS } from '../domain/types.ts';
+// Infra plans (issue #870): their own file, spread with the other features' events.
+export { INFRA_PLAN_EVENT_SCHEMAS as infraPlanEvents } from './infra-plan-schemas.ts';
 
 const strict = z.strictObject;
 

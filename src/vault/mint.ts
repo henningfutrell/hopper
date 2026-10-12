@@ -14,7 +14,8 @@ import type { CredentialMinter, VaultRepository } from '../domain/ports.ts';
 import { AT_WORK, boxAsk, type BoxAskOptions } from './box.ts';
 import { mintEks } from './eks.ts';
 
-export interface MintAsk { mint: MintKind; operation: string; asset: string; token: string }
+/** `plan` (issue #870): the plan an operation that changes infrastructure applies. */
+export interface MintAsk { mint: MintKind; operation: string; asset: string; plan?: string; token: string }
 
 /**
  * Mints from the minting credential `name` for `target`: in the hopper, or (issue #586) in the vault's own container,
@@ -33,6 +34,8 @@ export interface MintingOptions extends Omit<BoxAskOptions, 'job'> {
   userId: string;
   access?: VaultAccess;
   clock: Clock;
+  /** The apply gate (issue #870): absent, no credential that changes infrastructure is minted. */
+  plans?: { gate(profile: OperationProfile, planId: string | undefined): Promise<string | undefined> };
 }
 
 /** `namespace/lab/web` as an asset; undefined when it names no kind the model has. */
@@ -90,6 +93,10 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     // Access takes the template from who the job is now (issue #581): the box it runs on, joined as its template.
     const decision = await o.access.decideMint({ requester: { kind: 'job', userId: o.userId, jobId: job.id }, operation: profile.operation, asset });
     if (!decision.allowed) return refuse(denied(machine.template, profile, decision), decision);
+    // No apply without a plan (issue #870): every operation but read changes infrastructure.
+    const planNo = o.plans ? await o.plans.gate(profile, ask.plan) : profile.operation === 'read' ? undefined : 'no apply without a plan: this hopper keeps no plans';
+    if (planNo) return refuse(planNo, decision);
+    const plan = profile.operation !== 'read' && ask.plan ? { plan: ask.plan } : {};
 
     const { mintsFor } = target;
     const credential: VaultSecret | undefined = vault.list().find((s) => s.mints?.kind === mintsFor.kind && s.mints.name === mintsFor.name);
@@ -109,7 +116,7 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
       if (now?.id === credential.id) vault.replace({ ...now, lastUsed: { at, machine: machine.name, job: job.id } }, vault.sealed(now.id) ?? null);
       events.append({
         type: 'vault.minted', jobId: job.id, machineId: machine.name,
-        data: { kind: ask.mint, operation: profile.operation, asset, template: machine.template, machine: machine.name, job: job.id, credential: credential.name, decision: decision.id, expiresAt: expiryOf(out), renewal },
+        data: { kind: ask.mint, operation: profile.operation, asset, template: machine.template, machine: machine.name, job: job.id, credential: credential.name, decision: decision.id, expiresAt: expiryOf(out), renewal, ...plan },
       });
     });
     const { kind: _kind, ...answer } = out;

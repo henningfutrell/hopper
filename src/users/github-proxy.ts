@@ -2,6 +2,7 @@
 // asks the hopper with — its proxy token under this user's link key, `hopper-gh`, the hopper's URL as its machine
 // reaches it, and git's way to the hopper (issue #652) —, the check of a token a job shows, and this user's GitHub
 // connection, which the hopper acts with for every job when this is its oldest user, and for this user's own jobs' git.
+import { createInfraPlans, type InfraPlans } from '../infra-plans/service.ts';
 import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
 import { DEFAULT_CONTRIBUTION, type Job, type MachineSnapshot, type User } from '../domain/types.ts';
 import { createReportGitHub, createReportSender, type ReportGitHub, type ReportSender } from '../bug-reports/index.ts';
@@ -28,6 +29,11 @@ export interface UserGitHubProxy {
   bugReports: ReportSender;
   /** The GitHub watches of this user's pointed jobs (issue #427), with this user's own connection; they poll with the user's runtime. */
   watches: GitHubWatches;
+  /**
+   * The infra plans (issue #870): what this user's jobs plan to change, a person's approvals, the vault's apply gate. Here
+   * because the gate reads each plan's branch head on GitHub with this user's connection.
+   */
+  infraPlans: InfraPlans;
 }
 
 export interface UserGitHubProxyOptions {
@@ -92,6 +98,13 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         login: () => o.accounts.account('github'),
       },
       reports,
+      infraPlans: createInfraPlans({
+        store: o.store, clock: o.clock,
+        head: async (repo, ref) => {
+          if (!o.accounts.account('github')) throw new Error(o.accounts.ended('github') ?? notConnected);
+          return api().head(repo, ref);
+        },
+      }),
       watches: createGitHubWatches({
         store: o.store, now: () => o.clock.now().toISOString(), log: (l) => o.logger.warn(l),
         github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatchGitHub(mine())),

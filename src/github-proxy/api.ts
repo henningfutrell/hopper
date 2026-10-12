@@ -44,6 +44,8 @@ export interface ProxyApi {
   perform(req: ProxyRequest, subIssueOf?: SubIssueOf): Promise<ProxyResult>;
   /** The repository as the user sees it (issue #652: its default branch, which a job's push never changes; issue #429: the rest). */
   repo(repo: string): Promise<RepoFacts>;
+  /** The commit `ref` (a branch) of `repo` is at now (issue #870: the apply gate's check that the code did not move). */
+  head(repo: string, ref: string): Promise<string>;
 }
 
 interface RestIssue { id?: number; number: number; title: string; state: string; body?: string | null; html_url: string; user?: { login?: string } | null; labels?: ({ name?: string } | string)[]; pull_request?: unknown }
@@ -181,6 +183,10 @@ export function createProxyApi(o: { apiUrl: string } & TokenSource): ProxyApi {
     repo: (repo) => withToken(
       (token) => readRepo(req, { authorization: `token ${token}` }, repo),
       (err) => new ProxyGitHubError(`GitHub answered ${statusOf(err) ?? 'no status'} reading ${repo}: ${(err as Error).message}`, statusOf(err)),
+    ),
+    head: (repo, ref) => withToken(
+      async (token) => ((await req('GET /repos/{owner}/{repo}/commits/{ref}', { ...splitRepo(repo), ref, headers: { authorization: `token ${token}` } })).data as { sha: string }).sha,
+      (err) => new ProxyGitHubError(messageOf(err, `the head of ${repo} ${ref}`), statusOf(err)),
     ),
   };
 }

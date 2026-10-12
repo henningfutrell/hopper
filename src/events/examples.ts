@@ -249,4 +249,10 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     changes: { labels: { added: ['ready'], removed: [] }, comments: { added: [{ id: 1201, author: 'octocat', at: '2026-10-11T12:00:00Z' }], removed: 0 } },
   },
   'github_watch.settings_changed': { from: { intervalSeconds: 60 }, to: { intervalSeconds: 300 }, by: 'octocat' },
+  'infra.plan_recorded': {
+    plan: '0b7e5a3c-0000-4000-8000-000000000870', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network', repo: 'octo-org/infra',
+    ref: 'issue-12', commit: 'e83c5163316f89bfbde7d9ab23ca2e25604af290', pullRequest: 13, read: 'read/aws-role/123456789012/readonly',
+    issue: 'https://github.com/octo-org/infra/issues/12', file: true, expiresAt: '2026-10-12T11:00:00.000Z',
+  },
+  'infra.plan_approved': { plan: '0b7e5a3c-0000-4000-8000-000000000870', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network', by: 'Ada' },
 };

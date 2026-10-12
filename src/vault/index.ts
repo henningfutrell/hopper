@@ -16,6 +16,7 @@ import { localVault, withCredentialRequests, type Vault } from './vault.ts';
 import type { SharedSecrets } from './shared.ts';
 import { withSharedSecrets } from './shared-delivery.ts';
 import { withVaultGrants } from './grants.ts';
+import type { MintingOptions } from './mint.ts';
 
 export { clientTargets } from './service.ts';
 export { withLaunch, type LaunchScope } from './box.ts';
@@ -33,6 +34,8 @@ export async function openUserVault(o: {
   backends: () => ConfiguredBackend[];
   /** The shared secrets (issue #718), the whole hopper's: in the hopper under the master key, wherever this vault runs. Absent: none. */
   shared?: SharedSecrets;
+  /** The apply gate (issue #870), wherever this vault runs: the plans are in the hopper. */
+  plans?: MintingOptions['plans'];
 }): Promise<Vault> {
   const vault = await open(o);
   const shared = o.shared ? withSharedSecrets(vault, { shared: o.shared, userId: o.user, store: o.store, targets: o.targets, holds: o.holds }) : vault;
@@ -45,6 +48,7 @@ async function open(o: Parameters<typeof openUserVault>[0]): Promise<Vault> {
   const { shared: sharedSecrets } = o;
   const shared = {
     store: o.store, userId: o.user, ...(o.access ? { access: o.access } : {}), ...(o.minter ? { minter: o.minter } : {}), clock: o.clock, logger: o.logger, targets: o.targets, holds: o.holds, backends: o.backends,
+    ...(o.plans ? { plans: o.plans } : {}),
     ...(sharedSecrets ? { shared: (row: string) => sharedSecrets.get(row) } : {}),
   };
   if (o.vaultUrl) {
