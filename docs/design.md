@@ -242,6 +242,7 @@ an ordinary job never does, whatever its priority (critical priority, above, is 
   - the **router**: no advice yet, or advice that holds (`ask_human`, `stop_retry`,
     `reuse_cache`) — the router speaks first; an approval ends a router hold;
   - a **native hold** (no online machine runs the executor; pinned machine unknown/offline);
+    a pinned machine **retired** — gone from the plugins config — holds nothing: the job fails (below);
   - a resumed job **pinned** to the machine holding its pane (`resumeOn`).
   Nothing else orders jobs against each other: no per-source, per-repo or per-author cap, no
   one-claim-per-tick, **no dependency between jobs**. Owner decision (issue #11), replacing a
@@ -5753,6 +5754,17 @@ architecture (`attachedMachines:`, its own schema, its own edit route) — again
 - **Removing a machine** (`remove`, role `machine-source`) is refused (409, naming the jobs) while a
   lane there is busy or draining or a job waits in a pane there, as the old machine edit was. An
   executor named by a machine's `executors` cannot be removed ("machine <name>").
+- **A retired machine's pinned jobs** (issue #919). The machine is then **retired**: gone from the plugins
+  config, and no machine source lists it. A waiting job (queued or held) pinned to it — by hand, by a routing
+  rule, or to resume there (`resumeOn`) — would wait for it for good. The next scheduler pass, before the
+  Decision, fails it: `pinned machine <m> is retired: it is no longer configured. Run the job again to place it
+  on another machine` (`src/decider/retired.ts`, pure; applied in `src/engine/decision-step.ts`). One policy, no
+  setting: failure handling and Failures take it from there, and a run again is a new job of its item, routed
+  afresh. No cleanup is run: the machine is gone, and a deferred cleanup would hold the item's next job. A
+  machine still in the config whose instance did not build is not retired (held `pinned machine <m> unknown`),
+  and nothing is judged while the plugins config has an error: it falls back to the defaults, which would
+  retire every attached machine. A job on a question or a wait in a pane there is not waiting for a machine:
+  the removal is refused while one is (above).
 - **Migration 15** (`src/store/migrations.ts`) rewrites the stored plugins.yaml: `machines:` becomes
   the list — the old instance, or the built-in `local` (`lanes: 4`) when there was none — then each
   `attachedMachines:` entry as an instance of the plugin its `ssh`, `docker` or `client` field

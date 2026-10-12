@@ -11,6 +11,8 @@ export interface EngineOptions {
   idGen?: IdGen;
   executors: ExecutorRegistry;
   machines: MachineSource;
+  /** The machine names in the plugins config (issue #919), undefined while it has an error: one gone from it is retired. Absent: none is. */
+  configuredMachines?: () => readonly string[] | undefined;
   /** Every usage source the decider reads now: they follow the plugins config live (issue #356). Include `fakeUsage` here too when present. */
   usage: () => UsageSource[];
   /** The hand-settable source tests drive through `setFakeUsage`, when one is composed. */
