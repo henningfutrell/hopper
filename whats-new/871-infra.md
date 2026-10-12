@@ -1,0 +1,1 @@
+- Out-of-band infrastructure changes are now on the Infra page, not in Settings. Each notification links to that page, and the Infra entry in the menu counts the changes that no one marked yet.

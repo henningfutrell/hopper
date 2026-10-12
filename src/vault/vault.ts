@@ -15,7 +15,7 @@ import type { SystemChanger, SystemResult } from './system.ts';
  * of its own (`remoteVault`, src/vault/remote.ts). Its secrets' metadata and its templates are read here at once; what
  * needs the vault's key — set, remove, deliver — and whether it can be used now (`status`) may cross the network.
  */
-export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTemplate' | 'approveTemplate' | 'revokeTemplate' | 'approveProfile' | 'scopeOf' | 'boxRadius' | 'boxes' | 'templateScopes' | 'recordCheck' | 'checkTemplate' | 'agentCredential'> {
+export interface Vault extends Pick<VaultService, 'forStep' | 'saveTemplate' | 'removeTemplate' | 'approveTemplate' | 'revokeTemplate' | 'approveProfile' | 'scopeOf' | 'boxRadius' | 'boxes' | 'templateScopes' | 'recordCheck' | 'checkTemplate' | 'agentCredential'> {
   /** Its secrets' metadata and its templates, never a value. `problem` only when `status` is not asked: see vaultView. */
   view(): VaultView;
   /** Why no vault secret can be stored or delivered now; undefined when one can. */
@@ -63,6 +63,7 @@ export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decl
   set: async (s, by) => v.set(s, by),
   remove: async (name, by) => v.remove(name, by),
   deliver: (ask, key) => v.deliver(ask, key),
+  forStep: (ask) => v.forStep(ask),
   mint: (ask, key) => v.mint(ask, key),
   testMint: (asset, by) => v.testMint(asset, by),
   mintForCheck: (ask) => v.mintForCheck(ask),

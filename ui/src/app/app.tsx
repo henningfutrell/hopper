@@ -10,6 +10,7 @@ import { load, mustSignIn, recheckSession, SESSION_CHECK_MS, setLoadError, useHo
 import { connect } from '@/store/stream';
 import { AccessRequests } from '@/views/access-requests';
 import { Artifacts } from '@/views/artifacts';
+import { BugReports } from '@/views/bug-reports';
 import { Decisions } from '@/views/decisions';
 import { Events } from '@/views/events';
 import { Failures } from '@/views/failures';
@@ -37,7 +38,7 @@ import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  'needs-you': NeedsYou, overview: Overview, jobs: Jobs, queue: Queue, intake: Intake, 'access-requests': AccessRequests, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, sources: Sources, machines: Machines, infra: Infra, usage: Usage, settings: Settings, job: JobView,
+  'needs-you': NeedsYou, overview: Overview, jobs: Jobs, queue: Queue, intake: Intake, 'access-requests': AccessRequests, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, sources: Sources, machines: Machines, infra: Infra, usage: Usage, settings: Settings, job: JobView,
 };
 
 function Loading() {

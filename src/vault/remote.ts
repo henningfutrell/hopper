@@ -93,6 +93,14 @@ export function remoteVault(o: {
       });
       return { refused: r.problem };
     },
+    // A step's secret (issue #731): opened in the vault container; one kept in a vault backend is read here.
+    async forStep(ask) {
+      if (o.local.view().secrets.find((s) => s.name === ask.name)?.backend) return o.local.forStep(ask);
+      const r = await call<{ value: string } | { refused: string }>('step-deliver', { ask });
+      if (!('problem' in r)) return r.result;
+      o.store.events.append({ type: 'vault.step_refused', jobId: ask.job, data: { name: ask.name, host: ask.host, job: ask.job, reason: r.problem } });
+      return { refused: r.problem };
+    },
     mint: (ask, machineKey) => o.local.mint(ask, machineKey, mintFrom),
     testMint: (asset, by) => o.local.testMint(asset, by, mintFrom),
     mintForCheck: (ask) => o.local.mintForCheck(ask, mintFrom),

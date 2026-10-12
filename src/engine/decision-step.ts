@@ -1,7 +1,8 @@
 // One engine pass: gather inputs → decide() → skip a no-op → apply in one transaction.
 import { decide } from '../decider/index.ts';
-import type { CleanupDue, Decision, DecisionInputs, ExpectedCost, Job, Lane, LaneId } from '../domain/types.ts';
-import { nowIso, policyOf, type EngineContext } from './context.ts';
+import { retiredPins } from '../decider/retired.ts';
+import type { CleanupDue, Decision, DecisionInputs, ExpectedCost, Job, Lane, LaneId, MachineSnapshot } from '../domain/types.ts';
+import { nowIso, policyOf, priorityTagOf, type EngineContext } from './context.ts';
 import type { PriorityLanes } from './priority-lanes.ts';
 import type { BlastRadius } from './blast-radius.ts';
 import type { PlacementPicks } from './lane-calls.ts';
@@ -17,10 +18,10 @@ const RUNNING = ['claimed', 'running'] as const;
 /** A job's expected cost, where one is known (issue #688). */
 export type ExpectedCostOf = (job: Job) => ExpectedCost | undefined;
 
-async function gather(c: EngineContext, trigger: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf, picks: PlacementPicks): Promise<() => DecisionInputs> {
+async function gather(c: EngineContext, trigger: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf, picks: PlacementPicks): Promise<{ machines: MachineSnapshot[]; inputs: () => DecisionInputs }> {
   const [machines, ...readings] = await Promise.all([c.machines.list(), ...c.usage().map((u) => u.poll())]);
   // Store reads happen after the awaits, synchronously with decide and apply: no interleaving.
-  return () => {
+  return { machines, inputs: () => {
     const waiting = oldestFirst(c.store.jobs.list({ status: [...WAITING] }));
     const expectedCosts = expectedOf(waiting, expected);
     const placementPicks = picks.input(waiting);
@@ -42,7 +43,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       ...(placementPicks ? { placementPicks } : {}),
       policy: policyOf(c),
     };
-  };
+  } };
 }
 
 const oldestFirst = (jobs: Job[]): Job[] => [...jobs].reverse();
@@ -123,11 +124,32 @@ function freeStrandedLanes(c: EngineContext): void {
   if (stranded.length) store.tx(() => { for (const l of stranded) releaseLane(c, l, nowIso(c)); });
 }
 
+/**
+ * A waiting job pinned to a retired machine (issue #919) — one gone from the plugins config, that no machine source lists —
+ * fails with the reason: it would wait for it for good. Nothing is judged while the plugins config has an error. Failure
+ * handling and Failures take it from there; a run again is placed afresh. No cleanup: its machine is gone, and a deferred
+ * one would hold the item's next job.
+ */
+function failRetiredPins(c: EngineContext, machines: readonly MachineSnapshot[]): void {
+  const { store } = c;
+  const configured = c.configuredMachines();
+  if (configured === undefined) return;
+  const retired = retiredPins(store.jobs.list({ status: [...WAITING] }), machines, configured);
+  if (!retired.length) return;
+  store.tx(() => {
+    for (const r of retired) {
+      store.jobs.update(r.jobId, { status: 'failed', error: r.reason, finishedAt: nowIso(c), holdReason: undefined, waitReason: undefined, pendingAnswer: undefined });
+      store.events.append({ type: 'job.failed', jobId: r.jobId, data: { error: r.reason, ...priorityTagOf(c, r.jobId) } });
+    }
+  });
+}
+
 /** Returns the claims whose executors the caller must start, outside the transaction. */
 export async function decisionStep(c: EngineContext, trigger: string, decisionId: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf, picks: PlacementPicks): Promise<Claim[]> {
-  const inputs = await gather(c, trigger, cleanupDue, priorityLanes, blastRadius, expected, picks);
+  const { machines, inputs } = await gather(c, trigger, cleanupDue, priorityLanes, blastRadius, expected, picks);
   if (c.stopping()) return [];
   freeStrandedLanes(c);
+  failRetiredPins(c, machines);
   autoAccept(c);
   const decision = decide(inputs(), decisionId);
   if (isNoOp(decision)) return [];

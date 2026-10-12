@@ -1,6 +1,6 @@
 // The question history (issue #151): every handled question — answered, closed, dismissed, expired or
 // cancelled — as a compact list, newest first, each row opening to its question, the answer and the
-// job, each naming the machine that raised it (issue #485). In Settings, beside the question gates; the Questions view holds the open questions only.
+// job, each naming the machine that raised it (issue #485). A section of Questions (#questions/history, issue #897), beside the open questions.
 // A level's auto-answer (issue #632) says so, and a person may correct it: the job gets the correction.
 import { ChevronRight, History } from 'lucide-react';
 import { useState } from 'react';
@@ -99,10 +99,12 @@ function HandledRow({ q }: { q: Question }) {
 export function QuestionHistory() {
   const handled = useHopper((s) => s.handled);
   return (
-    <Panel title="Question history" icon={History} count={handled.length} bodyClassName="p-0">
-      {handled.length
-        ? <div data-slot="handled-questions">{handled.map((q) => <HandledRow key={q.id} q={q} />)}</div>
-        : <Empty>no handled questions yet</Empty>}
-    </Panel>
+    <div data-slot="question-history">
+      <Panel title="Question history" icon={History} count={handled.length} bodyClassName="p-0">
+        {handled.length
+          ? <div data-slot="handled-questions">{handled.map((q) => <HandledRow key={q.id} q={q} />)}</div>
+          : <Empty>No handled question yet. Each question that is answered, closed, dismissed, expired or cancelled shows here, with its answer. Correct an auto-answer here.</Empty>}
+      </Panel>
+    </div>
   );
 }

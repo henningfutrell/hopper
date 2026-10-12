@@ -38,6 +38,12 @@ const PLAN = {
   read: 'read', job: 'j-7', file: { size: 1, sha256: 'a'.repeat(64) }, createdAt: '2026-10-12T00:00:00.000Z', expiresAt: '2099-01-01T00:00:00.000Z',
 };
 const YOLO = { on: false, repos: { 'octo-user/hopper': true }, choices: { repos: ['octo-user/hopper', 'octo-user/infra'] } };
+const PICK = {
+  pickId: 'k1', at: '2026-10-12T00:00:00.000Z', point: 'merge-order', options: [{ id: 'a', label: 'First' }, { id: 'b', label: 'Second' }],
+  pick: 'a', confidence: 0.9, mode: 'shadow', threshold: 0.85, applied: false, notApplied: 'shadow',
+};
+const POINT = { point: 'merge-order', label: 'Merge order', describe: 'Which pull request merges first.', mode: 'shadow', threshold: 0.85, asked: 1, picked: 1, applied: 0, compared: 0, agreed: 0, agreement: null, overridden: 0 };
+const MINOR = { jev: { available: true }, typesafeKey: { set: true, last4: 'abcd' }, windowDays: 30, points: [POINT], recent: [PICK] };
 const EMPTY_VAULT = { secrets: [], backends: [], shared: [], readPolicy: [], templates: [], requests: [], grantAsks: [], grants: [] };
 
 const posts: { path: string; body: unknown }[] = [];
@@ -45,6 +51,7 @@ let sources: unknown[] = SOURCES;
 let vault: unknown = VAULT;
 let pullRequests: unknown = PULL_REQUESTS;
 let plans: unknown = { plans: [PLAN], applies: [] };
+let minor: unknown = MINOR;
 
 function fakeDaemon() {
   const routes: Record<string, unknown> = {
@@ -71,6 +78,8 @@ function fakeDaemon() {
     if (path === '/api/pull-requests') return json(200, pullRequests);
     if (path === '/api/infra-plans') return json(200, plans);
     if (path === '/api/yolo-mode') return json(200, YOLO);
+    if (path === '/api/minor-decisions') return json(200, minor);
+    if (path === '/api/bug-reports') return json(200, { reports: [] });
     if (path === '/api/vault') return vault === undefined ? json(404, { error: 'not found' }) : json(200, vault);
     return path in routes ? json(200, routes[path]) : json(404, { error: 'not found' });
   });
@@ -85,7 +94,7 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-async function boot(hash: string, o: { sources?: unknown[]; vault?: unknown; pullRequests?: unknown; plans?: unknown } = {}) {
+async function boot(hash: string, o: { sources?: unknown[]; vault?: unknown; pullRequests?: unknown; plans?: unknown; minor?: unknown } = {}) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   window.location.hash = hash;
@@ -96,6 +105,7 @@ async function boot(hash: string, o: { sources?: unknown[]; vault?: unknown; pul
   vault = 'vault' in o ? o.vault : VAULT;
   pullRequests = o.pullRequests ?? PULL_REQUESTS;
   plans = o.plans ?? { plans: [PLAN], applies: [] };
+  minor = o.minor ?? MINOR;
   vi.stubGlobal('fetch', fakeDaemon());
   vi.stubGlobal('EventSource', FakeEventSource);
   vi.resetModules();
@@ -228,5 +238,51 @@ describe('one home each: no Approve stays in Sources or Settings → Vault (issu
     await vi.waitFor(() => expect(confirm()).toBeDefined());
     await act(async () => { confirm()!.click(); });
     await vi.waitFor(() => expect(posts).toEqual([{ path: '/ui/api/vault', body: { action: 'approve-template', name: 'web' } }]));
+  });
+});
+
+describe('one home each: the decider\'s picks, the question history and Your reports leave Settings (issue #897)', () => {
+  const settingsSections = () => [...document.querySelectorAll('[data-slot="settings-nav"] a')].map((a) => a.getAttribute('href'));
+
+  it('Decisions has the decider\'s picks, each with Override', async () => {
+    await boot('#decisions');
+    const pick = () => document.querySelector<HTMLElement>('[data-pick="k1"]');
+    await vi.waitFor(() => expect(pick()).not.toBeNull());
+    expect(buttons(pick()!)).toContain('Override');
+    expect(main().querySelector('a[href="#settings/decider"]')).not.toBeNull();
+  });
+
+  it('Decisions with no pick says what will show there', async () => {
+    await boot('#decisions', { minor: { ...MINOR, recent: [] } });
+    await vi.waitFor(() => expect(document.querySelector('[data-decider-picks]')).not.toBeNull());
+    expect(main().textContent).toContain('No decider pick yet');
+  });
+
+  it('Settings → Decider keeps the configuration only, and links to the picks on Decisions', async () => {
+    await boot('#settings/decider');
+    await vi.waitFor(() => expect(document.querySelector('[data-point="merge-order"]')).not.toBeNull());
+    expect(document.querySelector('[data-pick]')).toBeNull();
+    expect(buttons(main())).not.toContain('Override');
+    expect(main().querySelector('a[href="#decisions"]')).not.toBeNull();
+  });
+
+  it('Settings has no Question history and no Your reports', async () => {
+    await boot('#settings/version');
+    await vi.waitFor(() => expect(settingsSections().length).toBeGreaterThan(0));
+    expect(settingsSections()).not.toContain('#settings/history');
+    expect(settingsSections()).not.toContain('#settings/reports');
+  });
+
+  it('an old #settings/history link opens the question history on Questions', async () => {
+    await boot('#settings/history');
+    await vi.waitFor(() => expect(window.location.hash).toBe('#questions/history'));
+    await vi.waitFor(() => expect(document.querySelector('[data-slot="question-history"]')).not.toBeNull());
+  });
+
+  it('Your reports is a top-level page; an old #settings/reports link opens it', async () => {
+    await boot('#settings/reports');
+    await vi.waitFor(() => expect(window.location.hash).toBe('#reports'));
+    expect(navLink('#reports')!.textContent).toContain('Your reports');
+    await vi.waitFor(() => expect(document.querySelector('[data-slot="bug-reports"]')).not.toBeNull());
   });
 });

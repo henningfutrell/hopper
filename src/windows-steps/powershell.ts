@@ -31,14 +31,25 @@ export function prepareScript(workDir: string): string {
 }
 
 /**
- * The step: the inputs extracted in the working directory (Windows' own tar, which refuses absolute paths and `..`),
- * the job's command run there in a PowerShell of its own, its output as it comes, then the outputs packed. Exits with
- * the command's exit code.
+ * The step: its secrets, when it has any, read from stdin into this process's environment (never a file, never an
+ * argument), the inputs extracted in the working directory (Windows' own tar, which refuses absolute paths and `..`),
+ * the job's command run there in a PowerShell of its own, which inherits that environment, its output as it comes, then
+ * the outputs packed. Exits with the command's exit code.
  */
-export function runScript(o: { workDir: string; inputs: boolean; outputs: string[] }): string {
+export function runScript(o: { workDir: string; inputs: boolean; outputs: string[]; secrets?: boolean }): string {
   const scratch = scratchOf(o.workDir);
   return [
     '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+    ...(o.secrets ? [
+      '$hopperIn = [Console]::In.ReadToEnd()',
+      "foreach ($hopperLine in ($hopperIn -split \"`n\")) {",
+      '  $hopperLine = $hopperLine.Trim()',
+      '  if (-not $hopperLine) { continue }',
+      "  $hopperName, $hopperValue = $hopperLine.Split('=', 2)",
+      "  [Environment]::SetEnvironmentVariable($hopperName, [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($hopperValue)), 'Process')",
+      '}',
+      'Remove-Variable hopperIn, hopperLine, hopperName, hopperValue -ErrorAction SilentlyContinue',
+    ] : []),
     `Set-Location -LiteralPath ${psQuote(o.workDir)}`,
     ...(o.inputs ? [
       `tar -xf ${psQuote(`${scratch}\\inputs.tar`)}`,
@@ -55,6 +66,11 @@ export function runScript(o: { workDir: string; inputs: boolean; outputs: string
     ] : []),
     'exit $code',
   ].join('\n');
+}
+
+/** What the run call writes on stdin for `runScript({ secrets: true })`: one line per secret, `NAME=<base64 of UTF-8>`. */
+export function secretsInput(secrets: Readonly<Record<string, string>>): string {
+  return Object.entries(secrets).map(([name, value]) => `${name}=${Buffer.from(value, 'utf8').toString('base64')}\n`).join('');
 }
 
 /** The job's command as the step's own script: its exit code is the last native command's, or 1 when the last statement failed. */

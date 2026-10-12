@@ -1,0 +1,1 @@
+- Decider picks, with Override, are now on the Decisions page. The question history is a History tab on Questions. Your reports has its own page. Settings keeps only the setup.

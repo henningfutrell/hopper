@@ -16,6 +16,7 @@ import { openInstanceStore, type InstanceStore } from '../store/index.ts';
 import { vaultKeys } from './keys.ts';
 import { kmsOf } from './kms.ts';
 import { createVaultService, type VaultService } from './service.ts';
+import type { StepSecretAsk } from './step-delivery.ts';
 import { createCredentialMinter } from './minter.ts';
 import type { MintTarget } from '../domain/minting.ts';
 import { VAULT_KEY_VARIABLE, VAULT_OP_PATH, vaultOps, type VaultOp } from './wire.ts';
@@ -121,6 +122,7 @@ function run(vault: VaultService, op: VaultOp, b: Record<string, unknown>): unkn
     case 'set': return vault.set(body.secret, body.by);
     case 'remove': return vault.remove(body.name, body.by);
     case 'deliver': return vault.deliver(body.ask, body.machine?.key ?? '');
+    case 'step-deliver': return vault.forStep((b as { ask: StepSecretAsk }).ask);
     case 'mint': return vault.mintFrom(body.credential, body.target, body.jobId, body.identify);
     case 'agent-credential': return vault.agentCredential((b as { ask: AgentCredentialAsk }).ask);
   }

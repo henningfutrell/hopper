@@ -76,5 +76,17 @@ describe('Grok Bot routine: intake stopped', () => {
       source: 'hopper', kind: 'infra.out_of_band_recorded', change: 'c1', signal: 'cloudtrail', target: 'sg-0abc', what: 'ec2:AuthorizeSecurityGroupIngress',
       who: 'arn:aws:sts::123456789012:assumed-role/Admin/console', happenedAt: '2026-10-07T20:40:00Z',
     }));
+    expect(r.hits[0]).not.toHaveProperty('infraUrl');
+  });
+
+  it('links an out-of-band change to the Infra page, where a person marks it (issue #871)', async () => {
+    const r = await receiver();
+    const listeners: ((e: DomainEvent) => void)[] = [];
+    const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url: r.url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date() }, baseMs: 10 });
+    n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined, question: () => undefined, waitingOnHuman: () => [], answerUrl: () => '', infraUrl: () => 'http://hopper.lan:4790/#infra' });
+    for (const l of listeners) l(event('infra.out_of_band_recorded', { change: 'c1', source: 'gitops', key: 'web', target: 'argocd app web', what: 'OutOfSync', at: '2026-10-07T20:40:00Z', job: 'j1' }));
+    await waitFor(() => r.hits.length === 1, { what: 'one post' });
+    await n.stop();
+    expect(r.hits[0]).toEqual(expect.objectContaining({ kind: 'infra.out_of_band_recorded', change: 'c1', infraUrl: 'http://hopper.lan:4790/#infra' }));
   });
 });

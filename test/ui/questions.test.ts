@@ -227,8 +227,8 @@ describe('handled questions', () => {
     expect(document.querySelector('[data-slot="question-gates"]')).toBeNull();
   });
 
-  it('are the question history in Settings, a compact list; a row opens to the question, the answer and who gave it', async () => {
-    await boot({ authed: true, hash: '#settings/history' });
+  it('are the question history, a section of Questions (issue #897), a compact list; a row opens to the question, the answer and who gave it', async () => {
+    await boot({ authed: true, hash: '#questions/history' });
     const list = await vi.waitFor(() => { const l = document.querySelector('[data-slot="handled-questions"]'); expect(l).not.toBeNull(); return l!; });
     const rows = list.querySelectorAll('[data-slot="handled-question"]');
     expect(rows).toHaveLength(1);

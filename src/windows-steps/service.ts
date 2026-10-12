@@ -1,7 +1,8 @@
 // One user's Windows sandbox steps (issue #731, design.md "Windows sandbox steps"): a running job's step checked against
 // the user's Windows hosts, run on its host one at a time, stopped at its timeout or when the job goes, recorded on the
-// job's timeline, and its result kept for the job to fetch — an hour, then swept. The host itself is the port
-// (`WindowsStepHost`): ssh in production, a double in tests.
+// job's timeline, and its result kept for the job to fetch — an hour, then swept. A step's vault secrets (each one its
+// host gives, and the vault gives after the job's grant) go to the step only, and are masked in the log the job reads.
+// The host itself is the port (`WindowsStepHost`): ssh in production, a double in tests.
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -22,12 +23,14 @@ export interface WindowsStepsOptions {
   dir: string;
   record(event: NewEvent): void;
   log(line: string): void;
+  /** A vault secret's value for `job`'s step on `host` (the vault's grant and checks), or why not. Absent: no step gets one. */
+  secret?(ask: { name: string; job: string; host: string }): Promise<{ value: string } | { refused: string }>;
   newId?: () => string;
   keepMs?: number;
 }
 
 /** A step's fields as the job sent them. */
-export interface StepFields { host?: string; command?: string; timeout?: string; outputs: string[] }
+export interface StepFields { host?: string; command?: string; timeout?: string; outputs: string[]; secrets?: string[] }
 
 /** A step checked and given its own directory: the route puts the inputs in `inputsFile`, then runs it. */
 export interface StepStart {
@@ -42,8 +45,8 @@ export interface StepStart {
 
 export interface WindowsSteps {
   hosts(): WindowsHost[];
-  /** Check `fields` for `job`: a step to run, or a no with its HTTP status. A no is a `step.refused` event. */
-  start(job: Job, fields: StepFields): StepStart | { status: number; no: string };
+  /** Check `fields` for `job`, and get its secrets: a step to run, or a no with its HTTP status. A no is a `step.refused` event. */
+  start(job: Job, fields: StepFields): Promise<StepStart | { status: number; no: string }>;
   /** A step's result, with its outputs tar when it has one; undefined: no step of this job's by that id, or swept. */
   result(job: Job, id: string): { result: StepResult; outputs?: string } | undefined;
   /** Remove results older than the keep. */
@@ -81,7 +84,7 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
     hosts: () => o.hosts(),
     sweep,
 
-    start(job, fields) {
+    async start(job, fields) {
       sweep();
       const request = stepRequestOf(fields);
       if ('problem' in request) return refuse(job, 400, request.problem, fields.host);
@@ -89,6 +92,18 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
       if (!host) {
         const names = o.hosts().map((h) => h.name);
         return refuse(job, 404, `the hopper has no Windows host ${request.host}. ${names.length ? `It has: ${names.join(', ')}.` : 'It has none: a person adds one in Settings → Windows hosts.'}`, request.host);
+      }
+      const gives = host.secrets ?? [];
+      const outside = request.secrets.find((n) => !gives.includes(n));
+      if (outside !== undefined) {
+        return refuse(job, 403, `${host.name} does not give ${outside} to its steps: ${gives.length ? `it gives ${gives.join(', ')}` : 'it gives none'}. A person adds a secret to the host in Settings → Windows hosts.`, host.name);
+      }
+      // Read now, before the inputs come: a no costs the job no upload. Held in memory for this step only.
+      const secrets: Record<string, string> = {};
+      for (const name of request.secrets) {
+        const r = o.secret ? await o.secret({ name, job: job.id, host: host.name }) : { refused: 'the hopper gives no vault secret to a step here' };
+        if ('refused' in r) return refuse(job, 403, `${name}: ${r.refused}`, host.name);
+        secrets[name] = r.value;
       }
       const id = newId();
       const dir = dirOf(id);
@@ -99,7 +114,9 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
           rmSync(dir, { recursive: true, force: true });
           refuse(job, 400, reason, host.name);
         },
-        async run({ inputsBytes, log, signal }) {
+        async run({ inputsBytes, log: toJob, signal }) {
+          const masked = maskSecrets(Object.values(secrets), toJob);
+          const log = masked.write;
           const before = queues.get(host.name);
           const stop = new AbortController();
           const onGone = () => stop.abort();
@@ -114,14 +131,15 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
             const started = Date.now();
             o.record({ type: 'step.started', jobId: job.id, data: {
               step: id, host: host.name, command: request.command.slice(0, COMMAND_IN_EVENT), timeoutSeconds: request.timeoutSeconds,
-              inputsBytes, outputs: request.outputs,
+              inputsBytes, outputs: request.outputs, ...(request.secrets.length ? { secrets: request.secrets } : {}),
             } });
             const timer = setTimeout(() => { timedOut = true; stop.abort(); }, request.timeoutSeconds * 1000);
             let result: StepResult;
             try {
-              result = await o.host.run(host, { id, command: request.command, dir, inputs: inputsBytes > 0, outputs: request.outputs }, { log, signal: stop.signal });
+              result = await o.host.run(host, { id, command: request.command, dir, inputs: inputsBytes > 0, outputs: request.outputs, ...(request.secrets.length ? { secrets } : {}) }, { log, signal: stop.signal });
             } finally {
               clearTimeout(timer);
+              masked.end();
             }
             if (timedOut) result = { ...result, problem: `timed out after ${request.timeoutSeconds} s` };
             else if (signal.aborted) result = { ...result, problem: 'the job stopped waiting for it' };
@@ -146,6 +164,7 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
           } finally {
             signal.removeEventListener('abort', onGone);
             if (queues.get(host.name) === mine) queues.delete(host.name);
+            for (const k of Object.keys(secrets)) delete secrets[k];
           }
         },
       };
@@ -157,6 +176,40 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
       if (!r || r.jobId !== job.id) return undefined;
       const outputs = join(dirOf(id), 'outputs.tar');
       return { result: r.result, ...(r.result.outputsBytes !== undefined ? { outputs } : {}) };
+    },
+  };
+}
+
+/** What stands in for a secret's value in the log the job reads. */
+export const MASK = '***';
+
+/**
+ * The step's log as the job reads it: each secret's value replaced by `MASK`, also when a value is split across two
+ * chunks — the tail that could start a value is held back until the next chunk, or `end`. Best effort: a value the
+ * step changes (encodes, reverses) is not found.
+ */
+export function maskSecrets(values: readonly string[], out: (chunk: string) => void): { write(chunk: string): void; end(): void } {
+  const secrets = values.filter((v) => v.length > 0).sort((x, y) => y.length - x.length);
+  if (secrets.length === 0) return { write: out, end: () => undefined };
+  const longest = secrets[0]!.length;
+  let held = '';
+  const mask = (s: string): string => secrets.reduce((acc, v) => acc.split(v).join(MASK), s);
+  return {
+    write(chunk) {
+      const text = mask(held + chunk);
+      // Hold back the longest tail that is the start of some value: the next chunk may finish it.
+      let keep = 0;
+      for (let n = Math.min(longest - 1, text.length); n > 0; n--) {
+        const tail = text.slice(text.length - n);
+        if (secrets.some((v) => v.startsWith(tail))) { keep = n; break; }
+      }
+      held = text.slice(text.length - keep);
+      const now = text.slice(0, text.length - keep);
+      if (now) out(now);
+    },
+    end() {
+      if (held) out(held);
+      held = '';
     },
   };
 }

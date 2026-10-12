@@ -71,8 +71,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   (a public link), under a sandbox policy; they change nothing. A running job's Windows sandbox step (issue #731,
   `docs/design.md` "Windows sandbox steps"): `GET`/`POST /job/step` and `GET /job/step/:id`, with the job's proxy token,
   run one step on a Windows host the user set up, over ssh with the hopper's own key and the host's pinned key, and answer
-  its output, exit code and outputs; it changes no job, question, webhook or setting, only records the step. A Windows host
-  is a config record (`windows-hosts`), set through the UI session or the operator CLI. Every other mutation is the UI's
+  its output, exit code and outputs; it changes no job, question, webhook or setting, only records the step. A step's vault
+  secret goes only to the step, on its ssh connection's stdin, never to the job: one its host's `secrets` names, after the job's
+  vault grant. A Windows host is a config record (`windows-hosts`), set through the UI session or the operator CLI. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) or an **API token** (issue #718, `docs/design.md` "API tokens":
   `Authorization: Bearer hopper_at_…`, JSON; a session of kind `api`, kept hashed, the admin's API-token lifetime at most
