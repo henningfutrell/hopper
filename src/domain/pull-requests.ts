@@ -47,6 +47,11 @@ export interface FollowsPullRequests {
   /** Whether the hopper merges a ready pull request of `repo` (yolo mode): its tending queue waits for that merge (issue #796). Absent: never. */
   mergesOnReady?(repo: string): boolean;
   /**
+   * Whether open pull requests `a` and `b` of `repo` (URLs), both into `base`, conflict with each other (issue #939): merged
+   * one after the other, the second has merge conflicts. undefined: the source cannot say. Absent: it never says.
+   */
+  conflictBetween?(repo: string, base: string, a: string, b: string): Promise<boolean | undefined>;
+  /**
    * Reconcile with the source (issue #763): of `jobs` — done, each the newest of its item, following no pull request —
    * the ones whose item is open and has an open pull request, each with the newest such pull request. A throw is asked
    * again on a later sync. Absent: nothing is reconciled.
@@ -82,6 +87,11 @@ export interface PullRequestSeen {
   mergeError?: string;
   /** The checks of its head commit that failed (issue #927), as the follow read them: what a `fix_checks` tend is told. */
   failedChecks?: FailedCheck[];
+  /**
+   * Ready, the hopper did not merge it (issue #939): it conflicts with this pull request of its repository, which the hopper
+   * merged first in the same sync pass. Its URL.
+   */
+  mergeHeldBehind?: string;
 }
 
 /** A check of a pull request's head commit that failed (issue #927): its name, and the link to its run or its log. */
