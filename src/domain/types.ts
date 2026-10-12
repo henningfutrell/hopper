@@ -13,7 +13,7 @@ import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './fa
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
 import type { OriginalKept, TextChange } from './item-snapshots.ts';
-import type { JobOrigin } from './intake-origin.ts';
+import type { ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView, JobOrigin } from './intake-origin.ts';
 import type { JobPhaseFields } from './phase.ts';
 import type { FollowOnOf } from './proposal-paths.ts';
 import type { JobRework } from './pull-requests.ts';
@@ -484,7 +484,7 @@ export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, Usage
 export * from './usage-history.ts';
 export * from './machine-history.ts';
 export * from './lane-tuning.ts';
-export type { CleanupDue, DeciderPolicy };
+export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView };
 export * from './plugins.ts';
 export * from './item-snapshots.ts';
 

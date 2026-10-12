@@ -27,15 +27,20 @@ export interface TestTrust extends IntakeTrust {
   approvals: Map<string, { text: ItemText; request: IntakeRequest; source: string }>;
   /** Every set of logins asked, in order. */
   asked: string[][];
+  /** Every set of acts asked, with their GitHub user ids (issue #930), in order. */
+  askedActs: { login: string; id?: number }[][];
 }
 
 export function testTrust(logins?: string[], o: { assignedHere?: string[] | ((key: string) => boolean); pending?: string[] } = {}): TestTrust {
   const approvals: TestTrust['approvals'] = new Map();
   const asked: string[][] = [];
+  const askedActs: { login: string; id?: number }[][] = [];
   return {
-    approvals, asked,
-    async trusted(ls, connected) {
+    approvals, asked, askedActs,
+    async trusted(acts, connected) {
+      const ls = acts.map((a) => a.login);
       asked.push(ls);
+      askedActs.push(acts.map((a) => ({ ...a })));
       const actors = (logins ?? [connected]).map((l) => l.toLowerCase());
       return new Map(ls.map((l) => [l.toLowerCase(), { allowed: actors.includes(l.toLowerCase()), reason: 'test' }]));
     },

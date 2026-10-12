@@ -8,7 +8,7 @@ import type { PostedComment } from '../api.ts';
 
 interface RestIssue {
   number: number; title: string; body?: string | null; state: string; html_url: string; updated_at: string;
-  user?: { login?: string } | null; assignees?: ({ login?: string } | null)[] | null; labels?: ({ name?: string } | string)[]; closed_by?: { login?: string } | null;
+  user?: { login?: string; id?: number } | null; assignees?: ({ login?: string } | null)[] | null; labels?: ({ name?: string } | string)[]; closed_by?: { login?: string } | null;
   closed_at?: string | null; state_reason?: string | null;
   pull_request?: unknown; sub_issues_summary?: { total?: number; completed?: number; percent_completed?: number } | null;
   repository_url?: string;
@@ -19,6 +19,7 @@ interface RestComment { id: number; body?: string | null; user?: { login?: strin
 export function issueFrom(i: RestIssue, repo: string): GitHubIssue {
   return {
     repo, number: i.number, url: i.html_url, title: i.title, body: i.body ?? '', author: i.user?.login ?? '',
+    ...(typeof i.user?.id === 'number' ? { authorId: i.user.id } : {}),
     assignees: (i.assignees ?? []).map((a) => a?.login ?? '').filter((l) => l !== ''),
     labels: (i.labels ?? []).map((l) => (typeof l === 'string' ? l : l.name ?? '')),
     state: i.state === 'closed' ? 'closed' : 'open', updatedAt: i.updated_at,
@@ -65,7 +66,7 @@ export async function listComments(req: Request, token: string, repo: string, nu
 
 interface RestIssueEvent {
   event: string; created_at: string; assignee?: { login?: string } | null;
-  actor?: { login?: string; type?: string } | null; label?: { name?: string } | null; performed_via_github_app?: { slug?: string } | null;
+  actor?: { login?: string; id?: number; type?: string } | null; label?: { name?: string } | null; performed_via_github_app?: { slug?: string } | null;
 }
 
 const listEvents = (req: Request, token: string, repo: string, number: number): Promise<RestIssueEvent[]> =>
@@ -76,7 +77,8 @@ export async function issueEvents(req: Request, token: string, repo: string, num
   return (await listEvents(req, token, repo, number)).flatMap((e): IssueEvent[] => {
     if (e.event !== 'labeled' && e.event !== 'assigned') return [];
     return [{
-      event: e.event, at: e.created_at, actor: e.actor?.login ?? '', ...(e.actor?.type ? { actorType: e.actor.type } : {}),
+      event: e.event, at: e.created_at, actor: e.actor?.login ?? '', ...(typeof e.actor?.id === 'number' ? { actorId: e.actor.id } : {}),
+      ...(e.actor?.type ? { actorType: e.actor.type } : {}),
       ...(e.performed_via_github_app?.slug ? { viaApp: e.performed_via_github_app.slug } : {}),
       ...(e.event === 'labeled' && e.label?.name ? { label: e.label.name } : {}),
       ...(e.event === 'assigned' && e.assignee?.login ? { assignee: e.assignee.login } : {}),

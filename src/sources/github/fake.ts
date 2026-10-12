@@ -35,8 +35,8 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const events = new Map<string, IssueEvent[]>();
   /** Record a label or an assignment on the issue by `by` (issue #652). */
   const happened = (k: string, e: { event: 'labeled'; label: string } | { event: 'assigned'; assignee: string }, by: FakeActor, at: string): void => {
-    const who = typeof by === 'string' ? { login: by } : by;
-    events.set(k, [...(events.get(k) ?? []), { ...e, at, actor: who.login, actorType: who.type ?? (/\[bot\]$/.test(who.login) ? 'Bot' : 'User'), ...(who.viaApp ? { viaApp: who.viaApp } : {}) }]);
+    const who: Exclude<FakeActor, string> = typeof by === 'string' ? { login: by } : by;
+    events.set(k, [...(events.get(k) ?? []), { ...e, at, actor: who.login, ...('id' in who && who.id !== undefined ? { actorId: who.id } : {}), actorType: who.type ?? (/\[bot\]$/.test(who.login) ? 'Bot' : 'User'), ...(who.viaApp ? { viaApp: who.viaApp } : {}) }]);
   };
   /** The fake's own writes: as the app's bot, or as the connected account through the hopper's app. */
   const self: FakeActor = o.app ? { login: o.app.botLogin, type: 'Bot', viaApp: FAKE_HOPPER_APP } : { login: o.login ?? 'owner', viaApp: FAKE_HOPPER_APP };
@@ -248,18 +248,18 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     ...api,
     setInstalledRepos(repos) { installed = [...repos]; },
     calls,
-    createIssue({ repo, title, body, author, assignees, labels: ls, labelledBy, assignedBy, parent }) {
+    createIssue({ repo, title, body, author, authorId, assignees, labels: ls, labelledBy, assignedBy, parent }) {
       const number = [...issues.values()].filter((i) => i.repo === repo).length + 1;
       for (const l of ls ?? []) repoLabels(repo).add(l);
       const issue: GitHubIssue = {
         repo, number, url: `https://github.com/${repo}/issues/${number}`, title: title ?? `Issue ${number}`,
-        body: body ?? `Do thing ${number}.`, author: author ?? human, assignees: [...(assignees ?? [human])], labels: [...(ls ?? [])], state: 'open', updatedAt: stamp(),
+        body: body ?? `Do thing ${number}.`, author: author ?? human, ...(authorId !== undefined ? { authorId } : {}), assignees: [...(assignees ?? [human])], labels: [...(ls ?? [])], state: 'open', updatedAt: stamp(),
       };
       issues.set(key(repo, number), issue);
       if (parent !== undefined) subIssues.set(key(repo, parent), [...(subIssues.get(key(repo, parent)) ?? []), key(repo, number)]);
       assigned.set(key(repo, number), issue.assignees.map((login) => ({ login, at: issue.updatedAt })));
-      for (const label of issue.labels) happened(key(repo, number), { event: 'labeled', label }, labelledBy ?? issue.author, issue.updatedAt);
-      for (const login of issue.assignees) happened(key(repo, number), { event: 'assigned', assignee: login }, assignedBy ?? issue.author, issue.updatedAt);
+      const byAuthor: FakeActor = { login: issue.author, ...(authorId !== undefined ? { id: authorId } : {}) }; for (const label of issue.labels) happened(key(repo, number), { event: 'labeled', label }, labelledBy ?? byAuthor, issue.updatedAt);
+      for (const login of issue.assignees) happened(key(repo, number), { event: 'assigned', assignee: login }, assignedBy ?? byAuthor, issue.updatedAt);
       return copy(issue);
     },
     addComment(repo, n, author, body, association) {
