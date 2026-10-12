@@ -25,3 +25,12 @@ describe('the tend brief of failing checks (issue #927)', () => {
     expect(brief).not.toContain('empty commit');
   });
 });
+
+describe('the tend brief of a rebase (issue #927)', () => {
+  it('resolves the small conflicts itself, and sends only a design-level one to a person, with the choice stated', () => {
+    const brief = tendBrief(PR, 'rebase');
+    expect(brief).toContain('Resolve small conflicts yourself: imports, call sites, type updates, and lines that both sides added to a list.');
+    expect(brief).toContain('If both sides change the design of the same thing and you cannot keep the intent of both, end the job as failed.');
+    expect(brief).toContain('Name the files, say what each side does, and state the choice a person must make.');
+  });
+});

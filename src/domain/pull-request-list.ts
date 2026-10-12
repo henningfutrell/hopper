@@ -4,9 +4,10 @@
 // merged one drops off. Only the newest job of an item counts: a job run again since is not waiting. Pure: built from the
 // jobs as their follow-ups last saw them (`PullRequestSeen`), never from GitHub at read time, and the time now (the
 // no-checks grace window, issue #677). A card that needs tending says what the hopper does about it (issue #927): tended
-// next, held behind the head of its repository's tending queue, or given up on, and why.
+// next, held behind the head of its repository's tending queue, or given up on, and why; a card a tend job works on says
+// the step, and one whose tend job failed is given up on, in the words of that job's failure.
 import type { Job } from './types.ts';
-import { followsWhenEnded, MAX_TENDS, noChecksSettled, readyToMerge, tendsInRow, type PullRequestSeen, type Tended } from './pull-requests.ts';
+import { followsWhenEnded, MAX_TENDS, noChecksSettled, readyToMerge, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import { queueHead, type QueueHead } from './tending-queue.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 
@@ -53,6 +54,8 @@ export interface PullRequestCard {
   mergeError?: string;
   /** Its item's tend job, which works on it now or failed to (issue #763): no Merge now or Close PR meanwhile. */
   tendJobId?: string;
+  /** The step that tend job takes (issue #927): rebase, or fix the checks. */
+  tendStep?: TendStep;
   /**
    * One with merge conflicts or failing checks (issue #927): tended next, or held behind the pull request that holds its
    * repository's tending queue, and why.
@@ -121,12 +124,31 @@ function cardOf(job: Job, yolo: boolean, now: number, tendJob: Job | undefined):
     part: f.part === true, state, checks: seen?.checks ?? 'unknown', mergeable: seen ? (seen.conflicting ? 'conflicts' : 'mergeable') : 'unknown',
     draft: seen?.draft ?? false, ...(seen?.base ? { base: seen.base } : {}), ...(seen?.openedAt ? { openedAt: seen.openedAt } : {}),
     ...(job.finishedAt ? { since: job.finishedAt } : {}), yolo,
-    ...(state === 'open' ? { waits } : {}), ...(tendJob ? { tendJobId: tendJob.id } : {}), ...(seen?.mergeError ? { mergeError: seen.mergeError } : {}),
+    ...(state === 'open' ? { waits } : {}), ...(tendJob ? { tendJobId: tendJob.id } : {}), ...(tendJob && f.tended ? { tendStep: f.tended.step } : {}),
+    ...(seen?.mergeError ? { mergeError: seen.mergeError } : {}),
   };
 }
 
-/** Why the hopper tends the job's pull request no more (issue #927): its checks were fixed `MAX_TENDS` times in a row. */
-function gaveUpOn(job: Job, card: PullRequestCard, get: (id: string) => Job | undefined): string | undefined {
+/** The most characters of a failed tend job's reason a card says (issue #927). */
+const MAX_TEND_FAILURE = 300;
+
+/**
+ * Why a tend job ended without its step done (issue #927), from its failure: for a design-level conflict, the rebase brief
+ * has it state the choice a person must make. Its reason on one line, cut to `MAX_TEND_FAILURE`.
+ */
+function tendFailure(tendJob: Job, step: TendStep | undefined): string {
+  const did = step === 'fix_checks' ? 'fixed its checks' : 'rebased it';
+  const why = (tendJob.error ?? '').replace(/\s+/g, ' ').trim();
+  if (why === '') return `the job that ${did} ended ${tendJob.status}: a person must look at it`;
+  return `the job that ${did} failed: ${why.length > MAX_TEND_FAILURE ? `${why.slice(0, MAX_TEND_FAILURE - 1)}…` : why}`;
+}
+
+/**
+ * Why the hopper tends the job's pull request no more (issue #927): its tend job failed, or its checks were fixed `MAX_TENDS`
+ * times in a row.
+ */
+function gaveUpOn(job: Job, card: PullRequestCard, tendJob: Job | undefined, get: (id: string) => Job | undefined): string | undefined {
+  if (card.waits === 'tend failed' && tendJob) return tendFailure(tendJob, card.tendStep);
   if (card.waits !== 'checks failing' || !card.pullRequest || tendsInRow(job, card.pullRequest.url, get) < MAX_TENDS) return undefined;
   return `checks still fail after ${MAX_TENDS} fixes: a person must look at them`;
 }
@@ -138,9 +160,9 @@ function gaveUpOn(job: Job, card: PullRequestCard, get: (id: string) => Job | un
 function withQueue(cards: PullRequestCard[], waiting: Job[], tendJobs: Job[], repo: string, yolo: boolean, now: number, get: (id: string) => Job | undefined): PullRequestCard[] {
   const head = queueHead(repo.toLowerCase(), [...waiting, ...tendJobs], get, () => yolo, now);
   return cards.map((c) => {
-    if (c.state !== 'open' || (c.waits !== 'conflicts' && c.waits !== 'checks failing')) return c;
+    if (c.state !== 'open' || (c.waits !== 'conflicts' && c.waits !== 'checks failing' && c.waits !== 'tend failed')) return c;
     const job = waiting.find((j) => j.id === c.jobId)!;
-    const gaveUp = gaveUpOn(job, c, get);
+    const gaveUp = gaveUpOn(job, c, tendJobs.find((t) => t.id === c.tendJobId), get);
     if (gaveUp) return { ...c, gaveUp };
     const held = head && head.pullRequest !== c.pullRequest?.url;
     return { ...c, queue: held ? { held: { pullRequest: numberOf(head.pullRequest), why: head.why } } : { next: true } };

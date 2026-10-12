@@ -20,13 +20,36 @@ const WAITS_TEXT: Record<MergeWait, string> = {
 export const waitsText = (c: Pick<PullRequestCard, 'waits' | 'base'>): string =>
   !c.waits ? '' : c.waits === 'conflicts' && c.base ? `conflicts with ${c.base}` : WAITS_TEXT[c.waits];
 
-/** What the hopper does about a card that needs tending (issue #927): tends it next, holds it behind another, or gave up; '' for none. */
-export function doingText(c: Pick<PullRequestCard, 'queue' | 'gaveUp'>): string {
+/**
+ * What the hopper does about an open card now (issue #927), when no tend is queued or given up: its tend job's step, the
+ * merge it waits to make, or nothing, and who acts then.
+ */
+const DOING_TEXT: Partial<Record<MergeWait, string>> = {
+  'no pull request': 'the hopper looks for its pull request on each sync', 'not checked yet': 'the hopper reads it from GitHub on its next sync',
+  'checks pending': 'the hopper merges it when its checks pass',
+  'checks not started': 'the hopper merges it when its checks pass, or when no check starts within 2 minutes of its last push',
+  ready: 'the hopper merges it on its next sync', 'merge refused': 'the hopper tries the merge again on each sync',
+  'checks unknown': 'nothing: the hopper may not read its checks, so a person merges it',
+  'yolo off': 'nothing: yolo mode is off, so a person merges it', draft: 'nothing: the hopper does not tend a draft, so a person marks it ready',
+};
+
+/**
+ * What the hopper does about a card (issue #927): gave up, and why; tends it next, or holds it behind another; its tend job's
+ * step; or what it waits to do. '' for a card that is not open.
+ */
+export function doingText(c: Pick<PullRequestCard, 'state' | 'waits' | 'base' | 'queue' | 'gaveUp' | 'tendJobId' | 'tendStep'>): string {
   if (c.gaveUp) return `the hopper gave up: ${c.gaveUp}`;
-  if (!c.queue) return '';
-  if ('next' in c.queue) return 'the hopper tends it next';
-  const { pullRequest, why } = c.queue.held;
-  return `held behind #${pullRequest}, ${why === 'tending' ? 'which a job works on now' : 'which waits for its checks to merge'}`;
+  if (c.queue) {
+    if ('next' in c.queue) return 'the hopper tends it next';
+    const { pullRequest, why } = c.queue.held;
+    return `held behind #${pullRequest}, ${why === 'tending' ? 'which a job works on now' : 'which waits for its checks to merge'}`;
+  }
+  if (c.state !== 'open' || !c.waits) return '';
+  if (c.waits === 'tending' && c.tendJobId) {
+    const step = c.tendStep === 'fix_checks' ? 'fixes its failed checks' : `rebases it onto ${c.base ?? 'its base branch'}`;
+    return `the hopper ${step}: job ${c.tendJobId.slice(0, 8)} works on it now`;
+  }
+  return DOING_TEXT[c.waits] ?? '';
 }
 
 export function waitingLine(v: PullRequestsView): string {

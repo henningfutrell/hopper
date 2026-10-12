@@ -83,6 +83,23 @@ describe('a pull request its item\'s tend job works on (issue #763)', () => {
     expect(list([tended('job-2')], tender)).toEqual([expect.objectContaining({ jobId: 'job-1', waits: 'tend failed' })]);
   });
 
+  it('the card names the step the tend job works on (issue #927)', () => {
+    const tender = jobForIssue(1, { id: 'job-2', status: 'running', rerunOf: 'job-1' });
+    expect(list([tended('job-2')], tender)[0]).toMatchObject({ tendJobId: 'job-2', tendStep: 'rebase' });
+  });
+
+  it('a tend job that failed: the hopper gave up, and says why in the words of the failed job (issue #927)', () => {
+    const tender = jobForIssue(1, { id: 'job-2', status: 'failed', rerunOf: 'job-1',
+      error: 'Design-level conflict in src/a.ts:\nboth sides reshape the store. Choose: keep the queue, or keep the stream.' });
+    expect(list([tended('job-2')], tender)[0]!.gaveUp)
+      .toBe('the job that rebased it failed: Design-level conflict in src/a.ts: both sides reshape the store. Choose: keep the queue, or keep the stream.');
+  });
+
+  it('a tend job that failed with no reason: the hopper gave up all the same', () => {
+    const tender = jobForIssue(1, { id: 'job-2', status: 'cancelled', rerunOf: 'job-1' });
+    expect(list([tended('job-2')], tender)[0]!.gaveUp).toBe('the job that rebased it ended cancelled: a person must look at it');
+  });
+
   it('a tend job that finished: only its own card, the one it follows', () => {
     const tender = jobForIssue(1, { id: 'job-2', status: 'finished', rerunOf: 'job-1', sourceState: { source: { follow: 'open', pullRequest: PR, seen: seen() } } });
     expect(list([tended('job-2'), tender], tender).map((c) => c.jobId)).toEqual(['job-2']);
