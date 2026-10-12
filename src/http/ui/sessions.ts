@@ -18,7 +18,7 @@ import type { Clock, UiSessionRepository, UiSessionRow } from '../../domain/port
 import { API_TOKEN_PREFIX, lowerRole, type ActingPerson, type ApiTokenView, type Identity, type SessionEndReason, type SessionKind, type SessionLengths, type SessionUser, type UiRole } from '../../domain/types.ts';
 import { randomSecret } from './secret.ts';
 
-export interface UiSession { token: string; expiresAt: string; role: UiRole; identity: Identity; userId: string; kind: SessionKind; label?: string; box?: true }
+export interface UiSession { token: string; expiresAt: string; role: UiRole; identity: Identity; userId: string; kind: SessionKind; label?: string; box?: true; grantId?: string }
 
 /** A session that ended, and why. */
 export interface EndedSession { userId: string; identity: Identity; reason: SessionEndReason }
@@ -27,10 +27,13 @@ export interface UiSessions {
   /**
    * A new session; `lastsMs` gives it a fixed end of its own, whatever the session lengths (the operator CLI's, an API
    * token's). `api`: an API token (issue #718), with its label; its token starts with API_TOKEN_PREFIX. `box`: a box token (issue #795).
+   * `grantId`: an API token refreshed from that grant (issue #881).
    */
-  create(o: { role: UiRole; identity: Identity; userId: string; lastsMs?: number; api?: { label: string; box?: boolean } }): UiSession;
-  /** The user's live API tokens, oldest first; never a token. */
+  create(o: { role: UiRole; identity: Identity; userId: string; lastsMs?: number; api?: { label: string; box?: boolean; grantId?: string } }): UiSession;
+  /** The user's live API tokens that no grant made, oldest first; never a token. A grant's API tokens are its own (issue #881). */
   apiTokens(userId: string): ApiTokenView[];
+  /** End every API token of the grant (issue #881: it was revoked or ended); how many. */
+  endGrant(grantId: string): number;
   /** End the user's API token with this id; false: the user has none such. */
   revokeApiToken(userId: string, id: string): boolean;
   /** The live session for this token, or undefined (unknown or ended). One that has expired ends here. */
@@ -137,6 +140,7 @@ export function createUiSessions(o: {
   const view = (token: string, r: UiSessionRow): UiSession => ({
     token, expiresAt: new Date(endOf(r, lengths()).at).toISOString(), role: r.role, identity: r.identity, userId: r.userId,
     kind: r.kind ?? 'ui', ...(r.label === undefined ? {} : { label: r.label }), ...(r.box ? { box: true as const } : {}),
+    ...(r.grantId === undefined ? {} : { grantId: r.grantId }),
   });
   const liveApiTokens = (userId: string): UiSessionRow[] =>
     o.repo.all().filter((r) => r.kind === 'api' && r.userId === userId).map(live).filter((r): r is UiSessionRow => r !== undefined);
@@ -148,15 +152,20 @@ export function createUiSessions(o: {
       const row: UiSessionRow = {
         tokenHash: hashOf(token), startedAt: at, lastSeenAt: at, checkedAt: at, role, identity, userId,
         ...(lastsMs === undefined ? {} : { endsAt: new Date(now() + lastsMs).toISOString() }),
-        ...(api ? { kind: 'api' as const, label: api.label, ...(api.box ? { box: true as const } : {}) } : {}),
+        ...(api ? { kind: 'api' as const, label: api.label, ...(api.box ? { box: true as const } : {}), ...(api.grantId === undefined ? {} : { grantId: api.grantId }) } : {}),
       };
       o.repo.create(row, new Date(absoluteEnd(row, lengths())).toISOString());
       return view(token, row);
     },
     apiTokens(userId) {
-      return liveApiTokens(userId).map((r) => ({
+      return liveApiTokens(userId).filter((r) => r.grantId === undefined).map((r) => ({
         id: apiTokenId(r.tokenHash), label: r.label ?? '', role: r.role, box: r.box === true, startedAt: r.startedAt, expiresAt: new Date(endOf(r, lengths()).at).toISOString(), lastUsedAt: r.lastSeenAt,
       }));
+    },
+    endGrant(grantId) {
+      const rows = o.repo.all().filter((r) => r.grantId === grantId);
+      for (const r of rows) end(r, 'logout');
+      return rows.length;
     },
     revokeApiToken(userId, id) {
       const r = liveApiTokens(userId).find((x) => apiTokenId(x.tokenHash) === id);

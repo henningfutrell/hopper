@@ -268,4 +268,9 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     reason: 'break-glass fix during the outage; the rule goes into git next', by: 'Ada',
   },
   'infra.controllers_changed': { from: [], to: ['system:serviceaccount:argocd:argocd-application-controller', 'arn:aws:sts::123456789012:assumed-role/atlantis/*'], by: 'Ada' },
+  'api_grant.minted': { grant: '3f9a0c2e5b7d1e48', label: 'Grok Bot', holder: 'grok-bot', role: 'operator', scopes: ['questions:answer', 'sources:intake', '*:read'], box: true, endsAt: '2027-01-10T09:00:00.000Z', tokenMinutes: 10 },
+  'api_grant.refreshed': { grant: '3f9a0c2e5b7d1e48', from: '127.0.0.1' },
+  'api_grant.reuse_detected': { grant: '3f9a0c2e5b7d1e48', label: 'Grok Bot', holder: 'grok-bot', from: '203.0.113.7' },
+  'api_grant.revoked': { grant: '3f9a0c2e5b7d1e48', label: 'Grok Bot', holder: 'grok-bot', reason: 'reuse-detected' },
+  'api_tokens.settings_changed': { tokenMinutes: 10 },
 };

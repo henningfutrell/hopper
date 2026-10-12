@@ -8,13 +8,14 @@ const rowOf = (r: Record<string, unknown>): UiSessionRow => ({
   role: String(r.role) as UiRole, identity: JSON.parse(String(r.identity)), userId: String(r.user_id),
   ...(r.kind === 'api' ? { kind: 'api' as const } : {}), ...(r.label === null || r.label === undefined ? {} : { label: String(r.label) }),
   ...(Number(r.box) === 1 ? { box: true as const } : {}),
+  ...(r.grant_id === null || r.grant_id === undefined ? {} : { grantId: String(r.grant_id) }),
 });
 
 export function createUiSessionRepository(c: StoreContext): UiSessionRepository {
   return {
     create(s, expiresAt) {
-      c.db.run('INSERT INTO ui_sessions (token_hash, started_at, last_seen_at, checked_at, ends_at, expires_at, role, identity, user_id, kind, label, box) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-        s.tokenHash, s.startedAt, s.lastSeenAt, s.checkedAt, s.endsAt ?? null, expiresAt, s.role, JSON.stringify(s.identity), s.userId, s.kind ?? 'ui', s.label ?? null, s.box ? 1 : 0);
+      c.db.run('INSERT INTO ui_sessions (token_hash, started_at, last_seen_at, checked_at, ends_at, expires_at, role, identity, user_id, kind, label, box, grant_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        s.tokenHash, s.startedAt, s.lastSeenAt, s.checkedAt, s.endsAt ?? null, expiresAt, s.role, JSON.stringify(s.identity), s.userId, s.kind ?? 'ui', s.label ?? null, s.box ? 1 : 0, s.grantId ?? null);
     },
     get(tokenHash) {
       const r = c.db.get('SELECT * FROM ui_sessions WHERE token_hash = ?', tokenHash);

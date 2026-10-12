@@ -71,11 +71,14 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   (a public link), under a sandbox policy; they change nothing. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) or an **API token** (issue #718, `docs/design.md` "API tokens":
-  `Authorization: Bearer hopper_at_…`, JSON; a session of kind `api`, kept hashed, an hour at most, its role no higher than
-  its minter's, minted from a UI session or exchanged at `POST /ui/auth/api-token` for a sign-in the API door accepts, never
-  by another API token; Access decides each use, `api_token#can_view|can_operate|can_administer`) whose UI role allows it. A
+  `Authorization: Bearer hopper_at_…`, JSON; a session of kind `api`, kept hashed, the admin's API-token lifetime at most
+  (5–15 minutes), its role no higher than its minter's, refreshed from a **grant** a person minted from a UI session (issue
+  #881, `docs/design.md` "Grants and refresh tokens": `POST /ui/auth/token/refresh` with a one-time refresh token, only
+  its hash kept; a spent one sent again ends the grant) or exchanged at `POST /ui/auth/api-token` for a sign-in the API door
+  accepts, never by another API token; a grant's token uses only the routes its scopes name, deny by default; Access decides
+  each use, `api_token#can_view|can_operate|can_administer`) whose UI role allows it. A
   **box action** (issue #795: starts a job, runs a command, approves or merges, updates, changes the work on a machine) also
-  needs a **box token**: list a new such route in `BOX_ACTIONS` (`src/http/ui/box-actions.ts`) in the same change. A
+  needs a **box token**, a box grant's: list a new such route in `BOX_ACTIONS` (`src/http/ui/box-actions.ts`) in the same change. A
   new mutation goes there and nowhere else, and names its least UI role, so every action a person has in the UI an agent has
   over the API. A job's own proxy token is no API token: a job asks the hopper, never acts on the vault or a box itself. `docs/design.md` "UI session and mutations" and
   "Sign-in: realms" state the residual risk.

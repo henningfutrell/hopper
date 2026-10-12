@@ -107,63 +107,98 @@ See [Lanes and lane tuning](lanes.md) and [Artifacts](artifacts.md).
 | `hopper master-key status` | Where the master key came from, and its fingerprint. Never the key. |
 | `hopper master-key rotate` | Make a new master key. It is printed one time: save it. |
 | `hopper typesafe-key [set\|remove]` | Jev's TypeSafe API key. |
-| `hopper token mint\|list\|revoke …` | API tokens (below). |
+| `hopper token mint\|list\|revoke\|revoke-all …` | Grants and API tokens (below). |
 
 See [Vault](vault.md) and [Sandboxes](sandboxes.md).
 
 ## API tokens
 
-An **API token** lets an agent act for you over the API. It can do everything you can do in the UI, with the role you give it.
+A **grant** lets an agent act for you over the API, unattended, for days. You make it one time. The agent then gets short-lived **API tokens** from it by itself.
 
-- It starts with `hopper_at_`.
-- It lasts 15 minutes by default, and one hour at most.
-- Its role is `viewer`, `operator` or `admin`, and never higher than the role of who made it.
-- The access service (OpenFGA) decides each use. When it does not run, no token is made (503).
-- The hopper keeps only its hash. You see the token one time, when it is made.
-- An API token cannot make another API token.
-- Only a **box token** can do a box action: start a job, run a command, approve or merge work, update the hopper, or change the work on a machine (answer a question, end a wait, add a machine, apply lanes). Any other token can read, hold, cancel and change settings, but gets `403` on a box action. See [Box tokens](#box-tokens).
+- The grant has a label, a holder (who keeps it, for example `grok-bot`), a role, scopes, and an optional box flag.
+- Its role is `viewer`, `operator` or `admin`, and never higher than your role. When your sign-in gives you a lower role later, the grant gets that role too. When your sign-in gives you no role, the grant ends.
+- Its **scopes** name the routes its tokens may use. A route that its scopes do not name is refused (`403`). See [Scopes](#scopes).
+- It ends when you revoke it, when no refresh used it for 30 days, or at its end (90 days by default, 1 to 365 days). An admin can make a grant with no fixed end.
+- The access service (OpenFGA) decides each use. When it does not run, no grant is made (503).
+- The hopper keeps only hashes. You see the tokens one time, when the grant is made.
+- An API token cannot make a grant.
+- Only a **box grant** can do a box action: start a job, run a command, approve or merge work, update the hopper, or change the work on a machine (answer a question, end a wait, add a machine, apply lanes). See [Box grants](#box-grants).
 
-### Make a token in the UI
+### Refresh tokens and API tokens
 
-1. Open **Settings → API tokens**.
-2. Select **Mint token**.
-3. Fill in **Label — who or what uses it**, the **Role — at most yours**, and the **Lifetime in minutes — 1 to 60**. Tick **Box token** only when the agent must do box actions.
-4. Select **Mint token**.
-5. Copy the token now. It is not shown again.
+When you make a grant, you get two tokens:
 
-The list shows each live token's label, role and end. **Revoke** ends one at once.
+- The **refresh token** starts with `hopper_rt_`. The agent keeps it in its own secret store.
+- The **API token** starts with `hopper_at_`. The agent sends it on each call. It lives 10 minutes by default. The hopper's admin sets this from 5 to 15 minutes in **Settings → API tokens**.
 
-### Make a token from the command line
+Before the API token ends, the agent gets a new pair:
 
 ```sh
-hopper token mint --label "nightly report" --role operator --minutes 30
-hopper token mint --label "Grok Bot" --role operator --minutes 30 --box
-hopper token list
-hopper token revoke <id>
+curl -X POST http://localhost:4790/ui/auth/token/refresh \
+  -H 'content-type: application/json' \
+  -d '{"refresh": "hopper_rt_…"}'
 ```
 
-`--role` is `admin` when you leave it out. A token made this way also ends when the hopper restarts or its sign-in settings change.
+The answer holds a new `token`, its `expiresAt`, and a new `refresh`. The agent must keep the new refresh token: the old one is spent.
+
+- A retry within 30 seconds gets the same pair. A short network problem loses nothing.
+- When a spent refresh token comes again later, someone may have stolen it. The hopper ends the whole grant at once, and records `api_grant.reuse_detected`. Subscribe a notifier or webhook to that event to be told.
+- Each mint, refresh, reuse and end is an event of yours (`api_grant.minted`, `api_grant.refreshed`, `api_grant.reuse_detected`, `api_grant.revoked`).
+
+### Scopes
+
+A scope names routes by their area and their act:
+
+| Route | Scope it needs |
+|-------|----------------|
+| `GET /api/<area>/…` | `<area>:read` |
+| `POST /ui/api/<area>/…/<act>` | `<area>:<act>` |
+| `POST /ui/api/<area>` | `<area>:edit` |
+
+For example, `POST /ui/api/questions/:id/answer` needs `questions:answer`, and `POST /ui/api/sources/:name/intake` needs `sources:intake`. A grant holds `<area>:<act>`, `<area>:*`, `*:<act>` (`*:read` is every read) or `*` (everything its role allows). `GET /api/api-tokens` lists every scope there is.
+
+### Make a grant in the UI
+
+1. Open **Settings → API tokens**.
+2. Select **Mint grant**.
+3. Fill in **Label**, **Holder**, the **Role — at most yours**, the **Scopes**, and how many days it lives at most. Tick **Box grant** only when the agent must do box actions.
+4. Select **Mint grant**.
+5. Copy the refresh token and the API token now. They are not shown again.
+
+The list shows each live grant: its holder, role, scopes, when it was made, when and from where it was last used, and when it ends. **Revoke** ends one at once, with its API tokens. **Revoke all** ends every one.
+
+### Make a grant from the command line
+
+```sh
+hopper token mint --label "nightly report" --scope '*:read' --role viewer
+hopper token mint --label "Grok Bot" --holder grok-bot --scope '*:read' --scope questions:answer --scope sources:intake --role operator --box
+hopper token list
+hopper token revoke <id>
+hopper token revoke-all
+```
+
+`--role` is `admin` when you leave it out. `--days` sets its end (1 to 365); `--no-expiry` (an admin's only) gives it no fixed end; `--minutes` gives its API tokens a shorter life than the admin's setting.
 
 ### Exchange a sign-in for a token
 
-An agent with no UI session can exchange a sign-in for a token. It sends a token the hopper already accepts for reads: a GitHub token of your connected account, or the JWT an auth gateway forwards.
+An agent with no UI session can exchange a sign-in for one API token. It sends a token the hopper already accepts for reads: a GitHub token of your connected account, or the JWT an auth gateway forwards.
 
 ```sh
 curl -X POST http://localhost:4790/ui/auth/api-token \
   -H "Authorization: Bearer $(gh auth token)" \
   -H 'content-type: application/json' \
-  -d '{"label": "my agent", "minutes": 30}'
+  -d '{"label": "my agent", "minutes": 10}'
 ```
 
-The answer holds `token`. The role is at most the one your sign-in settings give that account. The account must have signed in to the hopper before: this makes no new user. An exchange never gives a box token: `"box": true` gets `400`.
+The answer holds `token`. It lives the admin's API-token lifetime at most, and it has no refresh token: the agent exchanges its sign-in again. The role is at most the one your sign-in settings give that account. The account must have signed in to the hopper before: this makes no new user. An exchange never gives a box token: `"box": true` gets `400`.
 
-### Box tokens
+### Box grants
 
-A box token is an API token that may also do box actions. Only a person makes one: in **Settings → API tokens** (tick **Box token**), with `hopper token mint --box`, or with `"box": true` at `POST /ui/api/api-tokens` from a signed-in session. The token list says `box token` for each one.
+A box grant's API tokens may also do box actions, where its scopes allow. Only a person makes one: in **Settings → API tokens** (tick **Box grant**), with `hopper token mint --box`, or with `"box": true` at `POST /ui/api/api-tokens` from a signed-in session. The list says `box` for each one.
 
 - The access service decides each box action too (`api_token#can_run_on_box`). You can narrow it in **Settings → Access**.
 - A token without box gets `403` on a box action: `this is a box action: it needs a box token`.
-- Give an agent a box token only for the time it needs one. It ends after one hour at most.
+- Give a box grant only the scopes the agent needs.
 
 ### Use a token
 

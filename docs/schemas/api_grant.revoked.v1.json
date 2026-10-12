@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "grant": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "holder": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "revoked",
+        "revoked-all",
+        "reuse-detected",
+        "expired-idle",
+        "expired-absolute",
+        "realm-changed",
+        "refused"
+      ]
+    }
+  },
+  "required": [
+    "grant",
+    "label",
+    "reason"
+  ],
+  "additionalProperties": false
+}

@@ -8,7 +8,10 @@ import { HerdrError, type HerdrClient } from './client.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { abortReason, tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
-import { JOB_WORKTREE_MARK, JOB_WORKTREE_RUNNING, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand, mirrorOf, mirrorWorktreeOf } from './job-worktree.ts';
+import {
+  JOB_WORKTREE_MARK, JOB_WORKTREE_RUNNING, jobStartFetches, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand, mirrorOf, mirrorWorktreeOf, passFetchKey,
+  type PassFetches,
+} from './job-worktree.ts';
 import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from './job-scope.ts';
 import { DEPS_MARK, depsOutcome, shareDepsCommand } from './shared-deps.ts';
 import { scopeUnitOf } from '../../client/server.ts';
@@ -132,6 +135,8 @@ export interface StartDeps {
   sharedDependencies: boolean;
   /** A new agent session id (issue #501); default a random UUID, as Claude's `--session-id` takes. */
   newSession?: () => string;
+  /** Which work trees a start fetched in this sync pass (issue #858); default the process's own. */
+  passFetches?: PassFetches;
 }
 
 /**
@@ -263,7 +268,11 @@ async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Pr
  */
 async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneState, repo: string | undefined): Promise<ExecutionOutcome | StartTimedOut | null> {
   if (repo) ctx.progress(`fetching or cloning ${repo}'s mirror in the work tree`);
-  const command = makeJobWorktreeCommand(s.cwd, ctx.job.id, { ...(repo ? { repo } : {}), worktrees: d.jobWorktrees });
+  // One fetch per repository per sync pass on each machine (issue #858): a later start in the pass takes what it got.
+  const fetches = d.passFetches ?? jobStartFetches;
+  const key = passFetchKey(ctx.machine.id, s.cwd, repo);
+  const fetch = !fetches.fresh(key);
+  const command = makeJobWorktreeCommand(s.cwd, ctx.job.id, { ...(repo ? { repo } : {}), worktrees: d.jobWorktrees, fetch });
   for (let typed = 1; ; typed++) {
     await d.herdr.runInPane(s.paneId, command);
     const running = await awaitOnScreen(d, ctx, s.paneId, JOB_WORKTREE_RUNNING, shows(JOB_WORKTREE_RUNNING), JOB_WORKTREE_RUNNING_WAIT_MS);
@@ -283,6 +292,7 @@ async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneStat
     return { kind: 'failed', error: outcome === 'unmade' ? `the job worktree ${path} could not be made on ${ctx.machine.id}: ${tail(screen, 10)}`
       : `pane ${s.paneId} never made the job worktree within ${JOB_WORKTREE_WAIT_MS} ms: ${tail(screen, 10)}` };
   }
+  if (fetch) fetches.fetched(key);
   s.jobWorktree = path;
   if (ofMirror) s.checkout = mirrorOf(s.cwd, repo);
   ctx.saveState({ ...s });

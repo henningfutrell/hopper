@@ -265,7 +265,8 @@ export interface UiSessionRow {
   tokenHash: string; startedAt: string; lastSeenAt: string; checkedAt: string; endsAt?: string;
   role: UiRole; identity: Identity; userId: string;
   /** An API token (issue #718) and its label; absent: a UI session. `box`: a box token (issue #795). */
-  kind?: 'api'; label?: string; box?: true;
+  /** `grantId`: the grant an API token was refreshed from (issue #881); absent: no grant's (an exchange, or minted before). */
+  kind?: 'api'; label?: string; box?: true; grantId?: string;
 }
 
 /** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. Which have ended is the caller's to decide. */
@@ -522,7 +523,8 @@ export interface MasterKeyResealed {
 export interface InstanceStore {
   users: UserRepository;
   identities: IdentityLinks;
-  uiSessions: UiSessionRepository;
+  /** The UI sessions and API tokens; the grants and their refresh tokens (issue #881). */
+  uiSessions: UiSessionRepository; apiGrants: import('./api-grants.ts').ApiGrantRepository;
   loginCodes: LoginCodeRepository;
   joinCodes: JoinCodeRepository;
   /** The sandbox records (issue #708). */

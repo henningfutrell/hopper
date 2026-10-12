@@ -4452,3 +4452,104 @@ Version 1 (`docs/schemas/infra.controllers_changed.v1.json`). An admin changed t
   "by": "Ada"
 }
 ```
+## `api_grant.minted`
+
+Version 1 (`docs/schemas/api_grant.minted.v1.json`). A person minted a grant for an agent (issue #881): its id, `label`, `holder`, `role`, `scopes`, whether its tokens are box tokens (`box`), its fixed end (`endsAt`, null: none) and how long its API tokens live (`tokenMinutes`). Never a token.
+
+| field | type | required |
+|---|---|---|
+| `grant` | string | yes |
+| `label` | string | yes |
+| `holder` | string | no |
+| `role` | `viewer` \| `operator` \| `admin` | yes |
+| `scopes` | string[] | yes |
+| `box` | boolean | yes |
+| `endsAt` | string \| null | yes |
+| `tokenMinutes` | integer | yes |
+
+```json
+{
+  "grant": "3f9a0c2e5b7d1e48",
+  "label": "Grok Bot",
+  "holder": "grok-bot",
+  "role": "operator",
+  "scopes": [
+    "questions:answer",
+    "sources:intake",
+    "*:read"
+  ],
+  "box": true,
+  "endsAt": "2027-01-10T09:00:00.000Z",
+  "tokenMinutes": 10
+}
+```
+
+## `api_grant.refreshed`
+
+Version 1 (`docs/schemas/api_grant.refreshed.v1.json`). An agent traded a grant's refresh token for a new API token and a new refresh token (issue #881): `from` is the caller, as the sign-in limit counts it. Never a token.
+
+| field | type | required |
+|---|---|---|
+| `grant` | string | yes |
+| `from` | string | yes |
+
+```json
+{
+  "grant": "3f9a0c2e5b7d1e48",
+  "from": "127.0.0.1"
+}
+```
+
+## `api_grant.reuse_detected`
+
+Version 1 (`docs/schemas/api_grant.reuse_detected.v1.json`). A refresh token already spent was sent again after the grace period (issue #881): it may be stolen, so the grant was revoked at once (`api_grant.revoked`, reason `reuse-detected`). `from`: who sent it. Subscribe a notifier to this to be told.
+
+| field | type | required |
+|---|---|---|
+| `grant` | string | yes |
+| `label` | string | yes |
+| `holder` | string | no |
+| `from` | string | yes |
+
+```json
+{
+  "grant": "3f9a0c2e5b7d1e48",
+  "label": "Grok Bot",
+  "holder": "grok-bot",
+  "from": "203.0.113.7"
+}
+```
+
+## `api_grant.revoked`
+
+Version 1 (`docs/schemas/api_grant.revoked.v1.json`). A grant ended, and every API token of it (issue #881). `reason`: `revoked` (a person revoked it), `revoked-all` (a person revoked every grant), `reuse-detected` (a spent refresh token sent again), `expired-idle` (no refresh for 30 days), `expired-absolute` (its fixed end passed), `realm-changed` (its minter's sign-in grants no role any more), or `refused` (Access refused it at its mint).
+
+| field | type | required |
+|---|---|---|
+| `grant` | string | yes |
+| `label` | string | yes |
+| `holder` | string | no |
+| `reason` | `revoked` \| `revoked-all` \| `reuse-detected` \| `expired-idle` \| `expired-absolute` \| `realm-changed` \| `refused` | yes |
+
+```json
+{
+  "grant": "3f9a0c2e5b7d1e48",
+  "label": "Grok Bot",
+  "holder": "grok-bot",
+  "reason": "reuse-detected"
+}
+```
+
+## `api_tokens.settings_changed`
+
+Version 1 (`docs/schemas/api_tokens.settings_changed.v1.json`). The hopper's admin changed how long an API token lives (issue #881): `tokenMinutes`. API tokens issued after it live that long; those there are keep their own ends. In the admin's log.
+
+| field | type | required |
+|---|---|---|
+| `tokenMinutes` | integer | yes |
+
+```json
+{
+  "tokenMinutes": 10
+}
+```

@@ -66,8 +66,8 @@ describe('GitHub traffic per sync pass (issue #858)', () => {
     await traffic.pass('github', async () => { traffic.gitFetch('acme/app', job); });
     await traffic.pass('github', async () => undefined);
     expect(lines).toEqual([
-      'hopper: GitHub traffic of sync pass github: REST 0, GraphQL 0, git fetches 1 (acme/app 1; by job abcdef12 1); '
-      + 'between passes: REST 1 (GET /user 1), GraphQL 0, git fetches 3 (acme/app 2, acme/lib 1; by job abcdef12 2, fedcba98 1)',
+      'hopper: GitHub traffic of sync pass github: REST 0, GraphQL 0, git fetches 1 (acme/app 1; by abcdef12 1); '
+      + 'between passes: REST 1 (GET /user 1), GraphQL 0, git fetches 3 (acme/app 2, acme/lib 1; by abcdef12 2, fedcba98 1)',
       'hopper: GitHub traffic of sync pass github: REST 0, GraphQL 0, git fetches 0',
     ]);
   });
