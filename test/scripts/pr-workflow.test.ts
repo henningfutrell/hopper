@@ -55,8 +55,8 @@ describe('.github/workflows/pr.yml, the pull request check', () => {
     const shards = shard.strategy!.matrix.shard;
     expect(shards).toEqual(shards.map((_, i) => i + 1));
     const test = shard.steps.find((s) => s.run?.startsWith('npm test'));
-    // Two workers per core (issue #949): most of a test's time is a wait, not the CPU. vitest caps a percentage at the core count.
-    expect(test?.run).toBe(`npm test -- --shard=\${{ matrix.shard }}/${shards.length} --maxWorkers=$(( $(nproc) * 2 ))`);
+    // One worker per core (issue #949), not vitest's default of one less.
+    expect(test?.run).toBe(`npm test -- --shard=\${{ matrix.shard }}/${shards.length} --maxWorkers=100%`);
     expect(test?.env).toEqual({ HOPPER_TEST_HOST_SERVICES: '0' });
   });
 

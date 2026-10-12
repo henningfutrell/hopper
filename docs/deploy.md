@@ -1203,7 +1203,7 @@ existing database instead.
 
 **The PR check** (issue #672): `.github/workflows/pr.yml` runs on every pull request to `dev`, `beta` or
 `stable`. Its job `pr / gates` runs `npm ci`, `npm run typecheck`, `npm run lint` and `npm run build:ui`;
-its jobs `pr / shard (1)` to `(8)` run `npm test` in eight shards, two test workers per core, so the whole check
+its jobs `pr / shard (1)` to `(10)` run `npm test` in ten shards, one test worker per core, so the whole check
 takes about 4 minutes (issue #949). Every job takes `node_modules` from the cache of its `package-lock.json` and runs
 `npm ci` only when there is none.
 The check to require is **`pr / test`**: it passes only when the gates and every shard passed. The tests run
