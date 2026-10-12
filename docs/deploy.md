@@ -787,6 +787,10 @@ sets `HOPPER_PODMAN_SOCKET` to that path, and adds group 0 to the hopper's user:
 your own group, which may open the socket (`podman.socket` makes it mode 0660). A hopper on this host (not in a
 container) needs only `HOPPER_PODMAN_SOCKET=$XDG_RUNTIME_DIR/podman/podman.sock` in its environment.
 
+The same socket lets the hopper read what each container of its stack and each box uses, for the Resources page (issue #947):
+CPU, memory against its limit, network, disk, volumes, restarts and uptime. It only reads: it starts, stops or changes no
+container of the stack. Without the socket, Resources shows only Postgres.
+
 What the hopper then does:
 
 | When | The hopper |

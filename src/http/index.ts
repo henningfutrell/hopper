@@ -56,6 +56,8 @@ import type { RateLimiterControl } from '../github-limiter/settings.ts';
 import { instanceRoutes } from './instance.ts';
 import { usageHistoryRoutes } from './usage-history.ts';
 import { machineHistoryRoutes } from './machine-history.ts';
+import { stackResourceRoutes } from './stack-resources.ts';
+import type { StackResourcesReader } from '../stack-resources/index.ts';
 import { userRoutes } from './users.ts';
 import { createInstanceAdmin } from './instance-admin.ts';
 import { vaultRoutes } from './vault.ts';
@@ -91,6 +93,8 @@ export interface ServerOptions {
   masterKey: MasterKeyStatus;
   /** The shared GitHub rate limiter's settings (issue #436): GET /api/github-rate-limiter, POST /ui/api/github-rate-limiter. */
   rateLimiter: RateLimiterControl;
+  /** What every container of the stack and its Postgres use (issue #947): GET /api/resources. */
+  stackResources: StackResourcesReader;
   /** Remote access (issue #880): GET /api/remote-access, POST /ui/api/remote-access, and the tunnel service's GET /tunnel/agent. */
   remoteAccess: RemoteAccess;
   clock: Clock;
@@ -176,6 +180,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   instanceRoutes(app, { tenants: o.tenants, clock: o.clock, instanceAdmin });
   usageHistoryRoutes(app, { ...tenant, tenants: o.tenants, clock: o.clock, instanceAdmin });
   machineHistoryRoutes(app, { ...tenant, clock: o.clock });
+  stackResourceRoutes(app, { stackResources: o.stackResources, instanceAdmin });
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions, grants });
   realmRoutes(app, { realms, instanceAdmin });
   accessRoutes(app, { access: o.access, instanceAdmin });

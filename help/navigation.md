@@ -13,7 +13,7 @@ The menu puts the other pages in groups. Each group has a heading.
 | Waiting on you | Intake, Access requests, Questions, Proposals, Research, Logins, Failures, Parked |
 | Jobs | Overview, Jobs, Queue, Pull requests, Artifacts, Decisions, Events, Your reports |
 | Infra | Infra |
-| Sources & machines | Sources, Machines, Usage |
+| Sources & machines | Sources, Machines, Usage, Resources |
 | Settings | Settings |
 
 ## Collapse a group

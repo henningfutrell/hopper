@@ -68,6 +68,8 @@ services:
   # same way, and so is the tunnel service's key (issue #880), in its own volume `tunnel-key` (the hopper and the tunnel: uid 1000). No one-shot service for it: podman-compose cannot start a container whose
   # dependency has exited. OpenFGA's (issue #559): its preshared key, and its config — the database URL with the
   # `openfga` schema, that key — rewritten at each start; the schema is made once Postgres takes connections.
+  # pg_stat_statements (issue #947) is loaded, and made once Postgres takes connections: the Resources page shows statement
+  # latency from it.
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -91,8 +93,8 @@ services:
         chown 70:70 $$s/postgres_password
         chown 1000:1000 $$s/database_url $$s/openfga_key $$s/vault_key
         chown -R 65532:65532 $$s/openfga
-        (until pg_isready -q -h 127.0.0.1 -U hopper -d hopper; do sleep 1; done; psql -q -h 127.0.0.1 -U hopper -d hopper -c 'CREATE SCHEMA IF NOT EXISTS openfga' -c "ALTER ROLE hopper PASSWORD '$$(cat $$s/postgres_password)'" && touch $$s/password_set) &
-        exec docker-entrypoint.sh postgres
+        (until pg_isready -q -h 127.0.0.1 -U hopper -d hopper; do sleep 1; done; psql -q -h 127.0.0.1 -U hopper -d hopper -c 'CREATE SCHEMA IF NOT EXISTS openfga' -c "ALTER ROLE hopper PASSWORD '$$(cat $$s/postgres_password)'" && touch $$s/password_set; psql -q -h 127.0.0.1 -U hopper -d hopper -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements SCHEMA public' || true) &
+        exec docker-entrypoint.sh postgres -c shared_preload_libraries=pg_stat_statements
     environment:
       POSTGRES_USER: hopper
       POSTGRES_DB: hopper

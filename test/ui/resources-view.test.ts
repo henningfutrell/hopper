@@ -1,0 +1,105 @@
+// @vitest-environment happy-dom
+// The Resources page (issue #947), rendered against a fake of the daemon's HTTP: one row per container of the stack and
+// per sandbox box, labelled by its service — CPU, memory against its limit, network, disk, restarts and uptime —, and
+// the hopper's Postgres: connections against the most it allows, size, cache hits, locks, long transactions and
+// statement latency. What cannot be read says why.
+import { act, createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { StackResources } from '../../src/domain/types.ts';
+
+type El = ReturnType<typeof createElement>;
+let root: Root | undefined;
+const MiB = 1024 ** 2;
+const GiB = 1024 ** 3;
+const NOW = Date.parse('2026-10-12T12:00:00.000Z');
+
+const READ: StackResources = {
+  at: '2026-10-12T12:00:00.000Z',
+  containers: {
+    containers: [
+      {
+        service: 'postgres', group: 'stack', name: 'hopper-postgres-1', image: 'postgres:17-alpine', state: 'running', health: 'healthy',
+        startedAt: '2026-10-12T09:00:00.000Z', restarts: 2, cpuCores: 0.25, cpuLimitCores: 2, memUsedBytes: 512 * MiB, memLimitBytes: 2 * GiB,
+        netRxBytes: 3 * MiB, netTxBytes: 1536, diskReadBytes: 10 * MiB, diskWriteBytes: 20 * MiB, layerBytes: 4096, volumes: [{ name: 'hopper_postgres', bytes: 50 * MiB }],
+      },
+      { service: 'kms', group: 'stack', name: 'hopper-kms-1', image: 'local-kms', state: 'exited', restarts: 0 },
+      { service: 'hopper-sandbox-claude', group: 'sandbox', name: 'hopper-sandbox-claude', image: 'box:1', state: 'running', startedAt: '2026-10-12T11:30:00.000Z', restarts: 0, memUsedBytes: 100 * MiB },
+    ],
+  },
+  postgres: {
+    connections: { active: 3, total: 12, max: 100 }, databaseBytes: 80 * MiB, cacheHitFrac: 0.987, locksWaiting: 1, longTransactions: 0,
+    oldestTransactionS: 4, statements: { calls: 1200, meanMs: 0.42 },
+  },
+};
+
+async function render(read: StackResources | { status: number; error: string } = READ) {
+  localStorage.setItem('jh_session', 'a'.repeat(64));
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(NOW);
+  vi.stubGlobal('fetch', vi.fn(async () => ('status' in read
+    ? new Response(JSON.stringify({ error: read.error }), { status: read.status, headers: { 'content-type': 'application/json' } })
+    : new Response(JSON.stringify(read), { status: 200, headers: { 'content-type': 'application/json' } }))));
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  document.body.innerHTML = '<div id="root"></div>';
+  const store = '../../ui/src/store/index.ts';
+  const { useHopper } = (await import(store)) as { useHopper: { setState(s: Record<string, unknown>): void } };
+  useHopper.setState({ authed: true, serverOffsetMs: 0, user: { id: 'u1', name: 'ada', role: 'admin', realm: 'github', identity: 'ada', instanceAdmin: true } });
+  const view = '../../ui/src/views/resources.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
+  const { Resources } = (await import(view)) as { Resources: () => El };
+  await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(Resources)); });
+  for (let i = 0; i < 3; i++) await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+}
+
+const rows = () => [...document.querySelectorAll('[data-slot="container-row"]')].map((r) => r.textContent ?? '');
+const postgres = () => document.querySelector('[data-slot="postgres-reading"]')?.textContent ?? '';
+
+afterEach(async () => {
+  await act(async () => { root?.unmount(); });
+  root = undefined;
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+  localStorage.clear();
+});
+
+describe('the Resources page', () => {
+  it('shows each container by its service: CPU, memory against its limit, network, disk, restarts and uptime', async () => {
+    await render();
+    const [pg, kms, box] = rows();
+    expect(pg).toContain('postgres');
+    expect(pg).toContain('healthy');
+    expect(pg).toContain('0.25 of 2 cores');
+    expect(pg).toContain('512 MiB of 2 GiB (25%)');
+    expect(pg).toContain('in 3 MiB, out 1.5 KiB');
+    expect(pg).toContain('hopper_postgres 50 MiB');
+    expect(pg).toContain('2 restarts');
+    expect(pg).toContain('up 3h 0m');
+    expect(kms).toContain('kms');
+    expect(kms).toContain('exited');
+    expect(box).toContain('hopper-sandbox-claude');
+    expect(box).toContain('100 MiB, no limit');
+    expect(document.body.textContent).toContain('Sandbox boxes');
+  });
+
+  it('shows Postgres: connections against its maximum, size, cache hits, locks, transactions and statement latency', async () => {
+    await render();
+    const text = postgres();
+    expect(text).toContain('12 of 100 connections, 3 active');
+    expect(text).toContain('80 MiB');
+    expect(text).toContain('98.7%');
+    expect(text).toContain('1 lock waiting');
+    expect(text).toContain('no long transactions');
+    expect(text).toContain('0.42 ms mean over 1200 statements');
+  });
+
+  it('says why the containers or the statement latency cannot be read', async () => {
+    await render({ ...READ, containers: { problem: 'the hopper is given no container runtime socket' }, postgres: { ...READ.postgres, statements: { problem: 'pg_stat_statements is not installed' } } as StackResources['postgres'] });
+    expect(document.body.textContent).toContain('the hopper is given no container runtime socket');
+    expect(postgres()).toContain('pg_stat_statements is not installed');
+  });
+
+  it('a read the daemon refuses says why', async () => {
+    await render({ status: 403, error: 'only the hopper\'s admin may do this' });
+    expect(document.body.textContent).toContain('only the hopper\'s admin may do this');
+  });
+});
