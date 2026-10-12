@@ -1950,11 +1950,26 @@ requests). The tends of one job repository are a queue: after all the follows of
 repository, and none while its **head** holds it (`queueHead`): a tend job at work on a pull request (not ended, or finished
 and not following it again yet), or a pull request on its way to the hopper's merge — followed, yolo mode on for its
 repository (`JobSource.mergesOnReady`), of a trusted or approved origin, and as last seen no draft, no merge conflicts, no
-failing checks and no refused merge (checks pending, or not seen yet, hold it). Once the head is merged, closed, or waits on
+failing checks and no refused merge, and its checks passed, or it has none, or they run within `PENDING_HOLD_MS` (30
+minutes) of its last push (issue #927). Nothing holds the queue for good: checks that stay pending (a required check that
+never reports), checks the hopper cannot read, or a pull request not seen yet hold nothing, so the conflicted or failing
+pull requests behind it are tended. Before, any of them held the queue, and one pull request with stuck checks stopped every
+tend of its repository for a day. Once the head is merged, closed, or waits on
 a person (yolo mode off, a failed tend, failing checks past the cap, a refused merge), the next is tended against the new
 base: one rebase per merge. The next is the rules' first (`tendOrder`: the highest priority, then the oldest pull request,
 then the job), or Jev's applied pick at the `merge-order` decision point ("Decider calls"). Yolo mode off, nothing is merged
 by the hopper, so a tend holds the queue only while its job works. Each repository has its own queue.
+
+What the hopper does about each pull request that needs tending shows on its card in Pull requests (issue #927,
+`PullRequestCard.queue`, `gaveUp`): "the hopper tends it next", "held behind #N" with why (a job works on it, or it waits
+for its checks to merge), or "the hopper gave up" with why (its checks still fail after `MAX_TENDS` fixes). A stall is never
+silent.
+
+**Checks as seen** (issue #927, `src/sources/github/closer.ts`). GitHub keeps a pull request's check rollup pending while any
+check still runs, so a failed shard stayed "pending" until every other shard ended. The one pull request a follow reads
+also reads each check's end (`statusCheckRollup.contexts`): a check run that ended `FAILURE`, `TIMED_OUT` or
+`STARTUP_FAILURE`, or a commit status `ERROR` or `FAILURE`, makes the checks failing at once. The lists read the rollup
+only: 100 checks of each of 100 pull requests would cost too much of the rate limit.
 
 **Rework** (issue #724, `src/sources/rerun.ts`, `src/sources/github/rework.ts`) sends a done job's open pull request back
 to be reworked, in place of the manual draft, comment and label edits. A person asks from the card in Pull requests
@@ -2027,7 +2042,10 @@ its source asks again where it is (`JobSource.follow`), on the job's report chai
 
 **Pull-based completion** (issue #428). The item is resolved upstream; the hopper only follows. Closed as completed — by
 a person, a commit, or a pull request — the follow ends merged (first row above, `hopper:done`) with no hopper action,
-within one sync of the job's source. Closed as not planned, it ends abandoned (last row). It is the same for every job
+within one sync of the job's source. But a followed pull request still open on GitHub is open, whatever its issue (issue
+#927): it is followed to its end as "still open" says, and the follow ends merged once it is merged or closed. Before, the
+follow ended merged under an open pull request, and reconciling (issue #763) followed it again at each sync: a re-follow
+loop, and a conflicted pull request never tended. Closed as not planned, it ends abandoned (last row). It is the same for every job
 repository, owned or not. The `hopper:complete-at-merge` and `hopper:complete-at-pr` labels went with issue #579: done is
 always a pull request, and the follow decides the rest.
 

@@ -20,6 +20,15 @@ const WAITS_TEXT: Record<MergeWait, string> = {
 export const waitsText = (c: Pick<PullRequestCard, 'waits' | 'base'>): string =>
   !c.waits ? '' : c.waits === 'conflicts' && c.base ? `conflicts with ${c.base}` : WAITS_TEXT[c.waits];
 
+/** What the hopper does about a card that needs tending (issue #927): tends it next, holds it behind another, or gave up; '' for none. */
+export function doingText(c: Pick<PullRequestCard, 'queue' | 'gaveUp'>): string {
+  if (c.gaveUp) return `the hopper gave up: ${c.gaveUp}`;
+  if (!c.queue) return '';
+  if ('next' in c.queue) return 'the hopper tends it next';
+  const { pullRequest, why } = c.queue.held;
+  return `held behind #${pullRequest}, ${why === 'tending' ? 'which a job works on now' : 'which waits for its checks to merge'}`;
+}
+
 export function waitingLine(v: PullRequestsView): string {
   if (v.waiting.length === 0) return 'merging waits: nothing';
   return `merging waits: ${v.waiting.map((w) => `${prs(w.count)} in ${w.repo} (${WAITS_TEXT[w.reason]})`).join(', ')}`;
