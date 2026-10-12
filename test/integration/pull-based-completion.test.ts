@@ -1,6 +1,6 @@
 // Pull-based completion (issue #428): a done job's item is resolved upstream, and the hopper only follows. Its issue
-// closed as completed — by a person, with its pull request still open — ends the follow merged: `hopper:done`, recorded,
-// and the hopper merges nothing. Closed as not planned ends it abandoned: never merged, even with yolo mode on and its
+// closed as completed — by a person — ends the follow merged: `hopper:done`, recorded, and the hopper merges nothing. A
+// pull request still open is followed to its end first (issue #927): no re-follow at each sync. Closed as not planned ends it abandoned: never merged, even with yolo mode on and its
 // checks passing; `hopper:pr-ready` comes off, no end label goes on, `job.pull_request_abandoned` is recorded once, and its
 // card drops off the Pull requests list. Real daemon, real database; the in-memory fake GitHub at the GitHubApi seam.
 import { afterEach, describe, expect, it } from 'vitest';
@@ -49,11 +49,20 @@ async function waiting(gh: FakeGitHub, app: TestApp) {
 }
 
 describe('pull-based completion (issue #428)', () => {
-  it('closed as completed upstream, its pull request still open: merged at the next sync, hopper:done, the hopper merges nothing', async () => {
+  it('closed as completed upstream, its pull request still open: followed to its end (issue #927); once that ends unmerged, merged and hopper:done, the hopper merges nothing', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
+    const token = await app.login();
+    expect((await app.ui('/ui/api/yolo-mode', { repos: { [REPO]: false } }, { token })).status).toBe(200);
     const { issue, job, url } = await waiting(gh, app);
     gh.closeIssue(REPO, issue.number, 'owner', { at: now(), reason: 'completed' });
+    await app.sync();
+    await app.sync();
+    expect(await app.events('types=job.pull_request_merged')).toEqual([]);
+    expect(await app.events('types=job.pull_request_followed')).toEqual([]);
+    expect(await cardOf(app, job.id)).toMatchObject({ state: 'open', pullRequest: { url } });
+
+    gh.closePullRequest(url);
     await app.sync();
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:done'), { what: 'hopper:done' });
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:pr-ready');

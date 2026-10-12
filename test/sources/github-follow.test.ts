@@ -302,3 +302,30 @@ describe('closing finishes the loop: the hopper\'s own merge closes the issue (i
     expect(closes(gh)).toEqual([]);
   });
 });
+
+describe('a followed pull request still open on GitHub is open, whatever its issue (issue #927)', () => {
+  const LONG_AGO = '2026-10-02T09:50:00.000Z';
+
+  it('the issue is closed as completed while the pull request that closes it is open with merge conflicts: open, seen, never merged', async () => {
+    const { gh, source } = setup({}, { yoloMode: () => true });
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:pr-ready'] });
+    const pr = gh.openPullRequest(REPO, 1, { createdAt: LONG_AGO, conflicting: true, checks: 'passing' });
+    gh.closeIssue(REPO, 1, 'owner', { reason: 'completed' });
+    const job = jobForIssue(1, { status: 'finished', sourceState: { source: { pullRequest: pr.url, follow: 'open' } } });
+    const up = await source.follow!(job);
+    expect(up).toMatchObject({ outcome: 'open', pullRequest: pr.url, state: { follow: 'open', seen: { conflicting: true } } });
+    expect(gh.calls.filter((c) => c.method === 'merge')).toEqual([]);
+    // Followed again with what it saw: nothing changed, nothing recorded.
+    expect(await source.follow!({ ...job, sourceState: { source: up!.state } })).toBeUndefined();
+  });
+
+  it('the issue is closed as completed and the followed pull request is closed without a merge: merged, as before (issue #428)', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:pr-ready'] });
+    const pr = gh.openPullRequest(REPO, 1, { createdAt: LONG_AGO });
+    gh.closePullRequest(pr.url);
+    gh.closeIssue(REPO, 1, 'owner', { reason: 'completed' });
+    const job = jobForIssue(1, { status: 'finished', sourceState: { source: { pullRequest: pr.url, follow: 'open' } } });
+    expect(await source.follow!(job)).toMatchObject({ outcome: 'merged' });
+  });
+});
