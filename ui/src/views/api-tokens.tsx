@@ -3,7 +3,8 @@
 // grant's refresh token for short-lived API tokens, each time for a new refresh token. Both are shown once, here, right
 // after the mint. The list shows each live grant: holder, scopes, when it was made, last used and from where, and when it
 // ends; Revoke ends it at once, Revoke all ends every one. A box grant's tokens (issue #795) are the only ones that may do
-// a box action. The hopper's admin sets how long an API token lives.
+// a box action: a grant is one when a ticked scope is a box action. The scopes are ticked, never typed (issue #909,
+// ./scope-checklist.tsx). The hopper's admin sets how long an API token lives.
 import { KeySquare, Plus, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -13,8 +14,9 @@ import { Confirm } from '@/components/confirm';
 import { Empty, Panel } from '@/components/panel';
 import { Label } from '@/components/vault-fields';
 import { get, post, SessionRejected } from '@/lib/api';
-import { apiTokenLine, grantLine, mintableRoles, parseScopes, SCOPE_PRESETS } from '@/model/api-tokens';
-import type { ApiGrantMinted, ApiGrantView, ApiTokenSettings, ApiTokenView, UiRole } from '@/model/wire';
+import { apiTokenLine, boxPermissions, grantLine, mintableRoles } from '@/model/api-tokens';
+import type { ApiGrantMinted, ApiGrantView, ApiTokenSettings, ApiTokenView, ScopeRegistry, UiRole } from '@/model/wire';
+import { ScopeChecklist } from './scope-checklist';
 import { useHopper } from '@/store';
 import { useCanAdminInstance } from '@/store/selectors';
 
@@ -32,7 +34,7 @@ export function ApiTokens() {
   const role = useHopper((s) => s.user?.role);
   const instanceAdmin = useCanAdminInstance();
   const [listed, setListed] = useState<Listed>({ grants: [], tokens: [] });
-  const [known, setKnown] = useState<string[]>([]);
+  const [registry, setRegistry] = useState<ScopeRegistry | undefined>();
   const [settings, setSettings] = useState<ApiTokenSettings | undefined>();
   const [lifetime, setLifetime] = useState(10);
   const [minted, setMinted] = useState<ApiGrantMinted | undefined>();
@@ -41,25 +43,26 @@ export function ApiTokens() {
   const [label, setLabel] = useState('');
   const [holder, setHolder] = useState('');
   const [as, setAs] = useState<UiRole | undefined>();
-  const [scopes, setScopes] = useState('*:read');
+  const [scopes, setScopes] = useState<string[]>(['*:read']);
   const [days, setDays] = useState(90);
   const [forever, setForever] = useState(false);
-  const [box, setBox] = useState(false);
   const roles = mintableRoles(role);
-  const reload = () => get<Listed & { scopes: string[]; settings: ApiTokenSettings }>('/api/api-tokens').then((r) => {
+  const reload = () => get<Listed & { settings: ApiTokenSettings }>('/api/api-tokens').then((r) => {
     setListed({ grants: r.grants, tokens: r.tokens });
-    setKnown(r.scopes);
     setSettings(r.settings);
     setLifetime(r.settings.tokenMinutes);
   }, (e: Error) => toast.error(e.message));
-  useEffect(() => { void reload(); }, []);
+  useEffect(() => {
+    void reload();
+    get<ScopeRegistry>('/api/scopes').then(setRegistry, (e: Error) => toast.error(e.message));
+  }, []);
 
   const send = async (edit: Edit): Promise<void> => {
     setBusy(true);
     try {
       const r = await post<ApiGrantMinted | Listed>('/ui/api/api-tokens', edit);
       if ('refresh' in r) {
-        setMinted(r); setAdding(false); setLabel(''); setHolder(''); setBox(false); setForever(false);
+        setMinted(r); setAdding(false); setLabel(''); setHolder(''); setScopes(['*:read']); setForever(false);
         if (r.warning) toast.warning(r.warning);
         await reload();
       } else setListed(r);
@@ -82,7 +85,8 @@ export function ApiTokens() {
     }
   };
 
-  const wanted = parseScopes(scopes);
+  const grantRole = as ?? roles[roles.length - 1];
+  const box = registry !== undefined && boxPermissions(scopes, registry).length > 0;
   const count = listed.grants.length + listed.tokens.length;
   return (
     <Panel title="API tokens" icon={KeySquare} count={count || ''} bodyClassName="space-y-3"
@@ -110,24 +114,17 @@ export function ApiTokens() {
       {adding && (
         <form className="space-y-3 rounded-md border p-3" onSubmit={(e) => {
           e.preventDefault();
-          void send({ action: 'mint', label: label.trim(), ...(holder.trim() ? { holder: holder.trim() } : {}), role: as ?? roles[roles.length - 1]!, scopes: wanted, box, days: forever ? null : days });
+          void send({ action: 'mint', label: label.trim(), ...(holder.trim() ? { holder: holder.trim() } : {}), role: grantRole!, scopes, box, days: forever ? null : days });
         }}>
           <label className="block space-y-1"><Label>Label — what it is for</Label>
             <Input className="h-9 text-sm" value={label} required maxLength={64} placeholder="Grok Bot" onChange={(e) => setLabel(e.target.value)} /></label>
           <label className="block space-y-1"><Label>Holder — who keeps it</Label>
             <Input className="h-9 text-sm" value={holder} maxLength={64} placeholder="grok-bot" onChange={(e) => setHolder(e.target.value.toLowerCase())} /></label>
           <label className="block space-y-1"><Label>Role — at most yours</Label>
-            <select className="h-9 rounded-md border bg-transparent px-2 text-sm" value={as ?? roles[roles.length - 1]} onChange={(e) => setAs(e.target.value as UiRole)}>
+            <select className="h-9 rounded-md border bg-transparent px-2 text-sm" value={grantRole} onChange={(e) => setAs(e.target.value as UiRole)}>
               {roles.map((r) => <option key={r} value={r}>{r}</option>)}
             </select></label>
-          <div className="space-y-1">
-            <label className="block space-y-1"><Label>Scopes — the routes it may use: area:act, area:*, *:act or *</Label>
-              <Input className="h-9 font-mono text-xs" name="scopes" list="token-scopes" value={scopes} onChange={(e) => setScopes(e.target.value)} /></label>
-            <datalist id="token-scopes">{known.map((s) => <option key={s} value={s} />)}</datalist>
-            <div className="flex flex-wrap gap-1">
-              {SCOPE_PRESETS.map((p) => <Button key={p.label} type="button" size="sm" variant="ghost" onClick={() => setScopes(p.scopes)}>{p.label}</Button>)}
-            </div>
-          </div>
+          {registry ? <ScopeChecklist registry={registry} scopes={scopes} onChange={setScopes} role={grantRole!} disabled={busy} /> : <p className="text-sm text-muted-foreground">Loading the scopes…</p>}
           <div className="flex flex-wrap items-end gap-3">
             <label className="block space-y-1"><Label>Lives at most, in days — 1 to 365</Label>
               <Input className="h-9 w-24 text-sm" type="number" min={1} max={365} value={days} disabled={forever} onChange={(e) => setDays(Number(e.target.value))} /></label>
@@ -138,12 +135,8 @@ export function ApiTokens() {
               </label>
             )}
           </div>
-          <label className="flex items-start gap-2 text-sm">
-            <input type="checkbox" className="mt-1" name="box" checked={box} disabled={busy} onChange={(e) => setBox(e.target.checked)} />
-            <span>Box grant — its tokens may also start jobs, run commands, approve or merge, update, and change the work on a machine, where its scopes allow. Without it they do the rest: reads, holds, cancels and settings.</span>
-          </label>
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" disabled={busy || !label.trim() || wanted.length === 0 || (!forever && (days < 1 || days > 365))}>Mint grant</Button>
+            <Button type="submit" disabled={busy || !label.trim() || scopes.length === 0 || (!forever && (days < 1 || days > 365))}>Mint grant</Button>
             <Button type="button" variant="outline" disabled={busy} onClick={() => setAdding(false)}>Cancel</Button>
           </div>
         </form>

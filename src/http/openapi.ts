@@ -78,7 +78,7 @@ function reviewOperations(kind: ReviewKind): Operation[] {
   ];
 }
 
-const OPERATIONS: Operation[] = [
+export const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/health', tag: 'State', summary: 'Health and version', description: 'A loopback read without a session on a hopper with several users reads the instance\'s part only: `{ ok, version, uptimeS }`.', returns: '`{ ok, version, router, fallback, executors, parkingExecutors, reviewingExecutors, uptimeS }`: `parkingExecutors` the executors that can park a job; `reviewingExecutors` the ones that write research reports and proposals (only their jobs shift phase from a question)' },
   { method: 'get', path: '/api/queue', tag: 'State', summary: 'The queue', returns: '`{ waiting, running, waitingAnswer, operatorLed, parked, waitingOn, locked, ended, gate, presort }`: each list a `Job[]` (`waitingOn`: the jobs on their own wait, issue #483), `waiting` in queue order (the user order first), `locked` the locked entries (failed jobs kept in the queue until run again or dismissed), highest priority first, `ended` the last 24 h; `gate` the `QueueGate`; `presort` the `PreSort` of the waiting jobs not yet accepted' },
   { method: 'get', path: '/api/decisions', tag: 'State', summary: 'Recent decisions', query: decisionsQuery, returns: '`{ decisions: Decision[] }`, newest first' },

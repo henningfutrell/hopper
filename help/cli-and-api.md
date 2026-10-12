@@ -107,7 +107,7 @@ See [Lanes and lane tuning](lanes.md) and [Artifacts](artifacts.md).
 | `hopper master-key status` | Where the master key came from, and its fingerprint. Never the key. |
 | `hopper master-key rotate` | Make a new master key. It is printed one time: save it. |
 | `hopper typesafe-key [set\|remove]` | Jev's TypeSafe API key. |
-| `hopper token mint\|list\|revoke\|revoke-all …` | Grants and API tokens. See [API tokens and grants](api-tokens.md). |
+| `hopper token mint\|list\|scopes\|revoke\|revoke-all …` | Grants and API tokens. See [API tokens and grants](api-tokens.md). |
 
 See [Vault](vault.md) and [Sandboxes](sandboxes.md).
 
