@@ -33,7 +33,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Only on a pull request into dev: a promotion (dev to beta, beta to stable) carries lines already folded into
+      # WHATS-NEW.md on dev, which the check would read as direct edits.
       - run: node scripts/whats-new.ts check HEAD^1
+        if: github.base_ref == 'dev'
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build:ui
