@@ -15021,7 +15021,7 @@ line limit). Nothing new is recorded: the parts are read from what the job's rec
 | Code (`code`) | its pull request, checks and branch (its source state); the commits its latest checkpoint names (`checkpoint.commits`, issue #921), oldest first; its merge or close (`job.pull_request_merged`, `job.pull_request_closed`) |
 | Outputs (`outputs`) | its artifacts and each revision (`artifact.revised`); its plan or research report (`proposalId`, `researchId`) |
 | Infra (`infra`) | each plan and its approval (`infra.plan_recorded`, `infra.plan_approved`); each minted credential with its operation, asset and end (`vault.minted`); drift its check found (`infra.out_of_band_recorded`); a vault grant it asked for (`vault.grant_asked`, `vault.granted`) |
-| Decisions (`decisions`) | each question, and who answered it — a person, or the level by name (rules, a model) —; each override of a minor decision; its hand-off |
+| Decisions (`decisions`) | each question, and who answered it — a person, or the level by name (rules, a model) —; each override of a Decider pick (`minor_decision.overridden`); its hand-off |
 | Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); each checkpoint, with its commits and whether it holds the session (`job.checkpointed`); each Windows sandbox step (`step.started`) |
 
 Each part's `status` is `waiting_on_you`, `running`, `open`, `done`, `failed`, `cancelled` or `recorded` (a fact, not a

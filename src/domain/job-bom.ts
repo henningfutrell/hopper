@@ -196,7 +196,7 @@ function infra(events: readonly DomainEvent[]): BomPart[] {
   return out;
 }
 
-/** The decisions: each question and who answered it, the overrides of a minor decision, the hand-off. */
+/** The decisions: each question and who answered it, the overrides of a Decider pick, the hand-off. */
 function decisions(questions: readonly Question[], events: readonly DomainEvent[], handoff: Handoff | undefined): BomPart[] {
   const out: BomPart[] = [];
   for (const q of [...questions].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
