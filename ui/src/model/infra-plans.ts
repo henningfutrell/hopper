@@ -3,8 +3,8 @@
 // waits for, and its explainer: the summary in plain words, the risk callouts, the blast radius and the checks — and
 // whether this person may approve it: by its risk (part 3), an operator a low-risk plan in uat only, an admin any other,
 // nobody a plan that failed a check. One line per apply, and the applies and drift timeline: plans, approvals, applies and
-// out-of-band changes, newest first.
-import type { OutOfBandView, PlanApply, PlanView } from '../../../src/domain/types.ts';
+// out-of-band changes, newest first. The environment watchers (part 4) as a person types them: one environment a line.
+import type { InfraWatchers, OutOfBandView, PlanApply, PlanView } from '../../../src/domain/types.ts';
 import { changeHeadline } from './out-of-band.ts';
 
 export const planHeadline = (p: Omit<PlanView, 'approval'>): string =>
@@ -78,3 +78,23 @@ export function infraTimeline(plans: PlanView[], applies: PlanApply[], changes: 
   ];
   return entries.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 }
+
+/**
+ * The environment watchers in a text a person typed: one environment a line, `prod: prod-owner, ops-lead`; `*` names the
+ * watchers of every plan. Blank lines and empty names are dropped; the hopper checks the rest. A line with no colon is
+ * said, so nothing is saved by mistake.
+ */
+export function watchersFrom(text: string): InfraWatchers | string {
+  const out: InfraWatchers = {};
+  for (const [i, line] of text.split('\n').entries()) {
+    if (!line.trim()) continue;
+    const colon = line.indexOf(':');
+    if (colon < 0) return `line ${i + 1} has no colon: write the environment, a colon, then the watchers`;
+    const env = line.slice(0, colon).trim();
+    out[env] = [...(out[env] ?? []), ...line.slice(colon + 1).split(',').map((n) => n.trim()).filter((n) => n.length > 0)];
+  }
+  return out;
+}
+
+/** The watchers as a person types them, one environment a line. */
+export const watchersText = (w: InfraWatchers): string => Object.entries(w).map(([env, names]) => `${env}: ${names.join(', ')}`).join('\n');

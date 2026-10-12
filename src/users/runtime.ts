@@ -57,6 +57,7 @@ import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 import { machineLanesEditor } from './machine-lanes.ts';
 import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts';
+import { planNotice } from '../domain/infra-watchers.ts';
 
 export type { UserSeams } from './seams.ts';
 
@@ -377,7 +378,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const stopFailureLog = logFailures(store);
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
-  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => o.uiUrl(`question-${id}`), loginsUrl: () => o.uiUrl('logins'), infraUrl: () => o.uiUrl('infra'), highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), ...(o.reach ? { reach: o.reach } : {}) });
+  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => o.uiUrl(`question-${id}`), loginsUrl: () => o.uiUrl('logins'), infraUrl: () => o.uiUrl('infra'), infraPlan: (id) => { const p = store.infraPlans.get(id); return p ? planNotice(p, store.infraPlans.approval(id), store.settings.getInfraWatchers() ?? {}) : undefined; }, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), ...(o.reach ? { reach: o.reach } : {}) });
   // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them; lane tuning (issue #688) after new samples.
   const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), afterMachineRecord: () => engine.laneTuning.record(), store, clock, logger });
   const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });

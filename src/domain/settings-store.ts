@@ -96,6 +96,9 @@ export interface UserSettingsRepository {
   /** The infra plans' settings (issue #870 part 3): whether the hopper approves a low-risk uat plan itself; absent: off. */
   getInfraPlans(): import('./infra-plans.ts').InfraPlanSettings | undefined;
   setInfraPlans(settings: import('./infra-plans.ts').InfraPlanSettings): void;
+  /** The environment watchers (issue #870 part 4): who is told of each plan and apply, by environment; absent: none. */
+  getInfraWatchers(): import('./infra-watchers.ts').InfraWatchers | undefined;
+  setInfraWatchers(watchers: import('./infra-watchers.ts').InfraWatchers): void;
   /** The intake's trusted actors (issue #652); undefined: none named, so the connected login only. */
   getIntakeActors(): IntakeActorSettings | undefined;
   setIntakeActors(settings: IntakeActorSettings): void;

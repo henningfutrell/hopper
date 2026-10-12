@@ -28,6 +28,10 @@
 // Feature: approval by risk (part 3)
 //   Scenario: an operator approves a low-risk uat plan; a prod plan only an admin approves
 //   Scenario: with auto-approve on, the hopper approves a low-risk uat plan when it is kept, and says so; a prod plan waits
+//
+// Feature: environment watchers (part 4): no plan and no apply slides under the radar
+//   Scenario: an admin names the watchers of each environment; an operator cannot
+//   Scenario: a plan recorded, approved and applied is sent to the notifier, each time naming the watchers of its environments
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { InfraPlan, PlanApply, PlanView } from '../../src/domain/infra-plans.ts';
@@ -39,6 +43,8 @@ import { connectGitHub } from '../support/github-account.ts';
 import { boxes, helper, runningJob } from '../support/vault-box.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
 import { rawRequest } from '../support/http.ts';
+import { createServer, type Server } from 'node:http';
+import { waitFor } from '../support/wait.ts';
 
 const ACCOUNT = '123456789012';
 const ROLE = `aws-role/${ACCOUNT}/deploy`;
@@ -64,7 +70,7 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) c();
 });
 
-async function boot(): Promise<{ a: TestApp; session: string; dir: string; job: string; token: string; sts: FakeApi; github: FakeForge }> {
+async function boot(secrets: Record<string, string> = {}): Promise<{ a: TestApp; session: string; dir: string; job: string; token: string; sts: FakeApi; github: FakeForge }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
@@ -78,8 +84,9 @@ async function boot(): Promise<{ a: TestApp; session: string; dir: string; job: 
   t = await startTestApp({
     dbPath: db.dbPath,
     env: { HOPPER_GITHUB_URL: github.url, HOPPER_GITHUB_CLIENT_ID: 'gh-client-id', HOPPER_GITHUB_APP_SLUG: 'hopper-test' },
+    secrets: { ...secrets },
     plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } },
-    seams: { authorizationServer: createFakeAuthorizationServer() },
+    seams: { authorizationServer: createFakeAuthorizationServer(), grokbot: { baseMs: 20 } },
   });
   const a = t;
   connectGitHub(a, ['octo/infra']);
@@ -281,5 +288,59 @@ describe('no apply without a plan', () => {
     expect(minted.code, minted.stderr).toBe(0);
     expect(sts.seen).toHaveLength(1);
     expect((await helper(dir, ['aws', 'apply', ROLE, '--plan', prod.id], token)).stderr).toMatch(/is not approved/);
+  });
+});
+
+describe('environment watchers', () => {
+  /** The Grok Bot routine's receiver, on loopback. */
+  async function receiver(): Promise<{ url: string; hits: Record<string, unknown>[] }> {
+    const hits: Record<string, unknown>[] = [];
+    const server: Server = createServer((req, res) => {
+      let raw = '';
+      req.on('data', (c) => (raw += c));
+      req.on('end', () => { hits.push(JSON.parse(raw) as Record<string, unknown>); res.end(); });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    cleanups.push(() => { server.closeAllConnections(); server.close(); });
+    return { url: `http://127.0.0.1:${(server.address() as { port: number }).port}/routine`, hits };
+  }
+  const WATCHERS = { '*': ['ops-lead'], uat: ['qa-team'], prod: ['prod-owner'] };
+
+  it('lets an admin name the watchers of each environment; an operator cannot', async () => {
+    const { a, session } = await boot();
+    const set = await a.ui<{ watchers: Record<string, string[]> }>('/ui/api/infra-plans/watchers', { watchers: { ...WATCHERS, uat: [' qa-team ', 'qa-team'] } }, { token: session });
+    expect(set.status, JSON.stringify(set.body)).toBe(200);
+    expect(set.body.watchers).toEqual(WATCHERS);
+    expect((await a.api<{ watchers: Record<string, string[]> }>('GET', '/api/infra-plans', undefined, { 'x-hopper-session': session })).body.watchers).toEqual(WATCHERS);
+    expect((await a.events()).filter((e) => e.type === 'infra.watchers_changed').map((e) => e.data)).toEqual([{ from: {}, to: WATCHERS, by: expect.any(String) }]);
+
+    const bad = await a.ui('/ui/api/infra-plans/watchers', { watchers: { production: ['a'] } }, { token: session });
+    expect(bad.status).toBe(400);
+    expect(JSON.stringify(bad.body)).toMatch(/production is not an environment the hopper knows/);
+    const r = await a.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'operator', role: 'operator', scopes: ['infra-plans:watchers'] }, { token: session });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    const operator = await rawRequest(a.url, { method: 'POST', path: '/ui/api/infra-plans/watchers', headers: { authorization: `Bearer ${r.body.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ watchers: {} }) });
+    expect(operator.status).toBe(403);
+  });
+
+  it('sends each plan recorded, approved and applied to the notifier, naming the watchers of its environments', async () => {
+    const hook = await receiver();
+    const { a, session, dir, token, job } = await boot({ GROKBOT_WEBHOOK_URL: hook.url, GROKBOT_WEBHOOK_KEY: 'k' });
+    expect((await a.ui('/ui/api/infra-plans/watchers', { watchers: WATCHERS }, { token: session })).status).toBe(200);
+    const plan = await record(a, job);
+    expect((await a.ui('/ui/api/infra-plans', { action: 'approve', plan: plan.id }, { token: session })).status).toBe(200);
+    const minted = await helper(dir, ['aws', 'apply', ROLE, '--plan', plan.id], token);
+    expect(minted.code, minted.stderr).toBe(0);
+
+    const kinds = ['infra.plan_recorded', 'infra.plan_approved', 'infra.plan_applied'];
+    await waitFor(() => kinds.every((k) => hook.hits.some((h) => h.kind === k)), { what: 'a post for the plan, its approval and its apply' });
+    for (const kind of kinds) {
+      expect(hook.hits.find((h) => h.kind === kind)).toEqual(expect.objectContaining({
+        plan: plan.id, target: 'uat-network', environments: ['uat'], level: 'low', watchers: ['ops-lead', 'qa-team'], approver: { who: 'operator', why: 'low risk, in uat only' },
+      }));
+    }
+    expect(hook.hits.find((h) => h.kind === 'infra.plan_applied')).toEqual(expect.objectContaining({ operation: 'apply', jobId: job }));
+    expect(JSON.stringify(hook.hits)).not.toContain(JSON.parse(minted.stdout).AccessKeyId);
+    expect(JSON.stringify(hook.hits)).not.toContain(PLAN.text);
   });
 });
