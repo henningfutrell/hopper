@@ -1,15 +1,15 @@
 // Resources (issue #947, design.md "Stack resources"): what every container of the hopper's stack and each of its sandbox
 // boxes uses now — by its service: CPU, memory against its limit, network, disk, restarts and uptime —, and what its
-// Postgres does. Read from GET /api/resources when the page opens and every READ_EVERY_MS while it is shown; a part
+// Postgres and OpenFGA do. Read from GET /api/resources when the page opens and every READ_EVERY_MS while it is shown; a part
 // that cannot be read says why. The machines' own resources over time are on Usage and Machines (issue #560).
-import { AlertTriangle, Boxes, Container, Database, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Boxes, Container, Database, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Empty, Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { get } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import {
-  containerTone, cpuText, diskText, memoryFrac, memoryText, networkText, postgresLines, restartsText, uptimeText, volumesText,
+  containerTone, cpuText, diskText, memoryFrac, memoryText, networkText, openFgaLines, postgresLines, restartsText, uptimeText, volumesText,
 } from '@/model/stack-resources';
 import type { ContainerReading, StackResources } from '@/model/wire';
 import { useServerNow } from '@/store/selectors';
@@ -82,6 +82,19 @@ function Problem({ children }: { children: React.ReactNode }) {
   );
 }
 
+function Lines({ slot, lines }: { slot: string; lines: { label: string; text: string }[] }) {
+  return (
+    <dl data-slot={slot} className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
+      {lines.map((l) => (
+        <div key={l.label} className="min-w-0">
+          <dt className="text-[11px] text-muted-foreground">{l.label}</dt>
+          <dd className="num break-words text-sm">{l.text}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export function Resources() {
   const now = useServerNow();
   const [state, reload] = useResources();
@@ -94,13 +107,13 @@ export function Resources() {
       </div>
     );
   }
-  const { containers, postgres } = state.data;
+  const { containers, postgres, openfga } = state.data;
   const list = 'containers' in containers ? containers.containers : [];
   const stack = list.filter((c) => c.group === 'stack');
   const boxes = list.filter((c) => c.group === 'sandbox');
   return (
     <div className="max-w-4xl space-y-3">
-      <p className="text-sm text-muted-foreground">What each part of the hopper&apos;s stack uses now, by its service. CPU is the use since the read before; the page reads again every 10 seconds while it is open. Network and disk count since the container started.</p>
+      <p className="text-sm text-muted-foreground">What each part of the hopper&apos;s stack uses now, by its service. CPU is the use since the read before; the page reads again every 10 seconds while it is open. Network and disk count since the container started; OpenFGA&apos;s checks count since it started.</p>
       <Panel title="Containers" icon={Container} count={stack.length || ''}>
         {'problem' in containers ? <Problem>{containers.problem}</Problem>
           : stack.length === 0 ? <Empty>No container of the hopper&apos;s compose project. A hopper on the computer itself has none.</Empty>
@@ -112,16 +125,10 @@ export function Resources() {
         </Panel>
       )}
       <Panel title="Postgres" icon={Database}>
-        {'problem' in postgres ? <Problem>{postgres.problem}</Problem> : (
-          <dl data-slot="postgres-reading" className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
-            {postgresLines(postgres).map((l) => (
-              <div key={l.label} className="min-w-0">
-                <dt className="text-[11px] text-muted-foreground">{l.label}</dt>
-                <dd className="num break-words text-sm">{l.text}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
+        {'problem' in postgres ? <Problem>{postgres.problem}</Problem> : <Lines slot="postgres-reading" lines={postgresLines(postgres)} />}
+      </Panel>
+      <Panel title="OpenFGA" icon={ShieldCheck}>
+        {'problem' in openfga ? <Problem>{openfga.problem}</Problem> : <Lines slot="openfga-reading" lines={openFgaLines(openfga)} />}
       </Panel>
     </div>
   );

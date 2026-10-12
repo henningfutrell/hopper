@@ -75,9 +75,24 @@ export interface DatabaseStats {
   read(): PostgresReading;
 }
 
-/** `GET /api/resources` (issue #947): every container of the stack and each sandbox box, and Postgres, now. */
+/** OpenFGA's checks since it started, from its own metrics endpoint (issue #947). */
+export interface OpenFgaReading {
+  /** Checks it answered, and of those the ones that failed (any gRPC code but OK). */
+  checks: number;
+  errors: number;
+  /** The mean time of a check, in ms, as OpenFGA measures it; absent before any check. */
+  meanMs?: number;
+}
+
+/** What reads OpenFGA's metrics endpoint (issue #947). A read that fails throws, with why. */
+export interface OpenFgaMeter {
+  read(): Promise<OpenFgaReading>;
+}
+
+/** `GET /api/resources` (issue #947): every container of the stack and each sandbox box, Postgres and OpenFGA, now. */
 export interface StackResources {
   at: string;
   containers: ContainerReadings;
   postgres: PostgresReading | { problem: string };
+  openfga: OpenFgaReading | { problem: string };
 }
