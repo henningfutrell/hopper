@@ -1809,6 +1809,7 @@ repo: owner/repo · issue: #N · url: …
 title: …
 labels: a, b · author: owner
 priority: 75 (label:hopper:high) · project item: <project title> · Priority=P1 (or "none")
+windows: …: only with a Windows label: the Windows work runs as Windows sandbox steps ("Windows sandbox steps")
 done: …: done is the job's pull request, ready for review; with yolo mode on for the repo, it may also merge it ("Done is a pull request" below)
 recent comments (oldest first, up to recentComments; only the assignee's, no hopper-marked comments — anyone else's text never reaches the job; issue #387):
 - <author> at <ISO>: <body, ≤ 1000 chars>
@@ -4671,6 +4672,14 @@ would.
 
 **Retired:** the native Windows client lane and the `hopper:win` routing to it. No code of the hopper holds them: they
 are a person's machine and routing rule, removed in Settings → Machines and Settings → Routing.
+
+**A Windows label** (issue #918): an issue labelled `hopper:win` or `hopper:windows` (any case; `WINDOWS_LABELS`,
+`src/sources/github/labels.ts`) needs Windows. Its job is placed as any job is, on a Linux machine, and its
+`[hopper issue context]` gets a `windows:` line before `done:` (`WINDOWS_LINE`, `src/sources/github/context.ts`): do the
+work there, run each step that needs Windows as a Windows sandbox step (the `windows-step` skill, `sh "$HOPPER_STEP"
+hosts`), and ask the user for a host when none is set up. The label routes nothing: a routing rule that still names a
+removed Windows machine is skipped at intake, with why ("Routing rules"), and the next rule or the default placement
+applies. The line reaches a job at its prompt, so a job queued before keeps the prompt it was read with.
 
 **Not built.** A minted credential or a shared secret for a step; a step's output on the job stream (the response carries it); more than
 one step at a time on one host; a host reached through a jump host.

@@ -11,6 +11,7 @@ import { isArtifactDeliverable } from './completion.ts';
 import type { GitHubComment, GitHubIssue } from './api.ts';
 import { isHopperComment } from './identity.ts';
 import type { BotLogin } from './identity.ts';
+import { needsWindows } from './labels.ts';
 import { truncate } from './markers.ts';
 import type { Priority } from './priority.ts';
 
@@ -110,7 +111,13 @@ export function partsLine(n: number, parts: Parts): string {
     : `${what}. Ship the next part that is not done. Open its pull request with "Part of #${n}", and use "Closes #${n}" only when it ships the last part`;
 }
 
-/** The hopper's own context: where the issue is, its labels and priority, its parts, and what done means. */
+/**
+ * What a job whose issue has a Windows label (issue #918) is told: no machine of the hopper runs Windows (issue #704), so
+ * the job works on Linux and runs each step that needs Windows on a Windows host, as a Windows sandbox step (issue #731).
+ */
+export const WINDOWS_LINE = 'windows: this issue needs Windows. No Windows machine takes the job: do the work here, and run each step that needs Windows (a build, tests, a packing step) as a Windows sandbox step on a Windows host. sh "$HOPPER_SKILL" windows-step gives the help; sh "$HOPPER_STEP" hosts lists the hosts. When no host is set up, ask the user to add one in Settings → Windows hosts';
+
+/** The hopper's own context: where the issue is, its labels and priority, its parts, its Windows steps, and what done means. */
 export function contextBlock(issue: GitHubIssue, p: Priority, yoloMode: boolean, parts?: Parts): string {
   return [
     '[hopper issue context]',
@@ -118,6 +125,7 @@ export function contextBlock(issue: GitHubIssue, p: Priority, yoloMode: boolean,
     `labels: ${issue.labels.join(', ')} · author: ${issue.author}`,
     `priority: ${p.priority} (${p.reason}) · project item: ${p.projectItem}`,
     ...(parts ? [partsLine(issue.number, parts)] : []),
+    ...(needsWindows(issue.labels) ? [WINDOWS_LINE] : []),
     isArtifactDeliverable(issue) ? artifactDoneLine() : doneLine(issue.number, yoloMode),
   ].join('\n');
 }
