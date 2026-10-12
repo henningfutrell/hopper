@@ -144,6 +144,7 @@ describe('Pull requests view', () => {
     expect(waitsText(card({ waits: 'conflicts', base: 'dev' }))).toBe('conflicts with dev');
     expect(waitsText(card({ waits: 'conflicts' }))).toBe('conflicts with its base branch');
     expect(waitsText(card({ waits: 'ready' }))).toBe('ready, merging');
+    expect(waitsText(card({ waits: 'merge held' }))).toBe('ready, waits for another pull request to merge first');
     expect(waitsText(card({ waits: 'checks not started' }))).toBe('waiting for checks to start');
     expect(waitsText(card({ waits: 'checks failing' }))).toBe('checks failed');
     expect(waitsText(card({ waits: 'no pull request' }))).toBe('no pull request found yet');
@@ -152,8 +153,8 @@ describe('Pull requests view', () => {
 
   it('what the hopper does about a card that needs tending, in plain words (issue #927)', () => {
     expect(doingText(card({ waits: 'conflicts', queue: { next: true } }))).toBe('the hopper tends it next');
-    expect(doingText(card({ waits: 'checks failing', queue: { held: { pullRequest: 904, why: 'merging' } } }))).toBe('held behind #904, which waits for its checks to merge');
-    expect(doingText(card({ waits: 'conflicts', queue: { held: { pullRequest: 904, why: 'tending' } } }))).toBe('held behind #904, which a job works on now');
+    expect(doingText(card({ waits: 'checks failing', queue: { held: { pullRequest: 904, why: 'merging' } } }))).toBe('held behind #904, which the hopper merges first: they conflict');
+    expect(doingText(card({ waits: 'conflicts', queue: { held: { pullRequest: 904, why: 'tending' } } }))).toBe('held behind #904, which a job works on now: they conflict');
     expect(doingText(card({ waits: 'checks failing', gaveUp: 'checks still fail after 3 fixes: a person must look at them' }))).toBe('the hopper gave up: checks still fail after 3 fixes: a person must look at them');
     expect(doingText(card({ state: 'closed', waits: undefined }))).toBe('');
   });
