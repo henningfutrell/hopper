@@ -10,7 +10,7 @@ import { HOST_SERVICE_TESTS, testExclude } from '../support/host-services.ts';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
-type Step = { uses?: string; run?: string; with?: Record<string, unknown>; env?: Record<string, string> };
+type Step = { id?: string; uses?: string; run?: string; if?: string; with?: Record<string, unknown>; env?: Record<string, string> };
 type Job = { needs?: string[]; if?: string; 'timeout-minutes'?: number; strategy?: { matrix: { shard: number[] } }; steps: Step[] };
 type Workflow = {
   name: string;
@@ -55,8 +55,22 @@ describe('.github/workflows/pr.yml, the pull request check', () => {
     const shards = shard.strategy!.matrix.shard;
     expect(shards).toEqual(shards.map((_, i) => i + 1));
     const test = shard.steps.find((s) => s.run?.startsWith('npm test'));
-    expect(test?.run).toBe(`npm test -- --shard=\${{ matrix.shard }}/${shards.length}`);
+    // Two workers per core (issue #949): most of a test's time is a wait, not the CPU. vitest caps a percentage at the core count.
+    expect(test?.run).toBe(`npm test -- --shard=\${{ matrix.shard }}/${shards.length} --maxWorkers=$(( $(nproc) * 2 ))`);
     expect(test?.env).toEqual({ HOPPER_TEST_HOST_SERVICES: '0' });
+  });
+
+  // Issue #949: node_modules comes from the cache of its package-lock.json; `npm ci` runs only when there is none.
+  it('takes node_modules from the cache of package-lock.json, and installs only on a miss', () => {
+    for (const name of ['gates', 'shard']) {
+      const steps = workflow.jobs[name]!.steps;
+      const cache = steps.find((s) => s.uses?.startsWith('actions/cache@'));
+      expect(cache, name).toMatchObject({ id: 'deps', with: { path: 'node_modules' } });
+      expect(String(cache!.with!.key), name).toContain("hashFiles('package-lock.json')");
+      const install = steps.find((s) => s.run === 'npm ci');
+      expect(install?.if, name).toBe("steps.deps.outputs.cache-hit != 'true'");
+      expect(steps.indexOf(cache!), name).toBeLessThan(steps.indexOf(install!));
+    }
   });
 });
 

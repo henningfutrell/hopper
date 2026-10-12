@@ -96,7 +96,7 @@ describe('herdr-claude', () => {
   it('options default to what the env defaulted to before plugins', () => {
     expect(options(herdrClaude)).toEqual({
       bin: 'herdr', claudeBin: 'claude', session: 'hopper', yolo: true, args: [],
-      trustWorkdir: true, unattended: true, jobWorktrees: true, sharedDependencies: true, pollMs: 1000, idleNudgeMs: 20000,
+      trustWorkdir: true, unattended: true, jobWorktrees: true, sharedDependencies: true, pollMs: 1000, idleNudgeMs: 20000, promptSteadyMs: 2000,
     });
   });
 
