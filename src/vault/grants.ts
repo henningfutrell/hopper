@@ -1,10 +1,11 @@
 // Vault grants (issue #652, requirement 5, design.md "Vault grants"): a user's vault, wherever it runs, gives a box's job
-// nothing — no vault secret, no minted credential — until a person granted that job's item the vault. The ask passes the
+// — or a job's Windows sandbox step (issue #731) — nothing — no vault secret, no minted credential — until a person granted that job's item the vault. The ask passes the
 // same checks as any delivery first (box.ts): a refusal there is the vault's own, with its own reason. A job of a box with
 // no grant is refused, and the hopper asks a person: a grant ask, kept in memory, shown on the Vault page, one event per
 // job. A person grants or revokes through the UI session, after Access (the route's); the grant is kept for the item, so
 // Run again and Rework keep it. The template's approved scope still bounds what a granted job gets: the vault decides that.
 import type { Clock, UserStore } from '../domain/ports.ts';
+import type { Job } from '../domain/types.ts';
 import { grantKeyOf, noGrant, type VaultGrantAsk } from '../domain/vault-grants.ts';
 import type { ProxyTokenParts } from '../github-proxy/token.ts';
 import { AT_WORK, boxAsk, type ClientTarget } from './box.ts';
@@ -21,20 +22,24 @@ export function withVaultGrants(v: Vault, o: {
   /** The open asks, by job. */
   const asks = new Map<string, VaultGrantAsk>();
 
+  /** Records that `job` asked for `name` with no grant, from `where`: one ask per job, one event. */
+  function ask(job: Job, name: string, where: { machine: string; template: string } | { windowsHost: string }): void {
+    const open = asks.get(job.id);
+    if (open) {
+      if (!open.names.includes(name)) open.names.push(name);
+      return;
+    }
+    asks.set(job.id, { job: job.id, key: grantKeyOf(job), ...where, names: [name], askedAt: o.clock.now().toISOString() });
+    events.append({ type: 'vault.grant_asked', jobId: job.id, ...('machine' in where ? { machineId: where.machine } : {}), data: { job: job.id, key: grantKeyOf(job), ...where, name } });
+  }
+
   /** Undefined: the vault answers (no box, or granted). Else the refusal, after the ask is recorded. */
   function gate(token: string, machineKey: string, name: string): { machine: string; template: string; job: string; reason: string } | undefined {
     const box = boxAsk({ targets: o.targets, holds: o.holds, job: (id) => jobs.get(id), holdsTemplate: (t) => v.view().templates.some((x) => x.name === t) }, token, machineKey);
     if ('refused' in box) return undefined;
     const { machine: m, job } = box;
-    const key = grantKeyOf(job);
-    if (vaultGrants.get(key)) return undefined;
-    const open = asks.get(job.id);
-    if (open) {
-      if (!open.names.includes(name)) open.names.push(name);
-    } else {
-      asks.set(job.id, { job: job.id, key, machine: m.name, template: m.template, names: [name], askedAt: o.clock.now().toISOString() });
-      events.append({ type: 'vault.grant_asked', jobId: job.id, machineId: m.name, data: { job: job.id, key, machine: m.name, template: m.template, name } });
-    }
+    if (vaultGrants.get(grantKeyOf(job))) return undefined;
+    ask(job, name, { machine: m.name, template: m.template });
     return { machine: m.name, template: m.template, job: job.id, reason: noGrant(job.id) };
   }
 
@@ -55,6 +60,17 @@ export function withVaultGrants(v: Vault, o: {
       if (!refused) return v.deliver(ask, machineKey);
       events.append({ type: 'vault.refused', jobId: refused.job, machineId: refused.machine, data: { name: ask.name, machine: refused.machine, template: refused.template, job: refused.job, reason: refused.reason } });
       return { refused: refused.reason };
+    },
+    // A Windows sandbox step's secret (issue #731): the same grant, for the job whose step it is.
+    async forStep(a) {
+      const job = jobs.get(a.job);
+      if (job && !vaultGrants.get(grantKeyOf(job))) {
+        ask(job, a.name, { windowsHost: a.host });
+        const reason = noGrant(job.id);
+        events.append({ type: 'vault.step_refused', jobId: job.id, data: { name: a.name, host: a.host, job: job.id, reason } });
+        return { refused: reason };
+      }
+      return v.forStep(a);
     },
     async mint(ask, machineKey) {
       const refused = gate(ask.token, machineKey, `${ask.mint} ${ask.operation} ${ask.asset}`);

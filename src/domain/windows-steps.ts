@@ -3,6 +3,7 @@
 // worktree or agent runs on Windows (issue #704). This file is the pure part: a Windows host as the config record
 // `windows-hosts` keeps it, a step's request, and why either is not one.
 import { HOST_KEY } from './machines.ts';
+import { VAULT_SECRET_NAME } from './vault.ts';
 
 /** The config record that holds a user's Windows hosts. */
 export const WINDOWS_HOSTS = 'windows-hosts';
@@ -21,6 +22,11 @@ export interface WindowsHost {
   hostKey: string;
   /** The working directory every step runs in, an absolute Windows path (`C:\work\app`). Inputs land in it, outputs come from it. */
   workDir: string;
+  /**
+   * The user's vault secrets a step on this host may be given (issue #731): the upper bound a person sets, as a template's
+   * scope is for a box. A step asks for some of them by name; each also needs the job's vault grant. Absent: none.
+   */
+  secrets?: string[];
 }
 
 /** The record's value. */
@@ -33,6 +39,9 @@ export interface WindowsHostsView { hosts: WindowsHost[]; version: string }
 export interface WindowsHostsEdit { hosts: WindowsHost[]; version: string }
 
 export const MAX_WINDOWS_HOSTS = 20;
+/** The most vault secrets a host may give its steps, and a step may ask for. */
+export const MAX_HOST_SECRETS = 32;
+export const MAX_STEP_SECRETS = 16;
 export const WINDOWS_HOST_NAME = /^[a-z0-9][a-z0-9-]{0,39}$/;
 /** A plain `[user@]host`: it is also the host key's name in known_hosts, and an argument to ssh and scp. */
 export const WINDOWS_SSH_TARGET = /^[A-Za-z0-9_][A-Za-z0-9._-]*(@[A-Za-z0-9_][A-Za-z0-9._-]*)?$/;
@@ -46,7 +55,7 @@ export const WINDOWS_WORK_DIR = /^[A-Za-z]:[\\/](?!.*(?:^|[\\/])\.\.(?:[\\/]|$))
 function hostProblem(w: unknown): string | undefined {
   if (typeof w !== 'object' || w === null || Array.isArray(w)) return 'each Windows host is an object';
   const h = w as Record<string, unknown>;
-  const known = ['name', 'label', 'ssh', 'hostKey', 'workDir'];
+  const known = ['name', 'label', 'ssh', 'hostKey', 'workDir', 'secrets'];
   const extra = Object.keys(h).find((k) => !known.includes(k));
   if (extra) return `a Windows host has no field ${extra}`;
   if (typeof h.name !== 'string' || !WINDOWS_HOST_NAME.test(h.name)) return 'a Windows host\'s name is lower case letters, digits and -, at most 40';
@@ -56,6 +65,13 @@ function hostProblem(w: unknown): string | undefined {
   if (typeof h.hostKey !== 'string' || !HOST_KEY.test(h.hostKey)) return `${at}: hostKey is the pinned host key, <type> <base64>`;
   if (typeof h.workDir !== 'string' || h.workDir.length > 200 || !WINDOWS_WORK_DIR.test(h.workDir)) {
     return `${at}: workDir is an absolute Windows path such as C:\\work\\app: letters, digits, space, . _ ( ) - only`;
+  }
+  if (h.secrets !== undefined) {
+    if (!Array.isArray(h.secrets) || h.secrets.some((n) => typeof n !== 'string' || !VAULT_SECRET_NAME.test(n))) return `${at}: secrets is a list of vault secret names (the user's own, not system/ or shared/)`;
+    if (h.secrets.length > MAX_HOST_SECRETS) return `${at}: at most ${MAX_HOST_SECRETS} secrets`;
+    const names = h.secrets as string[];
+    const twice = names.find((n, i) => names.indexOf(n) !== i);
+    if (twice) return `${at}: secrets names ${twice} twice`;
   }
   return undefined;
 }
@@ -106,10 +122,12 @@ export interface StepRequest {
   timeoutSeconds: number;
   /** Paths relative to the working directory the hopper brings back as a tar. */
   outputs: string[];
+  /** The vault secrets the step gets in its environment, each by its own name: none of them is given to the job. */
+  secrets: string[];
 }
 
 /** The request the job's fields make, or why not. */
-export function stepRequestOf(f: { host?: string; command?: string; timeout?: string; outputs: string[] }): StepRequest | { problem: string } {
+export function stepRequestOf(f: { host?: string; command?: string; timeout?: string; outputs: string[]; secrets?: string[] }): StepRequest | { problem: string } {
   if (!f.host) return { problem: 'name the Windows host: sh "$HOPPER_STEP" hosts lists them' };
   if (!f.command || f.command.trim() === '') return { problem: 'give the command to run (PowerShell): --command TEXT or --script FILE' };
   if (Buffer.byteLength(f.command, 'utf8') > STEP_COMMAND_MAX_BYTES) return { problem: `the command may hold at most ${STEP_COMMAND_MAX_BYTES / 1024} KiB: send a longer one as a script (--script FILE)` };
@@ -121,7 +139,11 @@ export function stepRequestOf(f: { host?: string; command?: string; timeout?: st
   if (f.outputs.length > STEP_MAX_OUTPUTS) return { problem: `at most ${STEP_MAX_OUTPUTS} outputs` };
   const bad = f.outputs.find((o) => !STEP_OUTPUT.test(o));
   if (bad !== undefined) return { problem: `output ${JSON.stringify(bad)} is not a path relative to the working directory (letters, digits, space, . _ ( ) - / \\; no ..)` };
-  return { host: f.host, command: f.command, timeoutSeconds, outputs: f.outputs };
+  const secrets = [...new Set(f.secrets ?? [])];
+  if (secrets.length > MAX_STEP_SECRETS) return { problem: `at most ${MAX_STEP_SECRETS} secrets` };
+  const name = secrets.find((n) => !VAULT_SECRET_NAME.test(n));
+  if (name !== undefined) return { problem: `${JSON.stringify(name)} is not a vault secret name: sh "$HOPPER_STEP" hosts lists the secrets each host may give` };
+  return { host: f.host, command: f.command, timeoutSeconds, outputs: f.outputs, secrets };
 }
 
 /** What a step came to. `problem`: the hopper could not run it, or bring its outputs back, and why. */
@@ -140,10 +162,11 @@ export interface WindowsStepHost {
   /**
    * Run one step: copy the inputs (`<dir>/inputs.tar`, when `inputs`) and the command to the host, extract the inputs in
    * its working directory, run the command there in PowerShell, then bring `outputs` back as `<dir>/outputs.tar`. `dir`
-   * is this step's own directory on this machine. Every chunk of the command's output goes to `log` as it comes.
+   * is this step's own directory on this machine. `secrets`: values the step gets in its environment, by name, never
+   * in an argument or a file. Every chunk of the command's output goes to `log` as it comes.
    * `signal` aborts: the timeout, or the job gone. Resolves with the exit code; never rejects — a failure of its own is
    * `problem`.
    */
-  run(host: WindowsHost, step: { id: string; command: string; dir: string; inputs: boolean; outputs: string[] },
+  run(host: WindowsHost, step: { id: string; command: string; dir: string; inputs: boolean; outputs: string[]; secrets?: Readonly<Record<string, string>> },
     io: { log(chunk: string): void; signal: AbortSignal }): Promise<StepResult>;
 }

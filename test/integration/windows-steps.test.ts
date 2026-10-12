@@ -16,6 +16,14 @@
 //   Scenario: a no is clear: an unknown host, a bad output, a token that is no job's — exit 125, `step.refused`
 //   Scenario: a step past its timeout is stopped: exit 125, and why
 //   Scenario: a host that is not one is refused when it is saved, and a stale version conflicts
+//   Scenario: a step gets a vault secret only when its host gives it and a person granted the job the vault
+//     Given the vault secret NUGET_TOKEN, and a host that gives it
+//     When the job runs a step with `--secret NUGET_TOKEN` and has no vault grant
+//     Then the step does not run, exit 125, and the Vault page asks a person to grant the job the vault
+//     When a person grants it
+//     Then the step gets NUGET_TOKEN in its environment, the job's copy of the log has it masked, and
+//       `vault.step_delivered` names the secret, the host and the job, never the value
+//     And a secret the host does not give is refused before the vault is asked
 import { execFile, execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -26,12 +34,13 @@ import type { WindowsHost, WindowsHostsView } from '../../src/domain/types.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
 import { STEP_NOT_RUN, STEP_SCRIPT } from '../../src/windows-steps/index.ts';
 import { artifactHarness, eventsOf } from '../support/artifacts.ts';
+import { KEY as MASTER_KEY } from '../support/webhooks.ts';
 import type { TestApp } from '../support/app.ts';
 
 const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl';
 const HOST: WindowsHost = { name: 'build-host', ssh: 'builder@winbox', hostKey: KEY, workDir: 'C:\\work\\app', label: '.NET builds' };
 
-interface Seen { host: string; command: string; inputs: string[]; outputs: string[] }
+interface Seen { host: string; command: string; inputs: string[]; outputs: string[]; secrets?: Record<string, string> }
 
 /** A Windows host double: it lists the inputs it got, streams two lines, packs `bin/App.exe` as the outputs, exits 3. */
 function fakeHost(o: { hang?: boolean } = {}): { host: WindowsStepHost; seen: Seen[] } {
@@ -41,8 +50,10 @@ function fakeHost(o: { hang?: boolean } = {}): { host: WindowsStepHost; seen: Se
     host: {
       async run(host, step, io) {
         const inputs = step.inputs ? execFileSync('tar', ['-tf', join(step.dir, 'inputs.tar')], { encoding: 'utf8' }).trim().split('\n') : [];
-        seen.push({ host: host.name, command: step.command, inputs, outputs: step.outputs });
+        seen.push({ host: host.name, command: step.command, inputs, outputs: step.outputs, ...(step.secrets ? { secrets: { ...step.secrets } } : {}) });
         io.log('building App.sln\n');
+        // A step that prints its secret, split across two chunks: the job's copy of the log masks it.
+        for (const value of Object.values(step.secrets ?? {})) { io.log(`token ${value.slice(0, 5)}`); io.log(`${value.slice(5)} used\n`); }
         if (o.hang) {
           await new Promise((resolve) => { io.signal.addEventListener('abort', resolve, { once: true }); });
           return { exit: 255, problem: 'stopped before it ended' };
@@ -180,5 +191,39 @@ describe('Windows sandbox steps (issue #731)', () => {
     expect(stale.status).toBe(200);
     const again = await a.ui('/ui/api/windows-hosts', { hosts: [], version: 'missing' }, { token: session });
     expect(again.status).toBe(409);
+  }, 60_000);
+
+  it('gives a step a vault secret only when its host gives it and a person granted the job the vault, and masks it in the log', async () => {
+    const VALUE = 'nuget-key-0123456789-never-to-the-job';
+    const fake = fakeHost();
+    const { a, session, job } = await h.boot({ secrets: { HOPPER_MASTER_KEY: MASTER_KEY }, seams: { windowsStepHost: fake.host } });
+    const edit = (body: Record<string, unknown>) => a.ui('/ui/api/vault', body, { token: session });
+    expect((await edit({ action: 'set', name: 'NUGET_TOKEN', value: VALUE })).status).toBe(200);
+    expect((await edit({ action: 'set', name: 'PROD_KEY', value: 'prod-never-given' })).status).toBe(200);
+    expect((await saveHosts(a, session, [{ ...HOST, secrets: ['NUGET_TOKEN'] }])).status).toBe(200);
+    expect((await step(a, job, ['hosts'])).stdout).toBe('build-host  C:\\work\\app  .NET builds  secrets: NUGET_TOKEN\n');
+
+    const ungranted = await step(a, job, ['run', 'build-host', '--secret', 'NUGET_TOKEN', '--command', 'nuget push']);
+    expect(ungranted.code).toBe(STEP_NOT_RUN);
+    expect(ungranted.stdout).toMatch(/^no: NUGET_TOKEN: job [0-9a-f]{8} has no vault grant/);
+    expect(fake.seen).toEqual([]);
+    const asks = (await a.api<{ grantAsks?: unknown[] }>('GET', '/api/vault', undefined, { 'x-hopper-session': session })).body.grantAsks;
+    expect(asks).toEqual([expect.objectContaining({ job, windowsHost: 'build-host', names: ['NUGET_TOKEN'] })]);
+    expect(eventsOf(a, 'vault.grant_asked')[0]!.data).toMatchObject({ job, windowsHost: 'build-host', name: 'NUGET_TOKEN' });
+    expect(eventsOf(a, 'vault.step_refused')[0]!.data).toMatchObject({ name: 'NUGET_TOKEN', host: 'build-host', job });
+
+    const outside = await step(a, job, ['run', 'build-host', '--secret', 'PROD_KEY', '--command', 'dir']);
+    expect(outside.code).toBe(STEP_NOT_RUN);
+    expect(outside.stdout).toBe('no: build-host does not give PROD_KEY to its steps: it gives NUGET_TOKEN. A person adds a secret to the host in Settings → Windows hosts.\n');
+
+    expect((await a.ui(`/ui/api/jobs/${job}/grant-vault`, {}, { token: session })).status).toBe(200);
+    const r = await step(a, job, ['run', 'build-host', '--secret', 'NUGET_TOKEN', '--command', 'nuget push']);
+    expect(r.code).toBe(3);
+    expect(fake.seen).toEqual([expect.objectContaining({ command: 'nuget push', secrets: { NUGET_TOKEN: VALUE } })]);
+    expect(r.stdout).toBe('building App.sln\ntoken *** used\ndone\n');
+    expect(r.stdout + r.stderr).not.toContain(VALUE);
+    expect(eventsOf(a, 'vault.step_delivered').map((e) => e.data)).toEqual([{ name: 'NUGET_TOKEN', host: 'build-host', job }]);
+    expect(eventsOf(a, 'step.started')[0]!.data).toMatchObject({ secrets: ['NUGET_TOKEN'] });
+    expect(JSON.stringify(await a.events())).not.toContain(VALUE);
   }, 60_000);
 });

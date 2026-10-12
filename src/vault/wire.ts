@@ -46,6 +46,11 @@ export const vaultOps = {
     holds: z.boolean(),
   }),
   /**
+   * A Windows sandbox step's secret (issue #731): the hopper checked the job's token and the host's list; the vault checks
+   * the job is at work and opens the secret.
+   */
+  'step-deliver': z.strictObject({ user, ask: z.strictObject({ name, job: z.string().max(64), host: z.string().max(40) }) }),
+  /**
    * A mint from a minting credential (issue #580), asked only after the hopper's Access allowed it: the vault opens the
    * minting credential and calls STS or the Kubernetes API; the minted credential crosses back, the minting one never.
    */

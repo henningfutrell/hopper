@@ -27,15 +27,19 @@ No agent, client or work tree runs on Windows. When the work needs Windows (a .N
 tests, a packing step), the hopper runs that one step on a Windows host a person set up, over ssh, in PowerShell, in
 that host's working directory. The step's output streams back here as it runs; then its exit code and its outputs.
 
-  sh "$HOPPER_STEP" hosts                     the Windows hosts: name, working directory, label
+  sh "$HOPPER_STEP" hosts                     the Windows hosts: name, working directory, label, the secrets it gives
   sh "$HOPPER_STEP" run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]...
-                         [--timeout SECONDS] [--into DIR]
+                         [--secret NAME]... [--timeout SECONDS] [--into DIR]
     --command TEXT     PowerShell to run in the host's working directory (at most 4 KiB)
     --script FILE      a PowerShell script of this machine's to run instead (any size)
     --input PATH       a file or directory, relative to the current directory: copied into the host's working
                        directory, at the same relative path, before the command runs. Repeat for more.
     --output PATH      a file or directory, relative to the host's working directory: brought back after the command
                        ends, into --into DIR (default: the current directory). Repeat for more.
+    --secret NAME      a vault secret the host gives (see hosts): the step gets it as the environment variable NAME
+                       ($env:NAME). It goes only to the step, never to this machine; the step's log shows *** for
+                       it. The first ask of a job with no vault grant is refused, and a person is asked to grant it.
+                       Repeat for more.
     --timeout SECONDS  how long the step may run (default 1800, at most 14400): then it is stopped
 Exit: the step's own exit code; ${STEP_NOT_RUN}: the hopper did not run it, stopped it, or could not bring it all back
 (the reason is on stderr); 2: a bad call.
@@ -43,22 +47,25 @@ Exit: the step's own exit code; ${STEP_NOT_RUN}: the hopper did not run it, stop
 One step runs on a host at a time: a step waits while another runs there, and says so. The host keeps no scratch:
 the hopper removes what it copied there for the step when the step ends. Inputs overwrite files of the same name in
 the working directory, and stay there. A step is on this job's timeline: its host, command, exit code and time.
-The step gets no credential and no GitHub token. GitHub stays here: fetch, push and open pull requests from this
-machine.
+The step gets no GitHub token and no credential but the vault secrets it asks for with --secret. GitHub stays here:
+fetch, push and open pull requests from this machine. Do not print a secret, or write it into an output: the hopper
+masks only the log.
 
 Example: build a solution on the host, and bring the build back.
-  sh "$HOPPER_STEP" run build-host --input src --command "msbuild App.sln /p:Configuration=Release" --output src/App/bin/Release --into out`;
+  sh "$HOPPER_STEP" run build-host --input src --command "msbuild App.sln /p:Configuration=Release" --output src/App/bin/Release --into out
+Example: push a package with a key from the vault.
+  sh "$HOPPER_STEP" run build-host --secret NUGET_TOKEN --command 'nuget push out\\App.nupkg -ApiKey $env:NUGET_TOKEN'`;
 
 /** The script. The token goes to curl on stdin, never on a command line; every value in a URL is percent-encoded. */
 export const STEP_SCRIPT = `#!/bin/sh
 # hopper-step — run one step on a Windows host (issue #731). Written by the hopper at each job start.
 #   sh "$HOPPER_STEP" hosts
-#   sh "$HOPPER_STEP" run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR]
+#   sh "$HOPPER_STEP" run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR]
 # Load the windows-step skill for the full help: sh "$HOPPER_SKILL" windows-step
 # Exit: the step's own exit code; ${STEP_NOT_RUN}: the hopper did not run it, stopped it, or could not bring it all back; 2: a bad call.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-usage() { echo 'usage: sh "$HOPPER_STEP" hosts | run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR]' >&2; exit 2; }
+usage() { echo 'usage: sh "$HOPPER_STEP" hosts | run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR]' >&2; exit 2; }
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; }
 # Every byte as %XX: safe in a URL whatever the text holds.
 enc() { printf '%s' "$1" | od -An -v -tx1 | tr -d ' \\n' | sed 's/../%&/g'; }
@@ -79,13 +86,14 @@ host=$1; shift
 command=; script=; into=.; q=; : > "$tmp/inputs"
 while [ $# -gt 0 ]; do
   case $1 in
-    --command|--script|--input|--output|--timeout|--into)
+    --command|--script|--input|--output|--secret|--timeout|--into)
       [ $# -ge 2 ] || usage
       case $1 in
         --command) command=$2 ;;
         --script) script=$2 ;;
         --input) [ -e "$2" ] || { echo "no: $2 is not here" >&2; exit 2; }; printf '%s\\n' "$2" >> "$tmp/inputs" ;;
         --output) q="$q&output=$(enc "$2")" ;;
+        --secret) q="$q&secret=$(enc "$2")" ;;
         --timeout) q="$q&timeout=$(enc "$2")" ;;
         --into) into=$2 ;;
       esac

@@ -4593,7 +4593,7 @@ full help is the `windows-step` skill's text, so the catalog grows by one line a
 | call | what happens |
 |------|--------------|
 | `sh "$HOPPER_STEP" hosts` | `GET /job/step`: the user's hosts, `name  workDir  label` per line |
-| `sh "$HOPPER_STEP" run HOST (--command TEXT \| --script FILE) [--input PATH]... [--output PATH]... [--timeout S] [--into DIR]` | `POST /job/step?host=&command=&timeout=&output=…` with the inputs as a tar body (`application/x-tar`, streamed to a file, at most 1 GiB); 200 streams the step's output as it comes, the step's id in `x-hopper-step`. Then `GET /job/step/:id`: the outputs tar, `x-hopper-step-exit`, and `x-hopper-step-problem` when the hopper could not run it, stopped it or could not bring the outputs back |
+| `sh "$HOPPER_STEP" run HOST (--command TEXT \| --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout S] [--into DIR]` | `POST /job/step?host=&command=&timeout=&output=…&secret=…` with the inputs as a tar body (`application/x-tar`, streamed to a file, at most 1 GiB); 200 streams the step's output as it comes, the step's id in `x-hopper-step`. Then `GET /job/step/:id`: the outputs tar, `x-hopper-step-exit`, and `x-hopper-step-problem` when the hopper could not run it, stopped it or could not bring the outputs back |
 
 The script exits with the step's own exit code, or `125` with the reason on stderr when the hopper did not run the
 step, stopped it, or could not bring it all back. `--command` travels in the URL, so it is at most 4 KiB; `--script FILE`
@@ -4623,20 +4623,46 @@ ssh process is killed; the next step's prepare clears what is left); its result 
 to fetch, then swept. On the job's timeline: `step.started` (host, command up to 300 characters, timeout, inputs size,
 outputs), `step.finished` (exit, seconds, outputs size, problem) and `step.refused` (reason). Never the step's output.
 
-**Credentials and GitHub.** A step gets no credential and no GitHub token. GitHub stays on the Linux machine, through the
-hopper (issues #563, #652). The vault's delivery for one step only is not built yet: it is the open part of issue #731.
+**Credentials and GitHub.** A step gets no GitHub token: GitHub stays on the Linux machine, through the hopper (issues
+#563, #652). It gets a vault secret only when it asks for it by name (`--secret NAME`, at most 16), and only through
+three gates, in order:
+
+1. **The host gives it.** A Windows host's `secrets` lists the user's own vault secrets (no `system/`, no `shared/`, at
+   most 32) its steps may be given: the upper bound a person sets, as a template's scope is for a box. Edited with the
+   host, so it is a box action too. A name outside it: 403, `<host> does not give <name> to its steps`, before the
+   vault is asked.
+2. **The job's vault grant** ("Vault grants", issue #652). `withVaultGrants` gates `forStep` as it gates a box's
+   delivery: no grant for the job's item → refused (`vault.step_refused`), and a grant ask is opened with the host as
+   `windowsHost` in place of a box and template (`vault.grant_asked`, once per job). A person grants it on the Vault page.
+3. **The vault** (`VaultService.forStep`, `src/vault/service.ts`; in the vault container, the wire op `step-deliver`):
+   the job at work, a secret it holds, not a minting credential, opened or read in its backend. `vault.step_delivered`
+   (name, host, job, backend), never the value; the secret's `lastUsed` names the host.
+
+The secrets are read when the step is asked, before its inputs are taken, and held in the hopper's memory for that step
+only. On the host they go over the run call's stdin, one line each, `NAME=<base64 of UTF-8>`
+(`secretsInput`, `src/windows-steps/powershell.ts`); the run script reads stdin to its end, sets each as an environment
+variable of its own process, and runs the step's PowerShell, which inherits them. Never an argument, never a file, never
+in the step's script; the host's scratch directory holds none. The log the job reads has each value replaced by `***`
+(`maskSecrets`, `src/windows-steps/service.ts`), also when a value is split across chunks.
+
+**Residual risk.** The step runs the job's command with the value: a step that prints a changed form of it (encoded,
+reversed), or writes it into an output, gives it to the job. The mask is a guard against an accident, not a boundary;
+the gates decide what the job may reach. The host's account sees the value while the step runs, as any process of it
+would.
 
 **Retired:** the native Windows client lane and the `hopper:win` routing to it. No code of the hopper holds them: they
 are a person's machine and routing rule, removed in Settings → Machines and Settings → Routing.
 
-**Not built.** Vault secrets delivered to a step; a step's output on the job stream (the response carries it); more than
+**Not built.** A minted credential or a shared secret for a step; a step's output on the job stream (the response carries it); more than
 one step at a time on one host; a host reached through a jump host.
 
 Tests: `test/windows-steps/domain.test.ts` (a host's and a step's checks), `test/windows-steps/powershell.test.ts` (the
-scripts and their encoding), `test/windows-steps/ssh-host.test.ts` (fake ssh and scp record each call: the hardening, the
-host's own pin, the order, the copies, a stop, the cleanup), `test/integration/windows-steps.test.ts` (the real daemon and
-`hopper-step`, a double at the `WindowsStepHost` seam: hosts, a run with its log, exit code and outputs, a script, the
-noes, a timeout, the edit), `test/ui/windows-hosts.test.ts` (add with the host key confirmed, remove).
+scripts and their encoding; the secrets read from stdin), `test/windows-steps/ssh-host.test.ts` (fake ssh and scp record each
+call: the hardening, the host's own pin, the order, the copies, a stop, the cleanup; a secret on the run call's stdin only),
+`test/integration/windows-steps.test.ts` (the real daemon and `hopper-step`, a double at the `WindowsStepHost` seam: hosts, a
+run with its log, exit code and outputs, a script, the noes, a timeout, the edit; a secret refused with no grant and a grant
+ask opened, refused outside the host's list, given after the grant and masked in the log),
+`test/ui/windows-hosts.test.ts` (add with the host key confirmed, remove, set a host's secrets).
 
 ## Sandbox boxes the hopper launches (issue #603, 2026-10-09)
 
@@ -14141,6 +14167,8 @@ Run again, Rework and Retry make jobs of the same item, so one grant covers them
 **grant ask**, kept in the hopper's memory (dropped when the job is no longer at work or its item is granted),
 `vault.grant_asked` once per job. A granted job's ask then goes on to the vault, which decides as before: the template's
 approved scope, a launch's scope (issue #708), Access for a mint and for a shared secret. The grant widens nothing.
+A Windows sandbox step's secret (issue #731, "Windows sandbox steps") passes the same grant: with none, the ask names the
+Windows host (`windowsHost`) in place of a box and template.
 
 **Granting** (Settings → Vault, panel **Vault grants**: each grant ask as a card — the job, its box and template, what it
 asked for, the item — with **Grant**; each grant with who granted it and **Revoke**). `POST /ui/api/jobs/:id/grant-vault`

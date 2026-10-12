@@ -1,8 +1,9 @@
 // The Windows host a step runs on, over ssh and scp (issue #731, design.md "Windows sandbox steps"). The hopper reaches
 // it as it reaches an ssh target ("Target authentication"): its own key, public-key authentication only, the pinned
 // host key only — here one known_hosts file per Windows host, written before each step —, nothing forwarded. Four
-// calls per step: prepare the scratch directory, copy the inputs and the step's script, run it (its output streamed),
-// bring the outputs back; then the scratch directory is removed.
+// calls per step: prepare the scratch directory, copy the inputs and the step's script, run it (its output streamed;
+// its vault secrets, when it has any, on that call's stdin only), bring the outputs back; then the scratch directory is
+// removed.
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -10,7 +11,7 @@ import type { WindowsStepHost } from '../domain/ports.ts';
 import type { StepResult, WindowsHost } from '../domain/windows-steps.ts';
 import { scrubbedEnv } from '../executors/env.ts';
 import { scpArgv, sshArgv, SSH_FAILED, type SshAuth, type SshTransport } from '../executors/ssh.ts';
-import { cleanupScript, encodedCommand, prepareScript, runScript, scpScratch, stepFile } from './powershell.ts';
+import { cleanupScript, encodedCommand, prepareScript, runScript, scpScratch, secretsInput, stepFile } from './powershell.ts';
 
 export interface SshStepHostOptions {
   /** How the hopper proves itself (the same key as to its ssh targets); its known_hosts is replaced by the host's own pin. */
@@ -26,11 +27,14 @@ const SIDE_CALL_MS = 10 * 60 * 1000;
 
 interface Ran { code: number; stderr: string; aborted: boolean }
 
-function run(bin: string, argv: string[], o: { signal: AbortSignal; timeoutMs?: number; out?: (chunk: string) => void }): Promise<Ran> {
+/** Runs `bin`; `stdin`, when given, is written to it, then closed — the only way a secret reaches the host. */
+function run(bin: string, argv: string[], o: { signal: AbortSignal; timeoutMs?: number; out?: (chunk: string) => void; stdin?: string }): Promise<Ran> {
   return new Promise((resolve) => {
     let stderr = '';
     let aborted = false;
-    const child = spawn(bin, argv, { env: scrubbedEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(bin, argv, { env: scrubbedEnv(), stdio: ['pipe', 'pipe', 'pipe'] });
+    child.stdin.on('error', () => { /* the far end closed early: its exit says why */ });
+    child.stdin.end(o.stdin ?? '');
     const stop = () => { aborted = true; child.kill('SIGTERM'); };
     const timer = o.timeoutMs ? setTimeout(stop, o.timeoutMs) : undefined;
     if (o.signal.aborted) stop(); else o.signal.addEventListener('abort', stop, { once: true });
@@ -61,8 +65,8 @@ export function createSshStepHost(o: SshStepHostOptions): WindowsStepHost {
     async run(host, step, io) {
       let t: SshTransport;
       try { t = transport(host); } catch (e) { return { exit: SSH_FAILED, problem: (e as Error).message }; }
-      const remote = (script: string, opts: { out?: (c: string) => void; timeoutMs?: number; signal?: AbortSignal } = {}) =>
-        run(ssh, sshArgv(t, encodedCommand(script)), { signal: opts.signal ?? io.signal, ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}), ...(opts.out ? { out: opts.out } : {}) });
+      const remote = (script: string, opts: { out?: (c: string) => void; timeoutMs?: number; signal?: AbortSignal; stdin?: string } = {}) =>
+        run(ssh, sshArgv(t, encodedCommand(script)), { signal: opts.signal ?? io.signal, ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}), ...(opts.out ? { out: opts.out } : {}), ...(opts.stdin !== undefined ? { stdin: opts.stdin } : {}) });
       const failed = (what: string, r: Ran): StepResult => ({ exit: SSH_FAILED, problem: r.aborted ? `${what}: stopped` : `${what}: ${r.stderr || `exit ${r.code}`}` });
       try {
         const prepared = await remote(prepareScript(host.workDir), { timeoutMs: SIDE_CALL_MS });
@@ -71,7 +75,8 @@ export function createSshStepHost(o: SshStepHostOptions): WindowsStepHost {
         writeFileSync(join(step.dir, 'step.ps1'), `\ufeff${stepFile(step.command)}`);
         const sent = await run(scp, scpArgv(t, { to: true, from: [...(step.inputs ? [join(step.dir, 'inputs.tar')] : []), join(step.dir, 'step.ps1')], remote: `${scpScratch(host.workDir)}/` }), { signal: io.signal, timeoutMs: SIDE_CALL_MS });
         if (sent.code !== 0) return failed('the inputs could not be copied to the host', sent);
-        const ran = await remote(runScript({ workDir: host.workDir, inputs: step.inputs, outputs: step.outputs }), { out: io.log });
+        const secrets = step.secrets && Object.keys(step.secrets).length > 0 ? step.secrets : undefined;
+        const ran = await remote(runScript({ workDir: host.workDir, inputs: step.inputs, outputs: step.outputs, secrets: secrets !== undefined }), { out: io.log, ...(secrets ? { stdin: secretsInput(secrets) } : {}) });
         if (ran.aborted) return { exit: ran.code, problem: 'stopped before it ended' };
         const result: StepResult = { exit: ran.code };
         if (ran.code === SSH_FAILED) result.problem = `ssh ended with ${SSH_FAILED}: the connection to ${host.name} failed, or the command exited ${SSH_FAILED}`;
