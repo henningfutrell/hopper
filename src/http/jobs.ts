@@ -4,6 +4,7 @@ import type { FastifyRequest } from 'fastify';
 import { jobGraph, type JobGraphLink } from '../domain/job-graph.ts';
 import { withPhase, type Job, type JobStatus } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
+import type { Operation } from './openapi-operation.ts';
 import type { TenantParts } from './tenants.ts';
 
 const STATUSES = [
@@ -23,6 +24,11 @@ export const jobsQuery = z.object({
 });
 
 const idParams = z.object({ id: z.string() });
+
+/** The API reference's entry for the job graph (issue #900). */
+export const JOB_GRAPH_OPERATIONS: Operation[] = [
+  { method: 'get', path: '/api/jobs/graph', tag: 'Jobs', summary: 'The job graph', description: 'Where every job stands and how the jobs hang together (issue #900): nodes (jobs, issues, pull requests), each with its stage — `queued`, `running`, `waiting`, `pr_open`, `partly_done`, `done`, `failed`, `cancelled`, or `no_job` for an issue no job works —, a job\'s task count, lane, machine, time in stage (`stageSince`) and pull request with its checks; a partly done job names the pull request that blocks the rest and what runs after its merge. Typed edges: `parent`, `follow_up`, `works`, `next_part`, `rerun`, `spawned`, `plan_apply`, `opened`, `waits_on_merge`, `closes`. `trees`: each group of connected nodes with its root and the nodes that block it (`blocking`). `stages`: how many jobs are in each stage. The jobs are those `/api/queue` holds, the jobs whose pull request is open, and the jobs these ran again, forked from or carried out. The Jobs view\'s graph and list.', returns: '`JobGraph` `{ nodes: JobGraphNode[], edges: JobGraphEdge[], trees: JobTree[], stages }`' },
+];
 
 /** The job graph's bounds: followed jobs read, steps back along a job's origins, lineage links read. */
 const GRAPH_FOLLOWED = 500;

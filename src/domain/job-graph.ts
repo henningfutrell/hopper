@@ -101,6 +101,9 @@ export interface JobGraphInput {
 
 interface Followed { pullRequest?: string; follow?: string; seen?: { checks?: ChecksState | 'none'; draft?: boolean; conflicting?: boolean }; parts?: unknown }
 
+/** A job node's task count is part of the graph's contract: re-exported with it (and so through types.ts). */
+export type { TaskCount };
+
 const followedOf = (job: Job): Followed => (job.sourceState?.source ?? {}) as Followed;
 
 export const issueNodeId = (repo: string, number: number): string => `issue:${repo.toLowerCase()}#${number}`;

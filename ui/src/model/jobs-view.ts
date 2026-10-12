@@ -4,8 +4,10 @@
 // row also shows its last event — the newest of what GET /api/jobs/last-events answered and the events the stream
 // brought since.
 import { hierarchy, tree as d3tree } from 'd3';
-import type { Tone } from '@/components/status';
 import type { DomainEvent, JobGraph, JobGraphEdgeKind, JobGraphNode, JobStage, JobTree } from './wire.ts';
+
+/** A colour of the status palette (components/status.tsx `Tone`): the model names it, the view paints it. */
+export type Tone = 'busy' | 'ok' | 'bad' | 'warn' | 'question' | 'operator' | 'muted';
 
 /** Each stage as the view names and colours it, in the order the counts show. */
 export const STAGES: readonly { stage: JobStage; label: string; tone: Tone; title: string }[] = [
