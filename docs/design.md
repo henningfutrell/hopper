@@ -15018,11 +15018,11 @@ line limit). Nothing new is recorded: the parts are read from what the job's rec
 |---|---|
 | What was asked (`asked`) | its issue (`source`); each issue it filed (`job.child_issue_filed`); rework asked (`job.rework_requested`); a changed spec (`job.respecified`) |
 | Work (`work`) | each run (`job.started`); its task list (`tasks`); its lane; the time it took or runs so far; each job that ran it again, ran its next part, or forked from it |
-| Code (`code`) | its pull request, checks and branch (its source state); its merge or close (`job.pull_request_merged`, `job.pull_request_closed`) |
+| Code (`code`) | its pull request, checks and branch (its source state); the commits its latest checkpoint names (`checkpoint.commits`, issue #921), oldest first; its merge or close (`job.pull_request_merged`, `job.pull_request_closed`) |
 | Outputs (`outputs`) | its artifacts and each revision (`artifact.revised`); its plan or research report (`proposalId`, `researchId`) |
 | Infra (`infra`) | each plan and its approval (`infra.plan_recorded`, `infra.plan_approved`); each minted credential with its operation, asset and end (`vault.minted`); drift its check found (`infra.out_of_band_recorded`); a vault grant it asked for (`vault.grant_asked`, `vault.granted`) |
 | Decisions (`decisions`) | each question, and who answered it — a person, or the level by name (rules, a model) —; each override of a minor decision; its hand-off |
-| Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); each Windows sandbox step (`step.started`) |
+| Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); each checkpoint, with its commits and whether it holds the session (`job.checkpointed`); each Windows sandbox step (`step.started`) |
 
 Each part's `status` is `waiting_on_you`, `running`, `open`, `done`, `failed`, `cancelled` or `recorded` (a fact, not a
 piece of work: a lane, a branch, a credential); `href` is its page in the UI (`#questions`, `#artifacts/<id>/<n>`,
@@ -15045,8 +15045,8 @@ the job arrives on the stream, so a running part changes with no reload. A daemo
 cannot be read) leaves the page as it was: facts and timeline.
 
 **Left for later** (the pull request says so): cost and usage per job (the job cost profiles are made per finished job
-over machine samples, apart from this read), commits, merge order, help pages and What's new lines a job wrote, the
-checkpoints and test databases of a run — none has a record tied to a job yet.
+over machine samples, apart from this read), the commits pushed after the last checkpoint, merge order, help pages and
+What's new lines a job wrote, the test databases of a run — none has a record tied to a job yet.
 
 Tests: `test/domain/job-bom.test.ts` (each group, the order, the header and summary, the timeline),
 `test/domain/job-graph.test.ts` (titles, stage words, tree summaries), `test/integration/job-bom.test.ts` (a job that asked a

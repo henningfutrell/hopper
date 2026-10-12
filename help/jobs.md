@@ -74,11 +74,11 @@ The parts list is everything the job touched or made:
 |---|---|
 | What was asked | The issue, the follow-up issues the job filed, and rework a person asked for. |
 | Work | Each run, the task list, the lane, the time it took, and the jobs that ran it again or ran its next part. |
-| Code | The pull request, its checks, its branch, and its merge. |
+| Code | The pull request, its checks, its branch, the commits its latest checkpoint names, and its merge. |
 | Outputs | Its artifacts and each revision, and its plan or research report. |
 | Infra | Its infra plans and their approvals, each credential minted for it with what it may do, drift it found, and a vault grant it asked for. |
 | Decisions | Each question and who answered it (a person, or a level such as rules or a model), overrides, and its hand-off. |
-| Machines and sandboxes | Each machine it ran on, and each Windows sandbox step. |
+| Machines and sandboxes | Each machine it ran on, each checkpoint the hopper took of it, and each Windows sandbox step. |
 
 Each part shows its status: waiting on you, running, open, done, failed, cancelled, or recorded (a fact, such as a branch or a lane). The page reads the parts again each time the job has a new event, so running parts stay live.
 

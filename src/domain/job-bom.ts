@@ -121,6 +121,10 @@ function work(job: Job, events: readonly DomainEvent[], related: readonly Job[],
   for (const [m, runs] of machines) out.push({ id: `machine:${m}`, group: 'machines', kind: 'machine', label: m, status: 'recorded', detail: `${runs} ${runs === 1 ? 'run' : 'runs'}`, href: '#machines' });
   for (const e of events) {
     const d = e.data as Data;
+    if (e.type === 'job.checkpointed') {
+      const n = typeof d.commits === 'number' ? d.commits : 0;
+      out.push({ id: `checkpoint:${e.seq}`, group: 'machines', kind: 'checkpoint', label: `Checkpoint on ${str(d.machineId) ?? 'its machine'}`, status: 'recorded', at: e.at, detail: `${n} ${n === 1 ? 'commit' : 'commits'}, ${d.session ? 'with its session' : 'no session'}` });
+    }
     if (e.type === 'step.started') out.push({ id: `step:${str(d.step) ?? e.seq}`, group: 'machines', kind: 'step', label: `Windows step on ${str(d.host) ?? 'a host'}`, status: 'recorded', at: e.at, ...(str(d.command) ? { detail: str(d.command)! } : {}) });
   }
   return out;
@@ -139,6 +143,11 @@ function code(job: Job, events: readonly DomainEvent[]): BomPart[] {
       out.push({ id: 'checks', group: 'code', kind: 'checks', label: ch === 'none' ? 'No checks' : `Checks ${ch}`, status: ch === 'passing' ? 'done' : ch === 'failing' ? 'failed' : ch === 'none' ? 'recorded' : 'running' });
     }
     if (pr.headRef) out.push({ id: 'branch', group: 'code', kind: 'branch', label: pr.headRef, status: 'recorded', ...(pr.base ? { detail: `into ${pr.base}` } : {}) });
+  }
+  // The commits its latest checkpoint named (issue #921): its work after the branch's base then, oldest first.
+  for (const c of [...(job.checkpoint?.commits ?? [])].reverse()) {
+    const [sha, ...subject] = c.split(' ');
+    out.push({ id: `commit:${sha}`, group: 'code', kind: 'commit', label: subject.join(' ') || sha!, status: 'recorded', detail: sha!, at: job.checkpoint!.at });
   }
   for (const e of events) {
     const d = e.data as Data;
