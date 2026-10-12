@@ -306,7 +306,7 @@ describe('the vault mints short-lived credentials only through Access', () => {
     expect(asked.get('DurationSeconds')).toBe('900');
     expect(asked.get('PolicyArns.member.1.arn')).toBe('arn:aws:iam::aws:policy/ReadOnlyAccess');
     // Issue #715: the inline deny policy crosses from the hopper to the vault's container and on to STS.
-    expect(JSON.parse(asked.get('Policy')!)).toMatchObject({ Statement: expect.arrayContaining([expect.objectContaining({ Effect: 'Deny', Action: expect.arrayContaining(['*:Create*']) })]) });
+    expect(JSON.parse(asked.get('Policy')!)).toMatchObject({ Statement: expect.arrayContaining([expect.objectContaining({ Effect: 'Deny', Action: expect.arrayContaining(['ec2:Create*']) })]) });
 
     const bad = { ...value, SessionName: 'not a session name' };
     expect((await a.ui('/ui/api/vault', { action: 'set', name: 'AWS_LAB', value: JSON.stringify(bad) }, { token: session })).status).toBe(200);

@@ -9213,10 +9213,14 @@ template, since the needs decide the assets and the read policy decides the appr
 
 - **The deny policy** (`awsReadDenyPolicy`, `src/domain/minting.ts`). Every read session the vault mints from STS — for a
   job, a check box, or a mint test — carries an inline session policy beside the managed `ReadOnlyAccess`: explicit
-  denies of `*:Create*`, `*:Delete*`, `*:Put*`, `*:Update*`, `*:Modify*`, IAM's other writes (`iam:Attach*`,
-  `iam:PassRole`, `iam:Tag*`, …), and `sts:AssumeRole` (and its SAML and web-identity forms) on any role but its own.
-  Only denies: a session policy's allow could add to what `ReadOnlyAccess` gives. An explicit deny wins over every allow,
-  so a role whose own policy can write still gives a read session none of it. `AssumeRole` sends it as `Policy`; with the
+  denies of the `Create*`, `Delete*`, `Put*`, `Update*` and `Modify*` actions of twelve services (`iam`, `s3`,
+  `dynamodb`, `ec2`, `ssm`, `rds`, `lambda`, `ecs`, `eks`, `kms`, `secretsmanager`, `cloudformation`), IAM's other writes
+  (`iam:Attach*`, `iam:PassRole`, `iam:Tag*`, …), and `sts:AssumeRole` (and its SAML and web-identity forms) on any role
+  but its own. Only denies: a session policy's allow could add to what `ReadOnlyAccess` gives. An explicit deny wins over
+  every allow, so a role whose own policy can write still gives a read session none of those writes. Each service is
+  named (issue #853): IAM takes no wildcard in a service prefix, and the first form, `*:Create*`, made STS refuse every
+  read mint (`Invalid service prefix for action '*:Create*'`). A session gets only what both the role and its session
+  policies allow, so `ReadOnlyAccess` is the cap on every other service; the 2048-character limit keeps the list short. `AssumeRole` sends it as `Policy`; with the
   vault in a container of its own it crosses in the mint target (`policy`, at most 2048 characters, STS's limit). A write
   session carries neither policy.
 - **The read-only wrapper** (`TERRAFORM_WRAPPER`, `src/sandbox/terraform-wrapper.ts`). A read-only template's image
@@ -9346,7 +9350,7 @@ probe stack found nothing in its state to delete, so it asked the account nothin
   (`$HOME/tf-held`), with a local state the probe writes that holds the stack's SSM parameter. Then
   `"$HOPPER_TOOLS/terraform" destroy -refresh=false`. With no refresh, terraform does not first read the parameter, so
   it sends `ssm:DeleteParameter` whether or not the parameter exists, and the account must refuse it (the deny policy's
-  `*:Delete*`). Allowed, the provider deletes the parameter, or gets `ParameterNotFound` and ends with no error: in
+  `ssm:Delete*`). Allowed, the provider deletes the parameter, or gets `ParameterNotFound` and ends with no error: in
   both cases the probe fails. With a refresh, a missing parameter leaves the state empty and nothing is asked: the
   probe would pass with a writable credential.
 - **No cleanup.** A delete that went through removed only the check's own parameter, which nothing else uses.
@@ -9376,7 +9380,7 @@ did not know a workspace's backend.
   configured only by `-backend-config`: the bucket, the region, and the key `stateProbeKey(backend)` —
   `<key prefix>/hopper-read-only-check/terraform.tfstate`, the check's own key. Then `state push -lock=false` of a state
   of its own (no resources, lineage `hopper-read-only-check`). `init` only reads (`ListObjectsV2`, `HeadObject`); the push
-  is the one write, `s3:PutObject`, and the deny policy's `*:Put*` must refuse it. The probe never names the workspace's
+  is the one write, `s3:PutObject`, and the deny policy's `s3:Put*` must refuse it. The probe never names the workspace's
   own state key. Under the key prefix, not at the bucket's top: a role or bucket policy that allows writes under the prefix
   where the workspace's states are is the case to find, and a key elsewhere would miss it. Its `denial` is a refused
   `PutObject` only, so a read that `init` is refused (a role that cannot read the bucket) is an `error`, not a pass.
@@ -9416,12 +9420,13 @@ the hopper's network and reach any host.
 **Residual risk, stated.** The wrapper is one layer: anything in the box can run `$HOPPER_TOOLS/terraform` past it, by
 design, and the deny policy is what refuses then. Past the wrapper, a process can also unset `TF_CLI_CONFIG_FILE` and
 download a provider: the mirror stops the downloads terraform makes through the wrapper and by default, not every
-download a box can make, until egress is limited (#849). `*:Create*` and its kind match by the action's name: a write whose name
-starts with another word (`s3:Restore*`, `ec2:Run*`, `lambda:Invoke*`) is not in the deny policy, and is refused only
-when `ReadOnlyAccess` does not allow it — which it does not, as it allows only reads. The deny policy is a guard against
-a role whose own policy and a later change to `ReadOnlyAccess` could otherwise widen a session. It is checked against
-STS's documented policy grammar and in tests against a fake STS, not against AWS itself: `hopper vault mint-test`
-mints one with it, so a person sees STS take it.
+download a box can make, until egress is limited (#849). `ec2:Create*` and its kind match by the action's name: a write whose name
+starts with another word (`s3:Restore*`, `ec2:Run*`, `lambda:Invoke*`) is not in the deny policy, and neither is a write of a service the deny
+policy does not name; each is refused only when `ReadOnlyAccess` does not allow it — which it does not, as it allows only reads. The deny policy is a guard against
+a role whose own policy and a later change to `ReadOnlyAccess` could otherwise widen a session. It is checked in tests
+against IAM's policy grammar and AWS's list of services and actions (`@cloud-copilot/iam-policy`,
+`@cloud-copilot/iam-data`, issue #853: a fake STS took `*:Create*`, AWS did not), not against AWS itself:
+`hopper vault mint-test` mints one with it, so a person sees STS take it.
 
 Tests: `test/vault/read-session-policy.test.ts` (the policy: denies only, each write, every other role, within 2048
 characters; none on a write session), `test/integration/vault-mint.test.ts` (the policy reaches STS as `Policy`, through the
