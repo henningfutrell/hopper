@@ -21,7 +21,7 @@ export const INFRA_PLAN_EVENT_SCHEMAS = {
   'infra.plan_approved': strict({ plan: z.string(), tool: z.enum(PLAN_TOOLS), asset, target: z.string(), by: z.string() }),
   'infra.out_of_band_recorded': strict({
     change: z.string(), source: z.enum(SIGNAL_SOURCES), key: z.string(), target: z.string(), what: z.string(), who: z.string().optional(), at: z.string(),
-    job: z.string(), issue: z.string().optional(),
+    job: z.string().optional(), issue: z.string().optional(), reporter: z.string().optional(),
   }),
   'infra.out_of_band_marked': strict({
     change: z.string(), source: z.enum(SIGNAL_SOURCES), target: z.string(), what: z.string(), mark: z.enum(MARKS), reason: z.string().optional(), by: z.string(),

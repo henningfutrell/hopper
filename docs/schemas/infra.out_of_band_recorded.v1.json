@@ -34,6 +34,9 @@
     },
     "issue": {
       "type": "string"
+    },
+    "reporter": {
+      "type": "string"
     }
   },
   "required": [
@@ -42,8 +45,7 @@
     "key",
     "target",
     "what",
-    "at",
-    "job"
+    "at"
   ],
   "additionalProperties": false
 }

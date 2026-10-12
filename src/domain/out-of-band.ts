@@ -38,8 +38,14 @@ export interface Signal {
   detail?: string;
 }
 
-/** An out-of-band change as kept: the signal, the job whose check reported it, and when. Never changed once kept. */
-export interface OutOfBandChange extends Signal { id: string; job: string; recordedAt: string }
+/**
+ * An out-of-band change as kept: the signal, who reported it, and when. Never changed once kept. Who reported it: the
+ * `job` whose check did, or the `reporter`, an outside collector by its API token's grant label (part 2). One of the two.
+ */
+export interface OutOfBandChange extends Signal { id: string; job?: string; reporter?: string; recordedAt: string }
+
+/** Who reports signals: a running job's check, or an outside collector with an API token, by its grant's label. */
+export type SignalReporter = { job: string; issue?: string } | { reporter: string };
 
 /** A person's mark on a change: a row of its own, so the change itself never changes. */
 export interface OutOfBandMark { change: string; mark: Mark; reason?: string; by: string; at: string }

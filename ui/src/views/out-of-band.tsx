@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import { changeHeadline, changeState, controllersFrom } from '@/model/out-of-band';
+import { changeHeadline, changeState, controllersFrom, reportedBy } from '@/model/out-of-band';
 import type { OutOfBandMark, OutOfBandView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin } from '@/store/selectors';
@@ -28,7 +28,7 @@ function ChangeItem({ c, can, busy, mark }: { c: OutOfBandView; can: boolean; bu
   return (
     <li data-slot="out-of-band-change" className="space-y-1 rounded-md border p-3">
       <p className="text-sm break-words">{changeHeadline(c)}</p>
-      <p className="text-xs text-muted-foreground">at {c.at}, reported by job {c.job.slice(0, 8)}, signal {c.key}</p>
+      <p className="text-xs text-muted-foreground">at {c.at}, {reportedBy(c)}, signal {c.key}</p>
       {c.detail && <pre className="max-h-40 overflow-auto rounded bg-muted p-2 text-xs whitespace-pre-wrap">{c.detail}</pre>}
       <p className={`text-xs ${state.kind === 'open' ? 'text-warn' : 'text-muted-foreground'}`}>{state.words}</p>
       {can && state.kind === 'open' && (
