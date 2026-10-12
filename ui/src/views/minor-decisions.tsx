@@ -1,8 +1,9 @@
-// Decider calls (issue #550), in Settings: bounded choices Jev makes first, before an escalation level, a model or a
-// person. Whether Jev can be asked now; per decision point its mode and threshold (an admin's, saved to the daemon,
-// applied from the next decision) and its record over the window — asked, applied, the agreement rate a person flips
-// it to active on —; then the newest picks, each with its options, what Jev picked and how sure, what became of it and
-// what was decided, and Override (an operator's): what it should have been, which counts in the agreement rate.
+// Decider calls (issue #550): bounded choices Jev makes first, before an escalation level, a model or a person. In
+// Settings, the configuration: whether Jev can be asked now; per decision point its mode and threshold (an admin's, saved
+// to the daemon, applied from the next decision) and its record over the window — asked, applied, the agreement rate a
+// person flips it to active on. On Decisions, the one home of the picks (issue #897): the newest, each with its options,
+// what Jev picked and how sure, what became of it and what was decided, and Override (an operator's): what it should have
+// been, which counts in the agreement rate.
 // The TypeSafe API key Jev asks with (issue #657), right under whether Jev is on: write-only — set or not, its last 4
 // characters, when —, with Replace and Remove (an operator's: the user's own, or an admin's); a new key is checked once
 // against TypeSafe before it is kept. Saving it needs Access (OpenFGA): while OpenFGA is not running, Save and Remove are
@@ -158,34 +159,49 @@ function PickRow({ p, label, onSaved }: { p: MinorDecisionPickView; label: strin
   );
 }
 
-export function MinorDecisions() {
+/** Read when shown, again every 10 seconds; `reload` reads now. */
+function useMinorDecisions(): { view: MinorDecisionsView | undefined; reload: () => void } {
   const [view, setView] = useState<MinorDecisionsView | undefined>();
   const load = useCallback(async () => setView(await get<MinorDecisionsView>('/api/minor-decisions')), []);
   usePoll(load, POLL_MS);
-  const reload = () => { load().catch(() => {}); };
+  return { view, reload: () => { load().catch(() => {}); } };
+}
+
+/** Settings → Decider: the configuration only. The picks are on Decisions. */
+export function MinorDecisions() {
+  const { view, reload } = useMinorDecisions();
   const access = accessDown(useAccessStatus());
   if (!view) return <Panel title="Decider" icon={Scale}><Empty>loading</Empty></Panel>;
-  const labelOf = (point: string) => view.points.find((p) => p.point === point)?.label ?? point;
   return (
-    <div className="space-y-3">
-      <Panel title="Decider" icon={Scale}>
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Jev makes bounded decisions first, before a model or a person. In shadow it only records what it would pick, next
-            to what was decided; active, a pick it is sure enough of is applied. Anything that deletes, sends, publishes, pays, changes
-            permissions or runs on a gated machine always goes on to the next step. Figures over the last {view.windowDays} days.
-          </p>
-          <p data-jev={view.jev.available ? 'on' : 'off'} className="text-sm">
-            {view.jev.available ? 'Jev is on.' : `${view.jev.why ?? 'Jev is off'}. Each decision is made as before.`}
-          </p>
-          <TypesafeKeyField k={view.typesafeKey} onSaved={reload} {...(access !== undefined ? { accessDown: access } : {})} />
-          {view.points.map((p) => <Point key={`${p.point}:${p.mode}:${p.threshold}`} p={p} onSaved={reload} />)}
-        </div>
-      </Panel>
-      <Panel title="Recent picks" icon={Scale} count={view.recent.length} list>
-        {view.recent.length ? (
+    <Panel title="Decider" icon={Scale}>
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Jev makes bounded decisions first, before a model or a person. In shadow it only records what it would pick, next
+          to what was decided; active, a pick it is sure enough of is applied. Anything that deletes, sends, publishes, pays, changes
+          permissions or runs on a gated machine always goes on to the next step. Figures over the last {view.windowDays} days.
+        </p>
+        <p data-jev={view.jev.available ? 'on' : 'off'} className="text-sm">
+          {view.jev.available ? 'Jev is on.' : `${view.jev.why ?? 'Jev is off'}. Each decision is made as before.`}
+        </p>
+        <p className="text-sm">Each pick, with Override, is on <a className="underline" href="#decisions">Decisions</a>.</p>
+        <TypesafeKeyField k={view.typesafeKey} onSaved={reload} {...(access !== undefined ? { accessDown: access } : {})} />
+        {view.points.map((p) => <Point key={`${p.point}:${p.mode}:${p.threshold}`} p={p} onSaved={reload} />)}
+      </div>
+    </Panel>
+  );
+}
+
+/** On Decisions (issue #897): the decider's newest picks, each with Override. Always shown, and says what will show when empty. */
+export function DeciderPicks() {
+  const { view, reload } = useMinorDecisions();
+  const labelOf = (point: string) => view?.points.find((p) => p.point === point)?.label ?? point;
+  return (
+    <div data-decider-picks>
+      <Panel title="Decider picks" icon={Scale} count={view?.recent.length || ''} list
+        action={<a href="#settings/decider" className="text-xs underline underline-offset-2">Decider settings</a>}>
+        {!view ? <Empty>loading</Empty> : view.recent.length ? (
           <ul>{view.recent.map((p) => <PickRow key={`${p.pickId}:${p.actual ?? ''}`} p={p} label={labelOf(p.point)} onSaved={reload} />)}</ul>
-        ) : <Empty>no picks yet</Empty>}
+        ) : <Empty>No decider pick yet. Each bounded choice Jev makes shows here, with what was decided, and Override to say what it should have been.</Empty>}
       </Panel>
     </div>
   );

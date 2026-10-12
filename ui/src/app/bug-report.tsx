@@ -3,7 +3,7 @@
 // read and edit before sending. The daemon files it on the hopper's own repository as the person, through their own
 // GitHub connection. When open reports look similar it offers them first: add yours to one, or file a new one anyway.
 // After filing it shows the link. When GitHub cannot take it now, the hopper keeps it and sends it later: the form says
-// so, and where to see it (Settings → Your reports). The user menu opens it (issue #666); the dialog lives outside the menu, so it stays open.
+// so, and where to see it (Your reports, #reports). The user menu opens it (issue #666); the dialog lives outside the menu, so it stays open.
 // Every failure, hand-off and question card opens it on its job too (`ReportBugButton`).
 import { Bug } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
@@ -52,7 +52,7 @@ export function BugReportDialog({ jobId, onClose }: { jobId?: string; onClose: (
     body = (
       <p data-slot="bug-report-kept" className="text-sm">
         GitHub cannot take the report now: {step.problem}. The hopper keeps your report and sends it later.{' '}
-        <a className="underline" href="#settings/reports" onClick={onClose}>See it in Your reports</a>
+        <a className="underline" href="#reports" onClick={onClose}>See it in Your reports</a>
       </p>
     );
     footer = <Button onClick={onClose}>Done</Button>;
