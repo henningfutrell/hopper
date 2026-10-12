@@ -14925,3 +14925,39 @@ in the next, nothing outside a pass, a head that moved, another base, a failed f
 `test/sources/github-git-answers.test.ts` (the port's four reads through the real pass reads take git's conflicts, the
 repository fetched once in the pass; GitHub's answer outside a pass and with no git), `test/herdr/job-worktree.test.ts`
 (a later start in the pass fetches nothing; the tracker by machine, work tree and repository).
+
+## Needs you: one home per decision (issue #897, part 1, 2026-10-12)
+
+Owner report: decisions that wait on a person lived in odd corners — request cards inside each source's card in Sources;
+credential requests, vault grants and template approvals stacked at the bottom of Settings → Vault — and several panels
+rendered nothing when empty, so a person could not tell the feature was there.
+
+**As built:**
+- **One home each.** Every decision that waits on a person has one top-level page, where it is acted on. A buried copy
+  is removed or becomes a link to that page. Settings, Sources and the vault keep configuration.
+- **Needs you.** `#needs-you`, the first nav entry (`ui/src/views/needs-you.tsx`): a row per kind — Intake, Access
+  requests, Questions, Proposals, Research, Logins, Failures, the pre-sort — with its count, its high-priority count
+  (#535) and a link to its home (`needsYouRows`, `ui/src/model/needs-you.ts`; `useNeedsYou`, `ui/src/store/needs-you.ts`).
+  Its nav badge is the sum. Parked jobs have no row: they wait to be picked up, not for a decision; Parked keeps its
+  quiet badge. It acts on nothing itself.
+- **Intake.** `#intake` (it was Not taken, `#not-taken`, which still opens it): per source, every open labelled issue
+  grouped by why, taken last, with Assign all; the request cards' one home. Sources keeps each source's sync, the intake
+  migration and the repos outside the job repositories, and links to Intake with its counts; it lists no issue and offers
+  no Approve.
+- **Access requests.** `#access-requests` (`ui/src/views/access-requests.tsx`): Asked for (credential requests), Vault
+  grants, and Template approvals (`template-approvals.tsx`: Approve, and Approve `<profile>` for a high-radius profile),
+  plus a pointer to Settings → API tokens for box tokens. A template waits (`templateWaits`, `ui/src/model/vault.ts`) when
+  it was never approved or a new image, secret or profile waits. Settings → Vault keeps Revoke, Check again, Edit and
+  Remove, and links a waiting template here. The texts the hopper gives a job or a box for an approval or a grant name
+  Access requests.
+- **One vault read.** `useVault` (`ui/src/store/vault.ts`) keeps one copy of `GET /api/vault`, read when first used and
+  again after each `vault.*` event; the nav, Needs you, Access requests and Settings → Vault share it, and an edit's
+  answer replaces it. A read that fails is no count; Access requests says why and still renders its panels.
+- **Always rendered.** Needs you, Intake and each panel of Access requests render with nothing in them, and say what will
+  show there.
+- **API parity.** Every count is a read the UI makes with the same scopes — `/api/sources`, `/api/vault`,
+  `/api/questions`, `/api/proposals`, `/api/research`, `/api/logins`, `/api/failures`, `/api/queue` — and every action is
+  the `POST /ui/api/*` route the page uses (`help/needs-you.md`).
+
+**Left for later parts:** plans and applies (issue #896, a page of its own), conflicted pull requests and machine joins
+in Needs you, a global yolo indicator, and the duplicates of the question, decider and auto-park controls in Settings.

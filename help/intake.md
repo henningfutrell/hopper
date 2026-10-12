@@ -1,6 +1,6 @@
 # Intake: how issues become jobs
 
-The hopper takes a GitHub issue as a job when it has the source label, is assigned to you, and comes from a trusted origin. Any other issue waits in Sources as a request card that you read and approve, and every job runs the text that was approved.
+The hopper takes a GitHub issue as a job when it has the source label, is assigned to you, and comes from a trusted origin. Any other issue waits in **Intake** as a request card that you read and approve, and every job runs the text that was approved.
 
 ## What it is
 
@@ -36,7 +36,7 @@ These never count as trusted actors:
 - a login that is not in your trusted actors,
 - an act the hopper cannot find in the issue's events.
 
-**Assign to me** in Sources counts as your own act, because the hopper does it for you.
+**Assign to me** in Intake counts as your own act, because the hopper does it for you.
 
 An issue that a job filed is never of a trusted origin. A job cannot make work for itself.
 
@@ -44,7 +44,7 @@ Access decides each login. The hopper asks OpenFGA (`intake#can_start_jobs`) and
 
 ### Request cards
 
-An open, labelled issue that is assigned to you, but is not of a trusted origin, is a **request card**. The hopper does not take it. It shows the card in **Sources**, above the other issues.
+An open, labelled issue that is assigned to you, but is not of a trusted origin, is a **request card**. The hopper does not take it. It shows the card in **Intake**, above the other issues.
 
 The card shows:
 
@@ -68,7 +68,7 @@ Every later job of the same issue runs the snapshot, not the live issue. This in
 2. Open an issue in one of those repositories. Write the task in its title and body.
 3. Add the label `hopper`.
 4. Assign the issue to your connected GitHub account.
-5. Look in **Sources**. The issue shows as `taken`, with its job.
+5. Look in **Intake**. The issue shows as `taken`, with its job.
 
 If you did all of these steps yourself, the issue has a trusted origin. The job goes into the queue.
 
@@ -83,7 +83,7 @@ A bot login is refused. Issues from people not in the list still reach you as re
 
 ### Approve a request card
 
-1. Open **Sources**.
+1. Open **Intake**.
 2. Read the reasons on the card, and read the title and body.
 3. Select **Approve**.
 
@@ -95,7 +95,7 @@ If the issue changes after you approved it, but before its job is made, the card
 
 ### Issues not assigned to you
 
-An issue with the label but not assigned to you shows in Sources with `not assigned to you`.
+An issue with the label but not assigned to you shows in Intake with `not assigned to you`.
 
 - Select **Assign to me** to assign one issue to your account.
 - Select **Assign all N to me** to assign every such issue.
@@ -143,7 +143,7 @@ After intake, a new job also passes the queue gate. Set it in the **Queue** view
 
 ## What the hopper does for you
 
-- It lists every open labelled issue in your job repositories in **Sources**, with `taken` or the one reason it was not taken. It drops nothing silently.
+- It lists every open labelled issue in your job repositories in **Intake**, with `taken` or the one reason it was not taken. It drops nothing silently.
 - It reads the issue's events to find who wrote, labelled and assigned it.
 - It puts the issue's text into the job's prompt inside an untrusted block. The job reads it as data, not as instructions.
 - Only the assignee's comments reach the job.
@@ -159,13 +159,13 @@ After intake, a new job also passes the queue gate. Set it in the **Queue** view
 | Every issue is a request card, even your own | OpenFGA is not set up or not reached, so nobody is trusted. The reason says `trusted actors cannot be checked`. Set up OpenFGA: see [Deploy and update](deploy-and-update.md). |
 | **Approve** answers 503 | OpenFGA cannot be asked. Approve needs Access. Fix OpenFGA, then approve again. |
 | **Accept the new text** answers 403 | Access refused it: only the owner can accept new text. |
-| An issue is not in Sources at all | It is not open, has no source label, or is not in a chosen job repository. |
+| An issue is not in Intake at all | It is not open, has no source label, or is not in a chosen job repository. |
 | `not assigned to you` | Assign the issue to your connected account, or select **Assign to me**. |
 | `labelled by an app or a bot (…)` or `assigned by an app or a bot (…)` | An app or a bot added the label or the assignment. Do it again yourself, or approve the card. |
 | `a job filed it` | A job filed the issue. Read it and approve the card if you want it done. |
 | `rejected by you: not taken until assigned to you again` | Assign the issue to yourself again, or use **Run again** on the rejected job. |
 | A job waits with `its item changed since the snapshot` | Pick **Rerun the original**, **Accept the new text**, or **Cancel**. |
-| A job waits with `queued before trusted origins` | The job was queued before the hopper checked origins. Approve its request card in **Sources**, or cancel the job. |
+| A job waits with `queued before trusted origins` | The job was queued before the hopper checked origins. Approve its request card in **Intake**, or cancel the job. |
 | `addressed to another hopper` | The issue has a `hopper@<name>` label for another hopper. |
 
 Not built yet: a separate intake gate that stops each new issue for review before the trust check.
