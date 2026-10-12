@@ -9,6 +9,7 @@ These pages tell you how the hopper works and how to use it, for the version you
 - [Lanes](lanes.md)
 - [Questions and deciders](questions.md)
 - [Pull requests](pull-requests.md)
+- [Infra changes: plans and out-of-band changes](infra.md)
 - [The vault](vault.md)
 - [Sandbox boxes](sandboxes.md)
 - [Artifacts](artifacts.md)

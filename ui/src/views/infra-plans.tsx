@@ -1,4 +1,4 @@
-// Settings → Vault, Infra changes (issue #870, design.md "Infra plans: no apply without a plan"): every plan of an
+// The Infra changes page (#infra, issues #896, #897), the plans (issue #870, design.md "Infra plans: no apply without a plan"): every plan of an
 // infrastructure change the user's jobs recorded, newest first, with its state, its summary in plain words, its risk
 // callouts, blast radius and checks, and the raw plan on demand. An admin approves a plan here; until it is
 // stale, the vault mints the credential an apply that names it asks, if its branch is still at the plan's commit. A job
@@ -42,7 +42,7 @@ export function InfraChanges() {
     get<{ plans: PlanView[] }>('/api/infra-plans').then((r) => { if (live) setPlans(r.plans); }, () => { if (live) setPlans([]); });
     return () => { live = false; };
   }, []);
-  if (!plans || plans.length === 0) return null;
+  if (!plans) return null;
   const approve = async (id: string): Promise<void> => {
     setBusy(true);
     try {
@@ -59,6 +59,7 @@ export function InfraChanges() {
   return (
     <Panel title="Infra changes" icon={FileDiff} count={waiting || ''} bodyClassName="space-y-3">
       <p className="text-sm text-muted-foreground">No apply without a plan. A job records the plan of each infrastructure change; the vault mints a credential that changes infrastructure only for a plan you approved, made at the commit its branch is at now, and less than an hour old. A plan that adds an AWS resource without the MAP tag fails, and nobody approves it.</p>
+      {plans.length === 0 && <p data-slot="infra-plans-empty" className="text-sm text-muted-foreground">No plan recorded yet. A job records one before any apply.</p>}
       <ul className="space-y-2">{plans.map((p) => {
         const state = planState(p, now);
         const why = planExplainer(p);

@@ -14507,7 +14507,7 @@ minted its credential at each ask, with nothing that tied the change to a review
 - **A job records one**: `POST /job/infra-plans`, with its proxy token, JSON (`file` in base64): 201 with its id; a plan
   that is not whole is a 400 that says why. `GET /job/infra-plans/:id` answers it with its approval; `?file=1` gives the
   plan file back as it was put, so terraform applies only the saved plan. `infra.plan_recorded` on the job's timeline.
-- **A person approves it**: Settings → Vault, panel **Infra changes** (every plan, newest first, with its state:
+- **A person approves it**: the top-level **Infra changes** page (#infra), panel **Infra changes** (every plan, newest first, with its state:
   waits for approval, approved, stale), or `POST /ui/api/infra-plans` `{ action: "approve", plan }` (admin, a box
   action). The approval is a row of its own (`infra_plan_approvals`), so the plan does not change; a second is a 409.
   `infra.plan_approved` on the timeline of the job that recorded it. A job never approves a plan.
@@ -14633,7 +14633,7 @@ GitOps. Generic by the issue's rule: the hopper never classifies an action and k
   mark is a new change.
 - **Never silent.** Each one is `infra.out_of_band_recorded` on the reporting job's timeline: the Grok Bot routine sends
   it (body adds `change`, `signal`, `target`, `what`, `who`, `happenedAt`), and webhook subscribers get it as any event.
-- **A person marks it** on Settings → Vault, panel **Out-of-band changes** (every change, newest first, with who, what,
+- **A person marks it** on the top-level **Infra changes** page (#infra), panel **Out-of-band changes** (every change, newest first, with who, what,
   when, the signal and its detail), or `POST /ui/api/out-of-band` `{ action: "mark", change, mark, reason? }` (admin):
   `adopted` (brought back into git), `reverted`, or `accepted` with a reason. The mark is a row of its own
   (`infra_out_of_band_marks`), once (a second is a 409); `infra.out_of_band_marked`. Tracking only: the hopper reverts

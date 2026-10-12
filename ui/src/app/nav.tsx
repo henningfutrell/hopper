@@ -1,9 +1,10 @@
 // The views, routed by URL hash so a link (#questions) and the back button work. A view may have
 // sections after a slash (#settings/routing): the view is the part before it. Each section (Questions, Proposals,
 // Research, Logins, Failures, Parked; issues #543, #565) is a view whose badge follows the one section rule (useSectionBadges).
-// The Jobs view (issue #434) has a card per job. Not taken (issue #798) is badged with the request cards waiting for approval. The job view (#job/<id>, issue #433) is a
+// The Jobs view (issue #434) has a card per job. Not taken (issue #798) is badged with the request cards waiting for approval. Infra changes (issues #871, #896, #897) is
+// badged with the out-of-band changes no one marked. The job view (#job/<id>, issue #433) is a
 // route with no nav entry: timeline entries link to it.
-import { Briefcase, ChevronsUp, CircleDashed, FileCheck, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
+import { Briefcase, ChevronsUp, CircleDashed, FileCheck, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, ShieldAlert, Telescope, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -12,8 +13,9 @@ import { useAwaitingSort, useSectionBadges } from '@/store/selectors';
 import { SECTION_KINDS } from '@/model/sections';
 import { onTheBackburner, requestsWaiting } from '@/model/intake';
 import { cn } from '@/lib/utils';
+import { useOutOfBandOpen } from '@/store/infra-badge';
 
-export const VIEWS = ['overview', 'jobs', 'queue', 'not-taken', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
+export const VIEWS = ['overview', 'jobs', 'queue', 'not-taken', 'infra', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
 /** The routes: every view in the navigation, and the job view, which has no nav entry. */
 const ROUTES = [...VIEWS, 'job'] as const;
 export type View = (typeof ROUTES)[number];
@@ -22,6 +24,7 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   jobs: { label: 'Jobs', icon: LayoutGrid },
   queue: { label: 'Queue', icon: ListOrdered },
   'not-taken': { label: 'Not taken', icon: CircleDashed },
+  infra: { label: 'Infra changes', icon: ShieldAlert },
   questions: { label: 'Questions', icon: MessageCircleQuestion },
   proposals: { label: 'Proposals', icon: FileCheck },
   research: { label: 'Research', icon: Telescope },
@@ -51,11 +54,13 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const requests = useHopper((s) => requestsWaiting(s.sources));
   const backburner = useHopper((s) => onTheBackburner(s.sources));
   const sorting = useAwaitingSort();
+  const outOfBand = useOutOfBandOpen();
   // Every section's badge by the one rule; a high-priority item waiting (issue #535) marks it and says how many.
   const sections = useSectionBadges();
   const badge: Partial<Record<View, { n: number; cls: string; title?: string; high?: number }>> = {
     queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
     'not-taken': { n: requests, cls: 'bg-warn text-background', title: `${requests} ${requests === 1 ? 'request waits' : 'requests wait'} for approval` },
+    infra: { n: outOfBand, cls: 'bg-warn text-background', title: `${outOfBand} out-of-band ${outOfBand === 1 ? 'change waits' : 'changes wait'} to be marked` },
     ...sections,
     sources: { n: failedSources, cls: 'bg-bad text-background' },
   };

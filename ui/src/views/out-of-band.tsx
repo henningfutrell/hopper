@@ -1,7 +1,8 @@
-// Settings → Vault, Infra changes, the out-of-band changes (issue #871, design.md "Out-of-band changes"): every
+// The Infra changes page (#infra, issues #896, #897), the out-of-band changes (issue #871, design.md "Out-of-band changes"): every
 // infrastructure change the user's jobs' checks found that did not come through IaC or GitOps, newest first, with who,
 // what, when and where it was found. An admin marks one adopted, reverted, or accepted with a reason, and sets the
-// controller identities, whose writes are GitOps's. Tracking only: nothing here reverts a change.
+// controller identities, whose writes are GitOps's. Tracking only: nothing here reverts a change. Always shown:
+// with nothing found, it says so.
 import { Check, GitPullRequestArrow, Undo2, ShieldAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -53,7 +54,7 @@ export function OutOfBandChanges() {
     get<View>('/api/out-of-band').then((r) => { if (live) { setView(r); setText(r.controllers.join('\n')); } }, () => { if (live) setView({ changes: [], controllers: [] }); });
     return () => { live = false; };
   }, []);
-  if (!view || (view.changes.length === 0 && !can)) return null;
+  if (!view) return null;
   const act = async (fn: () => Promise<void>): Promise<void> => {
     setBusy(true);
     try { await fn(); } catch (e) { failed(e); }
@@ -73,6 +74,7 @@ export function OutOfBandChanges() {
   return (
     <Panel title="Out-of-band changes" icon={ShieldAlert} count={open || ''} bodyClassName="space-y-3">
       <p className="text-sm text-muted-foreground">Infrastructure changes that did not come through IaC or GitOps: drift, and writes made by no controller identity and no credential minted for an approved plan. Each one is sent to the notifiers. Mark each one: adopted into git, reverted, or accepted with a reason. The hopper reverts nothing.</p>
+      {view.changes.length === 0 && <p data-slot="out-of-band-empty" className="text-sm text-muted-foreground">No out-of-band change found yet.</p>}
       {view.changes.length > 0 && <ul className="space-y-2">{view.changes.map((c) => <ChangeItem key={c.id} c={c} can={can} busy={busy} mark={mark} />)}</ul>}
       {can && (
         <div className="space-y-2">
