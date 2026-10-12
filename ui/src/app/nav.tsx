@@ -5,7 +5,7 @@
 // person. Intake (issue #897; it was Not taken, issue #798) is badged with the request cards waiting for approval, Access requests
 // with what jobs on boxes wait for. An old link (#not-taken) opens the view it became (MOVED). The job view (#job/<id>, issue #433) is a
 // route with no nav entry: timeline entries link to it. Infra (issue #896) holds plans, applies and out-of-band changes, and is badged
-// with the plans that wait for an admin and the out-of-band changes no one marked (issue #871); Pull requests with the ones that have merge conflicts (issue #897).
+// with the plans that wait for an admin and the out-of-band changes no one marked (issue #871); Pull requests with the ones the hopper gave up on (issues #897, #927).
 // The entries are in nav groups (issue #906, model/nav-groups.ts): a collapsed group shows its entries' badges as one. Needs you is
 // pinned above them, never collapsed: its badge already sums other entries', so no group sums it again. Your reports (issue #694) is a view of
 // its own (issue #897): it left Settings, which keeps configuration only.
@@ -89,7 +89,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const access = n('access');
   const plans = n('plans');
   const unmarked = changesUnmarked(useOutOfBand());
-  const conflicts = n('pull-requests');
+  const gaveUp = n('pull-requests');
   const badge: Partial<Record<View, NavBadge>> = {
     queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
     'needs-you': { n: total.n, high: total.high, cls: 'bg-warn text-background', title: `${total.n} ${total.n === 1 ? 'decision waits' : 'decisions wait'} on you` },
@@ -97,7 +97,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
     'access-requests': { n: access, cls: 'bg-warn text-background', title: `${access} ${access === 1 ? 'access request waits' : 'access requests wait'} on you` },
     ...sections,
     infra: { n: plans + unmarked, cls: 'bg-warn text-background', title: [plans > 0 && `${plans} ${plans === 1 ? 'plan waits' : 'plans wait'} for an admin to approve`, unmarked > 0 && `${unmarked} out-of-band ${unmarked === 1 ? 'change waits' : 'changes wait'} to be marked`].filter(Boolean).join('; ') },
-    'pull-requests': { n: conflicts, cls: 'bg-bad text-background', title: `${conflicts} ${conflicts === 1 ? 'pull request has' : 'pull requests have'} merge conflicts` },
+    'pull-requests': { n: gaveUp, cls: 'bg-bad text-background', title: `the hopper gave up on ${gaveUp} ${gaveUp === 1 ? 'pull request' : 'pull requests'}` },
     sources: { n: failedSources, cls: 'bg-bad text-background' },
   };
   const collapsed = useNavCollapsed();

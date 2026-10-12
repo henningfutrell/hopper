@@ -4,14 +4,14 @@
 import { describe, expect, it } from 'vitest';
 import { NEEDS_YOU_KINDS, needsYouRows, needsYouTotal, type NeedsYouCounts } from '../../ui/src/model/needs-you.ts';
 import { plansWaiting } from '../../ui/src/model/infra-plans.ts';
-import { conflictedPullRequests } from '../../ui/src/model/pull-requests.ts';
+import { conflictedPullRequests, gaveUpLines } from '../../ui/src/model/pull-requests.ts';
 import { accessRequestsWaiting, templateWaits } from '../../ui/src/model/vault.ts';
 import { yoloIndicator } from '../../ui/src/model/yolo-mode.ts';
 import type { PlanView, PullRequestCard, PullRequestsView, TemplateView, VaultView, YoloModeView } from '../../ui/src/model/wire.ts';
 
 const none = { n: 0, high: 0 };
 const counts = (o: Partial<NeedsYouCounts> = {}): NeedsYouCounts => ({
-  intake: 0, access: 0, plans: 0, conflicts: 0, sorting: 0,
+  intake: 0, access: 0, plans: 0, gaveUp: [], sorting: 0,
   sections: { questions: none, proposals: none, research: none, logins: none, failures: none, parked: none },
   ...o,
 });
@@ -25,7 +25,7 @@ describe('Needs you rows (issue #897)', () => {
   });
 
   it('counts each kind, and the total adds them with the high-priority ones', () => {
-    const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, conflicts: 1, sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
+    const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, gaveUp: ['o/a#7: why'], sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
     const n = Object.fromEntries(rows.map((r) => [r.kind, r.n]));
     expect(n).toEqual({ intake: 2, access: 1, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, failures: 4, 'pull-requests': 1, sorting: 3 });
     expect(needsYouTotal(rows)).toEqual({ n: 14, high: 3 });
@@ -93,6 +93,27 @@ describe('Pull requests with merge conflicts (issue #897)', () => {
     expect(conflictedPullRequests(view)).toBe(2);
     expect(conflictedPullRequests(undefined)).toBe(0);
     expect(conflictedPullRequests({} as never)).toBe(0);
+  });
+});
+
+describe('Pull requests the hopper gave up on (issue #927)', () => {
+  it('one line each, with its repository, number and why; a card the hopper still tends is none', () => {
+    const view = { yolo: { on: 1, total: 1 }, waiting: [], repos: [
+      { repo: 'o/a', yolo: true, pullRequests: [
+        card({ mergeable: 'conflicts', pullRequest: { number: 7, url: 'https://github.com/o/a/pull/7' }, gaveUp: 'checks still fail after 3 fixes: a person must look at them' }),
+        card({ mergeable: 'conflicts', pullRequest: { number: 8, url: 'https://github.com/o/a/pull/8' }, queue: { next: true } }),
+        card({ state: 'closed', pullRequest: { number: 9, url: 'https://github.com/o/a/pull/9' }, gaveUp: 'old' }),
+      ] },
+    ] } as PullRequestsView;
+    expect(gaveUpLines(view)).toEqual(['o/a#7: checks still fail after 3 fixes: a person must look at them']);
+    expect(gaveUpLines(undefined)).toEqual([]);
+  });
+
+  it('the Pull requests row counts them, and says why for each', () => {
+    const row = needsYouRows(counts({ gaveUp: ['o/a#7: checks still fail'] })).find((r) => r.kind === 'pull-requests')!;
+    expect(row.n).toBe(1);
+    expect(row.details).toEqual(['o/a#7: checks still fail']);
+    expect(row.what).toContain('gave up');
   });
 });
 

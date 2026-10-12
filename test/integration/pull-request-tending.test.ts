@@ -81,11 +81,13 @@ describe('tending a waiting pull request (issue #736)', () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
     const { issue, job, url } = await pullRequestWaiting(gh, app, (pr) => { gh.pushToPullRequest(pr, new Date().toISOString()); gh.setChecks(pr, 'passing'); });
-    gh.setChecks(url, 'failing');
+    const failed = [{ name: 'test (1)', url: `${url}/checks` }];
+    gh.setChecks(url, 'failing', failed);
     await app.sync();
     const tender = await nextJob(app, issue.url, 2);
     await app.waitForStatus(tender!.id, 'finished');
-    expect(String(app.scripted.payloads.at(-1)!.prompt)).toContain(tendBrief(url, 'fix_checks'));
+    // Issue #927: the brief names the checks that failed, and the first fix may run a flaky one again once.
+    expect(String(app.scripted.payloads.at(-1)!.prompt)).toContain(tendBrief(url, 'fix_checks', { failed, rerun: true }));
     expect((await app.events('types=job.pull_request_tended')).map((e) => [e.jobId, e.data])).toEqual([[job.id, { pullRequest: url, step: 'fix_checks', nextJobId: tender!.id }]]);
   });
 
@@ -128,6 +130,8 @@ describe('tending a waiting pull request (issue #736)', () => {
       await app.sync();
       const tender = await nextJob(app, issue.url, n);
       await app.waitForStatus(tender!.id, 'finished');
+      // Issue #927: only the first fix of the row may run the checks again; the later ones fix the cause.
+      expect(String(app.scripted.payloads.at(-1)!.prompt)).toContain(tendBrief(url, 'fix_checks', { rerun: n === 2 }));
       await waitFor(async () => ((await app.job(tender!.id)).sourceState?.source as { follow?: string } | undefined)?.follow === 'open', { what: 'following again' });
     }
     gh.setChecks(url, 'failing');

@@ -1,6 +1,7 @@
 // Needs you (issue #897): the first nav entry, the one inbox of every decision that waits on a person. A row per kind —
 // Intake, Access requests, Questions, Proposals, Research, Logins, Failures, the pre-sort — with its count, a high-priority
-// mark (#535), and a link to the page that is its one home; nothing is acted on here. Always rendered: every row shows,
+// mark (#535), and a link to the page that is its one home; nothing is acted on here. A row may list what it counts, one line
+// each (issue #927: why the hopper gave up on a pull request). Always rendered: every row shows,
 // with what it counts, also when nothing waits.
 import { ArrowRight, BellRing, ChevronsUp } from 'lucide-react';
 import { Empty, Panel } from '@/components/panel';
@@ -25,6 +26,7 @@ export function NeedsYou() {
                   <span className="font-medium">{r.label}</span>
                   {r.high > 0 && <span className="ml-2 inline-flex items-center gap-0.5 text-xs text-warn"><ChevronsUp className="size-3" aria-hidden />{r.high} high priority</span>}
                   <span className="block text-xs text-muted-foreground">{r.what}</span>
+                  {r.details?.map((d) => <span key={d} data-needs-you-detail className="block text-xs text-bad">{d}</span>)}
                 </span>
                 <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
               </a>
