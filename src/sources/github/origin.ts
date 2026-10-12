@@ -4,7 +4,7 @@
 // a trusted origin. Not trusted: the text a person approved, when its title and body hash the same, makes it approved;
 // else it is a request card. A new request card's text records `source.request_opened` once (issue #798), so it notifies.
 import {
-  FILED_BY_JOB, FILED_BY_JOB_REASON, isBotLogin, requestHash, untrustedReason, type IntakeRequest, type JobOrigin, type OriginActor, type OriginRole,
+  FILED_BY_JOB, FILED_BY_JOB_REASON, isBotLogin, requestHash, untrustedReason, type ActorRef, type IntakeRequest, type JobOrigin, type OriginActor, type OriginRole,
 } from '../../domain/intake-origin.ts';
 import type { IntakeContext, IntakeTrust } from '../../domain/intake.ts';
 import type { GitHubApi, GitHubIssue, IssueEvent } from './api.ts';
@@ -24,16 +24,16 @@ function actOf(role: OriginRole, e: IssueEvent | undefined, own: { login: string
   const bot = e.actorType === 'Bot' || isBotLogin(e.actor);
   if (own && (bot || e.viaApp)) return { role, login: own.login };
   const app = bot ? e.actor : e.viaApp;
-  return { role, ...(e.actor ? { login: e.actor } : {}), ...(app ? { app } : {}) };
+  return { role, ...(e.actor ? { login: e.actor, ...(e.actorId !== undefined ? { id: e.actorId } : {}) } : {}), ...(app ? { app } : {}) };
 }
 
 /** Who wrote the issue, and who added `label` and the assignment to `assignee`: the newest event of each. */
-export function originActs(issue: Pick<GitHubIssue, 'author'>, events: IssueEvent[], label: string, assignee: string, assignedHere: boolean): Act[] {
+export function originActs(issue: Pick<GitHubIssue, 'author' | 'authorId'>, events: IssueEvent[], label: string, assignee: string, assignedHere: boolean): Act[] {
   const newest = (pick: (e: IssueEvent) => boolean) => events.filter(pick).sort((a, b) => a.at.localeCompare(b.at)).at(-1);
   const labelled = newest((e) => e.event === 'labeled' && e.label === label);
   const assigned = newest((e) => e.event === 'assigned' && e.assignee !== undefined && same(e.assignee, assignee));
   return [
-    { role: 'author', login: issue.author, ...(isBotLogin(issue.author) ? { app: issue.author } : {}) },
+    { role: 'author', login: issue.author, ...(issue.authorId !== undefined ? { id: issue.authorId } : {}), ...(isBotLogin(issue.author) ? { app: issue.author } : {}) },
     actOf('labelled', labelled, undefined),
     actOf('assigned', assigned, assignedHere ? { login: assignee } : undefined),
   ];
@@ -53,8 +53,9 @@ async function eventsOf(api: GitHubApi, issue: GitHubIssue): Promise<IssueEvent[
 export async function originsOf(api: GitHubApi, trust: IntakeTrust, issues: GitHubIssue[], label: string, connected: string): Promise<Map<string, OriginVerdict>> {
   const acts = new Map<string, Act[]>();
   for (const i of issues) acts.set(i.url, originActs(i, await eventsOf(api, i), label, connected, trust.assignedHere(i.url)));
-  const logins = [...new Set([...acts.values()].flat().filter((a) => !a.app && a.login).map((a) => a.login!.toLowerCase()))];
-  const answers = logins.length > 0 ? await trust.trusted(logins, connected) : new Map();
+  const asked = new Map<string, ActorRef>();
+  for (const a of [...acts.values()].flat()) if (!a.app && a.login && !asked.has(a.login.toLowerCase())) asked.set(a.login.toLowerCase(), { login: a.login.toLowerCase(), ...(a.id !== undefined ? { id: a.id } : {}) });
+  const answers = asked.size > 0 ? await trust.trusted([...asked.values()], connected) : new Map();
   const verdicts = new Map<string, OriginVerdict>();
   for (const i of issues) {
     const actors = acts.get(i.url)!.map((a): OriginActor => ({ ...a, trusted: !a.app && a.login !== undefined && answers.get(a.login.toLowerCase())?.allowed === true }));

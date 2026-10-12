@@ -1,11 +1,12 @@
 // A user's intake trust (issue #652, design.md "Trusted origin and request cards"): whether a GitHub login is one of the
-// user's trusted actors — Access decides, the actors named in Settings → Intake (else the connected login) told at each
-// check —, the text a person approved for an item, and a person's approval of a request card, kept as the item's snapshot.
+// user's trusted actors — Access decides, the actors named in Settings → Intake by GitHub user id (issue #930; else the
+// connected login) told at each check by the login each account has now —, the text a person approved for an item, and
+// a person's approval of a request card, kept as the item's snapshot.
 // No Access (OpenFGA not set up) trusts nobody: every issue is then a request card.
 import type { AccessAnswer } from '../domain/access.ts';
 import { NO_INTAKE_ACCESS, type IntakeTrust } from '../domain/intake.ts';
 import { APPROVED_BY_A_PERSON, textHash } from '../domain/item-snapshots.ts';
-import { trustedActors } from '../domain/intake-origin.ts';
+import { toldFor, trustedActors } from '../domain/intake-origin.ts';
 import type { UserStore } from '../domain/store.ts';
 
 /** Access's check of one login against the user's trusted actors; absent: OpenFGA is not set up. */
@@ -19,10 +20,15 @@ function assignedKeys(store: UserStore): Set<string> {
 
 export function storeIntakeTrust(store: UserStore, decide: DecideIntakeActor | undefined): IntakeTrust {
   return {
-    async trusted(logins, connected) {
-      const actors = trustedActors(store.settings.getIntakeActors(), connected);
+    async trusted(acts, connected) {
+      const account = store.connectedAccounts.get('github');
+      const id = account && account.account.toLowerCase() === connected.toLowerCase() && /^\d+$/.test(account.subject) ? Number(account.subject) : undefined;
+      const actors = trustedActors(store.settings.getIntakeActors(), { login: connected, ...(id !== undefined ? { id } : {}) });
       const answers = new Map<string, AccessAnswer>();
-      for (const login of new Set(logins.map((l) => l.toLowerCase()))) answers.set(login, decide ? await decide(login, actors) : NO_INTAKE_ACCESS);
+      for (const act of acts) {
+        const login = act.login.toLowerCase();
+        if (!answers.has(login)) answers.set(login, decide ? await decide(login, toldFor(actors, act)) : NO_INTAKE_ACCESS);
+      }
       return answers;
     },
     approvedText(key) {

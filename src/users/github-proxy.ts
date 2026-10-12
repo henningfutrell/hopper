@@ -8,6 +8,7 @@ import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } fr
 import { DEFAULT_CONTRIBUTION, type Job, type MachineSnapshot, type User } from '../domain/types.ts';
 import { createReportGitHub, createReportSender, type ReportGitHub, type ReportSender } from '../bug-reports/index.ts';
 import { createRepoChecksGitHub, type RepoChecksGitHub } from '../repo-checks/index.ts';
+import { createActorsGitHub, type ActorsGitHub } from '../intake-actors/index.ts';
 import { createGitHubWatches, createWatchGitHub, type GitHubWatches } from '../github-watch/index.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts';
@@ -27,6 +28,8 @@ export interface UserGitHubProxy {
   reports(): ReportGitHub | { problem: string };
   /** Repositories with no checks (issue #677): this user's own GitHub connection and its login, or why there is none. */
   repoChecks(): { api: RepoChecksGitHub; login: string } | { problem: string };
+  /** The trusted actor picker (issue #930): this user's own GitHub connection and its login, or why there is none. */
+  actors(): { api: ActorsGitHub; login: string } | { problem: string };
   /** Report a bug's kept reports sent later, and the filed ones' states read (issue #694); its loop runs with the user's runtime. */
   bugReports: ReportSender;
   /** The GitHub watches of this user's pointed jobs (issue #427), with this user's own connection; they poll with the user's runtime. */
@@ -118,6 +121,10 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       repoChecks: () => {
         const login = o.accounts.account('github');
         return login === undefined ? { problem: o.accounts.ended('github') ?? notMine } : { api: createRepoChecksGitHub(mine()), login };
+      },
+      actors: () => {
+        const login = o.accounts.account('github');
+        return login === undefined ? { problem: o.accounts.ended('github') ?? notMine } : { api: createActorsGitHub(mine()), login };
       },
       // A job's git acts with its own user's connection (issue #652), not the hopper's oldest user's.
       git: {
