@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand, mirrorOf, mirrorWorktreeOf } from '../../src/executors/herdr/job-worktree.ts';
+import { jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand, mirrorOf, mirrorWorktreeOf, passFetchKey, passFetches } from '../../src/executors/herdr/job-worktree.ts';
 import { reapArgv } from '../../src/client/server.ts';
 import { jobScratchOf } from '../../src/executors/herdr/start.ts';
 
@@ -152,6 +152,18 @@ describe('the job\'s repository in a work tree that is no repository (issues #36
     expect(out).toBe(`hopper-worktree-running\nhopper-job-worktree-mirror\n${mirrorWorktreeOf(plain, NEXT, 'acme/app')}\n`);
     expect(git(mirrorWorktreeOf(plain, NEXT, 'acme/app'), 'rev-parse', 'HEAD')).toBe(now);
     expect(git(mirrorOf(plain, 'acme/app'), 'for-each-ref', '--format=%(refname)')).not.toContain('someone-elses');
+  });
+
+  it('a later job in the same sync pass fetches nothing (issue #858 part 2): its worktree starts at what the pass fetched', () => {
+    const { root, plain, bare, url } = plainTree();
+    const first = git(bare, 'rev-parse', 'main');
+    sh(plain, checkout(plain, url));
+    pushTo(root, bare, 'main');
+    mkdirSync(join(plain, '.hopper-scratch', NEXT), { recursive: true });
+    const out = sh(plain, makeJobWorktreeCommand(plain, NEXT, { repo: 'acme/app', url, fetch: false }), 'pwd');
+    expect(out).toBe(`hopper-worktree-running\nhopper-job-worktree-mirror\n${mirrorWorktreeOf(plain, NEXT, 'acme/app')}\n`);
+    expect(git(mirrorWorktreeOf(plain, NEXT, 'acme/app'), 'rev-parse', 'HEAD')).toBe(first);
+    expect(git(mirrorOf(plain, 'acme/app'), 'rev-parse', 'refs/remotes/origin/main')).toBe(first);
   });
 
   it('an extra job adds only its worktree: one mirror, nothing cloned again', () => {
@@ -304,5 +316,20 @@ describe('the reap ends a job worktree (issues #379, #401)', () => {
     writeFileSync(join(path, 'a.txt'), 'changed\n');
     expect(reap()).toContain(`hopper-kept ${path}`);
     expect(existsSync(path)).toBe(true);
+  });
+});
+
+describe('one fetch per repository per sync pass on each machine (issue #858 part 2)', () => {
+  it('a start that fetched in the newest pass leaves the next start nothing to fetch, until another pass begins', () => {
+    let pass = 4;
+    const fetches = passFetches(() => pass);
+    const here = passFetchKey('omega', '/work/', 'Acme/App');
+    expect(here).toBe(passFetchKey('omega', '/work', 'acme/app'));
+    expect(fetches.fresh(here)).toBe(false);
+    fetches.fetched(here);
+    expect(fetches.fresh(here)).toBe(true);
+    expect(fetches.fresh(passFetchKey('other', '/work', 'acme/app'))).toBe(false);
+    pass = 5;
+    expect(fetches.fresh(here)).toBe(false);
   });
 });

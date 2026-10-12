@@ -18,8 +18,9 @@ const WRITES = ['ensureLabel', 'addLabels', 'removeLabels', 'addAssignees', 'reo
 /** Reads whose first argument is not a repository: any write drops them. */
 const UNSCOPED = new Set<string>(['projectItems', 'listAssignedIssues', 'listInstalledRepos']);
 
-// Every method of the port is a read, a write, or the bot's login (no GitHub call after the first): a new one must be sorted.
-type Sorted = (typeof READS)[number] | (typeof WRITES)[number] | 'botLogin';
+// Every method of the port is a read, a write, the bot's login (no GitHub call after the first), or where git fetches
+// (issue #858: a token, asked once per pass by the mirror): a new one must be sorted.
+type Sorted = (typeof READS)[number] | (typeof WRITES)[number] | 'botLogin' | 'gitRemote';
 const _everyMethodSorted: Exclude<keyof GitHubApi, Sorted> extends never ? true : never = true;
 void _everyMethodSorted;
 
@@ -64,6 +65,7 @@ export function passReads(api: GitHubApi, source: string, traffic: GitHubTraffic
   for (const name of READS) { const fn = port[name]; if (fn) out[name] = read(name, fn.bind(api)); }
   for (const name of WRITES) { const fn = port[name]; if (fn) out[name] = write(name, fn.bind(api)); }
   if (api.botLogin) out.botLogin = api.botLogin.bind(api);
+  if (api.gitRemote) out.gitRemote = api.gitRemote.bind(api);
 
   return {
     api: out as unknown as GitHubApi,

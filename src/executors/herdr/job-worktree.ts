@@ -7,11 +7,14 @@
 // machine, fetched for the default branch only, so an extra job adds only its worktree to disk; no machine needs its
 // repositories set up by hand (issue #361). The reap removes the worktree with the scratch dir when the job ends, or
 // keeps it when it holds uncommitted or unpushed work (reap.ts). The command runs in the pane's own shell, so on
-// whichever machine the work tree is. design.md "Work tree" → "Each job its own git worktree".
+// whichever machine the work tree is. A start fetches at most once per repository per sync pass on each machine
+// (issue #858 part 2, `passFetches`): a later one in the same pass makes its worktree of what that fetch got.
+// design.md "Work tree" → "Each job its own git worktree".
 
 import { posix } from 'node:path';
 import { SCRATCH_DIR } from '../../job-rules/index.ts';
 import { shellQuote } from '../ssh.ts';
+import { githubTraffic } from '../../github-limiter/traffic.ts';
 
 /** What the job worktree command prints, followed by its outcome. */
 export const JOB_WORKTREE_MARK = 'hopper-job-worktree-';
@@ -57,7 +60,8 @@ export const JOB_WORKTREE_RUNNING = 'hopper-worktree-running';
 /**
  * Run by `sh` in the work tree: `$1` the worktree of the work tree, `$2` the worktree of the mirror,
  * `$3` the job's repository (`owner/name`, empty for none), `$4` its clone URL, `$5` 1 when job worktrees
- * are on. Prints its outcome last. The worktree is made after one fetch (never prompting, issue #858) of the remote's
+ * are on, `$6` 1 to fetch before a new worktree (0: this sync pass fetched already, or the mirror was just cloned).
+ * Prints its outcome last. The worktree is made after one fetch (never prompting, issue #858) of the remote's
  * default branch only, pruned — blobless in a mirror —, detached at it, else the current branch's upstream, else
  * HEAD; one an earlier run of the job left is used as it is, nothing fetched. The mirror is `mirrorOf` when the work
  * tree is no repository's top, or the top of one whose origin is not the job's (matched in any case); its origin must
@@ -69,17 +73,17 @@ export const JOB_WORKTREE_RUNNING = 'hopper-worktree-running';
  * were busy lost or mangled a command of many lines typed into it, so every statement ends in `;` or a keyword.
  */
 const SCRIPT = [
-  'a=$1 b=$2 r=$3 url=$4 on=$5;',
+  'a=$1 b=$2 r=$3 url=$4 on=$5 f=$6;',
   'export GIT_TERMINAL_PROMPT=0;',
   "base() { git rev-parse --verify --quiet refs/remotes/origin/HEAD || git rev-parse --verify --quiet '@{upstream}' || git rev-parse --verify HEAD; };",
   // One fetch, of the default branch only (issue #858); a repository that knows no default branch fetches as it is set up.
   'refresh() { d=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null); if [ -n "$d" ]; then git fetch --quiet --prune "$@" origin "${d#origin/}"; else git fetch --quiet --prune "$@"; fi; };',
-  'worktree() { p=$1; shift; [ -e "$p/.git" ] || { refresh "$@" 2>/dev/null; git worktree prune && git worktree add --quiet --detach "$p" "$(base)"; }; };',
+  'worktree() { p=$1; shift; [ -e "$p/.git" ] || { if [ "$f" = 1 ]; then refresh "$@" 2>/dev/null; fi; git worktree prune && git worktree add --quiet --detach "$p" "$(base)"; }; };',
   'lc() { printf %s "$1" | tr "[:upper:]" "[:lower:]"; };',
   'of() { o=$(lc "$(git -C "$1" remote get-url origin 2>/dev/null)"); l=$(lc "$r"); case "$o" in *[:/]"$l"|*[:/]"$l".git|*[:/]"$l"/) return 0;; esac; return 1; };',
   // A bare clone's branches are `refs/heads/*`: moved to `refs/remotes/origin/*`, and fetched there from now on.
   "remotes() { git -C \"$1\" config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*' && h=$(git -C \"$1\" symbolic-ref --short HEAD) && git -C \"$1\" for-each-ref --format='create refs/remotes/origin/%(refname:lstrip=2) %(objectname)%0adelete %(refname)' refs/heads | git -C \"$1\" update-ref --stdin && git -C \"$1\" symbolic-ref refs/remotes/origin/HEAD \"refs/remotes/origin/$h\"; };",
-  'take() { n=$1; shift; [ -e "$n" ] && return 0; t="$n.hopper-clone-$$"; git clone --quiet "$@" "$url" "$t" && { [ "$1" != --bare ] || remotes "$t"; } || { rm -rf "$t"; return 1; }; if [ -e "$n" ]; then rm -rf "$t"; else mv "$t" "$n"; fi; };',
+  'take() { n=$1; shift; [ -e "$n" ] && return 0; t="$n.hopper-clone-$$"; git clone --quiet "$@" "$url" "$t" && { [ "$1" != --bare ] || remotes "$t"; } || { rm -rf "$t"; return 1; }; f=0; if [ -e "$n" ]; then rm -rf "$t"; else mv "$t" "$n"; fi; };',
   'if [ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$(pwd -P)" ]; then',
   '  [ "$on" = 1 ] || { echo none; exit 0; };',
   '  if [ -z "$r" ] || of .; then if worktree "$a"; then echo made; else echo unmade; fi; exit 0; fi;',
@@ -105,14 +109,14 @@ const SAY = `printf 'hopper-job-%s-%s\\n' worktree "\${o:-unmade}"`;
  * Make the job's worktree and enter it, in the pane's shell: of the work tree when that is the top of the
  * job's git repository, or of any when the job names none (a directory inside one, such as a home kept in git,
  * is not the job's repository); else of the mirror of the job's `repo` in the work tree's scratch dir, fetched or
- * cloned first (`url`, default GitHub's). With `worktrees` off, only the full checkout in a work tree that is no
+ * cloned first (`url`, default GitHub's); `fetch` false: no fetch before a new worktree. With `worktrees` off, only the full checkout in a work tree that is no
  * repository is fetched or cloned, and the shell stays in the work tree. It says first that it runs
  * (`JOB_WORKTREE_RUNNING`), then its outcome. One line, for any shell to type.
  */
-export function makeJobWorktreeCommand(workTree: string, jobId: string, o: { repo?: string; url?: string; worktrees?: boolean } = {}): string {
+export function makeJobWorktreeCommand(workTree: string, jobId: string, o: { repo?: string; url?: string; worktrees?: boolean; fetch?: boolean } = {}): string {
   const made = jobWorktreeOf(workTree, jobId);
   const mirrored = o.repo ? mirrorWorktreeOf(workTree, jobId, o.repo) : '';
-  const args = [made, mirrored, o.repo ?? '', o.repo ? (o.url ?? githubUrlOf(o.repo)) : '', o.worktrees === false ? '0' : '1'].map(shellQuote).join(' ');
+  const args = [made, mirrored, o.repo ?? '', o.repo ? (o.url ?? githubUrlOf(o.repo)) : '', o.worktrees === false ? '0' : '1', o.fetch === false ? '0' : '1'].map(shellQuote).join(' ');
   return `cd ${shellQuote(workTree)} && { ${SAY_RUNNING}; o=$(sh -c ${shellQuote(SCRIPT)} hopper-worktree ${args} | tail -n 1);`
     + ` case "$o" in made) cd ${shellQuote(made)};; mirror) cd ${shellQuote(mirrored || made)};; esac; ${SAY}; }`;
 }
@@ -126,3 +130,26 @@ const OUTCOME = new RegExp(`${JOB_WORKTREE_MARK}(made|mirror|none|unmade)\\b`, '
 export function jobWorktreeOutcome(screen: string): JobWorktreeOutcome | undefined {
   return [...screen.matchAll(OUTCOME)].at(-1)?.[1] as JobWorktreeOutcome | undefined;
 }
+
+/** Which work trees a job start fetched in the newest sync pass (issue #858 part 2): keyed by machine, work tree and repository. */
+export interface PassFetches {
+  /** A start in this work tree fetched since the newest sync pass began: fetch nothing now. */
+  fresh(key: string): boolean;
+  /** A start in this work tree fetched. */
+  fetched(key: string): void;
+}
+
+/** `lastPass`: the newest sync pass's id (`GitHubTraffic.lastPass`); before the first (0), every start fetches. */
+export function passFetches(lastPass: () => number = () => githubTraffic.lastPass()): PassFetches {
+  const at = new Map<string, number>();
+  return {
+    fresh: (key) => lastPass() > 0 && at.get(key) === lastPass(),
+    fetched: (key) => { at.set(key, lastPass()); },
+  };
+}
+
+/** The process's own: every executor's starts share it, so two lanes on one machine fetch once a pass. */
+export const jobStartFetches = passFetches();
+
+/** The key of a start's fetch: its machine, its work tree, its repository. */
+export const passFetchKey = (machine: string, workTree: string, repo: string | undefined): string => `${machine}\0${trimmed(workTree)}\0${(repo ?? '').toLowerCase()}`;
