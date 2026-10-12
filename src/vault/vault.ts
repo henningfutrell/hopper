@@ -15,7 +15,7 @@ import type { SystemChanger, SystemResult } from './system.ts';
  * of its own (`remoteVault`, src/vault/remote.ts). Its secrets' metadata and its templates are read here at once; what
  * needs the vault's key — set, remove, deliver — and whether it can be used now (`status`) may cross the network.
  */
-export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTemplate' | 'approveTemplate' | 'revokeTemplate' | 'approveProfile' | 'scopeOf' | 'boxRadius' | 'boxes' | 'templateScopes' | 'recordCheck' | 'checkTemplate'> {
+export interface Vault extends Pick<VaultService, 'saveTemplate' | 'removeTemplate' | 'approveTemplate' | 'revokeTemplate' | 'approveProfile' | 'scopeOf' | 'boxRadius' | 'boxes' | 'templateScopes' | 'recordCheck' | 'checkTemplate' | 'agentCredential'> {
   /** Its secrets' metadata and its templates, never a value. `problem` only when `status` is not asked: see vaultView. */
   view(): VaultView;
   /** Why no vault secret can be stored or delivered now; undefined when one can. */
@@ -75,6 +75,7 @@ export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decl
   boxes: () => v.boxes(),
   templateScopes: () => v.templateScopes(),
   recordCheck: (name, check) => v.recordCheck(name, check), checkTemplate: (name, by) => v.checkTemplate(name, by),
+  agentCredential: (ask) => v.agentCredential(ask),
 });
 
 /** Whether the vault holds a template of this name: a box joins as, or is set to, only one that is there (issue #604). */

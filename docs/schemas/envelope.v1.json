@@ -163,6 +163,7 @@
         "vault.check_mint_refused",
         "vault.credential_asked",
         "vault.credential_given",
+        "vault.agent_credential_given",
         "vault.credential_declined",
         "vault.read_policy_set",
         "vault.grant_asked",

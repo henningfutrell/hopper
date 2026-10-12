@@ -60,6 +60,8 @@ export const vaultOps = {
     /** A mint test (issue #781): ask STS who the minted session is, at the minting credential's STS. */
     identify: z.boolean().optional(),
   }),
+  /** A launch's agent credential (issue #708, part 10): the template's checks run here too, then the value crosses back. */
+  'agent-credential': z.strictObject({ user, ask: z.strictObject({ template: name, secrets: z.array(name).max(256), box: z.string().max(200) }) }),
 } as const;
 
 export type VaultOp = keyof typeof vaultOps;

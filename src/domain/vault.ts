@@ -239,6 +239,11 @@ export interface Template {
    * save. Absent: a person or an API caller asked for it, or it was saved before.
    */
   askedBy?: string;
+  /**
+   * The agent credential (issue #708, part 10; src/domain/agent-credential.ts): one of its secrets, a Claude token, that
+   * a box of it starts with, signed in, when its launch's scope holds it. Given only as far as its secrets are approved.
+   */
+  agentCredential?: string;
   /** The last read-only check, of the version it names (src/domain/read-only-check.ts). A save makes it stale. */
   check?: ReadOnlyCheck;
   savedBy: string;

@@ -204,4 +204,6 @@ export interface SandboxRecord {
   address: string;
   /** Its last start check: at launch, then at each reconcile pass. Absent: a box with none (taken on from before). */
   check?: { passed: boolean; at: string; output?: string };
+  /** The vault secret its agent signs in with (issue #708, part 10): its name, never its value. Absent: none was given. */
+  agentCredential?: string;
 }

@@ -21,7 +21,7 @@ A box needs a **rootless** container runtime: Podman (the default) or Docker. Th
 
 | A job on a box | |
 |---|---|
-| Agent sign-in | You sign the box's agent in once. The sign-in stays in the box's home volume. Nothing of your own sign-in is copied in. |
+| Agent sign-in | The box starts signed in when its template has an **agent credential** and the launch gives it. Else you sign the box's agent in once, and the sign-in stays in the box's home volume. Nothing of your own sign-in is copied in. |
 | GitHub | No token. `git` and `gh` go through the hopper, which acts for the job and refuses pushes to release branches. |
 | Your ssh agent and keys | Never. |
 | Vault secrets | Only through `$HOPPER_SECRET`, only on a box of an approved template, and only after a vault grant. See [The vault](vault.md). |
@@ -86,6 +86,7 @@ A **template** is a kind of box. It has:
 | **Tools** | `aws`, `helm`, `kubectl`, `terraform`. The hopper adds them to the image, each pinned and checked by its SHA-256. |
 | **Operation profiles** | An operation (`read`, `write`, `sync`, `apply`) on an asset (`cluster`, `namespace`, `argocd-app`, `terraform-workspace`, `aws-account`, `aws-role`). Its jobs may ask for minted credentials for these. |
 | **Limits** | The default and the maximum of CPUs, memory and time limit, and whether a box's home volume stays when the box goes. |
+| **Agent credential** | Optional. One of its secrets: a Claude token. A box of the template starts with its agent signed in. See [Start a box signed in](#start-a-box-signed-in). |
 
 Make one in **Settings → Vault**, panel **Templates**, with **Add template**, or:
 
@@ -111,6 +112,24 @@ No box of a template takes a job or gets anything from the vault until a person 
 While a template waits, its boxes show on **Machines** as *waiting for template approval*, and their jobs wait for another machine.
 
 Each launch fixes its own set of secrets and its one profile. A secret added to the template later reaches new boxes, not running ones.
+
+## Start a box signed in
+
+A template can give its boxes an **agent credential**. Then a box starts with Claude signed in, and no person runs `/login` in it.
+
+1. On a computer where you use Claude Code, run `claude setup-token`. It prints a token that starts with `sk-ant-oat`. The token is good for one year.
+2. Set the token as a vault secret, for example `CLAUDE`: `hopper vault set CLAUDE` (the value from stdin), or **Settings → Vault**.
+3. Add the secret to the template's secrets. In the template's form, set **Agent credential** to it. Or: `hopper template save <name> --image <image> --secret CLAUDE --agent-credential CLAUDE`.
+4. Approve the template.
+
+A launch gives the token to the box as `CLAUDE_CODE_OAUTH_TOKEN`. Every job on the box uses it.
+
+- Use only a token from `claude setup-token`. The hopper refuses a `/login` credentials file: its refresh token changes when one box renews it, and that signs the other boxes out.
+- A launch that leaves the secret out of its secrets starts a box that is not signed in. Sign it in once by hand.
+- While the agent credential waits for approval, no box of the template starts.
+- A box keeps the token it started with. After you set a new token, launch the boxes again.
+- Every process on the box can read the token, as every job could read a sign-in made by hand.
+- `--agent-credential none` takes it off the template.
 
 ## Templates a job asks for
 

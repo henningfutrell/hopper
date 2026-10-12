@@ -333,10 +333,11 @@ export const EVENT_SCHEMAS = {
   'template.check_requested': strict({ template: z.string(), by: z.string() }),
   'template.removed': strict({ template: z.string(), by: z.string() }),
   'vault.approved': strict({ template: z.string(), image: z.string(), tools: z.array(z.string()).optional(), secrets: z.array(z.string()), by: z.string() }),
-  'vault.revoked': strict({ template: z.string(), by: z.string() }),
-  'vault.read_policy_set': strict({ assets: z.array(z.string()), by: z.string() }),
+  'vault.revoked': strict({ template: z.string(), by: z.string() }), 'vault.read_policy_set': strict({ assets: z.array(z.string()), by: z.string() }),
   'template.profile_approved': strict({ template: z.string(), ...operationProfile.shape, level: radiusLevel, by: z.string() }),
   'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string(), backend: z.string().optional() }),
+  // A launch's agent credential (issue #708, part 10): given to a box at its launch, before it runs a job. Never the value.
+  'vault.agent_credential_given': strict({ name: z.string(), template: z.string(), box: z.string(), backend: z.string().optional() }),
   'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), backend: z.string().optional(), reason: z.string() }),
   'vault.minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), machine: z.string(), job: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string(), renewal: z.boolean() }),
   'vault.mint_refused': strict({ mint: strict({ kind: z.enum(MINT_KINDS), operation: z.string(), asset: z.union([asset, z.string()]) }), machine: z.string(), template: z.string().optional(), job: z.string().optional(), reason: z.string(), decision: z.string().optional(), }),

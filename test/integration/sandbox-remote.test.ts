@@ -10,6 +10,8 @@
 //   Scenario: the box on the machine is ready once it joins, and goes when its time limit passes
 //   Scenario: while the machine is away its boxes are kept; once it dials in again they are checked
 //   Scenario: a box with tools on the machine runs the tools image built there; the hopper's own runtime builds nothing
+//   Scenario: a box of a template with an agent credential starts on the machine signed in (issue #708, part 10): the
+//     machine's client carries the token in its create, and its create checks take it
 import { chmodSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -55,7 +57,7 @@ const dir = (): string => {
   return d;
 };
 
-interface Box { name: string; state: string; runtime: string; machine: string; address: string; image: string; expiresAt?: string }
+interface Box { name: string; state: string; runtime: string; machine: string; address: string; image: string; expiresAt?: string; agentCredential?: string }
 interface Setup { a: TestApp; session: string; local: FakeContainerRuntime; libpod: FakeLibpod; studio: string; startStudio(): void }
 
 /** A hopper, and a machine `studio` joined and dialled in, its client carrying runtime calls to its own Podman. */
@@ -168,5 +170,20 @@ describe('sandbox boxes on an attached machine', () => {
     expect((await launch(a, session, { machine: 'studio', params: { tools: ['kubectl'] } })).status).toBe(200);
     expect(onStudio(libpod, 'hopper-sandbox-claude-2')!.image).toBe(box.image);
     expect(libpod.builds.size).toBe(1);
+  });
+
+  it('a box of a template with an agent credential starts on the machine signed in', async () => {
+    const { a, session, local, libpod } = await boot();
+    const token = 'sk-ant-oat01-remote-agent-credential-0123456789';
+    for (const body of [
+      { action: 'set', name: 'CLAUDE', value: token },
+      { action: 'save-template', name: 'claude', image: 'example.org/claude-box:1', secrets: ['CLAUDE'], agentCredential: 'CLAUDE' },
+      { action: 'approve-template', name: 'claude' },
+    ]) expect((await a.ui('/ui/api/vault', body, { token: session })).status).toBe(200);
+    const r = await launch(a, session, { machine: 'studio', template: 'claude' });
+    expect(r.status, r.body.error).toBe(200);
+    expect(local.boxes.size).toBe(0);
+    expect((onStudio(libpod, r.body.container)!.body.env as Record<string, string>).CLAUDE_CODE_OAUTH_TOKEN).toBe(token);
+    expect((await view(a, session)).boxes).toEqual([expect.objectContaining({ name: r.body.container, machine: 'studio', agentCredential: 'CLAUDE' })]);
   });
 });

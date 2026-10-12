@@ -2982,7 +2982,7 @@ Version 1 (`docs/schemas/vault.delivered.v1.json`). A vault secret was delivered
 
 ## `vault.refused`
 
-Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret and was refused (issue #558): a template not approved for it, a machine of no template, a job not at work there, a token the hopper did not give, a vault backend that is gone or cannot read it (`backend`, issue #585). `reason` says which; never a value.
+Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret and was refused (issue #558): a template not approved for it, a machine of no template, a job not at work there, a token the hopper did not give, a vault backend that is gone or cannot read it (`backend`, issue #585). Or a launch's agent credential was refused (issue #708, part 10): its template is not approved for it, or its value is no Claude token; then `machine` is the box that was not started, and there is no `job`. `reason` says which; never a value.
 
 | field | type | required |
 |---|---|---|
@@ -3209,6 +3209,25 @@ Version 1 (`docs/schemas/vault.credential_given.v1.json`). A person gave a crede
   "jobs": [
     "f3b1c2d4-0000-4000-8000-000000000001"
   ]
+}
+```
+
+## `vault.agent_credential_given`
+
+Version 1 (`docs/schemas/vault.agent_credential_given.v1.json`). A box the hopper launched was given its template's agent credential at its launch (issue #708, part 10): a Claude token, in the box's environment as `CLAUDE_CODE_OAUTH_TOKEN`, so its agent starts signed in. The secret's name, the template and the box; never the value. `backend`: the vault backend it was read from, when it is kept in one.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `template` | string | yes |
+| `box` | string | yes |
+| `backend` | string | no |
+
+```json
+{
+  "name": "CLAUDE",
+  "template": "kube",
+  "box": "hopper-sandbox-kube"
 }
 ```
 

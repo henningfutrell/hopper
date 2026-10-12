@@ -38,7 +38,7 @@ import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxBoxesFor, sandboxClientsOf } from './users/sandbox-boxes.ts';
 import { mintJoinCode } from './machines/join-code.ts';
 import { selectRuntime } from './sandbox/runtime.ts';
-import { cachedSandboxes, createSandboxes, hopperAddress, hopperNetwork, launchScopes, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
+import { cachedSandboxes, createSandboxes, hopperAddress, hopperNetwork, launchScopes, ownContainer, usersAgentCredentials, usersTemplates, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
 export type { UserSeams } from './users/runtime.ts';
@@ -282,7 +282,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     mint: (userId, container, template) => mintJoinCode(instance, clock, userId, { container, ...(template ? { template } : {}) }).code,
     boxesOf: sandboxBoxesFor(instance, runtimes),
     waiting: (now) => new Set(instance.joinCodes.waiting(now.toISOString())),
-    clock, logger, checks: usersTemplates(() => runtimes.all()), // the read-only check (issue #716)
+    clock, logger, checks: usersTemplates(() => runtimes.all()), agentCredentials: usersAgentCredentials(() => runtimes.all()), // the read-only check (issue #716), the agent credential (#708)
   });
   const addUser = async (name: string): Promise<User> => {
     const user = instance.users.add(name);
