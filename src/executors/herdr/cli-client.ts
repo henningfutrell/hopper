@@ -167,6 +167,7 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
     survey: (roots) => shell.survey(roots),
     discover: () => shell.discover(),
     reach: (url) => shell.reach(url),
+    checkpoint: (jobId, worktree, session) => (shell.checkpoint ? shell.checkpoint(jobId, worktree, session) : Promise.resolve({ none: 'its machine takes no checkpoint' })),
     keepCredential: (jobId, dir, file, content, make) => shell.keepCredential(jobId, dir, file, content, make),
   };
 }

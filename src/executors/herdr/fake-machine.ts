@@ -14,6 +14,11 @@ export function fakeMachineShell(o: FakeHerdrOptions, fake: () => FakeHerdrClien
     survey: async (roots) => (onMachine('survey', roots), o.survey ?? { scopes: [], processes: [], scratch: [] }),
     discover: async () => (onMachine('discover'), o.discovery ?? { path: [], bins: [], versions: {}, aws: [], kube: [], credentials: { env: [], files: [] } }),
     reach: async (url) => (onMachine('reach', url), o.unreached),
+    async checkpoint(jobId, worktree, session) {
+      onMachine('checkpoint', jobId, worktree, session);
+      fake().checkpoints.push({ jobId, worktree, session });
+      return o.checkpoint ?? { none: 'the fake machine takes no checkpoint' };
+    },
     async keepCredential(jobId, dir, file, content, make) {
       onMachine('keepCredential', jobId, dir, file);
       fake().credentials.push({ jobId, dir, file, content, ...(make ? { make } : {}) });

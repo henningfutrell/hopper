@@ -10536,7 +10536,8 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   (`QuestionService.unparked`); the answer then re-queues it as any. Else `queued` (`to: queued`) with
   `pendingAnswer` the answer kept, or `PARKED_RESUME` (it was parked; go on). A pending answer pins it to
   `resumeOn` and gives it the resume boost, so it waits for its machine — held `pinned machine <m> offline`
-  while it is — and never starts elsewhere. A fresh start elsewhere is not offered: cancel it and Run again.
+  while it is — and never starts elsewhere, unless it is picked up to **resume elsewhere** from its checkpoint
+  (issue #921, "Checkpoints and resume elsewhere"). A fresh start elsewhere is not offered: cancel it and Run again.
 - **Resume.** The claim calls `Executor.resume`; with `job.parked` set, herdr-claude reopens: it stops
   whatever of the job still runs there (two agents in one session would interleave), opens a new pane in the
   recorded work tree, enters the same job worktree (the worktree command uses the one there), starts
@@ -15200,3 +15201,62 @@ reports and Question history, if they stay actionable.
 - **No duplicates found for auto-park or the issue thread.** Auto-park and the issue thread are configuration, set only in
   Settings; Parked and Questions show a job's state (`ThreadState`), not their settings. The phase-shift settings on
   Questions and the failures settings on Failures are configuration with one home each, so they stay.
+
+## Checkpoints and resume elsewhere (issue #921, 2026-10-12)
+
+Split from #919. When a machine drops, the job's agent session and the work it did not push were lost with it, and a
+parked job could resume only on the machine it was parked on. Now the hopper copies both off the machine while the job
+runs, and a parked job with such a copy can resume on any machine.
+
+- **The checkpoint.** A job at work (`running`, `waiting_answer`, `waiting_on`) whose executor has `checkpoint` —
+  herdr-claude, for a job with an agent session and a job worktree of its own — is checkpointed every ten minutes
+  (`CHECKPOINT_EVERY_MS`, a pass each minute, one at a time; a machine that cannot be reached is asked again at the next
+  interval, not each pass), and once more when it is parked, after `Executor.park` ended its agent, so the session is
+  whole (`releaseParked`). No setting: the interval is fixed.
+- **Read on the machine, never through the pane.** `MachineShell.checkpoint(jobId, worktree, session)` runs the fixed
+  script of `src/client/checkpoint.ts` through the machine's own connection: this machine, ssh, or a client target's
+  `POST /checkpoint` (a client older than it answers 404: no checkpoint, as for a missing `/reach`). The worktree must be
+  in the job's own scratch dir and the session id plain, or it is refused. The script only reads: an index of its own
+  (`GIT_INDEX_FILE`, so the job's index is never locked; `GIT_OPTIONAL_LOCKS=0`; no fetch, no prompt) takes the work tree
+  as it is, untracked files too, a `node_modules` link to shared dependencies left out. The **base** is the job's branch
+  as pushed when HEAD holds it, else where HEAD left the default branch, else HEAD: always a commit the remote has. It
+  prints the branch, the base, HEAD, the commits after the base (50 at most), the patch from the base to that tree
+  (`git diff --binary`) and the agent session's file (`<config>/projects/*/<session>.jsonl`, the config `CLAUDE_CONFIG_DIR`
+  or `~/.claude`), gzip and base64. More than 10 MiB compressed is no checkpoint (`too large`): the output stays under the
+  16 MiB a script may print.
+- **Scrubbed, then kept.** The hopper unpacks each part and masks secrets before it keeps anything
+  (`src/secrets/mask.ts`): in the session log, every string of each JSON line, so each line stays JSON its agent reads;
+  in the patch, only the lines it adds — a context or removed line is the base's, and masking it would keep the patch from
+  applying. `maskSecrets`: GitHub tokens, 32-byte keys (which covers a job's proxy token and the hopper's own), private
+  key blocks, AWS access key ids, Anthropic and OpenAI keys, Slack tokens. The patch is read as bytes (`latin1`), so a file
+  in any encoding comes back as it was. The latest checkpoint is kept, compressed, in the user's schema
+  (`job_checkpoints`, tenant migration 48: a table only, the build before runs on it); what it is — when, where, the
+  branch, base, HEAD, the commits not pushed, its size, whether it holds the session — is `job.checkpoint`, and
+  `job.checkpointed` says one was taken. A checkpoint goes a week after its job ended (`CHECKPOINT_KEEP_MS`).
+- **Resume elsewhere.** `POST /ui/api/jobs/:id/requeue` `{elsewhere: true}` (least role `operator`, as Pick up), for a
+  parked job whose checkpoint holds its agent session (`elsewhereRefusal`, else 409). Its question, proposal or research
+  report must be answered first (409): the claim resumes the agent with the answer, never to wait on it again elsewhere.
+  It is queued with the answer pending, `resumeOn` cleared — a pin of its spec (a person's, a routing rule's) stays —,
+  `parked.elsewhere: { at, checkpointAt, from }` set and `job.unparked { to: queued, elsewhere: true }`. This relaxes the rule
+  above that a parked job resumes only on its machine; a plain Pick up still does.
+- **The claim.** `Executor.resume` with `job.parked.elsewhere` set (herdr-claude's `relocate`): on the machine the job got, a new
+  pane in that machine's work tree for it, a new job worktree of its repository as for any start, then — before shared
+  dependencies are linked — the restore command (`restoreCommand`), typed into the pane's shell, which has the job's way
+  to the hopper (a machine that runs its jobs without the hopper's proxy cannot restore one: the job fails, saying so). It gets the checkpoint's parts from the hopper (`GET /job/checkpoint/patch` and `/session`, with the
+  job's proxy token), checks out the base on the job's branch (fetched through the hopper when it is not there), applies
+  the patch as uncommitted changes, and puts the session file where Claude finds it for that directory
+  (`projects/<the directory, each character not a letter or digit a dash>`). A worktree that holds changes already is the
+  job's own work there (it came back to a machine it ran on) and is kept as it is (`kept`). Then `claude --resume
+  <session>`, and the agent is sent `elsewhereBrief` (`src/engine/park.ts`): it moved, from which checkpoint, its new work
+  tree, the commits not pushed then — uncommitted changes now, to commit again —, that work after the checkpoint is lost,
+  then the answer. A restore that fails fails the job, with what the shell said. The next outcome clears it with `parked`.
+- **The route.** `GET /job/checkpoint/:part` (`src/http/job-checkpoint.ts`) serves only the job's own checkpoint, only
+  while it runs resuming elsewhere: 401 a token that is no running job's, 409 a job not resuming elsewhere now, 404 a part
+  it does not hold. It changes nothing and records nothing.
+- **UI.** The Parked row says when its last checkpoint was taken, and offers **Resume elsewhere**, confirmed (it says from
+  which checkpoint, the commits not pushed, and that later work is lost); disabled while its question waits on an answer.
+  The job view shows the checkpoint: when, where, its size, the commits not pushed.
+- **What it does not do.** A job whose machine dropped while it ran is not parked by itself; a person parks it (the park
+  takes no new checkpoint when its machine cannot be reached: the last one stands) and resumes it elsewhere. A failed job
+  does not resume elsewhere. What the job left on the old machine stays there until the sweep finds its job ended.
+

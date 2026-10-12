@@ -28,6 +28,7 @@ import { jobAddressRoutes } from './job-address.ts';
 import { jobSkillRoutes } from './job-skill.ts';
 import { jobStepRoutes } from './job-step.ts';
 import { jobStreamRoutes } from './job-stream.ts';
+import { jobCheckpointRoutes } from './job-checkpoint.ts';
 import { pluginStoreRoutes } from './plugin-store.ts';
 import { jobRulesRoutes } from './job-rules.ts';
 import { questionGatesRoutes } from './question-gates.ts';
@@ -180,6 +181,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   // A running job asks the hopper for GitHub (issue #563), with its own proxy token.
   const github = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock, updater: o.updater });
   jobGitRoutes(app, { tenants: o.tenants });
+  jobCheckpointRoutes(app, { tenants: o.tenants });
   // A machine's probe asks where it reaches the hopper (issue #698).
   jobAddressRoutes(app);
   // The tunnel service asks for its settings (issue #880), with its preshared key; never through the tunnel.

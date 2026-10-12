@@ -21,6 +21,7 @@ import { createIssueGraphRepository } from './issue-graph.ts';
 import { createVaultGrantRepository } from './vault-grants.ts';
 import { createLoginRepository } from './logins.ts';
 import { createPointedJobRepository } from './pointed-jobs.ts';
+import { createCheckpointRepository } from './checkpoints.ts';
 import { createGitHubWatchRepository } from './github-watches.ts';
 import { createReviewItemRepository } from './review-items.ts';
 import { createQuestionRepository } from './questions.ts';
@@ -79,6 +80,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     issueGraph: createIssueGraphRepository(ctx),
     pointedJobs: createPointedJobRepository(ctx),
     githubWatches: createGitHubWatchRepository(ctx),
+    checkpoints: createCheckpointRepository(ctx),
     settings: createUserSettingsRepository(ctx),
     connectedAccounts: createConnectedAccountRepository(ctx),
     usageHistory: createUsageHistoryRepository(ctx),

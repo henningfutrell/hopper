@@ -15,6 +15,7 @@ import {
 import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from './job-scope.ts';
 import { DEPS_MARK, depsOutcome, shareDepsCommand } from './shared-deps.ts';
 import { scopeUnitOf } from '../../client/server.ts';
+import { RESTORE_MARK, restoreOutcome } from '../../client/checkpoint.ts';
 import { SCRATCH_DIR, windowsShellOf } from './screen.ts';
 import { awaitOnScreen, shows } from './pane-wait.ts';
 import { seedClaudeConfig, settleStartup } from './startup.ts';
@@ -33,6 +34,8 @@ const JOB_WORKTREE_WAIT_MS = 10 * 60000;
 /** How long the shell has to start the job worktree command, and how often it is typed, before the start is tried again (issue #518). */
 const JOB_WORKTREE_RUNNING_WAIT_MS = 10000;
 const JOB_WORKTREE_TYPINGS = 3;
+/** How long restoring a checkpoint may take (issue #921): it gets the parts from the hopper and may fetch the base. */
+const RESTORE_WAIT_MS = 10 * 60000;
 /** How long sharing dependencies may take: the first job with a lockfile installs them (issue #410). */
 const DEPS_WAIT_MS = 15 * 60000;
 /** A machine's scratch age when it sets none: an entry of shared dependencies nothing links to goes after it. */
@@ -301,6 +304,24 @@ async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneStat
 }
 
 /**
+ * Rebuild a job's work from its checkpoint in its new worktree (issue #921, checkpoint.ts `restoreCommand`), in the
+ * pane's shell, which has the job's way to the hopper: before its dependencies are linked, so the worktree it checks is
+ * the job's own. A worktree that holds changes already is kept as it is. Null when done, else the failure.
+ */
+async function restoreCheckpoint(d: StartDeps, ctx: ExecutionContext, s: PaneState, command: string): Promise<ExecutionOutcome | null> {
+  if (!s.jobWorktree) return { kind: 'failed', error: `the job got no worktree of its own on ${ctx.machine.id} to restore its checkpoint into: it needs job worktrees, or a repository` };
+  ctx.progress('restoring the checkpoint in the job worktree');
+  await d.herdr.runInPane(s.paneId, command);
+  const { found: outcome, screen } = await awaitOnScreen(d, ctx, s.paneId, RESTORE_MARK, restoreOutcome, RESTORE_WAIT_MS);
+  if (ctx.signal.aborted) return null;
+  if (outcome === 'restored' || outcome === 'kept') {
+    ctx.progress(outcome === 'restored' ? 'restored the checkpoint: its base checked out, its patch applied, its session in place' : 'the job worktree holds work already: kept it as it is');
+    return null;
+  }
+  return { kind: 'failed', error: outcome ? `the checkpoint could not be restored on ${ctx.machine.id}: ${tail(screen, 10)}` : `pane ${s.paneId} never restored the checkpoint within ${RESTORE_WAIT_MS} ms: ${tail(screen, 10)}` };
+}
+
+/**
  * Link the job worktree's node_modules to the dependencies its lockfile shares with the repository's other
  * jobs, installing them first when no job has (issue #410, shared-deps.ts). Whatever it says, the job goes
  * on: a failed install is the job's to redo. Only a shell that never answers fails it.
@@ -338,9 +359,10 @@ async function startAgent(d: StartDeps, s: PaneState, args: string[]): Promise<A
  * when Claude is ready for the prompt (or the signal fired — the caller checks), a start that timed out
  * (issue #462), else the failure to report; the caller closes the pane. Claude starts in a session whose id
  * the hopper chose, or (`resume`) resumes that session (issue #501); once it is up, the id is the job's
- * `agentSession`. A parked job's worktree is still there: the worktree command finds it and enters it.
+ * `agentSession`. A parked job's worktree is still there: the worktree command finds it and enters it. `restore`: the
+ * command that rebuilds the job's work from its checkpoint in a new worktree (issue #921), run before Claude resumes.
  */
-export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, resume?: string): Promise<ExecutionOutcome | StartTimedOut | null> {
+export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, resume?: string, restore?: string): Promise<ExecutionOutcome | StartTimedOut | null> {
   const unmade = await makeScratch(d, ctx, s, p.makeWorkTree === true);
   if (unmade || ctx.signal.aborted) return unmade;
   const unscoped = await enterScope(d, ctx, s);
@@ -348,11 +370,17 @@ export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneSt
   if (d.jobWorktrees || p.repo) {
     const unentered = await enterJobWorktree(d, ctx, s, p.repo);
     if (unentered || ctx.signal.aborted) return unentered;
+    if (restore) {
+      const unrestored = await restoreCheckpoint(d, ctx, s, restore);
+      if (unrestored || ctx.signal.aborted) return unrestored;
+    }
     if (s.jobWorktree && d.sharedDependencies) {
       const unshared = await shareDependencies(d, ctx, s);
       if (unshared || ctx.signal.aborted) return unshared;
     }
   }
+  // Restoring a checkpoint needs the job's own worktree (issue #921): without one, the job fails here.
+  if (restore && !d.jobWorktrees && !p.repo) return restoreCheckpoint(d, ctx, s, restore);
   if (d.unattended) await seedClaudeConfig(d, ctx, s);
   if (ctx.signal.aborted) return null;
   const session = resume ?? (d.newSession ?? randomUUID)();
@@ -393,6 +421,8 @@ export interface StartHooks {
   random(): number;
   /** The agent session a parked job resumes (issue #501). */
   resume?: string;
+  /** The command that restores a job's checkpoint in its new worktree before it resumes elsewhere (issue #921). */
+  restore?: string;
 }
 
 /**
@@ -406,7 +436,7 @@ export async function startInPane(d: StartDeps, ctx: ExecutionContext, p: Claude
     const refused = h.opened(s);
     if (refused) return refused;
     if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
-    const failed = await startClaude(d, ctx, s, p, h.resume);
+    const failed = await startClaude(d, ctx, s, p, h.resume, h.restore);
     if (!failed) return ctx.signal.aborted ? { interrupt: abortReason(ctx.signal) } : s;
     await h.close(s);
     if (!('startTimedOut' in failed)) return failed;

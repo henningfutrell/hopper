@@ -9,8 +9,11 @@ export const rejectBody = z.object({ reason: z.string().trim().max(500, 'reason 
 export const reworkBody = z.object({
   notes: z.string().trim().min(1, 'notes must not be empty').max(MAX_REWORK_NOTES, `notes must be at most ${MAX_REWORK_NOTES} characters`),
 }).strict();
-/** Re-queue's confirmation (issue #530): `freshSession` true agrees that a parked job with no agent session starts a fresh one. */
-export const requeueBody = z.object({ freshSession: z.boolean().optional() }).strict();
+/**
+ * Re-queue's confirmation (issue #530): `freshSession` true agrees that a parked job with no agent session starts a fresh
+ * one. `elsewhere` (issue #921): it resumes on any machine from its checkpoint, not pinned to its own.
+ */
+export const requeueBody = z.object({ freshSession: z.boolean().optional(), elsewhere: z.boolean().optional() }).strict();
 /** Ending a job's own wait (issue #483): the person's optional note, typed into its pane with it. */
 export const endWaitBody = z.object({ note: z.string().trim().max(2000, 'note must be at most 2000 characters').optional() }).strict();
 /**
