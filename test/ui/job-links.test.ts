@@ -100,7 +100,7 @@ afterEach(async () => {
 
 describe('Lane timeline links to the job', () => {
   it('a running bar, a question wait and a failed bar each link to their job', async () => {
-    await boot('#overview');
+    await boot('#dashboard');
     const timeline = () => document.querySelector('svg[aria-label="Lane activity timeline"]');
     await vi.waitFor(() => expect(timeline()).not.toBeNull());
     for (const id of ['run1', 'ask1', 'fail1']) expect(timeline()!.querySelector(`a[href="#job/${id}"] rect`), id).not.toBeNull();
@@ -110,7 +110,7 @@ describe('Lane timeline links to the job', () => {
 
 describe('Event lines link to the job', () => {
   it('in Live activity, an event with a job links to it; one with no job has no link', async () => {
-    await boot('#overview');
+    await boot('#dashboard');
     await vi.waitFor(() => expect(line(6)).not.toBeNull());
     expect(line(2)!.closest('a')?.getAttribute('href') ?? line(2)!.querySelector('a')?.getAttribute('href')).toBe('#job/run1');
     expect(line(4)!.querySelector('a')?.getAttribute('href')).toBe('#job/ask1');

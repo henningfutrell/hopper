@@ -22,7 +22,7 @@ export function resetsIn(iso: string, now: number): string {
   return `resets in ${d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`}`;
 }
 
-/** The one usage source the overview shows of several (issue #85): the chosen one while it reports, else the first. */
+/** The one usage source the dashboard shows of several (issue #85): the chosen one while it reports, else the first. */
 export const shownSource = (sources: Pick<UsageSourceReport, 'name'>[], chosen: string | undefined): string | undefined =>
   sources.find((s) => s.name === chosen)?.name ?? sources[0]?.name;
 

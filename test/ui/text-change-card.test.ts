@@ -87,7 +87,7 @@ const card = () => row()?.querySelector('[data-slot="text-change"]');
 
 describe('a job held for its changed item (issue #662)', () => {
   it('shows what changed, who edited it and the new comments', async () => {
-    await boot('admin', '#overview');
+    await boot('admin', '#dashboard');
     const c = card()!;
     expect(c).not.toBeNull();
     expect(c.querySelector('[data-slot="editors"]')!.textContent).toBe('someone-else');
@@ -103,14 +103,14 @@ describe('a job held for its changed item (issue #662)', () => {
   });
 
   it('Rerun the original and Accept the new text post their routes', async () => {
-    await boot('admin', '#overview');
+    await boot('admin', '#dashboard');
     await act(async () => buttonIn(card()!, 'Rerun the original')!.click());
     await act(async () => buttonIn(card()!, 'Accept the new text')!.click());
     expect(daemon.posts.map((p) => p.path)).toEqual(['/ui/api/jobs/h1/keep-original', '/ui/api/jobs/h1/accept-new-text']);
   });
 
   it('a viewer sees the card and no buttons', async () => {
-    await boot('viewer', '#overview');
+    await boot('viewer', '#dashboard');
     expect(card()).not.toBeNull();
     expect(buttonIn(card()!, 'Rerun the original')).toBeUndefined();
     expect(buttonIn(card()!, 'Accept the new text')).toBeUndefined();

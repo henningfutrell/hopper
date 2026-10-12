@@ -52,7 +52,7 @@ export function JobView() {
   const events = useJobEvents(id);
   const machines = useHopper((s) => s.machines);
   const nameOf = useJobName();
-  const back = <a href="#overview" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3" />Overview</a>;
+  const back = <a href="#dashboard" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"><ArrowLeft className="size-3" />Dashboard</a>;
   return (
     <div data-slot="job-view" data-job-id={id} className="space-y-3">
       <Panel title="Job" icon={Briefcase} action={back} bodyClassName="space-y-2">

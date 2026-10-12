@@ -2,7 +2,7 @@
 // Issue #440 in the UI, against a fake of the daemon's HTTP surface. Intake (issue #897; Sources until then) lists every
 // open labelled issue its GitHub connection listed: taken, or the one reason it was not, with Assign to me (one, or all)
 // and Release claim where the source offers them. Sources keeps what the intake migration changed, once, and the repos
-// outside the job repositories with issues for the user, each with Add, which saves the job repositories with it. The Overview's
+// outside the job repositories with issues for the user, each with Add, which saves the job repositories with it. The Dashboard's
 // idle lanes say why they are idle, from the latest Decision. A request card (issue #652) shows the text as read, who
 // wrote, labelled and assigned it, and why; Approve sends its hash; a changed one shows the change.
 import { act, createElement } from 'react';
@@ -168,9 +168,9 @@ describe('Intake: what intake did with each labelled issue (issues #440, #897)',
   });
 });
 
-describe('Overview: why a lane is idle (issue #440)', () => {
+describe('Dashboard: why a lane is idle (issue #440)', () => {
   it('an idle lane and the room for one more say why, from the latest Decision', async () => {
-    await boot('#overview');
+    await boot('#dashboard');
     await vi.waitFor(() => expect(document.querySelectorAll('[data-lane-idle]')).toHaveLength(2));
     for (const el of document.querySelectorAll('[data-lane-idle]')) expect(el.textContent).toContain('every waiting job is held: awaiting acceptance (2 jobs)');
   });

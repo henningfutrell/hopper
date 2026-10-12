@@ -116,7 +116,7 @@ An issue claimed by another hopper shows `claimed by another hopper`. If you kno
 
 If someone edits the issue's title or body after the snapshot, the hopper holds the job. It does not run the edited text without a decision.
 
-The job card (in the Overview's waiting list and in the Queue) shows the title change, the body change line by line, any new assignee comments, and who edited the issue. Pick one:
+The job card (in the Dashboard's waiting list and in the Queue) shows the title change, the body change line by line, any new assignee comments, and who edited the issue. Pick one:
 
 | Button | What happens |
 |---|---|
@@ -138,7 +138,7 @@ A job cannot accept new text. A job's token does not reach these routes.
 ### Run again and Reject
 
 - **Run again** is on a job that failed, finished or was rejected. The hopper reopens the issue if it is closed, removes the end labels, and queues a new job at once. The new job runs the snapshot. CLI: `hopper job rerun <job-id>`.
-- **Reject** is on a waiting job (Queue, or the Overview's waiting list). The job ends rejected and never runs. You can give a reason. The hopper writes nothing on GitHub. It does not take the issue again until it is assigned to you again, or you select **Run again**. CLI: `hopper job reject <job-id> --reason <text>`.
+- **Reject** is on a waiting job (Queue, or the Dashboard's waiting list). The job ends rejected and never runs. You can give a reason. The hopper writes nothing on GitHub. It does not take the issue again until it is assigned to you again, or you select **Run again**. CLI: `hopper job reject <job-id> --reason <text>`.
 
 ### The queue gate
 

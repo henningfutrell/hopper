@@ -102,7 +102,7 @@ describe('Pick up of a parked job (issues #530, #565)', () => {
   const row = (id: string) => document.querySelector<HTMLElement>(`[data-job-group="parked"][data-job-id="${id}"]`);
 
   it('with no agent session: says it starts a fresh session in the kept work tree with the question and answer, and asks first', async () => {
-    const daemon = await boot('#overview', { parked: [job('p1', { status: 'parked', questionId: 'q9', resumeOn: 'local', parked: { at, from: 'waiting_answer' } })] });
+    const daemon = await boot('#dashboard', { parked: [job('p1', { status: 'parked', questionId: 'q9', resumeOn: 'local', parked: { at, from: 'waiting_answer' } })] });
     const r = await vi.waitFor(() => { const x = row('p1'); expect(x && button('Pick up', x)).toBeDefined(); return x!; });
     await click(button('Pick up', r));
     const d = await dialog();
@@ -115,7 +115,7 @@ describe('Pick up of a parked job (issues #530, #565)', () => {
   });
 
   it('with its agent session: picked up at once, resuming it', async () => {
-    const daemon = await boot('#overview', { parked: [job('p2', { status: 'parked', agentSession: 's', resumeOn: 'local', parked: { at, from: 'running' } })] });
+    const daemon = await boot('#dashboard', { parked: [job('p2', { status: 'parked', agentSession: 's', resumeOn: 'local', parked: { at, from: 'running' } })] });
     const r = await vi.waitFor(() => { const x = row('p2'); expect(x && button('Pick up', x)).toBeDefined(); return x!; });
     await click(button('Pick up', r));
     await vi.waitFor(() => expect(daemon.calls.find((x) => x.path === '/ui/api/jobs/p2/requeue')?.body).toEqual({}));

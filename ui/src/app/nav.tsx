@@ -6,8 +6,9 @@
 // with what jobs on boxes wait for. An old link (#not-taken) opens the view it became (MOVED). The job view (#job/<id>, issue #433) is a
 // route with no nav entry: timeline entries link to it. Infra (issue #896) holds plans, applies and out-of-band changes, and is badged
 // with the plans that wait for a person to approve them and the out-of-band changes no one marked (issue #871); Pull requests with the ones the hopper gave up on (issues #897, #927).
-// The entries are in nav groups (issue #906, model/nav-groups.ts): a collapsed group shows its entries' badges as one. Needs you is
-// pinned above them, never collapsed: its badge already sums other entries', so no group sums it again. Your reports (issue #694) is a view of
+// The entries are in nav groups (issue #906, model/nav-groups.ts): a collapsed group shows its entries' badges as one. The Dashboard
+// (issue #951; it was the Overview, and #overview still opens it) and Needs you are pinned above them, never collapsed: the Dashboard
+// covers the whole system and is the landing page; Needs you's badge already sums other entries', so no group sums it again. Your reports (issue #694) is a view of
 // its own (issue #897): it left Settings, which keeps configuration only. Direct jobs (issue #901) submits a job with no GitHub issue and reads it back. Resources (issue #947) shows what every
 // container of the stack and its Postgres use now.
 import { BellRing, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, Cpu, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Send, Server, Settings, ShieldQuestion, Telescope, type LucideIcon } from 'lucide-react';
@@ -26,16 +27,16 @@ import { groupBadges, type NavBadge } from '@/model/nav-groups';
 import { toggleNavGroup, useNavCollapsed } from '@/hooks/use-nav-collapsed';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['needs-you', 'overview', 'jobs', 'queue', 'direct-jobs', 'intake', 'access-requests', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'sources', 'machines', 'infra', 'usage', 'resources', 'settings'] as const;
+export const VIEWS = ['dashboard', 'needs-you', 'jobs', 'queue', 'direct-jobs', 'intake', 'access-requests', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'sources', 'machines', 'infra', 'usage', 'resources', 'settings'] as const;
 /** The routes: every view in the navigation, and the job view, which has no nav entry. */
 const ROUTES = [...VIEWS, 'job'] as const;
 export type View = (typeof ROUTES)[number];
 /** The views above the nav groups, always shown. */
-export const NAV_PINNED = ['needs-you'] as const satisfies readonly (typeof VIEWS)[number][];
+export const NAV_PINNED = ['dashboard', 'needs-you'] as const satisfies readonly (typeof VIEWS)[number][];
 /** The nav groups, in nav order, each with its entries in order. A view of the navigation neither pinned nor in a group fails the typecheck. */
 export const NAV_GROUPS = [
   { id: 'waiting', label: 'Waiting on you', views: ['intake', 'access-requests', ...SECTION_KINDS] },
-  { id: 'jobs', label: 'Jobs', views: ['overview', 'jobs', 'queue', 'direct-jobs', 'pull-requests', 'artifacts', 'decisions', 'events', 'reports'] },
+  { id: 'jobs', label: 'Jobs', views: ['jobs', 'queue', 'direct-jobs', 'pull-requests', 'artifacts', 'decisions', 'events', 'reports'] },
   { id: 'infra', label: 'Infra', views: ['infra'] },
   { id: 'sources-machines', label: 'Sources & machines', views: ['sources', 'machines', 'usage', 'resources'] },
   { id: 'settings', label: 'Settings', views: ['settings'] },
@@ -43,8 +44,8 @@ export const NAV_GROUPS = [
 const everyViewGrouped: Exclude<(typeof VIEWS)[number], (typeof NAV_GROUPS)[number]['views'][number] | (typeof NAV_PINNED)[number]> extends never ? true : never = true;
 void everyViewGrouped;
 const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
+  dashboard: { label: 'Dashboard', icon: LayoutDashboard },
   'needs-you': { label: 'Needs you', icon: BellRing },
-  overview: { label: 'Overview', icon: LayoutDashboard },
   jobs: { label: 'Jobs', icon: LayoutGrid },
   queue: { label: 'Queue', icon: ListOrdered },
   'direct-jobs': { label: 'Direct jobs', icon: Send },
@@ -72,8 +73,8 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
 
 const subscribe = (fn: () => void) => { window.addEventListener('hashchange', fn); return () => window.removeEventListener('hashchange', fn); };
 /** Old view names and the view each became, so an old link still opens it. */
-const MOVED: Record<string, View> = { 'not-taken': 'intake' };
-const read = (): View => { const h = window.location.hash.slice(1).split('/')[0]!; return MOVED[h] ?? ((ROUTES as readonly string[]).includes(h) ? (h as View) : 'overview'); };
+const MOVED: Record<string, View> = { 'not-taken': 'intake', overview: 'dashboard' };
+const read = (): View => { const h = window.location.hash.slice(1).split('/')[0]!; return MOVED[h] ?? ((ROUTES as readonly string[]).includes(h) ? (h as View) : 'dashboard'); };
 export const useView = (): View => useSyncExternalStore(subscribe, read);
 /** The section after the view in the hash (#settings/routing → routing), or ''. */
 const readSection = (): string => window.location.hash.slice(1).split('/')[1] ?? '';

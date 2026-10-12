@@ -22,7 +22,7 @@ import { Intake } from '@/views/intake';
 import { Logins } from '@/views/logins';
 import { Machines } from '@/views/machines';
 import { NeedsYou } from '@/views/needs-you';
-import { Overview } from '@/views/overview';
+import { Dashboard } from '@/views/dashboard';
 import { Parked } from '@/views/parked';
 import { PullRequests } from '@/views/pull-requests';
 import { Proposals, Research } from '@/views/review-section';
@@ -40,7 +40,7 @@ import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  'needs-you': NeedsYou, overview: Overview, jobs: Jobs, queue: Queue, 'direct-jobs': DirectJobs, intake: Intake, 'access-requests': AccessRequests, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, sources: Sources, machines: Machines, infra: Infra, usage: Usage, resources: Resources, settings: Settings, job: JobView,
+  'needs-you': NeedsYou, dashboard: Dashboard, jobs: Jobs, queue: Queue, 'direct-jobs': DirectJobs, intake: Intake, 'access-requests': AccessRequests, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, sources: Sources, machines: Machines, infra: Infra, usage: Usage, resources: Resources, settings: Settings, job: JobView,
 };
 
 function Loading() {
@@ -57,7 +57,7 @@ function Shell() {
   const loaded = useHopper((s) => s.loaded);
   const loadError = useHopper((s) => s.loadError);
   useForgetCleared();
-  useEffect(() => { document.title = view === 'overview' ? 'hopper' : `${viewLabel(view)} · hopper`; }, [view]);
+  useEffect(() => { document.title = view === 'dashboard' ? 'hopper' : `${viewLabel(view)} · hopper`; }, [view]);
   const Current = VIEW[view];
   return (
     <div className="min-h-dvh">

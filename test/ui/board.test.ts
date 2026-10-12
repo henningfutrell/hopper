@@ -1,4 +1,4 @@
-// The overview's numbers, lists and lane board, all derived from the one job store (issue #45).
+// The dashboard's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
 import { GROUP, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, rerunOutcome, laneJobState, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';

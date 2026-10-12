@@ -1,5 +1,5 @@
 // Drag one item onto another to place it there (issue #86), with the browser's own drag and drop:
-// no library — the platform does it, and the overview and Customize are its only two users.
+// no library — the platform does it, and the dashboard and Customize are its only two users.
 // `props(id)` goes on each item; while `enabled` is false an item is neither dragged nor a target.
 import { useRef, useState, type DragEvent } from 'react';
 

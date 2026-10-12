@@ -64,7 +64,7 @@ describe('usage model', () => {
     expect(accountFacts({ ...app, detail: { plan: 'max', organization: 'Org', authMethod: 'claude.ai' } })).toEqual([['plan', 'max'], ['organization', 'Org'], ['sign-in', 'claude.ai']]);
   });
 
-  it('the overview shows one usage source of several (issue #85): the chosen one while it reports, else the first', () => {
+  it('the dashboard shows one usage source of several (issue #85): the chosen one while it reports, else the first', () => {
     const sources = [{ name: 'work' }, { name: 'personal' }];
     expect(shownSource(sources, 'personal')).toBe('personal');
     expect(shownSource(sources, undefined)).toBe('work');

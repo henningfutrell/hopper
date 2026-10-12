@@ -78,7 +78,7 @@ let root: Root | undefined;
 async function boot(role: string, posts: string[] = []) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#overview';
+  window.location.hash = '#dashboard';
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
   vi.stubGlobal('fetch', fakeDaemon(role, posts));

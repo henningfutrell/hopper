@@ -1,4 +1,4 @@
-// The overview's charts: throughput, lane timeline, usage. Their settings come from the overview layout.
+// The dashboard's charts: throughput, lane timeline, usage. Their settings come from the dashboard layout.
 import { BarChart3, Gauge as GaugeIcon, GanttChart } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Empty, Panel } from '@/components/panel';
@@ -12,7 +12,7 @@ import { laneName } from '@/model/board';
 import { OPERATOR_LED_ROW } from '@/model/history';
 import { orderReadings, readingKey, shownSource } from '@/model/usage';
 import type { UsageSourceReport } from '@/model/wire';
-import { TIMELINE_WINDOWS, type TimelineWindow } from '@/model/overview-layout';
+import { TIMELINE_WINDOWS, type TimelineWindow } from '@/model/dashboard-layout';
 import { refreshUsage, useHopper } from '@/store';
 import { useJobBoard, useJobName, useLaneSpans, useQuestionWaits } from '@/store/selectors';
 import { cn } from '@/lib/utils';
@@ -39,7 +39,7 @@ export function ThroughputPanel({ hours }: { hours: number }) {
 const WINDOWS: Record<TimelineWindow, number> = { '1h': 3_600_000, '6h': 6 * 3_600_000, '24h': 24 * 3_600_000 };
 const OUTCOMES = [...Object.entries(OUTCOME_TONE).map(([key, tone]) => ({ key, color: COLOR[tone] })), { key: 'waiting answer', color: WAIT_SWATCH }];
 
-/** `window` is the overview layout's; choosing another on the panel sets it there. */
+/** `window` is the dashboard layout's; choosing another on the panel sets it there. */
 export function TimelinePanel({ window: win, onWindow }: { window: TimelineWindow; onWindow: (w: TimelineWindow) => void }) {
   const machines = useHopper((s) => s.machines);
   const nameOf = useJobName();
@@ -59,7 +59,7 @@ export function TimelinePanel({ window: win, onWindow }: { window: TimelineWindo
   );
 }
 
-/** One usage source's readings (issue #85): with several, a tab per source picks it; `source` is the overview layout's. */
+/** One usage source's readings (issue #85): with several, a tab per source picks it; `source` is the dashboard layout's. */
 export function UsagePanel({ source, onSource }: { source: string | undefined; onSource: (name: string) => void }) {
   const usage = useHopper((s) => s.usage);
   const now = useNow();

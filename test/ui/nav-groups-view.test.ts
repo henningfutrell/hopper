@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Issue #906: the main menu's entries in nav groups, rendered inside the whole app against a fake of the daemon's HTTP
 // surface. Every entry is in one group. A collapsed group hides its entries and shows their badges as one; open, each
-// entry shows its own. Needs you is pinned above the groups. Which groups are collapsed is kept per browser and holds in the sidebar and the mobile drawer.
+// entry shows its own. The Dashboard and Needs you are pinned above the groups (issue #951). Which groups are collapsed is kept per browser and holds in the sidebar and the mobile drawer.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -46,7 +46,7 @@ let root: Root | undefined;
 async function boot(collapsed?: string) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#overview';
+  window.location.hash = '#dashboard';
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
   if (collapsed !== undefined) localStorage.setItem('jh_nav_collapsed', collapsed);
@@ -70,10 +70,10 @@ afterEach(async () => {
 });
 
 describe('the nav groups', () => {
-  it('put every view of the navigation in exactly one group, or pinned above them: only Needs you, whose badge already sums others\'', async () => {
+  it('put every view of the navigation in exactly one group, or pinned above them: only the Dashboard, which covers the whole system, and Needs you, whose badge already sums others\'', async () => {
     const nav = '../../ui/src/app/nav.tsx';
     const { VIEWS, NAV_GROUPS, NAV_PINNED } = (await import(nav)) as { VIEWS: readonly string[]; NAV_PINNED: readonly string[]; NAV_GROUPS: readonly { id: string; views: readonly string[] }[] };
-    expect(NAV_PINNED).toEqual(['needs-you']);
+    expect(NAV_PINNED).toEqual(['dashboard', 'needs-you']);
     const placed = [...NAV_PINNED, ...NAV_GROUPS.flatMap((g) => g.views)];
     expect([...placed].sort()).toEqual([...VIEWS].sort());
     expect(new Set(placed).size).toBe(placed.length);

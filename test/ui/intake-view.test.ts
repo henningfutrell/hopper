@@ -108,7 +108,7 @@ const navLink = (hash: string) => document.querySelector<HTMLElement>(`nav a[hre
 
 describe('Intake: the issues a source listed, grouped by why (issues #798, #897)', () => {
   it('the nav entry is badged with the request cards waiting for approval', async () => {
-    await boot('#overview');
+    await boot('#dashboard');
     await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2'));
     expect(navLink('#intake').textContent).toContain('Intake');
   });
@@ -154,7 +154,7 @@ describe('Intake: no inner scroll box, a taken issue whose job ended (issue #798
 
 describe('the backburner is always visible (issue #808)', () => {
   it('the nav entry also counts the issues on the backburner, apart from the requests', async () => {
-    await boot('#overview');
+    await boot('#dashboard');
     await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge-backburner"]')?.textContent).toBe('2'));
     expect(navLink('#intake').querySelector('[data-slot="nav-badge-backburner"]')!.getAttribute('title')).toBe('2 issues on the backburner');
     expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2');

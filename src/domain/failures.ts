@@ -181,7 +181,7 @@ export const FAILURE_SETTING_BOUNDS = {
   handoffRetentionDays: { min: 1, max: 3650 },
 } as const;
 
-/** The assessment a failed job carries (`Job.assessment`): what the Queue and Overview show beside its error. */
+/** The assessment a failed job carries (`Job.assessment`): what the Queue and Dashboard show beside its error. */
 export interface JobAssessment {
   recordId: string;
   at: string;

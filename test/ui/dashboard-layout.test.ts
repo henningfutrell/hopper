@@ -1,10 +1,10 @@
-// Issue #73: the overview layout — which overview panels show, in what order, how wide, and each
+// Issue #73: the dashboard layout — which dashboard panels show, in what order, how wide, and each
 // panel's settings — is the viewer's, kept per browser. The model is pure; reading what a browser
 // stored never throws and never loses a panel.
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_LAYOUT, PANEL_IDS, movePanel, parseLayout, placePanel, setPanel, setSetting,
-} from '../../ui/src/model/overview-layout.ts';
+} from '../../ui/src/model/dashboard-layout.ts';
 
 const ids = (l = DEFAULT_LAYOUT) => l.panels.map((p) => p.id);
 
@@ -43,7 +43,7 @@ describe('parseLayout', () => {
     expect(l.settings).toEqual({ ...DEFAULT_LAYOUT.settings, throughputHours: 12 });
   });
 
-  it('keeps the usage source chosen for the overview (issue #85); anything but a name is dropped', () => {
+  it('keeps the usage source chosen for the dashboard (issue #85); anything but a name is dropped', () => {
     expect(parseLayout(JSON.stringify({ panels: [], settings: { usageSource: 'personal' } })).settings.usageSource).toBe('personal');
     expect(parseLayout(JSON.stringify({ panels: [], settings: { usageSource: 3 } })).settings).toEqual(DEFAULT_LAYOUT.settings);
     expect(parseLayout(JSON.stringify({ panels: [], settings: { usageSource: '' } })).settings).toEqual(DEFAULT_LAYOUT.settings);
@@ -64,7 +64,7 @@ describe('movePanel', () => {
   });
 });
 
-// Issue #86: the overview can be rearranged as seen fit — a panel dropped on another takes its place.
+// Issue #86: the dashboard can be rearranged as seen fit — a panel dropped on another takes its place.
 describe('placePanel', () => {
   it('a panel dropped on one before it goes in front of it; on one after it, behind it', () => {
     expect(ids(placePanel(DEFAULT_LAYOUT, 'live', 'kpis'))).toEqual(['live', ...ids().filter((id) => id !== 'live')]);

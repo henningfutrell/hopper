@@ -127,11 +127,12 @@ const badge = (hash: string) => navLink(hash)?.querySelector('[data-slot="nav-ba
 const buttons = (el: ParentNode) => [...el.querySelectorAll('button')].map((b) => b.textContent?.trim());
 const main = () => document.querySelector('main')!;
 
-describe('the nav: Needs you first, Intake and Access requests top-level, each with its count (issue #897)', () => {
-  it('Needs you is the first entry and counts every decision that waits', async () => {
-    await boot('#overview');
+describe('the nav: Dashboard, then Needs you, Intake and Access requests top-level, each with its count (issues #897, #951)', () => {
+  it('the Dashboard is the first entry, Needs you the second, and Needs you counts every decision that waits', async () => {
+    await boot('#dashboard');
     await vi.waitFor(() => expect(badge('#access-requests')).toBe('3'));
-    expect(document.querySelector('nav a')!.getAttribute('href')).toBe('#needs-you');
+    expect([...document.querySelectorAll('nav a')].slice(0, 2).map((a) => a.getAttribute('href'))).toEqual(['#dashboard', '#needs-you']);
+    expect(navLink('#dashboard')!.textContent).toBe('Dashboard');
     expect(navLink('#needs-you')!.textContent).toContain('Needs you');
     expect(badge('#intake')).toBe('1');
     await vi.waitFor(() => expect(badge('#needs-you')).toBe('6'));
@@ -139,10 +140,24 @@ describe('the nav: Needs you first, Intake and Access requests top-level, each w
   });
 
   it('Infra is badged with the plans that wait, Pull requests with the ones the hopper gave up on (issue #927)', async () => {
-    await boot('#overview');
+    await boot('#dashboard');
     await vi.waitFor(() => expect(badge('#pull-requests')).toBe('1'));
     await vi.waitFor(() => expect(badge('#infra')).toBe('1'));
     expect(navLink('#pull-requests')!.querySelector('[data-slot="nav-badge"]')!.getAttribute('title')).toBe('the hopper gave up on 1 pull request');
+  });
+
+  it('no view in the link opens the Dashboard (issue #951)', async () => {
+    await boot('');
+    await vi.waitFor(() => expect(document.querySelector('[data-dashboard-panel]')).not.toBeNull());
+    expect(navLink('#dashboard')!.getAttribute('aria-current')).toBe('page');
+    expect(document.title).toBe('hopper');
+  });
+
+  it('an old #overview link opens the Dashboard (issue #951)', async () => {
+    await boot('#overview');
+    await vi.waitFor(() => expect(document.querySelector('[data-dashboard-panel]')).not.toBeNull());
+    expect(navLink('#dashboard')!.getAttribute('aria-current')).toBe('page');
+    expect(navLink('#overview')).toBeNull();
   });
 
   it('an old #not-taken link opens Intake', async () => {
@@ -171,7 +186,7 @@ describe('Needs you lists every kind with its count and links to its home (issue
 
 describe('the header shows yolo mode on every screen, and links to its one switch (issue #897)', () => {
   it('says where it is on, and opens Settings → Yolo mode', async () => {
-    await boot('#overview');
+    await boot('#dashboard');
     const yolo = () => document.querySelector<HTMLAnchorElement>('header [data-yolo]');
     await vi.waitFor(() => expect(yolo()?.textContent).toBe('yolo on: 1 of 2 repos'));
     expect(yolo()!.getAttribute('href')).toBe('#settings/yolo-mode');

@@ -22,7 +22,7 @@ import { CardText, InlineMarkdown } from '@/components/markdown';
 import type { Job, QuestionView } from '@/model/wire';
 import { act, actFor, refreshQuestions, useHopper } from '@/store';
 import { useCanOperate, useJobBoard } from '@/store/selectors';
-import { CancelButton, PickUpButton } from '@/views/overview/lanes';
+import { CancelButton, PickUpButton } from '@/views/dashboard/lanes';
 import { ThreadState } from '@/components/thread-ask';
 
 /** The answer box of an expanded row: the answer is sent, then the job picked up; a fresh start is confirmed first. */
