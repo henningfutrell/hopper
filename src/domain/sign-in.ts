@@ -232,3 +232,32 @@ export interface SessionView {
     required: boolean;
   };
 }
+
+// The scope registry (issue #909, ./scope-registry.ts builds it): what `GET /api/scopes` answers.
+/** One scope as the registry shows it. */
+export interface ScopePermission {
+  scope: string;
+  /** What it lets an agent do, in plain words: the summaries of its routes. */
+  description: string;
+  /** The routes it covers: `POST /ui/api/jobs/:id/approve`. */
+  routes: string[];
+  /** The least UI role its routes need: a grant of a lower role gets 403 there. */
+  role: UiRole;
+  /** One of its routes is a box action: only a box grant's tokens may use it. */
+  box: boolean;
+}
+
+export interface ScopeSection { id: string; title: string; description: string; permissions: ScopePermission[] }
+
+/** A named set of scopes, picked with one click or by its id (`preset` at the mint, `hopper token mint --preset`). */
+export interface ScopePreset {
+  id: string;
+  label: string;
+  /** What a grant of it can do, in plain words. */
+  description: string;
+  scopes: string[];
+  /** Its scopes cover a box action: it is minted as a box grant. */
+  box: boolean;
+}
+
+export interface ScopeRegistry { sections: ScopeSection[]; presets: ScopePreset[] }

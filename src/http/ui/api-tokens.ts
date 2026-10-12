@@ -16,6 +16,7 @@ import {
   type AccessAnswer, type ApiGrantMinted, type ApiGrantView, type ApiTokenMinted, type ApiTokenSettings, type ApiTokenView, type Identity, type UiRole,
 } from '../../domain/types.ts';
 import { scopeAllows, scopeOfRoute, scopeProblem } from '../../domain/token-scopes.ts';
+import { presetOf, scopesOf, type ScopeRegistry } from '../../domain/scope-registry.ts';
 import type { Access } from '../../authz/service.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import type { Operation } from '../openapi-operation.ts';
@@ -37,7 +38,9 @@ export const apiTokenBody = z.discriminatedUnion('action', [
   z.strictObject({
     action: z.literal('mint'), label, role, minutes,
     holder: z.string().trim().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/, 'a holder: lower case letters, digits, . _ -, at most 64').optional(),
-    scopes: z.array(z.string().trim()).min(1, 'name at least one scope').max(64),
+    // Scopes, or a preset (issue #909: GET /api/scopes names them), or both: the grant holds the preset's and these.
+    scopes: z.array(z.string().trim()).max(64).optional(),
+    preset: z.string().trim().max(64).optional(),
     box: z.boolean().optional(),
     days: z.number().int().min(1).max(GRANT_MAX_DAYS).nullable().optional(),
   }),
@@ -51,11 +54,12 @@ export const tokenRefreshBody = z.strictObject({ refresh: z.string().startsWith(
 
 const LIFETIME = `the admin's API-token lifetime (Settings → API tokens: ${API_TOKEN_MINUTES.min}–${API_TOKEN_MINUTES.max} minutes, default ${API_TOKEN_MINUTES.default}), or less (\`minutes\`)`;
 const USE = 'Send it as `Authorization: Bearer <token>` on any `GET /api/*` or `POST /ui/api/*` route: it acts as a UI session of its user with its role would, with no Origin needed, and Access (`api_token#can_view`, `can_operate` or `can_administer`, for the role the route needs) decides each use. A box action (issue #795: a route that starts a job, runs a command, approves or merges work, updates the hopper or a client, or changes the work on a machine; the list is `src/http/ui/box-actions.ts`) needs a box token and `api_token#can_run_on_box` too: any other token gets 403.';
-const SCOPES = 'A grant\'s token may use only the routes its `scopes` cover (issue #881): a read `GET /api/<area>/…` needs `<area>:read`, a mutation `POST /ui/api/<area>/…/<act>` needs `<area>:<act>` (`<area>:edit` for `POST /ui/api/<area>`); a scope is `<area>:<act>`, `<area>:*`, `*:<act>` or `*`. `GET /api/api-tokens` lists the scopes there are.';
+const SCOPES = 'A grant\'s token may use only the routes its `scopes` cover (issue #881): a read `GET /api/<area>/…` needs `<area>:read`, a mutation `POST /ui/api/<area>/…/<act>` needs `<area>:<act>` (`<area>:edit` for `POST /ui/api/<area>`); a scope is `<area>:<act>`, `<area>:*`, `*:<act>` or `*`. `preset` (issue #909) names a preset of `GET /api/scopes`: the grant holds its scopes and `scopes`, and is a box grant when the preset is and `box` is not given. 400 for a scope that covers no route, or a preset that is not there; at least one scope.';
 
 export const API_TOKEN_OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/api-tokens', tag: 'API tokens', summary: 'List grants and API tokens', description: 'The request\'s user\'s live grants (issue #881: id, label, holder, role, scopes, box, created, fixed end or none, idle end, last used and from where) and the live API tokens an exchange made (issue #718); never a token. `scopes`: every scope a route needs. `settings`: the API-token lifetime and its bounds.', returns: '`{ grants: ApiGrantView[], tokens: ApiTokenView[], scopes: string[], settings: ApiTokenSettings }`' },
   { method: 'post', path: '/ui/api/api-tokens', tag: 'API tokens', summary: 'Mint or revoke a grant', description: `\`mint\` (issue #881): a new grant for the session's user, for an agent: a \`label\`, a \`holder\` (who keeps it, e.g. \`grok-bot\`), \`scopes\`, a \`role\` no higher than the session's (default: the session's), \`days\` it lives at most (1–${GRANT_MAX_DAYS}, default ${GRANT_DEFAULT_DAYS}; \`null\`: no fixed end, an admin's only, answered with a \`warning\`), and API tokens that live ${LIFETIME}. It dies ${GRANT_IDLE_DAYS} days after its last refresh too. \`box: true\` (issue #795) makes its tokens box tokens, the only kind that may do a box action — refused (403) when Access does not allow \`api_token#can_run_on_box\`. Answers the grant (\`view\`), its first API token (\`token\`, \`expiresAt\`) and its refresh token (\`refresh\`): once, never again; not cached. The agent trades the refresh token at \`POST /ui/auth/token/refresh\`. ${SCOPES} ${USE} An API token may not mint one (403). \`revoke\`: end one of the user's grants, or an exchanged token, by its id (404 when there is none); \`revoke-all\`: every grant and API token of the user. Both answer what is left. 503 when OpenFGA cannot be asked.`, role: 'viewer', body: apiTokenBody, returns: 'mint: `ApiGrantMinted`; revoke: `{ grants: ApiGrantView[], tokens: ApiTokenView[] }`', errors: [400, 403, 404, 503] },
+  { method: 'get', path: '/api/scopes', tag: 'API tokens', summary: 'The scope registry: every scope a grant may hold, and the presets', description: 'Issue #909: `sections`, one per area of work (Jobs, Intake, Questions and reviews, Pull requests, Infra changes, Vault and credentials, Machines, …), in order, each with its `permissions`: a `scope`, its plain `description`, the `routes` it covers, the least UI `role` they need, and `box` when one is a box action (only a box grant may use it). Built from the routes, so a new route\'s scope is listed with no edit; an area no section names is under `other`. `presets`: named scope sets (`id`, `label`, `description`, `scopes`, `box`) a person picks with one click, or names at the mint (`preset`).', returns: '`ScopeRegistry`' },
   { method: 'post', path: '/ui/api/api-tokens/settings', tag: 'API tokens', summary: 'Set the API-token lifetime', description: `Only the instance admin (issue #881): \`tokenMinutes\`, ${API_TOKEN_MINUTES.min}–${API_TOKEN_MINUTES.max} (default ${API_TOKEN_MINUTES.default}). Applies to the API tokens issued after it; those there are keep their own ends. A grant that asked for more gets the setting. A change is \`api_tokens.settings_changed\`.`, role: 'admin', body: apiTokenSettingsBody, returns: '`ApiTokenSettings`', errors: [400] },
   { method: 'post', path: '/ui/auth/token/refresh', tag: 'API tokens', summary: 'Trade a refresh token for an API token', description: `For the agent a grant was minted for (issue #881): \`{ refresh }\` answers a new API token (\`token\`, \`expiresAt\`) and a new refresh token (\`refresh\`), which replaces the one sent: keep it, the old one is spent. A refresh retried within 30 seconds gets the same pair. A spent refresh token sent again after that ends its whole grant at once (it may be stolen): \`api_grant.reuse_detected\`. 401 when the refresh token is unknown, spent, or its grant ended or was revoked; 429 past ${SIGN_IN_RATE} refreshes a minute from one caller. Not cached.`, body: tokenRefreshBody, returns: '`ApiTokenRefreshed`', errors: [400, 401, 429] },
   { method: 'post', path: '/ui/auth/api-token', tag: 'API tokens', summary: 'Exchange a sign-in for an API token', description: `For an agent with no UI session (issue #718): \`Authorization: Bearer <a gateway realm's JWT, or a GitHub token>\`, checked as the API door checks it, mints an API token for the user the sign-in is linked to (a GitHub account: the user whose connected account it is), with a \`label\`, a \`role\` no higher than the one the sign-in config grants (default: that one), living ${LIFETIME}. ${USE} 401 when the sign-in is refused or names no hopper user (the door signs nobody new in), or is itself an API token; never a box token and never a grant: \`box\` is refused (400); 403 when no role is granted or Access refuses; 503 when OpenFGA cannot be asked; 429 past ${SIGN_IN_RATE} exchanges a minute from one caller (behind the tunnel: the caller its edge names). Not cached.`, body: apiTokenExchangeBody, returns: '`ApiTokenMinted`', errors: [400, 401, 403, 429, 502, 503] },
@@ -101,10 +105,11 @@ export function grantScopeRefusal(grants: Pick<ApiGrants, 'live'>, s: Pick<UiSes
 export function registerApiTokenRoutes(app: FastifyInstance, o: {
   allow: (needs: UiRole) => Guard; instance: Guard; sessions: UiSessions; grants: ApiGrants; sessionOf: (req: FastifyRequest) => UiSession | undefined;
   access: Pick<Access, 'decideApiToken' | 'decideBoxAction'>; tenants: Tenants; signIn: Pick<SignIn, 'checkToken'>; caller: CallerOf;
-  /** Every scope a route needs: what a grant's scopes are checked against. */
-  scopes: readonly string[];
+  /** The scope registry (issue #909): every scope a route needs, what a grant's scopes are checked against, and the presets. */
+  registry: ScopeRegistry;
 }): void {
   const apiDoor = createApiDoor(o);
+  const known = scopesOf(o.registry);
 
   const checkedMinutes = (m: number | undefined): number | undefined => {
     const most = o.grants.settings().tokenMinutes;
@@ -134,12 +139,16 @@ export function registerApiTokenRoutes(app: FastifyInstance, o: {
   async function grant(s: UiSession, want: Extract<z.output<typeof apiTokenBody>, { action: 'mint' }>, from: string): Promise<ApiGrantMinted> {
     const role = want.role ?? s.role;
     if (!roleAllows(s.role, role)) throw new HttpError(403, `a grant may not act above its minter: ${role} is above ${s.role}`);
-    const problems = want.scopes.map((p) => scopeProblem(p, o.scopes)).filter((p): p is string => p !== undefined);
+    const preset = want.preset === undefined ? undefined : presetOf(o.registry, want.preset);
+    if (want.preset !== undefined && !preset) throw new HttpError(400, `no preset ${JSON.stringify(want.preset)}: GET /api/scopes lists the presets (${o.registry.presets.map((p) => p.id).join(', ')})`);
+    const scopes = [...new Set([...(preset?.scopes ?? []), ...(want.scopes ?? [])])];
+    if (scopes.length === 0) throw new HttpError(400, 'name at least one scope, or a preset');
+    const problems = scopes.map((p) => scopeProblem(p, known)).filter((p): p is string => p !== undefined);
     if (problems.length) throw new HttpError(400, problems.join('; '));
     if (want.days === null && !roleAllows(s.role, 'admin')) throw new HttpError(403, 'only an admin mints a grant with no fixed end: name `days`');
-    const box = want.box === true;
+    const box = want.box ?? preset?.box ?? false;
     const { session, ...minted } = o.grants.mint({
-      userId: s.userId, identity: s.identity, role, label: want.label, ...(want.holder === undefined ? {} : { holder: want.holder }), scopes: want.scopes, box,
+      userId: s.userId, identity: s.identity, role, label: want.label, ...(want.holder === undefined ? {} : { holder: want.holder }), scopes, box,
       days: want.days === undefined ? GRANT_DEFAULT_DAYS : want.days, ...(want.minutes === undefined ? {} : { minutes: checkedMinutes(want.minutes) }),
     }, from);
     const d = await apiTokenAnswer(o.access, session, role, box);
@@ -157,8 +166,10 @@ export function registerApiTokenRoutes(app: FastifyInstance, o: {
   app.get('/api/api-tokens', async (req) => {
     const userId = userIdOf(req);
     if (userId === undefined) throw new HttpError(401, 'sign in to list API tokens');
-    return { ...listed(userId), scopes: o.scopes, settings: o.grants.settings() };
+    return { ...listed(userId), scopes: known, settings: o.grants.settings() };
   });
+
+  app.get('/api/scopes', async (): Promise<ScopeRegistry> => o.registry);
 
   app.post('/ui/api/api-tokens', o.allow('viewer'), async (req, reply) => {
     reply.header('cache-control', 'no-store');

@@ -11676,6 +11676,42 @@ any question of the user. Sender binding (DPoP, RFC 9449) and per-grant reposito
 **Not built** (follow-ups): a grant minted by device-code approval; sender binding (DPoP); per-grant repository or source
 restrictions.
 
+### The scope registry and presets (issue #909, 2026-10-12)
+
+Owner direction on the issue: an agent must do approvals over the API with a grant, and nobody types scope strings: the
+form offers presets as one click, and lays out every permission as a box, in sections by area of work, always open, each
+with its plain description and the routes it covers, generated from the registry so a new capability shows up by itself.
+
+- **Every approval already has a scope.** Scopes are named from the routes (above), so intake (`sources:intake`), a held
+  job (`jobs:approve`), a job's vault grant ask (`jobs:grant-vault`), an infra plan (`infra-plans:edit`), a vault template
+  or credential request (`vault:edit`), a question (`questions:answer`) and a pull request (`pull-requests:merge`) each have
+  one. The 403 the issue saw was a grant whose scopes did not name the route, and a token with no box flag at a box
+  action. No route is left unscoped: `test/domain/scope-registry.test.ts` holds every route of the API reference to a
+  scope in a named section.
+- **The registry** (`src/domain/scope-registry.ts`, pure; `src/http/scopes.ts` gives it the API reference's operations
+  and `isBoxAction`). One permission per scope: `description` (its routes' summaries), `routes`, `role` (the least of
+  theirs), `box`. Sections by area (`SCOPE_SECTIONS`); a job's vault grant is shown under the vault; an area no section
+  names goes under **Other**, so it is still listed. `GET /api/scopes` answers it, `scopes:read` for a grant's token;
+  `hopper token scopes` prints it.
+- **Presets.** `read-only` (`*:read`), `agent-intake` (`*:read sources:intake`, a box grant), `agent-approvals` (`*:read
+  sources:intake jobs:approve jobs:grant-vault`, a box grant: infra plans and vault templates stay a person's unless
+  ticked), `full-admin` (`*`). A preset is a box grant when its scopes cover a box action. `*:read` covers every read the
+  Needs you list makes (`sources`, `vault`, `queue`, `sections`).
+- **The mint.** `POST /ui/api/api-tokens` `mint` takes `preset` beside `scopes`: the grant holds both; `box` named wins
+  over the preset's. An unknown preset, no scope at all, or a scope that covers no route is 400. `hopper token mint
+  --preset <id>`.
+- **The form** (`ui/src/views/scope-checklist.tsx`). The presets, each with what it does in plain words; then every
+  section with every scope as a box: its description, scope, routes, a "box action" mark and a "needs <role>" mark when
+  the grant's role is lower. A preset ticks its boxes and stays a wildcard (`*:read`) until a box it covers is cleared;
+  then it gives way to the scopes it covered, less that one. A grant is a box grant when a ticked scope is a box action:
+  the form says which; the box flag is no longer a box of its own.
+- **Risk guards kept.** A box action still needs the box flag, its scope and `api_token#can_run_on_box`; Access decides
+  each use by role. The `agent-approvals` preset leaves infra plans and vault templates out.
+
+**Not built** (follow-ups of #909): a per-item confirmation by a person (a notification to tap) for a high-risk or
+production plan and for a write credential, approved by a grant's token; scopes per `action` of a route whose body names
+it (`vault:edit` covers every vault change, `infra-plans:edit` the plan approval).
+
 Tests: `test/http/api-grants.test.ts` (mint, rotation, grace, reuse detection, a restart within the grace, idle and fixed
 ends, no fixed end, the lifetime and its setting, rights at each refresh, a sign-in change, revoke and revoke all),
 `test/integration/token-grants.test.ts` (the issue's flow over HTTP: a box grant for Grok Bot refreshed again and again,
