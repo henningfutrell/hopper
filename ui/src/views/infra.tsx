@@ -1,5 +1,6 @@
 // Infra (issue #896, design.md "The Infra page"): plans and applies of infrastructure changes, a top-level view on par with
-// Jobs. Plans (infra-plans.tsx): each plan, its state and who it waits for, approve, and the applies minted against it.
+// Jobs. Plans (infra-plans.tsx): each plan, its state and who it waits for, approve by risk, auto-approve, and the applies
+// minted against it.
 // Applies and drift: one timeline of plans recorded and approved, applies, drift and out-of-band writes, newest first.
 // Out-of-band changes (out-of-band.tsx). Every panel always shows: loading, an error with Try again, or an empty list
 // that says how a job fills it.
@@ -9,13 +10,13 @@ import { Empty, Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { get } from '@/lib/api';
 import { infraTimeline, planState } from '@/model/infra-plans';
-import type { PlanApply, PlanView } from '@/model/wire';
+import type { InfraPlanSettings, PlanApply, PlanView } from '@/model/wire';
 import { useServerNow } from '@/store/selectors';
-import { PlanList } from './infra-plans';
+import { AutoApprove, PlanList } from './infra-plans';
 import { OutOfBandChanges, type OutOfBandList } from './out-of-band';
 
 type Load<T> = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ok'; data: T };
-type Plans = { plans: PlanView[]; applies: PlanApply[] };
+type Plans = { plans: PlanView[]; applies: PlanApply[]; settings: InfraPlanSettings };
 
 /** One read, with its state: loading, failed (and why), or its answer; `reload` reads again. */
 function useLoad<T>(path: string): [Load<T>, (f: (d: T) => T) => void, () => void] {
@@ -52,15 +53,17 @@ export function Infra() {
   const [plans, changePlans, reloadPlans] = useLoad<Plans>('/api/infra-plans');
   const [changes, changeChanges, reloadChanges] = useLoad<OutOfBandList>('/api/out-of-band');
   const onPlan = (plan: PlanView) => changePlans((d) => ({ ...d, plans: d.plans.map((p) => (p.id === plan.id ? plan : p)) }));
+  const onSettings = (settings: InfraPlanSettings) => changePlans((d) => ({ ...d, settings }));
   const waiting = plans.kind === 'ok' ? plans.data.plans.filter((p) => planState(p, now).kind === 'waiting').length : 0;
   const timeline = plans.kind === 'ok' && changes.kind === 'ok' ? infraTimeline(plans.data.plans, plans.data.applies, changes.data.changes) : [];
   return (
     <div className="max-w-3xl space-y-3">
-      <p className="text-sm text-muted-foreground">No apply without a plan. A job records the plan of each infrastructure change; the vault mints a credential that changes infrastructure only for a plan an admin approved, made at the commit its branch is at now, and less than an hour old. A plan that adds an AWS resource without the MAP tag fails, and nobody approves it.</p>
+      <p className="text-sm text-muted-foreground">No apply without a plan. A job records the plan of each infrastructure change; the vault mints a credential that changes infrastructure only for an approved plan, made at the commit its branch is at now, and less than an hour old. An operator approves a low-risk plan in uat only; an admin approves any other plan. A plan that adds an AWS resource without the MAP tag fails, and nobody approves it.</p>
       <Panel title="Plans" icon={FileDiff} count={waiting || ''} bodyClassName="space-y-3">
         <NotYet state={plans} what="plans" retry={reloadPlans} />
+        {plans.kind === 'ok' && <AutoApprove settings={plans.data.settings} onSettings={onSettings} />}
         {plans.kind === 'ok' && plans.data.plans.length === 0 && (
-          <Empty>No plans yet. A job records one with POST /job/infra-plans before it applies a change: <code>terraform plan</code>, <code>helm diff</code> or an Argo CD diff. Then the plan waits here for an admin.</Empty>
+          <Empty>No plans yet. A job records one with POST /job/infra-plans before it applies a change: <code>terraform plan</code>, <code>helm diff</code> or an Argo CD diff. Then the plan waits here for a person to approve it.</Empty>
         )}
         {plans.kind === 'ok' && plans.data.plans.length > 0 && <PlanList plans={plans.data.plans} applies={plans.data.applies} onPlan={onPlan} />}
       </Panel>

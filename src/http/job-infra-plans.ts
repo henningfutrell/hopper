@@ -82,11 +82,14 @@ export function jobInfraPlanRoutes(app: FastifyInstance, o: { tenants: Tenants }
       if (typeof said === 'string') return no(req, reply, 400, said);
       const r = who.t.githubProxy.infraPlans.record(who.job, said.input, said.file);
       if (isPlanRefusal(r)) return no(req, reply, r.status, r.no);
-      const { text: _text, ...plan } = r;
-      const failed = failedChecks(r);
-      return answer(req, reply, 201, { plan }, `recorded: plan ${r.id}  ${r.tool}  ${r.asset.kind}/${r.asset.name}  ${r.target}  stale at ${r.expiresAt}
-summary: ${r.summary?.words ?? ''} (${r.summary?.level ?? ''} risk)
-${failed ? `failed: ${failed}\nnext: nobody approves this plan; fix the code and plan again` : `next: a person approves it on Infra; then ask with --plan ${r.id}`}`);
+      const { plan: p, view } = r;
+      const failed = failedChecks(p);
+      const next = failed ? `failed: ${failed}\nnext: nobody approves this plan; fix the code and plan again`
+        : view.approval ? `approved by ${view.approval.by} (auto-approve: ${view.approver.why})\nnext: ask with --plan ${p.id}`
+          : `next: ${view.approver.who === 'admin' ? 'an admin' : 'an operator or an admin'} approves it on Infra (${view.approver.why}); then ask with --plan ${p.id}`;
+      return answer(req, reply, 201, { plan: view }, `recorded: plan ${p.id}  ${p.tool}  ${p.asset.kind}/${p.asset.name}  ${p.target}  stale at ${p.expiresAt}
+summary: ${p.summary?.words ?? ''} (${p.summary?.level ?? ''} risk)
+${next}`);
     });
 
     // Out-of-band changes (issue #871): the signals a job's read-only check found, judged by the hopper's one rule.
@@ -116,10 +119,9 @@ ${failed ? `failed: ${failed}\nnext: nobody approves this plan; fix the code and
         if (!file) return no(req, reply, 404, `plan ${plan.id} has no saved plan file`);
         return reply.code(200).type('application/octet-stream').header('cache-control', 'no-store').send(file);
       }
-      const approval = plans.approval(plan.id);
-      const { text: _text, ...view } = plan;
-      return answer(req, reply, 200, { plan: { ...view, ...(approval ? { approval } : {}) } },
-        `plan ${plan.id}  ${plan.tool}  ${plan.asset.kind}/${plan.asset.name}  ${plan.target}  ${approval ? `approved by ${approval.by}` : 'not approved'}  stale at ${plan.expiresAt}`);
+      const { text: _text, ...view } = plans.view(plan.id)!;
+      return answer(req, reply, 200, { plan: view },
+        `plan ${plan.id}  ${plan.tool}  ${plan.asset.kind}/${plan.asset.name}  ${plan.target}  ${view.approval ? `approved by ${view.approval.by}` : `not approved: ${view.approver.who === 'nobody' ? 'nobody approves it' : `${view.approver.who === 'admin' ? 'an admin' : 'an operator or an admin'} approves it`} (${view.approver.why})`}  stale at ${plan.expiresAt}`);
     });
   });
 }

@@ -10,7 +10,7 @@ Each kind of decision has one page, its home. Needs you collects the counts. You
 |---|---|---|
 | Intake | **Intake** | Issues from people who are not trusted actors, waiting for your approval. |
 | Access requests | **Access requests** | Credentials, vault grants and box templates that jobs on boxes wait for. |
-| Infra plans | **Infra** | Plans of infrastructure changes that wait for an admin to approve them. |
+| Infra plans | **Infra** | Plans of infrastructure changes that wait for a person to approve them. |
 | Questions | **Questions** | Questions jobs asked you. |
 | Proposals | **Proposals** | Proposals that wait for you to pick a path. |
 | Research | **Research** | Research reports that wait for you to accept or steer them. |

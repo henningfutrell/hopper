@@ -1,0 +1,1 @@
+- An operator can now approve a low-risk infrastructure plan for uat. Plans for production, access rights, data, or that destroy something still need an admin, who confirms first. An admin can let the hopper approve low-risk uat plans by itself. Each one still shows on the Infra page.

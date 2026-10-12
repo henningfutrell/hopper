@@ -259,7 +259,6 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     issue: 'https://github.com/octo-org/infra/issues/12', file: true, expiresAt: '2026-10-12T11:00:00.000Z',
     summary: { words: 'Adds 2 security group rules in uat; changes nothing in prod; destroys nothing', level: 'low', risks: ['network'], failed: false },
   },
-  'infra.plan_approved': { plan: '0b7e5a3c-0000-4000-8000-000000000870', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network', by: 'Ada' },
   'infra.out_of_band_recorded': {
     change: '5d2c7a10-0000-4000-8000-000000000871', source: 'cloudtrail', key: '6f0e8d2a-1b3c-4d5e-9f00-0a1b2c3d4e5f', target: 'sg-0abc1234', what: 'ec2:AuthorizeSecurityGroupIngress',
     who: 'arn:aws:sts::123456789012:assumed-role/Admin/console', at: '2026-10-12T09:41:00Z', job: 'f3b1c2d4-0000-4000-8000-000000000001',
@@ -271,6 +270,8 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   },
   'approval.confirmation_asked': { kind: 'infra-plan', ref: '0b7e5a3c-0000-4000-8000-000000000870', plan: '0b7e5a3c-0000-4000-8000-000000000870', words: 'approve plan 0b7e5a3c for prod-db (high risk): Destroys 1 database in prod', asker: 'Grok Bot' },
   'infra.controllers_changed': { from: [], to: ['system:serviceaccount:argocd:argocd-application-controller', 'arn:aws:sts::123456789012:assumed-role/atlantis/*'], by: 'Ada' },
+  'infra.plan_approved': { plan: '0b7e5a3c-0000-4000-8000-000000000870', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network', by: 'Ada', level: 'low' },
+  'infra.settings_changed': { from: { autoApprove: false }, to: { autoApprove: true }, by: 'owner' },
   'api_grant.minted': { grant: '3f9a0c2e5b7d1e48', label: 'Grok Bot', holder: 'grok-bot', role: 'operator', scopes: ['questions:answer', 'sources:intake', '*:read'], box: true, endsAt: '2027-01-10T09:00:00.000Z', tokenMinutes: 10 },
   'api_grant.refreshed': { grant: '3f9a0c2e5b7d1e48', from: '127.0.0.1' },
   'api_grant.reuse_detected': { grant: '3f9a0c2e5b7d1e48', label: 'Grok Bot', holder: 'grok-bot', from: '203.0.113.7' },

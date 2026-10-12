@@ -64,10 +64,10 @@ describe('Access requests: what waits on a person (issue #897)', () => {
 });
 
 const plan = (o: Partial<PlanView> = {}): PlanView => ({
-  id: 'p', expiresAt: '2026-10-12T13:00:00.000Z', ...o,
+  id: 'p', expiresAt: '2026-10-12T13:00:00.000Z', approver: { who: 'operator', why: 'low risk, in uat only' }, ...o,
 } as unknown as PlanView);
 
-describe('Infra plans that wait for an admin (issue #897)', () => {
+describe('Infra plans that wait for a person (issue #897)', () => {
   const now = Date.parse('2026-10-12T12:00:00.000Z');
   it('counts the plans not approved, not stale and not failed; none for no answer', () => {
     const plans = [

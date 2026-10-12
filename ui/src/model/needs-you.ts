@@ -14,7 +14,7 @@ export interface NeedsYouCounts {
   intake: number;
   /** Credential requests, vault grant asks and templates that wait for approval. */
   access: number;
-  /** Infra plans that wait for an admin to approve them. */
+  /** Infra plans that wait for a person to approve them. */
   plans: number;
   /** The open pull requests the hopper gave up on (issue #927), one line each, with why. */
   gaveUp: readonly string[];
@@ -33,7 +33,7 @@ export interface NeedsYouRow {
 const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> = {
   intake: { label: 'Intake', href: '#intake', what: 'issues from people outside your trusted actors, waiting for your approval' },
   access: { label: 'Access requests', href: '#access-requests', what: 'credentials, vault grants and box templates that jobs on boxes wait for' },
-  plans: { label: 'Infra plans', href: '#infra', what: 'plans of infrastructure changes that wait for an admin to approve them' },
+  plans: { label: 'Infra plans', href: '#infra', what: 'plans of infrastructure changes that wait for a person to approve them' },
   questions: { label: 'Questions', href: '#questions', what: 'questions jobs asked you' },
   proposals: { label: 'Proposals', href: '#proposals', what: 'proposals that wait for you to pick a path' },
   research: { label: 'Research', href: '#research', what: 'research reports that wait for you to accept or steer them' },

@@ -4404,7 +4404,7 @@ Version 1 (`docs/schemas/infra.plan_recorded.v1.json`). A job recorded a plan of
 
 ## `infra.plan_approved`
 
-Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan of an infrastructure change (issue #870), on Infra: until the plan is stale, an apply that names it, made at the commit its branch is at, is minted the credential it asks. On the timeline of the job that recorded the plan.
+Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A plan of an infrastructure change was approved (issue #870), on Infra: until the plan is stale, an apply that names it, made at the commit its branch is at, is minted the credential it asks. By risk (part 3): an operator or an admin approves a low-risk plan in uat only, an admin any other. `by`, who; `auto` when the hopper approved it itself, as the plan was kept, with auto-approve on; `level`, the plan's risk level, when it has a summary. On the timeline of the job that recorded the plan.
 
 | field | type | required |
 |---|---|---|
@@ -4413,6 +4413,8 @@ Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan
 | `asset` | object | yes |
 | `target` | string | yes |
 | `by` | string | yes |
+| `auto` | boolean | no |
+| `level` | `low` \| `high` | no |
 
 ```json
 {
@@ -4423,7 +4425,8 @@ Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan
     "name": "123456789012/deploy"
   },
   "target": "uat-network",
-  "by": "Ada"
+  "by": "Ada",
+  "level": "low"
 }
 ```
 
@@ -4502,6 +4505,28 @@ Version 1 (`docs/schemas/infra.controllers_changed.v1.json`). An admin changed t
     "arn:aws:sts::123456789012:assumed-role/atlantis/*"
   ],
   "by": "Ada"
+}
+```
+
+## `infra.settings_changed`
+
+Version 1 (`docs/schemas/infra.settings_changed.v1.json`). An admin turned auto-approve of infra plans on or off (issue #870 part 3): on, the hopper approves a low-risk plan in uat only when a job records it. `from` and `to` (`autoApprove`), and `by`, who. It applies to the next plan kept.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "autoApprove": false
+  },
+  "to": {
+    "autoApprove": true
+  },
+  "by": "owner"
 }
 ```
 

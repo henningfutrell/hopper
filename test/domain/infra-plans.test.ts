@@ -8,9 +8,15 @@
 //   Scenario: a plan that failed a check (the MAP tag) is refused, approved or not
 //   Scenario: a plan made at another commit than the branch's head now is refused: plan again
 //   Scenario: a plan input that is not whole is refused, with why
+//
+// Feature: approval by risk (part 3)
+//   Scenario: a low-risk plan in uat only: an operator approves it, or the hopper when auto-approve is on
+//   Scenario: prod, IAM, destroys, data, a diff the hopper cannot read, or any other environment: only an admin
+//   Scenario: a plan that failed a check: nobody
 import { describe, expect, it } from 'vitest';
-import { applyRefusal, headRefusal, planInputProblem, PLAN_JSON_MAX, PLAN_TEXT_MAX, type InfraPlan, type PlanInput } from '../../src/domain/infra-plans.ts';
+import { applyRefusal, approveRefusal, approverOf, headRefusal, planInputProblem, PLAN_JSON_MAX, PLAN_TEXT_MAX, type InfraPlan, type PlanInput } from '../../src/domain/infra-plans.ts';
 import type { OperationProfile } from '../../src/domain/access.ts';
+import type { PlanSummary } from '../../src/domain/infra-plan-summary.ts';
 
 const COMMIT = 'a'.repeat(40);
 const ROLE = { kind: 'aws-role', name: '123456789012/deploy' } as const;
@@ -52,6 +58,45 @@ describe('the apply gate', () => {
   it('refuses a plan made at another commit than the head now', () => {
     expect(headRefusal(plan, COMMIT)).toBeUndefined();
     expect(headRefusal(plan, 'b'.repeat(40))).toMatch(/^the code moved since plan .*octo\/infra issue-1 is at bbbbbbbbbbbb now, the plan was made at aaaaaaaaaaaa\. Plan again$/);
+  });
+});
+
+describe('approval by risk', () => {
+  const summary = (o: Partial<PlanSummary>): PlanSummary => ({
+    words: 'Adds 1 security group rule in uat', level: 'low', counts: { create: 1, update: 0, replace: 0, delete: 0 }, environments: ['uat'],
+    risks: [], blastRadius: '', checks: [], failed: false, ...o,
+  });
+  const callout = (risk: PlanSummary['risks'][number]['risk']) => ({ risk, words: risk, resources: ['x'] });
+
+  it('lets an operator approve a low-risk plan in uat only', () => {
+    expect(approverOf({ summary: summary({}) })).toEqual({ who: 'operator', why: 'low risk, in uat only' });
+    expect(approverOf({ summary: summary({ risks: [callout('network')] }) })).toEqual({ who: 'operator', why: 'low risk, in uat only' });
+    expect(approveRefusal({ ...plan, summary: summary({}) }, 'operator')).toBeUndefined();
+    expect(approveRefusal({ ...plan, summary: summary({}) }, 'admin')).toBeUndefined();
+    expect(approveRefusal({ ...plan, summary: summary({}) }, 'viewer')).toMatch(/an operator or an admin approves it/);
+  });
+
+  it('leaves prod, IAM, destroys, data and a diff it cannot read to an admin, and says why', () => {
+    const high = summary({ level: 'high', environments: ['prod'], risks: [callout('destroy'), callout('iam'), callout('prod'), callout('network')] });
+    expect(approverOf({ summary: high })).toEqual({ who: 'admin', why: 'high risk: destroys, IAM and identity, prod' });
+    expect(approverOf({ summary: summary({ level: 'high', risks: [callout('data')] }) })).toEqual({ who: 'admin', why: 'high risk: data' });
+    expect(approverOf({ summary: summary({ level: 'high', environments: [] }) })).toEqual({ who: 'admin', why: 'high risk: the hopper found no change it knows in the diff' });
+    expect(approveRefusal({ ...plan, summary: high }, 'operator')).toBe(`plan ${plan.id} is high risk: destroys, IAM and identity, prod: only an admin approves it`);
+    expect(approveRefusal({ ...plan, summary: high }, 'admin')).toBeUndefined();
+  });
+
+  it('leaves a low-risk plan outside uat, or in uat and another environment, to an admin', () => {
+    expect(approverOf({ summary: summary({ environments: ['dev'] }) })).toEqual({ who: 'admin', why: 'low risk, but not in uat only: in dev' });
+    expect(approverOf({ summary: summary({ environments: ['uat', 'staging'] }) })).toEqual({ who: 'admin', why: 'low risk, but not in uat only: in uat, staging' });
+    expect(approverOf({ summary: summary({ environments: [] }) })).toEqual({ who: 'admin', why: 'low risk, but not in uat only: environment not named' });
+  });
+
+  it('leaves a plan kept before summaries to an admin, and a failed plan to nobody', () => {
+    expect(approverOf({})).toEqual({ who: 'admin', why: 'it was kept before plans had a summary' });
+    const check = { name: 'map-tag' as const, ok: false, words: '1 new AWS resource lacks the MAP tag' };
+    const failed = summary({ level: 'high', checks: [check], failed: true });
+    expect(approverOf({ summary: failed })).toEqual({ who: 'nobody', why: 'it failed its checks: 1 new AWS resource lacks the MAP tag' });
+    expect(approveRefusal({ ...plan, summary: failed }, 'admin')).toBe(`plan ${plan.id} failed its checks, so nobody approves it: 1 new AWS resource lacks the MAP tag`);
   });
 });
 

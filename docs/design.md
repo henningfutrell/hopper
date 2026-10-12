@@ -71,7 +71,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per host, stopped at the timeout, recorded, results kept an hour (`service.ts`), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
-| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
+| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
@@ -15196,8 +15196,8 @@ showed nothing when its list was empty or its read failed. The feature was invis
 
 - **A top-level view, `#infra`** (`ui/src/views/infra.tsx`), in the navigation between Machines and Usage, on par with
   Jobs. Vault keeps one line that links to it. Three panels:
-  - **Plans** (`infra-plans.tsx`): each plan, its state and who it waits for (an admin: approval by risk is not built), an
-    agent's confirmation ask (issue #909), its summary, Approve, its applies, and the raw plan on demand.
+  - **Plans** (`infra-plans.tsx`): each plan, its state and who it waits for (by its risk: "Infra plans: approval by risk"), an
+    agent's confirmation ask (issue #909), its summary, Approve, the auto-approve switch, its applies, and the raw plan on demand.
   - **Applies and drift** (`infraTimeline`, `ui/src/model/infra-plans.ts`, pure): one list, newest first, of plans recorded
     and approved, applies, drift (`gitops`, `terraform-plan`), out-of-band writes (`cloudtrail`, `kube-audit`) and marks.
   - **Out-of-band changes** (`out-of-band.tsx`), as before.
@@ -15209,15 +15209,57 @@ showed nothing when its list was empty or its read failed. The feature was invis
   them, newest first: `plan`, `at`, `operation`, `asset`, `job`, `expiresAt`, `renewal`. Read from the event log, so no
   new table and no migration. Never the credential.
 - **API.** The four routes are under the OpenAPI tag `Infra` (they were under `Vault`). A UI session and an API token read
-  and act the same way: approve is still an admin's box action.
+  and act the same way: approve is a box action, by the plan's risk.
 
-- **Badge.** The nav entry counts the plans that wait for an admin (issue #897) and the out-of-band changes no one marked
-  (`changesUnmarked`, `ui/src/model/out-of-band.ts`), read again after each `infra.out_of_band_*` event.
+- **Badge.** The nav entry counts the plans that wait for a person to approve them (issue #897) and the out-of-band
+  changes no one marked (`changesUnmarked`, `ui/src/model/out-of-band.ts`), read again after each `infra.out_of_band_*` event.
 
-**Not built here.** Approval by risk, so "who it waits for" names a person other than an admin; a plan detail route of its own; live updates over the event stream (the page reads on open and on Try again).
+**Not built here.** A plan detail route of its own; live updates over the event stream (the page reads on open and on Try again).
 
 Tests: `test/ui/infra-plans.test.ts` (who a plan waits for, the apply line, the timeline's order and words, empty),
 `test/integration/infra-plans.test.ts` (an apply against an approved plan listed with it, and no credential in the answer).
+## Infra plans: approval by risk (issue #870, part 3, 2026-10-12)
+
+Who approves a plan follows its risk. Before this, an admin approved every plan, whatever it changed.
+
+- **The approver** (`approverOf`, `src/domain/infra-plans.ts`, pure), read from the plan's summary each time it is shown or
+  approved, never kept:
+  - `operator`: a low-risk plan (`summary.level` `low`) whose every environment named is `uat`. The person who runs the
+    jobs (an operator) approves it, or an admin. With **auto-approve** on, the hopper approves it itself when the job
+    records it.
+  - `admin`: any other plan. Prod, IAM and identity, destroys and data make a plan `high`; an admin approves it, as the
+    blast-radius gate's Let through is an admin's act, after a confirmation that says what the plan changes and why. A
+    low-risk plan in another environment, in uat and another, or in none named is an admin's too: the issue names uat
+    alone. So is a plan kept before summaries.
+  - `nobody`: a plan that failed a check (the MAP tag).
+  Each comes with `why` in words: `low risk, in uat only`, `high risk: destroys, IAM and identity, prod`, `low risk, but
+  not in uat only: in dev`.
+- **Approve** (`POST /ui/api/infra-plans`) takes an operator now; the service (`approveRefusal`) answers a 403 that says
+  why when the plan's approver is an admin and the session's role is not. Still a box action. An API token whose role
+  may approve a plan that is not low risk still approves nothing: a person confirms it (issue #909, "A person confirms
+  what an agent asks"). A token whose role may not gets the 403, and no person is asked.
+- **Auto-approve** (`InfraPlanSettings { autoApprove }`, the user's settings key `infraPlans`, off by default):
+  `POST /ui/api/infra-plans/settings` (admin, a box action: it approves work), `infra.settings_changed { from, to, by }`.
+  On, `record` approves a plan whose approver is `operator` in the same transaction: an approval row of its own
+  (`by` "the hopper", `auto: true`) and `infra.plan_approved` with `auto`. Nothing is silent: the plan is on Infra
+  and on the job's timeline like any other, and the job's answer says it was approved.
+- **Shown.** `GET /api/infra-plans` carries each plan's `approver` and the `settings`; the job's `POST` and `GET` answers
+  say who approves the plan and why. Infra says who each waiting plan waits for, offers Approve only to a role that
+  may, asks an admin to confirm a high-risk plan, says when the hopper approved a plan itself, and has the auto-approve
+  switch (an admin's). `infra.plan_approved` carries `level` and `auto`.
+
+**Why uat alone.** The owner's rule names low-risk uat. A low-risk plan in dev or staging is likely as safe, but widening
+the rule is the owner's call; a second environment earns a setting.
+
+**Not built here (the next parts of #870).** Notifications to environment watchers for every plan and apply; the nightly
+drift plan; the terraform wrapper on write boxes; Argo CD syncs through the gate; the
+check of a plan's `read` against the job's mints.
+
+Tests: `test/domain/infra-plans.test.ts` (the approver of each kind of plan, and the role each needs),
+`test/integration/infra-plans.test.ts` (an operator's box token approves a low-risk uat plan and is refused a prod plan,
+a 403, which an admin then approves; with auto-approve on, a low-risk uat plan is approved as it is kept, the event says
+`auto`, and it mints; a prod plan still waits; an operator cannot turn auto-approve on), `test/ui/infra-plans.test.ts`
+(the waiting words, the auto-approved words, whom Approve is offered to, the confirmation).
 
 ## Git efficiency (issue #858 part 1, 2026-10-12)
 
@@ -15375,7 +15417,7 @@ in Needs you, a global yolo indicator, and the duplicates of the question, decid
 ## Needs you, part 2: plans, conflicts, and yolo mode's one switch (issue #897, 2026-10-12)
 
 **As built:**
-- **Two more rows.** Needs you counts the Infra plans that wait for an admin (`plansWaiting`, `ui/src/model/infra-plans.ts`:
+- **Two more rows.** Needs you counts the Infra plans that wait for a person to approve them (`plansWaiting`, `ui/src/model/infra-plans.ts`:
   not approved, no failed check, not stale) and the open pull requests with merge conflicts (`conflictedPullRequests`,
   `ui/src/model/pull-requests.ts`). The Infra nav entry is badged with the first, Pull requests with the second (red), and
   the Pull requests header says how many conflict.

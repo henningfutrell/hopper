@@ -2,12 +2,13 @@
 // from which commit — its state: waiting for a person, approved and still current, stale, or failed a check — and its
 // explainer.
 import { describe, expect, it } from 'vitest';
-import { applyLine, askedLine, infraTimeline, planExplainer, planHeadline, planState } from '../../ui/src/model/infra-plans.ts';
+import { applyLine, askedLine, infraTimeline, planApprove, planExplainer, planHeadline, planState } from '../../ui/src/model/infra-plans.ts';
 import type { OutOfBandView, PlanApply, PlanSummary, PlanView } from '../../src/domain/types.ts';
 
 const plan: PlanView = {
   id: '11111111-2222-4333-8444-555555555555', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network',
   repo: 'octo/infra', ref: 'issue-1', commit: 'a'.repeat(40), pullRequest: 4, job: 'j1', createdAt: '2026-10-12T10:00:00.000Z', expiresAt: '2026-10-12T11:00:00.000Z',
+  approver: { who: 'operator', why: 'low risk, in uat only' },
 };
 const now = Date.parse('2026-10-12T10:30:00.000Z');
 const summary: PlanSummary = {
@@ -25,7 +26,10 @@ describe('the Infra model', () => {
   });
 
   it('a plan waits for a person, is approved, or is stale: then nothing applies it', () => {
-    expect(planState(plan, now)).toEqual({ kind: 'waiting', words: 'Waits for an admin to approve it: stale in 30 min' });
+    expect(planState(plan, now)).toEqual({ kind: 'waiting', words: 'Waits for an operator or an admin to approve it (low risk, in uat only): stale in 30 min' });
+    expect(planState({ ...plan, approver: { who: 'admin', why: 'high risk: prod' } }, now)).toEqual({ kind: 'waiting', words: 'Waits for an admin to approve it (high risk: prod): stale in 30 min' });
+    expect(planState({ ...plan, approval: { plan: plan.id, by: 'the hopper', at: '2026-10-12T10:00:00.000Z', auto: true } }, now))
+      .toEqual({ kind: 'approved', words: 'Approved by the hopper (auto-approve: low risk, in uat only): stale in 30 min' });
     expect(planState({ ...plan, approval: { plan: plan.id, by: 'Ada', at: '2026-10-12T10:05:00.000Z' } }, now)).toEqual({ kind: 'approved', words: 'Approved by Ada: stale in 30 min' });
     expect(planState(plan, Date.parse(plan.expiresAt))).toEqual({ kind: 'stale', words: 'Stale: the job plans again' });
   });
@@ -41,6 +45,18 @@ describe('the Infra model', () => {
       lines: ['Network: 2 resources: aws_security_group_rule.a, aws_security_group_rule.b', 'Blast radius: 2 resources of 1 kind, in uat; applied as aws-role 123456789012/deploy to uat-network', 'Passed: Every new AWS resource has the MAP tag map-migrated=migXWT2TUR4TJ'],
     });
     expect(planExplainer({})).toBeUndefined();
+  });
+
+  it('offers Approve to whom the risk of the plan allows, and asks an admin to confirm a high-risk plan', () => {
+    const operator = { operate: true, admin: false };
+    const admin = { operate: true, admin: true };
+    expect(planApprove(plan, now, operator)).toEqual({ show: true });
+    expect(planApprove(plan, now, { operate: false, admin: false })).toEqual({ show: false });
+    const prod: PlanView = { ...plan, approver: { who: 'admin', why: 'high risk: prod' }, summary: { ...summary, level: 'high', words: 'Adds 1 instance in prod; destroys nothing' } };
+    expect(planApprove(prod, now, operator)).toEqual({ show: false });
+    expect(planApprove(prod, now, admin)).toEqual({ show: true, confirm: 'Adds 1 instance in prod; destroys nothing. This plan is high risk: prod. Once you approve it, the vault mints a credential that changes infrastructure for an apply of it, until it is stale.' });
+    expect(planApprove({ ...plan, approval: { plan: plan.id, by: 'Ada', at: '2026-10-12T10:05:00.000Z' } }, now, admin)).toEqual({ show: false });
+    expect(planApprove({ ...plan, approver: { who: 'nobody', why: 'it failed its checks' } }, now, admin)).toEqual({ show: false });
   });
 
   it('says each apply: the operation, the asset, the job, and whether it renewed a credential', () => {
