@@ -13,8 +13,11 @@ import type { BranchPullRequest, ClosingPullRequest, NumberedPullRequest, OpenPu
 import type { ChecksState } from '../../domain/pull-requests.ts';
 import type { CrossReferenceKind, IssueCrossReferences, Mention } from '../../domain/cross-references.ts';
 
-/** A pull request's head commit and base (issue #858), when the head was made (issue #618), and its checks (issue #637). */
-const HEAD_COMMIT = 'headRefOid baseRefName commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }';
+/**
+ * A pull request's head commit and base (issue #858), its head branch (issue #900: a stack), when the head was made (issue
+ * #618), and its checks (issue #637).
+ */
+const HEAD_COMMIT = 'headRefOid headRefName baseRefName commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }';
 
 export const CLOSING_PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { issue(number: $number) {
@@ -46,7 +49,7 @@ export const PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $numbe
 
 export const OPEN_REPO_PULL_REQUESTS_QUERY = `query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
-    pullRequests(states: [OPEN], first: 100, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { url createdAt isDraft state mergeable headRefName body ${HEAD_COMMIT} } }
+    pullRequests(states: [OPEN], first: 100, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { url createdAt isDraft state mergeable body ${HEAD_COMMIT} } }
   }
 }`;
 
@@ -101,12 +104,13 @@ export function closingPullRequestFrom(body: unknown, what: string): ClosingPull
 const CHECKS: Record<string, ChecksState> = { SUCCESS: 'passing', PENDING: 'pending', EXPECTED: 'pending', FAILURE: 'failing', ERROR: 'failing' };
 
 /** Its head commit, base, the head's time and checks, when GitHub said; checks the app may not read: unknown (issue #855). */
-const headOf = (n: Referenced, checksUnknown: boolean): { headCommittedAt?: string; checks?: ChecksState; headOid?: string; base?: string } => {
+const headOf = (n: Referenced, checksUnknown: boolean): { headCommittedAt?: string; checks?: ChecksState; headOid?: string; base?: string; headRef?: string } => {
   const commit = n.commits?.nodes?.at(-1)?.commit;
   const checks = CHECKS[commit?.statusCheckRollup?.state ?? ''] ?? (checksUnknown && !commit?.statusCheckRollup ? 'unknown' : undefined);
   return {
     ...(commit?.committedDate ? { headCommittedAt: commit.committedDate } : {}), ...(checks ? { checks } : {}),
     ...(n.headRefOid ? { headOid: n.headRefOid } : {}), ...(n.baseRefName ? { base: n.baseRefName } : {}),
+    ...(n.headRefName ? { headRef: n.headRefName } : {}),
   };
 };
 

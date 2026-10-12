@@ -9,8 +9,9 @@ export type GraphNodeKind = 'owner' | 'repo' | 'issue' | 'pull_request' | 'proje
  * `owned_by`: a repository or a Project to its owner. `in_repo`: an issue or a pull request to its repository.
  * `in_project`: an issue to a Project it is an item of. `closes`: a pull request to the issue its merge closes.
  * `references`: an issue or pull request to an issue it mentions. `sub_issue_of`: a sub-issue to its parent.
+ * `blocked_by`: an issue to an issue that blocks it (GitHub's issue dependencies, issue #900).
  */
-export type GraphEdgeKind = 'owned_by' | 'in_repo' | 'in_project' | 'closes' | 'references' | 'sub_issue_of';
+export type GraphEdgeKind = 'owned_by' | 'in_repo' | 'in_project' | 'closes' | 'references' | 'sub_issue_of' | 'blocked_by';
 
 export interface GraphNode {
   /** `owner:<login>`, `repo:<owner/name>` (lowercase: GitHub ignores case there), else the item's URL. */
@@ -39,6 +40,8 @@ export interface IssuePlace {
   references: ItemRef[];
   parent?: ItemRef;
   subIssues: ItemRef[];
+  /** The issues that block it (issue #900); absent: the GitHub asked has no issue dependencies. */
+  blockedBy?: ItemRef[];
 }
 
 /** When an issue was read for the graph last, and the `updatedAt` it had then. */
@@ -93,5 +96,6 @@ export function placeGraph(place: IssuePlace): IssueGraph {
   for (const r of place.references) edge(item(r), 'references', at);
   if (place.parent) edge(at, 'sub_issue_of', item(place.parent));
   for (const s of place.subIssues) edge(item(s), 'sub_issue_of', at);
+  for (const b of place.blockedBy ?? []) edge(at, 'blocked_by', item(b));
   return { nodes: [...nodes.values()], edges: [...edges.values()] };
 }

@@ -2,11 +2,12 @@
 // pull requests hang together. Nodes are jobs, issues and pull requests; edges are typed — a parent issue to its
 // sub-issue, an issue to a follow-up a job filed, an issue to the job that works it, a job to the job that runs its issue
 // again (the next part after a partly done one), a job to the fork it spawned from a question, a proposal to the job that
-// carries out its path, a job to its pull request, and a partly done job to the pull request whose merge lets the rest run.
-// Each node has its **stage**: queued, running, waiting, PR open, partly done, done, failed or cancelled — and an issue no
+// carries out its path, a job to its pull request, and a partly done job to the pull request whose merge lets the rest run;
+// an issue to an issue that blocks it, a pull request to the one whose branch it is based on, and a job to its open
+// question or hand-off, which are nodes too: each waits on a person. Each node has its **stage**: queued, running, waiting, PR open, partly done, done, failed or cancelled — and an issue no
 // job works yet, no job. Each group of
 // connected nodes is one **job tree**, named by its root, with what blocks the root marked. Pure: no I/O, no clock — the
-// route reads the jobs, the lineage links and the issue graph, and passes them in.
+// route reads the jobs, the lineage links, the issue graph and the open questions and hand-offs, and passes them in.
 import type { GraphEdge, GraphNode } from './issue-graph.ts';
 import type { ChecksState } from './pull-requests.ts';
 import type { TaskCount } from './task-count.ts';
@@ -19,7 +20,7 @@ export type JobStage = typeof JOB_STAGES[number];
 /** A stage that ends nothing more: no node in it blocks its tree's root. */
 const SETTLED: readonly JobStage[] = ['done', 'cancelled'];
 
-export type JobGraphNodeKind = 'job' | 'issue' | 'pull_request';
+export type JobGraphNodeKind = 'job' | 'issue' | 'pull_request' | 'question' | 'handoff';
 
 /**
  * `parent`: a parent issue to its sub-issue (GitHub's, or a required child a job filed). `follow_up`: an issue to a
@@ -27,9 +28,13 @@ export type JobGraphNodeKind = 'job' | 'issue' | 'pull_request';
  * that runs the rest of its issue; `rerun`: any other job to the job that runs its issue again. `spawned`: a job to a
  * fork made from one of its questions. `plan_apply`: a proposal's job to the job that carries out a path of it.
  * `opened`: a job to its pull request. `waits_on_merge`: a partly done job to its pull request, not merged yet: the rest
- * of its issue runs once it merges. `closes`: a pull request to the issue its merge closes.
+ * of its issue runs once it merges. `closes`: a pull request to the issue its merge closes. `blocked_by`: an issue to an
+ * issue that blocks it (GitHub's issue dependencies). `stacked_on`: a pull request to the open one whose head branch is
+ * its base: it merges after that one. `asks`: a job to its open question. `hands_off`: a job to its open hand-off.
  */
-export const JOB_GRAPH_EDGE_KINDS = ['parent', 'follow_up', 'works', 'next_part', 'rerun', 'spawned', 'plan_apply', 'opened', 'waits_on_merge', 'closes'] as const;
+export const JOB_GRAPH_EDGE_KINDS = [
+  'parent', 'follow_up', 'works', 'next_part', 'rerun', 'spawned', 'plan_apply', 'opened', 'waits_on_merge', 'closes', 'blocked_by', 'stacked_on', 'asks', 'hands_off',
+] as const;
 export type JobGraphEdgeKind = typeof JOB_GRAPH_EDGE_KINDS[number];
 
 /** A pull request as the graph shows it: its URL, where it is (open, merged, closed), its checks, draft, conflicts. */
@@ -40,13 +45,16 @@ export interface JobGraphPullRequest {
   checks?: ChecksState | 'none';
   draft?: boolean;
   conflicting?: boolean;
+  /** The branch it merges into, and its head branch: a stack, when one's base is another's head. */
+  base?: string;
+  headRef?: string;
 }
 
 export interface JobGraphNode {
-  /** `job:<id>`, `issue:<owner/name>#<n>` (lowercase repository), `pr:<url>`. */
+  /** `job:<id>`, `issue:<owner/name>#<n>` (lowercase repository), `pr:<url>`, `question:<id>`, `handoff:<id>`. */
   id: string;
   kind: JobGraphNodeKind;
-  /** What a person reads on the node: a job's goal, an issue's title, a pull request's `#n`. */
+  /** What a person reads on the node: a job's goal, an issue's title, a pull request's `#n`, a question's text, a hand-off's summary. */
   label: string;
   stage: JobStage;
   /** owner/name, when the node has one. */
@@ -54,7 +62,7 @@ export interface JobGraphNode {
   /** The issue or pull request number. */
   number?: number;
   url?: string;
-  /** A job's node: its id, status, task count, and lane (`<machine>/lane-<n>`: it names the machine too). */
+  /** A job's node: its id, status, task count, and lane (`<machine>/lane-<n>`: it names the machine too). A question's or a hand-off's: its job's id. */
   jobId?: string;
   status?: JobStatus;
   tasks?: TaskCount;
@@ -92,14 +100,25 @@ export interface JobGraph {
 /** One link a job recorded as it filed a child issue (`job.child_issue_filed`, issue #729). */
 export interface JobGraphLink { parent: { repo: string; number: number }; child: { repo: string; number: number; url?: string }; required: boolean }
 
-/** What the graph is made of: the jobs, the lineage links, and the issue graph's nodes and edges (issue #437). */
+/** An open question or hand-off of a job: what the graph shows of it, and since when it waits. */
+export interface JobGraphWait { id: string; jobId: string; text: string; since: string }
+
+/**
+ * What the graph is made of: the jobs, the lineage links, the issue graph's nodes and edges (issue #437), and the open
+ * questions and hand-offs. A question or hand-off of a job not here is left out.
+ */
 export interface JobGraphInput {
   jobs: readonly Job[];
   links?: readonly JobGraphLink[];
   issueGraph?: { nodes: readonly GraphNode[]; edges: readonly GraphEdge[] };
+  questions?: readonly JobGraphWait[];
+  handoffs?: readonly JobGraphWait[];
 }
 
-interface Followed { pullRequest?: string; follow?: string; seen?: { checks?: ChecksState | 'none'; draft?: boolean; conflicting?: boolean }; parts?: unknown }
+interface Followed {
+  pullRequest?: string; follow?: string; parts?: unknown;
+  seen?: { checks?: ChecksState | 'none'; draft?: boolean; conflicting?: boolean; base?: string; headRef?: string };
+}
 
 /** A job node's task count is part of the graph's contract: re-exported with it (and so through types.ts). */
 export type { TaskCount };
@@ -109,6 +128,11 @@ const followedOf = (job: Job): Followed => (job.sourceState?.source ?? {}) as Fo
 export const issueNodeId = (repo: string, number: number): string => `issue:${repo.toLowerCase()}#${number}`;
 export const jobNodeId = (jobId: string): string => `job:${jobId}`;
 export const pullRequestNodeId = (url: string): string => `pr:${url}`;
+export const questionNodeId = (id: string): string => `question:${id}`;
+export const handoffNodeId = (id: string): string => `handoff:${id}`;
+
+/** The longest label a question or hand-off gets: its text's start. */
+const WAIT_LABEL = 120;
 
 const PR_URL = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/;
 
@@ -122,6 +146,7 @@ export function pullRequestOf(job: Job): JobGraphPullRequest | undefined {
     ...(s.seen?.checks ? { checks: s.seen.checks } : {}),
     ...(s.seen?.draft !== undefined ? { draft: s.seen.draft } : {}),
     ...(s.seen?.conflicting !== undefined ? { conflicting: s.seen.conflicting } : {}),
+    ...(s.seen?.base ? { base: s.seen.base } : {}), ...(s.seen?.headRef ? { headRef: s.seen.headRef } : {}),
   };
 }
 
@@ -230,6 +255,10 @@ export function jobGraph(input: JobGraphInput): JobGraph {
     if (e.kind === 'sub_issue_of' && nodes.has(graphIssue.get(e.to)!) && !nodes.has(graphIssue.get(e.from)!)) {
       issueNode(String(from.attrs.repo), Number(from.attrs.number), { url: from.id });
     }
+    // An issue that blocks one here.
+    if (e.kind === 'blocked_by' && to.kind === 'issue' && nodes.has(graphIssue.get(e.from)!) && !nodes.has(graphIssue.get(e.to)!)) {
+      issueNode(String(to.attrs.repo), Number(to.attrs.number), { url: to.id });
+    }
     if (e.kind === 'closes' && nodes.has(graphIssue.get(e.to)!) && !nodes.has(graphIssue.get(e.from)!)) {
       const state = String(from.attrs.state ?? 'unknown').toLowerCase();
       prNode({ url: from.id, state }, state === 'merged' ? 'done' : state === 'open' ? 'pr_open' : 'cancelled');
@@ -256,6 +285,7 @@ export function jobGraph(input: JobGraphInput): JobGraph {
     if (!from || !to) continue;
     if (e.kind === 'sub_issue_of') edge(to, 'parent', from);
     else if (e.kind === 'closes') edge(from, 'closes', to);
+    else if (e.kind === 'blocked_by') edge(from, 'blocked_by', to);
   }
   for (const job of jobs) {
     const id = jobNodeId(job.id);
@@ -266,6 +296,31 @@ export function jobGraph(input: JobGraphInput): JobGraph {
     if (job.followOn && byId.has(job.followOn.jobId)) edge(jobNodeId(job.followOn.jobId), 'plan_apply', id);
     const pr = pullRequestOf(job);
     if (pr) edge(id, waitsOnMerge(job) ? 'waits_on_merge' : 'opened', pullRequestNodeId(pr.url));
+  }
+  // A stack: an open pull request whose base is another open one's head branch, in the same repository.
+  const heads = new Map<string, string>();
+  for (const n of nodes.values()) {
+    const pr = n.pullRequest;
+    if (n.kind === 'pull_request' && pr?.state === 'open' && pr.headRef && n.repo) heads.set(`${n.repo.toLowerCase()} ${pr.headRef}`, n.id);
+  }
+  for (const n of nodes.values()) {
+    const below = n.kind === 'pull_request' && n.pullRequest?.base && n.repo ? heads.get(`${n.repo.toLowerCase()} ${n.pullRequest.base}`) : undefined;
+    if (below) edge(n.id, 'stacked_on', below);
+  }
+  // The open questions and hand-offs of the jobs here: each waits on a person.
+  const waits: ['question' | 'handoff', readonly JobGraphWait[] | undefined, JobGraphEdgeKind][] = [['question', input.questions, 'asks'], ['handoff', input.handoffs, 'hands_off']];
+  for (const [kind, list, edgeKind] of waits) {
+    for (const w of list ?? []) {
+      const job = byId.get(w.jobId);
+      if (!job) continue;
+      const id = kind === 'question' ? questionNodeId(w.id) : handoffNodeId(w.id);
+      const text = w.text.replace(/\s+/g, ' ').trim();
+      nodes.set(id, {
+        id, kind, label: text.length > WAIT_LABEL ? `${text.slice(0, WAIT_LABEL - 1)}…` : text, stage: 'waiting', jobId: w.jobId, stageSince: w.since,
+        ...(job.source?.repo ? { repo: job.source.repo } : {}),
+      });
+      edge(jobNodeId(w.jobId), edgeKind, id);
+    }
   }
 
   const allNodes = [...nodes.values()];
@@ -281,7 +336,7 @@ const countStages = (nodes: readonly JobGraphNode[]): Partial<Record<JobStage, n
 };
 
 /** Root order: an issue before a job before a pull request, then by id. */
-const KIND_RANK: Record<JobGraphNodeKind, number> = { issue: 0, job: 1, pull_request: 2 };
+const KIND_RANK: Record<JobGraphNodeKind, number> = { issue: 0, job: 1, pull_request: 2, question: 3, handoff: 4 };
 
 /**
  * The job trees: each group of connected nodes, rooted at a node no edge leads into (an issue first), else at its first

@@ -27,7 +27,7 @@ const idParams = z.object({ id: z.string() });
 
 /** The API reference's entry for the job graph (issue #900). */
 export const JOB_GRAPH_OPERATIONS: Operation[] = [
-  { method: 'get', path: '/api/jobs/graph', tag: 'Jobs', summary: 'The job graph', description: 'Where every job stands and how the jobs hang together (issue #900): nodes (jobs, issues, pull requests), each with its stage — `queued`, `running`, `waiting`, `pr_open`, `partly_done`, `done`, `failed`, `cancelled`, or `no_job` for an issue no job works —, a job\'s task count, lane, machine, time in stage (`stageSince`) and pull request with its checks; a partly done job names the pull request that blocks the rest and what runs after its merge. Typed edges: `parent`, `follow_up`, `works`, `next_part`, `rerun`, `spawned`, `plan_apply`, `opened`, `waits_on_merge`, `closes`. `trees`: each group of connected nodes with its root and the nodes that block it (`blocking`). `stages`: how many jobs are in each stage. The jobs are those `/api/queue` holds, the jobs whose pull request is open, and the jobs these ran again, forked from or carried out. The Jobs view\'s graph and list.', returns: '`JobGraph` `{ nodes: JobGraphNode[], edges: JobGraphEdge[], trees: JobTree[], stages }`' },
+  { method: 'get', path: '/api/jobs/graph', tag: 'Jobs', summary: 'The job graph', description: 'Where every job stands and how the jobs hang together (issue #900): nodes (jobs, issues, pull requests), each with its stage — `queued`, `running`, `waiting`, `pr_open`, `partly_done`, `done`, `failed`, `cancelled`, or `no_job` for an issue no job works —, a job\'s task count, lane, machine, time in stage (`stageSince`) and pull request with its checks; a partly done job names the pull request that blocks the rest and what runs after its merge. Typed edges: `parent`, `follow_up`, `works`, `next_part`, `rerun`, `spawned`, `plan_apply`, `opened`, `waits_on_merge`, `closes`, `blocked_by` (an issue to an issue that blocks it), `stacked_on` (a pull request to the open one whose head branch is its base), `asks` (a job to its open question) and `hands_off` (a job to its open hand-off): an open question or hand-off is a node too, at `waiting`. `trees`: each group of connected nodes with its root and the nodes that block it (`blocking`). `stages`: how many jobs are in each stage. The jobs are those `/api/queue` holds, the jobs whose pull request is open, the jobs with an open question or hand-off, and the jobs these ran again, forked from or carried out. The Jobs view\'s graph and list.', returns: '`JobGraph` `{ nodes: JobGraphNode[], edges: JobGraphEdge[], trees: JobTree[], stages }`' },
 ];
 
 /** The job graph's bounds: followed jobs read, steps back along a job's origins, lineage links read. */
@@ -50,8 +50,9 @@ export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     return { events: store.events.lastOfJobs([...new Set(ids)]) };
   });
 
-  // The job graph (issue #900): the jobs /api/queue holds, the partly done and PR-open jobs whose pull requests wait, and
-  // the jobs these ran again, forked from or carried out — with their issues, pull requests and typed edges.
+  // The job graph (issue #900): the jobs /api/queue holds, the partly done and PR-open jobs whose pull requests wait, the
+  // jobs with an open question or hand-off, and the jobs these ran again, forked from or carried out — with their issues,
+  // pull requests, open questions and hand-offs, and typed edges.
   app.get('/api/jobs/graph', async (req) => {
     const { store, engine } = o.tenant(req);
     const q = engine.getQueue();
@@ -59,6 +60,14 @@ export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     for (const j of [...q.waiting, ...q.running, ...q.waitingAnswer, ...q.operatorLed, ...q.parked, ...q.waitingOn, ...q.ended, ...q.locked]) jobs.set(j.id, j);
     for (const j of store.jobs.list({ followed: true, limit: GRAPH_FOLLOWED })) {
       if ((j.sourceState?.source as { follow?: unknown } | undefined)?.follow === 'open') jobs.set(j.id, j);
+    }
+    const questions = store.questions.list({ status: ['open'], order: 'oldest-first' })
+      .map((q) => ({ id: q.id, jobId: q.jobId, text: q.text, since: q.createdAt }));
+    const handoffs = store.handoffs.list({ status: 'open' })
+      .map((h) => ({ id: h.id, jobId: h.jobId, text: h.tldr?.text ?? h.summary, since: h.openedAt }));
+    for (const { jobId } of [...questions, ...handoffs]) {
+      const j = jobs.has(jobId) ? undefined : store.jobs.get(jobId);
+      if (j) jobs.set(j.id, j);
     }
     // The jobs these come from, a few steps back: the run before, the job forked from, the proposal carried out.
     for (let step = 0, next = [...jobs.values()]; step < GRAPH_STEPS && next.length > 0; step++) {
@@ -74,7 +83,7 @@ export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     }
     const links = store.events.recent(GRAPH_LINKS, ['job.child_issue_filed']).map((e) => e.data as unknown as JobGraphLink)
       .filter((l) => typeof l.parent?.repo === 'string' && typeof l.parent.number === 'number' && typeof l.child?.repo === 'string' && typeof l.child.number === 'number');
-    return jobGraph({ jobs: [...jobs.values()], links, issueGraph: { nodes: store.issueGraph.nodes(), edges: store.issueGraph.edges() } });
+    return jobGraph({ jobs: [...jobs.values()], links, issueGraph: { nodes: store.issueGraph.nodes(), edges: store.issueGraph.edges() }, questions, handoffs });
   });
 
   app.get('/api/jobs/:id', async (req) => {

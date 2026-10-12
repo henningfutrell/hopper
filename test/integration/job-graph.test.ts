@@ -3,7 +3,8 @@
 // database and HTTP server.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { JobGraph } from '../../src/domain/types.ts';
-import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { waitFor } from '../support/wait.ts';
 
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
@@ -17,7 +18,7 @@ afterEach(async () => {
 async function start(): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  t = await startTestApp({ dbPath: db.dbPath });
+  t = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(4) }, seams: { levels: [] } });
   return t;
 }
 
@@ -55,6 +56,22 @@ describe('GET /api/jobs/graph (issue #900)', () => {
     expect(g.trees[0]).toMatchObject({ root: 'issue:acme/app#1' });
     expect(g.trees[0]!.blocking).toEqual(expect.arrayContaining([`job:${part.id}`, `pr:${PR}`, 'issue:acme/app#3']));
     expect(g.stages).toEqual({ partly_done: 1, done: 1 });
+  });
+
+  it('answers an open question and an open hand-off as nodes of their job', async () => {
+    const a = await start();
+    const asks = await a.pull({ op: 'ask', message: 'Which store should the cache use?' }, { key: 'item-5' });
+    const q = await a.waitForQuestion(asks.id, (x) => x.status === 'open');
+    const broke = await a.pull({ op: 'fail', message: 'HOPPER_FAILED the build fails', ms: 0 }, { key: 'item-6' });
+    const { store } = a.user();
+    const handoff = await waitFor(async () => store.handoffs.list({ status: 'open' }).find((h) => h.jobId === broke.id), { what: 'the failed job handed off' });
+
+    const g = (await a.api<JobGraph>('GET', '/api/jobs/graph')).body;
+    expect(g.nodes.find((n) => n.id === `question:${q.id}`)).toMatchObject({ kind: 'question', stage: 'waiting', label: 'Which store should the cache use?', jobId: asks.id });
+    expect(g.nodes.find((n) => n.id === `handoff:${handoff.id}`)).toMatchObject({ kind: 'handoff', stage: 'waiting', jobId: broke.id });
+    expect(g.edges.map((e) => `${e.from} ${e.kind} ${e.to}`)).toEqual(expect.arrayContaining([
+      `job:${asks.id} asks question:${q.id}`, `job:${broke.id} hands_off handoff:${handoff.id}`,
+    ]));
   });
 
   it('answers an empty graph for a hopper with no job', async () => {
