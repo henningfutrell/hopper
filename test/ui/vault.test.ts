@@ -2,7 +2,7 @@
 // it and when — never a value — and checks a name before anything is sent.
 import { describe, expect, it } from 'vitest';
 import { BOX_TOOLS as SERVER_TOOLS } from '../../src/domain/sandboxes.ts';
-import { approvalText, BOX_TOOLS, checkText, markableProbes, probeMarksText, toolsText, explicitApprovals, giveProblem, kindChoices, mintsOf, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
+import { approvalText, BOX_TOOLS, checkText, markableProbes, probeMarksText, toolsText, explicitApprovals, giveProblem, profileAskOf, kindChoices, mintsOf, profileText, radiusText, keptText, nameProblem, referenceHint, requestWaiting, secretFacts } from '../../ui/src/model/vault.ts';
 
 describe('a vault secret on the page', () => {
   it('says its scope, who set it and who last changed it; never a value', () => {
@@ -161,5 +161,16 @@ describe('a template\'s read-only check on the page (issue #716)', () => {
     expect(checkText({ readOnly: true, savedAt: at, check: { version: at, state: 'passed', probes: [probe('kube.get', true, 'allowed')], artifact: 'a-1' } }))
       .toEqual({ text: 'passed: 1 probes, every write refused, every read worked', waits: false, report: '#artifacts/a-1' });
     expect(checkText({ readOnly: true, savedAt: at, check: { version: 'older', state: 'passed', probes: [], artifact: 'a-1' } })?.report).toBeUndefined();
+  });
+});
+
+describe('an agent\'s ask on a profile (issue #909)', () => {
+  const asset = { kind: 'aws-role', name: '123456789012/deploy' } as const;
+  const ask = { template: 'deploy', operation: 'apply', asset, asker: 'Grok Bot', at: '2026-10-12T10:10:00.000Z' } as const;
+  it('is found for its template and profile only, and says who asked', () => {
+    expect(profileAskOf([ask], 'deploy', { operation: 'apply', asset })).toBe('Grok Bot asked to approve this through the API at 2026-10-12T10:10:00.000Z: approve it here to confirm it.');
+    expect(profileAskOf([ask], 'other', { operation: 'apply', asset })).toBeUndefined();
+    expect(profileAskOf([ask], 'deploy', { operation: 'write', asset })).toBeUndefined();
+    expect(profileAskOf(undefined, 'deploy', { operation: 'apply', asset })).toBeUndefined();
   });
 });
