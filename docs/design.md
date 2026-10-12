@@ -69,7 +69,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per host, stopped at the timeout, recorded, results kept an hour (`service.ts`), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
-| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`; its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
+| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
@@ -81,6 +81,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
 | `site/` | the GitHub Pages site (issue #382), built by `npm run build:site` (`site/vite.config.ts`) into `site/dist` and published by `.github/workflows/pages.yml`: `index.html`, the front page — the signed-out landing page's backdrop and story (`ui/src/app/story.ts`), the one-line install, a feature tour (`site/tour.ts`) with the screenshots in `docs/screenshots/` — and `install.html`, the install page; styled by `site/site.css`, which imports `ui/src/index.css` whole, so the site and the UI share one look; served beside them, `scripts/get.sh` as `install.sh`, `compose.yaml` and the logo; nothing loaded from another site | everything of `src/`; of `ui/` only `index.css` and `app/story.ts`; it links to the docs on GitHub |
 | `scripts/screenshots/` | the screenshots in `docs/screenshots/` (issue #353), made by `npm run screenshots`: `demo.ts` starts a busy demo hopper — the real composition root through `test/support/app.ts`, over the test doubles (fake GitHub with a connected account, scripted test executor, machines whose probe answers online, fake escalation levels) with made-up data — `doubles.ts` seals it off (throwaway HOME, the hostname replaced, `ssh`, `claude` and `herdr` refusing, fetch loopback-only) and speeds its clock up while it builds an hour of history, and `capture.ts` photographs the UI with Playwright and writes WebP | nothing of a real machine, network or account; it never runs in the daemon |
+| `scripts/out-of-band-collector.ts` | the ready-made out-of-band collector (issue #871 part 3, "Out-of-band changes"): runs `kubectl`, `terraform` and `aws` read-only on a schedule outside the hopper, and reports their signals with a grant's API token or a job's proxy token; its pure half is `src/domain/out-of-band-collect.ts` | everything in `src/` but `src/domain/out-of-band*.ts` |
 | `examples/plugins/` | one minimal runnable custom plugin per role, for authors (`docs/plugins.md`); imports only `hopper/plugin` types and `node:` builtins | everything in `src/` at runtime |
 | `src/main.ts` | composition root: config → instance store → sign-in config (`prepareSignIn`: the environment applied) → plugin store → updater → server → one user runtime per user (`src/users/`) | — |
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
@@ -1291,6 +1292,15 @@ expired. A question still with an escalation level does not count: it does not w
 The count follows the live stream: every `question.*` event refreshes the open questions. Opening the
 Questions view changes nothing in the count. Any other badge for something pending (the Logins badge,
 issue #477) follows the same rule: it counts what is pending and clears only when none is.
+
+**Nav groups never hide a badge** (issue #906). The nav entries are in nav groups (`NAV_GROUPS`,
+`ui/src/app/nav.tsx`); a person collapses a group by its heading, and the sidebar and the mobile drawer
+share which are collapsed, kept per browser (`jh_nav_collapsed`). A collapsed group's heading shows its
+entries' badges as one (`groupBadges`, `ui/src/model/nav-groups.ts`): the counts and the high-priority
+counts summed, the most urgent colour (bad, warn, question, plain, quiet), each entry and its count in the
+title, and the backburner count summed on its own. Open, each entry shows its own badge. Needs you is
+pinned above the groups (`NAV_PINNED`), never collapsed: its badge already sums other entries', and a group
+that held it would count those twice. A view of the navigation neither pinned nor in a group fails the typecheck.
 
 **Question history** (issue #37): every question stays in the `questions` table with its text,
 trail, answer and status; nothing prunes it. Settings' Question history (issue #151) lists handled ones (status not
@@ -11699,6 +11709,45 @@ in scope and out, the retry, the events; no box flag; revoke and revoke all; the
 `test/domain/token-scopes.test.ts`, `test/integration/api-tokens.test.ts`, `test/integration/box-tokens.test.ts`,
 `test/ui/api-tokens.test.ts`.
 
+### The scope registry and presets (issue #909, 2026-10-12)
+
+Owner direction on the issue: an agent must do approvals over the API with a grant, and nobody types scope strings: the
+form offers presets as one click, and lays out every permission as a box, in sections by area of work, always open, each
+with its plain description and the routes it covers, generated from the registry so a new capability shows up by itself.
+
+- **Every approval already has a scope.** Scopes are named from the routes (above), so intake (`sources:intake`), a held
+  job (`jobs:approve`), a job's vault grant ask (`jobs:grant-vault`), an infra plan (`infra-plans:edit`), a vault template
+  or credential request (`vault:edit`), a question (`questions:answer`) and a pull request (`pull-requests:merge`) each have
+  one. The 403 the issue saw was a grant whose scopes did not name the route, and a token with no box flag at a box
+  action. No route is left unscoped: `test/domain/scope-registry.test.ts` holds every route of the API reference to a
+  scope in a named section.
+- **The registry** (`src/domain/scope-registry.ts`, pure; `src/http/scopes.ts` gives it the API reference's operations
+  and `isBoxAction`). One permission per scope: `description` (its routes' summaries), `routes`, `role` (the least of
+  theirs), `box`. Sections by area (`SCOPE_SECTIONS`); a job's vault grant is shown under the vault; an area no section
+  names goes under **Other**, so it is still listed. `GET /api/scopes` answers it, `scopes:read` for a grant's token;
+  `hopper token scopes` prints it.
+- **Presets.** `read-only` (`*:read`), `agent-intake` (`*:read sources:intake`, a box grant), `agent-approvals` (`*:read
+  sources:intake jobs:approve jobs:grant-vault`, a box grant: infra plans and vault templates stay a person's unless
+  ticked), `full-admin` (`*`). A preset is a box grant when its scopes cover a box action. `*:read` covers every read the
+  Needs you list makes (`sources`, `vault`, `queue`, `sections`).
+- **The mint.** `POST /ui/api/api-tokens` `mint` takes `preset` beside `scopes`: the grant holds both; `box` named wins
+  over the preset's. An unknown preset, no scope at all, or a scope that covers no route is 400. `hopper token mint
+  --preset <id>`.
+- **The form** (`ui/src/views/scope-checklist.tsx`). The presets, each with what it does in plain words; then every
+  section with every scope as a box: its description, scope, routes, a "box action" mark and a "needs <role>" mark when
+  the grant's role is lower. A preset ticks its boxes and stays a wildcard (`*:read`) until a box it covers is cleared;
+  then it gives way to the scopes it covered, less that one. A grant is a box grant when a ticked scope is a box action:
+  the form says which; the box flag is no longer a box of its own.
+- **Risk guards kept.** A box action still needs the box flag, its scope and `api_token#can_run_on_box`; Access decides
+  each use by role. The `agent-approvals` preset leaves infra plans and vault templates out.
+
+**Not built** (follow-ups of #909): a per-item confirmation by a person (a notification to tap) for a high-risk or
+production plan and for a write credential, approved by a grant's token; scopes per `action` of a route whose body names
+it (`vault:edit` covers every vault change, `infra-plans:edit` the plan approval).
+
+Tests: `test/domain/scope-registry.test.ts`, `test/integration/token-grants.test.ts` (a grant from a preset),
+`test/ui/api-tokens.test.ts`, `test/ui/scope-checklist.test.ts`.
+
 ## Access: OpenFGA decides each mint (issue #559, 2026-10-09)
 
 The vault (issue #558) will hand jobs short-lived credentials. Before it mints or renews one, it asks **access**
@@ -14634,6 +14683,53 @@ Tests: `test/integration/job-last-events.test.ts` (real database and HTTP: one e
 job), `test/ui/jobs-view-model.test.ts` (filters, order, choices, last event), `test/ui/jobs-view.test.ts` (the whole app
 over a fake daemon: the card's facts, both filters, a status change from the stream with 250 jobs).
 
+## The job graph (issue #900, 2026-10-12)
+
+Requirement (issue #900): the Jobs view is the at-a-glance tracker, apart from the Overview's health summary. Each job's
+stage — partly done among them, which the status alone did not show —, its task progress, lane, time in stage, pull request
+and checks; counts per stage; filters by repository and stage. Then the scope change on the issue: jobs form a graph
+(parent and sub-issues, follow-ups, partly done remainders, plan to apply, forks from questions), so the primary mode is a
+graph, with the tree by root issue, a node's details on select and what blocks a root marked; a list stays as the second
+mode; the API gives the graph (issue #718's parity).
+
+**The model** (`src/domain/job-graph.ts`, pure). `stageOf(job)` maps a status to a **job stage**; a finished job is
+`partly_done` while its `partlyDone` pull request is not merged (its source's `follow` is not `merged`, `closed` or
+`abandoned`), `pr_open` while its own pull request's `follow` is `open`, else `done`. `stageSinceOf` is the time in stage:
+`createdAt` for queued, `startedAt` for running, `wait.since` or `parked.at` for waiting, `finishedAt` for the rest — what
+the record holds, no new field. `jobGraph({ jobs, links, issueGraph })` makes the nodes (jobs, issues, pull requests) and
+the typed edges (glossary "Job graph"), and `treesOf` the **job trees**: each connected group, rooted at a node no edge
+leads into (an issue first); a node **blocks** the root when it is not `done` or `cancelled`, or leads to one that is not
+(a depth-first walk that counts a cycle once). An issue takes the stage of its newest job; an issue no job works is
+`no_job`, or `done` when the issue graph read it closed.
+
+**Where the edges come from.** Nothing new is recorded: `rerunOf` (`next_part` when the job before is partly done, else
+`rerun`), `forkOf` (`spawned`), `followOn` (`plan_apply`), the job's source state (`opened`, `waits_on_merge`), the
+`job.child_issue_filed` events (`parent` for a required child, else `follow_up`), and the issue graph (issue #437:
+`sub_issue_of` gives `parent`, `closes` gives `closes`) — read here for the first time, for the issues the graph already
+has and nothing beyond them. GitHub's "blocked by" relation is not read: the hopper keeps no record of it.
+
+**The route.** `GET /api/jobs/graph` (`src/http/jobs.ts`), the user's own: the jobs `/api/queue` holds, the followed jobs
+whose pull request is open (at most 500, so a partly done job that ended days ago still shows), and the jobs these come
+from, five steps back along `rerunOf`, `forkOf` and `followOn`; the newest 5000 lineage links; the whole issue graph. A
+read, so an API token needs `jobs:read` (issue #881's scope rule). Made on each read, never kept.
+
+**The view** (`ui/src/views/jobs.tsx`, `ui/src/model/jobs-view.ts`). It reads the graph when it opens and again,
+debounced, each time the store's jobs change — the store already reads the queue after each event, so nothing new is on
+the wire. A tree is laid out left to right with d3's tidy tree (`hierarchy`, `tree`; d3 is already the UI's chart
+library): each node under the first node that reaches it along an edge either way, so every node has a place, and every
+edge is drawn over it. A tree with nothing blocking it starts folded when other trees show. The list keeps #434's cards,
+memoised on what they show, with the time in stage at minute resolution, so a card renders again at most once a minute.
+
+**Dropped, and why.** A node per job only, with its issue on it, was simpler, but an issue with two jobs (a partly done
+part and the next) and an issue no job works yet (a follow-up) then had no place. A force layout reads worse for trees
+and moves on each read. Help: `help/jobs.md`.
+
+Tests: `test/domain/job-graph.test.ts` (stages, each edge kind, trees, blocking, a cycle), `test/integration/job-graph.test.ts`
+(real database and HTTP: a partly done job, the next part, a filed issue, the empty graph), `test/ui/jobs-view-model.test.ts`
+(rows, trees, choices, counts, the layout, a pull request in words), `test/ui/jobs-view.test.ts` (the whole app over a fake
+daemon: the graph mode, a node's details, the list's facts, partly done, counts and filters, a live stage change with 250
+jobs, the empty states).
+
 ## Infra plans: no apply without a plan (issue #870, part 1, 2026-10-12)
 
 Owner's principle (issue #870): no apply without a plan. Plans and infrastructure changes never slide under the radar:
@@ -14782,9 +14878,7 @@ GitOps. Generic by the issue's rule: the hopper never classifies an action and k
   (`infra_out_of_band_marks`), once (a second is a 409); `infra.out_of_band_marked`. Tracking only: the hopper reverts
   nothing.
 
-**Not built here (the next parts of #871).** The scheduled check itself: a recurring read-only job that reads Argo CD's
-or Flux's sync status, runs `terraform plan -detailed-exitcode` on the default branch, and reads CloudTrail and the
-Kubernetes audit log since its last run, then reports what it found here. The hopper has no schedule for jobs yet.
+**The scheduled check** is part 3 below: a ready-made collector, run on a schedule outside the hopper.
 
 **Part 2: an outside collector reports (2026-10-12).** A check that runs outside the hopper — a CI schedule, a cron job,
 a small service beside the cluster — reports the same signals with an **API token**: `POST /ui/api/out-of-band/signals`,
@@ -14798,6 +14892,40 @@ change: the job, or the collector. The change is a JSON row, so no migration: a 
 So a scheduled check needs no schedule in the hopper: whatever runs it on a schedule reports here. Tests: the collector's report, its
 scope refused without it, its mark, in `test/integration/out-of-band.test.ts`; who reported, in `test/ui/out-of-band.test.ts`.
 
+**Part 3: the ready-made collector (2026-10-12).** `scripts/out-of-band-collector.ts`, run by Node with no install
+beyond the repository: a read-only check that runs the tools it is given read credentials for, turns what they print into
+signals, and reports them. It classifies no action; the hopper's rule judges each signal. The pure half is
+`src/domain/out-of-band-collect.ts`:
+- `--argo`: `kubectl get applications.argoproj.io -A -o json`; each application `OutOfSync` is drift (key
+  `argocd:<namespace>/<name>`, detail its revision and its out-of-sync resources).
+- `--flux`: `kubectl get` the Kustomizations and HelmReleases; each one whose `Ready` condition is not `True` is drift by
+  its reason, and each suspended one is drift as `Suspended`: a suspended object no longer puts back what git says.
+- `--terraform <dir>` (one or more): `terraform init`, then `terraform plan -detailed-exitcode -lock=false` in that
+  directory, which the schedule checks out at the default branch. Exit code 2 is drift (`what` its `Plan:` line, detail the
+  plan text, its end kept when it is too long); 0 is none; any other is a failed source.
+- `--cloudtrail <region>` (one or more): `aws cloudtrail lookup-events` with `ReadOnly=false`, from the last run; each
+  write by `userIdentity.arn` (else the user name), `what` `<service>:<event name>`.
+- `--kube-audit <file>`: the audit log as JSON lines; each write (`create`, `update`, `patch`, `delete`,
+  `deletecollection`) at `ResponseComplete` that went through (below 400), from the last run, by `user.username`. For a
+  managed control plane, the schedule exports its audit log to the file first (EKS: CloudWatch Logs).
+- **Where it reports.** In a hopper job (`HOPPER_TOKEN_FILE` set): `POST /job/infra-signals` on `HOPPER_URL`, with the
+  job's proxy token. Else, as an outside collector: `POST /ui/api/out-of-band/signals`, with an API token from a grant
+  with the scope `out-of-band:signals`. Its refresh token is in the **state file** (`--state`), or the first time in
+  `HOPPER_REFRESH_TOKEN`; each run trades it at `POST /ui/auth/token/refresh` and writes the new one to the state file
+  (mode 600) before anything else, since the sent one is spent. More than 500 signals go in more than one report.
+- **Since its last run.** The state file keeps when the last whole run started; the audit logs are read from then (else
+  `--since`, else the last 24 hours). A source that fails is said on stderr and the run exits 1; the other sources still
+  report, and the run's place does not move, so the next run reads the failed one again. A signal reported twice is kept
+  once, so an overlap costs nothing.
+- **The schedule** is outside the hopper: cron, a systemd timer, a Kubernetes CronJob with the state file on a volume
+  (`docs/deploy.md` "The out-of-band collector"). The hopper still has no schedule for jobs; a job that runs the script
+  reports as the job.
+- `--dry-run` prints the signals and sends nothing.
+
+Tests: `test/domain/out-of-band-collect.test.ts` (each tool's output as signals, each one whole),
+`test/scripts/out-of-band-collector.test.ts` (fake tools and a fake hopper: the refresh kept, the job's route, a failed
+source, the place kept), and the collector against the real daemon with a real grant in `test/integration/out-of-band.test.ts`.
+
 **Residual risk, stated.** The hopper judges what a check reports; a check that does not report a write leaves it
 untracked. A plan-bound credential's principal is in band for its whole life, so a write it made that the plan did not
 hold is not out of band here: issue #870's residual risk. A shared Kubernetes service account (`hopper-apply`) is in band
@@ -14808,6 +14936,34 @@ Tests: `test/domain/out-of-band.test.ts` (the rule, the signal, the marks, the p
 recorded, each an event; a controller's write and the write of the credential minted for an approved plan in band;
 nothing recorded twice; marks once; refusals), `test/plugins/grokbot-intake.test.ts` (the notification),
 `test/ui/out-of-band.test.ts`.
+
+## The Infra page (issue #896, 2026-10-12)
+
+Before: plans (issue #870) and out-of-band changes (issue #871) were two panels at the bottom of Settings → Vault, and each
+showed nothing when its list was empty or its read failed. The feature was invisible until a job recorded a plan.
+
+- **A top-level view, `#infra`** (`ui/src/views/infra.tsx`), in the navigation between Machines and Usage, on par with
+  Jobs. Vault keeps one line that links to it. Three panels:
+  - **Plans** (`infra-plans.tsx`): each plan, its state and who it waits for (an admin: approval by risk is not built), its
+    summary, Approve, its applies, and the raw plan on demand.
+  - **Applies and drift** (`infraTimeline`, `ui/src/model/infra-plans.ts`, pure): one list, newest first, of plans recorded
+    and approved, applies, drift (`gitops`, `terraform-plan`), out-of-band writes (`cloudtrail`, `kube-audit`) and marks.
+  - **Out-of-band changes** (`out-of-band.tsx`), as before.
+- **Always shown.** The page reads `GET /api/infra-plans` and `GET /api/out-of-band` once. Each panel shows a loading line,
+  an error that says why with **Try again**, or an empty list that says how a job fills it (`POST /job/infra-plans`,
+  `POST /job/infra-signals`). Nothing hides on an error.
+- **Applies** (`PlanApply`, `src/domain/infra-plans.ts`; `InfraPlans.applies`, `src/infra-plans/service.ts`).
+  `GET /api/infra-plans` adds `applies`: each `vault.minted` event that names one of the listed plans, since the oldest of
+  them, newest first: `plan`, `at`, `operation`, `asset`, `job`, `expiresAt`, `renewal`. Read from the event log, so no
+  new table and no migration. Never the credential.
+- **API.** The four routes are under the OpenAPI tag `Infra` (they were under `Vault`). A UI session and an API token read
+  and act the same way: approve is still an admin's box action.
+
+**Not built here.** Approval by risk, so "who it waits for" names a person other than an admin; a nav badge with the plans
+that wait; a plan detail route of its own; live updates over the event stream (the page reads on open and on Try again).
+
+Tests: `test/ui/infra-plans.test.ts` (who a plan waits for, the apply line, the timeline's order and words, empty),
+`test/integration/infra-plans.test.ts` (an apply against an approved plan listed with it, and no credential in the answer).
 
 ## Git efficiency (issue #858 part 1, 2026-10-12)
 
@@ -14925,3 +15081,61 @@ in the next, nothing outside a pass, a head that moved, another base, a failed f
 `test/sources/github-git-answers.test.ts` (the port's four reads through the real pass reads take git's conflicts, the
 repository fetched once in the pass; GitHub's answer outside a pass and with no git), `test/herdr/job-worktree.test.ts`
 (a later start in the pass fetches nothing; the tracker by machine, work tree and repository).
+
+## Needs you: one home per decision (issue #897, part 1, 2026-10-12)
+
+Owner report: decisions that wait on a person lived in odd corners — request cards inside each source's card in Sources;
+credential requests, vault grants and template approvals stacked at the bottom of Settings → Vault — and several panels
+rendered nothing when empty, so a person could not tell the feature was there.
+
+**As built:**
+- **One home each.** Every decision that waits on a person has one top-level page, where it is acted on. A buried copy
+  is removed or becomes a link to that page. Settings, Sources and the vault keep configuration.
+- **Needs you.** `#needs-you`, the first nav entry (`ui/src/views/needs-you.tsx`): a row per kind — Intake, Access
+  requests, Questions, Proposals, Research, Logins, Failures, the pre-sort — with its count, its high-priority count
+  (#535) and a link to its home (`needsYouRows`, `ui/src/model/needs-you.ts`; `useNeedsYou`, `ui/src/store/needs-you.ts`).
+  Its nav badge is the sum. Parked jobs have no row: they wait to be picked up, not for a decision; Parked keeps its
+  quiet badge. It acts on nothing itself.
+- **Intake.** `#intake` (it was Not taken, `#not-taken`, which still opens it): per source, every open labelled issue
+  grouped by why, taken last, with Assign all; the request cards' one home. Sources keeps each source's sync, the intake
+  migration and the repos outside the job repositories, and links to Intake with its counts; it lists no issue and offers
+  no Approve.
+- **Access requests.** `#access-requests` (`ui/src/views/access-requests.tsx`): Asked for (credential requests), Vault
+  grants, and Template approvals (`template-approvals.tsx`: Approve, and Approve `<profile>` for a high-radius profile),
+  plus a pointer to Settings → API tokens for box tokens. A template waits (`templateWaits`, `ui/src/model/vault.ts`) when
+  it was never approved or a new image, secret or profile waits. Settings → Vault keeps Revoke, Check again, Edit and
+  Remove, and links a waiting template here. The texts the hopper gives a job or a box for an approval or a grant name
+  Access requests.
+- **One vault read.** `useVault` (`ui/src/store/vault.ts`) keeps one copy of `GET /api/vault`, read when first used and
+  again after each `vault.*` event; the nav, Needs you, Access requests and Settings → Vault share it, and an edit's
+  answer replaces it. A read that fails is no count; Access requests says why and still renders its panels.
+- **Always rendered.** Needs you, Intake and each panel of Access requests render with nothing in them, and say what will
+  show there.
+- **API parity.** Every count is a read the UI makes with the same scopes — `/api/sources`, `/api/vault`,
+  `/api/questions`, `/api/proposals`, `/api/research`, `/api/logins`, `/api/failures`, `/api/queue` — and every action is
+  the `POST /ui/api/*` route the page uses (`help/needs-you.md`).
+
+**Left for later parts:** a Needs you row for the plans that wait on the Infra page (issue #896), conflicted pull requests and machine joins
+in Needs you, a global yolo indicator, and the duplicates of the question, decider and auto-park controls in Settings.
+
+## Needs you, part 2: plans, conflicts, and yolo mode's one switch (issue #897, 2026-10-12)
+
+**As built:**
+- **Two more rows.** Needs you counts the Infra plans that wait for an admin (`plansWaiting`, `ui/src/model/infra-plans.ts`:
+  not approved, no failed check, not stale) and the open pull requests with merge conflicts (`conflictedPullRequests`,
+  `ui/src/model/pull-requests.ts`). The Infra nav entry is badged with the first, Pull requests with the second (red), and
+  the Pull requests header says how many conflict.
+- **Shared reads.** `ui/src/store/polled.ts` keeps one copy each of `GET /api/pull-requests`, `GET /api/infra-plans` and
+  `GET /api/yolo-mode` for the nav, Needs you and the header: read when first shown, every 30 seconds while shown, and again
+  after a `job.pull_request_*` or `yolo_mode.*` event (a plan is recorded with no event). A failed read keeps the last answer.
+  A page that reads or saves one itself (Pull requests, Settings → Yolo mode) puts its answer there.
+- **Yolo mode in the header.** On every screen: `yolo off`, `yolo on`, or `yolo on: N of M repos` (`yoloIndicator`,
+  `ui/src/model/yolo-mode.ts`), the summary as its title, a link to Settings → Yolo mode. An answer without the settings
+  shows nothing, never off.
+- **One switch.** Settings → Yolo mode is yolo mode's one switch. The per-repository switch on Pull requests is removed;
+  each group keeps its yolo badge and links to Settings. The Queue cards keep their read-only badges.
+- **No machine joins row.** A join code adds a machine at once: nothing waits for a decision. A machine whose box template
+  waits for approval is counted in Access requests.
+
+**Left for later parts:** the duplicates of the question, decider and auto-park controls in Settings, and Settings → Your
+reports and Question history, if they stay actionable.

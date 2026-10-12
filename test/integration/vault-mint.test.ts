@@ -10,7 +10,7 @@
 //     And a job running on a box joined as kube, which takes a job only once kube is approved (issue #602)
 //     And the read on namespace/lab/web revoked in Settings → Access while the job runs
 //     When the job runs `$HOPPER_SECRET kube read namespace/lab/web`
-//     Then it is refused: the profile waits for a person's approval on Settings → Vault
+//     Then it is refused: the profile waits for a person's approval on Access requests
 //     And the Kubernetes API is not asked
 //   Scenario: once the template is approved, the job gets a short-lived token, and the audit names Access's decision
 //     Then the token is a TokenRequest token for the service account hopper-read in namespace web, with its expiry
@@ -192,7 +192,7 @@ describe('the vault mints short-lived credentials only through Access', () => {
     const gated = await helper(dir, ['kube', 'read', 'namespace/lab/web'], token);
     expect(gated.code).not.toBe(0);
     expect(gated.stdout).toBe('');
-    expect(gated.stderr).toMatch(/waits for a person's approval on Settings → Vault/);
+    expect(gated.stderr).toMatch(/waits for a person's approval on Access requests/);
     expect(kube.seen).toHaveLength(0);
     const refused = (await a.events()).find((e) => e.type === 'vault.mint_refused');
     expect(refused).toMatchObject({ jobId: job, data: { mint: { operation: 'read', asset: WEB }, template: 'kube', decision: expect.any(String) } });

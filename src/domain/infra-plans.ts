@@ -69,6 +69,9 @@ export interface PlanApproval { plan: string; by: string; at: string }
 /** A plan as the hopper shows it: the plan, without its text, and its approval. */
 export interface PlanView extends Omit<InfraPlan, 'text'> { approval?: PlanApproval }
 
+/** An apply (issue #896): a credential the vault minted for an approved plan, from its `vault.minted` event. Never the credential. */
+export interface PlanApply { plan: string; at: string; operation: string; asset: Asset; job: string; expiresAt: string; renewal: boolean }
+
 export interface InfraPlanRepository {
   add(plan: InfraPlan, file?: Buffer): void;
   get(id: string): InfraPlan | undefined;
@@ -111,7 +114,7 @@ export function applyRefusal(profile: OperationProfile, planId: string | undefin
   if (now.getTime() >= Date.parse(plan.expiresAt)) return `plan ${plan.id} is stale: it was made ${plan.createdAt} and could be applied until ${plan.expiresAt}. Plan again`;
   const failed = failedChecks(plan);
   if (failed) return `plan ${plan.id} failed its checks: ${failed}. Fix the code and plan again`;
-  if (!approval) return `plan ${plan.id} is not approved: a person approves it in Infra changes, then the job asks again`;
+  if (!approval) return `plan ${plan.id} is not approved: a person approves it on Infra, then the job asks again`;
   return undefined;
 }
 

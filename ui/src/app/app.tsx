@@ -8,15 +8,18 @@ import { useForgetCleared } from '@/hooks/use-dismissed';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { load, mustSignIn, recheckSession, SESSION_CHECK_MS, setLoadError, useHopper } from '@/store';
 import { connect } from '@/store/stream';
+import { AccessRequests } from '@/views/access-requests';
 import { Artifacts } from '@/views/artifacts';
 import { Decisions } from '@/views/decisions';
 import { Events } from '@/views/events';
 import { Failures } from '@/views/failures';
+import { Infra } from '@/views/infra';
 import { JobView } from '@/views/job';
 import { Jobs } from '@/views/jobs';
+import { Intake } from '@/views/intake';
 import { Logins } from '@/views/logins';
 import { Machines } from '@/views/machines';
-import { NotTaken } from '@/views/not-taken';
+import { NeedsYou } from '@/views/needs-you';
 import { Overview } from '@/views/overview';
 import { Parked } from '@/views/parked';
 import { PullRequests } from '@/views/pull-requests';
@@ -34,7 +37,7 @@ import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  overview: Overview, jobs: Jobs, queue: Queue, 'not-taken': NotTaken, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, sources: Sources, machines: Machines, usage: Usage, settings: Settings, job: JobView,
+  'needs-you': NeedsYou, overview: Overview, jobs: Jobs, queue: Queue, intake: Intake, 'access-requests': AccessRequests, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, sources: Sources, machines: Machines, infra: Infra, usage: Usage, settings: Settings, job: JobView,
 };
 
 function Loading() {

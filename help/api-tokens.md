@@ -44,15 +44,45 @@ A scope names routes by their area and their act:
 | `POST /ui/api/<area>/…/<act>` | `<area>:<act>` |
 | `POST /ui/api/<area>` | `<area>:edit` |
 
-For example, `POST /ui/api/questions/:id/answer` needs `questions:answer`, and `POST /ui/api/sources/:name/intake` needs `sources:intake`. A grant holds `<area>:<act>`, `<area>:*`, `*:<act>` (`*:read` is every read) or `*` (everything its role allows). `GET /api/api-tokens` lists every scope there is.
+For example, `POST /ui/api/questions/:id/answer` needs `questions:answer`, and `POST /ui/api/sources/:name/intake` needs `sources:intake`. A grant holds `<area>:<act>`, `<area>:*`, `*:<act>` (`*:read` is every read) or `*` (everything its role allows).
+
+Every route has a scope. `GET /api/scopes` (or `hopper token scopes`) gives the full list, in sections by area of work. For each scope it gives what the scope lets an agent do, the routes it covers, the least role they need, and whether it is a box action. You do not need to know the scope names: the grant form shows the same list as boxes.
+
+### Which scope approves what
+
+| To approve | Scope | Box action |
+|------------|-------|------------|
+| A request card, an assign, a release or a backburner in intake | `sources:intake` | yes |
+| A held job | `jobs:approve` | yes |
+| A job's vault grant ask | `jobs:grant-vault` | no |
+| An infra plan | `infra-plans:edit` | yes |
+| A vault template or a credential request | `vault:edit` | no |
+| A question | `questions:answer` | yes |
+| A pull request merge | `pull-requests:merge` | yes |
+| Read the Needs you list | `*:read` | no |
+
+## Presets
+
+A preset is a named set of scopes. On the grant form, one click ticks its boxes. You can then tick or clear more.
+
+| Preset | Scopes | What a grant of it can do |
+|--------|--------|---------------------------|
+| **Read only** (`read-only`) | `*:read` | Reads everything you can see, the Needs you list included. Changes nothing. |
+| **Agent: read everything and approve intake** (`agent-intake`) | `*:read`, `sources:intake` | Reads everything, and acts on intake: approves request cards, assigns issues to you, releases claims, takes issues off the backburner. A box grant. |
+| **Agent: read everything and approve what waits** (`agent-approvals`) | `*:read`, `sources:intake`, `jobs:approve`, `jobs:grant-vault` | Reads everything, and approves request cards, held jobs and vault grant asks. A box grant. Infra plans and vault templates are not in it: tick them to add them. |
+| **Full admin** (`full-admin`) | `*` | Everything your role allows, box actions included, and every route added later. |
+
+`GET /api/scopes` gives the presets too. A grant made from a preset lives until it ends or you revoke it, and the agent refreshes it by itself: you do not mint again.
 
 ## Make a grant in the UI
 
 1. Open **Settings → API tokens**.
 2. Select **Mint grant**.
-3. Fill in **Label**, **Holder**, the **Role — at most yours**, the **Scopes**, and how many days it lives at most. Tick **Box grant** only when the agent must do box actions.
-4. Select **Mint grant**.
-5. Copy the refresh token and the API token now. They are not shown again.
+3. Fill in **Label**, **Holder**, the **Role — at most yours**, and how many days it lives at most.
+4. Select a preset, for example **Agent: read everything and approve intake**. Its boxes are ticked.
+5. Read the sections below the presets. Each one lists the permissions of one area of work: Jobs, Intake, Questions and reviews, Pull requests, Infra changes, Vault and credentials, Machines, and more. Tick or clear a box to add or remove one permission. A permission marked **box action** makes the grant a box grant. A permission marked **needs admin** does not work with a lower role.
+6. Select **Mint grant**.
+7. Copy the refresh token and the API token now. They are not shown again.
 
 The list shows each live grant: its holder, role, scopes, when it was made, when and from where it was last used, and when it ends. **Revoke** ends one at once, with its API tokens. **Revoke all** ends every one.
 
@@ -61,12 +91,14 @@ The list shows each live grant: its holder, role, scopes, when it was made, when
 ```sh
 hopper token mint --label "nightly report" --scope '*:read' --role viewer
 hopper token mint --label "Grok Bot" --holder grok-bot --scope '*:read' --scope questions:answer --scope sources:intake --role operator --box
+hopper token mint --label "intake agent" --holder grok-bot --preset agent-intake --role operator
+hopper token scopes
 hopper token list
 hopper token revoke <id>
 hopper token revoke-all
 ```
 
-`--role` is `admin` when you leave it out. `--days` sets its end (1 to 365); `--no-expiry` (an admin's only) gives it no fixed end; `--minutes` gives its API tokens a shorter life than the admin's setting.
+`--preset` gives a preset's scopes, and its box flag unless you give `--box`. `--scope` adds more. `--role` is `admin` when you leave it out. `--days` sets its end (1 to 365); `--no-expiry` (an admin's only) gives it no fixed end; `--minutes` gives its API tokens a shorter life than the admin's setting.
 
 ## Exchange a sign-in for a token
 
@@ -83,7 +115,7 @@ The answer holds `token`. It lives the admin's API-token lifetime at most, and i
 
 ## Box grants
 
-A box grant's API tokens may also do box actions, where its scopes allow. Only a person makes one: in **Settings → API tokens** (tick **Box grant**), with `hopper token mint --box`, or with `"box": true` at `POST /ui/api/api-tokens` from a signed-in session. The list says `box` for each one.
+A box grant's API tokens may also do box actions, where its scopes allow. Only a person makes one: in **Settings → API tokens** (tick a permission marked **box action**), with `hopper token mint --box`, or with `"box": true` at `POST /ui/api/api-tokens` from a signed-in session. The list says `box` for each one.
 
 - The access service decides each box action too (`api_token#can_run_on_box`). You can narrow it in **Settings → Access**.
 - A token without box gets `403` on a box action: `this is a box action: it needs a box token`.

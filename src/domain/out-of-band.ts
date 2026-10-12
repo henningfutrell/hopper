@@ -1,5 +1,5 @@
 // Out-of-band changes (issue #871, design.md "Out-of-band changes"): infrastructure changes that did not come through IaC
-// or GitOps, tracked in Infra changes. One generic rule and no per-action classifier: a write is out of band unless a
+// or GitOps, tracked on Infra. One generic rule and no per-action classifier: a write is out of band unless a
 // GitOps controller identity or a plan-bound apply credential made it. Drift (a GitOps app out of sync, a non-empty
 // `terraform plan` on unchanged code) is out of band by itself. The types, the limits, the rule and the repository port. Pure.
 

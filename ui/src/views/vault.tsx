@@ -3,31 +3,28 @@
 // Replace types a new value over it; Remove deletes it. Templates: an image and the secrets its boxes may ask for,
 // approved once by a person and again for a new secret or a new image. A template's operation profiles (issue #584)
 // rate its blast radius with its secrets, shown next to it: approving the template approves its read profiles; a write,
-// sync or apply profile takes its own explicit approval. Editing is an admin's. A secret may instead be kept in a vault
+// sync or apply profile takes its own explicit approval. The approvals, and what jobs on boxes ask for, are on Access
+// requests (issue #897): this page is configuration only, and links a template that waits there. Editing is an admin's. A secret may instead be kept in a vault
 // backend (issue #585): the person names the backend and where the value is there, never the value. A minting
 // credential (issue #580) says the AWS account or cluster the hopper mints short-lived credentials for from it; it is
-// never given to a box, so no template lists it. Asked for (issue #583): the credentials jobs on boxes asked for and the
-// vault does not give; an admin gives one — of the kind suggested, or another — or declines. The hopper's own secrets
+// never given to a box, so no template lists it. The hopper's own secrets
 // (issue #658): the vault's system scope and its audit trail, read-only (vault-system.tsx). Shared secrets (issue #718):
 // what the hopper's admin shares with agents (vault-shared.tsx); a template may name one as shared/<name>. The read
 // policy (issue #716, vault-read-policy.tsx): what the hopper approves with no person, for a template a job asks for. The
 // template request on the page (issue #708, vault-template-request.tsx): the needs a box's work has, and the template the hopper makes from them.
 // The master key's rotation, the hopper's admin's (app/master-key.tsx, issue #659). A template's form, with the limits a
-// launch of it may ask for (issue #708): vault-template-form.tsx.
-import { Ban, Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { toast } from 'sonner';
+// launch of it may ask for (issue #708): vault-template-form.tsx. Infra plans and out-of-band changes have their own view, Infra (issue #896): a link here.
+import { Ban, Boxes, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Confirm } from '@/components/confirm';
 import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/template-radius';
 import { Empty, Panel } from '@/components/panel';
-import { get, post, SessionRejected } from '@/lib/api';
-import { approvalText, explicitApprovals, highRadius, keptText, mintsOf, nameProblem, profileText, referenceHint, secretFacts, toolsText } from '@/model/vault';
-import type { Asset, OperationProfile, SharedSecretView, TemplateView, VaultBackendView, VaultSecret, VaultView } from '@/model/wire';
+import { approvalText, keptText, mintsOf, nameProblem, profileText, referenceHint, secretFacts, templateWaits, toolsText } from '@/model/vault';
+import type { Asset, OperationProfile, SharedSecretView, TemplateView, VaultBackendView, VaultSecret } from '@/model/wire';
 import { Label, ValueInput } from '@/components/vault-fields';
-import { useHopper } from '@/store';
-import { AskedFor, InfraChanges, OutOfBandChanges, VaultGrants } from './vault-requests';
+import { sendVault, setVaultView, useVault, useVaultStore } from '@/store/vault';
 import { SystemSecrets } from './vault-system';
 import { SharedSecrets } from './vault-shared';
 import { ReadPolicy } from './vault-read-policy';
@@ -140,15 +137,14 @@ function SecretItem({ s, backends, local, can, busy, send }: { s: VaultSecret; b
 
 function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView; secrets: VaultSecret[]; shared: SharedSecretView[]; can: boolean; busy: boolean; send: Send }) {
   const [editing, setEditing] = useState(false);
-  const waiting = !t.approval || t.pending.image || t.pending.secrets.length > 0 || t.pending.profiles.some((p) => !highRadius(p));
-  const explicit = explicitApprovals(t);
+  const waiting = templateWaits(t);
   return (
     <li className="space-y-2 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Boxes className="size-4 text-muted-foreground" />
         <span className="font-mono text-sm font-medium break-all">{t.name}</span>
         <TemplateRadiusBadge radius={t.radius} />
-        <span className={`text-xs ${waiting || explicit.length > 0 ? 'text-warn' : 'text-muted-foreground'}`}>{approvalText(t)}</span>
+        <span className={`text-xs ${waiting ? 'text-warn' : 'text-muted-foreground'}`}>{approvalText(t)}</span>
       </div>
       <TemplateRadiusReasons radius={t.radius} />
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
@@ -163,18 +159,7 @@ function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView
       </dl>
       {editing ? <TemplateForm t={t} secrets={secrets} shared={shared} busy={busy} send={send} onDone={() => setEditing(false)} /> : (
         <div className="flex flex-wrap gap-2">
-          {waiting && (
-            <Confirm title={`Approve ${t.name}?`} action="Approve" onConfirm={() => void send({ action: 'approve-template', name: t.name }, `${t.name}: approved`)}
-              description={<>Boxes from <span className="font-mono">{t.image}</span>{t.tools?.length ? <> with <span className="font-mono">{t.tools.join(', ')}</span></> : null} may then ask for <span className="font-mono">{t.secrets.join(', ') || 'nothing'}</span>, whatever job runs in them{t.pending.profiles.some((p) => !highRadius(p)) ? <>, and read <span className="font-mono">{t.pending.profiles.filter((p) => !highRadius(p)).map(profileText).join(', ')}</span></> : null}. A write, sync or apply profile is not approved by this.</>}>
-              <Button size="sm" disabled={!can || busy}><Check />Approve</Button>
-            </Confirm>
-          )}
-          {explicit.map((p) => (
-            <Confirm key={profileText(p)} title={`Approve ${t.name}: ${profileText(p)}?`} action="Approve" onConfirm={() => void send({ action: 'approve-profile', name: t.name, ...p }, `${t.name}: ${profileText(p)} approved`)}
-              description={<>This is a high-radius profile: it changes <span className="font-mono">{p.asset.kind} {p.asset.name}</span>. Every job in a box of <span className="font-mono">{t.name}</span> may then {p.operation} there. An approval for read does not cover this.</>}>
-              <Button size="sm" variant="outline" disabled={!can || busy}><ShieldAlert />Approve {profileText(p)}</Button>
-            </Confirm>
-          ))}
+          {waiting && <a href="#access-requests" data-template-waits={t.name} className="inline-flex h-8 items-center text-sm text-warn hover:underline">Approve on Access requests →</a>}
           {t.approval && (
             <Confirm title={`Revoke the approval of ${t.name}?`} action="Revoke" onConfirm={() => void send({ action: 'revoke-template', name: t.name }, `${t.name}: approval revoked`)}
               description="Its boxes take no new job and get nothing from the vault until a person approves it again. Jobs that run there now keep running.">
@@ -195,27 +180,13 @@ function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView
 
 export function Vault() {
   const can = useCanAdmin();
-  const [view, setView] = useState<VaultView | null>(null);
-  const [busy, setBusy] = useState(false);
+  const view = useVault();
+  const busy = useVaultStore((s) => s.busy);
+  const error = useVaultStore((s) => s.error);
   const [adding, setAdding] = useState(false);
   const [addingTemplate, setAddingTemplate] = useState(false);
-  const lastChange = useHopper((s) => s.events.find((e) => e.type.startsWith('vault.'))?.id);
-  useEffect(() => { get<VaultView>('/api/vault').then(setView, (e: unknown) => toast.error((e as Error).message)); }, [lastChange]);
-
-  const send = async (edit: Edit, done: string): Promise<boolean> => {
-    setBusy(true);
-    try {
-      setView(await post<VaultView>('/ui/api/vault', edit));
-      toast.success(done);
-      return true;
-    } catch (e) {
-      if (e instanceof SessionRejected) useHopper.setState({ authed: false });
-      toast.error((e as Error).message);
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
+  const send: Send = sendVault;
+  const setView = setVaultView;
 
   const secrets = view?.secrets ?? [];
   const templates = view?.templates ?? [];
@@ -223,14 +194,14 @@ export function Vault() {
   const backends = view?.backends ?? [];
   // A value kept in the hopper needs its master key; a secret kept in a backend does not.
   const local = view !== null && view.problem === undefined;
-  const requests = view?.requests ?? [];
   return (
     <div className="max-w-2xl space-y-3">
-      <AskedFor requests={requests} can={can} busy={busy} send={send} />{view && <VaultGrants view={view} onView={setView} />}<InfraChanges /><OutOfBandChanges />
+      <p data-slot="vault-infra-link" className="text-sm text-muted-foreground">Plans, applies and out-of-band changes of infrastructure are on <a href="#infra" className="underline">Infra</a>.</p>
       <Panel title="Vault" icon={LockKeyhole} count={secrets.length || ''} bodyClassName="space-y-3"
         action={can && !adding ? <Button size="sm" onClick={() => setAdding(true)} disabled={busy || (!local && backends.length === 0)}><Plus />Add secret</Button> : undefined}>
         <p className="text-sm text-muted-foreground">Secrets for jobs, set once and never read back: no page and no API answer shows a value, to any role. Each is kept encrypted in the hopper's database, or in a vault backend you add in Plugins (HashiCorp Vault, 1Password, Bitwarden): then the hopper reads it there each time a job asks, and keeps no copy.</p>
         {view?.problem && <p className="text-sm text-bad break-words">{view.problem}</p>}
+        {!view && error && <p className="text-sm text-bad break-words">Could not read the vault: {error}</p>}
         {adding && <div className="rounded-md border p-3"><SetForm backends={backends} local={local} busy={busy} send={send} onDone={() => setAdding(false)} /></div>}
         {view && secrets.length === 0 && !adding && <Empty>No secrets yet.</Empty>}
         {secrets.length > 0 && <ul className="space-y-2">{secrets.map((s) => <SecretItem key={s.id} s={s} backends={backends} local={local} can={can} busy={busy} send={send} />)}</ul>}

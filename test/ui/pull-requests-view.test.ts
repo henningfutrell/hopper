@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // The Pull requests view (issue #637), rendered inside the whole app against a fake of the daemon's HTTP surface: the
-// header says how many repositories have yolo mode on and where merging waits; one group per repository, with its yolo
-// badge and a switch an admin turns; each card with its state badge and its repository's yolo badge. A repository with no
+// header says how many repositories have yolo mode on, where merging waits, and how many have merge conflicts (issue #897);
+// one group per repository, with its yolo badge and a link to yolo mode's one switch in Settings (issue #897); each card with its state badge and its repository's yolo badge. A repository with no
 // checks (issue #677) is flagged in the header and its group, with the job that adds them: Queue job and Dismiss.
 import { createElement } from 'react';
 import { act } from 'react';
@@ -88,7 +88,6 @@ async function boot(view: PullRequestsView, role: 'viewer' | 'admin' = 'admin', 
 
 const text = (sel: string, el: ParentNode = document) => el.querySelector(sel)?.textContent ?? '';
 const cardOf = (jobId: string) => document.querySelector(`[data-pull-request="${jobId}"]`)!;
-const toggleOf = (repo: string) => document.querySelector<HTMLButtonElement>(`[data-repo="${repo}"] [role="switch"]`)!;
 
 afterEach(async () => {
   await act(async () => root?.unmount());
@@ -151,23 +150,21 @@ describe('Pull requests view', () => {
     expect(waitsText(card({ waits: 'not checked yet' }))).toBe('not checked yet');
   });
 
-  it('an admin turns yolo mode on for one repo: the toggle posts that repo alone, then the list is read again', async () => {
+  it('yolo mode has one switch, in Settings: each group links to it and turns nothing itself (issue #897)', async () => {
     const daemon = await boot(fixture);
-    const reads = () => daemon.fetch.mock.calls.filter(([p]) => String(p) === '/api/pull-requests').length;
-    const before = reads();
-    expect(toggleOf('owner/a').disabled).toBe(false);
-    await act(async () => { toggleOf('owner/a').click(); });
-    await vi.waitFor(() => expect(daemon.bodies).toEqual([{ path: '/ui/api/yolo-mode', body: { repos: { 'owner/a': true } } }]));
-    await vi.waitFor(() => expect(reads()).toBeGreaterThan(before));
-    await act(async () => { toggleOf('org/b').click(); });
-    await vi.waitFor(() => expect(daemon.bodies[1]).toEqual({ path: '/ui/api/yolo-mode', body: { repos: { 'org/b': false } } }));
+    expect(document.querySelector('[data-repo] [role="switch"]')).toBeNull();
+    const link = document.querySelector('[data-repo="owner/a"] a[data-slot="yolo-settings"]')!;
+    expect(link.getAttribute('href')).toBe('#settings/yolo-mode');
+    expect(daemon.bodies).toEqual([]);
   });
 
-  it('a session that is not an admin sees the toggle, disabled', async () => {
-    const daemon = await boot(fixture, 'viewer');
-    expect(toggleOf('owner/a').disabled).toBe(true);
-    await act(async () => { toggleOf('owner/a').click(); });
-    expect(daemon.bodies).toEqual([]);
+  it('the header counts the pull requests with merge conflicts (issue #897)', async () => {
+    const conflicted = { ...fixture, repos: [{ ...fixture.repos[0]!, pullRequests: [card({ mergeable: 'conflicts', waits: 'conflicts' })] }] };
+    await boot(conflicted);
+    expect(text('[data-slot="pr-conflicts-line"]')).toBe('1 pull request has merge conflicts: fix it, or close it');
+    await act(async () => { root?.unmount(); });
+    await boot(fixture);
+    expect(document.querySelector('[data-slot="pr-conflicts-line"]')).toBeNull();
   });
 
   it('an open card has Merge now and Close PR, each asks once, then posts the job (issue #677)', async () => {

@@ -18,4 +18,4 @@ export interface VaultGrantAsk { job: string; key: string; machine?: string; tem
 export const grantKeyOf = (job: Pick<Job, 'id' | 'source'>): string => job.source?.key ?? job.id;
 
 /** Why a job with no grant gets nothing: what the job is told, and what `vault.refused` records. */
-export const noGrant = (job: string): string => `job ${job.slice(0, 8)} has no vault grant: a person grants it the vault on the Vault page (Settings → Vault), then ask again`;
+export const noGrant = (job: string): string => `job ${job.slice(0, 8)} has no vault grant: a person grants it the vault on Access requests, then ask again`;

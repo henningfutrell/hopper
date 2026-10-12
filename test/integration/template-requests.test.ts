@@ -2,7 +2,7 @@
 // AuthorizationServer seam: a running job asks the hopper for the sandbox template its work needs, and the hopper makes
 // it. The job runs the real `hopper-skill` (issue #582). The hopper writes the template from the job's needs — the box
 // image, no vault secret, one operation profile per need — and approves it with no person only when every need is a
-// read inside the user's read policy. Anything else waits for a person on Settings → Vault (design.md "Templates on
+// read inside the user's read policy. Anything else waits for a person on Access requests (design.md "Templates on
 // request").
 //
 // Feature: a job asks the hopper for the template its work needs
@@ -164,7 +164,7 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
     const creds = await runningJob(a);
     const first = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab write/cluster/lab']);
     expect(first.code, first.stdout).toBe(3);
-    expect(first.stdout).toMatch(/^waiting: template asked-[0-9a-f]+ waits for a person in Settings → Vault/);
+    expect(first.stdout).toMatch(/^waiting: template asked-[0-9a-f]+ waits for a person on Access requests/);
     expect(first.stdout).toContain('write on cluster lab');
     const [t] = await asked(a, token);
     // The policy approves only what is all read: the template waits as a whole, nothing of it approved.

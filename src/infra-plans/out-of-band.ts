@@ -1,7 +1,7 @@
 // Out-of-band changes (issue #871, design.md "Out-of-band changes"): one user's infrastructure changes that did not come
 // through IaC or GitOps. A job's read-only check, or an outside collector with an API token (part 2), reports signals — drift, and audit-log writes —; each is judged by the
 // one rule (`judge`): out of band unless a controller identity or a plan-bound apply credential made it. Each out-of-band
-// change is kept, an event on the reporting job's timeline that the notifiers send, and waits on Infra changes until a
+// change is kept, an event on the reporting job's timeline that the notifiers send, and waits on Infra until a
 // person marks it adopted, reverted, or accepted with a reason. Tracking only: the hopper reverts nothing.
 import { randomUUID } from 'node:crypto';
 import {
@@ -27,7 +27,7 @@ export interface OutOfBandChanges {
   setControllers(identities: string[], by: string): string[] | PlanRefusal;
 }
 
-/** How many changes Infra changes lists. */
+/** How many changes Infra lists. */
 const LIST_MAX = 200;
 /** How far before a write a mint may be: no minted credential lives longer. */
 const MINT_LOOKBACK_MS = 2 * 60 * 60_000;

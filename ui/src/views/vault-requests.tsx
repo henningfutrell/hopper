@@ -1,22 +1,16 @@
-// Settings → Vault, Asked for (issue #583, design.md "The dynamic vault"): the credentials jobs on boxes asked for and
-// the vault does not give. Each card says who waits and why and how to get the credential; an admin gives one — of the
-// kind the hopper suggests, or another, in their own words — or declines with a reason. The value is never shown.
+// Access requests, Asked for (issue #583, design.md "The dynamic vault"; on Access requests since issue #897): the
+// credentials jobs on boxes asked for and the vault does not give. Each card says who waits and why and how to get the
+// credential; an admin gives one — of the kind the hopper suggests, or another, in their own words — or declines with a
+// reason. The value is never shown. With none, the panel says what will show here.
 import { Check, MessageSquareWarning, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Panel } from '@/components/panel';
+import { Empty, Panel } from '@/components/panel';
 import { Label, ValueInput } from '@/components/vault-fields';
 import { giveProblem, kindChoices, requestWaiting } from '@/model/vault';
 import type { CredentialRequest } from '@/model/wire';
 import type { Send } from './vault';
-
-// Vault grants (issue #652) sit beside Asked for on the Vault page: both are what jobs on boxes wait on a person for.
-export { VaultGrants } from './vault-grants';
-// Infra changes (issue #870) too: a plan waits for a person before an apply is minted a credential.
-export { InfraChanges } from './infra-plans';
-// Out-of-band changes (issue #871) too: each waits for a person to mark it.
-export { OutOfBandChanges } from './out-of-band';
 
 /** A credential request (issue #583): what jobs wait on, how to get the credential, and the admin's answer. */
 function RequestItem({ r, can, busy, send }: { r: CredentialRequest; can: boolean; busy: boolean; send: Send }) {
@@ -71,11 +65,13 @@ function RequestItem({ r, can, busy, send }: { r: CredentialRequest; can: boolea
 }
 
 export function AskedFor({ requests, can, busy, send }: { requests: CredentialRequest[]; can: boolean; busy: boolean; send: Send }) {
-  if (requests.length === 0) return null;
   return (
-    <Panel title="Asked for" icon={MessageSquareWarning} count={requests.length} bodyClassName="space-y-3">
-      <p className="text-sm text-muted-foreground">Jobs on boxes need these credentials, and wait until you give one or decline. Give the kind the hopper suggests, or any other: the job is told what you gave, never the value.</p>
-      <ul className="space-y-2">{requests.map((r) => <RequestItem key={r.id} r={r} can={can} busy={busy} send={send} />)}</ul>
-    </Panel>
+    <div data-access-panel="credentials">
+      <Panel title="Asked for" icon={MessageSquareWarning} count={requests.length || ''} bodyClassName="space-y-3">
+        <p className="text-sm text-muted-foreground">Jobs on boxes need these credentials, and wait until you give one or decline. Give the kind the hopper suggests, or any other: the job is told what you gave, never the value.</p>
+        {requests.length === 0 ? <Empty>No job asks for a credential. When a job on a box needs one the vault does not give, it waits here.</Empty>
+          : <ul className="space-y-2">{requests.map((r) => <RequestItem key={r.id} r={r} can={can} busy={busy} send={send} />)}</ul>}
+      </Panel>
+    </div>
   );
 }

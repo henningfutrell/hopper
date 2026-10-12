@@ -5,7 +5,10 @@ These pages tell you how the hopper works and how to use it, for the version you
 ## The pages
 
 - [Run and update the hopper](deploy-and-update.md)
+- [Needs you: what waits on you](needs-you.md)
+- [The main menu](navigation.md)
 - [How issues become jobs](intake.md)
+- [The Jobs view](jobs.md)
 - [Lanes](lanes.md)
 - [Questions and deciders](questions.md)
 - [Pull requests](pull-requests.md)

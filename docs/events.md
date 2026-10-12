@@ -3092,7 +3092,7 @@ Version 1 (`docs/schemas/vault.mint_refused.v1.json`). A box asked the vault to 
   "machine": "hopper-sandbox-kube",
   "template": "kube",
   "job": "f3b1c2d4-0000-4000-8000-000000000001",
-  "reason": "Access denied it: template kube is not approved to write on namespace lab/web. write on namespace lab/web waits for a person's approval on Settings → Vault (the first-time gate)",
+  "reason": "Access denied it: template kube is not approved to write on namespace lab/web. write on namespace lab/web waits for a person's approval on Access requests (the first-time gate)",
   "decision": "6c1d2e3f-0000-4000-8000-000000000003"
 }
 ```
@@ -4354,7 +4354,7 @@ Version 1 (`docs/schemas/infra.plan_recorded.v1.json`). A job recorded a plan of
 
 ## `infra.plan_approved`
 
-Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan of an infrastructure change (issue #870), on Infra changes: until the plan is stale, an apply that names it, made at the commit its branch is at, is minted the credential it asks. On the timeline of the job that recorded the plan.
+Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan of an infrastructure change (issue #870), on Infra: until the plan is stale, an apply that names it, made at the commit its branch is at, is minted the credential it asks. On the timeline of the job that recorded the plan.
 
 | field | type | required |
 |---|---|---|
@@ -4379,7 +4379,7 @@ Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan
 
 ## `infra.out_of_band_recorded`
 
-Version 1 (`docs/schemas/infra.out_of_band_recorded.v1.json`). A read-only check — a job's, or an outside collector's with an API token (part 2) — reported an infrastructure change that did not come through IaC or GitOps (issue #871): drift (`gitops`: an app out of sync; `terraform-plan`: a non-empty plan on unchanged code) or an audit-log write (`cloudtrail`, `kube-audit`) by a principal that is no controller identity and no plan-bound apply credential. What changed (`target`), the action in the source's words (`what`), who (`who`), when (`at`), the signal's own id (`key`), and who reported it: the job whose check did and its issue, or the collector (`reporter`, its API token's label), then on no job's timeline. Never the signal's detail. On Infra changes until a person marks it; the notifiers send it.
+Version 1 (`docs/schemas/infra.out_of_band_recorded.v1.json`). A read-only check — a job's, or an outside collector's with an API token (part 2) — reported an infrastructure change that did not come through IaC or GitOps (issue #871): drift (`gitops`: an app out of sync; `terraform-plan`: a non-empty plan on unchanged code) or an audit-log write (`cloudtrail`, `kube-audit`) by a principal that is no controller identity and no plan-bound apply credential. What changed (`target`), the action in the source's words (`what`), who (`who`), when (`at`), the signal's own id (`key`), and who reported it: the job whose check did and its issue, or the collector (`reporter`, its API token's label), then on no job's timeline. Never the signal's detail. On Infra until a person marks it; the notifiers send it.
 
 | field | type | required |
 |---|---|---|
@@ -4410,7 +4410,7 @@ Version 1 (`docs/schemas/infra.out_of_band_recorded.v1.json`). A read-only check
 
 ## `infra.out_of_band_marked`
 
-Version 1 (`docs/schemas/infra.out_of_band_marked.v1.json`). A person marked an out-of-band change on Infra changes (issue #871): `adopted` (brought back into git), `reverted`, or `accepted` with its `reason`. Tracking only: the hopper reverts nothing. On the timeline of the job whose check reported the change.
+Version 1 (`docs/schemas/infra.out_of_band_marked.v1.json`). A person marked an out-of-band change on Infra (issue #871): `adopted` (brought back into git), `reverted`, or `accepted` with its `reason`. Tracking only: the hopper reverts nothing. On the timeline of the job whose check reported the change.
 
 | field | type | required |
 |---|---|---|

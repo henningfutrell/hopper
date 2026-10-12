@@ -3,10 +3,11 @@
 // behind one button at every width (issue #666). Shown only signed in (issue #213).
 // A GitHub connection that ended asks to connect again here, on every screen (issue #441) — unless the person signed in
 // with GitHub: then the session ended with it, and the page asks the daemon at once and goes to sign-in (issue #513). Pending logins are
-// counted here on every screen, warning when one expires soon, a link to the Logins view (issue #477).
+// counted here on every screen, warning when one expires soon, a link to the Logins view (issue #477). Yolo mode shows here
+// on every screen (issue #897): off, on, or on in some repositories, a link to its one switch in Settings → Yolo mode.
 // On a phone the wordmark, the help link and the API reference give way (Help stays in the user menu), so the version badge with its channel, the connection dot and
 // the user menu are all the bar holds (issues #497, #666).
-import { BookOpen, CircleHelp, KeyRound } from 'lucide-react';
+import { BookOpen, CircleHelp, KeyRound, Zap } from 'lucide-react';
 import { useEffect } from 'react';
 import logo from '../../../site/hopper-logo.svg';
 import { Button } from '@/components/ui/button';
@@ -14,8 +15,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Dot, StatusBadge } from '@/components/status';
 import { duration } from '@/model/format';
 import { connectionEnded } from '@/model/sources';
+import { yoloIndicator } from '@/model/yolo-mode';
 import { recheckSession, useHopper } from '@/store';
 import { cn } from '@/lib/utils';
+import { useYoloMode } from '@/store/polled';
 import { useLoginsBadge, useSignedInWith } from '@/store/selectors';
 import { UpdateButton } from './update';
 import { UserMenu } from './user-menu';
@@ -28,6 +31,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
   // Signed in with GitHub, the session ended with the connection (issue #513): no reconnect here, straight to sign-in.
   useEffect(() => { if (ended && signedInWithGitHub) void recheckSession(); }, [ended, signedInWithGitHub]);
   const logins = useLoginsBadge();
+  const yolo = yoloIndicator(useYoloMode());
   return (
     <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md">
       <div className="flex h-14 items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:px-6">
@@ -47,6 +51,13 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
               className={cn('flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium',
                 logins.warn ? 'border-warn/40 bg-warn/10 text-warn hover:bg-warn/15' : 'border-border text-foreground hover:bg-muted/60')}>
               <KeyRound className="size-3.5" /><span className="num">{logins.n}</span> <span className="max-sm:sr-only">{logins.n === 1 ? 'login' : 'logins'} pending</span>
+            </a>
+          )}
+          {yolo && (
+            <a data-yolo={yolo.on ? 'on' : 'off'} href="#settings/yolo-mode" title={yolo.title}
+              className={cn('flex items-center gap-1 rounded-md border px-2 py-1 font-medium',
+                yolo.on ? 'border-warn/40 bg-warn/10 text-warn hover:bg-warn/15' : 'border-border text-muted-foreground hover:bg-muted/60')}>
+              <Zap className="size-3.5" aria-hidden /><span className={cn(!yolo.on && 'max-sm:sr-only')}>{yolo.words}</span>
             </a>
           )}
           <div className="hidden items-center gap-1.5 md:flex">

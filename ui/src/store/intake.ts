@@ -1,7 +1,7 @@
 // Intake actions in the store (issue #811). An intake action's answer names the keys it did not do: `intakeRefusal` makes
 // that a failure, not a success toast. Approve on a request card: each approval this page sent, by the issue's key —
 // waiting for the daemon, which approves and then syncs the source, so it takes seconds; done; or refused, with why.
-// Sources and Not taken read it: the button waits at once and sends once, a refusal shows on the card, and an approved
+// Intake reads it (issue #897): the button waits at once and sends once, a refusal shows on the card, and an approved
 // issue stays where it was.
 import { create } from 'zustand';
 import type { IntakeActionResult } from '../../../src/domain/intake.ts';

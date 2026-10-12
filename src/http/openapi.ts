@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import { ENVELOPE_SCHEMA } from '../events/index.ts';
 import { REVIEW_KINDS, REVIEW_SECTIONS, SECTIONS, type ReviewKind } from '../domain/types.ts';
-import { jobsQuery } from './jobs.ts';
+import { JOB_GRAPH_OPERATIONS, jobsQuery } from './jobs.ts';
 import { loginsQuery } from './logins.ts';
 import { questionsQuery } from './questions.ts';
 import { loginSettingsBody } from './ui/logins.ts';
@@ -78,7 +78,7 @@ function reviewOperations(kind: ReviewKind): Operation[] {
   ];
 }
 
-const OPERATIONS: Operation[] = [
+export const OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/health', tag: 'State', summary: 'Health and version', description: 'A loopback read without a session on a hopper with several users reads the instance\'s part only: `{ ok, version, uptimeS }`.', returns: '`{ ok, version, router, fallback, executors, parkingExecutors, reviewingExecutors, uptimeS }`: `parkingExecutors` the executors that can park a job; `reviewingExecutors` the ones that write research reports and proposals (only their jobs shift phase from a question)' },
   { method: 'get', path: '/api/queue', tag: 'State', summary: 'The queue', returns: '`{ waiting, running, waitingAnswer, operatorLed, parked, waitingOn, locked, ended, gate, presort }`: each list a `Job[]` (`waitingOn`: the jobs on their own wait, issue #483), `waiting` in queue order (the user order first), `locked` the locked entries (failed jobs kept in the queue until run again or dismissed), highest priority first, `ended` the last 24 h; `gate` the `QueueGate`; `presort` the `PreSort` of the waiting jobs not yet accepted' },
   { method: 'get', path: '/api/decisions', tag: 'State', summary: 'Recent decisions', query: decisionsQuery, returns: '`{ decisions: Decision[] }`, newest first' },
@@ -167,7 +167,7 @@ const OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/blast-radius/discover', tag: 'Machines and usage', summary: 'Discover a machine now', description: 'Runs the discovery on `machineId`, or on every online machine, through its own connection, and answers when it is done. Discovery only reads: identities, configuration, IAM policy simulation, `kubectl auth can-i`.', role: 'operator', body: discoverBody, returns: '`BlastRadiusView`', errors: [404] },
   { method: 'post', path: '/ui/api/jobs/:id/gate-pass', tag: 'Jobs', summary: 'Let a job held at the blast-radius gate through', description: 'The job may then run on a gated machine (`gatePass`, `job.gate_passed`). 409: the job is not held at the gate.', role: 'admin', returns: 'the `Job`', errors: [404, 409] },
   { method: 'post', path: '/ui/api/usage/limits', tag: 'Machines and usage', summary: 'Set the usage limits', description: 'The soft limit, past which a machine\'s lane cap scales down, and the hard limit, at which it starts nothing: fractions from 0 to 1, soft below hard. Stored for the user: they win over `HOPPER_SOFT_LIMIT` / `HOPPER_HARD_LIMIT` from now on, and the next Decision uses them.', role: 'admin', body: usageLimitsBody, returns: '`{ limits: UsageLimits }`' },
-  ...LANE_TUNING_OPERATIONS, ...ACCESS_OPERATIONS, ...ACCESS_EDIT_OPERATIONS, ...SHARED_SECRET_OPERATIONS, ...API_TOKEN_OPERATIONS, ...BUG_REPORT_OPERATIONS, ...PULL_REQUEST_ACT_OPERATIONS, ...INTAKE_ACTORS_OPERATIONS, ...CONTRIBUTION_OPERATIONS, ...REPO_CHECKS_OPERATIONS, ...VAULT_GRANT_OPERATIONS, ...MINT_TEST_OPERATIONS, ...RATE_LIMITER_OPERATIONS, ...REMOTE_ACCESS_OPERATIONS, ...POINTED_JOB_OPERATIONS, ...GITHUB_WATCH_OPERATIONS, ...INFRA_PLAN_OPERATIONS, ...WINDOWS_HOSTS_OPERATIONS,
+  ...LANE_TUNING_OPERATIONS, ...ACCESS_OPERATIONS, ...ACCESS_EDIT_OPERATIONS, ...SHARED_SECRET_OPERATIONS, ...API_TOKEN_OPERATIONS, ...BUG_REPORT_OPERATIONS, ...PULL_REQUEST_ACT_OPERATIONS, ...INTAKE_ACTORS_OPERATIONS, ...CONTRIBUTION_OPERATIONS, ...REPO_CHECKS_OPERATIONS, ...VAULT_GRANT_OPERATIONS, ...MINT_TEST_OPERATIONS, ...RATE_LIMITER_OPERATIONS, ...REMOTE_ACCESS_OPERATIONS, ...POINTED_JOB_OPERATIONS, ...GITHUB_WATCH_OPERATIONS, ...INFRA_PLAN_OPERATIONS, ...WINDOWS_HOSTS_OPERATIONS, ...JOB_GRAPH_OPERATIONS,
   { method: 'get', path: '/api/plugins', tag: 'Plugins and routing', summary: 'Every role, instance and plugin', returns: '`PluginsReport`' },
   { method: 'get', path: '/api/plugin-store', tag: 'Plugins and routing', summary: 'The plugin store: its catalogue and the store installs', returns: '`PluginStoreReport`' },
   { method: 'post', path: '/ui/api/plugin-store', tag: 'Plugins and routing', summary: 'Set the plugin store; install, update or remove a plugin from it', description: 'Only the instance admin (issue #240). Read the plugin store again, set the plugin store (the default plugin store, none, or a git repository; issue #445) and read it, install a plugin its catalogue lists into the plugin dir (again: an update to the store\'s head), or remove a store install that the plugins config does not name.', role: 'admin', body: pluginStoreBody, returns: 'the new `PluginStoreReport`', errors: [404, 409] },

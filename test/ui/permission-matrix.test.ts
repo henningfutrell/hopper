@@ -177,7 +177,7 @@ describe('Settings → Permission matrix', () => {
     const why = document.querySelector('[data-slot="matrix-why"]')!;
     expect(why.textContent).toContain('machine box-kube is an instance of template kubectl-diag → template kubectl-diag is approved for read on cluster x → read on cluster x grants read on cluster x');
     expect(why.textContent).toContain('approved by alice');
-    expect(why.textContent).toContain('write: waits for approval on Settings → Vault');
+    expect(why.textContent).toContain('write: waits for approval on Access requests');
     await click(button('Revoke', why.querySelector('[data-approval="7"]')!));
     await click(button('Revoke', document.querySelector('[role="alertdialog"]')!));
     await vi.waitFor(() => expect(daemon.calls.find((c) => c.path === '/ui/api/access')?.body).toEqual({ action: 'revoke', approval: 7 }));

@@ -16,6 +16,8 @@
 //   Scenario: revoked in the UI, the grant's API token and refresh token stop at once
 //   Scenario: a mint names scopes the routes have, and a lifetime the admin allows
 //   Scenario: the admin sets the API-token lifetime, 5 to 15 minutes
+//   Scenario: a grant from a preset (issue #909): the agent reads the registry and what Needs you shows, and acts on
+//     intake as a box grant, with no scope typed and no box flag named; an unknown preset is refused
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { createFakeContainerRuntime } from '../support/fake-container-runtime.ts';
@@ -109,6 +111,30 @@ describe('grants and refresh tokens (issue #881)', () => {
     expect(types.filter((x) => x === 'api_grant.minted')).toHaveLength(1);
     expect(types.filter((x) => x === 'api_grant.refreshed')).toHaveLength(4);
     expect(JSON.stringify(events.body)).not.toContain(pair.refresh);
+  });
+
+  it('a grant from a preset reads the registry and Needs you, and acts on intake as a box grant (issue #909)', async () => {
+    const a = await boot();
+    const session = await a.login();
+    const registry = await a.api('GET', '/api/scopes', undefined, { 'x-hopper-session': session });
+    expect(registry.status).toBe(200);
+    const intake = registry.body.presets.find((p: { id: string }) => p.id === 'agent-intake');
+    expect(intake).toMatchObject({ scopes: ['*:read', 'sources:intake'], box: true });
+    const section = registry.body.sections.find((s: { id: string }) => s.id === 'intake');
+    expect(section.permissions).toContainEqual(expect.objectContaining({ scope: 'sources:intake', routes: ['POST /ui/api/sources/:name/intake'], box: true, role: 'operator' }));
+
+    expect((await mint(a, session, { preset: 'nope' })).body.error).toMatch(/no preset "nope"/);
+    expect((await mint(a, session, {})).body.error).toMatch(/at least one scope, or a preset/);
+    const minted = await mint(a, session, { preset: 'agent-intake', role: 'operator' });
+    expect(minted.status, minted.text).toBe(200);
+    expect(minted.body.view).toMatchObject({ scopes: ['*:read', 'sources:intake'], box: true });
+    for (const read of ['/api/scopes', '/api/sources', '/api/vault', '/api/queue', '/api/sections']) expect((await agent(a, 'GET', read, minted.body.token)).status, read).toBe(200);
+    const acted = await agent(a, 'POST', '/ui/api/sources/nope/intake', minted.body.token, { kind: 'approve', keys: ['nope#1'] });
+    expect(acted.body?.error ?? '').not.toMatch(/scope|box token/);
+    expect((await agent(a, 'POST', '/ui/api/jobs/nope/approve', minted.body.token, {})).body.error).toMatch(/do not cover jobs:approve/);
+    // A preset and scopes of its own: the grant holds both; `box` named wins over the preset's.
+    const both = await mint(a, session, { preset: 'read-only', scopes: ['questions:answer'], box: false });
+    expect(both.body.view).toMatchObject({ scopes: ['*:read', 'questions:answer'], box: false });
   });
 
   it('a grant without the box flag may not do a box action, whatever its scopes', async () => {
