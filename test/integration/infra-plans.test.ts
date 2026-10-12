@@ -17,12 +17,12 @@
 //   Scenario: a job records its plan; it is kept whole and shown, and its plan file comes back as it was put
 //     When the job posts its terraform plan at commit A, with the plan file
 //     Then the plan is kept with the job, the issue, the read credential it was made with, and its expiry
-//     And Infra changes lists it, not approved; and `infra.plan_recorded` is on the job's timeline
+//     And Infra lists it, not approved; and `infra.plan_recorded` is on the job's timeline
 //   Scenario: an unapproved plan mints nothing; a person approves it once
 //   Scenario: the code moved since the plan: the apply is refused, and STS is not asked
 //   Scenario: a current, approved plan mints the write credential, and the audit names the plan
 //   Scenario: a plan for another asset, and a plan that is not whole, are refused
-//   Scenario: each plan is kept with its summary in plain words: Infra changes lists it, the timeline says it
+//   Scenario: each plan is kept with its summary in plain words: Infra lists it, the timeline says it
 //   Scenario: a new AWS resource without the MAP tag fails the plan: kept and shown, nobody approves it, nothing applies it
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -127,7 +127,7 @@ describe('no apply without a plan', () => {
     expect((await helper(dir, ['aws', 'read', ROLE], token)).code).toBe(0);
   });
 
-  it('keeps a job\'s plan whole, lists it in Infra changes, and gives its plan file back as it was put', async () => {
+  it('keeps a job\'s plan whole, lists it on Infra, and gives its plan file back as it was put', async () => {
     const { a, session, job } = await boot();
     const plan = await record(a, job);
     expect(plan).toMatchObject({ tool: 'terraform', asset: { kind: 'aws-role', name: `${ACCOUNT}/deploy` }, target: 'uat-network', repo: 'octo/infra', ref: 'issue-1', commit: A, pullRequest: 4, read: PLAN.read, job, file: { size: FILE.length } });
@@ -191,7 +191,7 @@ describe('no apply without a plan', () => {
     expect(blind.json.error).toMatch(/^json must hold terraform show -json/);
   });
 
-  it('keeps each plan with its summary in plain words; Infra changes lists it and the timeline says it', async () => {
+  it('keeps each plan with its summary in plain words; Infra lists it and the timeline says it', async () => {
     const { a, session, job } = await boot();
     const plan = await record(a, job);
     const words = 'Adds 1 security group in uat; changes nothing in prod; destroys nothing';

@@ -1,6 +1,6 @@
 // Issue #871, through the real composition root, the real HTTP server, a real joined client and the real minting
 // adapters (STS and GitHub faked on loopback; OpenFGA as a double at its seam): infrastructure changes that did not come
-// through IaC or GitOps are tracked in Infra changes (design.md "Out-of-band changes"). A job's read-only check reports
+// through IaC or GitOps are tracked on Infra (design.md "Out-of-band changes"). A job's read-only check reports
 // what it found; the hopper's one rule keeps the out-of-band ones.
 //
 // Feature: out-of-band changes are tracked, never silent

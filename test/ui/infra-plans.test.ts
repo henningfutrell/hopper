@@ -1,4 +1,4 @@
-// Infra changes in the UI (ui/src/model/infra-plans.ts, issue #870), pure: each plan in one line — what changes where,
+// Infra in the UI (ui/src/model/infra-plans.ts, issue #870), pure: each plan in one line — what changes where,
 // from which commit — its state: waiting for a person, approved and still current, stale, or failed a check — and its
 // explainer.
 import { describe, expect, it } from 'vitest';
@@ -17,7 +17,7 @@ const summary: PlanSummary = {
   checks: [{ name: 'map-tag', ok: true, words: 'Every new AWS resource has the MAP tag map-migrated=migXWT2TUR4TJ' }], failed: false,
 };
 
-describe('the Infra changes model', () => {
+describe('the Infra model', () => {
   it('says what a plan changes, where, and from which commit', () => {
     expect(planHeadline(plan)).toBe('terraform: uat-network, applied as aws-role 123456789012/deploy, from octo/infra issue-1 at aaaaaaaaaaaa (pull request 4)');
     const { pullRequest: _pr, ...noPr } = plan;

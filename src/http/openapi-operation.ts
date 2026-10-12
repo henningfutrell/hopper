@@ -3,7 +3,7 @@
 import type { z } from 'zod';
 import type { UiRole } from '../domain/types.ts';
 
-export type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Research' | 'Logins' | 'Failures' | 'Decider' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Vault' | 'Events' | 'Self-update' | 'Users' | 'Sign-in' | 'Access' | 'API tokens' | 'Bug reports' | 'Remote access';
+export type Tag = 'State' | 'Jobs' | 'Questions' | 'Proposals' | 'Research' | 'Logins' | 'Failures' | 'Decider' | 'Machines and usage' | 'Plugins and routing' | 'Webhooks' | 'Vault' | 'Infra' | 'Events' | 'Self-update' | 'Users' | 'Sign-in' | 'Access' | 'API tokens' | 'Bug reports' | 'Remote access';
 
 export interface Operation {
   method: 'get' | 'post';
@@ -40,6 +40,7 @@ export const TAGS: Record<Tag, string> = {
   'Plugins and routing': 'Which plugin instance fills which role, and the routing rules.',
   Webhooks: 'Subscribers to the event log, kept in the database.',
   Vault: 'Write-only secrets for jobs: set once, never read back. The master key every kept secret is sealed under: given at launch, never from a file or a volume.',
+  Infra: 'Plans and applies of infrastructure changes (issues #870, #896): the plans jobs recorded, their approval, the applies minted against them, and the out-of-band changes (issue #871). The Infra view in the UI.',
   Events: 'The event log, read back or streamed.',
   'Self-update': 'The install and the update repository.',
   Users: 'The people one hopper works for, each with their own work, kept apart.',

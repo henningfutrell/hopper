@@ -160,7 +160,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   bugReportReadRoutes(app, tenant); // Your reports (issue #694)
   pointedJobReadRoutes(app, tenant); // Pointed jobs (issue #425)
   githubWatchReadRoutes(app, tenant); // GitHub watches (issue #427)
-  infraPlanReadRoutes(app, tenant); // Infra changes (issue #870)
+  infraPlanReadRoutes(app, tenant); // Infra (issue #870)
   sourceRoutes(app, tenant);
   accountRoutes(app, tenant);
   connectedAccountsRoutes(app, tenant);

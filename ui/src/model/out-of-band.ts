@@ -1,4 +1,4 @@
-// Out-of-band changes on Infra changes (issue #871, design.md "Out-of-band changes"), pure: one line per change — where it
+// Out-of-band changes on Infra (issue #871, design.md "Out-of-band changes"), pure: one line per change — where it
 // was found, what changed and who did it —, its state now, and the controller identities as a person types them.
 import type { OutOfBandView } from '../../../src/domain/types.ts';
 

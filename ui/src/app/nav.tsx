@@ -2,8 +2,8 @@
 // sections after a slash (#settings/routing): the view is the part before it. Each section (Questions, Proposals,
 // Research, Logins, Failures, Parked; issues #543, #565) is a view whose badge follows the one section rule (useSectionBadges).
 // The Jobs view (issue #434) has a card per job. Not taken (issue #798) is badged with the request cards waiting for approval. The job view (#job/<id>, issue #433) is a
-// route with no nav entry: timeline entries link to it.
-import { Briefcase, ChevronsUp, CircleDashed, FileCheck, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
+// route with no nav entry: timeline entries link to it. Infra (issue #896) holds plans, applies and out-of-band changes.
+import { Briefcase, ChevronsUp, CircleDashed, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Server, Settings, Telescope, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -13,7 +13,7 @@ import { SECTION_KINDS } from '@/model/sections';
 import { onTheBackburner, requestsWaiting } from '@/model/intake';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['overview', 'jobs', 'queue', 'not-taken', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'sources', 'machines', 'usage', 'settings'] as const;
+export const VIEWS = ['overview', 'jobs', 'queue', 'not-taken', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'sources', 'machines', 'infra', 'usage', 'settings'] as const;
 /** The routes: every view in the navigation, and the job view, which has no nav entry. */
 const ROUTES = [...VIEWS, 'job'] as const;
 export type View = (typeof ROUTES)[number];
@@ -34,6 +34,7 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   events: { label: 'Events', icon: ListTree },
   sources: { label: 'Sources', icon: Inbox },
   machines: { label: 'Machines', icon: Server },
+  infra: { label: 'Infra', icon: FileDiff },
   usage: { label: 'Usage', icon: Gauge },
   settings: { label: 'Settings', icon: Settings },
   job: { label: 'Job', icon: Briefcase },

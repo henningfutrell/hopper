@@ -7,7 +7,7 @@ import type { OperationProfile } from '../domain/access.ts';
 import { changesOf } from '../domain/infra-plan-changes.ts';
 import { summarize } from '../domain/infra-plan-summary.ts';
 import {
-  applyRefusal, failedChecks, headRefusal, planInputProblem, PLAN_FILE_MAX, PLAN_ID, PLAN_TTL_MINUTES, type InfraPlan, type PlanApproval, type PlanInput, type PlanView,
+  applyRefusal, failedChecks, headRefusal, planInputProblem, PLAN_FILE_MAX, PLAN_ID, PLAN_TTL_MINUTES, type InfraPlan, type PlanApply, type PlanApproval, type PlanInput, type PlanView,
 } from '../domain/infra-plans.ts';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
@@ -21,6 +21,8 @@ export interface InfraPlans {
   get(id: string): InfraPlan | undefined;
   file(id: string): Buffer | undefined;
   list(): PlanView[];
+  /** The applies of the plans `list` answers, newest first: each credential the vault minted naming one of them. */
+  applies(plans: PlanView[]): PlanApply[];
   approval(id: string): PlanApproval | undefined;
   approve(id: string, by: string): PlanView | PlanRefusal;
   /** Why the vault mints nothing for `profile` on `planId`, or undefined: a read, or a current approved plan of the asset. */
@@ -34,7 +36,7 @@ export interface InfraPlansOptions {
   head(repo: string, ref: string): Promise<string>;
 }
 
-/** How many plans Infra changes lists. */
+/** How many plans Infra lists. */
 const LIST_MAX = 200;
 
 export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
@@ -77,6 +79,15 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
     get: (id) => (PLAN_ID.test(id) ? plans.get(id) : undefined),
     file: (id) => (PLAN_ID.test(id) ? plans.file(id) : undefined),
     list: () => plans.list(LIST_MAX),
+    applies(listed) {
+      if (listed.length === 0) return [];
+      const ids = new Set(listed.map((p) => p.id));
+      const since = listed.reduce((min, p) => (p.createdAt < min ? p.createdAt : min), listed[0]!.createdAt);
+      return o.store.events.between(['vault.minted'], since).flatMap((e): PlanApply[] => {
+        const d = e.data as { plan?: string; operation: string; asset: PlanApply['asset']; job: string; expiresAt: string; renewal?: boolean };
+        return d.plan && ids.has(d.plan) ? [{ plan: d.plan, at: e.at, operation: d.operation, asset: d.asset, job: d.job, expiresAt: d.expiresAt, renewal: d.renewal === true }] : [];
+      }).reverse();
+    },
     approval: (id) => plans.approval(id),
     approve(id, by) {
       const plan = PLAN_ID.test(id) ? plans.get(id) : undefined;
