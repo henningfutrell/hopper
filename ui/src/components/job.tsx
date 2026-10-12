@@ -27,7 +27,8 @@ export function GhLink({ url, children, className }: { url?: string; children: R
   );
 }
 
-export function JobTitle({ job, className }: { job: Job; className?: string }) {
+/** `wrap`: the title and its chips wrap in place of being cut off, for a narrow card that must read whole (issue #883). */
+export function JobTitle({ job, className, wrap = false }: { job: Job; className?: string; wrap?: boolean }) {
   const ref = issueRef(job);
   const routed = routedByLabel(job);
   const high = useIsHigh(job);
@@ -35,8 +36,8 @@ export function JobTitle({ job, className }: { job: Job; className?: string }) {
   const parts = partsOf(job);
   return (
     <div className={cn('min-w-0', className)} title={`${goalOf(job)}\njob ${job.id}`}>
-      <div className="truncate text-sm font-medium text-foreground">{goalOf(job)}</div>
-      <div className="flex min-w-0 items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+      <div className={cn('text-sm font-medium text-foreground', wrap ? '[overflow-wrap:anywhere]' : 'truncate')}>{goalOf(job)}</div>
+      <div className={cn('flex min-w-0 items-center gap-1.5 font-mono text-[11px] text-muted-foreground', wrap && 'flex-wrap [overflow-wrap:anywhere]')}>
         {ref ? (
           <GhLink url={job.source?.url}>{ref}<ExternalLink className="size-3 opacity-60" /></GhLink>
         ) : <span>{job.id.slice(0, 8)}</span>}
