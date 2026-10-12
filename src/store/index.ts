@@ -15,6 +15,7 @@ import { createSandboxRepository } from './sandboxes.ts';
 import { createInstanceSettingsRepository } from './settings.ts';
 import { createSignInConfigRepository } from './sign-in-config.ts';
 import { userSchemaName } from './tenant-migrations.ts';
+import { createApiGrantRepository } from './api-grants.ts';
 import { createUiSessionRepository } from './ui-sessions.ts';
 import { openUserStore, schemaUrl } from './user-store.ts';
 import { createIdentityLinks, createUserRepository } from './users.ts';
@@ -47,6 +48,7 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen;
     users: createUserRepository(ctx, (user) => userStore(user).close(), schemaOf),
     identities: createIdentityLinks(ctx),
     uiSessions: createUiSessionRepository(ctx),
+    apiGrants: createApiGrantRepository(ctx),
     loginCodes: createLoginCodeRepository(ctx),
     joinCodes: createJoinCodeRepository(ctx),
     sandboxes: createSandboxRepository(ctx),

@@ -213,6 +213,11 @@
         "github_watch.settings_changed",
         "infra.plan_recorded",
         "infra.plan_approved",
+        "api_grant.minted",
+        "api_grant.refreshed",
+        "api_grant.reuse_detected",
+        "api_grant.revoked",
+        "api_tokens.settings_changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

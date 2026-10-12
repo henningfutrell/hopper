@@ -38,6 +38,7 @@ export const EVENT_TYPES = [
   'repo_checks.job_queued', 'repo_checks.dismissed', 'job.child_issue_filed', 'contribution.changed',
   'pointed_job.created', 'pointed_job.status_changed', 'github_watch.changed', 'github_watch.settings_changed',
   'infra.plan_recorded', 'infra.plan_approved',
+  'api_grant.minted', 'api_grant.refreshed', 'api_grant.reuse_detected', 'api_grant.revoked', 'api_tokens.settings_changed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -84,4 +85,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'repo_checks.job_queued': 1, 'repo_checks.dismissed': 1, 'job.child_issue_filed': 1, 'contribution.changed': 1,
   'pointed_job.created': 1, 'pointed_job.status_changed': 1, 'github_watch.changed': 1, 'github_watch.settings_changed': 1,
   'infra.plan_recorded': 1, 'infra.plan_approved': 1,
+  'api_grant.minted': 1, 'api_grant.refreshed': 1, 'api_grant.reuse_detected': 1, 'api_grant.revoked': 1, 'api_tokens.settings_changed': 1,
 };

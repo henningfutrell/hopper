@@ -76,12 +76,13 @@ export function jobPayload(e: DomainEvent, job: Job | undefined): Record<string,
 }
 
 /**
- * Where the hopper is reached from outside (issues #795, #880): the remote access URL while the tunnel is up, and where an agent exchanges
- * its sign-in for an API token there. `reason`: start, change (a new URL), recovery (up again after down), heartbeat. Sent
+ * Where the hopper is reached from outside (issues #795, #880): the remote access URL while the tunnel is up, where an agent
+ * exchanges its sign-in for an API token there, and where it trades a grant's refresh token (issue #881). `reason`: start,
+ * change (a new URL), recovery (up again after down), heartbeat. Sent
  * again every `heartbeatSeconds`: a receiver that hears none for longer holds the URL as stale.
  */
 export function reachablePayload(url: string, reason: 'start' | 'change' | 'recovery' | 'heartbeat', at: string, heartbeatMs: number): Record<string, unknown> {
-  return { source: 'hopper', kind: 'hopper.reachable', at, reason, url, apiTokenUrl: `${url}/ui/auth/api-token`, heartbeatSeconds: heartbeatMs / 1000 };
+  return { source: 'hopper', kind: 'hopper.reachable', at, reason, url, apiTokenUrl: `${url}/ui/auth/api-token`, tokenRefreshUrl: `${url}/ui/auth/token/refresh`, heartbeatSeconds: heartbeatMs / 1000 };
 }
 
 /**

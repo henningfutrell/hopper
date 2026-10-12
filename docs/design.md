@@ -2646,8 +2646,9 @@ event; in-memory only.
   `NotifierEvents.loginsUrl` —; never the URL to open or the code).
 - `hopper.reachable` (issue #795): where the hopper is reached from outside, while the **tunnel** is up
   (`NotifierEvents.reach`, the tunnel watch: "The tunnel"). Body `{ source: 'hopper', kind: 'hopper.reachable', at,
-  reason, url, apiTokenUrl, heartbeatSeconds }`: `url` is the remote access URL ("Remote access"), `apiTokenUrl` where an agent exchanges
-  its sign-in for an API token. Sent when the routine is configured and the URL is known: at start (`start`), on another
+  reason, url, apiTokenUrl, tokenRefreshUrl, heartbeatSeconds }`: `url` is the remote access URL ("Remote access"),
+  `apiTokenUrl` where an agent exchanges its sign-in for an API token, `tokenRefreshUrl` where it trades a grant's refresh
+  token (issue #881). Sent when the routine is configured and the URL is known: at start (`start`), on another
   URL (`change`), when the tunnel is up again after it was down (`recovery`), and again every 5 minutes while nothing
   changed (`heartbeat`, `heartbeatMs`), so a missed one heals; checked with the routine every 5 s. Nothing is sent while
   the tunnel is down: a receiver that hears no heartbeat for longer than `heartbeatSeconds` holds the URL as stale, and
@@ -11361,8 +11362,9 @@ same one, `POST /ui/api/*`; the token is one more kind of session at it.
 
 - **What it is.** An **API token** is a UI session row (`ui_sessions`, instance migration 35: `kind` `api`, `label`) —
   so its identity, user, role, hashed storage, ends and reconcile are the session's. Its token is `hopper_at_` and 64 hex
-  digits; only its SHA-256 is kept. It lives `minutes` (default 15, at most 60), a fixed end; the sign-in config's idle
-  timeout applies too. Its id, as listed and revoked, is the start of the hash.
+  digits; only its SHA-256 is kept. It lives the admin's **API-token lifetime** (issue #881: 5–15 minutes, default 10), or
+  `minutes` less, a fixed end; the sign-in config's idle timeout applies too. Its id, as listed and revoked, is the start
+  of the hash; a grant's token is known to Access by its grant's id.
 - **How it is sent.** `Authorization: Bearer hopper_at_…`, on every `GET /api/*` and `POST /ui/api/*`. An API token is
   accepted only there and a UI session only in `x-hopper-session` (`sessionIn`, `src/http/ui/guard.ts`): neither stands in
   for the other. A mutation with an API token needs no Origin and no `Sec-Fetch-Site`: those defend the UI session, a
@@ -11381,13 +11383,9 @@ same one, `POST /ui/api/*`; the token is one more kind of session at it.
   (start, a sign-in change) lowers it with its identity's role, never raises it, and ends it when its realm is gone or
   grants no role: turning a realm off closes every door at once.
 - **Who mints one.**
-  - A person, from their UI session: `POST /ui/api/api-tokens` `{ action: 'mint', label, role?, minutes? }` (least role
-    viewer), answered once with the token, `cache-control: no-store`; Settings → **API tokens** (mint, the token shown
-    once, the list, Revoke). `GET /api/api-tokens` lists the user's live tokens, never a token; `{ action: 'revoke', id }`
-    ends one, as does `POST /ui/api/logout` with the token itself.
-  - The operator CLI: `hopper token mint --label <who> [--role] [--minutes]`, `hopper token list`, `hopper token revoke
-    <id>`, through the same route under the CLI's own session (issue #374). Its identity is the CLI's (realm `cli`), so the
-    token ends at the next start or sign-in change, as the CLI's session does.
+  - Refreshed from a **grant** a person minted (issue #881, "Grants and refresh tokens" below): from their UI session
+    (Settings → **API tokens**, `POST /ui/api/api-tokens` `mint`) or the operator CLI (`hopper token mint`). This replaces
+    the one-hour token a person minted directly: a person now mints once, and the agent refreshes.
   - An agent with no UI session, by exchange: `POST /ui/auth/api-token` with `Authorization: Bearer` a sign-in the API
     door accepts (a gateway realm's JWT; a GitHub token of a user's connected account), checked as the door checks it
     (`createApiDoor`, `src/http/tenants.ts`): the token is minted for the user that identity is linked to, as that
@@ -11406,15 +11404,16 @@ same one, `POST /ui/api/*`; the token is one more kind of session at it.
 - **Not given to a token.** A login's device code (`GET /api/logins`): answered only to a UI session, as before.
 
 **Residual risk, stated.** Whoever holds a token acts as its user, with its role, until it ends, it is revoked, or Access
-says no: an hour at most. A token handed to an agent is a bearer credential like any other; the label and the log line say
+says no: the API-token lifetime at most (15 minutes). Whoever holds a grant's refresh token acts as long as the grant
+lives ("Grants and refresh tokens"). A token handed to an agent is a bearer credential like any other; the label and the log line say
 whose. A GitHub token on the exchange is any token of the account (as on the API door): GitHub says whose it is, not
 which app it is for. The build before this one reads `Authorization` only as the API door, so on a downgrade it would ask
 GitHub about an API token sent to it (a token it then refuses); the token is useless there and ends within the hour.
 
 **Box actions** (issue #795): a box action needs a box token too ("Box tokens" below).
 
-**Not built.** Narrower scopes than a role (a token for the vault alone) are the model's to express today, by
-editing `api_token`'s relations; a per-token scope list waits for a caller that needs one. (The rest of issue #718 is built under issue #716: "Templates
+**Scopes.** A grant's token uses only the routes its scopes cover (issue #881, "Grants and refresh tokens"); an exchanged
+token has no scopes: its role and Access bound it, as before. (The rest of issue #718 is built under issue #716: "Templates
 on request", "Tools assembled per run", "The read-only check"; its real-environment part is carried on #715.)
 
 Tests: `test/integration/api-tokens.test.ts` (a person mints, an agent sets a secret, saves and approves a template and
@@ -11461,17 +11460,102 @@ When it must, a person gives it a short-lived box token.
   (`apiTokenBoxGaps`): a model edited before them refuses every box action, naming the gap, and decides everything else; a
   model the hopper wrote is replaced by this build's default. A UI session is never asked: the person is there.
 - **Why not per-action confirmation.** A held action waiting on a person in the UI (path 3 on the issue) was not chosen:
-  the box token keeps an agent able to act unattended for as long as a person allows, an hour at most.
+  the box token keeps an agent able to act unattended for as long as a person allows. Since issue #881 a box token is
+  the API token of a box grant, so that is as long as the grant lives, within its scopes.
 
-**Residual risk, stated.** A box token in an agent's hands does every box action its role allows until it ends or is
-revoked: an hour at most. The boundary is the route list: a route that runs work on a box but is missing from it is open to
-any API token of the role. A downgrade to the build before reads no `box` column, so there every API token may again do
+**Residual risk, stated.** A box token in an agent's hands does every box action its role and its grant's scopes allow
+until it ends or is revoked. The boundary is the route list together with the scopes: a route that runs work on a box but
+is missing from the list is open to an exchanged token of the role, and to a grant's token only when its scopes name it
+(issue #881: a scope is named from the route, so a new route is in no existing grant's scopes but `*` and its area's `*`). A downgrade to the build before reads no `box` column, so there every API token may again do
 what its role allows.
 
 Tests: `test/integration/box-tokens.test.ts` (no box token: reads, holds and cancels pass, every box action is refused; a
 box token launches a sandbox box; the exchange never mints one; every listed route exists and only those ask; a model
 without the relations refuses box actions only), `test/http/ui-sessions.test.ts` (the flag is kept and listed),
 `test/authz/model.test.ts` (the gaps), `test/ui/api-tokens.test.ts` (the card's line).
+
+## Grants and refresh tokens (issue #881, 2026-10-12)
+
+Owner decision on the issue, which supersedes the one-hour, no-refresh limit of "Box tokens": a person mints a scoped
+**grant** once, and the agent (Grok Bot) keeps acting unattended with no new mint. Modelled on OAuth 2.0 refresh-token
+rotation (RFC 6749, OAuth 2.0 Security BCP RFC 9700). UI sessions are unchanged.
+
+- **A grant.** Minted only by a person: `POST /ui/api/api-tokens` `{ action: 'mint', label, holder?, role?, scopes,
+  box?, days?, minutes? }` from a UI session (Settings → API tokens), or `hopper token mint` (the operator CLI's session).
+  Never by an API token (403). Its role is at most its minter's; Access is asked for it (and for `can_run_on_box` when
+  `box`) at the mint, which ends it again when refused. It lives `days` (1–365, default 90) at most, or with
+  `days: null` has no fixed end — an admin's only, answered with a `warning` —, and dies `GRANT_IDLE_DAYS` (30) after its
+  last refresh. A row of `api_grants` (instance migration 37: its body as JSON), its refresh tokens rows of
+  `api_grant_tokens` (only their SHA-256, a rotated one kept for reuse detection until its grant goes), and each API
+  token a `ui_sessions` row with its `grant_id`. The mint answers the grant (`view`), its first API token and its refresh
+  token, once, `cache-control: no-store`.
+- **The refresh token.** `hopper_rt_` and 64 hex digits. Its one use: `POST /ui/auth/token/refresh` `{ refresh }`,
+  which answers a new API token and a new refresh token, and spends the one sent. Under `/ui/auth/`, beside the
+  exchange, and not `/api/token/refresh` as the issue wrote: `/api/` is the read door (GET, a session across the LAN,
+  the API door's `Authorization`), and the refresh carries its credential in its body; it has the sign-in limit per
+  caller, as the exchange, and passes the tunnel's edge with the same limit.
+  - **Rotation.** Each refresh is one transaction: the sent token marked rotated, its successor stored.
+  - **Grace.** A refresh token sent again within `REFRESH_GRACE_MS` (30 s) of its rotation is answered the same pair,
+    kept in memory, so a refresh retried after a network blip loses nothing. After a restart within those 30 s the pair
+    is gone: the retry is refused (401) and the grant stands.
+  - **Reuse detection.** A spent refresh token sent after the grace ends the whole grant at once, with every API token
+    of it: `api_grant.reuse_detected` (with who sent it), then `api_grant.revoked` reason `reuse-detected`, and a log
+    line. A notifier or webhook subscribed to the event tells the owner.
+  - **Rights, live.** Each refresh asks the sign-in config for the minter's role now: none ends the grant
+    (`realm-changed`), a lower one lowers it, a higher one never raises it. A sign-in change applies to grants as to
+    sessions (`reconcile`, at start and after Settings → Sign-in). Access is asked at every use of its tokens, as of any
+    API token. The CLI's identity is no realm's, so a grant the CLI minted keeps the role it was minted with.
+  - **Not peppered.** The issue allowed a hash with a pepper from the vault. The refresh token is 32 random bytes, kept
+    as its SHA-256 as every token the hopper mints; a pepper adds nothing a guess could use against 256 random bits, and
+    would tie every refresh to the master key.
+- **API tokens of a grant.** Opaque, a session row as any API token (the issue's "opaque with a hashed lookup"): no
+  signing key, no `kid`, no denylist; revoking a grant drops its rows, so it stops at once, not after the lifetime.
+  They live the **API-token lifetime**: the instance admin's setting, `POST /ui/api/api-tokens/settings
+  { tokenMinutes }` or Settings → API tokens, 5–15 minutes, default 10, a key of the instance settings; a change applies
+  to the tokens issued after it (`api_tokens.settings_changed`). A grant may ask for less at its mint (`minutes`,
+  5–15, never above the setting); the setting lowered below it wins. They are not listed apart: the grant is.
+- **Scopes** (`src/domain/token-scopes.ts`). Named from the route, so no route is left without one: `GET
+  /api/<area>/…` needs `<area>:read`, `POST /ui/api/<area>/…/<act>` needs `<area>:<act>` (its last fixed segment),
+  `POST /ui/api/<area>` needs `<area>:edit`. A grant holds `<area>:<act>`, `<area>:*`, `*:<act>` or `*`; a mint refuses
+  a pattern that is malformed or covers no route (400). Checked at every use of a grant's token, before Access: a read in
+  the tenancy hook, a mutation in its guard. Deny by default: a route its scopes do not cover, or one that names no scope,
+  is 403 naming the scope it needs. `GET /api/api-tokens` lists every scope the routes need, from the API reference.
+  - **Not OpenFGA relations.** The issue asked for scopes as OpenFGA relations. A relation per scope would grow the model
+    with every route, and a model edited before a route would deny it with a gap. The scope list is the grant's, checked
+    by the hopper; OpenFGA keeps deciding the role (`can_view|can_operate|can_administer`) and the box
+    (`can_run_on_box`) at each use, with the grant's id as the token's id — so a user still narrows one grant in Settings
+    → Access. A route outside a grant's scopes never reaches OpenFGA.
+- **Box.** A box grant's tokens are box tokens: a box action needs the box flag, the scope, and `can_run_on_box`.
+- **Revoke.** `{ action: 'revoke', id }` ends a grant (or an exchanged token) with its API tokens at once;
+  `{ action: 'revoke-all' }` ends every grant and token of the user. Settings lists each grant: holder, role, scopes, when
+  it was made, last used (its last refresh, and from where, as the sign-in limit counts callers), its end, Revoke,
+  Revoke all.
+- **Events.** Each mint, refresh, reuse and end is an event of the user's: `api_grant.minted`, `api_grant.refreshed`,
+  `api_grant.reuse_detected`, `api_grant.revoked` (reasons `revoked`, `revoked-all`, `reuse-detected`, `expired-idle`,
+  `expired-absolute`, `realm-changed`, `refused`). Never a token. "Notified" is the notifiers' and webhooks' that
+  subscribe to them; nothing else is sent.
+- **The exchange stays.** An agent with no grant may still exchange its sign-in for one API token (`POST
+  /ui/auth/api-token`): no refresh token, no scopes, no box, the API-token lifetime at most.
+- **Migration.** Tables and a column (instance migration 37). Every API token there is runs to its own end, an hour at
+  most; nothing is migrated, and none was a grant. The build before reads a grant's API token as an API token of its own
+  (it has no scope check) until it ends, 15 minutes at most, and never reads a grant.
+
+**Residual risk, stated.** A refresh token is a long-lived bearer credential: whoever holds it acts as the grant, within
+its scopes and its minter's live rights, until the grant ends, it is revoked, or the holder's next refresh finds it spent
+(then the grant ends). The agent keeps it in its own secret store and must replace it at each refresh. Reuse detection
+needs the legitimate holder to refresh after a thief: a thief who refreshes first and keeps refreshing holds the grant
+until the holder's next refresh ends it. The scope names a route's area and act, not an object: `questions:answer` answers
+any question of the user. Sender binding (DPoP, RFC 9449) and per-grant repository or source limits are not built.
+
+**Not built** (follow-ups): a grant minted by device-code approval; sender binding (DPoP); per-grant repository or source
+restrictions.
+
+Tests: `test/http/api-grants.test.ts` (mint, rotation, grace, reuse detection, a restart within the grace, idle and fixed
+ends, no fixed end, the lifetime and its setting, rights at each refresh, a sign-in change, revoke and revoke all),
+`test/integration/token-grants.test.ts` (the issue's flow over HTTP: a box grant for Grok Bot refreshed again and again,
+in scope and out, the retry, the events; no box flag; revoke and revoke all; the mint's checks; the setting's bounds),
+`test/domain/token-scopes.test.ts`, `test/integration/api-tokens.test.ts`, `test/integration/box-tokens.test.ts`,
+`test/ui/api-tokens.test.ts`.
 
 ## Access: OpenFGA decides each mint (issue #559, 2026-10-09)
 

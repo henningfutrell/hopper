@@ -27,7 +27,8 @@ import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { HttpError } from './errors.ts';
 import { atApiDoor, requestSession } from './host-guard.ts';
 import { apiTokenIn } from './ui/guard.ts';
-import { apiTokenIdOf } from './ui/sessions.ts';
+import { accessIdOf, grantScopeRefusal } from './ui/api-tokens.ts';
+import type { ApiGrants } from './ui/api-grants.ts';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
 import type { UiSessions } from './ui/sessions.ts';
 import type { SecretProblem } from './webhooks.ts';
@@ -119,15 +120,20 @@ export function createApiDoor(o: { tenants: Tenants; signIn: Pick<SignIn, 'check
   };
 }
 
-export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sessions: UiSessions; signIn: Pick<SignIn, 'checkToken'>; access: Pick<Access, 'decideApiToken'>; port: () => number; lan: Lan }): void {
+export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sessions: UiSessions; grants: Pick<ApiGrants, 'live'>; signIn: Pick<SignIn, 'checkToken'>; access: Pick<Access, 'decideApiToken'>; port: () => number; lan: Lan }): void {
   const peers = peerList(o.lan.peers);
   const throughApiDoor = createApiDoor(o);
   app.addHook('onRequest', async (req, reply) => {
     const session = requestSession(req, o.sessions);
     if (session) {
-      // An API token's read: Access decides it (a mutation's is decided by its guard, for the role the route needs).
+      // An API token's read: its grant's scopes (issue #881), then Access decide it (a mutation's is decided by its guard).
       if (session.kind === 'api' && req.method === 'GET' && req.url.startsWith('/api/')) {
-        const d = await o.access.decideApiToken({ userId: session.userId, tokenId: apiTokenIdOf(session.token), role: 'viewer' });
+        const outOfScope = grantScopeRefusal(o.grants, session, req.method, req.routeOptions.url);
+        if (outOfScope !== undefined) {
+          console.warn(`hopper: API token refused for ${req.method} ${req.url.split('?')[0]}: ${outOfScope}`);
+          return reply.code(403).send({ error: `the API token may not read this: ${outOfScope}` });
+        }
+        const d = await o.access.decideApiToken({ userId: session.userId, tokenId: accessIdOf(session), role: 'viewer' });
         if (!d.allowed) {
           console.warn(`hopper: API token refused for ${req.method} ${req.url.split('?')[0]}: ${d.reason}`);
           return reply.code(403).send({ error: `the API token may not read: ${d.reason}` });

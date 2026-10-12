@@ -257,4 +257,9 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     summary: { words: 'Adds 2 security group rules in uat; changes nothing in prod; destroys nothing', level: 'low', risks: ['network'], failed: false },
   },
   'infra.plan_approved': { plan: '0b7e5a3c-0000-4000-8000-000000000870', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network', by: 'Ada' },
+  'api_grant.minted': { grant: '3f9a0c2e5b7d1e48', label: 'Grok Bot', holder: 'grok-bot', role: 'operator', scopes: ['questions:answer', 'sources:intake', '*:read'], box: true, endsAt: '2027-01-10T09:00:00.000Z', tokenMinutes: 10 },
+  'api_grant.refreshed': { grant: '3f9a0c2e5b7d1e48', from: '127.0.0.1' },
+  'api_grant.reuse_detected': { grant: '3f9a0c2e5b7d1e48', label: 'Grok Bot', holder: 'grok-bot', from: '203.0.113.7' },
+  'api_grant.revoked': { grant: '3f9a0c2e5b7d1e48', label: 'Grok Bot', holder: 'grok-bot', reason: 'reuse-detected' },
+  'api_tokens.settings_changed': { tokenMinutes: 10 },
 };

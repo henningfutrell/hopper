@@ -19,6 +19,7 @@ import type { InstanceStore } from '../domain/store.ts';
 import { roleAllows, type Identity, type PersonView, type RealmsEdit, type RealmsView } from '../domain/types.ts';
 import { HttpError } from './errors.ts';
 import { assertInstanceRead, type InstanceAdmin } from './instance-admin.ts';
+import type { ApiGrants } from './ui/api-grants.ts';
 import type { UiSessions } from './ui/sessions.ts';
 
 export interface RealmsAdmin {
@@ -38,6 +39,8 @@ export function createRealmsAdmin(o: {
   /** The realms the environment set up at start. */
   environment: string[];
   signIn: SignIn; sessions: UiSessions;
+  /** Grants (issue #881): a sign-in change applies to them as to the sessions. */
+  grants: Pick<ApiGrants, 'reconcile'>;
 }): RealmsAdmin {
   const store = o.instance.signInConfig;
   /** Everyone who has signed in through a realm: by their live session's identity when there is one, else by subject. */
@@ -114,10 +117,11 @@ export function createRealmsAdmin(o: {
       if (!store.write(next, version)) throw new HttpError(409, MOVED);
       o.signIn.apply(config);
       const r = o.sessions.reconcile(o.signIn.roleOf);
+      const g = o.grants.reconcile(o.signIn.roleOf);
       const what = edit.action === 'save' ? `${edit.name === undefined ? 'add' : 'save'} ${edit.realm.name}`
         : 'name' in edit ? `${edit.action} ${edit.name}`
           : 'who' in edit ? `${edit.action === 'super-admin' && edit.transfer ? 'transfer super-admin to' : edit.action} ${edit.who.realm} ${edit.who.subject}` : edit.action;
-      console.warn(`hopper: sign-in changed in the UI by ${actor.realm} ${actor.subject} (${what}): applied; ${r.dropped} session(s) ended, ${r.changed} changed role`);
+      console.warn(`hopper: sign-in changed in the UI by ${actor.realm} ${actor.subject} (${what}): applied; ${r.dropped} session(s) ended, ${r.changed} changed role; ${g.dropped} grant(s) ended, ${g.changed} lowered`);
       return view();
     },
   };

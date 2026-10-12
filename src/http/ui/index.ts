@@ -45,6 +45,8 @@ export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceR
   tenants: Tenants;
   instance: Pick<InstanceStore, 'loginCodes' | 'joinCodes' | 'users'>;
   sessions: UiSessions;
+  /** Grants (issue #881), and every scope a route needs. */
+  grants: import('./api-grants.ts').ApiGrants; tokenScopes: readonly string[];
   signIn: SignIn;
   /** Settings → Sign-in: the sign-in config's realms (issue #185). */
   realms: RealmsAdmin;
@@ -201,7 +203,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   const tokenRefusal = async (req: FastifyRequest, reply: FastifyReply, needs: UiRole): Promise<unknown> => {
     const s = sessionOf(req)!;
     if (s.kind !== 'api') return undefined;
-    const d = await apiTokenAnswer(o.access, s, needs, isBoxAction(req.routeOptions.url));
+    const d = await apiTokenAnswer(o.access, s, needs, isBoxAction(req.routeOptions.url), { grants: o.grants, method: req.method, route: req.routeOptions.url });
     if (d.allowed) return undefined;
     if (d.unavailable) return reply.code(503).send({ error: `${ACCESS_UNAVAILABLE}: ${d.reason}` });
     return refuse(req, reply, `the API token may not do this: ${d.reason}`);
@@ -316,7 +318,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   registerAutoAnswerRoutes(app, { operator, admin, tenant: o.tenant, clock: o.clock });
   registerAccessRoutes(app, { instance, access: o.access, by: (req) => userName(sessionOf(req)!) });
   registerSharedSecretRoutes(app, { instance, tenant: o.tenant });
-  registerApiTokenRoutes(app, { allow, sessions, sessionOf, access: o.access, tenants: o.tenants, signIn, caller: o.caller });
+  registerApiTokenRoutes(app, { allow, instance, sessions, grants: o.grants, scopes: o.tokenScopes, sessionOf, access: o.access, tenants: o.tenants, signIn, caller: o.caller });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
   // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.
