@@ -1,7 +1,7 @@
 // The Vault settings page's model (issue #558): what a secret's card says — its scope, who set it and when, who last
 // changed it — and whether a name is one the hopper takes. A secret here is only its metadata: there is no value to show.
 // A secret kept in a vault backend (issue #585) says where: the backend and the reference read there at each use.
-import type { Asset, CredentialRequest, OperationProfile, TemplateRadius, TemplateView, VaultSecret } from './wire.ts';
+import type { Asset, CredentialRequest, OperationProfile, TemplateRadius, TemplateView, VaultSecret, VaultView } from './wire.ts';
 
 /** The hopper's rule for a vault secret's name (src/domain/vault.ts). */
 const NAME = /^[A-Za-z][A-Za-z0-9_.-]*$/;
@@ -83,6 +83,14 @@ export const highRadius = (p: OperationProfile): boolean => HIGH.includes(p.oper
 
 /** The template's profiles that wait for their own explicit approval: approving the template does not approve them. */
 export const explicitApprovals = (t: TemplateView): OperationProfile[] => t.pending.profiles.filter(highRadius);
+
+/** A template waits for a person (issue #897, Access requests): never approved, or a new image, secret or profile waits. */
+export const templateWaits = (t: TemplateView): boolean =>
+  !t.approval || t.pending.image || t.pending.secrets.length > 0 || t.pending.profiles.length > 0;
+
+/** What jobs on boxes wait on a person for (issue #897): credential requests, vault grant asks, and templates that wait. */
+export const accessRequestsWaiting = (v: VaultView | null): number =>
+  v === null ? 0 : (v.requests?.length ?? 0) + (v.grantAsks?.length ?? 0) + v.templates.filter(templateWaits).length;
 
 /** What a template's card says of its approval: approved, or what waits for a person. */
 export function approvalText(t: TemplateView): string {
