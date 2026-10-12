@@ -49,6 +49,7 @@ const ALL: Record<EventType, true> = {
   'repo_checks.job_queued': true, 'repo_checks.dismissed': true, 'job.child_issue_filed': true, 'contribution.changed': true,
   'pointed_job.created': true, 'pointed_job.status_changed': true, 'github_watch.changed': true, 'github_watch.settings_changed': true,
   'infra.plan_recorded': true, 'infra.plan_approved': true, 'infra.out_of_band_recorded': true, 'infra.out_of_band_marked': true, 'infra.controllers_changed': true,
+  'approval.confirmation_asked': true,
   'api_grant.minted': true, 'api_grant.refreshed': true, 'api_grant.reuse_detected': true, 'api_grant.revoked': true, 'api_tokens.settings_changed': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];

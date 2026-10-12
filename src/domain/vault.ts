@@ -179,7 +179,12 @@ export interface VaultView {
   grantAsks?: VaultGrantAsk[];
   /** The vault grants (issue #652): the items whose jobs may use the vault's helper, who granted each, and when. */
   grants?: VaultGrant[];
+  /** Issue #909: the waiting profiles an API token asked to approve, which a person is to confirm. Absent: none. */
+  asks?: ProfileAsk[];
 }
+
+/** An API token's ask to approve a template's write, sync or apply profile (issue #909): who asked, and when. */
+export interface ProfileAsk extends OperationProfile { template: string; asker: string; at: string }
 
 /**
  * A vault backend (issue #585, design.md "Vault backends"): where a vault secret's value may be kept outside the hopper

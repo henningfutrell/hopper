@@ -11815,7 +11815,8 @@ with its plain description and the routes it covers, generated from the registry
   then it gives way to the scopes it covered, less that one. A grant is a box grant when a ticked scope is a box action:
   the form says which; the box flag is no longer a box of its own.
 - **Risk guards kept.** A box action still needs the box flag, its scope and `api_token#can_run_on_box`; Access decides
-  each use by role. The `agent-approvals` preset leaves infra plans and vault templates out.
+  each use by role. The `agent-approvals` preset leaves infra plans and vault templates out. A high-risk plan and a write
+  profile a person confirms ("A person confirms what an agent asks", below).
 
 **Action scopes** (part 2 of #909). A route whose body names one of several actions — a discriminated union, or an
 object whose `action` or `kind` is one of a set (`bodyActions`, `src/http/scopes.ts`, read from the operation's zod body)
@@ -11829,12 +11830,42 @@ is read) lets a grant through when it holds the route's scope or one of its acti
 when it names none, and refuses with 403 naming that scope. A route with one action (`infra-plans`: approve) has only its
 route's scope.
 
-**Not built** (follow-up of #909): a per-item confirmation by a person (a notification to tap) for a high-risk or
-production plan and for a write credential, approved by a grant's token.
-
 Tests: `test/domain/scope-registry.test.ts`, `test/domain/token-scopes.test.ts`, `test/integration/token-grants.test.ts`
 (a grant from a preset; a grant that holds one action of a route), `test/ui/api-tokens.test.ts`,
 `test/ui/scope-checklist.test.ts`.
+
+### A person confirms what an agent asks (issue #909, part 3, 2026-10-12)
+
+The issue keeps risk guards: a high-risk or production plan and a write credential need a person's confirmation of the
+item, by a tap, not a token the operator mints. So an API token's approval of such an item is never done; it is a
+**confirmation ask**, and a person's approval of the item is the confirmation.
+
+- **What needs a person** (`src/domain/confirmation-asks.ts`, pure). An infra plan whose summary is not `low`
+  (`planNeedsPerson`: it destroys, touches IAM, prod or data, or has no summary), and a template's profile that does more
+  than read (`profileNeedsPerson`: write, sync, apply). A low-risk plan, a read profile, a template's own approval (it
+  approves its read profiles only) and every other approval stay the agent's, within its scopes.
+- **The ask.** `POST /ui/api/infra-plans` `approve` of such a plan that waits (not approved, no failed check), and `POST
+  /ui/api/vault` `approve-profile` of such a profile that waits, from an API token (`kind: api`, a grant's or not): nothing
+  is approved. The route answers 202 `{ waiting }`, which says what to approve and that a person does it in the UI. It
+  appends `approval.confirmation_asked` (`kind`, `ref`, `words`, `asker` — the API token's label —, and the plan or the
+  template and profile; on the plan's job's timeline), unless the item was asked for in the last hour
+  (`ASK_QUIET_MINUTES`): the agent may ask again and again, a person is asked once. A plan or profile that is not there,
+  approved already or failed its checks answers as before (404, 409).
+- **The tap.** The event goes to every webhook subscription and notifier that takes it: that is how a person's phone is
+  told; the hopper sends nothing else. The ask is shown on its item for a day (`ASK_SHOWN_HOURS`) while the item waits:
+  `GET /api/infra-plans` gives the plan `asked` (`asker`, `at`), and `GET /api/vault` gives `asks` (template, profile,
+  `asker`, `at`). Infra and Access requests → Template approvals say who asked and that approving confirms it. Both items
+  are already in the Needs you count. A person approves with the UI session, as always: that approval is the
+  confirmation. Nothing new is stored: the asks are events (`src/http/ui/confirmation-asks.ts` reads and writes them).
+- **No route confirms for a token.** There is no confirm route a grant's scope could cover: the confirmation is the item's
+  own approval, which an API token cannot make for such an item.
+
+**Residual risk.** An agent can make a person look at an item once an hour; it cannot approve it. A person who approves
+an item because an agent asked approves the item as shown, with its summary and blast radius.
+
+Tests: `test/domain/confirmation-asks.test.ts`, `test/integration/confirmation-asks.test.ts` (a low-risk plan approved at
+once; a high-risk plan asked once, shown, confirmed by a person; an apply profile asked, shown and confirmed, a read
+profile approved at once), `test/ui/infra-plans.test.ts`, `test/ui/vault.test.ts`.
 
 ## Access: OpenFGA decides each mint (issue #559, 2026-10-09)
 
@@ -15067,8 +15098,8 @@ showed nothing when its list was empty or its read failed. The feature was invis
 
 - **A top-level view, `#infra`** (`ui/src/views/infra.tsx`), in the navigation between Machines and Usage, on par with
   Jobs. Vault keeps one line that links to it. Three panels:
-  - **Plans** (`infra-plans.tsx`): each plan, its state and who it waits for (an admin: approval by risk is not built), its
-    summary, Approve, its applies, and the raw plan on demand.
+  - **Plans** (`infra-plans.tsx`): each plan, its state and who it waits for (an admin: approval by risk is not built), an
+    agent's confirmation ask (issue #909), its summary, Approve, its applies, and the raw plan on demand.
   - **Applies and drift** (`infraTimeline`, `ui/src/model/infra-plans.ts`, pure): one list, newest first, of plans recorded
     and approved, applies, drift (`gitops`, `terraform-plan`), out-of-band writes (`cloudtrail`, `kube-audit`) and marks.
   - **Out-of-band changes** (`out-of-band.tsx`), as before.

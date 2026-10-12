@@ -42,7 +42,7 @@ const COMMIT = 'a'.repeat(40);
 const tfJson = (address: string, type: string, actions: string[]) => JSON.stringify({
   format_version: '1.2', planned_values: {}, resource_changes: [{
     address, mode: 'managed', type, provider_name: 'registry.terraform.io/hashicorp/aws',
-    change: { actions, before: actions.includes('create') ? null : { name: 'a' }, after: actions.includes('delete') ? null : { name: 'a', tags_all: { 'map-migrated': 'mig1' } }, after_unknown: {} },
+    change: { actions, before: actions.includes('create') ? null : { name: 'a' }, after: actions.includes('delete') ? null : { name: 'a', tags_all: { 'map-migrated': 'migXWT2TUR4TJ' } }, after_unknown: {} },
   }],
 });
 

@@ -4478,6 +4478,31 @@ Version 1 (`docs/schemas/infra.controllers_changed.v1.json`). An admin changed t
 }
 ```
 
+## `approval.confirmation_asked`
+
+Version 1 (`docs/schemas/approval.confirmation_asked.v1.json`). An API token asked to approve a high-risk infra plan or a write, sync or apply profile of a template (issue #909), and the hopper did not approve it: a person confirms it by approving the item in the UI. `kind` (`infra-plan`, `vault-profile`), `ref` the item, `words` what to approve, `asker` the API token's label. Sent at most once an hour for an item; subscribe a webhook to it to be told. On the timeline of the job that recorded the plan.
+
+| field | type | required |
+|---|---|---|
+| `kind` | `infra-plan` \| `vault-profile` | yes |
+| `ref` | string | yes |
+| `words` | string | yes |
+| `asker` | string | yes |
+| `plan` | string | no |
+| `template` | string | no |
+| `operation` | `read` \| `write` \| `sync` \| `apply` | no |
+| `asset` | object | no |
+
+```json
+{
+  "kind": "infra-plan",
+  "ref": "0b7e5a3c-0000-4000-8000-000000000870",
+  "plan": "0b7e5a3c-0000-4000-8000-000000000870",
+  "words": "approve plan 0b7e5a3c for prod-db (high risk): Destroys 1 database in prod",
+  "asker": "Grok Bot"
+}
+```
+
 ## `api_grant.minted`
 
 Version 1 (`docs/schemas/api_grant.minted.v1.json`). A person minted a grant for an agent (issue #881): its id, `label`, `holder`, `role`, `scopes`, whether its tokens are box tokens (`box`), its fixed end (`endsAt`, null: none) and how long its API tokens live (`tokenMinutes`). Never a token.

@@ -1,7 +1,7 @@
 // The Vault settings page's model (issue #558): what a secret's card says — its scope, who set it and when, who last
 // changed it — and whether a name is one the hopper takes. A secret here is only its metadata: there is no value to show.
 // A secret kept in a vault backend (issue #585) says where: the backend and the reference read there at each use.
-import type { Asset, CredentialRequest, OperationProfile, TemplateRadius, TemplateView, VaultSecret, VaultView } from './wire.ts';
+import type { Asset, CredentialRequest, OperationProfile, ProfileAsk, TemplateRadius, TemplateView, VaultSecret, VaultView } from './wire.ts';
 
 /** The hopper's rule for a vault secret's name (src/domain/vault.ts). */
 const NAME = /^[A-Za-z][A-Za-z0-9_.-]*$/;
@@ -83,6 +83,12 @@ export const highRadius = (p: OperationProfile): boolean => HIGH.includes(p.oper
 
 /** The template's profiles that wait for their own explicit approval: approving the template does not approve them. */
 export const explicitApprovals = (t: TemplateView): OperationProfile[] => t.pending.profiles.filter(highRadius);
+
+/** An API token's ask to approve this profile of the template (issue #909), in words; undefined: none. */
+export function profileAskOf(asks: readonly ProfileAsk[] | undefined, template: string, p: OperationProfile): string | undefined {
+  const a = asks?.find((x) => x.template === template && x.operation === p.operation && x.asset.kind === p.asset.kind && x.asset.name === p.asset.name);
+  return a ? `${a.asker} asked to approve this through the API at ${a.at}: approve it here to confirm it.` : undefined;
+}
 
 /** A template waits for a person (issue #897, Access requests): never approved, or a new image, secret or profile waits. */
 export const templateWaits = (t: TemplateView): boolean =>

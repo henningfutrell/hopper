@@ -8,7 +8,7 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import { applyLine, planExplainer, planHeadline, planState } from '@/model/infra-plans';
+import { applyLine, askedLine, planExplainer, planHeadline, planState } from '@/model/infra-plans';
 import type { InfraPlan, PlanApply, PlanView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin, useServerNow } from '@/store/selectors';
@@ -63,6 +63,7 @@ export function PlanList({ plans, applies, onPlan }: { plans: PlanView[]; applie
             <span className={`text-xs ${TONE[state.kind]}`}>{state.words}</span>
             {can && state.kind === 'waiting' && <Button size="sm" disabled={busy} onClick={() => void approve(p.id)}><Check />Approve</Button>}
           </div>
+          {p.asked && state.kind === 'waiting' && <p data-slot="infra-plan-asked" className="text-xs text-warn break-words">{askedLine(p.asked)}</p>}
           {mine.length > 0 && (
             <ul data-slot="infra-plan-applies" className="space-y-0.5 text-xs">
               {mine.map((a) => <li key={`${a.at} ${a.job}`} className="break-words">Applied {a.at}: {applyLine(a)}</li>)}

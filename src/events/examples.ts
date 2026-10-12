@@ -268,6 +268,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     change: '5d2c7a10-0000-4000-8000-000000000871', source: 'cloudtrail', target: 'sg-0abc1234', what: 'ec2:AuthorizeSecurityGroupIngress', mark: 'accepted',
     reason: 'break-glass fix during the outage; the rule goes into git next', by: 'Ada',
   },
+  'approval.confirmation_asked': { kind: 'infra-plan', ref: '0b7e5a3c-0000-4000-8000-000000000870', plan: '0b7e5a3c-0000-4000-8000-000000000870', words: 'approve plan 0b7e5a3c for prod-db (high risk): Destroys 1 database in prod', asker: 'Grok Bot' },
   'infra.controllers_changed': { from: [], to: ['system:serviceaccount:argocd:argocd-application-controller', 'arn:aws:sts::123456789012:assumed-role/atlantis/*'], by: 'Ada' },
   'api_grant.minted': { grant: '3f9a0c2e5b7d1e48', label: 'Grok Bot', holder: 'grok-bot', role: 'operator', scopes: ['questions:answer', 'sources:intake', '*:read'], box: true, endsAt: '2027-01-10T09:00:00.000Z', tokenMinutes: 10 },
   'api_grant.refreshed': { grant: '3f9a0c2e5b7d1e48', from: '127.0.0.1' },
