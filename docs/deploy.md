@@ -717,6 +717,47 @@ domain from `HOPPER_PUBLIC_URL` and turns remote access on, once (the log says s
 Residual risk, stated: callers behind one address (a NAT, a shared egress) share one count of each limit. The `tunnel`
 container holds the authtoken in memory while ngrok runs.
 
+## The out-of-band collector
+
+Infra changes tracks infrastructure changes that did not come through IaC or GitOps (`docs/design.md` "Out-of-band
+changes"). Something must look for them on a schedule: `scripts/out-of-band-collector.ts` is a ready-made read-only check
+for that. It runs outside the hopper, on any machine with Node 24 or later, a checkout of this repository, and the read
+credentials of what it checks. It needs no `npm install`.
+
+1. Mint a grant for it: Settings → API tokens (http://127.0.0.1:4790/#settings/api-tokens), label `drift collector`, role
+   operator, scope `out-of-band:signals`. Or on the hopper's host: `hopper token mint --label "drift collector" --holder
+   cron --role operator --scope out-of-band:signals`. Copy the refresh token (`hopper_rt_…`). It is shown once.
+2. Run it once by hand, with the sources you have, to keep the refresh token in its state file:
+
+   ```sh
+   HOPPER_REFRESH_TOKEN=hopper_rt_… node scripts/out-of-band-collector.ts \
+     --hopper https://hopper.example.org --state /var/lib/drift-collector/state.json \
+     --argo --terraform infra/network --cloudtrail eu-west-1 --kube-audit /var/log/kube-audit.log
+   ```
+
+   It prints `<n> signal(s): <n> recorded, <n> in band, <n> reported before`. Use `--dry-run` first to see the signals
+   and send nothing.
+3. Schedule the same command without `HOPPER_REFRESH_TOKEN`, for example every 15 minutes with cron:
+   `*/15 * * * * cd /srv/hopper && git pull -q && node scripts/out-of-band-collector.ts --hopper … --state … --argo …`.
+   In Kubernetes, use a CronJob with the state file on a persistent volume.
+
+Keep in mind:
+
+- **Keep the state file.** It holds the grant's refresh token: each run spends it and writes the new one there (mode
+  600). A run with an old copy ends the whole grant (reuse detection). Then mint a new grant. A grant ends 30 days after
+  its last refresh, so run at least that often.
+- **Give it read credentials only.** It runs `kubectl get`, `terraform init` and `terraform plan -lock=false`, and
+  `aws cloudtrail lookup-events`. Point `--terraform` at a checkout of the default branch: a plan of unchanged code that
+  is not empty is drift.
+- **The audit log** is read from a file of JSON lines. On a managed control plane, export it to that file first (EKS: the
+  `kube-apiserver-audit` stream in CloudWatch Logs).
+- **Set the controller identities** in Infra → Out-of-band changes (http://127.0.0.1:4790/#infra) first, so the writes of Argo CD or Flux
+  are not reported as out of band.
+- A source that fails (no credentials, a failed plan) is said on stderr, the run exits 1, and the next run reads it again.
+  The other sources still report.
+- In a hopper job, the same command reports as the job, with the job's own token: leave out `--hopper`, `--state` and
+  the refresh token.
+
 ## Sandbox boxes the hopper starts
 
 Optional (issues #603, #708). Give the hopper your rootless Podman socket, and it starts, stops and removes sandbox

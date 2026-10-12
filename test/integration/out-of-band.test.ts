@@ -16,6 +16,10 @@
 //   Scenario: a person marks a change adopted, reverted, or accepted with a reason; once
 //   Scenario: a signal that is not whole, a controller list of *, are refused, with why
 //   Scenario: an outside collector reports with an API token whose grant has the scope out-of-band:signals (part 2)
+//   Scenario: the ready-made collector, given a grant's refresh token, reports what kubectl found (part 3)
+import { spawn } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { OutOfBandChange, OutOfBandView } from '../../src/domain/out-of-band.ts';
@@ -219,5 +223,34 @@ describe('out-of-band changes', () => {
     expect(outOfScope.status).toBe(403);
     expect(String(outOfScope.json.error)).toMatch(/do not cover out-of-band:signals/);
     expect((await send(await mint(['out-of-band:signals']), { signals: [] })).status).toBe(400);
+  });
+
+  it('the ready-made collector trades a grant\'s refresh token and reports what kubectl found, as its grant\'s label', async () => {
+    const { a, session } = await boot();
+    const m = await a.ui('/ui/api/api-tokens', { action: 'mint', label: 'drift collector', holder: 'cron', role: 'operator', scopes: ['out-of-band:signals'] }, { token: session });
+    expect(m.status, JSON.stringify(m.body)).toBe(200);
+    const dir = mkdtempSync(join(tmpdir(), 'jh-oob-collector-'));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    mkdirSync(join(dir, 'bin'));
+    const apps = { items: [{ metadata: { namespace: 'argocd', name: 'web' }, status: { sync: { status: 'OutOfSync' } } }] };
+    writeFileSync(join(dir, 'bin', 'kubectl'), `#!/bin/sh\necho '${JSON.stringify(apps)}'\n`);
+    chmodSync(join(dir, 'bin', 'kubectl'), 0o755);
+    const state = join(dir, 'state.json');
+    const script = join(import.meta.dirname, '..', '..', 'scripts', 'out-of-band-collector.ts');
+    const r = await new Promise<{ status: number | null; out: string }>((resolve) => {
+      const p = spawn(process.execPath, [script, '--hopper', a.url, '--state', state, '--argo'], {
+        env: { PATH: `${join(dir, 'bin')}:${process.env.PATH}`, HOME: dir, HOPPER_REFRESH_TOKEN: (m.body as { refresh: string }).refresh },
+      });
+      let out = '';
+      p.stdout.on('data', (d: Buffer) => { out += d; });
+      p.stderr.on('data', (d: Buffer) => { out += d; });
+      p.on('close', (status) => resolve({ status, out }));
+    });
+    expect(r.status, r.out).toBe(0);
+    expect(r.out).toContain('1 recorded, 0 in band, 0 reported before');
+    expect((JSON.parse(readFileSync(state, 'utf8')) as { refresh: string }).refresh).not.toBe((m.body as { refresh: string }).refresh);
+    expect((await listed(a, session)).changes).toEqual([
+      expect.objectContaining({ source: 'gitops', key: 'argocd:argocd/web', target: 'Argo CD application argocd/web', reporter: 'drift collector' }),
+    ]);
   });
 });
