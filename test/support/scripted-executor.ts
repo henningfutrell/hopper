@@ -12,6 +12,7 @@ import type { ExecutionContext, ExecutionOutcome, Executor, NudgeCheck } from '.
 import type { Job } from '../../src/domain/types.ts';
 import { createTestExecutor } from '../../src/executors/index.ts';
 import { UNTRUSTED_LINE } from '../../src/sources/github/context.ts';
+import { PRIVATE_LINE } from '../../src/direct-jobs/index.ts';
 import type { FakeGitHub } from '../../src/sources/index.ts';
 
 export interface ScriptedExecutor extends Executor {
@@ -26,7 +27,8 @@ export interface ScriptedExecutor extends Executor {
 function script(payload: Record<string, unknown>): Record<string, unknown> | string {
   if (typeof payload.prompt !== 'string') return 'prompt must be a string';
   const lines = payload.prompt.split('\n');
-  const at = lines[0] === UNTRUSTED_LINE ? lines.indexOf('') + 1 : 0; // after the block's marker and the title line
+  // After the block's marker and the title line; a direct job's brief after its private line (issue #901).
+  const at = lines[0] === UNTRUSTED_LINE || lines[0] === PRIVATE_LINE ? lines.indexOf('') + 1 : 0;
   const first = (lines[at] ?? '').trim();
   try {
     const parsed: unknown = JSON.parse(first);
