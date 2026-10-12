@@ -3,8 +3,9 @@
 // and taken by the `direct` job source in the same transaction: its job runs through the same queue gate, routing rules,
 // blast radius, vault and infra plan rules as any job. The source tells GitHub nothing: its reports are kept on the job
 // only. Run again takes the same submission again. Reads answer the submission with its newest job, its result and its
-// open questions.
-import { DIRECT_SOURCE, directJobView, directKey, type DirectJob, type DirectJobInput, type DirectJobView } from '../domain/direct-jobs.ts';
+// open questions. A submission that authorizes `vault` grants its item the vault in that transaction too, by the submitter:
+// the caller has had Access decide it first, as for a person's Grant (design.md "Direct jobs", part 3).
+import { authorizesVault, DIRECT_SOURCE, directJobView, directKey, type DirectJob, type DirectJobInput, type DirectJobView } from '../domain/direct-jobs.ts';
 import type { ActingPerson } from '../domain/failures.ts';
 import type { JobSource, SourceHost } from '../domain/ports.ts';
 import type { UserStore } from '../domain/store.ts';
@@ -16,8 +17,12 @@ export { directItem, directPrompt, PRIVATE_LINE } from './item.ts';
 export interface DirectJobs {
   /** The `direct` job source: the sync loop reports its jobs' ends to it, and Run again asks it. */
   readonly source: JobSource;
-  /** Keep the submission and make its job, in one transaction. `job` is absent only when its key already had one. */
-  submit(input: DirectJobInput, by: ActingPerson): { directJob: DirectJobView; job?: Job };
+  /**
+   * Keep the submission and make its job, in one transaction; with `vault` among its authorizations, grant its item the
+   * vault, by `by`, in the same one. `id`: the id to keep it under (the one Access decided the grant for); absent: a new
+   * id. `job` is absent only when its key already had one.
+   */
+  submit(input: DirectJobInput, by: ActingPerson, id?: string): { directJob: DirectJobView; job?: Job };
   list(): DirectJobView[];
   get(id: string): DirectJobView | undefined;
 }
@@ -55,15 +60,21 @@ export function createDirectJobs(o: { store: UserStore; host: () => SourceHost; 
 
   return {
     source,
-    submit(input, by) {
+    submit(input, by, id) {
       return store.tx(() => {
-        const d = store.directJobs.add({ ...input, submittedBy: by, submittedAt: o.now() });
+        const d = store.directJobs.add({ ...input, submittedBy: by, submittedAt: o.now() }, id);
         // Who submitted it and what they authorized, never its title or brief: those stay on the record.
         store.events.append({
           type: 'direct_job.submitted',
           data: { id: d.id, by: by.person, via: by.via, labels: d.labels, authorizations: d.authorizations, ...(d.repo ? { repo: d.repo } : {}) },
         });
         const job = o.host().ingest(directItem(d, o.url(d.id)), SOURCE_REF) ?? undefined;
+        // The submitter's vault grant, as Grant on Settings → Vault keeps it: for the item, so Run again keeps it.
+        const key = directKey(d.id);
+        if (job && authorizesVault(d) && !store.vaultGrants.get(key)) {
+          store.vaultGrants.put({ key, job: job.id, by: by.person, at: o.now() });
+          store.events.append({ type: 'vault.granted', jobId: job.id, data: { job: job.id, key, by: by.person } });
+        }
         return { directJob: view(d), ...(job ? { job } : {}) };
       });
     },
