@@ -1,6 +1,6 @@
 // The vault, its templates and the sandbox boxes from the operator CLI (issue #716, design.md "The vault and sandbox
 // boxes from the operator CLI"): an agent sets a vault secret, saves and approves a template, sets the read policy
-// (issue #716, item 1), tests an AWS minting credential (issue #781), asks for the template some needs name (issue #718), and launches a box of it without a UI session in a browser. Each is the UI's own read or `POST /ui/api/vault` / `POST /ui/api/machines/sandbox`,
+// (issue #716, item 1), tests a minting credential (issues #781, #854), asks for the template some needs name (issue #718), and launches a box of it without a UI session in a browser. Each is the UI's own read or `POST /ui/api/vault` / `POST /ui/api/machines/sandbox`,
 // so the vault's checks and its approval gate apply as they do for a click. A secret's value comes from stdin only.
 import { parseArgs } from 'node:util';
 import { ASSET_KINDS, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from './domain/access.ts';
@@ -15,6 +15,8 @@ export const VAULT_USAGE = `  hopper vault                                      
   hopper vault remove <name> [--shared]              remove a vault secret, or a shared secret
   hopper vault mint-test aws-role/<account>/<role>   mint a read session from the account's minting credential and show
                                                      the role and session name STS says it is (sts get-caller-identity)
+  hopper vault mint-test cluster/<name>              mint a read token from the cluster's minting credential and show who
+                                                     the cluster says it is and its namespaces (auth whoami, get ns)
   hopper template list                               the templates: image, secrets, operation profiles, what each gives and what waits
   hopper template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]...
                     [--cpus <default>:<max>] [--memory-mb <default>:<max>] [--ttl-minutes [<default>]:[<max>]] [--keep-home on|off]
@@ -42,7 +44,7 @@ export const VAULT_USAGE = `  hopper vault                                      
                                                      fewer of its tools, or any tool on a box of no template`;
 
 const VAULT_SET = 'vault set <name> [--scope <text>] [--shared [--reader <user id>]...] (the value on stdin, never as an argument)';
-const VAULT_MINT_TEST = 'vault mint-test aws-role/<account>/<role>';
+const VAULT_MINT_TEST = 'vault mint-test aws-role/<account>/<role>|cluster/<name>';
 const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared] | hopper ${VAULT_MINT_TEST}`;
 const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]...';
 const TEMPLATE_REQUEST = 'template request --needs "<operation>/<kind>/<asset> ..."';
@@ -60,7 +62,7 @@ export function vaultCall(args: string[], stdin: () => string): Call {
   const flags = Object.keys(values).length > 0;
   if (verb === undefined && !flags) return { role: 'viewer', path: '/api/vault' };
   if (values.reader && !values.shared) throw new OperatorRefusal('--reader names who may read a shared secret: add --shared');
-  // A mint test (issue #781): the vault mints a read session and STS says who it is; never a key.
+  // A mint test (issues #781, #854): the vault mints a read session or token, and STS or the cluster says who it is; never a key.
   if (verb === 'mint-test') {
     if (!name || extra.length > 0 || flags) throw usage(VAULT_MINT_TEST);
     return { role: 'admin', path: '/ui/api/vault/mint-test', body: async () => ({ asset: name }) };
