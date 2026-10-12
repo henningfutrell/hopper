@@ -5,6 +5,7 @@ import type { RateLimiterSettings } from './github-rate-limit.ts';
 import type { IntakeActorSettings } from './intake-origin.ts';
 import type { IntakeMigration } from './intake.ts';
 import type { ReadPolicy } from './read-policy.ts';
+import type { RemoteAccessSettings } from './remote-access.ts';
 import type {
   AutoAnswerSettings, AutoParkSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
   PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings,
@@ -137,6 +138,9 @@ export interface InstanceSettingsRepository {
   /** The last master key rotation (issue #659): the fingerprint of the key it replaced, and when; undefined: none. */
   masterKeyRotation(): MasterKeyRotation | undefined;
   setMasterKeyRotation(rotation: MasterKeyRotation): void;
+  /** Remote access (issue #880): the tunnel on or off and its domain; undefined: never set. */
+  getRemoteAccess(): RemoteAccessSettings | undefined;
+  setRemoteAccess(settings: RemoteAccessSettings): void;
 }
 
 /** A master key rotation (issue #659): the replaced key's fingerprint (never the key), and when. */

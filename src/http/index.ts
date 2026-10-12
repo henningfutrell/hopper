@@ -19,7 +19,8 @@ import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
 import { connectedAccountsRoutes } from './connected-accounts.ts';
 import { installHostGuard } from './host-guard.ts';
-import type { Lan } from './reach.ts';
+import { classifyRequest, peerList, type Lan } from './reach.ts';
+import { tunnelAgentRoutes, type RemoteAccess } from './remote-access.ts';
 import { jobRoutes } from './jobs.ts';
 import { jobGitHubRoutes } from './job-github.ts';
 import { jobGitRoutes } from './job-git.ts';
@@ -62,6 +63,7 @@ import { webhookRoutes } from './webhooks.ts';
 
 export type { TenantParts, Tenants } from './tenants.ts';
 export { tunnelCaller, watchTunnel, type TunnelWatch } from './tunnel.ts';
+export { createRemoteAccess, type RemoteAccess } from './remote-access.ts';
 
 export interface ServerOptions {
   /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */
@@ -84,6 +86,8 @@ export interface ServerOptions {
   masterKey: MasterKeyStatus;
   /** The shared GitHub rate limiter's settings (issue #436): GET /api/github-rate-limiter, POST /ui/api/github-rate-limiter. */
   rateLimiter: RateLimiterControl;
+  /** Remote access (issue #880): GET /api/remote-access, POST /ui/api/remote-access, and the tunnel service's GET /tunnel/agent. */
+  remoteAccess: RemoteAccess;
   clock: Clock;
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
@@ -164,6 +168,12 @@ export function createServer(o: ServerOptions): FastifyInstance {
   jobGitRoutes(app, { tenants: o.tenants });
   // A machine's probe asks where it reaches the hopper (issue #698).
   jobAddressRoutes(app);
+  // The tunnel service asks for its settings (issue #880), with its preshared key; never through the tunnel.
+  const peers = peerList(o.lan.peers);
+  tunnelAgentRoutes(app, { remoteAccess: o.remoteAccess, isPublic: (req) => {
+    const r = classifyRequest({ host: req.headers.host, peer: req.socket.remoteAddress }, o.port(), o.lan, peers);
+    return !('reach' in r) || r.reach === 'public';
+  } });
   // A running job asks the hopper what it can set up, and loads one skill (issue #582), with the same token.
   const skillWaits = jobSkillRoutes(app, { tenants: o.tenants, access: o.access });
   // A running job subscribes to its job stream (issue #613), with the same token: what it waits on is asked again.
@@ -178,7 +188,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
-    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter,
+    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess,
   });
   return app;
 }

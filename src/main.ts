@@ -17,7 +17,7 @@ import { machineOfLane } from './domain/raised-by.ts';
 import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
-import { createServer, tunnelCaller, watchTunnel } from './http/index.ts';
+import { createRemoteAccess, createServer, tunnelCaller } from './http/index.ts';
 import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
@@ -199,14 +199,15 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   });
   // The vault mints through STS and the Kubernetes API (issue #580), only after access allows it. It reads each box's launch
   // scope from the sandbox records, kept in memory (issue #708): from callbacks too, which can outlive the database. The
-  // tunnel watch (issue #795): whether HOPPER_PUBLIC_URL is up, so each user's Grok Bot routine is told where the hopper is.
-  const minter = createCredentialMinter(), sandboxRecords = cachedSandboxes(instance.sandboxes), tunnel = watchTunnel({ api: config.tunnelApi, publicUrl: config.publicUrl, logger });
+  // tunnel watch (issue #795, remoteAccess below): whether the remote access URL is up, so each user's Grok Bot routine is
+  // told where the hopper is.
+  const minter = createCredentialMinter(), sandboxRecords = cachedSandboxes(instance.sandboxes);
   // The shared secrets (issue #718): the instance's, every user's vault lists them and delivers them after Access allows it.
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
       config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(sandboxRecords.list(), userId),
-      installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, uiUrl, artifactLinkBase, reach: tunnel.url,
+      installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, uiUrl, artifactLinkBase, reach: () => remoteAccess.watch.url(),
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
       linkIdentity: (provider, subject) => {
@@ -239,6 +240,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   }
   // The instance's vault events (issue #658) reach every user's log now that their runtimes exist.
   secrets.connect((e) => runtimes.events.append(e));
+  // Remote access (issue #880): the tunnel's settings, set in the UI, its authtoken in the instance's vault (an install's
+  // NGROK_AUTHTOKEN and HOPPER_PUBLIC_URL from before moved there once), and its watch.
+  const remoteAccess = createRemoteAccess({ settings: store.settings, secrets: secrets.system, events: runtimes.events, tunnelApi: config.tunnelApi, env, publicUrl: config.publicUrl, now: () => clock.now(), logger });
   // The hopper's app's client secret turns GitHub sign-in by redirect on (issue #258). A bad one (NAME and
   // NAME_FILE both set, an unreadable file) stops the start; read again at each use, so a rotated one counts.
   const secret = runtimeSecrets(env);
@@ -309,7 +313,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       },
     },
     port: () => port, signIn, signInEnvironment,
-    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(tunnel),
+    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url }, remoteAccess, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
     client: { links, release: clientRelease, installScript: readFileSync(join(APP_DIR, 'scripts', 'client-install.sh'), 'utf8') },
   });
 
@@ -349,7 +353,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         const passes = sandboxes.stop();
         // A link is an upgraded socket: the server does not track it, so it would hold the close open.
         links.closeAll();
-        await Promise.all([server.close(), passes, tunnel.stop()]);
+        await Promise.all([server.close(), passes, remoteAccess.stop()]);
         await runtimes.stop();
         instance.close();
       })();
@@ -380,8 +384,7 @@ async function main(): Promise<void> {
       process.exit(1);
     });
   };
-  process.once('SIGTERM', () => shutdown('SIGTERM'));
-  process.once('SIGINT', () => shutdown('SIGINT'));
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => shutdown(signal));
 }
 
 const asksHelp = process.argv.includes('--help') || process.argv.includes('-h');

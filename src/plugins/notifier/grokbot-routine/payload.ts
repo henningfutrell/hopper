@@ -76,7 +76,7 @@ export function jobPayload(e: DomainEvent, job: Job | undefined): Record<string,
 }
 
 /**
- * Where the hopper is reached from outside (issue #795): its public URL while the tunnel is up, and where an agent exchanges
+ * Where the hopper is reached from outside (issues #795, #880): the remote access URL while the tunnel is up, and where an agent exchanges
  * its sign-in for an API token there. `reason`: start, change (a new URL), recovery (up again after down), heartbeat. Sent
  * again every `heartbeatSeconds`: a receiver that hears none for longer holds the URL as stale.
  */

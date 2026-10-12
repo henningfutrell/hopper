@@ -149,9 +149,6 @@ const schema = z.object({
 }).refine((e) => e.HOPPER_LAN_NAMES.length === 0 || e.HOPPER_LAN_PEERS.length > 0, {
   message: 'must be set with HOPPER_LAN_NAMES: the ranges LAN requests may come from',
   path: ['HOPPER_LAN_PEERS'],
-}).refine((e) => e.HOPPER_TUNNEL_API === undefined || e.HOPPER_PUBLIC_URL !== undefined, {
-  message: 'needs HOPPER_PUBLIC_URL: the URL the tunnel forwards',
-  path: ['HOPPER_TUNNEL_API'],
 }).refine((e) => e.HOPPER_LAN_PEERS.length === 0 || e.HOPPER_LAN_NAMES.length > 0 || e.HOPPER_PUBLIC_URL !== undefined, {
   message: 'must be set with HOPPER_LAN_PEERS (or set HOPPER_PUBLIC_URL): the names the UI answers to beyond loopback',
   path: ['HOPPER_LAN_NAMES'],
@@ -162,7 +159,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_DATABASE_URL: 'the Postgres database that holds everything: postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]. Or HOPPER_DATABASE_URL_FILE: a file holding it',
   HOPPER_PORT: 'the HTTP port of the UI, the API and the API reference',
   HOPPER_PUBLIC_URL: 'the origin people reach the UI at through a reverse proxy (https://hopper.example.com); a proxy on another host also needs HOPPER_LAN_PEERS',
-  HOPPER_TUNNEL_API: 'the local API of the tunnel agent that forwards HOPPER_PUBLIC_URL (http://tunnel:4040, the compose profile `tunnel`), asked whether that URL is up; a Grok Bot routine is told where the hopper is reached. Unset: no tunnel',
+  HOPPER_TUNNEL_API: 'the local API of the tunnel agent (http://tunnel:4040, the compose service `tunnel`), asked whether the remote access URL is up while remote access is on (Settings → Remote access); a Grok Bot routine is told where the hopper is reached. Unset: the hopper asks no tunnel agent',
   HOPPER_LAN_NAMES: 'host names the UI answers to on the LAN, comma-separated; needs HOPPER_LAN_PEERS. Unset: loopback only',
   HOPPER_LAN_PEERS: 'CIDR ranges LAN or proxy requests may come from, comma-separated (192.0.2.0/24); binds every interface',
   HOPPER_WORK_DIR: 'scratch space: working files, ssh control sockets. Nothing kept',
@@ -245,6 +242,8 @@ Sign-in set up at launch (each also NAME_FILE; written to the database at every 
                                           each call. Unset: none sent
   HOPPER_VAULT_KEY                        the preshared key of the vault container HOPPER_VAULT_URL names, read at
                                           each call. Unset: the vault container is not asked
+  HOPPER_TUNNEL_KEY                       the preshared key the tunnel service asks for its settings with (the compose
+                                          stack makes it at each start). Unset: no tunnel service; remote access stays down
 
 Once it runs (default port 4790):
   UI              http://127.0.0.1:4790/        sign in with GitHub: the first person to do so is the admin
@@ -269,6 +268,8 @@ const PART_SETTINGS = [
   'HOPPER_OPENFGA_KEY', 'HOPPER_OPENFGA_KEY_FILE',
   // Read by the vault's client at each call to the vault container (src/vault/remote.ts, issue #586).
   'HOPPER_VAULT_KEY', 'HOPPER_VAULT_KEY_FILE',
+  // Read at each ask of the tunnel service (src/http/remote-access.ts, issue #880).
+  'HOPPER_TUNNEL_KEY', 'HOPPER_TUNNEL_KEY_FILE',
 ];
 const READ = new Set([...Object.keys(schema.shape), ...SECRET_SETTINGS.map((n) => `${n}_FILE`), ...PART_SETTINGS]);
 

@@ -45,7 +45,11 @@ async function boot(tunnel: boolean): Promise<TestApp> {
   cleanup = db.cleanup;
   const agent = tunnel ? await tunnelAgent() : undefined;
   t = await startTestApp({ dbPath: db.dbPath, env: { HOPPER_PUBLIC_URL: PUBLIC, ...(agent ? { HOPPER_TUNNEL_API: agent.url } : {}) } });
-  if (agent) await waitFor(() => (agent.asks() > 0 ? true : undefined), { what: 'the tunnel watch', timeoutMs: 10_000 });
+  if (agent) {
+    // Remote access on, at the public URL's domain (issue #880): the watch asks the agent.
+    await t.ui('/ui/api/remote-access', { authtoken: 'a'.repeat(30), domain: 'h.example', enabled: true }, { token: await t.login() });
+    await waitFor(() => (agent.asks() > 0 ? true : undefined), { what: 'the tunnel watch', timeoutMs: 10_000 });
+  }
   return t;
 }
 

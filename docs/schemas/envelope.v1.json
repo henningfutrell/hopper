@@ -135,6 +135,7 @@
         "auto_answer.settings_changed",
         "auto_park.settings_changed",
         "github_rate_limiter.settings_changed",
+        "remote_access.changed",
         "question.thread_held",
         "question.thread_approved",
         "question.thread_posted",
