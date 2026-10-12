@@ -214,7 +214,25 @@ esac`);
     const { results, fake } = await run('read-only', [read('aws-role', '123456789012/hopper-read')]);
     expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'denied', passed: true });
     expect(results.find((r) => r.id === 'aws.ec2-create-tags')!.output).toContain('UnauthorizedOperation');
-    expect(fake.calls().filter((c) => c.startsWith('aws ec2'))).toEqual(['aws ec2 create-tags --dry-run --resources vpc-00000000 --tags Key=hopper-read-only-check,Value=1']);
+    expect(fake.calls().filter((c) => c.startsWith('aws ec2'))).toEqual([
+      "aws ec2 describe-vpcs --query Vpcs[0].VpcId --output text",
+      'aws ec2 create-tags --dry-run --resources vpc-0a1b2c3d4e5f60718 --tags Key=hopper-read-only-check,Value=1',
+    ]);
+  });
+
+  // Issue #882: EC2 looks up the VPC before its dry run asks the authorization, so a VPC the account does not hold
+  // answers NotFound and never a refusal. The probe tags a VPC the account holds; with none, it makes one, as a dry run.
+  it('the EC2 write tags a VPC the account holds, or with no VPC makes one, as a dry run: a refusal passes it', async () => {
+    const { results, fake } = await runWith('aws', `case "$*" in
+  *describe-vpcs*) echo None ;;
+  *"create-vpc --dry-run"*) echo 'An error occurred (UnauthorizedOperation) when calling the CreateVpc operation: You are not authorized to perform this operation.' >&2; exit 254 ;;
+  *) exit 1 ;;
+esac`, [read('aws-account', '123456789012')]);
+    expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'denied', passed: true });
+    expect(fake.calls().filter((c) => c.startsWith('aws ec2'))).toEqual([
+      'aws ec2 describe-vpcs --query Vpcs[0].VpcId --output text',
+      'aws ec2 create-vpc --dry-run --cidr-block 10.255.0.0/16',
+    ]);
   });
 
   it('helm list refused on a view role: it fails, and its result says a view role cannot read the secrets helm keeps releases in', async () => {
