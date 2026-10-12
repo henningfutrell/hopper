@@ -56,4 +56,9 @@ describe('placeGraph', () => {
     const alone = placeGraph({ ...place, projects: [], closedBy: [], references: [], subIssues: [], parent: undefined } as IssuePlace);
     expect(alone.edges.map((e) => e.kind).sort()).toEqual(['in_repo', 'owned_by']);
   });
+
+  it('links the issue to each issue that blocks it (issue #900)', () => {
+    const { edges } = placeGraph({ ...place, blockedBy: [{ kind: 'issue', repo: 'Acme/app', number: 3, url: 'https://github.com/Acme/app/issues/3', state: 'open' }] });
+    expect(edges.map((e) => `${e.from} ${e.kind} ${e.to}`)).toContain(`${ISSUE} blocked_by https://github.com/Acme/app/issues/3`);
+  });
 });

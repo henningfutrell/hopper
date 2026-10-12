@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { issuePlaceFrom } from '../../src/sources/github/issue-place.ts';
+import { issuePlace } from '../../src/sources/github/app/graphql.ts';
 
 const item = (url: string, number: number, state: string, repo = 'Acme/app') => ({ url, number, state, repository: { nameWithOwner: repo } });
 
@@ -13,6 +14,7 @@ describe('issuePlaceFrom', () => {
         url: 'https://github.com/Acme/app/issues/7', number: 7, title: 'Add a graph', state: 'OPEN', updatedAt: '2026-10-11T10:00:00Z',
         parent: item('https://github.com/Acme/app/issues/1', 1, 'OPEN'),
         subIssues: { nodes: [item('https://github.com/Acme/app/issues/9', 9, 'CLOSED'), null] },
+        blockedBy: { nodes: [item('https://github.com/Acme/app/issues/3', 3, 'OPEN')] },
         projectItems: { nodes: [{ project: { number: 3, title: 'Roadmap', url: 'https://github.com/orgs/Acme/projects/3', owner: { __typename: 'Organization', login: 'Acme' } } }] },
         closedByPullRequestsReferences: { nodes: [item('https://github.com/Acme/app/pull/8', 8, 'MERGED')] },
         timelineItems: { nodes: [
@@ -33,7 +35,20 @@ describe('issuePlaceFrom', () => {
       ],
       parent: { kind: 'issue', repo: 'Acme/app', number: 1, url: 'https://github.com/Acme/app/issues/1', state: 'open' },
       subIssues: [{ kind: 'issue', repo: 'Acme/app', number: 9, url: 'https://github.com/Acme/app/issues/9', state: 'closed' }],
+      blockedBy: [{ kind: 'issue', repo: 'Acme/app', number: 3, url: 'https://github.com/Acme/app/issues/3', state: 'open' }],
     });
+  });
+
+  it('asks again without blocked-by when the GitHub it asks has no issue dependencies (an older GitHub Enterprise)', async () => {
+    const asked: string[] = [];
+    const answer = { data: { repository: { owner: { __typename: 'User', login: 'me' }, issue: { url: 'https://github.com/me/r/issues/1', number: 1, title: 't', state: 'OPEN', updatedAt: 'u' } } } };
+    const place = await issuePlace(async (_t, query) => {
+      asked.push(query);
+      return query.includes('blockedBy') ? { errors: [{ message: "Field 'blockedBy' doesn't exist on type 'Issue'", extensions: { code: 'undefinedField', fieldName: 'blockedBy' } }] } : answer;
+    }, 'token', 'me/r', 1);
+    expect(asked).toHaveLength(2);
+    expect(place).toMatchObject({ issue: { number: 1 }, subIssues: [] });
+    expect(place.blockedBy).toBeUndefined();
   });
 
   it('keeps what a token can read when a part is refused (a user\'s Project and an installation token)', () => {

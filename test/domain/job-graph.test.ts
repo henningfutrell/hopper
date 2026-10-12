@@ -1,7 +1,7 @@
 // Issue #900: the job graph — each job's stage (partly done among them), the typed edges between jobs, issues and pull
 // requests, the job trees and what blocks a root. Pure.
 import { describe, expect, it } from 'vitest';
-import { issueNodeId, jobGraph, jobNodeId, pullRequestNodeId, stageOf, type JobGraph } from '../../src/domain/job-graph.ts';
+import { handoffNodeId, issueNodeId, jobGraph, jobNodeId, pullRequestNodeId, questionNodeId, stageOf, type JobGraph } from '../../src/domain/job-graph.ts';
 import { placeGraph } from '../../src/domain/issue-graph.ts';
 import type { Job, JobStatus } from '../../src/domain/types.ts';
 
@@ -131,5 +131,47 @@ describe('the job graph (issue #900)', () => {
     const g = jobGraph({ jobs: [a, b, c] });
     expect(g.trees).toHaveLength(1);
     expect(kinds(g).filter((k) => k.includes('gone'))).toEqual([]);
+  });
+
+  it('reads blocked-by links from the issue graph: a blocked issue to its blocker, which blocks the root', () => {
+    const issueGraph = placeGraph({
+      issue: { repo: 'acme/app', number: 1, url: 'https://github.com/acme/app/issues/1', title: 'Root work', state: 'OPEN', updatedAt: '2026-10-01T00:00:00Z' },
+      owner: { login: 'acme' }, projects: [], references: [], closedBy: [], subIssues: [],
+      blockedBy: [{ kind: 'issue', repo: 'acme/lib', number: 4, url: 'https://github.com/acme/lib/issues/4', state: 'OPEN' }],
+    });
+    const g = jobGraph({ jobs: [job('root', 'finished', {}, 1)], issueGraph });
+    expect(kinds(g)).toContain(`${issueNodeId('acme/app', 1)} blocked_by ${issueNodeId('acme/lib', 4)}`);
+    expect(node(g, issueNodeId('acme/lib', 4)).stage).toBe('no_job');
+    expect(g.trees[0]).toMatchObject({ root: issueNodeId('acme/app', 1), blocking: [issueNodeId('acme/lib', 4)] });
+  });
+
+  it('adds an open question and an open hand-off as nodes of their job, which wait on a person', () => {
+    const g = jobGraph({
+      jobs: [job('asks', 'waiting_answer', {}, 1), job('broke', 'failed', {}, 2)],
+      questions: [
+        { id: 'q1', jobId: 'asks', text: 'Which database should the cache use? Options follow.', since: '2026-10-02T03:00:00.000Z' },
+        { id: 'q2', jobId: 'gone', text: 'no job here', since: '2026-10-02T03:00:00.000Z' },
+      ],
+      handoffs: [{ id: 'h1', jobId: 'broke', summary: 'The build fails on a missing secret.', since: '2026-10-02T04:00:00.000Z' }],
+    });
+    expect(node(g, questionNodeId('q1'))).toMatchObject({ kind: 'question', stage: 'waiting', label: 'Which database should the cache use? Options follow.', stageSince: '2026-10-02T03:00:00.000Z', jobId: 'asks' });
+    expect(node(g, handoffNodeId('h1'))).toMatchObject({ kind: 'handoff', stage: 'waiting', label: 'The build fails on a missing secret.', jobId: 'broke' });
+    expect(g.nodes.some((n) => n.id === questionNodeId('q2'))).toBe(false);
+    expect(kinds(g)).toContain(`${jobNodeId('asks')} asks ${questionNodeId('q1')}`);
+    expect(kinds(g)).toContain(`${jobNodeId('broke')} hands_off ${handoffNodeId('h1')}`);
+    expect(g.trees.find((t) => t.root === issueNodeId('acme/app', 1))!.blocking).toContain(questionNodeId('q1'));
+    // Only jobs count in the stages.
+    expect(g.stages).toEqual({ waiting: 1, failed: 1 });
+  });
+
+  it('links a pull request based on another one\'s branch to it: stacked on', () => {
+    const g = jobGraph({ jobs: [
+      job('low', 'finished', followed(PR(10), 'open', { checks: 'passing', draft: false, conflicting: false, base: 'dev', headRef: 'issue-1-part' }), 1),
+      job('high', 'finished', followed(PR(11), 'open', { checks: 'pending', draft: false, conflicting: false, base: 'issue-1-part', headRef: 'issue-2' }), 2),
+      job('other', 'finished', { source: { ...job('x', 'queued').source!, repo: 'acme/other', number: 3 }, ...followed('https://github.com/acme/other/pull/12', 'open', { checks: 'none', draft: false, conflicting: false, base: 'issue-1-part', headRef: 'x' }) }),
+    ] });
+    expect(kinds(g)).toContain(`${pullRequestNodeId(PR(11))} stacked_on ${pullRequestNodeId(PR(10))}`);
+    expect(kinds(g).filter((k) => k.includes('stacked_on'))).toHaveLength(1);
+    expect(node(g, jobNodeId('high')).pullRequest).toMatchObject({ base: 'issue-1-part', headRef: 'issue-2' });
   });
 });
