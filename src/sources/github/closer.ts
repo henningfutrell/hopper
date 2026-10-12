@@ -65,19 +65,27 @@ interface GqlResponse {
     timelineItems?: { nodes?: ({ closer?: Closer | null; source?: Source | null } | null)[] };
     closedByPullRequestsReferences?: { nodes?: (Referenced | null)[] };
   } | null } | null };
-  errors?: { type?: string; message?: string }[];
+  errors?: GqlError[];
 }
+interface GqlError { type?: string; message?: string; path?: (string | number)[] }
 
 const PERMANENT_TYPES = new Set(['NOT_FOUND', 'FORBIDDEN']);
 
-/** Throws a GitHubApiError for a GraphQL error (NOT_FOUND/FORBIDDEN permanent, the rest transient). */
-function response(body: unknown, what: string): GqlResponse {
+/** A head commit's checks the app may not read (issue #855): it has no Checks and Commit statuses read; the rest of the answer holds. */
+const checksForbidden = (e: GqlError): boolean => e.type === 'FORBIDDEN' && e.path?.at(-1) === 'statusCheckRollup';
+
+/**
+ * Throws a GitHubApiError for a GraphQL error (NOT_FOUND/FORBIDDEN permanent, the rest transient), but for checks the app
+ * may not read: `checksUnknown`.
+ */
+function response(body: unknown, what: string): GqlResponse & { checksUnknown: boolean } {
   const r = (body ?? {}) as GqlResponse;
-  if (r.errors?.length) {
-    const message = `${what}: ${r.errors.map((e) => e.message ?? e.type ?? 'error').join('; ')}`;
-    throw new GitHubApiError(message, r.errors.some((e) => PERMANENT_TYPES.has(e.type ?? '')));
+  const errors = (r.errors ?? []).filter((e) => !checksForbidden(e));
+  if (errors.length) {
+    const message = `${what}: ${errors.map((e) => e.message ?? e.type ?? 'error').join('; ')}`;
+    throw new GitHubApiError(message, errors.some((e) => PERMANENT_TYPES.has(e.type ?? '')));
   }
-  return r;
+  return { ...r, checksUnknown: errors.length < (r.errors?.length ?? 0) };
 }
 
 export function closingPullRequestFrom(body: unknown, what: string): ClosingPullRequest | undefined {
@@ -90,10 +98,10 @@ export function closingPullRequestFrom(body: unknown, what: string): ClosingPull
 /** GitHub's rollup state as the port's checks: none (no checks) is absent. */
 const CHECKS: Record<string, ChecksState> = { SUCCESS: 'passing', PENDING: 'pending', EXPECTED: 'pending', FAILURE: 'failing', ERROR: 'failing' };
 
-/** Its head commit's time and checks, when GitHub said. */
-const headOf = (n: Referenced): { headCommittedAt?: string; checks?: ChecksState } => {
+/** Its head commit's time and checks, when GitHub said; checks the app may not read: unknown (issue #855). */
+const headOf = (n: Referenced, checksUnknown: boolean): { headCommittedAt?: string; checks?: ChecksState } => {
   const commit = n.commits?.nodes?.at(-1)?.commit;
-  const checks = CHECKS[commit?.statusCheckRollup?.state ?? ''];
+  const checks = CHECKS[commit?.statusCheckRollup?.state ?? ''] ?? (checksUnknown && !commit?.statusCheckRollup ? 'unknown' : undefined);
   return { ...(commit?.committedDate ? { headCommittedAt: commit.committedDate } : {}), ...(checks ? { checks } : {}) };
 };
 
@@ -101,31 +109,34 @@ const headOf = (n: Referenced): { headCommittedAt?: string; checks?: ChecksState
 export function pullRequestFrom(body: unknown, what: string): NumberedPullRequest | undefined {
   const r = (body ?? {}) as GqlResponse;
   if (r.data?.repository && r.errors?.every((e) => e.type === 'NOT_FOUND')) return undefined;
-  const n = response(body, what).data?.repository?.issueOrPullRequest;
+  const r2 = response(body, what);
+  const n = r2.data?.repository?.issueOrPullRequest;
   const state = PR_STATES[n?.state ?? ''];
   if (n?.__typename !== 'PullRequest' || !n.url || !n.createdAt || !state) return undefined;
   return {
     url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING', state,
-    ...(n.mergedAt ? { mergedAt: n.mergedAt } : {}), ...(n.baseRefName ? { base: n.baseRefName } : {}), ...headOf(n),
+    ...(n.mergedAt ? { mergedAt: n.mergedAt } : {}), ...(n.baseRefName ? { base: n.baseRefName } : {}), ...headOf(n, r2.checksUnknown),
   };
 }
 
 export function openPullRequestsFrom(body: unknown, what: string): OpenPullRequest[] {
-  const nodes = response(body, what).data?.repository?.issue?.closedByPullRequestsReferences?.nodes ?? [];
+  const r = response(body, what);
+  const nodes = r.data?.repository?.issue?.closedByPullRequestsReferences?.nodes ?? [];
   return nodes.flatMap((n) => n?.state === 'OPEN' && n.url && n.createdAt
-    ? [{ url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING', ...headOf(n) }] : []);
+    ? [{ url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING', ...headOf(n, r.checksUnknown) }] : []);
 }
 
 /** Each pull request that mentions the issue, once (the newest mention), any state. */
 export function referencingPullRequestsFrom(body: unknown, what: string): ReferencingPullRequest[] {
-  const nodes = response(body, what).data?.repository?.issue?.timelineItems?.nodes ?? [];
+  const r = response(body, what);
+  const nodes = r.data?.repository?.issue?.timelineItems?.nodes ?? [];
   const byUrl = new Map<string, ReferencingPullRequest>();
   for (const n of nodes) {
     const s = n?.source;
     const state = PR_STATES[s?.state ?? ''];
     if (s?.__typename !== 'PullRequest' || !s.url || !s.createdAt || !state || !s.repository?.nameWithOwner) continue;
     byUrl.set(s.url, {
-      url: s.url, createdAt: s.createdAt, isDraft: s.isDraft === true, conflicting: s.mergeable === 'CONFLICTING', ...headOf(s), state,
+      url: s.url, createdAt: s.createdAt, isDraft: s.isDraft === true, conflicting: s.mergeable === 'CONFLICTING', ...headOf(s, r.checksUnknown), state,
       ...(s.mergedAt ? { mergedAt: s.mergedAt } : {}), body: s.body ?? '', repo: s.repository.nameWithOwner,
     });
   }
@@ -134,9 +145,10 @@ export function referencingPullRequestsFrom(body: unknown, what: string): Refere
 
 /** The open pull requests of a repository, each with its branch (issue #637). */
 export function repoPullRequestsFrom(body: unknown, what: string): BranchPullRequest[] {
-  const nodes = response(body, what).data?.repository?.pullRequests?.nodes ?? [];
+  const r = response(body, what);
+  const nodes = r.data?.repository?.pullRequests?.nodes ?? [];
   return nodes.flatMap((n) => n?.state === 'OPEN' && n.url && n.createdAt && n.headRefName
-    ? [{ url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING', headRef: n.headRefName, body: n.body ?? '', ...headOf(n) }] : []);
+    ? [{ url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING', headRef: n.headRefName, body: n.body ?? '', ...headOf(n, r.checksUnknown) }] : []);
 }
 
 /**

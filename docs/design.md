@@ -8310,6 +8310,8 @@ the hopper pulls):
 | Pull requests | read and write | a job opens its pull request; completion checks read the pull request that closes an issue |
 | Contents | read and write | a job pushes its branch with its token (`GH_TOKEN`) where its git uses gh's credential helper (else the machine's own git credentials push) |
 | Metadata | read | required by GitHub for any repository permission |
+| Checks | read | a pull request's checks (`statusCheckRollup`): yolo mode merges on passing checks (#855) |
+| Commit statuses | read | the same rollup holds commit statuses too; without either, checks are `unknown` and nothing merges (#855) |
 
 Not asked for, and what that costs: **Workflows** (a job cannot push a change to `.github/workflows/`;
 GitHub refuses that push), **organization Projects** (a `projects` priority on an organization board
@@ -8321,7 +8323,7 @@ app's: it never had them.
 **Install path.** Before an installation: Sources says the app reaches no repository and links to its
 install page (#253). With installations: each says the repositories it reaches, **what it may do there**
 (`AppInstallation.permissions`, GitHub's installation answer, in words: "It may: read and write contents,
-issues, pull requests; read metadata."), and a link to choose its repositories; under them a quiet link
+issues, pull requests; read checks, metadata, statuses."), and a link to choose its repositories; under them a quiet link
 **Add the app to another account or organization** (the install page, where GitHub asks which account and
 which repositories) — not a nudge to install it again. On GitHub's install page the person picks *All
 repositories* or *Only select repositories*; the hopper then lists those, and the person ticks the job
@@ -9933,7 +9935,8 @@ redirect, a release, a person's Retry — the source is asked whether the job's 
 it ready or merged). Done: the job ends finished (`finishShipped`, its source told again: `hopper:done` or
 `hopper:pr-ready`, its pull request followed), the record `resolved` with the note `done at its source: …`, and nothing
 runs again — Run again would reopen the closed issue (`takeBack`). A person's Retry is then refused, saying so. A source
-that cannot tell postpones the run again 30 s. The attempt count is the chain of earlier jobs of the item a retry ran again.
+that cannot tell postpones the assessor's run again 30 s; it does not hold a person's Retry, which runs (issue #855: an
+answer the source can never give left the job stuck). The attempt count is the chain of earlier jobs of the item a retry ran again.
 
 **Release.** Resolving a problem (a person; or its **check**: a `machine offline` or `disk full` problem whose
 check saw the cause on its machine — offline, disk low — and then sees it gone) sets its held jobs to run again,
@@ -12909,9 +12912,15 @@ card (`merge refused`), as any refused merge. Yolo mode off: nothing changes, a 
 
 **Card states.** The follow keeps `pushedAt` and `base` (`baseRefName`) on what it saw (`PullRequestSeen`); the list,
 given the time now, says why each card waits: `no pull request`, `not checked yet`, `draft`, `conflicts`, `checks
-failing`, `yolo off`, `checks pending`, `checks not started`, `merge refused`, `ready`. The UI says each in plain words
+failing`, `yolo off`, `checks pending`, `checks unknown`, `checks not started`, `merge refused`, `ready`. The UI says each in plain words
 (`ui/src/model/pull-requests.ts` `waitsText`): `waiting for a person to merge`, `waiting for checks`, `waiting for checks
 to start`, `conflicts with <base>`, `ready, merging`, and so on.
+
+**Checks the hopper may not read** (issue #855). The pull request queries read each head commit's `statusCheckRollup`,
+which needs the app's Checks and Commit statuses read. An app without them gets the data and a `FORBIDDEN` error on
+that field. The hopper keeps the answer and takes those checks as `unknown` (`src/sources/github/closer.ts`): the
+done-check, the follow and the reconcile go on, and yolo mode never merges a pull request whose checks are `unknown`
+(card `checks unknown`). Any other GraphQL error still fails the call.
 
 **A pull request the report could not name** (the report names only a ready one) is looked for again at each follow: the
 newest open one that closes the issue, else one in its repository that mentions it — a part when it says `Part of #N` —,

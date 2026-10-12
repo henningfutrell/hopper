@@ -14,8 +14,11 @@ import type { CrossReference } from './cross-references.ts';
 export const PULL_REQUEST_ACTS = ['merge', 'close'] as const;
 export type PullRequestAct = (typeof PULL_REQUEST_ACTS)[number];
 
-/** A pull request's head commit checks (issue #637): all passed, some still running, or one failed. None: absent. */
-export type ChecksState = 'passing' | 'pending' | 'failing';
+/**
+ * A pull request's head commit checks (issue #637): all passed, some still running, or one failed; unknown: the hopper may
+ * not read them (issue #855: its GitHub App lacks Checks and Commit statuses read), never merged by yolo mode. None: absent.
+ */
+export type ChecksState = 'passing' | 'pending' | 'failing' | 'unknown';
 
 /** Why a done job is not done, from its source; undefined when it is. A throw: the source could not tell. */
 type NotComplete = (job: Job) => Promise<string | undefined>;
