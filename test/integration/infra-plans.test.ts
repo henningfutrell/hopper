@@ -24,6 +24,7 @@
 //   Scenario: a plan for another asset, and a plan that is not whole, are refused
 //   Scenario: each plan is kept with its summary in plain words: Infra lists it, the timeline says it
 //   Scenario: a new AWS resource without the MAP tag fails the plan: kept and shown, nobody approves it, nothing applies it
+//   Scenario: a plan names the read credential it was made with only when the vault minted the job that one (part 5)
 //
 // Feature: approval by risk (part 3)
 //   Scenario: an operator approves a low-risk uat plan; a prod plan only an admin approves
@@ -115,9 +116,10 @@ async function asJob(a: TestApp, job: string, method: string, path: string, body
   return { status: res.status, json: (await res.json()) as Record<string, unknown> };
 }
 
+const READ = `read/aws-role/${ACCOUNT}/deploy`;
 const PLAN = {
   tool: 'terraform', asset: ROLE, target: 'uat-network', repo: 'octo/infra', ref: 'issue-1', commit: A, pullRequest: 4,
-  read: `read/aws-role/${ACCOUNT}/deploy`, text: 'Terraform will perform the following actions:\n  + aws_security_group_rule.a\nPlan: 1 to add, 0 to change, 0 to destroy.',
+  text: 'Terraform will perform the following actions:\n  + aws_security_group_rule.a\nPlan: 1 to add, 0 to change, 0 to destroy.',
   file: FILE.toString('base64'), json: tfJson(MAP),
 };
 
@@ -140,9 +142,10 @@ describe('no apply without a plan', () => {
   });
 
   it('keeps a job\'s plan whole, lists it on Infra, and gives its plan file back as it was put', async () => {
-    const { a, session, job } = await boot();
-    const plan = await record(a, job);
-    expect(plan).toMatchObject({ tool: 'terraform', asset: { kind: 'aws-role', name: `${ACCOUNT}/deploy` }, target: 'uat-network', repo: 'octo/infra', ref: 'issue-1', commit: A, pullRequest: 4, read: PLAN.read, job, file: { size: FILE.length } });
+    const { a, session, dir, token, job } = await boot();
+    expect((await helper(dir, ['aws', 'read', ROLE], token)).code).toBe(0);
+    const plan = await record(a, job, { ...PLAN, read: READ });
+    expect(plan).toMatchObject({ tool: 'terraform', asset: { kind: 'aws-role', name: `${ACCOUNT}/deploy` }, target: 'uat-network', repo: 'octo/infra', ref: 'issue-1', commit: A, pullRequest: 4, read: READ, job, file: { size: FILE.length } });
     expect(Date.parse(plan.expiresAt) - Date.parse(plan.createdAt)).toBe(60 * 60 * 1000);
 
     const listed = (await a.api<{ plans: PlanView[] }>('GET', '/api/infra-plans', undefined, { 'x-hopper-session': session })).body.plans;
@@ -201,6 +204,20 @@ describe('no apply without a plan', () => {
     const blind = await asJob(a, job, 'POST', '/job/infra-plans', noJson);
     expect(blind.status).toBe(400);
     expect(blind.json.error).toMatch(/^json must hold terraform show -json/);
+  });
+
+  it('keeps a plan that names its read credential only when the vault minted the job that one (part 5)', async () => {
+    const { a, dir, token, job } = await boot();
+    const unminted = await asJob(a, job, 'POST', '/job/infra-plans', { ...PLAN, read: READ });
+    expect(unminted.status).toBe(400);
+    expect(unminted.json.error).toBe(`read names ${READ}, but the vault minted this job no such read credential (it minted none): a plan names the read credential it was made with`);
+    expect((await helper(dir, ['aws', 'read', ROLE], token)).code).toBe(0);
+    const other = await asJob(a, job, 'POST', '/job/infra-plans', { ...PLAN, read: `read/aws-role/${ACCOUNT}/other` });
+    expect(other.status).toBe(400);
+    expect(other.json.error).toMatch(new RegExp(`\\(it minted ${READ}\\)`));
+    expect((await record(a, job, { ...PLAN, read: READ })).read).toBe(READ);
+    // A plan that names no read credential is kept as before.
+    expect((await record(a, job)).read).toBeUndefined();
   });
 
   it('keeps each plan with its summary in plain words; Infra lists it and the timeline says it', async () => {

@@ -13,8 +13,12 @@
 //   Scenario: a low-risk plan in uat only: an operator approves it, or the hopper when auto-approve is on
 //   Scenario: prod, IAM, destroys, data, a diff the hopper cannot read, or any other environment: only an admin
 //   Scenario: a plan that failed a check: nobody
+//
+// Feature: a plan names the read credential it was made with (part 5)
+//   Scenario: a plan that names no read credential is kept
+//   Scenario: a plan's read credential must be one the vault minted for its job
 import { describe, expect, it } from 'vitest';
-import { applyRefusal, approveRefusal, approverOf, headRefusal, planInputProblem, PLAN_JSON_MAX, PLAN_TEXT_MAX, type InfraPlan, type PlanInput } from '../../src/domain/infra-plans.ts';
+import { applyRefusal, approveRefusal, approverOf, headRefusal, planInputProblem, readProfileOf, readRefusal, PLAN_JSON_MAX, PLAN_TEXT_MAX, type InfraPlan, type PlanInput } from '../../src/domain/infra-plans.ts';
 import type { OperationProfile } from '../../src/domain/access.ts';
 import type { PlanSummary } from '../../src/domain/infra-plan-summary.ts';
 
@@ -118,5 +122,24 @@ describe('a plan input', () => {
     expect(planInputProblem({ ...input, text: ' ' })).toMatch(/^text must hold/);
     expect(planInputProblem({ ...input, text: 'x'.repeat(PLAN_TEXT_MAX + 1) })).toMatch(/at most/);
     expect(planInputProblem({ ...input, json: 'x'.repeat(PLAN_JSON_MAX + 1) })).toMatch(/^json must be at most/);
+  });
+});
+
+describe('a plan\'s read credential (part 5)', () => {
+  const minted = [readProfileOf(ROLE), readProfileOf({ kind: 'cluster', name: 'uat' })];
+
+  it('is the profile of a read the vault minted, as a plan names it', () => {
+    expect(minted).toEqual(['read/aws-role/123456789012/deploy', 'read/cluster/uat']);
+  });
+
+  it('may be left out: the plan names no read credential', () => {
+    expect(readRefusal(undefined, [])).toBeUndefined();
+  });
+
+  it('must be a read the vault minted for the plan\'s job', () => {
+    expect(readRefusal('read/aws-role/123456789012/deploy', minted)).toBeUndefined();
+    expect(readRefusal('read/aws-role/123456789012/other', minted))
+      .toBe('read names read/aws-role/123456789012/other, but the vault minted this job no such read credential (it minted read/aws-role/123456789012/deploy, read/cluster/uat): a plan names the read credential it was made with');
+    expect(readRefusal('read/cluster/uat', [])).toMatch(/minted this job no such read credential \(it minted none\)/);
   });
 });
