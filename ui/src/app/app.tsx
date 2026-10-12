@@ -12,6 +12,7 @@ import { AccessRequests } from '@/views/access-requests';
 import { Artifacts } from '@/views/artifacts';
 import { BugReports } from '@/views/bug-reports';
 import { Decisions } from '@/views/decisions';
+import { DirectJobs } from '@/views/direct-jobs';
 import { Events } from '@/views/events';
 import { Failures } from '@/views/failures';
 import { Infra } from '@/views/infra';
@@ -38,7 +39,7 @@ import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  'needs-you': NeedsYou, overview: Overview, jobs: Jobs, queue: Queue, intake: Intake, 'access-requests': AccessRequests, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, sources: Sources, machines: Machines, infra: Infra, usage: Usage, settings: Settings, job: JobView,
+  'needs-you': NeedsYou, overview: Overview, jobs: Jobs, queue: Queue, 'direct-jobs': DirectJobs, intake: Intake, 'access-requests': AccessRequests, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, sources: Sources, machines: Machines, infra: Infra, usage: Usage, settings: Settings, job: JobView,
 };
 
 function Loading() {
