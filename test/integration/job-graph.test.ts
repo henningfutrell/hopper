@@ -57,6 +57,26 @@ describe('GET /api/jobs/graph (issue #900)', () => {
     expect(g.stages).toEqual({ partly_done: 1, done: 1 });
   });
 
+  it('answers an open question and an open hand-off as nodes of their job, and leaves out answered ones', async () => {
+    const a = await start();
+    const asks = await a.pull({ op: 'echo' }, { key: 'item-5' });
+    await a.waitForStatus(asks.id, 'finished');
+    const { store } = a.user();
+    store.jobs.update(asks.id, { source: issue(5) });
+    const open = store.questions.create({ jobId: asks.id, text: 'Which store should the cache use?', recentOutput: '', detectedBy: 'marker', tier: 'human' });
+    const answered = store.questions.create({ jobId: asks.id, text: 'Done already?', recentOutput: '', detectedBy: 'marker', tier: 'human' });
+    store.questions.update(answered.id, { status: 'answered', answer: 'yes' });
+    const handoff = store.handoffs.create({ jobId: asks.id, status: 'open', reason: 'person', openedAt: new Date().toISOString(), error: 'boom', summary: 'Needs a person: the build fails.', reasons: [] });
+
+    const g = (await a.api<JobGraph>('GET', '/api/jobs/graph')).body;
+    expect(g.nodes.find((n) => n.id === `question:${open.id}`)).toMatchObject({ kind: 'question', stage: 'waiting', label: 'Which store should the cache use?', jobId: asks.id });
+    expect(g.nodes.find((n) => n.id === `handoff:${handoff.id}`)).toMatchObject({ kind: 'handoff', stage: 'waiting', label: 'Needs a person: the build fails.' });
+    expect(g.nodes.some((n) => n.id === `question:${answered.id}`)).toBe(false);
+    expect(g.edges.map((e) => `${e.from} ${e.kind} ${e.to}`)).toEqual(expect.arrayContaining([
+      `job:${asks.id} asks question:${open.id}`, `job:${asks.id} hands_off handoff:${handoff.id}`,
+    ]));
+  });
+
   it('answers an empty graph for a hopper with no job', async () => {
     const a = await start();
     const r = await a.api<JobGraph>('GET', '/api/jobs/graph');
