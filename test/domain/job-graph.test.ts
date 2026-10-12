@@ -1,0 +1,135 @@
+// Issue #900: the job graph — each job's stage (partly done among them), the typed edges between jobs, issues and pull
+// requests, the job trees and what blocks a root. Pure.
+import { describe, expect, it } from 'vitest';
+import { issueNodeId, jobGraph, jobNodeId, pullRequestNodeId, stageOf, type JobGraph } from '../../src/domain/job-graph.ts';
+import { placeGraph } from '../../src/domain/issue-graph.ts';
+import type { Job, JobStatus } from '../../src/domain/types.ts';
+
+const PR = (n: number) => `https://github.com/acme/app/pull/${n}`;
+
+let made = 0;
+const job = (id: string, status: JobStatus, over: Partial<Job> = {}, issue = 1): Job => ({
+  id, spec: { executor: 'test', payload: {}, goal: `goal ${id}` }, priority: 50, status, approved: true, attempts: 1,
+  createdAt: new Date(Date.UTC(2026, 9, 1, 0, made++)).toISOString(), updatedAt: '2026-10-02T00:00:00.000Z',
+  source: { source: 'github', kind: 'issue', key: `https://github.com/acme/app/issues/${issue}`, url: `https://github.com/acme/app/issues/${issue}`, repo: 'acme/app', number: issue, title: `issue ${issue}` },
+  ...over,
+} as Job);
+const followed = (pullRequest: string, follow: string, seen?: object) => ({ sourceState: { source: { pullRequest, follow, ...(seen ? { seen } : {}) } } });
+
+const node = (g: JobGraph, id: string) => g.nodes.find((n) => n.id === id)!;
+const kinds = (g: JobGraph) => g.edges.map((e) => `${e.from} ${e.kind} ${e.to}`).sort();
+
+describe('the stage of a job (issue #900)', () => {
+  it.each<[JobStatus, string]>([
+    ['queued', 'queued'], ['held', 'queued'], ['claimed', 'queued'], ['running', 'running'],
+    ['waiting_answer', 'waiting'], ['operator_led', 'waiting'], ['parked', 'waiting'], ['waiting_on', 'waiting'],
+    ['failed', 'failed'], ['cancelled', 'cancelled'], ['rejected', 'cancelled'], ['finished', 'done'],
+  ])('%s is %s', (status, stage) => { expect(stageOf(job('j', status))).toBe(stage); });
+
+  it('a finished job with its pull request open is PR open; merged, done', () => {
+    expect(stageOf(job('j', 'finished', followed(PR(5), 'open')))).toBe('pr_open');
+    expect(stageOf(job('j', 'finished', followed(PR(5), 'merged')))).toBe('done');
+  });
+
+  it('a partly done job is partly done until its pull request merges', () => {
+    expect(stageOf(job('j', 'finished', { partlyDone: PR(5), ...followed(PR(5), 'open') }))).toBe('partly_done');
+    expect(stageOf(job('j', 'finished', { partlyDone: PR(5) }))).toBe('partly_done');
+    expect(stageOf(job('j', 'finished', { partlyDone: PR(5), ...followed(PR(5), 'merged') }))).toBe('done');
+  });
+});
+
+describe('the job graph (issue #900)', () => {
+  it('a job node carries its stage, tasks, lane, time in stage and pull request with its checks', () => {
+    const g = jobGraph({ jobs: [
+      job('run', 'running', { tasks: { done: 2, total: 5 }, laneId: 'm1/lane-1', machineId: 'm1', startedAt: '2026-10-02T01:00:00.000Z' }, 1),
+      job('pr', 'finished', { finishedAt: '2026-10-02T02:00:00.000Z', ...followed(PR(7), 'open', { checks: 'failing', draft: false, conflicting: true }) }, 2),
+    ] });
+    expect(node(g, jobNodeId('run'))).toMatchObject({ kind: 'job', stage: 'running', tasks: { done: 2, total: 5 }, laneId: 'm1/lane-1', machineId: 'm1', stageSince: '2026-10-02T01:00:00.000Z', repo: 'acme/app', number: 1 });
+    expect(node(g, jobNodeId('pr'))).toMatchObject({ stage: 'pr_open', stageSince: '2026-10-02T02:00:00.000Z', pullRequest: { url: PR(7), state: 'open', checks: 'failing', conflicting: true } });
+    expect(node(g, pullRequestNodeId(PR(7)))).toMatchObject({ kind: 'pull_request', label: 'PR #7', stage: 'pr_open' });
+    expect(g.stages).toEqual({ running: 1, pr_open: 1 });
+  });
+
+  it('a partly done job names the pull request that blocks the rest and what runs after the merge', () => {
+    const g = jobGraph({ jobs: [job('part', 'finished', { partlyDone: PR(9), ...followed(PR(9), 'open') }, 4)] });
+    expect(node(g, jobNodeId('part')).partlyDone).toEqual({ pullRequest: PR(9), afterMerge: 'the next part of acme/app#4 runs' });
+    expect(kinds(g)).toContain(`${jobNodeId('part')} waits_on_merge ${pullRequestNodeId(PR(9))}`);
+    expect(node(g, issueNodeId('acme/app', 4)).stage).toBe('partly_done');
+  });
+
+  it('types its edges: works, next part, rerun, spawned, plan to apply, opened', () => {
+    const part = job('part', 'finished', { partlyDone: PR(9), ...followed(PR(9), 'merged') }, 1);
+    const next = job('next', 'running', { rerunOf: 'part' }, 1);
+    const again = job('again', 'queued', { rerunOf: 'next' }, 1);
+    const fork = job('fork', 'running', { forkOf: { jobId: 'next', questionId: 'q', kind: 'research', question: 'why?' } }, 1);
+    const plan = job('plan', 'finished', {}, 2);
+    const apply = job('apply', 'queued', { followOn: { jobId: 'plan', proposalId: 'p', pathId: 'a', title: 't', text: 'x' } as Job['followOn'] }, 2);
+    const g = jobGraph({ jobs: [apply, again, fork, plan, next, part] });
+    expect(kinds(g)).toEqual([
+      `${issueNodeId('acme/app', 1)} works ${jobNodeId('again')}`,
+      `${issueNodeId('acme/app', 1)} works ${jobNodeId('fork')}`,
+      `${issueNodeId('acme/app', 1)} works ${jobNodeId('next')}`,
+      `${issueNodeId('acme/app', 1)} works ${jobNodeId('part')}`,
+      `${issueNodeId('acme/app', 2)} works ${jobNodeId('apply')}`,
+      `${issueNodeId('acme/app', 2)} works ${jobNodeId('plan')}`,
+      `${jobNodeId('next')} rerun ${jobNodeId('again')}`,
+      `${jobNodeId('next')} spawned ${jobNodeId('fork')}`,
+      `${jobNodeId('part')} next_part ${jobNodeId('next')}`,
+      `${jobNodeId('part')} opened ${pullRequestNodeId(PR(9))}`,
+      `${jobNodeId('plan')} plan_apply ${jobNodeId('apply')}`,
+    ].sort());
+  });
+
+  it('adds required children as parent edges and the rest as follow-ups, from the lineage links', () => {
+    const g = jobGraph({
+      jobs: [job('root', 'finished', {}, 1), job('child', 'running', {}, 2)],
+      links: [
+        { parent: { repo: 'acme/app', number: 1 }, child: { repo: 'acme/app', number: 2 }, required: true },
+        { parent: { repo: 'acme/app', number: 1 }, child: { repo: 'acme/app', number: 3, url: 'https://github.com/acme/app/issues/3' }, required: false },
+      ],
+    });
+    expect(kinds(g)).toContain(`${issueNodeId('acme/app', 1)} parent ${issueNodeId('acme/app', 2)}`);
+    expect(kinds(g)).toContain(`${issueNodeId('acme/app', 1)} follow_up ${issueNodeId('acme/app', 3)}`);
+    expect(node(g, issueNodeId('acme/app', 3)).stage).toBe('no_job');
+  });
+
+  it('reads sub-issues and closing pull requests from the issue graph for the issues it has', () => {
+    const issueGraph = placeGraph({
+      issue: { repo: 'acme/app', number: 1, url: 'https://github.com/acme/app/issues/1', title: 'Root work', state: 'OPEN', updatedAt: '2026-10-01T00:00:00Z' },
+      owner: { login: 'acme' }, projects: [], references: [],
+      closedBy: [{ kind: 'pull_request', repo: 'acme/app', number: 8, url: PR(8), state: 'OPEN' }],
+      subIssues: [{ kind: 'issue', repo: 'acme/app', number: 6, url: 'https://github.com/acme/app/issues/6', state: 'CLOSED' }],
+    });
+    const g = jobGraph({ jobs: [job('root', 'finished', followed(PR(8), 'open'), 1)], issueGraph });
+    expect(kinds(g)).toContain(`${issueNodeId('acme/app', 1)} parent ${issueNodeId('acme/app', 6)}`);
+    expect(kinds(g)).toContain(`${pullRequestNodeId(PR(8))} closes ${issueNodeId('acme/app', 1)}`);
+    expect(node(g, issueNodeId('acme/app', 1)).label).toBe('acme/app#1 Root work');
+    // The sub-issue is closed on GitHub and no job works it: it is done.
+    expect(node(g, issueNodeId('acme/app', 6)).stage).toBe('done');
+  });
+
+  it('groups connected nodes into trees rooted at an issue, and marks what blocks the root', () => {
+    const g = jobGraph({
+      jobs: [job('root', 'finished', {}, 1), job('child', 'failed', {}, 2), job('done', 'finished', {}, 3), job('alone', 'queued', {}, 9)],
+      links: [
+        { parent: { repo: 'acme/app', number: 1 }, child: { repo: 'acme/app', number: 2 }, required: true },
+        { parent: { repo: 'acme/app', number: 1 }, child: { repo: 'acme/app', number: 3 }, required: true },
+      ],
+    });
+    expect(g.trees).toHaveLength(2);
+    const tree = g.trees.find((t) => t.root === issueNodeId('acme/app', 1))!;
+    expect(tree.nodes).toHaveLength(6);
+    expect(tree.blocking.sort()).toEqual([issueNodeId('acme/app', 2), jobNodeId('child')].sort());
+    expect(tree.stages).toEqual({ done: 2, failed: 1 });
+    expect(g.trees.find((t) => t.root === issueNodeId('acme/app', 9))!.blocking).toEqual([jobNodeId('alone')]);
+  });
+
+  it('survives a cycle and an edge to a job it does not have', () => {
+    const a = job('a', 'running', { rerunOf: 'b' }, 1);
+    const b = job('b', 'finished', { rerunOf: 'a' }, 1);
+    const c = job('c', 'running', { rerunOf: 'gone' }, 1);
+    const g = jobGraph({ jobs: [a, b, c] });
+    expect(g.trees).toHaveLength(1);
+    expect(kinds(g).filter((k) => k.includes('gone'))).toEqual([]);
+  });
+});
