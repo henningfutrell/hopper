@@ -463,6 +463,22 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
 
   Then `kubectl -n hopper create token hopper-minter --duration=8760h` gives the minting credential's `token`; renew it
   before it expires.
+- **Kubernetes on EKS: sign in through EKS** (issue #854). No service account, no cluster change by the hopper, and no
+  long-lived token: the hopper signs an EKS token with a 15-minute read session of an IAM role. You need:
+  1. An IAM role that can see the cluster read-only, for example `eks-view`. Map it to view-only access in the cluster
+     with an access entry (`aws eks create-access-entry --cluster-name <name> --principal-arn <role ARN>` and
+     `aws eks associate-access-policy … --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSViewPolicy --access-scope type=cluster`),
+     or an aws-auth mapping to a group bound to `view`. Its trust policy lets the AWS minting identity assume it, as
+     for any read role below.
+  2. The AWS minting credential for the role's account (*Mints for* `aws-account/<id>`, below).
+  3. In Settings → Vault, a secret with *Mints for* `cluster/<name>` and the value
+     `{"type": "eks", "roleArn": "arn:aws:iam::<id>:role/eks-view", "cluster": "<EKS name>", "region": "<region>", "server": "https://….eks.amazonaws.com", "certificateAuthorityData": "<base64 PEM>"}`.
+     When the vault already holds a kubeconfig that signs in with `aws eks get-token`, name it in place of the cluster:
+     `{"type": "eks", "roleArn": "…", "kubeconfig": "<its vault name>"}` (and `"context": "<name>"` when it is not the
+     current context). The hopper takes the cluster, region, server and CA from it; it never runs its exec command.
+  Then check it: `hopper vault mint-test cluster/<name>` mints a read token and shows who the cluster says it is and the
+  namespaces it lists, as `kubectl auth whoami` and `kubectl get ns` would. When the cluster or STS refuses, it shows why.
+  A token lives 14 minutes; kubectl on the box asks for a new one before then.
 - **AWS.** Make an IAM user (or role) that may only `sts:AssumeRole` the roles templates may reach. In Settings →
   Vault, set a secret with *Mints for* `aws-account/<id>` and the value `{"AccessKeyId": "…", "SecretAccessKey": "…"}`
   (optional `Region`, and `Endpoint` for an STS other than AWS's). Each session lives 15 minutes; a `read` session
@@ -470,7 +486,7 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   policy allows only one session name (a condition on `sts:RoleSessionName`), add `"SessionName": "<that name>"` to
   the value; when it allows a prefix (`StringLike`, `ci-*`), add `"SessionNamePrefix": "ci-"`, and the hopper names
   each session `ci-<job id>`. Then the IAM role needs no change. To check it before a job needs it, run
-  `hopper vault mint-test aws-role/<id>/<role>`: the hopper mints a read session (named `hopper-mint-test`,
+  `hopper vault mint-test aws-role/<id>/<role>` (or `cluster/<name>` for a cluster): the hopper mints a read session (named `hopper-mint-test`,
   `<prefix>mint-test`, or the fixed name) and shows the role STS says it assumed, as `aws sts get-caller-identity` would.
   When STS refuses, it shows why.
 - **A read-only AWS setup, step by step** (issue #715). Two IAM identities: the **minting identity** whose keys the
@@ -537,6 +553,11 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   namespace, and the box's probes run with them. A need with no minting credential fails the check and says which one
   to add. The AWS session is named `hopper-read-only-check` (or `<prefix>read-only-check`, or the fixed `SessionName`).
   Set `Region` in an AWS minting credential when the account's services are not in `us-east-1`.
+- **`helm list` needs read access to Secrets** (issue #869). helm keeps each release in a Secret, and the built-in
+  `view` role cannot read Secrets. On a view role the `helm.list` probe is Forbidden and fails: that is expected, and
+  the check report says so under it. To make it pass, give the minted role read (`get`, `list`) on `secrets` in the
+  namespaces it lists. The `helm.install` probe asks the cluster to create each object of a chart in a server dry run:
+  each one must be refused.
 - **Where the check runs** (issue #708): beside the hopper when it is given a container runtime socket
   (`compose.sandboxes.yaml`). With none, it runs on a machine of the template's user that joined with Add machine, is
   dialled in, and has rootless Podman or Docker. The minted read credentials then go down that machine's link into

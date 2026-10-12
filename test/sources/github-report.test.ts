@@ -46,6 +46,17 @@ describe('GitHub source report', () => {
     expect(state).toEqual({ ...claimed, follow: 'open' });
   });
 
+  it('finished, a proposal\'s job whose follow-ons go on with its work: the issue stays claimed, nothing to follow (issue #859)', async () => {
+    const { gh, source } = withIssue();
+    const job = jobForIssue(1, { status: 'finished', result: { proposal: { id: 'p1', version: 1, decision: 'accept', followOns: [{ path: '1', jobId: 'j2' }] } } });
+    const claimed = await source.report({ kind: 'claimed', job });
+    gh.calls.length = 0;
+    const state = await source.report({ kind: 'finished', job: { ...job, sourceState: { source: claimed } } });
+    expect(gh.issue(REPO, 1)).toMatchObject({ state: 'open', labels: ['hopper', 'hopper:claimed'] });
+    expect(gh.calls).toEqual([]);
+    expect(state).toEqual(claimed);
+  });
+
   it('finished on an issue already closed (by the job’s own pull request): labels settle, the close is harmless', async () => {
     const { gh, source } = withIssue();
     gh.closeByPullRequest(REPO, 1, { createdAt: '2026-10-02T10:30:00.000Z', mergedAt: '2026-10-02T11:00:00.000Z' });

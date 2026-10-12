@@ -11,9 +11,10 @@ import { createHash } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
 import { checkWait } from '../domain/read-only-check.ts';
 import { inReadPolicy, type ReadPolicy } from '../domain/read-policy.ts';
-import type { TemplateView } from '../domain/vault.ts';
+import type { TemplatePreview, TemplateView } from '../domain/vault.ts';
 import { toolsForNeeds } from '../sandbox/tools.ts';
 import { SKILLS } from './catalog.ts';
+import { needsFromWords } from './needs-in-words.ts';
 
 /** The skill name a job asks for a template by. */
 export const TEMPLATE_SKILL = 'sandbox-template';
@@ -22,26 +23,40 @@ export const NEEDS_MAX = 16;
 /** Who approves a template the read policy holds: what its approval and its events say. */
 export const READ_POLICY_APPROVER = 'the read policy';
 
-const HOW = `write each need as <operation>/<kind>/<asset>: sh "$HOPPER_SKILL" ${TEMPLATE_SKILL} --needs "read/cluster/NAME read/aws-account/ID"`;
+const keyOf = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
 
-/** The needs a job said, split by spaces, commas or lines, each once; or why they cannot be read. */
+const HOW = `say it in words, one line each (kubectl get pods on cluster NAME), or write each need as <operation>/<kind>/<asset>: sh "$HOPPER_SKILL" ${TEMPLATE_SKILL} --needs "read/cluster/NAME read/aws-account/ID"`;
+
+/** One need written out, `<operation>/<kind>/<asset>`; or why it cannot be read. */
+function writtenNeed(item: string): OperationProfile | string {
+  const [operation, kind, ...rest] = item.split('/');
+  const name = rest.join('/');
+  if (!name || !ASSET_NAME.test(name)) return `${item}: ${HOW}`;
+  if (!(OPERATIONS as readonly string[]).includes(operation!)) return `${item}: the operation is one of ${OPERATIONS.join(', ')}; ${HOW}`;
+  if (!(ASSET_KINDS as readonly string[]).includes(kind!)) return `${item}: the asset kind is one of ${ASSET_KINDS.join(', ')}; ${HOW}`;
+  return { operation: operation as Operation, asset: { kind: kind as AssetKind, name } };
+}
+
+/**
+ * The needs said, each once; or why they cannot be read. Each line is written out — needs split by spaces or commas,
+ * every one with a `/` — or in plain words (issue #708, src/skills/needs-in-words.ts).
+ */
 export function needsOf(said: string | undefined): OperationProfile[] | string {
-  const items = (said ?? '').split(/[\s,]+/).filter((x) => x !== '');
-  if (items.length === 0) return `name what the work needs: ${HOW}`;
-  if (items.length > NEEDS_MAX) return `one request names at most ${NEEDS_MAX} needs: ${HOW}`;
+  const lines = (said ?? '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
+  if (lines.length === 0) return `name what the work needs: ${HOW}`;
   const needs = new Map<string, OperationProfile>();
-  for (const item of items) {
-    const [operation, kind, ...rest] = item.split('/');
-    const name = rest.join('/');
-    if (!name || !ASSET_NAME.test(name)) return `${item}: ${HOW}`;
-    if (!(OPERATIONS as readonly string[]).includes(operation!)) return `${item}: the operation is one of ${OPERATIONS.join(', ')}; ${HOW}`;
-    if (!(ASSET_KINDS as readonly string[]).includes(kind!)) return `${item}: the asset kind is one of ${ASSET_KINDS.join(', ')}; ${HOW}`;
-    needs.set(item, { operation: operation as Operation, asset: { kind: kind as AssetKind, name } });
+  for (const line of lines) {
+    const items = line.split(/[\s,]+/).filter((x) => x !== '');
+    const read = items.every((x) => x.includes('/')) ? items.map(writtenNeed) : [needsFromWords(line)].flat();
+    for (const p of read) {
+      if (typeof p === 'string') return p.endsWith(HOW) ? p : `${p}; ${HOW}`;
+      needs.set(keyOf(p), p);
+      if (needs.size > NEEDS_MAX) return `one request names at most ${NEEDS_MAX} needs: ${HOW}`;
+    }
   }
   return [...needs.values()];
 }
 
-const keyOf = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
 const sameNeeds = (a: readonly OperationProfile[], b: readonly OperationProfile[]): boolean => {
   const x = a.map(keyOf).sort(), y = b.map(keyOf).sort();
   return x.length === y.length && x.every((k, i) => k === y[i]);
@@ -84,6 +99,29 @@ function loads(needs: readonly OperationProfile[]): string {
   }).join('\n');
 }
 
+/** Why the read policy does not approve the needs, in words; empty when it approves them. All or nothing. */
+function outsidePolicy(needs: readonly OperationProfile[], policy: ReadPolicy | undefined): string[] {
+  return [
+    ...needs.filter((p) => p.operation === 'read' && !inReadPolicy(policy, p.asset)).map((p) => `the read policy does not hold ${inWords(p)}`),
+    ...needs.filter((p) => p.operation !== 'read').map((p) => `${inWords(p)} changes the asset`),
+  ];
+}
+
+/** The template these needs make, and who approves it; or why the needs cannot be read. It saves nothing. */
+export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'policy' | 'image'>, said: string | undefined): TemplatePreview | string {
+  const needs = needsOf(said);
+  if (typeof needs === 'string') return needs;
+  const name = requestedName(needs);
+  const was = u.template(name);
+  const waits = outsidePolicy(needs, u.policy());
+  return {
+    template: name, image: u.image, tools: toolsForNeeds(needs), needs: needs.map(inWords),
+    readOnly: needs.every((p) => p.operation === 'read'),
+    approvedBy: waits.length === 0 ? READ_POLICY_APPROVER : 'a person', waits,
+    ...(was ? { exists: sameNeeds(was.profiles, needs) ? 'same' as const : 'changed' as const } : {}),
+  };
+}
+
 /** A request, `by` the job (`job <id>`) or a person; `job`: the id of the job that asks (issue #715: its check's report goes there). */
 export async function requestTemplate(u: TemplateRequestUser, said: string | undefined, by: string, job?: string): Promise<TemplateAnswer> {
   const needs = needsOf(said);
@@ -98,8 +136,7 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
     const saved = await u.save({ name, image: u.image, secrets: [], profiles: needs, tools: toolsForNeeds(needs), readOnly, ...(job ? { askedBy: job } : {}) }, by);
     if (!saved.ok) return { status: STATUS[saved.code] ?? 503, reason: saved.error };
     // The policy approves only a template it makes now, and only when every need is a read it holds.
-    const outside = needs.filter((p) => p.operation !== 'read' || !inReadPolicy(u.policy(), p.asset));
-    if (outside.length === 0) {
+    if (outsidePolicy(needs, u.policy()).length === 0) {
       const approved = await u.approve(name, READ_POLICY_APPROVER);
       if (!approved.ok) return { status: STATUS[approved.code] ?? 503, reason: approved.error };
     }
@@ -108,9 +145,8 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
   if (!t) return { status: 503, reason: `template ${name} was not kept: ask again` };
   const waits = waitsOf(t);
   if (waits.length > 0) {
-    const policy = needs.filter((p) => p.operation === 'read' && !inReadPolicy(u.policy(), p.asset)).map((p) => `the read policy does not hold ${inWords(p)}`);
-    const high = needs.filter((p) => p.operation !== 'read').map((p) => `${inWords(p)} changes the asset`);
-    return { status: 202, text: `waiting: template ${name} waits for a person in Settings → Vault: ${waits.join('; ')}${[...policy, ...high].length ? ` (${[...policy, ...high].join('; ')})` : ''}.` };
+    const why = outsidePolicy(needs, u.policy());
+    return { status: 202, text: `waiting: template ${name} waits for a person in Settings → Vault: ${waits.join('; ')}${why.length ? ` (${why.join('; ')})` : ''}.` };
   }
   const checking = checkWait(t);
   if (checking) return { status: 202, text: `waiting: template ${name} is approved; ${checking}. Each write it may make must be refused, each read must work.` };

@@ -150,6 +150,11 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
     expect(again.code, again.stdout).toBe(0);
     expect(again.stdout).toContain(`template ${t!.name} is ready`);
     expect((await asked(a, token)).length).toBe(1);
+    // The same needs in plain words (issue #708): the same template.
+    const words = await skill(a, other, ['sandbox-template', '--needs', 'kubectl get pods on cluster lab\naws sts get-caller-identity with role readonly in account 123456789012']);
+    expect(words.code, words.stdout).toBe(0);
+    expect(words.stdout).toContain(`template ${t!.name} is ready`);
+    expect((await asked(a, token)).length).toBe(1);
     const types = (await a.events()).map((e) => e.type);
     expect(types).toEqual(expect.arrayContaining(['template.saved', 'vault.approved', 'template.profile_approved', 'skill.loaded']));
   });
@@ -213,7 +218,7 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
   it('needs the hopper cannot read are refused, saying how to write them', async () => {
     const { a, token } = await boot(['cluster/*']);
     const creds = await runningJob(a);
-    for (const needs of [[], ['--needs', 'read cluster lab'], ['--needs', 'delete/cluster/lab'], ['--needs', 'read/planet/mars']]) {
+    for (const needs of [[], ['--needs', 'look at the pods'], ['--needs', 'delete/cluster/lab'], ['--needs', 'read/planet/mars']]) {
       const r = await skill(a, creds, ['sandbox-template', ...needs]);
       expect(r.code, `${needs.join(' ')}: ${r.stdout}`).toBe(1);
       expect(r.stdout).toContain('--needs "read/cluster/NAME');

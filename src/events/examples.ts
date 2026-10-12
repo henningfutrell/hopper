@@ -170,6 +170,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'vault.revoked': { template: 'kube', by: 'Ada' },
   'vault.read_policy_set': { assets: ['cluster/lab', 'aws-account/*'], by: 'Ada' },
   'template.profile_approved': { template: 'kube', operation: 'write', asset: { kind: 'cluster', name: 'lab' }, level: 'high', by: 'Ada' },
+  'vault.agent_credential_given': { name: 'CLAUDE', template: 'kube', box: 'hopper-sandbox-kube' },
   'vault.delivered': { name: 'KUBE_TOKEN', template: 'kube', machine: 'hopper-sandbox-kube', job: 'f3b1c2d4-0000-4000-8000-000000000001' },
   'vault.minted': {
     kind: 'kube', operation: 'read', asset: { kind: 'namespace', name: 'lab/web' }, template: 'kube', machine: 'hopper-sandbox-kube', job: 'f3b1c2d4-0000-4000-8000-000000000001',
@@ -248,4 +249,10 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     changes: { labels: { added: ['ready'], removed: [] }, comments: { added: [{ id: 1201, author: 'octocat', at: '2026-10-11T12:00:00Z' }], removed: 0 } },
   },
   'github_watch.settings_changed': { from: { intervalSeconds: 60 }, to: { intervalSeconds: 300 }, by: 'octocat' },
+  'infra.plan_recorded': {
+    plan: '0b7e5a3c-0000-4000-8000-000000000870', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network', repo: 'octo-org/infra',
+    ref: 'issue-12', commit: 'e83c5163316f89bfbde7d9ab23ca2e25604af290', pullRequest: 13, read: 'read/aws-role/123456789012/readonly',
+    issue: 'https://github.com/octo-org/infra/issues/12', file: true, expiresAt: '2026-10-12T11:00:00.000Z',
+  },
+  'infra.plan_approved': { plan: '0b7e5a3c-0000-4000-8000-000000000870', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network', by: 'Ada' },
 };

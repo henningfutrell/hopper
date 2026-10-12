@@ -1,24 +1,32 @@
 // The minting adapters (issue #580, design.md "Minting: short-lived credentials"), at the `CredentialMinter` port: STS
-// AssumeRole (and, for a mint test, issue #781, GetCallerIdentity) through the AWS SDK (@aws-sdk/client-sts), and the Kubernetes TokenRequest API — one POST, sent with
-// node's own https and the cluster's CA, since a Kubernetes client library would cost more than the call. Called only
-// after Access allowed the mint. An error says what the outside service answered, never the minting credential.
+// AssumeRole (and, for a mint test, issue #781, GetCallerIdentity) through the AWS SDK (@aws-sdk/client-sts), the EKS
+// token (issue #854) presigned by the AWS SDK's own signer (@smithy/signature-v4), and the Kubernetes API — a
+// TokenRequest, and for a mint test a SelfSubjectReview and the namespace list —, each one call sent with node's own
+// https and the cluster's CA, since a Kubernetes client library would cost more than the calls. Called only after
+// Access allowed the mint. An error says what the outside service answered, never the minting credential.
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { AssumeRoleCommand, GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
-import { awsRegionOf, type AwsMintingCredential } from '../domain/minting.ts';
+import { HttpRequest } from '@smithy/core/protocols';
+import { Hash } from '@smithy/core/serde';
+import { SignatureV4 } from '@smithy/signature-v4';
+import { awsRegionOf, EKS_TOKEN_SECONDS, type AwsMintingCredential } from '../domain/minting.ts';
 import type { CredentialMinter } from '../domain/ports.ts';
 
 const TIMEOUT_MS = 15_000;
 const ANSWER_MAX = 256 * 1024;
 
-/** POSTs `body` as JSON to `url` with a bearer token; the parsed answer, or an error naming the status. */
-function postJson(url: URL, token: string, body: unknown, ca: string | undefined): Promise<unknown> {
+/** Sends `body` (none: a GET) as JSON to `url` with a bearer token; the parsed answer, or an error naming the status. */
+function callJson(url: URL, token: string, body: unknown, ca: string | undefined): Promise<unknown> {
   const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
-  const payload = JSON.stringify(body);
+  const payload = body === undefined ? '' : JSON.stringify(body);
   return new Promise((resolve, reject) => {
     const req = send(url, {
-      method: 'POST', timeout: TIMEOUT_MS, ...(ca ? { ca } : {}),
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json', 'content-length': Buffer.byteLength(payload) },
+      method: body === undefined ? 'GET' : 'POST', timeout: TIMEOUT_MS, ...(ca ? { ca } : {}),
+      headers: {
+        authorization: `Bearer ${token}`, accept: 'application/json',
+        ...(body === undefined ? {} : { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }),
+      },
     }, (res) => {
       let text = '';
       res.setEncoding('utf8');
@@ -36,6 +44,31 @@ function postJson(url: URL, token: string, body: unknown, ca: string | undefined
     req.on('error', (e) => reject(new Error(`the Kubernetes API could not be reached: ${e.message}`)));
     req.end(payload);
   });
+}
+
+/** A base64 CA as PEM, for node's https. */
+const pemOf = (ca: string | undefined): string | undefined => (ca ? Buffer.from(ca, 'base64').toString('utf8') : undefined);
+
+/** STS's host in the region: the China partition has its own domain. */
+const stsHost = (region: string): string => `sts.${region}.${region.startsWith('cn-') ? 'amazonaws.com.cn' : 'amazonaws.com'}`;
+
+/** The EKS token: GetCallerIdentity presigned with the session, the cluster's name in a signed header (issue #854). */
+async function eksToken(session: { AccessKeyId: string; SecretAccessKey: string; SessionToken: string; Expiration: string }, r: { cluster: string; region: string }) {
+  const hostname = stsHost(r.region);
+  const signer = new SignatureV4({
+    service: 'sts', region: r.region, sha256: Hash.bind(null, 'sha256'),
+    credentials: { accessKeyId: session.AccessKeyId, secretAccessKey: session.SecretAccessKey, sessionToken: session.SessionToken },
+  });
+  const signedAt = new Date();
+  // EKS takes the URL for 15 minutes from its signing whatever X-Amz-Expires says; `aws eks get-token` signs 60.
+  const signed = await signer.presign(new HttpRequest({
+    method: 'GET', protocol: 'https:', hostname, path: '/', headers: { host: hostname, 'x-k8s-aws-id': r.cluster },
+    query: { Action: 'GetCallerIdentity', Version: '2011-06-15' },
+  }), { expiresIn: 60, signingDate: signedAt });
+  const query = new URLSearchParams(signed.query as Record<string, string>).toString();
+  const token = `k8s-aws-v1.${Buffer.from(`https://${hostname}/?${query}`).toString('base64url')}`;
+  const expires = Math.min(signedAt.getTime() + EKS_TOKEN_SECONDS * 1000, Date.parse(session.Expiration));
+  return { kind: 'kube' as const, token, expirationTimestamp: new Date(expires).toISOString() };
 }
 
 /** An STS client at the minting credential's region and endpoint, signing with `keys`. */
@@ -81,12 +114,26 @@ export function createCredentialMinter(): CredentialMinter {
 
     async kubeToken(credential, r) {
       const url = new URL(`/api/v1/namespaces/${encodeURIComponent(r.namespace)}/serviceaccounts/${encodeURIComponent(r.serviceAccount)}/token`, credential.server);
-      const ca = credential.certificateAuthorityData ? Buffer.from(credential.certificateAuthorityData, 'base64').toString('utf8') : undefined;
-      const answer = await postJson(url, credential.token, { apiVersion: 'authentication.k8s.io/v1', kind: 'TokenRequest', spec: { expirationSeconds: r.expirationSeconds } }, ca)
+      const answer = await callJson(url, credential.token, { apiVersion: 'authentication.k8s.io/v1', kind: 'TokenRequest', spec: { expirationSeconds: r.expirationSeconds } }, pemOf(credential.certificateAuthorityData))
         .catch((e: unknown) => { throw new Error(`a token for ${r.namespace}/${r.serviceAccount}: ${(e as Error).message}`, { cause: e }); });
       const status = (answer as { status?: { token?: unknown; expirationTimestamp?: unknown } }).status;
       if (typeof status?.token !== 'string' || typeof status.expirationTimestamp !== 'string') throw new Error(`the Kubernetes API answered no token for ${r.namespace}/${r.serviceAccount}`);
       return { kind: 'kube', token: status.token, expirationTimestamp: status.expirationTimestamp };
+    },
+
+    eksToken,
+
+    async kubeIdentity(reach, token) {
+      const ca = pemOf(reach.certificateAuthorityData);
+      const review = await callJson(new URL('/apis/authentication.k8s.io/v1/selfsubjectreviews', reach.server), token, { apiVersion: 'authentication.k8s.io/v1', kind: 'SelfSubjectReview' }, ca)
+        .catch((e: unknown) => { throw new Error(`who the token is (kubectl auth whoami): ${(e as Error).message}`, { cause: e }); });
+      const info = (review as { status?: { userInfo?: { username?: unknown; groups?: unknown } } }).status?.userInfo;
+      if (typeof info?.username !== 'string') throw new Error('the Kubernetes API answered no user for the token');
+      const groups = Array.isArray(info.groups) ? info.groups.filter((g): g is string => typeof g === 'string') : [];
+      const list = await callJson(new URL('/api/v1/namespaces', reach.server), token, undefined, ca)
+        .catch((e: unknown) => { throw new Error(`the namespaces (kubectl get ns) as ${info.username as string}: ${(e as Error).message}`, { cause: e }); });
+      const items = (list as { items?: { metadata?: { name?: unknown } }[] }).items ?? [];
+      return { user: { username: info.username, groups }, namespaces: items.flatMap((n) => (typeof n.metadata?.name === 'string' ? [n.metadata.name] : [])) };
     },
   };
 }

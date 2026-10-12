@@ -13,6 +13,8 @@
 //                                          operation on the role (aws-role/<account>/<role>), short-lived (issue #580)
 //   $HOPPER_SECRET kube OPERATION ASSET    an exec credential plugin: a Kubernetes token the hopper mints for the
 //                                          operation on the cluster or namespace, short-lived, with its expiry
+//   ... OPERATION ASSET --plan ID          (issue #870) every operation but read changes infrastructure: the hopper
+//                                          mints it only for an approved, current plan, named here
 //
 // A minted credential is asked again at each run: the tool runs the helper again when the last one expires, and the
 // hopper asks Access before each one.
@@ -22,7 +24,7 @@ import { readFileSync } from 'node:fs';
 import { connect } from 'node:net';
 import { isSecretName, SOCKET_VARIABLE, type MintForm, type VaultAsk } from './vault.ts';
 
-const USAGE = 'usage: hopper-secret get NAME | git NAME [USER] get|store|erase | aws NAME | kube NAME | aws OPERATION ASSET | kube OPERATION ASSET';
+const USAGE = 'usage: hopper-secret get NAME | git NAME [USER] get|store|erase | aws NAME | kube NAME | aws OPERATION ASSET [--plan ID] | kube OPERATION ASSET [--plan ID]';
 
 export type Form = 'get' | 'aws' | 'kube';
 
@@ -90,7 +92,8 @@ async function run(argv: string[]): Promise<string> {
   const [mode, name, ...rest] = argv;
   if (!mode || !name || !['get', 'git', 'aws', 'kube'].includes(mode)) throw new Error(USAGE);
   // `aws|kube OPERATION ASSET`: minted, told by its two words; a secret is one (a shared secret's name has a `/` too).
-  const mint = (mode === 'aws' || mode === 'kube') && rest.length === 1 ? { mint: mode as MintForm, operation: name, asset: rest[0]! } : undefined;
+  const planned = rest.length === 3 && rest[1] === '--plan' ? { plan: rest[2]! } : undefined;
+  const mint = (mode === 'aws' || mode === 'kube') && (rest.length === 1 || planned) ? { mint: mode as MintForm, operation: name, asset: rest[0]!, ...planned } : undefined;
   if (!mint && !isSecretName(name)) throw new Error(`${JSON.stringify(name)} is not a vault secret's name`);
   let user = 'x-access-token';
   if (mode === 'git') {

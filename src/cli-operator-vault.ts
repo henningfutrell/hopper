@@ -1,6 +1,6 @@
 // The vault, its templates and the sandbox boxes from the operator CLI (issue #716, design.md "The vault and sandbox
 // boxes from the operator CLI"): an agent sets a vault secret, saves and approves a template, sets the read policy
-// (issue #716, item 1), tests an AWS minting credential (issue #781), asks for the template some needs name (issue #718), and launches a box of it without a UI session in a browser. Each is the UI's own read or `POST /ui/api/vault` / `POST /ui/api/machines/sandbox`,
+// (issue #716, item 1), tests a minting credential (issues #781, #854), asks for the template some needs name (issue #718), and launches a box of it without a UI session in a browser. Each is the UI's own read or `POST /ui/api/vault` / `POST /ui/api/machines/sandbox`,
 // so the vault's checks and its approval gate apply as they do for a click. A secret's value comes from stdin only.
 import { parseArgs } from 'node:util';
 import { ASSET_KINDS, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from './domain/access.ts';
@@ -15,13 +15,18 @@ export const VAULT_USAGE = `  hopper vault                                      
   hopper vault remove <name> [--shared]              remove a vault secret, or a shared secret
   hopper vault mint-test aws-role/<account>/<role>   mint a read session from the account's minting credential and show
                                                      the role and session name STS says it is (sts get-caller-identity)
+  hopper vault mint-test cluster/<name>              mint a read token from the cluster's minting credential and show who
+                                                     the cluster says it is and its namespaces (auth whoami, get ns)
   hopper template list                               the templates: image, secrets, operation profiles, what each gives and what waits
   hopper template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]...
                     [--cpus <default>:<max>] [--memory-mb <default>:<max>] [--ttl-minutes [<default>]:[<max>]] [--keep-home on|off]
                     [--tool aws|helm|kubectl|terraform]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]...
+                    [--agent-credential <secret>|none]
                                                      save a template; what is left out keeps what it has. A new scope, image,
                                                      tool or profile waits for approve. --backend: the S3 state backend
-                                                     of a terraform-workspace profile, which the read-only check probes
+                                                     of a terraform-workspace profile, which the read-only check probes.
+                                                     --agent-credential: one of its secrets, a token from claude setup-token,
+                                                     that its boxes start with, signed in
   hopper template approve <name>                     approve it as it is: its image, its secrets and its read profiles
   hopper template approve-profile <name> <operation>/<kind>/<asset>
                                                      approve one write, sync or apply profile explicitly
@@ -31,7 +36,8 @@ export const VAULT_USAGE = `  hopper vault                                      
                                                      read needs only): its boxes wait until it passed
   hopper template request --needs "<operation>/<kind>/<asset> ..."
                                                      ask for the template the needs name, as a job does: approved with no
-                                                     person only when each need is a read the read policy holds
+                                                     person only when each need is a read the read policy holds; a line
+                                                     of needs can be plain words (get pods on cluster lab)
   hopper template read-policy [set [<kind>/<asset>|<kind>/<prefix>*]...]
                                                      the read policy: the assets read is approved on with no person, for a
                                                      template a job asks for; set replaces it, set with none clears it
@@ -42,10 +48,10 @@ export const VAULT_USAGE = `  hopper vault                                      
                                                      fewer of its tools, or any tool on a box of no template`;
 
 const VAULT_SET = 'vault set <name> [--scope <text>] [--shared [--reader <user id>]...] (the value on stdin, never as an argument)';
-const VAULT_MINT_TEST = 'vault mint-test aws-role/<account>/<role>';
+const VAULT_MINT_TEST = 'vault mint-test aws-role/<account>/<role>|cluster/<name>';
 const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared] | hopper ${VAULT_MINT_TEST}`;
-const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]...';
-const TEMPLATE_REQUEST = 'template request --needs "<operation>/<kind>/<asset> ..."';
+const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]... [--agent-credential <secret>|none]';
+const TEMPLATE_REQUEST = 'template request --needs "<operation>/<kind>/<asset> ..." (or plain words, one line each: "get pods on cluster lab")';
 const TEMPLATE_VERBS = 'template list | save <name> … | request --needs <needs> | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | check <name> | read-policy [set <entry>...]';
 const SANDBOX_VERBS = 'sandbox list | launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>] [--tool <name>]...';
 
@@ -60,7 +66,7 @@ export function vaultCall(args: string[], stdin: () => string): Call {
   const flags = Object.keys(values).length > 0;
   if (verb === undefined && !flags) return { role: 'viewer', path: '/api/vault' };
   if (values.reader && !values.shared) throw new OperatorRefusal('--reader names who may read a shared secret: add --shared');
-  // A mint test (issue #781): the vault mints a read session and STS says who it is; never a key.
+  // A mint test (issues #781, #854): the vault mints a read session or token, and STS or the cluster says who it is; never a key.
   if (verb === 'mint-test') {
     if (!name || extra.length > 0 || flags) throw usage(VAULT_MINT_TEST);
     return { role: 'admin', path: '/ui/api/vault/mint-test', body: async () => ({ asset: name }) };
@@ -135,7 +141,7 @@ export function templateCall(args: string[]): Call {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     image: { type: 'string' }, secret: { type: 'string', multiple: true }, profile: { type: 'string', multiple: true }, backend: { type: 'string', multiple: true },
     cpus: { type: 'string' }, 'memory-mb': { type: 'string' }, 'ttl-minutes': { type: 'string' }, 'keep-home': { type: 'string' },
-    tool: { type: 'string', multiple: true }, needs: { type: 'string' },
+    tool: { type: 'string', multiple: true }, needs: { type: 'string' }, 'agent-credential': { type: 'string' },
   } });
   const [verb, name, ...rest] = positionals;
   const flags = Object.keys(values).length > 0;
@@ -156,7 +162,7 @@ export function templateCall(args: string[]): Call {
     if (!name || rest.length > 0 || !values.image || values.needs !== undefined) throw usage(TEMPLATE_SAVE);
     const profiles = values.profile?.map(profileOf);
     const limits = limitsOf(values);
-    const { image, secret, tool, backend } = values;
+    const { image, secret, tool, backend, 'agent-credential': credential } = values;
     backend?.forEach(backendOf);
     return {
       role: 'admin', path: '/ui/api/vault', pick: templatesOf,
@@ -167,6 +173,7 @@ export function templateCall(args: string[]): Call {
         return {
           action: 'save-template', name, image, secrets: secret ?? was?.secrets ?? [],
           ...(declared ? { profiles: withBackends(declared, was?.profiles ?? [], backend ?? []) } : {}), ...(limits ? { limits } : {}), ...(tool ? { tools: tool } : {}),
+          ...(credential !== undefined ? { agentCredential: credential === 'none' ? null : credential } : {}),
         };
       },
     };

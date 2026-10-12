@@ -795,7 +795,7 @@ are not read: a group rule matches nothing here.
 
 The hopper's GitHub App is public: any GitHub account or organization installs it, at
 https://github.com/apps/hopper-qm/installations/new. It may read and write issues, pull requests and
-contents, and read metadata — nothing else (why each: `docs/design.md` "The hopper's app, for everyone").
+contents, and read checks, commit statuses and metadata — nothing else (why each: `docs/design.md` "The hopper's app, for everyone").
 It reaches only the repositories it is **installed** on. After signing in, the
 Sources page lists, for each account it is installed on, the repositories it reaches there and what it may
 do there, with a link to choose them, and a link to add it to another account or organization; only where it is installed nowhere does it link to install it. When GitHub cannot say
@@ -810,7 +810,7 @@ https://github.com/settings/apps/new (or the organization's *Developer settings 
 URL: anything. Callback URL: required by the form, never used. Webhook: off. **Enable Device Flow**: on.
 Optional features: leave **user-to-server token expiration** on — the hopper renews the 8-hour tokens
 with their refresh token (a device flow grant needs no client secret for it). Repository permissions: Issues read/write, Pull
-requests read/write, Contents read/write, Metadata read. Add Workflows read/write if jobs change
+requests read/write, Contents read/write, Checks read, Commit statuses read, Metadata read. Add Workflows read/write if jobs change
 `.github/workflows/`, organization Projects read for a `projects` priority on an organization board, or
 account Email addresses read for an email on the identity. Where can it be installed: *Only on this
 account* for one person or organization, *Any account* for others too. Generate no private key and no client secret.

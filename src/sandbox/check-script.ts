@@ -107,12 +107,14 @@ export function readResults(runs: readonly ProbeRun[], logs: string): ProbeResul
     const m = new RegExp(`${MARK} (\\d+) (\\d+) ([A-Za-z0-9+/=]*)\\s*$`).exec(line);
     if (m) lines.set(Number(m[1]), { exit: Number(m[2]), output: Buffer.from(m[3]!, 'base64').toString('utf8') });
   }
-  return runs.map((run, n) => {
+  return runs.map((run, n): ProbeResult => {
     const base = { id: run.probe.id, asset: run.asset, expect: run.probe.expect };
-    if (run.notRun !== undefined) return { ...base, outcome: 'not-run', passed: false, output: run.notRun };
+    const note = run.probe.note !== undefined ? { note: run.probe.note } : {};
+    if (run.notRun !== undefined) return { ...base, outcome: 'not-run', passed: false, output: run.notRun, ...note };
     const got = lines.get(n);
-    if (!got) return { ...base, outcome: 'error', passed: false, output: 'it did not run' };
+    if (!got) return { ...base, outcome: 'error', passed: false, output: 'it did not run', ...note };
     const outcome = outcomeOf(run, got.exit, got.output);
-    return { ...base, outcome, passed: outcome === run.probe.expect, exit: got.exit, output: got.output.trim().slice(-PROBE_OUTPUT_MAX) };
+    const passed = outcome === run.probe.expect;
+    return { ...base, outcome, passed, exit: got.exit, output: got.output.trim().slice(-PROBE_OUTPUT_MAX), ...(passed ? {} : note) };
   });
 }

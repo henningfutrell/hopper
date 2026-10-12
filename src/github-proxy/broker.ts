@@ -12,7 +12,7 @@
 // (issue #429): before the check, what it decides on is read from GitHub — whether a repository outside the job
 // repositories is the job's fork, and, for `repo.fork`, whether the user can push to the job's own repository.
 import { randomUUID } from 'node:crypto';
-import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
+import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
@@ -64,8 +64,8 @@ const BEARER = /^Bearer\s+(\S+)$/i;
 
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
-/** A job's own repository: its source's, or for a fork its parent's (issue #548). */
-const repoOf = (job: Job): string | undefined => job.source?.repo ?? job.forkOf?.source?.repo;
+/** A job's own repository: its source item's (`sourceItemOf`: a fork's or an older follow-on's is its parent's). */
+const repoOf = (job: Job): string | undefined => sourceItemOf(job)?.repo;
 
 export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
   const newId = o.newId ?? (() => randomUUID());

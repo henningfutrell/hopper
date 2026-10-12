@@ -23,6 +23,7 @@
 //   Scenario: a write need waits for a person: the template is saved, nothing of it approved, and no box launches
 //   Scenario: needs the hopper cannot read are refused, saying how to write them; a viewer's token is refused for its role
 //   Scenario: the operator CLI asks for a template
+//   Scenario: the template request on the page (issue #708, part 9): the template the needs would make is shown, and nothing is saved
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import type { TemplateView, VaultView } from '../../src/domain/types.ts';
@@ -145,7 +146,7 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
   it('needs the hopper cannot read are refused, saying how; a viewer\'s token is refused for its role', async () => {
     const { a, session } = await boot(['cluster/*']);
     const token = await apiToken(a, session);
-    for (const needs of ['', 'read cluster lab', 'delete/cluster/lab', 'read/planet/mars']) {
+    for (const needs of ['', 'look at the pods', 'delete/cluster/lab', 'read/planet/mars']) {
       const r = await agent(a, 'POST', '/ui/api/vault', token, { action: 'request-template', needs });
       expect(r.status, `${needs}: ${r.text}`).toBe(400);
       expect(r.text).toContain('read/cluster/NAME');
@@ -172,5 +173,36 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
     expect(r.code, r.err).toBe(0);
     expect(JSON.parse(r.out)).toMatchObject({ template: expect.stringMatching(/^asked-[0-9a-f]{12}$/), ready: false, text: expect.stringContaining('read-only check') });
     expect(await hopper(['template', 'request'])).toMatchObject({ code: 2, err: expect.stringContaining('--needs') });
+  });
+
+  it('the template request on the page: the template the needs would make is shown before it is made, and nothing is saved (issue #708)', async () => {
+    const { a, session } = await boot(['cluster/lab']);
+    const token = await apiToken(a, session);
+    const shown = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'read/cluster/lab' });
+    expect(shown.status, shown.text).toBe(200);
+    expect(shown.body.preview).toEqual({
+      template: expect.stringMatching(/^asked-[0-9a-f]{12}$/), image: BOX, tools: ['helm', 'kubectl'],
+      needs: ['read on cluster lab'], readOnly: true, approvedBy: 'the read policy', waits: [],
+    });
+    const wide = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'read/cluster/lab write/cluster/lab' });
+    expect(wide.body.preview).toMatchObject({ approvedBy: 'a person', waits: ['write on cluster lab changes the asset'] });
+    expect(await asked(a, token)).toEqual([]);
+
+    const made = await agent(a, 'POST', '/ui/api/vault', token, { action: 'request-template', needs: 'read/cluster/lab' });
+    expect(made.body.request.template).toBe(shown.body.preview.template);
+    const again = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'read/cluster/lab' });
+    expect(again.body.preview).toMatchObject({ template: shown.body.preview.template, exists: 'same' });
+
+    const words = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'kubectl get pods on cluster lab' });
+    expect(words.body.preview).toMatchObject({ template: shown.body.preview.template, needs: ['read on cluster lab'], exists: 'same' });
+    const vague = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'look at the pods' });
+    expect(vague.status).toBe(400);
+    expect(vague.text).toContain('names no asset');
+
+    const bad = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'delete/cluster/lab' });
+    expect(bad.status).toBe(400);
+    expect(bad.text).toContain('the operation is one of');
+    const viewer = await apiToken(a, session, 'viewer');
+    expect((await agent(a, 'POST', '/ui/api/vault', viewer, { action: 'preview-template', needs: 'read/cluster/lab' })).status).toBe(403);
   });
 });

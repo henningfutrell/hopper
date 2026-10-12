@@ -7,22 +7,26 @@
 // (or read in its vault backend) in memory, for the one call, and never leaves the hopper.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import { ASSET_KINDS, profileProblem, type Asset, type AssetKind, type MintDecision, type OperationProfile, type VaultAccess } from '../domain/access.ts';
-import { expiryOf, mintTarget, profileInWords, type CallerIdentity, type Minted, type MintKind, type MintReach, type MintTarget } from '../domain/minting.ts';
+import { expiryOf, mintTarget, profileInWords, type CallerIdentity, type ClusterIdentity, type Minted, type MintKind, type MintReach, type MintTarget } from '../domain/minting.ts';
 import type { VaultSecret } from '../domain/vault.ts';
 import { awsRegionOf, awsSessionName, mintingCredentialOf } from '../domain/minting.ts';
 import type { CredentialMinter, VaultRepository } from '../domain/ports.ts';
 import { AT_WORK, boxAsk, type BoxAskOptions } from './box.ts';
+import { mintEks } from './eks.ts';
 
-export interface MintAsk { mint: MintKind; operation: string; asset: string; token: string }
+/** `plan` (issue #870): the plan an operation that changes infrastructure applies. */
+export interface MintAsk { mint: MintKind; operation: string; asset: string; plan?: string; token: string }
 
 /**
  * Mints from the minting credential `name` for `target`: in the hopper, or (issue #586) in the vault's own container,
  * which holds the value, for the job `jobId` (an AWS session is named for it, `awsSessionName`). Called only after
  * Access allowed it, or for a person's mint test (issue #781): `identify` then asks STS who the minted session is, where
- * the credential's STS is known. `reach`: where the minted credential is used (issue #797), never a secret. Never says
- * the minting credential's value.
+ * the credential's STS is known, or (issue #854) the cluster who the token is. `reach`: where the minted credential is
+ * used (issue #797), never a secret. `roleArn` and `sessionName`: the role session an EKS token was signed with. Never
+ * says the minting credential's value.
  */
-export type MintFrom = (name: string, target: MintTarget, jobId: string, identify?: boolean) => Promise<{ minted: Minted; reach: MintReach; sessionName?: string; identity?: CallerIdentity } | { refused: string }>;
+export type MintFrom = (name: string, target: MintTarget, jobId: string, identify?: boolean) => Promise<MintedFrom | { refused: string }>;
+export interface MintedFrom { minted: Minted; reach: MintReach; roleArn?: string; sessionName?: string; identity?: CallerIdentity; cluster?: ClusterIdentity }
 
 export interface MintingOptions extends Omit<BoxAskOptions, 'job'> {
   store: Pick<UserStore, 'vault' | 'events' | 'tx' | 'jobs'>;
@@ -30,6 +34,8 @@ export interface MintingOptions extends Omit<BoxAskOptions, 'job'> {
   userId: string;
   access?: VaultAccess;
   clock: Clock;
+  /** The apply gate (issue #870): absent, no credential that changes infrastructure is minted. */
+  plans?: { gate(profile: OperationProfile, planId: string | undefined): Promise<string | undefined> };
 }
 
 /** `namespace/lab/web` as an asset; undefined when it names no kind the model has. */
@@ -87,6 +93,10 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
     // Access takes the template from who the job is now (issue #581): the box it runs on, joined as its template.
     const decision = await o.access.decideMint({ requester: { kind: 'job', userId: o.userId, jobId: job.id }, operation: profile.operation, asset });
     if (!decision.allowed) return refuse(denied(machine.template, profile, decision), decision);
+    // No apply without a plan (issue #870): every operation but read changes infrastructure.
+    const planNo = o.plans ? await o.plans.gate(profile, ask.plan) : profile.operation === 'read' ? undefined : 'no apply without a plan: this hopper keeps no plans';
+    if (planNo) return refuse(planNo, decision);
+    const plan = profile.operation !== 'read' && ask.plan ? { plan: ask.plan } : {};
 
     const { mintsFor } = target;
     const credential: VaultSecret | undefined = vault.list().find((s) => s.mints?.kind === mintsFor.kind && s.mints.name === mintsFor.name);
@@ -106,7 +116,7 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
       if (now?.id === credential.id) vault.replace({ ...now, lastUsed: { at, machine: machine.name, job: job.id } }, vault.sealed(now.id) ?? null);
       events.append({
         type: 'vault.minted', jobId: job.id, machineId: machine.name,
-        data: { kind: ask.mint, operation: profile.operation, asset, template: machine.template, machine: machine.name, job: job.id, credential: credential.name, decision: decision.id, expiresAt: expiryOf(out), renewal },
+        data: { kind: ask.mint, operation: profile.operation, asset, template: machine.template, machine: machine.name, job: job.id, credential: credential.name, decision: decision.id, expiresAt: expiryOf(out), renewal, ...plan },
       });
     });
     const { kind: _kind, ...answer } = out;
@@ -114,12 +124,16 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
   };
 }
 
-/** Mints here from the minting credential `name` (opened, or read in its vault backend): never says its value. */
-export function mintHere(o: { vault: Pick<VaultRepository, 'get'>; minter?: CredentialMinter; valueOf(secret: VaultSecret): Promise<{ value: string } | { refused: string }> }): MintFrom {
+/**
+ * Mints here from the minting credential `name` (opened, or read in its vault backend): never says its value. A cluster's
+ * `eks` credential (issue #854) reads the AWS minting credential of its role's account too.
+ */
+export function mintHere(o: { vault: Pick<VaultRepository, 'get' | 'list'>; minter?: CredentialMinter; valueOf(secret: VaultSecret): Promise<{ value: string } | { refused: string }> }): MintFrom {
   return async (name, target, jobId, identify) => {
+    const minter = o.minter;
     const credential = o.vault.get(name);
     if (!credential?.mints) return { refused: `the vault holds no minting credential ${name}` };
-    if (!o.minter) return { refused: 'this vault has no minter' };
+    if (!minter) return { refused: 'this vault has no minter' };
     const read = await o.valueOf(credential);
     if ('refused' in read) return { refused: `the minting credential ${name}: ${read.refused}` };
     try {
@@ -127,14 +141,16 @@ export function mintHere(o: { vault: Pick<VaultRepository, 'get'>; minter?: Cred
         const c = mintingCredentialOf('aws', read.value);
         if (typeof c === 'string') return { refused: `the minting credential ${name}: ${c}` };
         const sessionName = awsSessionName(c, jobId);
-        const minted = await o.minter.awsSession(c, { roleArn: target.roleArn, sessionName, policyArns: target.policyArns, policy: target.policy, durationSeconds: target.durationSeconds });
+        const minted = await minter.awsSession(c, { roleArn: target.roleArn, sessionName, policyArns: target.policyArns, policy: target.policy, durationSeconds: target.durationSeconds });
         const reach: MintReach = { kind: 'aws', region: awsRegionOf(c), ...(c.Endpoint ? { stsEndpoint: c.Endpoint } : {}) };
-        return { minted, reach, sessionName, ...(identify ? { identity: await o.minter.awsCallerIdentity(c, minted) } : {}) };
+        return { minted, reach, sessionName, ...(identify ? { identity: await minter.awsCallerIdentity(c, minted) } : {}) };
       }
       const c = mintingCredentialOf('kube', read.value);
       if (typeof c === 'string') return { refused: `the minting credential ${name}: ${c}` };
-      const reach: MintReach = { kind: 'kube', server: c.server, ...(c.certificateAuthorityData ? { certificateAuthorityData: c.certificateAuthorityData } : {}) };
-      return { minted: await o.minter.kubeToken(c, { namespace: target.namespace, serviceAccount: target.serviceAccount, expirationSeconds: target.expirationSeconds }), reach };
+      if (c.type === 'eks') return await mintEks({ vault: o.vault, minter, valueOf: o.valueOf }, name, c, jobId, identify);
+      const reach = { kind: 'kube' as const, server: c.server, ...(c.certificateAuthorityData ? { certificateAuthorityData: c.certificateAuthorityData } : {}) };
+      const minted = await minter.kubeToken(c, { namespace: target.namespace, serviceAccount: target.serviceAccount, expirationSeconds: target.expirationSeconds });
+      return { minted, reach, ...(identify ? { cluster: await minter.kubeIdentity(reach, minted.token) } : {}) };
     } catch (e) {
       return { refused: `minting from ${name} failed: ${(e as Error).message}` };
     }

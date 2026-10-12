@@ -13,6 +13,8 @@ import type { Send } from './vault';
 
 // Vault grants (issue #652) sit beside Asked for on the Vault page: both are what jobs on boxes wait on a person for.
 export { VaultGrants } from './vault-grants';
+// Infra changes (issue #870) too: a plan waits for a person before an apply is minted a credential.
+export { InfraChanges } from './infra-plans';
 
 /** A credential request (issue #583): what jobs wait on, how to get the credential, and the admin's answer. */
 function RequestItem({ r, can, busy, send }: { r: CredentialRequest; can: boolean; busy: boolean; send: Send }) {

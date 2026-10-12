@@ -65,11 +65,12 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
-| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
+| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`. Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
-| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
+| `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the public URL is up through the tunnel (`tunnel.ts`, issue #795); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
@@ -4663,6 +4664,8 @@ deleted the home volume.
   image built in that machine's runtime — "Tools on a client target" below.
 - **The read-only check on a client target (part 8, 2026-10-11).** A hopper given no runtime runs the read-only check
   (issue #716) on a client target of the template's user — "The read-only check on a client target" below.
+- **The agent credential (part 10, 2026-10-12).** A box of a template that names an agent credential starts with its
+  agent signed in — "The agent credential" below.
 - **The line's limits (part 6, 2026-10-11).** The line Add machine shows for a box the hopper does not start gets its
   `run` flags with its join code: `POST /ui/api/machines/join` with `box: { cpus?, memoryMb? }` answers `flags`, built
   by `runFlags` from `lineFlags` (`launch.ts`), which resolves the CPUs and memory against the template as a launch
@@ -4743,6 +4746,60 @@ the placement (beside the hopper, else the first client target dialled in with a
 client target with its leftover check box removed first, and a template that waits with nowhere to run.
 `test/adapters/podman-check.test.ts` (real rootless Podman): the check run through a real client on that Podman passed,
 its output read through the client, and nothing of it left.
+
+### The agent credential (issue #708 part 10, 2026-10-12)
+
+Owner direction (2026-10-10): sandbox agent auth is inheritable from an approved source instead of a per-box `/login`;
+a new box of an approved template starts signed in where policy allows, and a one-time `/login` is the fallback. Before
+it, a person signed each box's agent in by hand (its home volume keeps the sign-in), and a box that nobody signed in
+stopped its first job at Claude's login screen.
+
+- **The source is the vault.** A template names one of its own secrets as its **agent credential**
+  (`Template.agentCredential`; `save-template` `agentCredential`, absent keeps it, `null` drops it; Settings → Vault, the
+  template's form; `hopper template save --agent-credential <secret>|none`). A name that is not one of its secrets, or a
+  shared secret (`shared/<name>`), is refused (400): a shared secret's read is Access's decision per user, which a launch
+  does not ask. The value is a Claude token, what `claude setup-token` prints (`sk-ant-oat…`).
+- **Only a setup token.** A `/login`'s credentials file holds a refresh token that rotates at each renewal: one box
+  renewing it signs every other box out (the field review saw this on a fleet). A setup token is good for a year and no
+  box renews it, so any number of boxes share it. Any other value refuses the launch (`agentCredentialValueProblem`,
+  `src/domain/agent-credential.ts`), and the refusal never says the value.
+- **Policy: the template's approval and the launch's scope.** The vault (`agentCredential`, `src/vault/agent-credential.ts`)
+  gives it only when the template's approved scope holds the secret (`givesOf`), and only when the launch's resolved
+  `secrets` name it (part 4): a launch that leaves it out starts a box that is not signed in. An agent credential that
+  waits for approval refuses every launch of the template (409), so no box starts quietly signed out. It is not part of
+  the approval itself: it names one of the secrets the approval already covers.
+- **At launch, once** (`launchCredential`, `src/sandbox/agent-credential.ts`). The launch asks the user's vault after it
+  picks the box's name and before it makes anything: a refusal is 409 and leaves no record, volume or container. The
+  value goes in the box's create body as `CLAUDE_CODE_OAUTH_TOKEN`. The box's entrypoint starts herdr with that
+  environment, and every job pane inherits it, so Claude in each job is signed in. No box image changes. The record keeps
+  `agentCredential`, the secret's name, never the value. `vault.agent_credential_given` records each give (the name, the
+  template, the box); a refusal is `vault.refused` with the box as its machine. Neither carries the value.
+- **Wherever the vault runs.** With the vault in a container of its own (issue #586) the template's checks run there and
+  the value crosses back (op `agent-credential`); one kept in a vault backend is read in the hopper, which runs the
+  backends. On a client target the value goes in the create the machine's client carries, and the client's create
+  checks take it as any other variable.
+- **Not per job, so no vault grant.** A vault grant (issue #652) gates what a *job* asks of the vault. The agent
+  credential is given to the *box*, before any job, as the hand sign-in it replaces was: that one sat in the box's home
+  volume, readable by every job on the box. The approval of the template is the person's decision that covers it.
+- **The fallback.** A template that names none, a launch that leaves it out, and a box from the line Add machine shows
+  (it has no record) start as before: a person signs the agent in once in the box, and its home volume keeps it.
+- **Residual risk, stated.** The token is in the box's environment, so every process in the box can read it, as every
+  job could read the hand sign-in in its home. It is in the container's config: the runtime's `inspect` shows it to the
+  account that owns the runtime socket, which the hopper already holds. A box keeps the token it started with until it
+  is removed: a new value reaches new boxes. A token a person revokes at Anthropic stops every box that holds it; set a
+  new one and launch the boxes again.
+
+**Verification (part 10).** `test/integration/sandbox-agent-credential.test.ts` (real composition root, a runtime
+double): an approved template's box gets the token in its environment, its record names the secret, and no event, log
+line or sandbox view holds the value, with the vault in the hopper and in a container of its own; a launch that leaves
+it out starts a box that is not signed in; an agent credential that waits for approval, and a value that is no setup
+token, refuse the launch with nothing made; a save keeps it, `null` drops it, and a name outside the secrets or a shared
+secret is refused. `test/integration/sandbox-remote.test.ts`: on a client target, the token is in the create the
+machine's Podman got. `test/integration/operator-cli-vault.test.ts`: `--agent-credential`. `test/vault/agent-credential.test.ts`,
+`test/ui/vault-agent-credential.test.ts`: the value's form, and the page's model. By hand, real rootless Podman: in the
+box image under the sandbox flags (read-only root, every capability dropped, the home volume), herdr's server started as
+the entrypoint starts it, a job tab made through herdr's CLI with a job variable; its pane saw both that variable and
+`CLAUDE_CODE_OAUTH_TOKEN` from the box's environment. Not checked here: a real Claude sign-in from a real setup token.
 
 ### The start check and the proven address (issue #708 part 3, 2026-10-11)
 
@@ -4846,7 +4903,8 @@ hand, and the hopper never saw that container. This is the path #704's machines 
 - **Keeping in step, per machine.** A reconcile pass runs per runtime: the hopper's own, then each `(user, machine)`
   that holds a recorded box, listing that user's boxes there (`io.hopper.box` and `io.hopper.user`). A machine that
   cannot be listed now — not dialled in — keeps its boxes and their records, past their time limit too; the pass on its
-  next dial-in checks them. Remove uses the runtime's forced remove, which also takes a container stuck stopping.
+  next dial-in checks them. Remove asks the box to stop, then uses the runtime's forced remove. A container stuck
+  stopping refuses the stop; that refusal does not hold the forced remove back, so the box still goes.
 - **A machine that hangs up is not dialled in.** The upgraded link socket is half-open: a client that closed its end
   left the hopper's end open until the hopper stopped, so the machine still looked dialled in. `MachineLinks` now
   closes its end when the client ends the link.
@@ -4858,7 +4916,8 @@ hand, and the hopper never saw that container. This is the path #704's machines 
 machine's Podman a libpod double, `test/support/fake-libpod.ts`): a box launched on a client target runs in its
 Podman with the sandbox flags and the sandbox label, dialling the hopper where the machine did, and the hopper's own
 runtime is not touched; a machine that is no client target is 400 and one that hung up is 409; the box is `ready` once
-it joins and goes at its time limit; a machine away keeps its boxes, and they are checked when it dials in again.
+it joins and goes at its time limit, a box stuck stopping too; a machine away keeps its boxes, and they are checked
+when it dials in again.
 `test/client/runtime.test.ts`: which runtime, a call carried and answered, a create without a flag or with a mount of
 the machine refused (Podman and Docker), a container or volume not the hopper's refused, a route outside the adapters'
 refused. `test/adapters/remote-runtime.test.ts`: a box's whole life through the client with the same create body, and
@@ -8310,6 +8369,8 @@ the hopper pulls):
 | Pull requests | read and write | a job opens its pull request; completion checks read the pull request that closes an issue |
 | Contents | read and write | a job pushes its branch with its token (`GH_TOKEN`) where its git uses gh's credential helper (else the machine's own git credentials push) |
 | Metadata | read | required by GitHub for any repository permission |
+| Checks | read | a pull request's checks (`statusCheckRollup`): yolo mode merges on passing checks (#855) |
+| Commit statuses | read | the same rollup holds commit statuses too; without either, checks are `unknown` and nothing merges (#855) |
 
 Not asked for, and what that costs: **Workflows** (a job cannot push a change to `.github/workflows/`;
 GitHub refuses that push), **organization Projects** (a `projects` priority on an organization board
@@ -8321,7 +8382,7 @@ app's: it never had them.
 **Install path.** Before an installation: Sources says the app reaches no repository and links to its
 install page (#253). With installations: each says the repositories it reaches, **what it may do there**
 (`AppInstallation.permissions`, GitHub's installation answer, in words: "It may: read and write contents,
-issues, pull requests; read metadata."), and a link to choose its repositories; under them a quiet link
+issues, pull requests; read checks, metadata, statuses."), and a link to choose its repositories; under them a quiet link
 **Add the app to another account or organization** (the install page, where GitHub asks which account and
 which repositories) — not a nudge to install it again. On GitHub's install page the person picks *All
 repositories* or *Only select repositories*; the hopper then lists those, and the person ticks the job
@@ -8960,7 +9021,8 @@ not get write access over the API; they still ask the hopper. So a job asks thro
 
 - **The ask.** `sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-account/123456789012" [--wait]`.
   Each **need** is an operation profile, written as the CLI writes one, `<operation>/<kind>/<asset>`; split by spaces,
-  commas or lines; at most 16; each once. A need the hopper cannot read is a 400 that says how to write it.
+  commas or lines; at most 16; each once. A line can also be plain words ("Needs in words"). A need the hopper cannot
+  read is a 400 that says how to write it.
 - **The template** (`requestTemplate`, `src/skills/template-request.ts`). Its name is `asked-` and 12 hex of a SHA-256
   over the sorted needs: the same needs, in any order and from any job, get the same template, so a later job with the
   same needs makes no second one. It runs the hopper's box image (`ghcr.io/henningfutrell/hopper:box-claude`), holds no
@@ -9029,6 +9091,70 @@ doubles, the check box running the check's real script with fake cloud tools: re
 the policy; a box refused until the read-only check passed; the same needs again, the same template, ready; a box of it
 launched with the same token; a write need waits and no box launches; needs it cannot read refused; a viewer's token
 refused; the CLI). This is the acceptance of issue #718, over an API token from end to end.
+
+## Template requests on the page (issue #708, part 9, 2026-10-11)
+
+Owner's model (issue #708): a person writes what a box must do, and the hopper builds the box's template from it; the
+secret scope is derived and shown for approval, never typed by hand. Before it, a template request was a job's
+(`sandbox-template`), an API caller's (`request-template`) or the CLI's (`hopper template request`); on the page, a
+person could only write a whole template by hand.
+
+- **The panel** (Settings → Vault, **Template request**, `ui/src/views/vault-template-request.tsx`). An admin writes the
+  needs, one per line, as a job writes them (`read/cluster/lab`). Other roles do not see the panel.
+- **Shown before it is made** (`POST /ui/api/vault` `preview-template`, `previewTemplate`, `src/skills/template-request.ts`).
+  The answer is `preview`: the template's name, its image, the tools its needs use, the needs in words, `readOnly`, who
+  approves it (`the read policy`, or `a person` with `waits`: why the read policy does not), and `exists` when a template
+  of that name is there (`same`; or `changed` by a person, when asking again is refused). It saves nothing and sends no
+  event. It is the same derivation as a request: `requestTemplate` uses the same `outsidePolicy` reasons.
+- **Ask for it** sends `request-template` with the same needs and shows its `text`. A change to the needs hides what was
+  shown, so a person asks only for what they saw. The new template is then in Templates, where a person approves what
+  waits, as for any template.
+
+Needs in plain words: "Needs in words".
+
+Tests: `test/skills/template-preview.test.ts`, `test/ui/vault-template-request.test.ts`,
+`test/integration/template-request-api.test.ts` (the preview over an API token: what it shows, nothing saved, `exists`
+after a request, 400 for needs it cannot read, 403 for a viewer).
+
+## Needs in words (issue #708, part 11, 2026-10-12)
+
+Owner's model (issue #708): a person writes what a box must do, and the hopper works out the needs; the secret scope is
+derived and shown for approval, never typed by hand. Before it, every template request (a job's, the API's, the CLI's,
+the page's) took only needs written out, `read/cluster/lab`.
+
+- **The reader** (`needsFromWords`, `src/skills/needs-in-words.ts`, pure). One line of plain words gives needs:
+  - **Assets** are a kind word, then the name: `cluster NAME`, `namespace NAME`, `workspace NAME` (a terraform
+    workspace), `account ID` (an AWS account), `role NAME` (an AWS role), `Argo CD app NAME` (also `argocd app`). `named`,
+    `called` or `is` may stand between them. A namespace takes the one cluster the line names (`namespace web on cluster
+    lab` is `namespace lab/web`), a role the one account (`role ReadOnly in account 1234…` is `aws-role 1234…/ReadOnly`);
+    that cluster or account is then no need of its own. `namespace lab/web` and `role 1234…/ReadOnly` are read as they are.
+  - **Operations** are the words for them, each with its -s, -ed and -ing forms, and each part of a command such as
+    `get-caller-identity`: read words (`get`, `list`, `describe`, `plan`, `logs`, `show`, …), `apply` and `deploy`
+    (apply), `sync` (sync), and change words (`delete`, `restart`, `install`, `upgrade`, `scale`, `exec`, …: write). Each
+    asset of the line gets each operation the line says. A change word just after `not`, `never`, `no` or `don't` says
+    no change.
+  - **Refused, with what to write:** a line that names no asset, a kind word with no name, a name an asset may not have,
+    a namespace or role with no single cluster or account to go in, and a line that says no operation. The reader never
+    makes a need the words did not name: no read is guessed when no read word is there.
+- **Where it applies** (`needsOf`, `src/skills/template-request.ts`). Each line of a request is either needs written out
+  (every word holds a `/`; the refusals of "Templates on request" are unchanged) or plain words. Both kinds mix in one
+  request; the needs merge, each once, at most 16. So a job's `sandbox-template --needs`, `request-template`,
+  `preview-template` and `hopper template request` all take words, and the same needs in words or written out make the
+  same template.
+- **Why a fixed set of words, and no model.** The needs decide what a box may be given. A model's reading can change from
+  one call to the next, and text in the request could steer it. A fixed reader is the same each time, and nothing in the
+  words can make it give more than the words name. The cost: words it does not know are refused, and a person writes
+  those as needs. The preview on the page shows the needs it read before anything is made ("Template requests on the
+  page"), and a change still waits for a person, so a reading that goes wide is caught before it gives anything.
+
+**Not built.** A tool name alone names no asset (`kubectl get pods` needs `on cluster NAME`). A word the reader does not
+know is not suggested.
+
+Tests: `test/skills/needs-in-words.test.ts` (the reader: assets, a namespace in its cluster, a role in its account,
+operations, `not`, the refusals; mixed lines; the preview), `test/integration/template-request-api.test.ts` (words over
+an API token: the same template as the needs written out; words that name no asset, 400),
+`test/integration/template-requests.test.ts` (a job's `--needs` in words gets the same template; unreadable words
+refused).
 
 ## Tools assembled per run (issue #716, item 2, 2026-10-10)
 
@@ -9115,8 +9241,15 @@ replaces them; test with doubles, and state the gap to a real environment.
   - `aws-account`, `aws-role`: read `aws sts get-caller-identity`; writes `ec2 create-tags --dry-run`, `ssm
     put-parameter`, `iam create-user`, `sts assume-role` to another role of the account.
   - `cluster`, `namespace` (`<cluster>/<ns>`): read `kubectl get ns` (or pods in the namespace), `helm list`; writes
-    `kubectl create namespace --dry-run=server`, `kubectl delete pod --dry-run=server`, `helm install --dry-run=server` of
-    a chart `helm create` makes. A server dry run still asks the API's authorization.
+    `kubectl create namespace --dry-run=server`, `kubectl delete pod --dry-run=server`, and the install of a chart `helm
+    create` makes: `helm template` renders it and `kubectl create --dry-run=server` creates its objects. A server dry run
+    still asks the API's authorization. `helm install --dry-run=server` does not (issue #869): it renders the chart and
+    creates nothing, so it ended 0 on a view role and the probe passed falsely. One object created fails the probe, even
+    when the others are refused.
+  - `helm list` reads the Secrets helm keeps its releases in. The built-in `view` role cannot read Secrets, so on a view
+    role `helm list` is Forbidden and its probe fails: that is expected, and the probe passes only with read access to
+    Secrets. A probe can carry a `note` for such a case; a result that did not pass carries it, and the report shows it
+    under the output (issue #869).
   - `argocd-app`: read the Application; write a label patch with `--dry-run=server`.
   - `terraform-workspace`: read `terraform plan` of a one-resource stack (an SSM parameter); write `terraform apply` of it,
     once with `terraform` on `PATH` (a read-only wrapper there, when #715 adds one) and once with the real binary in
@@ -9213,10 +9346,14 @@ template, since the needs decide the assets and the read policy decides the appr
 
 - **The deny policy** (`awsReadDenyPolicy`, `src/domain/minting.ts`). Every read session the vault mints from STS — for a
   job, a check box, or a mint test — carries an inline session policy beside the managed `ReadOnlyAccess`: explicit
-  denies of `*:Create*`, `*:Delete*`, `*:Put*`, `*:Update*`, `*:Modify*`, IAM's other writes (`iam:Attach*`,
-  `iam:PassRole`, `iam:Tag*`, …), and `sts:AssumeRole` (and its SAML and web-identity forms) on any role but its own.
-  Only denies: a session policy's allow could add to what `ReadOnlyAccess` gives. An explicit deny wins over every allow,
-  so a role whose own policy can write still gives a read session none of it. `AssumeRole` sends it as `Policy`; with the
+  denies of the `Create*`, `Delete*`, `Put*`, `Update*` and `Modify*` actions of twelve services (`iam`, `s3`,
+  `dynamodb`, `ec2`, `ssm`, `rds`, `lambda`, `ecs`, `eks`, `kms`, `secretsmanager`, `cloudformation`), IAM's other writes
+  (`iam:Attach*`, `iam:PassRole`, `iam:Tag*`, …), and `sts:AssumeRole` (and its SAML and web-identity forms) on any role
+  but its own. Only denies: a session policy's allow could add to what `ReadOnlyAccess` gives. An explicit deny wins over
+  every allow, so a role whose own policy can write still gives a read session none of those writes. Each service is
+  named (issue #853): IAM takes no wildcard in a service prefix, and the first form, `*:Create*`, made STS refuse every
+  read mint (`Invalid service prefix for action '*:Create*'`). A session gets only what both the role and its session
+  policies allow, so `ReadOnlyAccess` is the cap on every other service; the 2048-character limit keeps the list short. `AssumeRole` sends it as `Policy`; with the
   vault in a container of its own it crosses in the mint target (`policy`, at most 2048 characters, STS's limit). A write
   session carries neither policy.
 - **The read-only wrapper** (`TERRAFORM_WRAPPER`, `src/sandbox/terraform-wrapper.ts`). A read-only template's image
@@ -9346,7 +9483,7 @@ probe stack found nothing in its state to delete, so it asked the account nothin
   (`$HOME/tf-held`), with a local state the probe writes that holds the stack's SSM parameter. Then
   `"$HOPPER_TOOLS/terraform" destroy -refresh=false`. With no refresh, terraform does not first read the parameter, so
   it sends `ssm:DeleteParameter` whether or not the parameter exists, and the account must refuse it (the deny policy's
-  `*:Delete*`). Allowed, the provider deletes the parameter, or gets `ParameterNotFound` and ends with no error: in
+  `ssm:Delete*`). Allowed, the provider deletes the parameter, or gets `ParameterNotFound` and ends with no error: in
   both cases the probe fails. With a refresh, a missing parameter leaves the state empty and nothing is asked: the
   probe would pass with a writable credential.
 - **No cleanup.** A delete that went through removed only the check's own parameter, which nothing else uses.
@@ -9376,7 +9513,7 @@ did not know a workspace's backend.
   configured only by `-backend-config`: the bucket, the region, and the key `stateProbeKey(backend)` —
   `<key prefix>/hopper-read-only-check/terraform.tfstate`, the check's own key. Then `state push -lock=false` of a state
   of its own (no resources, lineage `hopper-read-only-check`). `init` only reads (`ListObjectsV2`, `HeadObject`); the push
-  is the one write, `s3:PutObject`, and the deny policy's `*:Put*` must refuse it. The probe never names the workspace's
+  is the one write, `s3:PutObject`, and the deny policy's `s3:Put*` must refuse it. The probe never names the workspace's
   own state key. Under the key prefix, not at the bucket's top: a role or bucket policy that allows writes under the prefix
   where the workspace's states are is the case to find, and a key elsewhere would miss it. Its `denial` is a refused
   `PutObject` only, so a read that `init` is refused (a role that cannot read the bucket) is an `error`, not a pass.
@@ -9416,12 +9553,13 @@ the hopper's network and reach any host.
 **Residual risk, stated.** The wrapper is one layer: anything in the box can run `$HOPPER_TOOLS/terraform` past it, by
 design, and the deny policy is what refuses then. Past the wrapper, a process can also unset `TF_CLI_CONFIG_FILE` and
 download a provider: the mirror stops the downloads terraform makes through the wrapper and by default, not every
-download a box can make, until egress is limited (#849). `*:Create*` and its kind match by the action's name: a write whose name
-starts with another word (`s3:Restore*`, `ec2:Run*`, `lambda:Invoke*`) is not in the deny policy, and is refused only
-when `ReadOnlyAccess` does not allow it — which it does not, as it allows only reads. The deny policy is a guard against
-a role whose own policy and a later change to `ReadOnlyAccess` could otherwise widen a session. It is checked against
-STS's documented policy grammar and in tests against a fake STS, not against AWS itself: `hopper vault mint-test`
-mints one with it, so a person sees STS take it.
+download a box can make, until egress is limited (#849). `ec2:Create*` and its kind match by the action's name: a write whose name
+starts with another word (`s3:Restore*`, `ec2:Run*`, `lambda:Invoke*`) is not in the deny policy, and neither is a write of a service the deny
+policy does not name; each is refused only when `ReadOnlyAccess` does not allow it — which it does not, as it allows only reads. The deny policy is a guard against
+a role whose own policy and a later change to `ReadOnlyAccess` could otherwise widen a session. It is checked in tests
+against IAM's policy grammar and AWS's list of services and actions (`@cloud-copilot/iam-policy`,
+`@cloud-copilot/iam-data`, issue #853: a fake STS took `*:Create*`, AWS did not), not against AWS itself:
+`hopper vault mint-test` mints one with it, so a person sees STS take it.
 
 Tests: `test/vault/read-session-policy.test.ts` (the policy: denies only, each write, every other role, within 2048
 characters; none on a write session), `test/integration/vault-mint.test.ts` (the policy reaches STS as `Policy`, through the
@@ -9928,7 +10066,8 @@ redirect, a release, a person's Retry — the source is asked whether the job's 
 it ready or merged). Done: the job ends finished (`finishShipped`, its source told again: `hopper:done` or
 `hopper:pr-ready`, its pull request followed), the record `resolved` with the note `done at its source: …`, and nothing
 runs again — Run again would reopen the closed issue (`takeBack`). A person's Retry is then refused, saying so. A source
-that cannot tell postpones the run again 30 s. The attempt count is the chain of earlier jobs of the item a retry ran again.
+that cannot tell postpones the assessor's run again 30 s; it does not hold a person's Retry, which runs (issue #855: an
+answer the source can never give left the job stuck). The attempt count is the chain of earlier jobs of the item a retry ran again.
 
 **Release.** Resolving a problem (a person; or its **check**: a `machine offline` or `disk full` problem whose
 check saw the cause on its machine — offline, disk low — and then sees it gone) sets its held jobs to run again,
@@ -10532,12 +10671,17 @@ selection is 400.
 **Follow-ons** (`createFollowOns`, `src/engine/follow-ons.ts`). Accepted with paths selected, outside a fork (whose
 result answers its parent's question, the selected paths named in it) and a switch that goes on (whose job is told the
 selected paths), each path continues as its own **follow-on** job, in the tx of the decision: the parent's spec without
-its asks, its priority, accepted at once, `followOn { jobId, proposalId, pathId, title, text, note, siblings, source }`;
-`job.queued` with `followOn`, then `proposal.followed_on` on the parent's timeline. A follow-on is told its path after its
-job rules (`followOnBrief`): the path as written, the person's note, and the other selected paths, which run as their
-own jobs. Like a fork, it has no source of its own; the sync never reports it to the parent's item. `signOff.selected`
-keeps each path with its job; the parent ends `finished`, its result `{ proposal: { id, version, decision, followOns: [{
-path, jobId }] } }`. Paths not selected stay on the version as the record. Follow-ons are jobs only: the hopper files no
+its asks, its priority, accepted at once, `followOn { jobId, proposalId, pathId, title, text, note, siblings }`;
+`job.queued` with `source` and `followOn`, then `proposal.followed_on` on the parent's timeline. A follow-on is told its
+path after its job rules (`followOnBrief`): the path as written, the person's note, and the other selected paths, which
+run as their own jobs. It has the parent's source as its own (#859): it pushes and opens its pull request on the
+parent's repository, the sync reports it to the parent's item, it is done only as any job of that item is (its pull
+request), and that pull request is followed, tended and merged as any job's. A follow-on queued before #859 kept the
+parent's item only as `followOn.source`; `sourceItemOf` still reads it for its repository. `signOff.selected` keeps each
+path with its job; the parent ends `finished`, its result `{ proposal: { id, version, decision, followOns: [{ path, jobId
+}] } }`. That parent (`handedToFollowOns`) leaves its item as it is, claimed: its end marks no issue ready or done, and
+it follows and is reconciled with no pull request — its follow-ons do the work, and only a pull request one of them
+opens makes the item done. Paths not selected stay on the version as the record. Follow-ons are jobs only: the hopper files no
 issue (GitHub text is neutral, and the hopper opens no issue of its own).
 
 **API and CLI.** `ReviewItemView.followOns`: each follow-on with its job's live status (as `QuestionView.forks`, #570).
@@ -11931,7 +12075,24 @@ of the hopper's compose stack, as Postgres is, so this needs nothing outside it.
 like any vault secret (or kept in a vault backend, issue #585), and it never leaves the vault: `deliver` refuses it, no template may list it in its scope, and
 the page leaves it out of a template's secrets. Its value is JSON (`mintingCredentialOf`, `src/domain/minting.ts`):
 for AWS `AccessKeyId`, `SecretAccessKey` (optional `SessionToken`, `Region`, `Endpoint`), for Kubernetes `server`,
-`token`, optional `certificateAuthorityData`.
+`token`, optional `certificateAuthorityData` (a `token` credential; its value names no `type`), or EKS sign-in (below).
+
+**EKS sign-in** (issue #854, owner decision 2026-10-11: cluster access through EKS sign-in, no cluster change and no
+long-lived token; `src/vault/eks.ts`). A cluster's minting credential of `"type": "eks"` names `roleArn`, the IAM role
+it signs in as, and the cluster: `cluster` (its EKS name), `region`, `server` and optional `certificateAuthorityData`;
+or `kubeconfig`, a vault secret whose context (`context`, else its current one) signs in with EKS exec
+(`aws eks get-token --cluster-name <name>`, `--region` or `AWS_REGION`, else the region in the server's host). A field
+the credential names wins over the kubeconfig's. To mint, the vault reads the AWS minting credential for the role's
+account and mints a read session of the role from it, as for an `aws-role` read — 900 s, the read session policies,
+the session name `awsSessionName` gives —, then signs an EKS token with that session (`CredentialMinter.eksToken`):
+STS `GetCallerIdentity` presigned at the region's STS (`X-Amz-Expires` 60; EKS takes it for 15 minutes from its
+signing), the cluster's name signed in the `x-k8s-aws-id` header, written `k8s-aws-v1.` and the URL in base64url. No
+call goes out to mint it. The token lives 14 minutes (`EKS_TOKEN_SECONDS`, as `aws eks get-token` says), never past
+the session; kubectl asks the helper again before then. The token only says who the session is, so it reaches nothing
+in AWS; the role's access entry (or aws-auth mapping) in the cluster decides what it may do, view-only for a read
+role: the hopper never changes the cluster. The operation does not change the role: an operation the cluster's RBAC
+does not give that role is Forbidden there. The kubeconfig and the AWS minting credential are read where the minting
+credential is opened and never leave the vault; a system secret is never read as a kubeconfig.
 
 **The AWS session name** (issue #781, `awsSessionName`). STS records it in the assumed role's ARN
 (`arn:aws:sts::<account>:assumed-role/<role>/<session name>`), and a role's trust policy can allow only some names
@@ -11952,7 +12113,13 @@ the credential's region and endpoint). The answer is the role, the session name,
 minting credential is opened: in the hopper, or in the vault's own container (the `mint` op's `identify`). The minted
 session never leaves the vault side; the answer and the `vault.mint_tested` event carry no key. STS's refusal is the
 answer (422), with its reason. No job and no template take part, so Access is not asked: the test is a person's act, and
-a read session that only asks who it is reaches nothing. AWS only; a Kubernetes token has no test.
+a read session that only asks who it is reaches nothing. A cluster too (issue #854): `hopper vault mint-test cluster/<name>`
+mints a read token from the cluster's minting credential, as for a job — a TokenRequest token for `hopper-read` in the
+namespace `hopper`, or an EKS token —, and asks the cluster who it is (a SelfSubjectReview, `kubectl auth whoami`) and
+which namespaces it lists (`kubectl get ns`), with the token, where the minting credential is opened
+(`CredentialMinter.kubeIdentity`). The answer is the API server, the cluster's `user` (`username`, `groups`) and its
+`namespaces`, and for EKS sign-in the role and the session name; never the token. The cluster's refusal is the answer
+(422), with its reason. An answer has `kind`: `aws` or `kube`.
 
 **What is minted** for an operation profile (`mintTarget`, pure):
 
@@ -11961,6 +12128,7 @@ a read session that only asks who it is reaches nothing. AWS only; a Kubernetes 
 | `aws` | `aws-role/<account>/<role>` | STS `AssumeRole` on `arn:aws:iam::<account>:role/<role>`, 900 s (STS's floor), session `hopper-<job id>` (or the minting credential's own: below); a `read` session carries the session policy `arn:aws:iam::aws:policy/ReadOnlyAccess`. From the minting credential for `aws-account/<account>`. |
 | `kube` | `namespace/<cluster>/<ns>` | a TokenRequest for the service account `hopper-<operation>` in `<ns>`, 600 s (TokenRequest's floor). From the minting credential for `cluster/<cluster>`. |
 | `kube` | `cluster/<name>` | the same, in the namespace `hopper`. |
+| `kube` | `cluster/<name>`, `namespace/<cluster>/<ns>` | with an `eks` minting credential (issue #854): an EKS token signed with a read session of its role, 14 minutes. |
 
 What a service account or a role may do is the cluster's RBAC and the account's IAM: the hopper decides *whether* a
 job gets a credential for the profile, the outside system *what* it allows. `docs/deploy.md` "Minting short-lived
@@ -12904,9 +13072,15 @@ card (`merge refused`), as any refused merge. Yolo mode off: nothing changes, a 
 
 **Card states.** The follow keeps `pushedAt` and `base` (`baseRefName`) on what it saw (`PullRequestSeen`); the list,
 given the time now, says why each card waits: `no pull request`, `not checked yet`, `draft`, `conflicts`, `checks
-failing`, `yolo off`, `checks pending`, `checks not started`, `merge refused`, `ready`. The UI says each in plain words
+failing`, `yolo off`, `checks pending`, `checks unknown`, `checks not started`, `merge refused`, `ready`. The UI says each in plain words
 (`ui/src/model/pull-requests.ts` `waitsText`): `waiting for a person to merge`, `waiting for checks`, `waiting for checks
 to start`, `conflicts with <base>`, `ready, merging`, and so on.
+
+**Checks the hopper may not read** (issue #855). The pull request queries read each head commit's `statusCheckRollup`,
+which needs the app's Checks and Commit statuses read. An app without them gets the data and a `FORBIDDEN` error on
+that field. The hopper keeps the answer and takes those checks as `unknown` (`src/sources/github/closer.ts`): the
+done-check, the follow and the reconcile go on, and yolo mode never merges a pull request whose checks are `unknown`
+(card `checks unknown`). Any other GraphQL error still fails the call.
 
 **A pull request the report could not name** (the report names only a ready one) is looked for again at each follow: the
 newest open one that closes the issue, else one in its repository that mentions it — a part when it says `Part of #N` —,
@@ -14238,3 +14412,54 @@ it. The max isolation (30 min) is the box's own limit for when the hopper cannot
 credentials, and its open session. A stop that fails (the reap times out) is logged and not tried again. Old clients
 ignore `jobs` and say no stops.
 
+## Infra plans: no apply without a plan (issue #870, part 1, 2026-10-12)
+
+Owner's principle (issue #870): no apply without a plan. Plans and infrastructure changes never slide under the radar:
+each one is surfaced to people. Before this, a box of a template with an approved `write`, `sync` or `apply` profile was
+minted its credential at each ask, with nothing that tied the change to a reviewed plan.
+
+- **A plan is a record of its own** (`InfraPlan`, `src/domain/infra-plans.ts`; tenant migration 46, `infra_plans`), apart
+  from artifacts, and never changed once kept. It holds what made it (`tool`: `terraform`, `helm`, `gitops`), the raw
+  plan (`text`: `terraform show` of the plan file, the `helm diff`, the GitOps diff; at most 1 MiB) and, for terraform,
+  the saved plan file (`terraform plan -out`, at most 8 MiB, its size and SHA-256 beside it), the `asset` an apply of it is
+  minted a credential for (an `aws-role`, a `cluster`, a `namespace`), the `target` (the workspace or app it changes), the
+  `repo`, the branch (`ref`) and full `commit` it was made at, its `pullRequest`, the read profile it was made with
+  (`read`, as the job says it), the job and its issue (who asked for it), `createdAt`, and `expiresAt` (60 minutes later).
+- **A job records one**: `POST /job/infra-plans`, with its proxy token, JSON (`file` in base64): 201 with its id; a plan
+  that is not whole is a 400 that says why. `GET /job/infra-plans/:id` answers it with its approval; `?file=1` gives the
+  plan file back as it was put, so terraform applies only the saved plan. `infra.plan_recorded` on the job's timeline.
+- **A person approves it**: Settings → Vault, panel **Infra changes** (every plan, newest first, with its state:
+  waits for approval, approved, stale), or `POST /ui/api/infra-plans` `{ action: "approve", plan }` (admin, a box
+  action). The approval is a row of its own (`infra_plan_approvals`), so the plan does not change; a second is a 409.
+  `infra.plan_approved` on the timeline of the job that recorded it. A job never approves a plan.
+- **The apply gate** (`applyRefusal`, `headRefusal`; `InfraPlans.gate`, `src/infra-plans/service.ts`). Before the vault
+  mints a credential for any operation but `read` (`src/vault/mint.ts`, after Access allowed it), the ask must name a
+  plan (`$HOPPER_SECRET aws apply aws-role/<account>/<role> --plan <id>`, the same for `kube`) that is kept, is a plan of
+  that asset, is not stale, is approved, and was made at the commit its branch is at now: the hopper reads the branch's
+  head on GitHub with the user's connection at each ask. Any other ask mints nothing (`vault.mint_refused`, with why),
+  and the outside service is not asked. A head that cannot be read refuses too. A vault with no gate mints only reads.
+  `vault.minted` names the plan. A renewal asks again, so a plan that went stale while it ran is not renewed.
+- **The client** sends the plan in its ask (`VaultAsk.plan`), bound into the sealed answer's authenticated data only when
+  it names one, so a client from before this opens its answers to a read as before; it sends no plan, so its applies are
+  refused.
+
+**Why every operation but read.** `write`, `sync` and `apply` each mint a credential that can change the asset; a gate on
+`apply` alone would leave the same change one word away.
+
+**Not built here (the next parts of #870).** The plain-language summary and explainer of each plan, with its risk
+callouts (destroys, IAM, prod, data, network) and blast radius; notifications to environment watchers for every plan
+and apply; approval by risk (a low-risk uat plan approved by its requester or automatically, still in the feed; prod,
+IAM, destroys and identity by the owner through the blast-radius gate); the failing check for a new resource without
+the MAP tag; a timeline of applies and drift, and the nightly drift plan; a terraform wrapper on write boxes that runs
+`apply` only of the saved plan file; routing Argo CD syncs through the gate. The `read` a plan names is recorded as the
+job says it, not checked against the job's mints.
+
+**Residual risk, stated.** The gate binds a credential to a plan, not each command to the plan: within its 15 or 10
+minutes, a minted credential can make any change its role or service account allows. The plan's commit is checked
+against its branch, not against the files the box applies from. The saved plan file, served back, is what makes the
+apply the plan's; enforcing that on the box is the wrapper above.
+
+Tests: `test/domain/infra-plans.test.ts` (the gate and the plan input, pure), `test/integration/infra-plans.test.ts` (the
+real daemon, a joined box, STS and GitHub faked: an apply with no plan, an unapproved plan, a moved head and a plan of
+another asset are refused and STS is not asked — the negative test of the issue's "Done when"; a current approved plan
+mints, its audit naming it; the plan kept whole, listed, its file given back), `test/ui/infra-plans.test.ts`.

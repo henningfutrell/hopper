@@ -10,7 +10,8 @@
 // vault does not give; an admin gives one — of the kind suggested, or another — or declines. The hopper's own secrets
 // (issue #658): the vault's system scope and its audit trail, read-only (vault-system.tsx). Shared secrets (issue #718):
 // what the hopper's admin shares with agents (vault-shared.tsx); a template may name one as shared/<name>. The read
-// policy (issue #716, vault-read-policy.tsx): what the hopper approves with no person, for a template a job asks for.
+// policy (issue #716, vault-read-policy.tsx): what the hopper approves with no person, for a template a job asks for. The
+// template request on the page (issue #708, vault-template-request.tsx): the needs a box's work has, and the template the hopper makes from them.
 // The master key's rotation, the hopper's admin's (app/master-key.tsx, issue #659). A template's form, with the limits a
 // launch of it may ask for (issue #708): vault-template-form.tsx.
 import { Ban, Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
@@ -26,19 +27,21 @@ import { approvalText, explicitApprovals, highRadius, keptText, mintsOf, namePro
 import type { Asset, OperationProfile, SharedSecretView, TemplateView, VaultBackendView, VaultSecret, VaultView } from '@/model/wire';
 import { Label, ValueInput } from '@/components/vault-fields';
 import { useHopper } from '@/store';
-import { AskedFor, VaultGrants } from './vault-requests';
+import { AskedFor, InfraChanges, VaultGrants } from './vault-requests';
 import { SystemSecrets } from './vault-system';
 import { SharedSecrets } from './vault-shared';
 import { ReadPolicy } from './vault-read-policy';
+import { TemplateRequest } from './vault-template-request';
 import { sameProfile, TemplateForm } from './vault-template-form';
 import { limitsText, type TemplateLimits } from '@/model/sandbox-launch';
+import { agentCredentialText } from '@/model/vault-agent-credential';
 import { MasterKeyRotation } from '@/app/master-key';
 import { CheckAgain, GateRows } from './vault-check';
 import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
   | { action: 'set-in-backend'; name: string; scope?: string; backend: string; reference: string; mints?: Asset | null } | { action: 'system-in-backend'; name: string; backend: string; reference: string }
-  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; limits: TemplateLimits } | { action: 'remove-template' | 'approve-template' | 'revoke-template' | 'check-template'; name: string }
+  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; limits: TemplateLimits; agentCredential: string | null } | { action: 'remove-template' | 'approve-template' | 'revoke-template' | 'check-template'; name: string }
   | ({ action: 'approve-profile'; name: string } & OperationProfile)
   | { action: 'give-credential'; request: string; name: string; kind: string; note?: string; value?: string } | { action: 'decline-credential'; request: string; reason: string };
 export type VaultEdit = Edit;
@@ -154,6 +157,7 @@ function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView
         <dt className="text-muted-foreground">Scope</dt><dd className="font-mono break-words">{t.secrets.join(', ') || 'none'}</dd>
         <dt className="text-muted-foreground">Profiles</dt><dd className="font-mono break-words">{t.profiles.map((p) => `${profileText(p)}${t.pending.profiles.some((x) => sameProfile(x, p)) ? ' (waits)' : ''}`).join(', ') || 'none'}</dd>
         <dt className="text-muted-foreground">Limits</dt><dd className="break-words">{limitsText(t.limits)}</dd>
+        <dt className="text-muted-foreground">Agent credential</dt><dd className="break-words">{agentCredentialText(t)}</dd>
         <dt className="text-muted-foreground">Gives now</dt><dd className="font-mono break-words">{t.gives.join(', ') || 'nothing'}</dd>
         <GateRows t={t} />
       </dl>
@@ -222,7 +226,7 @@ export function Vault() {
   const requests = view?.requests ?? [];
   return (
     <div className="max-w-2xl space-y-3">
-      <AskedFor requests={requests} can={can} busy={busy} send={send} />{view && <VaultGrants view={view} onView={setView} />}
+      <AskedFor requests={requests} can={can} busy={busy} send={send} />{view && <VaultGrants view={view} onView={setView} />}<InfraChanges />
       <Panel title="Vault" icon={LockKeyhole} count={secrets.length || ''} bodyClassName="space-y-3"
         action={can && !adding ? <Button size="sm" onClick={() => setAdding(true)} disabled={busy || (!local && backends.length === 0)}><Plus />Add secret</Button> : undefined}>
         <p className="text-sm text-muted-foreground">Secrets for jobs, set once and never read back: no page and no API answer shows a value, to any role. Each is kept encrypted in the hopper's database, or in a vault backend you add in Plugins (HashiCorp Vault, 1Password, Bitwarden): then the hopper reads it there each time a job asks, and keeps no copy.</p>
@@ -238,6 +242,7 @@ export function Vault() {
         {view && templates.length === 0 && !addingTemplate && <Empty>No templates yet.</Empty>}
         {templates.length > 0 && <ul className="space-y-2">{templates.map((t) => <TemplateItem key={t.name} t={t} secrets={secrets} shared={shared} can={can} busy={busy} send={send} />)}</ul>}
       </Panel>
+      {view && <TemplateRequest onView={setView} />}
       {view && <ReadPolicy entries={view.readPolicy ?? []} onView={setView} />}
       {view && <SharedSecrets shared={shared} onView={setView} />}
       {view && <SystemSecrets system={view.system} backends={backends} can={can} busy={busy} send={send} />}

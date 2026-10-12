@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { finishBrief, MAX_FINISH_BRIEFS, type FailuresView, type Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
+import { GitHubApiError } from '../../src/sources/github/api.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { opensPullRequest } from '../support/scripted-executor.ts';
 import { waitFor } from '../support/wait.ts';
@@ -210,5 +211,21 @@ describe('resolve and release do not run finished work again (issue #637)', () =
     await a.waitForStatus(job.id, 'finished');
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:pr-ready'), { what: 'hopper:pr-ready' });
     expect((await a.events('types=job.rerun')).filter((e) => e.jobId === job.id)).toEqual([]);
+  });
+
+  it('a person\'s Retry while the source cannot tell whether the work is done runs it again (issue #855)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const token = await a.login();
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    await a.sync();
+    const job = (await jobFor(a, issue.url))!;
+    await a.waitForStatus(job.id, 'failed');
+    const record = await waitFor(async () => (await a.api<FailuresView>('GET', '/api/failures')).body.recent.find((r) => r.jobId === job.id), { what: 'the failure' });
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
+    gh.failNext('closingPullRequest', new GitHubApiError('pull requests: Resource not accessible by integration', true));
+    const r = await a.ui<{ error?: string }>(`/ui/api/failures/${record.id}/retry`, {}, { token });
+    expect(r.status).toBe(200);
+    await waitFor(async () => (await a.events('types=job.rerun')).some((e) => e.jobId === job.id), { what: 'the run again' });
   });
 });

@@ -42,6 +42,9 @@
     "arn": {
       "type": "string"
     },
+    "user": {
+      "type": "string"
+    },
     "expiresAt": {
       "type": "string"
     },

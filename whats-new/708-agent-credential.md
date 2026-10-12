@@ -1,0 +1,1 @@
+- A template can name an **agent credential**: a vault secret that holds a token from claude setup-token. A box of the template then starts with Claude signed in, and nobody signs it in by hand. Set it in the template's form on Settings → Vault, or with the --agent-credential option of hopper template save.

@@ -163,6 +163,7 @@
         "vault.check_mint_refused",
         "vault.credential_asked",
         "vault.credential_given",
+        "vault.agent_credential_given",
         "vault.credential_declined",
         "vault.read_policy_set",
         "vault.grant_asked",
@@ -209,6 +210,8 @@
         "pointed_job.status_changed",
         "github_watch.changed",
         "github_watch.settings_changed",
+        "infra.plan_recorded",
+        "infra.plan_approved",
         "jev.mode_changed",
         "router.mode_changed"
       ]

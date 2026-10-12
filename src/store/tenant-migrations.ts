@@ -25,6 +25,7 @@ import { raisedByBackfill } from './migration-raised-by.ts';
 import { JOB_STREAM_TABLES } from './migration-job-stream.ts';
 import { ARTIFACT_REVISION_TABLES, ARTIFACT_TABLES } from './migration-artifacts.ts';
 import { BUG_REPORT_TABLE } from './bug-reports.ts';
+import { INFRA_PLAN_TABLES } from './infra-plans.ts';
 import { ISSUE_GRAPH_TABLES } from './issue-graph.ts';
 import { POINTED_JOB_TABLE } from './pointed-jobs.ts';
 import { GITHUB_WATCH_TABLE } from './github-watches.ts';
@@ -55,11 +56,7 @@ const TENANT_BASE = `
   CREATE INDEX jobs_status ON jobs (status);
   CREATE INDEX jobs_source_key ON jobs (source_key);
   CREATE TABLE lanes (id TEXT PRIMARY KEY, machine_id TEXT NOT NULL, number INTEGER NOT NULL, body TEXT NOT NULL, UNIQUE (machine_id, number));
-  CREATE TABLE decisions (
-    seq BIGSERIAL PRIMARY KEY,
-    id TEXT NOT NULL UNIQUE,
-    body TEXT NOT NULL
-  );
+  CREATE TABLE decisions (seq BIGSERIAL PRIMARY KEY, id TEXT NOT NULL UNIQUE, body TEXT NOT NULL);
   CREATE TABLE events (
     seq BIGSERIAL PRIMARY KEY,
     id TEXT NOT NULL UNIQUE,
@@ -355,6 +352,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   GITHUB_WATCH_TABLE,
   // 45: Each job's last event (issue #434), read for the Jobs view's cards. An index only: the build before runs on it.
   'CREATE INDEX IF NOT EXISTS events_job ON events (job_id, seq)',
+  // 46: Infra plans (issue #870): each plan a job recorded, and a person's approval of it. Tables only: the build before runs on it.
+  INFRA_PLAN_TABLES,
 ];
 
 /** A user schema's version once migrated. */

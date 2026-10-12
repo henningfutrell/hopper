@@ -45,24 +45,29 @@ export type MintForm = (typeof MINT_FORMS)[number];
 const OPERATION = /^[a-z]{1,16}$/;
 const ASSET = /^[a-z][a-z-]{0,39}\/[A-Za-z0-9][A-Za-z0-9._/+=,-]{0,199}$/;
 
+/** A plan's id (issue #870): a UUID. */
+const PLAN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 /**
  * What a machine asks, for the job whose proxy token it shows: one vault secret, or a credential minted for an
- * operation on an asset (`kube read namespace/lab/web`, issue #580).
+ * operation on an asset (`kube read namespace/lab/web`, issue #580). `plan` (issue #870): the plan an operation that
+ * changes infrastructure applies; the hopper mints such a credential for no ask without one.
  */
-export type VaultAsk = { name: string; token: string } | { mint: MintForm; operation: string; asset: string; token: string };
+export type VaultAsk = { name: string; token: string } | { mint: MintForm; operation: string; asset: string; plan?: string; token: string };
 
 /** The ask in words, for a log line: the secret's name, or what is minted. */
-export const askInWords = (a: VaultAsk): string => ('name' in a ? a.name : `${a.mint} ${a.operation} ${a.asset}`);
+export const askInWords = (a: VaultAsk): string => ('name' in a ? a.name : `${a.mint} ${a.operation} ${a.asset}${a.plan ? ` plan ${a.plan}` : ''}`);
 
 /** The ask in a body, or why it is none. */
 export function askOf(v: unknown): VaultAsk | string {
-  const b = (typeof v === 'object' && v !== null ? v : {}) as { name?: unknown; token?: unknown; mint?: unknown; operation?: unknown; asset?: unknown };
+  const b = (typeof v === 'object' && v !== null ? v : {}) as { name?: unknown; token?: unknown; mint?: unknown; operation?: unknown; asset?: unknown; plan?: unknown };
   if (typeof b.token !== 'string' || !JOB_TOKEN.test(b.token)) return 'token must be the job\'s proxy token (HOPPER_TOKEN_FILE)';
   if (b.mint === undefined) return isSecretName(b.name) ? { name: b.name, token: b.token } : 'name must be a vault secret\'s name';
   if (!(MINT_FORMS as readonly unknown[]).includes(b.mint)) return `mint must be one of ${MINT_FORMS.join(', ')}`;
   if (typeof b.operation !== 'string' || !OPERATION.test(b.operation)) return 'operation must be an operation: read, write, sync or apply';
   if (typeof b.asset !== 'string' || !ASSET.test(b.asset)) return 'asset must be KIND/NAME, as cluster/prod or namespace/prod/web';
-  return { mint: b.mint as MintForm, operation: b.operation, asset: b.asset, token: b.token };
+  if (b.plan !== undefined && (typeof b.plan !== 'string' || !PLAN.test(b.plan))) return 'plan must be a plan\'s id';
+  return { mint: b.mint as MintForm, operation: b.operation, asset: b.asset, ...(typeof b.plan === 'string' ? { plan: b.plan } : {}), token: b.token };
 }
 
 /** The hopper's answer: the value sealed to the request, base64url. */
@@ -70,8 +75,9 @@ export interface SealedAnswer { salt: string; nonce: string; body: string }
 
 const answerKey = (token: string, salt: Buffer, requestNonce: string): Buffer =>
   Buffer.from(hkdfSync('sha256', Buffer.from(token, 'utf8'), salt, `hopper vault answer v1\0${requestNonce}`, 32));
+// A plan (issue #870) is bound only when the ask names one, so a client from before it opens its answers as it did.
 const aad = (ask: VaultAsk): Buffer =>
-  Buffer.from('name' in ask ? `${ask.name}\0${ask.token}` : `mint\0${ask.mint}\0${ask.operation}\0${ask.asset}\0${ask.token}`, 'utf8');
+  Buffer.from('name' in ask ? `${ask.name}\0${ask.token}` : `mint\0${ask.mint}\0${ask.operation}\0${ask.asset}\0${ask.plan ? `plan\0${ask.plan}\0` : ''}${ask.token}`, 'utf8');
 
 /** `value` sealed to the request whose nonce is `requestNonce`, under the client token. */
 export function sealAnswer(token: string, requestNonce: string, ask: VaultAsk, value: string): SealedAnswer {

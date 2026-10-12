@@ -1,0 +1,1 @@
+- You can now write the needs of a template request in plain words, one line each, for example: get pods in namespace web on cluster lab. The hopper reads the needs from the words and shows them before it makes the template. This works on Settings → Vault, in hopper template request, and for a job.

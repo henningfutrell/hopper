@@ -6,6 +6,8 @@ import type { TemplateRadius } from './blast-radius.ts';
 import { checkWait, type ReadOnlyCheck } from './read-only-check.ts';
 
 export * from './read-only-check.ts';
+// Infra plans (issue #870) sit beside the vault: an apply's credential is minted only for one.
+export type { InfraPlan, PlanApproval, PlanTool, PlanView } from './infra-plans.ts';
 import type { BoxTool, TemplateLimits } from './sandboxes.ts';
 
 /** A vault secret's name: a letter, then letters, digits, `_`, `.`, `-`; at most 64. */
@@ -239,6 +241,11 @@ export interface Template {
    * save. Absent: a person or an API caller asked for it, or it was saved before.
    */
   askedBy?: string;
+  /**
+   * The agent credential (issue #708, part 10; src/domain/agent-credential.ts): one of its secrets, a Claude token, that
+   * a box of it starts with, signed in, when its launch's scope holds it. Given only as far as its secrets are approved.
+   */
+  agentCredential?: string;
   /** The last read-only check, of the version it names (src/domain/read-only-check.ts). A save makes it stale. */
   check?: ReadOnlyCheck;
   savedBy: string;
@@ -264,6 +271,16 @@ export interface TemplateView extends Template {
   gives: string[];
   /** Rated from its profiles and its secrets (issue #584). */
   radius: TemplateRadius;
+}
+
+/**
+ * The template a request makes, shown before it is made (issue #708, part 9: the template request on Settings → Vault): what a
+ * request with these needs saves now, and who approves it. `exists`: a template of that name is there already, with the
+ * same needs (a request makes no second one) or changed by a person (a request is refused).
+ */
+export interface TemplatePreview {
+  template: string; image: string; tools: string[]; needs: string[]; readOnly: boolean;
+  approvedBy: 'the read policy' | 'a person'; waits: string[]; exists?: 'same' | 'changed';
 }
 
 const sameProfile = (a: OperationProfile, b: OperationProfile): boolean => a.operation === b.operation && a.asset.kind === b.asset.kind && a.asset.name === b.asset.name;

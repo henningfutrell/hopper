@@ -54,8 +54,8 @@ export interface FollowOnView { pathId: string; jobId: string; jobStatus: string
 
 /**
  * A follow-on job's link (issue #651): the job and proposal it came from, the path it continues and the person's
- * note. Like a fork, it has no source of its own: the parent's item is named here, and the sync never reports the
- * follow-on to it.
+ * note. Since issue #859 a follow-on has its parent's source as its own, so the sync reports it to the parent's item
+ * like any job of it. `source`: the parent's item, kept only by a follow-on queued before then (`sourceItemOf`).
  */
 export interface FollowOnOf {
   jobId: string;
@@ -69,6 +69,26 @@ export interface FollowOnOf {
   siblings: string[];
   source?: { source: string; kind: string; key: string; url?: string; title?: string; repo?: string };
 }
+
+/** What a job's source item is known by: where it came from, and the repository its work tree holds. */
+export interface SourceItemRef { source: string; kind: string; key: string; url?: string; title?: string; repo?: string }
+
+/**
+ * The source item a job works on (issue #859): its own, else its parent's — a fork's (issue #548), or a follow-on's
+ * queued before issue #859 gave a follow-on the parent's source. Its pull requests, pushes and work tree are that item's
+ * repository's.
+ */
+export const sourceItemOf = (job: { source?: SourceItemRef; forkOf?: { source?: SourceItemRef }; followOn?: FollowOnOf }): SourceItemRef | undefined =>
+  job.source ?? job.forkOf?.source ?? job.followOn?.source;
+
+/**
+ * A job whose accepted proposal handed its work to follow-on jobs (issue #859): its result names them. Its item is not
+ * done when it ends: its follow-ons do the work, and its item is theirs to report, so it follows no pull request.
+ */
+export const handedToFollowOns = (job: { result?: unknown }): boolean => {
+  const proposal = (job.result as { proposal?: { followOns?: unknown } } | undefined)?.proposal;
+  return Array.isArray(proposal?.followOns) && proposal.followOns.length > 0;
+};
 
 /** A path a reviewer level adds (issue #651). */
 export interface PathDraft { title: string; summary: string; tradeoffs?: Partial<Record<PathTradeoff, string>>; creates?: string }

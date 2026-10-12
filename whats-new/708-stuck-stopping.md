@@ -1,0 +1,1 @@
+- A sandbox box stuck while it stops is now removed at its time limit. Before, the refused stop kept the box and showed it as a problem.

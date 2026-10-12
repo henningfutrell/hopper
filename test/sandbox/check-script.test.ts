@@ -1,9 +1,11 @@
 // The read-only check's script and its reading (issue #716, item 4), run by a real `sh` with fake aws, kubectl, helm and
 // terraform (test/support/fake-cloud-tools.ts) that answer as the real tools do under a read-only or a writable credential.
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CheckCredential, OperationProfile, Probe } from '../../src/domain/types.ts';
 import { checkEnv, checkScript, readResults } from '../../src/sandbox/check-script.ts';
-import { HOPPER_PROBES, PROBES, probeCatalog } from '../../src/sandbox/probes.ts';
+import { HELM_LIST_NOTE, HOPPER_PROBES, PROBES, probeCatalog } from '../../src/sandbox/probes.ts';
 import { createFakeCloudTools, type FakeCloudTools } from '../support/fake-cloud-tools.ts';
 
 const tools: FakeCloudTools[] = [];
@@ -172,5 +174,61 @@ describe('the read-only check script (issue #716)', () => {
       ['lab', '|||||{"users":[{"user":{"token":"kube-token"}}]}|0'],
       ['1/none', '||||||0'],
     ]);
+  });
+});
+
+// Issue #869: a write probe never passes falsely, and a read probe that a right credential can fail says why.
+describe('the read-only check on a cluster view role (issue #869)', () => {
+  const CLUSTER = [read('cluster', 'lab')];
+  /** Runs the hopper's probes for `needs`, with `tool` replaced by a script of its own. */
+  async function runWith(tool: string, body: string, needs: OperationProfile[] = CLUSTER) {
+    const fake = createFakeCloudTools('read-only');
+    tools.push(fake);
+    writeFileSync(join(fake.dir, tool), `#!/bin/sh\necho "${tool} $*" >> ${JSON.stringify(join(fake.dir, 'calls.log'))}\n${body}\n`);
+    const runs = HOPPER_PROBES.runsFor(needs);
+    const r = await fake.runScript({ name: 'c', image: 'i', network: 'n', volume: 'v', env: {}, labels: {}, limits: { cpus: 1, memoryMb: 1 }, user: 'agent', script: checkScript(runs) });
+    return { results: readResults(runs, r.output), fake };
+  }
+
+  it('helm install\'s own server dry run ends 0 on a view role; the probe asks the API to create the chart\'s objects, and the refusal passes it', async () => {
+    const { results, fake } = await run('read-only', CLUSTER);
+    expect(results.find((r) => r.id === 'helm.install')).toMatchObject({ outcome: 'denied', passed: true });
+    expect(results.find((r) => r.id === 'helm.install')!.output).toContain('is forbidden');
+    expect(fake.calls()).toEqual(expect.arrayContaining([
+      'helm template hopper-read-only-check ./chart -n default',
+      'kubectl create -n default --dry-run=server -f chart.yaml',
+    ]));
+    expect(fake.calls().filter((c) => c.startsWith('helm install'))).toEqual([]);
+  });
+
+  it('one object of the chart created and one refused: the write went through, and the probe fails', async () => {
+    const { results } = await runWith('kubectl', `case "$1" in
+  get) echo NAME ;;
+  create) echo 'deployment.apps/hopper-read-only-check-chart created (server dry run)'; echo 'Error from server (Forbidden): services is forbidden' >&2; exit 1 ;;
+  *) echo 'Error from server (Forbidden): is forbidden' >&2; exit 1 ;;
+esac`);
+    expect(results.find((r) => r.id === 'helm.install')).toMatchObject({ outcome: 'allowed', passed: false, exit: 0 });
+  });
+
+  it('the EC2 write is a dry run: an UnauthorizedOperation passes it, and nothing is written', async () => {
+    const { results, fake } = await run('read-only', [read('aws-role', '123456789012/hopper-read')]);
+    expect(results.find((r) => r.id === 'aws.ec2-create-tags')).toMatchObject({ outcome: 'denied', passed: true });
+    expect(results.find((r) => r.id === 'aws.ec2-create-tags')!.output).toContain('UnauthorizedOperation');
+    expect(fake.calls().filter((c) => c.startsWith('aws ec2'))).toEqual(['aws ec2 create-tags --dry-run --resources vpc-00000000 --tags Key=hopper-read-only-check,Value=1']);
+  });
+
+  it('helm list refused on a view role: it fails, and its result says a view role cannot read the secrets helm keeps releases in', async () => {
+    const { results } = await runWith('helm', `case "$1" in
+  list) echo 'Error: list: failed to list: secrets is forbidden: User "system:serviceaccount:hopper:view" cannot list resource "secrets"' >&2; exit 1 ;;
+  create) mkdir -p "$2" ;;
+  template) echo 'kind: Deployment' ;;
+esac`);
+    const list = results.find((r) => r.id === 'helm.list')!;
+    expect(list).toMatchObject({ outcome: 'denied', passed: false, note: HELM_LIST_NOTE });
+    expect(HELM_LIST_NOTE).toContain('A view role cannot read secrets');
+    // A probe that passed carries no note.
+    const { results: ok } = await run('read-only', CLUSTER);
+    expect(ok.find((r) => r.id === 'helm.list')).toMatchObject({ passed: true });
+    expect(ok.find((r) => r.id === 'helm.list')!.note).toBeUndefined();
   });
 });

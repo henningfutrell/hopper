@@ -1,0 +1,98 @@
+// A running job's plans (issue #870, design.md "Infra plans: no apply without a plan"): outside the UI session, on the
+// hopper's own URL and behind the Host guard, as a job's artifacts are (job-artifacts.ts). `Authorization: Bearer <the
+// job's proxy token>`, honoured only while its job is at work.
+//
+//   POST /job/infra-plans          JSON: tool, asset (KIND/NAME), target, repo, ref, commit, pullRequest?, read?, text,
+//                                  file? (the saved plan file, base64): kept, 201, with its id
+//   GET  /job/infra-plans/:id      the plan, with its approval; ?file=1: its saved plan file, the bytes as they were put
+//
+// Plain text back, or JSON when `Accept: application/json` asks for it; every no says why. It changes no job, question,
+// webhook or setting: it records a plan, an event on the job's timeline. A job never approves one.
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { PLAN_FILE_MAX, PLAN_TEXT_MAX, type PlanInput } from '../domain/infra-plans.ts';
+import type { Job, JobStatus } from '../domain/types.ts';
+import { parseProxyToken } from '../github-proxy/token.ts';
+import { isPlanRefusal } from '../infra-plans/service.ts';
+import { assetOf } from '../vault/mint.ts';
+import type { TenantParts, Tenants } from './tenants.ts';
+
+export const INFRA_PLAN_PATH = '/job/infra-plans';
+const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
+const BEARER = /^Bearer\s+(\S+)$/i;
+const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
+/** A body that holds the largest text, escaped, and the largest plan file in base64. */
+const BODY_LIMIT = PLAN_TEXT_MAX * 2 + Math.ceil(PLAN_FILE_MAX / 3) * 4 + 64 * 1024;
+
+type Asker = { t: TenantParts; job: Job } | { status: number; text: string };
+
+function askerOf(tenants: Tenants, authorization: string | undefined): Asker {
+  const parts = parseProxyToken(BEARER.exec(authorization ?? '')?.[1] ?? '');
+  const t = parts ? tenants.user(parts.userId) : undefined;
+  const job = parts && t?.githubProxy.user.holds(parts) ? t.githubProxy.user.job(parts.jobId) : undefined;
+  if (!parts || !t || !job) return { status: 401, text: 'the token is not a job\'s of this hopper. A job asks with its own HOPPER_TOKEN_FILE.' };
+  if (!AT_WORK.includes(job.status)) return { status: 401, text: `job ${job.id} is ${job.status}, not at work: only a running job records a plan.` };
+  return { t, job };
+}
+
+const answer = (req: FastifyRequest, reply: FastifyReply, status: number, json: Record<string, unknown>, text: string): FastifyReply =>
+  (/\bapplication\/json\b/.test(req.headers.accept ?? '')
+    ? reply.code(status).type('application/json; charset=utf-8').send(`${JSON.stringify({ ok: status < 400, ...json })}\n`)
+    : reply.code(status).type('text/plain; charset=utf-8').send(`${text}\n`));
+const no = (req: FastifyRequest, reply: FastifyReply, status: number, why: string): FastifyReply => answer(req, reply, status, { error: why }, `no: ${why}`);
+
+const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+
+/** The plan input and its file in a job's body, or why it is none. */
+function inputOf(body: unknown): { input: PlanInput; file?: Buffer } | string {
+  const b = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
+  const asset = assetOf(str(b.asset) ?? '');
+  if (!asset) return 'asset must be KIND/NAME, as aws-role/123456789012/deploy: what an apply of the plan is minted a credential for';
+  const [tool, target, repo, ref, commit, text] = ['tool', 'target', 'repo', 'ref', 'commit', 'text'].map((k) => str(b[k]));
+  if (!tool || !target || !repo || !ref || !commit || text === undefined) return 'the plan names tool, asset, target, repo, ref, commit and text';
+  if (b.pullRequest !== undefined && typeof b.pullRequest !== 'number') return 'pullRequest must be a pull request number';
+  if (b.read !== undefined && typeof b.read !== 'string') return 'read must be the read profile the plan was made with: read/<kind>/<asset>';
+  let file: Buffer | undefined;
+  if (b.file !== undefined) {
+    if (typeof b.file !== 'string' || !BASE64.test(b.file) || b.file.length % 4 !== 0) return 'file must be the saved plan file in base64';
+    file = Buffer.from(b.file, 'base64');
+  }
+  const input: PlanInput = {
+    tool: tool as PlanInput['tool'], asset, target, repo, ref, commit, text,
+    ...(typeof b.pullRequest === 'number' ? { pullRequest: b.pullRequest } : {}), ...(typeof b.read === 'string' ? { read: b.read } : {}),
+  };
+  return { input, ...(file ? { file } : {}) };
+}
+
+export function jobInfraPlanRoutes(app: FastifyInstance, o: { tenants: Tenants }): void {
+  void app.register(async (scope) => {
+    // The text and the plan file in base64, whole: the limits are checked after.
+    scope.post(INFRA_PLAN_PATH, { bodyLimit: BODY_LIMIT }, async (req, reply) => {
+      const who = askerOf(o.tenants, req.headers.authorization);
+      if ('status' in who) return no(req, reply, who.status, who.text);
+      const said = inputOf(req.body);
+      if (typeof said === 'string') return no(req, reply, 400, said);
+      const r = who.t.githubProxy.infraPlans.record(who.job, said.input, said.file);
+      if (isPlanRefusal(r)) return no(req, reply, r.status, r.no);
+      const { text: _text, ...plan } = r;
+      return answer(req, reply, 201, { plan }, `recorded: plan ${r.id}  ${r.tool}  ${r.asset.kind}/${r.asset.name}  ${r.target}  stale at ${r.expiresAt}
+next: a person approves it in Infra changes; then ask with --plan ${r.id}`);
+    });
+
+    scope.get<{ Params: { id: string } }>(`${INFRA_PLAN_PATH}/:id`, async (req, reply) => {
+      const who = askerOf(o.tenants, req.headers.authorization);
+      if ('status' in who) return no(req, reply, who.status, who.text);
+      const plans = who.t.githubProxy.infraPlans;
+      const plan = plans.get(req.params.id);
+      if (!plan) return no(req, reply, 404, `no plan ${req.params.id}`);
+      if ((req.query as Record<string, unknown> | undefined)?.file !== undefined) {
+        const file = plans.file(plan.id);
+        if (!file) return no(req, reply, 404, `plan ${plan.id} has no saved plan file`);
+        return reply.code(200).type('application/octet-stream').header('cache-control', 'no-store').send(file);
+      }
+      const approval = plans.approval(plan.id);
+      const { text: _text, ...view } = plan;
+      return answer(req, reply, 200, { plan: { ...view, ...(approval ? { approval } : {}) } },
+        `plan ${plan.id}  ${plan.tool}  ${plan.asset.kind}/${plan.asset.name}  ${plan.target}  ${approval ? `approved by ${approval.by}` : 'not approved'}  stale at ${plan.expiresAt}`);
+    });
+  });
+}

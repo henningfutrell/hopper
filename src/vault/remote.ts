@@ -15,6 +15,7 @@ import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts'
 import type { RuntimeSecrets } from '../secrets/runtime.ts';
 import type { ClientTarget, VaultResult, VaultService } from './service.ts';
 import type { Vault } from './vault.ts';
+import type { AgentCredentialAnswer } from './agent-credential.ts';
 import { VAULT_KEY_VARIABLE, VAULT_OP_PATH, type VaultOp } from './wire.ts';
 
 const TIMEOUT_MS = 10_000;
@@ -105,5 +106,13 @@ export function remoteVault(o: {
     boxes: () => o.local.boxes(),
     templateScopes: () => o.local.templateScopes(),
     recordCheck: (name, check) => o.local.recordCheck(name, check), checkTemplate: (name, by) => o.local.checkTemplate(name, by),
+    // A launch's agent credential (issue #708, part 10): opened in the vault container, which holds the key; one kept in a
+    // vault backend is read here, which runs the backends.
+    async agentCredential(ask) {
+      const name = o.local.view().templates.find((t) => t.name === ask.template)?.agentCredential;
+      if (name !== undefined && o.local.view().secrets.find((s) => s.name === name)?.backend) return o.local.agentCredential(ask);
+      const r = await call<AgentCredentialAnswer>('agent-credential', { ask });
+      return 'problem' in r ? { refused: r.problem } : r.result;
+    },
   };
 }

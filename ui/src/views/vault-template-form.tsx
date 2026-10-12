@@ -13,6 +13,8 @@ import { limitsDraft, templateLimits } from '@/model/sandbox-launch';
 import type { AssetKind, Operation, OperationProfile, SharedSecretView, TemplateView, VaultSecret } from '@/model/wire';
 import { LimitsInput } from './sandbox-limits';
 import { ToolsInput } from './vault-tools';
+import { AgentCredentialInput } from './vault-agent-credential';
+import { agentCredentialOf } from '@/model/vault-agent-credential';
 import { BackendsInput } from './vault-state-backend';
 import type { Send } from './vault';
 
@@ -67,13 +69,14 @@ export function TemplateForm({ t, secrets: all, shared = [], busy, send, onDone 
   const [profiles, setProfiles] = useState<OperationProfile[]>(t?.profiles ?? []);
   const [tools, setTools] = useState<string[]>(t?.tools ?? []);
   const [limits, setLimits] = useState(limitsDraft(t?.limits));
+  const [credential, setCredential] = useState(t?.agentCredential ?? '');
   const saved = templateLimits(limits);
   const toggle = (n: string) => setScope(scope.includes(n) ? scope.filter((x) => x !== n) : [...scope, n]);
   return (
     <form className="space-y-3" onSubmit={async (e) => {
       e.preventDefault();
       if (!saved.ok) return;
-      if (await send({ action: 'save-template', name: name.trim(), image: image.trim(), secrets: scope, profiles, tools, limits: saved.limits }, `${name.trim()}: saved`)) onDone();
+      if (await send({ action: 'save-template', name: name.trim(), image: image.trim(), secrets: scope, profiles, tools, limits: saved.limits, agentCredential: agentCredentialOf(credential, scope) }, `${name.trim()}: saved`)) onDone();
     }}>
       {!t && (
         <label className="block space-y-1"><Label>Name — its boxes are named hopper-sandbox-&lt;name&gt;</Label>
@@ -93,6 +96,7 @@ export function TemplateForm({ t, secrets: all, shared = [], busy, send, onDone 
           </div>
         )}
       </div>
+      <AgentCredentialInput choice={credential} scope={scope} busy={busy} onChange={setCredential} />
       <ToolsInput tools={tools} busy={busy} onChange={setTools} />
       <ProfilesInput profiles={profiles} busy={busy} onChange={setProfiles} />
       <BackendsInput key={profiles.filter((p) => p.asset.kind === 'terraform-workspace').map((p) => p.asset.name).join(' ')} profiles={profiles} busy={busy} onChange={setProfiles} />

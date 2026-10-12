@@ -11,6 +11,8 @@ import type { TemplateView } from '../domain/vault.ts';
 import { isRootUser, runFlags } from './flags.ts';
 import { resolveParams, type LaunchTemplate } from './params.ts';
 import { toolsImage } from './tools.ts';
+import { launchCredential } from './agent-credential.ts';
+import type { AgentCredentialAnswer, AgentCredentialAsk } from '../vault/agent-credential.ts';
 
 /** The label on every box the hopper launches: its value is the hopper's instance id. */
 export const BOX_LABEL = 'io.hopper.box';
@@ -49,6 +51,8 @@ export interface LaunchContext {
   launching: Set<string>;
   /** How long the launch waits for the box's start check to pass. */
   startCheckMs: number;
+  /** The user's vault, for the template's agent credential (issue #708, part 10). Absent: no box gets one. */
+  agentCredential?: (ask: AgentCredentialAsk) => Promise<AgentCredentialAnswer>;
 }
 
 /** The record's note of a start check, at `at`. */
@@ -109,12 +113,14 @@ export async function launchBox(c: LaunchContext, userId: string, l: LaunchReque
   const taken = new Set([...(await c.runtime.list()).map((x) => x.name), ...c.repo.list().map((r) => r.name)]);
   let name = stem;
   for (let n = 2; taken.has(name); n++) name = `${stem}-${n}`;
+  // Asked before anything of the box is made: a refusal leaves no record, volume or container.
+  const credential = await launchCredential(c.agentCredential, t && { template: t.name, secrets: params.secrets, box: name }, (reason) => new LaunchRefused(409, reason));
   const record: SandboxRecord = {
     id: c.id, userId, name, agent: l.agent, ...(t ? { template: { name: t.name, version: t.savedAt } } : {}), image, params,
     runtime: c.runtime.kind, machine: c.machine, containerId: '', volume: `${name}-home`, keepHome: t?.limits?.keepHome ?? true,
     state: 'starting', createdAt: c.now.toISOString(),
     ...(params.ttlMinutes !== undefined ? { expiresAt: new Date(c.now.getTime() + params.ttlMinutes * 60_000).toISOString() } : {}),
-    address: c.joinUrl,
+    address: c.joinUrl, ...(credential.name ? { agentCredential: credential.name } : {}),
   };
   if (!c.repo.add(record)) throw new Error(`a sandbox box named ${name} was launched meanwhile: start it again`);
   c.launching.add(record.id);
@@ -125,7 +131,7 @@ export async function launchBox(c: LaunchContext, userId: string, l: LaunchReque
     madeVolume = await c.runtime.createVolume(record.volume, labels);
     const spec = {
       name, image, network: c.network, volume: record.volume, labels, user, check: c.joinUrl,
-      env: { HOPPER_CLIENT_NAME: name, HOPPER_JOIN: `${c.joinUrl}#${code}` },
+      env: { HOPPER_CLIENT_NAME: name, HOPPER_JOIN: `${c.joinUrl}#${code}`, ...credential.env },
       limits: { cpus: params.cpus, memoryMb: params.memoryMb },
     };
     record.containerId = await c.runtime.create(spec).catch(async (e: unknown) => {

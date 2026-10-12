@@ -33,7 +33,7 @@ const ALL: Record<EventType, true> = {
   'question.corrected': true, 'auto_answer.settings_changed': true, 'auto_park.settings_changed': true, 'github_rate_limiter.settings_changed': true,
   'question.thread_held': true, 'question.thread_approved': true, 'question.thread_posted': true, 'thread_ask.settings_changed': true,
   'github_proxy.done': true, 'github_proxy.refused': true, 'github_proxy.failed': true,
-  'vault.secret_set': true, 'vault.secret_removed': true, 'vault.secret_read': true, 'vault.secret_migrated': true, 'vault.master_key_rotated': true, 'template.saved': true, 'template.removed': true, 'vault.approved': true, 'vault.revoked': true, 'template.profile_approved': true, 'template.checked': true, 'template.check_requested': true, 'vault.delivered': true, 'vault.refused': true, 'vault.minted': true, 'vault.mint_refused': true, 'vault.mint_tested': true, 'vault.check_minted': true, 'vault.check_mint_refused': true,
+  'vault.secret_set': true, 'vault.secret_removed': true, 'vault.secret_read': true, 'vault.secret_migrated': true, 'vault.master_key_rotated': true, 'template.saved': true, 'template.removed': true, 'vault.approved': true, 'vault.revoked': true, 'template.profile_approved': true, 'template.checked': true, 'template.check_requested': true, 'vault.delivered': true, 'vault.agent_credential_given': true, 'vault.refused': true, 'vault.minted': true, 'vault.mint_refused': true, 'vault.mint_tested': true, 'vault.check_minted': true, 'vault.check_mint_refused': true,
   'vault.credential_asked': true, 'vault.credential_given': true, 'vault.credential_declined': true, 'vault.read_policy_set': true, 'vault.grant_asked': true, 'vault.granted': true, 'vault.grant_revoked': true,
   'source.request_approved': true, 'intake.actors_changed': true, 'job.origin_judged': true,
   'source.request_opened': true, 'source.backburner_lifted': true,
@@ -47,6 +47,7 @@ const ALL: Record<EventType, true> = {
   'bug_report.filed': true, 'bug_report.failed': true, 'bug_report.kept': true,
   'repo_checks.job_queued': true, 'repo_checks.dismissed': true, 'job.child_issue_filed': true, 'contribution.changed': true,
   'pointed_job.created': true, 'pointed_job.status_changed': true, 'github_watch.changed': true, 'github_watch.settings_changed': true,
+  'infra.plan_recorded': true, 'infra.plan_approved': true,
 };
 export const EVENT_TYPES = Object.keys(ALL) as EventType[];
 

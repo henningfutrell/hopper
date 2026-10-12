@@ -13,7 +13,7 @@
 //     And `vault.mint_tested` records it, and no key is in the answer, the events or the log
 //   Scenario: with the vault in a container of its own (issue #586), the vault mints and asks STS
 //   Scenario: STS refuses AssumeRole: the test says why, and GetCallerIdentity is not asked
-//   Scenario: no minting credential for the account, or an asset that is not an aws-role: refused, STS not asked
+//   Scenario: no minting credential for the account, or an asset that is not an aws-role or a cluster: refused, STS not asked
 import { createServer, type Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
@@ -117,7 +117,7 @@ describe('a mint test shows the role a minted AWS session assumes (issue #781)',
     expect(r.err).toBe('');
     expect(r.code).toBe(0);
     expect(JSON.parse(r.out)).toEqual({
-      asset: { kind: 'aws-role', name: `${ACCOUNT}/diag` }, credential: 'AWS_LAB', roleArn: `arn:aws:iam::${ACCOUNT}:role/diag`,
+      kind: 'aws', asset: { kind: 'aws-role', name: `${ACCOUNT}/diag` }, credential: 'AWS_LAB', roleArn: `arn:aws:iam::${ACCOUNT}:role/diag`,
       sessionName: 'p2zapwin', durationSeconds: 900, policyArns: ['arn:aws:iam::aws:policy/ReadOnlyAccess'], expiresAt: '2030-01-01T00:15:00.000Z',
       identity: { arn: `arn:aws:sts::${ACCOUNT}:assumed-role/diag/p2zapwin`, account: ACCOUNT, userId: 'AROADIAG:p2zapwin' },
     });
@@ -154,14 +154,14 @@ describe('a mint test shows the role a minted AWS session assumes (issue #781)',
     noKeyAnywhere(a, r.err);
   });
 
-  it('refuses an account no minting credential mints for, and an asset that is not an aws-role; STS is not asked', async () => {
+  it('refuses an account no minting credential mints for, and an asset that is not an aws-role or a cluster; STS is not asked', async () => {
     const { a, sts } = await boot();
     const other = await hopper(a, ['vault', 'mint-test', 'aws-role/999999999999/diag']);
     expect(other.code).toBe(2);
     expect(other.err).toMatch(/no minting credential mints for aws-account 999999999999/);
-    const cluster = await hopper(a, ['vault', 'mint-test', 'cluster/lab']);
-    expect(cluster.code).toBe(2);
-    expect(cluster.err).toMatch(/aws-role/);
+    const namespace = await hopper(a, ['vault', 'mint-test', 'namespace/lab/web']);
+    expect(namespace.code).toBe(2);
+    expect(namespace.err).toMatch(/aws-role/);
     expect((await hopper(a, ['vault', 'mint-test'])).err).toMatch(/usage: hopper vault mint-test/);
     expect(sts.seen).toEqual([]);
   });

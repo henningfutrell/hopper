@@ -25,6 +25,8 @@
 //   Scenario: a template's tools are saved with --tool, and a launch names fewer of them (issue #716, item 2)
 //   Scenario: a terraform workspace's state backend is saved with --backend, and kept by a later save (issue #715)
 //   Scenario: the read policy is shown, set and cleared (issue #716, item 1); an entry it cannot read is refused
+//   Scenario: a template's agent credential is saved with --agent-credential, kept by a later save, and dropped with none;
+//     a launch then starts the box signed in (issue #708, part 10)
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import type { TemplateView } from '../../src/domain/types.ts';
@@ -160,6 +162,21 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(r).toMatchObject({ code: 0 });
     expect(runtime.images.get(runtime.boxes.get(json<{ container: string }>(r).container)!.spec.image)).toContain('io.hopper.tools="kubectl"');
     expect(await hopper(a, ['sandbox', 'launch', '--template', 'kube', '--tool', 'aws'])).toMatchObject({ code: 2, err: expect.stringContaining('does not add aws') });
+  });
+
+  it('saves a template\'s agent credential with --agent-credential; a later save keeps it, none drops it (issue #708)', async () => {
+    const { a, runtime } = await boot();
+    const token = 'sk-ant-oat01-cli-agent-credential-0123456789';
+    expect((await hopper(a, ['vault', 'set', 'CLAUDE'], token)).code).toBe(0);
+    expect(kube(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--secret', 'CLAUDE', '--agent-credential', 'CLAUDE']))).toMatchObject({ agentCredential: 'CLAUDE' });
+    expect((await hopper(a, ['template', 'approve', 'kube'])).code).toBe(0);
+    expect(kube(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE]))).toMatchObject({ agentCredential: 'CLAUDE' });
+    const r = await hopper(a, ['sandbox', 'launch', '--template', 'kube']);
+    expect(r).toMatchObject({ code: 0 });
+    expect(runtime.boxes.get(json<{ container: string }>(r).container)!.spec.env.CLAUDE_CODE_OAUTH_TOKEN).toBe(token);
+    expect(r.out).not.toContain(token);
+    expect(kube(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--agent-credential', 'none']))!.agentCredential).toBeUndefined();
+    expect(await hopper(a, ['template', 'save', 'kube', '--image', IMAGE, '--agent-credential', 'OTHER'])).toMatchObject({ code: 2, err: expect.stringContaining('not one of the template\'s secrets') });
   });
 
   it('saves a terraform workspace\'s state backend with --backend, and a later save keeps it (issue #715)', async () => {

@@ -7,6 +7,7 @@
 // (issue #724): a person sends a done job's open pull request back with notes, and the brief its new job is told. Pure
 // but for the source it asks.
 import type { ActingPerson } from './failures.ts';
+import { handedToFollowOns } from './proposal-paths.ts';
 import type { Job } from './types.ts';
 import type { CrossReference } from './cross-references.ts';
 
@@ -14,8 +15,11 @@ import type { CrossReference } from './cross-references.ts';
 export const PULL_REQUEST_ACTS = ['merge', 'close'] as const;
 export type PullRequestAct = (typeof PULL_REQUEST_ACTS)[number];
 
-/** A pull request's head commit checks (issue #637): all passed, some still running, or one failed. None: absent. */
-export type ChecksState = 'passing' | 'pending' | 'failing';
+/**
+ * A pull request's head commit checks (issue #637): all passed, some still running, or one failed; unknown: the hopper may
+ * not read them (issue #855: its GitHub App lacks Checks and Commit statuses read), never merged by yolo mode. None: absent.
+ */
+export type ChecksState = 'passing' | 'pending' | 'failing' | 'unknown';
 
 /** Why a done job is not done, from its source; undefined when it is. A throw: the source could not tell. */
 type NotComplete = (job: Job) => Promise<string | undefined>;
@@ -264,19 +268,23 @@ export const failedTend = (job: Job, get: (id: string) => Job | undefined): bool
 /** An end after which a job's pull request is followed (issues #579, #786): finished, or failed. */
 export const followsWhenEnded = (job: Job): boolean => job.status === 'finished' || job.status === 'failed';
 
-/** A source state that names an ended job's pull request still to follow (issue #579). A reworked one is not (issue #724). */
-export const following = (job: Job): boolean => (job.sourceState?.source as { follow?: unknown } | undefined)?.follow === 'open';
+/**
+ * A source state that names an ended job's pull request still to follow (issue #579). A reworked one is not (issue #724),
+ * nor a proposal's job whose follow-ons go on with its work (issue #859): any pull request of its item is theirs.
+ */
+export const following = (job: Job): boolean =>
+  (job.sourceState?.source as { follow?: unknown } | undefined)?.follow === 'open' && !handedToFollowOns(job);
 
 /**
  * An ended job that may follow its item's open pull request when reconciled with its source (issue #763): finished — or
  * failed (issue #786): a pull request is followed to its end, whatever its job's end —, and following none — it ended
  * before the hopper followed pull requests, or its follow ended. Not one that a tend handed on (`tended`) or a rework
- * (`reworked`), nor one whose merge is still to check again. The caller checks it is the newest job of its item, and no
- * failed tend (`failedTend`).
+ * (`reworked`), nor one whose merge is still to check again, nor a proposal's job whose follow-ons go on with its work
+ * (issue #859). The caller checks it is the newest job of its item, and no failed tend (`failedTend`).
  */
 export const reconcilable = (job: Job): boolean => {
   const f = (job.sourceState?.source as { follow?: unknown } | undefined)?.follow;
-  return followsWhenEnded(job) && f !== 'open' && f !== 'tended' && f !== 'reworked' && !rechecksMerge(job);
+  return followsWhenEnded(job) && f !== 'open' && f !== 'tended' && f !== 'reworked' && !rechecksMerge(job) && !handedToFollowOns(job);
 };
 
 /**

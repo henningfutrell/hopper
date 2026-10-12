@@ -21,7 +21,7 @@ A box needs a **rootless** container runtime: Podman (the default) or Docker. Th
 
 | A job on a box | |
 |---|---|
-| Agent sign-in | You sign the box's agent in once. The sign-in stays in the box's home volume. Nothing of your own sign-in is copied in. |
+| Agent sign-in | The box starts signed in when its template has an **agent credential** and the launch gives it. Else you sign the box's agent in once, and the sign-in stays in the box's home volume. Nothing of your own sign-in is copied in. |
 | GitHub | No token. `git` and `gh` go through the hopper, which acts for the job and refuses pushes to release branches. |
 | Your ssh agent and keys | Never. |
 | Vault secrets | Only through `$HOPPER_SECRET`, only on a box of an approved template, and only after a vault grant. See [The vault](vault.md). |
@@ -86,6 +86,7 @@ A **template** is a kind of box. It has:
 | **Tools** | `aws`, `helm`, `kubectl`, `terraform`. The hopper adds them to the image, each pinned and checked by its SHA-256. |
 | **Operation profiles** | An operation (`read`, `write`, `sync`, `apply`) on an asset (`cluster`, `namespace`, `argocd-app`, `terraform-workspace`, `aws-account`, `aws-role`). Its jobs may ask for minted credentials for these. |
 | **Limits** | The default and the maximum of CPUs, memory and time limit, and whether a box's home volume stays when the box goes. |
+| **Agent credential** | Optional. One of its secrets: a Claude token. A box of the template starts with its agent signed in. See [Start a box signed in](#start-a-box-signed-in). |
 
 Make one in **Settings → Vault**, panel **Templates**, with **Add template**, or:
 
@@ -112,6 +113,24 @@ While a template waits, its boxes show on **Machines** as *waiting for template 
 
 Each launch fixes its own set of secrets and its one profile. A secret added to the template later reaches new boxes, not running ones.
 
+## Start a box signed in
+
+A template can give its boxes an **agent credential**. Then a box starts with Claude signed in, and no person runs `/login` in it.
+
+1. On a computer where you use Claude Code, run `claude setup-token`. It prints a token that starts with `sk-ant-oat`. The token is good for one year.
+2. Set the token as a vault secret, for example `CLAUDE`: `hopper vault set CLAUDE` (the value from stdin), or **Settings → Vault**.
+3. Add the secret to the template's secrets. In the template's form, set **Agent credential** to it. Or: `hopper template save <name> --image <image> --secret CLAUDE --agent-credential CLAUDE`.
+4. Approve the template.
+
+A launch gives the token to the box as `CLAUDE_CODE_OAUTH_TOKEN`. Every job on the box uses it.
+
+- Use only a token from `claude setup-token`. The hopper refuses a `/login` credentials file: its refresh token changes when one box renews it, and that signs the other boxes out.
+- A launch that leaves the secret out of its secrets starts a box that is not signed in. Sign it in once by hand.
+- While the agent credential waits for approval, no box of the template starts.
+- A box keeps the token it started with. After you set a new token, launch the boxes again.
+- Every process on the box can read the token, as every job could read a sign-in made by hand.
+- `--agent-credential none` takes it off the template.
+
 ## Templates a job asks for
 
 A running job can ask the hopper for the template its work needs:
@@ -120,9 +139,23 @@ A running job can ask the hopper for the template its work needs:
 sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-account/123456789012" --wait
 ```
 
-Each **need** is `<operation>/<kind>/<asset>`, at most 16. The hopper makes the template `asked-<hash>` from the needs: the box image, the tools the needs use, no vault secret, and one operation profile per need. The same needs always get the same template.
+Each **need** is `<operation>/<kind>/<asset>`, at most 16. You can also write a line in plain words, for example `kubectl get pods in namespace web on cluster lab` (see **Needs in plain words** below). The hopper makes the template `asked-<hash>` from the needs: the box image, the tools the needs use, no vault secret, and one operation profile per need. The same needs always get the same template.
 
 The hopper approves it with no person only when it makes it now and every need is a `read` on an asset the **read policy** holds. Anything else waits for a person on **Settings → Vault**. A job never widens, approves or re-approves a template. A job does not start the box: a person or the command line does.
+
+An admin can ask for a template the same way on **Settings → Vault**, panel **Template request**. Write what the box must do, one line each, in plain words or as needs, and select **Show the template**. The hopper shows the template it makes from them before it makes it: its name, its image, its tools, its needs, and who approves it. When it waits for a person, the panel says why. Then select **Ask for it**. If you change the needs, show the template again before you ask for it.
+
+### Needs in plain words
+
+A line in plain words names the assets and what the box does on them. The hopper reads it with a fixed set of words, so the same words always give the same needs. Show the template first: it lists the needs that the hopper read.
+
+- **The asset:** a kind word, then the name. `cluster lab`, `namespace web`, `workspace network` (Terraform), `account 123456789012` (AWS), `role ReadOnly` (AWS), `Argo CD app billing`.
+- **A namespace** goes in the cluster that the line names: `namespace web on cluster lab`. Or write `namespace lab/web`.
+- **A role** goes in the account that the line names: `role ReadOnly in account 123456789012`.
+- **What the box does:** a read word (`get`, `list`, `describe`, `logs`, `plan`, `show`) gives read. `apply` or `deploy` gives apply. `sync` gives sync. A change word (`delete`, `restart`, `install`, `upgrade`, `scale`) gives write. A command such as `get-caller-identity` counts too.
+- A change word after `not` or `never` gives no change: `get pods on cluster lab, never delete them` is read only.
+- The hopper refuses a line that names no asset or says nothing that the box does. Write that need as `<operation>/<kind>/<asset>`.
+- A change always waits for a person, as for a need you write out.
 
 ### The read policy
 
