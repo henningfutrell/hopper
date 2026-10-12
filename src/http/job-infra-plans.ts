@@ -86,7 +86,7 @@ export function jobInfraPlanRoutes(app: FastifyInstance, o: { tenants: Tenants }
       const failed = failedChecks(r);
       return answer(req, reply, 201, { plan }, `recorded: plan ${r.id}  ${r.tool}  ${r.asset.kind}/${r.asset.name}  ${r.target}  stale at ${r.expiresAt}
 summary: ${r.summary?.words ?? ''} (${r.summary?.level ?? ''} risk)
-${failed ? `failed: ${failed}\nnext: nobody approves this plan; fix the code and plan again` : `next: a person approves it in Infra changes; then ask with --plan ${r.id}`}`);
+${failed ? `failed: ${failed}\nnext: nobody approves this plan; fix the code and plan again` : `next: a person approves it on Infra; then ask with --plan ${r.id}`}`);
     });
 
     // Out-of-band changes (issue #871): the signals a job's read-only check found, judged by the hopper's one rule.
@@ -99,7 +99,7 @@ ${failed ? `failed: ${failed}\nnext: nobody approves this plan; fix the code and
       if (isPlanRefusal(r)) return no(req, reply, r.status, r.no);
       const recorded = r.recorded.map(({ detail: _detail, ...c }) => c);
       return answer(req, reply, 200, { recorded, inBand: r.inBand, known: r.known }, [
-        `out of band: ${r.recorded.length} recorded, each on Infra changes and sent to the notifiers; in band: ${r.inBand.length}; reported before: ${r.known}`,
+        `out of band: ${r.recorded.length} recorded, each on Infra and sent to the notifiers; in band: ${r.inBand.length}; reported before: ${r.known}`,
         ...r.recorded.map((c) => `recorded: ${c.id}  ${c.source}  ${c.target}  ${c.what}${c.who ? `  by ${c.who}` : ''}`),
         ...r.inBand.map((s) => `in band: ${s.source} ${s.key}: ${s.why}`),
       ].join('\n'));

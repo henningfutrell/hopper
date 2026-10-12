@@ -14781,6 +14781,34 @@ recorded, each an event; a controller's write and the write of the credential mi
 nothing recorded twice; marks once; refusals), `test/plugins/grokbot-intake.test.ts` (the notification),
 `test/ui/out-of-band.test.ts`.
 
+## The Infra page (issue #896, 2026-10-12)
+
+Before: plans (issue #870) and out-of-band changes (issue #871) were two panels at the bottom of Settings → Vault, and each
+showed nothing when its list was empty or its read failed. The feature was invisible until a job recorded a plan.
+
+- **A top-level view, `#infra`** (`ui/src/views/infra.tsx`), in the navigation between Machines and Usage, on par with
+  Jobs. Vault keeps one line that links to it. Three panels:
+  - **Plans** (`infra-plans.tsx`): each plan, its state and who it waits for (an admin: approval by risk is not built), its
+    summary, Approve, its applies, and the raw plan on demand.
+  - **Applies and drift** (`infraTimeline`, `ui/src/model/infra-plans.ts`, pure): one list, newest first, of plans recorded
+    and approved, applies, drift (`gitops`, `terraform-plan`), out-of-band writes (`cloudtrail`, `kube-audit`) and marks.
+  - **Out-of-band changes** (`out-of-band.tsx`), as before.
+- **Always shown.** The page reads `GET /api/infra-plans` and `GET /api/out-of-band` once. Each panel shows a loading line,
+  an error that says why with **Try again**, or an empty list that says how a job fills it (`POST /job/infra-plans`,
+  `POST /job/infra-signals`). Nothing hides on an error.
+- **Applies** (`PlanApply`, `src/domain/infra-plans.ts`; `InfraPlans.applies`, `src/infra-plans/service.ts`).
+  `GET /api/infra-plans` adds `applies`: each `vault.minted` event that names one of the listed plans, since the oldest of
+  them, newest first: `plan`, `at`, `operation`, `asset`, `job`, `expiresAt`, `renewal`. Read from the event log, so no
+  new table and no migration. Never the credential.
+- **API.** The four routes are under the OpenAPI tag `Infra` (they were under `Vault`). A UI session and an API token read
+  and act the same way: approve is still an admin's box action.
+
+**Not built here.** Approval by risk, so "who it waits for" names a person other than an admin; a nav badge with the plans
+that wait; a plan detail route of its own; live updates over the event stream (the page reads on open and on Try again).
+
+Tests: `test/ui/infra-plans.test.ts` (who a plan waits for, the apply line, the timeline's order and words, empty),
+`test/integration/infra-plans.test.ts` (an apply against an approved plan listed with it, and no credential in the answer).
+
 ## Git efficiency (issue #858 part 1, 2026-10-12)
 
 The git half of issue #822. Before: a job in a work tree that was not its repository got a full `git clone` of it (in

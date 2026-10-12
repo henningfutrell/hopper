@@ -13,7 +13,7 @@
 // policy (issue #716, vault-read-policy.tsx): what the hopper approves with no person, for a template a job asks for. The
 // template request on the page (issue #708, vault-template-request.tsx): the needs a box's work has, and the template the hopper makes from them.
 // The master key's rotation, the hopper's admin's (app/master-key.tsx, issue #659). A template's form, with the limits a
-// launch of it may ask for (issue #708): vault-template-form.tsx.
+// launch of it may ask for (issue #708): vault-template-form.tsx. Infra plans and out-of-band changes have their own view, Infra (issue #896): a link here.
 import { Ban, Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -27,7 +27,7 @@ import { approvalText, explicitApprovals, highRadius, keptText, mintsOf, namePro
 import type { Asset, OperationProfile, SharedSecretView, TemplateView, VaultBackendView, VaultSecret, VaultView } from '@/model/wire';
 import { Label, ValueInput } from '@/components/vault-fields';
 import { useHopper } from '@/store';
-import { AskedFor, InfraChanges, OutOfBandChanges, VaultGrants } from './vault-requests';
+import { AskedFor, VaultGrants } from './vault-requests';
 import { SystemSecrets } from './vault-system';
 import { SharedSecrets } from './vault-shared';
 import { ReadPolicy } from './vault-read-policy';
@@ -226,7 +226,8 @@ export function Vault() {
   const requests = view?.requests ?? [];
   return (
     <div className="max-w-2xl space-y-3">
-      <AskedFor requests={requests} can={can} busy={busy} send={send} />{view && <VaultGrants view={view} onView={setView} />}<InfraChanges /><OutOfBandChanges />
+      <AskedFor requests={requests} can={can} busy={busy} send={send} />{view && <VaultGrants view={view} onView={setView} />}
+      <p data-slot="vault-infra-link" className="text-sm text-muted-foreground">Plans, applies and out-of-band changes of infrastructure are on <a href="#infra" className="underline">Infra</a>.</p>
       <Panel title="Vault" icon={LockKeyhole} count={secrets.length || ''} bodyClassName="space-y-3"
         action={can && !adding ? <Button size="sm" onClick={() => setAdding(true)} disabled={busy || (!local && backends.length === 0)}><Plus />Add secret</Button> : undefined}>
         <p className="text-sm text-muted-foreground">Secrets for jobs, set once and never read back: no page and no API answer shows a value, to any role. Each is kept encrypted in the hopper's database, or in a vault backend you add in Plugins (HashiCorp Vault, 1Password, Bitwarden): then the hopper reads it there each time a job asks, and keeps no copy.</p>
