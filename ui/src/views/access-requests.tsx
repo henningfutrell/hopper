@@ -21,7 +21,7 @@ export function AccessRequests() {
       {!view && error && <p role="alert" className="text-sm text-bad break-words">Could not read the vault: {error}</p>}
       <AskedFor requests={view?.requests ?? []} can={can} busy={busy} send={sendVault} />
       <VaultGrants view={view} />
-      <TemplateApprovals templates={view?.templates ?? []} can={can} busy={busy} send={sendVault} />
+      <TemplateApprovals templates={view?.templates ?? []} {...(view?.asks ? { asks: view.asks } : {})} can={can} busy={busy} send={sendVault} />
       <Panel title="Box tokens" icon={Ticket}>
         <p className="text-sm text-muted-foreground">An agent that approves or merges work, or starts a job, through the API needs a box token: a token of a grant minted with Box grant on. Mint one, or end one, on <a href="#settings/api-tokens" className="underline">Settings → API tokens</a>.</p>
       </Panel>

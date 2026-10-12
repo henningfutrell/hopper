@@ -35,6 +35,10 @@ export function planExplainer(p: Pick<PlanView, 'summary'>): PlanExplainer | und
   };
 }
 
+/** An API token's ask to approve the plan (issue #909): who asked, and that a person confirms it by approving it. */
+export const askedLine = (a: NonNullable<PlanView['asked']>): string =>
+  `${a.asker} asked to approve this through the API at ${a.at}. An API token does not approve a high-risk plan: approve it here to confirm it.`;
+
 /** One apply: the operation, the asset, the job that asked, and until when the credential is valid. */
 export const applyLine = (a: PlanApply): string =>
   `${a.operation} on ${a.asset.kind} ${a.asset.name} by job ${a.job.slice(0, 8)}, valid until ${a.expiresAt}${a.renewal ? ' (renewed)' : ''}`;

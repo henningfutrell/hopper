@@ -8,11 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
 import { Empty, Panel } from '@/components/panel';
 import { TemplateRadiusBadge, TemplateRadiusReasons } from '@/components/template-radius';
-import { approvalText, explicitApprovals, highRadius, profileText, templateWaits } from '@/model/vault';
-import type { TemplateView } from '@/model/wire';
+import { approvalText, explicitApprovals, highRadius, profileAskOf, profileText, templateWaits } from '@/model/vault';
+import type { ProfileAsk, TemplateView } from '@/model/wire';
 import type { Send } from './vault';
 
-function Waiting({ t, can, busy, send }: { t: TemplateView; can: boolean; busy: boolean; send: Send }) {
+function Waiting({ t, asks, can, busy, send }: { t: TemplateView; asks?: ProfileAsk[]; can: boolean; busy: boolean; send: Send }) {
   const reads = t.pending.profiles.filter((p) => !highRadius(p));
   const whole = !t.approval || t.pending.image || t.pending.secrets.length > 0 || reads.length > 0;
   return (
@@ -24,6 +24,10 @@ function Waiting({ t, can, busy, send }: { t: TemplateView; can: boolean; busy: 
         <span className="text-xs text-warn">{approvalText(t)}</span>
       </div>
       <TemplateRadiusReasons radius={t.radius} />
+      {explicitApprovals(t).map((p) => {
+        const asked = profileAskOf(asks, t.name, p);
+        return asked ? <p key={profileText(p)} data-slot="profile-asked" className="text-xs text-warn break-words">{profileText(p)}: {asked}</p> : null;
+      })}
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
         <dt className="text-muted-foreground">Image</dt><dd className="font-mono break-all">{t.image}</dd>
         <dt className="text-muted-foreground">Scope</dt><dd className="font-mono break-words">{t.secrets.join(', ') || 'none'}</dd>
@@ -49,14 +53,14 @@ function Waiting({ t, can, busy, send }: { t: TemplateView; can: boolean; busy: 
   );
 }
 
-export function TemplateApprovals({ templates, can, busy, send }: { templates: TemplateView[]; can: boolean; busy: boolean; send: Send }) {
+export function TemplateApprovals({ templates, asks, can, busy, send }: { templates: TemplateView[]; asks?: ProfileAsk[]; can: boolean; busy: boolean; send: Send }) {
   const waiting = templates.filter(templateWaits);
   return (
     <div data-access-panel="templates">
       <Panel title="Template approvals" icon={Boxes} count={waiting.length || ''} bodyClassName="space-y-3">
         <p className="text-sm text-muted-foreground">A box of a template takes no job and gets nothing from the vault until a person approves the template, and again after a new image, secret or profile. A write, sync or apply profile takes its own approval.</p>
         {waiting.length === 0 ? <Empty>No template waits for approval. A template a person or a job adds, or changes, waits here.</Empty>
-          : <ul className="space-y-2">{waiting.map((t) => <Waiting key={t.name} t={t} can={can} busy={busy} send={send} />)}</ul>}
+          : <ul className="space-y-2">{waiting.map((t) => <Waiting key={t.name} t={t} asks={asks} can={can} busy={busy} send={send} />)}</ul>}
       </Panel>
     </div>
   );

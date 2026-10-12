@@ -1,0 +1,1 @@
+- When an agent asks to approve a risky infra plan or a credential that can change things, the hopper no longer does it. It asks you instead, and shows the ask on the item. You approve it there to confirm.

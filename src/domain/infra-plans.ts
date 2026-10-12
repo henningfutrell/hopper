@@ -67,7 +67,11 @@ export interface InfraPlan extends Omit<PlanInput, 'asset' | 'json'> {
 export interface PlanApproval { plan: string; by: string; at: string }
 
 /** A plan as the hopper shows it: the plan, without its text, and its approval. */
-export interface PlanView extends Omit<InfraPlan, 'text'> { approval?: PlanApproval }
+export interface PlanView extends Omit<InfraPlan, 'text'> {
+  approval?: PlanApproval;
+  /** Issue #909: an API token asked to approve it, and a person is to confirm it; only while it waits. */
+  asked?: { asker: string; at: string };
+}
 
 /** An apply (issue #896): a credential the vault minted for an approved plan, from its `vault.minted` event. Never the credential. */
 export interface PlanApply { plan: string; at: string; operation: string; asset: Asset; job: string; expiresAt: string; renewal: boolean }

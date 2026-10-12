@@ -57,12 +57,22 @@ Every route has a scope. `GET /api/scopes` (or `hopper token scopes`) gives the 
 | A request card, an assign, a release or a backburner in intake | `sources:intake` | `sources:intake.approve` (a request card) | yes |
 | A held job | `jobs:approve` | | yes |
 | A job's vault grant ask | `jobs:grant-vault` | | no |
-| An infra plan | `infra-plans:edit` | | yes |
+| An infra plan (a high-risk one: a person confirms it) | `infra-plans:edit` | | yes |
 | A vault template | `vault:edit` | `vault:edit.approve-template` | no |
+| A template's profile (write, sync or apply: a person confirms it) | `vault:edit` | `vault:edit.approve-profile` | no |
 | A credential request | `vault:edit` | `vault:edit.give-credential`, `vault:edit.decline-credential` | no |
 | A question | `questions:answer` | | yes |
 | A pull request merge | `pull-requests:merge` | | yes |
 | Read the Needs you list | `*:read` | | no |
+
+### What a person confirms
+
+Some approvals are too risky for an agent alone. An API token does not approve:
+
+- an infra plan whose risk is not low (it destroys, touches IAM, prod or data, or its risk is not known), and
+- a template's write, sync or apply profile (a credential that can change something).
+
+For these, the API answers `202` with `waiting`, and approves nothing. The hopper asks a person: it records the event `approval.confirmation_asked`, at most once an hour for an item. Subscribe a webhook (or a notifier that sends it) to that event to get the ask on your phone. The item shows who asked, on **Infra** or in **Access requests → Template approvals**. To confirm, approve the item there. Nothing else is needed: the agent asks again and sees it approved. A low-risk plan and a read profile the agent approves at once.
 
 ## Presets
 

@@ -2,7 +2,7 @@
 // from which commit — its state: waiting for a person, approved and still current, stale, or failed a check — and its
 // explainer.
 import { describe, expect, it } from 'vitest';
-import { applyLine, infraTimeline, planExplainer, planHeadline, planState } from '../../ui/src/model/infra-plans.ts';
+import { applyLine, askedLine, infraTimeline, planExplainer, planHeadline, planState } from '../../ui/src/model/infra-plans.ts';
 import type { OutOfBandView, PlanApply, PlanSummary, PlanView } from '../../src/domain/types.ts';
 
 const plan: PlanView = {
@@ -79,5 +79,11 @@ describe('the applies and drift timeline', () => {
 
   it('is empty when nothing happened', () => {
     expect(infraTimeline([], [], [])).toEqual([]);
+  });
+});
+
+describe('an agent\'s ask on a plan (issue #909)', () => {
+  it('says who asked through the API, and that approving it here confirms it', () => {
+    expect(askedLine({ asker: 'Grok Bot', at: '2026-10-12T10:10:00.000Z' })).toBe('Grok Bot asked to approve this through the API at 2026-10-12T10:10:00.000Z. An API token does not approve a high-risk plan: approve it here to confirm it.');
   });
 });

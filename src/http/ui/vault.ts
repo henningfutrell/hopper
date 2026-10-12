@@ -4,7 +4,8 @@
 // decline a credential request (issue #583, "The dynamic vault"); keep a system secret of the user's in a vault backend
 // (issue #658); set the read policy (issue #716); run a template's read-only check again (issue #716); ask for the
 // template some needs name, as a running job does (issue #718, "Templates on request"). Each answers the vault's view,
-// never a value, and is not cached.
+// never a value, and is not cached. An API token's approval of a write, sync or apply profile is a person's to confirm
+// (issue #909): asked, not done.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ASSET_KINDS, OPERATIONS } from '../../domain/access.ts';
@@ -19,6 +20,8 @@ import { holdsTemplate, type Vault } from '../../vault/vault.ts';
 import { templateRequestUser, vaultAnswer } from '../vault.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
 import { identityName } from './sessions.ts';
+import { profileAsk, profileNeedsPerson, profileRef } from '../../domain/confirmation-asks.ts';
+import { askerOf, askPerson, byApiToken } from './confirmation-asks.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -90,6 +93,11 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
     const parts = o.tenant(req);
     const { vault } = parts;
     const edit = parseWith(vaultEditBody, req.body);
+    if (edit.action === 'approve-profile' && byApiToken(s) && profileNeedsPerson(edit)) {
+      const profile = { operation: edit.operation, asset: edit.asset };
+      const waits = vault.view().templates.find((t) => t.name === edit.name)?.pending.profiles.some((p) => profileRef(edit.name, p) === profileRef(edit.name, profile));
+      if (waits) return askPerson(parts.store, reply, profileAsk(edit.name, profile, askerOf(s)));
+    }
     if (edit.action === 'set-read-policy') {
       const assets = [...new Set(edit.assets.map((x) => x.trim()).filter((x) => x !== ''))];
       const problem = readPolicyProblem(assets);
