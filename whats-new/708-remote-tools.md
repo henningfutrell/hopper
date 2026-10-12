@@ -1,1 +1,0 @@
-- A sandbox box with tools can now start on another machine. The hopper builds the tools image on that machine, once for each image and set of tools.
