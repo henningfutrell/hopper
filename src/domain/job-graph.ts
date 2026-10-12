@@ -54,12 +54,11 @@ export interface JobGraphNode {
   /** The issue or pull request number. */
   number?: number;
   url?: string;
-  /** A job's node: its id, status, task count, lane and machine. */
+  /** A job's node: its id, status, task count, and lane (`<machine>/lane-<n>`: it names the machine too). */
   jobId?: string;
   status?: JobStatus;
   tasks?: TaskCount;
   laneId?: string;
-  machineId?: string;
   /** When the node entered its stage, as near as its record tells (ISO): what "time in stage" counts from. */
   stageSince?: string;
   /** A job's pull request, or a pull request node's own state. */
@@ -195,7 +194,6 @@ export function jobGraph(input: JobGraphInput): JobGraph {
       stageSince: stageSinceOf(job),
       ...(s?.repo ? { repo: s.repo } : {}), ...(s?.number !== undefined ? { number: s.number } : {}), ...(s?.url ? { url: s.url } : {}),
       ...(job.tasks ? { tasks: job.tasks } : {}), ...(job.laneId ? { laneId: job.laneId } : {}),
-      ...(job.machineId ? { machineId: job.machineId } : {}),
       ...(pr ? { pullRequest: pr } : {}),
       ...(job.partlyDone && stage === 'partly_done' ? {
         partlyDone: { pullRequest: job.partlyDone, afterMerge: s?.repo && s.number !== undefined ? `the next part of ${ref(s.repo, s.number)} runs` : 'the next part of its issue runs' },

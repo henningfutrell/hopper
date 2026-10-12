@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
-import { withPhase, type JobStatus } from '../domain/types.ts';
+import { jobGraph, type JobGraphLink } from '../domain/job-graph.ts';
+import { withPhase, type Job, type JobStatus } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
 import type { TenantParts } from './tenants.ts';
 
@@ -23,6 +24,11 @@ export const jobsQuery = z.object({
 
 const idParams = z.object({ id: z.string() });
 
+/** The job graph's bounds: followed jobs read, steps back along a job's origins, lineage links read. */
+const GRAPH_FOLLOWED = 500;
+const GRAPH_STEPS = 5;
+const GRAPH_LINKS = 5000;
+
 // Read-only: jobs are pulled from sources, never posted (design.md "Phase 3"). The request's user's jobs, each with its phase (issue #548).
 export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
   app.get('/api/jobs', async (req) => {
@@ -36,6 +42,33 @@ export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     const q = engine.getQueue();
     const ids = [...q.waiting, ...q.running, ...q.waitingAnswer, ...q.operatorLed, ...q.parked, ...q.waitingOn, ...q.ended, ...q.locked].map((j) => j.id);
     return { events: store.events.lastOfJobs([...new Set(ids)]) };
+  });
+
+  // The job graph (issue #900): the jobs /api/queue holds, the partly done and PR-open jobs whose pull requests wait, and
+  // the jobs these ran again, forked from or carried out — with their issues, pull requests and typed edges.
+  app.get('/api/jobs/graph', async (req) => {
+    const { store, engine } = o.tenant(req);
+    const q = engine.getQueue();
+    const jobs = new Map<string, Job>();
+    for (const j of [...q.waiting, ...q.running, ...q.waitingAnswer, ...q.operatorLed, ...q.parked, ...q.waitingOn, ...q.ended, ...q.locked]) jobs.set(j.id, j);
+    for (const j of store.jobs.list({ followed: true, limit: GRAPH_FOLLOWED })) {
+      if ((j.sourceState?.source as { follow?: unknown } | undefined)?.follow === 'open') jobs.set(j.id, j);
+    }
+    // The jobs these come from, a few steps back: the run before, the job forked from, the proposal carried out.
+    for (let step = 0, next = [...jobs.values()]; step < GRAPH_STEPS && next.length > 0; step++) {
+      const found: Job[] = [];
+      for (const j of next) {
+        for (const id of [j.rerunOf, j.forkOf?.jobId, j.followOn?.jobId]) {
+          if (!id || jobs.has(id)) continue;
+          const back = store.jobs.get(id);
+          if (back) { jobs.set(id, back); found.push(back); }
+        }
+      }
+      next = found;
+    }
+    const links = store.events.recent(GRAPH_LINKS, ['job.child_issue_filed']).map((e) => e.data as unknown as JobGraphLink)
+      .filter((l) => typeof l.parent?.repo === 'string' && typeof l.parent.number === 'number' && typeof l.child?.repo === 'string' && typeof l.child.number === 'number');
+    return jobGraph({ jobs: [...jobs.values()], links, issueGraph: { nodes: store.issueGraph.nodes(), edges: store.issueGraph.edges() } });
   });
 
   app.get('/api/jobs/:id', async (req) => {
