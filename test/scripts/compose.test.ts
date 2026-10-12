@@ -123,6 +123,13 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect((postgres as Service & { healthcheck?: { test: string[] } }).healthcheck?.test.join(' ')).toMatch(/pg_isready -U hopper -d hopper && test -f \/run\/hopper-secrets\/password_set/);
   });
 
+  it('loads pg_stat_statements, so the Resources page shows statement latency (issue #947)', () => {
+    const script = postgres.command!.join('\n');
+    expect(script).toMatch(/exec docker-entrypoint\.sh postgres -c shared_preload_libraries=pg_stat_statements/);
+    // Made once Postgres takes connections, apart from the password step: it never holds the stack's health back.
+    expect(script).toMatch(/touch \$\$?s\/password_set; psql [^\n]*CREATE EXTENSION IF NOT EXISTS pg_stat_statements SCHEMA public[^\n]*\|\| true/);
+  });
+
   it('has no one-shot service anything depends on: podman-compose cannot start a container whose dependency has exited (issue #125)', () => {
     expect(Object.keys(r.services).sort()).toEqual(['hopper', 'openfga', 'openfga-migrate', 'postgres', 'tunnel']);
     for (const s of Object.values(r.services)) expect(Object.keys(s.depends_on ?? {})).not.toContain('openfga-migrate');
