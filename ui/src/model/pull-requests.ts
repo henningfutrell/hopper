@@ -13,7 +13,7 @@ const WAITS_TEXT: Record<MergeWait, string> = {
   'no pull request': 'no pull request found yet', tending: 'a job works on it now', 'tend failed': 'the job that worked on it failed: waiting for a person',
   'not checked yet': 'not checked yet', draft: 'draft',
   conflicts: 'conflicts with its base branch', 'checks failing': 'checks failed', 'yolo off': 'waiting for a person to merge',
-  'checks pending': 'waiting for checks', 'checks not started': 'waiting for checks to start', 'merge refused': 'merge refused',
+  'checks pending': 'waiting for checks', 'checks unknown': 'the hopper cannot read its checks', 'checks not started': 'waiting for checks to start', 'merge refused': 'merge refused',
   ready: 'ready, merging',
 };
 
@@ -26,7 +26,7 @@ export function waitingLine(v: PullRequestsView): string {
 }
 
 export const CHECKS_TEXT: Record<PullRequestCard['checks'], string> = {
-  passing: 'checks pass', pending: 'checks pending', failing: 'checks fail', none: 'no checks', unknown: 'checks not seen yet',
+  passing: 'checks pass', pending: 'checks pending', failing: 'checks fail', none: 'no checks', unknown: 'checks not known',
 };
 
 export const MERGEABLE_TEXT: Record<PullRequestCard['mergeable'], string> = {

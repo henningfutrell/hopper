@@ -54,6 +54,10 @@ describe('why a pull request waits (issue #677)', () => {
     expect(waits(seen(), { untrusted: true, yolo: false }).waits).toBe('yolo off');
   });
 
+  it('yolo on, checks the hopper cannot read (issue #855): checks unknown, never merged', () => {
+    expect(waits(seen({ checks: 'unknown', pushedAt: ago(NO_CHECKS_GRACE_MS + 1000) })).waits).toBe('checks unknown');
+  });
+
   it('a refused merge says so', () => {
     expect(waits(seen({ checks: 'none', mergeError: 'Required status check "test" is expected' })).waits).toBe('merge refused');
   });

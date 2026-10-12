@@ -15,11 +15,11 @@ export * from './repo-checks.ts';
  * Why a waiting pull request is not merged yet: the first that holds, in this order. `no pull request`: none named nor
  * found yet. `tending`: its item's tend job works on it; `tend failed`: that job failed, and it waits on a person (issue
  * #763). Its job's origin does not hold it (issue #805): the job already ran, so a pull request of a job with no origin
- * merges as any other. `checks not started`: it has no checks, inside the grace window after its last
+ * merges as any other. `checks unknown`: the hopper may not read its checks (issue #855). `checks not started`: it has no checks, inside the grace window after its last
  * push. `ready`: yolo mode on and it is ready, so the next sync merges it (issue #677).
  */
 export const MERGE_WAITS = [
-  'no pull request', 'tending', 'tend failed', 'not checked yet', 'draft', 'conflicts', 'checks failing', 'yolo off', 'checks pending', 'checks not started', 'merge refused', 'ready',
+  'no pull request', 'tending', 'tend failed', 'not checked yet', 'draft', 'conflicts', 'checks failing', 'yolo off', 'checks pending', 'checks unknown', 'checks not started', 'merge refused', 'ready',
 ] as const;
 export type MergeWait = (typeof MERGE_WAITS)[number];
 
@@ -95,6 +95,7 @@ function waitOf(named: boolean, seen: PullRequestSeen | undefined, yolo: boolean
   if (seen.checks === 'failing') return 'checks failing';
   if (!yolo) return 'yolo off';
   if (seen.checks === 'pending') return 'checks pending';
+  if (seen.checks === 'unknown') return 'checks unknown';
   if (seen.checks === 'none' && !noChecksSettled(seen, now)) return 'checks not started';
   if (seen.mergeError || !readyToMerge(seen, now)) return 'merge refused';
   return 'ready';

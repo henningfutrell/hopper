@@ -33,7 +33,7 @@ export interface DoneAtSourceOptions {
 export interface DoneAtSource {
   /** Before a pending run again: true when it must not run — finished, or put off `laterMs` while its source cannot tell. */
   beforeRun(r: FailureRecord, laterMs: number): Promise<boolean>;
-  /** A person's Retry: `go`, unless refused — finished, or its source cannot tell. */
+  /** A person's Retry: `go`, unless refused — finished. A source that cannot tell does not hold it: the person decides (issue #855). */
   unlessDone<T>(recordId: string, go: () => Promise<T>): Promise<T | { ok: false; reason: 'conflict'; message: string }>;
 }
 
@@ -58,9 +58,8 @@ export function createDoneAtSource(o: DoneAtSourceOptions): DoneAtSource {
     },
     async unlessDone(recordId, go) {
       const r = o.store.failures.get(recordId);
-      const done = r ? await finishedIfDone(r).catch((e: unknown) => notKnown(e)) : false;
-      if (done === false) return go();
-      return { ok: false, reason: 'conflict', message: `failure ${recordId} needs no run again: ${done === true ? `its job is ${DONE_NOTE}` : done}` };
+      if (!r || !await finishedIfDone(r).catch(() => false)) return go();
+      return { ok: false, reason: 'conflict', message: `failure ${recordId} needs no run again: its job is ${DONE_NOTE}` };
     },
   };
 }
