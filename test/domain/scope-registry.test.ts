@@ -16,6 +16,7 @@ const routes: RegistryRoute[] = [
   { method: 'post', path: '/ui/api/jobs/:id/grant-vault', summary: 'Grant a job the vault', role: 'operator' },
   { method: 'post', path: '/ui/api/brand-new/thing', summary: 'Something new', role: 'admin' },
   { method: 'post', path: '/ui/auth/token/refresh', summary: 'Refresh' },
+  { method: 'post', path: '/ui/api/vault', summary: 'Edit the vault', role: 'admin', actions: { field: 'action', values: ['approve-template', 'set'] } },
 ];
 const box = (route: string) => route === '/ui/api/sources/:name/intake';
 
@@ -32,9 +33,16 @@ describe('the scope registry', () => {
     const of = (id: string) => registry.sections.find((s) => s.id === id)?.permissions.map((p) => p.scope);
     expect(of('intake')).toEqual(['sources:intake', 'sources:read']);
     expect(of('jobs')).toEqual(['jobs:cancel', 'jobs:read']);
-    expect(of('vault')).toEqual(['jobs:grant-vault']);
     expect(of('other')).toEqual(['brand-new:thing']);
     expect(registry.sections.map((s) => s.id)).toEqual(['jobs', 'intake', 'vault', 'other']);
+  });
+
+  it('a route that does one of several actions has a scope for each, under its own (issue #909)', () => {
+    expect(registry.sections.find((s) => s.id === 'vault')?.permissions.map((p) => p.scope)).toEqual(['jobs:grant-vault', 'vault:edit', 'vault:edit.approve-template', 'vault:edit.set']);
+    expect(permission('vault:edit.approve-template')).toEqual({
+      scope: 'vault:edit.approve-template', description: 'Approve template (Edit the vault)', routes: ['POST /ui/api/vault (action: approve-template)'], role: 'admin', parent: 'vault:edit', box: false,
+    });
+    expect(permission('vault:edit')).not.toHaveProperty('parent');
   });
 
   it('a route with no scope is in no section', () => {
@@ -63,6 +71,13 @@ describe('the registry of the API reference', () => {
     for (const s of ['sources:intake', 'jobs:approve', 'jobs:grant-vault', 'infra-plans:edit', 'vault:edit', 'questions:answer', 'pull-requests:merge'])
       expect(scopes).toContain(s);
     expect(all.find((p) => p.scope === 'sources:intake')).toMatchObject({ box: true, role: 'operator' });
+  });
+
+  it('gives each action of an approval route a scope of its own (issue #909)', () => {
+    const scopes = all.map((p) => p.scope);
+    for (const s of ['sources:intake.approve', 'sources:intake.assign', 'vault:edit.approve-template', 'vault:edit.give-credential', 'vault:edit.decline-credential', 'vault:edit.set'])
+      expect(scopes).toContain(s);
+    expect(all.find((p) => p.scope === 'sources:intake.approve')).toMatchObject({ parent: 'sources:intake', box: true, role: 'operator' });
   });
 
   it('every preset names real scopes, and agent-intake reads every route the Needs you list reads', () => {
