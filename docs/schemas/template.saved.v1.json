@@ -85,6 +85,19 @@
         "additionalProperties": false
       }
     },
+    "probeMarks": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "enum": [
+          "expect-denied",
+          "skip"
+        ]
+      }
+    },
     "by": {
       "type": "string"
     }

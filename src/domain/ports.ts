@@ -7,7 +7,6 @@ import type {
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread,
 } from './types.ts';
-import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
 import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
@@ -167,6 +166,12 @@ export interface Executor {
    */
   park?(job: Job): Promise<void>;
   /**
+   * Take a running job's checkpoint (issue #921): its agent session and its work not pushed, read on its machine.
+   * Undefined when the job has none to take (no agent session, no worktree of its own). Rejects when its machine
+   * cannot be reached. Absent → the executor takes none.
+   */
+  checkpoint?(job: Job): Promise<import('./checkpoints.ts').CheckpointCapture | undefined>;
+  /**
    * Release whatever a job holds outside the process (close its pane), and reap what it left (issue
    * #401): its processes stopped, its scratch dir removed. Called after every terminal outcome, when a
    * waiting_answer job is cancelled or expires, and by restart recovery for running jobs it fails.
@@ -182,49 +187,8 @@ export interface Executor {
   machineShell?(machine: MachineSnapshot): MachineShell | undefined;
 }
 
-/**
- * What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. `pushed`
- * (issue #630): those whose HEAD holds a remote branch the default branch does not; absent, none.
- */
-export interface Reaped { kept: string[]; pushed?: string[] }
-
-/** What a job left on a machine, as the sweep's survey finds it (issue #410): job ids, and each scratch dir with its age. */
-export interface Survey {
-  /** Jobs with a running scope (`hopper-job-<id>.scope`). */
-  scopes: string[];
-  /** Jobs with a process carrying their HOPPER_JOB_ID. */
-  processes: string[];
-  /** Each `<work tree>/.hopper-scratch/<job id>` under the work trees asked about. */
-  scratch: { jobId: string; path: string; ageMs: number }[];
-}
-
-/**
- * A machine as the reap and the sweep reach it (issue #410): the fixed scripts run there through its own
- * connection — this machine, ssh, or a client target's `/reap` and `/survey` — never in a pane. Each
- * rejects when the machine cannot be reached or the script did not finish.
- */
-export interface MachineShell {
-  /**
-   * Stops the job's scope and every process carrying its id; removes `scratch` (its own) unless it holds work not
-   * pushed, or `keep` (a timed-out job's, issue #630: it may go on there). Says what it kept and what was pushed.
-   */
-  reap(jobId: string, scratch?: string, keep?: boolean): Promise<Reaped>;
-  /** What jobs left there: scopes, processes, and the scratch dirs under `roots`. */
-  survey(roots: string[]): Promise<Survey>;
-  /**
-   * Writes `content` to `file` under `dir`, the job's own credentials dir (`…/.hopper-scratch/<job id>/credentials`),
-   * mode 600, replacing it whole (issue #441): a running job reads its connection's current token there.
-   * `make`: the work tree may be made here (the jobs dir); else a work tree that is not there is refused.
-   */
-  keepCredential(jobId: string, dir: string, file: string, content: string, make?: boolean): Promise<void>;
-  /** What the machine holds (issue #542): its tools, its access, its credential sources — names only. */
-  discover(): Promise<DiscoveryFacts>;
-  /**
-   * Whether the machine reaches the hopper at `url` (issue #695), checked there: undefined when it does, or when the
-   * check cannot run there (a client older than it); else why not, plainly, naming the URL.
-   */
-  reach(url: string): Promise<string | undefined>;
-}
+import type { MachineShell, Reaped } from './machine-shell.ts';
+export type { MachineShell, Reaped, Survey } from './machine-shell.ts';
 
 // ---- Inputs the decider is made over ---------------------------------------------------
 

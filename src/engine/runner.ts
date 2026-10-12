@@ -14,7 +14,7 @@ import { nowIso, type EngineContext } from './context.ts';
 import { placeCredentials } from './credentials.ts';
 import type { Claim } from './decision-step.ts';
 import { recordOutcome } from './outcome.ts';
-import { freshStartBrief, recordPark, releaseParked, startsFresh } from './park.ts';
+import { elsewhereBrief, freshStartBrief, recordPark, releaseParked, startsFresh } from './park.ts';
 import { withCorrection } from './answers.ts';
 import { forkResume } from './phase-shifts.ts';
 import { nudgeCheck } from './nudge-check.ts';
@@ -184,7 +184,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
     const progress = progressReporter(job.id, claim.laneId);
     // A fork whose question was answered without it (issue #570) is told the answer first.
     // A person's correction of an earlier auto-answer (issue #632) goes in ahead of what it resumes with.
-    const resumeWith = store.tx(() => withCorrection(c, started, forkResume(c, started, started.pendingAnswer !== undefined && startsFresh(started) ? freshStartBrief(c, started, started.pendingAnswer) : started.pendingAnswer)));
+    const resumeWith = store.tx(() => withCorrection(c, started, forkResume(c, started, started.pendingAnswer === undefined ? undefined
+      : started.parked?.elsewhere ? elsewhereBrief(started, started.pendingAnswer) : startsFresh(started) ? freshStartBrief(c, started, started.pendingAnswer) : started.pendingAnswer)));
     const contextOf = (j: Job, m: MachineSnapshot): ExecutionContext => ({
       // The job rules as they are at this start (issue #172): an edit reaches the next job.
       job: j, laneId: claim.laneId, machine: m, signal: entry.controller.signal, jobRules: withAsks(readJobRules(store.config), j.spec, j.forkOf, j.followOn),

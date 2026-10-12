@@ -5,18 +5,18 @@ import { describe, expect, it } from 'vitest';
 import { apiTokenLine, boxPermissions, grantLine, mintableRoles, presetOfScopes, scopeTicked, toggleScope } from '../../ui/src/model/api-tokens.ts';
 import type { ScopeRegistry } from '../../ui/src/model/wire.ts';
 
-const permission = (scope: string, box = false) => ({ scope, description: scope, routes: [], role: 'viewer' as const, box });
+const permission = (scope: string, box = false, parent?: string) => ({ scope, description: scope, routes: [], role: 'viewer' as const, box, ...(parent ? { parent } : {}) });
 const registry: ScopeRegistry = {
   sections: [
     { id: 'jobs', title: 'Jobs', description: '', permissions: [permission('jobs:approve', true), permission('jobs:cancel'), permission('jobs:read')] },
-    { id: 'intake', title: 'Intake', description: '', permissions: [permission('sources:intake', true), permission('sources:read')] },
+    { id: 'intake', title: 'Intake', description: '', permissions: [permission('sources:intake', true), permission('sources:intake.approve', true, 'sources:intake'), permission('sources:intake.assign', true, 'sources:intake'), permission('sources:read')] },
   ],
   presets: [
     { id: 'read-only', label: 'Read only', description: '', scopes: ['*:read'], box: false },
     { id: 'agent-intake', label: 'Agent', description: '', scopes: ['*:read', 'sources:intake'], box: true },
   ],
 };
-const known = ['jobs:approve', 'jobs:cancel', 'jobs:read', 'sources:intake', 'sources:read'];
+const known = ['jobs:approve', 'jobs:cancel', 'jobs:read', 'sources:intake', 'sources:intake.approve', 'sources:intake.assign', 'sources:read'];
 
 describe('API tokens model', () => {
   it('a person gives a grant their role or a lower one', () => {
@@ -54,6 +54,17 @@ describe('API tokens model', () => {
     expect(toggleScope(['*:read', 'sources:intake'], 'sources:intake', false, known)).toEqual(['*:read']);
     expect(toggleScope(['*:read', 'sources:intake'], 'jobs:read', false, known)).toEqual(['sources:read', 'sources:intake']);
     expect(toggleScope(['*'], 'jobs:approve', false, known)).toEqual(['jobs:cancel', 'jobs:read', 'sources:intake', 'sources:read']);
+  });
+
+  it('an action\'s box is ticked by its route\'s; a clear of one action keeps the others (issue #909)', () => {
+    expect(scopeTicked(['sources:intake'], 'sources:intake.approve')).toBe(true);
+    expect(scopeTicked(['sources:intake.approve'], 'sources:intake')).toBe(false);
+    expect(toggleScope(['*:read'], 'sources:intake.approve', true, known)).toEqual(['*:read', 'sources:intake.approve']);
+    expect(toggleScope(['sources:intake.approve'], 'sources:intake', true, known)).toEqual(['sources:intake']);
+    expect(toggleScope(['sources:intake'], 'sources:intake.assign', false, known)).toEqual(['sources:intake.approve']);
+    expect(toggleScope(['sources:intake', 'sources:intake.approve'], 'sources:intake', false, known)).toEqual([]);
+    expect(boxPermissions(['sources:intake'], registry).map((p) => p.scope)).toEqual(['sources:intake']);
+    expect(boxPermissions(['sources:intake.approve'], registry).map((p) => p.scope)).toEqual(['sources:intake.approve']);
   });
 
   it('a ticked box action makes it a box grant, and a preset is named while its scopes stand as they are', () => {

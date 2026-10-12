@@ -10,12 +10,13 @@ import type { Interrupt, Sleep } from './monitor.ts';
 import { afterLoginAct, loginWait, restoreLogin, takeLogin } from './login.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
-import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText, protocolFooter } from './screen.ts';
+import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText } from './screen.ts';
 import { readPaneAnswer } from './pane-answer.ts';
+import { checkpointOn, payloadOn, relocation, taskText } from './relocate.ts';
 import { answerDialog, readyFor } from './before-send.ts';
 import { jobScratchOf, startInPane } from './start.ts';
 import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
-import { heldOf, lastLineOf, paneStateOf, realSleep, samePane, timeoutLiveness, whereOn, type HeldPane, type PaneOn, type RemoteHerdr, type Scratch, type Where } from './panes.ts';
+import { heldElsewhere, heldOf, lastLineOf, paneStateOf, realSleep, samePane, timeoutLiveness, whereOn, type HeldPane, type RemoteHerdr, type Scratch, type Where } from './panes.ts';
 
 export type { ClientTarget, RemoteHerdr } from './panes.ts';
 
@@ -87,13 +88,6 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     jobWorktrees: o.jobWorktrees ?? false, sharedDependencies: o.sharedDependencies ?? false,
   });
 
-  /** The refusal when the pane is already mapped to another lane; a lane never shares a pane. */
-  function heldElsewhere(laneId: LaneId, pane: PaneOn): ExecutionOutcome | null {
-    for (const [lane, held] of lanes) {
-      if (samePane(held, pane) && lane !== laneId) return { kind: 'failed', error: `herdr: pane ${pane.paneId} is already held by lane ${lane}` };
-    }
-    return null;
-  }
 
   /**
    * The reap (issues #401, #410): Claude gets a moment to exit by itself, then the job's machine — through
@@ -252,7 +246,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   }
 
   /** Open the job's pane in `p.cwd` and start Claude there (start.ts `startInPane`); `held` learns each pane, for onLane. */
-  function startIn(ctx: ExecutionContext, p: ClaudeJobPayload, held: (s: PaneState | undefined) => void, resume?: string): Promise<PaneState | ExecutionOutcome | Interrupt> {
+  function startIn(ctx: ExecutionContext, p: ClaudeJobPayload, held: (s: PaneState | undefined) => void, resume?: string, restore?: string): Promise<PaneState | ExecutionOutcome | Interrupt> {
     const where = whereOn(ctx.machine);
     const local = !where.ssh && !where.client;
     return startInPane(depsOn(where), ctx, p, {
@@ -263,14 +257,14 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         return local ? { ...env, ...o.paneEnv } : env;
       },
       opened: (s) => {
-        const refused = heldElsewhere(ctx.laneId, s);
+        const refused = heldElsewhere(lanes, ctx.laneId, s);
         if (refused) return refused;
         held(s);
         lanes.set(ctx.laneId, heldOf(s, ctx.job.id));
         return null;
       },
       close: async (s) => { await exitAndClose(heldOf(s, ctx.job.id)); held(undefined); },
-      random, ...(resume ? { resume } : {}),
+      random, ...(resume ? { resume } : {}), ...(restore ? { restore } : {}),
     });
   }
 
@@ -280,19 +274,39 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
    * there (its worktree found where it was left), and the answer goes to it. With none recorded (issue #530), a fresh
    * session starts there instead, sent its task, `answer` (the engine's brief: its question and answer) and the footer.
    */
+  /**
+   * Opens the job's pane and starts Claude (`resume`: its session; `restore`: its checkpoint first, issue #921), says
+   * `said`, then sends the text `text` gives for the pane, with its anchor.
+   */
+  function startAndSend(ctx: ExecutionContext, p: ClaudeJobPayload, o: { resume?: string; restore?: string; said?: string; first?: () => Promise<unknown> }, text: (s: PaneState) => [string, string]): Promise<ExecutionOutcome> {
+    let state: PaneState | undefined;
+    return onLane(ctx, () => state && heldOf(state, ctx.job.id), async () => {
+      await o.first?.();
+      const started = await startIn(ctx, p, (s) => { state = s; }, o.resume, o.restore);
+      if ('kind' in started || 'interrupt' in started) return started;
+      if (o.said) ctx.progress(o.said);
+      return send(ctx, started, p, ...text(started));
+    });
+  }
+
   function reopen(ctx: ExecutionContext, saved: PaneState | undefined, answer: string): Promise<ExecutionOutcome> {
+    if (ctx.job.parked?.elsewhere) return relocate(ctx, answer);
     const session = ctx.job.agentSession;
     if (!saved) return Promise.resolve({ kind: 'failed', error: 'the parked job has no pane state: its work tree is not known' });
     const p = { ...resolvePayload(ctx.job, ctx.machine), cwd: saved.cwd, makeWorkTree: false };
     ctx.workTree(saved.jobWorktree ?? saved.cwd);
-    let state: PaneState | undefined;
-    return onLane(ctx, () => state && heldOf(state, ctx.job.id), async () => {
-      await herdrOn(whereOn(ctx.machine)).reap(ctx.job.id);
-      const started = await startIn(ctx, p, (s) => { state = s; }, session);
-      if ('kind' in started || 'interrupt' in started) return started;
-      ctx.progress(session ? `resumed agent session ${session}` : 'started a fresh agent session in the kept work tree: none was recorded');
-      return session ? send(ctx, started, p, answer, lastLineOf(answer)) : send(ctx, started, p, `${p.prompt}\n\n${answer}\n\n${protocolFooter(p.cwd, ctx.jobRules, jobScratchOf(p.cwd, ctx.job.id), started.jobWorktree, started.sharedDependencies === true, started.checkout)}`, FOOTER_ANCHOR);
-    });
+    return startAndSend(ctx, p, {
+      first: () => herdrOn(whereOn(ctx.machine)).reap(ctx.job.id), ...(session ? { resume: session } : {}),
+      said: session ? `resumed agent session ${session}` : 'started a fresh agent session in the kept work tree: none was recorded',
+    }, (s) => (session ? [answer, lastLineOf(answer)] : [taskText(ctx, p, s, answer), FOOTER_ANCHOR]));
+  }
+
+  /** A parked job picked up to resume elsewhere (issue #921): a new pane and job worktree there, its checkpoint restored, its session resumed. */
+  function relocate(ctx: ExecutionContext, answer: string): Promise<ExecutionOutcome> {
+    const r = relocation(ctx);
+    if ('kind' in r) return Promise.resolve(r);
+    ctx.workTree(r.p.cwd);
+    return startAndSend(ctx, r.p, { resume: r.session, restore: r.restore, said: r.said }, () => [answer, lastLineOf(answer)]);
   }
 
   return {
@@ -303,22 +317,10 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     validate: validatePayload,
 
     async run(ctx) {
-      // A container target (issue #58) has no herdr; without this the job would run on this machine.
-      if (ctx.machine.docker) return { kind: 'failed', error: `herdr-claude does not run on container target ${ctx.machine.id}: it has no herdr; give it the command executor` };
-      // An ssh target that runs no herdr (issue #142): without this the job would run in this machine's herdr.
-      if (ctx.machine.ssh && !ctx.machine.herdr) return { kind: 'failed', error: `herdr-claude does not run on ${ctx.machine.id}: it runs no herdr; give it another executor` };
-      const asked = resolvePayload(ctx.job, ctx.machine);
-      // Issue #323: `~` is the lane's machine's home, never this process's when the job runs elsewhere.
-      const tree = workTreeOn(ctx.machine, asked.cwd);
-      if ('error' in tree) return { kind: 'failed', error: tree.error };
-      const p = { ...asked, cwd: tree.cwd };
+      const p = payloadOn(ctx);
+      if ('kind' in p) return p;
       ctx.workTree(p.cwd);
-      let state: PaneState | undefined;
-      return onLane(ctx, () => state && heldOf(state, ctx.job.id), async () => {
-        const started = await startIn(ctx, p, (s) => { state = s; });
-        if ('kind' in started || 'interrupt' in started) return started;
-        return send(ctx, started, p, `${p.prompt}\n\n${protocolFooter(p.cwd, ctx.jobRules, jobScratchOf(p.cwd, ctx.job.id), started.jobWorktree, started.sharedDependencies === true, started.checkout)}`, FOOTER_ANCHOR);
-      });
+      return startAndSend(ctx, p, {}, (s) => [taskText(ctx, p, s), FOOTER_ANCHOR]);
     },
 
     resume(ctx, answer) {
@@ -327,7 +329,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       if (ctx.job.parked || ctx.job.continued) return reopen(ctx, state, answer);
       if (!state) return Promise.resolve({ kind: 'failed', error: 'pane lost' });
       const p = resolvePayload(ctx.job, ctx.machine);
-      const refused = heldElsewhere(ctx.laneId, state);
+      const refused = heldElsewhere(lanes, ctx.laneId, state);
       if (refused) return Promise.resolve(refused);
       return onLane(ctx, () => state && heldOf(state, ctx.job.id), async () => {
         const herdr = herdrOn(state);
@@ -389,6 +391,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const open = state ? await exitAndClose(heldOf(state, job.id), 'none') : undefined;
       if (open) throw new Error(`pane ${state!.paneId} may still be open: ${open}`);
     },
+
+    // Read on the job's machine through its own connection, never the pane (issue #921): its worktree and agent session.
+    checkpoint: (job) => checkpointOn(job, herdrOn),
 
     async cleanup(job) {
       const state = paneStateOf(job);

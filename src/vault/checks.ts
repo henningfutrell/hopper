@@ -13,8 +13,19 @@
 import type { UserStore } from '../domain/ports.ts';
 import type { OperationProfile, VaultAccess } from '../domain/access.ts';
 import { CHECK_MINT_ID, expiryOf, mintKindFor, mintTarget, type Minted, type MintReach } from '../domain/minting.ts';
-import { currentCheck, failedProbes, type ReadOnlyCheck } from '../domain/read-only-check.ts';
+import { currentCheck, failedProbes, probeMarksProblem, type ProbeMarks, type ReadOnlyCheck } from '../domain/read-only-check.ts';
+import { PROBES } from '../sandbox/probes.ts';
 import type { MintFrom } from './mint.ts';
+
+/**
+ * A template's probe marks at a save (issue #916): the `given` ones, which replace the ones it `had`, or those when none
+ * are given; `keep` is what the template and its `template.saved` event hold. `problem`: why the given ones cannot be kept.
+ */
+export function probeMarksFor(given: Readonly<Record<string, string>> | undefined, had: ProbeMarks | undefined): { problem?: string; keep: { probeMarks?: ProbeMarks } } {
+  const problem = given ? probeMarksProblem(given, PROBES) : undefined;
+  const marks = { ...(problem ? had : (given as ProbeMarks | undefined) ?? had) };
+  return { ...(problem ? { problem } : {}), keep: Object.keys(marks).length ? { probeMarks: marks } : {} };
+}
 
 type Result = { ok: true } | { ok: false; code: 'invalid' | 'not_found' | 'conflict'; error: string };
 

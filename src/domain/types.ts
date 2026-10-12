@@ -8,6 +8,7 @@ import type { DeciderPolicy } from './decider-policy.ts';
 import type { UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
 import type { JobMachineLink, MachineHerdr } from './machines.ts';
+import type { ParkedElsewhere } from './checkpoints.ts';
 import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
@@ -170,15 +171,21 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * Set when the job was parked (issue #501): its pane and agent ended, its work tree and agent session kept,
    * `from` the status it was parked from. Kept through the re-queue until the resumed run records an outcome:
    * that claim reopens the session instead of typing into a pane. `auto` (issue #650): auto-park parked it, `why` says
-   * so, and the answer to its question re-queues it with no pick up.
+   * so, and the answer to its question re-queues it with no pick up. `elsewhere` (issue #921): a person picked it up to
+   * resume elsewhere — not pinned to its machine, its claim rebuilds its work tree from its checkpoint where it runs.
    */
-  parked?: { at: string; from: 'running' | 'waiting_answer'; auto?: true; why?: string };
+  parked?: { at: string; from: 'running' | 'waiting_answer'; auto?: true; why?: string; elsewhere?: ParkedElsewhere };
   /**
    * Set when a person continued this failed job from Needs a person (issue #551): queued again with its failure and
    * their note pending, pinned to its machine. As for a parked job, kept until the resumed run records an outcome:
    * that claim reopens its agent session in its work tree. `handoffId`: the hand-off it resolved.
    */
   continued?: { at: string } & ContinuedBy;
+  /**
+   * Its latest checkpoint (issue #921): its agent session and its work not pushed, copied from its machine while it ran.
+   * The patch and the session are in the store's checkpoints.
+   */
+  checkpoint?: import('./checkpoints.ts').JobCheckpoint;
   /** Set while the job waits on something it named (issue #483, status `waiting_on`): what, how it will know, since when. */
   wait?: JobWait;
   /** What its source and routing rules last gave the spec (issue #375): a part differing from it was set by hand. Absent: the spec. */
@@ -413,6 +420,7 @@ export interface Decision {
 
 // ---- Events ------------------------------------------------------------------------
 export * from './event-types.ts';
+export * from './checkpoints.ts';
 
 export interface DomainEvent<T = Record<string, unknown>> {
   /** Monotonic, assigned by the store on append. */
@@ -453,23 +461,8 @@ export interface WebhookSubscription {
   createdAt: string;
 }
 
-export type { WebhooksEdit } from './webhooks.ts';
+export type { DeliveryStatus, WebhookDelivery, WebhooksEdit } from './webhooks.ts';
 
-export type DeliveryStatus = 'pending' | 'retrying' | 'delivered' | 'failed';
-
-export interface WebhookDelivery {
-  id: string;
-  subscriptionId: string;
-  eventSeq: number;
-  eventType: EventType;
-  status: DeliveryStatus;
-  attempts: number;
-  lastStatusCode?: number;
-  lastError?: string;
-  nextAttemptAt?: string;
-  createdAt: string;
-  updatedAt: string;
-}
 
 // ---- Questions: src/domain/questions.ts (re-exported here) ----------------------------
 

@@ -18,6 +18,8 @@
 //   Scenario: the admin sets the API-token lifetime, 5 to 15 minutes
 //   Scenario: a grant from a preset (issue #909): the agent reads the registry and what Needs you shows, and acts on
 //     intake as a box grant, with no scope typed and no box flag named; an unknown preset is refused
+//   Scenario: a grant that holds one action of a route (issue #909): it does that action, and is refused the others,
+//     naming the action's scope
 import { afterEach, describe, expect, it } from 'vitest';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { createFakeContainerRuntime } from '../support/fake-container-runtime.ts';
@@ -135,6 +137,36 @@ describe('grants and refresh tokens (issue #881)', () => {
     // A preset and scopes of its own: the grant holds both; `box` named wins over the preset's.
     const both = await mint(a, session, { preset: 'read-only', scopes: ['questions:answer'], box: false });
     expect(both.body.view).toMatchObject({ scopes: ['*:read', 'questions:answer'], box: false });
+  });
+
+  it('a grant that holds one action of a route does that action only (issue #909)', async () => {
+    const a = await boot();
+    const session = await a.login();
+    const registry = await a.api('GET', '/api/scopes', undefined, { 'x-hopper-session': session });
+    const intake = registry.body.sections.find((s: { id: string }) => s.id === 'intake');
+    expect(intake.permissions).toContainEqual(expect.objectContaining({ scope: 'sources:intake.approve', parent: 'sources:intake', routes: ['POST /ui/api/sources/:name/intake (kind: approve)'], box: true }));
+
+    const minted = await mint(a, session, { scopes: ['*:read', 'sources:intake.approve', 'vault:edit.decline-credential'], box: true });
+    expect(minted.status, minted.text).toBe(200);
+    expect(minted.body.view.scopes).toEqual(['*:read', 'sources:intake.approve', 'vault:edit.decline-credential']);
+    const token = minted.body.token as string;
+    // Its action: the route answers for itself, not the scope.
+    const approved = await agent(a, 'POST', '/ui/api/sources/nope/intake', token, { kind: 'approve', keys: ['nope#1'], hash: 'a'.repeat(64) });
+    expect(approved.body?.error ?? '', approved.text).not.toMatch(/scope|box token/);
+    const declined = await agent(a, 'POST', '/ui/api/vault', token, { action: 'decline-credential', request: 'nope', reason: 'no' });
+    expect(declined.body?.error ?? '', declined.text).not.toMatch(/scope/);
+    // Another action of the same route: refused, naming its scope.
+    const assigned = await agent(a, 'POST', '/ui/api/sources/nope/intake', token, { kind: 'assign', keys: ['nope#1'] });
+    expect(assigned.status).toBe(403);
+    expect(assigned.body.error).toMatch(/do not cover sources:intake\.assign/);
+    const set = await agent(a, 'POST', '/ui/api/vault', token, { action: 'set', name: 'X', value: 'y' });
+    expect(set.status).toBe(403);
+    expect(set.body.error).toMatch(/do not cover vault:edit\.set/);
+    // A body with no action: the route's own scope.
+    expect((await agent(a, 'POST', '/ui/api/vault', token, {})).body.error).toMatch(/do not cover vault:edit$/);
+    // A route none of whose actions it holds: refused at the door.
+    expect((await agent(a, 'POST', '/ui/api/webhooks', token, { action: 'remove', id: 'nope' })).body.error).toMatch(/do not cover webhooks:edit/);
+    expect((await mint(a, session, { scopes: ['vault:edit.nope'] })).body.error).toMatch(/names no route/);
   });
 
   it('a grant without the box flag may not do a box action, whatever its scopes', async () => {

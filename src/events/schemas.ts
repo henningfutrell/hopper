@@ -131,7 +131,9 @@ export const EVENT_SCHEMAS = {
   'job.cancelled': strict({ reason: z.string() }),
   'job.requeued': strict({ from: z.string(), reason: z.string() }),
   'job.parked': strict({ from: z.enum(['running', 'waiting_answer']), machineId: z.string().optional(), auto: z.literal(true).optional(), why: z.string().optional() }),
-  'job.unparked': strict({ to: z.enum(['queued', 'waiting_answer']) }),
+  // `elsewhere` (issue #921, additive): picked up to resume on another machine from its checkpoint. `job.checkpointed`
+  // (issue #921): a checkpoint taken on `machineId`; `bytes` compressed, whether it holds the agent session, the commits not pushed.
+  'job.unparked': strict({ to: z.enum(['queued', 'waiting_answer']), elsewhere: z.literal(true).optional() }), 'job.checkpointed': strict({ machineId: z.string(), bytes: z.number().int(), session: z.boolean(), commits: z.number().int() }),
   // A person's Continue names its hand-off (issue #551); the assessor's, its failure record (issue #630).
   'job.continued': strict({ handoffId: z.string().optional(), recordId: z.string().optional() }),
   'job.reattached': strict({ reason: z.string() }),
@@ -328,7 +330,7 @@ export const EVENT_SCHEMAS = {
   'vault.secret_read': strict({ name: z.string(), by: z.string(), purpose: z.string().optional() }), 'vault.secret_migrated': strict({ name: z.string(), from: z.string() }),
   // A master key rotation (issue #659): the short fingerprints of the key replaced and the new one, who pressed it, the counts. Never a key.
   'vault.master_key_rotated': strict({ from: z.string(), to: z.string(), by: z.string(), resealed: z.number().int().nonnegative(), unreadable: z.number().int().nonnegative() }),
-  'template.saved': strict({ template: z.string(), image: z.string(), tools: z.array(z.string()).optional(), secrets: z.array(z.string()), profiles: z.array(operationProfile.extend({ backend: stateBackend.optional() })).optional(), by: z.string() }),
+  'template.saved': strict({ template: z.string(), image: z.string(), tools: z.array(z.string()).optional(), secrets: z.array(z.string()), profiles: z.array(operationProfile.extend({ backend: stateBackend.optional() })).optional(), probeMarks: z.record(z.string(), z.enum(['expect-denied', 'skip'])).optional(), by: z.string() }),
   'template.checked': strict({ template: z.string(), state: z.enum(['passed', 'failed']), failed: z.array(z.string()), problem: z.string().optional(), artifact: z.string().optional() }),
   'template.check_requested': strict({ template: z.string(), by: z.string() }),
   'template.removed': strict({ template: z.string(), by: z.string() }),

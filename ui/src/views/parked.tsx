@@ -3,8 +3,10 @@
 // agent session resumes or it starts fresh —, high-priority jobs first, then the longest parked on top. Expanded, the
 // full question and, where the session may act, an answer box: Answer and pick up sends the answer and picks the job up
 // in one step. A question asked on its issue thread (issue #435) says so, with Post on the issue while it is held for review. A job auto-park parked (issue #650) says why, and its answer alone picks it up: its box only answers. Pick up (`POST /ui/api/jobs/:id/requeue`) and Cancel act on the row; a viewer reads only. A job picked
-// up with its question still open waits on it again, and the question is back in Questions.
-import { ChevronRight, CirclePause, Play } from 'lucide-react';
+// up with its question still open waits on it again, and the question is back in Questions. A job with a checkpoint
+// (issue #921) says when it was taken, and Resume elsewhere, confirmed, picks it up on any machine from it; with its
+// question open, the answer comes first.
+import { ChevronRight, CirclePause, MoveRight, Play } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -12,7 +14,7 @@ import { Confirm } from '@/components/confirm';
 import { JobTitle, Since } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
-import { machineName, parkedOrder, startsFresh } from '@/model/board';
+import { canResumeElsewhere, machineName, parkedOrder, startsFresh } from '@/model/board';
 import { answerPicksUp } from '@/model/auto-park';
 import { goalOf } from '@/model/job';
 import { firstLine } from '@/model/questions';
@@ -58,6 +60,30 @@ function AnswerAndPickUp({ job, q }: { job: Job; q: QuestionView }) {
   );
 }
 
+/**
+ * Resume elsewhere (issue #921): the job is picked up on any machine that can take it, its work tree rebuilt there from
+ * its last checkpoint. `waits`: its question is open with no answer, which must come first.
+ */
+function ResumeElsewhereButton({ job, waits }: { job: Job; waits: boolean }) {
+  const machines = useHopper((s) => s.machines);
+  const canOperate = useCanOperate();
+  const k = job.checkpoint;
+  if (!canOperate || !k || !canResumeElsewhere(job)) return null;
+  const button = (
+    <Button size="xs" variant="outline" disabled={waits} title={waits ? 'Answer its question first: it resumes elsewhere with the answer' : 'Resume on any machine, from its last checkpoint'}>
+      <MoveRight />Resume elsewhere
+    </Button>
+  );
+  if (waits) return button;
+  const n = k.commits.length;
+  return (
+    <Confirm title="Resume elsewhere?" action="Resume elsewhere" onConfirm={() => act(`/ui/api/jobs/${job.id}/requeue`, { elsewhere: true }, 'Job picked up: it resumes elsewhere from its checkpoint')}
+      description={<>“{goalOf(job)}” resumes its agent session on any machine that can take it, from its checkpoint taken <Since iso={k.at} /> ago on {machineName(k.machineId, machines)}. Its work tree is made again there: the pushed work, then the checkpoint&apos;s changes as uncommitted work{n ? ` (${n} commit${n === 1 ? '' : 's'} not pushed)` : ''}. Work done after the checkpoint is lost.</>}>
+      {button}
+    </Confirm>
+  );
+}
+
 function ParkedRow({ job, q }: { job: Job; q: QuestionView | undefined }) {
   const machines = useHopper((s) => s.machines);
   const canOperate = useCanOperate();
@@ -73,6 +99,7 @@ function ParkedRow({ job, q }: { job: Job; q: QuestionView | undefined }) {
           : <span className="w-6 shrink-0" />}
         <JobTitle job={job} className="flex-1" />
         <PickUpButton job={job} />
+        <ResumeElsewhereButton job={job} waits={q !== undefined && job.pendingAnswer === undefined} />
         <CancelButton job={job} />
       </div>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-8 text-xs text-muted-foreground">
@@ -81,6 +108,7 @@ function ParkedRow({ job, q }: { job: Job; q: QuestionView | undefined }) {
         <span data-slot="resumes" title={job.agentSession ? 'Picked up, its agent session resumes where it stopped.' : 'No agent session was recorded: picked up, it starts a fresh one in its kept work tree.'}>
           {job.agentSession ? 'resumes its session' : 'starts fresh'}
         </span>
+        {job.checkpoint && <span data-slot="checkpoint" title={`Its last checkpoint, taken on ${machineName(job.checkpoint.machineId, machines)}`}>checkpoint <Since iso={job.checkpoint.at} /> ago</span>}
         {answered && <StatusBadge status="answered" tone="ok" title="Answered: picked up, it resumes with the answer." />}
       </div>
       {job.parked?.why && <div data-slot="parked-why" className="pl-8 text-xs text-muted-foreground">{job.parked.why}</div>}

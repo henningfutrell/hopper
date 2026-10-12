@@ -7,6 +7,7 @@
 // level's run (issue #482); `POST /reap` and `POST /survey`
 // its machine scripts (issue #410); `POST /runtime` a container runtime call on the machine's own runtime (issue #708). One session per link: a client that dials in again is a new link.
 import { DISCOVER_TIMEOUT_MS } from '../client/discover.ts';
+import { CHECKPOINT_TIMEOUT_MS } from '../client/checkpoint.ts';
 import { connect, type ClientHttp2Session } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import type { ClientRelease } from '../client/release.ts';
@@ -106,8 +107,8 @@ function clientHome(home: unknown): string | undefined {
 }
 
 /** A reap or a survey on the client target (issue #410): the client runs its own fixed script; resolves what it printed and its exit code. */
-export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/credential' | '/discover' | '/reach', body: Record<string, unknown>): Promise<ClientAnswer> {
-  return clientCall<ClientAnswer>(t, path, body, path === '/discover' ? DISCOVER_TIMEOUT_MS + 15000 : 60000);
+export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/credential' | '/discover' | '/reach' | '/checkpoint', body: Record<string, unknown>): Promise<ClientAnswer> {
+  return clientCall<ClientAnswer>(t, path, body, path === '/discover' ? DISCOVER_TIMEOUT_MS + 15000 : path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS + 15000 : 60000);
 }
 
 /**

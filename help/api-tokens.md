@@ -46,20 +46,23 @@ A scope names routes by their area and their act:
 
 For example, `POST /ui/api/questions/:id/answer` needs `questions:answer`, and `POST /ui/api/sources/:name/intake` needs `sources:intake`. A grant holds `<area>:<act>`, `<area>:*`, `*:<act>` (`*:read` is every read) or `*` (everything its role allows).
 
+Some routes do one of several actions. The body names the action, in `action` (or `kind`). Each action has a scope of its own: `<route scope>.<action>`. For example, `vault:edit.approve-template` lets an agent approve a vault template, and no other vault change. `sources:intake.approve` lets it approve a request card, and not assign or release an item. The route's scope (`vault:edit`) covers all of its actions. When a grant holds only some actions of a route, a request for another action gets `403`, and the answer names the scope it needs.
+
 Every route has a scope. `GET /api/scopes` (or `hopper token scopes`) gives the full list, in sections by area of work. For each scope it gives what the scope lets an agent do, the routes it covers, the least role they need, and whether it is a box action. You do not need to know the scope names: the grant form shows the same list as boxes.
 
 ### Which scope approves what
 
-| To approve | Scope | Box action |
-|------------|-------|------------|
-| A request card, an assign, a release or a backburner in intake | `sources:intake` | yes |
-| A held job | `jobs:approve` | yes |
-| A job's vault grant ask | `jobs:grant-vault` | no |
-| An infra plan | `infra-plans:edit` | yes |
-| A vault template or a credential request | `vault:edit` | no |
-| A question | `questions:answer` | yes |
-| A pull request merge | `pull-requests:merge` | yes |
-| Read the Needs you list | `*:read` | no |
+| To approve | Scope | Only this action | Box action |
+|------------|-------|------------------|------------|
+| A request card, an assign, a release or a backburner in intake | `sources:intake` | `sources:intake.approve` (a request card) | yes |
+| A held job | `jobs:approve` | | yes |
+| A job's vault grant ask | `jobs:grant-vault` | | no |
+| An infra plan | `infra-plans:edit` | | yes |
+| A vault template | `vault:edit` | `vault:edit.approve-template` | no |
+| A credential request | `vault:edit` | `vault:edit.give-credential`, `vault:edit.decline-credential` | no |
+| A question | `questions:answer` | | yes |
+| A pull request merge | `pull-requests:merge` | | yes |
+| Read the Needs you list | `*:read` | | no |
 
 ## Presets
 

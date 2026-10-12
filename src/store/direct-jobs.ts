@@ -1,4 +1,4 @@
-// Direct jobs (issue #901, tenant migration 48): one row each, the body as JSON — the submission, its brief included,
+// Direct jobs (issue #901, tenant migration 49): one row each, the body as JSON — the submission, its brief included,
 // kept in the user's schema and nowhere else.
 import type { DirectJob, DirectJobRepository } from '../domain/direct-jobs.ts';
 import { parse, type StoreContext } from './context.ts';

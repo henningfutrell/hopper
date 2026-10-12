@@ -28,7 +28,7 @@ import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { HttpError } from './errors.ts';
 import { atApiDoor, requestSession } from './host-guard.ts';
 import { apiTokenIn } from './ui/guard.ts';
-import { accessIdOf, grantScopeRefusal } from './ui/api-tokens.ts';
+import { accessIdOf, grantActionRefusal, grantScopeRefusal } from './ui/api-tokens.ts';
 import type { ApiGrants } from './ui/api-grants.ts';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
 import type { UiSessions } from './ui/sessions.ts';
@@ -128,7 +128,10 @@ export function createApiDoor(o: { tenants: Tenants; signIn: Pick<SignIn, 'check
   };
 }
 
-export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sessions: UiSessions; grants: Pick<ApiGrants, 'live'>; signIn: Pick<SignIn, 'checkToken'>; access: Pick<Access, 'decideApiToken'>; port: () => number; lan: Lan }): void {
+export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sessions: UiSessions; grants: Pick<ApiGrants, 'live'>; signIn: Pick<SignIn, 'checkToken'>; access: Pick<Access, 'decideApiToken'>; port: () => number; lan: Lan;
+  /** The field of a POST route's body that names its action (issue #909), by the route as registered; undefined: none. */
+  actionField: (route: string) => string | undefined;
+}): void {
   const peers = peerList(o.lan.peers);
   const throughApiDoor = createApiDoor(o);
   app.addHook('onRequest', async (req, reply) => {
@@ -166,6 +169,20 @@ export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sess
     if (!('reach' in r) || r.reach !== 'local') return;
     const all = o.tenants.list();
     if (all.length === 1) users.set(req, all[0]!.id);
+  });
+  // A grant's mutation that names one of its route's actions (issue #909): once the body is read, the grant's scopes
+  // must cover that action, or the whole route. The door let the grant through on a part of the route's actions.
+  app.addHook('preHandler', async (req, reply) => {
+    if (req.method !== 'POST' || kinds.get(req) !== 'api') return;
+    const route = req.routeOptions.url;
+    const field = route === undefined ? undefined : o.actionField(route);
+    if (field === undefined) return;
+    const session = requestSession(req, o.sessions);
+    if (!session) return;
+    const outOfScope = grantActionRefusal(o.grants, session, req.method, route, (req.body as Record<string, unknown> | undefined)?.[field]);
+    if (outOfScope === undefined) return;
+    console.warn(`hopper: API token refused for ${req.method} ${req.url.split('?')[0]}: ${outOfScope}`);
+    return reply.code(403).send({ error: `the API token may not do this: ${outOfScope}` });
   });
 }
 

@@ -11,6 +11,7 @@
 // scripts on this machine (issue #410): the reap of an ended job, what the sweep asks, a running job's token; `{code, stdout, stderr}`;
 // `POST /discover` runs the discovery script (issue #542, discover.ts): only reads, no argument of the request's; `{code, stdout, stderr}`;
 // `POST /reach {url}` runs the reach check (issue #695, reach.ts): whether this machine reaches the hopper at that URL; `{code, stdout, stderr}`;
+// `POST /checkpoint {jobId, worktree, session}` takes a running job's checkpoint (issue #921, checkpoint.ts): it only reads; `{code, stdout, stderr}`;
 // `POST /runtime` carries a container runtime call of the hopper's to this machine's own Podman or Docker, checked (issue #708, runtime.ts);
 // `POST /claude {args, timeoutMs?}` runs `<claudeBin> <args>` for a usage read (issue #366) — only the two
 // read-only calls `claude-plan` makes, nothing else — with no shell, stdin closed, in a fresh private dir
@@ -30,6 +31,8 @@ import type { Duplex } from 'node:stream';
 import { credentialOf } from './credential.ts';
 import { DISCOVER_TIMEOUT_MS, discoverArgv } from './discover.ts';
 import { reachOf } from './reach.ts';
+import { CHECKPOINT_TIMEOUT_MS, checkpointOf } from './checkpoint.ts';
+import { runArgv } from './run.ts';
 import { defaultRuntimeSockets, runtimeRoute, type RuntimeSockets } from './runtime.ts';
 import { level, runClaude } from './level.ts';
 import { checkRelease, installRelease, readRelease } from './release.ts';
@@ -114,7 +117,7 @@ function readBody(stream: ServerHttp2Stream): Promise<string | 'too large'> {
 }
 
 /** One request on the tunnel: verified, then run; the answer signed. */
-const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree', '/discover', '/reach', '/runtime']);
+const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree', '/discover', '/reach', '/checkpoint', '/runtime']);
 /** How long a reap or a survey may take: stopping a scope waits up to its 10 s stop timeout. */
 const SCRIPT_TIMEOUT_MS = 60000;
 
@@ -146,7 +149,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   nonce = v.nonce;
   if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome(), resources: resources(), ...(o.vaultHelper ? { vault: o.vaultHelper } : {}), ...(o.door?.() ? { door: o.door() } : {}) });
   if (path === '/load') return load(o, releases, stream, body, answer);
-  if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree' || path === '/reach') return fixed(path, body, answer);
+  if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree' || path === '/reach' || path === '/checkpoint') return fixed(path, body, answer);
   // Discovery (issue #542): the fixed script, no argument of the request's.
   if (path === '/discover') return answer(200, await runArgv(discoverArgv(), DISCOVER_TIMEOUT_MS));
   if (path === '/level') return level(o.claudeBin ?? 'claude', body, answer);
@@ -164,30 +167,20 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
 
 /**
  * A signed call of a fixed script, run with no shell of the request's: a reap or survey, its argv from the
- * body; a running job's credential (issue #441), its content on stdin; the machine's work tree made (issue #361); or the reach check (issue #695).
+ * body; a running job's credential (issue #441), its content on stdin; the machine's work tree made (issue #361); the reach check (issue #695); or a checkpoint (issue #921).
  */
-async function fixed(path: '/reap' | '/survey' | '/credential' | '/work-tree' | '/reach', body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
+async function fixed(path: '/reap' | '/survey' | '/credential' | '/work-tree' | '/reach' | '/checkpoint', body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
   let parsed: unknown;
   try { parsed = JSON.parse(body); } catch { return answer(400, { error: 'body must be JSON' }); }
   if (path === '/work-tree') { const r = workTreeCall(parsed, homedir()); return answer(r.status, r.payload); }
   // The reach check (issue #695): the fixed script, its one argument a URL.
-  const call = path === '/credential' ? credentialOf(parsed) : path === '/reach' ? reachOf(parsed) : scriptArgvOf(path, parsed);
+  // A checkpoint (issue #921): the fixed script, which only reads the job's own worktree and session.
+  const call = path === '/credential' ? credentialOf(parsed) : path === '/reach' ? reachOf(parsed) : path === '/checkpoint' ? checkpointOf(parsed) : scriptArgvOf(path, parsed);
   if (typeof call === 'string') return answer(400, { error: call });
-  answer(200, Array.isArray(call) ? await runArgv(call, SCRIPT_TIMEOUT_MS) : await runArgv(call.argv, SCRIPT_TIMEOUT_MS, call.input));
+  const timeout = path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS : SCRIPT_TIMEOUT_MS;
+  answer(200, Array.isArray(call) ? await runArgv(call, timeout) : await runArgv(call.argv, timeout, call.input));
 }
 
-function runArgv(argv: string[], timeoutMs: number, input?: string): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
-    const child = execFile(argv[0]!, argv.slice(1), { timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
-      if (!err) return resolve({ code: 0, stdout, stderr });
-      const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };
-      if (e.killed) return resolve({ code: 124, stdout, stderr: `timed out after ${timeoutMs} ms` });
-      resolve({ code: typeof e.code === 'number' ? e.code : 127, stdout, stderr: stderr || e.message });
-    });
-    child.stdin?.on('error', () => undefined); // a script that exits before reading answers its own exit code
-    child.stdin?.end(input ?? '');
-  });
-}
 
 /** After the load's answer leaves this end, how long the link stays up for it to reach the hopper before the restart. */
 const RESTART_GRACE_MS = 1000;
