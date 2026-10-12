@@ -22,7 +22,9 @@ When the hopper takes an issue, it adds `hopper:claimed` and a holder label, `ho
 
 ### Trusted actors and trusted origin
 
-A **trusted actor** is a GitHub login whose acts can start your jobs. By default, the only trusted actor is your connected GitHub login. An admin can name more logins in **Settings → Intake**.
+A **trusted actor** is a GitHub account whose acts can start your jobs. By default, the only trusted actor is your connected GitHub login. An admin can pick more accounts in **Settings → Intake**.
+
+The hopper keeps each trusted actor by its GitHub user id, not by its login. When a person renames their GitHub account, they stay trusted. When another account takes an old login, it does not get the trust.
 
 An issue has a **trusted origin** when all three acts come from trusted actors:
 
@@ -76,10 +78,14 @@ If you did all of these steps yourself, the issue has a trusted origin. The job 
 
 1. Sign in as an admin.
 2. Open **Settings → Intake**.
-3. Type one GitHub login per line. Leave it empty to trust only your connected login.
-4. Select **Save**.
+3. Find the person in **Add from GitHub**. The list shows real GitHub accounts, each with its picture, login and type, and where the hopper found it: your repositories' collaborators, your organization's members, recent issue authors, and the hopper's own users and API token holders.
+4. If the person is not in the list, type their login in the box and select **Look up … on GitHub**.
+5. Select **Add**. To remove a person, select **Remove**.
+6. Select **Save**.
 
-A bot login is refused. Issues from people not in the list still reach you as request cards.
+You cannot type a login that does not exist: the hopper reads every account from GitHub before it saves it. Apps, bots and organizations are refused. With nobody added, your connected login is trusted by default. Issues from people not in the list still reach you as request cards.
+
+A list saved before the hopper kept accounts by id shows a note. The hopper looks up each login again; select **Save** to keep them by account.
 
 ### Approve a request card
 

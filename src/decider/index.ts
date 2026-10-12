@@ -13,7 +13,7 @@ export const AWAITING_ACCEPTANCE = 'awaiting acceptance';
 export const TEXT_CHANGED = 'its item changed since the snapshot: keep the original, accept the new text, or cancel';
 
 /** Queued before origins were judged (issue #652): nothing starts it until its issue is of a trusted origin or approved. */
-export const ORIGIN_PENDING = 'queued before trusted origins: held until its issue is judged — approve its request card in Sources, or cancel it';
+export const ORIGIN_PENDING = 'queued before trusted origins: held until its issue is judged — approve its request card in Intake, or cancel it';
 
 /** Pure: same inputs, same Decision. `inputs.at` is the clock; `decisionId` is supplied. */
 export function decide(inputs: DecisionInputs, decisionId: string): Decision {

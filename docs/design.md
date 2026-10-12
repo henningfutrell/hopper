@@ -64,6 +64,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
+| `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per host, stopped at the timeout, recorded, results kept an hour (`service.ts`), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
@@ -14205,10 +14206,28 @@ before origins were judged, or one of a source that judges none; such a pull req
 has no `untrusted origin` state. Its checks rule stays as issue #677 set it: no checks, settled, is ready — the owner's
 later decision over the issue's "no checks does not count".
 
-**Settings → Intake** (`/api/intake-actors`, `POST /ui/api/intake-actors`, admin): the whole list of GitHub logins,
-lowercased; empty: the connected login only. A bot's login is refused. `intake.actors_changed { from, to, by }`. Kept in
-the user's settings (`intakeActors`), told to OpenFGA at each check: the role lives in the model (`intake#trusted_actor`),
-so an edited model can widen or narrow who it admits.
+**Settings → Intake** (`/api/intake-actors`, `POST /ui/api/intake-actors`, admin): the whole list of trusted actors,
+by GitHub user id (issue #930); empty: the connected login only, shown as trusted by default. Nobody types a login: the
+picker offers **actor candidates** (`GET /api/intake-actors/candidates`) — the connected account, each job repository's
+collaborators (GitHub shows them only to who can push), the members of the organizations that own them, the authors of
+their 50 newest issues and pull requests, and every hopper user and API token holder by their connected GitHub account —,
+and looks one up by login (`GET /api/intake-actors/lookup?login=`, 404 when GitHub knows none). All read now with the
+user's own GitHub connection (`src/intake-actors/`), one page of each; what could not be read is listed in `problems`,
+never an error. The save takes ids and reads each from GitHub first: an id GitHub does not know, or an account that is no
+person's (`type` not `User`: an app, a bot, an organization), refuses the whole save (400), so no login that does not
+exist is kept. Each account is kept with its login, type and avatar as GitHub answered (`accounts`), beside its login
+lowercased (`actors`), which the build before reads. `intake.actors_changed { from, to, by }` names the logins. The same
+reads and the save are the API's, so an agent picks as a person does.
+
+At each check the hopper tells OpenFGA each account by the login it has now: an act's GitHub user id (the issue's
+`user.id`, the event's `actor.id`) that matches a trusted actor tells that actor by the act's login, so a renamed account
+stays trusted; a trusted actor's old login that an account of another id now holds is not told, so it gets no trust. An
+act whose id GitHub did not give compares by login. A list kept before ids has logins only (`unresolved` in the view):
+they count by login until an admin saves the list again; the picker looks each up and has it ready to save. The role lives
+in the model (`intake#trusted_actor`, by `github_login`), so an edited model can widen or narrow who it admits.
+
+**Residual risk** (issue #930). The candidates are read with the user's own connection: what that account cannot see is
+not offered, but can be looked up. Avatars are GitHub's images, loaded by the person's browser from GitHub.
 
 **The backfill** (requirement 10). A job queued before this change has no origin, and its issue was never judged.
 Tenant migration 39 (`store/migration-origin-pending.ts`), at the first start of the build that has it, marks every
@@ -14217,7 +14236,7 @@ queued or held job of a GitHub source (`kind` `github`, `github-account`, `githu
 Approve for it, only a link to Sources: approving the job is not approving its issue. At each sync the source judges the
 issue of a job whose origin is pending (`IntakeTrust.originPending`), though it has a job that has not ended. Of a trusted
 origin, or approved, the item is offered; the host's refresh sets the job's `source.origin`, drops the flag
-(`job.origin_judged { key, origin }`), and the job runs as any other. Any other issue is a request card in Sources, and
+(`job.origin_judged { key, origin }`), and the job runs as any other. Any other issue is a request card in Intake, and
 its job stays held until a person approves the card or cancels the job. Approving a card whose job already exists makes
 no second job: the next sync gives the job its origin. A running job keeps running; only queued and held jobs wait. A
 job whose source is gone stays held: cancel it. The build before ignores the flag and runs such a job.

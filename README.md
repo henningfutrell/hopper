@@ -172,7 +172,7 @@ GitHub realm's role rules grant (Settings → Sign-in: usernames, or numeric ids
 [docs/sign-in.md](docs/sign-in.md#github)).
 
 Signing in connects your GitHub: issues labelled `hopper` and assigned to you become your jobs
-when you or a trusted actor (Settings → Intake) wrote, labelled and assigned them — others show in Sources as
+when you or a trusted actor (Settings → Intake) wrote, labelled and assigned them — others show in Intake as
 requests to approve —, in the repositories you choose under **Sources → GitHub account** — and your jobs
 act as you on GitHub, with the app marked on what they do. Until you choose at least one repository, no job comes in.
 
@@ -240,7 +240,7 @@ Named so you know they are not missing steps. None is the path for a self-hosted
 1. Sign in with GitHub (or **Sources → GitHub account → Connect GitHub**), then choose the job
    repositories in **Sources → GitHub account**: the issues in them that are labelled `hopper` and
    assigned to you are taken when a trusted actor wrote, labelled and assigned them; any other is a request
-   card in Sources with **Approve** (help page "How issues become jobs", `/help/intake`). To tune a source, or to use
+   card in Intake with **Approve** (help page "How issues become jobs", `/help/intake`). To tune a source, or to use
    [your own App](#a-github-app-of-your-own), open the instance in Settings → Plugins → Job sources —
    `github-account` or `github-app` (your App) — and set its options:
 

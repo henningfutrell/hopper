@@ -11,7 +11,7 @@ type Role = 'viewer' | 'admin';
 const T = '2026-10-09T12:00:00.000Z';
 const heldJob = {
   id: 'h1', spec: { executor: 'herdr-claude', payload: { body: 'Fix the bug.' }, goal: 'Fix the bug' }, priority: 50, status: 'held', approved: false, attempts: 0,
-  holdReason: 'queued before trusted origins: held until its issue is judged — approve its request card in Sources, or cancel it',
+  holdReason: 'queued before trusted origins: held until its issue is judged — approve its request card in Intake, or cancel it',
   originPending: true,
   createdAt: T, updatedAt: T, source: { source: 'github', kind: 'github-account', key: 'k-h1', title: 'Fix the bug', repo: 'o/r', number: 7 },
 };
