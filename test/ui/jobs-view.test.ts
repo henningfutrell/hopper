@@ -213,6 +213,20 @@ describe('the Jobs view (issue #434)', () => {
     expect(details.textContent).toContain('asks this');
   });
 
+  it('a pull request\'s details list its tend attempts, each linked to its job (issue #927)', async () => {
+    const pr = 'https://github.com/acme/site/pull/70';
+    const first = { ...pointed(1, 'finished'), sourceState: { source: { pullRequest: pr, follow: 'tended', tended: { pullRequest: pr, step: 'rebase', nextJobId: 'job-tend' } } } } as Job;
+    const tend = { ...pointed(1, 'failed'), id: 'job-tend', rerunOf: first.id, createdAt: '2026-10-02T00:00:00Z' } as Job;
+    jobs = [first, tend];
+    await boot('graph');
+    const at = `[data-slot="graph-node"][data-node-id="pr:${pr}"]`;
+    await vi.waitFor(() => expect(document.querySelector(at)).not.toBeNull());
+    await click(document.querySelector<SVGElement>(at)!);
+    const tends = document.querySelector<HTMLElement>('[data-slot="graph-node-tends"]')!;
+    expect(tends.textContent).toContain('rebase by job job-tend: failed');
+    expect(tends.querySelector('a[href="#job/job-tend"]')).not.toBeNull();
+  });
+
   it('says so when there is no job, in both modes', async () => {
     jobs = [];
     await boot('graph');
