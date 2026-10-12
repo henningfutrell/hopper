@@ -9032,6 +9032,30 @@ the policy; a box refused until the read-only check passed; the same needs again
 launched with the same token; a write need waits and no box launches; needs it cannot read refused; a viewer's token
 refused; the CLI). This is the acceptance of issue #718, over an API token from end to end.
 
+## Template requests on the page (issue #708, part 9, 2026-10-11)
+
+Owner's model (issue #708): a person writes what a box must do, and the hopper builds the box's template from it; the
+secret scope is derived and shown for approval, never typed by hand. Before it, a template request was a job's
+(`sandbox-template`), an API caller's (`request-template`) or the CLI's (`hopper template request`); on the page, a
+person could only write a whole template by hand.
+
+- **The panel** (Settings → Vault, **Template request**, `ui/src/views/vault-template-request.tsx`). An admin writes the
+  needs, one per line, as a job writes them (`read/cluster/lab`). Other roles do not see the panel.
+- **Shown before it is made** (`POST /ui/api/vault` `preview-template`, `previewTemplate`, `src/skills/template-request.ts`).
+  The answer is `preview`: the template's name, its image, the tools its needs use, the needs in words, `readOnly`, who
+  approves it (`the read policy`, or `a person` with `waits`: why the read policy does not), and `exists` when a template
+  of that name is there (`same`; or `changed` by a person, when asking again is refused). It saves nothing and sends no
+  event. It is the same derivation as a request: `requestTemplate` uses the same `outsidePolicy` reasons.
+- **Ask for it** sends `request-template` with the same needs and shows its `text`. A change to the needs hides what was
+  shown, so a person asks only for what they saw. The new template is then in Templates, where a person approves what
+  waits, as for any template.
+
+**Not built.** Needs inferred from free text: a person still writes each need as an operation profile.
+
+Tests: `test/skills/template-preview.test.ts`, `test/ui/vault-template-request.test.ts`,
+`test/integration/template-request-api.test.ts` (the preview over an API token: what it shows, nothing saved, `exists`
+after a request, 400 for needs it cannot read, 403 for a viewer).
+
 ## Tools assembled per run (issue #716, item 2, 2026-10-10)
 
 Owner's model (issue #716): the hopper picks or composes the image with the tools a job asks for, instead of one fixed

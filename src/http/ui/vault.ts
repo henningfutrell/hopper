@@ -14,7 +14,7 @@ import type { UserStore } from '../../domain/ports.ts';
 import { CREDENTIAL_NOTE_MAX, systemBackendRefusal, VAULT_REFERENCE_MAX, VAULT_VALUE_MAX, type SystemSecretName } from '../../domain/vault.ts';
 import type { SystemChanger, SystemResult } from '../../vault/system.ts';
 import { HttpError, parseWith } from '../errors.ts';
-import { needsOf, requestedName, requestTemplate } from '../../skills/template-request.ts';
+import { needsOf, previewTemplate, requestedName, requestTemplate } from '../../skills/template-request.ts';
 import { holdsTemplate, type Vault } from '../../vault/vault.ts';
 import { templateRequestUser, vaultAnswer } from '../vault.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
@@ -64,6 +64,8 @@ export const vaultEditBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('set-read-policy'), assets: z.array(z.string().max(220)).max(256) }),
   // A template request (issue #718): the needs, as a job's `sandbox-template --needs` says them.
   z.strictObject({ action: z.literal('request-template'), needs: z.string().max(4000) }),
+  // The template request on the page (issue #708, part 9): the template those needs make, shown before it is made. Saves nothing.
+  z.strictObject({ action: z.literal('preview-template'), needs: z.string().max(4000) }),
 ]);
 
 const STATUS = { invalid: 400, forbidden: 403, not_found: 404, conflict: 409, unavailable: 503 } as const;
@@ -98,6 +100,11 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
       const r = await systemInBackend(vault, parts.store, edit, { userId: s.userId, admin: s.role === 'admin', by });
       if (!r.ok) throw new HttpError(STATUS[r.code], r.error);
       return await vaultAnswer(parts);
+    }
+    if (edit.action === 'preview-template') {
+      const preview = previewTemplate(templateRequestUser(parts), edit.needs);
+      if (typeof preview === 'string') throw new HttpError(400, preview);
+      return { preview };
     }
     if (edit.action === 'request-template') {
       const r = await requestTemplate(templateRequestUser(parts), edit.needs, by);

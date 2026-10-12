@@ -10,7 +10,8 @@
 // vault does not give; an admin gives one — of the kind suggested, or another — or declines. The hopper's own secrets
 // (issue #658): the vault's system scope and its audit trail, read-only (vault-system.tsx). Shared secrets (issue #718):
 // what the hopper's admin shares with agents (vault-shared.tsx); a template may name one as shared/<name>. The read
-// policy (issue #716, vault-read-policy.tsx): what the hopper approves with no person, for a template a job asks for.
+// policy (issue #716, vault-read-policy.tsx): what the hopper approves with no person, for a template a job asks for. The
+// template request on the page (issue #708, vault-template-request.tsx): the needs a box's work has, and the template the hopper makes from them.
 // The master key's rotation, the hopper's admin's (app/master-key.tsx, issue #659). A template's form, with the limits a
 // launch of it may ask for (issue #708): vault-template-form.tsx.
 import { Ban, Boxes, Check, KeyRound, LockKeyhole, Pencil, Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
@@ -30,6 +31,7 @@ import { AskedFor, VaultGrants } from './vault-requests';
 import { SystemSecrets } from './vault-system';
 import { SharedSecrets } from './vault-shared';
 import { ReadPolicy } from './vault-read-policy';
+import { TemplateRequest } from './vault-template-request';
 import { sameProfile, TemplateForm } from './vault-template-form';
 import { limitsText, type TemplateLimits } from '@/model/sandbox-launch';
 import { MasterKeyRotation } from '@/app/master-key';
@@ -238,6 +240,7 @@ export function Vault() {
         {view && templates.length === 0 && !addingTemplate && <Empty>No templates yet.</Empty>}
         {templates.length > 0 && <ul className="space-y-2">{templates.map((t) => <TemplateItem key={t.name} t={t} secrets={secrets} shared={shared} can={can} busy={busy} send={send} />)}</ul>}
       </Panel>
+      {view && <TemplateRequest onView={setView} />}
       {view && <ReadPolicy entries={view.readPolicy ?? []} onView={setView} />}
       {view && <SharedSecrets shared={shared} onView={setView} />}
       {view && <SystemSecrets system={view.system} backends={backends} can={can} busy={busy} send={send} />}
