@@ -1293,6 +1293,15 @@ The count follows the live stream: every `question.*` event refreshes the open q
 Questions view changes nothing in the count. Any other badge for something pending (the Logins badge,
 issue #477) follows the same rule: it counts what is pending and clears only when none is.
 
+**Nav groups never hide a badge** (issue #906). The nav entries are in nav groups (`NAV_GROUPS`,
+`ui/src/app/nav.tsx`); a person collapses a group by its heading, and the sidebar and the mobile drawer
+share which are collapsed, kept per browser (`jh_nav_collapsed`). A collapsed group's heading shows its
+entries' badges as one (`groupBadges`, `ui/src/model/nav-groups.ts`): the counts and the high-priority
+counts summed, the most urgent colour (bad, warn, question, plain, quiet), each entry and its count in the
+title, and the backburner count summed on its own. Open, each entry shows its own badge. Needs you is
+pinned above the groups (`NAV_PINNED`), never collapsed: its badge already sums other entries', and a group
+that held it would count those twice. A view of the navigation neither pinned nor in a group fails the typecheck.
+
 **Question history** (issue #37): every question stays in the `questions` table with its text,
 trail, answer and status; nothing prunes it. Settings' Question history (issue #151) lists handled ones (status not
 `open`, newest first, the last 200 from `GET /api/questions?status=all&limit=200`) as one compact
