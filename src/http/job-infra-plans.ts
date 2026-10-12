@@ -3,13 +3,14 @@
 // job's proxy token>`, honoured only while its job is at work.
 //
 //   POST /job/infra-plans          JSON: tool, asset (KIND/NAME), target, repo, ref, commit, pullRequest?, read?, text,
-//                                  file? (the saved plan file, base64): kept, 201, with its id
+//                                  file? (the saved plan file, base64), json (terraform: `terraform show -json` of the
+//                                  plan file, as a string): kept with its summary, 201, with its id
 //   GET  /job/infra-plans/:id      the plan, with its approval; ?file=1: its saved plan file, the bytes as they were put
 //
 // Plain text back, or JSON when `Accept: application/json` asks for it; every no says why. It changes no job, question,
 // webhook or setting: it records a plan, an event on the job's timeline. A job never approves one.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { PLAN_FILE_MAX, PLAN_TEXT_MAX, type PlanInput } from '../domain/infra-plans.ts';
+import { failedChecks, PLAN_FILE_MAX, PLAN_JSON_MAX, PLAN_TEXT_MAX, type PlanInput } from '../domain/infra-plans.ts';
 import type { Job, JobStatus } from '../domain/types.ts';
 import { parseProxyToken } from '../github-proxy/token.ts';
 import { isPlanRefusal } from '../infra-plans/service.ts';
@@ -20,8 +21,8 @@ export const INFRA_PLAN_PATH = '/job/infra-plans';
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 const BEARER = /^Bearer\s+(\S+)$/i;
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
-/** A body that holds the largest text, escaped, and the largest plan file in base64. */
-const BODY_LIMIT = PLAN_TEXT_MAX * 2 + Math.ceil(PLAN_FILE_MAX / 3) * 4 + 64 * 1024;
+/** A body that holds the largest text and JSON, escaped, and the largest plan file in base64. */
+const BODY_LIMIT = PLAN_TEXT_MAX * 2 + PLAN_JSON_MAX * 2 + Math.ceil(PLAN_FILE_MAX / 3) * 4 + 64 * 1024;
 
 type Asker = { t: TenantParts; job: Job } | { status: number; text: string };
 
@@ -51,6 +52,7 @@ function inputOf(body: unknown): { input: PlanInput; file?: Buffer } | string {
   if (!tool || !target || !repo || !ref || !commit || text === undefined) return 'the plan names tool, asset, target, repo, ref, commit and text';
   if (b.pullRequest !== undefined && typeof b.pullRequest !== 'number') return 'pullRequest must be a pull request number';
   if (b.read !== undefined && typeof b.read !== 'string') return 'read must be the read profile the plan was made with: read/<kind>/<asset>';
+  if (b.json !== undefined && typeof b.json !== 'string') return 'json must be terraform show -json of the plan file, as a string';
   let file: Buffer | undefined;
   if (b.file !== undefined) {
     if (typeof b.file !== 'string' || !BASE64.test(b.file) || b.file.length % 4 !== 0) return 'file must be the saved plan file in base64';
@@ -59,6 +61,7 @@ function inputOf(body: unknown): { input: PlanInput; file?: Buffer } | string {
   const input: PlanInput = {
     tool: tool as PlanInput['tool'], asset, target, repo, ref, commit, text,
     ...(typeof b.pullRequest === 'number' ? { pullRequest: b.pullRequest } : {}), ...(typeof b.read === 'string' ? { read: b.read } : {}),
+    ...(typeof b.json === 'string' ? { json: b.json } : {}),
   };
   return { input, ...(file ? { file } : {}) };
 }
@@ -74,8 +77,10 @@ export function jobInfraPlanRoutes(app: FastifyInstance, o: { tenants: Tenants }
       const r = who.t.githubProxy.infraPlans.record(who.job, said.input, said.file);
       if (isPlanRefusal(r)) return no(req, reply, r.status, r.no);
       const { text: _text, ...plan } = r;
+      const failed = failedChecks(r);
       return answer(req, reply, 201, { plan }, `recorded: plan ${r.id}  ${r.tool}  ${r.asset.kind}/${r.asset.name}  ${r.target}  stale at ${r.expiresAt}
-next: a person approves it in Infra changes; then ask with --plan ${r.id}`);
+summary: ${r.summary?.words ?? ''} (${r.summary?.level ?? ''} risk)
+${failed ? `failed: ${failed}\nnext: nobody approves this plan; fix the code and plan again` : `next: a person approves it in Infra changes; then ask with --plan ${r.id}`}`);
     });
 
     scope.get<{ Params: { id: string } }>(`${INFRA_PLAN_PATH}/:id`, async (req, reply) => {

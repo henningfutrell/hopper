@@ -67,7 +67,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
-| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`. Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts` | engine, http, store, plugins, executors, decider |
+| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
@@ -14404,3 +14404,60 @@ Tests: `test/domain/infra-plans.test.ts` (the gate and the plan input, pure), `t
 real daemon, a joined box, STS and GitHub faked: an apply with no plan, an unapproved plan, a moved head and a plan of
 another asset are refused and STS is not asked — the negative test of the issue's "Done when"; a current approved plan
 mints, its audit naming it; the plan kept whole, listed, its file given back), `test/ui/infra-plans.test.ts`.
+
+## Infra plans: the summary and the MAP tag check (issue #870, part 2, 2026-10-12)
+
+Every plan gets a summary and an explainer in plain words, and a new AWS resource without the MAP tag fails the plan.
+Before this, Infra changes showed only where a plan applies and from which commit; a person read the raw plan to learn
+what it does.
+
+- **The changes** (`changesOf`, `src/domain/infra-plan-changes.ts`, pure): what each resource of the plan has done to it
+  (`create`, `update`, `replace`, `delete`). A terraform plan is read from `terraform show -json` of the plan file, which
+  the job now sends as `json` (a string, at most 8 MiB) with `POST /job/infra-plans`: needed for terraform, refused for
+  the others, read and not kept. A no-op, a read and a data source are not changes. A `helm diff` is read from its
+  headers (`<namespace>, <name>, <Kind> (<group>) has changed:` / `has been added:` / `has been removed:`), an
+  `argocd app diff` from its `===== <group>/<Kind> <namespace>/<name> ======` headers and its `<` (live) and `>`
+  (desired) lines. Terraform JSON that is not a plan (no `planned_values`: the JSON of a state, say) is a 400.
+- **The summary** (`summarize`, `src/domain/infra-plan-summary.ts`, pure; `InfraPlan.summary`), made once when the plan is
+  kept and kept with it, so it never changes either:
+  - `words`, one line: the changes by action and type, the environments, "changes nothing in prod" when the plan names
+    environments and prod is not one, "destroys nothing" when nothing is deleted or replaced. For example "Adds 2
+    security group rules in uat; changes nothing in prod; destroys nothing".
+  - `environments`: `prod`, `uat`, `staging`, `dev`, `qa` as words of their own in the target, a resource's address or
+    its `Environment` tag.
+  - `risks`, the callouts, each with its resources: `destroy` (deleted or replaced), `iam` (IAM and identity: IAM, SSO,
+    Identity Store, Organizations, Cognito, any `*_iam_*` type; Kubernetes roles, bindings, service accounts), `prod`
+    (a resource in prod, or every one when the target is), `data` (a data store changed, replaced or deleted, not
+    created: databases, buckets, volumes, KMS keys, secrets; Kubernetes volumes, stateful sets, secrets), `network`
+    (VPCs, subnets, routes, security groups, load balancers, DNS, CDN; Kubernetes services, ingresses, network policies).
+  - `blastRadius`: how many resources of how many kinds, where, applied as which asset to which target.
+  - `checks`: the MAP tag check, for terraform.
+  - `level`: `high` when the plan destroys, touches IAM, prod or data, fails a check, or is a diff with no change the
+    hopper knows; else `low`. Network alone is `low`. Approval by risk (the next part) reads it.
+- **The MAP tag check.** Each new AWS resource (action `create`, an `hashicorp/aws` provider) that takes tags (its plan
+  has `tags` or `tags_all`) carries `map-migrated=migXWT2TUR4TJ` in either (`MAP_TAG`). A replaced or changed resource
+  exists already and is not checked. A plan that fails it is kept and shown (`summary.failed`), but `approve` is a 409
+  and the apply gate refuses it (`failedChecks`), approved or not: the job fixes the code and plans again.
+- **Shown.** `GET /api/infra-plans` and the job's own `GET /job/infra-plans/:id` carry the summary; the job's `POST`
+  answer says it, and says when the plan failed. Infra changes shows each plan's words and level, its callouts, its blast
+  radius and its checks, a failed plan in red with no Approve, and **Show the plan**, the raw text, read when opened.
+  `infra.plan_recorded` carries `summary { words, level, risks, failed }`.
+- A plan kept before this has no summary, and is shown and gated as before.
+
+**Why the job sends the JSON.** The hopper runs no terraform, and the text form of `terraform show` is meant for people:
+its tags and its actions are not stable to read. The JSON form is terraform's own stable contract.
+
+**Residual risk, stated.** The summary is read from the JSON the job sends, not from the saved plan file: a job could send
+JSON that does not match its file. The wrapper on write boxes (a next part) runs `terraform show -json` of the saved file
+itself. The MAP tag value is one constant: a second value earns a setting.
+
+**Not built here (the next parts of #870).** Notifications to environment watchers; approval by risk (a low-risk uat plan
+approved by its requester or automatically; the rest by the owner through the blast-radius gate); the timeline of
+applies and drift, and the nightly drift plan; the terraform wrapper on write boxes; Argo CD syncs through the gate; the
+check of a plan's `read` against the job's mints.
+
+Tests: `test/domain/infra-plan-summary.test.ts` (the changes of terraform JSON, a helm diff and an Argo CD diff; the
+words, the callouts, the level; the MAP tag check on new resources only), `test/domain/infra-plans.test.ts` (a failed
+plan refused, approved or not), `test/integration/infra-plans.test.ts` (the summary kept, listed and on the timeline; a
+plan without the MAP tag kept and listed, its approval a 409, its apply refused and STS not asked; a terraform plan with
+no JSON a 400), `test/ui/infra-plans.test.ts` (the failed state, the explainer).

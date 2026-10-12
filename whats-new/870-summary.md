@@ -1,0 +1,1 @@
+- Each infrastructure plan now has a summary in plain words: what it adds, changes and destroys, and where. Infra changes shows its risks (destroys, access rights, production, data, network), how far it reaches, and the full plan on demand. A plan that adds an AWS resource without the migration tag fails, and nobody can approve it.
