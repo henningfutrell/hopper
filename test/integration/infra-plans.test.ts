@@ -223,9 +223,9 @@ describe('no apply without a plan', () => {
     expect(sts.seen).toHaveLength(0);
   });
 
-  /** An operator's box token (issue #795): an agent that may approve work, as an operator. */
+  /** An operator's box token (issue #795), with the infra plans' scopes (issue #909): an agent that may approve work, as an operator. */
   async function operatorToken(a: TestApp, session: string): Promise<string> {
-    const r = await a.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'operator', role: 'operator', box: true }, { token: session });
+    const r = await a.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'operator', role: 'operator', box: true, scopes: ['infra-plans:edit', 'infra-plans:settings'] }, { token: session });
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     return r.body.token;
   }

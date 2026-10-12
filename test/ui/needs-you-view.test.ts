@@ -37,6 +37,7 @@ const PULL_REQUESTS = { yolo: { on: 1, total: 2 }, waiting: [], repos: [{ repo: 
 const PLAN = {
   id: 'p1', tool: 'terraform', asset: { kind: 'aws-account', name: 'lab' }, target: 'lab', repo: 'octo-user/infra', ref: 'main', commit: 'c'.repeat(40),
   read: 'read', job: 'j-7', file: { size: 1, sha256: 'a'.repeat(64) }, createdAt: '2026-10-12T00:00:00.000Z', expiresAt: '2099-01-01T00:00:00.000Z',
+  approver: { who: 'admin', why: 'low risk, but not in uat only: in lab' },
 };
 const YOLO = { on: false, repos: { 'octo-user/hopper': true }, choices: { repos: ['octo-user/hopper', 'octo-user/infra'] } };
 const PICK = {
