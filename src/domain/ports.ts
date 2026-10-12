@@ -225,8 +225,8 @@ export interface NotifierEvents {
   answerUrl(questionId: string): string;
   /** The high-priority threshold now (issue #535): a job at or above it is high priority. Absent: the default. */
   highPriority?(): number;
-  /** Where a person sees the logins, with each one's link and code (issue #698): the UI's Logins view. Absent: not known. */
-  loginsUrl?(): string;
+  /** Where a person sees the logins (issue #698): the Logins view; and marks out-of-band changes (issue #871): the Infra page. Absent: not known. */
+  loginsUrl?(): string; infraUrl?(): string;
   /** Where a person opens an artifact (issue #673): its stable URL under the user's link base. Absent: not known. */
   artifactUrl?(id: string): string;
   /** What a notification of the question leads with (issue #569): its TL;DR, else the agent's own summary; undefined: a short question, or the TL;DR off. */

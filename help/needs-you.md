@@ -21,7 +21,7 @@ Each kind of decision has one page, its home. Needs you collects the counts. You
 
 The badge on **Needs you** is the sum of all rows. When a high-priority job waits, the badge has a ring and an arrow. Parked jobs are not in Needs you: they wait to be picked up, not for a decision. **Parked** keeps its own badge.
 
-**Infra** and **Pull requests** also have their own badges in the navigation, with the same counts. A machine has no row: a join code adds a machine at once, with no approval. A box whose template waits for approval counts in Access requests.
+**Infra** and **Pull requests** also have their own badges in the navigation, with the same counts. The Infra badge also counts the out-of-band changes that no one marked yet: see [Infra](infra.md). A machine has no row: a join code adds a machine at once, with no approval. A box whose template waits for approval counts in Access requests.
 
 Every row shows, also when its count is 0. The page says *Nothing waits on you* when all counts are 0.
 
