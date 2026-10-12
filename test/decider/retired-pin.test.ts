@@ -13,13 +13,17 @@ describe('retired pins (issue #919)', () => {
       job('free'),
       job('here', { machineId: 'a' }),
     ];
-    expect(retiredPins(waiting, machines)).toEqual([
+    expect(retiredPins(waiting, machines, ['a', 'b'])).toEqual([
       { jobId: 'gone', machineId: 'ghost', reason: 'pinned machine ghost is retired: it is no longer configured. Run the job again to place it on another machine' },
       { jobId: 'back', machineId: 'ghost', reason: 'pinned machine ghost is retired: it is no longer configured. Run the job again to place it on another machine' },
     ]);
   });
 
+  it('a machine still in the plugins config is not retired, though no machine source lists it (its instance did not build)', () => {
+    expect(retiredPins([job('broken', { machineId: 'ghost' })], machines, ['a', 'b', 'ghost'])).toEqual([]);
+  });
+
   it('skips a job on a question: it is not waiting for a machine', () => {
-    expect(retiredPins([job('q', { machineId: 'ghost', status: 'waiting_answer' })], machines)).toEqual([]);
+    expect(retiredPins([job('q', { machineId: 'ghost', status: 'waiting_answer' })], machines, [])).toEqual([]);
   });
 });
