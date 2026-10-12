@@ -14917,8 +14917,9 @@ GitOps. Generic by the issue's rule: the hopper never classifies an action and k
   audit-log write once ever (by its source and key), drift once while it is not marked; drift found again after its
   mark is a new change.
 - **Never silent.** Each one is `infra.out_of_band_recorded` on the reporting job's timeline: the Grok Bot routine sends
-  it (body adds `change`, `signal`, `target`, `what`, `who`, `happenedAt`), and webhook subscribers get it as any event.
-- **A person marks it** on Settings → Vault, panel **Out-of-band changes** (every change, newest first, with who, what,
+  it (body adds `change`, `signal`, `target`, `what`, `who`, `happenedAt`, and `infraUrl`, the Infra page, when the UI's
+  URL is known), and webhook subscribers get it as any event.
+- **A person marks it** on Infra (`#infra`, "The Infra page"), panel **Out-of-band changes** (every change, newest first, with who, what,
   when, the signal and its detail), or `POST /ui/api/out-of-band` `{ action: "mark", change, mark, reason? }` (admin):
   `adopted` (brought back into git), `reverted`, or `accepted` with a reason. The mark is a row of its own
   (`infra_out_of_band_marks`), once (a second is a 409); `infra.out_of_band_marked`. Tracking only: the hopper reverts
@@ -15005,8 +15006,10 @@ showed nothing when its list was empty or its read failed. The feature was invis
 - **API.** The four routes are under the OpenAPI tag `Infra` (they were under `Vault`). A UI session and an API token read
   and act the same way: approve is still an admin's box action.
 
-**Not built here.** Approval by risk, so "who it waits for" names a person other than an admin; a nav badge with the plans
-that wait; a plan detail route of its own; live updates over the event stream (the page reads on open and on Try again).
+- **Badge.** The nav entry counts the plans that wait for an admin (issue #897) and the out-of-band changes no one marked
+  (`changesUnmarked`, `ui/src/model/out-of-band.ts`), read again after each `infra.out_of_band_*` event.
+
+**Not built here.** Approval by risk, so "who it waits for" names a person other than an admin; a plan detail route of its own; live updates over the event stream (the page reads on open and on Try again).
 
 Tests: `test/ui/infra-plans.test.ts` (who a plan waits for, the apply line, the timeline's order and words, empty),
 `test/integration/infra-plans.test.ts` (an apply against an approved plan listed with it, and no credential in the answer).

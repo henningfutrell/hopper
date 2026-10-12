@@ -5,7 +5,7 @@
 // person. Intake (issue #897; it was Not taken, issue #798) is badged with the request cards waiting for approval, Access requests
 // with what jobs on boxes wait for. An old link (#not-taken) opens the view it became (MOVED). The job view (#job/<id>, issue #433) is a
 // route with no nav entry: timeline entries link to it. Infra (issue #896) holds plans, applies and out-of-band changes, and is badged
-// with the plans that wait for an admin; Pull requests with the ones that have merge conflicts (issue #897).
+// with the plans that wait for an admin and the out-of-band changes no one marked (issue #871); Pull requests with the ones that have merge conflicts (issue #897).
 // The entries are in nav groups (issue #906, model/nav-groups.ts): a collapsed group shows its entries' badges as one. Needs you is
 // pinned above them, never collapsed: its badge already sums other entries', so no group sums it again. Your reports (issue #694) is a view of
 // its own (issue #897): it left Settings, which keeps configuration only.
@@ -16,6 +16,8 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/s
 import { useHopper } from '@/store';
 import { useAwaitingSort, useSectionBadges } from '@/store/selectors';
 import { useNeedsYou } from '@/store/needs-you';
+import { useOutOfBand } from '@/store/polled';
+import { changesUnmarked } from '@/model/out-of-band';
 import { needsYouTotal } from '@/model/needs-you';
 import { SECTION_KINDS } from '@/model/sections';
 import { onTheBackburner, requestsWaiting } from '@/model/intake';
@@ -86,6 +88,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const n = (k: (typeof rows)[number]['kind']): number => rows.find((r) => r.kind === k)!.n;
   const access = n('access');
   const plans = n('plans');
+  const unmarked = changesUnmarked(useOutOfBand());
   const conflicts = n('pull-requests');
   const badge: Partial<Record<View, NavBadge>> = {
     queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
@@ -93,7 +96,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
     intake: { n: requests, cls: 'bg-warn text-background', title: `${requests} ${requests === 1 ? 'request waits' : 'requests wait'} for approval` },
     'access-requests': { n: access, cls: 'bg-warn text-background', title: `${access} ${access === 1 ? 'access request waits' : 'access requests wait'} on you` },
     ...sections,
-    infra: { n: plans, cls: 'bg-warn text-background', title: `${plans} ${plans === 1 ? 'plan waits' : 'plans wait'} for an admin to approve` },
+    infra: { n: plans + unmarked, cls: 'bg-warn text-background', title: [plans > 0 && `${plans} ${plans === 1 ? 'plan waits' : 'plans wait'} for an admin to approve`, unmarked > 0 && `${unmarked} out-of-band ${unmarked === 1 ? 'change waits' : 'changes wait'} to be marked`].filter(Boolean).join('; ') },
     'pull-requests': { n: conflicts, cls: 'bg-bad text-background', title: `${conflicts} ${conflicts === 1 ? 'pull request has' : 'pull requests have'} merge conflicts` },
     sources: { n: failedSources, cls: 'bg-bad text-background' },
   };
