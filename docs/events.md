@@ -3092,7 +3092,7 @@ Version 1 (`docs/schemas/vault.mint_refused.v1.json`). A box asked the vault to 
   "machine": "hopper-sandbox-kube",
   "template": "kube",
   "job": "f3b1c2d4-0000-4000-8000-000000000001",
-  "reason": "Access denied it: template kube is not approved to write on namespace lab/web. write on namespace lab/web waits for a person's approval on Settings → Vault (the first-time gate)",
+  "reason": "Access denied it: template kube is not approved to write on namespace lab/web. write on namespace lab/web waits for a person's approval on Access requests (the first-time gate)",
   "decision": "6c1d2e3f-0000-4000-8000-000000000003"
 }
 ```

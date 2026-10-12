@@ -100,7 +100,7 @@ A save keeps what it leaves out. Each template shows its **blast radius** rating
 
 ## Approval
 
-No box of a template takes a job or gets anything from the vault until a person approves the template.
+No box of a template takes a job or gets anything from the vault until a person approves the template. A template that waits shows on **Access requests**, panel **Template approvals**, with its approve buttons. You edit, revoke and remove templates on **Settings → Vault**.
 
 - **Approve** approves the image, the tools, the secrets and the **read** profiles.
 - A **write**, **sync** or **apply** profile is high-radius. It needs its own approval: **Approve `<profile>`**, or `hopper template approve-profile <name> <operation>/<kind>/<asset>`.
@@ -141,7 +141,7 @@ sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-account/1
 
 Each **need** is `<operation>/<kind>/<asset>`, at most 16. You can also write a line in plain words, for example `kubectl get pods in namespace web on cluster lab` (see **Needs in plain words** below). The hopper makes the template `asked-<hash>` from the needs: the box image, the tools the needs use, no vault secret, and one operation profile per need. The same needs always get the same template.
 
-The hopper approves it with no person only when it makes it now and every need is a `read` on an asset the **read policy** holds. Anything else waits for a person on **Settings → Vault**. A job never widens, approves or re-approves a template. A job does not start the box: a person or the command line does.
+The hopper approves it with no person only when it makes it now and every need is a `read` on an asset the **read policy** holds. Anything else waits for a person on **Access requests**. A job never widens, approves or re-approves a template. A job does not start the box: a person or the command line does.
 
 An admin can ask for a template the same way on **Settings → Vault**, panel **Template request**. Write what the box must do, one line each, in plain words or as needs, and select **Show the template**. The hopper shows the template it makes from them before it makes it: its name, its image, its tools, its needs, and who approves it. When it waits for a person, the panel says why. Then select **Ask for it**. If you change the needs, show the template again before you ask for it.
 

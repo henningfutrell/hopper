@@ -1,4 +1,4 @@
-// A source's intake outcomes grouped by why (issue #798), for Not taken and Sources: one heading per group with its count,
+// A source's intake outcomes grouped by why (issue #798), for Intake (issue #897): one heading per group with its count,
 // then each issue — taken (with its job, and whether that job has ended since), or its reason — with the action the source
 // offers: Assign to me, Release claim, Take off the backburner (GitHub writes the user makes), and a request card with
 // Approve. No inner scroll box: the page scrolls, so no row hides. Each row says its issue number; an issue on the

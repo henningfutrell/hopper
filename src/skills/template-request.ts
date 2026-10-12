@@ -146,7 +146,7 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
   const waits = waitsOf(t);
   if (waits.length > 0) {
     const why = outsidePolicy(needs, u.policy());
-    return { status: 202, text: `waiting: template ${name} waits for a person in Settings → Vault: ${waits.join('; ')}${why.length ? ` (${why.join('; ')})` : ''}.` };
+    return { status: 202, text: `waiting: template ${name} waits for a person on Access requests: ${waits.join('; ')}${why.length ? ` (${why.join('; ')})` : ''}.` };
   }
   const checking = checkWait(t);
   if (checking) return { status: 202, text: `waiting: template ${name} is approved; ${checking}. Each write it may make must be refused, each read must work.` };

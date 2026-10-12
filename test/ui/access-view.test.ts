@@ -153,7 +153,7 @@ describe('Settings → Access', () => {
     const t = panel()!.querySelector('[data-template="kubectl-diag"]')!;
     expect(t.textContent).toContain('high radius');
     expect(t.querySelector('[data-slot="template-radius"]')!.textContent).toBe('write on cluster x: it changes the asset; waits for an explicit approval');
-    expect(t.textContent).toContain('Waits for approval on Settings → Vault: write on cluster x');
+    expect(t.textContent).toContain('Waits for approval on Access requests: write on cluster x');
   });
 
   it('says why OpenFGA cannot be asked, and that every credential is denied meanwhile', async () => {

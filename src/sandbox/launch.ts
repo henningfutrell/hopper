@@ -99,7 +99,7 @@ export function lineFlags(t: TemplateView | undefined, p: Pick<LaunchParams, 'cp
 
 export async function launchBox(c: LaunchContext, userId: string, l: LaunchRequest): Promise<SandboxRecord> {
   const t = l.template;
-  if (t && (t.approval === undefined || t.pending.image)) throw new LaunchRefused(409, `the image of template ${t.name} is not approved: approve it in Settings → Vault first`);
+  if (t && (t.approval === undefined || t.pending.image)) throw new LaunchRefused(409, `the image of template ${t.name} is not approved: approve it on Access requests first`);
   // The read-only check (issue #716): a template that needs one starts no box until its current version passed.
   const waits = t && checkWait(t);
   if (waits) throw new LaunchRefused(409, waits);

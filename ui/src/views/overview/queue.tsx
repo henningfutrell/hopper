@@ -208,7 +208,7 @@ export function WaitingPanel() {
           {job.status === 'queued' && job.waitReason && <div className="pl-7 text-xs text-muted-foreground [overflow-wrap:anywhere]">{job.waitReason.replace(/^waiting for a lane: /, '')}</div>}
           <div data-slot="waiting-actions" className="flex flex-wrap items-center gap-1.5 pl-7 empty:hidden">
             {job.accepted === false && <a href="#queue" className="text-xs text-warn hover:underline">accept in Queue →</a>}
-            {job.originPending && <a href="#sources" className="text-xs text-warn hover:underline" title="Its issue waits as a request card in Sources">approve in Sources →</a>}
+            {job.originPending && <a href="#intake" className="text-xs text-warn hover:underline" title="Its issue waits as a request card in Intake">approve in Intake →</a>}
             <GatePassButton job={job} />
             {approve && <Button size="xs" variant="outline" onClick={() => act(`/ui/api/jobs/${job.id}/approve`, {}, 'Job approved')}><Check />Approve</Button>}
             {authed && <RejectButton job={job} />}
