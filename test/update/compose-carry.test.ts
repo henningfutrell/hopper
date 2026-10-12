@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { carryLocalSettings, carryOverride } from '../../src/update/compose-carry.ts';
+import { carryCompose, carryLocalSettings, carryOverride } from '../../src/update/compose-carry.ts';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 const SHIPPED = readFileSync(join(ROOT, 'compose.yaml'), 'utf8');
@@ -89,5 +89,68 @@ describe('moving what .env cannot hold to compose.override.yaml (issue #697)', (
   it('says so, and moves nothing, when the old file or the override is not YAML', () => {
     expect(carryOverride('services: [', SHIPPED, undefined)).toEqual({ override: undefined, notes: [expect.stringMatching(/not read/)] });
     expect(carryOverride(OLD_LAN, SHIPPED, 'services: [')).toEqual({ override: undefined, notes: [expect.stringMatching(/compose\.override\.yaml was not read/)] });
+  });
+});
+
+describe('the new compose.yaml, with the install\'s own settings in it: no .env (issue #894)', () => {
+  const IMAGE = 'ghcr.io/henningfutrell/hopper:beta';
+  const KEY = 'a'.repeat(64);
+  const hopperEnv = (text: string): Record<string, string> =>
+    (parse(text) as { services: { hopper: { environment: Record<string, string> } } }).services.hopper.environment;
+
+  it('names the image it updates to, and changes nothing else of the shipped file', () => {
+    const r = carryCompose({ old: SHIPPED, shipped: SHIPPED, dotenv: '', image: IMAGE });
+    expect(r.compose).toBe(SHIPPED.replaceAll('${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}', `\${HOPPER_IMAGE:-${IMAGE}}`));
+    expect(r.overrideEnv).toEqual({});
+  });
+
+  it('moves an old LAN install\'s settings and its .env into compose.yaml, and the master key into no file', () => {
+    const dotenv = `HOPPER_MASTER_KEY=${KEY}\nHOPPER_IMAGE=ghcr.io/henningfutrell/hopper:latest\n# a comment\nexport HOPPER_LAN_PEERS="192.168.0.0/16"\n`;
+    const r = carryCompose({ old: OLD_LAN, shipped: SHIPPED, dotenv, image: IMAGE });
+    expect(r.compose).not.toContain(KEY);
+    expect(r.compose).toContain('"${HOPPER_BIND:-0.0.0.0}:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"');
+    expect(r.compose).toMatch(/^ {4}image: \$\{HOPPER_IMAGE:-ghcr\.io\/henningfutrell\/hopper:beta\}$/m);
+    expect(hopperEnv(r.compose)).toMatchObject({
+      HOPPER_LAN_NAMES: '${HOPPER_LAN_NAMES:-hopper,lanbox}',
+      HOPPER_LAN_PEERS: '${HOPPER_LAN_PEERS:-192.168.0.0/16}',
+      HOPPER_PUBLIC_URL: '${HOPPER_PUBLIC_URL:-https://hopper.example.test}',
+      HOPPER_MASTER_KEY: '${HOPPER_MASTER_KEY:-}',
+    });
+    expect(r.overrideEnv).toEqual({});
+    expect(r.notes).toEqual(expect.arrayContaining([
+      'HOPPER_BIND: set in compose.yaml',
+      'HOPPER_LAN_PEERS: set in compose.yaml',
+      expect.stringMatching(/^HOPPER_MASTER_KEY: in no file: give it at launch/),
+    ]));
+  });
+
+  it('keeps what an earlier update set in compose.yaml, at the next update', () => {
+    const first = carryCompose({ old: OLD_LAN, shipped: SHIPPED, dotenv: 'HOPPER_PORT=4800\nCOMPOSE_PROFILES=kms\n', image: IMAGE });
+    const next = carryCompose({ old: first.compose, shipped: SHIPPED, dotenv: '', image: 'ghcr.io/henningfutrell/hopper:stable' });
+    expect(next.compose).toContain('"${HOPPER_BIND:-0.0.0.0}:${HOPPER_PORT:-4800}:${HOPPER_PORT:-4800}"');
+    expect(hopperEnv(next.compose)).toMatchObject({ HOPPER_LAN_NAMES: '${HOPPER_LAN_NAMES:-hopper,lanbox}', COMPOSE_PROFILES: '${COMPOSE_PROFILES:-kms}' });
+    expect(next.compose).toContain('${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:stable}');
+  });
+
+  it('takes the settings given at launch over the old .env and the old compose.yaml', () => {
+    const r = carryCompose({ old: OLD_LAN, shipped: SHIPPED, dotenv: 'HOPPER_LAN_NAMES=from-env\n', launch: 'HOPPER_LAN_NAMES=from-launch\nHOPPER_PORT=4800\n', image: IMAGE });
+    expect(hopperEnv(r.compose)).toMatchObject({ HOPPER_LAN_NAMES: '${HOPPER_LAN_NAMES:-from-launch}', HOPPER_PORT: '${HOPPER_PORT:-4800}' });
+  });
+
+  it('turns on the services of COMPOSE_PROFILES in the file itself, and leaves the others behind their profile', () => {
+    const r = carryCompose({ old: SHIPPED, shipped: SHIPPED, dotenv: 'COMPOSE_PROFILES=hopper-vault,kms\n', image: IMAGE });
+    const services = (parse(r.compose) as { services: Record<string, { profiles?: string[] }> }).services;
+    expect(services['hopper-vault']!.profiles).toBeUndefined();
+    expect(services.kms!.profiles).toBeUndefined();
+    expect(services.vault!.profiles).toEqual(['vault']);
+    expect(hopperEnv(r.compose).COMPOSE_PROFILES).toBe('${COMPOSE_PROFILES:-hopper-vault,kms}');
+  });
+
+  it('moves a setting compose.yaml does not name to compose.override.yaml; a secret only by name, given at launch', () => {
+    const r = carryCompose({ old: SHIPPED, shipped: SHIPPED, dotenv: 'HOPPER_GREETING=a $b c\nCLAUDE_CODE_OAUTH_TOKEN=t0\nHOPPER_LAN_NAMES=x y\n', image: IMAGE });
+    expect(r.overrideEnv).toEqual({ HOPPER_GREETING: 'a $$b c', CLAUDE_CODE_OAUTH_TOKEN: '${CLAUDE_CODE_OAUTH_TOKEN:-}', HOPPER_LAN_NAMES: 'x y' });
+    expect(r.compose).not.toContain('t0');
+    const o = carryOverride(SHIPPED, r.compose, undefined, r.overrideEnv);
+    expect(parse(o.override!)).toEqual({ services: { hopper: { environment: r.overrideEnv } } });
   });
 });
