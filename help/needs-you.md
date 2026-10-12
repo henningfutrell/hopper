@@ -53,6 +53,18 @@ The page also links to **Settings → API tokens**, where you mint a box token f
 
 **Settings → Vault** keeps the configuration: secrets, templates, the read policy, shared secrets and the hopper's own secrets. A template that waits there links to Access requests. See [The vault](vault.md) and [Sandbox boxes](sandboxes.md).
 
+## Settings keeps configuration only
+
+Each page where you act is outside **Settings**. Settings keeps only how the hopper works:
+
+| What | Its home | What you do there |
+|---|---|---|
+| Decider picks | **Decisions**, panel **Decider picks** | Read what Jev picked. Select **Override** to say what it should have been. |
+| Question history | **Questions**, tab **History** | Read each handled question. Select **Correct** to correct an auto-answer. |
+| Your reports | **Your reports** | Read the bug reports you and your jobs filed. Select **Refresh**. |
+
+**Settings → Decider** keeps the decision points and the TypeSafe API key, and links to Decisions. An old link to Settings → Question history or Settings → Your reports opens the new page.
+
 ## Through the API
 
 Every count comes from the same reads the UI makes, with the same scopes:

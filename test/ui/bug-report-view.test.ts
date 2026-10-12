@@ -101,7 +101,7 @@ describe('Report a bug', () => {
     const kept = document.querySelector('[data-slot="bug-report-kept"]')!;
     expect(kept.textContent).toContain('your GitHub is not connected');
     expect(kept.textContent).toContain('The hopper keeps your report and sends it later.');
-    expect(kept.querySelector('a')?.getAttribute('href')).toBe('#settings/reports');
+    expect(kept.querySelector('a')?.getAttribute('href')).toBe('#reports');
     expect(button(/Done/)).toBeDefined();
   });
 });

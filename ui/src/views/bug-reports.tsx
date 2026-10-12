@@ -1,4 +1,4 @@
-// Your reports (issue #694), in Settings: each bug report the person filed with Report a bug, or one of their jobs
+// Your reports (issue #694), a top-level view (#reports; issue #897 moved it out of Settings, which keeps configuration only): each bug report the person filed with Report a bug, or one of their jobs
 // filed, newest first, with its state — waiting to send (kept while GitHub could not take it, with why), open or
 // closed on GitHub, with its link. The hopper sends the kept ones and reads the states every 10 minutes; Refresh does
 // it now.
