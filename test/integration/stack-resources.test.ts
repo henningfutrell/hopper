@@ -6,8 +6,9 @@
 //   Scenario: the containers as the meter reads them, and Postgres's connections, size, cache, locks and transactions
 //   Scenario: with no runtime socket, the containers say why, and Postgres is still read
 //   Scenario: statement latency says why there is none when pg_stat_statements is not installed
+//   Scenario: OpenFGA's checks as its meter reads them; with no OpenFGA, or a meter that fails, it says why
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ContainerMeter, ContainerReading, PostgresReading, StackResources } from '../../src/domain/types.ts';
+import type { ContainerMeter, ContainerReading, OpenFgaMeter, PostgresReading, StackResources } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
 const apps: TestApp[] = [];
@@ -22,10 +23,10 @@ const POSTGRES: ContainerReading = {
   startedAt: '2026-10-12T09:00:00.000Z', restarts: 1, cpuCores: 0.25, memUsedBytes: 300 * 1024 ** 2, netRxBytes: 10, netTxBytes: 20,
 };
 
-async function boot(meter?: ContainerMeter): Promise<TestApp> {
+async function boot(meter?: ContainerMeter, openFgaMeter?: OpenFgaMeter): Promise<TestApp> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  const a = await startTestApp({ dbPath: db.dbPath, seams: meter ? { containerMeter: meter } : {} });
+  const a = await startTestApp({ dbPath: db.dbPath, seams: { ...(meter ? { containerMeter: meter } : {}), ...(openFgaMeter ? { openFgaMeter } : {}) } });
   apps.push(a);
   return a;
 }
@@ -73,5 +74,20 @@ describe('stack resources', () => {
     if (!isReading(pg)) throw new Error(pg.problem);
     // The test database has no pg_stat_statements; compose.yaml loads it (test/scripts/compose.test.ts).
     expect(pg.statements).toEqual({ problem: expect.stringContaining('pg_stat_statements') });
+  });
+
+  it('answers OpenFGA\'s checks as its meter reads them', async () => {
+    const a = await boot(undefined, { read: async () => ({ checks: 100, errors: 3, meanMs: 1 }) });
+    const r = await a.api<StackResources>('GET', '/api/resources');
+    expect(r.body.openfga).toEqual({ checks: 100, errors: 3, meanMs: 1 });
+  });
+
+  it('with no OpenFGA, or a meter that fails, OpenFGA says why and the rest is still read', async () => {
+    const none = await boot();
+    const r = await none.api<StackResources>('GET', '/api/resources');
+    expect(r.body.openfga).toEqual({ problem: expect.stringContaining('HOPPER_OPENFGA_URL') });
+    expect(isReading(r.body.postgres)).toBe(true);
+    const failing = await boot(undefined, { read: async () => { throw new Error('OpenFGA\'s metrics answered 503'); } });
+    expect((await failing.api<StackResources>('GET', '/api/resources')).body.openfga).toEqual({ problem: 'OpenFGA\'s metrics answered 503' });
   });
 });
