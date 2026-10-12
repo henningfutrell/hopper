@@ -73,7 +73,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the public URL is up through the tunnel (`tunnel.ts`, issue #795); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); remote access — the tunnel's settings, its authtoken in the instance's vault, its status and the tunnel service's ask (`remote-access.ts`, `ui/remote-access.ts`, issue #880); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
@@ -864,7 +864,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   `https://github.com/<owner/name>.git` the first time, then makes the job worktree
   `<work tree>/.hopper-scratch/<job id>/<name>` of the checkout the same way, enters it and prints
   `hopper-job-worktree-checkout`; the pane state keeps the checkout as `checkout`, and the footer names
-  it as what the worktree is of. Neither: `hopper-job-worktree-none`, and the job runs in its work tree. Git refusing:
+  it as what the worktree is of. Since issue #858 the checkout is a **repository mirror** in the work tree's scratch dir,
+  the fetch is of the default branch only, and the outcome is `hopper-job-worktree-mirror` ("Git efficiency" below).
+  Neither: `hopper-job-worktree-none`, and the job runs in its work tree. Git refusing:
   `hopper-job-worktree-unmade`, the job fails at once with what git said, pane closed. The worktree
   ends with the job through the reap: in the scratch dir, it is removed with it (`git worktree
   remove`, so the repository keeps no entry) unless it holds uncommitted or unpushed work, which is
@@ -2644,7 +2646,7 @@ event; in-memory only.
   `NotifierEvents.loginsUrl` —; never the URL to open or the code).
 - `hopper.reachable` (issue #795): where the hopper is reached from outside, while the **tunnel** is up
   (`NotifierEvents.reach`, the tunnel watch: "The tunnel"). Body `{ source: 'hopper', kind: 'hopper.reachable', at,
-  reason, url, apiTokenUrl, heartbeatSeconds }`: `url` is `HOPPER_PUBLIC_URL`, `apiTokenUrl` where an agent exchanges
+  reason, url, apiTokenUrl, heartbeatSeconds }`: `url` is the remote access URL ("Remote access"), `apiTokenUrl` where an agent exchanges
   its sign-in for an API token. Sent when the routine is configured and the URL is known: at start (`start`), on another
   URL (`change`), when the tunnel is up again after it was down (`recovery`), and again every 5 minutes while nothing
   changed (`heartbeat`, `heartbeatMs`), so a missed one heals; checked with the routine every 5 s. Nothing is sent while
@@ -6465,35 +6467,81 @@ usernames: GitHub logins can be renamed and re-registered, so the guide grants b
 
 Owner decisions on the issue: the box's link to the hopper is already durable (`hopper-client.service`, "Joining a
 machine"), so no new box tunnel; what was missing is reach to the hopper's API from outside the LAN. The tunnel is a
-**sidecar**, the compose service `tunnel` behind its profile (docs/deploy.md "The tunnel"): an ngrok agent, never
-`@ngrok/ngrok` in the hopper's process. Grok Bot is told the URL by `hopper.reachable` ("Grok Bot routine webhook").
+**sidecar**, the compose service `tunnel` (docs/deploy.md "Remote access"): an ngrok agent, never `@ngrok/ngrok` in the
+hopper's process. Grok Bot is told the URL by `hopper.reachable` ("Grok Bot routine webhook"). Its settings are the
+hopper's, set in the UI ("Remote access" below, issue #880).
 
 - **Its network.** The service is on `hopper_tunnel` alone, which the hopper joins too, and forwards to
   `http://hopper:<port>`. Never `network_mode: service:hopper` nor a forward to `127.0.0.1`: every internet request would
-  then be a local one and read `GET /api/*` with no session. Its requests come from a LAN peer with the public URL's
-  Host: **public requests**. No box joins `hopper_tunnel`, so none reaches the agent's local API, which can start
+  then be a local one and read `GET /api/*` with no session. Its requests come from a LAN peer with the remote access
+  domain as Host: **public requests**. No box joins `hopper_tunnel`, so none reaches the agent's local API, which can start
   tunnels.
 - **Its edge** (ngrok traffic policy, written by the service's command): `404` for every path but `/api/`, `/ui/api/` and
   `/ui/auth/api-token`, and for `/api/events/stream` (its session is in the query); per caller address, 120 requests and
-  5 API-token exchanges a minute.
-- **The URL is fixed.** `--url` is `HOPPER_PUBLIC_URL`, one value for both ends. The Host guard takes `HOPPER_PUBLIC_URL`
-  only, never a URL the agent reports: a random per-start URL would make the guard follow a value from a container.
-- **The tunnel watch** (`src/http/tunnel.ts`): with `HOPPER_TUNNEL_API` (the agent's local API, `http://tunnel:4040`;
-  config refuses it without `HOPPER_PUBLIC_URL`), the hopper asks `GET /api/tunnels` every 10 s (5 s timeout). Up: an
-  endpoint's `public_url` has the public URL's origin. Down: no answer, not 2xx, no endpoint, or only endpoints at other
-  URLs — logged once per change, with why. `url()` is the public URL while up; each user's runtime passes it to its
+  5 API-token exchanges a minute. `/tunnel/agent` is not on the edge.
+- **The URL is fixed.** `--url` is the remote access URL, `https://<domain>`, one value for both ends. The Host guard takes
+  that domain from the settings only, never a URL the agent reports: a random per-start URL would make the guard follow a
+  value from a container.
+- **The tunnel watch** (`src/http/tunnel.ts`): with `HOPPER_TUNNEL_API` (the agent's local API, `http://tunnel:4040`) and
+  remote access on, the hopper asks `GET /api/tunnels` every 10 s (5 s timeout), and at once after each change of the
+  settings. Up: an endpoint's `public_url` has the remote access URL's origin. Down: no answer, not 2xx, no endpoint, or
+  only endpoints at other URLs — logged once per change, with why, which the status shows. Off: it asks nothing. `url()`
+  is the remote access URL while up (and while the settings still name it); each user's runtime passes it to its
   notifiers as `NotifierEvents.reach`. Stopped, and its ask in flight settled, with the server.
 - **The caller behind the tunnel** (second part of the issue). Every request through the tunnel comes from one peer, the
   agent. The edge first drops an `x-hopper-caller` header the caller sent, then sets it to the caller's address
   (`conn.client_ip`). The hopper reads it only from the agent: each ask of the tunnel watch also looks up the addresses of
-  `HOPPER_TUNNEL_API`'s host (`isAgent`). `tunnelCaller` keys the sign-in limit: from the agent, the one address the
-  header names; else, or with no single address named, the peer's own address. A LAN peer cannot pick its count with the
-  header. `trustProxy` stays off: nothing else reads a forwarded address, and the Host guard is unchanged.
+  `HOPPER_TUNNEL_API`'s host (`isAgent`), on or off. `tunnelCaller` keys the sign-in limit: from the agent, the one address
+  the header names; else, or with no single address named, the peer's own address. A LAN peer cannot pick its count with
+  the header. `trustProxy` stays off: nothing else reads a forwarded address.
 - **The exchange has the sign-in limit.** `POST /ui/auth/api-token` was outside it: through the tunnel, only the edge
   limited it. It now has its own count of `SIGN_IN_RATE` (20 a minute) per caller, in its own Fastify context; 429 past
   it. A stranger through the tunnel uses up only their own count, never an agent's.
 - **Residual risk, stated.** The edge names the caller by the address ngrok sees; callers behind one address (a NAT, a
   shared egress) share a count. The auth boundary is decided: a box action needs a box token ("Box tokens" below).
+
+### Remote access (issue #880, 2026-10-12)
+
+The issue: the tunnel needed `NGROK_AUTHTOKEN`, `HOPPER_PUBLIC_URL` and `COMPOSE_PROFILES=tunnel` hand-edited into `.env`
+on the host. The hopper keeps its own secrets, entered in the UI and kept in the database. Now an admin sets the tunnel in
+Settings → Remote access, from any browser or with an API token: no file on the host, so a phone can turn it on, restart
+it or rotate its token.
+
+- **Settings.** The instance's settings record `remoteAccess`: `{ enabled, domain?, restartedAt? }`. The domain is the
+  one reserved at ngrok, kept lowercase with no scheme (`domainOf`); the remote access URL is `https://<domain>`, never a
+  variable of its own. The **ngrok authtoken** is a system secret of the instance's vault, `remote-access.ngrok-authtoken`
+  (kind `remote-access`), written through `SystemSecrets.keep`, never in a vault backend (the whole hopper's). It is on
+  only with both. Each change is `remote_access.changed` (`from`, `to`, `authtoken: set|removed`, never a value).
+- **Routes.** `GET /api/remote-access` (the instance admin; the authtoken's metadata, never its value; the status) and
+  `POST /ui/api/remote-access` (`enabled`, `domain`, `authtoken`, `restart`; the `instance` guard, so an admin's API token
+  works too). 409 to turn it on without a domain and a token, to remove one while on, or to restart while off; 503 with no
+  master key.
+- **The tunnel service pulls.** The compose service `tunnel` is required, not behind a profile: off, it runs no ngrok. It
+  holds no setting. Every 10 s it asks `GET /tunnel/agent` with `Authorization: Bearer <HOPPER_TUNNEL_KEY>` and
+  `?ngrok=<report>` (`running`, `stopped`, `exited` or the `ERR_NGROK_<n>` code ngrok stopped with). The answer is 204
+  while off, else `url=…`, `authtoken=…` and `restart=…` lines. A different answer stops ngrok and starts it with the new
+  one; 204 stops it; a failed ask keeps what runs (the hopper restarting does not drop the tunnel). After an error code it
+  waits for new settings, so a refused token is not sent to ngrok every 10 s. The token is in ngrok's environment only,
+  never on a command line or in a file, and masked in its log.
+- **The tunnel service's key.** Postgres makes it at each start of the stack, as it makes the other preshared keys
+  (issue #659), in its own tmpfs volume `tunnel-key`: the tunnel is internet-facing, so it mounts that key alone, never
+  `runtime-secrets` (the database URL). The hopper reads `HOPPER_TUNNEL_KEY_FILE` at each ask, compared in constant time.
+  Without it, `/tunnel/agent` is 404 and the status says this hopper runs no tunnel service.
+- **Never through the tunnel.** `/tunnel/agent` is off `/api/`, so the edge answers 404 for it; the hopper refuses it as a
+  public request too (Host the remote access domain or the public URL): 404.
+- **The Host guard** takes the remote access domain as a public request's Host while remote access is on (`Lan.tunnelUrl`,
+  read at each request), beside `HOPPER_PUBLIC_URL`, which stays for a reverse proxy. Off, the domain is any other Host:
+  421.
+- **Status.** `off`; `no-service` (no tunnel service, or none asked in 30 s); `down` with ngrok's last error code in words
+  (`ngrokErrorText`, its page at ngrok) or the tunnel watch's reason; `up` with the URL. Settings → Remote access reads it
+  every 10 s while shown.
+- **From before.** At start, an install with `NGROK_AUTHTOKEN` in its environment and no `remoteAccess` record moves the
+  token into the vault, takes `HOPPER_PUBLIC_URL`'s host as the domain (https, no port) and turns remote access on with
+  it; logged, once. `HOPPER_TUNNEL_API` no longer needs `HOPPER_PUBLIC_URL`.
+- **Residual risk, stated.** The tunnel service is third-party code on the internet's path, and it holds the authtoken
+  while it runs: as it did before, now in memory only. Anyone with the tunnel service's key reads the authtoken: the key is
+  in that container and the hopper's, and in memory on the host. A restart of the hopper reads the key file again; a full
+  stop of the stack makes a new key.
 
 ## Self-update (issue #44, 2026-10-04)
 
@@ -9238,7 +9286,9 @@ replaces them; test with doubles, and state the gap to a real environment.
   it was refused in the tool's own words (`DENIAL`: `AccessDenied`, `UnauthorizedOperation`, `is forbidden`, …); a read
   must exit 0. Each write leaves nothing when refused, and is a dry run where the service has one; a write that went
   through runs its `cleanup`, and the check fails.
-  - `aws-account`, `aws-role`: read `aws sts get-caller-identity`; writes `ec2 create-tags --dry-run`, `ssm
+  - `aws-account`, `aws-role`: read `aws sts get-caller-identity`; writes `ec2 create-tags --dry-run` on a VPC
+    `ec2 describe-vpcs` finds (`ec2 create-vpc --dry-run` with none: EC2 looks up a VPC before the dry run asks the
+    authorization, so a VPC the account does not hold answers NotFound, never a refusal, issue #882), `ssm
     put-parameter`, `iam create-user`, `sts assume-role` to another role of the account.
   - `cluster`, `namespace` (`<cluster>/<ns>`): read `kubectl get ns` (or pods in the namespace), `helm list`; writes
     `kubectl create namespace --dry-run=server`, `kubectl delete pod --dry-run=server`, and the install of a chart `helm
@@ -9793,7 +9843,9 @@ machine; a routing rule may still override it per repository, on the machine it 
   of a git repository — a checkout the owner keeps, as before — is used as it is: no clone is put in it,
   and each job gets its own worktree of it ("Each job its own git worktree"). Any other work tree (the
   jobs directory, a fresh box's) gets the job's repository when the job has one (a GitHub issue's,
-  `job.source.repo`): the job worktree command fetches the **checkout** `<work tree>/<name>`, whose
+  `job.source.repo`): the job worktree command fetches the **checkout** `<work tree>/<name>` (since issue #858 the
+  **repository mirror** `<work tree>/.hopper-scratch/repos/<owner>/<name>.git`, "Git efficiency"; the checkout only
+  with `jobWorktrees` off), whose
   `origin` must be that repository, or clones it there from `https://github.com/<owner/name>.git` the
   first time (into `<name>.hopper-clone-<pid>`, then moved in, so two jobs cloning at once leave one),
   and makes the job's worktree of it, `<work tree>/.hopper-scratch/<job id>/<name>`. Git takes github.com
@@ -13872,7 +13924,8 @@ worktree command (`src/executors/herdr/job-worktree.ts`) compares the work tree'
 repository (`owner/name`, in any case, as `mappedWorkTree` does):
 - the job's own repository, or a job that names none: as before, a worktree of the work tree (`made`);
 - another repository (or none at all): the job's repository is fetched, or cloned the first time, into the work
-  tree's scratch dir, `repoCheckoutOf` = `<work tree>/.hopper-scratch/repos/<owner>/<name>`, and the job gets its
+  tree's scratch dir, `repoCheckoutOf` = `<work tree>/.hopper-scratch/repos/<owner>/<name>` (since issue #858 the
+  repository mirror `mirrorOf`, `<name>.git` there, outcome `mirror`: "Git efficiency"), and the job gets its
   worktree of that checkout, `<work tree>/.hopper-scratch/<job id>/<name>` (outcome `other`). The executor
   records the checkout (`PaneState.checkout`) and names it in the prompt, as for issue #361's checkout.
 The checkout is under `.hopper-scratch`, which git ignores there, so the work tree's repository stays clean. The
@@ -14516,3 +14569,65 @@ Tests: `test/domain/out-of-band.test.ts` (the rule, the signal, the marks, the p
 recorded, each an event; a controller's write and the write of the credential minted for an approved plan in band;
 nothing recorded twice; marks once; refusals), `test/plugins/grokbot-intake.test.ts` (the notification),
 `test/ui/out-of-band.test.ts`.
+
+## Git efficiency (issue #858 part 1, 2026-10-12)
+
+The git half of issue #822. Before: a job in a work tree that was not its repository got a full `git clone` of it (in
+`<work tree>/<name>`, or `.hopper-scratch/repos/<owner>/<name>`), and each job start ran a `git fetch` of every ref, with no
+`--prune` and no filter. Nothing counted git fetches, and the GitHub API had lifetime counts only. Part 1 does steps 0 to 2
+of the issue; steps 3 and 4 are later parts.
+
+**GitHub traffic per sync pass** (step 0, `src/github-limiter/traffic.ts`). Measured first: each sync pass of a GitHub source
+logs one line, `hopper: GitHub traffic of sync pass <source>: REST <n> (<route> <n>, …), GraphQL <n> (<read> <n>, …), git
+fetches <n> (<owner/name> <n>, …; by job <job id's first 8> <n>, …)`.
+- The shared limiter's hook counts every call it lets go (a deferred call is not made, so not counted): a REST call by method
+  and Octokit's route template (`GET /repos/{owner}/{repo}/issues/{issue_number}`), so one route is one count whatever the
+  repository; a page link by its path without the query. A GraphQL call by the `GitHubApi` read or write that made it
+  (`passReads` runs each in `traffic.read`), else its operation name, else its first two fields (`repository.issue`). A batched
+  GraphQL request (`graphql-batch.ts`) counts once, under the read that scheduled it first.
+- The git proxy counts each fetch that goes to GitHub, for its repository and its job: git asks for the refs once per fetch or
+  clone (`GET info/refs?service=git-upload-pack`), so that ask is the fetch. A push is not a fetch. The fetch at a job's start
+  goes through the proxy too, so it is counted.
+- Which pass a call counts for is an `AsyncLocalStorage` context, as for the pass reads: two sources' passes at once count each
+  its own. A call outside any pass (a job's git fetch, a job's own GitHub request, a GitHub watch) is counted "between passes",
+  and the next pass that ends adds it to its line, once. A failed pass logs its line too.
+- Counts only, in memory, logged and forgotten: nothing is kept, no event, no UI.
+
+**The repository mirror** (step 1, `src/executors/herdr/job-worktree.ts`). One bare, blobless clone of each repository per
+work tree: `<work tree>/.hopper-scratch/repos/<owner>/<name>.git` (`mirrorOf`), for a work tree that is no repository and for
+one that is another repository's top alike. Made by `git clone --bare --filter=blob:none`; its branches are then moved from
+`refs/heads/*` to `refs/remotes/origin/*`, `remote.origin.fetch` set to `+refs/heads/*:refs/remotes/origin/*`, and
+`refs/remotes/origin/HEAD` to the default branch. So a job's worktree of it (`git worktree add --detach … origin/<default>`)
+has the remote's branches where a clone has them: a branch the job pushes is `refs/remotes/origin/<branch>` in the mirror,
+and the reap (`--not --remotes`) reads it as pushed. Blobs come on demand, when a worktree checks a file out. An extra job
+adds only its worktree. The mirror's `origin` must be the job's repository; another is refused (`unmade`, "is not a mirror
+of"). Cloned into `<mirror>.hopper-clone-<pid>` and moved in, so two jobs cloning at once leave one. The outcome is
+`hopper-job-worktree-mirror` (replacing `checkout` and `other`), and `PaneState.checkout` names the mirror, which the
+footer names as what the worktree is of. The old checkouts are no longer used; nothing removes them.
+
+**Targeted fetch** (step 2). A job start that makes a worktree fetches the default branch only, pruned:
+`git fetch --quiet --prune origin <default branch>` (the branch from `refs/remotes/origin/HEAD`), with `--filter=blob:none` in
+a mirror. A repository that knows no default branch fetches as it is set up. The job's own branch is not fetched at the start:
+it has none yet, and a run again finds its worktree and fetches nothing.
+
+**Job rules.** The `[hopper job worktree]` line adds: fetch and push through the worktree's origin only; never clone the
+repository again and never add a remote of your own, such as an ssh one. A clone over the job's own ssh remote went around
+the hopper and left full clones behind.
+
+**Not changed.** With job worktrees off (the print agents), a work tree that is no repository still gets the full checkout
+`<work tree>/<name>`, and the job runs beside it: there is no worktree to make of a mirror. A work tree that is the job's own
+repository is used as it is; only its fetch is targeted now.
+
+**Left for later parts.** Step 3, one fetch per repository per sync pass (the daemon runs no git yet; a mirror on the
+daemon's side, the broker answering fetches from it), with a job start skipping its fetch when the pass already fetched;
+step 4, conflicts and mergeability from `git merge-tree --write-tree` and `git merge-base --is-ancestor` in place of GraphQL
+`mergeable`. Both change only what the counts above show is hot.
+
+Tests: `test/github-limiter/traffic.test.ts` (through the real `makeRequest` and limiter against a fake GitHub: the line per
+pass, routes per template, GraphQL per read, between passes once, two passes at once, a failed pass),
+`test/sources/github-pass-reads.test.ts` (a read asked once is counted once, under its name),
+`test/integration/git-proxy.test.ts` "counts each fetch of a job" (real git through the real proxy), `test/herdr/job-worktree.test.ts`
+and `job-worktree-other-repository.test.ts` (real git, the origin served over a `file://` URL with blob filters allowed: the
+mirror bare and blobless with its branches under `refs/remotes/origin`, a later job fetching the default branch only, an extra
+job adding only its worktree, a pushed branch reaped as pushed, a mirror of another repository refused, worktrees off as
+before), `test/herdr/executor-job-worktree.test.ts` (the mirror saved and named in the prompt with the new rule).

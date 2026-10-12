@@ -1,6 +1,7 @@
-// The tunnel watch (issue #795): the hopper asks the tunnel agent's local API whether the endpoint for HOPPER_PUBLIC_URL
-// is up. Up: the public URL is where the hopper is reached. Anything else — no agent, an error, no endpoint, an endpoint at
-// another URL — is down. It only reads: the Host guard never takes a URL the agent reports. A loopback fake agent.
+// The tunnel watch (issues #795, #880): the hopper asks the tunnel agent's local API whether the endpoint for the remote
+// access URL is up. Up: that URL is where the hopper is reached. Anything else — no agent, an error, no endpoint, an
+// endpoint at another URL — is down, with why. Remote access off: nothing asked. It only reads: the Host guard never takes
+// a URL the agent reports. A loopback fake agent.
 import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { tunnelCaller, watchTunnel, type TunnelWatch } from '../../src/http/tunnel.ts';
@@ -37,14 +38,15 @@ const logger = () => {
 
 describe('the tunnel watch', () => {
   it('has no URL and asks nothing when no tunnel API is set', async () => {
-    watch = watchTunnel({ api: undefined, publicUrl: 'https://h.example', logger: logger() });
+    watch = watchTunnel({ api: undefined, url: () => 'https://h.example', logger: logger() });
     expect(watch.url()).toBeUndefined();
+    expect(watch.reason()).toBeUndefined();
   });
 
-  it('is up when the agent has an endpoint at HOPPER_PUBLIC_URL, and asks GET /api/tunnels', async () => {
+  it('is up when the agent has an endpoint at the remote access URL, and asks GET /api/tunnels', async () => {
     const a = await agent(() => tunnels('https://h.example'));
     const log = logger();
-    watch = watchTunnel({ api: a.api, publicUrl: 'https://h.example', logger: log, everyMs: 20 });
+    watch = watchTunnel({ api: a.api, url: () => 'https://h.example', logger: log, everyMs: 20 });
     await waitFor(() => watch!.url() === 'https://h.example', { what: 'up' });
     expect(a.asked[0]).toBe('GET /api/tunnels');
     expect(log.lines).toContain('info hopper: the tunnel is up: https://h.example');
@@ -53,17 +55,17 @@ describe('the tunnel watch', () => {
   it('is down when the endpoint is at another URL: the Host guard would refuse it', async () => {
     const a = await agent(() => tunnels('https://random-1234.ngrok-free.app'));
     const log = logger();
-    watch = watchTunnel({ api: a.api, publicUrl: 'https://h.example', logger: log, everyMs: 20 });
+    watch = watchTunnel({ api: a.api, url: () => 'https://h.example', logger: log, everyMs: 20 });
     await waitFor(() => log.lines.some((l) => l.startsWith('warn')), { what: 'a warning' });
     expect(watch.url()).toBeUndefined();
-    expect(log.lines.find((l) => l.startsWith('warn'))).toMatch(/not HOPPER_PUBLIC_URL \(https:\/\/h\.example\): https:\/\/random-1234\.ngrok-free\.app/);
+    expect(log.lines.find((l) => l.startsWith('warn'))).toMatch(/not the remote access URL \(https:\/\/h\.example\): https:\/\/random-1234\.ngrok-free\.app/);
   });
 
   it('goes down when the agent errs or has no endpoint, and up again when it is back; each change logged once', async () => {
     let answer: { status: number; body: unknown } = tunnels('https://h.example');
     const a = await agent(() => answer);
     const log = logger();
-    watch = watchTunnel({ api: a.api, publicUrl: 'https://h.example', logger: log, everyMs: 20 });
+    watch = watchTunnel({ api: a.api, url: () => 'https://h.example', logger: log, everyMs: 20 });
     await waitFor(() => watch!.url() !== undefined, { what: 'up' });
     answer = { status: 502, body: { error: 'no session' } };
     await waitFor(() => watch!.url() === undefined, { what: 'down' });
@@ -75,11 +77,31 @@ describe('the tunnel watch', () => {
     expect(log.lines.filter((l) => l.includes('is up'))).toHaveLength(2);
   });
 
+  it('asks nothing while remote access is off, and follows its URL when it is turned on or changed', async () => {
+    const a = await agent(() => tunnels('https://h.example'));
+    let url: string | undefined;
+    watch = watchTunnel({ api: a.api, url: () => url, logger: logger(), everyMs: 20 });
+    await new Promise((r) => setTimeout(r, 100));
+    expect(a.asked).toEqual([]);
+    expect(watch.url()).toBeUndefined();
+    expect(watch.reason()).toBeUndefined();
+    url = 'https://h.example';
+    await waitFor(() => watch!.url() === 'https://h.example', { what: 'up' });
+    url = 'https://other.example';
+    // Not up a moment longer on a changed URL; why, at the next ask.
+    expect(watch.url()).toBeUndefined();
+    await waitFor(() => /not the remote access URL \(https:\/\/other\.example\)/.test(watch!.reason() ?? ''), { what: 'down on the new URL' });
+    url = undefined;
+    await waitFor(() => watch!.reason() === undefined, { what: 'off' });
+    expect(watch.url()).toBeUndefined();
+  });
+
   it('is down when no agent answers', async () => {
     const log = logger();
-    watch = watchTunnel({ api: 'http://127.0.0.1:1', publicUrl: 'https://h.example', logger: log, everyMs: 20 });
+    watch = watchTunnel({ api: 'http://127.0.0.1:1', url: () => 'https://h.example', logger: log, everyMs: 20 });
     await waitFor(() => log.lines.some((l) => l.startsWith('warn')), { what: 'a warning' });
     expect(watch.url()).toBeUndefined();
+    expect(watch.reason()).toMatch(/does not answer/);
   });
 });
 

@@ -52,3 +52,16 @@ export function afterDone(job: Job): AfterDone | undefined {
   if (s.follow === 'abandoned') return ABANDONED(url);
   return undefined;
 }
+
+/** The router's advice in plain words (issue #883); undefined for its default, run in full, which says nothing. */
+const ADVICE_TEXT: Record<NonNullable<Job['advice']>['action'], string | undefined> = {
+  proceed_full: undefined,
+  reuse_cache: 'the router says: reuse earlier work',
+  stop_retry: 'the router says: stop trying again',
+  run_deterministic: 'the router says: run a fixed script, no agent',
+  chat_only: 'the router says: answer only, change no code',
+  ask_human: 'the router asks a person to look first',
+  allow_subagent: 'the router lets it use helper agents',
+  research_capped: 'the router says: research, with a limit',
+};
+export const adviceText = (action: NonNullable<Job['advice']>['action']): string | undefined => ADVICE_TEXT[action];

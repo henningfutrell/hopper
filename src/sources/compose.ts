@@ -71,7 +71,7 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
   const assignee = () => o.accounts?.account('github');
   const real = o.api ? undefined : createGitHubAppApi({ app, keyEnv: options.privateKeyEnv, clock: o.clock, ...(options.apiUrl ? { baseUrl: options.apiUrl } : {}) });
   // One read per sync pass (issue #822): the source reads through `reads.api`, and each sync is one `reads.pass`.
-  const reads = passReads(o.api ?? real!);
+  const reads = passReads(o.api ?? real!, o.name);
   const api = reads.api;
   const source = createGitHubSource({
     name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable, trust: o.trust,
@@ -99,7 +99,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     try { return await accounts.token(provider); } catch (err) { throw new GitHubApiError((err as Error).message, false); }
   };
   // One read per sync pass (issue #822), across a rebuild of the source too.
-  const reads = passReads(o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token, renew: (refused) => accounts.renew(provider, refused) }));
+  const reads = passReads(o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token, renew: (refused) => accounts.renew(provider, refused) }), o.name);
   const api = reads.api;
   let built: { key: string; source: JobSource } | undefined;
   const current = (): JobSource | undefined => {

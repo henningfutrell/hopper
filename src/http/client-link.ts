@@ -28,7 +28,7 @@ import type { Clock, InstanceStore } from '../domain/ports.ts';
 import { useJoinCode } from '../machines/join-code.ts';
 import type { MachineLinks } from '../machines/links.ts';
 import { HttpError, parseWith } from './errors.ts';
-import { classifyRequest, peerList, type Lan } from './reach.ts';
+import { classifyRequest, peerList, publicOriginOf, type Lan } from './reach.ts';
 import type { Tenants } from './tenants.ts';
 import { holdsTemplate } from '../vault/vault.ts';
 
@@ -136,7 +136,7 @@ export function clientLinkRoutes(app: FastifyInstance, o: ClientLinkOptions): vo
     if (head.length) socket.unshift(head);
     if ('setTimeout' in socket && typeof socket.setTimeout === 'function') socket.setTimeout(0);
     // Where the machine reached the hopper: its jobs ask the hopper there (issue #563). Behind the public URL the
-    // scheme is the public URL's; on loopback or the LAN, plain http to the Host it named.
-    o.links.accept(user, key, socket, reach.reach === 'public' ? o.lan.publicUrl : `http://${req.headers.host ?? ''}`);
+    // scheme is the public URL's (or the remote access URL's); on loopback or the LAN, plain http to the Host it named.
+    o.links.accept(user, key, socket, reach.reach === 'public' ? publicOriginOf(o.lan, req.headers.host ?? '') : `http://${req.headers.host ?? ''}`);
   });
 }

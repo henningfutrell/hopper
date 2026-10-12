@@ -1,1 +1,0 @@
-- Settings → Vault has a **Template request** panel. Write the needs of a box, one per line. The hopper shows the template it makes from them before it makes it: its image, its tools, its needs, and who approves it. Then ask for it.

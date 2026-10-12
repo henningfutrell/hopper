@@ -2564,6 +2564,31 @@ Version 1 (`docs/schemas/github_rate_limiter.settings_changed.v1.json`). The hop
 }
 ```
 
+## `remote_access.changed`
+
+Version 1 (`docs/schemas/remote_access.changed.v1.json`). The hopper's admin changed remote access (issue #880): the tunnel on or off (`enabled`) the domain reserved at ngrok (`domain`) and when the admin last started the tunnel again (`restartedAt`), `from` and `to`; `authtoken`: the ngrok authtoken was `set` or `removed` (never its value: it is the system secret `remote-access.ngrok-authtoken`). `by` is `hopper` when a start moved NGROK_AUTHTOKEN from the environment. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `authtoken` | `set` \| `removed` | no |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "enabled": false
+  },
+  "to": {
+    "enabled": true,
+    "domain": "hopper.example.ngrok.app"
+  },
+  "authtoken": "set",
+  "by": "admin"
+}
+```
+
 ## `question.thread_held`
 
 Version 1 (`docs/schemas/question.thread_held.v1.json`). A question at the human stage of a GitHub job waits on a person before it goes on its issue thread (issue #435): the policy for the repository (`otherRepos` or `ownRepos`) is `review`. Approve it to post it; an answer in the hopper works as before.

@@ -1,1 +1,0 @@
-- A template can now read a Terraform workspace. Ask for read on the workspace and read on the AWS role that reads it: the workspace uses that role's read session, and its read-only check now runs and can pass. The session reads the workspace's state, but cannot write it or take its lock.

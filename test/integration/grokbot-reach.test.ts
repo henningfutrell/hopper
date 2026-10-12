@@ -1,6 +1,6 @@
-// The tunnel tells Grok Bot where the hopper is (issue #795), through the real composition root: HOPPER_TUNNEL_API names
-// a loopback fake of the ngrok agent's local API; once it has an endpoint at HOPPER_PUBLIC_URL, the user's Grok Bot
-// routine gets `hopper.reachable` with that URL. A loopback receiver.
+// The tunnel tells Grok Bot where the hopper is (issues #795, #880), through the real composition root: HOPPER_TUNNEL_API
+// names a loopback fake of the ngrok agent's local API; once it has an endpoint at the remote access URL (set in the UI),
+// the user's Grok Bot routine gets `hopper.reachable` with that URL. A loopback receiver.
 import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -29,20 +29,20 @@ async function serve(handle: (path: string, body: string) => string): Promise<st
 }
 
 describe('the tunnel and the Grok Bot routine', () => {
-  it('announces HOPPER_PUBLIC_URL once the tunnel agent has an endpoint there', async () => {
-    let up = false;
-    const agent = await serve(() => JSON.stringify({ tunnels: up ? [{ public_url: 'https://h.example', proto: 'https' }] : [] }));
+  it('announces the remote access URL once the tunnel agent has an endpoint there', async () => {
+    const agent = await serve(() => JSON.stringify({ tunnels: [{ public_url: 'https://h.example', proto: 'https' }] }));
     const hits: Record<string, unknown>[] = [];
     const routine = await serve((_p, body) => { hits.push(JSON.parse(body) as Record<string, unknown>); return '{}'; });
     const db = tempDbPath();
     cleanup = db.cleanup;
     t = await startTestApp({
-      dbPath: db.dbPath, env: { HOPPER_PUBLIC_URL: 'https://h.example', HOPPER_TUNNEL_API: agent },
+      dbPath: db.dbPath, env: { HOPPER_TUNNEL_API: agent },
       secrets: { GROKBOT_WEBHOOK_URL: `${routine}/routine`, GROKBOT_WEBHOOK_KEY: 'sekrit' }, seams: { grokbot: { baseMs: 20, watchMs: 20 } },
     });
+    // Off: nothing is announced, though the agent has the endpoint.
     await new Promise((r) => setTimeout(r, 200));
     expect(hits.filter((h) => h.kind === 'hopper.reachable')).toEqual([]);
-    up = true;
+    await t.ui('/ui/api/remote-access', { authtoken: 'a'.repeat(30), domain: 'h.example', enabled: true }, { token: await t.login() });
     const hit = await waitFor(() => hits.find((h) => h.kind === 'hopper.reachable'), { what: 'the announce', timeoutMs: 15_000 });
     expect(hit).toMatchObject({ source: 'hopper', url: 'https://h.example', apiTokenUrl: 'https://h.example/ui/auth/api-token' });
   }, 20_000);

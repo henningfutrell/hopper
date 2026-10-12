@@ -35,8 +35,9 @@
 # on every interface, for a LAN install) or in compose.override.yaml, which compose reads beside it. The update moves
 # what an older file had of your own there by itself, and the hopper says when its stack differs from this file.
 #
-# Required services: postgres, hopper, openfga (and openfga-migrate, which runs once). A plain `podman compose up -d`
-# starts only these, and the vault works: it runs in the hopper, under the master key.
+# Required services: postgres, hopper, openfga (and openfga-migrate, which runs once), and tunnel, which runs no ngrok
+# until remote access is turned on in the UI (Settings → Remote access, issue #880). A plain `podman compose up -d` starts
+# only these, and the vault works: it runs in the hopper, under the master key.
 #
 # Optional services (issue #586, docs/deploy.md "Optional services"), each behind a compose profile; the hopper starts
 # and works without them. Turn them on with lines in .env, then `podman compose up -d`:
@@ -49,7 +50,6 @@
 #                   HOPPER_KMS_URL=http://kms:8080
 #                 (the KMS also works with the vault in the hopper: COMPOSE_PROFILES=kms and HOPPER_KMS_URL alone.)
 #   vault         HashiCorp Vault, a vault backend secrets may be kept in (issue #585): see the service below.
-#   tunnel        an ngrok agent that forwards HOPPER_PUBLIC_URL to the hopper's API (issue #795): see the service below.
 # Turn the KMS on with the vault holding secrets: they are sealed again under the data key at its first use. Turn it
 # off again: set each vault secret again (a value sealed under the data key does not open without the KMS).
 name: hopper
@@ -59,7 +59,7 @@ services:
   # connections: `runtime-secrets` is in memory (tmpfs), so each start of the stack after a full stop makes a new password,
   # and the database keeps working (issue #659). No secret is in a persistent volume, and no master key is kept here. Each file is readable only by the one service that needs it (postgres: uid 70;
   # the hopper and hopper-vault: uid 1000; OpenFGA: uid 65532). hopper-vault's preshared key (issue #586) is made the
-  # same way. No one-shot service for it: podman-compose cannot start a container whose
+  # same way, and so is the tunnel service's key (issue #880), in its own volume `tunnel-key` (the hopper and the tunnel: uid 1000). No one-shot service for it: podman-compose cannot start a container whose
   # dependency has exited. OpenFGA's (issue #559): its preshared key, and its config — the database URL with the
   # `openfga` schema, that key — rewritten at each start; the schema is made once Postgres takes connections.
   postgres:
@@ -80,6 +80,8 @@ services:
           printf 'datastore:\n  engine: postgres\n  uri: postgres://hopper:%s@postgres:5432/hopper?sslmode=disable&search_path=openfga\nauthn:\n  method: preshared\n  preshared:\n    keys: ["%s"]\nplayground:\n  enabled: false\n' \
             "$$(cat $$s/postgres_password)" "$$(cat $$s/openfga_key)" > $$s/openfga/config.yaml
         )
+        (umask 077; [ -s /run/hopper-tunnel/key ] || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > /run/hopper-tunnel/key)
+        chown 1000:1000 /run/hopper-tunnel/key
         chown 70:70 $$s/postgres_password
         chown 1000:1000 $$s/database_url $$s/openfga_key $$s/vault_key
         chown -R 65532:65532 $$s/openfga
@@ -92,6 +94,7 @@ services:
     volumes:
       - postgres:/var/lib/postgresql/data
       - runtime-secrets:/run/hopper-secrets
+      - tunnel-key:/run/hopper-tunnel
     healthcheck:
       # Healthy once the password is set again (password_set): the hopper never meets an old one.
       test: ["CMD-SHELL", "pg_isready -U hopper -d hopper && test -f /run/hopper-secrets/password_set"]
@@ -119,6 +122,10 @@ services:
       HOPPER_VAULT_KEY_FILE: /run/hopper-secrets/vault_key
       # The KMS (profile `kms`), used here only when the vault runs here; unset: the master key.
       HOPPER_KMS_URL: ${HOPPER_KMS_URL:-}
+      # The tunnel (issue #880): its agent's local API, asked whether the remote access URL is up, and the key the tunnel
+      # service asks for its settings with. Remote access itself is set in the UI (Settings → Remote access).
+      HOPPER_TUNNEL_API: ${HOPPER_TUNNEL_API:-http://tunnel:4040}
+      HOPPER_TUNNEL_KEY_FILE: /run/hopper-tunnel/key
       # The token of the optional `vault` service below (issue #585): read-only, made by that service on its first
       # start. Nothing reads it until a hashicorp-vault vault backend is added in Settings → Plugins.
       VAULT_TOKEN_FILE: ${VAULT_TOKEN_FILE:-/run/hopper-vault/token}
@@ -132,12 +139,13 @@ services:
     volumes:
       - runtime-secrets:/run/hopper-secrets:ro
       - vault-token:/run/hopper-vault:ro
+      - tunnel-key:/run/hopper-tunnel:ro
       # Its home: the claude sign-in.
       - home:/home/node
     ports:
       # HOPPER_BIND in .env: the address the UI is published on; 0.0.0.0 reaches it from the LAN (issue #697).
       - "${HOPPER_BIND:-127.0.0.1}:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"
-    # `tunnel` (issue #795): the network the hopper shares with the tunnel alone (profile `tunnel`, below).
+    # `tunnel` (issues #795, #880): the network the hopper shares with the tunnel alone (below).
     networks: [default, tunnel]
 
   # OpenFGA (issue #559): access asks it before every credential a job is given. Its tables are the `openfga` schema of
@@ -205,32 +213,36 @@ services:
     restart: unless-stopped
     volumes:
       - kms:/data
-  # Optional (profile `tunnel`, issue #795, docs/deploy.md "The tunnel"): an ngrok agent that forwards HOPPER_PUBLIC_URL
-  # to the hopper, so an agent (Grok Bot) reaches its API from anywhere, with no inbound port on this machine. In .env:
-  #   COMPOSE_PROFILES=tunnel
-  #   NGROK_AUTHTOKEN=<the token from the ngrok dashboard>
-  #   HOPPER_PUBLIC_URL=https://<the domain reserved for it in ngrok>
-  #   HOPPER_TUNNEL_API=http://tunnel:4040
-  # It forwards to http://hopper over the `tunnel` network, which only the hopper shares, never to the hopper's loopback:
-  # an internet request is a public request (the API only with a session or an API token), and no box reaches the agent's
-  # local API. Its edge lets only the API through (/api/ but the event stream, /ui/api/, /ui/auth/api-token): never the UI,
-  # its sign-in pages or the installer; and it limits each caller's requests a minute. It names each caller to the hopper in
-  # `x-hopper-caller` (one a caller sent is dropped), which the hopper reads from this agent alone, so its own sign-in limit
-  # counts each caller, not the agent (docs/design.md "The tunnel"). The hopper asks the agent's local API
-  # whether the public URL is up (HOPPER_TUNNEL_API), and tells a Grok Bot routine where it is reached.
+  # The tunnel (issues #795, #880, docs/deploy.md "Remote access"): an ngrok agent that forwards the remote access URL to
+  # the hopper, so an agent (Grok Bot) reaches its API from anywhere, with no inbound port on this machine. It holds
+  # nothing: remote access is turned on, and its ngrok authtoken and domain are set, in the hopper's UI (Settings → Remote
+  # access), kept in the hopper's vault. This service asks the hopper for them every 10 s (GET /tunnel/agent, with the key
+  # postgres makes at each start of the stack, in memory: the `tunnel-key` volume), starts ngrok with them, starts it
+  # again when they change and stops it when remote access is turned off. The token is in ngrok's environment only, and
+  # masked in its log. Off, it runs no ngrok. It forwards to http://hopper over the `tunnel` network, which only the
+  # hopper shares, never to the hopper's loopback: an internet request is a public request (the API only with a session
+  # or an API token), and no box reaches the agent's local API. Its edge lets only the API through (/api/ but the event
+  # stream, /ui/api/, /ui/auth/api-token): never the UI, its sign-in pages, the installer or /tunnel/agent; and it limits
+  # each caller's requests a minute. It names each caller to the hopper in `x-hopper-caller` (one a caller sent is
+  # dropped), which the hopper reads from this agent alone, so its own sign-in limit counts each caller, not the agent
+  # (docs/design.md "The tunnel"). The hopper asks the agent's local API whether the URL is up (HOPPER_TUNNEL_API), shows
+  # it in Settings → Remote access, and tells a Grok Bot routine where it is reached.
   tunnel:
-    profiles: [tunnel]
     image: docker.io/ngrok/ngrok:3.39.11-alpine
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
-      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
-      HOPPER_PUBLIC_URL: ${HOPPER_PUBLIC_URL:-}
       HOPPER_PORT: ${HOPPER_PORT:-4790}
-    entrypoint: [sh, -euc]
+    volumes:
+      - tunnel-key:/run/hopper-tunnel:ro
+    entrypoint: [sh, -eu, -c]
     command:
       - |
-        : "$${NGROK_AUTHTOKEN:?set NGROK_AUTHTOKEN in .env: the token from the ngrok dashboard}"
-        : "$${HOPPER_PUBLIC_URL:?set HOPPER_PUBLIC_URL in .env: https://<the domain reserved for the tunnel in ngrok>}"
+        until [ -s /run/hopper-tunnel/key ]; do sleep 1; done
+        key=$$(cat /run/hopper-tunnel/key)
+        a="http://hopper:$${HOPPER_PORT}/tunnel/agent"
         p=/var/lib/ngrok/hopper-policy.yml
         cat > $$p <<'EOF'
         on_http_request:
@@ -271,7 +283,36 @@ services:
                   bucket_key:
                     - conn.client_ip
         EOF
-        exec ngrok --config=/var/lib/ngrok/ngrok.yml http "http://hopper:$${HOPPER_PORT}" --url "$${HOPPER_PUBLIC_URL}" --traffic-policy-file $$p --log stdout
+        out=/tmp/ngrok.out; err=/tmp/ngrok.err
+        rm -f $$out; mkfifo $$out
+        pid=; last=; report=stopped
+        stop() { if [ -n "$$pid" ]; then kill "$$pid" 2>/dev/null || true; wait "$$pid" 2>/dev/null || true; fi; pid=; }
+        trap 'stop; exit 0' TERM INT
+        while :; do
+          # ngrok stopped. With an error code (a refused authtoken, a domain not reserved), it starts again only with
+          # new settings; with none, at the next ask.
+          if [ -n "$$pid" ] && ! kill -0 "$$pid" 2>/dev/null; then
+            wait "$$pid" 2>/dev/null || true; pid=
+            report=$$(grep -o 'ERR_NGROK_[0-9]*' $$err 2>/dev/null | tail -n 1 || true); report=$${report:-exited}
+            if [ "$$report" = exited ]; then last=; fi
+          elif [ -n "$$pid" ]; then report=running; fi
+          if conf=$$(wget -q -T 5 -O - --header "authorization: Bearer $$key" "$$a?ngrok=$$report" 2>/dev/null); then
+            if [ "$$conf" != "$$last" ]; then
+              stop; last=$$conf; rm -f $$err; report=stopped
+              url=$$(printf '%s\n' "$$conf" | sed -n 's/^url=//p'); tok=$$(printf '%s\n' "$$conf" | sed -n 's/^authtoken=//p')
+              if [ -n "$$url" ] && [ -n "$$tok" ]; then
+                echo "tunnel: starting ngrok at $$url"
+                T=$$tok awk '{ gsub(ENVIRON["T"], "[authtoken]"); print; fflush(); if ($$0 ~ /lvl=(eror|crit)|ERR_NGROK_/) { print >> "/tmp/ngrok.err"; fflush("/tmp/ngrok.err") } }' < $$out &
+                NGROK_AUTHTOKEN=$$tok ngrok --config=/var/lib/ngrok/ngrok.yml http "http://hopper:$${HOPPER_PORT}" --url "$$url" --traffic-policy-file $$p --log stdout > $$out 2>&1 &
+                pid=$$!; report=running
+              else
+                echo "tunnel: remote access is off"
+              fi
+              unset tok
+            fi
+          fi
+          sleep 10 & wait $$! || true
+        done
     networks: [tunnel]
 
   # HashiCorp Vault (issue #585), optional: a vault backend the hopper's vault can keep secrets in. It starts only when
@@ -329,7 +370,7 @@ services:
 networks:
   default:
     name: hopper_default
-  # The tunnel's (issue #795): the hopper and the tunnel only. No box joins it, so none reaches the tunnel agent's local API.
+  # The tunnel's (issues #795, #880): the hopper and the tunnel only. No box joins it, so none reaches the tunnel agent's local API.
   tunnel:
     name: hopper_tunnel
 
@@ -343,6 +384,13 @@ volumes:
       type: tmpfs
       device: tmpfs
       o: size=1m,mode=0755
+  # The tunnel service's key (issue #880): made by postgres like runtime-secrets, in memory, but a volume of its own, so
+  # the tunnel (an internet-facing container) mounts that key alone and none of the others.
+  tunnel-key:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=64k,mode=0755
   postgres:
   home:
   vault-data:

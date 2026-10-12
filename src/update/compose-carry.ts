@@ -120,7 +120,7 @@ export function carryLocalSettings(oldText: string, newText: string): Carried {
 }
 
 /** Every service a hopper compose.yaml has shipped: one the new file lacks is the hopper's, retired, never the install's. */
-const SHIPPED_SERVICES = new Set(['postgres', 'hopper', 'secrets', 'openfga', 'openfga-migrate', 'hopper-vault', 'kms', 'vault']);
+const SHIPPED_SERVICES = new Set(['postgres', 'hopper', 'secrets', 'openfga', 'openfga-migrate', 'hopper-vault', 'kms', 'vault', 'tunnel']);
 /** Every key a shipped service has set: the hopper's to change, so never carried. */
 const SHIPPED_KEYS = new Set(['build', 'command', 'depends_on', 'entrypoint', 'env_file', 'environment', 'healthcheck', 'image', 'ports', 'profiles', 'restart', 'user', 'volumes', 'working_dir']);
 /** A volume entry that mounts a host folder or file: the install's own, as a shipped file mounts only named volumes. */

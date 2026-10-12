@@ -136,6 +136,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'contribution.changed': { from: { on: false }, to: { on: true }, by: 'owner' },
   'yolo_mode.changed': { from: { on: false, repos: {} }, to: { on: false, repos: { 'owner/repo': true } }, by: 'owner' },
   'auto_answer.settings_changed': { from: { enabled: true, threshold: 'high', holdHighPriority: false }, to: { enabled: true, threshold: 'medium', holdHighPriority: false }, by: 'admin' },
+  'remote_access.changed': { from: { enabled: false }, to: { enabled: true, domain: 'hopper.example.ngrok.app' }, authtoken: 'set', by: 'admin' },
   'github_rate_limiter.settings_changed': { from: { slowBelowPercent: 25, reserve: 50, batchSize: 10 }, to: { slowBelowPercent: 40, reserve: 50, batchSize: 10 }, by: 'admin' },
   'auto_park.settings_changed': { from: { minutes: 30, highPriorityMinutes: 30 }, to: { minutes: 30, highPriorityMinutes: 10 }, by: 'admin' },
   'question.thread_held': { questionId: 'q1', repo: 'someone/library', number: 12 },

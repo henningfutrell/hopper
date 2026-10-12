@@ -58,8 +58,10 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
   it('makes its own network, named hopper_default whatever the project is called, and every service is on it', () => {
     expect(r.networks?.default).toMatchObject({ name: 'hopper_default' });
     expect(r.networks?.default?.external).toBeFalsy();
-    // The hopper is on the tunnel's network too (issue #795): no other service, and no box, reaches the tunnel agent.
-    for (const [name, s] of Object.entries(r.services)) expect(Object.keys(s.networks ?? { default: null }).sort(), name).toEqual(name === 'hopper' ? ['default', 'tunnel'] : ['default']);
+    // The hopper is on the tunnel's network too (issue #795); the tunnel on that one alone: no other service, and no box,
+    // reaches the tunnel agent.
+    const nets: Record<string, string[]> = { hopper: ['default', 'tunnel'], tunnel: ['tunnel'] };
+    for (const [name, s] of Object.entries(r.services)) expect(Object.keys(s.networks ?? { default: null }).sort(), name).toEqual(nets[name] ?? ['default']);
     expect(render(undefined, { COMPOSE_PROJECT_NAME: 'other' }).networks?.default).toMatchObject({ name: 'hopper_default' });
   });
 
@@ -118,7 +120,7 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
   });
 
   it('has no one-shot service anything depends on: podman-compose cannot start a container whose dependency has exited (issue #125)', () => {
-    expect(Object.keys(r.services).sort()).toEqual(['hopper', 'openfga', 'openfga-migrate', 'postgres']);
+    expect(Object.keys(r.services).sort()).toEqual(['hopper', 'openfga', 'openfga-migrate', 'postgres', 'tunnel']);
     for (const s of Object.values(r.services)) expect(Object.keys(s.depends_on ?? {})).not.toContain('openfga-migrate');
   });
 
@@ -162,7 +164,7 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
 
   it('keeps the hopper\'s home in a volume: herdr and claude sign-ins and job checkouts survive a rebuild', () => {
     expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: 'home', target: '/home/node' }));
-    expect(Object.keys(r.volumes).sort()).toEqual(['home', 'postgres', 'runtime-secrets', 'vault-token']);
+    expect(Object.keys(r.volumes).sort()).toEqual(['home', 'postgres', 'runtime-secrets', 'tunnel-key', 'vault-token']);
   });
 });
 

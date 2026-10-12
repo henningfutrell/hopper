@@ -22,10 +22,11 @@ import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Executor, MachineShell } from '../../src/domain/ports.ts';
 import type { DiscoveryFacts, DomainEvent } from '../../src/domain/types.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
+import { githubTraffic } from '../../src/github-limiter/traffic.ts';
 import { createFakeGitHub } from '../support/fake-forges.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -155,6 +156,25 @@ describe('git through the hopper (issue #652)', () => {
     // Updated and forced on its own branch: a rebase pushes with --force-with-lease.
     expect((await git(['commit', '--quiet', '--amend', '-m', 'Fix, again'], work)).code).toBe(0);
     expect(await git(['push', '--force-with-lease', 'origin', 'HEAD:refs/heads/issue-7-fix'], work)).toMatchObject({ code: 0 });
+  });
+
+  // Issue #858: each fetch through the hopper is counted for its repository and its job, and the next sync pass tells it.
+  it('counts each fetch of a job, never its push, in the next sync pass line', async () => {
+    const t = await start();
+    const { job, home, git } = await running(t);
+    const logged = vi.spyOn(console, 'warn');
+    cleanups.push(() => logged.mockRestore());
+    await githubTraffic.pass('before', async () => undefined);
+    expect((await git(['clone', '--quiet', `${t.github.url}/octo/tools.git`, 'tools'])).code).toBe(0);
+    const work = join(home, 'tools');
+    expect((await git(['fetch', '--quiet', 'origin'], work)).code).toBe(0);
+    await git(['commit', '--quiet', '--allow-empty', '-m', 'Fix'], work);
+    expect((await git(['push', '--quiet', 'origin', 'HEAD:refs/heads/issue-7-fix'], work)).code).toBe(0);
+    await githubTraffic.pass('probe', async () => undefined);
+    const lines = logged.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith('hopper: GitHub traffic of sync pass'));
+    const fetches = lines.join('\n').match(new RegExp(`octo/tools (\\d+); by job ${job.id.slice(0, 8)} (\\d+)`, 'g')) ?? [];
+    const sum = fetches.map((f) => Number(/octo\/tools (\d+)/.exec(f)![1])).reduce((a, b) => a + b, 0);
+    expect(sum).toBe(2);
   });
 
   it('refuses a push to the default branch or a release branch, saying why; nothing changes on GitHub', async () => {

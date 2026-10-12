@@ -1,1 +1,0 @@
-- The line Add machine shows for a sandbox box you run yourself now uses the template's CPUs and memory. You can change them before you show the line, up to what the template allows.

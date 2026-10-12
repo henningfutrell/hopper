@@ -1,1 +1,0 @@
-- A sync now asks GitHub about the pull requests of all the jobs it follows in shared requests, so the hopper uses fewer of GitHub's calls.

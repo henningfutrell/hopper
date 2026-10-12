@@ -30,7 +30,7 @@ const ALL: Record<EventType, true> = {
   'machine.discovered': true, 'machine.discovery_failed': true, 'machine.radius_grew': true, 'machine.actor_mismatch': true, 'blast_radius.settings_changed': true, 'job.gate_passed': true,
   'minor_decision.picked': true, 'minor_decision.compared': true, 'minor_decision.overridden': true, 'minor_decision.settings_changed': true,
   'job.phase_changed': true, 'job.forked': true, 'job.fork_resolved': true, 'phase_shifts.settings_changed': true,
-  'question.corrected': true, 'auto_answer.settings_changed': true, 'auto_park.settings_changed': true, 'github_rate_limiter.settings_changed': true,
+  'question.corrected': true, 'auto_answer.settings_changed': true, 'auto_park.settings_changed': true, 'github_rate_limiter.settings_changed': true, 'remote_access.changed': true,
   'question.thread_held': true, 'question.thread_approved': true, 'question.thread_posted': true, 'thread_ask.settings_changed': true,
   'github_proxy.done': true, 'github_proxy.refused': true, 'github_proxy.failed': true,
   'vault.secret_set': true, 'vault.secret_removed': true, 'vault.secret_read': true, 'vault.secret_migrated': true, 'vault.master_key_rotated': true, 'template.saved': true, 'template.removed': true, 'vault.approved': true, 'vault.revoked': true, 'template.profile_approved': true, 'template.checked': true, 'template.check_requested': true, 'vault.delivered': true, 'vault.agent_credential_given': true, 'vault.refused': true, 'vault.minted': true, 'vault.mint_refused': true, 'vault.mint_tested': true, 'vault.check_minted': true, 'vault.check_mint_refused': true,
