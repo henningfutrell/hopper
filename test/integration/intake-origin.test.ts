@@ -1,7 +1,7 @@
 // Trusted origin and request cards end to end (issue #652), through the real daemon, the fake GitHub at its seam and
 // the OpenFGA double: an issue a stranger wrote is a request card in Sources and no job; a person approves its text, and
 // the job runs that text; an edit before the job is made shows the card again; without OpenFGA nobody is a trusted actor
-// and nothing can be approved; the trusted actors are the user's to name in Settings → Intake.
+// and nothing can be approved. Naming the trusted actors in Settings → Intake: intake-actor-picker.test.ts (issue #930).
 import { afterEach, describe, expect, it } from 'vitest';
 import type { IntakeOutcome } from '../../src/domain/intake.ts';
 import type { Job } from '../../src/domain/types.ts';
@@ -92,21 +92,5 @@ describe('trusted origin and request cards (issue #652)', () => {
     const r = await a.ui<{ error: string }>('/ui/api/sources/github/intake', { kind: 'approve', keys: [issue.url], hash: card!.request!.hash }, { token });
     expect(r.status).toBe(503);
     expect(r.body.error).toMatch(/OpenFGA is not set up/);
-  });
-
-  it('the trusted actors are the user\'s to name in Settings → Intake: a teammate\'s issue is then taken', async () => {
-    const gh = createFakeGitHub();
-    const a = await boot(gh);
-    const token = await a.login();
-    const issue = gh.createIssue({ repo: REPO, author: 'teammate', body: body('Fix the typo.'), labels: ['hopper'], labelledBy: 'teammate', assignedBy: 'teammate' });
-    await a.sync();
-    expect(await jobsFor(a, issue.url)).toEqual([]);
-
-    expect((await a.ui('/ui/api/intake-actors', { actors: ['Teammate', 'owner'] }, { token })).body).toEqual({ actors: ['owner', 'teammate'] });
-    expect((await a.api('GET', '/api/intake-actors')).body).toEqual({ actors: ['owner', 'teammate'] });
-    expect((await a.events('types=intake.actors_changed')).map((e) => e.data)).toEqual([{ from: [], to: ['owner', 'teammate'], by: expect.any(String) }]);
-    await a.sync();
-    expect((await jobsFor(a, issue.url)).map((j) => j.source?.origin)).toEqual(['trusted']);
-    expect((await a.ui('/ui/api/intake-actors', { actors: ['helper[bot]'] }, { token })).status).toBe(400);
   });
 });

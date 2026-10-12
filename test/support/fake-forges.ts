@@ -24,6 +24,7 @@ import { repoChecksRoute, type RepoChecksForge } from './fake-repo-checks.ts';
 import { issueIdOf, subIssuesRoute, type SubIssuesForge } from './fake-sub-issues.ts';
 import { watchRoute, type WatchForge } from './fake-github-watch.ts';
 import { headsRoute, type HeadsForge } from './fake-heads.ts';
+import { peopleRoute, type PeopleForge } from './fake-people.ts';
 
 export interface FakeIssue {
   repo: string;
@@ -50,7 +51,7 @@ export interface ForgeRequest { method: string; path: string; query: Record<stri
 
 interface Device { code: string; userCode: string; state: 'pending' | 'approved' | 'denied'; login?: string }
 
-export interface FakeForge extends RepoChecksForge, SubIssuesForge, ForksForge, WatchForge, HeadsForge {
+export interface FakeForge extends RepoChecksForge, SubIssuesForge, ForksForge, WatchForge, HeadsForge, PeopleForge {
   url: string;
   requests: ForgeRequest[];
   issues: FakeIssue[];
@@ -246,6 +247,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const path = r.path.slice('/api/v3'.length);
       const checks = repoChecksRoute(forge?.repoChecks, r.method, path, r.body);
       if (checks) return checks;
+      const people = peopleRoute(forge, base, issues, r.method, path, r.query);
+      if (people) return people;
       if (r.method === 'GET' && path === '/user') return { status: 200, body: { id: idOf(login), login, name: `${login} name` } };
       if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] };
       if (r.method === 'GET' && path === '/user/installations') {

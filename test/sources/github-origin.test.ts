@@ -63,6 +63,15 @@ describe('GitHub source: trusted origin (issue #652)', () => {
     expect(trust.asked).toEqual([['teammate', 'owner']]);
   });
 
+  it('each act is asked with its GitHub user id, so trust follows the account, not its login (issue #930)', async () => {
+    const trust = testTrust(['teammate']);
+    const { gh, source } = setup({}, { trust });
+    const teammate = { login: 'teammate', id: 42 };
+    gh.createIssue({ repo: REPO, author: 'teammate', authorId: 42, labels: ['hopper'], labelledBy: teammate, assignedBy: teammate });
+    await source.discover();
+    expect(trust.askedActs).toEqual([[{ login: 'teammate', id: 42 }]]);
+  });
+
   it('this hopper\'s own Assign to me is the user\'s act, though it went through the hopper\'s app', async () => {
     const trust = testTrust(undefined, { assignedHere: [url(1)] });
     const { gh, source } = setup({}, { trust });
