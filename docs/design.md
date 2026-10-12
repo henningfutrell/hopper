@@ -76,7 +76,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
-| `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint) and the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`) | engine, http, store, plugins |
+| `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); remote access — the tunnel's settings, its authtoken in the instance's vault, its status and the tunnel service's ask (`remote-access.ts`, `ui/remote-access.ts`, issue #880); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -15793,10 +15793,35 @@ its limit with a bar, network, disk read and written and its layer, volumes with
 OpenFGA's: the mean check time and the share of checks that failed. It
 reads when it opens and every 10 seconds while the page is shown (CPU is the use since the read before).
 
-**Not built yet** (the rest of the issue, its next parts): the readings over time (a recorder like the machine one, a
-graph, the same history retention);
-Solr's query latency, index size and documents waiting (issue #945, not in the stack yet); the vault and KMS beyond the
-container basics; a container target's or a client target's boxes (their runtime is the machine's, through its client).
+### Stack resources over time (part 3 of the issue)
+
+The machine resources keep a machine sample a minute (issue #560); the stack resources now do the same, for the whole
+hopper rather than per user, so the Resources page shows each part's use over the last day, week or month.
+
+**What is kept.** Only what reads as a share, so the usage graph draws it unchanged on its 0–100% axis: per running
+container its **CPU** (cores busy, of its CPU quota, else of the cores it sees — the runtime stats' `online_cpus`, now on the
+container reading as `cores`) and its **memory** (in use, of its limit, else of the most it may use — the stats'
+`memory_stats.limit`, the computer's memory when it has no limit, now `memMaxBytes`); Postgres's **connections** (of
+`max_connections`, service `postgres`); and OpenFGA's **failed checks** (the share of its checks since the record before
+that failed, service `openfga`; fewer checks than before is a restart, and gives nothing). Latency, sizes and byte counts
+are not shares and are not kept: the page reads them now.
+
+**Recording.** The **stack recorder** (`src/stack-resources/history.ts`) reads `GET /api/resources`'s read every minute, on
+the usage recorder's loop (`createRecordLoop`), and keeps a **stack sample** per service and metric in `stack_samples`
+(instance schema, migration 38; key: service, metric, time). A part that cannot be read, or a container that does not run,
+adds nothing: the graph shows a gap. Every hour, samples older than 30 days (`STACK_HISTORY_RETENTION_DAYS`) are pruned:
+there is no instance setting for the history retention (the usage history's is each user's), and a sample a minute per
+service and metric adds up — about 15 lines for a full stack, 650 000 rows in 30 days.
+
+**The graph** (`GET /api/resources/history`, `StackHistory`): the machine resource graph's query and step
+(`resourceGraphRange`, `src/http/machine-history.ts`), per service, metric and step the peak, and the gaps by the same rule
+(`src/store/stack-history.ts`). The same instance read as `GET /api/resources`. On the Resources page, *Stack resources over
+time* (`ui/src/model/stack-history.ts`): a line per service and metric, a colour per service, a dash per metric; a sandbox
+box's lines are hidden until shown, since boxes come and go. It reads again once a minute; no SSE event, as nothing else waits on it.
+
+**Not built yet** (the rest of the issue, its next parts): Solr's query latency, index size and documents waiting (issue
+#945, not in the stack yet); a container target's or a client target's boxes (their runtime is the machine's, through its
+client).
 
 Tests: `test/adapters/container-meter.test.ts` (the project and the boxes chosen, CPU between reads and the runtime's own,
 memory less the cache against its limit, network and disk summed, the disk use's sizes and its failure, a stopped
@@ -15806,7 +15831,9 @@ status, no answer), `test/integration/stack-resources.test.ts` (the
 meter's readings and the real Postgres's, no socket, a meter that throws, no pg_stat_statements, OpenFGA's reading, no
 OpenFGA, an OpenFGA meter that fails),
 `test/integration/instance-admin.test.ts` (an instance read), `test/scripts/compose.test.ts` (pg_stat_statements loaded),
-`test/ui/resources-view.test.ts` (the rows, Postgres, what cannot be read). Live: the meter against this computer's
+`test/ui/resources-view.test.ts` (the rows, Postgres, what cannot be read, the graph's lines),
+`test/integration/stack-history.test.ts` (a record's shares, OpenFGA's failed checks between records and after a restart,
+the peak per step and the gaps, the retention), `test/ui/stack-history.test.ts` (the lines). Live: the meter against this computer's
 rootless Podman and its hopper stack (every service, a CPU-bound container read at one core, its limits); the Postgres
 reading against `postgres:17-alpine` with pg_stat_statements loaded; the OpenFGA metric names against `openfga/openfga:v1.22.0`
 (checks allowed, denied and refused) and its endpoint read from inside the hopper's container on the compose network.

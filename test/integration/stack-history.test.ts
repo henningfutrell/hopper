@@ -56,9 +56,10 @@ describe('the stack\'s resources over time', () => {
   it('each record keeps every running container\'s CPU and memory as shares, Postgres\'s connections, and OpenFGA\'s failed checks', async () => {
     const openfga = { now: { checks: 100, errors: 3, meanMs: 1 } as OpenFgaReading };
     const a = await boot(openfga);
-    // The first record: OpenFGA has no record before to count from.
-    expect(await a.app.stackHistory.record()).toBe(6);
+    // The recorder records once as the daemon starts too: this record is OpenFGA's record before, whichever came first.
+    expect(await a.app.stackHistory.record()).toBeGreaterThan(0);
     openfga.now = { checks: 150, errors: 8, meanMs: 1 };
+    // Two shares for each of postgres and hopper, the box's CPU, Postgres's connections, OpenFGA's failed checks.
     expect(await a.app.stackHistory.record()).toBe(7);
 
     const r = await history(a, 'range=24h');

@@ -35,9 +35,8 @@ import { userForIdentity } from './users/identities.ts';
 import type { UserRuntime, UserSeams } from './users/runtime.ts';
 import { createRuntimes } from './users/runtimes.ts';
 import { openInstanceSecrets } from './users/instance-secrets.ts';
-import { sandboxBoxesFor, sandboxClientsOf } from './users/sandbox-boxes.ts';
-import { mintJoinCode } from './machines/join-code.ts';
-import { selectRuntime } from './sandbox/runtime.ts'; import { createOpenFgaMeter, createStackResources, meterFor, openFgaMetricsUrl } from './stack-resources/index.ts';
+import { sandboxBoxesFor, sandboxClientsOf } from './users/sandbox-boxes.ts'; import { mintJoinCode } from './machines/join-code.ts';
+import { selectRuntime } from './sandbox/runtime.ts'; import { createOpenFgaMeter, createStack, meterFor, openFgaMetricsUrl, type StackRecorder } from './stack-resources/index.ts';
 import { cachedSandboxes, createSandboxes, hopperAddress, hopperNetwork, launchScopes, ownContainer, usersAgentCredentials, usersTemplates, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
@@ -58,8 +57,9 @@ export interface App {
   access: Access;
   /** The sandbox boxes the hopper starts and removes (issue #603). */
   sandboxes: Sandboxes;
-  /** The master key's status (issue #659): its source, the one reveal, a person's word that they saved it. */
-  masterKey: MasterKeyStatus;
+  /** The master key's status (issue #659): its source, the one reveal, a person's word that they saved it. The stack
+   * recorder (issue #947): the stack's resources over time. */
+  masterKey: MasterKeyStatus; stackHistory: StackRecorder;
   /** Every user, oldest first. */
   users(): User[];
   /** A running user's parts (store, engine, sources, plugins) — for tests; throws for a user with none. */
@@ -294,11 +294,13 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     const user = instance.users.add(name);
     return runtimes.ensure(user).then(() => user);
   };
+  // Stack resources (issue #947): the containers through the runtime's socket, Postgres through the store, OpenFGA its
+  // metrics; the stack recorder keeps them over time.
+  const stack = createStack({ meter: seams.containerMeter ?? meterFor({ config, instanceId: instance.settings.instanceId(), self: ownContainer(config.localMachine) }), openfga: seams.openFgaMeter ?? (config.openFgaUrl ? createOpenFgaMeter({ url: openFgaMetricsUrl(config.openFgaUrl) }) : undefined), database: store.databaseStats, history: store.stackHistory, clock, logger });
   const server = createServer({
     // The stack against the compose file of this version (issue #697): checked at start, and at each GET /api/update/drift.
     // The shared GitHub rate limiter (issue #436): every GitHub call of this process goes through it, with the saved settings.
-    // Stack resources (issue #947): the containers through the runtime's socket, Postgres through the store, OpenFGA its metrics.
-    instance, clock, version: VERSION, pluginStore, updater, buildDir: appDir, access, sandboxes, masterKey: masterKeyStatus, rateLimiter: createRateLimiterControl({ settings: store.settings, events: runtimes.events }), stackResources: createStackResources({ meter: seams.containerMeter ?? meterFor({ config, instanceId: instance.settings.instanceId(), self: ownContainer(config.localMachine) }), openfga: seams.openFgaMeter ?? (config.openFgaUrl ? createOpenFgaMeter({ url: openFgaMetricsUrl(config.openFgaUrl) }) : undefined), database: store.databaseStats, clock }), stackDrift: startStackDrift({ appDir, env, logger, probe: seams.update?.stackProbe ?? createStackProbe({ vaultUrl: config.vaultUrl }) }),
+    instance, clock, version: VERSION, pluginStore, updater, buildDir: appDir, access, sandboxes, masterKey: masterKeyStatus, rateLimiter: createRateLimiterControl({ settings: store.settings, events: runtimes.events }), stackResources: stack.resources, stackDrift: startStackDrift({ appDir, env, logger, probe: seams.update?.stackProbe ?? createStackProbe({ vaultUrl: config.vaultUrl }) }),
     tenants: {
       user: (id) => runtimes.get(id),
       list: () => instance.users.list(),
@@ -329,7 +331,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   await runtimes.start();
   runtimes.watch(intervalMs);
   // After the runtimes: a box is kept only when a machine names it, so the machines must be known first.
-  sandboxes.start();
+  sandboxes.start(); stack.recorder.start();
 
   let stopped: Promise<void> | undefined;
   const app: App = {
@@ -341,7 +343,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     updater,
     access,
     sandboxes,
-    masterKey: masterKeyStatus,
+    masterKey: masterKeyStatus, stackHistory: stack.recorder,
     users: () => instance.users.list(),
     user(id) {
       const rt = runtimes.get(id);
@@ -351,7 +353,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     addUser,
     stop() {
       stopped ??= (async () => {
-        updater.stop();
+        updater.stop(); stack.recorder.stop();
         await access.stop();
         const passes = sandboxes.stop();
         // A link is an upgraded socket: the server does not track it, so it would hold the close open.

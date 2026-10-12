@@ -74,7 +74,7 @@ export { createRemoteAccess, type RemoteAccess } from './remote-access.ts';
 
 export interface ServerOptions {
   /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */
-  instance: Pick<InstanceStore, 'uiSessions' | 'apiGrants' | 'loginCodes' | 'joinCodes' | 'users' | 'identities' | 'signInConfig' | 'settings' | 'tx'>;
+  instance: Pick<InstanceStore, 'uiSessions' | 'apiGrants' | 'loginCodes' | 'joinCodes' | 'users' | 'identities' | 'signInConfig' | 'settings' | 'stackHistory' | 'tx'>;
   /** Every user's running parts (issue #158): a tenant route reads and changes the request's user's. */
   tenants: Tenants;
   /** The plugin store (the instance's): GET /api/plugin-store, POST /ui/api/plugin-store. */
@@ -180,7 +180,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   instanceRoutes(app, { tenants: o.tenants, clock: o.clock, instanceAdmin });
   usageHistoryRoutes(app, { ...tenant, tenants: o.tenants, clock: o.clock, instanceAdmin });
   machineHistoryRoutes(app, { ...tenant, clock: o.clock });
-  stackResourceRoutes(app, { stackResources: o.stackResources, instanceAdmin });
+  stackResourceRoutes(app, { stackResources: o.stackResources, history: o.instance.stackHistory, instanceAdmin, clock: o.clock });
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions, grants });
   realmRoutes(app, { realms, instanceAdmin });
   accessRoutes(app, { access: o.access, instanceAdmin });

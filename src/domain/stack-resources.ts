@@ -1,6 +1,8 @@
 // Stack resources (issue #947, design.md "Stack resources"): what each container of the hopper's own stack and each
 // sandbox box uses now, read from the container runtime, and what its Postgres does, read from Postgres itself. The
-// machine resources (issue #560) are each machine's; these are each service's, with the service as their label.
+// machine resources (issue #560) are each machine's; these are each service's, with the service as their label. The stack
+// recorder keeps some of them over time as stack samples (design.md "Stack resources over time").
+import type { UsageGap, UsageGraphView, UsagePoint } from './usage-history.ts';
 
 /** Where a container is: a service of the hopper's compose stack, or a sandbox box the hopper started. */
 export const CONTAINER_GROUPS = ['stack', 'sandbox'] as const;
@@ -26,10 +28,14 @@ export interface ContainerReading {
   cpuCores?: number;
   /** The CPU cores it may use, when a quota is set. */
   cpuLimitCores?: number;
+  /** The CPU cores it sees: the runtime's online CPUs. */
+  cores?: number;
   /** Memory in use, less the page cache it could drop. */
   memUsedBytes?: number;
   /** Its memory limit; absent when it has none (it may use the computer's). */
   memLimitBytes?: number;
+  /** The most memory it may use, as the runtime's stats say: its limit, else the computer's. */
+  memMaxBytes?: number;
   /** Bytes in and out over its networks, since it started. */
   netRxBytes?: number;
   netTxBytes?: number;
@@ -95,4 +101,55 @@ export interface StackResources {
   containers: ContainerReadings;
   postgres: PostgresReading | { problem: string };
   openfga: OpenFgaReading | { problem: string };
+}
+
+/**
+ * What the stack's resource graph draws per service (issue #947), each a share, 0..1: a container's CPU (of its CPU quota,
+ * else of the cores it sees) and memory (of the most it may use), Postgres's connections (of `max_connections`), and
+ * OpenFGA's checks that failed since the record before.
+ */
+export const STACK_METRICS = ['cpu', 'memory', 'connections', 'check-errors'] as const;
+export type StackMetric = (typeof STACK_METRICS)[number];
+
+/** One service's metric at one time: what the stack recorder keeps. */
+export interface StackSample {
+  at: string;
+  /** The label: a container's service, `postgres` for Postgres's own metrics, `openfga` for OpenFGA's. */
+  service: string;
+  group: ContainerGroup;
+  metric: StackMetric;
+  /** A share, 0..1. */
+  value: number;
+}
+
+/** One line of the stack's resource graph: per graph step its peak share; the gaps where the service gave no sample. */
+export interface StackSeries {
+  service: string;
+  group: ContainerGroup;
+  metric: StackMetric;
+  points: UsagePoint[];
+  gaps: UsageGap[];
+}
+
+/** The stack's resources over time (issue #947): stack samples in the instance schema. */
+export interface StackHistoryRepository {
+  /** Keep stack samples; one already kept (same service, metric and time) is kept once. How many were new. */
+  record(samples: readonly StackSample[]): number;
+  /** The stack's resource graph's lines over [from, to), ordered by service and metric. */
+  series(q: { from: Date; to: Date; stepMs: number; originMs: number }): StackSeries[];
+  /** Delete the samples older than `before`; how many. */
+  prune(before: Date): number;
+}
+
+/** How long stack samples are kept: a sample a minute per service and metric adds up. */
+export const STACK_HISTORY_RETENTION_DAYS = 30;
+
+/** `GET /api/resources/history` (issue #947): the stack's resource graph. */
+export interface StackHistory {
+  view: UsageGraphView;
+  from: string;
+  to: string;
+  stepMs: number;
+  retentionDays: number;
+  series: StackSeries[];
 }
