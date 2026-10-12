@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Issue #542: blast radius in the UI. The settings read as one sentence; a discovery's changes as a short line. A job
-// held at the gate shows why, as other holds do; an admin sees Let through, and nobody sees Approve for it — approving
+// held at the gate shows why, in plain words (issue #883); an admin sees Let through, and nobody sees Approve for it — approving
 // would not move it past the gate. A role the server refuses sees no button.
 import { createElement } from 'react';
 import { act } from 'react';
@@ -102,7 +102,7 @@ describe('a job held at the gate', () => {
   it('shows why; an admin may let it through, and nobody is offered Approve', async () => {
     const posts: string[] = [];
     await boot('admin', posts);
-    await vi.waitFor(() => expect(row()?.textContent).toContain(HOLD));
+    await vi.waitFor(() => expect(row()?.textContent).toContain('desk is rated high blast radius'));
     expect(buttons()).toContain('Let through');
     expect(buttons()).not.toContain('Approve');
     const pass = row()!.querySelector<HTMLButtonElement>('[data-slot="gate-pass"]')!;
@@ -117,7 +117,7 @@ describe('a job held at the gate', () => {
 
   it('an operator sees why, and no button the server would refuse', async () => {
     await boot('operator');
-    await vi.waitFor(() => expect(row()?.textContent).toContain(HOLD));
+    await vi.waitFor(() => expect(row()?.textContent).toContain('desk is rated high blast radius'));
     expect(buttons()).not.toContain('Let through');
     expect(buttons()).not.toContain('Approve');
   });
