@@ -105,6 +105,8 @@ const roles = new WeakMap<FastifyRequest, UiRole>();
 const identities = new WeakMap<FastifyRequest, Identity>();
 /** Whether the request's session is an API token (issue #718); absent: no session. */
 const kinds = new WeakMap<FastifyRequest, SessionKind>();
+/** An API token's label (its grant's, issue #881): who acts, when the token is an agent's (issue #871 part 2). */
+const labels = new WeakMap<FastifyRequest, string>();
 
 /** What a refused API token, or one that names no live session, is told. */
 export const API_TOKEN_GONE = 'the API token is unknown, revoked or expired';
@@ -143,6 +145,7 @@ export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sess
         }
       }
       users.set(req, session.userId); roles.set(req, session.role); identities.set(req, session.identity); kinds.set(req, session.kind);
+      if (session.kind === 'api' && session.label !== undefined) labels.set(req, session.label);
       return;
     }
     if (atApiDoor(req)) {
@@ -180,14 +183,15 @@ export const roleOfRequest = (req: FastifyRequest): UiRole | undefined => roles.
 
 /**
  * The request's session or token as the instance admin check reads it (issue #240); undefined: neither. `kind`: the
- * session's (an API token's is `api`); absent for a sign-in's token on the API door.
+ * session's (an API token's is `api`); absent for a sign-in's token on the API door. `label`: an API token's.
  */
-export function signedInOf(req: FastifyRequest): { role: UiRole; identity: Identity; userId: string; kind?: SessionKind } | undefined {
+export function signedInOf(req: FastifyRequest): { role: UiRole; identity: Identity; userId: string; kind?: SessionKind; label?: string } | undefined {
   const role = roles.get(req);
   const identity = identities.get(req);
   const userId = users.get(req);
   const kind = kinds.get(req);
-  return role === undefined || identity === undefined || userId === undefined ? undefined : { role, identity, userId, ...(kind ? { kind } : {}) };
+  const label = labels.get(req);
+  return role === undefined || identity === undefined || userId === undefined ? undefined : { role, identity, userId, ...(kind ? { kind } : {}), ...(label !== undefined ? { label } : {}) };
 }
 
 const notLinked = (who: Identity, via: 'gateway' | 'github'): string => via === 'github'

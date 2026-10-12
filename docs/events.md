@@ -4378,7 +4378,7 @@ Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan
 
 ## `infra.out_of_band_recorded`
 
-Version 1 (`docs/schemas/infra.out_of_band_recorded.v1.json`). A job's read-only check reported an infrastructure change that did not come through IaC or GitOps (issue #871): drift (`gitops`: an app out of sync; `terraform-plan`: a non-empty plan on unchanged code) or an audit-log write (`cloudtrail`, `kube-audit`) by a principal that is no controller identity and no plan-bound apply credential. What changed (`target`), the action in the source's words (`what`), who (`who`), when (`at`), the signal's own id (`key`), the job whose check reported it and its issue. Never the signal's detail. On Infra changes until a person marks it; the notifiers send it.
+Version 1 (`docs/schemas/infra.out_of_band_recorded.v1.json`). A read-only check — a job's, or an outside collector's with an API token (part 2) — reported an infrastructure change that did not come through IaC or GitOps (issue #871): drift (`gitops`: an app out of sync; `terraform-plan`: a non-empty plan on unchanged code) or an audit-log write (`cloudtrail`, `kube-audit`) by a principal that is no controller identity and no plan-bound apply credential. What changed (`target`), the action in the source's words (`what`), who (`who`), when (`at`), the signal's own id (`key`), and who reported it: the job whose check did and its issue, or the collector (`reporter`, its API token's label), then on no job's timeline. Never the signal's detail. On Infra changes until a person marks it; the notifiers send it.
 
 | field | type | required |
 |---|---|---|
@@ -4389,8 +4389,9 @@ Version 1 (`docs/schemas/infra.out_of_band_recorded.v1.json`). A job's read-only
 | `what` | string | yes |
 | `who` | string | no |
 | `at` | string | yes |
-| `job` | string | yes |
+| `job` | string | no |
 | `issue` | string | no |
+| `reporter` | string | no |
 
 ```json
 {

@@ -1,15 +1,14 @@
 // Out-of-band changes (issue #871, design.md "Out-of-band changes"): one user's infrastructure changes that did not come
-// through IaC or GitOps. A job's read-only check reports signals — drift, and audit-log writes —; each is judged by the
+// through IaC or GitOps. A job's read-only check, or an outside collector with an API token (part 2), reports signals — drift, and audit-log writes —; each is judged by the
 // one rule (`judge`): out of band unless a controller identity or a plan-bound apply credential made it. Each out-of-band
 // change is kept, an event on the reporting job's timeline that the notifiers send, and waits on Infra changes until a
 // person marks it adopted, reverted, or accepted with a reason. Tracking only: the hopper reverts nothing.
 import { randomUUID } from 'node:crypto';
 import {
   AUDIT_SOURCES, controllerProblem, judge, markProblem, signalProblem, SIGNALS_MAX, type ApplyIdentity, type Mark, type OutOfBandChange,
-  type OutOfBandMark, type OutOfBandView, type Signal,
+  type OutOfBandMark, type OutOfBandView, type Signal, type SignalReporter,
 } from '../domain/out-of-band.ts';
 import type { Clock, UserStore } from '../domain/ports.ts';
-import type { Job } from '../domain/types.ts';
 import type { PlanRefusal } from './service.ts';
 
 /** What a report came to: the changes kept, the signals in band (with why), and the ones kept already. */
@@ -20,7 +19,7 @@ export interface SignalReport {
 }
 
 export interface OutOfBandChanges {
-  report(job: Job, signals: Signal[]): SignalReport | PlanRefusal;
+  report(by: SignalReporter, signals: Signal[]): SignalReport | PlanRefusal;
   list(): OutOfBandView[];
   get(id: string): OutOfBandView | undefined;
   mark(id: string, mark: Mark, reason: string | undefined, by: string): OutOfBandView | PlanRefusal;
@@ -48,7 +47,7 @@ export function createOutOfBandChanges(o: { store: Pick<UserStore, 'outOfBand' |
     return { ...c, ...(marked ? { marked } : {}) };
   };
   return {
-    report(job, said) {
+    report(by, said) {
       if (said.length === 0 || said.length > SIGNALS_MAX) return { status: 400, no: `a report holds 1 to ${SIGNALS_MAX} signals` };
       for (const [i, s] of said.entries()) {
         const problem = signalProblem(s);
@@ -67,13 +66,15 @@ export function createOutOfBandChanges(o: { store: Pick<UserStore, 'outOfBand' |
           const verdict = judge(s, controllers, applies);
           if (!verdict.outOfBand) { out.inBand.push({ source: s.source, key: s.key, why: verdict.why }); continue; }
           if (known(s)) { out.known++; continue; }
-          const change: OutOfBandChange = { ...s, id: randomUUID(), job: job.id, recordedAt: o.clock.now().toISOString() };
+          const change: OutOfBandChange = {
+            ...s, id: randomUUID(), ...('job' in by ? { job: by.job } : { reporter: by.reporter }), recordedAt: o.clock.now().toISOString(),
+          };
           repo.add(change);
           o.store.events.append({
-            type: 'infra.out_of_band_recorded', jobId: job.id,
+            type: 'infra.out_of_band_recorded', ...('job' in by ? { jobId: by.job } : {}),
             data: {
-              change: change.id, source: s.source, key: s.key, target: s.target, what: s.what, ...(s.who ? { who: s.who } : {}), at: s.at, job: job.id,
-              ...(job.source?.url ? { issue: job.source.url } : {}),
+              change: change.id, source: s.source, key: s.key, target: s.target, what: s.what, ...(s.who ? { who: s.who } : {}), at: s.at,
+              ...('job' in by ? { job: by.job, ...(by.issue ? { issue: by.issue } : {}) } : { reporter: by.reporter }),
             },
           });
           out.recorded.push(change);
@@ -96,7 +97,7 @@ export function createOutOfBandChanges(o: { store: Pick<UserStore, 'outOfBand' |
       o.store.tx(() => {
         repo.mark(m);
         o.store.events.append({
-          type: 'infra.out_of_band_marked', jobId: c.job,
+          type: 'infra.out_of_band_marked', ...(c.job ? { jobId: c.job } : {}),
           data: { change: id, source: c.source, target: c.target, what: c.what, mark, ...(m.reason ? { reason: m.reason } : {}), by },
         });
       });

@@ -9,6 +9,10 @@ const FOUND_IN: Record<OutOfBandView['source'], string> = {
 export const changeHeadline = (c: Omit<OutOfBandView, 'marked'>): string =>
   `${FOUND_IN[c.source]}: ${c.what} on ${c.target}${c.who ? `, by ${c.who}` : ''}`;
 
+/** Who reported a change: the job whose check found it, or an outside collector by its API token's label. */
+export const reportedBy = (c: Pick<OutOfBandView, 'job' | 'reporter'>): string =>
+  (c.job ? `reported by job ${c.job.slice(0, 8)}` : `reported by ${c.reporter ?? 'an unknown reporter'}`);
+
 export type ChangeState = { kind: 'open' | 'marked'; words: string };
 
 const MARKED = { adopted: 'Adopted into git', reverted: 'Reverted', accepted: 'Accepted' } as const;

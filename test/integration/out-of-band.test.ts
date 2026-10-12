@@ -15,6 +15,7 @@
 //   Scenario: a report sent again records nothing twice; drift found again after its mark is a new change
 //   Scenario: a person marks a change adopted, reverted, or accepted with a reason; once
 //   Scenario: a signal that is not whole, a controller list of *, are refused, with why
+//   Scenario: an outside collector reports with an API token whose grant has the scope out-of-band:signals (part 2)
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { OutOfBandChange, OutOfBandView } from '../../src/domain/out-of-band.ts';
@@ -178,5 +179,45 @@ describe('out-of-band changes', () => {
     expect((await a.events()).filter((e) => e.type === 'infra.controllers_changed')).toEqual([
       expect.objectContaining({ data: { from: [], to: ['system:serviceaccount:argocd:*'], by: expect.any(String) } }),
     ]);
+  });
+
+  it('takes a report from an outside collector with an API token, judged by the same rule; a grant without the scope is refused', async () => {
+    const { a, session } = await boot();
+    const mint = async (scopes: string[]) => {
+      const r = await a.ui('/ui/api/api-tokens', { action: 'mint', label: 'drift collector', holder: 'ci', role: 'operator', scopes }, { token: session });
+      expect(r.status, JSON.stringify(r.body)).toBe(200);
+      return (r.body as { token: string }).token;
+    };
+    const send = async (token: string, body: unknown) => {
+      const res = await fetch(`${a.url}/ui/api/out-of-band/signals`, {
+        method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body),
+      });
+      return { status: res.status, json: (await res.json()) as Record<string, unknown> };
+    };
+
+    const r = await send(await mint(['out-of-band:signals']), { signals: [DRIFT, CONSOLE, ARGO] });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    const recorded = r.json.recorded as OutOfBandChange[];
+    expect(recorded.map((c) => c.source)).toEqual(['terraform-plan', 'cloudtrail']);
+    expect(recorded[1]).toMatchObject({ target: 'sg-0abc', who: CONSOLE.who, reporter: 'drift collector' });
+    expect(recorded[1]).not.toHaveProperty('job');
+    expect(recorded[1]).not.toHaveProperty('detail');
+    expect(r.json.inBand).toEqual([{ source: 'kube-audit', key: 'audit-1', why: 'controller system:serviceaccount:argocd:*' }]);
+
+    const events = (await a.events()).filter((e) => e.type === 'infra.out_of_band_recorded');
+    expect(events).toHaveLength(2);
+    expect(events[1]).not.toHaveProperty('jobId');
+    expect(events[1]).toMatchObject({ data: { source: 'cloudtrail', reporter: 'drift collector' } });
+    expect(events[1]!.data).not.toHaveProperty('job');
+
+    // The person marks it as any change; the mark is on no job's timeline.
+    expect((await a.ui('/ui/api/out-of-band', { action: 'mark', change: recorded[1]!.id, mark: 'reverted' }, { token: session })).status).toBe(200);
+    expect((await a.events()).find((e) => e.type === 'infra.out_of_band_marked')).not.toHaveProperty('jobId');
+    expect((await listed(a, session)).changes.find((c) => c.id === recorded[1]!.id)).toMatchObject({ reporter: 'drift collector', marked: { mark: 'reverted' } });
+
+    const outOfScope = await send(await mint(['out-of-band:read']), { signals: [DRIFT] });
+    expect(outOfScope.status).toBe(403);
+    expect(String(outOfScope.json.error)).toMatch(/do not cover out-of-band:signals/);
+    expect((await send(await mint(['out-of-band:signals']), { signals: [] })).status).toBe(400);
   });
 });

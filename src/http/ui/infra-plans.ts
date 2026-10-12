@@ -37,7 +37,7 @@ export function infraPlanReadRoutes(app: FastifyInstance, { tenant }: { tenant: 
   });
 }
 
-export function registerInfraPlanRoutes(app: FastifyInstance, o: { admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {
+export function registerInfraPlanRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {
   registerOutOfBandRoutes(app, o);
   app.post('/ui/api/infra-plans', o.admin, async (req) => {
     const s = signedInOf(req);

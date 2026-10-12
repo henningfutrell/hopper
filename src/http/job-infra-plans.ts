@@ -95,7 +95,7 @@ ${failed ? `failed: ${failed}\nnext: nobody approves this plan; fix the code and
       if ('status' in who) return no(req, reply, who.status, who.text);
       const signals = (req.body as { signals?: unknown } | undefined)?.signals;
       if (!Array.isArray(signals) || !signals.every((s) => typeof s === 'object' && s !== null)) return no(req, reply, 400, 'signals must be a list of signals: source, key, target, what, who, at, detail');
-      const r = who.t.githubProxy.outOfBand.report(who.job, signals as Signal[]);
+      const r = who.t.githubProxy.outOfBand.report({ job: who.job.id, ...(who.job.source?.url ? { issue: who.job.source.url } : {}) }, signals as Signal[]);
       if (isPlanRefusal(r)) return no(req, reply, r.status, r.no);
       const recorded = r.recorded.map(({ detail: _detail, ...c }) => c);
       return answer(req, reply, 200, { recorded, inBand: r.inBand, known: r.known }, [
