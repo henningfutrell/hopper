@@ -26,7 +26,7 @@
 //   Scenario: a new AWS resource without the MAP tag fails the plan: kept and shown, nobody approves it, nothing applies it
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { InfraPlan, PlanView } from '../../src/domain/infra-plans.ts';
+import type { InfraPlan, PlanApply, PlanView } from '../../src/domain/infra-plans.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
@@ -169,6 +169,10 @@ describe('no apply without a plan', () => {
     expect(JSON.parse(minted.stdout)).toMatchObject({ Version: 1, AccessKeyId: expect.any(String) });
     expect(sts.seen).toHaveLength(1);
     expect((await a.events()).filter((e) => e.type === 'vault.minted').at(-1)).toMatchObject({ jobId: job, data: { operation: 'apply', plan: plan.id } });
+    // The Infra page (issue #896) lists the apply with its plan; never the credential.
+    const listed = (await a.api<{ applies: PlanApply[] }>('GET', '/api/infra-plans', undefined, { 'x-hopper-session': session })).body;
+    expect(listed.applies).toEqual([{ plan: plan.id, at: expect.any(String), operation: 'apply', asset: { kind: 'aws-role', name: `${ACCOUNT}/deploy` }, job, expiresAt: expect.any(String), renewal: false }]);
+    expect(JSON.stringify(listed)).not.toContain(JSON.parse(minted.stdout).AccessKeyId);
   });
 
   it('refuses a plan for another asset, and a plan that is not whole', async () => {
