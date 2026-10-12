@@ -656,7 +656,8 @@ What it does, and what it keeps out:
   hopper shares. It never forwards to the hopper's loopback: an internet request is a **public request**, which reads
   the API only with a session or an API token. No box the hopper starts is on that network, so none reaches the ngrok
   agent's local API.
-- **Only the API at the edge.** ngrok answers `404` for every path but `/api/`, `/ui/api/` and `/ui/auth/api-token`,
+- **Only the API at the edge.** ngrok answers `404` for every path but `/api/`, `/ui/api/`, `/ui/auth/api-token` and
+  `/ui/auth/token/refresh`,
   and for the event stream (`/api/events/stream`, whose session is in the query). The UI, its sign-in pages, the
   installer and the tunnel service's own ask stay off the internet.
 - **A limit per caller at the edge.** 120 requests a minute per address, and 5 API-token exchanges a minute per address.
@@ -666,9 +667,10 @@ What it does, and what it keeps out:
 - **The URL is fixed.** The Host guard takes the domain from Settings → Remote access only, while remote access is on.
 - **Grok Bot is told.** While the tunnel is up, the Grok Bot routine gets `hopper.reachable` with the URL: at start,
   when the tunnel comes back, and every 5 minutes (docs/design.md "Grok Bot routine webhook").
-- **No box action without a box token.** The token an agent gets for its own sign-in reads, holds and cancels. To let it
-  start jobs, answer questions, merge, update or change a machine, mint a box token for it in Settings → API tokens (tick
-  Box token), for an hour at most (docs/design.md "Box tokens").
+- **No box action without a box grant.** The token an agent gets for its own sign-in reads, holds and cancels. To let it
+  start jobs, answer questions, merge, update or change a machine, mint a grant for it in Settings → API tokens (tick
+  Box grant), with only the scopes it needs. It refreshes its own API tokens through the tunnel, at
+  `/ui/auth/token/refresh` (docs/design.md "Grants and refresh tokens").
 
 **An install from before** (`.env` with `COMPOSE_PROFILES=tunnel`, `NGROK_AUTHTOKEN` and `HOPPER_PUBLIC_URL`): at its
 first start with this version, the hopper moves the authtoken into its vault, takes the domain from `HOPPER_PUBLIC_URL`

@@ -8,7 +8,7 @@
 //   Scenario: a token without box reads, holds and cancels, but every box action is refused with the reason
 //   Scenario: a person mints a box token; with it an agent launches a sandbox box
 //   Scenario: the sign-in exchange never mints a box token
-//   Scenario: the operator CLI mints a box token with --box
+//   Scenario: the operator CLI mints a box grant with --box
 //   Scenario: every listed box action is a route the hopper serves, and no other route asks for a box token
 //   Scenario: a model edited before box tokens refuses box actions only
 import { afterEach, describe, expect, it } from 'vitest';
@@ -59,7 +59,7 @@ async function agent(a: TestApp, method: 'GET' | 'POST', path: string, token: st
 }
 
 async function mint(a: TestApp, session: string, body: Record<string, unknown> = {}): Promise<Answer> {
-  const r = await a.ui('/ui/api/api-tokens', { action: 'mint', label: 'grok-bot', ...body }, { token: session });
+  const r = await a.ui('/ui/api/api-tokens', { action: 'mint', label: 'grok-bot', scopes: ['*'], ...body }, { token: session });
   return { status: r.status, body: r.body, text: JSON.stringify(r.body) };
 }
 
@@ -100,13 +100,12 @@ describe('box tokens (issue #795)', () => {
     const session = await a.login();
     const minted = await mint(a, session, { box: true, minutes: 10 });
     expect(minted.status).toBe(200);
-    expect(minted.body).toMatchObject({ box: true, role: 'admin' });
-    const plain = (await mint(a, session)).body as { id: string; box: boolean };
-    expect(plain.box).toBe(false);
+    expect(minted.body.view).toMatchObject({ box: true, role: 'admin' });
+    const plain = (await mint(a, session)).body as { grant: string };
     const listed = await a.api('GET', '/api/api-tokens', undefined, { 'x-hopper-session': session });
-    expect(listed.body.tokens).toHaveLength(2);
-    expect(listed.body.tokens).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: minted.body.id, box: true }), expect.objectContaining({ id: plain.id, box: false }),
+    expect(listed.body.grants).toHaveLength(2);
+    expect(listed.body.grants).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: minted.body.grant, box: true }), expect.objectContaining({ id: plain.grant, box: false }),
     ]));
 
     const token = minted.body.token as string;
@@ -145,14 +144,14 @@ describe('box tokens (issue #795)', () => {
     const io: CliIo = { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => '', out: (x) => out.push(x), err: () => undefined };
     const mintCli = async (extra: string[]) => {
       out.length = 0;
-      expect(await runCli(['token', 'mint', '--label', 'grok-bot', '--role', 'operator', ...extra, '--url', a.url], io)).toBe(0);
-      return JSON.parse(out.join('')) as { token: string; box: boolean };
+      expect(await runCli(['token', 'mint', '--label', 'grok-bot', '--scope', '*', '--role', 'operator', ...extra, '--url', a.url], io)).toBe(0);
+      return JSON.parse(out.join('')) as { token: string; view: { box: boolean } };
     };
     const box = await mintCli(['--box']);
-    expect(box.box).toBe(true);
+    expect(box.view.box).toBe(true);
     expect((await agent(a, 'POST', '/ui/api/jobs/nope/approve', box.token, {})).body.error ?? '').not.toMatch(BOX_REFUSAL);
     const plain = await mintCli([]);
-    expect(plain.box).toBe(false);
+    expect(plain.view.box).toBe(false);
     expect((await agent(a, 'POST', '/ui/api/jobs/nope/approve', plain.token, {})).body.error).toMatch(BOX_REFUSAL);
   });
 

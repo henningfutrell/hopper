@@ -37,6 +37,9 @@ import { reviewRoutes } from './reviews.ts';
 import { sectionRoutes } from './sections.ts';
 import { questionRoutes } from './questions.ts';
 import { createRealmsAdmin, realmRoutes } from './realms.ts';
+import { openApiDocument } from './openapi.ts';
+import { createApiGrants } from './ui/api-grants.ts';
+import { scopesOfRoutes } from '../domain/token-scopes.ts';
 import { sourceRoutes } from './sources.ts';
 import { sseRoutes } from './sse.ts';
 import { stateRoutes } from './state.ts';
@@ -67,7 +70,7 @@ export { createRemoteAccess, type RemoteAccess } from './remote-access.ts';
 
 export interface ServerOptions {
   /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */
-  instance: Pick<InstanceStore, 'uiSessions' | 'loginCodes' | 'joinCodes' | 'users' | 'identities' | 'signInConfig' | 'settings' | 'tx'>;
+  instance: Pick<InstanceStore, 'uiSessions' | 'apiGrants' | 'loginCodes' | 'joinCodes' | 'users' | 'identities' | 'signInConfig' | 'settings' | 'tx'>;
   /** Every user's running parts (issue #158): a tenant route reads and changes the request's user's. */
   tenants: Tenants;
   /** The plugin store (the instance's): GET /api/plugin-store, POST /ui/api/plugin-store. */
@@ -125,8 +128,19 @@ export function createServer(o: ServerOptions): FastifyInstance {
   // The sign-in config may have changed since the sessions were made: a realm removed or off, or a rule, ends them.
   const r = sessions.reconcile(o.signIn.roleOf);
   if (r.dropped + r.changed > 0) console.warn(`hopper: the sign-in config applied to stored UI sessions: ${r.dropped} ended, ${r.changed} changed role`);
+  // Grants (issue #881): each mint, refresh, reuse and end is logged and is an event of its user's, which notifiers pass on.
+  const grants = createApiGrants({
+    repo: o.instance.apiGrants, sessions, clock: o.clock, roleOf: o.signIn.roleOf,
+    recorded: (userId, e) => {
+      if (e.type === 'api_grant.reuse_detected') console.warn(`hopper: grant ${e.data.grant} (${e.data.label}) of user ${userId}: a spent refresh token was sent again; the grant is revoked`);
+      if (e.type === 'api_grant.revoked') console.warn(`hopper: grant ${e.data.grant} (${e.data.label}) of user ${userId} ended (${e.data.reason})`);
+      o.tenants.user(userId)?.store.events.append(e);
+    },
+  });
+  const g = grants.reconcile(o.signIn.roleOf);
+  if (g.dropped + g.changed > 0) console.warn(`hopper: the sign-in config applied to grants: ${g.dropped} ended, ${g.changed} lowered`);
   installHostGuard(app, { port: o.port, lan: o.lan, sessions });
-  installTenancy(app, { tenants: o.tenants, sessions, signIn: o.signIn, access: o.access, port: o.port, lan: o.lan });
+  installTenancy(app, { tenants: o.tenants, sessions, grants, signIn: o.signIn, access: o.access, port: o.port, lan: o.lan });
   const tenant = { tenant: (req: Parameters<typeof tenantOf>[1]) => tenantOf(o.tenants, req) };
   apiReferenceRoutes(app, o.version);
   helpRoutes(app, o.version);
@@ -159,7 +173,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   instanceRoutes(app, { tenants: o.tenants, clock: o.clock, instanceAdmin });
   usageHistoryRoutes(app, { ...tenant, tenants: o.tenants, clock: o.clock, instanceAdmin });
   machineHistoryRoutes(app, { ...tenant, clock: o.clock });
-  const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions });
+  const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions, grants });
   realmRoutes(app, { realms, instanceAdmin });
   accessRoutes(app, { access: o.access, instanceAdmin });
   clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan });
@@ -187,7 +201,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   staticRoutes(app, o.uiDir);
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
-    ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
+    ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, tokenScopes: scopesOfRoutes(Object.entries(openApiDocument(o.version).paths as Record<string, object>).flatMap(([path, ops]) => Object.keys(ops).map((method) => ({ method, path })))), signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
     updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess,
   });
   return app;

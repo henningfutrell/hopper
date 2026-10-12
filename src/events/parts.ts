@@ -6,6 +6,7 @@ import { POINTED_JOB_STATUSES, POINTER_KINDS } from '../domain/pointed-jobs.ts';
 import { CONFIDENCES, RISK_CATEGORIES, RISK_LEVELS } from '../domain/types.ts';
 // Infra plans (issue #870): their own file, spread with the other features' events.
 export { INFRA_PLAN_EVENT_SCHEMAS as infraPlanEvents } from './infra-plan-schemas.ts';
+export { API_GRANT_EVENT_SCHEMAS as apiGrantEvents } from './api-grant-schemas.ts';
 
 const strict = z.strictObject;
 

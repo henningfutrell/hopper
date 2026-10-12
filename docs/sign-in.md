@@ -409,7 +409,7 @@ curl -H "Authorization: Bearer $ACCESS_TOKEN" https://hopper.example.com/api/que
   once it is forgotten (Sources → **Stop working through GitHub**, offered to a user signed in another
   way) it no longer does.
 - **Reads only.** This door only reads. To change anything, exchange the same sign-in for an API token at
-  `POST /ui/auth/api-token`, or mint one in Settings → API tokens, and send `Authorization: Bearer hopper_at_…`
+  `POST /ui/auth/api-token`, or mint a grant in Settings → API tokens, and send `Authorization: Bearer hopper_at_…`
   (help page "The operator CLI and the API", `/help/cli-and-api`).
 - The same realms and role rules decide: turning the realm off, or a rule that grants no role, closes
   this door as it closes the sign-in page. A refused token is 401 with the reason, no role is 403, an
