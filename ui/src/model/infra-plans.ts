@@ -19,6 +19,10 @@ export function planState(p: PlanView, now: number): PlanState {
   return p.approval ? { kind: 'approved', words: `Approved by ${p.approval.by}: ${minutes}` } : { kind: 'waiting', words: `Waits for an admin to approve it: ${minutes}` };
 }
 
+/** The plans that wait for an admin at `now` (issue #897: Needs you, the Infra badge); none for an answer with no plans. */
+export const plansWaiting = (v: { plans?: PlanView[] } | undefined, now: number): number =>
+  Array.isArray(v?.plans) ? v.plans.filter((p) => planState(p, now).kind === 'waiting').length : 0;
+
 export interface PlanExplainer { words: string; level: 'low' | 'high'; lines: string[] }
 
 /** What the plan changes in plain words, its risk, and why: each callout, the blast radius, each check. None for a plan kept before summaries. */

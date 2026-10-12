@@ -49,3 +49,16 @@ export function yoloPatch(v: YoloModeView, d: YoloDraft): YoloPatch | undefined 
   const p: YoloPatch = { ...(d.on !== v.on ? { on: d.on } : {}), ...(Object.keys(repos).length ? { repos } : {}) };
   return Object.keys(p).length ? p : undefined;
 }
+
+/**
+ * The header's yolo mode (issue #897), on every screen: off, on in every repository, or on in some, with the summary as its
+ * title. Undefined for an answer without the settings: it is never read as off.
+ */
+export function yoloIndicator(v: YoloModeView | undefined): { on: boolean; words: string; title: string } | undefined {
+  if (typeof v?.on !== 'boolean' || !Array.isArray(v.choices?.repos)) return undefined;
+  const rows = yoloRows(v);
+  const merging = rows.filter((r) => r.merges).length;
+  const on = rows.length ? merging > 0 : v.on;
+  const words = !on ? 'yolo off' : merging === rows.length ? 'yolo on' : `yolo on: ${merging} of ${rows.length} repos`;
+  return { on, words, title: yoloSummary(v) };
+}
