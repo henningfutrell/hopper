@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // Settings → Windows hosts (issue #731), rendered in happy-dom inside the whole app against a fake of the daemon's HTTP
 // surface: a person adds a Windows host — its host key read and its fingerprint shown before it is pinned —, and the
-// whole list is saved with the version read; a host is removed after a confirm.
+// whole list is saved with the version read; a host is removed after a confirm; an edit sets the vault secrets a host's
+// steps may be given, and keeps the pinned key.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -91,6 +92,19 @@ describe('Settings → Windows hosts (issue #731)', () => {
       version: 'v1', hosts: [EXISTING, { name: 'build-host', ssh: 'builder@winbox', hostKey: KEY, workDir: 'C:\\work\\app' }],
     });
     await vi.waitFor(() => expect(panel()!.querySelectorAll('[data-slot="windows-host"]')).toHaveLength(2));
+  });
+
+  it('sets the vault secrets a host gives its steps, and keeps its pinned key', async () => {
+    const daemon = await boot();
+    await click(button('Edit'));
+    const form = panel()!.querySelector('[data-slot="windows-host-form"]')!;
+    const secrets = form.querySelector<HTMLInputElement>('[data-slot="windows-host-secrets"]')!;
+    await type(secrets, 'NUGET_TOKEN, SIGN_PASS  NUGET_TOKEN');
+    await click(button('Save'));
+    await vi.waitFor(() => expect(daemon.calls.find((c) => c.path === '/ui/api/windows-hosts')?.body).toEqual({
+      version: 'v1', hosts: [{ ...EXISTING, secrets: ['NUGET_TOKEN', 'SIGN_PASS'] }],
+    }));
+    await vi.waitFor(() => expect(panel()!.querySelector('[data-slot="windows-host"]')!.textContent).toContain('NUGET_TOKEN, SIGN_PASS'));
   });
 
   it('removes a host after a confirm', async () => {
