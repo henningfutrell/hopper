@@ -15050,3 +15050,25 @@ rendered nothing when empty, so a person could not tell the feature was there.
 
 **Left for later parts:** a Needs you row for the plans that wait on the Infra page (issue #896), conflicted pull requests and machine joins
 in Needs you, a global yolo indicator, and the duplicates of the question, decider and auto-park controls in Settings.
+
+## Needs you, part 2: plans, conflicts, and yolo mode's one switch (issue #897, 2026-10-12)
+
+**As built:**
+- **Two more rows.** Needs you counts the Infra plans that wait for an admin (`plansWaiting`, `ui/src/model/infra-plans.ts`:
+  not approved, no failed check, not stale) and the open pull requests with merge conflicts (`conflictedPullRequests`,
+  `ui/src/model/pull-requests.ts`). The Infra nav entry is badged with the first, Pull requests with the second (red), and
+  the Pull requests header says how many conflict.
+- **Shared reads.** `ui/src/store/polled.ts` keeps one copy each of `GET /api/pull-requests`, `GET /api/infra-plans` and
+  `GET /api/yolo-mode` for the nav, Needs you and the header: read when first shown, every 30 seconds while shown, and again
+  after a `job.pull_request_*` or `yolo_mode.*` event (a plan is recorded with no event). A failed read keeps the last answer.
+  A page that reads or saves one itself (Pull requests, Settings → Yolo mode) puts its answer there.
+- **Yolo mode in the header.** On every screen: `yolo off`, `yolo on`, or `yolo on: N of M repos` (`yoloIndicator`,
+  `ui/src/model/yolo-mode.ts`), the summary as its title, a link to Settings → Yolo mode. An answer without the settings
+  shows nothing, never off.
+- **One switch.** Settings → Yolo mode is yolo mode's one switch. The per-repository switch on Pull requests is removed;
+  each group keeps its yolo badge and links to Settings. The Queue cards keep their read-only badges.
+- **No machine joins row.** A join code adds a machine at once: nothing waits for a decision. A machine whose box template
+  waits for approval is counted in Access requests.
+
+**Left for later parts:** the duplicates of the question, decider and auto-park controls in Settings, and Settings → Your
+reports and Question history, if they stay actionable.

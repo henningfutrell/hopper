@@ -51,7 +51,7 @@ The **Pull requests** view lists these pull requests, grouped by job repository.
 | `merge refused` | GitHub refused the merge. The card shows what GitHub said. |
 | `ready, merging` | Yolo mode merges it at the next sync. |
 
-The header says how many repositories have yolo mode on, and where merging waits.
+The header says how many repositories have yolo mode on, and where merging waits. When pull requests have merge conflicts, the header says how many, and the **Pull requests** entry in the navigation has a red badge with that count. **Needs you** counts them too. Fix each one, or close it.
 
 ## How to use it
 
@@ -88,10 +88,12 @@ Use `--repo` when two repositories have a pull request with the same number.
 
 ### Turn on yolo mode
 
+The top bar shows yolo mode on every screen: *yolo off*, *yolo on*, or *yolo on: 2 of 5 repos*. Select it to open **Settings → Yolo mode**.
+
 Yolo mode lets the hopper merge a ready pull request itself. It is off by default.
 
 1. Sign in as an admin.
-2. Open **Settings → Yolo mode**, read the warning, and set it for every repository or per repository. Or use the switch on a repository's group in **Pull requests**.
+2. Open **Settings → Yolo mode**, read the warning, and set it for every repository or per repository. This is the one switch for yolo mode. Each repository's group in **Pull requests** links to it.
 3. Or, from a terminal: `hopper yolo <owner/repo> on|off|default`.
 
 A per-repository setting wins over the setting for every repository. `default` follows the setting for every repository.

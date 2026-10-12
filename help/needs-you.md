@@ -10,14 +10,18 @@ Each kind of decision has one page, its home. Needs you collects the counts. You
 |---|---|---|
 | Intake | **Intake** | Issues from people who are not trusted actors, waiting for your approval. |
 | Access requests | **Access requests** | Credentials, vault grants and box templates that jobs on boxes wait for. |
+| Infra plans | **Infra** | Plans of infrastructure changes that wait for an admin to approve them. |
 | Questions | **Questions** | Questions jobs asked you. |
 | Proposals | **Proposals** | Proposals that wait for you to pick a path. |
 | Research | **Research** | Research reports that wait for you to accept or steer them. |
 | Logins | **Logins** | Logins a job waits on, and connections that ended. |
 | Failures | **Failures** | Open problems and jobs handed off to a person. |
+| Pull requests | **Pull requests** | Open pull requests with merge conflicts. Fix them, or close them. |
 | Pre-sort | **Queue** | Jobs that wait on the pre-sort before a lane takes them. |
 
 The badge on **Needs you** is the sum of all rows. When a high-priority job waits, the badge has a ring and an arrow. Parked jobs are not in Needs you: they wait to be picked up, not for a decision. **Parked** keeps its own badge.
+
+**Infra** and **Pull requests** also have their own badges in the navigation, with the same counts. A machine has no row: a join code adds a machine at once, with no approval. A box whose template waits for approval counts in Access requests.
 
 Every row shows, also when its count is 0. The page says *Nothing waits on you* when all counts are 0.
 
@@ -57,6 +61,8 @@ Every count comes from the same reads the UI makes, with the same scopes:
 |---|---|
 | Intake | `GET /api/sources`: the intake items with `action: "approve"`. |
 | Access requests | `GET /api/vault`: `requests`, `grantAsks`, and the templates with `pending` items or no `approval`. |
+| Infra plans | `GET /api/infra-plans`: the plans with no `approval`, no failed check (`summary.failed`), and an `expiresAt` still to come. |
+| Pull requests | `GET /api/pull-requests`: the cards with `state: "open"` and `mergeable: "conflicts"`. |
 | Questions, proposals, research, logins, failures, pre-sort | `GET /api/questions`, `GET /api/proposals`, `GET /api/research`, `GET /api/logins`, `GET /api/failures`. The pre-sort: `GET /api/queue`. |
 
-Each action is the same `POST /ui/api/*` route the page uses. See [The operator CLI and the API](cli-and-api.md).
+The yolo mode in the top bar is `GET /api/yolo-mode`. Each action is the same `POST /ui/api/*` route the page uses. See [The operator CLI and the API](cli-and-api.md).
