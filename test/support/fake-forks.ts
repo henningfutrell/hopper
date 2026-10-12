@@ -7,12 +7,16 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+export { commentEditRoute, editIssue } from './fake-edits.ts';
+
 /** The fake GitHub's options for it (fields of `FakeForge`). */
 export interface ForksForge {
   /** GitHub: repositories the token's user cannot push to (`permissions.push` false): ones they do not own. */
   notPushable?: string[];
   /** GitHub: repositories with issues turned off (`has_issues` false). */
   issuesOff?: string[];
+  /** GitHub: private repositories (`private`, `visibility`); any other is public (issue #946: Promote to GitHub reads it). */
+  privateRepos?: string[];
   /** GitHub: the forks, by fork → its parent (owner/name); a fork made through the API is added. */
   forks?: Record<string, string>;
 }
@@ -31,7 +35,8 @@ export function forksRoute(
     const push = !(f.notPushable ?? []).includes(name) && (parent === undefined || name.split('/')[0] === login);
     return {
       full_name: name, html_url: `${base}/${name}`, owner: { login: name.split('/')[0] }, default_branch: 'dev',
-      has_issues: !(f.issuesOff ?? []).includes(name), permissions: { admin: push, push, pull: true },
+      has_issues: !(f.issuesOff ?? []).includes(name), private: (f.privateRepos ?? []).includes(name),
+      visibility: (f.privateRepos ?? []).includes(name) ? 'private' : 'public', permissions: { admin: push, push, pull: true },
       fork: parent !== undefined, ...(parent ? { parent: { full_name: parent }, source: { full_name: parent } } : {}),
     };
   };

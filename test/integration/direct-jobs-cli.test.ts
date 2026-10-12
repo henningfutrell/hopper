@@ -39,10 +39,10 @@ describe('direct jobs from the CLI (issue #901)', () => {
     cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
     const file = join(dir, 'brief.md');
     writeFileSync(file, `${JSON.stringify({ op: 'echo', message: 'looked up' })}\nLook up the lockout.`);
-    const r = await hopper(a, ['job', 'submit', '--title', 'Lockout lookup', '--brief-file', file, '--label', 'sme:identity', '--authorize', 'keycloak:read', '--executor', 'scripted', '--priority', '70']);
+    const r = await hopper(a, ['job', 'submit', '--title', 'Lockout lookup', '--brief-file', file, '--label', 'sme:identity', '--authorize', 'keycloak:read', '--executor', 'scripted', '--priority', '70', '--promote-when-done']);
     expect(r).toMatchObject({ code: 0 });
     const { directJob, job } = JSON.parse(r.out) as { directJob: DirectJobView; job: { id: string; priority: number } };
-    expect(directJob).toMatchObject({ title: 'Lockout lookup', labels: ['sme:identity'], authorizations: ['keycloak:read'], priority: 70, submittedBy: { via: 'cli' } });
+    expect(directJob).toMatchObject({ title: 'Lockout lookup', labels: ['sme:identity'], authorizations: ['keycloak:read'], priority: 70, promoteWhenDone: true, submittedBy: { via: 'cli' } });
     expect(job.priority).toBe(70);
     await a.waitForStatus(job.id, 'finished');
 

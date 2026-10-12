@@ -17,7 +17,7 @@
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { forksRoute, type ForksForge } from './fake-forks.ts';
+import { commentEditRoute, editIssue, forksRoute, type ForksForge } from './fake-forks.ts';
 import { serveGit } from './fake-git.ts';
 import { readBody, send } from './fake-http.ts';
 import { repoChecksRoute, type RepoChecksForge } from './fake-repo-checks.ts';
@@ -294,7 +294,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       if (!m) return { status: 404, body: { message: 'Not Found' } };
       const repo = m[1]!;
       const rest = m[2] ?? '';
-      const sub = subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest); if (sub) return sub;
+      const sub = subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest) ?? commentEditRoute(issues, r.method, repo, rest, r.body); if (sub) return sub;
       if (r.method === 'POST' && rest === 'labels') return { status: 201, body: { name: r.body.name } };
       if (r.method === 'GET' && rest === 'issues') {
         return { status: 200, body: issues.filter((i) => i.repo === repo && (i.state ?? 'open') === 'open' && i.labels.includes(r.query.labels ?? '')).map(restIssue) };
@@ -333,7 +333,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         ] };
       }
       if (r.method === 'PATCH' && !im[2]) {
-        if (r.body.state === 'closed') Object.assign(issue, { state: 'closed', stateReason: String(r.body.state_reason ?? 'completed') });
+        if (r.body.state === 'closed') Object.assign(issue, { state: 'closed', stateReason: String(r.body.state_reason ?? 'completed') }); else editIssue(issue, r.body);
         return { status: 200, body: restIssue(issue) };
       }
       if (r.method === 'GET' && im[2] === 'comments') return { status: 200, body: issue.comments ?? [] };
