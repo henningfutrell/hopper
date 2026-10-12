@@ -16,6 +16,11 @@ export type MintsForKind = (typeof MINTS_FOR_KINDS)[number];
 /** How long a minted credential lives: STS's floor (15 minutes), and TokenRequest's floor (10 minutes). */
 export const AWS_SESSION_SECONDS = 900;
 export const KUBE_TOKEN_SECONDS = 600;
+/**
+ * How long an EKS token lives (issue #854): EKS takes a presigned URL for 15 minutes from its signing; the hopper says
+ * 14, as `aws eks get-token` does, so kubectl asks again before EKS refuses it.
+ */
+export const EKS_TOKEN_SECONDS = 840;
 /** The session policy a read session gets: AWS's managed read-only policy, so the session reads whatever the role may do. */
 export const AWS_READ_POLICY = 'arn:aws:iam::aws:policy/ReadOnlyAccess';
 /**
@@ -40,6 +45,9 @@ export const awsReadDenyPolicy = (roleArn: string): string => JSON.stringify({
     { Sid: 'HopperReadNoOtherRole', Effect: 'Deny', Action: ['sts:AssumeRole', 'sts:AssumeRoleWithSAML', 'sts:AssumeRoleWithWebIdentity'], NotResource: roleArn },
   ],
 });
+/** The session policies a read session of `roleArn` gets: `ReadOnlyAccess`, and the deny policy beside it. */
+export const awsReadSession = (roleArn: string): { policyArns: string[]; policy: string } => ({ policyArns: [AWS_READ_POLICY], policy: awsReadDenyPolicy(roleArn) });
+
 /** Where a token for a whole cluster is minted: the service accounts `hopper-<operation>` live in this namespace. */
 export const KUBE_CLUSTER_NAMESPACE = 'hopper';
 
@@ -68,8 +76,36 @@ function sessionNameProblem(name: string | undefined, prefix: string | undefined
   if (prefix !== undefined && (prefix.length > 32 || !SESSION_NAME_CHARS.test(prefix))) return `SessionNamePrefix must be 1 to 32 of ${allowed}`;
   return undefined;
 }
-/** A minting credential's value for Kubernetes: the API server, a token allowed to create service account tokens, its CA. */
-export interface KubeMintingCredential { server: string; token: string; certificateAuthorityData?: string }
+/**
+ * A minting credential's value for Kubernetes: a `token` credential — the API server, a token allowed to create service
+ * account tokens, its CA; its value names no `type` — or (issue #854) an `eks` credential, which signs in through EKS.
+ */
+export type KubeMintingCredential = KubeTokenCredential | EksMintingCredential;
+export interface KubeTokenCredential { type: 'token'; server: string; token: string; certificateAuthorityData?: string }
+
+/**
+ * EKS sign-in (issue #854): the vault mints a read session of the IAM role `roleArn` from the AWS minting credential for
+ * the role's account, and signs an EKS token with it. The cluster is named here (`cluster`, `region`, `server`,
+ * `certificateAuthorityData`), or found in the vault secret `kubeconfig` (its `context`, else its current one), whose
+ * EKS exec sign-in names the cluster; a field named here wins. The role's access entry or aws-auth mapping in the
+ * cluster decides what the token may do: the hopper never changes the cluster.
+ */
+export interface EksMintingCredential {
+  type: 'eks'; roleArn: string; cluster?: string; region?: string; server?: string; certificateAuthorityData?: string; kubeconfig?: string; context?: string;
+}
+
+/** The EKS cluster a token is signed for and a kubeconfig reaches. */
+export interface EksCluster { cluster: string; region: string; server: string; certificateAuthorityData?: string }
+
+/** An IAM role's ARN, in any partition: its account is group 1. A path may come before the role's name. */
+const ROLE_ARN = /^arn:aws[a-z-]*:iam::(\d{12}):role\/[\w+=,.@/-]{1,512}$/;
+
+/** The account of an IAM role's ARN. */
+export const roleAccountOf = (roleArn: string): string => ROLE_ARN.exec(roleArn)?.[1] ?? '';
+
+/** A cluster's name as EKS takes it, and a region's. */
+export const EKS_CLUSTER_NAME = /^[0-9A-Za-z][A-Za-z0-9_-]{0,99}$/;
+export const AWS_REGION_NAME = /^[a-z]{2}(-[a-z]+)+-\d{1,2}$/;
 
 /** What is minted for one profile: the AWS role and session policies, or the Kubernetes service account. */
 export type MintTarget =
@@ -88,7 +124,7 @@ export function mintTarget(kind: MintKind, p: OperationProfile): MintTarget | st
     const [account, role, ...rest] = name.split('/');
     if (assetKind !== 'aws-role' || !account || !role || rest.length) return `an aws credential is minted for an aws-role (aws-role/<account>/<role>), not ${assetKind}/${name}`;
     const roleArn = `arn:aws:iam::${account}:role/${role}`;
-    const read = p.operation === 'read' ? { policyArns: [AWS_READ_POLICY], policy: awsReadDenyPolicy(roleArn) } : { policyArns: [] };
+    const read = p.operation === 'read' ? awsReadSession(roleArn) : { policyArns: [] };
     return { kind, mintsFor: { kind: 'aws-account', name: account }, roleArn, ...read, durationSeconds: AWS_SESSION_SECONDS };
   }
   const serviceAccount = `hopper-${p.operation}`;
@@ -127,7 +163,14 @@ export const expiryOf = (m: Minted): string => (m.kind === 'aws' ? m.Expiration 
  */
 export interface CredentialMinter {
   awsSession(credential: AwsMintingCredential, r: { roleArn: string; sessionName: string; policyArns: string[]; policy?: string | undefined; durationSeconds: number }): Promise<Extract<Minted, { kind: 'aws' }>>;
-  kubeToken(credential: KubeMintingCredential, r: { namespace: string; serviceAccount: string; expirationSeconds: number }): Promise<Extract<Minted, { kind: 'kube' }>>;
+  kubeToken(credential: KubeTokenCredential, r: { namespace: string; serviceAccount: string; expirationSeconds: number }): Promise<Extract<Minted, { kind: 'kube' }>>;
+  /**
+   * An EKS token for `cluster` (issue #854): STS `GetCallerIdentity` presigned with `session` at the region's STS, the
+   * cluster's name signed in the `x-k8s-aws-id` header, as `k8s-aws-v1.` and the URL in base64url. No call is made.
+   */
+  eksToken(session: Extract<Minted, { kind: 'aws' }>, r: { cluster: string; region: string }): Promise<Extract<Minted, { kind: 'kube' }>>;
+  /** Who the cluster says `token` is (a SelfSubjectReview: `kubectl auth whoami`), and the namespaces it lists with it (issue #854). */
+  kubeIdentity(reach: Extract<MintReach, { kind: 'kube' }>, token: string): Promise<ClusterIdentity>;
   /** Who STS says the minted session is (`GetCallerIdentity`), asked at the credential's STS with the session's keys (issue #781). */
   awsCallerIdentity(credential: AwsMintingCredential, session: Extract<Minted, { kind: 'aws' }>): Promise<CallerIdentity>;
 }
@@ -144,11 +187,17 @@ export const MINT_TEST_ID = 'mint-test';
 /** A read-only check's mints (issue #797): an AWS session is named as a job's is, with this in place of the job id. */
 export const CHECK_MINT_ID = 'read-only-check';
 
-/** What a mint test answers: the role, what was asked of STS, and who STS says the session is. Never a key. */
-export interface MintTestResult {
-  asset: Asset; credential: string; roleArn: string; sessionName: string; durationSeconds: number; policyArns: string[]; expiresAt: string;
-  identity: CallerIdentity;
-}
+/** Who a cluster says a token is, and the namespaces it lists with it (issue #854): `kubectl auth whoami`, `kubectl get ns`. */
+export interface ClusterIdentity { user: { username: string; groups: string[] }; namespaces: string[] }
+
+/**
+ * What a mint test answers. AWS: the role, what was asked of STS, and who STS says the session is. A cluster (issue
+ * #854): its API server, who it says the token is and its namespaces; for EKS sign-in, the role and the session name.
+ * Never a key or a token.
+ */
+export type MintTestResult =
+  | { kind: 'aws'; asset: Asset; credential: string; roleArn: string; sessionName: string; durationSeconds: number; policyArns: string[]; expiresAt: string; identity: CallerIdentity }
+  | ({ kind: 'kube'; asset: Asset; credential: string; server: string; expiresAt: string; roleArn?: string; sessionName?: string } & ClusterIdentity);
 
 /** The minting credential's value read as `kind` wants it, or why it cannot be. Never says the value. */
 export function mintingCredentialOf(kind: 'aws', value: string): AwsMintingCredential | string;
@@ -166,10 +215,28 @@ export function mintingCredentialOf(kind: MintKind, value: string): AwsMintingCr
     const extra = (['SessionToken', 'Region', 'Endpoint', 'SessionName', 'SessionNamePrefix'] as const).flatMap((k) => (str(k) ? [[k, str(k)!]] : []));
     return { AccessKeyId, SecretAccessKey, ...Object.fromEntries(extra) };
   }
+  const ca = str('certificateAuthorityData') ? { certificateAuthorityData: str('certificateAuthorityData')! } : {};
+  const type = str('type') ?? 'token';
+  if (type === 'eks') return eksCredentialOf(str, ca);
+  if (type !== 'token') return 'a kube minting credential\'s type is token or eks';
   const server = str('server');
   const token = str('token');
   if (!server || !token || !/^https?:\/\//.test(server)) return 'a kube minting credential holds JSON with server (its URL) and token (and certificateAuthorityData when the server has its own CA)';
-  return { server, token, ...(str('certificateAuthorityData') ? { certificateAuthorityData: str('certificateAuthorityData')! } : {}) };
+  return { type: 'token', server, token, ...ca };
+}
+
+/** An `eks` kube minting credential (issue #854), or why its value is not one. */
+function eksCredentialOf(str: (k: string) => string | undefined, ca: { certificateAuthorityData?: string }): EksMintingCredential | string {
+  const roleArn = str('roleArn');
+  if (!roleArn || !ROLE_ARN.test(roleArn)) return 'an eks minting credential names roleArn, the IAM role it signs in as (arn:aws:iam::<account>:role/<name>)';
+  const named = Object.fromEntries((['cluster', 'region', 'server', 'kubeconfig', 'context'] as const).flatMap((k) => (str(k) ? [[k, str(k)!]] : []))) as Partial<EksMintingCredential>;
+  const { cluster, region, server } = named;
+  const whole = cluster && region && server;
+  if (!named.kubeconfig && !whole) return 'an eks minting credential names cluster, region and server, or kubeconfig (a vault secret whose EKS sign-in names them)';
+  if (server && !/^https?:\/\//.test(server)) return 'an eks minting credential names cluster, region and server, or kubeconfig: server is its URL';
+  if (cluster && !EKS_CLUSTER_NAME.test(cluster)) return `an eks minting credential's cluster ${JSON.stringify(cluster)} is no EKS cluster name`;
+  if (region && !AWS_REGION_NAME.test(region)) return `an eks minting credential's region ${JSON.stringify(region)} is no AWS region`;
+  return { type: 'eks', roleArn, ...named, ...ca };
 }
 
 /** A minting credential's asset said in a request: `{kind, name}` of a kind a credential mints for, or why not. */

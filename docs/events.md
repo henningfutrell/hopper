@@ -3071,7 +3071,7 @@ Version 1 (`docs/schemas/vault.mint_refused.v1.json`). A box asked the vault to 
 
 ## `vault.mint_tested`
 
-Version 1 (`docs/schemas/vault.mint_tested.v1.json`). A person tested an AWS minting credential (issue #781, `hopper vault mint-test`): the vault minted a read session for the `aws-role`, as for a job, and asked STS who it is. `arn` is the role the session assumed, with `sessionName`; `reason` when no session was minted or STS refused. Never a key.
+Version 1 (`docs/schemas/vault.mint_tested.v1.json`). A person tested a minting credential (issue #781, `hopper vault mint-test`): the vault minted a read session for the `aws-role`, as for a job, and asked STS who it is; or (issue #854) a read token for the `cluster`, and asked the cluster who it is and which namespaces it lists. `arn` is the role the session assumed, with `sessionName`; `user` is who the cluster says the token is, with `sessionName` when it signed in through EKS; `reason` when nothing was minted or STS or the cluster refused. Never a key or a token.
 
 | field | type | required |
 |---|---|---|
@@ -3079,6 +3079,7 @@ Version 1 (`docs/schemas/vault.mint_tested.v1.json`). A person tested an AWS min
 | `credential` | string | no |
 | `sessionName` | string | no |
 | `arn` | string | no |
+| `user` | string | no |
 | `expiresAt` | string | no |
 | `reason` | string | no |
 | `by` | string | yes |
