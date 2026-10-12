@@ -14678,7 +14678,8 @@ leads into (an issue first); a node **blocks** the root when it is not `done` or
 `rerun`), `forkOf` (`spawned`), `followOn` (`plan_apply`), the job's source state (`opened`, `waits_on_merge`), the
 `job.child_issue_filed` events (`parent` for a required child, else `follow_up`), and the issue graph (issue #437:
 `sub_issue_of` gives `parent`, `closes` gives `closes`) — read here for the first time, for the issues the graph already
-has and nothing beyond them. GitHub's "blocked by" relation is not read: the hopper keeps no record of it.
+has and nothing beyond them. GitHub's "blocked by" relation is not read: the hopper keeps no record of it (part 2 below
+reads it).
 
 **The route.** `GET /api/jobs/graph` (`src/http/jobs.ts`), the user's own: the jobs `/api/queue` holds, the followed jobs
 whose pull request is open (at most 500, so a partly done job that ended days ago still shows), and the jobs these come
@@ -14701,6 +14702,36 @@ Tests: `test/domain/job-graph.test.ts` (stages, each edge kind, trees, blocking,
 (rows, trees, choices, counts, the layout, a pull request in words), `test/ui/jobs-view.test.ts` (the whole app over a fake
 daemon: the graph mode, a node's details, the list's facts, partly done, counts and filters, a live stage change with 250
 jobs, the empty states).
+
+**Part 2: blocked by, stacks, questions and hand-offs (issue #900, 2026-10-12).** What part 1 left:
+
+- **Blocked by.** The issue place's query (`src/sources/github/issue-place.ts`) reads `blockedBy` (GitHub's issue
+  dependencies, first 50) beside the sub-issues; `placeGraph` keeps each as an issue graph edge `blocked_by` (the blocked
+  issue to its blocker), and the job graph adds the blocker's issue node and a `blocked_by` edge in the same direction.
+  The direction is the one `waits_on_merge` has: from what waits to what it waits on, so an open blocker blocks the root
+  with no change to `treesOf`. A GitHub with no issue dependencies (an older GitHub Enterprise) refuses the whole query
+  for the unknown field; `issuePlace` then asks once more without it (`noBlockedBy`), and the place has no `blockedBy`. No
+  migration: the issue graph's edges are replaced at each read of an issue.
+- **Stacks.** `headRefName` joins the pull request reads' shared fields (`HEAD_COMMIT`, `src/sources/github/closer.ts`),
+  as `headRef` on the port's pull request, and following a pull request keeps it in `seen` beside `base`. In the job graph,
+  an open pull request whose `base` is the `headRef` of another open one in the same repository gets a `stacked_on` edge
+  to it. Only followed pull requests have branches, so a stack of pull requests no job opened is not seen. A pull request
+  followed before this change has no `headRef` until its next follow writes it: no migration, the field is optional.
+- **Questions and hand-offs.** The route reads the open questions (any tier: one a level holds waits too) and the open
+  hand-offs, adds their jobs to the jobs it shows, and passes them in. Each is a node (`question:<id>`, `handoff:<id>`),
+  at stage `waiting`, labelled with the question's text or the hand-off's TL;DR (else its summary), at most 120
+  characters, its time in stage from when it was asked or opened, with an `asks` or `hands_off` edge from its job. A
+  question or hand-off whose job is not in the graph is left out. The stage counts still count jobs only.
+
+Dropped: a `blocks` edge from the blocker to the blocked issue, as the issue named it. It points against the direction
+`treesOf` walks, so the blocker would become a root of its own and never mark the issue it blocks. A question node per
+answered question: the graph shows what stands now, and the job view keeps the history.
+
+Tests: `test/domain/issue-graph.test.ts`, `test/sources/issue-place.test.ts` (the `blockedBy` read, the second ask),
+`test/sources/github-follow.test.ts` and `test/sources/github-checks-unreadable.test.ts` (`headRef`),
+`test/domain/job-graph.test.ts` (each new edge and node), `test/integration/job-graph.test.ts` (an open question and
+hand-off over the real database and HTTP server), `test/ui/jobs-view-model.test.ts` and `test/ui/jobs-view.test.ts` (the
+question node, its edge and its details).
 
 ## Infra plans: no apply without a plan (issue #870, part 1, 2026-10-12)
 
