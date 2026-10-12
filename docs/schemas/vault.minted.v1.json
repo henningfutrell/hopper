@@ -65,6 +65,9 @@
     },
     "plan": {
       "type": "string"
+    },
+    "principal": {
+      "type": "string"
     }
   },
   "required": [

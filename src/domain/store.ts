@@ -6,12 +6,11 @@ import type { JobStreamRepository } from './job-stream.ts';
 import type { ArtifactRepository } from './artifacts.ts';
 import type { VaultRepository } from './vault.ts';
 import type { SandboxRecord } from './sandboxes.ts';
-import type { ItemSnapshot } from './item-snapshots.ts';
 import type { VaultGrant } from './vault-grants.ts';
 import type { BugReportRepository } from './bug-reports.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 import type { DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
-  Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User, UsageSample, UsageSeries, UsageTotalSeries, GitHubWatchRepository, PointedJobRepository, FailureOutcome, FailureRecord, Handoff, Problem, ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries } from './types.ts';
+  Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User, UsageSample, UsageSeries, UsageTotalSeries, GitHubWatchRepository, PointedJobRepository, FailureOutcome, FailureRecord, Handoff, Problem, ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries, ItemSnapshot } from './types.ts';
 
 // Report a bug (issue #694): its repository sits beside its record.
 export type { BugReportRepository } from './bug-reports.ts';
@@ -478,6 +477,8 @@ export interface UserStore {
   artifacts: ArtifactRepository;
   /** The infra plans jobs record, and their approvals (issue #870). */
   infraPlans: import('./infra-plans.ts').InfraPlanRepository;
+  /** The out-of-band infrastructure changes jobs' checks report, their marks, and the controller identities (issue #871). */
+  outOfBand: import('./out-of-band.ts').OutOfBandRepository;
   questions: QuestionRepository;
   /** Each review section's items, by kind: proposals (issue #537), research reports (issue #543). */
   reviews: Readonly<Record<ReviewKind, ReviewItemRepository>>;

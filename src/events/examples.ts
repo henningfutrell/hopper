@@ -175,6 +175,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'vault.minted': {
     kind: 'kube', operation: 'read', asset: { kind: 'namespace', name: 'lab/web' }, template: 'kube', machine: 'hopper-sandbox-kube', job: 'f3b1c2d4-0000-4000-8000-000000000001',
     credential: 'KUBE_LAB', decision: '6c1d2e3f-0000-4000-8000-000000000002', expiresAt: '2026-10-09T12:10:00.000Z', renewal: false,
+    principal: 'system:serviceaccount:web:hopper-read',
   },
   'vault.mint_refused': {
     mint: { kind: 'kube', operation: 'write', asset: { kind: 'namespace', name: 'lab/web' } }, machine: 'hopper-sandbox-kube', template: 'kube', job: 'f3b1c2d4-0000-4000-8000-000000000001',
@@ -256,4 +257,14 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     summary: { words: 'Adds 2 security group rules in uat; changes nothing in prod; destroys nothing', level: 'low', risks: ['network'], failed: false },
   },
   'infra.plan_approved': { plan: '0b7e5a3c-0000-4000-8000-000000000870', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network', by: 'Ada' },
+  'infra.out_of_band_recorded': {
+    change: '5d2c7a10-0000-4000-8000-000000000871', source: 'cloudtrail', key: '6f0e8d2a-1b3c-4d5e-9f00-0a1b2c3d4e5f', target: 'sg-0abc1234', what: 'ec2:AuthorizeSecurityGroupIngress',
+    who: 'arn:aws:sts::123456789012:assumed-role/Admin/console', at: '2026-10-12T09:41:00Z', job: 'f3b1c2d4-0000-4000-8000-000000000001',
+    issue: 'https://github.com/octo-org/infra/issues/20',
+  },
+  'infra.out_of_band_marked': {
+    change: '5d2c7a10-0000-4000-8000-000000000871', source: 'cloudtrail', target: 'sg-0abc1234', what: 'ec2:AuthorizeSecurityGroupIngress', mark: 'accepted',
+    reason: 'break-glass fix during the outage; the rule goes into git next', by: 'Ada',
+  },
+  'infra.controllers_changed': { from: [], to: ['system:serviceaccount:argocd:argocd-application-controller', 'arn:aws:sts::123456789012:assumed-role/atlantis/*'], by: 'Ada' },
 };

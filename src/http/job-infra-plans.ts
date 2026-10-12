@@ -6,6 +6,8 @@
 //                                  file? (the saved plan file, base64), json (terraform: `terraform show -json` of the
 //                                  plan file, as a string): kept with its summary, 201, with its id
 //   GET  /job/infra-plans/:id      the plan, with its approval; ?file=1: its saved plan file, the bytes as they were put
+//   POST /job/infra-signals        JSON: signals (issue #871: what a read-only check found — drift, audit-log writes):
+//                                  each judged by the out-of-band rule; the out-of-band ones kept, 200, with the counts
 //
 // Plain text back, or JSON when `Accept: application/json` asks for it; every no says why. It changes no job, question,
 // webhook or setting: it records a plan, an event on the job's timeline. A job never approves one.
@@ -14,15 +16,19 @@ import { failedChecks, PLAN_FILE_MAX, PLAN_JSON_MAX, PLAN_TEXT_MAX, type PlanInp
 import type { Job, JobStatus } from '../domain/types.ts';
 import { parseProxyToken } from '../github-proxy/token.ts';
 import { isPlanRefusal } from '../infra-plans/service.ts';
+import type { Signal } from '../domain/out-of-band.ts';
 import { assetOf } from '../vault/mint.ts';
 import type { TenantParts, Tenants } from './tenants.ts';
 
 export const INFRA_PLAN_PATH = '/job/infra-plans';
+export const INFRA_SIGNAL_PATH = '/job/infra-signals';
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 const BEARER = /^Bearer\s+(\S+)$/i;
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 /** A body that holds the largest text and JSON, escaped, and the largest plan file in base64. */
 const BODY_LIMIT = PLAN_TEXT_MAX * 2 + PLAN_JSON_MAX * 2 + Math.ceil(PLAN_FILE_MAX / 3) * 4 + 64 * 1024;
+/** A report of signals: a check with more sends more than one. */
+const SIGNAL_BODY_LIMIT = 16 * 1024 * 1024;
 
 type Asker = { t: TenantParts; job: Job } | { status: number; text: string };
 
@@ -81,6 +87,22 @@ export function jobInfraPlanRoutes(app: FastifyInstance, o: { tenants: Tenants }
       return answer(req, reply, 201, { plan }, `recorded: plan ${r.id}  ${r.tool}  ${r.asset.kind}/${r.asset.name}  ${r.target}  stale at ${r.expiresAt}
 summary: ${r.summary?.words ?? ''} (${r.summary?.level ?? ''} risk)
 ${failed ? `failed: ${failed}\nnext: nobody approves this plan; fix the code and plan again` : `next: a person approves it in Infra changes; then ask with --plan ${r.id}`}`);
+    });
+
+    // Out-of-band changes (issue #871): the signals a job's read-only check found, judged by the hopper's one rule.
+    scope.post(INFRA_SIGNAL_PATH, { bodyLimit: SIGNAL_BODY_LIMIT }, async (req, reply) => {
+      const who = askerOf(o.tenants, req.headers.authorization);
+      if ('status' in who) return no(req, reply, who.status, who.text);
+      const signals = (req.body as { signals?: unknown } | undefined)?.signals;
+      if (!Array.isArray(signals) || !signals.every((s) => typeof s === 'object' && s !== null)) return no(req, reply, 400, 'signals must be a list of signals: source, key, target, what, who, at, detail');
+      const r = who.t.githubProxy.outOfBand.report(who.job, signals as Signal[]);
+      if (isPlanRefusal(r)) return no(req, reply, r.status, r.no);
+      const recorded = r.recorded.map(({ detail: _detail, ...c }) => c);
+      return answer(req, reply, 200, { recorded, inBand: r.inBand, known: r.known }, [
+        `out of band: ${r.recorded.length} recorded, each on Infra changes and sent to the notifiers; in band: ${r.inBand.length}; reported before: ${r.known}`,
+        ...r.recorded.map((c) => `recorded: ${c.id}  ${c.source}  ${c.target}  ${c.what}${c.who ? `  by ${c.who}` : ''}`),
+        ...r.inBand.map((s) => `in band: ${s.source} ${s.key}: ${s.why}`),
+      ].join('\n'));
     });
 
     scope.get<{ Params: { id: string } }>(`${INFRA_PLAN_PATH}/:id`, async (req, reply) => {

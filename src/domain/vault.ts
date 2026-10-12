@@ -9,6 +9,7 @@ export * from './read-only-check.ts';
 // Infra plans (issue #870) sit beside the vault: an apply's credential is minted only for one.
 export type { InfraPlan, PlanApproval, PlanTool, PlanView } from './infra-plans.ts';
 export type { PlanCheck, PlanLevel, PlanRisk, PlanSummary, RiskCallout } from './infra-plan-summary.ts';
+export type { Mark, OutOfBandChange, OutOfBandMark, OutOfBandView, SignalSource } from './out-of-band.ts';
 import type { BoxTool, TemplateLimits } from './sandboxes.ts';
 
 /** A vault secret's name: a letter, then letters, digits, `_`, `.`, `-`; at most 64. */

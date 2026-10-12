@@ -212,6 +212,9 @@
         "github_watch.settings_changed",
         "infra.plan_recorded",
         "infra.plan_approved",
+        "infra.out_of_band_recorded",
+        "infra.out_of_band_marked",
+        "infra.controllers_changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

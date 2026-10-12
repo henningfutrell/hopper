@@ -3005,7 +3005,7 @@ Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret
 
 ## `vault.minted`
 
-Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Settings → Access); `renewal` when the job had one for that profile before. `plan` (issue #870): the approved, current plan an operation that changes infrastructure named. Never the credential.
+Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Settings → Access); `renewal` when the job had one for that profile before. `plan` (issue #870): the approved, current plan an operation that changes infrastructure named. `principal` (issue #871): who the credential writes as, as an audit log names it (the assumed role's session, the service account), so a write it made while valid is not out of band. Never the credential.
 
 | field | type | required |
 |---|---|---|
@@ -3020,6 +3020,7 @@ Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived 
 | `expiresAt` | string | yes |
 | `renewal` | boolean | yes |
 | `plan` | string | no |
+| `principal` | string | no |
 
 ```json
 {
@@ -3035,7 +3036,8 @@ Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived 
   "credential": "KUBE_LAB",
   "decision": "6c1d2e3f-0000-4000-8000-000000000002",
   "expiresAt": "2026-10-09T12:10:00.000Z",
-  "renewal": false
+  "renewal": false,
+  "principal": "system:serviceaccount:web:hopper-read"
 }
 ```
 
@@ -4345,6 +4347,83 @@ Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan
     "name": "123456789012/deploy"
   },
   "target": "uat-network",
+  "by": "Ada"
+}
+```
+
+## `infra.out_of_band_recorded`
+
+Version 1 (`docs/schemas/infra.out_of_band_recorded.v1.json`). A job's read-only check reported an infrastructure change that did not come through IaC or GitOps (issue #871): drift (`gitops`: an app out of sync; `terraform-plan`: a non-empty plan on unchanged code) or an audit-log write (`cloudtrail`, `kube-audit`) by a principal that is no controller identity and no plan-bound apply credential. What changed (`target`), the action in the source's words (`what`), who (`who`), when (`at`), the signal's own id (`key`), the job whose check reported it and its issue. Never the signal's detail. On Infra changes until a person marks it; the notifiers send it.
+
+| field | type | required |
+|---|---|---|
+| `change` | string | yes |
+| `source` | `gitops` \| `terraform-plan` \| `cloudtrail` \| `kube-audit` | yes |
+| `key` | string | yes |
+| `target` | string | yes |
+| `what` | string | yes |
+| `who` | string | no |
+| `at` | string | yes |
+| `job` | string | yes |
+| `issue` | string | no |
+
+```json
+{
+  "change": "5d2c7a10-0000-4000-8000-000000000871",
+  "source": "cloudtrail",
+  "key": "6f0e8d2a-1b3c-4d5e-9f00-0a1b2c3d4e5f",
+  "target": "sg-0abc1234",
+  "what": "ec2:AuthorizeSecurityGroupIngress",
+  "who": "arn:aws:sts::123456789012:assumed-role/Admin/console",
+  "at": "2026-10-12T09:41:00Z",
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "issue": "https://github.com/octo-org/infra/issues/20"
+}
+```
+
+## `infra.out_of_band_marked`
+
+Version 1 (`docs/schemas/infra.out_of_band_marked.v1.json`). A person marked an out-of-band change on Infra changes (issue #871): `adopted` (brought back into git), `reverted`, or `accepted` with its `reason`. Tracking only: the hopper reverts nothing. On the timeline of the job whose check reported the change.
+
+| field | type | required |
+|---|---|---|
+| `change` | string | yes |
+| `source` | `gitops` \| `terraform-plan` \| `cloudtrail` \| `kube-audit` | yes |
+| `target` | string | yes |
+| `what` | string | yes |
+| `mark` | `adopted` \| `reverted` \| `accepted` | yes |
+| `reason` | string | no |
+| `by` | string | yes |
+
+```json
+{
+  "change": "5d2c7a10-0000-4000-8000-000000000871",
+  "source": "cloudtrail",
+  "target": "sg-0abc1234",
+  "what": "ec2:AuthorizeSecurityGroupIngress",
+  "mark": "accepted",
+  "reason": "break-glass fix during the outage; the rule goes into git next",
+  "by": "Ada"
+}
+```
+
+## `infra.controllers_changed`
+
+Version 1 (`docs/schemas/infra.controllers_changed.v1.json`). An admin changed the controller identities (issue #871): the principals whose writes are GitOps's, not out of band. A trailing `*` names a group. `from` and `to` are the whole lists.
+
+| field | type | required |
+|---|---|---|
+| `from` | string[] | yes |
+| `to` | string[] | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": [],
+  "to": [
+    "system:serviceaccount:argocd:argocd-application-controller",
+    "arn:aws:sts::123456789012:assumed-role/atlantis/*"
+  ],
   "by": "Ada"
 }
 ```

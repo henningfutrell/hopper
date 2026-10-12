@@ -46,7 +46,7 @@ export function questionPayload(b: QuestionBody): Record<string, unknown> {
 }
 
 /**
- * A stop of intake (issue #358), or a request card waiting for approval (issue #798). `source` is the sender (the hopper):
+ * A stop of intake (issue #358), a request card waiting for approval (issue #798), or an out-of-band change (issue #871). `source` is the sender (the hopper):
  * the job source's name goes as `sourceName`.
  */
 export function intakePayload(e: DomainEvent, job: Job | undefined): Record<string, unknown> {
@@ -54,6 +54,11 @@ export function intakePayload(e: DomainEvent, job: Job | undefined): Record<stri
   if (e.type === 'source.stalled') return { ...b, sourceName: e.data.source, error: e.data.error, since: e.data.since };
   if (e.type === 'connected_account.expired') return { ...b, provider: e.data.provider, account: e.data.account, reason: e.data.reason };
   if (e.type === 'source.request_opened') return { ...b, sourceName: e.data.source, issueUrl: e.data.key, author: e.data.author, why: e.data.why };
+  // An out-of-band infrastructure change (issue #871): never silent. `signal` is where it was found; `source` stays the sender.
+  if (e.type === 'infra.out_of_band_recorded') {
+    const d = e.data as { change: string; source: string; target: string; what: string; who?: string; at: string };
+    return { ...b, change: d.change, signal: d.source, target: d.target, what: d.what, who: d.who ?? null, happenedAt: d.at };
+  }
   return b;
 }
 

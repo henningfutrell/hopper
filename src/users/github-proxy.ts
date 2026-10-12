@@ -3,6 +3,7 @@
 // reaches it, and git's way to the hopper (issue #652) —, the check of a token a job shows, and this user's GitHub
 // connection, which the hopper acts with for every job when this is its oldest user, and for this user's own jobs' git.
 import { createInfraPlans, type InfraPlans } from '../infra-plans/service.ts';
+import { createOutOfBandChanges, type OutOfBandChanges } from '../infra-plans/out-of-band.ts';
 import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
 import { DEFAULT_CONTRIBUTION, type Job, type MachineSnapshot, type User } from '../domain/types.ts';
 import { createReportGitHub, createReportSender, type ReportGitHub, type ReportSender } from '../bug-reports/index.ts';
@@ -34,6 +35,8 @@ export interface UserGitHubProxy {
    * because the gate reads each plan's branch head on GitHub with this user's connection.
    */
   infraPlans: InfraPlans;
+  /** The out-of-band changes (issue #871): what this user's jobs' checks report, a person's marks, the controller identities. */
+  outOfBand: OutOfBandChanges;
 }
 
 export interface UserGitHubProxyOptions {
@@ -105,6 +108,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
           return api().head(repo, ref);
         },
       }),
+      outOfBand: createOutOfBandChanges({ store: o.store, clock: o.clock }),
       watches: createGitHubWatches({
         store: o.store, now: () => o.clock.now().toISOString(), log: (l) => o.logger.warn(l),
         github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatchGitHub(mine())),

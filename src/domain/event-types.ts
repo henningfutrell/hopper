@@ -37,7 +37,7 @@ export const EVENT_TYPES = [
   'bug_report.filed', 'bug_report.failed', 'bug_report.kept',
   'repo_checks.job_queued', 'repo_checks.dismissed', 'job.child_issue_filed', 'contribution.changed',
   'pointed_job.created', 'pointed_job.status_changed', 'github_watch.changed', 'github_watch.settings_changed',
-  'infra.plan_recorded', 'infra.plan_approved',
+  'infra.plan_recorded', 'infra.plan_approved', 'infra.out_of_band_recorded', 'infra.out_of_band_marked', 'infra.controllers_changed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -83,5 +83,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'bug_report.filed': 1, 'bug_report.failed': 1, 'bug_report.kept': 1,
   'repo_checks.job_queued': 1, 'repo_checks.dismissed': 1, 'job.child_issue_filed': 1, 'contribution.changed': 1,
   'pointed_job.created': 1, 'pointed_job.status_changed': 1, 'github_watch.changed': 1, 'github_watch.settings_changed': 1,
-  'infra.plan_recorded': 1, 'infra.plan_approved': 1,
+  'infra.plan_recorded': 1, 'infra.plan_approved': 1, 'infra.out_of_band_recorded': 1, 'infra.out_of_band_marked': 1, 'infra.controllers_changed': 1,
 };

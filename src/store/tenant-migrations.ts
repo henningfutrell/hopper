@@ -26,6 +26,7 @@ import { JOB_STREAM_TABLES } from './migration-job-stream.ts';
 import { ARTIFACT_REVISION_TABLES, ARTIFACT_TABLES } from './migration-artifacts.ts';
 import { BUG_REPORT_TABLE } from './bug-reports.ts';
 import { INFRA_PLAN_TABLES } from './infra-plans.ts';
+import { OUT_OF_BAND_TABLES } from './out-of-band.ts';
 import { ISSUE_GRAPH_TABLES } from './issue-graph.ts';
 import { POINTED_JOB_TABLE } from './pointed-jobs.ts';
 import { GITHUB_WATCH_TABLE } from './github-watches.ts';
@@ -354,6 +355,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   'CREATE INDEX IF NOT EXISTS events_job ON events (job_id, seq)',
   // 46: Infra plans (issue #870): each plan a job recorded, and a person's approval of it. Tables only: the build before runs on it.
   INFRA_PLAN_TABLES,
+  // 47: Out-of-band changes (issue #871): each change a job's check reported, a person's mark, the controller identities. Tables only: the build before runs on it.
+  OUT_OF_BAND_TABLES,
 ];
 
 /** A user schema's version once migrated. */
