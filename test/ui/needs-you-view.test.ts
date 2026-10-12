@@ -31,7 +31,8 @@ const VAULT = {
   grants: [],
 };
 const PULL_REQUESTS = { yolo: { on: 1, total: 2 }, waiting: [], repos: [{ repo: 'octo-user/hopper', yolo: true, pullRequests: [
-  { jobId: 'j-5', repo: 'octo-user/hopper', issue: { number: 5, url: url(5) }, pullRequest: { number: 6, url: 'https://github.com/octo-user/hopper/pull/6' }, part: false, state: 'open', checks: 'passing', mergeable: 'conflicts', draft: false, yolo: true, waits: 'conflicts' },
+  { jobId: 'j-5', repo: 'octo-user/hopper', issue: { number: 5, url: url(5) }, pullRequest: { number: 6, url: 'https://github.com/octo-user/hopper/pull/6' }, part: false, state: 'open', checks: 'passing', mergeable: 'conflicts', draft: false, yolo: true, waits: 'conflicts', queue: { next: true } },
+  { jobId: 'j-7', repo: 'octo-user/hopper', issue: { number: 7, url: url(7) }, pullRequest: { number: 8, url: 'https://github.com/octo-user/hopper/pull/8' }, part: false, state: 'open', checks: 'failing', mergeable: 'mergeable', draft: false, yolo: true, waits: 'checks failing', gaveUp: 'checks still fail after 3 fixes: a person must look at them' },
 ] }] };
 const PLAN = {
   id: 'p1', tool: 'terraform', asset: { kind: 'aws-account', name: 'lab' }, target: 'lab', repo: 'octo-user/infra', ref: 'main', commit: 'c'.repeat(40),
@@ -136,11 +137,11 @@ describe('the nav: Needs you first, Intake and Access requests top-level, each w
     expect(navLink('#not-taken')).toBeNull();
   });
 
-  it('Infra is badged with the plans that wait, Pull requests with the ones that have merge conflicts', async () => {
+  it('Infra is badged with the plans that wait, Pull requests with the ones the hopper gave up on (issue #927)', async () => {
     await boot('#overview');
     await vi.waitFor(() => expect(badge('#pull-requests')).toBe('1'));
     await vi.waitFor(() => expect(badge('#infra')).toBe('1'));
-    expect(navLink('#pull-requests')!.querySelector('[data-slot="nav-badge"]')!.getAttribute('title')).toBe('1 pull request has merge conflicts');
+    expect(navLink('#pull-requests')!.querySelector('[data-slot="nav-badge"]')!.getAttribute('title')).toBe('the hopper gave up on 1 pull request');
   });
 
   it('an old #not-taken link opens Intake', async () => {
@@ -162,6 +163,8 @@ describe('Needs you lists every kind with its count and links to its home (issue
     expect(row('plans')!.querySelector('a')!.getAttribute('href')).toBe('#infra');
     await vi.waitFor(() => expect(row('pull-requests')?.querySelector('[data-needs-you-count]')?.textContent).toBe('1'));
     expect(row('pull-requests')!.querySelector('a')!.getAttribute('href')).toBe('#pull-requests');
+    // Issue #927: why the hopper gave up shows under its row, not only on the card.
+    expect(row('pull-requests')!.querySelector('[data-needs-you-detail]')!.textContent).toBe('octo-user/hopper#8: checks still fail after 3 fixes: a person must look at them');
   });
 });
 

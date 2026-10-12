@@ -3,7 +3,7 @@
 // fake (fake.ts, either identity). Errors are GitHubApiError, classified
 // permanent (403/404/410/422, missing scope) or transient (network, 5xx, rate limit, timeout).
 
-import type { ChecksState } from '../../domain/pull-requests.ts';
+import type { ChecksState, FailedCheck } from '../../domain/pull-requests.ts';
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
 import type { IssueCrossReferences } from '../../domain/cross-references.ts';
 import type { IssuePlace } from '../../domain/issue-graph.ts';
@@ -60,6 +60,8 @@ export interface OpenPullRequest {
   headCommittedAt?: string;
   /** Its head commit's checks (issue #637, GitHub's status check rollup); absent: it has none. */
   checks?: ChecksState;
+  /** The checks of its head commit that failed (issue #927); read only for one pull request by its number. Absent: none, or not read. */
+  failedChecks?: FailedCheck[];
   /** Its head commit (issue #858: what the mirror merges); absent: GitHub did not say. */
   headOid?: string;
   /** The branch it merges into (issue #677); absent: GitHub did not say. */

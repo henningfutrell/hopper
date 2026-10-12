@@ -1,5 +1,5 @@
 // The in-memory GitHub's types (fake.ts): the helpers a test plays the other side with, apart for the fake's size.
-import type { ChecksState } from '../../domain/pull-requests.ts';
+import type { ChecksState, FailedCheck } from '../../domain/pull-requests.ts';
 import type { FakeMentionInput } from './fake-cross-references.ts';
 import type { GitHubApi, GitHubComment, GitHubIssue, OpenPullRequest, ClosingPullRequest } from './api.ts';
 
@@ -37,7 +37,7 @@ export interface FakeGitHub extends GitHubApi {
    */
   mentionIssue(repo: string, number: number, m: FakeMentionInput): string;
   /** Its head commit's checks now (issue #637); undefined: none. */
-  setChecks(url: string, checks: ChecksState | undefined): void;
+  setChecks(url: string, checks: ChecksState | undefined, failedChecks?: FailedCheck[]): void;
   /** Its base branch moved (issue #736): it has merge conflicts with it now, or not, with no push to it. */
   setConflicting(url: string, conflicting: boolean): void;
   /** A push to a pull request's branch (issue #618): a new head commit at `at`, with or without merge conflicts after it. */
@@ -67,7 +67,7 @@ export interface FakeGitHub extends GitHubApi {
 
 /** A pull request to open: when, a draft or not, merge conflicts or not, and its head commit's time (default createdAt). */
 export interface PullRequestInput {
-  createdAt: string; isDraft?: boolean; conflicting?: boolean; headCommittedAt?: string; checks?: ChecksState; headRef?: string; base?: string;
+  createdAt: string; isDraft?: boolean; conflicting?: boolean; headCommittedAt?: string; checks?: ChecksState; failedChecks?: FailedCheck[]; headRef?: string; base?: string;
   /** Its body in place of the fixed text (issue #786); it still mentions the issue. */
   body?: string;
 }

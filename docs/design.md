@@ -1965,12 +1965,22 @@ by the hopper, so a tend holds the queue only while its job works. Each reposito
 What the hopper does about each pull request that needs tending shows on its card in Pull requests (issue #927,
 `PullRequestCard.queue`, `gaveUp`): "the hopper tends it next", "held behind #N" with why (a job works on it, or it waits
 for its checks to merge), or "the hopper gave up" with why (its checks still fail after `MAX_TENDS` fixes). A stall is never
-silent.
+silent. A pull request the hopper gave up on is also a row line in Needs you, with why (`gaveUpLines`,
+`ui/src/model/pull-requests.ts`): the Pull requests row and its nav badge count those, not the ones with merge conflicts,
+which the hopper rebases itself.
+
+**What a check fix is told** (issue #927, `tendBrief`, `TendChecks`). The follow keeps the checks that failed, by name and
+link, on what it saw (`PullRequestSeen.failedChecks`, at most `MAX_FAILED_CHECKS`), and a `fix_checks` brief lists them. The
+first fix of a row may run the checks again once — a flaky check, not related to the change (a test that fails by chance, a
+runner or network failure) —: it pushes an empty commit and changes no code. A later fix of the row is told to fix the cause.
+The rerun is a push, not GitHub's "re-run failed jobs": the hopper's GitHub App has no Actions write, and a push needs no new
+permission. It counts as one of the row's `MAX_TENDS`.
 
 **Checks as seen** (issue #927, `src/sources/github/closer.ts`). GitHub keeps a pull request's check rollup pending while any
 check still runs, so a failed shard stayed "pending" until every other shard ended. The one pull request a follow reads
 also reads each check's end (`statusCheckRollup.contexts`): a check run that ended `FAILURE`, `TIMED_OUT` or
-`STARTUP_FAILURE`, or a commit status `ERROR` or `FAILURE`, makes the checks failing at once. The lists read the rollup
+`STARTUP_FAILURE`, or a commit status `ERROR` or `FAILURE`, makes the checks failing at once. It keeps the name and link of each
+(`CheckRun.name`, `detailsUrl`; `StatusContext.context`, `targetUrl`). The lists read the rollup
 only: 100 checks of each of 100 pull requests would cost too much of the rate limit.
 
 **Rework** (issue #724, `src/sources/rerun.ts`, `src/sources/github/rework.ts`) sends a done job's open pull request back

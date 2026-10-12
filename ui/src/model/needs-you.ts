@@ -1,6 +1,8 @@
 // Needs you (issue #897): the one inbox of every decision that waits on a person. One row per kind, in a fixed order, each
 // with its count and a link to the page that is its one home; the nav badge is the total, marked when a high-priority job
 // waits (#535). Parked jobs wait to be picked up, not on a decision: Parked keeps its own quiet badge, and has no row here.
+// Pull requests counts the ones the hopper gave up on (issue #927), each with why: one with merge conflicts or failing checks
+// the hopper tends itself, and is no decision.
 // A machine's join takes no approval (a join code joins it at once); a machine whose box template waits counts in Access requests.
 import type { SectionKind } from './wire.ts';
 
@@ -14,14 +16,18 @@ export interface NeedsYouCounts {
   access: number;
   /** Infra plans that wait for an admin to approve them. */
   plans: number;
-  /** Open pull requests with merge conflicts. */
-  conflicts: number;
+  /** The open pull requests the hopper gave up on (issue #927), one line each, with why. */
+  gaveUp: readonly string[];
   /** Jobs that wait on the pre-sort. */
   sorting: number;
   sections: Readonly<Record<SectionKind, { n: number; high: number }>>;
 }
 
-export interface NeedsYouRow { kind: NeedsYouKind; label: string; href: string; n: number; high: number; what: string }
+export interface NeedsYouRow {
+  kind: NeedsYouKind; label: string; href: string; n: number; high: number; what: string;
+  /** One line per thing it counts, shown under the row (issue #927: why the hopper gave up on each pull request). */
+  details?: readonly string[];
+}
 
 /** Each row's page and words: what it counts, said also when nothing waits, so a person knows the kind is there. */
 const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> = {
@@ -33,16 +39,16 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
   research: { label: 'Research', href: '#research', what: 'research reports that wait for you to accept or steer them' },
   logins: { label: 'Logins', href: '#logins', what: 'logins a job waits on, and connections that ended' },
   failures: { label: 'Failures', href: '#failures', what: 'open problems and jobs handed off to a person' },
-  'pull-requests': { label: 'Pull requests', href: '#pull-requests', what: 'pull requests with merge conflicts: fix them, or close them' },
+  'pull-requests': { label: 'Pull requests', href: '#pull-requests', what: 'pull requests the hopper gave up on: fix them, or close them' },
   sorting: { label: 'Pre-sort', href: '#queue', what: 'jobs that wait on the pre-sort before a lane takes them' },
 };
 
 export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {
-  const count = (k: NeedsYouKind): { n: number; high: number } => {
+  const count = (k: NeedsYouKind): { n: number; high: number; details?: readonly string[] } => {
     if (k === 'intake') return { n: c.intake, high: 0 };
     if (k === 'access') return { n: c.access, high: 0 };
     if (k === 'plans') return { n: c.plans, high: 0 };
-    if (k === 'pull-requests') return { n: c.conflicts, high: 0 };
+    if (k === 'pull-requests') return { n: c.gaveUp.length, high: 0, ...(c.gaveUp.length ? { details: c.gaveUp } : {}) };
     if (k === 'sorting') return { n: c.sorting, high: 0 };
     return c.sections[k];
   };

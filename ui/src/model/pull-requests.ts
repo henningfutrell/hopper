@@ -58,6 +58,14 @@ export const yoloNote = (on: boolean): string => on
 export const conflictedPullRequests = (v: PullRequestsView | undefined): number =>
   Array.isArray(v?.repos) ? v.repos.reduce((n, r) => n + r.pullRequests.filter((c) => c.state === 'open' && c.mergeable === 'conflicts').length, 0) : 0;
 
+/**
+ * The open pull requests the hopper gave up on (issue #927), one line each: its repository and number, and why. They wait
+ * on a person, so Needs you lists them.
+ */
+export const gaveUpLines = (v: PullRequestsView | undefined): string[] =>
+  Array.isArray(v?.repos) ? v.repos.flatMap((r) => r.pullRequests.flatMap((c) =>
+    c.state === 'open' && c.gaveUp ? [`${r.repo}#${c.pullRequest?.number ?? c.issue.number}: ${c.gaveUp}`] : [])) : [];
+
 /** The header's line for them; '' when none. */
 export const conflictsLine = (n: number): string =>
   n === 0 ? '' : `${n} ${n === 1 ? 'pull request has' : 'pull requests have'} merge conflicts: fix ${n === 1 ? 'it' : 'them'}, or close ${n === 1 ? 'it' : 'them'}`;

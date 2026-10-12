@@ -28,4 +28,18 @@ describe('the checks of a pull request (issue #927)', () => {
     expect(pullRequestFrom(withRollup({ state: 'PENDING' }), 'pull request')?.checks).toBe('pending');
     expect(pullRequestFrom(withRollup({ state: 'SUCCESS' }), 'pull request')?.checks).toBe('passing');
   });
+
+  it('keeps the name and link of each check that failed, at most ten', () => {
+    const r = withRollup({ state: 'PENDING', contexts: contexts(
+      { __typename: 'CheckRun', name: 'test (1)', conclusion: 'FAILURE', detailsUrl: 'https://github.com/owner/repo/actions/runs/1/job/2' },
+      { __typename: 'CheckRun', name: 'test (2)', conclusion: null, detailsUrl: 'https://github.com/owner/repo/actions/runs/1/job/3' },
+      { __typename: 'StatusContext', context: 'ci/other', state: 'ERROR', targetUrl: null },
+    ) });
+    expect(pullRequestFrom(r, 'pull request')?.failedChecks).toEqual([
+      { name: 'test (1)', url: 'https://github.com/owner/repo/actions/runs/1/job/2' }, { name: 'ci/other' },
+    ]);
+    const many = withRollup({ state: 'FAILURE', contexts: contexts(...Array.from({ length: 12 }, (_, i) => ({ __typename: 'CheckRun', name: `c${i}`, conclusion: 'FAILURE' }))) });
+    expect(pullRequestFrom(many, 'pull request')?.failedChecks).toHaveLength(10);
+    expect(pullRequestFrom(withRollup({ state: 'SUCCESS' }), 'pull request')?.failedChecks).toBeUndefined();
+  });
 });

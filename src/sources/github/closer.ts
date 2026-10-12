@@ -10,7 +10,7 @@
 
 import { GitHubApiError } from './api.ts';
 import type { BranchPullRequest, ClosingPullRequest, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
-import type { ChecksState } from '../../domain/pull-requests.ts';
+import { MAX_FAILED_CHECKS, type ChecksState, type FailedCheck } from '../../domain/pull-requests.ts';
 import type { CrossReferenceKind, IssueCrossReferences, Mention } from '../../domain/cross-references.ts';
 
 /**
@@ -22,7 +22,7 @@ const HEAD_COMMIT = 'headRefOid headRefName baseRefName commits(last: 1) { nodes
  * The head commit with each check's end (issue #927), for the one pull request a follow reads: a failed check counts while
  * others still run. Not in the lists, where 100 checks of 100 pull requests would cost too much of the rate limit.
  */
-const HEAD_COMMIT_CHECKS = 'headRefOid headRefName baseRefName commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state contexts(first: 100) { nodes { __typename ... on CheckRun { conclusion } ... on StatusContext { state } } } } } } }';
+const HEAD_COMMIT_CHECKS = 'headRefOid headRefName baseRefName commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state contexts(first: 100) { nodes { __typename ... on CheckRun { name conclusion detailsUrl } ... on StatusContext { context state targetUrl } } } } } } }';
 
 export const CLOSING_PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { issue(number: $number) {
@@ -58,7 +58,8 @@ export const OPEN_REPO_PULL_REQUESTS_QUERY = `query($owner: String!, $name: Stri
   }
 }`;
 
-interface Rollup { state?: string; contexts?: { nodes?: ({ conclusion?: string | null; state?: string } | null)[] } }
+interface Context { name?: string; conclusion?: string | null; detailsUrl?: string | null; context?: string; state?: string; targetUrl?: string | null }
+interface Rollup { state?: string; contexts?: { nodes?: (Context | null)[] } }
 interface Closer { __typename?: string; url?: string; createdAt?: string; mergedAt?: string | null }
 interface Referenced {
   url?: string; createdAt?: string; isDraft?: boolean; state?: string; mergeable?: string;
@@ -122,12 +123,22 @@ const rollupChecks = (r: Rollup | null | undefined): ChecksState | undefined => 
   return r?.contexts?.nodes?.some((n) => FAILED.has(n?.conclusion ?? n?.state ?? '')) ? 'failing' : state;
 };
 
+/** Each check that failed (issue #927), with its link, at most `MAX_FAILED_CHECKS`: what a `fix_checks` tend is told. */
+const failedChecksOf = (r: Rollup | null | undefined): FailedCheck[] =>
+  (r?.contexts?.nodes ?? []).flatMap((n): FailedCheck[] => {
+    const name = n?.name ?? n?.context;
+    const url = n?.detailsUrl ?? n?.targetUrl;
+    return n && name && FAILED.has(n.conclusion ?? n.state ?? '') ? [{ name, ...(url ? { url } : {}) }] : [];
+  }).slice(0, MAX_FAILED_CHECKS);
+
 /** Its head commit, base, the head's time and checks, when GitHub said; checks the app may not read: unknown (issue #855). */
-const headOf = (n: Referenced, checksUnknown: boolean): { headCommittedAt?: string; checks?: ChecksState; headOid?: string; base?: string; headRef?: string } => {
+const headOf = (n: Referenced, checksUnknown: boolean): { headCommittedAt?: string; checks?: ChecksState; failedChecks?: FailedCheck[]; headOid?: string; base?: string; headRef?: string } => {
   const commit = n.commits?.nodes?.at(-1)?.commit;
   const checks = rollupChecks(commit?.statusCheckRollup) ?? (checksUnknown && !commit?.statusCheckRollup ? 'unknown' : undefined);
+  const failedChecks = failedChecksOf(commit?.statusCheckRollup);
   return {
     ...(commit?.committedDate ? { headCommittedAt: commit.committedDate } : {}), ...(checks ? { checks } : {}),
+    ...(failedChecks.length ? { failedChecks } : {}),
     ...(n.headRefOid ? { headOid: n.headRefOid } : {}), ...(n.baseRefName ? { base: n.baseRefName } : {}),
     ...(n.headRefName ? { headRef: n.headRefName } : {}),
   };

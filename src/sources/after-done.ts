@@ -23,7 +23,8 @@
 // The tending queue (issue #796): after every follow of the sync, at most one tend starts per job repository, and none
 // while its head holds it (`queueHead`): a tend job at work, or a pull request on its way to the hopper's merge. The next
 // is the rules' first (`tendOrder`), or Jev's pick (`merge-order`, `tend-order.ts`). A pull request whose checks stay pending
-// holds it no more than `PENDING_HOLD_MS` after its last push; one not seen yet holds nothing (issue #927).
+// holds it no more than `PENDING_HOLD_MS` after its last push; one not seen yet holds nothing (issue #927). A `fix_checks`
+// brief names the checks that failed, and the first fix of a row may run a flaky one again once (issue #927).
 // Cross-references (issue #430): before each follow, the cross-references of the job's item (`JobSource.crossReferences`) are
 // asked again and kept on the job (`crossReferences`), when they changed. A throw is only logged: the follow goes on, and
 // they are asked again next sync.
@@ -33,7 +34,7 @@ import { pickHead } from './tend-order.ts';
 import { SourceError } from '../domain/ports.ts';
 import {
   failedTend, following, followsWhenEnded, judge, MAX_TENDS, rechecksMerge, reconcilable, tendBrief, tendsInRow, tendStep,
-  type ActingPerson, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestAct, type PullRequestSeen, type Tended,
+  type ActingPerson, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestAct, type PullRequestSeen, type Tended, type TendChecks,
 } from '../domain/types.ts';
 
 export interface AfterDoneContext {
@@ -133,21 +134,25 @@ export function createAfterDone(c: AfterDoneContext) {
     if (c.host.finishComplete(jobId, 'partlyDone' in v ? v.partlyDone : undefined)) c.reportAgain(jobId);
   }
 
-  /** Its followed pull request needs tending (issue #736), and it may be: the step, and its URL; else undefined. */
-  function tendDue(job: Job | undefined): { step: NonNullable<ReturnType<typeof tendStep>>; url: string } | undefined {
+  /**
+   * Its followed pull request needs tending (issue #736), and it may be: the step, its URL, and what the brief says of its
+   * checks — the ones that failed, and a rerun for the first fix of a row (issue #927); else undefined.
+   */
+  function tendDue(job: Job | undefined): { step: NonNullable<ReturnType<typeof tendStep>>; url: string; checks: TendChecks } | undefined {
     if (!job || !followsWhenEnded(job) || !following(job)) return undefined;
     const s = job.sourceState?.source as { pullRequest?: string; seen?: PullRequestSeen } | undefined;
     const step = tendStep(s?.seen);
     if (!step || !s?.pullRequest) return undefined;
-    if (step === 'fix_checks' && tendsInRow(job, s.pullRequest, (id) => store.jobs.get(id)) >= MAX_TENDS) return undefined;
-    return { step, url: s.pullRequest };
+    const inRow = step === 'fix_checks' ? tendsInRow(job, s.pullRequest, (id) => store.jobs.get(id)) : 0;
+    if (inRow >= MAX_TENDS) return undefined;
+    return { step, url: s.pullRequest, checks: { failed: s.seen?.failedChecks ?? [], rerun: inRow === 0 } };
   }
 
   /** Tend the job's followed pull request when it needs it (issue #736): its item runs again with the tend brief. */
   async function tendIfDue(jobId: string): Promise<void> {
     const due = tendDue(store.jobs.get(jobId));
     if (!due) return;
-    const r = await c.tend(jobId, tendBrief(due.url, due.step));
+    const r = await c.tend(jobId, tendBrief(due.url, due.step, due.checks));
     if (!r.ok) {
       if (r.reason !== 'conflict') c.failed(jobId, new Error(r.message));
       return;

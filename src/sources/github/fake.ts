@@ -285,7 +285,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     openReferencingPullRequest: (repo, n, o) => openPull(repo, n, o, false, 'Refs'),
     openUnlinkedPullRequest: (repo, o) => addPull(repo, '', o, false, 'A change.'),
     mentionIssue: (repo, n, m) => { find(repo, n); return xrefs.mention(key(repo, n), repo, m); },
-    setChecks(url, checks) { const p = pull(url); if (checks) p.checks = checks; else delete p.checks; },
+    setChecks(url, checks, failedChecks) { const p = pull(url); if (checks) p.checks = checks; else delete p.checks; if (failedChecks) p.failedChecks = failedChecks; else delete p.failedChecks; },
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
     closePullRequest(url) { pull(url).state = 'closed'; },
     markReady(url) { pull(url).isDraft = false; },

@@ -80,7 +80,15 @@ export interface PullRequestSeen {
   /** Its head branch (issue #900): a pull request whose base it is, is stacked on it. */
   headRef?: string;
   mergeError?: string;
+  /** The checks of its head commit that failed (issue #927), as the follow read them: what a `fix_checks` tend is told. */
+  failedChecks?: FailedCheck[];
 }
+
+/** A check of a pull request's head commit that failed (issue #927): its name, and the link to its run or its log. */
+export interface FailedCheck { name: string; url?: string }
+
+/** The most failed checks a follow keeps of one pull request (issue #927). */
+export const MAX_FAILED_CHECKS = 10;
 
 /**
  * How long a pull request with no checks waits for checks to start after its last push (issue #677): a check that starts
@@ -172,11 +180,27 @@ export const tendStep = (seen: PullRequestSeen | undefined): TendStep | undefine
  * What the item's new job is told after its prompt when the hopper tends its waiting pull request (issue #736): go on with
  * that pull request, the step, and to fail saying why when it cannot. Fixed text, no model call.
  */
-export function tendBrief(pullRequest: string, step: TendStep): string {
+export function tendBrief(pullRequest: string, step: TendStep, checks: TendChecks = {}): string {
   return [`The hopper runs this issue again to tend its open pull request ${pullRequest}.`,
-    `Work on the branch of ${pullRequest}.`, ...stepLines({ pullRequest, step }), 'Do not open a new pull request.',
+    `Work on the branch of ${pullRequest}.`, ...stepLines({ pullRequest, step }), ...(step === 'fix_checks' ? checkLines(checks) : []),
+    'Do not open a new pull request.',
     'If you cannot resolve a conflict or fix a check, end the job as failed. Say which files or checks, and why.',
     'Then end the job as done.'].join('\n');
+}
+
+/**
+ * What a `fix_checks` tend is told of its checks (issue #927): the checks that failed, as the follow read them, and whether
+ * it may run them again once (`rerun`: the first fix of a row) — a flaky check, not related to the change, gets one rerun
+ * before anyone changes code for it.
+ */
+export interface TendChecks { failed?: readonly FailedCheck[]; rerun?: boolean }
+
+function checkLines({ failed = [], rerun = false }: TendChecks): string[] {
+  const named = failed.length === 0 ? [] : ['The checks that failed:', ...failed.map((c) => `- ${c.name}${c.url ? `: ${c.url}` : ''}`)];
+  const again = rerun
+    ? ['If a check failed for a cause not related to this pull request (a flaky test, a runner or network failure), run the checks again once: push an empty commit (git commit --allow-empty) to the branch, change no code, and end the job as done.']
+    : ['A job tended these checks before. Do not run them again only to retry: fix the cause.'];
+  return [...named, ...again];
 }
 
 /** What a tend left on the job it tended (issue #736), in its source state (`tended`): it follows no more. When: `job.pull_request_tended`. */
