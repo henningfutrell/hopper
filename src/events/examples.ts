@@ -253,6 +253,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     plan: '0b7e5a3c-0000-4000-8000-000000000870', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network', repo: 'octo-org/infra',
     ref: 'issue-12', commit: 'e83c5163316f89bfbde7d9ab23ca2e25604af290', pullRequest: 13, read: 'read/aws-role/123456789012/readonly',
     issue: 'https://github.com/octo-org/infra/issues/12', file: true, expiresAt: '2026-10-12T11:00:00.000Z',
+    summary: { words: 'Adds 2 security group rules in uat; changes nothing in prod; destroys nothing', level: 'low', risks: ['network'], failed: false },
   },
   'infra.plan_approved': { plan: '0b7e5a3c-0000-4000-8000-000000000870', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network', by: 'Ada' },
 };

@@ -5,10 +5,11 @@
 //   Scenario: a read needs no plan
 //   Scenario: any other operation without a plan is refused, and says how to get one
 //   Scenario: a plan of another asset, a stale plan, an unapproved plan are refused
+//   Scenario: a plan that failed a check (the MAP tag) is refused, approved or not
 //   Scenario: a plan made at another commit than the branch's head now is refused: plan again
 //   Scenario: a plan input that is not whole is refused, with why
 import { describe, expect, it } from 'vitest';
-import { applyRefusal, headRefusal, planInputProblem, PLAN_TEXT_MAX, type InfraPlan, type PlanInput } from '../../src/domain/infra-plans.ts';
+import { applyRefusal, headRefusal, planInputProblem, PLAN_JSON_MAX, PLAN_TEXT_MAX, type InfraPlan, type PlanInput } from '../../src/domain/infra-plans.ts';
 import type { OperationProfile } from '../../src/domain/access.ts';
 
 const COMMIT = 'a'.repeat(40);
@@ -41,6 +42,13 @@ describe('the apply gate', () => {
     expect(applyRefusal(apply, plan.id, plan, approval, now)).toBeUndefined();
   });
 
+  it('refuses a plan that failed a check, approved or not', () => {
+    const now = at('2026-10-12T10:10:00Z');
+    const check = { name: 'map-tag' as const, ok: false, words: '1 new AWS resource lacks the MAP tag', resources: ['aws_instance.a'] };
+    const failed: InfraPlan = { ...plan, summary: { words: 'Adds 1 instance', level: 'high', counts: { create: 1, update: 0, replace: 0, delete: 0 }, environments: [], risks: [], blastRadius: '', checks: [check], failed: true } };
+    expect(applyRefusal(apply, plan.id, failed, approval, now)).toMatch(/failed its checks: 1 new AWS resource lacks the MAP tag\. Fix the code and plan again$/);
+  });
+
   it('refuses a plan made at another commit than the head now', () => {
     expect(headRefusal(plan, COMMIT)).toBeUndefined();
     expect(headRefusal(plan, 'b'.repeat(40))).toMatch(/^the code moved since plan .*octo\/infra issue-1 is at bbbbbbbbbbbb now, the plan was made at aaaaaaaaaaaa\. Plan again$/);
@@ -64,5 +72,6 @@ describe('a plan input', () => {
     expect(planInputProblem({ ...input, read: 'write/aws-role/x' })).toMatch(/^read/);
     expect(planInputProblem({ ...input, text: ' ' })).toMatch(/^text must hold/);
     expect(planInputProblem({ ...input, text: 'x'.repeat(PLAN_TEXT_MAX + 1) })).toMatch(/at most/);
+    expect(planInputProblem({ ...input, json: 'x'.repeat(PLAN_JSON_MAX + 1) })).toMatch(/^json must be at most/);
   });
 });

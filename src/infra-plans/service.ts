@@ -4,8 +4,10 @@
 // head is read on GitHub at each ask, so a plan made before the code moved is never applied.
 import { createHash, randomUUID } from 'node:crypto';
 import type { OperationProfile } from '../domain/access.ts';
+import { changesOf } from '../domain/infra-plan-changes.ts';
+import { summarize } from '../domain/infra-plan-summary.ts';
 import {
-  applyRefusal, headRefusal, planInputProblem, PLAN_FILE_MAX, PLAN_ID, PLAN_TTL_MINUTES, type InfraPlan, type PlanApproval, type PlanInput, type PlanView,
+  applyRefusal, failedChecks, headRefusal, planInputProblem, PLAN_FILE_MAX, PLAN_ID, PLAN_TTL_MINUTES, type InfraPlan, type PlanApproval, type PlanInput, type PlanView,
 } from '../domain/infra-plans.ts';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
@@ -47,9 +49,14 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
       const problem = planInputProblem(input);
       if (problem) return { status: 400, no: problem };
       if (file && (file.length === 0 || file.length > PLAN_FILE_MAX)) return { status: 400, no: `the plan file must be 1 to ${PLAN_FILE_MAX} bytes` };
+      const changes = changesOf(input.tool, input.text, input.json);
+      if (typeof changes === 'string') return { status: 400, no: changes };
+      const { json: _json, ...said } = input;
+      const target = input.target.trim();
+      const summary = summarize(input.tool, changes, { target, asset: input.asset });
       const now = o.clock.now();
       const plan: InfraPlan = {
-        id: randomUUID(), ...input, target: input.target.trim(), job: job.id, ...(job.source?.url ? { issue: job.source.url } : {}),
+        id: randomUUID(), ...said, target, summary, job: job.id, ...(job.source?.url ? { issue: job.source.url } : {}),
         ...(file ? { file: { size: file.length, sha256: createHash('sha256').update(file).digest('hex') } } : {}),
         createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + PLAN_TTL_MINUTES * 60_000).toISOString(),
       };
@@ -61,6 +68,7 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
             plan: plan.id, tool: plan.tool, asset: plan.asset, target: plan.target, repo: plan.repo, ref: plan.ref, commit: plan.commit,
             ...(plan.pullRequest !== undefined ? { pullRequest: plan.pullRequest } : {}), ...(plan.read ? { read: plan.read } : {}),
             ...(plan.issue ? { issue: plan.issue } : {}), file: file !== undefined, expiresAt: plan.expiresAt,
+            summary: { words: summary.words, level: summary.level, risks: summary.risks.map((r) => r.risk), failed: summary.failed },
           },
         });
       });
@@ -74,6 +82,8 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
       const plan = PLAN_ID.test(id) ? plans.get(id) : undefined;
       if (!plan) return { status: 404, no: `no plan ${id}` };
       if (plans.approval(id)) return { status: 409, no: `plan ${id} is approved already` };
+      const failed = failedChecks(plan);
+      if (failed) return { status: 409, no: `plan ${id} failed its checks, so nobody approves it: ${failed}` };
       o.store.tx(() => {
         plans.approve({ plan: id, by, at: o.clock.now().toISOString() });
         o.store.events.append({ type: 'infra.plan_approved', jobId: plan.job, data: { plan: id, tool: plan.tool, asset: plan.asset, target: plan.target, by } });

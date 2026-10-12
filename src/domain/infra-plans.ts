@@ -4,6 +4,7 @@
 // `read`) only for an apply that names a plan of the same asset, made at the commit its branch is at now, not stale, and
 // approved by a person. The types, the limits, the checks and the repository port. Pure.
 import { profileProblem, type Asset, type OperationProfile } from './access.ts';
+import type { PlanSummary } from './infra-plan-summary.ts';
 import { profileInWords } from './minting.ts';
 
 /** What made the plan: `terraform plan -out`, `helm diff`, or a GitOps (Argo CD) diff. */
@@ -15,6 +16,8 @@ export const PLAN_TTL_MINUTES = 60;
 /** The most text a plan keeps (its `terraform show` text, the diff), and the most bytes of a saved plan file. */
 export const PLAN_TEXT_MAX = 1024 * 1024;
 export const PLAN_FILE_MAX = 8 * 1024 * 1024;
+/** The most bytes of `terraform show -json`: it holds the state before and after, so it is larger than the text. */
+export const PLAN_JSON_MAX = 8 * 1024 * 1024;
 
 /** A commit as git names it in full: 40 hex (SHA-1) or 64 (SHA-256). */
 export const COMMIT = /^([0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -41,11 +44,15 @@ export interface PlanInput {
   read?: string;
   /** The plan as text: `terraform show` of the plan file, the diff. */
   text: string;
+  /** Terraform only, and needed there: `terraform show -json` of the plan file, read into the summary, not kept. */
+  json?: string;
 }
 
 /** A kept plan: what the job said, who made it, when, and when it goes stale. Never changed once kept. */
-export interface InfraPlan extends Omit<PlanInput, 'asset'> {
+export interface InfraPlan extends Omit<PlanInput, 'asset' | 'json'> {
   id: string;
+  /** What it changes in plain words, its risks and checks (infra-plan-summary.ts). Absent on a plan kept before. */
+  summary?: PlanSummary;
   asset: Asset;
   /** The saved plan file (`terraform plan -out`): its size and SHA-256; its bytes are kept beside the plan. */
   file?: { size: number; sha256: string };
@@ -85,6 +92,7 @@ export function planInputProblem(p: PlanInput): string | undefined {
   if (p.read !== undefined && !/^read\/[a-z-]+\/\S{1,200}$/.test(p.read)) return 'read must be the read profile the plan was made with: read/<kind>/<asset>';
   if (!p.text.trim()) return 'text must hold the plan: terraform show of the plan file, or the diff';
   if (Buffer.byteLength(p.text) > PLAN_TEXT_MAX) return `text must be at most ${PLAN_TEXT_MAX} bytes`;
+  if (p.json !== undefined && Buffer.byteLength(p.json) > PLAN_JSON_MAX) return `json must be at most ${PLAN_JSON_MAX} bytes`;
   return undefined;
 }
 
@@ -101,9 +109,15 @@ export function applyRefusal(profile: OperationProfile, planId: string | undefin
   if (!plan) return `no plan ${planId}: ${plan_again}`;
   if (!sameAsset(plan.asset, profile.asset)) return `plan ${plan.id} is a plan for ${plan.asset.kind} ${plan.asset.name}, not ${profile.asset.kind} ${profile.asset.name}`;
   if (now.getTime() >= Date.parse(plan.expiresAt)) return `plan ${plan.id} is stale: it was made ${plan.createdAt} and could be applied until ${plan.expiresAt}. Plan again`;
+  const failed = failedChecks(plan);
+  if (failed) return `plan ${plan.id} failed its checks: ${failed}. Fix the code and plan again`;
   if (!approval) return `plan ${plan.id} is not approved: a person approves it in Infra changes, then the job asks again`;
   return undefined;
 }
+
+/** The words of the checks a plan failed (the MAP tag), or undefined: such a plan is never approved or applied. */
+export const failedChecks = (plan: Pick<InfraPlan, 'summary'>): string | undefined =>
+  (plan.summary?.failed ? plan.summary.checks.filter((c) => !c.ok).map((c) => c.words).join('; ') : undefined);
 
 /** Why the plan cannot be applied at the branch's head now, or undefined. */
 export const headRefusal = (plan: InfraPlan, head: string): string | undefined => (head === plan.commit

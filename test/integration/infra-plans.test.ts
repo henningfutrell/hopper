@@ -22,6 +22,8 @@
 //   Scenario: the code moved since the plan: the apply is refused, and STS is not asked
 //   Scenario: a current, approved plan mints the write credential, and the audit names the plan
 //   Scenario: a plan for another asset, and a plan that is not whole, are refused
+//   Scenario: each plan is kept with its summary in plain words: Infra changes lists it, the timeline says it
+//   Scenario: a new AWS resource without the MAP tag fails the plan: kept and shown, nobody approves it, nothing applies it
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { InfraPlan, PlanView } from '../../src/domain/infra-plans.ts';
@@ -38,6 +40,14 @@ const ROLE = `aws-role/${ACCOUNT}/deploy`;
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
 const FILE = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 1, 2, 255]);
+const MAP = { 'map-migrated': 'migXWT2TUR4TJ' };
+/** `terraform show -json` of a plan that adds one security group rule, `tags_all` as the AWS provider's default tags make it. */
+const tfJson = (tags: Record<string, string>) => JSON.stringify({
+  format_version: '1.2', planned_values: {}, resource_changes: [{
+    address: 'aws_security_group.a', mode: 'managed', type: 'aws_security_group', provider_name: 'registry.terraform.io/hashicorp/aws',
+    change: { actions: ['create'], before: null, after: { name: 'a', tags: {}, tags_all: tags }, after_unknown: {} },
+  }],
+});
 
 let t: TestApp | undefined;
 const box = boxes();
@@ -96,7 +106,7 @@ async function asJob(a: TestApp, job: string, method: string, path: string, body
 const PLAN = {
   tool: 'terraform', asset: ROLE, target: 'uat-network', repo: 'octo/infra', ref: 'issue-1', commit: A, pullRequest: 4,
   read: `read/aws-role/${ACCOUNT}/deploy`, text: 'Terraform will perform the following actions:\n  + aws_security_group_rule.a\nPlan: 1 to add, 0 to change, 0 to destroy.',
-  file: FILE.toString('base64'),
+  file: FILE.toString('base64'), json: tfJson(MAP),
 };
 
 const record = async (a: TestApp, job: string, body: Record<string, unknown> = PLAN): Promise<InfraPlan> => {
@@ -171,5 +181,36 @@ describe('no apply without a plan', () => {
     expect(bad.status).toBe(400);
     expect(bad.json.error).toMatch(/^commit must be/);
     expect((await asJob(a, job, 'POST', '/job/infra-plans', { ...PLAN, file: 'not base64!' })).status).toBe(400);
+    const { json: _json, ...noJson } = PLAN;
+    const blind = await asJob(a, job, 'POST', '/job/infra-plans', noJson);
+    expect(blind.status).toBe(400);
+    expect(blind.json.error).toMatch(/^json must hold terraform show -json/);
+  });
+
+  it('keeps each plan with its summary in plain words; Infra changes lists it and the timeline says it', async () => {
+    const { a, session, job } = await boot();
+    const plan = await record(a, job);
+    const words = 'Adds 1 security group in uat; changes nothing in prod; destroys nothing';
+    expect(plan.summary).toMatchObject({ words, level: 'low', environments: ['uat'], failed: false, risks: [{ risk: 'network' }] });
+    expect(plan.summary!.blastRadius).toBe(`1 resource of 1 kind, in uat; applied as aws-role ${ACCOUNT}/deploy to uat-network`);
+    const listed = (await a.api<{ plans: PlanView[] }>('GET', '/api/infra-plans', undefined, { 'x-hopper-session': session })).body.plans;
+    expect(listed[0]!.summary).toEqual(plan.summary);
+    expect((await a.events()).find((e) => e.type === 'infra.plan_recorded')).toMatchObject({ data: { summary: { words, level: 'low', risks: ['network'], failed: false } } });
+  });
+
+  it('fails a plan that adds an AWS resource without the MAP tag: kept and shown, nobody approves it, nothing applies it', async () => {
+    const { a, session, dir, token, sts, job } = await boot();
+    const plan = await record(a, job, { ...PLAN, json: tfJson({ Name: 'a' }) });
+    expect(plan.summary).toMatchObject({ failed: true, level: 'high', checks: [{ name: 'map-tag', ok: false, resources: ['aws_security_group.a'] }] });
+    const listed = (await a.api<{ plans: PlanView[] }>('GET', '/api/infra-plans', undefined, { 'x-hopper-session': session })).body.plans;
+    expect(listed.map((p) => p.id)).toEqual([plan.id]);
+
+    const approve = await a.ui('/ui/api/infra-plans', { action: 'approve', plan: plan.id }, { token: session });
+    expect(approve.status).toBe(409);
+    expect(JSON.stringify(approve.body)).toMatch(/failed its checks.*lacks the MAP tag map-migrated=migXWT2TUR4TJ/);
+    const refused = await helper(dir, ['aws', 'apply', ROLE, '--plan', plan.id], token);
+    expect(refused.code).not.toBe(0);
+    expect(refused.stderr).toMatch(/failed its checks/);
+    expect(sts.seen).toHaveLength(0);
   });
 });
