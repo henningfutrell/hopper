@@ -71,7 +71,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per host, stopped at the timeout, recorded, results kept an hour (`service.ts`), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
-| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
+| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
@@ -2725,7 +2725,10 @@ event; in-memory only.
   end instead of polling; body adds `repo`, `issueNumber`, `priority`, and `result` with `partlyDone?`, or `error`); `auth.pending` (a new code
   too, `renewed: true`) and `auth.expired` (issue #698, "Logins": body adds `loginId`, `tool`, `host`, `run`, `machineId`,
   `laneId`, `priority`, `high`, `repo`, `issueNumber`, `expiresAt`, `expiresInSeconds` and `loginsUrl`, the Logins view —
-  `NotifierEvents.loginsUrl` —; never the URL to open or the code).
+  `NotifierEvents.loginsUrl` —; never the URL to open or the code); `infra.out_of_band_recorded` (issue #871);
+  `infra.plan_recorded`, `infra.plan_approved` and `infra.plan_applied` (issue #870 part 4, "Infra plans: environment
+  watchers": the plan's notice from `NotifierEvents.infraPlan`, with the watchers of its environments; `infra.plan_applied`
+  is a `vault.minted` that names a plan and is no renewal).
 - `hopper.reachable` (issue #795): where the hopper is reached from outside, while the **tunnel** is up
   (`NotifierEvents.reach`, the tunnel watch: "The tunnel"). Body `{ source: 'hopper', kind: 'hopper.reachable', at,
   reason, url, apiTokenUrl, tokenRefreshUrl, heartbeatSeconds }`: `url` is the remote access URL ("Remote access"),
@@ -15298,6 +15301,49 @@ Tests: `test/domain/infra-plans.test.ts` (the approver of each kind of plan, and
 a 403, which an admin then approves; with auto-approve on, a low-risk uat plan is approved as it is kept, the event says
 `auto`, and it mints; a prod plan still waits; an operator cannot turn auto-approve on), `test/ui/infra-plans.test.ts`
 (the waiting words, the auto-approved words, whom Approve is offered to, the confirmation).
+
+## Infra plans: environment watchers (issue #870, part 4, 2026-10-12)
+
+Every plan, approval and apply reaches the people who watch its environment. Before this, a plan and its apply were on
+Infra and on the job's timeline, and a webhook subscriber got the events, but no notifier sent them: a person who did not
+open Infra did not learn of a plan.
+
+- **The environment watchers** (`InfraWatchers`, `src/domain/infra-watchers.ts`, pure; the user's settings key
+  `infraWatchers`): for each environment a plan summary names (`prod`, `uat`, `staging`, `dev`, `qa`), and for every plan
+  (`*`), names as the notifier's receiver knows them: a handle, a team, a channel. An admin names them on Infra, or
+  `POST /ui/api/infra-plans/watchers { watchers }` (the whole list; one line, no comma, at most 50 an environment; kept
+  trimmed, each name once, an environment with no name dropped; 400 for an environment the hopper does not know).
+  `infra.watchers_changed { from, to, by }`. `GET /api/infra-plans` carries `watchers`. Not a box action: it approves no
+  work.
+- **A plan's watchers** (`watchersOf`): the watchers of `*`, then of each environment the plan names, each once. A plan
+  that names no environment, or was kept before summaries, reaches the watchers of `*` only.
+- **The notification** (`planNotice`, read through the notifier feed's `infraPlan(id)` at each send, so it names the
+  watchers as they are then). The Grok Bot routine sends:
+  - `infra.plan_recorded`: each plan a job records, a failed one too;
+  - `infra.plan_approved`: each approval, a person's (`approvedBy`) or the hopper's (`auto`);
+  - `infra.plan_applied`: each `vault.minted` that names a plan, which is an apply; not its renewal, which is the same
+    apply going on, and not a read, which names no plan.
+  Each body carries the plan (`plan`, `tool`, `asset`, `target`, `repo`, `ref`, `commit`, `pullRequest`), its `words`,
+  `level`, `risks`, `environments`, `blastRadius` and `failed`, its `approver` (who and why), `watchers`, and `infraUrl`;
+  an apply adds `operation` and `expiresAt`. Never the plan's text or file, the credential, or the box.
+- Webhook subscribers get the same events as before (`infra.plan_recorded`, `infra.plan_approved`, `vault.minted`); the
+  watchers are not in them.
+
+**Why names, not addresses.** The hopper's notifier is one receiver (the Grok Bot routine) that already tells people; the
+hopper keeps no address book and sends no mail. It says whom to tell, and the receiver tells them. A notifier that
+delivers to people itself would read the same names.
+
+**Why a separate settings key.** The auto-approve record stays `{ autoApprove }`, so a build before this, which writes that
+record whole, does not drop the watchers.
+
+**Not built here (the next parts of #870).** The nightly drift plan; the terraform wrapper on write boxes; Argo CD syncs
+through the gate; the check of a plan's `read` against the job's mints.
+
+Tests: `test/domain/infra-watchers.test.ts` (a plan's watchers, the list's checks, the notice and what it leaves out),
+`test/plugins/grokbot-infra-plans.test.ts` (the three posts, each with its watchers; no renewal, no read),
+`test/integration/infra-plans.test.ts` (an admin names the watchers and an operator cannot; through the real daemon, a
+plan recorded, approved and applied is posted three times, each naming its watchers, never the credential or the plan's
+text), `test/ui/infra-plans.test.ts` (the watchers as a person types them).
 
 ## Git efficiency (issue #858 part 1, 2026-10-12)
 

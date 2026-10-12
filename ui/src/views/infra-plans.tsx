@@ -5,15 +5,17 @@
 // high risk. Until it is stale, the vault mints the credential an apply that names it asks, if its branch is still at the
 // plan's commit. An admin turns auto-approve on: the hopper then approves a low-risk uat plan when it is kept, and it is
 // still shown here. A job never approves one, and nothing here changes a plan. The page loads the plans (infra.tsx).
+// An admin names the environment watchers (part 4): the notifiers name them with each plan, approval and apply.
 import { Check } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import { applyLine, askedLine, planApprove, planExplainer, planHeadline, planState } from '@/model/infra-plans';
-import type { InfraPlan, InfraPlanSettings, PlanApply, PlanView } from '@/model/wire';
+import { applyLine, askedLine, planApprove, planExplainer, planHeadline, planState, watchersFrom, watchersText } from '@/model/infra-plans';
+import type { InfraPlan, InfraPlanSettings, InfraWatchers, PlanApply, PlanView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useCanAdmin, useCanOperate, useServerNow } from '@/store/selectors';
 
@@ -59,6 +61,41 @@ export function AutoApprove({ settings, onSettings }: { settings: InfraPlanSetti
       <Switch checked={settings.autoApprove} disabled={busy || !admin} aria-label="Auto-approve low-risk uat plans" onCheckedChange={(on) => void change(on)} />
       The hopper approves a low-risk plan in uat only when a job records it. It still shows here.
     </label>
+  );
+}
+
+/**
+ * The environment watchers (issue #870 part 4): an admin names who is told of each plan, approval and apply, one
+ * environment a line; any other role reads them. `onWatchers` takes the list the change answered.
+ */
+export function Watchers({ watchers, onWatchers }: { watchers: InfraWatchers; onWatchers: (w: InfraWatchers) => void }) {
+  const admin = useCanAdmin();
+  const [text, setText] = useState(watchersText(watchers));
+  const [busy, setBusy] = useState(false);
+  const save = async (): Promise<void> => {
+    const said = watchersFrom(text);
+    if (typeof said === 'string') { toast.error(said); return; }
+    setBusy(true);
+    try {
+      const saved = (await post<{ watchers: InfraWatchers }>('/ui/api/infra-plans/watchers', { watchers: said })).watchers;
+      onWatchers(saved);
+      setText(watchersText(saved));
+      toast.success('environment watchers saved');
+    } catch (e) {
+      refused(e, 'an admin');
+    }
+    setBusy(false);
+  };
+  return (
+    <div data-slot="infra-watchers" className="space-y-2">
+      <p className="text-sm">Environment watchers: each plan, approval and apply is sent to the notifiers with the watchers of the environments the plan names, and of every plan (*). One environment a line: prod, uat, staging, dev, qa or *, a colon, then the names, split by commas.</p>
+      {admin ? (
+        <>
+          <Textarea aria-label="Environment watchers" placeholder={'*: ops-lead\nprod: prod-owner'} value={text} onChange={(e) => setText(e.target.value)} />
+          <Button size="sm" disabled={busy || text === watchersText(watchers)} onClick={() => void save()}>Save</Button>
+        </>
+      ) : <pre className="text-xs whitespace-pre-wrap text-muted-foreground">{watchersText(watchers) || 'No watchers named.'}</pre>}
+    </div>
   );
 }
 

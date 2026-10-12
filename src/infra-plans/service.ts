@@ -3,7 +3,8 @@
 // infrastructure. Each record and approval is an event on the timeline of the job that recorded the plan. The branch's
 // head is read on GitHub at each ask, so a plan made before the code moved is never applied. Approval by risk (part 3):
 // an operator approves a low-risk uat plan, or the hopper does when the plan is kept and auto-approve is on; an admin
-// approves any other; nobody approves a plan that failed a check.
+// approves any other; nobody approves a plan that failed a check. The environment watchers (part 4): who the notifiers
+// name for each plan, approval and apply, by the plan's environments; an admin names them.
 import { createHash, randomUUID } from 'node:crypto';
 import type { OperationProfile } from '../domain/access.ts';
 import { changesOf } from '../domain/infra-plan-changes.ts';
@@ -12,6 +13,7 @@ import {
   applyRefusal, approveRefusal, approverOf, AUTO_APPROVER, DEFAULT_INFRA_PLAN_SETTINGS, headRefusal, planInputProblem, PLAN_FILE_MAX, PLAN_ID, PLAN_TTL_MINUTES,
   type InfraPlan, type InfraPlanSettings, type KeptPlanView, type PlanApply, type PlanApproval, type PlanInput, type PlanView,
 } from '../domain/infra-plans.ts';
+import { normalWatchers, watchersProblem, type InfraWatchers } from '../domain/infra-watchers.ts';
 import type { UiRole } from '../domain/sign-in.ts';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
@@ -35,6 +37,9 @@ export interface InfraPlans {
   approve(id: string, by: string, role: UiRole): PlanView | PlanRefusal;
   settings(): InfraPlanSettings;
   setSettings(to: InfraPlanSettings, by: string): InfraPlanSettings;
+  watchers(): InfraWatchers;
+  /** An admin names the environment watchers: the whole list, kept trimmed (normalWatchers); a 400 that says why. */
+  setWatchers(to: InfraWatchers, by: string): InfraWatchers | PlanRefusal;
   /** Why the vault mints nothing for `profile` on `planId`, or undefined: a read, or a current approved plan of the asset. */
   gate(profile: OperationProfile, planId: string | undefined): Promise<string | undefined>;
 }
@@ -133,6 +138,19 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
         o.store.events.append({ type: 'infra.settings_changed', data: { from, to, by } });
       });
       return settings();
+    },
+    watchers: () => o.store.settings.getInfraWatchers() ?? {},
+    setWatchers(said, by) {
+      const problem = watchersProblem(said);
+      if (problem) return { status: 400, no: problem };
+      const to = normalWatchers(said);
+      o.store.tx(() => {
+        const from = o.store.settings.getInfraWatchers() ?? {};
+        if (JSON.stringify(from) === JSON.stringify(to)) return;
+        o.store.settings.setInfraWatchers(to);
+        o.store.events.append({ type: 'infra.watchers_changed', data: { from, to, by } });
+      });
+      return to;
     },
     async gate(profile, planId) {
       const plan = planId !== undefined && PLAN_ID.test(planId) ? plans.get(planId) : undefined;

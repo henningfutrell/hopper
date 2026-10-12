@@ -36,6 +36,8 @@ const ENVIRONMENTS: [string, RegExp][] = [
   ['dev', /(^|[^a-z0-9])(dev|development)($|[^a-z0-9])/i],
   ['qa', /(^|[^a-z0-9])qa($|[^a-z0-9])/i],
 ];
+/** The environments the hopper knows, in that order (issue #870 part 4: the environment watchers are named by them). */
+export const PLAN_ENVIRONMENTS: readonly string[] = ENVIRONMENTS.map(([env]) => env);
 const envsOf = (s: string): string[] => ENVIRONMENTS.filter(([, re]) => re.test(s)).map(([env]) => env);
 const changeEnvs = (c: PlannedChange): string[] => [...envsOf(c.address), ...(c.envTag ? envsOf(c.envTag) : [])];
 
