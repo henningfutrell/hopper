@@ -1,7 +1,9 @@
 // The release check (issue #652, requirement 9): an update goes only to a commit that is the merge of a pull request
 // whose checks passed. Asked of GitHub's REST API, here a fake on loopback; "no checks" is not passing, and a commit
 // GitHub cannot be asked about is not offered. Issue #822: every ask carries a connected account's token, never none,
-// and GitHub's rate limit holds the commit until GitHub's reset time, with that time in the reason.
+// and GitHub's rate limit holds the commit until GitHub's reset time, with that time in the reason. Issue #913: "not the
+// merge of a pull request" is never settled (GitHub's commit-to-pull-request answer lags a merge, and can name a later
+// pull request that holds the commit, as a promotion), and a "Merge pull request #N" commit is checked against pull N.
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -23,7 +25,7 @@ const TOKEN = 'account-token';
  * authorization it carried. It refuses a request with no token, as github.com counts it against the asker's address.
  * `limited`: until that time (epoch seconds) it refuses every request for the rate, with GitHub's headers.
  */
-function fakeGitHub(o: { pulls?: Record<string, unknown[]>; runs?: Record<string, Run[]>; down?: boolean; tokens?: string[]; limited?: { until: number; now: () => number } }) {
+function fakeGitHub(o: { pulls?: Record<string, unknown[]>; runs?: Record<string, Run[]>; commits?: Record<string, { message: string; parents: number }>; byNumber?: Record<number, unknown>; down?: boolean; tokens?: string[]; limited?: { until: number; now: () => number } }) {
   const asked: string[] = [];
   const auth: (string | undefined)[] = [];
   const server = createServer((req, res) => {
@@ -40,6 +42,13 @@ function fakeGitHub(o: { pulls?: Record<string, unknown[]>; runs?: Record<string
     if (m) return send(res, 200, o.pulls?.[m[1]!] ?? []);
     m = /^\/repos\/o\/r\/commits\/([^/]+)\/check-runs$/.exec(path);
     if (m) { const runs = o.runs?.[m[1]!] ?? []; return send(res, 200, { total_count: runs.length, check_runs: runs }); }
+    m = /^\/repos\/o\/r\/commits\/([^/]+)$/.exec(path);
+    if (m) {
+      const c = o.commits?.[m[1]!] ?? { message: 'a direct push', parents: 1 };
+      return send(res, 200, { sha: m[1], commit: { message: c.message }, parents: Array.from({ length: c.parents }, (_, i) => ({ sha: String(i).repeat(40) })) });
+    }
+    m = /^\/repos\/o\/r\/pulls\/(\d+)$/.exec(path);
+    if (m && o.byNumber?.[Number(m[1])]) return send(res, 200, o.byNumber[Number(m[1])]);
     send(res, 404, { message: 'Not Found' });
   });
   return { server, asked, auth };
@@ -74,6 +83,43 @@ describe('the release check (issue #652)', () => {
     const c = await check(fakeGitHub({ pulls: { [MERGE]: [{ ...merged(7), merge_commit_sha: HEAD }], [HEAD]: [] } }));
     expect(await c.verify(REPO, MERGE)).toEqual({ passed: false, reason: 'mmmmmmm is not the merge of a pull request' });
     expect(await c.verify(REPO, HEAD)).toEqual({ passed: false, reason: 'hhhhhhh is not the merge of a pull request' });
+  });
+
+  it('asks again about a commit GitHub does not yet name as a merge: the answer lags a merge (issue #913)', async () => {
+    const now = { t: 0 };
+    const world: { pulls: Record<string, unknown[]> } = { pulls: { [MERGE]: [] } };
+    const c = await check(fakeGitHub({ ...world, runs: { [HEAD]: [run('pr / test', 'success')] } }), now);
+    expect(await c.verify(REPO, MERGE)).toEqual({ passed: false, reason: 'mmmmmmm is not the merge of a pull request' });
+    world.pulls[MERGE] = [merged(7)];
+    now.t = 60_000;
+    expect(await c.verify(REPO, MERGE)).toEqual({ passed: true, pullRequest: { number: 7, url: 'https://github.com/o/r/pull/7' } });
+  });
+
+  it('finds the pull request a "Merge pull request #N" commit names when GitHub names another (issue #913)', async () => {
+    const promotion = { ...merged(852), merge_commit_sha: 'p'.repeat(40) };
+    const gh = fakeGitHub({
+      pulls: { [MERGE]: [promotion] },
+      commits: { [MERGE]: { message: 'Merge pull request #815 from o/issue-815\n\nA change', parents: 2 } },
+      byNumber: { 815: merged(815) },
+      runs: { [HEAD]: [run('pr / test', 'success')] },
+    });
+    const c = await check(gh);
+    expect(await c.verify(REPO, MERGE)).toEqual({ passed: true, pullRequest: { number: 815, url: 'https://github.com/o/r/pull/815' } });
+  });
+
+  it('holds a "Merge pull request #N" commit that is not pull N\'s merge, or has one parent (issue #913)', async () => {
+    const other = await check(fakeGitHub({
+      commits: { [MERGE]: { message: 'Merge pull request #815 from o/x', parents: 2 } },
+      byNumber: { 815: { ...merged(815), merge_commit_sha: HEAD } },
+      runs: { [HEAD]: [run('pr / test', 'success')] },
+    }));
+    expect(await other.verify(REPO, MERGE)).toEqual({ passed: false, reason: 'mmmmmmm is not the merge of a pull request' });
+    const single = await check(fakeGitHub({
+      commits: { [MERGE]: { message: 'Merge pull request #815 from o/x', parents: 1 } },
+      byNumber: { 815: merged(815) },
+      runs: { [HEAD]: [run('pr / test', 'success')] },
+    }));
+    expect(await single.verify(REPO, MERGE)).toEqual({ passed: false, reason: 'mmmmmmm is not the merge of a pull request' });
   });
 
   it('holds a pull request with no checks: no checks is not passing', async () => {
