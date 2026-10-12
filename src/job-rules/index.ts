@@ -50,6 +50,9 @@ export const jobWorktreeRule = (path: string, cwd: string, sharedDependencies = 
 /** The protocol line on GitHub (issue #563): never a login of the job's own; the hopper's proxy, its help read only when needed. */
 export const GITHUB_PROXY_LINE = 'Never log in to GitHub yourself: no gh auth login, no device code. This machine holds no GitHub token: git fetch and git push to GitHub go through the hopper by themselves, and a push goes only to a new branch of your own work. For any other GitHub operation (filing an issue, opening a pull request from your pushed branch, reading an issue or pull request, and the like), ask the hopper, which does it with its own GitHub connection: run sh "$HOPPER_GH" help to see how. When your user cannot push to the repository of the job (sh "$HOPPER_GH" repo view --repo OWNER/NAME says canPush false), contribute through a fork: the help says how. If the hopper cannot be reached from here (HOPPER_URL is not set, or hopper-gh or git to GitHub cannot connect to it), do not sign in to GitHub another way: end with HOPPER_FAILED and say that this machine cannot reach the hopper.';
 
+/** The protocol line on a short outage (issue #752): the client door's 503 says since when; the job works on locally and waits to push. */
+export const OUT_OF_REACH_LINE = 'When an answer says "the hopper is out of reach since <time>", the hopper is away for a short time. Keep the local work going: edit, build, test and commit. Wait to push and to ask the hopper, then try again in a few minutes. Never sign in another way.';
+
 /** The protocol line on skills (issue #582; artifacts, issue #624): the catalog first, a skill loaded only when needed, a no taken as it is. */
 export const SKILL_LINE = 'When you need something set up from outside this machine, or a credential (a read-only link to a cluster or an AWS account, a token for another service, and the like), or a place to show a person a visual you made (a diagram or a chart: the artifacts skill), ask the hopper what it can set up: run sh "$HOPPER_SKILL". Load a skill only when you need it. Never ask for a credential in a question. When the hopper says no, it says why: find another way.';
 
@@ -68,6 +71,8 @@ export const PROTOCOL_LINES: readonly string[] = [
   ...REVIEW_KINDS.map((k) => REVIEW_SECTIONS[k].protocol),
   // GitHub through the hopper (issue #563): a job never logs in to GitHub; `hopper-gh` is kept beside its proxy token.
   GITHUB_PROXY_LINE,
+  // A short outage (issue #752): the client door holds, then says since when; the job works on locally.
+  OUT_OF_REACH_LINE,
   // Skills (issue #582): `hopper-skill` beside it, the catalog in a few lines.
   SKILL_LINE,
   'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>, and, when the command shows them, account: <the account or host it signs in to>, scopes: <the scopes it asks for>. The user completes the login; then the command goes on and you continue. Report a login once per code, never again while you wait on it; when it goes through, say so in a line of its own: Logged in.',

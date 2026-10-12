@@ -6,4 +6,5 @@ export { createGitProxy, type GitAnswer, type GitConnection, type GitProxy, type
 export { createProxyLimiter, PROXY_LIMITS, type LimitedOp, type ProxyLimiter } from './limits.ts';
 export { checkRequest, CONTRIBUTION_OFF, contributionSteps, filedNote, PROXY_OPS, proxyRequest, REPORT_OP, reportRequest, type ProxyAsker, type ProxyOp, type ProxyRequest, type ReportRequest } from './policy.ts';
 export * from './script.ts';
+export { HCURL_SH, RETRY_AFTER_TRIES } from './retry-after.ts';
 export { holdsProxyToken, parseProxyToken, proxyToken, type ProxyTokenParts } from './token.ts';

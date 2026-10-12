@@ -1,0 +1,1 @@
+- A job on an attached machine no longer fails at once when the hopper is out of reach for a short time: its requests wait up to two minutes, then it is told since when the hopper is away, and it keeps its local work going until it can push.
