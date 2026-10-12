@@ -7,7 +7,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { jobGraph } from '../../src/domain/job-graph.ts';
+import { jobGraph, type JobGraphWait } from '../../src/domain/job-graph.ts';
 import type { DomainEvent, Job, JobStatus } from '../../src/domain/types.ts';
 
 const REPOS = ['acme/widgets', 'acme/site', 'other-org/tools'];
@@ -26,6 +26,7 @@ const event = (seq: number, jobId: string, type: string): DomainEvent =>
   ({ seq, schemaVersion: 1, id: `e${seq}`, type, at: '2026-10-01T01:00:00Z', jobId, data: {} } as DomainEvent);
 
 let jobs: Job[] = [];
+let questions: JobGraphWait[] = [];
 
 function fakeDaemon() {
   const queue = () => {
@@ -37,7 +38,7 @@ function fakeDaemon() {
     '/api/queue': queue,
     '/api/machines': () => ({ machines: [{ id: 'm1', label: 'box', maxLanes: 300, online: true, executors: ['test'], usage: [], lanes: [] }] }),
     '/api/jobs/last-events': () => ({ events: jobs.map((j, i) => event(i + 1, j.id, 'job.queued')) }),
-    '/api/jobs/graph': () => jobGraph({ jobs }),
+    '/api/jobs/graph': () => jobGraph({ jobs, questions }),
     '/api/decisions': () => ({ decisions: [] }), '/api/events': () => ({ events: [] }),
     '/api/webhooks': () => ({ subscriptions: [] }), '/api/webhooks/deliveries': () => ({ deliveries: [] }),
     '/api/questions': () => ({ questions: [] }), '/api/sources': () => ({ sources: [] }),
@@ -102,6 +103,7 @@ async function choose(name: string, value: string) {
 afterEach(() => {
   act(() => root?.unmount());
   root = undefined;
+  questions = [];
   vi.unstubAllGlobals();
 });
 
@@ -191,6 +193,22 @@ describe('the Jobs view (issue #434)', () => {
     expect(details.dataset.nodeId).toBe('job:job-1');
     expect(details.textContent).toContain('the next part of acme/site#1 runs');
     expect(details.textContent).toContain('next part');
+  });
+
+  it('shows an open question as a node of its job that blocks the root, and links its details to the job', async () => {
+    jobs = [pointed(1, 'waiting_answer')];
+    questions = [{ id: 'q1', jobId: 'job-1', text: 'Which store should the cache use?', since: '2026-10-01T02:00:00Z' }];
+    await boot('graph');
+    const tree = await vi.waitFor(() => document.querySelector<HTMLElement>('[data-slot="job-tree"][data-root="issue:acme/site#1"]')!);
+    const node = tree.querySelector<SVGElement>('[data-slot="graph-node"][data-node-id="question:q1"]')!;
+    expect(node.dataset.kind).toBe('question');
+    expect(node.dataset.blocking).toBe('');
+    expect(node.textContent).toContain('question · waiting');
+    expect([...tree.querySelectorAll<SVGElement>('[data-slot="graph-edge"]')].map((e) => e.dataset.kind).sort()).toEqual(['asks', 'works']);
+    await click(node);
+    const details = document.querySelector<HTMLElement>('[data-slot="graph-node-details"]')!;
+    expect(details.querySelector<HTMLAnchorElement>('a[href="#job/job-1"]')?.textContent).toBe('Which store should the cache use?');
+    expect(details.textContent).toContain('asks this');
   });
 
   it('says so when there is no job, in both modes', async () => {
