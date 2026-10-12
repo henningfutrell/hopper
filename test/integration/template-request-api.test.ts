@@ -146,7 +146,7 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
   it('needs the hopper cannot read are refused, saying how; a viewer\'s token is refused for its role', async () => {
     const { a, session } = await boot(['cluster/*']);
     const token = await apiToken(a, session);
-    for (const needs of ['', 'read cluster lab', 'delete/cluster/lab', 'read/planet/mars']) {
+    for (const needs of ['', 'look at the pods', 'delete/cluster/lab', 'read/planet/mars']) {
       const r = await agent(a, 'POST', '/ui/api/vault', token, { action: 'request-template', needs });
       expect(r.status, `${needs}: ${r.text}`).toBe(400);
       expect(r.text).toContain('read/cluster/NAME');
@@ -192,6 +192,12 @@ describe('an agent asks the hopper for a template over the API (issue #718)', ()
     expect(made.body.request.template).toBe(shown.body.preview.template);
     const again = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'read/cluster/lab' });
     expect(again.body.preview).toMatchObject({ template: shown.body.preview.template, exists: 'same' });
+
+    const words = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'kubectl get pods on cluster lab' });
+    expect(words.body.preview).toMatchObject({ template: shown.body.preview.template, needs: ['read on cluster lab'], exists: 'same' });
+    const vague = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'look at the pods' });
+    expect(vague.status).toBe(400);
+    expect(vague.text).toContain('names no asset');
 
     const bad = await agent(a, 'POST', '/ui/api/vault', token, { action: 'preview-template', needs: 'delete/cluster/lab' });
     expect(bad.status).toBe(400);

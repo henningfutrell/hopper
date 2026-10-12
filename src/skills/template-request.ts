@@ -14,6 +14,7 @@ import { inReadPolicy, type ReadPolicy } from '../domain/read-policy.ts';
 import type { TemplatePreview, TemplateView } from '../domain/vault.ts';
 import { toolsForNeeds } from '../sandbox/tools.ts';
 import { SKILLS } from './catalog.ts';
+import { needsFromWords } from './needs-in-words.ts';
 
 /** The skill name a job asks for a template by. */
 export const TEMPLATE_SKILL = 'sandbox-template';
@@ -22,26 +23,40 @@ export const NEEDS_MAX = 16;
 /** Who approves a template the read policy holds: what its approval and its events say. */
 export const READ_POLICY_APPROVER = 'the read policy';
 
-const HOW = `write each need as <operation>/<kind>/<asset>: sh "$HOPPER_SKILL" ${TEMPLATE_SKILL} --needs "read/cluster/NAME read/aws-account/ID"`;
+const keyOf = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
 
-/** The needs a job said, split by spaces, commas or lines, each once; or why they cannot be read. */
+const HOW = `say it in words, one line each (kubectl get pods on cluster NAME), or write each need as <operation>/<kind>/<asset>: sh "$HOPPER_SKILL" ${TEMPLATE_SKILL} --needs "read/cluster/NAME read/aws-account/ID"`;
+
+/** One need written out, `<operation>/<kind>/<asset>`; or why it cannot be read. */
+function writtenNeed(item: string): OperationProfile | string {
+  const [operation, kind, ...rest] = item.split('/');
+  const name = rest.join('/');
+  if (!name || !ASSET_NAME.test(name)) return `${item}: ${HOW}`;
+  if (!(OPERATIONS as readonly string[]).includes(operation!)) return `${item}: the operation is one of ${OPERATIONS.join(', ')}; ${HOW}`;
+  if (!(ASSET_KINDS as readonly string[]).includes(kind!)) return `${item}: the asset kind is one of ${ASSET_KINDS.join(', ')}; ${HOW}`;
+  return { operation: operation as Operation, asset: { kind: kind as AssetKind, name } };
+}
+
+/**
+ * The needs said, each once; or why they cannot be read. Each line is written out — needs split by spaces or commas,
+ * every one with a `/` — or in plain words (issue #708, src/skills/needs-in-words.ts).
+ */
 export function needsOf(said: string | undefined): OperationProfile[] | string {
-  const items = (said ?? '').split(/[\s,]+/).filter((x) => x !== '');
-  if (items.length === 0) return `name what the work needs: ${HOW}`;
-  if (items.length > NEEDS_MAX) return `one request names at most ${NEEDS_MAX} needs: ${HOW}`;
+  const lines = (said ?? '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
+  if (lines.length === 0) return `name what the work needs: ${HOW}`;
   const needs = new Map<string, OperationProfile>();
-  for (const item of items) {
-    const [operation, kind, ...rest] = item.split('/');
-    const name = rest.join('/');
-    if (!name || !ASSET_NAME.test(name)) return `${item}: ${HOW}`;
-    if (!(OPERATIONS as readonly string[]).includes(operation!)) return `${item}: the operation is one of ${OPERATIONS.join(', ')}; ${HOW}`;
-    if (!(ASSET_KINDS as readonly string[]).includes(kind!)) return `${item}: the asset kind is one of ${ASSET_KINDS.join(', ')}; ${HOW}`;
-    needs.set(item, { operation: operation as Operation, asset: { kind: kind as AssetKind, name } });
+  for (const line of lines) {
+    const items = line.split(/[\s,]+/).filter((x) => x !== '');
+    const read = items.every((x) => x.includes('/')) ? items.map(writtenNeed) : [needsFromWords(line)].flat();
+    for (const p of read) {
+      if (typeof p === 'string') return p.endsWith(HOW) ? p : `${p}; ${HOW}`;
+      needs.set(keyOf(p), p);
+      if (needs.size > NEEDS_MAX) return `one request names at most ${NEEDS_MAX} needs: ${HOW}`;
+    }
   }
   return [...needs.values()];
 }
 
-const keyOf = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
 const sameNeeds = (a: readonly OperationProfile[], b: readonly OperationProfile[]): boolean => {
   const x = a.map(keyOf).sort(), y = b.map(keyOf).sort();
   return x.length === y.length && x.every((k, i) => k === y[i]);
