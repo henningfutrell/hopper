@@ -2,7 +2,8 @@
 // and the one a person sets: `hopper:backburner` keeps an issue out (never picked up). After a job ends done (issue
 // #579): `hopper:pr-ready` while its pull request waits for review, `hopper:partly-done` while the part it shipped waits,
 // `hopper:pr-closed` once its pull request was closed without a merge; each keeps the issue out until it changes.
-// An issue labelled `hopper@<name>` is addressed to the hopper of that name (issue #159).
+// An issue labelled `hopper@<name>` is addressed to the hopper of that name (issue #159). An issue labelled `hopper:win`
+// (or `hopper:windows`) needs Windows: its job runs its Windows work as Windows sandbox steps (issue #918).
 
 export const LABEL_CLAIMED = 'hopper:claimed';
 export const LABEL_DONE = 'hopper:done';
@@ -14,6 +15,9 @@ export const LABEL_PARTLY_DONE = 'hopper:partly-done';
 export const LABEL_PR_CLOSED = 'hopper:pr-closed';
 /** The labels a job's end leaves, any of which keeps the issue out; Run again takes them all off. */
 export const END_LABELS: readonly string[] = [LABEL_FAILED, LABEL_DONE, LABEL_REJECTED, LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_PR_CLOSED];
+/** The Windows labels (issue #918), any case: the job is told to run its Windows work as Windows sandbox steps. */
+export const WINDOWS_LABELS: readonly string[] = ['hopper:win', 'hopper:windows'];
+export const needsWindows = (labels: readonly string[]): boolean => labels.some((l) => WINDOWS_LABELS.includes(l.toLowerCase()));
 /** `hopper@<name>`: the issue is for the hopper whose source has `hopperName: <name>`. */
 export const ADDRESS_PREFIX = 'hopper@';
 /**

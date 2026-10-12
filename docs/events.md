@@ -290,9 +290,9 @@ Version 1 (`docs/schemas/job.respecified.v1.json`). A sync worked out a job that
   "to": {
     "executor": "herdr-claude",
     "model": "claude-opus-5-5",
-    "cwd": "~/code/app-win",
-    "machineId": "win-native",
-    "rule": "windows"
+    "cwd": "~/code/app-gpu",
+    "machineId": "gpu",
+    "rule": "gpu"
   }
 }
 ```

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { UNTRUSTED_END, UNTRUSTED_LINE, UNTRUSTED_START } from '../../src/sources/github/context.ts';
+import { UNTRUSTED_END, UNTRUSTED_LINE, UNTRUSTED_START, WINDOWS_LINE } from '../../src/sources/github/context.ts';
 import { REPO, discoverOne, setup } from './fixtures/github-support.ts';
 
 const URL1 = `https://github.com/${REPO}/issues/1`;
@@ -144,5 +144,31 @@ describe('GitHub source: full issue context and job environment', () => {
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     await source.discover();
     expect(gh.calls.some((c) => c.method === 'listComments')).toBe(false);
+  });
+});
+
+describe('GitHub source: a Windows label sends the Windows work to Windows sandbox steps (issue #918)', () => {
+  const windowsLine = (prompt: string) => prompt.split('\n').find((l) => l.startsWith('windows:'));
+
+  it.each(['hopper:win', 'hopper:windows', 'Hopper:Win'])('labelled %s: the job is told to run its Windows work as steps', async (label) => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper', label] });
+    expect(windowsLine((await discoverOne(source)).prompt)).toBe(WINDOWS_LINE);
+    // No Windows machine takes the job: it runs on Linux and asks for each Windows step.
+    expect(WINDOWS_LINE).toContain('sh "$HOPPER_STEP" hosts');
+    expect(WINDOWS_LINE).toContain('sh "$HOPPER_SKILL" windows-step');
+  });
+
+  it('the line comes before what done means', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:win'] });
+    const lines = (await discoverOne(source)).prompt.split('\n');
+    expect(lines.indexOf(WINDOWS_LINE)).toBe(lines.findIndex((l) => l.startsWith('done')) - 1);
+  });
+
+  it('no Windows label: no line', async () => {
+    const { gh, source } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper', 'windows-ui'] });
+    expect(windowsLine((await discoverOne(source)).prompt)).toBeUndefined();
   });
 });

@@ -12,7 +12,7 @@ import { busy, inputs, job, lane, machine, policy } from '../decider/support.ts'
 
 const ctx = { policy, queueSorter: { name: 'priority', sort: (es) => [...es].sort(byPriority).map((e) => e.job.id) } } as EngineContext;
 const at = (min: number) => `2026-10-02T11:${String(min).padStart(2, '0')}:00.000Z`;
-const machines = [machine({ id: 'linux', maxLanes: 3 }), machine({ id: 'win-native', maxLanes: 1 })];
+const machines = [machine({ id: 'linux', maxLanes: 3 }), machine({ id: 'gpu', maxLanes: 1 })];
 
 /** Free one linux lane at a time, as jobs end, and return the jobs in the order they start. */
 function refill(waiting: Job[], rounds: number): string[] {
@@ -21,7 +21,7 @@ function refill(waiting: Job[], rounds: number): string[] {
   for (let i = 0; i < rounds; i++) {
     const lanes: Lane[] = [
       busy(1, 'running-1', { machineId: 'linux' }), busy(2, 'running-2', { machineId: 'linux' }), lane(3, { machineId: 'linux' }),
-      busy(1, 'running-win', { machineId: 'win-native' }),
+      busy(1, 'running-gpu', { machineId: 'gpu' }),
     ];
     const d = decide(inputs({ machines, lanes, waiting: left, queueOrder: queueOrder(ctx, left) }), `d${i}`);
     started.push(...d.start.map((s) => s.jobId));
@@ -37,7 +37,7 @@ describe('a freed lane takes the highest-priority job that fits its machine (iss
       job('low', { priority: 25, createdAt: at(1), accepted: true, userRank: 0 }),
       job('default-old', { priority: 50, createdAt: at(2), accepted: true, userRank: 1 }),
       job('high', { priority: 75, createdAt: at(3), accepted: true, userRank: 2 }),
-      job('win', { priority: 85, createdAt: at(4), accepted: true, userRank: 3, machineId: 'win-native' }),
+      job('gpu', { priority: 85, createdAt: at(4), accepted: true, userRank: 3, machineId: 'gpu' }),
       job('escalated', { priority: 85, createdAt: at(5), accepted: true }),
       job('default-new', { priority: 50, createdAt: at(6), accepted: true }),
     ];
