@@ -47,7 +47,7 @@ describe('keeping a client target on the hopper\'s release', () => {
     const { install, loaded, transport } = await olderClient();
     const lines: string[] = [];
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) } });
-    const probe = await keep(transport, () => true);
+    const probe = await keep(transport, () => ['job-busy']);
     expect(probe).toMatchObject({ online: true, client: { current: false } });
     expect(loaded).toEqual([]);
     expect(readRelease(install).id).not.toBe(HOPPERS.id);
@@ -57,7 +57,7 @@ describe('keeping a client target on the hopper\'s release', () => {
     const { install, loaded, transport } = await olderClient();
     const lines: string[] = [];
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) } });
-    await keep(transport, () => false);
+    await keep(transport, () => []);
     await waitFor(() => (loaded.length > 0 ? true : undefined), { timeoutMs: 5000, what: 'the restart asked for' });
     expect(loaded).toEqual([HOPPERS.id]);
     expect(readRelease(install)).toEqual(HOPPERS);
@@ -68,7 +68,7 @@ describe('keeping a client target on the hopper\'s release', () => {
     const { loaded, transport } = await olderClient(true);
     const lines: string[] = [];
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) } });
-    await keep(transport, () => false);
+    await keep(transport, () => []);
     await waitFor(() => (loaded.length > 0 ? true : undefined), { timeoutMs: 5000, what: 'the restart asked for' });
     expect(loaded).toEqual([HOPPERS.id]);
     expect(lines.join('\n')).toMatch(new RegExp(`client studio: loaded release ${HOPPERS.id}`));
@@ -78,7 +78,7 @@ describe('keeping a client target on the hopper\'s release', () => {
   it('the probe carries the home the client answered, so ~ in a work tree resolves there (issue #323)', async () => {
     const { transport } = await olderClient();
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: () => {}, warn: () => {} } });
-    expect(await keep(transport, () => true)).toMatchObject({ online: true, home: homedir() });
+    expect(await keep(transport, () => ['job-busy'])).toMatchObject({ online: true, home: homedir() });
   });
 
   // Issue #365: a client on Windows answers its os.homedir(), a drive-letter path with backslashes.
@@ -92,7 +92,7 @@ describe('keeping a client target on the hopper\'s release', () => {
     const home = process.env.HOME;
     process.env.HOME = answered;
     try {
-      const probe = await keep(transport, () => true);
+      const probe = await keep(transport, () => ['job-busy']);
       expect(probe.online).toBe(true);
       expect(probe.home).toBe(expected);
     } finally { process.env.HOME = home; }
@@ -101,14 +101,14 @@ describe('keeping a client target on the hopper\'s release', () => {
   it('the probe carries the disk the client\'s home is on, so the UI warns before it fills (issue #401)', async () => {
     const { transport } = await olderClient();
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: () => {}, warn: () => {} } });
-    const { disk } = await keep(transport, () => true);
+    const { disk } = await keep(transport, () => ['job-busy']);
     expect(disk?.totalBytes).toBeGreaterThan(0);
   });
 
   it('a client not dialled in is offline, and nothing is tried', async () => {
     dir = mkdtempSync(join(tmpdir(), 'jh-keeper-'));
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: () => {}, warn: () => {} } });
-    await expect(keep({ machine: 'studio', link: () => undefined, token: () => TOKEN }, () => false)).rejects.toThrow(/not dialled in/);
+    await expect(keep({ machine: 'studio', link: () => undefined, token: () => TOKEN }, () => [])).rejects.toThrow(/not dialled in/);
   });
 
   it('a client released before manifests (a fixed file list) gets the bridge, which starts the hopper\'s release (issue #545)', async () => {
@@ -121,7 +121,7 @@ describe('keeping a client target on the hopper\'s release', () => {
     client = await startTestClient({ token: () => TOKEN, herdrBin: HERDR, session: 'hopper', installDir: install, start: startFieldClient, onLoaded: (id) => loaded.push(id) });
     const lines: string[] = [];
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) } });
-    const probe = await keep(client.transport(TOKEN), () => false);
+    const probe = await keep(client.transport(TOKEN), () => []);
     expect(probe).toMatchObject({ online: true, client: { release: '835e17bd3c9c6ac3', current: false } });
     expect(probe.client).not.toHaveProperty('update');
     const bridge = bridgeRelease(HOPPERS, field.CLIENT_FILES);
@@ -141,11 +141,11 @@ describe('keeping a client target on the hopper\'s release', () => {
     const lines: string[] = [];
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) } });
     for (let i = 1; i <= 3; i++) {
-      const p = await keep(transport, () => false);
+      const p = await keep(transport, () => []);
       expect(p.client).not.toHaveProperty('update');
       await waitFor(() => (loaded.length === i ? true : undefined), { timeoutMs: 5000, what: `load ${i}` });
     }
-    const stuck = await keep(transport, () => false);
+    const stuck = await keep(transport, () => []);
     expect(loaded).toHaveLength(3);
     expect(stuck).toMatchObject({ online: true, client: { current: false, update: { problem: expect.stringMatching(/still runs release [0-9a-f]{16} after 3 loads of the hopper's/) } } });
     expect(lines.join('\n')).toMatch(/client studio: cannot update/);
@@ -154,8 +154,8 @@ describe('keeping a client target on the hopper\'s release', () => {
   it('a load the client refuses: the cause, in the client\'s words, is what Machines shows once the tries are spent', async () => {
     const { transport } = await olderClient();
     const keep = createClientReleaseKeeper({ release: { ...HOPPERS, id: '0123456789abcdef' }, logger: { info: () => {}, warn: () => {} } });
-    for (let i = 0; i < 3; i++) await keep(transport, () => false);
-    const stuck = await keep(transport, () => false);
+    for (let i = 0; i < 3; i++) await keep(transport, () => []);
+    const stuck = await keep(transport, () => []);
     expect(stuck.client?.update?.problem).toMatch(/refused the hopper's release: .*id 0123456789abcdef/);
   });
 });

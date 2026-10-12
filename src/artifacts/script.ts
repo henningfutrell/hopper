@@ -4,6 +4,7 @@
 // `artifacts` skill's text: a job reads it only when it loads the skill. Agent-native: `--json` answers JSON, and the
 // exit code says what happened.
 
+import { HCURL_SH } from '../github-proxy/retry-after.ts';
 import { ARTIFACT_LIB_PATH, ARTIFACT_LIBS } from './libs.ts';
 
 export const ARTIFACT_SCRIPT_VARIABLE = 'HOPPER_ARTIFACT';
@@ -107,6 +108,7 @@ export const ARTIFACT_SCRIPT = `#!/bin/sh
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
 usage() { echo 'usage: sh "$HOPPER_ARTIFACT" put FILE [--title TEXT] [--summary TEXT] [--type TYPE] [--to ID [--note TEXT] | --new] | list [--all] [--markdown] | get ID [--out FILE] | revisions ID | restore ID N | share ID (--owner | --user NAME | --public [--hours N] | --revoke SHARE) | rm ID  [--json]' >&2; exit 2; }
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; [ -z "$json" ] || printf 'accept: application/json\\n'; }
+${HCURL_SH}
 # Every byte as %XX: safe in a URL whatever the text holds.
 enc() { printf '%s' "$1" | od -An -v -tx1 | tr -d ' \\n' | sed 's/../%&/g'; }
 [ $# -ge 1 ] || usage
@@ -142,19 +144,19 @@ done
 case $cmd in
   put)
     [ -f "$file" ] && [ -r "$file" ] || { echo "no: $file is not a file this job can read" >&2; exit 2; }
-    res=$(token | curl -sS -H @- -X POST -H 'content-type: application/octet-stream' --data-binary @"$file" -w '\\n%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}?name=$(enc "\${file##*/}")$q") || exit 3 ;;
-  list) res=$(token | curl -sS -H @- -w '\\n%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}?$q") || exit 3 ;;
+    res=$(hcurl -sS -H @- -X POST -H 'content-type: application/octet-stream' --data-binary @"$file" -w '\\n%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}?name=$(enc "\${file##*/}")$q") || exit 3 ;;
+  list) res=$(hcurl -sS -H @- -w '\\n%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}?$q") || exit 3 ;;
   get)
     if [ -n "$out" ]; then
-      code=$(token | curl -sS -H @- -o "$out" -w '%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}/$id?content=1") || exit 3
+      code=$(hcurl -sS -H @- -o "$out" -w '%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}/$id?content=1") || exit 3
       [ "$code" = 200 ] && { [ -n "$json" ] && printf '{"ok":true,"out":"%s"}\\n' "$out" || echo "wrote $out"; exit 0; }
       cat "$out"; rm -f "$out"; exit 1
     fi
-    res=$(token | curl -sS -H @- -w '\\n%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}/$id") || exit 3 ;;
-  share) res=$(token | curl -sS -H @- -X POST -w '\\n%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}/$id/share?$q") || exit 3 ;;
-  revisions) res=$(token | curl -sS -H @- -w '\\n%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}/$id/revisions") || exit 3 ;;
-  restore) res=$(token | curl -sS -H @- -X POST -w '\\n%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}/$id/restore?revision=$n") || exit 3 ;;
-  rm) res=$(token | curl -sS -H @- -X POST -w '\\n%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}/$id/rm") || exit 3 ;;
+    res=$(hcurl -sS -H @- -w '\\n%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}/$id") || exit 3 ;;
+  share) res=$(hcurl -sS -H @- -X POST -w '\\n%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}/$id/share?$q") || exit 3 ;;
+  revisions) res=$(hcurl -sS -H @- -w '\\n%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}/$id/revisions") || exit 3 ;;
+  restore) res=$(hcurl -sS -H @- -X POST -w '\\n%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}/$id/restore?revision=$n") || exit 3 ;;
+  rm) res=$(hcurl -sS -H @- -X POST -w '\\n%{http_code}' "$HOPPER_URL${ARTIFACT_PATH}/$id/rm") || exit 3 ;;
 esac
 code=\${res##*
 }
@@ -163,6 +165,7 @@ body=\${res%
 printf '%s' "$body"
 case $code in
   2??) exit 0 ;;
+  503) exit 3 ;;
   *) exit 1 ;;
 esac
 `;

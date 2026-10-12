@@ -7,6 +7,8 @@
 //   HOPPER_JOIN_FILE       a file holding a join line (a sandbox box, issue #606): a machine that has not joined yet
 //                          joins with it first. Read and removed at start, joined or not, so nothing keeps the code
 //   HOPPER_CLIENT_NAME     the name it joins under (default its host name)
+//   HOPPER_CLIENT_MAX_ISOLATION_MS  cut off from the hopper this long, it stops the jobs the hopper last named there
+//                          (issue #752, isolation.ts; default 30 min, 0: never)
 // herdr and claude (a usage read, issue #366; a level's run, issue #482) are the ones on its PATH: the client is one long-lived process,
 // never a fresh login shell per call.
 // Native Windows is not supported (issue #704): there it stops at once, before it joins or dials in.
@@ -19,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { dialIn } from './dial.ts';
 import { startDoor, type Door } from './door.ts';
 import { hasLink, joinHopper, linkKeyFile, readLink } from './join.ts';
+import { maxIsolationOf } from './isolation.ts';
 import { linkToken, unsupportedPlatform } from './link.ts';
 import { startClient, type Client, type ClientOptions } from './server.ts';
 import { askHopper, HELPER_FILE, startVault } from './vault.ts';
@@ -31,7 +34,7 @@ export const machineName = (name: string): string => name.replace(/[^A-Za-z0-9_-
  * public half; its vault (vault.ts, issue #558), the socket and helper a job gets a vault secret through; and its door
  * (door.ts, issue #695), the loopback URL its jobs reach the hopper at.
  */
-export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herdrBin' | 'claudeBin' | 'session' | 'installDir' | 'backoffMs' | 'log' | 'onLoaded' | 'runtimeSockets'>): Client {
+export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herdrBin' | 'claudeBin' | 'session' | 'installDir' | 'backoffMs' | 'log' | 'onLoaded' | 'runtimeSockets' | 'maxIsolationMs'>): Client {
   const link = readLink(o.dir);
   const token = linkToken(readFileSync(linkKeyFile(o.dir), 'utf8'), link.hopperKey);
   const { dir, ...rest } = o;
@@ -93,7 +96,7 @@ async function run(argv: string[]): Promise<void> {
   }
   const client = startLinkedClient({
     dir, herdrBin: 'herdr', session: process.env.HOPPER_CLIENT_SESSION || 'hopper-client',
-    installDir: dirname(fileURLToPath(import.meta.url)), log: say,
+    installDir: dirname(fileURLToPath(import.meta.url)), log: say, maxIsolationMs: maxIsolationOf(process.env.HOPPER_CLIENT_MAX_ISOLATION_MS),
     onLoaded: () => { void client.stop().then(() => process.exit(75)); },
   });
   for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => { void client.stop().then(() => process.exit(0)); });

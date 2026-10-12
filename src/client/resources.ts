@@ -5,8 +5,8 @@
 // /proc/meminfo; elsewhere (Windows, macOS) from the OS, with no swap. A process in a container whose cgroup (v2)
 // sets limits reads its limits and its own use: a memory limit as its total, a CPU quota as its cores.
 // Imports nothing of hopper: a client target runs it as a plain file.
-import { readFileSync } from 'node:fs';
-import { availableParallelism, cpus, freemem, loadavg, totalmem } from 'node:os';
+import { readFileSync, statfsSync } from 'node:fs';
+import { availableParallelism, cpus, freemem, homedir, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
 
 export interface ResourceReading {
@@ -138,4 +138,14 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
       ...(q !== undefined ? { container: true as const } : {}),
     };
   };
+}
+
+/** The disk this user's home is on (issue #401), for the hopper's warning before it fills; none when it cannot be read. */
+export function diskOfHome(): { disk?: { freeBytes: number; totalBytes: number } } {
+  try {
+    const s = statfsSync(homedir());
+    return { disk: { freeBytes: s.bavail * s.bsize, totalBytes: s.blocks * s.bsize } };
+  } catch {
+    return {};
+  }
 }

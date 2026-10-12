@@ -27,6 +27,8 @@ export interface TestClient {
   link(): Duplex | undefined;
   /** The hopper's end of the client target, signing with `token`. */
   transport(token: string, machine?: string): ClientTransport;
+  /** Cuts the client off from the stand-in hopper (issue #752): its link ends, and each dial is hung up at once. `false` lets it in again. */
+  cut(off: boolean): void;
   /** Stops the client and the stand-in hopper end. */
   stop(): Promise<void>;
 }
@@ -34,7 +36,8 @@ export interface TestClient {
 /** `start`: another client's startClient, such as a field release's (test/fixtures), run in place of this checkout's. */
 export async function startTestClient(o: Omit<ClientOptions, 'dial' | 'installDir'> & { installDir?: string; start?: (o: ClientOptions) => Client }): Promise<TestClient> {
   let link: Socket | undefined;
-  const server = createServer((s) => { link?.destroy(); link = s; s.once('close', () => { if (link === s) link = undefined; }); });
+  let cutOff = false;
+  const server = createServer((s) => { if (cutOff) { s.destroy(); return; } link?.destroy(); link = s; s.once('close', () => { if (link === s) link = undefined; }); });
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const port = (server.address() as { port: number }).port;
   const dial = (): Promise<Duplex> => new Promise((resolve, reject) => {
@@ -49,6 +52,7 @@ export async function startTestClient(o: Omit<ClientOptions, 'dial' | 'installDi
     client,
     link: () => link,
     transport: (token, machine = 'studio') => ({ machine, link: () => link, token: () => token }),
+    cut(off) { cutOff = off; if (off) link?.destroy(); },
     async stop() {
       await client.stop();
       link?.destroy();

@@ -11,8 +11,11 @@ export interface PingTiming { everyMs: number; timeoutMs: number }
 
 export const PING_TIMING: PingTiming = { everyMs: 5000, timeoutMs: 10000 };
 
-/** PINGs on `session` until it closes; `drop` is called once, when a PING is not answered in time or fails. */
-export function keepAlive(session: Http2Session, drop: () => void, t: PingTiming = PING_TIMING): void {
+/**
+ * PINGs on `session` until it closes; `drop` is called once, when a PING is not answered in time or fails. `answered`
+ * is called for each PING the other end answers (the client's isolation watch, isolation.ts).
+ */
+export function keepAlive(session: Http2Session, drop: () => void, t: PingTiming = PING_TIMING, answered?: () => void): void {
   let waiting: NodeJS.Timeout | undefined;
   let dropped = false;
   const stop = (): void => { clearInterval(every); clearTimeout(waiting); };
@@ -30,7 +33,8 @@ export function keepAlive(session: Http2Session, drop: () => void, t: PingTiming
       session.ping((err) => {
         clearTimeout(waiting);
         waiting = undefined;
-        if (err && !session.destroyed) lost();
+        if (!err) answered?.();
+        else if (!session.destroyed) lost();
       });
     } catch {
       lost();
@@ -41,8 +45,8 @@ export function keepAlive(session: Http2Session, drop: () => void, t: PingTiming
 }
 
 /** The client's end of its link: HTTP/2 served on `socket`, kept alive; `drop` when the hopper stops answering PINGs. */
-export function serveLink(socket: Duplex, drop: () => void, t?: PingTiming): ServerHttp2Session {
+export function serveLink(socket: Duplex, drop: () => void, t?: PingTiming, answered?: () => void): ServerHttp2Session {
   const session = performServerHandshake(socket);
-  keepAlive(session, drop, t);
+  keepAlive(session, drop, t, answered);
   return session;
 }

@@ -4,6 +4,7 @@
 // request a person must answer first is waited on with --wait: the hopper pushes the answer on the job stream (issue
 // #613), and the script reads it there, reconnecting with Last-Event-ID when the stream drops, until its deadline.
 
+import { HCURL_SH } from '../github-proxy/retry-after.ts';
 import { STREAM_PATH } from '../job-stream/wire.ts';
 
 export const SKILL_SCRIPT_VARIABLE = 'HOPPER_SKILL';
@@ -68,6 +69,7 @@ export const SKILL_SCRIPT = `#!/bin/sh
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
 usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--credential TEXT] [--needs TEXT] [--wait [--timeout SECONDS]]]' >&2; exit 2; }
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; }
+${HCURL_SH}
 wait=; opt=; pos=0
 for a in "$@"; do
   shift
@@ -88,7 +90,7 @@ for a in "$@"; do
   esac
 done
 [ -z "$opt" ] || usage
-out=$(token | curl -sS -H @- -X POST "$@" -w '\\n%{http_code}' "$HOPPER_URL${SKILL_PATH}") || exit 1
+out=$(hcurl -sS -H @- -X POST "$@" -w '\\n%{http_code}' "$HOPPER_URL${SKILL_PATH}") || exit 1
 code=\${out##*
 }
 body=\${out%
@@ -127,7 +129,7 @@ while :; do
     *) status=1 ;;
   esac
   if [ -n "$3" ]; then
-    token | curl -sS -H @- -H 'accept: text/plain' "$HOPPER_URL$3" > "$dir/out" || exit 1
+    hcurl -sS -H @- -H 'accept: text/plain' "$HOPPER_URL$3" > "$dir/out" || exit 1
   fi
   printf '%s' "$(cat "$dir/out")"
   exit "$status"
