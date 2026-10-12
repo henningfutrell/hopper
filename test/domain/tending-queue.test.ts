@@ -3,7 +3,7 @@
 // Nothing holds it for good (issue #927): checks that stay pending hold it only for a time after the last push; a pull
 // request not seen yet, or whose checks the hopper cannot read, holds nothing.
 import { describe, expect, it } from 'vitest';
-import { PENDING_HOLD_MS, queueHead } from '../../src/domain/tending-queue.ts';
+import { PENDING_HOLD_MS, queueHeads } from '../../src/domain/tending-queue.ts';
 import type { Job, PullRequestSeen } from '../../src/domain/types.ts';
 import { jobForIssue, REPO } from '../sources/fixtures/github-support.ts';
 
@@ -18,7 +18,7 @@ function waiting(origin: boolean, s: PullRequestSeen | null = seen): Job {
   return { ...job, source };
 }
 
-const head = (job: Job) => queueHead(REPO.toLowerCase(), [job], () => undefined, () => true, NOW);
+const head = (job: Job) => queueHeads(REPO.toLowerCase(), [job], () => undefined, () => true, NOW)[0];
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
 
 describe('the tending queue\'s head (issues #796, #805)', () => {
@@ -28,7 +28,7 @@ describe('the tending queue\'s head (issues #796, #805)', () => {
 
   it('yolo off: it holds nothing, whatever its origin', () => {
     for (const origin of [true, false]) {
-      expect(queueHead(REPO.toLowerCase(), [waiting(origin)], () => undefined, () => false, NOW)).toBeUndefined();
+      expect(queueHeads(REPO.toLowerCase(), [waiting(origin)], () => undefined, () => false, NOW)).toEqual([]);
     }
   });
 });

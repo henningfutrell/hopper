@@ -40,6 +40,8 @@ export interface FakeGitHub extends GitHubApi {
   setChecks(url: string, checks: ChecksState | undefined, failedChecks?: FailedCheck[]): void;
   /** Its base branch moved (issue #736): it has merge conflicts with it now, or not, with no push to it. */
   setConflicting(url: string, conflicting: boolean): void;
+  /** Whether two pull requests conflict with each other, as git would say (issue #939); never set: git cannot say. */
+  setConflictBetween(a: string, b: string, conflict: boolean): void;
   /** A push to a pull request's branch (issue #618): a new head commit at `at`, with or without merge conflicts after it. */
   pushToPullRequest(url: string, at: string, o?: { conflicting?: boolean }): void;
   /** Mark an open draft pull request ready for review (issue #626). */

@@ -15,6 +15,7 @@ import type { BranchPullRequest, ClosingPullRequest, GitHubApi, GitHubComment, G
 
 import { createFakeCrossReferences } from './fake-cross-references.ts';
 import type { FakeActor, FakeAppIdentity, FakeGitHub, Method, PullRequestInput } from './fake-types.ts';
+import { fakeConflicts } from './fake-conflicts.ts';
 import { fakeIssuePlace } from './fake-issue-place.ts';
 
 export type { FakeActor, FakeAppIdentity, FakeGitHub, PullRequestInput } from './fake-types.ts';
@@ -276,8 +277,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       edits.set(key(repo, n), [...(edits.get(key(repo, n)) ?? []), ...made]);
     },
     closeIssue(repo, n, closedBy, c = {}) {
-      const i = find(repo, n);
-      Object.assign(i, { state: 'closed', closedBy: closedBy ?? human, closedAt: c.at ?? stamp(), stateReason: c.reason ?? 'completed' });
+      Object.assign(find(repo, n), { state: 'closed', closedBy: closedBy ?? human, closedAt: c.at ?? stamp(), stateReason: c.reason ?? 'completed' });
       closers.delete(key(repo, n));
     },
     openPullRequest: (repo, n, o) => openPull(repo, n, o, true),
@@ -289,7 +289,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
     closePullRequest(url) { pull(url).state = 'closed'; },
     markReady(url) { pull(url).isDraft = false; },
-    setConflicting(url, conflicting) { pull(url).conflicting = conflicting; },
+    setConflicting(url, conflicting) { pull(url).conflicting = conflicting; }, ...fakeConflicts(enter),
     pushToPullRequest(url, at, o = {}) { Object.assign(pull(url), { headCommittedAt: at, conflicting: o.conflicting ?? false }); },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {
       const i = find(repo, n);

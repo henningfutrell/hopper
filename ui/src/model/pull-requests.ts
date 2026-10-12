@@ -14,7 +14,7 @@ const WAITS_TEXT: Record<MergeWait, string> = {
   'not checked yet': 'not checked yet', draft: 'draft',
   conflicts: 'conflicts with its base branch', 'checks failing': 'checks failed', 'yolo off': 'waiting for a person to merge',
   'checks pending': 'waiting for checks', 'checks unknown': 'the hopper cannot read its checks', 'checks not started': 'waiting for checks to start', 'merge refused': 'merge refused',
-  ready: 'ready, merging',
+  'merge held': 'ready, waits for another pull request to merge first', ready: 'ready, merging',
 };
 
 export const waitsText = (c: Pick<PullRequestCard, 'waits' | 'base'>): string =>
@@ -42,7 +42,7 @@ export function doingText(c: Pick<PullRequestCard, 'state' | 'waits' | 'base' | 
   if (c.queue) {
     if ('next' in c.queue) return 'the hopper tends it next';
     const { pullRequest, why } = c.queue.held;
-    return `held behind #${pullRequest}, ${why === 'tending' ? 'which a job works on now' : 'which waits for its checks to merge'}`;
+    return `held behind #${pullRequest}, ${why === 'tending' ? 'which a job works on now' : 'which the hopper merges first'}: they conflict`;
   }
   if (c.state !== 'open' || !c.waits) return '';
   if (c.waits === 'tending' && c.tendJobId) {

@@ -218,6 +218,11 @@ export interface GitHubApi {
   botLogin?(): Promise<string>;
   /** Where git fetches `repo` and the token it fetches with, this adapter's own (issue #858: the hopper's mirror). Absent: no mirror. */
   gitRemote?(repo: string): Promise<GitRemote>;
+  /**
+   * Whether pull requests `a` and `b` of `repo`, both into `base`, conflict with each other, as the hopper's mirror says
+   * (issue #939, `gitAnswers`); undefined: git cannot say. Absent: no mirror.
+   */
+  conflictBetween?(repo: string, base: string, a: number, b: number): Promise<boolean | undefined>;
   /** Every repo (owner/repo) the app is installed on, across installations: the allowlist. */
   listInstalledRepos?(): Promise<{ repo: string; installationId: number }[]>;
 }

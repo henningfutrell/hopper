@@ -4,11 +4,12 @@
 // merged one drops off. Only the newest job of an item counts: a job run again since is not waiting. Pure: built from the
 // jobs as their follow-ups last saw them (`PullRequestSeen`), never from GitHub at read time, and the time now (the
 // no-checks grace window, issue #677). A card that needs tending says what the hopper does about it (issue #927): tended
-// next, held behind the head of its repository's tending queue, or given up on, and why; a card a tend job works on says
-// the step, and one whose tend job failed is given up on, in the words of that job's failure.
+// next, held behind a head of its repository's tending queue that conflicts with it, or given up on, and why; a ready one
+// whose merge is held says behind which (issue #939). What holds each is kept on its job by the sync (`Holds`, `seen`).
+// A card a tend job works on says the step, and one whose tend job failed is given up on, in the words of that job's failure.
 import type { Job } from './types.ts';
 import { followsWhenEnded, MAX_TENDS, noChecksSettled, readyToMerge, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
-import { queueHead, type QueueHead } from './tending-queue.ts';
+import type { Holds, QueueHead } from './tending-queue.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 
 // The list's repositories with no checks (issue #677) are their own module; re-exported here, as the list is in types.ts.
@@ -19,10 +20,11 @@ export * from './repo-checks.ts';
  * found yet. `tending`: its item's tend job works on it; `tend failed`: that job failed, and it waits on a person (issue
  * #763). Its job's origin does not hold it (issue #805): the job already ran, so a pull request of a job with no origin
  * merges as any other. `checks unknown`: the hopper may not read its checks (issue #855). `checks not started`: it has no checks, inside the grace window after its last
- * push. `ready`: yolo mode on and it is ready, so the next sync merges it (issue #677).
+ * push. `merge held`: ready, it conflicts with a pull request the hopper merged first (issue #939). `ready`: yolo mode
+ * on and it is ready, so the next sync merges it (issue #677).
  */
 export const MERGE_WAITS = [
-  'no pull request', 'tending', 'tend failed', 'not checked yet', 'draft', 'conflicts', 'checks failing', 'yolo off', 'checks pending', 'checks unknown', 'checks not started', 'merge refused', 'ready',
+  'no pull request', 'tending', 'tend failed', 'not checked yet', 'draft', 'conflicts', 'checks failing', 'yolo off', 'checks pending', 'checks unknown', 'checks not started', 'merge refused', 'merge held', 'ready',
 ] as const;
 export type MergeWait = (typeof MERGE_WAITS)[number];
 
@@ -57,8 +59,8 @@ export interface PullRequestCard {
   /** The step that tend job takes (issue #927): rebase, or fix the checks. */
   tendStep?: TendStep;
   /**
-   * One with merge conflicts or failing checks (issue #927): tended next, or held behind the pull request that holds its
-   * repository's tending queue, and why.
+   * One with merge conflicts or failing checks (issue #927): tended next, or held behind a pull request of its repository's
+   * tending queue that conflicts with it (issue #939), and why. A ready one whose merge is held: behind the one merged first.
    */
   queue?: { next: true } | { held: { pullRequest: number; why: QueueHead['why'] } };
   /** The hopper tends it no more, and why (issue #927): it waits on a person. */
@@ -74,7 +76,7 @@ export interface PullRequestsView {
   repos: { repo: string; yolo: boolean; pullRequests: PullRequestCard[] }[];
 }
 
-interface Followed { pullRequest?: string; follow?: string; part?: boolean; seen?: PullRequestSeen; tended?: Tended }
+interface Followed extends Holds { pullRequest?: string; follow?: string; part?: boolean; seen?: PullRequestSeen; tended?: Tended }
 
 const followedOf = (job: Job): Followed => (job.sourceState?.source ?? {}) as Followed;
 const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
@@ -110,7 +112,7 @@ function waitOf(named: boolean, seen: PullRequestSeen | undefined, yolo: boolean
   if (seen.checks === 'unknown') return 'checks unknown';
   if (seen.checks === 'none' && !noChecksSettled(seen, now)) return 'checks not started';
   if (seen.mergeError || !readyToMerge(seen, now)) return 'merge refused';
-  return 'ready';
+  return seen.mergeHeldBehind ? 'merge held' : 'ready';
 }
 
 function cardOf(job: Job, yolo: boolean, now: number, tendJob: Job | undefined): PullRequestCard {
@@ -155,17 +157,19 @@ function gaveUpOn(job: Job, card: PullRequestCard, tendJob: Job | undefined, get
 
 /**
  * What the hopper does about each card that needs tending (issue #927): gave up, or its place in its repository's tending
- * queue — next, or held behind the queue's head.
+ * queue — next, or held behind a pull request that conflicts with it (issue #939), as the sync kept it. A ready card whose
+ * merge is held: behind the pull request merged first.
  */
-function withQueue(cards: PullRequestCard[], waiting: Job[], tendJobs: Job[], repo: string, yolo: boolean, now: number, get: (id: string) => Job | undefined): PullRequestCard[] {
-  const head = queueHead(repo.toLowerCase(), [...waiting, ...tendJobs], get, () => yolo, now);
+function withQueue(cards: PullRequestCard[], waiting: Job[], tendJobs: Job[], get: (id: string) => Job | undefined): PullRequestCard[] {
+  const heldAs = (pullRequest: string, why: QueueHead['why']) => ({ queue: { held: { pullRequest: numberOf(pullRequest), why } } });
   return cards.map((c) => {
-    if (c.state !== 'open' || (c.waits !== 'conflicts' && c.waits !== 'checks failing' && c.waits !== 'tend failed')) return c;
     const job = waiting.find((j) => j.id === c.jobId)!;
+    const f = followedOf(job);
+    if (c.waits === 'merge held' && f.seen?.mergeHeldBehind) return { ...c, ...heldAs(f.seen.mergeHeldBehind, 'merging') };
+    if (c.state !== 'open' || (c.waits !== 'conflicts' && c.waits !== 'checks failing' && c.waits !== 'tend failed')) return c;
     const gaveUp = gaveUpOn(job, c, tendJobs.find((t) => t.id === c.tendJobId), get);
     if (gaveUp) return { ...c, gaveUp };
-    const held = head && head.pullRequest !== c.pullRequest?.url;
-    return { ...c, queue: held ? { held: { pullRequest: numberOf(head.pullRequest), why: head.why } } : { next: true } };
+    return { ...c, ...(f.heldBehind ? heldAs(f.heldBehind.pullRequest, f.heldBehind.why) : { queue: { next: true } }) };
   });
 }
 
@@ -183,7 +187,7 @@ export function pullRequestList(jobs: Job[], newest: (key: string) => Job | unde
     const tendJobs = here.flatMap((j) => tendJobOf(j, newest) ?? []);
     const cards = here.map((j) => cardOf(j, on, now, tendJobOf(j, newest)))
       .sort((a, b) => (a.openedAt ?? a.since ?? '').localeCompare(b.openedAt ?? b.since ?? '') || a.jobId.localeCompare(b.jobId));
-    return { repo, yolo: on, pullRequests: withQueue(cards, here, tendJobs, repo, on, now, get) };
+    return { repo, yolo: on, pullRequests: withQueue(cards, here, tendJobs, get) };
   });
   const counts = new Map<string, { repo: string; count: number; reason: MergeWait }>();
   for (const c of groups.flatMap((g) => g.pullRequests)) {

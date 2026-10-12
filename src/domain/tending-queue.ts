@@ -1,12 +1,15 @@
 // The tending queue (issue #796, design.md "The tending queue"): each merge moves its base, so the waiting pull requests of
-// one job repository that need tending are tended one at a time, never all at once. The head — a pull request a tend job
-// works on, or one on its way to the hopper's merge — holds the queue; once it is merged, closed, or waits on a person,
-// the next is tended against the new base: one rebase per merge, never a rebase of the whole backlog that each merge
-// breaks again. The rules' order: the highest priority first, then the oldest pull request. Jev may pick the head
+// one job repository that need tending are not all tended at once. A head — a pull request a tend job works on, or one on
+// its way to the hopper's merge — holds the pull requests that conflict with it; once it is merged, closed, or waits on a
+// person, they are tended against the new base: one rebase per merge, never a rebase of the whole backlog that each merge
+// breaks again. The rules' order: the highest priority first, then the oldest pull request. Jev may pick the first
 // (`merge-order`). Pure.
 // Nothing holds it for good (issue #927): a pull request on its way to the merge holds it only while it is seen ready, or
 // its checks run within `PENDING_HOLD_MS` of its last push. Not seen yet, checks the hopper cannot read, or checks that
 // stay pending hold nothing: the pull requests behind it are tended.
+// One queue per set of pull requests that conflict, not per repository (issue #939): the source says whether two conflict
+// (`JobSource.conflictBetween`, the hopper's mirror); the after-done half asks it, so pull requests whose changes do not
+// conflict are tended at the same time. Where the source cannot say, they conflict: one tend at a time, as before.
 import { following, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Job } from './types.ts';
 
@@ -15,6 +18,12 @@ export interface TendDue { jobId: string; pullRequest: string; step: TendStep }
 
 /** What holds a repository's tending queue: a tend job works on the pull request, or the hopper is to merge it. */
 export interface QueueHead { pullRequest: string; why: 'tending' | 'merging' }
+
+/**
+ * What a waiting pull request that needs tending waits behind (issue #939), kept in its job's source state by the sync: a
+ * head of its tending queue that conflicts with it, so it is not tended yet. Absent: nothing holds it.
+ */
+export interface Holds { heldBehind?: QueueHead }
 
 /** How long a pull request whose checks run holds its repository's tending queue after its last push (issue #927). */
 export const PENDING_HOLD_MS = 30 * 60_000;
@@ -57,22 +66,18 @@ function merging(job: Job, merges: (repo: string) => boolean, now: number): stri
   return f.seen && soonMerged(f.seen, now) ? f.pullRequest : undefined;
 }
 
-/** What holds `repo`'s tending queue at `now` (ms), of `jobs`; undefined: it is free, and the next may be tended. */
-export function queueHead(repo: string, jobs: readonly Job[], get: (id: string) => Job | undefined, merges: (repo: string) => boolean, now: number): QueueHead | undefined {
-  for (const job of jobs.filter((j) => repoOf(j) === repo)) {
-    const t = tending(job, get);
-    if (t) return { pullRequest: t, why: 'tending' };
-  }
-  for (const job of jobs.filter((j) => repoOf(j) === repo)) {
-    const m = merging(job, merges, now);
-    if (m) return { pullRequest: m, why: 'merging' };
-  }
-  return undefined;
+/** The heads of `repo`'s tending queue at `now` (ms), of `jobs`: every tend job at work, then every pull request on its way to the merge. */
+export function queueHeads(repo: string, jobs: readonly Job[], get: (id: string) => Job | undefined, merges: (repo: string) => boolean, now: number): QueueHead[] {
+  const here = jobs.filter((j) => repoOf(j) === repo);
+  return [
+    ...here.flatMap((job): QueueHead[] => { const t = tending(job, get); return t ? [{ pullRequest: t, why: 'tending' }] : []; }),
+    ...here.flatMap((job): QueueHead[] => { const m = merging(job, merges, now); return m ? [{ pullRequest: m, why: 'merging' }] : []; }),
+  ];
 }
 
-/** The rules' order of a repository's due tends: the highest priority first, then the oldest pull request, then the job. */
-export function tendOrder(due: readonly TendDue[], get: (id: string) => Job | undefined): TendDue[] {
-  const opened = (d: TendDue) => followedOf(get(d.jobId)).seen?.openedAt ?? '';
+/** The rules' order of a repository's due tends, or ready merges: the highest priority first, then the oldest pull request, then the job. */
+export function tendOrder<D extends { jobId: string }>(due: readonly D[], get: (id: string) => Job | undefined): D[] {
+  const opened = (d: { jobId: string }) => followedOf(get(d.jobId)).seen?.openedAt ?? '';
   return [...due].sort((a, b) => (get(b.jobId)?.priority ?? 0) - (get(a.jobId)?.priority ?? 0)
     || opened(a).localeCompare(opened(b)) || a.jobId.localeCompare(b.jobId));
 }

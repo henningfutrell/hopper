@@ -1,10 +1,12 @@
 // The tending queue (issue #796): when several waiting pull requests of one job repository need tending at once, the
 // hopper tends one at a time, in a decided order. The head is rebased and, with yolo mode on, merged before the next is
 // rebased against the new base: one rebase per merge, never a rebase of the whole backlog that each merge breaks again.
-// Jev picks the head first (`merge-order`); in shadow its pick is compared with the rules' head. Real daemon, in-memory
-// fake GitHub at the GitHubApi seam, Jev as a double at its seam; issues carry a scripted-executor op as their first body line.
+// Jev picks the head first (`merge-order`); in shadow its pick is compared with the rules' head. One queue per set of pull
+// requests that conflict (issue #939): pull requests git says do not conflict are tended at the same time, and of two ready
+// ones that conflict the hopper merges one per sync pass. Real daemon, in-memory fake GitHub at the GitHubApi seam (its git
+// answer set by the test), Jev as a double at its seam; issues carry a scripted-executor op as their first body line.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { JevChooser, JevPick, Job, MinorDecisionAsk } from '../../src/domain/types.ts';
+import type { JevChooser, JevPick, Job, MinorDecisionAsk, PullRequestsView } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
@@ -44,7 +46,7 @@ async function boot(gh: FakeGitHub, jev?: JevChooser): Promise<TestApp> {
 
 const body = (op: Record<string, unknown>) => `${JSON.stringify(op)}\n\nPlease do the thing.`;
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
-const sourceOf = (j: Job) => j.sourceState?.source as { follow?: string } | undefined;
+const sourceOf = (j: Job) => j.sourceState?.source as { follow?: string; heldBehind?: unknown; seen?: { mergeHeldBehind?: string } } | undefined;
 
 const urlsOf = new WeakMap<TestApp, Map<string, string>>();
 
@@ -143,6 +145,61 @@ describe('the tending queue (issue #796)', () => {
     expect((await tends(app)).map(([id]) => id).sort()).toEqual([mine!.job.id, other!.job.id].sort());
     await tendDone(app, mine!.job.id);
     await tendDone(app, other!.job.id);
+  });
+});
+
+describe('one queue per set of pull requests that conflict (issue #939)', () => {
+  it('pull requests that do not conflict are tended at the same time; one that conflicts with a tend waits for it', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const [first, second, third] = await waitingPullRequests(gh, app, REPO, 3);
+    gh.setConflictBetween(first!.url, second!.url, false);
+    gh.setConflictBetween(first!.url, third!.url, true);
+    gh.setConflictBetween(second!.url, third!.url, false);
+    for (const w of [first!, second!, third!]) gh.setConflicting(w.url, true);
+    await app.sync();
+    expect((await tends(app)).map(([id]) => id).sort()).toEqual([first!.job.id, second!.job.id].sort());
+    expect(sourceOf(await app.job(third!.job.id))?.heldBehind).toEqual({ pullRequest: first!.url, why: 'tending' });
+    const cards = (await app.api<PullRequestsView>('GET', '/api/pull-requests')).body.repos.find((r) => r.repo === REPO)!.pullRequests;
+    expect(cards.find((c) => c.jobId === third!.job.id)?.queue).toEqual({ held: { pullRequest: Number(first!.url.split('/').at(-1)), why: 'tending' } });
+    await tendDone(app, first!.job.id);
+    await tendDone(app, second!.job.id);
+    await app.sync();
+    expect((await tends(app)).map(([id]) => id)).toContain(third!.job.id);
+    expect(sourceOf(await app.job(third!.job.id))?.heldBehind).toBeUndefined();
+    await tendDone(app, third!.job.id);
+  });
+
+  it('git cannot say: one tend at a time, as before', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const [first, second] = await waitingPullRequests(gh, app, REPO, 2);
+    for (const w of [first!, second!]) gh.setConflicting(w.url, true);
+    await app.sync();
+    expect(await tends(app)).toEqual([[first!.job.id, 'rebase']]);
+    expect(sourceOf(await app.job(second!.job.id))?.heldBehind).toEqual({ pullRequest: first!.url, why: 'tending' });
+    await tendDone(app, first!.job.id);
+  });
+
+  it('yolo on: of two ready pull requests that conflict, one is merged; the other is held, then tended against the new base', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const token = await app.login();
+    expect((await app.ui('/ui/api/yolo-mode', { repos: { [REPO]: true } }, { token })).status).toBe(200);
+    const waiting = await waitingPullRequests(gh, app, REPO, 2, { checks: 'passing' });
+    gh.setConflictBetween(waiting[0]!.url, waiting[1]!.url, true);
+    await app.sync();
+    const merged = await waitFor(() => waiting.find((w) => gh.issue(REPO, w.issue).state === 'closed'), { what: 'one merged' });
+    const held = waiting.find((w) => w !== merged)!;
+    await waitFor(async () => sourceOf(await app.job(held.job.id))?.seen?.mergeHeldBehind === merged.url, { what: 'the other held' });
+    expect(gh.calls.filter((c) => c.method === 'merge')).toHaveLength(1);
+    const card = (await app.api<PullRequestsView>('GET', '/api/pull-requests')).body.repos.find((r) => r.repo === REPO)!.pullRequests.find((c) => c.jobId === held.job.id);
+    expect(card).toMatchObject({ waits: 'merge held', queue: { held: { pullRequest: Number(merged.url.split('/').at(-1)), why: 'merging' } } });
+    // The merge moved the base: the held one has merge conflicts now, and is tended.
+    gh.setConflicting(held.url, true);
+    await app.sync();
+    await waitFor(async () => (await tends(app)).some(([id]) => id === held.job.id), { what: 'the held one tended' });
+    await tendDone(app, held.job.id);
   });
 });
 

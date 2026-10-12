@@ -2,6 +2,7 @@
 // pull request with no checks in a yolo repository — waiting for checks to start in the grace window, then ready.
 import { describe, expect, it } from 'vitest';
 import { MAX_TENDS, NO_CHECKS_GRACE_MS, pullRequestList, type Job, type PullRequestSeen } from '../../src/domain/types.ts';
+import type { Holds } from '../../src/domain/tending-queue.ts';
 import { jobForIssue, REPO } from './fixtures/github-support.ts';
 
 const NOW = Date.parse('2026-10-02T10:00:00.000Z');
@@ -113,8 +114,8 @@ describe('a pull request its item\'s tend job works on (issue #763)', () => {
 
 describe('what the hopper does about a pull request that needs tending (issue #927)', () => {
   const PR8 = `https://github.com/${REPO}/pull/8`;
-  const job = (n: number, id: string, pullRequest: string, s: PullRequestSeen, over: Partial<Job> = {}): Job =>
-    jobForIssue(n, { id, status: 'finished', sourceState: { source: { follow: 'open', pullRequest, seen: s } }, ...over });
+  const job = (n: number, id: string, pullRequest: string, s: PullRequestSeen, over: Partial<Job> = {}, holds: Holds = {}): Job =>
+    jobForIssue(n, { id, status: 'finished', sourceState: { source: { follow: 'open', pullRequest, seen: s, ...holds } }, ...over });
   const cards = (jobs: Job[]) => {
     const byId = new Map(jobs.map((j) => [j.id, j]));
     const newest = (key: string) => jobs.filter((j) => j.source?.key === key).at(-1);
@@ -125,11 +126,25 @@ describe('what the hopper does about a pull request that needs tending (issue #9
     expect(cards([job(2, 'job-b', PR8, seen({ conflicting: true }))])[0]).toMatchObject({ waits: 'conflicts', queue: { next: true } });
   });
 
-  it('another pull request holds the queue on its way to the merge: held behind it, and why', () => {
+  it('a pull request of the queue that conflicts with it holds it, on its way to the merge: held behind it, and why', () => {
     const head = job(1, 'job-a', PR, seen({ checks: 'pending', pushedAt: ago(60_000) }));
-    const behind = job(2, 'job-b', PR8, seen({ checks: 'failing' }));
+    const behind = job(2, 'job-b', PR8, seen({ checks: 'failing' }), {}, { heldBehind: { pullRequest: PR, why: 'merging' } });
     expect(cards([head, behind]).find((c) => c.jobId === 'job-b')).toMatchObject({ waits: 'checks failing', queue: { held: { pullRequest: 7, why: 'merging' } } });
     expect(cards([head, behind]).find((c) => c.jobId === 'job-a')).not.toHaveProperty('queue');
+  });
+
+  it('a head that does not conflict with it holds nothing (issue #939): it is tended next', () => {
+    const head = job(1, 'job-a', PR, seen({ checks: 'pending', pushedAt: ago(60_000) }));
+    const free = job(2, 'job-b', PR8, seen({ conflicting: true }));
+    expect(cards([head, free]).find((c) => c.jobId === 'job-b')).toMatchObject({ waits: 'conflicts', queue: { next: true } });
+  });
+
+  it('a ready pull request whose merge is held (issue #939): it waits for the one merged first, and says which', () => {
+    const first = job(1, 'job-a', PR, seen({}));
+    const held = job(2, 'job-b', PR8, seen({ mergeHeldBehind: PR }));
+    const list = cards([first, held]);
+    expect(list.find((c) => c.jobId === 'job-a')).toMatchObject({ waits: 'ready' });
+    expect(list.find((c) => c.jobId === 'job-b')).toMatchObject({ waits: 'merge held', queue: { held: { pullRequest: 7, why: 'merging' } } });
   });
 
   it('its checks were fixed the most times in a row and still fail: the hopper gave up, and says why; not in the queue', () => {
