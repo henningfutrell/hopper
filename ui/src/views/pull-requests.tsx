@@ -18,7 +18,7 @@ import { usePoll } from '@/hooks/use-poll';
 import { useNow } from '@/hooks/use-now';
 import { get } from '@/lib/api';
 import { ago } from '@/model/format';
-import { CHECKS_TEXT, MERGEABLE_TEXT, closeQuestion, closesText, conflictedPullRequests, conflictsLine, mergeQuestion, hasCards, noChecksLine, noChecksNote, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
+import { CHECKS_TEXT, MERGEABLE_TEXT, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, mergeQuestion, hasCards, noChecksLine, noChecksNote, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
 import type { PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '@/model/wire';
 import { act } from '@/store';
 import { setPolled } from '@/store/polled';
@@ -99,6 +99,7 @@ function Card({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
         {age && <span title={age}>{c.openedAt ? 'opened' : 'done'} {ago(age, now)}</span>}
         {c.waits && <span data-slot="pr-waits" className={c.waits === 'ready' ? 'text-ok' : ''}>{waitsText(c)}</span>}
       </div>
+      {doingText(c) && <div data-slot="pr-doing" className={c.gaveUp ? 'text-xs text-bad' : 'text-xs text-muted-foreground'}>{doingText(c)}</div>}
       {c.mergeError && <div data-slot="pr-merge-error" className="text-xs text-bad">merge refused: {c.mergeError}</div>}
       <CardActions c={c} onChanged={onChanged} />
     </li>

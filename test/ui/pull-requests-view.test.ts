@@ -7,7 +7,7 @@ import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { noChecksLine, waitsText, waitingLine, yoloLine } from '../../ui/src/model/pull-requests.ts';
+import { doingText, noChecksLine, waitsText, waitingLine, yoloLine } from '../../ui/src/model/pull-requests.ts';
 import type { PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '../../src/domain/types.ts';
 
 const card = (over: Partial<PullRequestCard>): PullRequestCard => ({
@@ -148,6 +148,14 @@ describe('Pull requests view', () => {
     expect(waitsText(card({ waits: 'checks failing' }))).toBe('checks failed');
     expect(waitsText(card({ waits: 'no pull request' }))).toBe('no pull request found yet');
     expect(waitsText(card({ waits: 'not checked yet' }))).toBe('not checked yet');
+  });
+
+  it('what the hopper does about a card that needs tending, in plain words (issue #927)', () => {
+    expect(doingText(card({ waits: 'conflicts', queue: { next: true } }))).toBe('the hopper tends it next');
+    expect(doingText(card({ waits: 'checks failing', queue: { held: { pullRequest: 904, why: 'merging' } } }))).toBe('held behind #904, which waits for its checks to merge');
+    expect(doingText(card({ waits: 'conflicts', queue: { held: { pullRequest: 904, why: 'tending' } } }))).toBe('held behind #904, which a job works on now');
+    expect(doingText(card({ waits: 'checks failing', gaveUp: 'checks still fail after 3 fixes: a person must look at them' }))).toBe('the hopper gave up: checks still fail after 3 fixes: a person must look at them');
+    expect(doingText(card({}))).toBe('');
   });
 
   it('yolo mode has one switch, in Settings: each group links to it and turns nothing itself (issue #897)', async () => {

@@ -156,3 +156,21 @@ describe('a pull request is followed to its end, whatever its issue (issue #786)
     expect(await app.events('types=job.pull_request_followed')).toHaveLength(1);
   });
 });
+
+describe('a recorded merge that GitHub contradicts (issue #927)', () => {
+  it('a job recorded merged while its issue\'s closing pull request is still open with merge conflicts: followed once, then open, tended — no re-follow at each sync', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { issue, job, url } = await doneNotFollowing(gh, app, (n) => gh.openPullRequest(REPO, n, { createdAt: now(), checks: 'passing' }).url);
+    gh.closeIssue(REPO, issue.number, 'owner', { at: now(), reason: 'completed' });
+    gh.setConflicting(url, true);
+    const sync = (await app.job(job.id)).sourceState?.sync;
+    app.user().store.jobs.update(job.id, { sourceState: { sync, source: { pullRequest: url, follow: 'merged', mergeChecked: true } } });
+    await app.sync();
+    await waitFor(async () => (await followOf(app, job.id))?.follow === 'tended', { what: 'tended' });
+    await app.sync();
+    await app.sync();
+    expect((await app.events('types=job.pull_request_followed')).map((e) => e.jobId)).toEqual([job.id]);
+    expect((await app.events('types=job.pull_request_tended')).map((e) => [e.jobId, (e.data as { step: string }).step])).toEqual([[job.id, 'rebase']]);
+  });
+});

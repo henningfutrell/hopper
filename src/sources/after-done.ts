@@ -22,7 +22,8 @@
 // but a failed tend's (`failedTend`), which waits on a person —, and a rebase tend is never capped, only `fix_checks`.
 // The tending queue (issue #796): after every follow of the sync, at most one tend starts per job repository, and none
 // while its head holds it (`queueHead`): a tend job at work, or a pull request on its way to the hopper's merge. The next
-// is the rules' first (`tendOrder`), or Jev's pick (`merge-order`, `tend-order.ts`).
+// is the rules' first (`tendOrder`), or Jev's pick (`merge-order`, `tend-order.ts`). A pull request whose checks stay pending
+// holds it no more than `PENDING_HOLD_MS` after its last push; one not seen yet holds nothing (issue #927).
 // Cross-references (issue #430): before each follow, the cross-references of the job's item (`JobSource.crossReferences`) are
 // asked again and kept on the job (`crossReferences`), when they changed. A throw is only logged: the follow goes on, and
 // they are asked again next sync.
@@ -52,6 +53,8 @@ export interface AfterDoneContext {
   failed(jobId: string, e: unknown): void;
   /** Run the job's item again with `brief`, by `tending` (issue #736): Run again's own path, off the report chain. */
   tend(jobId: string, brief: string): Promise<RerunResult>;
+  /** The time now, in ms: how long a pull request whose checks run holds its tending queue (issue #927). */
+  now(): number;
   /** Jev first, for the head of a tending queue (issue #796); absent: the rules pick. */
   jevFirst?: JevFirst;
 }
@@ -166,7 +169,7 @@ export function createAfterDone(c: AfterDoneContext) {
     const due = jobs.filter((j) => c.finalReported(j)).flatMap((j): TendDue[] => { const d = tendDue(j); return d ? [{ jobId: j.id, pullRequest: d.url, step: d.step }] : []; });
     const merges = (repo: string) => source.mergesOnReady?.(repo) ?? false;
     for (const repo of new Set(due.map((d) => repoOf(get(d.jobId)!)))) {
-      if (repo === undefined || queueHead(repo, jobs, get, merges)) continue;
+      if (repo === undefined || queueHead(repo, jobs, get, merges, c.now())) continue;
       const head = await pickHead(c.jevFirst, repo, tendOrder(due.filter((d) => repoOf(get(d.jobId)!) === repo), get), get);
       await tendIfDue(head.jobId).catch((e: unknown) => { c.failed(head.jobId, e); });
     }

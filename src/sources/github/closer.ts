@@ -18,6 +18,11 @@ import type { CrossReferenceKind, IssueCrossReferences, Mention } from '../../do
  * #618), and its checks (issue #637).
  */
 const HEAD_COMMIT = 'headRefOid headRefName baseRefName commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }';
+/**
+ * The head commit with each check's end (issue #927), for the one pull request a follow reads: a failed check counts while
+ * others still run. Not in the lists, where 100 checks of 100 pull requests would cost too much of the rate limit.
+ */
+const HEAD_COMMIT_CHECKS = 'headRefOid headRefName baseRefName commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state contexts(first: 100) { nodes { __typename ... on CheckRun { conclusion } ... on StatusContext { state } } } } } } }';
 
 export const CLOSING_PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { issue(number: $number) {
@@ -43,7 +48,7 @@ export const REFERENCING_PULL_REQUESTS_QUERY = `query($owner: String!, $name: St
 
 export const PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { issueOrPullRequest(number: $number) {
-    __typename ... on PullRequest { url createdAt isDraft state mergeable mergedAt ${HEAD_COMMIT} }
+    __typename ... on PullRequest { url createdAt isDraft state mergeable mergedAt ${HEAD_COMMIT_CHECKS} }
   } }
 }`;
 
@@ -53,10 +58,11 @@ export const OPEN_REPO_PULL_REQUESTS_QUERY = `query($owner: String!, $name: Stri
   }
 }`;
 
+interface Rollup { state?: string; contexts?: { nodes?: ({ conclusion?: string | null; state?: string } | null)[] } }
 interface Closer { __typename?: string; url?: string; createdAt?: string; mergedAt?: string | null }
 interface Referenced {
   url?: string; createdAt?: string; isDraft?: boolean; state?: string; mergeable?: string;
-  commits?: { nodes?: ({ commit?: { committedDate?: string; statusCheckRollup?: { state?: string } | null } } | null)[] };
+  commits?: { nodes?: ({ commit?: { committedDate?: string; statusCheckRollup?: Rollup | null } } | null)[] };
   headRefName?: string;
   headRefOid?: string;
   baseRefName?: string;
@@ -103,10 +109,23 @@ export function closingPullRequestFrom(body: unknown, what: string): ClosingPull
 /** GitHub's rollup state as the port's checks: none (no checks) is absent. */
 const CHECKS: Record<string, ChecksState> = { SUCCESS: 'passing', PENDING: 'pending', EXPECTED: 'pending', FAILURE: 'failing', ERROR: 'failing' };
 
+/** A check run's conclusion, or a commit status's state, that fails the checks (issue #927). */
+const FAILED = new Set(['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE', 'ERROR']);
+
+/**
+ * The rollup's state, but failing once one of its checks failed (issue #927): GitHub keeps the rollup pending while other
+ * checks still run, and a failure must not wait for them.
+ */
+const rollupChecks = (r: Rollup | null | undefined): ChecksState | undefined => {
+  const state = CHECKS[r?.state ?? ''];
+  if (state !== 'pending') return state;
+  return r?.contexts?.nodes?.some((n) => FAILED.has(n?.conclusion ?? n?.state ?? '')) ? 'failing' : state;
+};
+
 /** Its head commit, base, the head's time and checks, when GitHub said; checks the app may not read: unknown (issue #855). */
 const headOf = (n: Referenced, checksUnknown: boolean): { headCommittedAt?: string; checks?: ChecksState; headOid?: string; base?: string; headRef?: string } => {
   const commit = n.commits?.nodes?.at(-1)?.commit;
-  const checks = CHECKS[commit?.statusCheckRollup?.state ?? ''] ?? (checksUnknown && !commit?.statusCheckRollup ? 'unknown' : undefined);
+  const checks = rollupChecks(commit?.statusCheckRollup) ?? (checksUnknown && !commit?.statusCheckRollup ? 'unknown' : undefined);
   return {
     ...(commit?.committedDate ? { headCommittedAt: commit.committedDate } : {}), ...(checks ? { checks } : {}),
     ...(n.headRefOid ? { headOid: n.headRefOid } : {}), ...(n.baseRefName ? { base: n.baseRefName } : {}),
