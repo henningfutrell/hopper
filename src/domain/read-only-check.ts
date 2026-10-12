@@ -32,6 +32,8 @@ export interface Probe {
    * `$HOPPER_STATE_KEY` (the check's own key), and is not run for a need with no backend.
    */
   backend?: true;
+  /** What a person reads when it fails: why it can fail on a credential that is right (issue #869). */
+  note?: string;
 }
 
 /**
@@ -65,6 +67,8 @@ export interface ProbeResult {
   exit?: number;
   /** The end of what it wrote, at most PROBE_OUTPUT_MAX characters. */
   output: string;
+  /** Its probe's `note`, when it did not pass. */
+  note?: string;
 }
 
 /** How much of a probe's output the check keeps. */

@@ -36,12 +36,18 @@ esac`,
   kubectl: `case "$1" in
   get) echo 'NAME STATUS' ;;
   *) if [ "$MODE" = read-only ]; then echo "Error from server (Forbidden): $2 is forbidden: User \\"system:serviceaccount:hopper:hopper\\" cannot $1" >&2; exit 1; fi
-     [ "$1" = delete ] && { echo 'Error from server (NotFound): pods "hopper-read-only-check" not found' >&2; exit 1; } ;;
+     [ "$1" = delete ] && { echo 'Error from server (NotFound): pods "hopper-read-only-check" not found' >&2; exit 1; }
+     [ "$1" = create ] && case " $* " in *" --dry-run=server "*) echo 'deployment.apps/hopper-read-only-check-chart created (server dry run)' ;; esac ;;
 esac`,
+  // helm's `--dry-run=server` renders the chart and creates nothing: it never asks the API's authorization for the
+  // writes, so it ends 0 under a read-only credential too (issue #869). `template` renders the chart.
   helm: `case "$1" in
   list) echo 'NAME NAMESPACE' ;;
   create) mkdir -p "$2" ;;
-  install) if [ "$MODE" = read-only ]; then echo 'Error: INSTALLATION FAILED: secrets is forbidden: User cannot create resource' >&2; exit 1; fi ;;
+  install) case " $* " in *" --dry-run=server "*) echo 'NAME: hopper-read-only-check'; echo 'STATUS: pending-install' ;;
+    *) if [ "$MODE" = read-only ]; then echo 'Error: INSTALLATION FAILED: secrets is forbidden: User cannot create resource' >&2; exit 1; fi ;;
+    esac ;;
+  template) printf '%s\\n' '---' 'apiVersion: apps/v1' 'kind: Deployment' 'metadata:' '  name: hopper-read-only-check-chart' ;;
 esac`,
   terraform: `case "$1" in
   init) if [ -f "\${TF_CLI_CONFIG_FILE:-}" ]; then

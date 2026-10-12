@@ -9240,8 +9240,15 @@ replaces them; test with doubles, and state the gap to a real environment.
   - `aws-account`, `aws-role`: read `aws sts get-caller-identity`; writes `ec2 create-tags --dry-run`, `ssm
     put-parameter`, `iam create-user`, `sts assume-role` to another role of the account.
   - `cluster`, `namespace` (`<cluster>/<ns>`): read `kubectl get ns` (or pods in the namespace), `helm list`; writes
-    `kubectl create namespace --dry-run=server`, `kubectl delete pod --dry-run=server`, `helm install --dry-run=server` of
-    a chart `helm create` makes. A server dry run still asks the API's authorization.
+    `kubectl create namespace --dry-run=server`, `kubectl delete pod --dry-run=server`, and the install of a chart `helm
+    create` makes: `helm template` renders it and `kubectl create --dry-run=server` creates its objects. A server dry run
+    still asks the API's authorization. `helm install --dry-run=server` does not (issue #869): it renders the chart and
+    creates nothing, so it ended 0 on a view role and the probe passed falsely. One object created fails the probe, even
+    when the others are refused.
+  - `helm list` reads the Secrets helm keeps its releases in. The built-in `view` role cannot read Secrets, so on a view
+    role `helm list` is Forbidden and its probe fails: that is expected, and the probe passes only with read access to
+    Secrets. A probe can carry a `note` for such a case; a result that did not pass carries it, and the report shows it
+    under the output (issue #869).
   - `argocd-app`: read the Application; write a label patch with `--dry-run=server`.
   - `terraform-workspace`: read `terraform plan` of a one-resource stack (an SSM parameter); write `terraform apply` of it,
     once with `terraform` on `PATH` (a read-only wrapper there, when #715 adds one) and once with the real binary in
