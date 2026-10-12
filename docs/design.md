@@ -14959,5 +14959,5 @@ rendered nothing when empty, so a person could not tell the feature was there.
   `/api/questions`, `/api/proposals`, `/api/research`, `/api/logins`, `/api/failures`, `/api/queue` — and every action is
   the `POST /ui/api/*` route the page uses (`help/needs-you.md`).
 
-**Left for later parts:** plans and applies (issue #896, a page of its own), conflicted pull requests and machine joins
+**Left for later parts:** a Needs you row for the plans that wait on the Infra page (issue #896), conflicted pull requests and machine joins
 in Needs you, a global yolo indicator, and the duplicates of the question, decider and auto-park controls in Settings.
