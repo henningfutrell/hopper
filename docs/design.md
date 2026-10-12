@@ -11676,6 +11676,13 @@ any question of the user. Sender binding (DPoP, RFC 9449) and per-grant reposito
 **Not built** (follow-ups): a grant minted by device-code approval; sender binding (DPoP); per-grant repository or source
 restrictions.
 
+Tests: `test/http/api-grants.test.ts` (mint, rotation, grace, reuse detection, a restart within the grace, idle and fixed
+ends, no fixed end, the lifetime and its setting, rights at each refresh, a sign-in change, revoke and revoke all),
+`test/integration/token-grants.test.ts` (the issue's flow over HTTP: a box grant for Grok Bot refreshed again and again,
+in scope and out, the retry, the events; no box flag; revoke and revoke all; the mint's checks; the setting's bounds),
+`test/domain/token-scopes.test.ts`, `test/integration/api-tokens.test.ts`, `test/integration/box-tokens.test.ts`,
+`test/ui/api-tokens.test.ts`.
+
 ### The scope registry and presets (issue #909, 2026-10-12)
 
 Owner direction on the issue: an agent must do approvals over the API with a grant, and nobody types scope strings: the
@@ -11712,12 +11719,8 @@ with its plain description and the routes it covers, generated from the registry
 production plan and for a write credential, approved by a grant's token; scopes per `action` of a route whose body names
 it (`vault:edit` covers every vault change, `infra-plans:edit` the plan approval).
 
-Tests: `test/http/api-grants.test.ts` (mint, rotation, grace, reuse detection, a restart within the grace, idle and fixed
-ends, no fixed end, the lifetime and its setting, rights at each refresh, a sign-in change, revoke and revoke all),
-`test/integration/token-grants.test.ts` (the issue's flow over HTTP: a box grant for Grok Bot refreshed again and again,
-in scope and out, the retry, the events; no box flag; revoke and revoke all; the mint's checks; the setting's bounds),
-`test/domain/token-scopes.test.ts`, `test/integration/api-tokens.test.ts`, `test/integration/box-tokens.test.ts`,
-`test/ui/api-tokens.test.ts`.
+Tests: `test/domain/scope-registry.test.ts`, `test/integration/token-grants.test.ts` (a grant from a preset),
+`test/ui/api-tokens.test.ts`, `test/ui/scope-checklist.test.ts`.
 
 ## Access: OpenFGA decides each mint (issue #559, 2026-10-09)
 
