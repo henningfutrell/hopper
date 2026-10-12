@@ -7,7 +7,7 @@
 // the artifacts (issue #673, cli-operator-artifact.ts); the master key's status (issue #685, cli-operator-keys.ts): never the key;
 // the vault, its templates and the sandbox boxes (issue #716, cli-operator-vault.ts): a secret's value from stdin only;
 // API tokens (issue #718, cli-operator-keys.ts): mint one for an agent, printed once; list and revoke them;
-// Report a bug and Your reports (issue #694, cli-operator-report.ts): its context first, then the report.
+// Report a bug and Your reports (issue #694, cli-operator-report.ts): its context first, then the report; direct jobs (issue #901, cli-operator-direct.ts).
 // Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
 // runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
@@ -26,6 +26,7 @@ import { MASTER_KEY_USAGE, TOKEN_USAGE, masterKeyCall, tokenCall, typesafeKeyCal
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
 import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts';
 import { REPO_USAGE, repoCall } from './cli-operator-repo.ts';
+import { DIRECT_USAGE, directCall } from './cli-operator-direct.ts';
 import { REPORT_USAGE, reportCall } from './cli-operator-report.ts';
 import { VAULT_USAGE, sandboxCall, templateCall, vaultCall } from './cli-operator-vault.ts';
 
@@ -37,6 +38,7 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
   hopper job rework <id> --notes <text>              send a done job's open pull request back: it becomes a draft, a new job reworks it, told the notes
   hopper job keep-original <id>                      a job held because its item changed: it runs the original text
   hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)
+${DIRECT_USAGE}
   hopper queue order <id>...                         the user order: these waiting jobs, first to last, before every other
   hopper queue gate <mode> [--per-hour <n>|none]     the queue gate: ${QUEUE_GATE_MODES.join(' or ')}; auto-accept at most <n> an hour
   hopper question list [--reason <reason>]           the open questions; --reason keeps those sent to a person for it: ${ESCALATION_REASONS.join(', ')}
@@ -98,6 +100,8 @@ const CLI_IDENTITY = { realm: CLI_REALM, subject: 'operator-cli', name: 'operato
 
 
 function jobCall(args: string[]): Call {
+  const direct = directCall(args[0], args.slice(1));
+  if (direct) return direct;
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
   if (!id || extra.length > 0) throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');

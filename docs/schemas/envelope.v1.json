@@ -212,6 +212,7 @@
         "pointed_job.status_changed",
         "github_watch.changed",
         "github_watch.settings_changed",
+        "direct_job.submitted",
         "infra.plan_recorded",
         "infra.plan_approved",
         "infra.out_of_band_recorded",

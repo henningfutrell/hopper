@@ -10,6 +10,7 @@
 // GitHub account it is. A token given and refused is refused, on loopback too. A sign-in's token reads only;
 // what it may do beyond is exchange itself for an API token (issue #718, src/http/api-tokens.ts). An API token is a
 // session (src/http/ui/sessions.ts) and reads as its user, once Access allows its read (`api_token#can_view`).
+import type { DirectJobs } from '../direct-jobs/index.ts';
 import type { Vault } from '../vault/vault.ts';
 import type { JobStream } from '../job-stream/index.ts';
 import type { UserArtifacts } from '../artifacts/index.ts';
@@ -82,6 +83,8 @@ export interface TenantParts {
   githubProxy: UserGitHubProxy;
   /** Windows sandbox steps (issue #731): the user's Windows hosts, and their jobs' steps on them. */
   windowsSteps: WindowsSteps;
+  /** Direct jobs (issue #901): jobs a person submits straight to the hopper, with no GitHub issue. */
+  directJobs: DirectJobs;
 }
 
 /** The users and their running parts. */

@@ -29,7 +29,7 @@ import { INFRA_PLAN_TABLES } from './infra-plans.ts';
 import { OUT_OF_BAND_TABLES } from './out-of-band.ts';
 import { ISSUE_GRAPH_TABLES } from './issue-graph.ts';
 import { POINTED_JOB_TABLE } from './pointed-jobs.ts';
-import { CHECKPOINT_TABLE } from './checkpoints.ts';
+import { CHECKPOINT_TABLE, DIRECT_JOB_TABLE } from './migration-recent-tables.ts';
 import { GITHUB_WATCH_TABLE } from './github-watches.ts';
 import { itemSnapshotsBackfill } from './migration-item-snapshots.ts';
 import { commentHoldsReleased } from './migration-comment-holds.ts';
@@ -359,7 +359,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   // 47: Out-of-band changes (issue #871): each change a job's check reported, a person's mark, the controller identities. Tables only: the build before runs on it.
   OUT_OF_BAND_TABLES,
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
-  CHECKPOINT_TABLE,
+  // 49: Direct jobs (issue #901): each job a person submitted straight to the hopper. A table only: the build before runs on it.
+  CHECKPOINT_TABLE, DIRECT_JOB_TABLE,
 ];
 
 /** A user schema's version once migrated. */

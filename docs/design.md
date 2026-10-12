@@ -64,6 +64,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
+| `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
@@ -15348,6 +15349,53 @@ reports and Question history, if they stay actionable.
 - **No duplicates found for auto-park or the issue thread.** Auto-park and the issue thread are configuration, set only in
   Settings; Parked and Questions show a job's state (`ThreadState`), not their settings. The phase-shift settings on
   Questions and the failures settings on Failures are configuration with one home each, so they stay.
+
+## Direct jobs (issue #901, part 1, 2026-10-12)
+
+Requirement: customer support and account work (the first use: a locked-out customer's one-time-password lookup and fix)
+runs through the hopper with no GitHub issue behind it. Customer details do not belong on GitHub.
+
+**A direct job** is a submission a person makes straight to the hopper: a `title`, a `brief` (what to do), routing
+`labels` (`sme:identity`), `authorizations` (what the submitter authorizes it to do or reach, each in their words), an
+optional `repo` (`owner/name`, the one repository its work may open a pull request on), an optional `executor` (default
+`herdr-claude`, the GitHub source's default too) and `priority` (default 50). It is kept as a record in the user's schema
+(tenant migration 49, `direct_jobs`, the body as JSON), with `submittedBy` (the person and the way: `ui`, `api`, `cli`)
+and `submittedAt`.
+
+**Its job comes from a job source.** The `direct` job source (`src/direct-jobs/`) is the core's own, beside the plugin
+sources: one per user, always on, named and of kind `direct`. Not a plugin: it holds no outside connection to configure,
+and a plugin would need the user's store in its context. `POST /ui/api/direct-jobs` keeps the record, appends
+`direct_job.submitted` and calls the source host's `ingest` with the item, in one transaction: so the job is queued from
+the source `direct` (key `direct:<id>`), through the same queue gate, routing rules, lane caps, blast radius, vault, vault
+grants and infra plan rules (#870) as any job. The routing rules match its labels and the source name `direct`, so a rule
+sends `sme:identity` work to the seat or the sandbox box it names. The source's `discover` answers nothing (its items come
+only through the route); `check` signals nothing; `report` keeps what was reported on the job and sends it nowhere;
+`rerun` answers the same submission, so Run again runs it again.
+
+**Trusted origin.** Its item is of a trusted origin: a person submitted it, through the UI session, the operator CLI, or a
+**box token** — the route is a box action (`BOX_ACTIONS`, kind `start a job`), so an API token that is no box token is
+refused (403), and a box token is one a person minted from a UI session (issue #881). Least role: operator.
+
+**Private.** The job's prompt starts with the private line (`PRIVATE_LINE`): its brief and results stay in the hopper;
+write none of them to GitHub or anywhere else; open a pull request only when the brief asks for a change to `repo`, and
+then in neutral terms. Then the brief, then the context block: the labels, the authorizations ("do nothing that needs an
+authorization not on this list: ask instead"), who submitted it and when, the repository or none, and what done means
+(the job's last report is its result). Its environment has `HOPPER_DIRECT_JOB` and, with a repository, `HOPPER_REPO`. A
+job with no repository has no repository the git proxy pushes to. `direct_job.submitted` carries the id, who, the way,
+the labels, the authorizations and the repository — never the title or the brief.
+
+**Reading back.** `GET /api/direct-jobs` (newest first) and `GET /api/direct-jobs/:id` answer the record and its newest
+job: `status`, `result`, `error`, `finishedAt`, and its open `questions` (`id`, `text`, `tier`, `askedAt`). A requester
+answers a question with `POST /ui/api/questions/:id/answer`, as any question. The notifiers tell of its questions and its
+end as of any job's. The operator CLI: `hopper job submit --title … (--brief … | --brief-file …) [--label …]...
+[--authorize …]... [--repo …] [--executor …] [--priority …]` and `hopper job direct [<id>]`.
+
+**Residual risk, stated.** `job.queued` carries the job's spec, and so its prompt — the brief —, as for every job: a
+webhook subscription to `job.queued` delivers it to the subscriber. The authorizations are told to the job and recorded;
+they do not yet make vault grants.
+
+**Not built yet (the next parts).** A submit form in the UI; authorizations that become the job's vault grants;
+notifying the requester by name, beyond the notifiers.
 
 ## Checkpoints and resume elsewhere (issue #921, 2026-10-12)
 

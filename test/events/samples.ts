@@ -11,6 +11,7 @@ export const INVALID_DATA: Partial<Record<EventType, Record<string, unknown>>> =
   'job.queued': { priority: 60 },
   'job.prioritized': { advice, statusAtAdvice: 'sideways' },
   'pointed_job.status_changed': { id: 'p1', from: 'queued', to: 'sideways', by: 'octocat' },
+  'direct_job.submitted': { id: 'd1', by: 'octocat', via: 'mail', labels: [], authorizations: [] },
   'github_watch.changed': { pointedJob: 'p1', repo: 'o/r', pointer: { kind: 'issue', number: 1, url: 'u' }, changes: { state: { from: 'open', to: 'reopened' } } },
   'job.held': {},
   'job.claimed': { attempts: '1' },

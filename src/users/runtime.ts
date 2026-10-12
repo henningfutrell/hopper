@@ -56,6 +56,7 @@ import { liveExecutors } from './executors.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 import { machineLanesEditor } from './machine-lanes.ts';
+import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts';
 
 export type { UserSeams } from './seams.ts';
 
@@ -124,15 +125,12 @@ export interface UserRuntimeOptions {
 
 /** One user's running parts: what the HTTP edge reads and changes for that user, and tests drive. */
 export interface UserRuntime {
-  user: User;
-  store: UserStore;
-  engine: Engine;
+  user: User; store: UserStore; engine: Engine;
   /** The sync loop (syncNow in tests). */
   sources: SourceSync;
   /** Every job source's status, the ones that do not run included (/api/sources). */
   registry: SourceRegistry;
-  plugins: PluginsView;
-  host: PluginHost;
+  plugins: PluginsView; host: PluginHost;
   questions: QuestionService;
   /** Each review section's review: proposals (issue #537), research (issue #543). */
   reviews: ReviewServices;
@@ -148,8 +146,8 @@ export interface UserRuntime {
   typesafeKey: TypesafeKey;
   /** The TL;DR of every long card (issue #569): its sweep. */
   tldrs: Tldrs;
-  dispatcher: WebhookDispatcher;
-  executors: ExecutorRegistry;
+  dispatcher: WebhookDispatcher; executors: ExecutorRegistry;
+  directJobs: DirectJobs; // issue #901: jobs a person submits straight to the hopper, with no GitHub issue
   /** The user's connected GitHub account (issue #214). */
   connectedAccounts: ConnectedAccountsService;
   webhooksEditor: WebhooksEditor;
@@ -175,7 +173,8 @@ export interface UserRuntime {
   stop(): Promise<void>;
 }
 
-const SEAM_SOURCE_POLL_MS = 1000;
+// The direct source (issue #901) pulls nothing, its jobs come through the route: a sync only retries a report that failed.
+const SEAM_SOURCE_POLL_MS = 1000, DIRECT_POLL_MS = 60_000;
 /** One Jev pick: a TypeSafe call, the Python start included. Past it, no pick: the decision goes on as before. */
 const JEV_TIMEOUT_MS = 30_000;
 
@@ -328,7 +327,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     onDecided: (p) => engine.onDecided(p), onRevise: (p, brief) => engine.onRevise(p, brief),
   });
   let { running, fixed } = splitSources(host.jobSources());
-  const jobSources = () => [...running.map((r) => r.source), ...(seams.sources ?? [])];
+  const directJobs = createDirectJobs({ store, host: () => engine.sourceHost, url: (id) => o.uiUrl(`direct-job-${id}`), now: () => clock.now().toISOString() });
+  const jobSources = () => [...running.map((r) => r.source), directJobs.source, ...(seams.sources ?? [])];
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
   // The vault's view carries the system scope too (issue #658): the user's and the whole hopper's own secrets, and their audit trail.
@@ -361,7 +361,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const sync = createSourceSync({
     sources: jobSources(), host: engine.sourceHost, clock, jevFirst: minorDecisions,
-    pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? SEAM_SOURCE_POLL_MS,
+    pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? (name === directJobs.source.name ? DIRECT_POLL_MS : SEAM_SOURCE_POLL_MS),
   });
   // The failure assessor (issue #509): its runs again go through the sync loop's Run again.
   const failures = createFailures({
@@ -385,7 +385,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }) });
   let started = false, stopped: Promise<void> | undefined;
   return {
-    jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps,
+    jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, directJobs,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
