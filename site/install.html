@@ -269,6 +269,25 @@ as <a href="#before">step 1</a> says, sign in to <code>claude</code>, and run th
 <code>/mnt/c</code>: it is much faster.</p>
 </details>
 
+<h3 id="windows-machine">A Windows computer as a machine</h3>
+<p>hopper is not supported natively on Windows. A client that runs on Windows itself (Node.js for Windows, Git Bash)
+cannot join: hopper refuses it with <code>Windows isn't supported natively. Run the client inside WSL.</code> Run the
+machine inside WSL instead, with Podman for its sandbox boxes:</p>
+<ol class="steps">
+<li><p>On the Windows computer, install Ubuntu in WSL and Podman in it: <a href="#windows">On Windows</a>, steps 1 and 2.</p></li>
+<li><p>Turn systemd on in Ubuntu:</p>
+<div class="cmd"><pre>printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf</pre><button type="button" data-copy="printf &#x27;[boot]\nsystemd=true\n&#x27; | sudo tee -a /etc/wsl.conf">Copy</button></div>
+<p>Then run <code>wsl --shutdown</code> in PowerShell and open Ubuntu again.</p></li>
+<li><p>Start the Podman socket, and keep your user's services running after you log out:</p>
+<div class="cmd"><pre>systemctl --user enable --now podman.socket
+sudo loginctl enable-linger "$USER"</pre><button type="button" data-copy="systemctl --user enable --now podman.socket &amp;&amp; sudo loginctl enable-linger &quot;$USER&quot;">Copy</button></div></li>
+<li><p>In the hopper's UI, open <strong>Machines</strong> → <strong>Add machine</strong>, and run the line it shows in
+Ubuntu, not in PowerShell. For a computer, Ubuntu needs Node.js 24, herdr and a signed-in <code>claude</code> first,
+as for any Linux computer. The WSL distro then shows in Machines as one machine.</p></li>
+</ol>
+<p class="note">Not supported, and not planned: the client on Windows itself, Git Bash or MSYS, and Podman machine,
+Docker Desktop or Hyper-V virtual machines.</p>
+
 <h2 id="sign-in">Sign-in for a team</h2>
 <p>Alone on one machine, signing in with GitHub is enough. For a team, or a hopper reached over the internet, people
 sign in through your own sign-in service, set up from the hopper's environment: no clicks and no files. Put the
@@ -289,14 +308,18 @@ copy, and how to check it works:
 
 <h2 id="upgrade">Upgrade</h2>
 <p><strong>With Podman:</strong> you update it; the hopper never updates a container itself. In the hopper's folder,
-download the newest image and recreate the hopper on it, then remove the image it replaced. It keeps your settings,
-database and sign-ins. When an update is out, the hopper's update notice shows these commands and how many running jobs
-the restart would end: wait until none.</p>
-<div class="cmd"><pre>podman compose pull hopper &amp;&amp; podman compose up -d --force-recreate --no-deps hopper</pre><button type="button" data-copy="podman compose pull hopper &amp;&amp; podman compose up -d --force-recreate --no-deps hopper">Copy</button></div>
+make the update script from the newest image, read it, then run it. It backs up the database, <code>compose.yaml</code>
+and <code>.env</code>; puts in the new image's <code>compose.yaml</code> and moves your own settings to <code>.env</code>;
+then pulls and starts the whole stack and checks it. It keeps your settings, database and sign-ins. Never update the
+hopper's container alone: a new version can add services it needs. When an update is out, the hopper's update notice
+shows these commands and how many running jobs the restart would end: wait until none. Then remove the image it replaced.</p>
+<div class="cmd"><pre>podman run --rm --pull=always ghcr.io/henningfutrell/hopper:stable hopper update podman &gt; hopper-update.sh</pre><button type="button" data-copy="podman run --rm --pull=always ghcr.io/henningfutrell/hopper:stable hopper update podman &gt; hopper-update.sh">Copy</button></div>
+<div class="cmd"><pre>sh hopper-update.sh</pre><button type="button" data-copy="sh hopper-update.sh">Copy</button></div>
 <div class="cmd"><pre>podman image prune -f --filter label=org.opencontainers.image.title=hopper</pre><button type="button" data-copy="podman image prune -f --filter label=org.opencontainers.image.title=hopper">Copy</button></div>
-<p class="note">The image tag is the update channel: <code>HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev</code> (or <code>:beta</code>,
-<code>:stable</code>) in <code>.env</code> beside <code>compose.yaml</code>; unset, it is <code>:latest</code>, the same as <code>:stable</code>.
-Pick the same channel in the hopper's Settings → Version.</p>
+<p class="note">The image tag is the update channel: <code>ghcr.io/henningfutrell/hopper:dev</code> (or <code>:beta</code>,
+<code>:stable</code>). The script sets it as <code>HOPPER_IMAGE</code> in <code>.env</code>; unset, it is <code>:latest</code>, the same as <code>:stable</code>.
+Pick the same channel in the hopper's Settings → Version. Your own settings go in <code>.env</code> (for a LAN install,
+<code>HOPPER_BIND=0.0.0.0</code>) or in <code>compose.override.yaml</code>, never in <code>compose.yaml</code>: each update replaces it.</p>
 <p><strong>On the machine itself:</strong> run the install command again. It updates hopper and keeps your
 settings, database and running jobs. The UI also tells you when an update is out, says what is new, and can
 apply it for you.</p>
@@ -321,7 +344,7 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <tr><td><code>looking up compose provider failed</code></td><td>Install <code>podman-compose</code> (<a href="#podman">step 1</a>).</td></tr>
 <tr><td><code>failed to connect to the docker API at unix:///run/user/…/podman/podman.sock</code></td><td>Podman found Docker's compose program and uses it, which talks to Podman through its socket. Turn the socket on: <code>systemctl --user enable --now podman.socket</code>. Or use the other one: <code>PODMAN_COMPOSE_PROVIDER=podman-compose podman compose up -d</code>.</td></tr>
 <tr><td>The UI does not open</td><td>See whether both containers run: <code>podman compose ps</code>. Read why the hopper stopped: <code>podman compose logs hopper</code>.</td></tr>
-<tr><td>A job fails with <code>… is PowerShell, and the hopper needs a POSIX shell</code></td><td>The machine is a Windows computer whose jobs open in PowerShell. Give its hopper session Git Bash as the shell: <a href="https://github.com/henningfutrell/hopper#a-computer-or-a-sandbox-box-one-line">A Windows computer</a>.</td></tr>
+<tr><td><code>Windows isn't supported natively. Run the client inside WSL.</code></td><td>The line ran on Windows itself. Run it inside WSL: <a href="#windows-machine">A Windows computer as a machine</a>.</td></tr>
 <tr><td>A job is <code>hopper:failed</code> at once</td><td>The repository could not be cloned on the machine that ran it, or <code>claude</code> is not signed in: <a href="#podman">step 4</a>. The job in the UI says why it failed.</td></tr>
 </table></div>
 <p>Everything else is the same as on the machine itself, below, with <code>podman compose exec hopper</code> in front of
@@ -348,7 +371,7 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <tr><td><code>hopper</code> is not running</td><td>Read why: <code>journalctl --user -u hopper -n 50</code>. If it says <code>/usr/bin/node</code> is missing or too old, install Node.js system-wide (<a href="#before">step 1</a>), then <code>systemctl --user restart hopper</code>.</td></tr>
 <tr><td>The services are gone after you log out</td><td>Do <a href="#running">step 3</a>, then <code>systemctl --user start hopper-herdr hopper</code>.</td></tr>
 <tr><td>The UI does not open, or asks you to sign in</td><td>Open <code>http://localhost:4790/</code> and sign in with GitHub. From another computer, use the <a href="#ui">ssh tunnel</a>.</td></tr>
-<tr><td>A labelled issue is not picked up after a few minutes</td><td>Check: it is assigned to you; its repository is chosen under <strong>Sources</strong> → <strong>GitHub account</strong>; the label is exactly <code>hopper</code>. The UI's <strong>Sources</strong> view shows whether the GitHub source is running or paused, and why: <em>not connected</em> or <em>sign-in expired</em> means sign in with GitHub again.</td></tr>
+<tr><td>A labelled issue is not picked up after a few minutes</td><td>Check: it is assigned to you; its repository is chosen under <strong>Sources</strong> → <strong>GitHub account</strong>; the label is exactly <code>hopper</code>; you (or a trusted actor in <strong>Settings</strong> → <strong>Intake</strong>) wrote, labelled and assigned it. Otherwise <strong>Sources</strong> shows it as a request: read it and select <strong>Approve</strong>. Every issue is a request while OpenFGA does not run. The UI's <strong>Sources</strong> view shows whether the GitHub source is running or paused, and why: <em>not connected</em> or <em>sign-in expired</em> means sign in with GitHub again.</td></tr>
 <tr><td>A job is <code>hopper:failed</code> at once</td><td>The repository could not be cloned, or <code>claude</code> is not signed in: run <code>claude</code> once. The job in the UI says why it failed.</td></tr>
 </table></div>
 <p>Still stuck? <a href="https://github.com/henningfutrell/hopper/issues">Open an issue</a> with the message you see.</p>

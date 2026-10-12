@@ -33,6 +33,30 @@ describe('why a question came to a person', () => {
     await vi.waitFor(() => expect(banner()?.textContent).toMatch(/Sent to you/));
   });
 
+  it('every hold: the banner lists each reason, and what Fable says', async () => {
+    const all = {
+      reason: 'guard', guards: [{ name: 'credentials', describe: 'credentials, secrets, passwords, keys or tokens' }],
+      holds: [
+        { reason: 'guard', by: 'risk', guards: [{ name: 'credentials', describe: 'credentials, secrets, passwords, keys or tokens' }] },
+        { reason: 'high_priority' },
+        { reason: 'low_confidence', confidence: 'medium', threshold: 'high' },
+      ],
+      recommendation: { by: 'fable', answer: 'Go ahead', confidence: 'medium' },
+    };
+    await boot({ authed: true, attempts: [fableSaysGo], escalation: all });
+    const b = await vi.waitFor(() => { const x = banner(); expect(x).not.toBeNull(); return x!; });
+    expect(b.textContent).toMatch(/Sent to you because risk rule credentials holds it, its job is high priority and Fable was not confident enough \(medium confidence, needs high\)\./);
+    expect(b.textContent).toMatch(/held back on purpose/);
+    expect(b.textContent).toMatch(/Fable says: Go ahead/);
+  });
+
+  it('issue #679: a card the keyword rules checked says so, with a link to set up the Decider', async () => {
+    await boot({ authed: true, attempts: [fableSaysGo], escalation: { ...guard, riskCheck: { by: 'rules' } } });
+    const note = await vi.waitFor(() => { const x = banner()?.querySelector('[data-slot="risk-check-note"]'); expect(x).toBeTruthy(); return x!; });
+    expect(note.textContent).toMatch(/Risk checked by keyword rules; set up the Decider for better checks\./);
+    expect(note.querySelector('a')?.getAttribute('href')).toBe('#settings/decider');
+  });
+
   it('the trail no longer shows "(no rules yet)"', async () => {
     await boot({ authed: true, attempts: [fableSaysGo], escalation: guard });
     await vi.waitFor(() => expect(card()!.textContent).toContain('fine'));
@@ -43,21 +67,23 @@ describe('why a question came to a person', () => {
     const other = (id: string, text: string, escalation: unknown) => ({ ...question, id, text, escalation });
     await boot({
       authed: true, escalation: guard,
-      more: [other('a1', 'Push the tag?', guard), other('a2', 'Which name?', { reason: 'low_confidence' })],
+      more: [other('a1', 'Push the tag?', guard), other('a2', 'Which name?', { reason: 'low_confidence' }),
+        // Held by a guard and not confident (issue #679): it counts under both.
+        other('a3', 'Rotate it?', { ...guard, holds: [{ reason: 'guard', by: 'risk', guards: guard.guards }, { reason: 'low_confidence', confidence: 'low', threshold: 'high' }] })],
     });
     const filters = () => document.querySelector('[data-slot="reason-filter"]');
     await vi.waitFor(() => expect(filters()).not.toBeNull());
     const chip = (label: RegExp) => [...filters()!.querySelectorAll('button')].find((b) => label.test(b.textContent ?? ''));
-    expect(chip(/^All\s*3$/)).toBeDefined();
-    expect(chip(/^Guard\s*2$/)).toBeDefined();
-    expect(chip(/^Not confident\s*1$/)).toBeDefined();
+    expect(chip(/^All\s*4$/)).toBeDefined();
+    expect(chip(/^Guard\s*3$/)).toBeDefined();
+    expect(chip(/^Not confident\s*2$/)).toBeDefined();
     const shown = () => [...document.querySelectorAll('[data-question]')].map((x) => x.getAttribute('data-question'));
-    expect(shown()).toHaveLength(3);
+    expect(shown()).toHaveLength(4);
     await click(chip(/^Not confident/));
-    expect(shown()).toEqual(['a2']);
+    expect(shown().sort()).toEqual(['a2', 'a3']);
     await click(chip(/^Guard/));
-    expect(shown().sort()).toEqual(['a1', question.id].sort());
+    expect(shown().sort()).toEqual(['a1', 'a3', question.id].sort());
     await click(chip(/^All/));
-    expect(shown()).toHaveLength(3);
+    expect(shown()).toHaveLength(4);
   });
 });

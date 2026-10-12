@@ -4,15 +4,19 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, DECISION_POINTS, MINOR_DECISION_MODES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS } from '../domain/types.ts';
+import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, EVENT_DECISION_POINTS, MINOR_DECISION_MODES, RISK_CATEGORIES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
-import { advice, adviceAction, holdPlan, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, startPlan } from './parts.ts';
+import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts';
+import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
+import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts';
+import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, holdPlan, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents } from './parts.ts';
 
 const strict = z.strictObject;
-const decisionPoint = z.enum(DECISION_POINTS);
+// A point from before (issue #679 removed `question-answer`) stays valid in the events that name it.
+const decisionPoint = z.enum(EVENT_DECISION_POINTS);
 const decisionPointSettings = z.strictObject({ mode: z.enum(MINOR_DECISION_MODES), threshold: z.number().min(0).max(1) });
 const gateActor = z.enum(['user', 'pre-sort']);
 const queueGate = strict({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
@@ -99,7 +103,8 @@ const divergence = strict({
 const phase = z.enum(JOB_PHASES);
 const reviewKind = z.enum(REVIEW_KINDS);
 const yoloMode = strict({ on: z.boolean(), repos: z.record(z.string(), z.boolean()) });
-const autoAnswerSettings = strict({ enabled: z.boolean(), threshold: z.enum(CONFIDENCES) });
+// `holdHighPriority` (additive, issue #679): absent on a change made before it, which held high-priority jobs.
+const autoAnswerSettings = strict({ enabled: z.boolean(), threshold: z.enum(CONFIDENCES), holdHighPriority: z.boolean().optional() });
 const autoParkSettings = strict({ minutes: z.number().min(0), highPriorityMinutes: z.number().min(0) });
 const phaseShiftSettings = strict({ defaultMode: z.enum(SHIFT_MODES), forkParent: z.enum(FORK_PARENT), levels: z.array(z.string()) });
 
@@ -118,7 +123,8 @@ export const EVENT_SCHEMAS = {
   'job.approved': strict({}),
   'job.claimed': strict({ attempts: z.number().int(), effectivePriority: z.number(), reason: z.string() }),
   'job.started': strict({ attempts: z.number().int() }),
-  'job.progressed': strict({ progress: z.number().min(0).max(1), message: z.string().optional() }),
+  // v2 (issue #794): the job's task count, never a fraction of time; a message, a count, or both.
+  'job.progressed': strict({ message: z.string().optional(), tasks: taskCount.optional() }),
   // `partlyDone` (issue #579, additive): the URL of the job's own pull request that ships part of its item.
   'job.finished': strict({ result: z.unknown(), partlyDone: z.string().optional() }),
   'job.failed': strict({ error: z.string(), ...priority }),
@@ -129,6 +135,7 @@ export const EVENT_SCHEMAS = {
   // A person's Continue names its hand-off (issue #551); the assessor's, its failure record (issue #630).
   'job.continued': strict({ handoffId: z.string().optional(), recordId: z.string().optional() }),
   'job.reattached': strict({ reason: z.string() }),
+  'job.link_lost': strict({ machine: z.string(), since: z.string(), failsAt: z.string() }),
   // A job's own wait (issue #483).
   'job.waiting': strict({ for: z.string(), until: z.string().optional() }),
   'job.wait_ended': strict({ by: z.literal('person'), note: z.string().optional() }),
@@ -156,10 +163,11 @@ export const EVENT_SCHEMAS = {
     raisedBy, ...priority,
   }),
   // Only the human stage, once per question reaching it; never a level hop or a re-notification.
+  // `holds` (additive, issue #679): every hold on the level's answer that sent it, strongest first.
   'question.escalated_to_human': strict({
     questionId: z.string(), reason: z.string(), text: z.string(), jobId: z.string(),
     goal: z.string().optional(), answerUrl: z.string(), notifyCount: z.number().int(),
-    lapsesAt: z.string().optional(), tldr: z.string().optional(), raisedBy, ...priority,
+    lapsesAt: z.string().optional(), tldr: z.string().optional(), raisedBy, ...priority, holds: z.array(answerHold).optional(),
   }),
   // v2: `by` is whose answer was typed: the escalation level instance that answered, or `human`.
   // `via: "pane"`: the owner typed it into the job's pane, not the UI (additive, still v2).
@@ -177,7 +185,7 @@ export const EVENT_SCHEMAS = {
   // Issue #376: nobody answered; the agent denied its dialog by itself when the countdown ran out.
   'question.lapsed': strict({ questionId: z.string(), lapsesAt: z.string(), raisedBy }),
   // Self-update (issue #44): commits are full shas; `ref` is the branch of the channel.
-  'update.available': strict({ from: z.string(), to: z.string(), ref: z.string(), changes: z.number().int() }),
+  'update.available': strict({ from: z.string(), to: z.string(), ref: z.string(), changes: z.number().int(), pullRequest: z.number().int().optional() }),
   'update.started': strict({ from: z.string(), to: z.string(), ref: z.string() }),
   'update.applied': strict({ from: z.string(), to: z.string(), ref: z.string() }),
   'update.failed': strict({ to: z.string(), error: z.string() }),
@@ -193,7 +201,9 @@ export const EVENT_SCHEMAS = {
   'job.claimed_by_operator': strict({}),
   // Run again (a re-run, issue #313): the user gave a failed job's item back to its source to run again.
   // `assessor` (issue #509): the failure assessor ran it again — a retry, a redirect, a release of a held job.
-  'job.rerun': strict({ by: z.enum(['user', 'assessor']), ...actingIfPerson }),
+  'job.rerun': strict({ by: z.enum(['user', 'assessor', 'tending']), ...actingIfPerson }),
+  // A person sent the job's open pull request back for rework (issue #724): the new job reworks it, told the notes.
+  'job.rework_requested': strict({ pullRequest: z.string(), notes: z.string(), nextJobId: z.string(), ...actingIfPerson }),
   // A locked entry dismissed (issue #355): the failed job stays failed, out of the queue.
   'job.dismissed': strict({ by: z.enum(['user']) }),
   'job.work_kept': strict({ paths: z.array(z.string()).min(1) }),
@@ -211,12 +221,11 @@ export const EVENT_SCHEMAS = {
   'connected_account.renewal_failed': strict({ provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), account: z.string(), code: z.string() }),
   // A UI session of the user's ended (issue #439), and why: early logouts can be told apart.
   'ui_session.ended': strict({ reason: z.enum(SESSION_END_REASONS), realm: z.string() }),
-  // Intake (issue #440): a claim released, a source moved to the current intake rules, issues assigned to the user from Sources.
-  'source.claim_released': strict({ source: z.string(), key: z.string(), by: z.enum(['hopper', 'migration', 'user']), reason: z.string() }),
-  'source.intake_migrated': strict({ source: z.string(), changes: z.array(strict({ key: z.string(), change: z.string() })) }),
-  'source.issues_assigned': strict({ source: z.string(), keys: z.array(z.string()), assignee: z.string() }),
+  // Intake (issues #440, #652): src/events/intake-schemas.ts.
+  ...INTAKE_EVENT_SCHEMAS,
   // Logins (issue #476): a login a job or run waits on, handled apart from questions. `run`: the executor or escalation level.
-  'auth.pending': strict({ ...login, expiresAt: z.iso.datetime(), intervalSec: z.number().int().positive().optional(), run: z.string(), questionId: z.string().optional(), renewed: z.boolean().optional(), ...priority }),
+  // `host` (issue #698): the host of the URL to open, never its path or query.
+  'auth.pending': strict({ ...login, host: z.string().optional(), expiresAt: z.iso.datetime(), intervalSec: z.number().int().positive().optional(), run: z.string(), questionId: z.string().optional(), renewed: z.boolean().optional(), ...priority }),
   'auth.completed': strict(login),
   'auth.expired': strict({ ...login, expiresAt: z.iso.datetime() }),
   'auth.cancelled': strict({ ...login, by: z.enum(['user']) }),
@@ -280,9 +289,10 @@ export const EVENT_SCHEMAS = {
   // person's override of one, an admin's change to a decision point's settings.
   'minor_decision.picked': strict({
     pickId: z.string(), point: decisionPoint, by: z.literal('jev'), options: z.array(strict({ id: z.string(), label: z.string() })),
-    pick: z.string().optional(), confidence: z.number().min(0).max(1).optional(), error: z.string().optional(),
+    pick: z.string().optional(), confidence: z.number().min(0).max(1).optional(), error: z.string().optional(), categories: z.array(z.enum(RISK_CATEGORIES)).optional(),
     mode: z.enum(MINOR_DECISION_MODES), threshold: z.number().min(0).max(1), applied: z.boolean(),
     notApplied: z.enum(NOT_APPLIED).optional(), consequential: z.array(z.string()).optional(), questionId: z.string().optional(),
+    machineId: z.string().optional(),
   }),
   'minor_decision.compared': strict({ pickId: z.string(), point: decisionPoint, pick: z.string(), actual: z.string(), agreed: z.boolean(), decidedBy: z.string() }),
   'minor_decision.overridden': strict({ pickId: z.string(), point: decisionPoint, pick: z.string().optional(), actual: z.string() }),
@@ -302,41 +312,50 @@ export const EVENT_SCHEMAS = {
   ...TLDR_EVENT_SCHEMAS,
   // The vault (issue #558): names and people; never a value.
   // After done (issue #579): the job's pull request, followed after its end, merged or closed without a merge.
-  // byHopper (issue #637): the hopper merged it itself, yolo mode on for its repository.
-  'job.pull_request_merged': strict({ pullRequest: z.string(), part: z.boolean(), byHopper: z.literal(true).optional() }),
-  'job.pull_request_closed': strict({ pullRequest: z.string(), part: z.boolean() }),
+  // byHopper (issue #637): the hopper merged it itself, yolo mode on for its repository. person, via (issue #677): a
+  // person's Merge now or Close PR, and the way.
+  'job.pull_request_merged': strict({ pullRequest: z.string(), part: z.boolean(), byHopper: z.literal(true).optional(), ...actingIfPerson }),
+  'job.pull_request_closed': strict({ pullRequest: z.string(), part: z.boolean(), ...actingIfPerson }),
+  'job.pull_request_abandoned': strict({ pullRequest: z.string(), part: z.boolean() }),
   // The job's own pull request was left with merge conflicts or as a draft (issue #626): the job goes on with the fixed brief.
   'job.finish_briefed': strict({ pullRequest: z.string(), step: z.enum(FINISH_STEPS) }),
+  'job.pull_request_tended': strict({ pullRequest: z.string(), step: z.enum(TEND_STEPS), nextJobId: z.string() }),
+  'job.pull_request_followed': strict({ pullRequest: z.string(), part: z.boolean() }),
   // Yolo mode (issue #579): the settings before and after, and who changed them.
   'yolo_mode.changed': strict({ from: yoloMode, to: yoloMode, by: z.string() }),
   'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean(), rotated: z.boolean().optional(), backend: z.string().optional(), mints: asset.optional() }),
   'vault.secret_removed': strict({ name: z.string(), by: z.string() }),
   'vault.secret_read': strict({ name: z.string(), by: z.string(), purpose: z.string().optional() }), 'vault.secret_migrated': strict({ name: z.string(), from: z.string() }),
-  'template.saved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), profiles: z.array(operationProfile).optional(), by: z.string() }),
+  // A master key rotation (issue #659): the short fingerprints of the key replaced and the new one, who pressed it, the counts. Never a key.
+  'vault.master_key_rotated': strict({ from: z.string(), to: z.string(), by: z.string(), resealed: z.number().int().nonnegative(), unreadable: z.number().int().nonnegative() }),
+  'template.saved': strict({ template: z.string(), image: z.string(), tools: z.array(z.string()).optional(), secrets: z.array(z.string()), profiles: z.array(operationProfile.extend({ backend: stateBackend.optional() })).optional(), by: z.string() }),
+  'template.checked': strict({ template: z.string(), state: z.enum(['passed', 'failed']), failed: z.array(z.string()), problem: z.string().optional(), artifact: z.string().optional() }),
+  'template.check_requested': strict({ template: z.string(), by: z.string() }),
   'template.removed': strict({ template: z.string(), by: z.string() }),
-  'vault.approved': strict({ template: z.string(), image: z.string(), secrets: z.array(z.string()), by: z.string() }),
+  'vault.approved': strict({ template: z.string(), image: z.string(), tools: z.array(z.string()).optional(), secrets: z.array(z.string()), by: z.string() }),
   'vault.revoked': strict({ template: z.string(), by: z.string() }),
+  'vault.read_policy_set': strict({ assets: z.array(z.string()), by: z.string() }),
   'template.profile_approved': strict({ template: z.string(), ...operationProfile.shape, level: radiusLevel, by: z.string() }),
   'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string(), backend: z.string().optional() }),
   'vault.refused': strict({ name: z.string(), machine: z.string(), template: z.string().optional(), job: z.string().optional(), backend: z.string().optional(), reason: z.string() }),
-  'vault.minted': strict({
-    kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), machine: z.string(), job: z.string(), credential: z.string(),
-    decision: z.string(), expiresAt: z.string(), renewal: z.boolean(),
-  }),
-  'vault.mint_refused': strict({
-    mint: strict({ kind: z.enum(MINT_KINDS), operation: z.string(), asset: z.union([asset, z.string()]) }),
-    machine: z.string(), template: z.string().optional(), job: z.string().optional(), reason: z.string(), decision: z.string().optional(),
-  }),
+  'vault.minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), machine: z.string(), job: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string(), renewal: z.boolean() }),
+  'vault.mint_refused': strict({ mint: strict({ kind: z.enum(MINT_KINDS), operation: z.string(), asset: z.union([asset, z.string()]) }), machine: z.string(), template: z.string().optional(), job: z.string().optional(), reason: z.string(), decision: z.string().optional(), }),
+  // A read-only check's mints (issue #797): for the check box of a template, which runs no job. Never a credential.
+  'vault.check_minted': strict({ kind: z.enum(MINT_KINDS), ...operationProfile.shape, template: z.string(), check: z.string(), credential: z.string(), decision: z.string(), expiresAt: z.string() }),
+  'vault.check_mint_refused': strict({ mint: strict({ kind: z.enum(MINT_KINDS).optional(), ...operationProfile.shape }), template: z.string(), check: z.string(), reason: z.string(), decision: z.string().optional() }),
+  'vault.mint_tested': strict({ asset: z.union([asset, z.string()]), credential: z.string().optional(), sessionName: z.string().optional(), arn: z.string().optional(), expiresAt: z.string().optional(), reason: z.string().optional(), by: z.string() }),
   // The dynamic vault (issue #583): a credential request asked, given or declined. Never a value.
   'vault.credential_asked': strict({ request: z.string(), skill: z.string(), template: z.string(), machine: z.string(), job: z.string(), why: z.string().optional() }),
   'vault.credential_given': strict({ request: z.string(), skill: z.string(), name: z.string(), kind: z.string(), template: z.string(), by: z.string(), approved: z.boolean(), jobs: z.array(z.string()) }),
   'vault.credential_declined': strict({ request: z.string(), skill: z.string(), template: z.string(), reason: z.string(), by: z.string(), jobs: z.array(z.string()) }),
   // The GitHub proxy (issue #563): a job's request done, refused, or failed at GitHub. On the job's timeline; for
   // another user's job also in the log of the user whose GitHub connection the hopper acts with (`forUser`, `job`).
-  // A job's push through the hopper (issue #652): op `git.push`, the refs it named, no number or url.
+  // A job's push through the hopper (issue #652): op `git.push`, the refs it named, no number or url. A repository read or
+  // forked (issue #429): its url, no number; a fork names the fork.
   'github_proxy.done': z.union([
     strict({ ...proxyAsked, op: proxyOp, repo: z.string(), number: z.number().int(), url: z.string() }),
     strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()) }),
+    strict({ ...proxyAsked, op: z.enum(['repo.view', 'repo.fork']), repo: z.string(), url: z.string(), fork: z.string().optional() }),
   ]),
   'github_proxy.refused': strict({ ...proxyAsked, op: z.string().optional(), repo: z.string().optional(), refs: z.array(z.string()).optional(), reason: z.string() }),
   'github_proxy.failed': strict({ ...proxyAsked, op: z.union([proxyOp, z.literal('git.push')]), repo: z.string(), refs: z.array(z.string()).optional(), error: z.string() }),
@@ -346,8 +365,11 @@ export const EVENT_SCHEMAS = {
   'skill.loaded': strict({ ...skillAsked, skill: z.string(), decision: z.string().optional() }),
   'skill.refused': strict({ ...skillAsked, skill: z.string(), reason: z.string(), decision: z.string().optional() }),
   // Artifacts (issue #624, issue #675): src/events/artifact-schemas.ts.
-  ...ARTIFACT_EVENT_SCHEMAS,
-  ...ITEM_EVENT_SCHEMAS,
+  ...ARTIFACT_EVENT_SCHEMAS, ...ITEM_EVENT_SCHEMAS,
+  // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
+  ...LANE_TUNING_EVENT_SCHEMAS,
+  ...THREAD_ASK_EVENT_SCHEMAS,
+  ...bugReportEvents, ...repoChecksEvents, ...vaultGrantEvents, ...issueLineageEvents, ...rateLimiterEvents, ...contributionEvents, ...pointedJobEvents, ...githubWatchEvents,
 } satisfies Record<EventType, z.ZodType>;
 
 export const ENVELOPE_SCHEMA = strict({

@@ -3,6 +3,9 @@
 
 import type { Job, JobStatus } from '../../../src/domain/types.ts';
 import type { JobSource, SourceItem } from '../../../src/domain/ports.ts';
+import type { IntakeTrust } from '../../../src/domain/intake.ts';
+import type { ItemText } from '../../../src/domain/item-snapshots.ts';
+import type { IntakeRequest } from '../../../src/domain/intake-origin.ts';
 import githubApp from '../../../src/plugins/job-source/github-app/index.ts';
 import { parseOptions } from '../../../src/plugins/options.ts';
 import { sourceConfig, type GitHubAppOptions, type GitHubSourceConfig } from '../../../src/sources/config.ts';
@@ -19,11 +22,35 @@ export function githubConfig(over: Record<string, unknown> = {}): GitHubSourceCo
   return sourceConfig(shared);
 }
 
-export function setup(over: Record<string, unknown> = {}, o: Partial<Pick<GitHubSourceOptions, 'knownKeys' | 'rerunnable' | 'rejections' | 'whoami' | 'yoloMode' | 'jobArtifacts'>> = {}) {
+/** A test's intake trust (issue #652): `logins` (default: the connected login) are trusted actors; approvals kept in memory. */
+export interface TestTrust extends IntakeTrust {
+  approvals: Map<string, { text: ItemText; request: IntakeRequest; source: string }>;
+  /** Every set of logins asked, in order. */
+  asked: string[][];
+}
+
+export function testTrust(logins?: string[], o: { assignedHere?: string[] | ((key: string) => boolean); pending?: string[] } = {}): TestTrust {
+  const approvals: TestTrust['approvals'] = new Map();
+  const asked: string[][] = [];
+  return {
+    approvals, asked,
+    async trusted(ls, connected) {
+      asked.push(ls);
+      const actors = (logins ?? [connected]).map((l) => l.toLowerCase());
+      return new Map(ls.map((l) => [l.toLowerCase(), { allowed: actors.includes(l.toLowerCase()), reason: 'test' }]));
+    },
+    approvedText: (key) => { const a = approvals.get(key); return a && { title: a.text.title, body: a.text.body }; },
+    approve: (source, key, text, request) => { approvals.set(key, { text, request, source }); },
+    assignedHere: (key) => (typeof o.assignedHere === 'function' ? o.assignedHere(key) : (o.assignedHere ?? []).includes(key)),
+    originPending: (key) => (o.pending ?? []).includes(key),
+  };
+}
+
+export function setup(over: Record<string, unknown> = {}, o: Partial<Pick<GitHubSourceOptions, 'knownKeys' | 'rerunnable' | 'rejections' | 'whoami' | 'yoloMode' | 'jobArtifacts' | 'trust'>> = {}) {
   const gh = createFakeGitHub();
   const config = githubConfig(over);
   const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };
-  const source = createGitHubSource({ name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', config, api: gh, clock, ...o });
+  const source = createGitHubSource({ name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', config, api: gh, clock, trust: testTrust(), ...o });
   return { gh, config, source };
 }
 
@@ -43,7 +70,7 @@ export function setupApp(over: Record<string, unknown> = {}, o: AppSetupOptions 
   const config = githubConfig({ repos: [], ...over });
   const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };
   const source = createGitHubSource({
-    name: 'github-app', kind: 'github-app', mode: 'app', assignee: () => 'owner', config, api: gh, clock,
+    name: 'github-app', kind: 'github-app', mode: 'app', assignee: () => 'owner', config, api: gh, clock, trust: testTrust(),
     appInfo: o.appInfo ?? (() => APP_INFO),
     ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}),
     ...(o.paused ? { paused: o.paused } : {}),
@@ -77,6 +104,8 @@ export function jobFor(item: Pick<SourceItem, 'key' | 'url' | 'repo' | 'number' 
     source: {
       source, kind: source, key: item.key, url: item.url, title: item.title,
       ...(item.repo ? { repo: item.repo } : {}), ...(item.number ? { number: item.number } : {}), author: item.author,
+      // A job taken from a trusted origin (issue #652), as discover takes one now.
+      origin: 'trusted',
     },
     ...over,
   };

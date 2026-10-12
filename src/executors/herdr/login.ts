@@ -18,6 +18,9 @@ const HOW = 'a line containing only HOPPER_AUTH_PENDING, then one line each: too
 /** Typed in when the user cancels the login. */
 export const loginCancelledNote = (tool: string): string => `[hopper] The user cancelled the ${tool} login. Stop the command that waits for it, then go on without it; if the job cannot be done without it, end with a line HOPPER_FAILED followed by the reason.`;
 
+/** Typed in when the job's screen shows a device code it did not report (issue #698): the user was told; report it. */
+export const loginSeenNote = (tool: string): string => `[hopper] Your screen shows a ${tool} login code. The user was shown the link and the code (Logins). Keep the command that waits for it running in the background. Report it: end your message with ${HOW}.`;
+
 /** Typed in when the user asks for a new code. */
 export const loginNewCodeNote = (tool: string): string => `[hopper] The user asked for a new code for the ${tool} login. Stop the command that waits for it, start the login again in the background, and end your message with ${HOW}.`;
 
@@ -36,7 +39,10 @@ export function isGitHubLogin(r: Pick<LoginReport, 'tool' | 'verificationUrl'>):
 }
 
 /** Typed in, once, when a job reports a GitHub login (issue #563): ask the hopper instead. */
-export const githubLoginNote = (tool: string): string => `[hopper] Do not log in to GitHub on this machine: stop the ${tool} login (the command waiting for it) without entering the code. The hopper does GitHub for this job with its own connection: run sh "$HOPPER_GH" help to see how, and use it for what you needed the login for. If HOPPER_GH is not set, or the hopper cannot do what you need, say why and report the login again; then it goes to the user.`;
+export const githubLoginNote = (tool: string): string => `[hopper] Do not log in to GitHub on this machine: stop the ${tool} login (the command waiting for it) without entering the code. The hopper does GitHub for this job with its own connection: run sh "$HOPPER_GH" help to see how, and use it for what you needed the login for. If HOPPER_GH is not set, the hopper cannot be reached from this machine, or it cannot do what you need, end with a line HOPPER_FAILED followed by the reason. Never report a GitHub login again and never ask for one: the job fails if you do.`;
+
+/** Why a job that reports a GitHub login again, after it was steered, fails (issue #695): a job never signs in to GitHub. */
+export const GITHUB_LOGIN_AGAIN = 'the job reported a GitHub login again after it was told to use the hopper: a job never signs in to GitHub, not even to get around a hopper it cannot reach (issue #695). Look at the job\'s last progress for why the hopper did not serve it';
 
 /** Typed in when the login the job reported cannot be taken. */
 export const loginUnreadableNote = (problem: string): string => `[hopper] The login you reported could not be taken: ${problem}. Report it again: end your message with ${HOW}.`;
@@ -61,23 +67,31 @@ export function loginReportOf(f: AuthFields, now: Date): LoginReport | { problem
     expiresAt = new Date(now.getTime() + seconds * 1000).toISOString();
   }
   const intervalSec = positiveInt(f.interval);
+  // What asks, when the tool shows it (issue #698): the account, and the scopes as a list.
+  const scopes = f.scopes?.split(/[\s,]+/).filter(Boolean) ?? [];
   return {
     kind: kind as LoginKind, tool, verificationUrl: f.url.trim(), ...(f.code?.trim() ? { userCode: f.code.trim() } : {}), expiresAt,
-    ...(intervalSec ? { intervalSec } : {}),
+    ...(intervalSec ? { intervalSec } : {}), ...(f.account?.trim() ? { account: f.account.trim() } : {}), ...(scopes.length ? { scopes } : {}),
   };
 }
 
 /**
  * A turn that ended on a login: reported to the logins (the job then waits), or said back to the job when it
  * cannot be taken, `unreadable` times in a row at most before the job fails. A GitHub login is steered to the
- * hopper's GitHub proxy instead (`steered`, issue #563), unless the job was steered the turn before and reports it again,
- * or already waits on it. The login it already waits on, reported again (a script polling, Claude checking on it,
- * issue #567), is the same login and says nothing new.
+ * hopper's GitHub proxy instead (`steered`, issue #563); reported again right after, the job fails (issue #695): a GitHub
+ * sign-in never goes to the user. The login it already waits on, reported again (a script polling, Claude checking on it,
+ * issue #567), is the same login and says nothing new. A login `seen` on screen, not reported (issue #698), is reported
+ * all the same, and the job is told to report it (`say` with its `login`). Its code joins `codes`, the job's known ones.
  */
-export function takeLogin(ctx: ExecutionContext, fields: AuthFields, now: Date, unreadable: number, steered = false, waitsOn?: LoginRef): { login: LoginRef } | { say: string; steered?: true } | { failed: string } {
+export function takeLogin(
+  ctx: ExecutionContext, fields: AuthFields, now: Date, unreadable: number, steered = false, waitsOn?: LoginRef, o: { seen?: boolean; codes?: Set<string> } = {},
+): { login: LoginRef } | { say: string; steered?: true; login?: LoginRef } | { failed: string } {
+  if (fields.code) o.codes?.add(fields.code.trim());
   const report = loginReportOf(fields, now);
+  // Reported again right after it was steered (issue #695): never taken to the user; the job fails.
+  if (!('problem' in report) && steered && isGitHubLogin(report)) return { failed: GITHUB_LOGIN_AGAIN };
   if (!('problem' in report) && !steered && !waitsOn && isGitHubLogin(report)) {
-    ctx.progress(0, `the job started a ${report.tool} login: told it to ask the hopper for GitHub instead`);
+    ctx.progress(`the job started a ${report.tool} login: told it to ask the hopper for GitHub instead`);
     return { say: githubLoginNote(report.tool), steered: true };
   }
   let problem = 'problem' in report ? report.problem : ctx.logins ? undefined : 'this hopper takes no logins';
@@ -86,8 +100,8 @@ export function takeLogin(ctx: ExecutionContext, fields: AuthFields, now: Date, 
       const id = ctx.logins!.report(report, { renewable: true });
       if (id === waitsOn?.id) return { login: waitsOn };
       const login = { id, tool: report.tool };
-      ctx.progress(0, `waiting for the ${login.tool} login: the user completes it (Logins)`);
-      return { login };
+      ctx.progress(`waiting for the ${login.tool} login: the user completes it (Logins)`);
+      return o.seen ? { say: loginSeenNote(login.tool), login } : { login };
     } catch (e) { problem = (e as Error).message; }
   }
   if (unreadable > MAX_UNREADABLE) return { failed: `the login the job reported could not be taken: ${problem}` };
@@ -104,13 +118,13 @@ export function loginWait(ctx: ExecutionContext, login: LoginRef, cleared: () =>
     signal: (s: LoginSignal) => {
       if (s === 'expired') {
         ctx.logins?.expired(login.id);
-        ctx.progress(0, `the ${login.tool} code expired before the login was completed`);
+        ctx.progress(`the ${login.tool} code expired before the login was completed`);
         return;
       }
       if (s === 'completed') ctx.logins?.completed(login.id);
       else ctx.logins?.failed(login.id, `the ${login.tool} login was denied at the provider`);
       cleared();
-      ctx.progress(0, s === 'completed' ? `the ${login.tool} login went through: claude goes on` : `the ${login.tool} login was denied at the provider`);
+      ctx.progress(s === 'completed' ? `the ${login.tool} login went through: claude goes on` : `the ${login.tool} login was denied at the provider`);
     },
   };
 }

@@ -3,7 +3,8 @@
 // its GitHub connection listed: taken, or the one reason it was not, with Assign to me (one, or all) and Release
 // claim where the source offers them; what the intake migration changed, once; and the repos outside the job
 // repositories with issues for the user, each with Add, which saves the job repositories with it. The Overview's
-// idle lanes say why they are idle, from the latest Decision.
+// idle lanes say why they are idle, from the latest Decision. A request card (issue #652) shows the text as read, who
+// wrote, labelled and assigned it, and why; Approve sends its hash; a changed one shows the change.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -13,10 +14,20 @@ const DETAIL = {
   mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper',
   intake: [
     { key: url(1), title: 'Taken one', repo: 'octo-user/hopper', jobId: 'j-1' },
-    { key: url(2), title: 'Nobody has it', repo: 'octo-user/hopper', reason: 'not assigned to you', action: 'assign' },
-    { key: url(3), title: 'Also unassigned', repo: 'octo-user/hopper', reason: 'not assigned to you', action: 'assign' },
-    { key: url(4), title: 'Old claim', repo: 'octo-user/hopper', reason: 'claimed by another hopper', action: 'release' },
-    { key: url(5), title: 'Kept out', repo: 'octo-user/hopper', reason: 'on the backburner' },
+    { key: url(2), title: 'Nobody has it', repo: 'octo-user/hopper', reason: 'not assigned to you', action: 'assign', group: 'not-assigned' },
+    { key: url(3), title: 'Also unassigned', repo: 'octo-user/hopper', reason: 'not assigned to you', action: 'assign', group: 'not-assigned' },
+    { key: url(4), title: 'Old claim', repo: 'octo-user/hopper', reason: 'claimed by another hopper', action: 'release', group: 'other' },
+    { key: url(5), title: 'Kept out', repo: 'octo-user/hopper', reason: 'on the backburner', action: 'unbackburner', group: 'backburner' },
+    { key: url(7), title: 'From a stranger', repo: 'octo-user/hopper', reason: 'a request: approve it to take it', action: 'approve', group: 'request', request: {
+      hash: 'a'.repeat(64), title: 'From a stranger', body: 'Please <img src=x onerror="alert(1)"> change the CI.', author: 'stranger',
+      actors: [{ role: 'author', login: 'stranger', trusted: false }, { role: 'labelled', login: 'octo-user', trusted: true }, { role: 'assigned', login: 'octo-user', trusted: true }],
+      why: ['written by stranger, not a trusted actor'],
+    } },
+    { key: url(8), title: 'Edited since', repo: 'octo-user/hopper', reason: 'a request: approve it to take it', action: 'approve', group: 'request', request: {
+      hash: 'b'.repeat(64), title: 'Edited since', body: 'one\nthree\n', author: 'stranger', approved: { title: 'Edited since', body: 'one\ntwo\n' },
+      actors: [{ role: 'author', login: 'stranger', trusted: false }, { role: 'labelled', app: 'helper[bot]', login: 'helper[bot]', trusted: false }, { role: 'assigned', login: 'octo-user', trusted: true }],
+      why: ['written by stranger, not a trusted actor', 'labelled by an app or a bot (helper[bot])'],
+    } },
   ],
   intakeMigration: { at: '2026-10-08T10:00:00.000Z', changes: [{ key: url(6), change: 'released a claim with no holder recorded and no job in this hopper' }] },
   outsideRepos: [{ repo: 'octo-user/other', items: [url(1, 'octo-user/other')] }],
@@ -96,7 +107,7 @@ describe('Sources: what intake did with each labelled issue (issue #440)', () =>
   it('each issue is taken or says why, with the action the source offers', async () => {
     await boot('#sources');
     await vi.waitFor(() => expect(intake()).not.toBeNull());
-    expect(intake()!.querySelector('[data-intake-summary]')?.textContent).toBe('5 open labelled issues: 1 taken, 4 not taken');
+    expect(intake()!.querySelector('[data-intake-summary]')?.textContent).toBe('7 open labelled issues: 1 taken, 6 not taken');
     expect(row(url(1)).textContent).toContain('taken');
     expect(row(url(2)).textContent).toContain('not assigned to you');
     expect(row(url(5)).textContent).toContain('on the backburner');
@@ -110,6 +121,32 @@ describe('Sources: what intake did with each labelled issue (issue #440)', () =>
       { path: '/ui/api/sources/github-account/intake', body: { kind: 'release', keys: [url(4)] } },
       { path: '/ui/api/sources/github-account/intake', body: { kind: 'assign', keys: [url(2), url(3)] } },
     ]);
+  });
+
+  it('a request card (issue #652): the text as plain text, who did what, why; Approve sends the hash it shows', async () => {
+    await boot('#sources');
+    await vi.waitFor(() => expect(intake()).not.toBeNull());
+    const card = row(url(7)).querySelector<HTMLElement>('[data-slot="request-card"]')!;
+    expect(card.querySelector('[data-slot="request-why"]')!.textContent).toBe('written by stranger, not a trusted actor');
+    expect(card.querySelector('[data-slot="request-actors"]')!.textContent).toBe('written by strangerlabelled by octo-userassigned by octo-user');
+    expect(card.querySelector('[data-slot="request-body"]')!.textContent).toBe('Please <img src=x onerror="alert(1)"> change the CI.');
+    expect(card.querySelector('img')).toBeNull();
+    // Requests come first: they are what needs the user.
+    expect(intake()!.querySelector('[data-intake-item]')!.getAttribute('data-intake-item')).toBe(url(7));
+    await click(button(card, 'Approve'));
+    await vi.waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toEqual({ path: '/ui/api/sources/github-account/intake', body: { kind: 'approve', keys: [url(7)], hash: 'a'.repeat(64) } });
+  });
+
+  it('a request changed since a person approved it shows the change line by line', async () => {
+    await boot('#sources');
+    await vi.waitFor(() => expect(intake()).not.toBeNull());
+    const card = row(url(8)).querySelector<HTMLElement>('[data-slot="request-card"]')!;
+    const diff = card.querySelector('[data-slot="body-diff"]')!;
+    expect([...diff.querySelectorAll('[data-change="removed"]')].map((e) => e.textContent)).toEqual(['two\n']);
+    expect([...diff.querySelectorAll('[data-change="added"]')].map((e) => e.textContent)).toEqual(['three\n']);
+    expect(card.querySelector('[data-slot="request-actors"]')!.textContent).toContain('labelled by helper[bot] (helper[bot])');
+    expect(button(card, 'Approve the new text')).toBeDefined();
   });
 
   it('lists what the intake migration changed', async () => {

@@ -48,7 +48,9 @@ describe('.github/workflows/pr.yml, the pull request check', () => {
       expect(node?.with, name).toMatchObject({ 'node-version': 24, cache: 'npm' });
     }
     const runs = workflow.jobs.gates!.steps.map((s) => s.run).filter(Boolean);
-    expect(runs).toEqual(['npm ci', 'npm run typecheck', 'npm run lint', 'npm run build:ui']);
+    expect(runs).toEqual(['npm ci', 'node scripts/whats-new.ts check HEAD^1', 'npm run typecheck', 'npm run lint', 'npm run build:ui']);
+    // What's new is checked against the base (issue #824): the checkout is the merge, so HEAD^1 must be fetched.
+    expect(workflow.jobs.gates!.steps.find((s) => s.uses?.startsWith('actions/checkout@'))?.with).toEqual({ 'fetch-depth': 2 });
     const shard = workflow.jobs.shard!;
     const shards = shard.strategy!.matrix.shard;
     expect(shards).toEqual(shards.map((_, i) => i + 1));

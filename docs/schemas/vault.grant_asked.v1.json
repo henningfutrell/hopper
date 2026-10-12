@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "job": {
+      "type": "string"
+    },
+    "key": {
+      "type": "string"
+    },
+    "machine": {
+      "type": "string"
+    },
+    "template": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "job",
+    "key",
+    "machine",
+    "template",
+    "name"
+  ],
+  "additionalProperties": false
+}

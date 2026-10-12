@@ -3,12 +3,13 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock, PluginsView, UserStore } from '../domain/ports.ts';
 import { userIdOf, type TenantParts } from './tenants.ts';
-import type { Sandboxes } from '../sandboxes/service.ts';
+import type { Sandboxes } from '../sandbox/service.ts';
 import { EVENT_TYPES } from '../domain/types.ts';
 import type { DomainEvent, EventType } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
 import { pullRequestsView, yoloModeView } from './ui/yolo-mode.ts';
 import { autoParkView } from './ui/auto-park.ts';
+import { threadAskView } from './ui/thread-ask.ts';
 import { tldrView } from './ui/tldr.ts';
 
 export const eventTypeList = z.string().optional().transform((s, ctx) => {
@@ -73,6 +74,7 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
   app.get('/api/yolo-mode', async (req) => yoloModeView(o.tenant(req)));
   // Auto-park (issue #650): how long a question waits on a person before its job parks by itself.
   app.get('/api/auto-park', async (req) => autoParkView(o.tenant(req)));
+  app.get('/api/thread-ask', async (req) => threadAskView(o.tenant(req)));
   // The TL;DR (issue #569): whether a cheap model writes one for every long card, and the cards show it.
   app.get('/api/tldr', async (req) => tldrView(o.tenant(req)));
   // The Pull requests list (issue #637): the waiting pull requests, per repository, their state and yolo mode; where merging waits.
@@ -110,4 +112,6 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
   app.get('/api/routing', async (req) => o.tenant(req).plugins.routing());
 
   app.get('/api/usage', async (req) => o.tenant(req).engine.getUsageReport());
+  app.get('/api/lanes/plan', async (req) => o.tenant(req).engine.laneTuning.plan());
+  app.get('/api/lanes/costs', async (req) => o.tenant(req).engine.laneTuning.costs());
 }

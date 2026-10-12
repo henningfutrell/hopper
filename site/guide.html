@@ -108,8 +108,9 @@ you.</p>
 <li>put a <code>## Proposal</code> heading in the issue body, or</li>
 <li>press <strong>Propose</strong> on a job in the Queue that has not started yet, and confirm. The job then shows <em>proposal asked</em>.</li>
 </ul>
-<p>The agent writes <strong>Goal</strong>, <strong>Approach</strong>, <strong>Alternatives considered</strong>,
-<strong>Risks</strong>, <strong>Effort</strong> and <strong>Context</strong> (what it read and relied on). While it waits the
+<p>The agent writes a <strong>TL;DR</strong>, the <strong>Problem</strong>, one or more paths (each with <strong>Summary</strong>,
+<strong>Security</strong>, <strong>Effort</strong>, <strong>Risk</strong>, <strong>Friction</strong> and <strong>Creates</strong>), the
+<strong>Recommended</strong> path, and <strong>Context</strong> (what it read and relied on). While it waits the
 job holds no lane, keeps its session, and can be parked.</p>
 <h3>Reviewer levels and escalation</h3>
 <p>An admin sets these in <strong>Proposals settings</strong>, at the bottom of the Proposals view. They apply at once.</p>
@@ -125,15 +126,16 @@ as often as allowed, it comes to you. Every verdict and its notes stay on the re
 <h3>What you can do</h3>
 <div class="table-wrap"><table class="stack">
 <tr><th>Button</th><th>Note</th><th>Then</th></tr>
-<tr><td><strong>Accept</strong></td><td>optional</td><td>Signed off: who, when, which version. The job ends as finished.</td></tr>
-<tr><td><strong>Request changes</strong></td><td>required: what to change</td><td>The job writes the next version, which is reviewed from the first level again.</td></tr>
-<tr><td><strong>Reject</strong></td><td>required: why</td><td>Asks you to confirm. The job ends.</td></tr>
+<tr><td><strong>Continue with selected</strong></td><td>optional, one per path</td><td>Signed off: who, when, which version. Each selected path continues as its own follow-on job.</td></tr>
+<tr><td><strong>Ask for more paths</strong></td><td>optional</td><td>The job writes the next version with more paths, which is reviewed from the first level again.</td></tr>
+<tr><td><strong>Steer</strong></td><td>required: what to change</td><td>The job writes the next version, which is reviewed from the first level again.</td></tr>
+<tr><td><strong>Reject all</strong></td><td>required: why</td><td>Asks you to confirm. The job ends.</td></tr>
 </table></div>
 <p>You can decide at any stage, also while a reviewer level still has it. A viewer sees the card but cannot decide; an
 operator or admin can.</p>
 <h3>What an accepted proposal leads to</h3>
-<p>The proposal stays linked to its job and issue, and the job ends. Turning an accepted proposal into new issues or work by
-itself is not decided yet: you start that work yourself. The exception is a job you switched into a proposal from a
+<p>The proposal stays linked to its job and issue, and the job ends. Each path you select continues as its own follow-on job, with the
+parent's spec and your note. The exception is a job you switched into a proposal from a
 question: it goes on as you picked at Accept, and a rejected proposal sends it back to its work
 (<a href="#phase-shifts">Phase shifts</a>).</p>
 
@@ -231,6 +233,8 @@ pick, beside what was decided, so you can see whether to trust it.</p>
 <li><strong>Answering a question with listed options</strong>: a job's question lists two or more numbered options. Jev is asked
 before any escalation level.</li>
 <li><strong>A failed job no rule explains</strong>: Jev picks between running it again and handing it to a person.</li>
+<li><strong>How many lanes a machine runs</strong>: shadow by default.</li>
+<li><strong>The machine a waiting job goes to</strong>: shadow by default.</li>
 </ul>
 <h3>Shadow and active</h3>
 <p>Each decision has its own mode in <strong>Settings → Decider</strong> (admin):</p>
@@ -360,8 +364,9 @@ Overview marks a priority lane with a star.</p>
 lane fault, newer runs counting more. A lane needs 5 runs and an online machine to be ranked. A priority lane is replaced only by
 one clearly more reliable.</li>
 <li><strong>How many</strong>: <em>Priority lanes</em>, default 1; 0 turns them off.</li>
-<li><strong>While no high-priority job waits</strong>: <em>a priority lane stays free</em> (default), or <em>it takes default
-jobs</em> — a default job takes one only when no other lane on that machine is free; a low job never does.</li>
+<li><strong>While a high-priority job waits</strong>: <em>only it takes a priority lane</em> (default), or <em>default jobs take
+one too</em> — then only low jobs leave it. A priority lane is held only while a high-priority job waits for one. While none
+waits, any job takes a priority lane, after the other lanes on that machine.</li>
 <li><strong>By hand</strong>: an admin ticks lanes and presses <strong>Use these lanes</strong>; <strong>Choose by
 reliability</strong> goes back to the automatic choice.</li>
 </ul>

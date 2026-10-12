@@ -7,7 +7,7 @@ import { z } from 'zod';
 import type { Clock } from '../domain/ports.ts';
 import { highFirst, LOGIN_STATUSES, roleAllows } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
-import { sessionToken } from './host-guard.ts';
+import { requestSession } from './host-guard.ts';
 import { userIdOf, type TenantParts } from './tenants.ts';
 import type { UiSessions } from './ui/sessions.ts';
 
@@ -19,10 +19,10 @@ export const loginsQuery = z.object({
 const idParams = z.object({ id: z.string() });
 
 export function loginRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts; sessions: UiSessions; clock: Clock }): void {
-  /** The request carries a UI session of the user it reads as, whose role may act on a login. */
+  /** The request carries a UI session of the user it reads as, whose role may act on a login; an API token never reads a code. */
   const ownSession = (req: FastifyRequest): boolean => {
-    const s = o.sessions.find(sessionToken(req));
-    return s !== undefined && s.userId === userIdOf(req) && roleAllows(s.role, 'operator');
+    const s = requestSession(req, o.sessions);
+    return s?.kind === 'ui' && s.userId === userIdOf(req) && roleAllows(s.role, 'operator');
   };
 
   app.get('/api/logins', async (req) => {

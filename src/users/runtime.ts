@@ -9,7 +9,7 @@ import type {
   Clock, EscalationLevel, ExecutorRegistry, PluginsView, QuestionService, ReviewServices, SourceRegistry,
   UserStore, WebhookDispatcher, CredentialMinter,
 } from '../domain/ports.ts';
-import { doneAtSource, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, overAtSource, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type VaultAccess, type User, type WebhookSubscription } from '../domain/types.ts';
+import { doneAtSource, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, overAtSource, prioritySettingsOf, REVIEW_KINDS, type AttachedMachine, type ConnectedAccountProvider, type Job, type MachineSnapshot, type Question, type VaultAccess, type IntakeAccess, type User, type WebhookSubscription } from '../domain/types.ts';
 import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
@@ -20,7 +20,7 @@ import type { MachineJoin } from '../plugins/attached-edit.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
-import { createClientReleaseKeeper, createTargetPool, withClientWorkTree, probeContainer, probeHerdrOverSsh, probeSsh } from '../machines/index.ts';
+import { createClientReleaseKeeper, createOwnedHerdrKeeper, createTargetPool, probeOwnedHerdr, withClientWorkTree, probeContainer, probeSsh } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
 import { builtinInstances, ensurePluginsConfig } from '../plugins/builtin-instances.ts';
 import { createDetectionKit } from '../plugins/detect.ts';
@@ -41,19 +41,20 @@ import { runtimeSecrets } from '../secrets/runtime.ts';
 import { createSourceSync, withFixedStatuses, type SourceSync } from '../sources/index.ts';
 import { accountEvents, createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { createUserGitHubProxy, type UserGitHubProxy } from './github-proxy.ts';
-import { createUserLink } from './link.ts';
+import { createUserLink, type UserLink } from './link.ts';
 import { installations, whoIs } from '../connected-accounts/identity.ts';
 
 import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } from './history.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts';
-import { approvalWait, clientTargets as vaultTargets, openUserVault, type Vault } from '../vault/index.ts';
+import { approvalWait, clientTargets as vaultTargets, openUserVault, type LaunchScope, type Vault, withLaunch } from '../vault/index.ts';
 import type { JobStream } from '../job-stream/index.ts';
 import { openJobStream } from './job-stream.ts';
 import { artifactUrl, type UserArtifacts } from '../artifacts/index.ts';
 import { liveExecutors } from './executors.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
+import { machineLanesEditor } from './machine-lanes.ts';
 
 export type { UserSeams } from './seams.ts';
 
@@ -65,6 +66,8 @@ export interface UserMachineLink {
   join(j: MachineJoin): Promise<{ ok: true; machine: string } | { ok: false; error: string }>;
   /** The client token of the client target holding this machine key; undefined when none does. */
   tokenFor(key: string): string | undefined;
+  /** The client target named `machine`, reached down its link, where it dialled in, and which are (issue #708: a box on it). */
+  client: Pick<UserLink, 'named' | 'dialled' | 'dialledIn'>;
 }
 
 /** What the instance gives each user runtime. */
@@ -86,26 +89,35 @@ export interface UserRuntimeOptions {
   installedDir: string;
   /** How often the plugins config's version is checked. */
   pluginsConfigIntervalMs: number;
-  /** The UI link to one question (notifications carry it). */
-  answerUrl(questionId: string): string;
+  /** A UI link to a view, by its hash (no `#`): one question, `question-<id>`; the Logins view, `logins` (issue #698). Notifications carry them. */
+  uiUrl(hash: string): string;
   /** The base of an artifact's link in a notification, given the user's link base (issue #673). */
   artifactLinkBase(linkBase: string): string;
+  /** Where the hopper is reached from outside now (issue #795, the tunnel watch). */
+  reach?: () => string | undefined;
   /** A GitHub account this user connected from Sources: link it, so signing in with it lands here (issue #214). */
   linkIdentity?(provider: ConnectedAccountProvider, subject: string): void;
   /** Of these source keys, those another user of this hopper has a job for (issue #440): a claim may be theirs. */
   otherUsersKnow?(keys: string[]): Set<string>;
   /**
-   * The hopper's URL as a job on `machine` reaches it (issue #563): `dialled`, the URL a client target dialled in
-   * at. Undefined: the machine cannot reach the hopper, and its jobs get no GitHub proxy. Absent: none.
+   * The hopper's URL as a job on `machine` reaches it (issues #563, #695): `dialled`, the URL a client target dialled in
+   * at; `linkBase`, the user's (Settings → Artifacts). Undefined: the machine cannot reach the hopper, and its jobs get no
+   * GitHub proxy. Absent: none.
    */
-  proxyUrl?(machine: MachineSnapshot, dialled: string | undefined): string | undefined;
+  proxyUrl?(machine: MachineSnapshot, dialled: string | undefined, linkBase: string): string | undefined;
+  /** The hopper's addresses (issue #698): an ssh target's probe asks which one it reaches. Absent: not asked. */
+  hopperUrls?(): string[];
+  /** The hopper's network (issue #711): a machine off it is shown the command that joins it. Absent: none. */
+  network?: string;
   /**
    * Access (the instance's, issue #559): where the vault's gate approves a template's operation profiles (issue #584),
    * and what the vault asks before every mint (issue #580); `minter` mints (STS, the Kubernetes API).
    */
-  access?: VaultAccess; minter?: CredentialMinter;
-  /** The whole hopper's system secrets (issue #658): the sign-in realms', shown on the vault's page. */
-  instanceSecrets?: SystemSecrets;
+  access?: VaultAccess & IntakeAccess; minter?: CredentialMinter;
+  /** The whole hopper's system secrets (issue #658): the sign-in realms', shown on the vault's page; its shared secrets (issue #718). */
+  instanceSecrets?: SystemSecrets; sharedSecrets?: Parameters<typeof openUserVault>[0]['shared'];
+  /** What each box of this user was launched with, by machine name (issue #708): the vault gives it nothing else. Absent: no box is narrowed. */
+  launchScopes?(userId: string): Map<string, LaunchScope>;
 }
 
 
@@ -173,7 +185,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Every secret comes from the runtime, under the user's prefix (issue #56, #158) — but the TypeSafe API key, the
   // hopper's own (issue #657), kept in the vault's system scope.
   // The hopper's own secrets are in the vault's system scope (issue #658): the old copies moved in at this start.
-  const { system, keys } = openUserSystemSecrets({ user, store, env: o.env, ...(o.access ? { access: o.access } : {}), clock, logger });
+  const { system, keys, readBackends } = openUserSystemSecrets({ user, store, env: o.env, ...(o.access ? { access: o.access } : {}), clock, logger });
   const { jev, typesafeKey, secret } = userTypesafeKey({
     user, store, env: o.env, runtime: userSecrets(o.env, user), system,
     ...(seams.jev ? { seamJev: seams.jev } : {}), timeoutMs: JEV_TIMEOUT_MS, clock, logger,
@@ -195,18 +207,22 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   }
   // How the hopper proves itself to an ssh target, asked at every connection (design.md "Target authentication").
   const sshAuth = () => hopperSshAuth({ env: secret, dataDir });
+  // The addresses an ssh target's probe asks (issues #695, #698): the user's link base (Settings → Artifacts) first, when
+  // set, then the hopper's own; a job there gets only the one the probe found it reaches, the link base too.
+  const sshCandidates = (urls: string[]): string[] => { const b = store.artifacts.settings().linkBase.replace(/\/+$/, ''); return b ? [b, ...urls.filter((u) => u !== b)] : urls; };
   // The hopper's link key for this user (issue #308), and its client targets reached down their links.
   let clientTargets = (): AttachedMachine[] => [];
   const link = createUserLink({ store, links: o.links, userId: user.id, targets: () => clientTargets() });
   const { key: hopperLink, transport: clientTransport, named: clientNamed } = link;
-  const keepClient = createClientReleaseKeeper({ release: o.clientRelease, logger });
+  // Client targets on the hopper's client release (issue #545); ssh targets on the hopper's own herdr (issue #741).
+  const keepClient = createClientReleaseKeeper({ release: o.clientRelease, logger }), keepHerdr = createOwnedHerdrKeeper({ logger });
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
   let applyJobSources = (_built: BuiltJobSource[]): void => {};
   // How the hopper reaches each attached machine (issue #74: the machine-source context's `target`).
   const target = createTargetPool({
     // A box of a template not approved takes no new job (issue #602): the template's approval, read at every list.
-    clock, logger, templateWait: (name) => approvalWait(name, store.vault.template(name)),
+    clock, logger, templateWait: (name) => approvalWait(name, store.vault.template(name)), ...(o.network ? { network: o.network } : {}),
     // A client target that dials in is probed at once, not at the next 30 s.
     reachedAt: (m) => ('client' in m ? o.links.dialledAt(user.id, m.client.key) : 0),
     probe: seams.machineProbe
@@ -215,10 +231,12 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         : 'docker' in m
           ? probeContainer({ container: m.docker, dockerHost: () => dockerHost(secret) }).then((online) => ({ online }))
           // An ssh target's home comes with every probe: `~` in a job's work tree resolves there (issue #323);
-          // and its work tree is made there (issue #361). One after the other, over the one shared ssh connection.
-          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth, ...(m.workTree !== undefined ? { workTree: m.workTree } : {}) }).then(async (found) => ({
-            online: m.herdr ? await probeHerdrOverSsh({ target: m.ssh, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }) : true,
+          // and its work tree is made there (issue #361); which of the hopper's addresses it reaches (issue #698). One
+          // after the other, over the one shared ssh connection.
+          : probeSsh({ target: m.ssh, controlDir: join(dataDir, 'ssh'), auth: sshAuth, ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(o.hopperUrls ? { hopperUrls: sshCandidates(o.hopperUrls()) } : {}) }).then(async (found) => ({
             ...found,
+            // Its herdr session running, its herdr client and server versions, and first the herdr the hopper owns there (issue #741): installed, linked, the session server moved to it when nothing is lost.
+            ...(m.herdr ? await probeOwnedHerdr(keepHerdr, { target: m.ssh, session: m.session, controlDir: join(dataDir, 'ssh'), auth: sshAuth }, () => jobsOnMachine(m.name).length > 0) : { online: true }),
           })))),
   });
   // The GitHub account the user's work comes through (issue #214): from signing in with it, or
@@ -237,7 +255,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     },
   });
   // The GitHub proxy (issue #563): a client target's jobs reach the hopper where it dialled in.
-  const proxy = createUserGitHubProxy({ user, store, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id)) });
+  const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase) });
   const notEnded = () => store.jobs.list({ status: [...IN_FLIGHT_STATUSES] });
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine);
   const host = createPluginHost({
@@ -246,7 +264,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     defaultMachines: builtin.machines, defaultExecutors: builtin.executors,
     kit: createDetectionKit({ env: { ...o.env, ...cliEnv }, secret, secretName: (n) => `${user.secretPrefix}${n}` }),
     builtins: withSeams(seams),
-    jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow), connectedAccounts },
+    jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow, o.access && ((login, actors) => o.access!.decideIntakeActor(user.id, login, actors))), connectedAccounts },
     machineContext: { executors: () => executorNames(), target },
     executorContext: { client: clientNamed },
     intervalMs: o.pluginsConfigIntervalMs,
@@ -261,7 +279,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       localMachine: config.localMachine,
     },
   });
-  await host.start();
+  // Then the system secrets kept in a vault backend are read (issue #658, requirement 6), and read again from then on.
+  const stopBackendReads = await host.start().then(() => readBackends(() => host.vaultBackends()));
   // The pinned host keys follow the plugins config: rewritten when it changes, each problem logged once.
   const pinProblems = new Set<string>();
   const pinned = (machines: AttachedMachine[]): AttachedMachine[] => {
@@ -292,9 +311,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Read at each question and failure: reached only after `engine` exists.
   const gated = (machineId: string): boolean => engine.blastRadius.gates(machineId);
   const questions = createQuestionService({
-    store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config, minorDecisions: { first: minorDecisions, gated },
+    store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config, gated, risk: minorDecisions,
     renotifyMs: config.humanRenotifyMs, humanTimeoutMs: config.humanTimeoutMs,
-    answerUrl: o.answerUrl,
+    answerUrl: (id) => o.uiUrl(`question-${id}`),
     onAnswered: (q: Question) => engine.onAnswered(q),
     onExpired: (q: Question) => engine.onExpired(q),
     // onShift: a level's suggested phase shift (issue #548), made when the phase-shift settings allow the level.
@@ -311,7 +330,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
   // The vault's view carries the system scope too (issue #658): the user's and the whole hopper's own secrets, and their audit trail.
-  const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends() }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
+  const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => withLaunch(vaultTargets(host.targets()), o.launchScopes?.(user.id)), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends(), ...(o.sharedSecrets ? { shared: o.sharedSecrets } : {}) }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
   const engine: Engine = createEngine({
     store, clock, executors, router, questions, reviews, logins, queueSorter: host.queueSorter,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() },
@@ -320,12 +339,10 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     machines: { list: () => { pinned(host.targets()); return host.machines().list(); } },
     // The usage sources follow the plugins config live (issue #356).
     usage: () => [...host.usageSources(), ...(seams.fakeUsage ? [seams.fakeUsage] : [])],
-    policy: {
-      softLimit: config.softLimit, hardLimit: config.hardLimit, routerCheapBoost: config.routerCheapBoost,
-      laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost, pacing: config.pacing,
-    },
+    policy: { softLimit: config.softLimit, hardLimit: config.hardLimit, routerCheapBoost: config.routerCheapBoost,
+      laneIdleGraceMs: config.laneIdleGraceMs, resumeBoost: config.resumeBoost, pacing: config.pacing },
     tickMs: config.tickMs,
-    maxQuestions: config.maxQuestions, keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs, doneRecheckMs: config.doneRecheckMs,
+    maxQuestions: config.maxQuestions, keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs, linkGraceMs: config.linkGraceMs, doneRecheckMs: config.doneRecheckMs,
     // Completion is the job's source's to judge (issues #171, #187, #579); a job of no source, or of one that does not judge, is complete.
     verdict: (job) => judge(sourceOf(job), job),
     // Before a nudge (issue #627): the job's work over at its source, or a credential a person is asked for.
@@ -334,12 +351,14 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // git's way to GitHub through it (issue #652). No job holds a GitHub token of its own.
     // A box's blast radius includes its template's rating (issue #605), read live from the vault.
     jobProxy: proxy.jobProxy, boxRadius: (machine) => vault.boxRadius(machine),
-    // Read at each Decision; reached only after `failures` exists.
-    problems: () => failures.blocks(),
+    // Read at each Decision; reached only after `failures` exists. An applied lane recommendation edits the machine (issue #688).
+    problems: () => failures.blocks(), machineLanes: machineLanesEditor(plugins),
+    // A machine's lanes and a waiting job's machine are decider calls too (issue #688).
+    jevFirst: minorDecisions,
   });
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const sync = createSourceSync({
-    sources: jobSources(), host: engine.sourceHost, clock,
+    sources: jobSources(), host: engine.sourceHost, clock, jevFirst: minorDecisions,
     pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? SEAM_SOURCE_POLL_MS,
   });
   // The failure assessor (issue #509): its runs again go through the sync loop's Run again.
@@ -356,9 +375,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const stopFailureLog = logFailures(store);
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
-  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: o.answerUrl, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id) });
-  // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them.
-  const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), store, clock, logger });
+  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => o.uiUrl(`question-${id}`), loginsUrl: () => o.uiUrl('logins'), highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), ...(o.reach ? { reach: o.reach } : {}) });
+  // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them; lane tuning (issue #688) after new samples.
+  const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), afterMachineRecord: () => engine.laneTuning.record(), store, clock, logger });
   const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
   let started = false, stopped: Promise<void> | undefined;
   return {
@@ -368,25 +387,21 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
     secretProblem: (sub) => webhookSecrets.problem(sub), vault, // issues #558, #585, #586
-    machineLink: {
-      hopperKey: hopperLink.publicKey,
-      join: (j) => host.joinMachine(j),
-      tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined),
-    },
+    machineLink: { hopperKey: hopperLink.publicKey, join: (j) => host.joinMachine(j), client: link,
+      tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined) },
     async start() {
-      if (started) return;
-      started = true;
+      if (started) return; started = true;
       await engine.start();
       await failures.backfill.once(); // the done-check backfill (issue #637), before the sync and the assessor judge the same failures
       sync.start();
       history.start(); minorDecisions.start(); tldrs.start();
       failures.start();
       connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
-      jobStream.start();
+      jobStream.start(); proxy.githubProxy.bugReports.start(); proxy.githubProxy.watches.start(); // Report a bug's kept reports (issue #694), the GitHub watches (issue #427)
     },
     stop() {
       stopped ??= (async () => {
-        jobStream.stop();
+        jobStream.stop(); await proxy.githubProxy.bugReports.stop(); await proxy.githubProxy.watches.stop();
         await failures.stop();
         minorDecisions.stop(); await tldrs.stop();
         await sync.stop();
@@ -398,7 +413,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         await dispatcher.stop();
         await host.stopNotifiers();
         stopFailureLog();
-        host.stop();
+        host.stop(); stopBackendReads();
         store.close();
       })();
       return stopped;

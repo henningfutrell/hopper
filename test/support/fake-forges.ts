@@ -15,9 +15,14 @@
 // one never used, else the least recently used. `POST /api/v3/credentials/revoke` (no authentication, as
 // GitHub's) revokes the access and refresh tokens it is given; `revokeDown` makes it answer that status.
 import { createHash } from 'node:crypto';
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { forksRoute, type ForksForge } from './fake-forks.ts';
 import { serveGit } from './fake-git.ts';
+import { readBody, send } from './fake-http.ts';
+import { repoChecksRoute, type RepoChecksForge } from './fake-repo-checks.ts';
+import { issueIdOf, subIssuesRoute, type SubIssuesForge } from './fake-sub-issues.ts';
+import { watchRoute, type WatchForge } from './fake-github-watch.ts';
 
 export interface FakeIssue {
   repo: string;
@@ -33,6 +38,8 @@ export interface FakeIssue {
   stateReason?: string;
   /** The comments posted on it, as GitHub's REST answers them (issue #673). */
   comments?: Record<string, unknown>[];
+  /** Its sub-issues, each `owner/name#N` (issue #729). */
+  subIssues?: string[];
 }
 
 /** A pull request opened on the fake (issue #563); `draft` is marked ready through GraphQL (issue #652). */
@@ -42,7 +49,7 @@ export interface ForgeRequest { method: string; path: string; query: Record<stri
 
 interface Device { code: string; userCode: string; state: 'pending' | 'approved' | 'denied'; login?: string }
 
-export interface FakeForge {
+export interface FakeForge extends RepoChecksForge, SubIssuesForge, ForksForge, WatchForge {
   url: string;
   requests: ForgeRequest[];
   issues: FakeIssue[];
@@ -61,6 +68,8 @@ export interface FakeForge {
   chosenRepos?: Record<string, string[]>;
   /** GitHub: where the app is installed cannot be read (GET /user/installations answers 503). */
   installationsDown?: boolean;
+  /** GitHub: a new issue or comment answers this status and is not made (issue #694: no access to the repository, GitHub down). */
+  issuesRefused?: number;
   /** GitHub: the refresh grant answers this status, refusing nothing (issue #441: a 5xx, a rate limit). */
   refreshDown?: number;
   /** The credentials revoke requests named (issue #514), in order. */
@@ -79,20 +88,6 @@ export interface FakeForge {
   mint(login: string, web?: boolean): { accessToken: string; refreshToken: string };
   close(): Promise<void>;
 }
-
-async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  for await (const c of req) chunks.push(c as Buffer);
-  const text = Buffer.concat(chunks).toString('utf8');
-  if (!text) return {};
-  if ((req.headers['content-type'] ?? '').includes('application/x-www-form-urlencoded')) return Object.fromEntries(new URLSearchParams(text));
-  try { return JSON.parse(text) as Record<string, unknown>; } catch { return { raw: text }; }
-}
-
-const send = (res: ServerResponse, status: number, body: unknown) => {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
-  res.end(body === undefined ? '' : JSON.stringify(body));
-};
 
 type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string };
 
@@ -179,7 +174,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
     const restIssue = (i: FakeIssue) => ({
       number: i.number, title: i.title, body: i.body, state: i.state ?? 'open', html_url: `${base}/${i.repo}/issues/${i.number}`,
       updated_at: '2026-10-06T00:00:00Z', user: { login: i.author }, assignees: (i.assignees ?? [i.author]).map((login) => ({ login })), labels: i.labels.map((name) => ({ name })),
-      repository_url: `${base}/api/v3/repos/${i.repo}`,
+      repository_url: `${base}/api/v3/repos/${i.repo}`, id: issueIdOf(i.repo, i.number),
     });
     const find = (repo: string, num: number) => issues.find((i) => issueKey(i.repo, i.number) === issueKey(repo, num));
     const restPull = (p: FakePull) => ({
@@ -248,6 +243,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const usedNow = grants.find((g) => r.auth.endsWith(` ${g.access}`));
       if (usedNow) usedNow.used = ++tick;
       const path = r.path.slice('/api/v3'.length);
+      const checks = repoChecksRoute(forge?.repoChecks, r.method, path, r.body);
+      if (checks) return checks;
       if (r.method === 'GET' && path === '/user') return { status: 200, body: { id: idOf(login), login, name: `${login} name` } };
       if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] };
       if (r.method === 'GET' && path === '/user/installations') {
@@ -273,8 +270,14 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         const label = /label:"?([^"\s]+)"?/.exec(q)?.[1];
         const users = [...q.matchAll(/user:(\S+)/g)].map((m) => m[1]);
         const authors = [...q.matchAll(/author:(\S+)/g)].map((m) => m[1]);
+        const repos = [...q.matchAll(/repo:(\S+)/g)].map((m) => m[1]);
+        // `in:title` or `in:body` with words joined by OR (issue #694: Report a bug's duplicate search, by title or by a
+        // failure's signature): a title, or a body, with any of them.
+        const where = q.includes('in:title') ? 'title' : q.includes('in:body') ? 'body' : undefined;
+        const words = where ? q.replace(/\S+:\S+/g, ' ').replace(/[()"]/g, ' ').split(/\s+/).filter((w) => w && w !== 'OR').map((w) => w.toLowerCase()) : [];
         const found = issues.filter((i) => (i.state ?? 'open') === 'open' && (!label || i.labels.includes(label))
-          && (users.length === 0 || users.includes(i.repo.split('/')[0])) && (authors.length === 0 || authors.includes(i.author)));
+          && (users.length === 0 || users.includes(i.repo.split('/')[0])) && (authors.length === 0 || authors.includes(i.author))
+          && (repos.length === 0 || repos.includes(i.repo)) && (words.length === 0 || words.some((w) => (where === 'body' ? i.body : i.title).toLowerCase().includes(w))));
         return { status: 200, body: { total_count: found.length, incomplete_results: false, items: found.map(restIssue) } };
       }
       if (r.method === 'POST' && path === '/graphql') {
@@ -288,13 +291,15 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       if (!m) return { status: 404, body: { message: 'Not Found' } };
       const repo = m[1]!;
       const rest = m[2] ?? '';
+      const sub = subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest); if (sub) return sub;
       if (r.method === 'POST' && rest === 'labels') return { status: 201, body: { name: r.body.name } };
       if (r.method === 'GET' && rest === 'issues') {
         return { status: 200, body: issues.filter((i) => i.repo === repo && (i.state ?? 'open') === 'open' && i.labels.includes(r.query.labels ?? '')).map(restIssue) };
       }
       // Filing an issue and opening a pull request (the GitHub proxy, issue #563): GitHub numbers both in one sequence per repository.
       const nextNumber = () => Math.max(0, ...issues.filter((i) => i.repo === repo).map((i) => i.number), ...pulls.filter((p) => p.repo === repo).map((p) => p.number)) + 1;
-      if (r.method === 'GET' && rest === '') return { status: 200, body: { full_name: repo, default_branch: 'dev' } };
+      const repoAnswer = forksRoute(forge, o.gitRoot, base, login, r.method, repo, rest, r.body); if (repoAnswer) return repoAnswer;
+      if (r.method === 'POST' && (rest === 'issues' || /^issues\/\d+\/comments$/.test(rest)) && forge?.issuesRefused) return { status: forge.issuesRefused, body: { message: 'Resource not accessible by integration' } };
       if (r.method === 'POST' && rest === 'issues') {
         const issue: FakeIssue = {
           repo, number: nextNumber(), title: String(r.body.title), body: String(r.body.body ?? ''), author: login,
@@ -312,10 +317,18 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const pm = /^pulls\/(\d+)$/.exec(rest);
       const pull = pm ? pulls.find((p) => p.repo === repo && p.number === Number(pm[1])) : undefined;
       if (r.method === 'GET' && pm) return pull ? { status: 200, body: restPull(pull) } : { status: 404, body: { message: 'Not Found' } };
-      const im = /^issues\/(\d+)(?:\/(comments|labels)(?:\/(.+))?)?$/.exec(rest);
+      const im = /^issues\/(\d+)(?:\/(comments|labels|events)(?:\/(.+))?)?$/.exec(rest);
       const issue = im ? find(repo, Number(im[1])) : undefined;
       if (!im || !issue) return { status: 404, body: { message: 'Not Found' } };
       if (r.method === 'GET' && !im[2]) return { status: 200, body: restIssue(issue) };
+      // Its labels and assignments, each by its author (issue #652: who added them is what intake trusts).
+      if (r.method === 'GET' && im[2] === 'events') {
+        const actor = { login: issue.author, type: 'User' };
+        return { status: 200, body: [
+          ...issue.labels.map((name) => ({ event: 'labeled', created_at: '2026-10-06T00:00:00Z', actor, label: { name } })),
+          ...(issue.assignees ?? [issue.author]).map((login) => ({ event: 'assigned', created_at: '2026-10-06T00:00:00Z', actor, assignee: { login } })),
+        ] };
+      }
       if (r.method === 'PATCH' && !im[2]) {
         if (r.body.state === 'closed') Object.assign(issue, { state: 'closed', stateReason: String(r.body.state_reason ?? 'completed') });
         return { status: 200, body: restIssue(issue) };

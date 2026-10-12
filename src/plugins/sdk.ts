@@ -2,7 +2,7 @@
 // Out-of-tree plugins import it type-only as `hopper/plugin` (package.json `exports`), which
 // type stripping erases, so a plugin needs nothing of hopper at runtime. Types only here.
 import type { z } from 'zod';
-import type { IntakeContext } from '../domain/intake.ts';
+import type { IntakeContext, IntakeTrust } from '../domain/intake.ts';
 import type {
   AnswerRequest, Clock, ConnectedAccountTokens, EscalationLevel, ExecutionContext, ExecutionOutcome, Executor, JobSource, LevelReply,
   MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, ReviewReply, ReviewRequest, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
@@ -11,6 +11,7 @@ import type { VaultBackend } from '../domain/vault.ts';
 import type { ClientTransport } from '../executors/client.ts';
 import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, RaisedBy, Role, UsageReading } from '../domain/types.ts';
 import type { Rejection } from '../domain/rejection.ts';
+import type { IssueGraphRepository } from '../domain/issue-graph.ts';
 
 export type {
   Advice, AdviceAction, AnswerRequest, AttachedMachine, Clock, ConnectedAccountTokens, Detection, DomainEvent, EscalationLevel, ExecutionContext, LevelReply,
@@ -163,10 +164,14 @@ export interface JobSourceContext {
   connectedAccounts: ConnectedAccountTokens;
   /** For the source of this instance name: claim holders, the intake migration and intake events (issue #440); undefined: none kept. */
   intake(sourceName: string): IntakeContext | undefined;
+  /** The user's trusted actors and approved requests (issue #652): what an item's origin is judged by. */
+  intakeTrust: IntakeTrust;
   /** Whether a job on this repository (`owner/repo`) may merge its own pull request: the user's yolo mode (issue #579), read at each call. */
   yoloMode(repo: string): boolean;
   /** The artifacts a job made (issue #673): each one's id and the URL of the issue it is linked to. */
   jobArtifacts(jobId: string): { id: string; issue?: string }[];
+  /** The user's issue graph (issue #437): a source keeps the place of each issue it sees there. Store only. */
+  issueGraph: Pick<IssueGraphRepository, 'record' | 'lastRead'>;
 }
 
 export type { OptionChoice };

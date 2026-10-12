@@ -7,6 +7,7 @@ import type { ConnectedAccount } from '../../src/domain/ports.ts';
 import { createConnectedAccounts } from '../../src/connected-accounts/service.ts';
 import { hopperApps } from '../../src/connected-accounts/hopper-app.ts';
 import { createAccountSource } from '../../src/sources/compose.ts';
+import { NO_INTAKE_TRUST } from '../../src/domain/intake.ts';
 import { memoryAccountStore, systemOf } from '../support/system-secrets.ts';
 
 const NOW = Date.parse('2026-10-07T21:00:00Z');
@@ -40,7 +41,7 @@ describe('an expired connected account', () => {
     expect(s.ended('github')).toBe('GitHub\'s sign-in expired: Sources → Connect GitHub again');
     await expect(s.token('github')).rejects.toThrow('GitHub\'s sign-in expired: Sources → Connect GitHub again');
     expect(told).toHaveLength(1);
-    const source = createAccountSource({ name: 'github-account', clock: { now: () => new Date(NOW) }, knownKeys: () => new Set(), rerunnable: () => new Set(), env: () => undefined, provider: 'github', accounts: s },
+    const source = createAccountSource({ name: 'github-account', clock: { now: () => new Date(NOW) }, knownKeys: () => new Set(), rerunnable: () => new Set(), env: () => undefined, provider: 'github', accounts: s, trust: NO_INTAKE_TRUST },
       { enabled: true } as never);
     expect(source.paused?.()).toBe('GitHub\'s sign-in expired: Sources → Connect GitHub again');
   });
@@ -63,7 +64,7 @@ describe('an expired connected account', () => {
   // Issue #518: after the sign-in ended, a run again and a report said "GitHub is not connected", which it was.
   it('a run again or a report of an account whose sign-in ended says it expired, never that it is not connected', async () => {
     const { s } = service(legacy);
-    const source = createAccountSource({ name: 'github-account', clock: { now: () => new Date(NOW) }, knownKeys: () => new Set(), rerunnable: () => new Set(), env: () => undefined, provider: 'github', accounts: s },
+    const source = createAccountSource({ name: 'github-account', clock: { now: () => new Date(NOW) }, knownKeys: () => new Set(), rerunnable: () => new Set(), env: () => undefined, provider: 'github', accounts: s, trust: NO_INTAKE_TRUST },
       { enabled: true } as never);
     await expect(source.rerun!({} as never)).rejects.toThrow('GitHub\'s sign-in expired: Sources → Connect GitHub again');
     await expect(source.report({} as never)).rejects.toThrow('GitHub\'s sign-in expired: Sources → Connect GitHub again');

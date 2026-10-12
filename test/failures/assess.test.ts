@@ -42,6 +42,13 @@ describe('assess', () => {
     expect(assess(input('read ECONNRESET', {}, { maxAttempts: 0 })).decision).toBe('person');
   });
 
+  // Issue #741: at once, on the first job it fails, not after it recurs.
+  it('a herdr client its server does not take opens a problem on the machine at the first failure, redirected', () => {
+    const a = assess(input('herdr: Error: client protocol 17 is older than server protocol 22'));
+    expect(a).toMatchObject({ cls: 'shared', decision: 'redirect' });
+    expect(a.problem).toEqual({ kind: 'open', title: 'Herdr outdated on desk', scope: { machineId: 'desk' }, general: false, decision: 'redirect', causeId: 'herdr-outdated' });
+  });
+
   it('a known shared cause opens a problem scoped to the machine, redirected when the job may go elsewhere', () => {
     const a = assess(input('write: ENOSPC: no space left on device'));
     expect(a).toMatchObject({ cls: 'shared', decision: 'redirect', auto: true });

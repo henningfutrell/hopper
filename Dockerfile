@@ -50,6 +50,12 @@ COPY src ./src
 COPY scripts/check-ui-bundle.ts ./scripts/check-ui-bundle.ts
 COPY scripts ./scripts
 COPY WHATS-NEW.md ./
+# What's new not assembled yet (issue #824): its fragments are part of "this version".
+COPY whats-new ./whats-new
+# The help pages (issue #782): the daemon serves them at /help/, the version they describe.
+COPY help ./help
+# The compose file of this release (issue #697): `hopper update` puts it in, so an update never keeps an old one.
+COPY compose.yaml ./
 COPY --from=ui /build/ui/dist ./ui/dist
 RUN chmod 755 src/cli.ts && ln -s /app/src/cli.ts /usr/local/bin/hopper
 # What this image is built from (issue #409): install.json, as an install has, and the OCI labels — so Settings →

@@ -11,6 +11,17 @@
     "byHopper": {
       "type": "boolean",
       "const": true
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api"
+      ]
     }
   },
   "required": [

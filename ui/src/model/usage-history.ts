@@ -15,6 +15,9 @@ export const ACCOUNT_COLORS = ['var(--busy)', 'var(--ok)', 'var(--warn)', 'var(-
 
 export interface GraphPoint { t: number; v: number }
 
+/** A moment marked on a line, with what happened then: a lane change on a machine's lanes in use (issue #688). */
+export interface GraphMark { at: string; label: string }
+
 export interface GraphLine {
   key: string;
   /** Account · window. */
@@ -24,6 +27,8 @@ export interface GraphLine {
   /** Informational lines start hidden: they limit one model, not every job. */
   shownByDefault: boolean;
   series: UsageSeries;
+  /** Moments marked on it, drawn from the top of the graph down while it is shown. */
+  marks?: GraphMark[];
 }
 
 export const lineKey = (s: Pick<UsageSeries, 'account' | 'window'>): string => `${s.account}|${s.window ?? ''}`;
@@ -68,6 +73,10 @@ export function valuesAt(lines: readonly GraphLine[], t: number, stepMs: number,
     return p ? [{ key: l.key, v: p.usedFrac }] : [];
   });
 }
+
+/** Each shown line's marks within half a graph step of `t`: what hovering there names. */
+export const marksAt = (lines: readonly GraphLine[], t: number, stepMs: number, hidden: ReadonlySet<string>): { key: string; mark: GraphMark }[] =>
+  lines.flatMap((l) => (hidden.has(l.key) ? [] : (l.marks ?? []).filter((m) => Math.abs(Date.parse(m.at) - t) <= stepMs / 2).map((mark) => ({ key: l.key, mark }))));
 
 /** The lines hidden: those the legend hid (`toggled` true), and the informational ones it did not show. */
 export const hiddenLines = (lines: readonly GraphLine[], toggled: ReadonlyMap<string, boolean>): Set<string> =>

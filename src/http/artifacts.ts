@@ -32,7 +32,8 @@ import { FAVICON_LINK } from './static.ts';
 /** What the share page's frame lets an HTML or SVG artifact do: the UI's own (ui/src/model/artifacts.ts FRAME_SANDBOX). */
 const FRAME_SANDBOX = 'allow-scripts allow-popups allow-downloads';
 import { publicHosts, uiOrigins, type Lan } from './reach.ts';
-import { userIdOf, type TenantParts, type Tenants } from './tenants.ts';
+import { signedInOf, userIdOf, type TenantParts, type Tenants } from './tenants.ts';
+import { CLI_REALM } from './ui/sessions.ts';
 
 /** What every artifact route shares: the signer of content URLs, and where people open the hopper. */
 export interface ArtifactEdge {
@@ -45,6 +46,11 @@ export interface ArtifactEdge {
   base(t: Pick<TenantParts, 'artifacts'>): string;
   /** The origin of the Host a request came in on (issue #673): what the viewer used, so a link opens where they are. */
   baseOf(req: FastifyRequest): string;
+  /**
+   * The base of the links a read or an action answers (issue #687): the operator CLI's are printed for a person to open
+   * elsewhere, so they use `base` as a job's do; a browser's use the Host it came in on (`baseOf`).
+   */
+  viewBase(req: FastifyRequest, t: Pick<TenantParts, 'artifacts'>): string;
   /** The public URL, when the hopper has one: the only base a link on GitHub may name. */
   publicBase(): string | undefined;
   /** Every origin the hopper answers to: a link base must be one of them. */
@@ -68,6 +74,7 @@ export function createArtifactEdge(o: { clock: Clock; lan: Lan; port: () => numb
       if (o.lan.publicUrl && publicHosts(o.lan).includes(host)) return new URL(o.lan.publicUrl).origin;
       return host ? `http://${host}` : `http://127.0.0.1:${o.port()}`;
     },
+    viewBase: (req, t) => (signedInOf(req)?.identity.realm === CLI_REALM ? edge.base(t) : edge.baseOf(req)),
     publicBase: () => (o.lan.publicUrl ? new URL(o.lan.publicUrl).origin : undefined),
     origins: () => uiOrigins(o.port(), o.lan).map((u) => new URL(u).origin),
     url: artifactUrl,
@@ -197,7 +204,7 @@ export function artifactRoutes(app: FastifyInstance, o: { tenant: (req: FastifyR
     const job = (req.query as Record<string, unknown>).job;
     const mine = t.artifacts.list(typeof job === 'string' && job !== '' ? { jobId: job } : {});
     const shared = await sharedWith(o.tenants, o.access, me, now());
-    const base = o.edge.baseOf(req);
+    const base = o.edge.viewBase(req, t);
     return {
       artifacts: mine.map((a) => o.edge.view(t, a, me, base)),
       shared: shared.map((s) => o.edge.view(s.t, s.a, me, base, s.owner)),
@@ -220,7 +227,7 @@ export function artifactRoutes(app: FastifyInstance, o: { tenant: (req: FastifyR
   app.get<{ Params: { id: string } }>('/api/artifacts/:id', async (req, reply): Promise<ArtifactView> => {
     void reply.header('cache-control', 'no-store');
     const f = await found(req, req.params.id);
-    return o.edge.view(f.t, f.a, f.me, o.edge.baseOf(req), f.owner);
+    return o.edge.view(f.t, f.a, f.me, o.edge.viewBase(req, o.tenant(req)), f.owner);
   });
 
   app.get<{ Params: { id: string } }>('/api/artifacts/:id/revisions', async (req, reply): Promise<{ revisions: ArtifactRevisionView[] }> => {

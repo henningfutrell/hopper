@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "repo": {
+      "type": "string"
+    },
+    "pointer": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "issue",
+            "pull_request"
+          ]
+        },
+        "number": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "number",
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "repo",
+    "pointer",
+    "source",
+    "by"
+  ],
+  "additionalProperties": false
+}

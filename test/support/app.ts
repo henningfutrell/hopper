@@ -10,7 +10,8 @@
 // (scripted-executor.ts). Every user (issue #158) has a manual source of its own (`sourceOf(id)`;
 // `source` is admin's); `api` reads without a session (loopback: the one user's work, while there is one
 // user) unless its headers carry one; the helpers that read a user's work (`job`, `pull`, …) carry a
-// session of that user once the hopper has several (issue #221).
+// session of that user once the hopper has several (issue #221). OpenFGA is the in-memory double
+// (fake-authorization-server.ts) unless the test names its own, or `authorizationServer: undefined` for none.
 // Every event the app emits is validated against its schema; stop() fails the test on any
 // nonconforming event (tracker + a scan of every user's whole event log).
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -30,6 +31,7 @@ import { mintLoginCode } from '../../src/http/ui/login-code.ts';
 import { readConfig, writeConfig } from './files.ts';
 import { fakeLevels } from './fake-questions.ts';
 import { createFakeRouter } from './fake-router.ts';
+import { createFakeAuthorizationServer } from './fake-authorization-server.ts';
 import { createManualSource, manualItem, type ManualSource } from './manual-source.ts';
 import { createScriptedExecutor, type ScriptedExecutor } from './scripted-executor.ts';
 import { waitFor } from './wait.ts';
@@ -88,7 +90,8 @@ export interface TestApp {
 /** A temp dir (the app's work dir) and `dbPath` in it: the key of the app's database (support/database.ts databaseUrlFor). */
 export function tempDbPath(): { dbPath: string; cleanup(): void } {
   const dir = mkdtempSync(join(tmpdir(), 'hopper-it-'));
-  return { dbPath: join(dir, 'db.sqlite'), cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  // Retried: a process the app started (a fake herdr writes into this dir) can still be ending (ENOTEMPTY).
+  return { dbPath: join(dir, 'db.sqlite'), cleanup: () => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }) };
 }
 
 /** The plugins config's `machines`: only the local machine, with this many lanes. */
@@ -156,6 +159,9 @@ export async function startTestApp(o: {
     ...(o.realLevels ? {} : fakeLevels()),
     // No model in tests (issue #569): a long card has no TL;DR unless a test puts a double here.
     tldrWriter: async () => ({ error: 'no TL;DR model in tests' }),
+    // OpenFGA, as a deploy runs it (issue #652: no issue is of a trusted origin without it); a test of a hopper without
+    // OpenFGA names `authorizationServer: undefined`.
+    authorizationServer: createFakeAuthorizationServer(),
     ...o.seams,
     executors: [scripted, ...(o.seams?.executors ?? [])],
     // Each user's own manual source and fake usage; the seams' sources run for admin only.

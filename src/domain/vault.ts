@@ -1,7 +1,12 @@
 // The vault (issue #558, design.md "The vault"): a user's secrets, set once in the UI and never read back, kept sealed
 // in the user's store under the master key. The types every part shares: a secret is only ever its metadata.
+import type { VaultGrant, VaultGrantAsk } from './vault-grants.ts';
 import type { Asset, OperationProfile } from './access.ts';
 import type { TemplateRadius } from './blast-radius.ts';
+import { checkWait, type ReadOnlyCheck } from './read-only-check.ts';
+
+export * from './read-only-check.ts';
+import type { BoxTool, TemplateLimits } from './sandboxes.ts';
 
 /** A vault secret's name: a letter, then letters, digits, `_`, `.`, `-`; at most 64. */
 export const VAULT_SECRET_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
@@ -35,11 +40,53 @@ export const isSystemSecret = (name: string): boolean => name.startsWith(SYSTEM_
 /** The system secret a vault row holds: its name without `system/`. */
 export const systemSecretName = (row: string): SystemSecretName => row.slice(SYSTEM_PREFIX.length) as SystemSecretName;
 
+/**
+ * A shared secret (issue #718, design.md "Shared secrets"): a vault secret the hopper's admin shares with the agents of
+ * every user, or of the users named, in place of a copy per user. A row of the instance's vault named `shared/<name>`,
+ * sealed under the master key. A template names it by that row name; a job on a box of the template gets it only once
+ * a person approved that, and Access (`shared_secret#can_read`) allows the job's user. A vault secret is the user's by
+ * default: sharing is the admin's choice.
+ */
+const SHARED_PREFIX = 'shared/';
+/** The instance's vault row, and the name a template and a job use, of the shared secret `name`. */
+export const sharedSecretRow = (name: string): string => `${SHARED_PREFIX}${name}`;
+/** Whether a name is a shared secret's row. */
+export const isSharedSecret = (name: string): boolean => name.startsWith(SHARED_PREFIX);
+/** The shared secret's own name: its row name without `shared/`. */
+export const sharedSecretName = (row: string): string => (isSharedSecret(row) ? row.slice(SHARED_PREFIX.length) : row);
+
+/** A shared secret as every user's vault page shows it: its metadata, never its value. */
+export interface SharedSecretView {
+  /** Its row name, `shared/<name>`: what a template names. */
+  name: string;
+  scope?: string;
+  /** The users whose agents may read it. Absent: every user's. */
+  readers?: string[];
+  setBy: string;
+  createdAt: string;
+  changedBy: string;
+  changedAt: string;
+}
+
 /** The kinds of system secret, by what the hopper keeps them for. */
 export type SystemSecretKind = 'typesafe' | 'artifact' | 'connected-account' | 'webhook' | 'sign-in';
 export const systemSecretKind = (name: string): SystemSecretKind =>
   name.startsWith('connected-account.') ? 'connected-account' : name.startsWith('webhook.') ? 'webhook' : name.startsWith('sign-in.') ? 'sign-in'
     : name === 'artifact-content-key' ? 'artifact' : 'typesafe';
+
+/**
+ * Why a system secret may not be kept in a vault backend (issue #658, requirement 6), or undefined when it may. The
+ * backends only read: a secret the hopper writes itself (the GitHub connection's tokens at each renewal, the artifact
+ * key it makes) stays in the hopper. The backends are a user's plugins: the whole hopper's (the sign-in realms') stays in
+ * the hopper too. What may: the TypeSafe API key and a webhook's signing secret, each a value a person gives.
+ */
+export function systemBackendRefusal(name: string): string | undefined {
+  if (name === 'typesafe-api-key' || /^webhook\.[^.]+\.signing-secret$/.test(name)) return undefined;
+  const kind = systemSecretKind(name);
+  if (kind === 'typesafe' || kind === 'webhook') return `${name} is no system secret`;
+  const why = kind === 'sign-in' ? 'it is the whole hopper\'s, and a vault backend is one user\'s plugin' : 'the hopper writes it itself, and a vault backend only reads';
+  return `${name} stays in the hopper: ${why}`;
+}
 
 /** A system secret as Settings → Vault shows it (issue #658): never its value. */
 export interface SystemSecretView {
@@ -51,8 +98,10 @@ export interface SystemSecretView {
   last4?: string;
   setBy: string;
   setAt: string;
-  /** Why it cannot be opened now (the start check): the key it was sealed under is missing. */
+  /** Why it cannot be opened now (the start check): the key it was sealed under is missing, or its backend cannot read it. */
   problem?: string;
+  /** Where a vault backend keeps it (issue #658, requirement 6): the hopper holds its value in memory only. Absent: in the hopper, sealed. */
+  backend?: { name: string; reference: string };
 }
 
 /** One entry of the system scope's audit trail (issue #658): an event naming the secret, never its value. */
@@ -98,6 +147,8 @@ export interface VaultSecret {
   skill?: string;
   kind?: string;
   note?: string;
+  /** A shared secret's readers (issue #718): the users whose agents may read it. Absent: every user's. */
+  readers?: string[];
 }
 
 /** `GET /api/vault`: never a value. */
@@ -113,6 +164,14 @@ export interface VaultView {
   problem?: string;
   /** The hopper's own secrets (issue #658): the system scope's metadata and its audit trail, newest first. */
   system?: { secrets: SystemSecretView[]; audit: SystemSecretAudit[] };
+  /** The shared secrets (issue #718): what the hopper's admin shares with agents, for a template to name. Never a value. */
+  shared?: SharedSecretView[];
+  /** The read policy (issue #716): the assets the hopper approves read on with no person, for a template a job asks for. */
+  readPolicy?: string[];
+  /** Jobs on boxes that asked the vault with no vault grant (issue #652): a person grants them the vault, or not. */
+  grantAsks?: VaultGrantAsk[];
+  /** The vault grants (issue #652): the items whose jobs may use the vault's helper, who granted each, and when. */
+  grants?: VaultGrant[];
 }
 
 /**
@@ -159,10 +218,41 @@ export interface Template {
    * write, sync or apply profile only by its own explicit approval. Absent on a template saved before: none.
    */
   profiles?: OperationProfile[];
+  /**
+   * What a launch of it may ask for (issue #708): the defaults and maximums of its boxes' resources and time limit, and
+   * whether a box's home volume stays when it goes. Absent: the hopper's defaults (src/sandbox/params.ts). Not part of
+   * its approval: limits narrow what a box may use, they give it nothing.
+   */
+  limits?: TemplateLimits;
+  /**
+   * The tools the hopper adds to its image for its boxes (issue #716; src/sandbox/tools.ts). Part of what its boxes run,
+   * so approved with its image: a change waits for a person as a new image does. Absent: none.
+   */
+  tools?: BoxTool[];
+  /**
+   * A template a job asked for with read needs only (issue #716, item 4): it takes no box and no job until the read-only
+   * check of its current version passed. Kept through every save. Absent: no check.
+   */
+  readOnly?: true;
+  /**
+   * The job that asked for it (issue #715): the read-only check's report is an artifact of that job. Kept through every
+   * save. Absent: a person or an API caller asked for it, or it was saved before.
+   */
+  askedBy?: string;
+  /** The last read-only check, of the version it names (src/domain/read-only-check.ts). A save makes it stale. */
+  check?: ReadOnlyCheck;
   savedBy: string;
   savedAt: string;
-  /** The last approval: the image and scope a person approved, who and when. Absent: never approved. */
-  approval?: { image: string; secrets: string[]; by: string; at: string };
+  /** The last approval: the image (and its tools) and scope a person approved, who and when. Absent: never approved. */
+  approval?: { image: string; tools?: BoxTool[]; secrets: string[]; by: string; at: string };
+}
+
+/** Whether the template runs what was approved: the image, with the same tools (issue #716). False when never approved. */
+export function imageApproved(t: Template): boolean {
+  const a = t.approval;
+  if (!a || a.image !== t.image) return false;
+  const was = a.tools ?? [], now = t.tools ?? [];
+  return was.length === now.length && was.every((x) => now.includes(x));
 }
 
 /** A template as the vault shows it: what waits for a person, what its boxes may be given now, and its blast radius. */
@@ -181,25 +271,26 @@ const sameProfile = (a: OperationProfile, b: OperationProfile): boolean => a.ope
 /** The secrets a template's boxes may be given now: its scope, as far as it was approved, while its image is the approved one. */
 export function givesOf(t: Template): string[] {
   const approved = t.approval?.secrets ?? [];
-  return t.approval?.image !== t.image ? [] : t.secrets.filter((s) => approved.includes(s));
+  return !imageApproved(t) ? [] : t.secrets.filter((s) => approved.includes(s));
 }
 
 /**
  * Why a box of the template `name` takes no new job (issue #602), or undefined when the template is approved: saved, and
- * approved with the image it names now. A scope widened since keeps its boxes working on what was approved.
+ * approved with the image it names now, and (issue #716) its read-only check passed when it needs one. A scope widened
+ * since keeps its boxes working on what was approved.
  */
 export function approvalWait(name: string, t: Template | undefined): string | undefined {
   const wait = 'waiting for template approval';
   if (!t) return `${wait}: no template ${name} is saved`;
   if (!t.approval) return `${wait}: ${name} is not approved`;
-  if (t.approval.image !== t.image) return `${wait}: the image of ${name} changed since it was approved`;
-  return undefined;
+  if (!imageApproved(t)) return `${wait}: the image of ${name} changed since it was approved`;
+  return checkWait(t);
 }
 
 /** The template's view, with the profiles access approves it for (`approvedProfiles`) and its rating. */
 export function templateView(t: Template, approvedProfiles: readonly OperationProfile[], radius: TemplateRadius): TemplateView {
   const approved = t.approval?.secrets ?? [];
-  const image = t.approval?.image !== t.image;
+  const image = !imageApproved(t);
   const profiles = t.profiles ?? [];
   return {
     ...t, profiles,

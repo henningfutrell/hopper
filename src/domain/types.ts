@@ -7,12 +7,16 @@ import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
+import type { JobMachineLink, MachineHerdr } from './machines.ts';
 import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
 import type { OriginalKept, TextChange } from './item-snapshots.ts';
+import type { JobOrigin } from './intake-origin.ts';
 import type { JobPhaseFields } from './phase.ts';
 import type { FollowOnOf } from './proposal-paths.ts';
+import type { JobRework } from './pull-requests.ts';
+import type { TaskCount } from './task-count.ts';
 
 export type JobId = string;
 export type MachineId = string;
@@ -27,8 +31,7 @@ export type JobStatus =
   | 'operator_led' // claimed by an operator, worked by hand outside the hopper; holds no lane, never run (issue #318)
   | 'parked' // taken out of its lane by a person (issue #501): no lane, no pane, no agent; its work tree and agent session kept until re-queued
   | 'waiting_on' // its own wait (issue #483): it waits on something it named; holds no lane; its pane stays open; no question
-  | 'finished' | 'failed' | 'cancelled'
-  | 'rejected'; // turned away at the queue gate: kept, never run
+  | 'finished' | 'failed' | 'cancelled' | 'rejected'; // rejected: turned away at the queue gate, kept, never run
 
 /**
  * The jobs directory (issue #314): the default work tree, below the home of the job's machine. A job never
@@ -52,9 +55,7 @@ export const TERMINAL_STATUSES: readonly JobStatus[] = ['finished', 'failed', 'c
  * human cleared the marker. Unreported, the item is still the same attempt: a failing report must
  * not loop.
  */
-export function isRerunnable(job: Job): boolean {
-  return TERMINAL_STATUSES.includes(job.status) && job.sourceState?.sync?.finalReported === true;
-}
+export const isRerunnable = (job: Job): boolean => TERMINAL_STATUSES.includes(job.status) && job.sourceState?.sync?.finalReported === true;
 
 /** What an agent pushes. `executor` names a registered Executor; `payload` is opaque to the queue. */
 export interface JobSpec {
@@ -81,13 +82,18 @@ export interface JobSpec {
    * too, it researches first and, once the research is accepted, writes the proposal (src/domain/review.ts REVIEW_KINDS).
    */
   research?: true;
+  /**
+   * Designated specialty (issue #762; its item labelled `hopper:specialty`): when it fits on no machine, it may elbow in —
+   * start a lane past the machine's lane cap, within the machine's elbow-ins. No other job goes past the cap this way.
+   */
+  specialty?: true;
 }
 
 /** What a job's source and routing rules give its spec (issue #375); `cwd`, `model`: the payload's. */
 export interface SpecFromConfig { executor: string; model?: string; cwd?: string; machineId?: MachineId; rule?: string }
 
 /** A job; its phase, switch and forks (issue #548) are declared in src/domain/phase.ts. */
-export interface Job extends JobPhaseFields {
+export interface Job extends JobPhaseFields, JobMachineLink {
   id: JobId;
   /** A follow-on of an accepted proposal (issue #651): the job, proposal and path it continues. */
   followOn?: FollowOnOf;
@@ -114,10 +120,17 @@ export interface Job extends JobPhaseFields {
   textChange?: TextChange;
   /** A person kept the original text of its changed item: that live text holds it no more (issue #662). */
   originalKept?: OriginalKept;
+  /**
+   * Set while its item's origin is not judged (issue #652, the backfill): a job of a GitHub source queued before origins
+   * were judged (tenant migration 39). Held until a sync finds its issue of a trusted origin, or a person approves its
+   * request card; then its `source.origin` is set and this goes.
+   */
+  originPending?: true;
   /** The job's place in the user order (0 first): set when the user orders the queue; ranked jobs run before the rest. */
   userRank?: number;
   laneId?: LaneId;
-  progress?: number; // 0..1
+  /** Its task count (issue #794): done of total, as it last reported it. None before it has a task list. */
+  tasks?: TaskCount;
   progressMessage?: string;
   result?: unknown;
   /** Finished partly done (issue #579): the URL of its own pull request that ships part of its item. */
@@ -174,6 +187,8 @@ export interface Job extends JobPhaseFields {
   source?: JobSourceRef;
   /** The job this one runs again (a re-run, issue #354): the newest job of its source key when it was created. */
   rerunOf?: JobId;
+  /** Set when this job reworks a pull request a person sent back (issue #724): it, the notes, who. */
+  rework?: JobRework;
   /** When the user dismissed this failed job (issue #355): it is no longer a locked entry. */
   dismissedAt?: string;
   /**
@@ -214,18 +229,21 @@ export interface JobSourceRef {
   /** The login the job was taken for (issue #387). Absent on jobs taken before intake by assignee. */
   assignee?: string;
   labels?: string[]; // the item's labels at intake (issue #378); absent on jobs taken before
+  /** The item's declared parts and how many are done, at intake (issue #729); absent: it declares none. */
+  parts?: Parts;
+  /**
+   * Where the item came from (issue #652): a trusted origin, or a request card a person approved. Absent: neither — a job
+   * of a source that does not judge origins, or one taken before origins were judged. Yolo mode does not read it (issue #805).
+   */
+  origin?: JobOrigin;
 }
+
+/** An item's declared parts (issue #729): how many there are, and how many are done. */
+export interface Parts { done: number; total: number }
 
 /** The actions a router can advise — grok-bot-jev's router actions (src/router.py). */
 export type AdviceAction =
-  | 'proceed_full'
-  | 'reuse_cache'
-  | 'stop_retry'
-  | 'run_deterministic'
-  | 'chat_only'
-  | 'ask_human'
-  | 'allow_subagent'
-  | 'research_capped';
+  'proceed_full' | 'reuse_cache' | 'stop_retry' | 'run_deterministic' | 'chat_only' | 'ask_human' | 'allow_subagent' | 'research_capped';
 
 /** A router's answer for one job. */
 export interface Advice {
@@ -249,35 +267,46 @@ export interface Lane {
   idleSince?: string;
 }
 
-/** Point-in-time view of one machine, as polled by the engine. */
-export interface MachineSnapshot {
+/** Point-in-time view of one machine, as polled by the engine. Its herdr: `MachineHerdr` (src/domain/machines.ts). */
+export interface MachineSnapshot extends MachineHerdr {
   id: MachineId;
   label: string;
-  /** Hard ceiling on lanes this machine may run. */
+  /** Hard ceiling on lanes this machine may run: in the engine, the lanes lane tuning applied in active mode (issue #688). */
   maxLanes: number;
+  /** The lanes it is configured with, when lane tuning applied others in active mode (issue #688). Absent: `maxLanes`. */
+  configuredLanes?: number;
   /** Lanes kept for jobs pinned to it (issue #372): jobs with no machine pin use at most its lane cap less these. Absent: 0. */
   reservedLanes?: number;
+  /** How many lanes specialty jobs may elbow in past its lane cap at once (issue #762). Absent: 1. 0: none. */
+  elbowIns?: number;
   online: boolean;
   /** Executors this machine can run. */
   executors: string[];
   /** An attached machine: the ssh destination its executors reach it by. Absent → this machine. */
   ssh?: string;
-  /** An attached machine's herdr: hopper's session there, herdr found by name (issue #311); this machine's, the herdr session it was added with (issue #260). */
-  herdr?: { session: string };
   /** A container target: the container its executors reach it in, through `docker exec`. */
   docker?: string;
   /** Its work tree (issues #324, #361): every job's there but one a routing rule pinned here with a path; `~` resolves on it. Absent: the jobs directory. */
   workTree?: string;
+  /** A work tree per repository (issue #691), keyed `owner/name`, matched in any case: a job from one of them works there, not in `workTree`. */
+  workTrees?: Record<string, string>;
   /** Why its work tree cannot be made usable, as its last probe found (issue #361): no job is routed to it. Absent: usable, or not probed yet. */
   workTreeProblem?: string;
+  /** An ssh target: the hopper's address its last probe found it reaches, given to its jobs as HOPPER_URL (issue #698). Absent: none found, or not probed yet. */
+  hopperUrl?: string;
+  /** An ssh target: why its jobs cannot reach the hopper, as its last probe found (issue #698): no new job is routed to it. */
+  addressProblem?: string;
+  /** An ssh target with an address problem: the command that joins it to the hopper's network (issue #711). Absent: none fits. */
+  addressFix?: string;
   /** An attached machine's home, as its probe found it: where `~` in a job's work tree resolves there (issue #323). Absent: not found yet, or this machine. */
   home?: string;
   /**
    * A client target: once probed online, the client release it runs (absent: it predates releases) and whether that is
    * the hopper's (issue #70); `update` when the hopper's release has not taken there after its tries, and why (issue #545);
-   * `vault`: the vault's helper its client wrote, given to each job there as HOPPER_SECRET (issue #558).
+   * `vault`: the vault's helper its client wrote, given to each job there as HOPPER_SECRET (issue #558); `door`: its
+   * client door, the loopback URL there its jobs reach the hopper at, given to each as HOPPER_URL (issue #695).
    */
-  client?: { release?: string; current?: boolean; update?: { problem: string }; vault?: string };
+  client?: { release?: string; current?: boolean; update?: { problem: string }; vault?: string; door?: string };
   /** The disk its home is on, as last read (issue #401); `low` by its thresholds, and then it takes no new job (issue #410). Absent: not read (a container target, a client older than this). */
   disk?: { freeBytes: number; totalBytes: number; low: boolean };
   /** Its CPU, memory and swap, as last read (issue #560): this machine at every list, an ssh target in its probe, a client target by its client. Absent: not read (a container target, a client older than this, offline). */
@@ -314,10 +343,14 @@ export interface DecisionInputs {
   priorityLanes?: PriorityLanesInput;
   /** The machines the blast-radius gate keeps from ordinary placement, and what may pass (issue #542). Absent on Decisions stored before it: none. */
   blastRadius?: BlastRadiusInput;
+  /**
+   * Issue #688. `expectedCosts`: each waiting job's expected cost, where one is known: a machine where it does not fit is
+   * passed over. `placementPicks`: Jev's applied picks of a waiting job's machine (`job-machine`), taken first where the
+   * job may go. Absent on Decisions stored before them: none.
+   */
+  expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>;
   policy: DeciderPolicy;
 }
-
-export type { DeciderPolicy } from './decider-policy.ts';
 
 export interface LanePlan {
   machineId: MachineId;
@@ -446,10 +479,11 @@ export { ESCALATION_REASONS } from './questions.ts';
 // ---- Sources: src/domain/sources.ts (re-exported here) ------------------------------------
 
 export type { SourceStatus } from './sources.ts';
+export type { TaskCount } from './task-count.ts';
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 
-export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, type ClientMachine, type SandboxesView, type ConfiguredMachine, type ContainerMachine, type HostKeyOffer, type HostKeyOfferOutcome, type MachineDefaults, type MachineDefaultsEdit, type MachineEdit, type SshMachine, type MachineEditOutcome, type MachinesConfig } from './machines.ts';
+export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, type ClientMachine, type SandboxesView, type ConfiguredMachine, type ContainerMachine, type HerdrSide, type HerdrVersions, type MachineHerdr, type HostKeyOffer, type HostKeyOfferOutcome, type MachineDefaults, type MachineDefaultsEdit, type MachineEdit, type SshMachine, type MachineEditOutcome, type MachinesConfig } from './machines.ts';
 
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
@@ -457,7 +491,8 @@ export type * from './routing.ts';
 export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
 export * from './usage-history.ts';
 export * from './machine-history.ts';
-export type { CleanupDue } from './cleanup.ts';
+export * from './lane-tuning.ts';
+export type { CleanupDue, DeciderPolicy };
 export * from './plugins.ts';
 export * from './item-snapshots.ts';
 
@@ -474,6 +509,7 @@ export * from './phase.ts';
 export * from './sections.ts';
 export * from './failures.ts';
 export * from './yolo-mode.ts';
+export * from './contribution.ts';
 export * from './pull-requests.ts';
 export * from './pull-request-list.ts';
 export * from './priority.ts';
@@ -481,9 +517,13 @@ export * from './blast-radius.ts';
 export * from './minor-decisions.ts';
 export * from './auto-answer.ts';
 export * from './auto-park.ts';
+export * from './thread-ask.ts';
 export * from './access.ts';
+export * from './state-backend.ts';
 export * from './artifacts.ts';
 export * from './tldr.ts';
+export * from './pointed-jobs.ts';
+export * from './github-watch.ts';
 
 // ---- Question gates: src/domain/question-gates.ts (re-exported here) -------------------
 
@@ -495,8 +535,8 @@ export type { JobRulesView } from './job-rules.ts';
 
 // ---- Sign-in: src/domain/sign-in.ts (re-exported here) ------------------------------------
 
-export type { Identity, PersonView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionEndReason, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole } from './sign-in.ts';
-export { DEFAULT_SESSION_LENGTHS, DEVICE_REALM_TYPES, FORM_REALM_TYPES, MAX_SESSION_HOURS, REALM_TYPES, REDIRECT_REALM_TYPES, SESSION_END_REASONS, UI_ROLES, roleAllows } from './sign-in.ts';
+export type { ApiTokenMinted, ApiTokenView, Identity, PersonView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, SessionEndReason, SessionKind, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole } from './sign-in.ts';
+export { API_TOKEN_DEFAULT_MINUTES, API_TOKEN_MAX_MINUTES, API_TOKEN_PREFIX, DEFAULT_SESSION_LENGTHS, DEVICE_REALM_TYPES, FORM_REALM_TYPES, MAX_SESSION_HOURS, REALM_TYPES, REDIRECT_REALM_TYPES, SESSION_END_REASONS, UI_ROLES, lowerRole, roleAllows } from './sign-in.ts';
 
 // ---- Users (issue #158): src/domain/users.ts (re-exported here) ---------------------------
 
@@ -504,7 +544,7 @@ export { ENDED_STATUSES, IN_FLIGHT_STATUSES, ADMIN_ID, type InstanceTotals, type
 
 // ---- Self-update (issue #44) ------------------------------------------------------------
 
-export { isUpdateChannel, UPDATE_CHANNELS, type InstallInfo, type InstallKind, type UpdateApply, type UpdateChannel, type UpdateSettings, type UpdateState, type UpdateStatus, type VersionEntry, type VersionHistory } from './update.ts';
+export { isUpdateChannel, UPDATE_CHANNELS, type InstallInfo, type InstallKind, type ShippedCompose, type StackDrift, type StackGap, type UpdateApply, type UpdateChannel, type UpdateSettings, type UpdateState, type UpdatePullRequest, type UpdateStatus, type UpdateTarget, type VersionEntry, type VersionHistory } from './update.ts';
 
 // ---- Connected accounts (issue #214): src/domain/connected-accounts.ts --------------------------
 

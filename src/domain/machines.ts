@@ -2,6 +2,7 @@
 // the UI"; docs/glossary.md "Attached machine", "Machine edit", "Detected ssh target"). An attached
 // machine is a machine-source instance of the `ssh`, `docker` or `client` plugin (issue #74).
 import type { MachineSnapshot } from './types.ts';
+import type { RuntimeKind, SandboxRecord } from './sandboxes.ts';
 /**
  * An attached machine as its machine-source instance names it (design.md "Attached machines",
  * "Container targets", "Client targets"): a target reached over ssh, with its own herdr; a container
@@ -9,6 +10,28 @@ import type { MachineSnapshot } from './types.ts';
  * hopper client that connects back over a reverse tunnel.
  */
 export type AttachedMachine = SshMachine | ContainerMachine | ClientMachine;
+
+/** One side of an ssh target's herdr (issue #741): its version and protocol, as `herdr status` prints them. */
+export interface HerdrSide { version?: string; protocol?: number }
+
+/** An ssh target's herdr client (and the binary the hopper calls) and the herdr server of its session (issue #741). */
+export interface HerdrVersions {
+  client?: HerdrSide & { binary?: string };
+  server?: HerdrSide;
+  /** The herdr the hopper owns there (issue #741): its version, whether every call runs it, and why not or what waits. */
+  owned?: { version?: string; inUse: boolean; note?: string };
+}
+
+/** A machine's herdr, as its snapshot (`MachineSnapshot`) carries it. */
+export interface MachineHerdr {
+  /**
+   * An attached machine's herdr: hopper's session there, herdr found by name (issue #311); this machine's, the herdr session it was added with (issue #260).
+   * An ssh target's also carries the herdr client the hopper calls there and the herdr server of its session, as its last probe read them (issue #741).
+   */
+  herdr?: { session: string } & HerdrVersions;
+  /** An ssh target: why its herdr client cannot work with its herdr server, as its last probe found (issue #741): no new job is routed to it. */
+  herdrProblem?: string;
+}
 
 interface AttachedBase {
   /** The machine id; never `local`. */
@@ -19,12 +42,16 @@ interface AttachedBase {
   executors: string[];
   /** Its default work tree (issue #324); `~` is its home. Never on a container target. */
   workTree?: string;
+  /** A work tree per repository (issue #691), keyed `owner/name`: a job from one of them works there. Never on a container target. */
+  workTrees?: Record<string, string>;
   /** When its disk is low (issue #410); absent fields take the defaults. Never on a container target. */
   diskLow?: DiskThresholds;
   /** How the sweep treats it (issue #410); absent fields take the defaults. Never on a container target. */
   sweep?: SweepSettings;
   /** Lanes kept for jobs pinned to it (issue #372). */
   reservedLanes?: number;
+  /** Lanes specialty jobs may elbow in past its lane cap at once (issue #762). */
+  elbowIns?: number;
 }
 
 export interface SshMachine extends AttachedBase {
@@ -147,8 +174,19 @@ export interface MachinesConfig {
 /** A sandbox box the hopper could not stop or remove (issue #603): shown on Machines until it goes. */
 export interface CleanupProblem { container: string; reason: string; at: string }
 
-/** GET /api/sandboxes (issue #603): whether the hopper can start a sandbox box now, why not, and the user's cleanup problems. */
-export interface SandboxesView { launch: { available: boolean; problem?: string }; problems: CleanupProblem[] }
+/** A sandbox box as GET /api/sandboxes shows it: its record (issue #708), but whose it is. */
+export type SandboxBox = Omit<SandboxRecord, 'userId'>;
+
+/**
+ * GET /api/sandboxes (issues #603, #708): whether the hopper can start a sandbox box now, why not, and through which
+ * container runtime; the sandbox flags of the line Add machine shows (`src/sandbox/flags.ts`, the boxes' own builder);
+ * the user's boxes, from their records; and the user's cleanup problems.
+ */
+export interface SandboxesView {
+  launch: { available: boolean; problem?: string; runtime?: RuntimeKind };
+  boxes: SandboxBox[];
+  problems: CleanupProblem[];
+}
 
 export type MachineEditOutcome =
   | { ok: true; config: MachinesConfig }
@@ -165,3 +203,12 @@ export interface DiskThresholds { belowGiB?: number; belowPercent?: number }
  * job's scratch dir there is reaped once it is `scratchMaxAgeHours` old (absent, 24).
  */
 export interface SweepSettings { everyMinutes?: number; scratchMaxAgeHours?: number }
+
+/** A job's side of its machine's link (issue #752, design.md "Link-lost hold"). */
+export interface JobMachineLink {
+  /**
+   * Set while the job is held because its machine's link dropped: it stays `running` on its lane until the link is back
+   * and its pane is alive, or it fails at `failsAt` (the link grace). `since`: when the link was found down.
+   */
+  linkLost?: { machine: string; since: string; failsAt: string };
+}

@@ -8,10 +8,12 @@ import { artifactLibRoutes } from '../artifacts/libs.ts';
 import { artifactRoutes, createArtifactEdge } from './artifacts.ts';
 import { jobArtifactRoutes } from './job-artifacts.ts';
 import { apiReferenceRoutes } from './api-reference.ts';
+import { helpRoutes } from './help.ts';
 import type { Access } from '../authz/service.ts';
 import { clientLinkRoutes, type ClientLinkOptions } from './client-link.ts';
 import type { SignIn } from '../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../domain/ports.ts';
+import type { StackDrift } from '../domain/types.ts';
 import { accountRoutes } from './accounts.ts';
 import { installErrorHandling } from './errors.ts';
 import { connectedAccountsRoutes } from './connected-accounts.ts';
@@ -20,6 +22,7 @@ import type { Lan } from './reach.ts';
 import { jobRoutes } from './jobs.ts';
 import { jobGitHubRoutes } from './job-github.ts';
 import { jobGitRoutes } from './job-git.ts';
+import { jobAddressRoutes } from './job-address.ts';
 import { jobSkillRoutes } from './job-skill.ts';
 import { jobStreamRoutes } from './job-stream.ts';
 import { pluginStoreRoutes } from './plugin-store.ts';
@@ -38,19 +41,25 @@ import { stateRoutes } from './state.ts';
 import { staticRoutes } from './static.ts';
 import { installTenancy, tenantOf, type Tenants } from './tenants.ts';
 import { registerUiRoutes } from './ui/index.ts';
-import type { Sandboxes } from '../sandboxes/service.ts';
+import type { CallerOf } from './ui/sign-in.ts';
+import type { Sandboxes } from '../sandbox/service.ts';
 import { createUiSessions, identityName } from './ui/sessions.ts';
 import { updateRoutes } from './update.ts';
 import { masterKeyRoutes, type MasterKeyStatus } from './master-key.ts';
+import type { RateLimiterControl } from '../github-limiter/settings.ts';
 import { instanceRoutes } from './instance.ts';
 import { usageHistoryRoutes } from './usage-history.ts';
 import { machineHistoryRoutes } from './machine-history.ts';
 import { userRoutes } from './users.ts';
 import { createInstanceAdmin } from './instance-admin.ts';
 import { vaultRoutes } from './vault.ts';
+import { bugReportReadRoutes } from './ui/bug-reports.ts';
+import { pointedJobReadRoutes } from './ui/pointed-jobs.ts';
+import { githubWatchReadRoutes } from './ui/github-watches.ts';
 import { webhookRoutes } from './webhooks.ts';
 
 export type { TenantParts, Tenants } from './tenants.ts';
+export { tunnelCaller, watchTunnel, type TunnelWatch } from './tunnel.ts';
 
 export interface ServerOptions {
   /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */
@@ -61,12 +70,18 @@ export interface ServerOptions {
   pluginStore: PluginStoreView;
   /** Self-update (the instance's): GET /api/update, POST /ui/api/update. */
   updater: Updater;
+  /** The build's directory, whose compose.yaml GET /api/update/compose serves (issue #697); default this build's. */
+  buildDir?: string;
+  /** How the stack differs from the compose file of this version (issue #697): GET /api/update/drift. */
+  stackDrift?: () => Promise<StackDrift>;
   /** Access (issue #559, the instance's): GET /api/access, POST /ui/api/access. */
   access: Access;
   /** The sandbox boxes the hopper starts (issue #603): GET /api/sandboxes, POST /ui/api/machines/sandbox. */
   sandboxes: Sandboxes;
   /** The master key's status (issue #659): GET /api/master-key, POST /ui/api/master-key. */
   masterKey: MasterKeyStatus;
+  /** The shared GitHub rate limiter's settings (issue #436): GET /api/github-rate-limiter, POST /ui/api/github-rate-limiter. */
+  rateLimiter: RateLimiterControl;
   clock: Clock;
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
@@ -77,6 +92,8 @@ export interface ServerOptions {
   signInEnvironment: string[];
   /** The LAN names and peers (design.md "Reaching the UI across the LAN"); empty: loopback only. */
   lan: Lan;
+  /** Who a request counts as for the sign-in limit (issue #795): `tunnelCaller` of the tunnel watch; default its address. */
+  caller?: CallerOf;
   /** The built UI bundle (ui/dist). */
   uiDir: string;
   /** Machines joining and dialling in (issue #308): their links, the client release, the install script. */
@@ -103,9 +120,10 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const r = sessions.reconcile(o.signIn.roleOf);
   if (r.dropped + r.changed > 0) console.warn(`hopper: the sign-in config applied to stored UI sessions: ${r.dropped} ended, ${r.changed} changed role`);
   installHostGuard(app, { port: o.port, lan: o.lan, sessions });
-  installTenancy(app, { tenants: o.tenants, sessions, signIn: o.signIn, port: o.port, lan: o.lan });
+  installTenancy(app, { tenants: o.tenants, sessions, signIn: o.signIn, access: o.access, port: o.port, lan: o.lan });
   const tenant = { tenant: (req: Parameters<typeof tenantOf>[1]) => tenantOf(o.tenants, req) };
   apiReferenceRoutes(app, o.version);
+  helpRoutes(app, o.version);
   jobRoutes(app, tenant);
   stateRoutes(app, { ...tenant, clock: o.clock, version: o.version, port: o.port, sandboxes: o.sandboxes });
   questionRoutes(app, tenant);
@@ -118,6 +136,9 @@ export function createServer(o: ServerOptions): FastifyInstance {
   jobRulesRoutes(app, tenant);
   webhookRoutes(app, tenant);
   vaultRoutes(app, tenant);
+  bugReportReadRoutes(app, tenant); // Your reports (issue #694)
+  pointedJobReadRoutes(app, tenant); // Pointed jobs (issue #425)
+  githubWatchReadRoutes(app, tenant); // GitHub watches (issue #427)
   sourceRoutes(app, tenant);
   accountRoutes(app, tenant);
   connectedAccountsRoutes(app, tenant);
@@ -136,8 +157,10 @@ export function createServer(o: ServerOptions): FastifyInstance {
   accessRoutes(app, { access: o.access, instanceAdmin });
   clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan });
   // A running job asks the hopper for GitHub (issue #563), with its own proxy token.
-  const github = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock });
+  const github = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock, updater: o.updater });
   jobGitRoutes(app, { tenants: o.tenants });
+  // A machine's probe asks where it reaches the hopper (issue #698).
+  jobAddressRoutes(app);
   // A running job asks the hopper what it can set up, and loads one skill (issue #582), with the same token.
   const skillWaits = jobSkillRoutes(app, { tenants: o.tenants, access: o.access });
   // A running job subscribes to its job stream (issue #613), with the same token: what it waits on is asked again.
@@ -150,8 +173,8 @@ export function createServer(o: ServerOptions): FastifyInstance {
   staticRoutes(app, o.uiDir);
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
-    ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock,
-    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey,
+    ...tenant, tenants: o.tenants, instance: o.instance, sessions, signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
+    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter,
   });
   return app;
 }

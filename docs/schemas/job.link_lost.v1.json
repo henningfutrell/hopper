@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machine": {
+      "type": "string"
+    },
+    "since": {
+      "type": "string"
+    },
+    "failsAt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "machine",
+    "since",
+    "failsAt"
+  ],
+  "additionalProperties": false
+}

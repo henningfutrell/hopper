@@ -1,17 +1,17 @@
 // The lane board: every lane on every machine, what it runs, for how long, how far along (when the job says), and its latest activity.
-import { FileCheck, FolderOpen, Hand, Layers, Pause, Play, Telescope, X } from 'lucide-react';
+import { ExternalLink, FileCheck, FolderOpen, Hand, Layers, Pause, Play, Telescope, X } from 'lucide-react';
 import { PriorityLaneMark } from '@/components/priority';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
-import { JobTitle, Since, UnassignedFlag } from '@/components/job';
+import { GhLink, JobTitle, LinkLostFlag, Since, UnassignedFlag } from '@/components/job';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
-import { canPickUp, laneRows, machineName, parkRefusal, startsFresh, type LaneRow } from '@/model/board';
-import { goalOf } from '@/model/job';
+import { GROUP, canPickUp, laneJobState, laneRows, machineName, overCap, parkRefusal, startsFresh, type LaneRow } from '@/model/board';
+import { goalOf, issuePointer } from '@/model/job';
 import { REVIEW_UI } from '@/model/reviews';
 import type { Job, ReviewKind } from '@/model/wire';
 import { act, useHopper } from '@/store';
-import { useJobBoard } from '@/store/selectors';
+import { useJobBoard, useJobIndex } from '@/store/selectors';
 import { cn } from '@/lib/utils';
 import { useCanOperate } from '@/store/selectors';
 
@@ -98,42 +98,45 @@ export function AskButton({ job, kind }: { job: Job; kind: ReviewKind }) {
 
 /** What each lane state means, on hover (issue #381). */
 const LANE_MEANING = {
+  starting: 'Its job is starting: the executor is not running yet.',
   busy: 'Running a job.',
+  waiting: 'Its job waits, and still holds this lane.',
   idle: 'Open, with no job: the next waiting job takes it.',
   unopened: 'Room for a lane this machine may open; none is open there now.',
 } as const;
 const CLOSES_AFTER = 'The job runs to the end; this lane then closes, because the machine has more lanes open than its lane cap allows now (a usage limit or an executor\'s lane cap).';
+const ELBOWED_IN = 'A specialty job elbowed in: it started on a lane past this machine\'s lane cap. The lane closes when the job ends, and the machine is back at its cap.';
 
 function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: string; idle?: string | undefined; priority: boolean }) {
   const { job, lane } = row;
   const name = lane ? lane.id.slice(lane.id.lastIndexOf('/') + 1) : 'unopened';
-  // A draining lane still runs its job (issue #381): it shows busy, and says it closes after the job.
-  const state = row.state === 'draining' ? 'busy' : row.state;
+  // A draining lane still runs its job (issue #381): it shows busy, and says it closes after the job. A lane with a job
+  // says what the job does now: starting, busy or waiting (issue #432).
+  const state = job ? laneJobState(job) : row.state === 'draining' ? 'busy' : row.state;
+  const pointer = job && issuePointer(job);
   return (
-    <div data-lane-job={job?.id} className={cn('rounded-lg border bg-background/40 p-3 transition-colors',
-      state === 'busy' && 'border-busy/30 bg-busy/[0.04]', state === 'unopened' && 'border-dashed opacity-60')}>
+    <div data-lane-job={job?.id} data-lane-state={state} className={cn('rounded-lg border bg-background/40 p-3 transition-colors',
+      state !== 'idle' && state !== 'unopened' && 'border-busy/30 bg-busy/[0.04]', state === 'unopened' && 'border-dashed opacity-60')}>
       <div className="mb-2 flex items-center gap-2 text-xs">
         <span className="min-w-0 truncate font-medium" title={`machine ${machine}`}>{machine}</span>
         <span className="shrink-0 font-mono text-muted-foreground">{name}</span>
         {priority && <PriorityLaneMark />}
-        {row.state === 'draining' && <span className="ml-auto truncate text-muted-foreground" title={CLOSES_AFTER}>closes after this job</span>}
+        {row.elbowIn && <span data-slot="elbow-in" className="shrink-0 rounded border border-warn/40 px-1 text-warn" title={ELBOWED_IN}>elbow-in · over the cap</span>}
+        {row.state === 'draining' && <span className="ml-auto truncate text-muted-foreground" title={row.elbowIn ? ELBOWED_IN : CLOSES_AFTER}>closes after this job</span>}
         <StatusBadge className={row.state === 'draining' ? undefined : 'ml-auto'} status={state === 'unopened' ? 'not open' : state}
           tone={state === 'unopened' ? 'muted' : undefined} title={LANE_MEANING[state]} />
       </div>
+      {pointer && (
+        <div data-slot="lane-target" className="mb-1 font-mono text-xs" title={`the issue this lane works on: ${pointer.label}`}>
+          <GhLink url={pointer.url}>{pointer.label}<ExternalLink className="size-3 opacity-60" /></GhLink>
+        </div>
+      )}
       {job ? (
-        <div data-job-group="running" data-job-id={job.id} data-status={job.status} className="space-y-2">
+        <div data-job-group={GROUP[job.status]} data-job-id={job.id} data-status={job.status} className="space-y-2">
           <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><ParkButton job={job} /><CancelButton job={job} /></div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {job.startedAt && <span title="Running for">for <Since iso={job.startedAt} /></span>}
-            {/* A bar only for a percentage the job reported (issue #381): none reads as stuck at 0%. */}
-            {job.progress !== undefined && (
-              <div data-slot="progress" className="flex flex-1 items-center gap-2">
-                <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full rounded-full bg-busy transition-[width] duration-700" style={{ width: `${Math.round(job.progress * 100)}%` }} />
-                </div>
-                <span className="num w-8 text-right">{Math.round(job.progress * 100)}%</span>
-              </div>
-            )}
+            <TaskBar tasks={job.tasks} />
           </div>
           {row.workTree && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground" title={`work tree ${row.workTree}`}>
@@ -142,8 +145,11 @@ function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: str
             </div>
           )}
           {job.progressMessage && <div className="truncate text-xs text-muted-foreground" title={job.progressMessage}>{job.progressMessage}</div>}
+          <LinkLostFlag job={job} />
           <UnassignedFlag job={job} />
         </div>
+      ) : lane?.jobId ? (
+        <div data-lane-loading className="text-xs text-muted-foreground" title={`job ${lane.jobId}`}>job {lane.jobId.slice(0, 8)} · loading</div>
       ) : (
         <div data-lane-idle className="text-xs text-muted-foreground/70" title={idle}>
           {lane ? 'idle' : 'capacity, no lane open'}{idle && <> · <span className="text-muted-foreground">{idle}</span></>}
@@ -163,7 +169,7 @@ export function LanesPanel() {
   const machines = useHopper((s) => s.machines);
   const { running } = useJobBoard();
   const idle = useIdleReasons();
-  const rows = laneRows(machines, running);
+  const rows = laneRows(machines, running, useJobIndex());
   // A machine with no lane to show (its lane count is 0) still says why it runs nothing.
   const laneless = machines.filter((m) => !rows.some((r) => r.machine.id === m.id) && idle.has(m.id));
   // The priority lanes (issue #535): marked where open; the ones not open now named below.
@@ -179,7 +185,34 @@ export function LanesPanel() {
           {notOpen.length === 1 ? 'Priority lane' : 'Priority lanes'} {notOpen.join(', ')} not open now: opened for the next high-priority job
         </a>
       )}
+      {overCap(machines).map((o) => (
+        <div key={o.machineId} data-slot="over-cap" className="text-xs text-warn" title={ELBOWED_IN}>
+          {machineName(o.machineId, machines)}: {o.inUse}/{o.lanes} lanes in use · {o.inUse - o.lanes} over the cap, back to {o.lanes} when the work over it ends
+        </div>
+      ))}
       {laneless.map((m) => <div key={m.id} data-lane-idle className="text-xs text-muted-foreground">{machineName(m.id, machines)}: {idle.get(m.id)}</div>)}
     </Panel>
+  );
+}
+
+/**
+ * The job's task count as a bar and `x/y` (issue #794): it steps as each task completes, never on a clock. Before the
+ * job has a task list the bar is indeterminate: no count reads as stuck at 0% (issue #381).
+ */
+function TaskBar({ tasks }: { tasks: Job['tasks'] }) {
+  if (!tasks) {
+    return (
+      <div data-slot="progress" data-indeterminate="true" className="flex flex-1 items-center gap-2" title="No task list yet">
+        <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted"><div className="h-full w-1/3 animate-pulse rounded-full bg-busy/40" /></div>
+      </div>
+    );
+  }
+  return (
+    <div data-slot="progress" className="flex flex-1 items-center gap-2" title={`${tasks.done} of ${tasks.total} tasks done`}>
+      <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+        <div data-slot="progress-fill" className="h-full rounded-full bg-busy transition-[width] duration-700" style={{ width: `${Math.round((tasks.done / tasks.total) * 100)}%` }} />
+      </div>
+      <span className="num text-right">{tasks.done}/{tasks.total}</span>
+    </div>
   );
 }

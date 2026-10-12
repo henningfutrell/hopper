@@ -9,6 +9,7 @@
 //   HOPPER_CLIENT_NAME     the name it joins under (default its host name)
 // herdr and claude (a usage read, issue #366; a level's run, issue #482) are the ones on its PATH: the client is one long-lived process,
 // never a fresh login shell per call.
+// Native Windows is not supported (issue #704): there it stops at once, before it joins or dials in.
 // The client's install dir is this file's directory: the hopper loads its release there (release.ts,
 // issue #70), and the client exits 75 so whatever runs it (the unit, a box's entrypoint) starts the new files.
 import { readFileSync, rmSync } from 'node:fs';
@@ -16,8 +17,9 @@ import { homedir, hostname } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dialIn } from './dial.ts';
+import { startDoor, type Door } from './door.ts';
 import { hasLink, joinHopper, linkKeyFile, readLink } from './join.ts';
-import { linkToken } from './link.ts';
+import { linkToken, unsupportedPlatform } from './link.ts';
 import { startClient, type Client, type ClientOptions } from './server.ts';
 import { askHopper, HELPER_FILE, startVault } from './vault.ts';
 
@@ -26,19 +28,27 @@ export const machineName = (name: string): string => name.replace(/[^A-Za-z0-9_-
 
 /**
  * The client of a joined machine: its link from its client dir, its token derived from its link key and the hopper's
- * public half; and its vault (vault.ts, issue #558), the socket and helper a job gets a vault secret through.
+ * public half; its vault (vault.ts, issue #558), the socket and helper a job gets a vault secret through; and its door
+ * (door.ts, issue #695), the loopback URL its jobs reach the hopper at.
  */
-export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herdrBin' | 'claudeBin' | 'session' | 'installDir' | 'backoffMs' | 'log' | 'onLoaded'>): Client {
+export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herdrBin' | 'claudeBin' | 'session' | 'installDir' | 'backoffMs' | 'log' | 'onLoaded' | 'runtimeSockets'>): Client {
   const link = readLink(o.dir);
   const token = linkToken(readFileSync(linkKeyFile(o.dir), 'utf8'), link.hopperKey);
   const { dir, ...rest } = o;
   const vault = startVault({ dir, installDir: o.installDir, ask: askHopper({ url: link.url, user: link.user, key: link.key, token: () => token }), ...(o.log ? { log: o.log } : {}) });
   vault.catch((e: unknown) => o.log?.(`hopper-client: the vault's socket could not be served: ${(e as Error).message}`));
-  const client = startClient({ ...rest, vaultHelper: join(dir, HELPER_FILE), token: () => token, dial: dialIn({ url: link.url, user: link.user, key: link.key, token: () => token }) });
+  let open: Door | undefined;
+  const door = startDoor({ url: link.url, ...(o.log ? { log: o.log } : {}) }).then((d) => { open = d; return d; });
+  door.catch((e: unknown) => o.log?.(`hopper-client: the client door could not be opened: ${(e as Error).message}`));
+  const client = startClient({
+    ...rest, vaultHelper: join(dir, HELPER_FILE), door: () => open?.url, token: () => token,
+    dial: dialIn({ url: link.url, user: link.user, key: link.key, token: () => token }),
+  });
   return {
     async stop() {
       await client.stop();
       await vault.then((v) => v.stop(), () => undefined);
+      await door.then((d) => d.stop(), () => undefined);
     },
   };
 }
@@ -65,6 +75,8 @@ export function takeJoinLine(env: NodeJS.ProcessEnv = process.env): string | und
 const say = (line: string): void => { process.stdout.write(`${line}\n`); };
 
 async function run(argv: string[]): Promise<void> {
+  const unsupported = unsupportedPlatform(process.platform);
+  if (unsupported) throw new Error(unsupported);
   const dir = process.env.HOPPER_CLIENT_DIR || join(homedir(), '.config', 'hopper-client');
   const name = machineName(process.env.HOPPER_CLIENT_NAME || hostname());
   if (argv[0] === 'join') {

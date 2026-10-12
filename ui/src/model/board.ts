@@ -118,19 +118,35 @@ export interface LaneRow {
   workTree?: string;
   /** `unopened`: capacity under maxLanes with no lane open. */
   state: Lane['state'] | 'unopened';
+  /** A specialty job's lane past the machine's lanes (issue #762): it elbowed in, and closes when its job ends. */
+  elbowIn?: true;
 }
 
-export function laneRows(machines: MachineView[], running: Job[]): LaneRow[] {
-  const byId = new Map(running.map((j) => [j.id, j]));
+const inUse = (m: Pick<MachineView, 'lanes'>): number => m.lanes.filter((l) => l.state !== 'idle').length;
+
+/** The machines with more lanes in use than their lanes (issue #762): specialty jobs elbowed in, e.g. 7 of 6. */
+export function overCap(machines: readonly MachineView[]): { machineId: string; inUse: number; lanes: number }[] {
+  return machines.filter((m) => inUse(m) > m.maxLanes).map((m) => ({ machineId: m.id, inUse: inUse(m), lanes: m.maxLanes }));
+}
+
+/**
+ * `jobs`: every job the store holds. A job that waits (on a question or on its own wait) while its lane still names it
+ * shows on that lane too (issue #432), never an empty busy lane. An ended or parked job a stale lane names does not.
+ */
+export function laneRows(machines: MachineView[], running: Job[], jobs: ReadonlyMap<string, Job> = new Map()): LaneRow[] {
+  const waits = [...jobs.values()].filter((j) => GROUP[j.status] === 'waitingAnswer' || GROUP[j.status] === 'waitingOn');
+  const byId = new Map([...waits, ...running].map((j) => [j.id, j]));
   const byLane = new Map(running.filter((j) => j.laneId).map((j) => [j.laneId, j]));
   const placed = new Set<string>();
   const rows: LaneRow[] = [];
   for (const m of machines) {
     const machine = { id: m.id, label: m.label || m.id };
+    const over = inUse(m) > m.maxLanes;
     for (const lane of m.lanes) {
       const job = (lane.jobId && byId.get(lane.jobId)) || byLane.get(lane.id);
       if (job) placed.add(job.id);
-      rows.push({ key: lane.id, machine, lane, job, ...(job?.workTree ? { workTree: job.workTree } : {}), state: lane.state });
+      const elbowIn = over && job?.spec.specialty === true && lane.state !== 'idle';
+      rows.push({ key: lane.id, machine, lane, job, ...(job?.workTree ? { workTree: job.workTree } : {}), state: lane.state, ...(elbowIn ? { elbowIn: true as const } : {}) });
     }
     for (let i = m.lanes.length; i < m.maxLanes; i += 1) rows.push({ key: `${m.id}/unopened-${i}`, machine, state: 'unopened' });
   }
@@ -141,6 +157,14 @@ export function laneRows(machines: MachineView[], running: Job[]): LaneRow[] {
     rows.push({ key: `orphan-${job.id}`, machine: { id: machineId, label: machineId }, job, ...(job.workTree ? { workTree: job.workTree } : {}), state: 'busy' });
   }
   return rows;
+}
+
+/** What a lane with a job does now (issue #432): its job starts (claimed), runs, or waits while it holds the lane. */
+export type LaneJobState = 'starting' | 'busy' | 'waiting';
+
+export function laneJobState(job: Job): LaneJobState {
+  if (job.status === 'claimed') return 'starting';
+  return job.status === 'running' ? 'busy' : 'waiting';
 }
 
 export interface Kpis {

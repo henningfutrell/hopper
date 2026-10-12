@@ -55,6 +55,11 @@ describe('matchCause', () => {
     expect(cause('ssh: connect to host box port 22: No route to host')).toBe('machine-offline');
   });
 
+  // Issue #741: a herdr client older than its session's server fails every job start on that machine.
+  it('names a herdr client its server does not take', () => {
+    expect(cause('herdr: Error: client protocol 17 is older than server protocol 22')).toBe('herdr-outdated');
+  });
+
   it('names transient hiccups and job-specific ends', () => {
     expect(cause('interrupted by daemon restart')).toBe('daemon-restart');
     expect(cause('read ECONNRESET')).toBe('network');

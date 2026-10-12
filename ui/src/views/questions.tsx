@@ -1,5 +1,5 @@
 // Open questions: what the job asked, its recent output, the escalation trail, and the answer box
-// with Send answer, Close and Dismiss, and Park for the job waiting on it (issue #530: where a person decides the job
+// with Send answer, Close and Dismiss, Report a bug on its job (issue #694), and Park for the job waiting on it (issue #530: where a person decides the job
 // must wait; or why it cannot be parked). A level's recommendation on the trail is sent in one click, Use answer, by
 // the same route as Send answer; the card says in place whether it was sent, or why not with Retry (issue #459). A 403 on a mutation drops the UI to logged out: the landing
 // page (issue #213). Shown, the owner's
@@ -28,11 +28,12 @@ import { Countdown, JobTitle } from '@/components/job';
 import { CardText, Markdown } from '@/components/markdown';
 import { Empty, Panel } from '@/components/panel';
 import { RaisedOn } from '@/components/raised-by';
+import { ThreadState } from '@/components/thread-ask';
 import { StatusBadge } from '@/components/status';
 import { between, clock } from '@/model/format';
 import type { EscalationReason, QuestionAttempt, QuestionView } from '@/model/wire';
 import { unseenByOwner } from '@/model/questions';
-import { REASON_LABELS, reasonCounts, reasonSentence, recommendationLine, stageName, trailReason } from '@/model/escalation';
+import { REASON_LABELS, reasonCounts, reasonSentence, reasonsOf, recommendationLine, riskCheckNote, stageName, trailReason } from '@/model/escalation';
 import { questionOrder } from '@/model/priority';
 import { HighTag } from '@/components/priority';
 import { useReadingPosition } from '@/lib/reading-position';
@@ -40,6 +41,7 @@ import { act, actFor, markSeen, refreshQuestions, useHopper } from '@/store';
 import { useCanAdmin, useCanOperate, useJobIndex, useQuestions } from '@/store/selectors';
 import { ParkButton } from '@/views/overview/lanes';
 import { PhaseShiftSettingsPanel, QuestionForks, ShiftActions } from '@/views/phase-shifts';
+import { ReportBugButton } from '@/app/bug-report';
 
 const Mark = ({ ok }: { ok: boolean }) => <span className={ok ? 'text-ok' : 'text-bad'}>{ok ? '✓' : '✗'}</span>;
 
@@ -66,14 +68,19 @@ function Attempt({ a, onUse, busy }: { a: QuestionAttempt; onUse?: (answer: stri
   );
 }
 
-/** Why the question came to a person and what the level recommends: the top of its card, nothing to expand (issue #679). */
+/**
+ * Why the question came to a person and what the level recommends: the top of its card, nothing to expand (issue #679).
+ * When the keyword risk rules checked the answer, a note says so, with a link to the Decider's settings.
+ */
 function ReasonBanner({ q }: { q: QuestionView }) {
   const said = recommendationLine(q.escalation);
+  const note = riskCheckNote(q.escalation);
   const guard = q.escalation?.reason === 'guard';
   return (
     <div data-slot="escalation-reason" className={`space-y-0.5 rounded-md border p-2.5 text-sm ${guard ? 'border-bad/40 bg-bad/5' : 'border-question/30 bg-question/5'}`}>
       <div className="font-medium">{reasonSentence(q.escalation)}</div>
       {said && <div className="text-muted-foreground">{said}</div>}
+      {note && <div data-slot="risk-check-note" className="text-xs text-muted-foreground">{note} <a className="underline" href="#settings/decider">Decider settings</a></div>}
     </div>
   );
 }
@@ -124,6 +131,7 @@ function QuestionCard({ q }: { q: QuestionView }) {
         {!movedOn && <ParkButton job={job} />}</div>}
       {q.tier === 'human' && <ReasonBanner q={q} />}
       <div data-slot="question-text" className="rounded-md border-l-2 border-question bg-question/5 p-3 text-sm"><CardText text={q.text} tldr={q.tldr?.text} /></div>
+      <ThreadState q={q} />
       <QuestionForks q={q} />
       {q.lapsesAt && <div data-slot="lapses" className="text-xs text-warn">Claude Code denies this by itself <Countdown iso={q.lapsesAt} /> unless it is answered first.</div>}
       <Collapsible>
@@ -154,6 +162,7 @@ function QuestionCard({ q }: { q: QuestionView }) {
               action="Dismiss question" onConfirm={() => void end('dismiss')}>
               <Button variant="ghost" disabled={sending} title="Drop a question that needs no action"><Archive />Dismiss</Button>
             </Confirm>
+            <span className="ml-auto self-center"><ReportBugButton jobId={q.jobId} /></span>
           </div>
           {!movedOn && <ShiftActions q={q} busy={sending} />}
         </div>
@@ -191,7 +200,7 @@ export function Questions() {
   const counts = useMemo(() => reasonCounts(questions), [questions]);
   // A filter whose last question left shows all again.
   const active = reason && counts.some((c) => c.reason === reason) ? reason : undefined;
-  const ordered = useMemo(() => questionOrder(active ? questions.filter((q) => q.escalation?.reason === active) : questions), [questions, active]);
+  const ordered = useMemo(() => questionOrder(active ? questions.filter((q) => reasonsOf(q.escalation).includes(active)) : questions), [questions, active]);
   const list = useRef<HTMLDivElement>(null);
   const { below, showBelow } = useReadingPosition(list, 'question', ordered.map((q) => q.id), questions);
   // Seen is shared state: only a session that can act on the questions marks them.

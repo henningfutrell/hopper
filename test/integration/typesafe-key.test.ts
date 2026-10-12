@@ -11,6 +11,8 @@
 //   Scenario: a key in the environment and none stored: imported once, with a note; a later removal is not undone
 //   Scenario: removing the key turns Jev off at once
 //   Scenario: Access decides: OpenFGA not reached, nothing changes; a job's ask for the key is refused
+//   Scenario: OpenFGA down or not set up (issue #696): the save fails with a 503 that names OpenFGA; the GitHub
+//     connection, the UI session and every other secret stay exactly as they were
 //   Scenario: the operator CLI sets the key from stdin and removes it, as JSON
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -26,7 +28,7 @@ const FAKE_TYPESAFE = join(import.meta.dirname, '..', 'plugins', 'fixtures', 'fa
 const GOOD = 'ts-good-0123456789abcdef-wxyz';
 const OTHER = 'ts-good-fedcba9876543210-qrst';
 const BAD = 'ts-bad-0123456789abcdef-nope';
-const PICK = 'Which name should the new module take?\n1. ledger\n2. journal';
+const QUESTION = 'Which name should the new module take?\n1. ledger\n2. journal';
 
 let t: TestApp | undefined;
 const cleanups: (() => void)[] = [];
@@ -46,7 +48,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-async function boot(o: { secrets?: Record<string, string>; dbPath?: string; fga?: FakeAuthorizationServer } = {}): Promise<{ a: TestApp; session: string; fga: FakeAuthorizationServer }> {
+async function boot(o: { secrets?: Record<string, string>; dbPath?: string; fga?: FakeAuthorizationServer; noOpenFga?: boolean } = {}): Promise<{ a: TestApp; session: string; fga: FakeAuthorizationServer }> {
   let dbPath = o.dbPath;
   if (!dbPath) {
     const db = tempDbPath();
@@ -55,7 +57,7 @@ async function boot(o: { secrets?: Record<string, string>; dbPath?: string; fga?
   }
   const fga = o.fga ?? createFakeAuthorizationServer();
   t = await startTestApp({
-    dbPath, plugins: { machines: lanes(1) }, seams: { authorizationServer: fga },
+    dbPath, plugins: { machines: lanes(1) }, seams: { authorizationServer: o.noOpenFga ? undefined : fga },
     secrets: { HOPPER_MASTER_KEY: KEY, PYTHONPATH: FAKE_TYPESAFE, ...o.secrets },
   });
   return { a: t, session: await t.login(), fga };
@@ -94,10 +96,11 @@ describe('the TypeSafe API key, set in the UI', () => {
     expect(v.jev).toEqual({ available: true });
     expect(v.typesafeKey).toMatchObject({ set: true, last4: 'wxyz' });
     // Jev is asked at the next decision, with the key, through TypeSafe: no restart.
-    const job = await a.pull({ op: 'ask', message: PICK });
+    const job = await a.pull({ op: 'ask', message: QUESTION });
     await a.waitForStatus(job.id, 'finished');
     const [pick] = await picked(a, job.id);
-    expect(pick!.data).toMatchObject({ by: 'jev', pick: '1', confidence: 0.9 });
+    // The risk call on the level's answer (issue #679): the fake TypeSafe picks the first option, no risk.
+    expect(pick!.data).toMatchObject({ by: 'jev', point: 'question-risk', pick: 'none', confidence: 0.9 });
     // Kept in the vault's system scope: sealed, and not one of the vault's own secrets.
     expect(rows(a)).toHaveLength(1);
     expect(rows(a)[0]).toMatchObject({ name: 'system/typesafe-api-key' });
@@ -132,7 +135,7 @@ describe('the TypeSafe API key, set in the UI', () => {
     expect(r.status).toBe(200);
     expect(r.body).toEqual({ set: false });
     expect((await view(a)).jev).toEqual({ available: false, why: 'Jev is off until a TypeSafe API key is set' });
-    const job = await a.pull({ op: 'ask', message: PICK });
+    const job = await a.pull({ op: 'ask', message: QUESTION });
     await a.waitForStatus(job.id, 'finished');
     expect(await picked(a, job.id)).toEqual([]);
     expect((await a.events('types=vault.secret_set,vault.secret_removed')).map((e) => [e.type, e.data.name])).toEqual([
@@ -167,10 +170,37 @@ describe('the TypeSafe API key, set in the UI', () => {
     expect(check?.tuple).toEqual({ subject: 'user:admin', relation: 'can_change', object: 'system_secret:admin/typesafe-api-key' });
     fga.reachable = false;
     const r = await removeKey(a, session);
-    expect(r.status).toBe(403);
-    expect(r.body.error).toMatch(/OpenFGA cannot be asked/);
+    expect(r.status).toBe(503);
+    expect(r.body.error).toMatch(/^access checks are unavailable: OpenFGA is not reachable/);
     expect((await view(a)).typesafeKey).toMatchObject({ set: true });
   });
+
+  // Issue #696: an Access outage is not a refusal, and a failed save touches nothing else.
+  for (const how of ['down', 'not set up'] as const) {
+    it(`OpenFGA ${how}: saving the key fails with a 503; the GitHub connection, the session and every other secret stay`, async () => {
+      const { a, session, fga } = await boot(how === 'not set up' ? { noOpenFga: true } : {});
+      const github = a.user().connectedAccounts;
+      await github.adopt({ provider: 'github', subject: '1', account: 'octo-user', accessToken: 'gho_kept0123456789' });
+      const before = rows(a);
+      const connection = { account: github.account('github'), ended: github.ended('github') };
+      const connectionEvents = (await a.events('types=connected_account.expired,connected_account.renewal_failed,connected_account.renewed')).length;
+      expect(before.map((r) => r.name)).toContain('system/connected-account.github.access-token');
+      if (how === 'down') fga.reachable = false;
+      const r = await setKey(a, session, GOOD);
+      expect(r.status).toBe(503);
+      expect(r.body.error).toMatch(/^access checks are unavailable: OpenFGA is not reachable/);
+      expect(rows(a)).toEqual(before);
+      expect({ account: github.account('github'), ended: github.ended('github') }).toEqual(connection);
+      expect(await a.events('types=connected_account.expired,connected_account.renewal_failed,connected_account.renewed')).toHaveLength(connectionEvents);
+      expect((await a.api('GET', '/ui/api/session', undefined, { 'x-hopper-session': session })).body).toMatchObject({ authenticated: true });
+      expect((await a.events('types=vault.secret_removed,vault.secret_set')).filter((e) => e.data.name !== 'system/connected-account.github.access-token')).toEqual([]);
+      expect((await view(a)).typesafeKey).toMatchObject({ set: false });
+      // Every user reads why: the banner and the form say it before a save is tried.
+      const status = (await a.api<{ state: string; why?: string }>('GET', '/api/access/status')).body;
+      expect(status.state).toBe(how === 'down' ? 'unreachable' : 'not-configured');
+      expect(status.why).toEqual(expect.any(String));
+    });
+  }
 
   it('a viewer cannot set it', async () => {
     const { a } = await boot();

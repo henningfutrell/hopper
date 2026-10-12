@@ -1,0 +1,163 @@
+// Report a bug (issue #694, design.md "Report a bug"): one person's reports. `context` is what the form shows, masked,
+// for the person to read and edit; `file` searches the open reports for the failure's signature and a similar title
+// first and answers those instead of filing, unless the person names one to comment on or files anyway; then it files on
+// the hopper's own repository with the person's own GitHub connection (`bug_report.filed`, `bug_report.failed`).
+// `fileForJob` is a running job's report, by the same path: its text masked whole, the job's context added, marked as
+// the job's. With no GitHub connection, or GitHub out of reach or refusing access, the report is kept (`bug_report.kept`)
+// and sent later (`later.ts`); every report filed or kept is a row, for Your reports. Never a token in an event.
+import type { BugReportRepository } from '../domain/ports.ts';
+import type { InstallInfo, Job, NewEvent } from '../domain/types.ts';
+import { maskReportText, REPORT_LABEL, REPORT_REPO, reportBody, reportContext, reportTitle, searchTerms, SIGNATURE_LINE, similarityOf, type ReportSystem } from './context.ts';
+import { ReportGitHubError, type ReportGitHub, type SimilarReport } from './github.ts';
+import { sendReport } from './later.ts';
+
+/** A title with at least this share of the terms is offered as similar. */
+export const SIMILAR_AT = 0.5;
+/** The most similar reports offered. */
+export const MAX_SIMILAR = 5;
+
+export interface BugReportDraft {
+  title: string;
+  happened: string;
+  expected: string;
+  /** The context as the person left it. */
+  context: string;
+  jobId?: string;
+  /** Add the report as a comment on this open report. */
+  commentOn?: number;
+  /** File it even with a similar open report. */
+  force?: boolean;
+  /** A running job files it (`fileForJob`), not a person. */
+  fromJob?: boolean;
+}
+
+/** What a running job sends (`hopper-gh report bug`): a title and what happened, and its choice after a similar one. */
+export interface JobReport { title: string; body: string; commentOn?: number; force?: boolean }
+
+export type BugReportAnswer =
+  | { kind: 'filed' | 'commented'; number: number; url: string }
+  | { kind: 'similar'; similar: SimilarReport[] }
+  /** Not sent: GitHub could not take it now (`problem`); the hopper keeps it and sends it later. */
+  | { kind: 'kept'; id: string; problem: string };
+
+/** Why a report was not filed: `status` as the HTTP edge answers it. */
+export class BugReportRefused extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'BugReportRefused';
+    this.status = status;
+  }
+}
+
+export interface BugReportsOptions {
+  /** The person's GitHub, or why there is none. */
+  github(): ReportGitHub | { problem: string };
+  job(id: string): Job | undefined;
+  /** The job's failure record: its id and its signature. */
+  failureOf(jobId: string): { id: string; signature: string } | undefined;
+  install(): Partial<InstallInfo>;
+  system(): ReportSystem;
+  record(event: NewEvent): void;
+  log(line: string): void;
+  /** The person's reports: those filed, and those kept to send later. */
+  reports: BugReportRepository;
+  now(): string;
+}
+
+/**
+ * GitHub could not take the report now, and may later: no answer, the connection refused or ended (401), no access to
+ * the repository (403, 404: the app is not installed there), a rate limit (429), or GitHub's own failure (5xx).
+ */
+export const sendLater = (e: unknown): boolean => {
+  const status = e instanceof ReportGitHubError ? e.status : undefined;
+  return status === undefined || status === 401 || status === 403 || status === 404 || status === 429 || status >= 500;
+};
+
+export interface BugReports {
+  /** The context of a report, masked; on a job when `jobId` names one (else 404). */
+  context(jobId?: string): string;
+  file(draft: BugReportDraft, by: string): Promise<BugReportAnswer>;
+  /** A running job's report on itself: its text masked, its context added; `bug_report.filed` says `fromJob`. */
+  fileForJob(jobId: string, report: JobReport): Promise<BugReportAnswer>;
+}
+
+export function createBugReports(o: BugReportsOptions): BugReports {
+  const jobOf = (id: string): Job => {
+    const job = o.job(id);
+    if (!job) throw new BugReportRefused(404, `job ${id} not found`);
+    return job;
+  };
+  /**
+   * Open reports of the same error — their text names the signature — then those like this title, best first, each
+   * once; a failed search files the report as if there were none.
+   */
+  async function similar(github: ReportGitHub, title: string, signature: string | undefined): Promise<SimilarReport[]> {
+    const terms = searchTerms(title);
+    try {
+      const same = signature ? await github.search(REPORT_REPO, REPORT_LABEL, [signature], 'body') : [];
+      const found = terms.length === 0 ? [] : await github.search(REPORT_REPO, REPORT_LABEL, terms);
+      const like = found.map((r) => ({ r, s: similarityOf(terms, r.title) })).filter((x) => x.s >= SIMILAR_AT)
+        .sort((a, b) => b.s - a.s).map((x) => x.r);
+      const seen = new Set<number>();
+      return [...same, ...like].filter((r) => !seen.has(r.number) && seen.add(r.number)).slice(0, MAX_SIMILAR);
+    } catch (e) {
+      o.log(`hopper: Report a bug: the duplicate search failed, filing anyway: ${(e as Error).message}`);
+      return [];
+    }
+  }
+  const context = (jobId?: string): string => {
+    const job = jobId === undefined ? undefined : jobOf(jobId);
+    const failure = job ? o.failureOf(job.id) : undefined;
+    return reportContext({ install: o.install(), system: o.system(), ...(job ? { job } : {}), ...(failure ? { failureId: failure.id, signature: failure.signature } : {}) });
+  };
+  /** Kept to send later: the row, `bug_report.kept`, and the answer that says so. */
+  function keep(d: BugReportDraft, at: Record<string, unknown>, body: string, problem: string): BugReportAnswer {
+    const r = o.reports.add({
+      createdAt: o.now(), by: String(at.by), ...(d.jobId ? { jobId: d.jobId } : {}), ...(d.fromJob ? { fromJob: true } : {}),
+      title: reportTitle(d.title), state: 'waiting', kind: d.commentOn !== undefined ? 'comment' : 'issue',
+      ...(d.commentOn !== undefined ? { number: d.commentOn } : {}), body, problem, tries: 1, checkedAt: o.now(),
+    });
+    o.record({ type: 'bug_report.kept', ...(d.jobId ? { jobId: d.jobId } : {}), data: { ...at, id: r.id, problem } });
+    return { kind: 'kept', id: r.id, problem };
+  }
+  async function file(d: BugReportDraft, by: string): Promise<BugReportAnswer> {
+    if (d.jobId !== undefined) jobOf(d.jobId);
+    const at = { repo: REPORT_REPO, ...(d.jobId ? { jobId: d.jobId } : {}), by, ...(d.fromJob ? { fromJob: true } : {}) };
+    const body = reportBody({ happened: d.happened, expected: d.expected, context: d.context, ...(d.fromJob && d.jobId ? { fromJob: d.jobId } : {}) });
+    const github = o.github();
+    if ('problem' in github) return keep(d, at, body, github.problem);
+    if (d.commentOn === undefined && !d.force) {
+      // The signature only while the context sent still names it: what the person removed is not searched for either.
+      const signature = d.jobId === undefined ? undefined : o.failureOf(d.jobId)?.signature;
+      const found = await similar(github, d.title, signature && d.context.includes(`${SIGNATURE_LINE}${signature}`) ? signature : undefined);
+      if (found.length > 0) return { kind: 'similar', similar: found };
+    }
+    const kind = d.commentOn !== undefined ? 'comment' : 'issue';
+    try {
+      const done = await sendReport(github, { kind, title: reportTitle(d.title), body, ...(d.commentOn !== undefined ? { number: d.commentOn } : {}) });
+      o.reports.add({
+        createdAt: o.now(), by, ...(d.jobId ? { jobId: d.jobId } : {}), ...(d.fromJob ? { fromJob: true } : {}),
+        title: reportTitle(d.title), state: 'open', kind, number: done.number, url: done.url, tries: 1, checkedAt: o.now(),
+      });
+      o.record({ type: 'bug_report.filed', ...(d.jobId ? { jobId: d.jobId } : {}), data: { ...at, kind, number: done.number, url: done.url } });
+      return { kind: kind === 'comment' ? 'commented' : 'filed', ...done };
+    } catch (e) {
+      const error = (e as Error).message;
+      if (sendLater(e)) return keep(d, at, body, error);
+      o.record({ type: 'bug_report.failed', ...(d.jobId ? { jobId: d.jobId } : {}), data: { ...at, error } });
+      throw new BugReportRefused(502, error);
+    }
+  }
+  return {
+    context,
+    file,
+    fileForJob(jobId, r) {
+      const host = o.system().hostname;
+      return file({
+        title: maskReportText(r.title, host), happened: maskReportText(r.body, host), expected: '', context: context(jobId), jobId, fromJob: true,
+        ...(r.commentOn !== undefined ? { commentOn: r.commentOn } : {}), ...(r.force ? { force: true } : {}),
+      }, `job ${jobId}`);
+    },
+  };
+}

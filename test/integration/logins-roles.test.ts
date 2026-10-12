@@ -52,13 +52,14 @@ describe('the logins as the Logins view reads them', () => {
     expect(one).not.toHaveProperty('userCode');
   });
 
-  it('the warning before a code runs out is a setting: 60 seconds by default, changed by an admin, kept with onExpiry', async () => {
+  it('the warning before a code runs out is a setting: 60 seconds by default, changed by an admin, kept with onExpiry (hold by default)', async () => {
     const a = await start();
     const token = await a.login();
-    expect((await loginsOf(a, token)).settings).toEqual({ onExpiry: 'fail', warnSec: 60 });
-    expect((await a.ui('/ui/api/logins/settings', { warnSec: 120 }, { token })).body).toEqual({ onExpiry: 'fail', warnSec: 120 });
-    expect((await a.ui('/ui/api/logins/settings', { onExpiry: 'hold' }, { token })).body).toEqual({ onExpiry: 'hold', warnSec: 120 });
-    expect((await loginsOf(a, token)).settings).toEqual({ onExpiry: 'hold', warnSec: 120 });
+    // Hold by default (issue #698): an expired code waits for a new one and never fails the job by itself.
+    expect((await loginsOf(a, token)).settings).toEqual({ onExpiry: 'hold', warnSec: 60 });
+    expect((await a.ui('/ui/api/logins/settings', { warnSec: 120 }, { token })).body).toEqual({ onExpiry: 'hold', warnSec: 120 });
+    expect((await a.ui('/ui/api/logins/settings', { onExpiry: 'fail' }, { token })).body).toEqual({ onExpiry: 'fail', warnSec: 120 });
+    expect((await loginsOf(a, token)).settings).toEqual({ onExpiry: 'fail', warnSec: 120 });
     expect((await a.ui('/ui/api/logins/settings', { warnSec: 0 }, { token })).status).toBe(400);
     expect((await a.ui('/ui/api/logins/settings', {}, { token })).status).toBe(400);
   });

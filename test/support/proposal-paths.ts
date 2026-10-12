@@ -48,3 +48,30 @@ export const LEGACY = [
   'Effort: an afternoon',
   'Context: the shed is bare wood',
 ].join('\n');
+
+// Issue #755: a path as agents write it — a summary with bullets, the tradeoffs on one line, a field the format does not
+// name (Role:), and bullets whose words before a colon are no field.
+export const BULLET_PATH = [
+  'TL;DR: Keep the key on the hopper.',
+  'Problem: A box needs the key.',
+  '',
+  '## Path 1: Hopper holds the key',
+  'Summary: The hopper keeps the key; a box asks for it.',
+  '- Hopper side: holds the key in the vault.',
+  '- Box side: asks for it with its token.',
+  '- Machines join with a code.',
+  '**Security:** the key never leaves the hopper. **Effort:** two days. **Role:** an admin sets it up. **Friction:** none.',
+  'Creates: one job, with `hopper vault`.',
+  '',
+  'Path 2: Box holds the key',
+  'Summary: Each box keeps a copy.',
+  'Security: a copy on every box.',
+  'Effort: one day.',
+  'Risk: a lost box leaks the key.',
+  'Role: the person copies it.',
+  'Friction: the person copies the key.',
+  'Creates: one job.',
+  '',
+  'Recommended: 1 — the key stays in one place.',
+  'Context: the vault design.',
+].join('\n');

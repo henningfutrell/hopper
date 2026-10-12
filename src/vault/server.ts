@@ -22,12 +22,12 @@ import { VAULT_KEY_VARIABLE, VAULT_OP_PATH, vaultOps, type VaultOp } from './wir
 
 const digest = (s: string): Buffer => createHash('sha256').update(s, 'utf8').digest();
 
-/** Starts the vault server on `host`:`port` (0: any free one). Its database, keys and KMS come from `env`. */
-export async function startVaultServer(o: { env: Record<string, string | undefined>; host: string; port: number; clock?: Clock }): Promise<{ url: string; stop(): Promise<void> }> {
+/** Starts the vault server on `host`:`port` (0: any free one). Its database, keys and KMS come from `env`; `commit` is its build's. */
+export async function startVaultServer(o: { env: Record<string, string | undefined>; host: string; port: number; clock?: Clock; commit?: string }): Promise<{ url: string; stop(): Promise<void> }> {
   // The master key (issue #659): HOPPER_MASTER_KEY, else the old token key while the install is moved from it. Checked
   // against the database's fingerprint at each user's first request: a wrong key seals nothing and opens nothing.
   const masterKey = launchKey(o.env);
-  const secret = runtimeSecrets(withMasterKey(o.env, masterKey));
+  const secret = runtimeSecrets(withMasterKey(o.env, masterKey).env);
   const databaseUrl = secret('HOPPER_DATABASE_URL');
   if (!databaseUrl) throw new Error('HOPPER_DATABASE_URL is not set: the vault keeps its secrets in the hopper\'s database');
   if (!secret(VAULT_KEY_VARIABLE)) throw new Error(`${VAULT_KEY_VARIABLE} is not set: the vault answers only the hopper, which shows it`);
@@ -57,8 +57,9 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
   }
 
   const app = Fastify({ logger: false, bodyLimit: 256 * 1024 });
-  // The container's health check: the server answers. Says nothing of the vault.
-  app.get('/health', async () => ({ ok: true }));
+  // The container's health check: the server answers. Says nothing of the vault. The commit it runs, when its build knows
+  // it: the hopper names a vault container on another version (issue #697).
+  app.get('/health', async () => ({ ok: true, ...(o.commit ? { commit: o.commit } : {}) }));
   app.post<{ Params: { op: string } }>(`${VAULT_OP_PATH}:op`, async (req, reply) => {
     reply.header('cache-control', 'no-store');
     const expected = secret(VAULT_KEY_VARIABLE) ?? '';
@@ -112,13 +113,13 @@ export async function startVaultServer(o: { env: Record<string, string | undefin
 function run(vault: VaultService, op: VaultOp, b: Record<string, unknown>): unknown {
   const body = b as never as {
     by: string; name: string; secret: { name: string; scope?: string; value: string; mints?: { kind: 'aws-account' | 'cluster'; name: string } | null }; ask: { name: string; token: string }; machine?: { key: string };
-    credential: string; target: MintTarget; sessionName: string;
+    credential: string; target: MintTarget; jobId: string; identify?: boolean;
   };
   switch (op) {
     case 'status': return vault.view().problem;
     case 'set': return vault.set(body.secret, body.by);
     case 'remove': return vault.remove(body.name, body.by);
     case 'deliver': return vault.deliver(body.ask, body.machine?.key ?? '');
-    case 'mint': return vault.mintFrom(body.credential, body.target, body.sessionName);
+    case 'mint': return vault.mintFrom(body.credential, body.target, body.jobId, body.identify);
   }
 }

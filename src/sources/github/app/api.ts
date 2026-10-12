@@ -8,8 +8,9 @@ import type { GitHubApi } from '../api.ts';
 import { createAuth } from './auth.ts';
 import type { AppAuth } from './auth.ts';
 import type { GitHubApp, GitHubAppLoad } from './config.ts';
-import { closingPullRequest, issueEdits, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from './graphql.ts';
-import { makeRequest, paginate, splitRepo, statusOf, toApiError } from './http.ts';
+import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from './graphql.ts';
+import { batchGraphQL } from './graphql-batch.ts';
+import { SOURCE_DEFER_AFTER_MS, makeRequest, paginate, splitRepo, statusOf, toApiError } from './http.ts';
 import * as rest from './rest.ts';
 
 export type AppStatus = { ok: true; slug: string; botLogin: string; htmlUrl: string } | { ok: false; reason: string };
@@ -22,6 +23,8 @@ interface Loaded {
   auth: AppAuth;
   /** owner/repo → installation id, from listInstalledRepos or a cold lookup. */
   installs: Map<string, number>;
+  /** owner/repo → the cold lookup under way: the reads asked meanwhile wait on it. */
+  asking: Map<string, Promise<number>>;
   /** installation account login → installation id, from GET /app/installations. */
   accounts?: Map<string, number>;
 }
@@ -31,7 +34,8 @@ interface InstalledRepo { full_name: string }
 
 /** `app`: the identity now (github-app options + the key's variable); `keyEnv` names that variable in messages. */
 export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; baseUrl?: string; clock: Clock }): GitHubAppApi {
-  const req = makeRequest(o.baseUrl ?? 'https://api.github.com');
+  const req = makeRequest(o.baseUrl ?? 'https://api.github.com', undefined, { deferAfterMs: SOURCE_DEFER_AFTER_MS });
+  const ask = batchGraphQL(req);
   let loaded: Loaded | undefined;
   let authError: string | undefined;
 
@@ -44,7 +48,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
     const key = `${r.app.appId}:${r.app.slug}:${r.app.privateKey}`;
     if (loaded?.key === key) return loaded;
     authError = undefined;
-    loaded = { key, app: r.app, auth: createAuth(r.app, req), installs: new Map() };
+    loaded = { key, app: r.app, auth: createAuth(r.app, req), installs: new Map(), asking: new Map() };
     return loaded;
   };
 
@@ -72,20 +76,26 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
 
   const bearer = async (l: Loaded) => `bearer ${await l.auth.jwt()}`;
 
-  /** The installation covering `repo`; a cold cache asks GitHub (design B6). */
+  /** The installation covering `repo`; a cold cache asks GitHub (design B6), once for every read that waits on it (issue #822). */
   const installationFor = async (l: Loaded, repo: string): Promise<number> => {
     const hit = l.installs.get(repo);
     if (hit !== undefined) return hit;
-    try {
-      const r = await req('GET /repos/{owner}/{repo}/installation', { ...splitRepo(repo), headers: { authorization: await bearer(l) } });
-      const id = (r.data as Installation).id;
-      l.installs.set(repo, id);
-      return id;
-    } catch (err) {
-      // No status: the 404 is about the installation, not the item asked for (an issue is not gone).
-      if (statusOf(err) === 404) throw new GitHubApiError(`app not installed on ${repo}`, true);
-      throw err;
-    }
+    const asked = l.asking.get(repo);
+    if (asked) return asked;
+    const asking = (async () => {
+      try {
+        const r = await req('GET /repos/{owner}/{repo}/installation', { ...splitRepo(repo), headers: { authorization: await bearer(l) } });
+        const id = (r.data as Installation).id;
+        l.installs.set(repo, id);
+        return id;
+      } catch (err) {
+        // No status: the 404 is about the installation, not the item asked for (an issue is not gone).
+        if (statusOf(err) === 404) throw new GitHubApiError(`app not installed on ${repo}`, true);
+        throw err;
+      }
+    })().finally(() => l.asking.delete(repo));
+    l.asking.set(repo, asking);
+    return asking;
   };
 
   const tokenFor = async (l: Loaded, repo: string) => l.auth.installationToken(await installationFor(l, repo));
@@ -121,27 +131,35 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
     }),
     listOpenIssues: (repo, label) => call(`list issues ${repo}`, async (l) => rest.listOpenIssues(req, await tokenFor(l, repo), repo, label)),
     getIssue: (repo, number) => call(`get ${repo}#${number}`, async (l) => rest.getIssue(req, await tokenFor(l, repo), repo, number)),
+    subIssues: (repo, number) => call(`sub-issues of ${repo}#${number}`, async (l) => rest.subIssues(req, await tokenFor(l, repo), repo, number)),
     listComments: (repo, number) => call(`comments ${repo}#${number}`, async (l) => rest.listComments(req, await tokenFor(l, repo), repo, number)),
-    issueEdits: (repo, number) => call(`edits of ${repo}#${number}`, async (l) => issueEdits(req, await tokenFor(l, repo), repo, number)),
+    issueEdits: (repo, number) => call(`edits of ${repo}#${number}`, async (l) => issueEdits(ask, await tokenFor(l, repo), repo, number)),
+    issuePlace: (repo, number) => call(`place of ${repo}#${number}`, async (l) => issuePlace(ask, await tokenFor(l, repo), repo, number)),
     ensureLabel: (repo, name, color, description) => call(`label ${repo} ${name}`, async (l) =>
       rest.ensureLabel(req, await tokenFor(l, repo), repo, name, color, description)),
     addLabels: (repo, number, labels) => call(`add labels ${repo}#${number}`, async (l) => rest.addLabels(req, await tokenFor(l, repo), repo, number, labels)),
     removeLabels: (repo, number, labels) => call(`remove labels ${repo}#${number}`, async (l) =>
       rest.removeLabels(req, await tokenFor(l, repo), repo, number, labels)),
+    issueEvents: (repo, number) => call(`events of ${repo}#${number}`, async (l) => rest.issueEvents(req, await tokenFor(l, repo), repo, number)),
     assignedAt: (repo, number, login) => call(`events of ${repo}#${number}`, async (l) => rest.assignedAt(req, await tokenFor(l, repo), repo, number, login)),
     addAssignees: (repo, number, logins) => call(`assign ${repo}#${number}`, async (l) => rest.addAssignees(req, await tokenFor(l, repo), repo, number, logins)),
     reopenIssue: (repo, number) => call(`reopen ${repo}#${number}`, async (l) => rest.reopenIssue(req, await tokenFor(l, repo), repo, number)),
+    closeAsCompleted: (repo, number) => call(`close ${repo}#${number}`, async (l) => rest.closeIssue(req, await tokenFor(l, repo), repo, number)),
     postComment: (repo, number, body) => call(`comment on ${repo}#${number}`, async (l) => rest.postComment(req, await tokenFor(l, repo), repo, number, body)),
     closingPullRequest: (repo, number) => call(`closer of ${repo}#${number}`, async (l) =>
-      closingPullRequest(req, await tokenFor(l, repo), repo, number)),
+      closingPullRequest(ask, await tokenFor(l, repo), repo, number)),
     openClosingPullRequests: (repo, number) => call(`pull requests of ${repo}#${number}`, async (l) =>
-      openClosingPullRequests(req, await tokenFor(l, repo), repo, number)),
+      openClosingPullRequests(ask, await tokenFor(l, repo), repo, number)),
     referencingPullRequests: (repo, number) => call(`pull requests mentioning ${repo}#${number}`, async (l) =>
-      referencingPullRequests(req, await tokenFor(l, repo), repo, number)),
+      referencingPullRequests(ask, await tokenFor(l, repo), repo, number)),
+    crossReferences: (repo, number) => call(`cross-references of ${repo}#${number}`, async (l) =>
+      crossReferences(ask, await tokenFor(l, repo), repo, number)),
     pullRequest: (repo, number) => call(`pull request ${repo}#${number}`, async (l) =>
-      pullRequest(req, await tokenFor(l, repo), repo, number)),
+      pullRequest(ask, await tokenFor(l, repo), repo, number)),
     openPullRequests: (repo) => call(`open pull requests of ${repo}`, async (l) => openPullRequests(req, await tokenFor(l, repo), repo)),
     merge: (repo, number) => call(`merge ${repo}#${number}`, async (l) => rest.mergePullRequest(req, await tokenFor(l, repo), repo, number)),
+    closeWithoutMerge: (repo, number) => call(`close ${repo}#${number}`, async (l) => rest.closePullRequest(req, await tokenFor(l, repo), repo, number)),
+    toDraft: (repo, number) => call(`draft ${repo}#${number}`, async (l) => rest.convertToDraft(req, await tokenFor(l, repo), repo, number)),
     projectItems: (owner, number) => call(`project ${owner}/projects/${number}`, async (l) => {
       if (!l.accounts) await listInstallations(l);
       const id = l.accounts!.get(owner) ?? l.accounts!.values().next().value;

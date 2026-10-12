@@ -3,17 +3,54 @@
 // Issue #581: the requesters — a user owns a job, a job runs on a machine, a machine is an instance of a template — are
 // tuples the hopper writes from who is live, and the path from a requester to an asset names each step.
 import { describe, expect, it } from 'vitest';
-import { artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, itemGaps, modelGaps, systemSecretGaps } from '../../src/authz/model.ts';
+import { apiTokenBoxGaps, apiTokenGaps, artifactGaps, compileAccessModel, DEFAULT_ACCESS_MODEL, intakeGaps, itemGaps, modelGaps, sharedSecretGaps, systemSecretGaps, vaultGrantGaps } from '../../src/authz/model.ts';
 import { shareTuples, profileId, profileOf, assetObject, approvalTuples, machineObject, relationshipPath, requesterObject, requesterTuples } from '../../src/authz/objects.ts';
 
 describe('the access model', () => {
   it('compiles the default model with no gap', () => {
     const json = compileAccessModel(DEFAULT_ACCESS_MODEL);
-    expect(json.type_definitions.map((t) => t.type).sort()).toEqual(['artifact', 'asset', 'item', 'job', 'link', 'machine', 'operation_profile', 'system_secret', 'template', 'user']);
+    expect(json.type_definitions.map((t) => t.type).sort()).toEqual(['api_token', 'artifact', 'asset', 'github_login', 'intake', 'item', 'job', 'link', 'machine', 'operation_profile', 'shared_secret', 'system_secret', 'template', 'user', 'vault_grant']);
     expect(modelGaps(json)).toEqual([]);
     expect(artifactGaps(json)).toEqual([]);
     expect(systemSecretGaps(json)).toEqual([]);
+    expect(sharedSecretGaps(json)).toEqual([]);
     expect(itemGaps(json)).toEqual([]);
+    expect(apiTokenGaps(json)).toEqual([]);
+    expect(apiTokenBoxGaps(json)).toEqual([]);
+    expect(intakeGaps(json)).toEqual([]);
+    expect(vaultGrantGaps(json)).toEqual([]);
+  });
+
+  it('a model edited before vault grants (issue #652) still decides mints and intake; its vault grant gaps are apart, so no job is granted', () => {
+    const before = DEFAULT_ACCESS_MODEL.slice(0, DEFAULT_ACCESS_MODEL.indexOf('\n# A job\'s vault grant'));
+    expect(before).not.toContain('vault_grant');
+    const json = compileAccessModel(before);
+    expect(modelGaps(json)).toEqual([]);
+    expect(intakeGaps(json)).toEqual([]);
+    expect(vaultGrantGaps(json)).toEqual(['vault_grant#owner', 'vault_grant#can_grant']);
+  });
+
+  it('a model edited before API tokens (issue #718) still decides mints; it names what API tokens need', () => {
+    const before = DEFAULT_ACCESS_MODEL.replace(/\n# An API token \(issue #718\)[\s\S]*?define can_run_on_box: [^\n]*\n/, '\n');
+    expect(before).not.toContain('api_token');
+    const json = compileAccessModel(before);
+    expect(modelGaps(json)).toEqual([]);
+    expect(apiTokenGaps(json)).toEqual(['api_token#owner', 'api_token#can_view', 'api_token#can_operate', 'api_token#can_administer']);
+  });
+
+  it('a model edited before box tokens (issue #795) still decides API tokens; only box actions are then refused', () => {
+    const before = DEFAULT_ACCESS_MODEL.replace(/\n *define box_runner: \[user\]\n *define can_run_on_box: [^\n]*/, '');
+    expect(before).not.toContain('define can_run_on_box');
+    const json = compileAccessModel(before);
+    expect(apiTokenGaps(json)).toEqual([]);
+    expect(apiTokenBoxGaps(json)).toEqual(['api_token#box_runner', 'api_token#can_run_on_box']);
+  });
+
+  it('a model edited before intake (issue #652) still decides mints; its intake gaps are apart, so every issue is then a request card', () => {
+    const before = DEFAULT_ACCESS_MODEL.slice(0, DEFAULT_ACCESS_MODEL.indexOf('\n# A GitHub login, lowercased'));
+    const json = compileAccessModel(before);
+    expect(modelGaps(json)).toEqual([]);
+    expect(intakeGaps(json)).toEqual(['intake#trusted_actor', 'intake#can_start_jobs']);
   });
 
   it('a model edited before the system scope (issue #657) still decides mints; its system secret gaps are apart', () => {

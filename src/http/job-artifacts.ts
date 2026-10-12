@@ -3,7 +3,8 @@
 // proxy token>`, honoured only while its job is at work. Every value but the file is in the query string.
 //
 //   POST /job/artifacts?name=&title=&type=   the file as the body (application/octet-stream): kept, 201, with a
-//                                            warning when HTML has no drawing (issue #675)
+//                                            warning when HTML has no drawing (issue #675), or when it looks like a
+//                                            revision of an artifact of the user's and has no `to` or `new` (issue #687)
 //   GET  /job/artifacts[?all=1][&markdown=1] the job's artifacts (all: every job's of the user)
 //   GET  /job/artifacts/:id[?content=1]      one, or its content
 //   POST /job/artifacts/:id/share?owner=1 | ?user=NAME | ?public=1[&hours=N] | ?revoke=SHARE
@@ -110,7 +111,7 @@ export function jobArtifactRoutes(app: FastifyInstance, o: { tenants: Tenants; e
       const [title, summary, type, to, note] = ['title', 'summary', 'type', 'to', 'note'].map((k) => q(req, k));
       if (to !== undefined && !ID.test(to)) return no(req, reply, { status: 400, text: `${to} is not an artifact id` });
       const r = who.t.artifacts.put(who.job, {
-        name, content: req.body, ...(title ? { title } : {}), ...(summary ? { summary } : {}), ...(type ? { type } : {}), ...(to ? { to } : {}), ...(note ? { note } : {}),
+        name, content: req.body, ...(q(req, 'new') ? { separate: true } : {}), ...(title ? { title } : {}), ...(summary ? { summary } : {}), ...(type ? { type } : {}), ...(to ? { to } : {}), ...(note ? { note } : {}),
       });
       if (isRefusal(r)) return no(req, reply, r);
       const { warning, ...kept } = r;

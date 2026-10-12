@@ -18,14 +18,14 @@ import { useCanAdmin } from '@/store/selectors';
 
 const lanes = (n: number): string => `${n} priority lane${n === 1 ? '' : 's'}`;
 
-/** One sentence: the threshold, how many priority lanes and how they were chosen, and what one does while none waits. */
+/** One sentence: the threshold, how many priority lanes and how they were chosen, and when one is held. */
 export function summaryOf(v: PriorityLanesView): string {
   const s = v.settings;
   const chosen = v.by === 'manual' ? `${lanes(v.chosen.length)}, chosen by an admin`
     : s.count === 0 ? 'priority lanes off'
       : v.by === 'none' ? `no priority lane yet: no lane has ${s.minRuns} runs in ${s.windowDays} days`
         : `${lanes(v.chosen.length)}, chosen by reliability`;
-  const idle = s.whenIdle === 'keep-free' ? 'kept free while no high-priority job waits' : 'take default jobs while no high-priority job waits, never low ones';
+  const idle = s.whenIdle === 'keep-free' ? 'held only while a high-priority job waits for one, else used by any job' : 'held from low jobs only while a high-priority job waits for one, else used by any job';
   return `High priority: ${s.highPriority} and above. ${chosen.charAt(0).toUpperCase()}${chosen.slice(1)}; ${idle}.`;
 }
 
@@ -64,11 +64,11 @@ function SettingsForm({ settings }: { settings: PriorityLaneSettings }) {
           <Input id={n.id} type="number" min={n.min} max={n.max} className="h-8 w-28" value={draft[n.key]} disabled={busy}
             onChange={(e) => setDraft({ ...draft, [n.key]: e.target.value })} /></label>
       ))}
-      <label className="grid gap-1"><span className="text-xs text-muted-foreground">While no high-priority job waits</span>
-        <select className={`${FIELD} h-8 w-56 text-sm`} aria-label="While no high-priority job waits" value={whenIdle} disabled={busy}
+      <label className="grid gap-1"><span className="text-xs text-muted-foreground">While a high-priority job waits</span>
+        <select className={`${FIELD} h-8 w-56 text-sm`} aria-label="While a high-priority job waits" value={whenIdle} disabled={busy}
           onChange={(e) => setWhenIdle(e.target.value as PriorityLaneIdle)}>
-          <option value="keep-free">a priority lane stays free</option>
-          <option value="share">it takes default jobs</option>
+          <option value="keep-free">only it takes a priority lane</option>
+          <option value="share">default jobs take one too</option>
         </select></label>
       <Button type="submit" size="sm" disabled={busy || Object.keys(changed).length === 0}>Save</Button>
     </form>

@@ -6,6 +6,7 @@
 // reach the job (issue #387; the app bot's never). The job never writes to its issue, and its prompt says nothing about
 // commenting: silence about issues is the instruction.
 
+import type { Parts } from '../../domain/types.ts';
 import { isArtifactDeliverable } from './completion.ts';
 import type { GitHubComment, GitHubIssue } from './api.ts';
 import { isHopperComment } from './identity.ts';
@@ -98,13 +99,25 @@ export function untrustedBlock(issue: Pick<GitHubIssue, 'title' | 'body'>, comme
   ].join('\n');
 }
 
-/** The hopper's own context: where the issue is, its labels and priority, and what done means. */
-export function contextBlock(issue: GitHubIssue, p: Priority, yoloMode: boolean): string {
+/**
+ * What the job is told of the issue's declared parts (issue #729): how many are done, which to ship, and that only the
+ * last part closes the issue; when every part is done, to check the issue and close it when nothing is left.
+ */
+export function partsLine(n: number, parts: Parts): string {
+  const what = `parts: ${parts.done} of ${parts.total} done (the checklist under the heading "Parts" in the issue and its sub-issues; each merged "Part of #${n}" pull request counts as one more done; a part that names an issue, and a sub-issue, is done only when that issue is closed)`;
+  return parts.done >= parts.total
+    ? `${what}. Now every part is done: check the issue, and when nothing is left, close it as completed`
+    : `${what}. Ship the next part that is not done. Open its pull request with "Part of #${n}", and use "Closes #${n}" only when it ships the last part`;
+}
+
+/** The hopper's own context: where the issue is, its labels and priority, its parts, and what done means. */
+export function contextBlock(issue: GitHubIssue, p: Priority, yoloMode: boolean, parts?: Parts): string {
   return [
     '[hopper issue context]',
     `repo: ${issue.repo} · issue: #${issue.number} · url: ${issue.url}`,
     `labels: ${issue.labels.join(', ')} · author: ${issue.author}`,
     `priority: ${p.priority} (${p.reason}) · project item: ${p.projectItem}`,
+    ...(parts ? [partsLine(issue.number, parts)] : []),
     isArtifactDeliverable(issue) ? artifactDoneLine() : doneLine(issue.number, yoloMode),
   ].join('\n');
 }

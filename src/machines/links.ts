@@ -34,6 +34,8 @@ export function createMachineLinks(): MachineLinks {
       if (url) urls.set(k, url);
       old?.destroy();
       socket.once('close', () => { if (links.get(k) === socket) links.delete(k); });
+      // The upgraded socket is half-open: a client that hangs up ends it, and nothing else closes this end (issue #708).
+      socket.once('end', () => socket.destroy());
     },
     link: (user, key) => links.get(id(user, key)),
     dialledAt: (user, key) => at.get(id(user, key)) ?? 0,

@@ -3,38 +3,42 @@
 // sources, questions, webhooks, notifiers) → updater → server. Adapters are built by their plugins,
 // through each user's host (integration tests call startApp, with doubles at the seams).
 import { artifactBase } from './artifacts/links.ts';
+import { jobHopperUrl } from './github-proxy/reach.ts';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createMachineLinks } from './machines/links.ts';
+import { hopperAddresses } from './machines/hopper-address.ts';
 import { createAccess, LIVE_JOB_STATUSES, type Access } from './authz/service.ts';
 import { createCredentialMinter } from './vault/minter.ts';
 import { createOpenFgaServer } from './authz/openfga.ts';
 import { fileURLToPath } from 'node:url';
-import type { AuthorizationServer, InstanceStore, Restarter, SandboxEngine, UpdateBuilder, Updater } from './domain/ports.ts';
+import type { AuthorizationServer, ContainerRuntime, InstanceStore, ReleaseCheck, Restarter, StackProbe, UpdateBuilder, Updater } from './domain/ports.ts';
 import { machineOfLane } from './domain/raised-by.ts';
 import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
-import { createServer } from './http/index.ts';
+import { createServer, tunnelCaller, watchTunnel } from './http/index.ts';
 import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { createPluginStore, DEFAULT_PLUGIN_STORE, installedDirOf } from './plugins/plugin-store.ts';
 import { logMasterKey, resolveMasterKey, withMasterKey, type MasterKey } from './secrets/master-key.ts';
+import { masterKeyRotation } from './users/master-key-rotation.ts';
+import { createRateLimiterControl } from './github-limiter/settings.ts';
 import { createMasterKeyStatus, type MasterKeyStatus } from './http/master-key.ts';
 import { logMask } from './secrets/log-mask.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { CLIENT_SECRET_VARIABLE } from './connected-accounts/web-flow.ts';
 import { openInstanceStore } from './store/index.ts';
-import { createInstallScriptBuilder, createRestarter, createUpdater, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
+import { createInstallScriptBuilder, createReleaseCheck, createRestarter, releaseAccount, createStackProbe, createUpdater, startStackDrift, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
 import { userForIdentity } from './users/identities.ts';
 import type { UserRuntime, UserSeams } from './users/runtime.ts';
 import { createRuntimes } from './users/runtimes.ts';
 import { openInstanceSecrets } from './users/instance-secrets.ts';
-import { sandboxBoxesOf } from './users/sandbox-boxes.ts';
+import { sandboxBoxesFor, sandboxClientsOf } from './users/sandbox-boxes.ts';
 import { mintJoinCode } from './machines/join-code.ts';
-import { createPodmanEngine } from './sandboxes/podman.ts';
-import { createSandboxes, type Sandboxes } from './sandboxes/service.ts';
+import { selectRuntime } from './sandbox/runtime.ts';
+import { cachedSandboxes, createSandboxes, hopperAddress, hopperNetwork, launchScopes, ownContainer, usersTemplates, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
 export type { UserSeams } from './users/runtime.ts';
@@ -80,10 +84,13 @@ export interface AppSeams extends UserSeams {
   uiDir?: string;
   /** OpenFGA (issue #559); default the server HOPPER_OPENFGA_URL names, else none. */
   authorizationServer?: AuthorizationServer;
-  /** The sandbox engine (issue #603); default rootless Podman at HOPPER_PODMAN_SOCKET, else none. */
-  sandboxEngine?: SandboxEngine;
+  /** The container runtime (issue #708); default the one src/sandbox/runtime.ts selects from the config, else none. */
+  containerRuntime?: ContainerRuntime;
+  /** How long a sandbox launch waits for the box's start check (issue #708); default START_CHECK_MS. */
+  startCheckMs?: number;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
-  update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter };
+  /** `stackProbe`: what the hopper sees of its stack (issue #697); default the compose network's names and the vault container's /health. */
+  update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter; stackProbe?: StackProbe; release?: ReleaseCheck };
 }
 
 const PLUGINS_CONFIG_CHECK_MS = 5000;
@@ -102,7 +109,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, sandboxEngine: _box, ...shared } = seams;
+  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, startCheckMs: _check, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -118,17 +125,16 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // secret; a wrong key stops the start. The parts read it through `keyed`, never from a file or the old token key.
   let masterKey: MasterKey;
   try {
-    masterKey = resolveMasterKey({
-      env, kept: () => store.keptSecrets(),
-      record: { fingerprint: () => store.settings.masterKeyFingerprint(), setFingerprint: (fp) => store.settings.setMasterKeyFingerprint(fp) },
-    });
+    const { settings } = store;
+    masterKey = resolveMasterKey({ env, kept: () => store.keptSecrets(), record: { fingerprint: () => settings.masterKeyFingerprint(), setFingerprint: (fp) => settings.setMasterKeyFingerprint(fp), rotation: () => settings.masterKeyRotation() } });
   } catch (e) {
     store.close();
     throw e;
   }
-  const masterKeyStatus = createMasterKeyStatus(masterKey, store.settings);
+  const { env: keyed, use: useKey } = withMasterKey(env, masterKey.source === 'missing' ? undefined : masterKey);
+  // A rotation (issue #659): every secret sealed again, then the running hopper on the new key (src/users/master-key-rotation.ts).
+  const masterKeyStatus = createMasterKeyStatus(masterKey, store.settings, masterKeyRotation({ store, keyed: { use: useKey }, mask: logMask, vaultUrl: config.vaultUrl, logger, append: (e) => runtimes.events.append(e) }));
   logMasterKey(masterKey, masterKeyStatus.view().saved, logger);
-  const keyed = withMasterKey(env, masterKey.source === 'missing' ? undefined : masterKey);
   // The sign-in realms' secrets are in the instance's vault (issue #658): moved there now, before the sign-in config is read.
   const secrets = openInstanceSecrets(store, { env: keyed, clock, logger, migrate: true });
   const { instance } = secrets;
@@ -153,7 +159,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const workDir = config.workDir;
   mkdirSync(workDir, { recursive: true, mode: 0o700 });
   let port = config.port;
-  const answerUrl = (id: string): string => `http://${config.lanNames[0] ?? '127.0.0.1'}:${port}/#question-${id}`;
+  const uiUrl = (hash: string): string => `http://${config.lanNames[0] ?? '127.0.0.1'}:${port}/#${hash}`;
   // Where a notification's artifact link points (issue #673): the user's link base, else the hopper's own default.
   const artifactLinkBase = (linkBase: string): string => artifactBase({ linkBase, publicUrl: config.publicUrl, lanNames: config.lanNames, port });
   const intervalMs = seams.pluginsConfigIntervalMs ?? PLUGINS_CONFIG_CHECK_MS;
@@ -161,11 +167,11 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const clientRelease = readRelease(join(APP_DIR, 'src', 'client'));
   // The links of the machines dialled in (issue #308): the instance's, each keyed by user and machine key.
   const links = createMachineLinks();
-  // Where a job reaches the hopper to ask it for GitHub (issue #563): a client target, the URL it dialled in at;
-  // this machine, loopback; an ssh or container target, the public URL, else the first LAN name; else nowhere.
-  const reachable = (): string | undefined => config.publicUrl ?? (config.lanNames[0] ? `http://${config.lanNames[0]}:${port}` : undefined);
-  const proxyUrl = (m: MachineSnapshot, dialled: string | undefined): string | undefined =>
-    dialled ?? (m.client ? reachable() : !m.ssh && !m.docker ? `http://127.0.0.1:${port}` : reachable());
+  // Where a job reaches the hopper (issues #563, #695, #698): a client target, its client door (else the URL it dialled in
+  // at); this machine, loopback; an ssh target, the address its probe found it reaches, never a guessed one
+  // (src/machines/hopper-address.ts); a container target, the user's link base, the public URL, else a LAN name, an
+  // address first (src/github-proxy/reach.ts).
+  const proxyUrl = (m: MachineSnapshot, dialled: string | undefined, linkBase: string): string | undefined => m.ssh ? m.hopperUrl : jobHopperUrl({ machine: m, dialled, linkBase, publicUrl: config.publicUrl, lanNames: config.lanNames, port });
   // Access (issue #559): the instance's. Who is live (issue #581): each user's live jobs, each on the machine it runs on,
   // and each box with its template; a template is rated from every user's vault templates of its name (issue #584).
   // Made before the runtimes: each user's vault approves profiles in it.
@@ -191,13 +197,16 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       })));
     },
   });
-  // The vault mints through STS and the Kubernetes API (issue #580), only after access allows it.
-  const minter = createCredentialMinter();
+  // The vault mints through STS and the Kubernetes API (issue #580), only after access allows it. It reads each box's launch
+  // scope from the sandbox records, kept in memory (issue #708): from callbacks too, which can outlive the database. The
+  // tunnel watch (issue #795): whether HOPPER_PUBLIC_URL is up, so each user's Grok Bot routine is told where the hopper is.
+  const minter = createCredentialMinter(), sandboxRecords = cachedSandboxes(instance.sandboxes), tunnel = watchTunnel({ api: config.tunnelApi, publicUrl: config.publicUrl, logger });
+  // The shared secrets (issue #718): the instance's, every user's vault lists them and delivers them after Access allows it.
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, access, minter, instanceSecrets: secrets.system,
-      installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, answerUrl, artifactLinkBase,
+      config, seams: seamsOf(seams, user.id), env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(sandboxRecords.list(), userId),
+      installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, uiUrl, artifactLinkBase, reach: tunnel.url,
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
       linkIdentity: (provider, subject) => {
@@ -252,34 +261,37 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     appDir, dataDir: workDir, settings: instance.settings, events: runtimes.events, clock, logger,
     builder: seams.update?.builder ?? createInstallScriptBuilder({ logFile: join(workDir, 'update', 'build.log') }),
     restart: seams.update?.restart ?? (() => restartApp()),
+    // Only the merge of a pull request whose checks passed (issue #652), asked of github.com's API with the oldest
+    // user's GitHub connection there (issue #822): never with no token.
+    release: seams.update?.release ?? createReleaseCheck({ clock, github: () => releaseAccount(instance.users.list().flatMap((u) => runtimes.get(u.id)?.connectedAccounts ?? [])) }),
     // A restart would lose the running jobs of every user.
     restartBlockers: () => runtimes.all().reduce((n, rt) => n + restartBlockers(rt.store.jobs.list({ status: ['running'] }), (name) => rt.executors.get(name)), 0),
     checkMs: config.updateCheckMs,
   });
-  // The sandbox boxes the hopper starts (issue #603): through rootless Podman, beside the hopper — on the compose
-  // network, reaching it by its LAN name, or on the host network, reaching it on loopback.
+  // The sandbox boxes the hopper starts (issues #603, #708): through the container runtime selected once here (Podman
+  // whenever it is reachable), beside the hopper — on the compose network, reaching it by its LAN name, or on the host
+  // network, reaching it on loopback.
   const sandboxes = createSandboxes({
-    engine: seams.sandboxEngine ?? (config.podmanSocket ? createPodmanEngine(config.podmanSocket) : undefined),
-    instanceId: instance.settings.instanceId(),
-    network: config.sandboxNetwork ?? (config.localMachine ? 'host' : 'hopper_default'),
+    runtime: seams.containerRuntime ?? await selectRuntime({ podmanSocket: config.podmanSocket, dockerSocket: config.dockerSocket, runtime: config.sandboxRuntime }),
+    repo: sandboxRecords, instanceId: instance.settings.instanceId(),
+    network: hopperNetwork(config),
     joinUrl: () => (config.localMachine ? `http://127.0.0.1:${port}` : `http://${config.lanNames[0] ?? 'hopper'}:${port}`),
+    address: (runtime) => hopperAddress({ runtime, network: hopperNetwork(config), self: ownContainer(config.localMachine), lanNames: config.lanNames, port }),
+    ...(seams.startCheckMs !== undefined ? { startCheckMs: seams.startCheckMs } : {}),
+    clients: sandboxClientsOf(runtimes),
     mint: (userId, container, template) => mintJoinCode(instance, clock, userId, { container, ...(template ? { template } : {}) }).code,
-    // A user the instance no longer has keeps no box; one whose runtime cannot say now keeps all of them.
-    boxesOf: (userId) => {
-      if (!instance.users.get(userId)) return new Set();
-      const rt = runtimes.get(userId);
-      return rt ? sandboxBoxesOf(rt.host) : undefined;
-    },
-    waiting: () => new Set(instance.joinCodes.waiting(clock.now().toISOString())),
-    clock, logger,
+    boxesOf: sandboxBoxesFor(instance, runtimes),
+    waiting: (now) => new Set(instance.joinCodes.waiting(now.toISOString())),
+    clock, logger, checks: usersTemplates(() => runtimes.all()), // the read-only check (issue #716)
   });
   const addUser = async (name: string): Promise<User> => {
     const user = instance.users.add(name);
-    await runtimes.ensure(user);
-    return user;
+    return runtimes.ensure(user).then(() => user);
   };
   const server = createServer({
-    instance, clock, version: VERSION, pluginStore, updater, access, sandboxes, masterKey: masterKeyStatus,
+    // The stack against the compose file of this version (issue #697): checked at start, and at each GET /api/update/drift.
+    // The shared GitHub rate limiter (issue #436): every GitHub call of this process goes through it, with the saved settings.
+    instance, clock, version: VERSION, pluginStore, updater, buildDir: appDir, access, sandboxes, masterKey: masterKeyStatus, rateLimiter: createRateLimiterControl({ settings: store.settings, events: runtimes.events }), stackDrift: startStackDrift({ appDir, env, logger, probe: seams.update?.stackProbe ?? createStackProbe({ vaultUrl: config.vaultUrl }) }),
     tenants: {
       user: (id) => runtimes.get(id),
       list: () => instance.users.list(),
@@ -297,7 +309,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       },
     },
     port: () => port, signIn, signInEnvironment,
-    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR,
+    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl }, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(tunnel),
     client: { links, release: clientRelease, installScript: readFileSync(join(APP_DIR, 'scripts', 'client-install.sh'), 'utf8') },
   });
 
@@ -317,7 +329,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     url: `http://127.0.0.1:${port}`,
     config,
     auth: () => signIn.config(),
-    answerUrl,
+    answerUrl: (id) => uiUrl(`question-${id}`),
     instance,
     updater,
     access,
@@ -333,11 +345,11 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     stop() {
       stopped ??= (async () => {
         updater.stop();
-        access.stop();
-        sandboxes.stop();
+        await access.stop();
+        const passes = sandboxes.stop();
         // A link is an upgraded socket: the server does not track it, so it would hold the close open.
         links.closeAll();
-        await server.close();
+        await Promise.all([server.close(), passes, tunnel.stop()]);
         await runtimes.stop();
         instance.close();
       })();

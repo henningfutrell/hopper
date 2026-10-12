@@ -193,9 +193,16 @@ const MIGRATIONS: readonly Migration[] = [
   // 33: the instance's vault (issue #658): the hopper's own secrets for the whole hopper — its sign-in realms' secrets —
   // as system secrets, sealed. A table only: the build before never reads it, and finds the realms' secrets gone from
   // the sign-in record once a start of this build has moved them.
-  `
-  CREATE TABLE IF NOT EXISTS vault_secrets (seq BIGSERIAL PRIMARY KEY, id TEXT NOT NULL UNIQUE, name TEXT NOT NULL UNIQUE, sealed TEXT, body TEXT NOT NULL);
-  `,
+  'CREATE TABLE IF NOT EXISTS vault_secrets (seq BIGSERIAL PRIMARY KEY, id TEXT NOT NULL UNIQUE, name TEXT NOT NULL UNIQUE, sealed TEXT, body TEXT NOT NULL);',
+  // 34: the sandbox records (issue #708): one row per sandbox box the hopper launched, which its sandbox module
+  // reconciles from. A table only: the build before never reads it, and keeps the boxes it finds by their labels.
+  'CREATE TABLE IF NOT EXISTS sandboxes (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL, body TEXT NOT NULL);',
+  // 35: API tokens (issue #718): a session row of kind `api`, with its label. The build before reads every row as a UI
+  // session, and an API token comes in `Authorization`, which it never reads as one: there it signs nobody in.
+  "ALTER TABLE ui_sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'ui'; ALTER TABLE ui_sessions ADD COLUMN label TEXT;",
+  // 36: box tokens (issue #795): an API token a person minted with `box`, which alone may do box actions. Every token
+  // there is is no box token. The build before never reads the column: there every API token may do what its role allows.
+  'ALTER TABLE ui_sessions ADD COLUMN box INTEGER NOT NULL DEFAULT 0;',
 ];
 
 /** Each recorded access decision's `job` becomes its `requester`, of kind job; the rest of the record is kept. */

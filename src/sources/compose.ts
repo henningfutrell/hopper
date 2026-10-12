@@ -12,10 +12,13 @@ import { createAccountGitHubApi } from './github/account/api.ts';
 import { GitHubApiError } from './github/api.ts';
 import type { Rejection } from './github/discover.ts';
 import type { JobArtifacts } from './github/completion.ts';
-import type { IntakeContext } from '../domain/intake.ts';
+import type { IssueGraphRecorder } from './github/graph.ts';
+import type { IntakeContext, IntakeTrust } from '../domain/intake.ts';
 import { createGitHubAppApi, loadGitHubApp, type GitHubAppLoad } from './github/app/index.ts';
 import type { GitHubApi } from './github/index.ts';
 import { createGitHubSource } from './github/index.ts';
+import { gitHubThread } from './github/thread.ts';
+import { passReads } from './github/pass-reads.ts';
 import { sourceConfig, type GitHubAccountOptions, type GitHubAppOptions } from './config.ts';
 
 export const APP_MISSING = 'no GitHub App configured';
@@ -46,10 +49,14 @@ export interface GitHubSourceDeps {
   accounts?: ConnectedAccountTokens;
   /** Claim holders, the intake migration and intake events for this source (issue #440). */
   intake?: IntakeContext | undefined;
+  /** The user's trusted actors and approved requests (issue #652). */
+  trust: IntakeTrust;
   /** The user's yolo mode for a repository (issue #579); absent: off. */
   yoloMode?: (repo: string) => boolean;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. */
   jobArtifacts?: JobArtifacts;
+  /** The user's issue graph (issue #437). */
+  issueGraph?: IssueGraphRecorder;
 }
 
 /**
@@ -63,13 +70,17 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
   });
   const assignee = () => o.accounts?.account('github');
   const real = o.api ? undefined : createGitHubAppApi({ app, keyEnv: options.privateKeyEnv, clock: o.clock, ...(options.apiUrl ? { baseUrl: options.apiUrl } : {}) });
-  const api: GitHubApi = o.api ?? real!;
-  return createGitHubSource({
-    name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable,
+  // One read per sync pass (issue #822): the source reads through `reads.api`, and each sync is one `reads.pass`.
+  const reads = passReads(o.api ?? real!);
+  const api = reads.api;
+  const source = createGitHubSource({
+    name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable, trust: o.trust,
     ...(o.rejections ? { rejections: o.rejections } : {}), ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}), api, assignee,
+    ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}),
     paused: () => appProblem(app()) ?? (assignee() ? undefined : NO_ASSIGNEE),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
   });
+  return { ...source, pass: reads.pass };
 }
 
 /**
@@ -87,7 +98,9 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
   const token = async (): Promise<string> => {
     try { return await accounts.token(provider); } catch (err) { throw new GitHubApiError((err as Error).message, false); }
   };
-  const api = o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token, renew: (refused) => accounts.renew(provider, refused) });
+  // One read per sync pass (issue #822), across a rebuild of the source too.
+  const reads = passReads(o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token, renew: (refused) => accounts.renew(provider, refused) }));
+  const api = reads.api;
   let built: { key: string; source: JobSource } | undefined;
   const current = (): JobSource | undefined => {
     const login = accounts.account(provider);
@@ -99,9 +112,10 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       built = {
         key,
         source: createGitHubSource({
-          name: o.name, kind, mode: 'account', whoami: login, assignee: () => login, config, api, clock: o.clock,
+          name: o.name, kind, mode: 'account', whoami: login, assignee: () => login, config, api, clock: o.clock, trust: o.trust,
           knownKeys: o.knownKeys, rerunnable: o.rerunnable, ...(o.rejections ? { rejections: o.rejections } : {}),
           ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}),
+          ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}),
         }),
       };
     }
@@ -119,8 +133,11 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
   return {
     name: o.name,
     kind,
+    // The issue thread goes through the account's own api (issue #435): a disconnect stops its next call.
+    thread: gitHubThread(api),
     paused: () => (!current() ? why() : accounts.jobRepositories(provider).length === 0 ? NO_REPOSITORIES : undefined),
     describe: () => current()?.describe() ?? unconnected(),
+    pass: reads.pass,
     discover: () => current()?.discover() ?? Promise.resolve([]),
     check: (active) => current()?.check(active) ?? Promise.resolve([]),
     report(r) {
@@ -147,13 +164,27 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       const s = current();
       return s?.unfinishedPullRequest ? s.unfinishedPullRequest(job) : Promise.reject(new Error(why()));
     },
-    follow(job) {
+    follow(job, act) {
       const s = current();
-      return s?.follow ? s.follow(job) : Promise.reject(new SourceError(why(), false));
+      return s?.follow ? s.follow(job, act) : Promise.reject(new SourceError(why(), false));
     },
+    unfollowedPullRequests(jobs) {
+      const s = current();
+      return s?.unfollowedPullRequests ? s.unfollowedPullRequests(jobs) : Promise.reject(new SourceError(why(), false));
+    },
+    crossReferences(job) {
+      const s = current();
+      return s?.crossReferences ? s.crossReferences(job) : Promise.reject(new SourceError(why(), false));
+    },
+    // Unconnected, nothing is merged (issue #796).
+    mergesOnReady: (repo) => current()?.mergesOnReady?.(repo) ?? false,
     rerun(job) {
       const s = current();
       return s?.rerun ? s.rerun(job) : Promise.reject(new SourceError(why(), false));
+    },
+    rework(job) {
+      const s = current();
+      return s?.rework ? s.rework(job) : Promise.reject(new SourceError(why(), false));
     },
     withText(item, text) {
       const s = current();

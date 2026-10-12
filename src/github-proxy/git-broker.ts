@@ -4,29 +4,36 @@
 // only to the job's own one, and only there when it is one of the user's job repositories; then a push's ref updates,
 // read before anything reaches GitHub (`checkPush`). A fetch of a repository the user's jobs do not use goes to GitHub
 // without credentials, as anyone's would. A push is an event on the job's timeline (`github_proxy.done`, `.refused`,
-// `.failed`, op `git.push`); a fetch is not.
+// `.failed`, op `git.push`); a fetch is not. The contribution flow (issue #429): a job whose user cannot push to its own
+// repository is refused before GitHub refuses it, with what to do; with the user's Contribution on, the job's fork — a
+// fork of its own repository in the user's account, as GitHub says — is pushed to and fetched with the user's connection
+// as its own repository is, under the same ref check.
 import { Readable } from 'node:stream';
 import { gunzipSync } from 'node:zlib';
 import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
+import type { RepoFacts } from './api.ts';
 import { checkPush, gitPath, receivePackCommands, type GitService, type RefUpdate } from './git.ts';
+import { CONTRIBUTION_OFF } from './policy.ts';
 import { parseProxyToken } from './token.ts';
 import type { ProxyUser } from './broker.ts';
 
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 
-/** A user's GitHub connection as git uses it: where GitHub's git is, its token, and the repository's default branch. */
+/** A user's GitHub connection as git uses it: where GitHub's git is, its token, its login, and a repository as it sees it. */
 export interface GitConnection {
   /** GitHub's web origin, where its git is (`https://github.com`). */
   url: string;
+  login: string;
   token(): Promise<string>;
   renew(refused: string): Promise<string>;
-  defaultBranch(repo: string): Promise<string>;
+  repo(repo: string): Promise<RepoFacts>;
 }
 
-/** One user's side: their jobs, and their GitHub connection for git, or why there is none. */
+/** One user's side: their jobs, their Contribution (issue #429), and their GitHub connection for git, or why there is none. */
 export interface GitUser {
   user: ProxyUser;
   jobRepositories(): string[];
+  contribution(): boolean;
   git(): GitConnection | { problem: string };
 }
 
@@ -142,13 +149,29 @@ export function createGitProxy(o: GitProxyOptions) {
         return text(403, `refused: ${reason}`);
       };
       const own = repoOf(job);
+      const toOwn = own !== undefined && same(own, at.repo);
       const usedHere = side.jobRepositories().some((x) => same(x, at.repo));
-      if (push && !(own && same(own, at.repo))) return refuse(`a job pushes only to its own repository${own ? ` (${own})` : ', and this job has none'}`);
-      if (push && !usedHere) return refuse(`${at.repo} is not one of the repositories your jobs use, so the hopper pushes nothing there`);
       const git = side.git();
+      const contribution = side.contribution();
+      // The job's fork (issue #429): read only when it can be one — Contribution on, the user's own, no job repository.
+      let facts: RepoFacts | undefined;
+      if (!toOwn && own && contribution && !('problem' in git) && same(at.repo.split('/')[0]!, git.login) && !usedHere) {
+        try { facts = await git.repo(at.repo); } catch { facts = undefined; }
+      }
+      const fork = facts !== undefined && facts.fork && [facts.parent, facts.source].some((p) => p !== undefined && same(p, own!));
+      if (push && !toOwn && !fork) return refuse(`a job pushes only to its own repository${own ? ` (${own})${contribution ? ', or to its user\'s fork of it' : ''}` : ', and this job has none'}`);
+      if (push && toOwn && !usedHere) return refuse(`${at.repo} is not one of the repositories your jobs use, so the hopper pushes nothing there`);
       if ('problem' in git) {
         if (usedHere) return refuse(git.problem);
         return text(503, `refused: ${git.problem}`);
+      }
+      if (push && toOwn) {
+        try { facts = await git.repo(at.repo); } catch (e) { return refuse(`${at.repo} could not be read: ${(e as Error).message}`); }
+        if (!facts.canPush) {
+          return refuse(contribution
+            ? `your user cannot push to ${at.repo}: contribute through a fork: sh "$HOPPER_GH" repo fork --repo ${at.repo}, then push your branch to the fork`
+            : `your user cannot push to ${at.repo}, and ${CONTRIBUTION_OFF}`);
+        }
       }
       let refs: RefUpdate[] = [];
       if (push && !at.advertise) {
@@ -158,16 +181,14 @@ export function createGitProxy(o: GitProxyOptions) {
         const read = receivePackCommands(plain);
         if (!read.ok) return refuse(read.reason);
         refs = read.commands;
-        let defaultBranch: string | undefined;
-        try { defaultBranch = await git.defaultBranch(at.repo); } catch (e) { return refuse(`its default branch could not be read: ${(e as Error).message}`); }
-        const allowed = checkPush(refs, { defaultBranch });
+        const allowed = checkPush(refs, { defaultBranch: facts!.defaultBranch });
         if (!allowed.ok) {
           record('github_proxy.refused', { refs: refs.map((c) => c.ref), reason: allowed.reason });
           return refusedReport(plain, refs, allowed.reason);
         }
       }
       try {
-        const answer = await forward(r, at, git, usedHere);
+        const answer = await forward(r, at, git, usedHere || fork);
         if (push && !at.advertise) {
           if (answer.status === 200) record('github_proxy.done', { refs: refs.map((c) => c.ref) });
           else record('github_proxy.failed', { refs: refs.map((c) => c.ref), error: `GitHub answered ${answer.status}` });

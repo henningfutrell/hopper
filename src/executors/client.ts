@@ -5,16 +5,18 @@
 // sign is not believed. `POST /release` and `POST /load` are the client release's calls (src/client/
 // release.ts, issue #70); `POST /claude` a usage read's claude calls (issue #366); `POST /level` an escalation
 // level's run (issue #482); `POST /reap` and `POST /survey`
-// its machine scripts (issue #410). One session per link: a client that dials in again is a new link.
+// its machine scripts (issue #410); `POST /runtime` a container runtime call on the machine's own runtime (issue #708). One session per link: a client that dials in again is a new link.
 import { DISCOVER_TIMEOUT_MS } from '../client/discover.ts';
 import { connect, type ClientHttp2Session } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import type { ClientRelease } from '../client/release.ts';
 import type { FixedListRelease } from '../machines/client-bridge.ts';
 import type { DiskReading } from '../domain/machines.ts';
+import type { RuntimeAnswer, RuntimeRelay, RuntimeRelayCall } from '../domain/sandboxes.ts';
 import type { ResourceReading } from '../domain/machine-history.ts';
 import { diskOf } from '../machines/disk.ts';
 import { resourcesOf } from '../machines/resources.ts';
+import { keepAlive, type PingTiming } from '../client/keepalive.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, nonceOf, signRequest, verifyResponse } from '../client/signature.ts';
 
 /** Reaching a client target. */
@@ -25,6 +27,8 @@ export interface ClientTransport {
   link: () => Duplex | undefined;
   /** The client token, derived from the hopper's link key and the machine key; read at each call. */
   token: () => string;
+  /** The link's keepalive (src/client/keepalive.ts, issue #752); default PING_TIMING. */
+  ping?: PingTiming;
 }
 
 export interface ClientAnswer { code: number; stdout: string; stderr: string }
@@ -42,7 +46,11 @@ function sessionOn(t: ClientTransport): Promise<ClientHttp2Session> {
   if (open) return open;
   const opened = new Promise<ClientHttp2Session>((resolve, reject) => {
     const s = connect('http://hopper-client', { createConnection: () => link });
-    s.once('connect', () => resolve(s));
+    s.once('connect', () => {
+      // A dead or half-open link is dropped within seconds (issue #752): the machine is then not dialled in.
+      keepAlive(s, () => { console.warn(`client ${t.machine}: no answer to a PING; dropping its link`); link.destroy(); }, t.ping);
+      resolve(s);
+    });
     s.once('error', (e) => reject(new ClientError(`client ${t.machine}: ${e.message}`)));
     s.once('close', () => sessions.delete(link));
   });
@@ -70,8 +78,8 @@ export function clientLevel(t: ClientTransport, call: { model: string; effort?: 
  * (`manifest`, issue #545; a client before that checks a fixed list of file names), and its home when it says (a
  * client before issue #323 does not).
  */
-export async function clientRunningRelease(t: ClientTransport): Promise<{ release: string; manifest: boolean; home?: string; disk?: DiskReading; resources?: ResourceReading; vault?: string }> {
-  const { release, loads, home, disk, resources, vault } = await clientCall<{ release?: unknown; loads?: unknown; home?: unknown; disk?: unknown; resources?: unknown; vault?: unknown }>(t, '/release', {}, 15000);
+export async function clientRunningRelease(t: ClientTransport): Promise<{ release: string; manifest: boolean; home?: string; disk?: DiskReading; resources?: ResourceReading; vault?: string; door?: string }> {
+  const { release, loads, home, disk, resources, vault, door } = await clientCall<{ release?: unknown; loads?: unknown; home?: unknown; disk?: unknown; resources?: unknown; vault?: unknown; door?: unknown }>(t, '/release', {}, 15000);
   if (typeof release !== 'string') throw new ClientError(`client ${t.machine}: no release in its answer`);
   // The disk its home is on (issue #401): a client older than this says none.
   const d = disk as { freeBytes?: unknown; totalBytes?: unknown } | undefined;
@@ -81,7 +89,9 @@ export async function clientRunningRelease(t: ClientTransport): Promise<{ releas
   const res = resourcesOf(resources);
   // Its vault's helper (issue #558): an absolute path, one line; a client older than this says none.
   const helper = typeof vault === 'string' && vault.startsWith('/') && !/[\n\0]/.test(vault) && vault.length <= 4096 ? { vault } : {};
-  return { release, manifest: loads === 'manifest', ...(at ? { home: at } : {}), ...read, ...(res ? { resources: res } : {}), ...helper };
+  // Its client door (issue #695): a loopback URL there; a client older than this says none.
+  const open = typeof door === 'string' && /^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(door) ? { door } : {};
+  return { release, manifest: loads === 'manifest', ...(at ? { home: at } : {}), ...read, ...(res ? { resources: res } : {}), ...helper, ...open };
 }
 
 /**
@@ -96,7 +106,7 @@ function clientHome(home: unknown): string | undefined {
 }
 
 /** A reap or a survey on the client target (issue #410): the client runs its own fixed script; resolves what it printed and its exit code. */
-export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/credential' | '/discover', body: Record<string, unknown>): Promise<ClientAnswer> {
+export function clientScript(t: ClientTransport, path: '/reap' | '/survey' | '/credential' | '/discover' | '/reach', body: Record<string, unknown>): Promise<ClientAnswer> {
   return clientCall<ClientAnswer>(t, path, body, path === '/discover' ? DISCOVER_TIMEOUT_MS + 15000 : 60000);
 }
 
@@ -108,6 +118,23 @@ export async function clientWorkTree(t: ClientTransport, workTree: string): Prom
   const { workTreeProblem } = await clientCall<{ workTreeProblem?: unknown }>(t, '/work-tree', { workTree }, 15000);
   return typeof workTreeProblem === 'string' ? { workTreeProblem } : {};
 }
+
+/** Which container runtime the client target has (issue #708): `{kind}`, or `{problem}`, what to do to give it one. */
+export async function clientRuntimeWhich(t: ClientTransport): Promise<{ kind: 'podman' | 'docker' } | { problem: string }> {
+  const r = await clientCall<{ kind?: unknown; problem?: unknown }>(t, '/runtime', { which: true }, 15000);
+  if (r.kind === 'podman' || r.kind === 'docker') return { kind: r.kind };
+  return { problem: typeof r.problem === 'string' ? r.problem : 'its client names no container runtime' };
+}
+
+/** One container runtime call on the client target's own runtime (issue #708): its runtime's answer. */
+export async function clientRuntimeCall(t: ClientTransport, call: RuntimeRelayCall): Promise<RuntimeAnswer> {
+  const r = await clientCall<{ status?: unknown; text?: unknown; base64?: unknown }>(t, '/runtime', call, call.timeoutMs ?? 30000);
+  if (typeof r.status !== 'number' || typeof r.text !== 'string') throw new ClientError(`client ${t.machine}: its runtime answer has no status`);
+  return { status: r.status, text: r.text, ...(typeof r.base64 === 'string' ? { base64: r.base64 } : {}) };
+}
+
+/** The relay a remote runtime (src/sandbox/remote.ts) drives the client target's own runtime through. */
+export const runtimeRelay = (t: ClientTransport): RuntimeRelay => ({ which: () => clientRuntimeWhich(t), call: (c) => clientRuntimeCall(t, c) });
 
 /** Loads a client release onto the client target — or, for one with a fixed file list, the bridge to it (issue #545); it restarts to run it. */
 export async function loadClientRelease(t: ClientTransport, release: ClientRelease | FixedListRelease): Promise<void> {

@@ -129,7 +129,7 @@ describe('GET /api/plugins: the executor role', () => {
     expect(marked('gate-router')).toEqual(['jevPath', 'python']);
     expect(marked('github-account')).toEqual([]);
     expect(marked('github-app')).toEqual(['apiUrl', 'appId', 'privateKeyEnv', 'slug']);
-    expect(marked('local')).toEqual(['workTree']);
+    expect(marked('local')).toEqual(['workTree', 'workTrees']);
   });
 
   it('an executor added to the plugins config runs without a restart (issue #142)', async () => {

@@ -14,14 +14,15 @@
 
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport, SourceSignal } from '../domain/ports.ts';
-import { TERMINAL_STATUSES, isRerunnable } from '../domain/types.ts';
+import { TERMINAL_STATUSES, isRerunnable, type DomainEvent, type JevFirst, type Job, type SourceStatus } from '../domain/types.ts';
 import { offer } from './item-text.ts';
-import { REMOVED, followSources, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
-import type { DomainEvent, Job, SourceStatus } from '../domain/types.ts';
-import type { IntakeOutcome } from '../domain/intake.ts';
+import { intakeOrder } from './intake-order.ts';
+import { REMOVED, detailOf, followSources, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
+import { liveIntake } from './intake-live.ts';
 import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
 import { createAfterDone } from './after-done.ts';
+import { createThreadAsks } from './thread-asks.ts';
 
 export { REMOVED } from './sync-slots.ts';
 
@@ -32,6 +33,8 @@ export interface SourceSyncOptions {
   pollMs: (sourceName: string) => number;
   /** How long a source may stay in error before `source.stalled` is recorded. Default STALL_AFTER_MS. */
   stallAfterMs?: number;
+  /** Jev first, for the order new items enter and the head of each tending queue (issue #796); absent: the rules decide. */
+  jevFirst?: JevFirst;
 }
 
 /** A source in error this long has stopped intake: the owner is told. */
@@ -165,7 +168,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   }
 
   function onEvent(e: DomainEvent) {
-    if (running && writeBacks.follows(e)) return;
+    if (running && (writeBacks.follows(e) || threadAsks.follows(e))) return;
     if (!running || !e.jobId || !TRIGGERS.has(e.type)) return;
     const jobId = e.jobId;
     const hint: Hint = e.type === 'job.cancelled' && typeof e.data.reason === 'string' ? { cancelReason: e.data.reason } : {};
@@ -232,7 +235,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   }
 
   async function pull(slot: Slot): Promise<{ seen: number; created: number }> {
-    const items = await slot.source.discover();
+    const items = await intakeOrder(o.jevFirst, slot.source.name, await slot.source.discover(), (i) => { const e = store.jobs.getBySourceKey(i.key); return !e || isRerunnable(e); });
     let created = 0;
     const notRerun: NotRerun[] = [];
     for (const item of items) {
@@ -251,17 +254,23 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   async function syncOnce(slot: Slot) {
     const st = slot.status;
+    // Issue #812: a sync asked for off its timer (Sync now, an intake action) runs now: its timer goes, so one timer per
+    // source fires, at the next sync time shown; and the old next time goes while it runs.
+    clearTimeout(slot.timer);
+    delete st.nextSyncAt;
+    st.syncing = true;
+    emit(slot);
     const previous = st.state === 'error' ? st.lastError : undefined;
     // Paused: nothing new is pulled, but the source's own active jobs are still checked and reported.
     const paused = slot.removed ? REMOVED : slot.source.paused?.();
-    try {
+    // One pass (issue #822): the source asks GitHub once for what the steps read twice.
+    const pass = async () => {
       if (paused === undefined) {
         const { seen, created } = await pull(slot);
         st.itemsSeen = seen;
         st.jobsCreated += created;
       } else {
-        st.itemsSeen = 0;
-        slot.notRerun = [];
+        [st.itemsSeen, slot.notRerun] = [0, []];
       }
       await applySignals(slot, jobsOf(slot).filter((j) => !isTerminal(j)));
       await finishCompleteOperatorLed(slot, jobsOf(slot).filter((j) => !isTerminal(j)));
@@ -269,7 +278,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         .filter((j) => !isTerminal(j) || !flagsOf(j).finalReported || !flagsOf(j).claimReported)
         .map((j) => queueReport(slot, j.id)));
       await writeBacks.catchUp(slot.source);
-      await afterDone.catchUp(slot.source, jobsOf(slot));
+      await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot)), threadAsks.catchUp(slot.source, jobsOf(slot))]);
+    };
+    try {
+      await (slot.source.pass ? slot.source.pass(pass) : pass());
       await drain();
       st.state = 'ok';
       st.lastOkAt = clock.now().toISOString();
@@ -280,19 +292,11 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
     told(slot, previous, { clock, stallAfterMs, events: store.events });
     const jobs = jobsOf(slot);
+    delete st.syncing;
     st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
     if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
-    // Every item the source listed, taken (with its job) or not (with its reason) — issue #440. None while paused.
-    const intake = paused === undefined ? slot.source.intake?.() : undefined;
-    st.detail = {
-      ...slot.source.describe(),
-      ...(intake ? { intake: intake.map((x): IntakeOutcome => (x.reason === undefined ? withJob(x) : x)) } : {}),
-      ...(paused !== undefined ? { paused } : {}),
-      permanentErrors: jobs.filter((j) => flagsOf(j).permanentErrors?.length).length,
-      reportRetries: slot.retrying.size,
-      ...(slot.notRerun.length ? { notRerun: slot.notRerun } : {}),
-    };
+    st.detail = detailOf(slot, paused, jobs.filter((j) => flagsOf(j).permanentErrors?.length).length);
     if (slot.removed && st.state !== 'error' && jobs.every((j) => isTerminal(j) && flagsOf(j).claimReported && flagsOf(j).finalReported)) {
       // Nothing of its own is left to report: the removed source goes.
       if (slots.get(slot.source.name) === slot) slots.delete(slot.source.name);
@@ -319,32 +323,34 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return slot.chain;
   }
 
-  const withJob = (x: IntakeOutcome): IntakeOutcome => { const job = store.jobs.getBySourceKey(x.key); return job ? { ...x, jobId: job.id } : x; };
+  /** A status with each taken item's job as it is now (issue #798). */
+  const live = (st: SourceStatus): SourceStatus => liveIntake(st, (key) => store.jobs.getBySourceKey(key));
 
-  const emit = (slot: Slot) => { for (const l of listeners) l({ ...slot.status }); };
+  const emit = (slot: Slot) => { for (const l of listeners) l(live(slot.status)); };
 
-  const writeBacks = createWriteBacks({
-    store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: (jobId) => (running ? slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.source : undefined),
-  });
+  const sourceOfJob = (jobId: string) => (running ? slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.source : undefined);
+  const retry = (jobId: string, e: unknown) => { slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.retrying.set(jobId, message(e)); };
+  const writeBacks = createWriteBacks({ store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: sourceOfJob });
+  const threadAsks = createThreadAsks({ store, host, enqueue, sourceOf: sourceOfJob, now: () => clock.now().toISOString(), failed: retry });
 
   const afterDone = createAfterDone({
-    store, host, enqueue, finalReported: (j) => flagsOf(j).finalReported === true,
+    store, host, enqueue, ...(o.jevFirst ? { jevFirst: o.jevFirst } : {}), finalReported: (j) => flagsOf(j).finalReported === true, sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
     setSource: (jobId, source) => { const j = store.jobs.get(jobId); if (j) write(jobId, flagsOf(j), source); },
     reportAgain: (jobId) => { const j = store.jobs.get(jobId); const slot = slots.get(j?.source?.source ?? ''); if (!j || !slot) return; write(jobId, { ...flagsOf(j), finalReported: false }); void queueReport(slot, jobId); },
-    failed: (jobId, e) => { slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.retrying.set(jobId, message(e)); },
+    failed: retry, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief),
   });
 
   const rerunning = createRerun({
-    host, flagsOf, enqueue,
-    sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
+    host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id),
     syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); },
   });
 
   return {
-    statuses: () => [...slots.values()].map((s) => ({ ...s.status })),
+    statuses: () => [...slots.values()].map((s) => live(s.status)),
     onStatus(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    rerun: rerunning.rerun,
-    continueJob: rerunning.continueJob,
+    // Run again, Continue and Rework.
+    ...rerunning,
+    pullRequestAct: afterDone.act,
     async intakeAction(name, action) {
       const slot = slots.get(name);
       if (!slot || slot.removed || !running) return { ok: false, reason: 'not_found', message: `no running job source ${name}` };

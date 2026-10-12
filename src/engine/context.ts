@@ -1,7 +1,7 @@
 import type {
   Clock, ExecutorRegistry, IdGen, JobProxyCredentials, MachineSource, QuestionService, ReviewServices, QueueSorter, Router, RoutingView, SettableUsageSource, UserStore, UsageSource,
 } from '../domain/ports.ts';
-import { jobPriorityTag, type CredentialRequest, type DeciderPolicy, type TemplateRadius, type Job, type MachineSnapshot, type PriorityTag, type ProblemBlock, type Verdict } from '../domain/types.ts';
+import { jobPriorityTag, type CredentialRequest, type DeciderPolicy, type JevFirst, type TemplateRadius, type Job, type MachineSnapshot, type PriorityTag, type ProblemBlock, type Verdict } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
 
 export interface EngineOptions {
@@ -36,6 +36,8 @@ export interface EngineOptions {
   maxQuestions: number;
   /** After a restart, how long a running job whose machine does not answer yet stays running before it fails (issue #368). */
   reconnectGraceMs: number;
+  /** Once a running job's machine link drops, how long it is held before it fails (issue #752). Default 10 min. */
+  linkGraceMs?: number;
   /** A done job whose source finds it not done is asked again after this long, for GitHub's lag, before it fails (issue #637). Default 0: at once. */
   doneRecheckMs?: number;
   /** Skip executor cleanup on terminal outcomes (HOPPER_KEEP_PANES). */
@@ -55,6 +57,13 @@ export interface EngineOptions {
   boxRadius?: (machineId: string) => { name: string; radius: TemplateRadius } | undefined;
   /** The open problems that hold or redirect jobs (issue #509), read at each Decision. */
   problems: () => ProblemBlock[];
+  /**
+   * Set a machine's configured lanes as an admin's edit of the machine sets them (issue #688): an applied lane
+   * recommendation and its undo. Throws an EngineError when refused. Absent: refused.
+   */
+  machineLanes?: (machineId: string, lanes: number) => Promise<void>;
+  /** Decider calls through Jev first (issue #550): a machine's lanes and a waiting job's machine (issue #688). Absent: Jev is never asked. */
+  jevFirst?: JevFirst;
 }
 
 /** What the engine's modules share. */

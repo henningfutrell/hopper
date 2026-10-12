@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Prepare another machine to run hopper jobs (design.md "Attached machines"): over ssh, check
+# Prepare another machine to run hopper jobs (design.md "Attached machines"): over ssh, install this machine's
+# herdr at the hopper's versioned path there (issue #741, same platform only), check
 # herdr and claude are there, install hopper's own herdr session unit (hopper-herdr), enable
 # and start it, and confirm the session runs. Let the hopper in with its own key only (issue #59,
 # design.md "Target authentication"): the public half of HOPPER_SSH_KEY_FILE goes into the
@@ -42,12 +43,27 @@ HOST_KEY="$(printf '%s\n' "$KNOWN" | awk '$2 == "ssh-ed25519" { print $2, $3; ex
 [ -n "$HOST_KEY" ] || HOST_KEY="$(printf '%s\n' "$KNOWN" | awk 'NF >= 3 { print $2, $3; exit }')"
 [ -n "$HOST_KEY" ] || die "no host key for $TARGET in ~/.ssh/known_hosts: connect once by hand (ssh $TARGET), check its fingerprint, then run this again"
 
+# The herdr the hopper owns there (issue #741): this machine's herdr, at a path with its version in it, linked as
+# current. The hopper's calls and the session unit run it; the hopper keeps it at its own version from then on.
+OWNED='.local/share/hopper/herdr'
+HERDR="$(command -v herdr || true)"
+VERSION="$( [ -n "$HERDR" ] && "$HERDR" --version 2>/dev/null | awk '$1 == "herdr" && $2 ~ /^[0-9][0-9A-Za-z.+-]*$/ { print $2; exit }' || true)"
+if [ -z "$VERSION" ]; then
+  printf 'attach-machine: warning: no herdr here that says its version: none installed at ~/%s on %s; the hopper installs its own at its first probe\n' "$OWNED" "$TARGET" >&2
+elif [ "$(remote 'uname -sm')" != "$(uname -sm)" ]; then
+  printf 'attach-machine: warning: %s is another platform than this machine: no herdr installed at ~/%s; herdr there must be in ~/.local/bin or on its PATH\n' "$TARGET" "$OWNED" >&2
+else
+  step "install the hopper's herdr $VERSION at ~/$OWNED/$VERSION/herdr on $TARGET"
+  remote "d=\"\$HOME/$OWNED/$VERSION\"; mkdir -p \"\$d\" && cat > \"\$d/herdr.part\" && chmod 755 \"\$d/herdr.part\" && mv -f \"\$d/herdr.part\" \"\$d/herdr\" && ln -sfn '$VERSION' \"\$HOME/$OWNED/current\"" < "$HERDR" \
+    || die "installing herdr at ~/$OWNED/$VERSION/herdr on $TARGET failed"
+fi
+
 step "check herdr and claude on $TARGET"
-# The hopper calls herdr there by name, from its PATH and then ~/.local/bin (issue #311): look it up
-# the same way.
-HERDR_PATH='PATH="$PATH:$HOME/.local/bin"'
+# The hopper calls its own herdr there when it is linked, else herdr by name, from ~/.local/bin and then its PATH
+# (issues #311, #741): look it up the same way.
+HERDR_PATH='PATH="$HOME/.local/share/hopper/herdr/current:$HOME/.local/bin:$PATH"'
 for bin in herdr claude; do
-  remote "$HERDR_PATH; command -v $bin >/dev/null" || die "$bin not found on $TARGET (not on its PATH, not in ~/.local/bin)"
+  remote "$HERDR_PATH; command -v $bin >/dev/null" || die "$bin not found on $TARGET (not at ~/$OWNED/current, not on its PATH, not in ~/.local/bin)"
 done
 
 step "let the hopper in on $TARGET with its own key, restricted"

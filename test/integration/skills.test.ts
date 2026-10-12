@@ -21,7 +21,7 @@
 //     Then the answer names the vault secrets of the box's template, through the vault's helper, never a value
 //   Scenario: a machine of no template, a skill with no asset, a token that is no job's: each a clear no
 import { execFile } from 'node:child_process';
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,6 +32,7 @@ import type { Client } from '../../src/client/server.ts';
 import type { AccessView, DomainEvent } from '../../src/domain/types.ts';
 import { PROXY_HELP } from '../../src/github-proxy/index.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
+import { HELP_DIR } from '../../src/help/book.ts';
 import { SKILL_SCRIPT } from '../../src/skills/index.ts';
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -140,8 +141,27 @@ describe('the skill catalog and broker (issue #582)', () => {
 
     const other = await skill(a, job, ['example-api']);
     expect(other.code).toBe(1);
-    expect(other.stdout).toMatch(/^no: the hopper has no skill example-api\. It has: github, kube-diagnostics, aws-diagnostics, artifacts\. For another service, say what credential it takes: sh "\$HOPPER_SKILL" example-api --credential "<what it takes>"\. Else find another way\./);
+    expect(other.stdout).toMatch(/^no: the hopper has no skill example-api\. It has: github, kube-diagnostics, aws-diagnostics, sandbox-template, artifacts, help\. For another service, say what credential it takes: sh "\$HOPPER_SKILL" example-api --credential "<what it takes>"\. Else find another way\./);
     expect(eventsOf(a, 'skill.refused')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ skill: 'example-api', reason: expect.stringContaining('no skill example-api') }) })]);
+  });
+
+  it('a job reads the help pages through the help skill: the list, then one page as its Markdown (issue #782)', async () => {
+    const { a, session } = await boot();
+    await joinMachine(a, session, 'desk');
+    const job = await runningJob(a, 'desk');
+
+    const list = await skill(a, job, ['help']);
+    expect(list.code).toBe(0);
+    expect(list.stdout).toMatch(/^vault: /m);
+    expect(list.stdout).toContain('sh "$HOPPER_SKILL" help PAGE');
+    const page = await skill(a, job, ['help', 'vault']);
+    expect(page.code).toBe(0);
+    expect(page.stdout).toContain(readFileSync(join(HELP_DIR, 'vault.md'), 'utf8').trim());
+    expect(eventsOf(a, 'skill.loaded')).toEqual(expect.arrayContaining([expect.objectContaining({ jobId: job, data: expect.objectContaining({ skill: 'help', asset: 'vault' }) })]));
+
+    const none = await skill(a, job, ['help', 'no-such-page']);
+    expect(none.code).toBe(1);
+    expect(none.stdout).toMatch(/^no: the help has no page no-such-page\. It has: .*vault/);
   });
 
   it('a box gets a clear no with Access\'s reason; once Access allows it, the skill and its link for that box, never a value', async () => {

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Deprecated (issue #708): the sandbox module (src/sandbox/) owns the life of every sandbox box the hopper starts,
+# through the container runtime API. This script stays only until nothing uses it; a follow-up deletes it.
 # Start a container target (design.md "Container targets", issue #58): a plain container on this
 # machine's docker that the hopper reaches through `docker exec`, not ssh. No agent, no herdr, no
 # sshd runs in it: its main process only sleeps, and the command executor runs each job in it.

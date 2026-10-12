@@ -8,6 +8,12 @@
     "image": {
       "type": "string"
     },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "secrets": {
       "type": "array",
       "items": {

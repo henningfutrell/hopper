@@ -24,11 +24,17 @@ export function systemSecretWhere(s: Pick<SystemSecretView, 'kind'>): string {
   return 'Settings → Sign-in';
 }
 
+/**
+ * Whether a person may keep it in a vault backend (issue #658, requirement 6): a user's TypeSafe key or webhook signing
+ * secret, each a value a person gives. The hopper writes the others itself, and the sign-in realms' are the whole hopper's.
+ */
+export const mayKeepInBackend = (s: Pick<SystemSecretView, 'kind' | 'scope'>): boolean => s.scope === 'user' && (s.kind === 'typesafe' || s.kind === 'webhook');
+
 /** The card's line: set, its last 4 characters, who and when; how it is kept; why it cannot be opened. */
 export function systemSecretLine(s: SystemSecretView): string {
   return [
     `Set${s.last4 ? ` — ends in ${s.last4}` : ''} — ${when(s.setAt)} by ${s.setBy}`,
-    'sealed',
+    s.backend ? `kept in vault backend ${s.backend.name} at ${s.backend.reference}, held in memory only` : 'sealed',
     s.scope === 'instance' ? 'the whole hopper' : undefined,
   ].filter(Boolean).join(' · ');
 }

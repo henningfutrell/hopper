@@ -1,10 +1,11 @@
 // The minting adapters (issue #580, design.md "Minting: short-lived credentials"), at the `CredentialMinter` port: STS
-// AssumeRole through the AWS SDK (@aws-sdk/client-sts), and the Kubernetes TokenRequest API — one POST, sent with
+// AssumeRole (and, for a mint test, issue #781, GetCallerIdentity) through the AWS SDK (@aws-sdk/client-sts), and the Kubernetes TokenRequest API — one POST, sent with
 // node's own https and the cluster's CA, since a Kubernetes client library would cost more than the call. Called only
 // after Access allowed the mint. An error says what the outside service answered, never the minting credential.
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
-import { AssumeRoleCommand, STSClient } from '@aws-sdk/client-sts';
+import { AssumeRoleCommand, GetCallerIdentityCommand, STSClient } from '@aws-sdk/client-sts';
+import { awsRegionOf, type AwsMintingCredential } from '../domain/minting.ts';
 import type { CredentialMinter } from '../domain/ports.ts';
 
 const TIMEOUT_MS = 15_000;
@@ -37,25 +38,42 @@ function postJson(url: URL, token: string, body: unknown, ca: string | undefined
   });
 }
 
+/** An STS client at the minting credential's region and endpoint, signing with `keys`. */
+const stsAt = (credential: AwsMintingCredential, keys: { AccessKeyId: string; SecretAccessKey: string; SessionToken?: string | undefined }): STSClient => new STSClient({
+  region: awsRegionOf(credential),
+  ...(credential.Endpoint ? { endpoint: credential.Endpoint } : {}),
+  credentials: { accessKeyId: keys.AccessKeyId, secretAccessKey: keys.SecretAccessKey, ...(keys.SessionToken ? { sessionToken: keys.SessionToken } : {}) },
+  maxAttempts: 1,
+});
+
 export function createCredentialMinter(): CredentialMinter {
   return {
     async awsSession(credential, r) {
-      const sts = new STSClient({
-        region: credential.Region ?? 'us-east-1',
-        ...(credential.Endpoint ? { endpoint: credential.Endpoint } : {}),
-        credentials: { accessKeyId: credential.AccessKeyId, secretAccessKey: credential.SecretAccessKey, ...(credential.SessionToken ? { sessionToken: credential.SessionToken } : {}) },
-        maxAttempts: 1,
-      });
+      const sts = stsAt(credential, credential);
       try {
         const out = await sts.send(new AssumeRoleCommand({
           RoleArn: r.roleArn, RoleSessionName: r.sessionName, DurationSeconds: r.durationSeconds,
           ...(r.policyArns.length ? { PolicyArns: r.policyArns.map((arn) => ({ arn })) } : {}),
+          ...(r.policy ? { Policy: r.policy } : {}),
         }));
         const c = out.Credentials;
         if (!c?.AccessKeyId || !c.SecretAccessKey || !c.SessionToken || !c.Expiration) throw new Error('STS answered no credentials');
         return { kind: 'aws', AccessKeyId: c.AccessKeyId, SecretAccessKey: c.SecretAccessKey, SessionToken: c.SessionToken, Expiration: c.Expiration.toISOString() };
       } catch (e) {
         throw new Error(`STS refused AssumeRole on ${r.roleArn}: ${(e as Error).message}`, { cause: e });
+      } finally {
+        sts.destroy();
+      }
+    },
+
+    async awsCallerIdentity(credential, session) {
+      const sts = stsAt(credential, session);
+      try {
+        const out = await sts.send(new GetCallerIdentityCommand({}));
+        if (!out.Arn || !out.Account || !out.UserId) throw new Error('STS answered no identity');
+        return { arn: out.Arn, account: out.Account, userId: out.UserId };
+      } catch (e) {
+        throw new Error(`STS refused GetCallerIdentity with the minted session: ${(e as Error).message}`, { cause: e });
       } finally {
         sts.destroy();
       }

@@ -3,7 +3,8 @@
 // comment): claimed → `hopper:claimed`, with `hopper:held-by:<id>` naming its holder (issue #440); finished — only a job
 // whose work is done or partly done is finished (completion.ts, issues #171, #187, #579) — → `hopper:pr-ready` while its
 // pull request waits for review, `hopper:partly-done` for a part, `hopper:done` once the issue is closed as complete; the
-// merge of its pull request closes the issue, never the hopper, and `follow.ts` follows it after; failed → `hopper:failed`; rejected at the queue gate → the claim label goes and nothing
+// merge of its pull request closes the issue, never report(), and `follow.ts` follows it after (and closes it only after the
+// hopper's own merge of a pull request with no closing keyword, issue #677); failed → `hopper:failed`; rejected at the queue gate → the claim label goes and nothing
 // else (issue #387: a rejection is the user's own record, kept on the job; a shared label would turn the issue
 // away for every user and every hopper on the repo); cancelled → the claim label goes. `hopper:rejected`
 // written before then still keeps an issue out until a person removes it. Returns the source state unchanged.
@@ -22,7 +23,7 @@ import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_READY, LABEL_REJECTED, holderLabel } from './labels.ts';
 import { claimLabels, isAssignedTo } from './discover.ts';
-import { isPartOf, namesIssue } from './completion.ts';
+import { isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
 import type { GitHubIssue } from './api.ts';
 
 export interface ReportContext {
@@ -80,13 +81,20 @@ async function finished(ctx: ReportContext, job: Job, repo: string, number: numb
   return { ...state, ...(own ? { pullRequest: own.url } : {}), follow: 'open' };
 }
 
-/** The newest ready pull request that closes the issue, else one that references it, else one on a branch named for it. */
+/**
+ * The newest ready pull request that closes the issue, else one that references it, else one on a branch named for it.
+ * Never a part (issue #721): it ships part of the issue, on whatever branch.
+ */
 async function readyPullRequest(api: GitHubApi, repo: string, number: number): Promise<{ url: string } | undefined> {
   const ready = <P extends { isDraft: boolean; conflicting: boolean; createdAt: string }>(prs: P[]): P | undefined =>
     prs.filter((pr) => !pr.isDraft && !pr.conflicting).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-  return ready(await api.openClosingPullRequests(repo, number))
-    ?? ready((await api.referencingPullRequests(repo, number)).filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase() && !isPartOf(pr, repo, number)))
-    ?? ready((await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number)));
+  const closing = ready(await api.openClosingPullRequests(repo, number));
+  if (closing) return closing;
+  const mentions = (await api.referencingPullRequests(repo, number))
+    .filter((pr) => pr.repo.toLowerCase() === repo.toLowerCase() && !worksOnAnotherIssue(pr.body, repo, number));
+  const parts = new Set(mentions.filter((pr) => isPartOf(pr, repo, number)).map((pr) => pr.url));
+  return ready(mentions.filter((pr) => pr.state === 'open' && !parts.has(pr.url)))
+    ?? ready((await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number) && !parts.has(pr.url)));
 }
 
 async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise<State> {
@@ -110,7 +118,7 @@ async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise
 }
 
 /** A GitHub error as the SourceError the sync loop reads (permanent or not). */
-function sourceError(err: unknown): SourceError {
+export function sourceError(err: unknown): SourceError {
   if (err instanceof SourceError) return err;
   if (err instanceof GitHubApiError) return new SourceError(err.message, err.permanent, err.status);
   return new SourceError((err as Error).message, false);

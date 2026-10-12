@@ -1,0 +1,1 @@
+- Each read-only check now keeps a check report: a page that shows each probe and its result. The check report is an artifact of the job that asked for the template, and each later check adds a new revision. Settings → Vault links it from the template's **Read-only check** row.

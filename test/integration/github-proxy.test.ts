@@ -18,20 +18,30 @@
 //   Scenario: a job of another user files an issue, and may do nothing else
 //     Then the issue is filed with the hopper's connection, marked; a comment is refused
 //     And both are in that job's timeline and in the hopper's own user's log, naming the user and the job
+//   Scenario: an issue a job files is a child of the job's issue (issue #729: issue lineage)
+//     Given a job running for octo/tools#7
+//     When the job files an issue through the hopper
+//     Then the issue's text names octo/tools#7 as its parent, and the lineage is on the job's timeline (`job.child_issue_filed`)
+//     And with --required the hopper links it as a GitHub sub-issue of octo/tools#7: a required part of it
+//     And a link GitHub refuses leaves the issue filed: the job and the timeline say why
 //   Scenario: a token that is no job's, or a job no longer at work, is refused
 //   Scenario: the script's help says how, and the job's files carry no GitHub token
-import { execFile } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+//   Scenario: a job whose machine cannot reach the hopper fails at its start, saying why and what to do (issue #695)
+//     Given a machine where the reach check finds no hopper at the URL the job would be given
+//     When a job starts there
+//     Then it fails at once: "this machine cannot reach the hopper at <url>", with the action, and no file is kept there
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Executor, MachineShell } from '../../src/domain/ports.ts';
-import type { DiscoveryFacts, DomainEvent, Job } from '../../src/domain/types.ts';
+import type { DomainEvent, Job } from '../../src/domain/types.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
 import { PROXY_HELP } from '../../src/github-proxy/index.ts';
 import { createFakeGitHub, type FakeForge } from '../support/fake-forges.ts';
+import { issueIdOf } from '../support/fake-sub-issues.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { holder, hopperGh, type Run } from '../support/job-holder.ts';
 import { waitFor } from '../support/wait.ts';
 
 const apps: TestApp[] = [];
@@ -40,51 +50,6 @@ afterEach(async () => {
   for (const a of apps.splice(0)) await a.stop();
   for (const c of cleanups.splice(0)) await c();
 });
-
-const NOTHING: DiscoveryFacts = { path: ['/usr/bin'], bins: [{ dir: '/usr/bin', name: 'sh' }], versions: {}, aws: [], kube: [], credentials: { env: [], files: [] } };
-
-/** A running job of the holder: the variables it runs with, and what ends it. */
-interface Held { env: Record<string, string>; end(): void }
-
-/**
- * An executor whose jobs hold their lane until ended, keeping their credential files as real files under `root`
- * (the machine's disk, as the MachineShell port writes them).
- */
-function holder(root: string) {
-  const held = new Map<string, Held>();
-  const shell: MachineShell = {
-    async reap() { return { kept: [] }; },
-    async survey() { return { scopes: [], processes: [], scratch: [] }; },
-    async keepCredential(_jobId, dir, file, content) {
-      const path = join(root, dir, file);
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, content, { mode: 0o600 });
-    },
-    async discover() { return NOTHING; },
-  };
-  const executor: Executor = {
-    name: 'holder', idempotent: false, validate: () => null, machineShell: () => shell,
-    async run(ctx) {
-      const env = { ...(await ctx.credentials?.(`/work/.hopper-scratch/${ctx.job.id}`)) };
-      await new Promise<void>((end) => held.set(ctx.job.id, { env, end }));
-      return { kind: 'finished', result: 'ended' };
-    },
-    resume: async () => ({ kind: 'failed', error: 'not resumed' }),
-  };
-  return { executor, held };
-}
-
-interface Run { code: number; stdout: string; stderr: string }
-
-/** The job runs the script it was given, on its machine: its variables, its files under `root`. */
-function hopperGh(root: string, env: Record<string, string>, args: string[]): Promise<Run> {
-  const onDisk = (v: string | undefined) => (v === undefined ? undefined : join(root, v));
-  return new Promise((resolve) => {
-    execFile('sh', [onDisk(env.HOPPER_GH)!, ...args], {
-      env: { PATH: process.env.PATH, HOPPER_URL: env.HOPPER_URL, HOPPER_TOKEN_FILE: onDisk(env.HOPPER_TOKEN_FILE) } as NodeJS.ProcessEnv,
-    }, (err, stdout, stderr) => resolve({ code: err ? Number((err as { code?: number }).code ?? 1) : 0, stdout, stderr }));
-  });
-}
 
 const json = (r: Run): Record<string, unknown> => JSON.parse(r.stdout) as Record<string, unknown>;
 
@@ -106,12 +71,12 @@ async function start() {
   });
   apps.push(app);
   connectGitHub(app, ['octo/tools', 'octo/site']);
-  return { app, github, root, held: h.held };
+  return { app, github, root, held: h.held, reach: h.reach };
 }
 
 /** A job of the user's own, running in the holder: its id and variables. */
-async function running(t: Awaited<ReturnType<typeof start>>, repo = 'octo/tools', userId = ADMIN_ID): Promise<{ job: Job; env: Record<string, string> }> {
-  const job = await t.app.pull({}, { executor: 'holder', repo }, userId);
+async function running(t: Awaited<ReturnType<typeof start>>, repo = 'octo/tools', userId = ADMIN_ID, number?: number): Promise<{ job: Job; env: Record<string, string> }> {
+  const job = await t.app.pull({}, { executor: 'holder', repo, ...(number !== undefined ? { number } : {}) }, userId);
   const env = await waitFor(async () => t.held.get(job.id)?.env, { what: `job ${job.id} to run` });
   return { job, env };
 }
@@ -142,6 +107,7 @@ describe('GitHub through the hopper (issue #563)', () => {
 
     const [done] = eventsOf(t.app, ADMIN_ID, 'github_proxy.done');
     expect(done).toMatchObject({ jobId: job.id, data: { requestId: answer.requestId, op: 'issue.create', repo: 'octo/tools', number: 1, url: answer.url, own: true, machine: 'local' } });
+    expect(eventsOf(t.app, ADMIN_ID, 'job.child_issue_filed')).toEqual([]);
     await t.app.sync();
     expect((await t.app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=100')).body.jobs.map((j) => j.id)).toEqual([job.id]);
   });
@@ -251,5 +217,69 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(help).toMatchObject({ code: 0 });
     expect(help.stdout.trim()).toBe(PROXY_HELP);
     expect((await hopperGh(t.root, env, ['auth', 'login'])).code).toBe(2);
+  });
+
+  it('fails a job whose machine cannot reach the hopper at its start, saying why and what to do; no file is kept there (issue #695)', async () => {
+    const t = await start();
+    t.reach.unreached = `this machine cannot reach the hopper at ${t.app.url}: Could not resolve host: hopper`;
+    const job = await t.app.pull({}, { executor: 'holder', repo: 'octo/tools' });
+    const failed = await t.app.waitForStatus(job.id, 'failed', 10000);
+    expect(failed.error).toContain(`this machine cannot reach the hopper at ${t.app.url}: Could not resolve host: hopper`);
+    expect(failed.error).toContain('Settings → Artifacts');
+    expect(t.reach.asked).toEqual([t.app.url]);
+    expect(t.held.has(job.id)).toBe(false);
+  });
+
+  it('checks that the machine reaches the hopper at the URL the job is given, before the job runs (issue #695)', async () => {
+    const t = await start();
+    const { env } = await running(t);
+    expect(t.reach.asked).toEqual([env.HOPPER_URL]);
+  });
+});
+
+describe('issue lineage through the hopper (issue #729)', () => {
+  const subIssueLinks = (f: FakeForge) => f.requests.filter((r) => r.method === 'POST' && r.path.endsWith('/sub_issues'));
+
+  async function parented() {
+    const t = await start();
+    t.github.issues.push({ repo: 'octo/tools', number: 7, title: 'Ship it in parts', body: 'Please.', author: 'owner', labels: ['hopper'] });
+    return { t, ...(await running(t, 'octo/tools', ADMIN_ID, 7)) };
+  }
+
+  it('an issue a job files is a follow-up of the job\'s issue: its text names the parent, the lineage is on the job\'s timeline, no sub-issue link', async () => {
+    const { t, job, env } = await parented();
+    const r = await hopperGh(t.root, env, ['issue', 'create', '--repo', 'octo/tools', '--title', 'Later', '--body', 'Do it later.']);
+    const answer = json(r);
+    expect(answer).toMatchObject({ ok: true, number: 8, parent: 'octo/tools#7', required: false });
+    expect(t.github.issues.find((i) => i.number === 8)!.body).toContain('\n---\nFollow-up of octo/tools#7.\nFiled through hopper');
+    expect(subIssueLinks(t.github)).toEqual([]);
+    expect(eventsOf(t.app, ADMIN_ID, 'job.child_issue_filed')).toEqual([expect.objectContaining({
+      jobId: job.id, data: { requestId: answer.requestId, parent: { repo: 'octo/tools', number: 7 }, child: { repo: 'octo/tools', number: 8, url: answer.url }, required: false },
+    })]);
+  });
+
+  it('--required links it as a GitHub sub-issue of the job\'s issue', async () => {
+    const { t, job, env } = await parented();
+    const r = await hopperGh(t.root, env, ['issue', 'create', '--repo', 'octo/tools', '--title', 'Fix first', '--body', 'Needed.', '--required']);
+    const answer = json(r);
+    expect(answer).toMatchObject({ ok: true, number: 8, parent: 'octo/tools#7', required: true, subIssue: true });
+    expect(t.github.issues.find((i) => i.number === 8)!.body).toContain('Required child of octo/tools#7: that issue is not done while this one is open.');
+    expect(subIssueLinks(t.github)).toEqual([expect.objectContaining({ path: '/api/v3/repos/octo/tools/issues/7/sub_issues', body: { sub_issue_id: issueIdOf('octo/tools', 8) } })]);
+    expect(t.github.issues.find((i) => i.number === 7)!.subIssues).toEqual(['octo/tools#8']);
+    expect(eventsOf(t.app, ADMIN_ID, 'job.child_issue_filed')).toEqual([expect.objectContaining({
+      jobId: job.id, data: expect.objectContaining({ parent: { repo: 'octo/tools', number: 7 }, child: expect.objectContaining({ number: 8 }), required: true, subIssue: true }),
+    })]);
+  });
+
+  it('a sub-issue link GitHub refuses leaves the issue filed: the job and the timeline say why', async () => {
+    const { t, env } = await parented();
+    t.github.subIssuesRefused = 422;
+    const r = await hopperGh(t.root, env, ['issue', 'create', '--repo', 'octo/tools', '--title', 'Fix first', '--body', 'Needed.', '--required']);
+    expect(r.code).toBe(0);
+    const answer = json(r);
+    expect(answer).toMatchObject({ ok: true, number: 8, required: true, subIssue: false, subIssueError: expect.stringContaining('GitHub answered 422') });
+    expect(eventsOf(t.app, ADMIN_ID, 'job.child_issue_filed')).toEqual([expect.objectContaining({
+      data: expect.objectContaining({ required: true, subIssue: false, subIssueError: expect.stringContaining('GitHub answered 422') }),
+    })]);
   });
 });

@@ -15,6 +15,7 @@
 //   Scenario: something holding another machine key cannot dial in as the machine
 //   Scenario: a removed machine's next dial-in is refused
 //   Scenario: the client install is served by the hopper
+//   Scenario: a native Windows client is refused, and its join code is not spent (issue #704)
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -109,6 +110,17 @@ describe('adding a machine with one line', () => {
     await joinHopper({ line, name: 'studio', dir: machineDir() });
     await expect(joinHopper({ line, name: 'laptop', dir: machineDir() })).rejects.toThrow(/join code is not valid/);
     expect((await machinesOf(a)).map((m) => m.id)).toEqual(['studio']);
+  });
+
+  it('a native Windows client is refused with the WSL way, and its join code stays good (issue #704)', async () => {
+    const { a, session } = await boot();
+    const line = `${a.url}#${await joinCode(a, session)}`;
+    await expect(joinHopper({ line, name: 'pc', dir: machineDir(), platform: 'win32' }))
+      .rejects.toThrow("Windows isn't supported natively. Run the client inside WSL.");
+    expect(await machinesOf(a)).toEqual([]);
+    // The refusal comes before the code is spent: the same line joins from WSL.
+    const link = await joinHopper({ line, name: 'pc', dir: machineDir(), platform: 'linux' });
+    expect(link.machine).toBe('pc');
   });
 
   it('a join code is minted only through an admin\'s UI session', async () => {

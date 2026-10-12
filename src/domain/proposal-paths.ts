@@ -4,6 +4,7 @@
 // viable path was found. A person selects one or more paths, each with a note; each selected path continues on its own,
 // as a follow-on job. A proposal written before paths (Goal:, Approach:, ...) reads as one path. Pure: no I/O.
 // Re-exported from types.ts.
+import { fieldsOfLine, labelled, OTHER_FIELD } from './path-fields.ts';
 
 /** A path's tradeoffs, in the order the card shows them. */
 export const PATH_TRADEOFFS = ['security', 'effort', 'risk', 'friction'] as const;
@@ -20,6 +21,8 @@ export interface ProposalPath {
   tradeoffs: Partial<Record<PathTradeoff, string>>;
   /** What continuing with it creates: jobs, issues, research. */
   creates?: string;
+  /** Labelled lines the format does not name (issue #755), such as `Role:`, in the order written. */
+  otherFields?: { label: string; text: string }[];
   /** The whole path as the agent wrote it, as Markdown. */
   text: string;
   /** The agent recommends it, alone or in a combination. */
@@ -77,19 +80,6 @@ const TOP_LABELS: Readonly<Record<string, string>> = {
   'tl;dr': 'tldr', tldr: 'tldr', problem: 'problem', 'problem statement': 'problem', paths: 'paths',
   recommended: 'recommended', recommendation: 'recommended', context: 'context',
 };
-const PATH_LABELS: Readonly<Record<string, string>> = {
-  summary: 'summary', 'tl;dr': 'summary', tldr: 'summary', security: 'security', effort: 'effort', risk: 'risk', risks: 'risk',
-  friction: 'friction', 'friction for the person': 'friction', creates: 'creates', 'what it creates': 'creates',
-};
-
-/** A labelled line: its label (heading, list or emphasis marks aside), lowercased, and the words after the colon. */
-function labelled(line: string): { label: string; rest: string } | undefined {
-  const m = /^[\s#>*•-]*\**_*([A-Za-z][A-Za-z ;]*?)_*\**\s*:\s*\**_*\s*(.*)$/.exec(line);
-  if (m) return { label: m[1]!.trim().toLowerCase(), rest: m[2]!.trim() };
-  // A heading on its own line: `## Problem`.
-  const h = /^\s{0,3}#{1,6}\s+([A-Za-z][A-Za-z ;]*?)\s*#*\s*$/.exec(line);
-  return h ? { label: h[1]!.trim().toLowerCase(), rest: '' } : undefined;
-}
 
 /** A line that starts a path: `Path 2: Spray it`, `## Path 2 — Spray it`, `**Option 2.** Spray it`. */
 function pathStart(line: string): { id: string; title: string } | undefined {
@@ -144,10 +134,10 @@ export function proposalDocument(text: string): ProposalDocument {
     if (current?.kind === 'path') {
       const d = current.draft;
       d.lines.push(line);
-      const field = l ? PATH_LABELS[l.label] : undefined;
-      if (l && field) {
-        d.field = field;
-        d.fields.set(field, [...(d.fields.get(field) ?? []), ...(l.rest ? [l.rest] : [])]);
+      const fields = fieldsOfLine(line);
+      if (fields) {
+        for (const f of fields) d.fields.set(f.field, [...(d.fields.get(f.field) ?? []), ...(f.rest ? [f.rest] : [])]);
+        d.field = fields.at(-1)!.field;
       } else if (line.trim() === '') d.field = undefined;
       else if (d.field) d.fields.get(d.field)!.push(line.trim());
       else if (!d.title) d.title = line.replace(/^[\s#>*•-]+/, '').trim();
@@ -172,8 +162,10 @@ export function proposalDocument(text: string): ProposalDocument {
     }
     const summary = field('summary');
     const creates = field('creates');
+    const otherFields = [...d.fields.keys()].filter((k) => k.startsWith(OTHER_FIELD) && field(k)).map((k) => ({ label: k.slice(OTHER_FIELD.length), text: field(k)! }));
     paths.push({
       id: d.id, title: d.title || `Path ${d.id}`, ...(summary ? { summary } : {}), tradeoffs, ...(creates ? { creates } : {}),
+      ...(otherFields.length > 0 ? { otherFields } : {}),
       text: d.lines.join('\n').trim(), ...(rec?.ids.includes(d.id) ? { recommended: true as const } : {}),
     });
   }

@@ -1,6 +1,6 @@
 // The Pull requests view (issue #637), pure: the header lines, and the words for each card's checks, merge state and
-// closing issue. The daemon builds the list; the UI only says it.
-import type { PullRequestCard, PullRequestsView } from './wire.ts';
+// closing issue, and the repositories with no checks (issue #677). The daemon builds the list; the UI only says it.
+import type { PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from './wire.ts';
 
 type MergeWait = NonNullable<PullRequestCard['waits']>;
 
@@ -10,7 +10,8 @@ export const yoloLine = (v: PullRequestsView): string => `yolo: on for ${v.yolo.
 
 /** Why a card waits, in plain words (issue #677). */
 const WAITS_TEXT: Record<MergeWait, string> = {
-  'no pull request': 'no pull request found yet', 'not checked yet': 'not checked yet', draft: 'draft',
+  'no pull request': 'no pull request found yet', tending: 'a job works on it now', 'tend failed': 'the job that worked on it failed: waiting for a person',
+  'not checked yet': 'not checked yet', draft: 'draft',
   conflicts: 'conflicts with its base branch', 'checks failing': 'checks failed', 'yolo off': 'waiting for a person to merge',
   'checks pending': 'waiting for checks', 'checks not started': 'waiting for checks to start', 'merge refused': 'merge refused',
   ready: 'ready, merging',
@@ -34,6 +35,10 @@ export const MERGEABLE_TEXT: Record<PullRequestCard['mergeable'], string> = {
 
 export const closesText = (c: PullRequestCard): string => `${c.part ? 'part of' : 'closes'} #${c.issue.number}`;
 
+/** What Merge now and Close PR ask before they act (issue #677). */
+export const mergeQuestion = (c: PullRequestCard): string => `Merge #${c.pullRequest?.number} into ${c.base ?? 'its base branch'} now?`;
+export const closeQuestion = (c: PullRequestCard): string => `Close #${c.pullRequest?.number} without a merge?`;
+
 /** What yolo mode does for a repository, on or off. */
 export const yoloNote = (on: boolean): string => on
   ? 'On: the hopper merges a ready pull request when its checks pass, or when it has no checks.'
@@ -43,3 +48,15 @@ export const yoloNote = (on: boolean): string => on
 export const yoloToggle = (repo: string, on: boolean): { repos: Record<string, boolean> } => ({ repos: { [repo]: on } });
 
 export const hasCards = (v: PullRequestsView): boolean => v.repos.some((r) => r.pullRequests.length > 0);
+
+/** The header's warning (issue #677): every job repository with no checks; '' when none. */
+export function noChecksLine(v: RepoChecksView): string {
+  const none = (v.repos ?? []).filter((r) => r.state === 'no checks');
+  if (none.length === 0) return '';
+  return `no checks: ${none.map((r) => r.repo).join(', ')}${none.some((r) => r.yolo) ? ' (yolo merges unverified code there)' : ''}`;
+}
+
+/** A repository group's warning when it has no checks (issue #677). */
+export const noChecksNote = (r: Pick<RepoChecks, 'yolo'>): string => r.yolo
+  ? 'No checks: yolo mode merges unverified code here.'
+  : 'No checks: nothing verifies a pull request here before a person merges it.';

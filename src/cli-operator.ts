@@ -1,10 +1,13 @@
 // The operator's actions from the command line (issue #374, design.md "Operator actions from the CLI"):
-// accept, reject or run a job again, order the queue, set the queue gate, list the open questions with why each came to a
+// accept, reject, run a job again or send its pull request back for rework (issue #724), order the queue, set the queue gate, list the open questions with why each came to a
 // person (issue #679), answer, close or dismiss a question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
-// list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637);
+// list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637); Merge now and Close PR (issue #677, cli-operator-pr.ts);
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
 // the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all;
-// the artifacts (issue #673, cli-operator-artifact.ts); the master key's status (issue #685, cli-operator-keys.ts): never the key.
+// the artifacts (issue #673, cli-operator-artifact.ts); the master key's status (issue #685, cli-operator-keys.ts): never the key;
+// the vault, its templates and the sandbox boxes (issue #716, cli-operator-vault.ts): a secret's value from stdin only;
+// API tokens (issue #718, cli-operator-keys.ts): mint one for an agent, printed once; list and revoke them;
+// Report a bug and Your reports (issue #694, cli-operator-report.ts): its context first, then the report.
 // Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
 // runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
@@ -18,13 +21,20 @@ import { SESSION_HEADER } from './http/ui/guard.ts';
 import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
 import { loadSignInConfig } from './auth/index.ts';
 import { ARTIFACT_USAGE, artifactCall } from './cli-operator-artifact.ts';
-import { MASTER_KEY_USAGE, masterKeyCall, typesafeKeyCall } from './cli-operator-keys.ts';
+import { autoParkCall } from './cli-operator-auto-park.ts';
+import { MASTER_KEY_USAGE, TOKEN_USAGE, masterKeyCall, tokenCall, typesafeKeyCall } from './cli-operator-keys.ts';
+import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
+import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts';
+import { REPO_USAGE, repoCall } from './cli-operator-repo.ts';
+import { REPORT_USAGE, reportCall } from './cli-operator-report.ts';
+import { VAULT_USAGE, sandboxCall, templateCall, vaultCall } from './cli-operator-vault.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'vault', 'template', 'sandbox', 'token', 'report'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
   hopper job rerun <id>                              run a failed, finished or rejected job again; it runs its item's approved text
+  hopper job rework <id> --notes <text>              send a done job's open pull request back: it becomes a draft, a new job reworks it, told the notes
   hopper job keep-original <id>                      a job held because its item changed: it runs the original text
   hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)
   hopper queue order <id>...                         the user order: these waiting jobs, first to last, before every other
@@ -45,6 +55,8 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
   hopper failure list                                the open failures
   hopper failure retry <id>                          run a failure's job again
   hopper prs                                         the Pull requests list: each waiting pull request, its state and its repository's yolo mode
+${PR_USAGE}
+${REPO_USAGE}
   hopper yolo <owner/repo> on|off|default            yolo mode for one repository: the hopper merges its ready pull requests; default follows every repository's
   hopper backfill done-check                         judge again each done-check failure waiting on a person: done, PR waiting, or it stays
   hopper auto-park                                   the auto-park timeouts: minutes a question waits on a person before its job parks by itself
@@ -64,6 +76,10 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
   hopper typesafe-key remove                         remove it: Jev is off until a key is set
 ${MASTER_KEY_USAGE}
 ${ARTIFACT_USAGE}
+${REPORT_USAGE}
+${LANES_USAGE}
+${VAULT_USAGE}
+${TOKEN_USAGE}
   Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
 
 
@@ -82,10 +98,13 @@ const CLI_IDENTITY = { realm: CLI_REALM, subject: 'operator-cli', name: 'operato
 
 
 function jobCall(args: string[]): Call {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
-  if (!id || extra.length > 0) throw usage('job accept|reject|rerun|keep-original|accept-new-text <id>');
+  if (!id || extra.length > 0) throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');
   const at = `/ui/api/jobs/${encodeURIComponent(id)}`;
+  const notes = values.notes;
+  if (verb === 'rework' && notes !== undefined && values.reason === undefined) return { role: 'operator', path: `${at}/rework`, body: async () => ({ notes }) };
+  if (verb === 'rework' || notes !== undefined) throw usage('job rework <id> --notes <text>');
   if (verb === 'reject') return { role: 'operator', path: `${at}/reject`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
   if (values.reason !== undefined) throw usage('job reject <id> --reason <text>');
   // Run again, and the two ways on for a job held because its item changed (issue #662): each its own route.
@@ -97,7 +116,7 @@ function jobCall(args: string[]): Call {
       return { jobIds: [...waiting.filter((j) => j.accepted !== false && j.id !== id).map((j) => j.id), id] };
     } };
   }
-  throw usage('job accept|reject|rerun|keep-original|accept-new-text <id>');
+  throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');
 }
 
 function perHour(raw: string): number | null {
@@ -168,43 +187,9 @@ function failureCall(args: string[]): Call {
   throw usage('failure list | retry <id>');
 }
 
-const YOLO_OF: Record<string, boolean | null> = { on: true, off: false, default: null };
-
-function prsCall(args: string[]): Call {
-  if (args.length > 0) throw usage('prs');
-  return { role: 'viewer', path: '/api/pull-requests' };
-}
-
-function yoloCall(args: string[]): Call {
-  const [repo, mode, ...extra] = args;
-  if (!repo || !/^[^/\s]+\/[^/\s]+$/.test(repo) || mode === undefined || !(mode in YOLO_OF) || extra.length > 0) throw usage('yolo <owner/repo> on|off|default');
-  return { role: 'admin', path: '/ui/api/yolo-mode', body: async () => ({ repos: { [repo]: YOLO_OF[mode] } }) };
-}
-
 function backfillCall(args: string[]): Call {
   if (args.length !== 1 || args[0] !== 'done-check') throw usage('backfill done-check');
   return { role: 'operator', path: '/ui/api/backfill/done-check', body: async () => ({}) };
-}
-
-const AUTO_PARK_SET = 'auto-park set [--minutes <n>] [--high-priority-minutes <n>]';
-const AUTO_PARK_USAGE = `auto-park | hopper ${AUTO_PARK_SET}`;
-
-function minutesOf(flag: string, raw: string | undefined): number | undefined {
-  if (raw === undefined) return undefined;
-  const n = Number(raw);
-  if (raw.trim() === '' || !Number.isFinite(n)) throw new OperatorRefusal(`--${flag} must be a number of minutes; not ${raw}`);
-  return n;
-}
-
-function autoParkCall(args: string[]): Call {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { minutes: { type: 'string' }, 'high-priority-minutes': { type: 'string' } } });
-  const [verb, ...extra] = positionals;
-  const minutes = minutesOf('minutes', values.minutes);
-  const highPriorityMinutes = minutesOf('high-priority-minutes', values['high-priority-minutes']);
-  if (verb === undefined && minutes === undefined && highPriorityMinutes === undefined) return { role: 'viewer', path: '/api/auto-park' };
-  if (verb !== 'set' || extra.length > 0) throw usage(AUTO_PARK_USAGE);
-  if (minutes === undefined && highPriorityMinutes === undefined) throw usage(AUTO_PARK_SET);
-  return { role: 'admin', path: '/ui/api/auto-park', body: async () => ({ ...(minutes === undefined ? {} : { minutes }), ...(highPriorityMinutes === undefined ? {} : { highPriorityMinutes }) }) };
 }
 
 /** A proposal's paths in short, as the CLI lists them (issue #651). */
@@ -214,7 +199,7 @@ function pathsBrief(p: ReviewItemView) {
   return {
     id: p.id, jobId: p.jobId, status: p.status, stage: p.stage, version: v.number, title: p.source?.title, tldr: v.sections.tldr, problem: v.sections.problem,
     paths: set.paths.map((x) => ({
-      id: x.id, title: x.title, summary: x.summary, tradeoffs: x.tradeoffs, creates: x.creates,
+      id: x.id, title: x.title, summary: x.summary, tradeoffs: x.tradeoffs, ...(x.otherFields ? { otherFields: x.otherFields } : {}), creates: x.creates,
       ...(x.recommended ? { recommended: true } : {}), ...(x.addedBy ? { addedBy: x.addedBy } : {}), ...(x.notViable ? { notViable: x.notViable } : {}),
     })),
     ...(set.recommendation ? { recommendation: set.recommendation } : {}), ...(set.none !== undefined ? { none: set.none } : {}),
@@ -254,11 +239,19 @@ function proposalCall(args: string[]): Call {
 
 function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'master-key') return masterKeyCall(args);
+  if (command === 'lanes') return lanesCall(args);
+  if (command === 'token') return tokenCall(args);
+  if (command === 'vault') return vaultCall(args, stdin);
+  if (command === 'template') return templateCall(args);
+  if (command === 'sandbox') return sandboxCall(args);
   if (command === 'artifact') return artifactCall(args);
+  if (command === 'report') return reportCall(args);
   if (command === 'typesafe-key') return typesafeKeyCall(args, stdin);
   if (command === 'auto-park') return autoParkCall(args);
   if (command === 'proposal') return proposalCall(args);
   if (command === 'prs') return prsCall(args);
+  if (command === 'pr') return prCall(args);
+  if (command === 'repo') return repoCall(args);
   if (command === 'yolo') return yoloCall(args);
   if (command === 'backfill') return backfillCall(args);
   if (command === 'job') return jobCall(args);
@@ -296,7 +289,7 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question|problem|handoff|failure|prs|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key …`: one operator action on the running daemon, as `userOf` names the user.
+ * `hopper job|queue|question|problem|handoff|failure|prs|pr|repo|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|vault|template|sandbox|report …`: one operator action on the running daemon, as `userOf` names the user.
  * Prints the daemon's answer as JSON.
  */
 export async function runOperatorAction(

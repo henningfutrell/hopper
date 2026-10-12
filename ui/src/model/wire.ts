@@ -3,10 +3,11 @@
 import type {
   AttachedMachine, Decision, DomainEvent, HostKeyOffer, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachineSnapshot, MachinesConfig, SandboxesView, CleanupProblem, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
   Question, QuestionAttempt, QuestionGatesView, RaisedBy, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
-  WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
+  WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, StackDrift, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageLimitPair, UsageLimits, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
   MachineHistory, MachineResource, ResourceReading, ResourceSeries,
+  LaneChange, LaneRecommendation, LaneTuning, LaneTuningPlan, JobCostGroup, JobCostGrouping, JobCostProfile, JobCosts, ResourceCost,
   Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, HandoffReason, HandoffResolution, HandoffResolutionAction, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
   LaneReliability, PriorityLaneIdle, PriorityLaneSettings, PriorityLaneView, PriorityLanesView, QuestionView,
@@ -16,22 +17,24 @@ import type {
   ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, RadiusSource, Reach, UnconfirmedAs, TemplateRadius, TemplateProfileRadius,
   DecisionPoint, DecisionPointView, MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, MinorDecisionsView, TypesafeKeyView,
   ForkParent, ForkQuestion, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionFork, QuestionShifts, ShiftMode, ShiftThen,
-  AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, AutoParkSettings, Confidence, Escalation, EscalationReason, GuardHit,
-  CredentialRequest, SystemSecretAudit, SystemSecretView, Template, TemplateView, VaultBackendView, VaultSecret, VaultView, YoloModeSettings, YoloModeView, PullRequestCard, PullRequestsView,
+  AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, AutoParkSettings, ThreadAsk, ThreadAskPolicy, ThreadAskSettings, Confidence, AnswerHold, Escalation, EscalationHold, EscalationReason, GuardHit,
+  ConfidenceSpread, DeciderRiskHold, RiskCategory, RiskCheck, RiskDecision,
+  ApiTokenMinted, ApiTokenView, CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplateView, VaultBackendView, VaultSecret, VaultView, YoloModeSettings, YoloModeView, ContributionSettings, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksQueued, RepoChecksView,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
   Artifact, ArtifactKind, ArtifactRevision, ArtifactRevisionView, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
   Tldr, TldrSettings,
   ItemComment, ItemEdit, TextChange,
-  MasterKeyView,
+  MasterKeyRotated, MasterKeyView,
 } from '../../../src/domain/types.ts';
 
 export type {
   AttachedMachine, Decision, DomainEvent, HostKeyOffer, InstanceSpec, Job, JobStatus, Lane, MachineDefaultsEdit, MachineEdit, MachineLaneEffect, MachinesConfig, SandboxesView, CleanupProblem, OptionChoice, PartAccount, PluginsEdit, PluginsReport,
   Question, QuestionAttempt, QuestionGatesView, RaisedBy, JobRulesView, QuestionStatus, RiskRuleView, Role, RoutingReport, RulesView, SelectableRole, ListRole, SourceStatus, UsageReading, UsageReport, UsageSourceReport, WebhookDelivery,
-  WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
+  WebhookSubscription, WebhooksEdit, SessionLengths, SessionUser, SessionView, SignInRealmView, UiRole, StackDrift, UpdateStatus, UpdateChannel, VersionHistory, PluginStoreEdit, PluginStoreEntry, PluginStoreReport, ConnectedAccountStatus, AppInstallation,
   InstanceTotals, UsageTotal, UserAdded, UserView, RealmSettings, RealmType, RealmView, RealmsEdit, RealmsView, PersonView, PreSort, QueueGate, QueueGateMode,
   InstanceUsageHistory, UsageGraphView, UsageHistory, UsageLimitPair, UsageLimits, UsageSeries, UsageTotalSeries, NotifierAction, NotifierActionResult,
   MachineHistory, MachineResource, ResourceReading, ResourceSeries,
+  LaneChange, LaneRecommendation, LaneTuning, LaneTuningPlan, JobCostGroup, JobCostGrouping, JobCostProfile, JobCosts, ResourceCost,
   Login, LoginSettings, LoginStatus, LoginView,
   Allowed, FailureDecision, FailureRecordView, FailureSettings, FailuresView, HandoffReason, HandoffResolution, HandoffResolutionAction, HandoffView, JobAssessment, KnownCause, ProblemView, SignatureStat,
   LaneReliability, PriorityLaneIdle, PriorityLaneSettings, PriorityLaneView, PriorityLanesView, QuestionView,
@@ -41,10 +44,11 @@ export type {
   ActorMachine, BlastRadiusSettings, BlastRadiusView, DiscoveryChanges, DiscoveryRecord, GateAt, MachineRadiusView, RadiusLevel, RadiusSource, Reach, UnconfirmedAs, TemplateRadius, TemplateProfileRadius,
   DecisionPoint, DecisionPointView, MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, MinorDecisionsView, TypesafeKeyView,
   ForkParent, ForkQuestion, JobPhase, PhaseShiftSettings, PhaseShiftSettingsView, PhaseSuggestion, QuestionFork, QuestionShifts, ShiftMode, ShiftThen,
-  AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, AutoParkSettings, Confidence, Escalation, EscalationReason, GuardHit,
-  CredentialRequest, SystemSecretAudit, SystemSecretView, Template, TemplateView, VaultBackendView, VaultSecret, VaultView, YoloModeSettings, YoloModeView, PullRequestCard, PullRequestsView,
+  AutoAnswerSettings, AutoAnswerStats, AutoAnswerView, AutoParkSettings, ThreadAsk, ThreadAskPolicy, ThreadAskSettings, Confidence, AnswerHold, Escalation, EscalationHold, EscalationReason, GuardHit,
+  ConfidenceSpread, DeciderRiskHold, RiskCategory, RiskCheck, RiskDecision,
+  ApiTokenMinted, ApiTokenView, CredentialRequest, SharedSecretView, SystemSecretAudit, SystemSecretView, Template, TemplateView, VaultBackendView, VaultSecret, VaultView, YoloModeSettings, YoloModeView, ContributionSettings, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksQueued, RepoChecksView,
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
-  MasterKeyView,
+  MasterKeyRotated, MasterKeyView,
   Artifact, ArtifactKind, ArtifactRevision, ArtifactRevisionView, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
   Tldr, TldrSettings,
   ItemComment, ItemEdit, TextChange,
@@ -103,3 +107,6 @@ export interface WebhooksView {
   /** Only in the answer to the edit that made it (add with no secret typed in, rotate; issue #451): shown once. */
   generatedSecret?: string;
 }
+
+export type { RateBucket, RateLimiterSettings, RateLimiterView } from '../../../src/domain/github-rate-limit.ts';
+export type { GitHubWatch, GitHubWatchSettings, GitHubWatchView } from '../../../src/domain/github-watch.ts';

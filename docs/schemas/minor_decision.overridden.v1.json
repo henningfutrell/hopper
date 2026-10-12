@@ -8,8 +8,13 @@
     "point": {
       "type": "string",
       "enum": [
-        "question-answer",
-        "failure-assessment"
+        "question-risk",
+        "failure-assessment",
+        "lane-count",
+        "job-machine",
+        "intake-order",
+        "merge-order",
+        "question-answer"
       ]
     },
     "pick": {

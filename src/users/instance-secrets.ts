@@ -12,6 +12,8 @@ import { runtimeSecrets } from '../secrets/runtime.ts';
 import { sealerOf } from '../secrets/sealer.ts';
 import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 import { createSystemSecrets, type SystemSecrets } from '../vault/system.ts';
+import { createSharedSecrets, type SharedSecrets } from '../vault/shared.ts';
+import type { VaultAccess } from '../domain/access.ts';
 
 interface Logger { info(line: string): void; warn(line: string): void }
 
@@ -19,6 +21,8 @@ export interface InstanceSecrets {
   /** The instance store with its sign-in config over the vault. */
   instance: InstanceStore;
   system: SystemSecrets;
+  /** The shared secrets (issue #718) in the instance's vault, Access deciding each change and read. */
+  shared(access?: VaultAccess): SharedSecrets;
   /** From now on the events go to `sink`; those made before it, first. */
   connect(sink: (e: NewEvent) => void): void;
 }
@@ -44,6 +48,9 @@ function open(store: InstanceStore, o: { env: Record<string, string | undefined>
   const system = createSystemSecrets({
     store: { vault: store.vault, events, tx: store.tx }, keys, userId: 'instance', scope: 'instance', clock: o.clock, idGen: randomUUID, logger: o.logger,
   });
+  const shared = (access?: VaultAccess): SharedSecrets => createSharedSecrets({
+    store: { vault: store.vault, events, tx: store.tx }, keys, ...(access ? { access } : {}), clock: o.clock, idGen: randomUUID, logger: o.logger,
+  });
   const raw = store.signInConfig;
   if (o.migrate) {
     const record = raw.read();
@@ -62,10 +69,13 @@ function open(store: InstanceStore, o: { env: Record<string, string | undefined>
     const resealed = system.resealAll();
     if (resealed > 0) o.logger.info(`hopper: ${resealed} sign-in realm secret(s) sealed again under the current ${MASTER_KEY_VARIABLE}`);
     for (const c of system.check()) o.logger.warn(`hopper: start check: system secret ${c.name} ${c.problem}`);
+    const resealedShared = shared().resealAll();
+    if (resealedShared > 0) o.logger.info(`hopper: ${resealedShared} shared secret(s) sealed again under the current ${MASTER_KEY_VARIABLE}`);
   }
   return {
     instance: { ...store, signInConfig: sealedSignIn({ raw, system, tx: store.tx, logger: o.logger }) },
     system,
+    shared,
     connect(to) {
       sink = to;
       for (const e of waiting.splice(0)) to(e);

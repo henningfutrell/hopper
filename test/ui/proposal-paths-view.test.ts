@@ -136,6 +136,29 @@ describe('a proposal card with paths', () => {
     expect(c.querySelector('[data-slot="recommendation"]')!.textContent).toContain('the brush is cheap');
   });
 
+  it('issue #755: a path renders its summary as Markdown and its fields as labelled rows, then what it creates', async () => {
+    const rich = path('1', 'Hopper holds the key', {
+      summary: 'The hopper keeps the key.\n- Hopper side: holds it.\n- Box side: asks for it.',
+      tradeoffs: { security: 'the key **never** leaves', effort: 'two days', friction: 'none' },
+      otherFields: [{ label: 'Role', text: 'an admin sets it up' }],
+      creates: 'one job, with `hopper vault`',
+    });
+    await boot({ proposals: [proposal('j1', { versions: [{ ...proposal('j1').versions[0], paths: { paths: [rich] } }] })], jobs: [job('j1')] });
+    const one = pathCard(card('j1'), '1');
+    const summary = one.querySelector('[data-slot="path-summary"]')!;
+    expect([...summary.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Hopper side: holds it.', 'Box side: asks for it.']);
+    const rows = [...one.querySelectorAll('[data-slot="path-fields"] [data-field]')] as HTMLElement[];
+    expect(rows.map((r) => [r.getAttribute('data-field'), r.querySelector('dt')!.textContent, r.querySelector('dd')!.textContent?.trim()])).toEqual([
+      ['security', 'Security', 'the key never leaves'], ['effort', 'Effort', 'two days'], ['friction', 'Friction', 'none'], ['Role', 'Role', 'an admin sets it up'],
+    ]);
+    expect(rows[0]!.querySelector('dd strong')!.textContent).toBe('never');
+    expect(one.querySelector('[data-tradeoff="risk"]')).toBeNull();
+    const creates = one.querySelector('[data-slot="path-creates"]')!;
+    expect(creates.querySelector('code')!.textContent).toBe('hopper vault');
+    const order = [summary, one.querySelector('[data-slot="path-fields"]')!, creates];
+    expect(order.every((el, i) => i === 0 || (order[i - 1]!.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  });
+
   it('a path expands to its full Markdown, with no raw HTML or script', async () => {
     await boot({ proposals: [proposal('j1')], jobs: [job('j1')] });
     const one = pathCard(card('j1'), '1');

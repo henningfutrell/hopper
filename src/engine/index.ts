@@ -22,13 +22,17 @@ import { createPriorityLanes, type PriorityLanes } from './priority-lanes.ts';
 import { DISCOVER_CHECK_MS, createBlastRadius, type BlastRadius } from './blast-radius.ts';
 import { SWEEP_CHECK_MS, createSweep } from './sweep.ts';
 import { createPhaseShifts, type PhaseShifts } from './phase-shifts.ts';
+import { createLaneTuning, type LaneTuningService } from './lane-tuning.ts';
+import { createPlacementPicks } from './lane-calls.ts';
 
-export { EngineError } from './errors.ts';
+import { EngineError } from './errors.ts';
+export { EngineError };
 export type { EngineOptions } from './context.ts';
 export type { MachineView, QueueView } from './queries.ts';
 export type { PriorityLanes, PriorityLaneSettingsPatch } from './priority-lanes.ts';
 export type { BlastRadius, BlastRadiusSettingsPatch } from './blast-radius.ts';
 export type { PhaseShifts, PhaseShiftSettingsPatch, ShiftRequest, ShiftResult } from './phase-shifts.ts';
+export type { LaneTuningPatch, LaneTuningService } from './lane-tuning.ts';
 
 const SHUTDOWN_WAIT_MS = 5000;
 
@@ -41,7 +45,7 @@ const SHUTDOWN_WAIT_MS = 5000;
  * a lane, and one sent back or accepted on to the next section requeues its job (issues #537, #543); a discovery that
  * changed a machine, new blast-radius settings and a job let through the gate change which machines a job may take
  * (issue #542); a fork queued or a job switched from its question re-queued changes the queue (issue #548); a template
- * saved or removed, a profile approved and a vault secret set or removed change a template's rating, so its boxes' (issue #605). */
+ * saved or removed, a profile approved and a vault secret set or removed change a template's rating, so its boxes' (issue #605); a read-only check ended or asked for again changes whether its boxes take a job (issue #716); a lane recommendation applied or undone changes a machine's lanes (issue #688). */
 const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.queued', 'job.prioritized', 'job.reprioritized', 'job.respecified', 'job.approved', 'job.finished', 'job.failed', 'job.cancelled',
   'question.asked', 'question.answered', 'question.closed', 'question.dismissed', 'question.expired', 'question.lapsed',
@@ -49,7 +53,8 @@ const TRIGGERS: ReadonlySet<EventType> = new Set<EventType>([
   'job.parked', 'job.unparked', 'job.continued', 'failure.grouped', 'failure.resolved', 'usage.limits_changed', 'priority_lanes.settings_changed',
   ...REVIEW_KINDS.flatMap((k) => (['submitted', 'revision_requested', 'accepted'] as const).map((s) => `${REVIEW_SECTIONS[k].prefix}.${s}` as EventType)),
   'machine.discovered', 'blast_radius.settings_changed', 'vault.approved', 'vault.revoked', 'job.gate_passed', 'job.forked',
-  'template.saved', 'template.removed', 'template.profile_approved', 'vault.secret_set', 'vault.secret_removed',
+  'template.saved', 'template.removed', 'template.profile_approved', 'template.checked', 'template.check_requested', 'vault.secret_set', 'vault.secret_removed',
+  'lanes.applied', 'lanes.undone',
 ]);
 
 export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands, Queries, AnswerHandlers, ReviewHandlers {
@@ -72,6 +77,8 @@ export interface Engine extends Commands, QueueGateCommands, UsageLimitCommands,
   readonly priorityLanes: PriorityLanes;
   /** Each machine's discovery and blast radius, the gate and the actor machines (issue #542). */
   readonly blastRadius: BlastRadius;
+  /** Lane tuning (issue #688): every machine's lane recommendation, recorded; an admin's apply, dismiss and undo; each machine's settings. */
+  readonly laneTuning: LaneTuningService;
   /** Recover from a previous run (jobs — reattaching live ones, waiting for machines not reachable yet —, then questions), ask the router, take the first Decision, start the tick. */
   start(): Promise<void>;
   /** Abort running executors (≤ 5 s) and stop deciding. The caller closes the store. */
@@ -90,14 +97,16 @@ export function createEngine(o: EngineOptions): Engine {
   let unsubscribe: (() => void) | undefined;
 
   const serial = createSerial(async (reason) => {
-    const claims = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius);
+    const claims = await decisionStep(c, reason, c.idGen(), () => cleanups.due(), priorityLanes, blastRadius, laneTuning.expected, placementPicks);
     for (const claim of claims) runner.start(claim);
   }, (e) => console.error('decision failed', e));
 
   const c: EngineContext = {
     store, clock: o.clock, idGen: o.idGen ?? randomUUID, executors: o.executors, machines: o.machines,
     usage: o.usage, router: o.router, queueSorter: o.queueSorter, routing: o.routing, policy: o.policy,
-    questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, doneRecheckMs: o.doneRecheckMs ?? 0, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems,
+    questions: o.questions, reviews: o.reviews, logins: o.logins, maxQuestions: o.maxQuestions, keepPanes: o.keepPanes, reconnectGraceMs: o.reconnectGraceMs, linkGraceMs: o.linkGraceMs ?? 600000, doneRecheckMs: o.doneRecheckMs ?? 0, verdict: o.verdict, overAtSource: o.overAtSource ?? (async () => undefined), credentialRequests: o.credentialRequests ?? (() => []), jobProxy: o.jobProxy ?? (() => undefined), boxRadius: o.boxRadius ?? (() => undefined), problems: o.problems,
+    machineLanes: o.machineLanes ?? (() => Promise.reject(new EngineError('conflict', 'a machine\'s lanes cannot be set here'))),
+    jevFirst: o.jevFirst ?? { decide: () => Promise.resolve({ asked: false }) },
     ...(o.fakeUsage ? { fakeUsage: o.fakeUsage } : {}),
     trigger: (reason) => serial.trigger(reason),
     stopping: () => stopping,
@@ -112,6 +121,10 @@ export function createEngine(o: EngineOptions): Engine {
   const priorityLanes = createPriorityLanes(c);
   const blastRadius = createBlastRadius(c);
   const phaseShifts = createPhaseShifts(c);
+  // Decider calls in lane tuning (issue #688): Jev reads every lane's reliability (issue #535) and never decides for a gated machine.
+  const laneCalls = { gated: (id: string) => blastRadius.gates(id), reliability: async () => (await priorityLanes.view()).lanes };
+  const laneTuning = createLaneTuning(c, laneCalls);
+  const placementPicks = createPlacementPicks(c, { ...laneCalls, expected: (job) => laneTuning.expected(job) });
 
   return {
     get executorNames() { return o.executors.names(); },
@@ -122,6 +135,7 @@ export function createEngine(o: EngineOptions): Engine {
     sourceHost: createSourceHost(c, commands),
     priorityLanes,
     blastRadius,
+    laneTuning,
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
     ...createUsageLimitCommands(c),
@@ -146,7 +160,10 @@ export function createEngine(o: EngineOptions): Engine {
         if (event.type === 'job.queued' && event.jobId) {
           const jobId = event.jobId;
           setImmediate(() => classifier.classifyJob(jobId));
+          // Its status is read now, before a Decision can claim it (issue #688, `job-machine`).
+          placementPicks.ask(jobId, event.at);
         }
+        if ((event.type === 'job.claimed' || event.type === 'job.cancelled') && event.jobId) placementPicks.forget(event.jobId);
         if (TRIGGERS.has(event.type)) setImmediate(() => c.trigger(event.type));
       });
       // Restart open questions at the answer stage, re-arm human timers, expire overdue ones.
@@ -159,6 +176,7 @@ export function createEngine(o: EngineOptions): Engine {
         o.logins.sweep();
         o.questions.sweep();
         for (const k of REVIEW_KINDS) o.reviews[k].sweep();
+        placementPicks.sweep();
         // Auto-park (issue #650): one pass at a time; a pass still ending panes skips this tick.
         if (!autoParking) {
           autoParking = true;

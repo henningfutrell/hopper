@@ -9,6 +9,8 @@
 // is unavailable, an ask refused — nothing else in the hopper waits on it.
 import type { UserStore } from '../domain/ports.ts';
 import type { Minted, NewEvent } from '../domain/types.ts';
+import type { CallerIdentity, MintReach } from '../domain/minting.ts';
+import type { MintFrom } from './mint.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 import type { RuntimeSecrets } from '../secrets/runtime.ts';
 import type { ClientTarget, VaultResult, VaultService } from './service.ts';
@@ -55,6 +57,14 @@ export function remoteVault(o: {
     return 'problem' in r ? { ok: false, code: 'unavailable', error: r.problem } : r.result;
   };
 
+  // Every check and Access's decision run here, in the hopper (issue #580); only the mint itself crosses, to the vault
+  // that holds the minting credential. One kept in a vault backend is minted here, which runs the backends.
+  const mintFrom: MintFrom = async (name, target, jobId, identify) => {
+    if (o.local.view().secrets.find((s) => s.name === name)?.backend) return o.local.mintFrom(name, target, jobId, identify);
+    const r = await call<{ minted: Minted; reach: MintReach; sessionName?: string; identity?: CallerIdentity } | { refused: string }>('mint', { credential: name, target, jobId, ...(identify ? { identify } : {}) });
+    return 'problem' in r ? { refused: r.problem } : r.result;
+  };
+
   return {
     view: () => {
       const { problem: _noKeyHere, ...view } = o.local.view();
@@ -82,13 +92,9 @@ export function remoteVault(o: {
       });
       return { refused: r.problem };
     },
-    // Every check and Access's decision run here, in the hopper (issue #580); only the mint itself crosses, to the vault
-    // that holds the minting credential. One kept in a vault backend is minted here, which runs the backends.
-    mint: (ask, machineKey) => o.local.mint(ask, machineKey, async (name, target, sessionName) => {
-      if (o.local.view().secrets.find((s) => s.name === name)?.backend) return o.local.mintFrom(name, target, sessionName);
-      const r = await call<{ minted: Minted } | { refused: string }>('mint', { credential: name, target, sessionName });
-      return 'problem' in r ? { refused: r.problem } : r.result;
-    }),
+    mint: (ask, machineKey) => o.local.mint(ask, machineKey, mintFrom),
+    testMint: (asset, by) => o.local.testMint(asset, by, mintFrom),
+    mintForCheck: (ask) => o.local.mintForCheck(ask, mintFrom),
     saveTemplate: (t, by) => o.local.saveTemplate(t, by),
     removeTemplate: (name, by) => o.local.removeTemplate(name, by),
     approveTemplate: (name, by) => o.local.approveTemplate(name, by),
@@ -98,5 +104,6 @@ export function remoteVault(o: {
     boxRadius: (machine) => o.local.boxRadius(machine),
     boxes: () => o.local.boxes(),
     templateScopes: () => o.local.templateScopes(),
+    recordCheck: (name, check) => o.local.recordCheck(name, check), checkTemplate: (name, by) => o.local.checkTemplate(name, by),
   };
 }

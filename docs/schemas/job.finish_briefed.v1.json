@@ -9,6 +9,7 @@
       "type": "string",
       "enum": [
         "rebase",
+        "fix_checks",
         "mark_ready"
       ]
     }

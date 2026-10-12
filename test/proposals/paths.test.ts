@@ -7,7 +7,7 @@ import {
   amendPaths, pathGaps, pathsOf, proposalDocument, recommendationOf, reviewDocument, selectionRefusal, type ProposalPathSet,
 } from '../../src/domain/types.ts';
 import { preCheck } from '../../src/review/pre-check.ts';
-import { LEGACY, NO_PATHS, THREE_PATHS } from '../support/proposal-paths.ts';
+import { BULLET_PATH, LEGACY, NO_PATHS, THREE_PATHS } from '../support/proposal-paths.ts';
 
 describe('a proposal read as paths', () => {
   it('reads the problem, each path with its TL;DR, tradeoffs and what it creates, and the recommendation', () => {
@@ -54,6 +54,22 @@ describe('a proposal read as paths', () => {
   it('a review document carries paths only for a proposal', () => {
     expect(reviewDocument('proposal', THREE_PATHS).paths?.paths).toHaveLength(3);
     expect(reviewDocument('research', 'Findings: x').paths).toBeUndefined();
+  });
+
+  it('issue #755: keeps the bullets of a summary, splits fields on one line, and keeps a field the format does not name', () => {
+    const [one, two] = proposalDocument(BULLET_PATH).paths.paths;
+    expect(one!.summary).toBe('The hopper keeps the key; a box asks for it.\n- Hopper side: holds the key in the vault.\n- Box side: asks for it with its token.\n- Machines join with a code.');
+    expect(one!.tradeoffs).toEqual({ security: 'the key never leaves the hopper.', effort: 'two days.', friction: 'none.' });
+    expect(one!.otherFields).toEqual([{ label: 'Role', text: 'an admin sets it up.' }]);
+    expect(one!.creates).toBe('one job, with `hopper vault`.');
+    expect(two!.tradeoffs).toEqual({ security: 'a copy on every box.', effort: 'one day.', risk: 'a lost box leaks the key.', friction: 'the person copies the key.' });
+    expect(two!.otherFields).toEqual([{ label: 'Role', text: 'the person copies it.' }]);
+    expect(proposalDocument(THREE_PATHS).paths.paths[0]!.otherFields).toBeUndefined();
+  });
+
+  it('issue #755: a sentence with a colon in a field is no new field', () => {
+    const d = proposalDocument(BULLET_PATH.replace('Effort: one day.', 'Effort: one day. note: the copy is slow, see this: x.'));
+    expect(d.paths.paths[1]!.tradeoffs.effort).toBe('one day. note: the copy is slow, see this: x.');
   });
 
   it('prose that names a path does not start one', () => {

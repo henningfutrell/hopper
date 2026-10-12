@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import type { UsageSeries } from '../../src/domain/types.ts';
 import { graphStepFor, STEP_MS } from '../../src/domain/usage-history.ts';
-import { graphLines, hiddenLines, lineSegments, MIN_ZOOM_MS, selected, totalsAsSeries, valuesAt, zoomed } from '../../ui/src/model/usage-history.ts';
+import { graphLines, hiddenLines, lineSegments, MIN_ZOOM_MS, marksAt, selected, totalsAsSeries, valuesAt, zoomed } from '../../ui/src/model/usage-history.ts';
 
 const H = 3_600_000;
 const D = 24 * H;
@@ -64,6 +64,14 @@ describe('hovering', () => {
     const lines = graphLines([series('a', 'session', { points: pts([0, 0.1], [1, 0.25]) }), series('a', 'week', { points: pts([0, 0.5]) })]);
     expect(valuesAt(lines, T0 + 1.5 * H, H, new Set())).toEqual([{ key: 'a|session', v: 0.25 }]);
     expect(valuesAt(lines, T0 + 0.5 * H, H, new Set(['a|week']))).toEqual([{ key: 'a|session', v: 0.1 }]);
+  });
+
+  it('names each shown line\'s marks within half a step of the pointer (issue #688: a lane change)', () => {
+    const mark = { at: iso(T0 + 1.2 * H), label: 'Applied: 2 → 4 lanes' };
+    const lines = [{ ...graphLines([series('a', 'session')])[0]!, marks: [mark] }, ...graphLines([series('b', 'week')])];
+    expect(marksAt(lines, T0 + 1.5 * H, H, new Set())).toEqual([{ key: 'a|session', mark }]);
+    expect(marksAt(lines, T0 + 2 * H, H, new Set())).toEqual([]);
+    expect(marksAt(lines, T0 + 1.5 * H, H, new Set(['a|session']))).toEqual([]);
   });
 });
 

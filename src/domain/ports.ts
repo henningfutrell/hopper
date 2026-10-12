@@ -5,16 +5,15 @@ import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.t
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness,
-  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins, JobWait,
+  Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness,
+  ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread,
 } from './types.ts';
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { UserStore } from './store.ts';
-import type { ItemEdit, ItemText } from './item-snapshots.ts';
-import type { SourceItem, SourceRef } from './source-item.ts';
+import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
-import type { FollowsPullRequests } from './pull-requests.ts';
+import type { FollowsPullRequests, FollowUp, PullRequestAct } from './pull-requests.ts';
 export type * from './escalation-ports.ts';
 export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
 export { authorizationServerRefusal, isRefusal } from './access.ts';
@@ -33,8 +32,11 @@ export interface ExecutionContext {
    * returns promptly and leaves external work (a herdr pane) as it is: `park` then releases it.
    */
   signal: AbortSignal;
-  /** Report progress 0..1 with an optional message. Emits job.progressed. */
-  progress(fraction: number, message?: string): void;
+  /**
+   * Report progress (issue #794): a progress message, the job's task count, or both. What is left out keeps what the
+   * job has. Emits job.progressed.
+   */
+  progress(message?: string, tasks?: TaskCount): void;
   /**
    * Persist executor-owned state on the job (`job.executorState`) as soon as it exists — e.g.
    * the herdr pane a job runs in — so restart recovery and resume can find it.
@@ -89,9 +91,10 @@ export type ExecutionOutcome =
   | { kind: 'finished'; result: unknown; partlyDone?: string }
   /**
    * `tail`: the pane or output tail at failure, codes hidden (issue #509): the assessor's evidence. `liveness`: a
-   * timeout's (issue #630), what the job showed of its progress then.
+   * timeout's (issue #630), what the job showed of its progress then. `linkLost` (issue #752): its machine's link dropped
+   * while its work was watched, so that work may live on there; the engine holds the job and reattaches it when the link is back.
    */
-  | { kind: 'failed'; error: string; tail?: string; liveness?: JobLiveness }
+  | { kind: 'failed'; error: string; tail?: string; liveness?: JobLiveness; linkLost?: true }
   /** The job is paused on a question. Its executor state (saveState) must allow resume. */
   | { kind: 'question'; question: ExecutionQuestion }
   /**
@@ -217,6 +220,11 @@ export interface MachineShell {
   keepCredential(jobId: string, dir: string, file: string, content: string, make?: boolean): Promise<void>;
   /** What the machine holds (issue #542): its tools, its access, its credential sources — names only. */
   discover(): Promise<DiscoveryFacts>;
+  /**
+   * Whether the machine reaches the hopper at `url` (issue #695), checked there: undefined when it does, or when the
+   * check cannot run there (a client older than it); else why not, plainly, naming the URL.
+   */
+  reach(url: string): Promise<string | undefined>;
 }
 
 // ---- Inputs the decider is made over ---------------------------------------------------
@@ -254,10 +262,14 @@ export interface NotifierEvents {
   answerUrl(questionId: string): string;
   /** The high-priority threshold now (issue #535): a job at or above it is high priority. Absent: the default. */
   highPriority?(): number;
+  /** Where a person sees the logins, with each one's link and code (issue #698): the UI's Logins view. Absent: not known. */
+  loginsUrl?(): string;
   /** Where a person opens an artifact (issue #673): its stable URL under the user's link base. Absent: not known. */
   artifactUrl?(id: string): string;
   /** What a notification of the question leads with (issue #569): its TL;DR, else the agent's own summary; undefined: a short question, or the TL;DR off. */
   tldr?(q: Question): string | undefined;
+  /** Where the hopper is reached from outside now (issue #795): HOPPER_PUBLIC_URL while its tunnel is up. Absent or undefined: not reached. */
+  reach?(): string | undefined;
 }
 
 /**
@@ -458,7 +470,7 @@ export type SourceReport =
   | { kind: 'cancelled'; job: Job }
   | { kind: 'rejected'; job: Job };
 
-export interface JobSource extends FollowsPullRequests {
+export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses {
   readonly name: string;
   readonly kind: string;
   /** Facts for SourceStatus.detail. */
@@ -488,6 +500,13 @@ export interface JobSource extends FollowsPullRequests {
    * job. Throws SourceError. Absent: the source cannot run an item again on request.
    */
   rerun?(job: Job): Promise<SourceItem>;
+  /**
+   * Take a done job's item back to rework its open pull request (issue #724): the pull request the job follows becomes a
+   * draft and stays open on its branch, then the item is taken back as for `rerun`. Answers the item, the pull request,
+   * and the job's source state from now on (it no longer follows the pull request). Throws RerunRefused when there is no
+   * open pull request to rework, SourceError when the source cannot be reached. Absent: the source cannot rework.
+   */
+  rework?(job: Job): Promise<{ item: SourceItem; pullRequest: string; state: Record<string, unknown> }>;
   /**
    * The item as it would be with `text` (issue #662): its title, body, prompt and environment rendered from that text, the
    * rest as read. A source that sets `SourceItem.text` has it: a later job of the item runs its snapshot's text this way.
@@ -542,6 +561,8 @@ export interface JobSource extends FollowsPullRequests {
  * where its machine keeps files: the token is never in an environment variable.
  */
 export interface JobProxyCredentials {
+  /** The hopper's URL as the job's machine reaches it (HOPPER_URL): what the reach check asks for before the job starts (issue #695). */
+  url: string;
   files: Record<string, string>;
   paths: Record<string, string>;
   vars: Record<string, string>;
@@ -562,7 +583,7 @@ export class SourceError extends Error {
  * What the sync loop may do to the hopper. Engine-owned: every method is one store.tx with
  * compare-and-set on the job's current status.
  */
-export interface SourceHost {
+export interface SourceHost extends AnswersFromThread {
   store: UserStore;
   /** Create the job for an item (dedupe by key). null when the key already has a job. */
   ingest(item: SourceItem, source: SourceRef): Job | null;
@@ -608,6 +629,12 @@ export interface SourceHost {
    * session. job.continued. Refused (not_found, conflict) when it is gone, no longer failed, or a newer job of its item exists.
    */
   continueJob(jobId: JobId, brief: string, by: ContinuedBy): RerunResult;
+  /**
+   * Its source gave a done job's item back for rework (issue #724): the ended job's source state is replaced by `state`
+   * (it no longer follows its pull request), and the new job for `item` is created as `rerun` does, told the rework brief,
+   * with `rework` set; job.rework_requested on the ended job, in one tx.
+   */
+  rework(jobId: JobId, item: SourceItem, source: SourceRef, rework: { pullRequest: string; notes: string; state: Record<string, unknown> }, acting?: ActingPerson): Job;
 }
 
 /**
@@ -630,18 +657,35 @@ export interface SourceRegistry {
    */
   continueJob(jobId: JobId, brief: string, by: ContinuedBy): Promise<RerunResult>;
   /**
+   * Send a done job's open pull request back for rework (issue #724): its source makes the pull request a draft and gives
+   * the item back, and a new job is queued at once, told `notes`. Only a finished job that follows an open pull request,
+   * the newest of its item, once its end was reported to the source.
+   */
+  rework(jobId: JobId, notes: string, acting?: ActingPerson): Promise<RerunResult>;
+  /**
    * The user's act on items a source listed (Assign to me, Release claim; issue #440), then a sync of that
    * source, so its status shows the result. not_found: no running source of that name; conflict: it takes no such act.
    */
   intakeAction(source: string, action: IntakeAction): Promise<IntakeActionOutcome>;
+  /**
+   * A person's Merge now or Close PR on a finished job's open pull request (issue #677): its source merges it — whatever
+   * yolo mode and its checks say — or closes it without a merge, on the job's report chain, and it is recorded as a
+   * follow-up is, with who pressed it. Refused (not_found, conflict) when the job is gone or has no open pull request,
+   * or GitHub refuses; source: GitHub could not be reached.
+   */
+  pullRequestAct(jobId: JobId, act: PullRequestAct, acting: ActingPerson): Promise<PullRequestActResult>;
 }
+
+export type PullRequestActResult =
+  | { ok: true; outcome: FollowUp['outcome']; pullRequest: string; part: boolean }
+  | { ok: false; reason: 'not_found' | 'conflict' | 'source'; message: string };
 
 export type IntakeActionOutcome =
   | { ok: true; result: IntakeActionResult }
   | { ok: false; reason: 'not_found' | 'conflict'; message: string };
 
 /** Who asks for an ended job's item to run again: the user, or the failure assessor (issue #509). */
-export type RerunBy = 'user' | 'assessor';
+export type RerunBy = 'user' | 'assessor' | 'tending';
 
 export type RerunResult =
   | { ok: true; job: Job }
@@ -656,6 +700,22 @@ export interface UpdateBuilder {
 
 /** Ends this process so it starts again on the install now in place (exit for the supervisor, or respawn). Never returns in production. */
 export type Restarter = () => Promise<void>;
+
+/** What the hopper sees of the stack it runs in (issue #697, "The stack against its compose file"): from inside its container, never the container runtime's. */
+export interface StackProbe {
+  /** Whether `service` has a name on the compose network: compose names each running service's container by it. */
+  resolves(service: string): Promise<boolean>;
+  /** The commit the vault in its own container says it runs; null when it is not reached or does not say. */
+  vaultCommit(): Promise<string | null>;
+}
+
+/** Whether a commit may be updated to (issue #652): the merge of a pull request whose checks passed, or why not. */
+export type ReleaseVerdict = { passed: true; pullRequest: UpdatePullRequest } | { passed: false; reason: string };
+
+/** The release check: asks where the update repository lives whether `commit` is a merged pull request with passing checks. */
+export interface ReleaseCheck {
+  verify(repo: string, commit: string): Promise<ReleaseVerdict>;
+}
 
 /** The daemon's self-update: GET /api/update, POST /ui/api/update. */
 export interface Updater {

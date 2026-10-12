@@ -7,9 +7,11 @@ import { jobForIssue, REPO } from './fixtures/github-support.ts';
 const NOW = Date.parse('2026-10-02T10:00:00.000Z');
 const PR = `https://github.com/${REPO}/pull/7`;
 
-function waits(seen: PullRequestSeen | undefined, o: { yolo?: boolean; pullRequest?: string | null } = {}) {
+function waits(seen: PullRequestSeen | undefined, o: { yolo?: boolean; pullRequest?: string | null; untrusted?: boolean } = {}) {
   const pullRequest = o.pullRequest === null ? {} : { pullRequest: o.pullRequest ?? PR };
-  const job: Job = jobForIssue(1, { status: 'finished', sourceState: { source: { follow: 'open', ...pullRequest, ...(seen ? { seen } : {}) } } });
+  const base = jobForIssue(1, { status: 'finished', sourceState: { source: { follow: 'open', ...pullRequest, ...(seen ? { seen } : {}) } } });
+  const { origin: _o, ...source } = base.source!;
+  const job: Job = o.untrusted ? { ...base, source } : base;
   const v = pullRequestList([job], () => job, { on: o.yolo ?? true, repos: {} }, [REPO], NOW);
   return v.repos[0]!.pullRequests[0]!;
 }
@@ -47,11 +49,43 @@ describe('why a pull request waits (issue #677)', () => {
     expect(waits(seen({ checks: 'none' })).waits).toBe('ready');
   });
 
+  it('yolo on, a job with no origin (neither a trusted origin nor approved): ready, the hopper merges it (issue #805)', () => {
+    expect(waits(seen(), { untrusted: true }).waits).toBe('ready');
+    expect(waits(seen(), { untrusted: true, yolo: false }).waits).toBe('yolo off');
+  });
+
   it('a refused merge says so', () => {
     expect(waits(seen({ checks: 'none', mergeError: 'Required status check "test" is expected' })).waits).toBe('merge refused');
   });
 
   it('yolo off: it waits for a person', () => {
     expect(waits(seen({ checks: 'none' }), { yolo: false }).waits).toBe('yolo off');
+  });
+});
+
+describe('a pull request its item\'s tend job works on (issue #763)', () => {
+  const tended = (nextJobId: string): Job => jobForIssue(1, { id: 'job-1', status: 'finished', sourceState: { source: {
+    follow: 'tended', pullRequest: PR, seen: seen({ conflicting: true }), tended: { pullRequest: PR, step: 'rebase', nextJobId },
+  } } });
+  const list = (jobs: Job[], newest: Job) => pullRequestList(jobs, () => newest, { on: true, repos: {} }, [REPO], NOW).repos[0]!.pullRequests;
+
+  it('stays on the list while the tend job runs: open, waiting on the tend', () => {
+    const tender = jobForIssue(1, { id: 'job-2', status: 'running', rerunOf: 'job-1' });
+    expect(list([tended('job-2')], tender)).toEqual([expect.objectContaining({ jobId: 'job-1', state: 'open', pullRequest: { number: 7, url: PR }, waits: 'tending' })]);
+  });
+
+  it('a tend job that failed: the pull request stays, waiting on a person', () => {
+    const tender = jobForIssue(1, { id: 'job-2', status: 'failed', rerunOf: 'job-1' });
+    expect(list([tended('job-2')], tender)).toEqual([expect.objectContaining({ jobId: 'job-1', waits: 'tend failed' })]);
+  });
+
+  it('a tend job that finished: only its own card, the one it follows', () => {
+    const tender = jobForIssue(1, { id: 'job-2', status: 'finished', rerunOf: 'job-1', sourceState: { source: { follow: 'open', pullRequest: PR, seen: seen() } } });
+    expect(list([tended('job-2'), tender], tender).map((c) => c.jobId)).toEqual(['job-2']);
+  });
+
+  it('an older tend, not the newest job of its item: no card', () => {
+    const newest = jobForIssue(1, { id: 'job-3', status: 'running', rerunOf: 'job-2' });
+    expect(list([tended('job-2')], newest)).toEqual([]);
   });
 });

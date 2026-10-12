@@ -1,4 +1,5 @@
-// Jev at its seam (issue #550, design.md "Decider calls"): one TypeSafe Choice over a decision point's options,
+// Jev at its seam (issue #550, design.md "Decider calls"): one TypeSafe Choice over a decision point's options — or
+// several in one call, each over its own options (the risk call, issue #679) —
 // through jev_pick.py and the `typesafe_sdk` the gate router's Jev uses, with the user's TypeSafe API key from the
 // vault's system scope (issue #657; asked on every call: a key set, replaced or removed applies at once), handed to the
 // script as TYPESAFE_API_KEY. No key: Jev is off, and nothing is asked. Every failure — no SDK, TypeSafe refusing, a
@@ -6,7 +7,7 @@
 // is one such pick, over two options, with the key offered. The script runs in its own process group, so a timeout kills all of it.
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import type { JevChooser, JevPick, MinorDecisionAsk } from '../domain/types.ts';
+import type { JevChoices, JevChoicesAsk, JevChooser, JevPick, MinorDecisionAsk } from '../domain/types.ts';
 import { maskSecret } from '../secrets/mask.ts';
 
 const SCRIPT = fileURLToPath(new URL('./jev_pick.py', import.meta.url));
@@ -49,7 +50,7 @@ function run(o: JevOptions, key: string, request: unknown, signal?: AbortSignal)
 export const JEV_OFF = 'Jev is off until a TypeSafe API key is set';
 /** What a key check asks: two options, nothing of the user's. */
 const CHECK: MinorDecisionAsk = {
-  point: 'question-answer', instructions: 'A check of the TypeSafe API key: pick yes.', state: { check: true },
+  point: 'failure-assessment', instructions: 'A check of the TypeSafe API key: pick yes.', state: { check: true },
   options: [{ id: 'yes', label: 'yes' }, { id: 'no', label: 'no' }],
 };
 
@@ -57,20 +58,28 @@ export function createJev(o: JevOptions): JevChooser {
   const key = () => o.key() || undefined;
   const masked = (why: string, k: string): string => maskSecret(why, k, 'TypeSafe API key');
 
-  async function pickWith(k: string, ask: MinorDecisionAsk, signal?: AbortSignal): Promise<JevPick> {
+  async function chooseWith(k: string, ask: JevChoicesAsk, signal?: AbortSignal): Promise<JevChoices> {
     try {
-      const stdout = await run(o, k, {
-        model: JEV_MODEL, instructions: ask.instructions, state: ask.state,
-        criteria: Object.fromEntries(ask.options.map((x) => [x.id, x.label])),
-      }, signal);
-      const out = JSON.parse(stdout.trim().split('\n').pop() ?? '') as { ok: boolean; pick?: unknown; confidence?: unknown; error?: string };
+      const choices = Object.fromEntries(Object.entries(ask.choices).map(([name, c]) => [name, { instructions: [ask.instructions, c.instructions].filter(Boolean).join(' '), criteria: Object.fromEntries(c.options.map((x) => [x.id, x.label])) }]));
+      const stdout = await run(o, k, { model: JEV_MODEL, state: ask.state, choices }, signal);
+      const out = JSON.parse(stdout.trim().split('\n').pop() ?? '') as { ok: boolean; picks?: Record<string, { pick?: unknown; confidence?: unknown }>; error?: string };
       if (!out.ok) return { ok: false, why: masked(out.error ?? 'no answer', k) };
-      if (typeof out.pick !== 'string' || !ask.options.some((x) => x.id === out.pick)) return { ok: false, why: `Jev picked ${String(out.pick)}, not an option` };
-      const confidence = typeof out.confidence === 'number' ? Math.min(1, Math.max(0, out.confidence)) : 0;
-      return { ok: true, pick: out.pick, confidence };
+      const picks: Record<string, { pick: string; confidence: number }> = {};
+      for (const [name, c] of Object.entries(ask.choices)) {
+        const p = out.picks?.[name];
+        if (typeof p?.pick !== 'string' || !c.options.some((x) => x.id === p.pick)) return { ok: false, why: `Jev picked ${String(p?.pick)} for ${name}, not an option` };
+        picks[name] = { pick: p.pick, confidence: typeof p.confidence === 'number' ? Math.min(1, Math.max(0, p.confidence)) : 0 };
+      }
+      return { ok: true, picks };
     } catch (e) {
       return { ok: false, why: masked(e instanceof Error ? e.message : String(e), k) };
     }
+  }
+
+  async function pickWith(k: string, ask: MinorDecisionAsk, signal?: AbortSignal): Promise<JevPick> {
+    const r = await chooseWith(k, { instructions: ask.instructions, state: ask.state, choices: { decision: { instructions: '', options: ask.options } } }, signal);
+    if (!r.ok) return { ok: false, why: r.why.replace(/ for decision, not an option$/, ', not an option') };
+    return { ok: true, ...r.picks.decision! };
   }
 
   return {
@@ -78,6 +87,10 @@ export function createJev(o: JevOptions): JevChooser {
     pick(ask, signal) {
       const k = key();
       return k ? pickWith(k, ask, signal) : Promise.resolve({ ok: false, why: JEV_OFF });
+    },
+    choose(ask, signal) {
+      const k = key();
+      return k ? chooseWith(k, ask, signal) : Promise.resolve({ ok: false, why: JEV_OFF });
     },
     async check(k) {
       const r = await pickWith(k, CHECK);

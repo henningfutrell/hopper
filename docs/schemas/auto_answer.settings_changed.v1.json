@@ -15,6 +15,9 @@
             "medium",
             "high"
           ]
+        },
+        "holdHighPriority": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -36,6 +39,9 @@
             "medium",
             "high"
           ]
+        },
+        "holdHighPriority": {
+          "type": "boolean"
         }
       },
       "required": [

@@ -21,17 +21,24 @@ export type ContainerTool = (typeof CONTAINER_TOOLS)[number];
 /** The container tool a browser remembers (issue #521): Podman, the one the docs lead with, until Docker is chosen. */
 export const parseContainerTool = (text: string | null): ContainerTool => (text === 'Docker' ? 'Docker' : 'Podman');
 
-/** How the user updates a container install (issue #494): run from the folder that holds compose.yaml, with `env` in `.env` beside it. */
+/**
+ * How the user updates a container install (issues #494, #697): in the folder that holds compose.yaml, the selected
+ * channel's image makes the update script (`hopper update <tool>`, src/update/update-script.ts), which brings the whole
+ * stack to the compose file that image ships with — never the hopper's container alone on an old one.
+ */
 export interface ImageUpdate {
-  /** The `.env` line that names the selected channel's tag. */
-  env: string;
-  /** Pull, then recreate the hopper's container alone (never Postgres, never a volume); then the optional prune of the replaced image. */
-  commands: { tool: ContainerTool; update: string; prune: string }[];
+  /** The selected channel's image: the script sets it as HOPPER_IMAGE in `.env`. */
+  image: string;
+  /** Make the script from the image, run it; then the optional prune of the replaced image. */
+  commands: { tool: ContainerTool; make: string; run: string; prune: string }[];
   /** Set when the running image is another channel's than the selected one. */
   mismatch?: string;
   /** What a recreate would end now: the restart blockers, as the host updater waits on them. */
   blockers: string;
 }
+
+/** The file the update script is saved as (src/update/update-script.ts UPDATE_SCRIPT_FILE). */
+const SCRIPT = 'hopper-update.sh';
 
 const cli = (tool: ContainerTool) => tool.toLowerCase();
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -61,12 +68,13 @@ export function imageUpdate(s: UpdateStatus): ImageUpdate | undefined {
   if (s.state !== 'available' || s.installed?.kind !== 'image') return undefined;
   const n = s.restartBlockers;
   const mismatch = channelMismatch(s);
+  const image = `${IMAGE}:${s.channel}`;
   return {
-    env: `HOPPER_IMAGE=${IMAGE}:${s.channel}`,
-    // --force-recreate: podman-compose keeps the old container on a newly pulled image without it.
+    image,
     commands: CONTAINER_TOOLS.map((tool) => ({
       tool,
-      update: `${cli(tool)} compose pull hopper && ${cli(tool)} compose up -d --force-recreate --no-deps hopper`,
+      make: `${cli(tool)} run --rm --pull=always ${image} hopper update ${cli(tool)} > ${SCRIPT}`,
+      run: `sh ${SCRIPT}`,
       prune: `${cli(tool)} ${PRUNE}`,
     })),
     mismatch: mismatch && `this container ${runsWords(s, mismatch)}: switch the image tag`,
@@ -85,6 +93,8 @@ export function headline(s: UpdateStatus): string {
       // Installed from another channel's branch: applying moves to this channel (issue #282).
       return s.installed && s.installed.branch !== s.channel ? `Update available: move to the ${s.channel} channel` : 'Update available';
     }
+    // Not the merge of a pull request whose checks passed (issue #652): not offered, and why.
+    case 'held': return `Update held: ${s.reason ?? 'unknown'}`;
     case 'applying': return `Updating: ${s.apply?.detail ?? 'starting'}`;
     case 'error': return `Update problem: ${s.reason ?? 'unknown'}`;
     case 'unavailable': return `Self-update unavailable: ${s.reason ?? 'unknown'}`;
@@ -92,7 +102,17 @@ export function headline(s: UpdateStatus): string {
   }
 }
 
-export const showNotice = (s: UpdateStatus | null): boolean => s !== null && (s.state === 'available' || s.state === 'applying' || s.state === 'error');
+export const showNotice = (s: UpdateStatus | null): boolean => s !== null && (s.state === 'available' || s.state === 'held' || s.state === 'applying' || s.state === 'error');
+
+/**
+ * The commit the notice is about (issue #652): the channel and the short commit, and for an offered update the pull
+ * request it is the merge of, whose checks passed. None with no update or held one.
+ */
+export function targetLine(s: UpdateStatus): string | undefined {
+  if ((s.state !== 'available' && s.state !== 'held') || !s.target) return undefined;
+  const commit = `${s.target.ref} ${s.target.commit.slice(0, 7)}`;
+  return s.target.pullRequest ? `${commit} · pull request #${s.target.pullRequest.number}, checks passed` : commit;
+}
 
 export const reloadNeeded = (loadedCommit: string | undefined, s: UpdateStatus): boolean =>
   loadedCommit !== undefined && s.installed !== undefined && s.installed.commit !== loadedCommit;

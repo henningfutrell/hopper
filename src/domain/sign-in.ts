@@ -8,6 +8,26 @@ export const UI_ROLES: readonly UiRole[] = ['viewer', 'operator', 'admin'];
 /** True when `role` includes `needs`. */
 export const roleAllows = (role: UiRole, needs: UiRole): boolean => UI_ROLES.indexOf(role) >= UI_ROLES.indexOf(needs);
 
+/** The lower of two roles: what a role is capped to (an API token never acts above its minter, issue #718). */
+export const lowerRole = (a: UiRole, b: UiRole): UiRole => (roleAllows(a, b) ? b : a);
+
+/**
+ * What a session is (issue #718): a person's UI session (`ui`), or an **API token** (`api`) — a short-lived session a
+ * person or an agent acting for them mints, sent as `Authorization: Bearer <token>`, which Access decides at each use.
+ */
+export type SessionKind = 'ui' | 'api';
+/** An API token starts with this, so the API door never takes it for a GitHub token and sends it to GitHub. */
+export const API_TOKEN_PREFIX = 'hopper_at_';
+/** How long an API token lives when the mint names no length, and at most (issue #718: short-lived). */
+export const API_TOKEN_DEFAULT_MINUTES = 15;
+export const API_TOKEN_MAX_MINUTES = 60;
+
+/** An API token as it is listed: never the token. `id`: the start of the token's hash, what a revoke names. */
+/** `box`: a box token (issue #795), which alone may do box actions. */
+export interface ApiTokenView { id: string; label: string; role: UiRole; box: boolean; startedAt: string; expiresAt: string; lastUsedAt: string }
+/** A new API token: the token itself, answered once, in the answer that made it. */
+export interface ApiTokenMinted extends ApiTokenView { token: string }
+
 /** The realm types the sign-in config offers. `local` (the login code) and `none` (no sign-in) are not realms. */
 export type RealmType = 'ldap' | 'oidc' | 'github' | 'saml' | 'gateway';
 export const REALM_TYPES: readonly RealmType[] = ['ldap', 'oidc', 'github', 'saml', 'gateway'];

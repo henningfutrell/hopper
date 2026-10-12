@@ -4,7 +4,7 @@
 import type { MinorDecisionMode, MinorDecisionOption, MinorDecisionPickView, TypesafeKeyView } from './wire.ts';
 
 /** A pick as these read it: its identity and place aside. */
-type Pick = Omit<MinorDecisionPickView, 'pickId' | 'at' | 'point' | 'jobId' | 'questionId'>;
+type Pick = Omit<MinorDecisionPickView, 'pickId' | 'at' | 'point' | 'jobId' | 'questionId' | 'machineId'>;
 
 export const MODE_TEXT: Readonly<Record<MinorDecisionMode, string>> = {
   off: 'Off', shadow: 'Shadow: record only', active: 'Active: Jev decides when sure',
@@ -25,13 +25,15 @@ function fate(p: Pick): string {
     case 'shadow': return 'recorded only';
     case 'below_threshold': return `below the ${pct(p.threshold)} needed`;
     case 'consequential': return `consequential${p.consequential?.length ? ` (${p.consequential.join(', ')})` : ''}: never decided by Jev`;
+    case 'too_late': return 'too late: decided before Jev answered';
     default: return 'not applied';
   }
 }
 
 export function pickSummary(p: Pick): string {
   if (p.pick === undefined) return `no pick${p.error ? `: ${p.error}` : ''}`;
-  return `${optionText(p.options, p.pick)} at ${pct(p.confidence ?? 0)} — ${fate(p)}`;
+  const kinds = p.categories && p.categories.length > 0 ? ` (${p.categories.join(', ')})` : '';
+  return `${optionText(p.options, p.pick)}${kinds} at ${pct(p.confidence ?? 0)} — ${fate(p)}`;
 }
 
 /** What was decided after the pick; empty while it is not known. */

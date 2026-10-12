@@ -7,7 +7,7 @@ export interface YoloRow { repo: string; setting: YoloSetting; merges: boolean }
 export interface YoloDraft { on: boolean; repos: Record<string, YoloSetting> }
 export type YoloPatch = { on?: boolean; repos?: Record<string, boolean | null> };
 
-export const YOLO_WARNING = 'With yolo mode on, a job merges its own pull request once the repo\'s checks pass: no person reviews the change first. '
+export const YOLO_WARNING = 'With yolo mode on, the hopper merges a job\'s pull request once the repo\'s checks pass, or two minutes after its last push when the repo has no checks: no person reviews the change first. '
   + 'If the repo has no branch protection, nothing else stops the merge, and a merge to the default branch runs whatever it triggers there — '
   + 'a release, an image build, a deploy. Turn it on only for repos where you accept that. A job is done either way: done is its pull request, ready for review.';
 
@@ -16,13 +16,19 @@ const settingOf = (v: Pick<YoloModeView, 'repos'>, repo: string): YoloSetting =>
   return own === undefined ? 'default' : own ? 'on' : 'off';
 };
 
+/** Whether a repository's jobs merge (issue #737): its own setting, else the default. */
+export const repoMerges = (v: Pick<YoloModeView, 'on' | 'repos'>, repo: string): boolean => {
+  const setting = settingOf(v, repo);
+  return setting === 'default' ? v.on : setting === 'on';
+};
+
 /** Every job repository, then each other repository set apart (a job repository no more), with whether its jobs merge. */
 export function yoloRows(v: YoloModeView): YoloRow[] {
   const listed = new Set(v.choices.repos.map((r) => r.toLowerCase()));
   const repos = [...v.choices.repos, ...Object.keys(v.repos).filter((r) => !listed.has(r)).sort()];
   return repos.map((repo) => {
     const setting = settingOf(v, repo);
-    return { repo, setting, merges: setting === 'default' ? v.on : setting === 'on' };
+    return { repo, setting, merges: repoMerges(v, repo) };
   });
 }
 

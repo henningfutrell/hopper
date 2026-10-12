@@ -1,6 +1,6 @@
 // Item snapshots (issue #662): the text an item's first job ran with — its title, body and the assignee comments the
-// job saw —, and its SHA-256 hash. Every later job of the item runs that text; a live item whose text hashes
-// differently holds its job until a person decides (a text change). Pure.
+// job saw —, and its SHA-256 hash. Every later job of the item runs that text; a live item whose title or body differs
+// holds its job until a person decides (a text change). A new comment alone holds nothing (issue #747). Pure.
 import { createHash } from 'node:crypto';
 
 /** One comment an item's job sees (the assignee's own, on GitHub). */
@@ -9,8 +9,12 @@ export interface ItemComment { author: string; at: string; body: string }
 /** An item's text: what its job runs. */
 export interface ItemText { title: string; body: string; comments: ItemComment[] }
 
-/** How a snapshot came to be: at the item's first job, from its first job's spec by the migration, or a person accepted new text. */
-export const SNAPSHOT_REASONS = ['intake', 'backfill', 'accepted'] as const;
+/**
+ * How a snapshot came to be: at the item's first job, from its first job's spec by the migration, a person accepted new
+ * text, or a person approved the item's request card (issue #652). The last two are a person's approval of the text.
+ */
+export const SNAPSHOT_REASONS = ['intake', 'backfill', 'accepted', 'approved'] as const;
+export const APPROVED_BY_A_PERSON: readonly SnapshotReason[] = ['accepted', 'approved'];
 export type SnapshotReason = typeof SNAPSHOT_REASONS[number];
 
 /** The approved text of one source item, by its key. */
@@ -49,6 +53,11 @@ export interface OriginalKept { liveHash: string; at: string; seen: ItemText }
 export function textHash(t: ItemText): string {
   const canonical = JSON.stringify([t.title, t.body, t.comments.map((c) => [c.author, c.at, c.body])]);
   return createHash('sha256').update(canonical).digest('hex');
+}
+
+/** Whether two texts ask the same: the same title and body. Comments are no part of the ask (issue #747). */
+export function sameAsk(a: ItemText, b: ItemText): boolean {
+  return a.title === b.title && a.body === b.body;
 }
 
 /** The comments of `to` that `from` lacks: the new ones since the snapshot. */

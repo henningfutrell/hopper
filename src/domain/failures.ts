@@ -122,6 +122,9 @@ export interface Problem {
 /** What the decider reads of an open problem. */
 export interface ProblemBlock { id: string; title: string; machineId?: string; executor?: string }
 
+/** What a check reads of a problem's machine: online, its disk, its herdr (issue #741). */
+export type CauseCheck = 'online' | 'disk' | 'herdr';
+
 /** A known cause: built in, matched by its text, or named by a person for a signature. */
 export interface KnownCause {
   id: string;
@@ -131,8 +134,8 @@ export interface KnownCause {
   decision: FailureDecision;
   /** Where its problem applies: the job's machine, its executor on that machine, or every machine. */
   scope: 'machine' | 'executor' | 'all';
-  /** The check that resolves its problem by itself. */
-  check?: 'online' | 'disk';
+  /** The check that resolves its problem by itself: the machine online, its disk not low, its herdr working (issue #741). */
+  check?: CauseCheck;
   builtin: boolean;
 }
 
@@ -224,8 +227,8 @@ export type HandoffResolutionAction = typeof HANDOFF_RESOLUTIONS[number];
  * sync of the job's source, with the last error; `failed`: the source refused it for good (`writeBackError`); `none`:
  * the job has no source to tell, or its source takes no resolution.
  */
-/** The ways a person acts on failures (issue #623): the UI, or the operator CLI (`hopper problem|handoff|failure`). */
-export const ACTION_VIAS = ['ui', 'cli'] as const;
+/** The ways a person acts on failures (issue #623): the UI, the operator CLI (`hopper problem|handoff|failure`), or an API token (issue #718). */
+export const ACTION_VIAS = ['ui', 'cli', 'api'] as const;
 export type ActionVia = typeof ACTION_VIAS[number];
 /** Who acted on a problem, a hand-off or a failure (issue #623): the person the session signed in, and the way. Kept in the events. */
 export interface ActingPerson { person: string; via: ActionVia }

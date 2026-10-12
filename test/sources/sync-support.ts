@@ -74,6 +74,7 @@ export function createWorld(): World {
     store,
     // No snapshot is kept here (issue #662): nothing changed since one.
     changedSince: () => undefined,
+    answerFromThread: () => false,
     ingest(it, source) {
       calls.ingest.push(it);
       const known = store.jobs.getBySourceKey(it.key);
@@ -119,6 +120,12 @@ export function createWorld(): World {
     rerun(id, it, source) {
       const job = host.ingest(it, source) ?? store.jobs.getBySourceKey(it.key)!;
       emit('job.rerun', id, { by: 'user' });
+      return job;
+    },
+    rework(id, it, source, rework) {
+      patchJob(id, { sourceState: { ...jobs.get(id)!.sourceState, source: rework.state } });
+      const job = patchJob((host.ingest(it, source) ?? store.jobs.getBySourceKey(it.key)!).id, { rework: { pullRequest: rework.pullRequest, notes: rework.notes, at: iso() } });
+      emit('job.rework_requested', id, { pullRequest: rework.pullRequest, notes: rework.notes, nextJobId: job.id });
       return job;
     },
     continueJob(id, brief, by) {

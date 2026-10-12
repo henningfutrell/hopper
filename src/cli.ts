@@ -20,6 +20,10 @@
 //   hopper proposal list|paths|select|accept|more-paths|steer|reject …
 //                                                     the proposals' paths on the running daemon (issue #651, cli-operator.ts)
 //   hopper master-key status [--url <hopper URL>]     the master key's source and fingerprint, never the key (issue #685, cli-operator.ts)
+//   hopper master-key rotate [--url <hopper URL>]     a new master key, every secret sealed again under it; prints it once (issue #659)
+//   hopper lanes plan|tune …                          lane recommendations and a machine's lane tuning (issue #688, cli-operator-lanes.ts)
+//   hopper vault|template|sandbox …                   vault secrets (value on stdin), templates and sandbox boxes (issue #716, cli-operator-vault.ts)
+//   hopper update <tool>|compose|skill                the update of a container install, no database (issue #697, cli-update.ts)
 //   hopper help                                       what each command does
 //
 // There is no login from here (issue #238: no bootstrap login): people sign in through a realm.
@@ -41,6 +45,7 @@ import { mintJoinCode } from './machines/join-code.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { OPERATOR_COMMANDS, OPERATOR_USAGE, runOperatorAction } from './cli-operator.ts';
 import { OperatorRefusal } from './cli-operator-call.ts';
+import { runUpdate, UPDATE_USAGE } from './cli-update.ts';
 
 export interface CliIo {
   env: Record<string, string | undefined>;
@@ -65,6 +70,7 @@ usage:
   hopper ssh-key                                     the public half of the hopper's ssh key, the line a machine's
                                                      authorized_keys takes (scripts/agent-boxes.sh asks it)
 ${OPERATOR_USAGE}
+${UPDATE_USAGE}
   hopper help                                        this text
 
 The job, queue, question, problem, handoff and failure commands act on the running daemon, through its own checks
@@ -76,7 +82,7 @@ records: ${CONFIG_NAMES.join(', ')}. plugins, rules and job-rules are one user's
 in the UI too.
 --user <id> on config, ssh-key and the commands on the running daemon names the user (default: the one user, while there is one).
 
-Every command but help needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
+Every command but help and update needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
 the database the daemon uses, postgres://user:password@host:port/database.
 
 First sign-in:  sign in with GitHub in the UI; the first person to sign in with GitHub is the admin (docs/sign-in.md)
@@ -234,6 +240,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     io.out(`${USAGE}\n`);
     return 0;
   }
+  if (command === 'update') return runUpdate(rest, io);
   if (command === undefined || !COMMANDS.includes(command)) {
     io.err(`${USAGE}\n`);
     return 2;

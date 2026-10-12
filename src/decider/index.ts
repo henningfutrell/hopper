@@ -4,12 +4,16 @@ import type { Candidate, MachineState } from './assign.ts';
 import { divergence, routerVerdict } from './router-verdict.ts';
 import { idleReason, planGoneLanes, planLanes } from './lanes.ts';
 import { laneSlots } from './priority-lanes.ts';
+import { isSpecialty } from '../domain/elbow-in.ts';
 import { laneEffect, placementPressure } from './usage.ts';
 
 /** The hold of a job waiting at the queue gate (issue #159). */
 export const AWAITING_ACCEPTANCE = 'awaiting acceptance';
 /** Its item's text changed since the snapshot (issue #662): a person keeps the original, accepts the new text, or cancels it. */
 export const TEXT_CHANGED = 'its item changed since the snapshot: keep the original, accept the new text, or cancel';
+
+/** Queued before origins were judged (issue #652): nothing starts it until its issue is of a trusted origin or approved. */
+export const ORIGIN_PENDING = 'queued before trusted origins: held until its issue is judged — approve its request card in Sources, or cancel it';
 
 /** Pure: same inputs, same Decision. `inputs.at` is the clock; `decisionId` is supplied. */
 export function decide(inputs: DecisionInputs, decisionId: string): Decision {
@@ -35,7 +39,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       reasons.push(`${machine.id} ${e.executor}: ${Math.round(e.usedFrac * 100)}% used, lane cap ${e.cap} of ${machine.maxLanes} (${e.band})`);
     }
     return {
-      machine, cap, band, usedFrac, assigned: 0, overCap: 0,
+      machine, cap, band, usedFrac, assigned: 0, overCap: 0, placed: { memoryBytes: 0, cpu: 0 },
       occupied: held.length,
       problems: (inputs.problems ?? []).filter((b) => b.machineId === undefined || b.machineId === machine.id),
       // A lane whose job is unknown counts as unpinned: the reserve stays free (issue #372).
@@ -56,6 +60,11 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const advice: Divergence[] = [];
   const candidates: Candidate[] = [];
   for (const job of waiting) {
+    if (job.originPending) {
+      // Before every other judgement: no approval or acceptance starts a job whose issue nobody trusted or approved.
+      hold.push({ jobId: job.id, reason: ORIGIN_PENDING });
+      continue;
+    }
     if (job.textChange) {
       // Before every other judgement: no approval or acceptance starts a job whose item's text nobody approved.
       hold.push({ jobId: job.id, reason: TEXT_CHANGED });
@@ -87,13 +96,14 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   }
 
   if (inputs.queueOrder) reasons.push(`queue order by ${inputs.queueOrder.sorter}`);
-  const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states, policy, inputs.priorityLanes);
+  const placed = assign(order(candidates, inputs.queueOrder?.jobIds), states, policy, inputs.priorityLanes, inputs.expectedCosts, inputs.placementPicks);
   const priorityOf = new Map(inputs.running.map((j) => [j.id, j.priority]));
+  const specialty = new Set(inputs.running.filter(isSpecialty).map((j) => j.id));
 
   const taken = new Set(placed.start.map((s) => s.laneId));
   const plans = states.map((s) => {
     const unassigned = (idleByMachine.get(s.machine.id) ?? []).filter((l) => !taken.has(l.id));
-    const plan = planLanes(s, unassigned, lanes, placed.start, inputs.at, policy.laneIdleGraceMs, priorityOf);
+    const plan = planLanes(s, unassigned, lanes, placed.start, inputs.at, policy.laneIdleGraceMs, priorityOf, specialty);
     const idle = idleReason(s, hold, placed.wait);
     return idle === undefined ? plan : { ...plan, idle };
   });

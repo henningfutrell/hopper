@@ -68,18 +68,20 @@ npm run build:ui --prefix "$BUILD"
 [ -s "$BUILD/ui/dist/index.html" ] || { echo "UI build wrote no $BUILD/ui/dist/index.html" >&2; exit 1; }
 
 # The install: src/, scripts/, systemd/ (self-update installs changed units from here), ui/dist/,
-# package*.json, WHATS-NEW.md (the Updates panel's "this version"), production node_modules, install.json.
+# package*.json, WHATS-NEW.md and whats-new/ (the Updates panel's "this version"), help/ (the help pages), production node_modules, install.json.
 assemble() {
   local target="$1"
-  step "copy src/, scripts/, systemd/, ui/dist/, package.json, package-lock.json, WHATS-NEW.md to $target (replacing old ones; node_modules kept for npm ci)"
+  step "copy src/, scripts/, systemd/, ui/dist/, help/, package.json, package-lock.json, WHATS-NEW.md, whats-new/ to $target (replacing old ones; node_modules kept for npm ci)"
   mkdir -p "$target/ui"
-  rm -rf "$target/src" "$target/scripts" "$target/systemd" "$target/ui/dist"
+  rm -rf "$target/src" "$target/scripts" "$target/systemd" "$target/ui/dist" "$target/help" "$target/whats-new"
   cp -r "$APP_DIR/src" "$target/src"
   cp -r "$BUILD/ui/dist" "$target/ui/dist"
   cp -r --preserve=mode "$APP_DIR/scripts" "$target/scripts"
   cp -r "$APP_DIR/systemd" "$target/systemd"
+  cp -r "$APP_DIR/help" "$target/help"
   cp "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$target/"
   cp "$APP_DIR/WHATS-NEW.md" "$target/"
+  cp -r "$APP_DIR/whats-new" "$target/whats-new"
 
   step "npm ci --omit=dev --prefix $target"
   npm ci --omit=dev --prefix "$target"
@@ -122,10 +124,10 @@ if [ -z "$(env_line HOPPER_DATABASE_URL)" ] && [ -z "$(env_line HOPPER_DATABASE_
   fi
 fi
 # The master key (issue #659, docs/deploy.md "The master key") is not made here: the daemon makes one at its first
-# start and shows it once, in its log and in the UI, to be saved and then given as HOPPER_MASTER_KEY in daemon.env.
+# start and shows it once, in the UI only (never in its log), to be saved and then given as HOPPER_MASTER_KEY in daemon.env.
 # A HOPPER_TOKEN_KEY line from before is read until then, and the daemon says to rename it.
 [ -n "$(env_line HOPPER_MASTER_KEY)" ] || [ -n "$(env_line HOPPER_TOKEN_KEY)" ] \
-  || echo "the master key: the first start makes one; save it from journalctl --user -u hopper, then add HOPPER_MASTER_KEY=<it> to $ENV_FILE"
+  || echo "the master key: the first start makes one; save it from the UI banner (Show the key (once)), then add HOPPER_MASTER_KEY=<it> to $ENV_FILE"
 chmod 600 "$ENV_FILE"
 
 # The operator CLI against the daemon's database, given the way daemon.env gives it.

@@ -1,11 +1,11 @@
-// The UI session's actions on one job: cancel, approve, operator-led, reject, run again, park and re-queue
+// The UI session's actions on one job: cancel, approve, operator-led, reject, run again, rework (issue #724), park and re-queue
 // (issue #501), end its own wait (issue #483), dismiss, mark cleaned up; for a job held because its item changed since
 // the snapshot (issue #662), keep the original text, or accept the new text — the owner only, as Access decides. Least role: operator.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpError, parseWith } from '../errors.ts';
 import type { TenantParts } from '../tenants.ts';
-import { endWaitBody, rejectBody, requeueBody } from './job-bodies.ts';
+import { endWaitBody, rejectBody, requeueBody, reworkBody } from './job-bodies.ts';
 import type { Access } from '../../authz/service.ts';
 import { signedInOf } from '../tenants.ts';
 import { actingOf } from './sessions.ts';
@@ -32,6 +32,13 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
     if (r.ok) return r.job;
     throw new HttpError(RERUN_STATUS[r.reason], r.message);
   });
+  app.post('/ui/api/jobs/:id/rework', o.operator, async (req) => {
+    const { notes } = parseWith(reworkBody, req.body ?? {});
+    const s = signedInOf(req);
+    const r = await o.tenant(req).registry.rework(parseWith(idParams, req.params).id, notes, s ? actingOf(s) : undefined);
+    if (r.ok) return r.job;
+    throw new HttpError(RERUN_STATUS[r.reason], r.message);
+  });
   app.post('/ui/api/jobs/:id/park', o.operator, async (req) => o.tenant(req).engine.park(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/requeue', o.operator, async (req) => o.tenant(req).engine.requeue(parseWith(idParams, req.params).id, parseWith(requeueBody, req.body ?? {})));
   app.post('/ui/api/jobs/:id/end-wait', o.operator, async (req) => {
@@ -39,7 +46,7 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
     return o.tenant(req).engine.endWait(parseWith(idParams, req.params).id, note || undefined);
   });
   app.post('/ui/api/jobs/:id/keep-original', o.operator, async (req) =>
-    o.tenant(req).engine.keepOriginalText(parseWith(idParams, req.params).id, actingOf(signedIn(req).identity)));
+    o.tenant(req).engine.keepOriginalText(parseWith(idParams, req.params).id, actingOf(signedIn(req))));
   app.post('/ui/api/jobs/:id/accept-new-text', o.operator, async (req) => {
     const s = signedIn(req);
     const t = o.tenant(req);
@@ -49,7 +56,7 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
     // The item is the hopper's user's whose jobs these are: Access decides whether the person signed in may accept for them.
     const d = await o.access.decideTextAcceptance(s.userId, { ownerId: s.userId, key: job.source.key });
     if (!d.allowed) throw new HttpError(403, `accepting the new text is refused: ${d.reason}`);
-    return t.engine.acceptNewText(job.id, actingOf(s.identity));
+    return t.engine.acceptNewText(job.id, actingOf(s));
   });
   app.post('/ui/api/jobs/:id/dismiss', o.operator, async (req) => o.tenant(req).engine.dismiss(parseWith(idParams, req.params).id));
   app.post('/ui/api/jobs/:id/cleaned-up', o.operator, async (req) => o.tenant(req).engine.markCleanedUp(parseWith(idParams, req.params).id));

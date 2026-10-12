@@ -30,6 +30,8 @@ export interface Config {
   laneIdleGraceMs: number;
   /** How long restart recovery waits for a running job's machine to answer before failing the job (issue #368). */
   reconnectGraceMs: number;
+  /** How long a running job is held once its machine's link drops, before it fails (issue #752). */
+  linkGraceMs: number;
   /** How long a done job its source finds not done waits before it is asked again (issue #637). */
   doneRecheckMs: number;
   /** The question service's ceiling per stage (answer, assess), whatever a plugin's own timeout says. */
@@ -48,6 +50,8 @@ export interface Config {
   pluginStore?: string;
   /** The URL people reach the UI at through a reverse proxy (origin only), or undefined. The sign-in origin when set. */
   publicUrl: string | undefined;
+  /** HOPPER_TUNNEL_API (issue #795): the tunnel agent's local API, asked whether HOPPER_PUBLIC_URL is up. */
+  tunnelApi?: string;
   /** Host names the UI answers to on the LAN (lowercase, no port); empty: loopback only. */
   lanNames: string[];
   /** CIDR ranges a LAN request may come from. */
@@ -72,6 +76,10 @@ export interface Config {
   kms?: { url: string; key: string };
   /** The rootless Podman API socket the hopper starts sandbox boxes through (issue #603); unset: it starts none. */
   podmanSocket?: string;
+  /** The rootless Docker Engine API socket (issue #708): used when Podman is not given or not reached, or chosen. */
+  dockerSocket?: string;
+  /** The container runtime chosen (issue #708); unset: Podman whenever it is reachable (src/sandbox/runtime.ts). */
+  sandboxRuntime?: 'podman' | 'docker';
   /** The network the boxes it starts join; unset: `hopper_default` in the container, `host` on the host. */
   sandboxNetwork?: string;
 }
@@ -93,6 +101,7 @@ const publicUrl = z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' 
   .transform((u) => new URL(u).origin);
 const schema = z.object({
   HOPPER_PUBLIC_URL: publicUrl.optional(),
+  HOPPER_TUNNEL_API: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL (http://tunnel:4040)' }).optional(),
   // Loopback, plus the LAN names when set (AGENTS.md, design.md "Reaching the UI across the LAN").
   HOPPER_LAN_NAMES: list(lanName),
   HOPPER_LAN_PEERS: list(lanPeer),
@@ -110,6 +119,7 @@ const schema = z.object({
   HOPPER_WEBHOOK_BASE_MS: int(1).default(1000),
   HOPPER_LANE_IDLE_GRACE_MS: int(0).default(5000),
   HOPPER_RECONNECT_GRACE_MS: int(0).default(120000),
+  HOPPER_LINK_GRACE_MS: int(0).default(600000),
   HOPPER_DONE_RECHECK_MS: int(0).default(60000),
   HOPPER_ANSWER_TIMEOUT_MS: int(1).default(180000),
   HOPPER_HUMAN_RENOTIFY_MS: int(1).default(900000),
@@ -131,12 +141,17 @@ const schema = z.object({
   HOPPER_KMS_KEY: z.string().min(1).max(256).default(DEFAULT_KMS_KEY),
   HOPPER_PODMAN_SOCKET: z.string().regex(/^\//, 'must be an absolute path: the Podman API socket').optional(),
   HOPPER_SANDBOX_NETWORK: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/, 'must be a Podman network name, or host').optional(),
+  HOPPER_DOCKER_SOCKET: z.string().regex(/^\//, 'must be an absolute path: the Docker Engine API socket').optional(),
+  HOPPER_SANDBOX_RUNTIME: z.enum(['podman', 'docker']).optional(),
 }).refine((e) => e.HOPPER_SOFT_LIMIT < e.HOPPER_HARD_LIMIT, {
   message: 'must be below HOPPER_HARD_LIMIT',
   path: ['HOPPER_SOFT_LIMIT'],
 }).refine((e) => e.HOPPER_LAN_NAMES.length === 0 || e.HOPPER_LAN_PEERS.length > 0, {
   message: 'must be set with HOPPER_LAN_NAMES: the ranges LAN requests may come from',
   path: ['HOPPER_LAN_PEERS'],
+}).refine((e) => e.HOPPER_TUNNEL_API === undefined || e.HOPPER_PUBLIC_URL !== undefined, {
+  message: 'needs HOPPER_PUBLIC_URL: the URL the tunnel forwards',
+  path: ['HOPPER_TUNNEL_API'],
 }).refine((e) => e.HOPPER_LAN_PEERS.length === 0 || e.HOPPER_LAN_NAMES.length > 0 || e.HOPPER_PUBLIC_URL !== undefined, {
   message: 'must be set with HOPPER_LAN_PEERS (or set HOPPER_PUBLIC_URL): the names the UI answers to beyond loopback',
   path: ['HOPPER_LAN_NAMES'],
@@ -147,6 +162,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_DATABASE_URL: 'the Postgres database that holds everything: postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]. Or HOPPER_DATABASE_URL_FILE: a file holding it',
   HOPPER_PORT: 'the HTTP port of the UI, the API and the API reference',
   HOPPER_PUBLIC_URL: 'the origin people reach the UI at through a reverse proxy (https://hopper.example.com); a proxy on another host also needs HOPPER_LAN_PEERS',
+  HOPPER_TUNNEL_API: 'the local API of the tunnel agent that forwards HOPPER_PUBLIC_URL (http://tunnel:4040, the compose profile `tunnel`), asked whether that URL is up; a Grok Bot routine is told where the hopper is reached. Unset: no tunnel',
   HOPPER_LAN_NAMES: 'host names the UI answers to on the LAN, comma-separated; needs HOPPER_LAN_PEERS. Unset: loopback only',
   HOPPER_LAN_PEERS: 'CIDR ranges LAN or proxy requests may come from, comma-separated (192.0.2.0/24); binds every interface',
   HOPPER_WORK_DIR: 'scratch space: working files, ssh control sockets. Nothing kept',
@@ -162,6 +178,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_WEBHOOK_BASE_MS: 'first webhook retry delay; doubles each retry',
   HOPPER_LANE_IDLE_GRACE_MS: 'how long an idle lane stays open',
   HOPPER_RECONNECT_GRACE_MS: 'after a restart, how long a running job waits for its machine to answer (a client to dial in, an ssh target to reply) before it fails',
+  HOPPER_LINK_GRACE_MS: 'once a running job\'s machine link drops, how long the job is held on its lane for the link to come back before it fails',
   HOPPER_DONE_RECHECK_MS: 'a job that ended done whose source finds it not done is asked again after this long (GitHub may not show a new pull request at once) before it fails; 0: at once',
   HOPPER_ANSWER_TIMEOUT_MS: 'ceiling per escalation level\'s call on a question',
   HOPPER_HUMAN_RENOTIFY_MS: 'how often an unanswered question is notified again',
@@ -180,7 +197,9 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_KMS_URL: 'a local KMS the vault\'s data key is wrapped by (http://kms:8080, the compose profile `kms`), read where the vault runs. Unset: the vault seals under HOPPER_MASTER_KEY',
   HOPPER_KMS_KEY: 'the KMS key, by id or alias, that wraps the vault\'s data key; an alias the KMS lacks is made',
   HOPPER_PODMAN_SOCKET: 'the rootless Podman API socket the hopper starts, stops and removes sandbox boxes through (/run/podman/podman.sock in the container: docs/deploy.md "Sandbox boxes the hopper starts"). Unset: Add machine shows the line to run instead',
-  HOPPER_SANDBOX_NETWORK: 'the Podman network the boxes the hopper starts join. Unset: hopper_default in the container (HOPPER_LOCAL_MACHINE=false), host on the host',
+  HOPPER_SANDBOX_NETWORK: 'the network the boxes the hopper starts join. Unset: hopper_default in the container (HOPPER_LOCAL_MACHINE=false), host on the host',
+  HOPPER_DOCKER_SOCKET: 'a rootless Docker Engine API socket the hopper starts sandbox boxes through when Podman is not given or not reached, or when HOPPER_SANDBOX_RUNTIME=docker. Unset: Docker is not used',
+  HOPPER_SANDBOX_RUNTIME: 'podman or docker: the container runtime the hopper starts sandbox boxes through. Unset: Podman whenever it is reachable, else Docker',
 };
 
 /** Every setting the daemon reads: name, default (`required`, `unset` or the value), what it does. */
@@ -292,6 +311,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     webhookBaseMs: e.HOPPER_WEBHOOK_BASE_MS,
     laneIdleGraceMs: e.HOPPER_LANE_IDLE_GRACE_MS,
     reconnectGraceMs: e.HOPPER_RECONNECT_GRACE_MS,
+    linkGraceMs: e.HOPPER_LINK_GRACE_MS,
     doneRecheckMs: e.HOPPER_DONE_RECHECK_MS,
     answerTimeoutMs: e.HOPPER_ANSWER_TIMEOUT_MS,
     humanRenotifyMs: e.HOPPER_HUMAN_RENOTIFY_MS,
@@ -303,6 +323,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     ...(e.HOPPER_PLUGIN_DIR ? { pluginDir: e.HOPPER_PLUGIN_DIR } : {}),
     ...(e.HOPPER_PLUGIN_STORE ? { pluginStore: e.HOPPER_PLUGIN_STORE } : {}),
     publicUrl: e.HOPPER_PUBLIC_URL,
+    ...(e.HOPPER_TUNNEL_API ? { tunnelApi: e.HOPPER_TUNNEL_API } : {}),
     lanNames: e.HOPPER_LAN_NAMES,
     lanPeers: e.HOPPER_LAN_PEERS,
     updateCheckMs: e.HOPPER_UPDATE_CHECK_MS,
@@ -312,6 +333,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     ...(e.HOPPER_KMS_URL ? { kms: { url: e.HOPPER_KMS_URL, key: e.HOPPER_KMS_KEY } } : {}),
     ...(e.HOPPER_PODMAN_SOCKET ? { podmanSocket: e.HOPPER_PODMAN_SOCKET } : {}),
     ...(e.HOPPER_SANDBOX_NETWORK ? { sandboxNetwork: e.HOPPER_SANDBOX_NETWORK } : {}),
+    ...(e.HOPPER_DOCKER_SOCKET ? { dockerSocket: e.HOPPER_DOCKER_SOCKET } : {}),
+    ...(e.HOPPER_SANDBOX_RUNTIME ? { sandboxRuntime: e.HOPPER_SANDBOX_RUNTIME } : {}),
     leftoverEnv,
     hopperApps: hopperApps({
       github: {

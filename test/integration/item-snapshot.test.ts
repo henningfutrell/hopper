@@ -21,11 +21,12 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function boot(gh: FakeGitHub, o: { openFga?: boolean } = {}) {
+async function boot(gh: FakeGitHub, o: { server?: ReturnType<typeof createFakeAuthorizationServer> } = {}) {
   const db = tempDbPath();
   cleanup = db.cleanup;
   const plugins = { jobSources: [{ name: 'github', plugin: 'github-account', options: { enabled: true, pollSeconds: 3600, executor: 'scripted' } }] };
-  const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh, ...(o.openFga ? { authorizationServer: createFakeAuthorizationServer() } : {}) }, plugins });
+  // OpenFGA (issue #652): the issue is of a trusted origin only when it can be asked.
+  const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh, authorizationServer: o.server ?? createFakeAuthorizationServer() }, plugins });
   apps.push(a);
   connectGitHub(a, [REPO]);
   return a;
@@ -62,6 +63,29 @@ describe('Item snapshots (issue #662)', () => {
     expect(await a.events('types=item.changed_since_snapshot')).toEqual([]);
     // One snapshot per item: a rerun records none.
     expect(await a.events('types=item.snapshot_recorded')).toHaveLength(1);
+  });
+
+  it('a comment alone is no change (issue #747): Run again and an item offered again run at once with the snapshot', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const token = await a.login();
+    const { issue, first, jobsFor } = await failedOnce(gh, a);
+    gh.addComment(REPO, issue.number, 'owner', 'Status ping.');
+
+    const r = await a.ui<Job>(`/ui/api/jobs/${first.id}/rerun`, {}, { token });
+    expect(r.status).toBe(200);
+    expect(r.body.textChange).toBeUndefined();
+    const second = await a.waitForStatus(r.body.id, 'failed');
+    expect(second.error).toBe('original text ran');
+
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed again' });
+    gh.addComment(REPO, issue.number, 'owner', 'Design notes.');
+    gh.removeLabel(REPO, issue.number, 'hopper:failed');
+    await a.sync();
+    const third = await waitFor(async () => (await jobsFor()).find((j) => j.id !== first.id && j.id !== r.body.id), { what: 'the third job' });
+    expect(third.textChange).toBeUndefined();
+    expect((await a.waitForStatus(third.id, 'failed')).error).toBe('original text ran');
+    expect(await a.events('types=item.changed_since_snapshot')).toEqual([]);
   });
 
   it('an issue edited after a failed run: Run again holds the new job with the change shown, never runs the edited text; Rerun the original runs the snapshot', async () => {
@@ -101,7 +125,7 @@ describe('Item snapshots (issue #662)', () => {
 
   it('Accept the new text, as the owner Access allows: a new snapshot is recorded and the job runs the new text', async () => {
     const gh = createFakeGitHub();
-    const a = await boot(gh, { openFga: true });
+    const a = await boot(gh);
     const token = await a.login();
     const { issue, first } = await failedOnce(gh, a);
     gh.editIssue(REPO, issue.number, { body: EDITED }, 'owner');
@@ -129,18 +153,20 @@ describe('Item snapshots (issue #662)', () => {
     expect(again.body.spec.payload.body).toBe(EDITED);
   });
 
-  it('without owner rights through Access — no OpenFGA to ask — the new text cannot be accepted, from the UI or the CLI\'s route', async () => {
+  it('without owner rights through Access — OpenFGA cannot be asked — the new text cannot be accepted, from the UI or the CLI\'s route', async () => {
     const gh = createFakeGitHub();
-    const a = await boot(gh);
+    const server = createFakeAuthorizationServer();
+    const a = await boot(gh, { server });
     const token = await a.login();
     const { issue, first } = await failedOnce(gh, a);
+    server.reachable = false;
     gh.editIssue(REPO, issue.number, { body: EDITED }, 'someone-else');
     const r = await a.ui<Job>(`/ui/api/jobs/${first.id}/rerun`, {}, { token });
     await waitFor(async () => (await job(a, r.body.id)).textChange, { what: 'held for the change' });
 
     const refused = await a.ui<{ error: string }>(`/ui/api/jobs/${r.body.id}/accept-new-text`, {}, { token });
     expect(refused.status).toBe(403);
-    expect(refused.body.error).toMatch(/OpenFGA is not set up/);
+    expect(refused.body.error).toMatch(/OpenFGA cannot be asked/);
     const still = await job(a, r.body.id);
     expect(still.textChange).toBeDefined();
     expect(still.spec.payload.body).toBe(ORIGINAL);

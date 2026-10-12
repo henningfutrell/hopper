@@ -81,6 +81,25 @@ export function artifactName(name: string): string {
   return base === '' || base === '.' || base === '..' ? 'artifact' : base;
 }
 
+/** A title's prefix: the text before its first colon, else all of it; lower case, spaces made one. */
+const titlePrefix = (title: string): string => (title.split(':')[0] ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+/** The issue references a title names: `#662`. */
+const issueRefs = (title: string): string[] => title.match(/#\d+\b/g) ?? [];
+
+/**
+ * Issue #687: the artifact of the user's that a new put looks like a revision of — the same file name, the same title
+ * prefix, or an issue reference both titles name —, newest first; undefined: none. Pure.
+ */
+export function lookAlike(put: { name: string; title: string }, artifacts: readonly Artifact[]): Artifact | undefined {
+  const prefix = titlePrefix(put.title);
+  const refs = issueRefs(put.title);
+  return artifacts.find((a) => a.name === put.name || (prefix !== '' && titlePrefix(a.title) === prefix) || issueRefs(a.title).some((r) => refs.includes(r)));
+}
+
+/** What a put that looks like a revision of `a` is told (issue #687). */
+export const lookAlikeWarning = (a: Pick<Artifact, 'id' | 'title'>): string =>
+  `looks like a revision of ${a.id} '${a.title}': pass --to ${a.id}, or --new to keep it separate`;
+
 export const ARTIFACT_TITLE_MAX = 200;
 export const ARTIFACT_SUMMARY_MAX = 300;
 export const ARTIFACT_NOTE_MAX = 300;

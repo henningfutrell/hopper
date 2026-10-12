@@ -64,7 +64,7 @@ describe('artifacts (issue #624)', () => {
     });
     expect(out.artifact.sha256).toMatch(/^[0-9a-f]{64}$/);
 
-    const text = await artifact(a, job, ['put', 'chart.html', '--summary', 'Queue wait by hour'], { cwd: dir });
+    const text = await artifact(a, job, ['put', 'chart.html', '--summary', 'Queue wait by hour', '--new'], { cwd: dir });
     expect(text.code).toBe(0);
     expect(text.stdout).toMatch(/^put: [0-9a-f-]{36} {2}chart\.html {2}text\/html {2}\d+ bytes\nurl: http:\/\/127\.0\.0\.1:\d+\/#artifacts\/[0-9a-f-]{36}\n$/);
 

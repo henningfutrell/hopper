@@ -4,7 +4,7 @@
 // for. A read profile is low; a write, sync or apply profile is high, approved or not. A vault secret is a credential
 // whose reach the hopper cannot see: it counts as an unconfirmed reach, by the rules.
 import {
-  RADIUS_LEVELS, type OperationProfile, type RadiusLevel, type RadiusRules, type TemplateProfileRadius, type TemplateRadius,
+  DEFAULT_BLAST_RADIUS_SETTINGS, RADIUS_LEVELS, type OperationProfile, type RadiusLevel, type RadiusRules, type TemplateProfileRadius, type TemplateRadius,
 } from '../domain/types.ts';
 import { prodName, reachLevel } from './rate.ts';
 
@@ -49,4 +49,16 @@ export function rateTemplate(scope: TemplateScope, approved: readonly OperationP
   if (lines.length === 0) return { level: 'low', reasons: ['no operation profiles or vault secrets in scope'], profiles };
   const level = RADIUS_LEVELS[Math.max(...lines.map((l) => RADIUS_LEVELS.indexOf(l.level)))]!;
   return { level, reasons: lines.filter((l) => l.level === level).map((l) => l.reason), profiles };
+}
+
+const rank = (r: TemplateRadius): number => RADIUS_LEVELS.indexOf(r.level);
+
+/**
+ * A template's rating as Settings → Access shows it: from its approvals and each vault template of its name (`scopes`);
+ * the highest when users' templates share it, and the default rules when none does.
+ */
+export function templateRadius(template: string, approved: OperationProfile[], scopes: { name: string; scope: TemplateScope; rules: RadiusRules }[]): TemplateRadius {
+  const mine = scopes.filter((s) => s.name === template);
+  const rated = mine.length ? mine.map((s) => rateTemplate(s.scope, approved, s.rules)) : [rateTemplate({ secrets: [], profiles: [] }, approved, DEFAULT_BLAST_RADIUS_SETTINGS.rules)];
+  return rated.reduce((a, b) => (rank(b) > rank(a) ? b : a));
 }

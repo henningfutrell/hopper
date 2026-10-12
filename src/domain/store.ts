@@ -5,14 +5,16 @@ import type { AccessRepository } from './access.ts';
 import type { JobStreamRepository } from './job-stream.ts';
 import type { ArtifactRepository } from './artifacts.ts';
 import type { VaultRepository } from './vault.ts';
+import type { SandboxRecord } from './sandboxes.ts';
 import type { ItemSnapshot } from './item-snapshots.ts';
+import type { VaultGrant } from './vault-grants.ts';
+import type { BugReportRepository } from './bug-reports.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
-import type {
-  DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
-  Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User,
-  UsageSample, UsageSeries, UsageTotalSeries, FailureOutcome, FailureRecord, Handoff, Problem,
-} from './types.ts';
-import type { ConnectedAccountProvider, MachineSample, ResourceSeries } from './types.ts';
+import type { DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
+  Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User, UsageSample, UsageSeries, UsageTotalSeries, GitHubWatchRepository, PointedJobRepository, FailureOutcome, FailureRecord, Handoff, Problem, ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries } from './types.ts';
+
+// Report a bug (issue #694): its repository sits beside its record.
+export type { BugReportRepository } from './bug-reports.ts';
 
 export type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
 export type { VaultRepository } from './vault.ts';
@@ -23,7 +25,7 @@ export interface JobFilter {
   status?: JobStatus[];
   /** Only the jobs with no failure assessment (issue #517). */
   unassessed?: boolean;
-  /** Only the jobs whose pull request is followed, open or closed without a merge (issue #637: the Pull requests list). */
+  /** Only the jobs whose pull request is followed, open or closed without a merge (issue #637: the Pull requests list), or handed to a tend job (issue #763). */
   followed?: boolean;
   limit?: number;
 }
@@ -68,6 +70,8 @@ export interface EventLog {
   recent(limit?: number, types?: EventType[]): DomainEvent[];
   /** Events of these types at or after `since` (ISO), oldest first (issue #535: lane reliability). */
   between(types: readonly EventType[], since: string): DomainEvent[];
+  /** The newest event of each of these jobs that has one, one per job (issue #434: the Jobs view's last event). */
+  lastOfJobs(jobIds: readonly string[]): DomainEvent[];
   subscribe(listener: (event: DomainEvent) => void): () => void;
 }
 
@@ -161,6 +165,15 @@ export interface FailureRepository {
 }
 
 /** The hand-offs (issue #516): failed jobs waiting on a person. */
+/** The vault grants (issue #652), one row per item key: a person's grant of the vault to that item's jobs. */
+export interface VaultGrantRepository {
+  get(key: string): VaultGrant | undefined;
+  list(): VaultGrant[];
+  put(grant: VaultGrant): VaultGrant;
+  /** Whether there was one to remove. */
+  remove(key: string): boolean;
+}
+
 /** The approved text of each source item (issue #662), one row per item key: the newest snapshot replaces the one before. */
 export interface ItemSnapshotRepository {
   get(key: string): ItemSnapshot | undefined;
@@ -202,6 +215,8 @@ export interface UsageHistoryQuery {
   to: Date;
   stepMs: number;
   originMs: number;
+  /** Only the usage that limits this machine: its own readings and those of a budget every machine shares (issue #688). */
+  limiting?: string;
 }
 
 /** One user's lines of one unit and usage window, summed per graph step: summed again over every user for the instance usage totals. */
@@ -222,7 +237,7 @@ export interface UsageHistoryRepository {
 }
 
 /** The resource graph's query (issue #560): the usage graph's, and the one machine when it asks for one. */
-export interface MachineHistoryQuery extends UsageHistoryQuery {
+export interface MachineHistoryQuery extends Omit<UsageHistoryQuery, 'limiting'> {
   machineId?: string;
 }
 
@@ -232,6 +247,10 @@ export interface MachineHistoryRepository {
   record(samples: readonly MachineSample[]): number;
   /** The resource graph's lines over [from, to), ordered by machine and resource. */
   series(q: MachineHistoryQuery): ResourceSeries[];
+  /** Lane load over [from, to): per machine and lanes in use, ordered by machine and lanes in use (issue #688). */
+  laneLoad(q: { from: Date; to: Date; pressure: ResourcePressure }): LaneLoad[];
+  /** The job runs that ended in [from, to), with what the machine and usage samples in each show (issue #688). */
+  jobRuns(q: { from: Date; to: Date }): JobRun[];
   /** Delete the samples older than `before`; how many. */
   prune(before: Date): number;
 }
@@ -246,6 +265,8 @@ export interface MachineHistoryRepository {
 export interface UiSessionRow {
   tokenHash: string; startedAt: string; lastSeenAt: string; checkedAt: string; endsAt?: string;
   role: UiRole; identity: Identity; userId: string;
+  /** An API token (issue #718) and its label; absent: a UI session. `box`: a box token (issue #795). */
+  kind?: 'api'; label?: string; box?: true;
 }
 
 /** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. Which have ended is the caller's to decide. */
@@ -284,6 +305,16 @@ export interface JoinCodeRepository {
   take(codeHash: string, now: string): ({ userId: string } & JoinCodePlace) | undefined;
   /** The sandbox boxes live codes name (issue #603): launched, not joined yet. */
   waiting(now: string): string[];
+}
+
+/** The sandbox records (issue #708, instance migration 34): one per sandbox box the hopper launched, by id; names are unique. */
+export interface SandboxRepository {
+  list(): SandboxRecord[];
+  get(id: string): SandboxRecord | undefined;
+  /** False when a record of that id or name exists. */
+  add(record: SandboxRecord): boolean;
+  update(record: SandboxRecord): void;
+  remove(id: string): boolean;
 }
 
 /**
@@ -453,6 +484,14 @@ export interface UserStore {
   problems: ProblemRepository;
   handoffs: HandoffRepository;
   itemSnapshots: ItemSnapshotRepository;
+  vaultGrants: VaultGrantRepository;
+  bugReports: BugReportRepository;
+  /** The issue graph (issue #437): store only, nothing reads it yet. */
+  issueGraph: import('./issue-graph.ts').IssueGraphRepository;
+  /** Pointed jobs (issue #425). */
+  pointedJobs: PointedJobRepository;
+  /** GitHub watches (issue #427): each pointed job's last snapshot. */
+  githubWatches: GitHubWatchRepository;
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;
@@ -471,12 +510,20 @@ export interface KeptSecrets {
   tokens: readonly string[];
 }
 
+/** What a master key rotation sealed again, and how many values an old key sealed that do not open (left as they were). */
+export interface MasterKeyResealed {
+  resealed: number;
+  unreadable: number;
+}
+
 export interface InstanceStore {
   users: UserRepository;
   identities: IdentityLinks;
   uiSessions: UiSessionRepository;
   loginCodes: LoginCodeRepository;
   joinCodes: JoinCodeRepository;
+  /** The sandbox records (issue #708). */
+  sandboxes: SandboxRepository;
   /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */
   config: ConfigRecords<InstanceConfigName>;
   /** The sign-in config: the `sign-in` record with the password accounts. */
@@ -490,6 +537,12 @@ export interface InstanceStore {
   userStore(user: User): UserStore;
   /** What the users' schemas keep sealed under the master key (issue #659); a vault a KMS data key seals is left out. */
   keptSecrets(): KeptSecrets;
+  /**
+   * The master key rotation (issue #659): in one transaction, every value `from` sealed, in every schema, sealed again
+   * under `to`, its new fingerprint recorded, and the rotation. A value no `from` key sealed is left; one that does not
+   * open is counted, and left. Throws, and changes nothing, when a write fails.
+   */
+  rotateMasterKey(o: { from: { key: string; previous: readonly string[] }; to: string }): MasterKeyResealed;
   /** Take the daemon lock on this database for this store's life: false when another process holds it (a running daemon). */
   holdDaemonLock(): boolean;
   tx<T>(fn: () => T): T;

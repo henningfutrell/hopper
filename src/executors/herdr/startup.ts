@@ -59,7 +59,7 @@ export async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: Pane
       if (step && ('ask' in step || count >= MAX_STARTUP_SCREENS)) return null;
       if (step) {
         await d.herdr.sendKeys(s.paneId, step.keys);
-        ctx.progress(0, step.did);
+        ctx.progress(step.did);
         answered = screen;
         count++;
         quiet = undefined;
@@ -82,6 +82,6 @@ export async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: Pane
 export async function seedClaudeConfig(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<void> {
   await d.herdr.runInPane(s.paneId, seedClaudeConfigCommand(s.cwd, d.trustWorkdir, d.yolo));
   const { found } = await awaitOnScreen(d, ctx, s.paneId, CLAUDE_CONFIG_MARK, claudeConfigOutcome, SEED_WAIT_MS);
-  if (found === 'seeded') ctx.progress(0, "seeded claude's config: the machine had none");
-  if (found === 'unwritable') ctx.progress(0, "claude's config could not be seeded: its startup screens get their defaults");
+  if (found === 'seeded') ctx.progress("seeded claude's config: the machine had none");
+  if (found === 'unwritable') ctx.progress("claude's config could not be seeded: its startup screens get their defaults");
 }

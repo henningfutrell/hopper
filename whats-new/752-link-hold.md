@@ -1,0 +1,1 @@
+- A running job no longer fails when its box loses the link to the hopper for up to 10 minutes. The job waits on its lane, shows when it fails if the link does not come back, and goes on by itself when the link is back. The machine's card shows since when the machine is out of reach and how many jobs wait for it. A dead link is now found in seconds.

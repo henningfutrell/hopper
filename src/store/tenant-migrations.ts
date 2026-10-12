@@ -24,7 +24,15 @@ import { collapseFloodedLogins } from './migration-login-flood.ts';
 import { raisedByBackfill } from './migration-raised-by.ts';
 import { JOB_STREAM_TABLES } from './migration-job-stream.ts';
 import { ARTIFACT_REVISION_TABLES, ARTIFACT_TABLES } from './migration-artifacts.ts';
+import { BUG_REPORT_TABLE } from './bug-reports.ts';
+import { ISSUE_GRAPH_TABLES } from './issue-graph.ts';
+import { POINTED_JOB_TABLE } from './pointed-jobs.ts';
+import { GITHUB_WATCH_TABLE } from './github-watches.ts';
 import { itemSnapshotsBackfill } from './migration-item-snapshots.ts';
+import { commentHoldsReleased } from './migration-comment-holds.ts';
+import { originPendingBackfill } from './migration-origin-pending.ts';
+import { laneRecommendationsOnly } from './migration-lane-recommendations.ts';
+import { VAULT_GRANT_TABLE } from './vault-grants.ts';
 import { newerStore } from './migrations.ts';
 
 type Migration = string | ((db: Db) => void);
@@ -46,13 +54,7 @@ const TENANT_BASE = `
   );
   CREATE INDEX jobs_status ON jobs (status);
   CREATE INDEX jobs_source_key ON jobs (source_key);
-  CREATE TABLE lanes (
-    id TEXT PRIMARY KEY,
-    machine_id TEXT NOT NULL,
-    number INTEGER NOT NULL,
-    body TEXT NOT NULL,
-    UNIQUE (machine_id, number)
-  );
+  CREATE TABLE lanes (id TEXT PRIMARY KEY, machine_id TEXT NOT NULL, number INTEGER NOT NULL, body TEXT NOT NULL, UNIQUE (machine_id, number));
   CREATE TABLE decisions (
     seq BIGSERIAL PRIMARY KEY,
     id TEXT NOT NULL UNIQUE,
@@ -314,20 +316,10 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   collapseFloodedLogins,
   // 28: The vault (issue #558): each secret's sealed value (`sealed`, never read into its metadata) beside its metadata.
   // A table only: the build before runs on it.
-  `CREATE TABLE vault_secrets (
-    seq BIGSERIAL PRIMARY KEY,
-    id TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL UNIQUE,
-    sealed TEXT NOT NULL,
-    body TEXT NOT NULL
-  )`,
+  'CREATE TABLE vault_secrets (seq BIGSERIAL PRIMARY KEY, id TEXT NOT NULL UNIQUE, name TEXT NOT NULL UNIQUE, sealed TEXT NOT NULL, body TEXT NOT NULL)',
   // 29: Templates (issue #558): an image and the vault secrets its boxes may ask for, with its last approval, in its
   // body. A table only: the build before runs on it.
-  `CREATE TABLE templates (
-    seq BIGSERIAL PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,
-    body TEXT NOT NULL
-  )`,
+  'CREATE TABLE templates (seq BIGSERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, body TEXT NOT NULL)',
   // 30: done is always a pull request ready for review (issue #579): the GitHub sources' `completion` option goes.
   // The build before reads a source with none as its old default.
   noCompletion,
@@ -341,11 +333,28 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   noOpusLevel,
   // 34: Artifacts (issue #624): what jobs make for a person to see, their content, and their shares.
   ARTIFACT_TABLES,
-  // 35: Item snapshots (issue #662): the approved text of each source item, backfilled from its first job. A table only:
-  // the build before runs on it.
+  // 35: Item snapshots (issue #662): each item's approved text, from its first job. A table: the build before runs on it.
   itemSnapshotsBackfill,
   // 36: Artifact revisions (issue #675); the artifact row stays the latest, so the build before runs on it.
   ARTIFACT_REVISION_TABLES,
+  // 37: A comment holds no job (issue #747): a text change whose title and body are the snapshot's is dropped.
+  commentHoldsReleased,
+  // 38: Lane tuning recommends, an admin applies (issue #688): the lanes active mode applied become configured lanes.
+  laneRecommendationsOnly,
+  // 39: Queued GitHub jobs with no origin wait for it (issue #652, the backfill); the build before ignores the flag.
+  originPendingBackfill,
+  // 40: Vault grants (issue #652): a person's grant of the vault to an item's jobs. A table: the build before runs on it.
+  VAULT_GRANT_TABLE,
+  // 41: Bug reports (issue #694): a person's reports, filed or kept to send later. A table only: the build before runs on it.
+  BUG_REPORT_TABLE,
+  // 42: The issue graph (issue #437): issues, repositories, owners, Projects and their links. Tables only: the build before runs on it.
+  ISSUE_GRAPH_TABLES,
+  // 43: Pointed jobs (issue #425): a table only; the jobs a store has read as pointed jobs. The build before runs on it.
+  POINTED_JOB_TABLE,
+  // 44: GitHub watches (issue #427): each pointed job's last snapshot. A table only: the build before runs on it.
+  GITHUB_WATCH_TABLE,
+  // 45: Each job's last event (issue #434), read for the Jobs view's cards. An index only: the build before runs on it.
+  'CREATE INDEX IF NOT EXISTS events_job ON events (job_id, seq)',
 ];
 
 /** A user schema's version once migrated. */
@@ -355,14 +364,12 @@ export const TENANT_SCHEMA_VERSION = TENANT_BASE_VERSION + TENANT_MIGRATIONS.len
 export const quoteIdent = (name: string): string => `"${name.replaceAll('"', '""')}"`;
 
 /** A user's schema: `u_<id>` beside the `public` instance schema, else `<instance schema>_u_<id>`. */
-export const userSchemaName = (instanceSchema: string, userId: string): string =>
-  (instanceSchema === 'public' ? `u_${userId}` : `${instanceSchema}_u_${userId}`);
+export const userSchemaName = (instanceSchema: string, userId: string): string => (instanceSchema === 'public' ? `u_${userId}` : `${instanceSchema}_u_${userId}`);
 
 function step(db: Db, m: Migration, record: () => void): void {
   db.exec('BEGIN');
   try {
-    if (typeof m === 'string') db.exec(m);
-    else m(db);
+    if (typeof m === 'string') db.exec(m); else m(db);
     record();
     db.exec('COMMIT');
   } catch (e) {

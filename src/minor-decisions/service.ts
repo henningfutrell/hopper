@@ -3,16 +3,18 @@
 // database, read on every decision) Jev is not asked (off), asked and only recorded (shadow), or asked and its pick
 // applied when it meets the point's threshold and nothing makes it consequential (active). Every pick is an event on
 // its job. What is decided after a pick that was not applied is compared with it — a question's answer, a
-// person's action on a hand-off —, and a person may override any pick: the agreement rates a person flips a point to
+// person's action on a hand-off, the machine a job got, an admin's act on a lane recommendation —, and a person may override any pick: the agreement rates a person flips a point to
 // active on. Without Jev (no TypeSafe API key, issue #657) nothing is asked and nothing recorded: each decision is made as before.
+// The risk call on a level's answer (issue #679) is a typed decision of its own, in ./risk.ts; the Decider answers no question.
 import { randomUUID } from 'node:crypto';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import {
   DECISION_POINTS, DEFAULT_MINOR_DECISION_SETTINGS, MINOR_DECISION_WINDOW_DAYS, type DecisionPoint, type DecisionPointPatch, type DecisionPointSettings,
   type DomainEvent, type JevChooser, type JevPick, type MinorDecisionInput, type MinorDecisionOutcome, type MinorDecisionPickView,
-  type MinorDecisionSettings, type JevFirst, type MinorDecisionsView, type NotApplied, type TypesafeKeyView,
+  type MinorDecisionSettings, type JevFirst, type MinorDecisionsView, type NotApplied, type QuestionRisk, type TypesafeKeyView,
 } from '../domain/types.ts';
-import { optionNamed } from './options.ts';
+import { withDeadline } from './deadline.ts';
+import { askRisk } from './risk.ts';
 import { picksOf, viewOf, VIEW_EVENT_TYPES } from './view.ts';
 
 export interface MinorDecisionsOptions {
@@ -28,7 +30,7 @@ export interface MinorDecisionsOptions {
 
 export type OverrideResult = { ok: true; value: MinorDecisionPickView } | { ok: false; reason: 'not_found' | 'invalid'; message: string };
 
-export interface MinorDecisions extends JevFirst {
+export interface MinorDecisions extends JevFirst, QuestionRisk {
   /** Follow what is decided after a pick. Once. */
   start(): void;
   stop(): void;
@@ -41,12 +43,13 @@ export interface MinorDecisions extends JevFirst {
 }
 
 const DAY_MS = 86_400_000;
-/** A free-text answer, kept as what was decided, at most this long. */
-const ACTUAL_MAX = 200;
 /** What a person's end of a hand-off says the failed job needed. */
 const HANDOFF_ACTUAL: Readonly<Record<string, string>> = {
   run_again: 'retry', continued: 'retry', cleared: 'person', done_by_hand: 'person', wont_do: 'person',
 };
+
+/** The events what is decided after a pick is read from. */
+const FOLLOWED: ReadonlySet<string> = new Set(['handoff.closed', 'job.claimed', 'lanes.applied', 'lanes.dismissed']);
 
 export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
   const { store, clock } = o;
@@ -61,18 +64,9 @@ export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
     store.events.between(VIEW_EVENT_TYPES, new Date(clock.now().getTime() - MINOR_DECISION_WINDOW_DAYS * DAY_MS).toISOString());
   const picks = () => picksOf(windowEvents());
 
-  async function ask(input: MinorDecisionInput): Promise<JevPick> {
-    let timer: NodeJS.Timeout | undefined;
-    const ac = new AbortController();
-    const timeout = new Promise<JevPick>((resolve) => {
-      timer = setTimeout(() => { ac.abort(); resolve({ ok: false, why: `no pick within ${o.timeoutMs} ms` }); }, o.timeoutMs);
-    });
-    try {
-      const { point, instructions, options, state } = input;
-      return await Promise.race([o.jev.pick({ point, instructions, options, state }, ac.signal).catch((e: unknown) => ({ ok: false as const, why: e instanceof Error ? e.message : String(e) })), timeout]);
-    } finally {
-      clearTimeout(timer);
-    }
+  function ask(input: MinorDecisionInput): Promise<JevPick> {
+    const { point, instructions, options, state } = input;
+    return withDeadline(o.timeoutMs, (signal) => o.jev.pick({ point, instructions, options, state }, signal), { ok: false, why: `no pick within ${o.timeoutMs} ms` });
   }
 
   function notAppliedOf(s: DecisionPointSettings, pick: JevPick, consequential: readonly string[]): NotApplied | undefined {
@@ -87,17 +81,29 @@ export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
     const s = settings()[input.point];
     if (s.mode === 'off' || stopped || !o.jev.available().available) return { asked: false };
     const pick = await ask(input);
-    const notApplied = notAppliedOf(s, pick, input.consequential);
+    if (stopped) return { asked: false };
+    // Decided while Jev was asked (a job placed before its pick came): not applied, and compared at once.
+    const settled = input.settled?.() ?? (input.rules !== undefined && notAppliedOf(s, pick, input.consequential) ? { actual: input.rules, by: 'rules' } : undefined);
+    const notApplied = notAppliedOf(s, pick, input.consequential) ?? (settled ? 'too_late' : undefined);
     const pickId = randomUUID();
-    store.events.append({
-      type: 'minor_decision.picked', ...(input.jobId ? { jobId: input.jobId } : {}), ...(input.questionId ? { questionId: input.questionId } : {}),
-      data: {
-        pickId, point: input.point, by: 'jev', options: input.options.map((x) => ({ id: x.id, label: x.label })),
-        ...(pick.ok ? { pick: pick.pick, confidence: pick.confidence } : { error: pick.why }),
-        mode: s.mode, threshold: s.threshold, applied: notApplied === undefined,
-        ...(notApplied ? { notApplied } : {}), ...(notApplied === 'consequential' ? { consequential: [...input.consequential] } : {}),
-        ...(input.questionId ? { questionId: input.questionId } : {}),
-      },
+    const tags = { ...(input.jobId ? { jobId: input.jobId } : {}), ...(input.questionId ? { questionId: input.questionId } : {}) };
+    store.tx(() => {
+      store.events.append({
+        type: 'minor_decision.picked', ...tags,
+        data: {
+          pickId, point: input.point, by: 'jev', options: input.options.map((x) => ({ id: x.id, label: x.label })),
+          ...(pick.ok ? { pick: pick.pick, confidence: pick.confidence } : { error: pick.why }),
+          mode: s.mode, threshold: s.threshold, applied: notApplied === undefined,
+          ...(notApplied ? { notApplied } : {}), ...(notApplied === 'consequential' ? { consequential: [...input.consequential] } : {}),
+          ...(input.questionId ? { questionId: input.questionId } : {}), ...(input.machineId ? { machineId: input.machineId } : {}),
+        },
+      });
+      if (settled && pick.ok) {
+        store.events.append({
+          type: 'minor_decision.compared', ...tags,
+          data: { pickId, point: input.point, pick: pick.pick, actual: settled.actual, agreed: settled.actual === pick.pick, decidedBy: settled.by },
+        });
+      }
     });
     return {
       asked: true, pickId, applied: notApplied === undefined,
@@ -119,12 +125,16 @@ export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
 
   function follow(e: DomainEvent): void {
     const d = e.data as Record<string, unknown>;
-    if (e.type === 'question.answered' && d.by !== 'jev' && typeof d.answer === 'string' && e.questionId) {
-      const answer = d.answer;
-      compare((p) => p.point === 'question-answer' && p.questionId === e.questionId, (p) => optionNamed(p.options, answer) ?? answer.slice(0, ACTUAL_MAX), String(d.by));
-    } else if (e.type === 'handoff.closed' && e.jobId && typeof d.end === 'string' && HANDOFF_ACTUAL[d.end]) {
+    if (e.type === 'handoff.closed' && e.jobId && typeof d.end === 'string' && HANDOFF_ACTUAL[d.end]) {
       const actual = HANDOFF_ACTUAL[d.end];
       compare((p) => p.point === 'failure-assessment' && p.jobId === e.jobId, () => actual, 'person');
+    } else if (e.type === 'job.claimed' && e.jobId && e.machineId) {
+      const machineId = e.machineId;
+      compare((p) => p.point === 'job-machine' && p.jobId === e.jobId, () => machineId, 'placement');
+    } else if ((e.type === 'lanes.applied' || e.type === 'lanes.dismissed') && typeof d.by === 'string') {
+      // An admin's act on a machine's lane recommendation: the lanes applied, or the configured lanes kept.
+      const actual = String(e.type === 'lanes.applied' ? d.to : d.configured);
+      compare((p) => p.point === 'lane-count' && p.machineId === d.machineId, () => actual, d.by);
     }
   }
 
@@ -133,9 +143,16 @@ export function createMinorDecisions(o: MinorDecisionsOptions): MinorDecisions {
       o.logger.warn(`hopper: a decider call at ${input.point} failed: ${e instanceof Error ? e.message : String(e)}`);
       return { asked: false };
     }),
+    // Fail closed (issue #679): a risk call that breaks is an error, which an active point holds the question for.
+    risk: (input) => askRisk({ store, jev: o.jev, settings: () => settings()['question-risk'], timeoutMs: o.timeoutMs, stopped: () => stopped }, input).catch((e: unknown) => {
+      const why = e instanceof Error ? e.message : String(e);
+      o.logger.warn(`hopper: the risk call failed: ${why}`);
+      const s = settings()['question-risk'];
+      return s.mode === 'off' ? { asked: false as const, why } : { asked: true as const, mode: s.mode, threshold: s.threshold, error: why };
+    }),
     start() {
       unsubscribe ??= store.events.subscribe((e) => {
-        if (stopped || (e.type !== 'question.answered' && e.type !== 'handoff.closed')) return;
+        if (stopped || !FOLLOWED.has(e.type)) return;
         setImmediate(() => {
           if (stopped) return;
           try { follow(e); } catch (err) { o.logger.warn(`hopper: comparing a decider call failed: ${err instanceof Error ? err.message : String(err)}`); }

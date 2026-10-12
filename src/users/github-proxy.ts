@@ -2,8 +2,11 @@
 // asks the hopper with — its proxy token under this user's link key, `hopper-gh`, the hopper's URL as its machine
 // reaches it, and git's way to the hopper (issue #652) —, the check of a token a job shows, and this user's GitHub
 // connection, which the hopper acts with for every job when this is its oldest user, and for this user's own jobs' git.
-import type { ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
-import type { Job, MachineSnapshot, User } from '../domain/types.ts';
+import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
+import { DEFAULT_CONTRIBUTION, type Job, type MachineSnapshot, type User } from '../domain/types.ts';
+import { createReportGitHub, createReportSender, type ReportGitHub, type ReportSender } from '../bug-reports/index.ts';
+import { createRepoChecksGitHub, type RepoChecksGitHub } from '../repo-checks/index.ts';
+import { createGitHubWatches, createWatchGitHub, type GitHubWatches } from '../github-watch/index.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts';
 import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
@@ -17,11 +20,21 @@ export interface UserGitHubProxy {
   user: ProxyUser;
   connection: ProxyConnection;
   git: GitUser;
+  /** Report a bug (issue #694): this user's own GitHub connection, so a report is filed as this user; or why there is none. */
+  reports(): ReportGitHub | { problem: string };
+  /** Repositories with no checks (issue #677): this user's own GitHub connection and its login, or why there is none. */
+  repoChecks(): { api: RepoChecksGitHub; login: string } | { problem: string };
+  /** Report a bug's kept reports sent later, and the filed ones' states read (issue #694); its loop runs with the user's runtime. */
+  bugReports: ReportSender;
+  /** The GitHub watches of this user's pointed jobs (issue #427), with this user's own connection; they poll with the user's runtime. */
+  watches: GitHubWatches;
 }
 
 export interface UserGitHubProxyOptions {
   user: User;
   store: UserStore;
+  clock: Clock;
+  logger: { warn(line: string): void };
   /** The private half of the hopper's link key for this user (issue #308): the key its jobs' tokens are derived under. */
   linkPrivateKey: string;
   accounts: ConnectedAccountTokens;
@@ -36,6 +49,14 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
     token: () => o.accounts.token('github'),
     renew: (refused) => o.accounts.renew('github', refused),
   });
+  const notMine = 'your GitHub is not connected: connect it in Sources → Connect GitHub';
+  /** This user's own connection, for what they do themselves: Report a bug, the Add PR checks job. */
+  const mine = () => ({ apiUrl: o.accounts.endpoints('github').apiUrl, token: () => o.accounts.token('github'), renew: (refused: string) => o.accounts.renew('github', refused) });
+  const reports = (): ReportGitHub | { problem: string } => (!o.accounts.account('github')
+    ? { problem: o.accounts.ended('github') ?? notMine }
+    : createReportGitHub(mine()));
+  /** This user's Contribution (issue #429), read at each request: a change applies without a restart. */
+  const contribution = () => (o.store.settings.getContribution() ?? DEFAULT_CONTRIBUTION).on;
   const user: ProxyUser = {
     id: o.user.id,
     holds: (parts) => parts.userId === o.user.id && holdsProxyToken(o.linkPrivateKey, parts),
@@ -48,14 +69,16 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       const url = o.url(machine);
       if (!url) return undefined;
       return {
+        url,
         // `hopper-skill` (issue #582) asks with the same token: what the hopper can set up for this box; `hopper-artifact`
         // (issue #624) puts what the job makes for a person to see.
         files: { [PROXY_TOKEN_FILE]: proxyToken(o.linkPrivateKey, o.user.id, job.id), [PROXY_SCRIPT_FILE]: PROXY_SCRIPT, [SKILL_SCRIPT_FILE]: SKILL_SCRIPT, [ARTIFACT_SCRIPT_FILE]: ARTIFACT_SCRIPT },
         paths: { [PROXY_TOKEN_VARIABLE]: PROXY_TOKEN_FILE, [PROXY_SCRIPT_VARIABLE]: PROXY_SCRIPT_FILE, [SKILL_SCRIPT_VARIABLE]: SKILL_SCRIPT_FILE, [ARTIFACT_SCRIPT_VARIABLE]: ARTIFACT_SCRIPT_FILE },
-        // The vault's helper (issue #558), where the machine's client serves one: it asks with this job's proxy token.
+        // The vault's helper (issue #558), where the machine's client serves one and the machine is a box of a template:
+        // the vault gives nothing to any other machine (issue #652). It asks with this job's proxy token.
         // git's way to GitHub, through the hopper (issue #652): the job holds no GitHub token.
         vars: {
-          [PROXY_URL_VARIABLE]: url, ...(machine.client?.vault ? { [SECRET_HELPER_VARIABLE]: machine.client.vault } : {}),
+          [PROXY_URL_VARIABLE]: url, ...(machine.client?.vault && machine.template ? { [SECRET_HELPER_VARIABLE]: machine.client.vault } : {}),
           ...jobGitConfig(url, o.accounts.endpoints('github').url),
         },
       };
@@ -65,19 +88,35 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       connection: {
         jobRepositories: () => o.accounts.jobRepositories('github'),
         api: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notConnected } : api()),
+        contribution,
+        login: () => o.accounts.account('github'),
+      },
+      reports,
+      watches: createGitHubWatches({
+        store: o.store, now: () => o.clock.now().toISOString(), log: (l) => o.logger.warn(l),
+        github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatchGitHub(mine())),
+      }),
+      bugReports: createReportSender({ github: reports, reports: o.store.bugReports, now: () => o.clock.now().toISOString(), record: (e) => { o.store.events.append(e); }, log: (l) => o.logger.warn(l) }),
+      repoChecks: () => {
+        const login = o.accounts.account('github');
+        return login === undefined ? { problem: o.accounts.ended('github') ?? notMine } : { api: createRepoChecksGitHub(mine()), login };
       },
       // A job's git acts with its own user's connection (issue #652), not the hopper's oldest user's.
       git: {
         user,
         jobRepositories: () => o.accounts.jobRepositories('github'),
-        git: () => (!o.accounts.account('github')
-          ? { problem: o.accounts.ended('github') ?? 'your GitHub is not connected: connect it in Sources → Connect GitHub' }
-          : {
-            url: o.accounts.endpoints('github').url,
-            token: () => o.accounts.token('github'),
-            renew: (refused) => o.accounts.renew('github', refused),
-            defaultBranch: (repo) => api().defaultBranch(repo),
-          }),
+        contribution,
+        git: () => {
+          const login = o.accounts.account('github');
+          return login === undefined
+            ? { problem: o.accounts.ended('github') ?? notMine }
+            : {
+              url: o.accounts.endpoints('github').url, login,
+              token: () => o.accounts.token('github'),
+              renew: (refused) => o.accounts.renew('github', refused),
+              repo: (repo) => api().repo(repo),
+            };
+        },
       },
     },
   };

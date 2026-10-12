@@ -56,6 +56,29 @@ describe('herdr-claude executor: a job worktree for each job (issue #379)', () =
     expect(herdr.prompts[0]!.text).toContain(`[hopper job worktree] Work in ${tree}: a git worktree of ${CWD}/app made for this job alone`);
   });
 
+  // Issue #431: a work tree that is another repository's top gives the job its own repository, cloned in the work tree's scratch dir.
+  it('a job from a repository, its work tree another repository\'s top: a worktree of its own repository\'s checkout in the scratch dir, named in the prompt', async () => {
+    const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], origins: { [CWD]: 'acme/site' } }, { jobWorktrees: true });
+    const source = { source: 'github', kind: 'github-account', key: 'k', url: 'u', title: 't', author: 'a', repo: 'acme/app' };
+    const { ctx, saved, workTrees } = contextFor(jobWith({ prompt: 'go' }, { source }));
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+    expect(runs(herdr)).toContain(makeJobWorktreeCommand(CWD, JOB_ID, { repo: 'acme/app' }));
+    const tree = checkoutWorktreeOf(CWD, JOB_ID, 'acme/app');
+    const checkout = `${CWD}/.hopper-scratch/repos/acme/app`;
+    expect(saved.at(-1)).toMatchObject({ cwd: CWD, jobWorktree: tree, checkout });
+    expect(workTrees.at(-1)).toBe(tree);
+    expect(herdr.prompts[0]!.text).toContain(`[hopper job worktree] Work in ${tree}: a git worktree of ${checkout} made for this job alone`);
+  });
+
+  it('a job from the repository its work tree is a checkout of: a worktree of the work tree, as before', async () => {
+    const { executor } = setup({ turns: [DONE], repositories: [CWD], origins: { [CWD]: 'acme/app' } }, { jobWorktrees: true });
+    const source = { source: 'github', kind: 'github-account', key: 'k', url: 'u', title: 't', author: 'a', repo: 'acme/app' };
+    const { ctx, saved } = contextFor(jobWith({ prompt: 'go' }, { source }));
+    expect(await executor.run(ctx)).toMatchObject({ kind: 'finished' });
+    expect(saved.at(-1)).toMatchObject({ cwd: CWD, jobWorktree: JOB_TREE });
+    expect(saved.at(-1)).not.toHaveProperty('checkout');
+  });
+
   it('job worktrees off, a job from a repository: the checkout is made, and the job runs in the work tree', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     const source = { source: 'github', kind: 'github-account', key: 'k', url: 'u', title: 't', author: 'a', repo: 'acme/app' };

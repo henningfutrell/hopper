@@ -92,7 +92,7 @@ describe('meaningful and shareable (issue #675)', () => {
     const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="5" height="5"/></svg>\n';
     const none = JSON.parse((await h.artifact(a, job, ['put', 'a.svg', '--json'], { cwd: h.file('a.svg', svg).dir })).stdout) as { artifact: ArtifactView; warning?: string };
     expect(none.warning).toMatch(/no summary/);
-    const given = JSON.parse((await h.artifact(a, job, ['put', 'a.svg', '--title', 'Queue', '--summary', 'Wait by hour:\nlonger at nine', '--json'], { cwd: h.file('a.svg', svg).dir })).stdout) as { artifact: ArtifactView; warning?: string };
+    const given = JSON.parse((await h.artifact(a, job, ['put', 'a.svg', '--title', 'Queue', '--summary', 'Wait by hour:\nlonger at nine', '--new', '--json'], { cwd: h.file('a.svg', svg).dir })).stdout) as { artifact: ArtifactView; warning?: string };
     expect(given.warning).toBeUndefined();
     // One line, at most 300 characters.
     expect(given.artifact.summary).toBe('Wait by hour: longer at nine');

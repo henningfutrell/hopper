@@ -1,6 +1,8 @@
-// One event as one line: time, type (coloured by what ended or started), and its subject.
+// One event as one line: time, type (coloured by what ended or started), and its subject. An event about a job links to
+// its job view (issue #433); one with no job has no link.
 import { clock } from '@/model/format';
 import { subjectOf } from '@/model/board';
+import { jobHref } from '@/model/job';
 import { artifactCreatedDetail, revisedDetail } from '@/model/artifacts';
 import { pickedEventDetail } from '@/model/minor-decisions';
 import type { DomainEvent, MachineView } from '@/model/wire';
@@ -9,19 +11,22 @@ import { cn } from '@/lib/utils';
 
 const TYPE_TONE: Record<string, Tone> = {
   'job.started': 'busy', 'job.claimed': 'busy', 'job.reattached': 'busy', 'job.finished': 'ok', 'job.failed': 'bad',
-  'job.held': 'warn', 'job.requeued': 'warn', 'question.asked': 'question', 'question.escalated': 'question', 'question.escalated_to_human': 'question',
+  'job.held': 'warn', 'job.requeued': 'warn', 'job.link_lost': 'warn', 'question.asked': 'question', 'question.escalated': 'question', 'question.escalated_to_human': 'question',
   'question.answered': 'ok', 'question.closed': 'warn', 'question.dismissed': 'muted', 'question.expired': 'bad', 'question.lapsed': 'warn', 'lane.opened': 'busy',
+  'question.thread_held': 'question', 'question.thread_approved': 'ok', 'question.thread_posted': 'question',
   'update.available': 'warn', 'update.started': 'busy', 'update.applied': 'ok', 'update.failed': 'bad',
   'plugin.installed': 'ok', 'job.accepted': 'ok', 'job.rejected': 'muted', 'queue.gate_changed': 'warn', 'usage.limits_changed': 'warn',
   'priority_lanes.changed': 'warn', 'priority_lanes.settings_changed': 'warn',
   'job.claimed_by_operator': 'operator',
   'minor_decision.picked': 'question', 'minor_decision.overridden': 'warn',
   'job.phase_changed': 'question', 'job.forked': 'question', 'job.fork_resolved': 'ok', 'phase_shifts.settings_changed': 'warn',
-  'question.corrected': 'warn', 'auto_answer.settings_changed': 'warn', 'auto_park.settings_changed': 'warn', 'tldr.settings_changed': 'warn',
-  'job.rerun': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
-  'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad',
+  'question.corrected': 'warn', 'auto_answer.settings_changed': 'warn', 'auto_park.settings_changed': 'warn', 'thread_ask.settings_changed': 'warn', 'tldr.settings_changed': 'warn', 'github_rate_limiter.settings_changed': 'warn', 'github_watch.settings_changed': 'warn',
+  'job.rerun': 'warn', 'job.pull_request_tended': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
+  'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad', 'job.child_issue_filed': 'ok',
   'skill.loaded': 'ok', 'skill.refused': 'warn',
   'artifact.posted': 'ok', 'artifact.revised': 'ok',
+  'lanes.recommended': 'warn', 'lanes.tuning_changed': 'warn', 'lanes.applied': 'warn', 'lanes.undone': 'warn', 'lanes.dismissed': 'warn',
+  'bug_report.filed': 'ok', 'bug_report.failed': 'bad',
 };
 export const eventTone = (type: string): Tone => TYPE_TONE[type] ?? 'muted';
 
@@ -34,6 +39,11 @@ export function detailOf(e: DomainEvent): string {
   // The GitHub proxy (issue #563): what the hopper did on GitHub for the job, where, or why not.
   if (e.type === 'github_proxy.done') return `${String(d.op)} ${String(d.repo)}#${String(d.number)}: ${String(d.url)}`;
   if (e.type === 'github_proxy.refused') return `${typeof d.op === 'string' ? `${d.op} ` : ''}refused: ${String(d.reason)}`;
+  // Issue lineage (issue #729): the child issue the job filed, of which parent, and a sub-issue link GitHub refused.
+  if (e.type === 'job.child_issue_filed') {
+    const at = (i: unknown) => { const r = i as { repo?: unknown; number?: unknown }; return `${String(r.repo)}#${String(r.number)}`; };
+    return `${d.required === true ? 'required child' : 'follow-up'} ${at(d.child)} of ${at(d.parent)}${typeof d.subIssueError === 'string' ? `; not linked: ${d.subIssueError}` : ''}`;
+  }
   if (e.type === 'github_proxy.failed') return `${String(d.op)} ${String(d.repo)}: ${String(d.error)}`;
   // Skills (issue #582): what the job asked the hopper to set up, and the answer.
   if (e.type === 'skill.listed') return 'asked what the hopper can set up';
@@ -55,11 +65,12 @@ export function EventLine({ e, nameOf, machines, className }: { e: DomainEvent; 
   const detail = detailOf(e);
   const subject = subjectOf(e, nameOf, machines);
   return (
-    <div className={cn('grid grid-cols-[4.5rem_8.5rem_minmax(0,1fr)] items-baseline gap-2 text-xs', className)}>
+    <div data-event-seq={e.seq} className={cn('grid grid-cols-[4.5rem_8.5rem_minmax(0,1fr)] items-baseline gap-2 text-xs', className)}>
       <span className="num font-mono text-muted-foreground/80" title={e.at}>{clock(e.at)}</span>
       <span className={cn('truncate font-mono font-medium', TEXT[eventTone(e.type)])}>{e.type}</span>
       <span className="min-w-0 truncate" title={detail ? `${subject} — ${detail}` : subject}>
-        {subject}{detail && <span className="text-muted-foreground"> — {detail}</span>}
+        {e.jobId ? <a href={jobHref(e.jobId)} className="underline-offset-4 hover:underline">{subject}</a> : subject}
+        {detail && <span className="text-muted-foreground"> — {detail}</span>}
       </span>
     </div>
   );

@@ -111,7 +111,7 @@ describe('following the pull request', () => {
   it('merged: the item is done — hopper:done in place of hopper:pr-ready; following ends', async () => {
     const { gh, source, job, pr } = await ended();
     gh.mergePullRequest(pr.url);
-    expect(await source.follow!(job)).toEqual({ outcome: 'merged', pullRequest: pr.url, part: false, state: { pullRequest: pr.url, follow: 'merged' } });
+    expect(await source.follow!(job)).toEqual({ outcome: 'merged', pullRequest: pr.url, part: false, state: { pullRequest: pr.url, follow: 'merged', mergeChecked: true } });
     expect(gh.issue(REPO, 1)).toMatchObject({ state: 'closed', labels: ['hopper', 'hopper:done'] });
   });
 
@@ -166,6 +166,22 @@ describe('yolo mode and a pull request with no checks (issue #677)', () => {
     expect(gh.issue(REPO, 1)).toMatchObject({ state: 'closed', labels: ['hopper', 'hopper:done'] });
   });
 
+  it('a job with no origin (neither a trusted origin nor approved): yolo mode merges it once ready, checks passed or none (issue #805)', async () => {
+    for (const checks of ['passing', undefined] as const) {
+      const { gh, source, job, pr } = await ended({ createdAt: LONG_AGO, ...(checks ? { checks } : {}) });
+      const { origin: _o, ...untrusted } = job.source!;
+      expect(await source.follow!({ ...job, source: untrusted })).toMatchObject({ outcome: 'merged', pullRequest: pr.url, byHopper: true });
+      expect(gh.calls.filter((c) => c.method === 'merge')).toHaveLength(1);
+    }
+  });
+
+  it('a job with no origin: yolo off still waits for a person (issue #805)', async () => {
+    const { gh, source, job } = await ended({ createdAt: LONG_AGO, checks: 'passing' }, false);
+    const { origin: _o, ...untrusted } = job.source!;
+    expect(await source.follow!({ ...job, source: untrusted })).toMatchObject({ outcome: 'open' });
+    expect(gh.calls.some((c) => c.method === 'merge')).toBe(false);
+  });
+
   it('no checks yet, pushed inside the grace window: it waits, so checks that start late are not missed', async () => {
     const { gh, source, job, pr } = await ended({ createdAt: LONG_AGO, headCommittedAt: JUST_NOW });
     const seen = await source.follow!(job);
@@ -216,5 +232,73 @@ describe('a pull request the report could not name (issue #677)', () => {
   it('none found: nothing changes', async () => {
     const { source } = withIssue();
     expect(await source.follow!(jobForIssue(1, { status: 'finished', sourceState: { source: { follow: 'open' } } }))).toBeUndefined();
+  });
+});
+
+describe('closing finishes the loop: the hopper\'s own merge closes the issue (issue #677)', () => {
+  // The source's clock is 2026-10-02T10:00: a pull request opened at 09:50 with no checks is past the grace window.
+  const LONG_AGO = '2026-10-02T09:50:00.000Z';
+
+  function followed(open: (gh: ReturnType<typeof setup>['gh']) => { url: string }, yolo = true) {
+    const s = setup({}, { yoloMode: () => yolo });
+    s.gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    const pr = open(s.gh);
+    s.gh.addLabel(REPO, 1, 'hopper:pr-ready');
+    const job = jobForIssue(1, { status: 'finished', sourceState: { source: { pullRequest: pr.url, follow: 'open' } } });
+    return { ...s, pr, job };
+  }
+  const closes = (gh: ReturnType<typeof setup>['gh']) => gh.calls.filter((c) => c.method === 'closeAsCompleted');
+
+  it('yolo mode merges a pull request with no closing keyword: the hopper closes the issue as completed, with one comment that links the pull request', async () => {
+    const { gh, source, job, pr } = followed((gh) => gh.openReferencingPullRequest(REPO, 1, { createdAt: LONG_AGO }));
+    const up = await source.follow!(job);
+    expect(up).toEqual({ outcome: 'merged', pullRequest: pr.url, part: false, byHopper: true, state: { pullRequest: pr.url, follow: 'merged', mergeChecked: true } });
+    expect(gh.issue(REPO, 1)).toMatchObject({ state: 'closed', stateReason: 'completed', labels: ['hopper', 'hopper:done'] });
+    const comments = gh.commentsOn(REPO, 1);
+    expect(comments).toHaveLength(1);
+    expect(comments[0]!.body).toContain(pr.url);
+    // Checked once already: a later sync asks nothing.
+    gh.calls.length = 0;
+    expect(await source.follow!({ ...job, sourceState: { source: up!.state } })).toBeUndefined();
+    expect(gh.calls).toEqual([]);
+  });
+
+  it('yolo mode merges a pull request that closes another issue and only mentions this one: the hopper leaves this issue open (issue #786)', async () => {
+    const { gh, source, job } = followed((gh) => gh.openReferencingPullRequest(REPO, 1, { createdAt: LONG_AGO, body: 'Closes #9\n\nIt depends on #1.' }));
+    expect(await source.follow!(job)).toMatchObject({ outcome: 'merged', part: true });
+    expect(gh.issue(REPO, 1).state).toBe('open');
+    expect(closes(gh)).toEqual([]);
+    expect(gh.commentsOn(REPO, 1)).toEqual([]);
+  });
+
+  it('Merge now on a pull request named for the issue only on its branch: the issue is closed the same way', async () => {
+    const { gh, source, job, pr } = followed((gh) => gh.openUnlinkedPullRequest(REPO, { createdAt: LONG_AGO, headRef: 'issue-1-fix', checks: 'pending' }), false);
+    expect(await source.follow!(job, 'merge')).toMatchObject({ outcome: 'merged', pullRequest: pr.url, part: false });
+    expect(gh.issue(REPO, 1)).toMatchObject({ state: 'closed', stateReason: 'completed', labels: ['hopper', 'hopper:done'] });
+    expect(gh.commentsOn(REPO, 1).map((c) => c.body).join('\n')).toContain(pr.url);
+  });
+
+  it('a pull request that closes the issue: its merge closes it; the hopper neither closes it nor comments', async () => {
+    const { gh, source, job } = followed((gh) => gh.openPullRequest(REPO, 1, { createdAt: LONG_AGO }));
+    expect(await source.follow!(job)).toMatchObject({ outcome: 'merged', part: false });
+    expect(gh.issue(REPO, 1).state).toBe('closed');
+    expect(closes(gh)).toEqual([]);
+    expect(gh.commentsOn(REPO, 1)).toEqual([]);
+  });
+
+  it('a part ("Part of #N") merged by the hopper: the issue stays open for its next part, no comment', async () => {
+    const { gh, source, job } = followed((gh) => gh.openPartPullRequest(REPO, 1, { createdAt: LONG_AGO, headRef: 'issue-1-first-part' }));
+    expect(await source.follow!(job, 'merge')).toMatchObject({ outcome: 'merged', part: true });
+    expect(gh.issue(REPO, 1)).toMatchObject({ state: 'open', labels: ['hopper'] });
+    expect(closes(gh)).toEqual([]);
+    expect(gh.commentsOn(REPO, 1)).toEqual([]);
+  });
+
+  it('a person\'s merge on GitHub of a pull request with no closing keyword: the hopper leaves the issue open (issue #721)', async () => {
+    const { gh, source, job, pr } = followed((gh) => gh.openReferencingPullRequest(REPO, 1, { createdAt: LONG_AGO, checks: 'pending' }));
+    gh.mergePullRequest(pr.url);
+    expect(await source.follow!(job)).toMatchObject({ outcome: 'merged', part: true });
+    expect(gh.issue(REPO, 1).state).toBe('open');
+    expect(closes(gh)).toEqual([]);
   });
 });

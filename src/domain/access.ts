@@ -4,6 +4,7 @@
 // operation, an asset, and the operation profile that is an operation on an asset. The approvals and the model are the
 // hopper's, rows in its database, pushed to OpenFGA with the tuples of who is live; every decision is recorded.
 import type { TemplateRadius } from './blast-radius.ts';
+import { backendProblem, type StateBackend } from './state-backend.ts';
 
 /** What a credential lets a job do on its asset. Write and apply are the high blast-radius ones (#542, #544). */
 export const OPERATIONS = ['read', 'write', 'sync', 'apply'] as const;
@@ -15,8 +16,11 @@ export type AssetKind = (typeof ASSET_KINDS)[number];
 
 export interface Asset { kind: AssetKind; name: string }
 
-/** An operation on an asset: what an approval lets a template's jobs do (`read/cluster/x`). */
-export interface OperationProfile { operation: Operation; asset: Asset }
+/**
+ * An operation on an asset: what an approval lets a template's jobs do (`read/cluster/x`). `backend` (issue #715): a
+ * terraform workspace's state backend, which the read-only check probes; it is no part of what is approved.
+ */
+export interface OperationProfile { operation: Operation; asset: Asset; backend?: StateBackend }
 
 /** A template's name: lowercase letters, digits, `.`, `_` and `-`. The vault (issue #558) registers templates; here a name is enough. */
 export const TEMPLATE_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -24,11 +28,12 @@ export const TEMPLATE_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 export const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._/+=,-]{0,199}$/;
 
 /** Why an operation profile is not one the model can hold, or undefined. */
-export function profileProblem(p: { operation: string; asset: { kind: string; name: string } }): string | undefined {
+export function profileProblem(p: { operation: string; asset: { kind: string; name: string }; backend?: StateBackend }): string | undefined {
   if (!(OPERATIONS as readonly string[]).includes(p.operation)) return `operation ${JSON.stringify(p.operation)} is not one of ${OPERATIONS.join(', ')}`;
   if (!(ASSET_KINDS as readonly string[]).includes(p.asset.kind)) return `asset kind ${JSON.stringify(p.asset.kind)} is not one of ${ASSET_KINDS.join(', ')}`;
   if (!ASSET_NAME.test(p.asset.name)) return `asset name ${JSON.stringify(p.asset.name)} has a character an asset name may not have (letters, digits and . _ / + = , -; an AWS role as <account>/<role>)`;
-  return undefined;
+  if (p.backend && p.asset.kind !== 'terraform-workspace') return `${p.asset.kind} ${p.asset.name}: only a terraform-workspace need has a state backend`;
+  return p.backend ? backendProblem(p.backend) : undefined;
 }
 
 /** One relationship, as OpenFGA keeps it: `subject` is `relation` of `object` (OpenFGA's user, relation, object). */
@@ -46,6 +51,12 @@ export interface MintRequest {
   operation: Operation;
   asset: Asset;
 }
+
+/**
+ * A read-only check's ask for a credential (issue #797): the check box `check` runs as `template` and runs no job, so
+ * Access is asked as for a live job of that template (as a trial is), and the decision is recorded as the check's.
+ */
+export interface CheckMintRequest { template: string; check: string; operation: Operation; asset: Asset }
 
 /** Who is live now, of one user, as the hopper writes it to OpenFGA: each live job with the machine it runs on, and each box with the template it joined as. */
 export interface LiveRequesters {
@@ -75,10 +86,14 @@ export interface MintDecision {
   modelId?: string;
 }
 
-/** A recorded decision: the request with its answer, and the template the requester ran as. A check tried from Settings → Access is a `trial`, by whom. */
+/**
+ * A recorded decision: the request with its answer, and the template the requester ran as. A check tried from Settings →
+ * Access is a `trial`, by whom; a read-only check's mint (issue #797) is a `check`, by its check box.
+ */
 export interface AccessDecisionRecord extends MintDecision {
   requester?: Requester;
   trial?: { by: string };
+  check?: { box: string };
   template?: string;
   operation: Operation;
   asset: Asset;
@@ -162,12 +177,47 @@ export interface SystemSecretAsk {
   admin?: boolean;
 }
 
+/**
+ * An ask about a shared secret (issue #718): `read` it, for a job of `userId`, or `change` it — set or remove — as
+ * `userId`, `admin` when the session is the hopper's admin's. `readers`: the users it is shared with; absent, every user.
+ */
+export interface SharedSecretAsk {
+  userId: string;
+  name: string;
+  action: 'change' | 'read';
+  admin?: boolean;
+  readers?: readonly string[];
+}
+
+/**
+ * An ask about a use of an API token (issue #718): whether the user's token `tokenId` may act with `role` — read
+ * (`viewer`), act as an operator, or as an admin — for the request at hand. The token's owner is told at each ask.
+ */
+export interface ApiTokenAsk { userId: string; tokenId: string; role: 'viewer' | 'operator' | 'admin' }
+/** An ask about a box action with an API token (issue #795): `box` — whether it is a box token — is told at each ask. */
+export interface ApiTokenBoxAsk { userId: string; tokenId: string; box: boolean }
+
 /** What the vault reads of access (issue #580): the gate's approvals, and the decision it asks before every mint and renewal. */
 export interface VaultAccess extends TemplateApprovals {
   decideMint(request: MintRequest): Promise<MintDecision>;
+  /** Whether a read-only check box of the template gets the credential (issue #797): asked before each of its mints; recorded. */
+  decideCheckMint(request: CheckMintRequest): Promise<MintDecision>;
   /** Whether a requester may change or read a system secret (issue #657): OpenFGA's answer, asked each time; a deny when it cannot be had. */
-  decideSystemSecret(ask: SystemSecretAsk): Promise<{ allowed: boolean; reason: string }>;
+  decideSystemSecret(ask: SystemSecretAsk): Promise<AccessAnswer>;
+  /** Whether a user may read or change a shared secret (issue #718): OpenFGA's answer, the readers told at each ask; a deny when it cannot be had. */
+  decideSharedSecret(ask: SharedSecretAsk): Promise<AccessAnswer>;
 }
+
+/** What intake asks of access (issue #652): whether a GitHub login may start a user's jobs, the user's trusted actors told. */
+export interface IntakeAccess {
+  decideIntakeActor(userId: string, login: string, actors: readonly string[]): Promise<AccessAnswer>;
+}
+
+/** Access's answer to one check. `unavailable`: OpenFGA could not be asked (not set up, not reached), so it is a deny by outage, not a refusal (issue #696). */
+export interface AccessAnswer { allowed: boolean; reason: string; unavailable?: true }
+
+/** What a change that needs Access says when OpenFGA cannot be asked (issue #696): a 503, never a 401 or 403 that reads as signed out. */
+export const ACCESS_UNAVAILABLE = 'access checks are unavailable: OpenFGA is not reachable';
 
 // ---- Ports ---------------------------------------------------------------------------
 

@@ -20,6 +20,8 @@
 //   Scenario: after a revoke in Settings → Access, the next renewal is denied
 //   Scenario: a minting credential is never given out, and a profile the template does not declare is refused
 //   Scenario: with the vault in a container of its own (issue #586), Access decides in the hopper and the vault mints
+//   Scenario: a minting credential that names a session name (issue #781) assumes the role with that name, still 900 s
+//     and read only, so a trust policy that allows one session name only lets the hopper in
 import { execFile } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -31,6 +33,7 @@ import { joinHopper } from '../../src/client/join.ts';
 import { startLinkedClient } from '../../src/client/main.ts';
 import type { Client } from '../../src/client/server.ts';
 import { HELPER_FILE } from '../../src/client/vault.ts';
+import { mintTarget } from '../../src/domain/minting.ts';
 import type { AccessView } from '../../src/domain/types.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -39,6 +42,7 @@ import { createFakeAuthorizationServer } from '../support/fake-authorization-ser
 import { startVaultContainer, VAULT_KEY } from '../support/vault-container.ts';
 import { waitFor } from '../support/wait.ts';
 import { KEY } from '../support/webhooks.ts';
+import { grantVault } from '../support/vault-box.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 chmodSync(HERDR, 0o755);
@@ -150,6 +154,7 @@ async function boxWithJob(a: TestApp, session: string): Promise<{ dir: string; j
   await waitFor(async () => ((await a.api('GET', '/api/machines')).body.machines as { id: string; online: boolean }[]).find((m) => m.id === 'hopper-sandbox-kube' && m.online), { timeoutMs: 10000, what: 'the box online' });
   const job = (await a.pull({ op: 'sleep', ms: 60000 })).id;
   expect((await a.waitForStatus(job, 'running', 10000)).laneId).toBe('hopper-sandbox-kube/lane-1');
+  await grantVault(a, job);
   const token = join(temp('job-credentials-'), 'token');
   writeFileSync(token, `${proxyToken(a.user().store.settings.getLinkKey()!.privateKey, a.user().user.id, job)}\n`, { mode: 0o600 });
   return { dir, job, token };
@@ -215,7 +220,7 @@ describe('the vault mints short-lived credentials only through Access', () => {
   it('mints a read-only AWS role session through STS; after a revoke in Settings → Access the next renewal is denied', async () => {
     const { a, session, sts } = await boot();
     await a.ui('/ui/api/vault', { action: 'approve-template', name: 'kube' }, { token: session });
-    const { dir, token } = await boxWithJob(a, session);
+    const { dir, job, token } = await boxWithJob(a, session);
 
     const first = await helper(dir, ['aws', 'read', `aws-role/${ACCOUNT}/diag`], token);
     expect(first.code).toBe(0);
@@ -223,8 +228,12 @@ describe('the vault mints short-lived credentials only through Access', () => {
     const asked = new URLSearchParams(sts.seen[0]!.body);
     expect(asked.get('Action')).toBe('AssumeRole');
     expect(asked.get('RoleArn')).toBe(`arn:aws:iam::${ACCOUNT}:role/diag`);
+    expect(asked.get('RoleSessionName')).toBe(`hopper-${job}`);
     expect(asked.get('DurationSeconds')).toBe('900');
     expect(asked.get('PolicyArns.member.1.arn')).toBe('arn:aws:iam::aws:policy/ReadOnlyAccess');
+    // Issue #715: and the inline policy of explicit denies, so the role's own policy cannot widen the session.
+    expect(asked.get('Policy')).toBe((mintTarget('aws', { operation: 'read', asset: { kind: 'aws-role', name: `${ACCOUNT}/diag` } }) as { policy: string }).policy);
+    expect(JSON.parse(asked.get('Policy')!)).toMatchObject({ Statement: expect.arrayContaining([expect.objectContaining({ Effect: 'Deny', NotResource: `arn:aws:iam::${ACCOUNT}:role/diag` })]) });
     expect(sts.seen[0]!.authorization).toContain('Credential=AKIAMINTING/');
 
     expect((await helper(dir, ['aws', 'read', `aws-role/${ACCOUNT}/diag`], token)).code).toBe(0);
@@ -281,6 +290,30 @@ describe('the vault mints short-lived credentials only through Access', () => {
     expect(revoked.code).not.toBe(0);
     expect(revoked.stderr).toMatch(/waits for a person's approval/);
     expect(kube.seen).toHaveLength(1);
+    mintingCredentialsNowhere(a, dir);
+  });
+
+  it('assumes the role with the session name the minting credential names, through the vault in a container of its own (issue #781)', async () => {
+    const { a, session, sts } = await boot({ container: true });
+    const value = { AccessKeyId: 'AKIAMINTING', SecretAccessKey: AWS_MINTING_SECRET, Region: 'us-east-1', Endpoint: sts.url, SessionName: 'p2zapwin' };
+    expect((await a.ui('/ui/api/vault', { action: 'set', name: 'AWS_LAB', value: JSON.stringify(value) }, { token: session })).status).toBe(200);
+    await a.ui('/ui/api/vault', { action: 'approve-template', name: 'kube' }, { token: session });
+    const { dir, token } = await boxWithJob(a, session);
+
+    expect((await helper(dir, ['aws', 'read', `aws-role/${ACCOUNT}/diag`], token)).code).toBe(0);
+    const asked = new URLSearchParams(sts.seen[0]!.body);
+    expect(asked.get('RoleSessionName')).toBe('p2zapwin');
+    expect(asked.get('DurationSeconds')).toBe('900');
+    expect(asked.get('PolicyArns.member.1.arn')).toBe('arn:aws:iam::aws:policy/ReadOnlyAccess');
+    // Issue #715: the inline deny policy crosses from the hopper to the vault's container and on to STS.
+    expect(JSON.parse(asked.get('Policy')!)).toMatchObject({ Statement: expect.arrayContaining([expect.objectContaining({ Effect: 'Deny', Action: expect.arrayContaining(['*:Create*']) })]) });
+
+    const bad = { ...value, SessionName: 'not a session name' };
+    expect((await a.ui('/ui/api/vault', { action: 'set', name: 'AWS_LAB', value: JSON.stringify(bad) }, { token: session })).status).toBe(200);
+    const refused = await helper(dir, ['aws', 'read', `aws-role/${ACCOUNT}/diag`], token);
+    expect(refused.code).not.toBe(0);
+    expect(refused.stderr).toMatch(/SessionName/);
+    expect(sts.seen).toHaveLength(1);
     mintingCredentialsNowhere(a, dir);
   });
 });

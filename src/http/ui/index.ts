@@ -2,14 +2,15 @@
 // login code (when the sign-in config leaves local sign-in on), no sign-in or a realm (sign-in.ts) → a page
 // that keeps the session token in localStorage → POST /ui/api/* with that token in
 // x-hopper-session, exact Origin, same-origin, JSON, and a role that allows it (design.md
-// "Sign-in: realms"). Every refusal is a logged 403. A logged-in admin hands another
+// "Sign-in: realms"). Every refusal is a logged 403; only one with no live session says `session: 'ended'`, the one the
+// UI reads as signed out (issue #696). A logged-in admin hands another
 // device a login link per LAN name (design.md "Reaching the UI across the LAN"). A mutation acts for the
 // session's user only (issue #158); the instance's (update, plugin store, users, realms) need admin.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { isSuperAdmin, type SignIn } from '../../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
-import { CONNECTED_ACCOUNT_PROVIDERS, MAX_HISTORY_RETENTION_DAYS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
+import { ACCESS_UNAVAILABLE, CONNECTED_ACCOUNT_PROVIDERS, MAX_HISTORY_RETENTION_DAYS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
@@ -17,24 +18,28 @@ import { writeJobRules } from '../../job-rules/index.ts';
 import { writeRules } from '../../questions/index.ts';
 import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
 import { usageGraphViewBody } from '../usage-history.ts';
-import { SESSION_HEADER, mutationRefusal } from './guard.ts';
+import { mutationRefusal, sessionIn } from './guard.ts';
+import { apiTokenAnswer, registerApiTokenRoutes } from './api-tokens.ts';
+import { isBoxAction } from './box-actions.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
 import { registerMachineJoinRoutes } from './machine-join.ts';
 import { registerInstanceRoutes } from './instance.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
-import { registerSignInRoutes } from './sign-in.ts';
+import { registerSignInRoutes, type CallerOf } from './sign-in.ts';
 import { answerBody } from './job-bodies.ts';
 import { questionView } from '../questions.ts';
 import { ROUTE_GROUPS } from './route-groups.ts';
 import { registerAutoAnswerRoutes } from './auto-answer.ts';
 import { registerAccessRoutes } from './access.ts';
+import { registerSharedSecretRoutes } from './vault-shared.ts';
 import type { ArtifactEdge } from '../artifacts.ts';
 import type { Access } from '../../authz/service.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
 import { knownTemplate } from './vault.ts';
 
-export interface UiRouteOptions {
+/** The master key's status (issue #659): the one reveal, a person's word that they saved it; the shared GitHub rate limiter's settings (issue #436). */
+export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceRoutes>[1], 'masterKey' | 'rateLimiter'> {
   /** The request's user's parts (the session's user). */
   tenant: (req: FastifyRequest) => TenantParts;
   tenants: Tenants;
@@ -47,6 +52,8 @@ export interface UiRouteOptions {
   /** The bound port (known only after listen). */
   port: () => number;
   lan: Lan;
+  /** Who a request counts as for the sign-in limit: its address, or the tunnel's caller (issue #795). */
+  caller: CallerOf;
   clock: Clock;
   updater: Updater;
   /** Whether a session may do what is the instance's (issue #240). */
@@ -57,8 +64,6 @@ export interface UiRouteOptions {
   artifacts: ArtifactEdge;
   /** The sandbox boxes the hopper starts (issue #603). */
   sandboxes: Parameters<typeof registerMachineJoinRoutes>[1]['sandboxes'];
-  /** The master key's status (issue #659): the one reveal, and a person's word that they saved it. */
-  masterKey: Parameters<typeof registerInstanceRoutes>[1]['masterKey'];
 }
 
 const idParams = z.object({ id: z.string() });
@@ -157,9 +162,9 @@ const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
 /** The rules themselves are validated by the plugin host (the plugins config schema), so a refusal names the field. */
 export const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
 
-const refuse = (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole) => {
+const refuse = (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole, session?: 'ended') => {
   console.warn(`hopper: UI ${req.method} ${req.url} refused: ${why}`);
-  return reply.code(403).send(needs ? { error: why, needs } : { error: why });
+  return reply.code(403).send({ error: why, ...(needs ? { needs } : {}), ...(session ? { session } : {}) });
 };
 
 
@@ -168,10 +173,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   const { sessions, signIn } = o;
   /** The session's user's name (the user may be gone from a stale session's view: its id then). */
   const userName = (s: UiSession): string => o.instance.users.get(s.userId)?.name ?? s.userId;
-  const sessionOf = (req: FastifyRequest): UiSession | undefined => {
-    const header = req.headers[SESSION_HEADER];
-    return sessions.find(typeof header === 'string' ? header : undefined);
-  };
+  const sessionOf = (req: FastifyRequest): UiSession | undefined => sessionIn(req.headers, sessions);
 
   app.get('/ui/api/session', async (req): Promise<SessionView> => {
     const s = sessionOf(req);
@@ -185,26 +187,39 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   registerSignInRoutes(app, {
-    sessions, signIn, refuse, instance: o.instance, clock: o.clock, isUiOrigin: (origin) => uiOrigins(o.port(), o.lan).includes(origin),
+    sessions, signIn, refuse, caller: o.caller, instance: o.instance, clock: o.clock, isUiOrigin: (origin) => uiOrigins(o.port(), o.lan).includes(origin),
     userFor: (who) => o.tenants.signInAs(who),
     connect: (userId, connection) => o.tenants.user(userId)?.connectedAccounts.adopt(connection),
     userName: (id) => o.instance.users.get(id)?.name ?? id,
     instanceAdmin: o.instanceAdmin,
   });
 
-  // Each mutation names the least role that may make it (design.md "Sign-in" Roles).
+  /**
+   * Why Access refuses the request's API token the role it needs (issue #718), or a box action (issue #795: a box token
+   * only, and `can_run_on_box`), or undefined: allowed, or no API token.
+   */
+  const tokenRefusal = async (req: FastifyRequest, reply: FastifyReply, needs: UiRole): Promise<unknown> => {
+    const s = sessionOf(req)!;
+    if (s.kind !== 'api') return undefined;
+    const d = await apiTokenAnswer(o.access, s, needs, isBoxAction(req.routeOptions.url));
+    if (d.allowed) return undefined;
+    if (d.unavailable) return reply.code(503).send({ error: `${ACCESS_UNAVAILABLE}: ${d.reason}` });
+    return refuse(req, reply, `the API token may not do this: ${d.reason}`);
+  };
+  // Each mutation names the least role that may make it (design.md "Sign-in" Roles); an API token's use is Access's too.
   const allow = (needs: UiRole) => ({ onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
     const r = mutationRefusal(req.headers, o.port(), o.lan, sessions, needs);
-    if (r) return refuse(req, reply, r.why, r.needs);
+    if (r) return refuse(req, reply, r.why, r.needs, r.session);
+    return tokenRefusal(req, reply, needs);
   } });
   const operator = allow('operator');
   const admin = allow('admin');
   // What is the instance's (issue #240): an admin session of the hopper's admin, not any admin session.
   const instance = { onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
     const r = mutationRefusal(req.headers, o.port(), o.lan, sessions, 'admin');
-    if (r) return refuse(req, reply, r.why, r.needs);
-    // `needs` keeps the session: the UI reads a bare 403 as a dead one.
+    if (r) return refuse(req, reply, r.why, r.needs, r.session);
     if (!o.instanceAdmin(sessionOf(req)!)) return refuse(req, reply, INSTANCE_ADMIN_ONLY, 'admin');
+    return tokenRefusal(req, reply, 'admin');
   } };
 
   app.post('/ui/api/queue/order', operator, async (req) => ({ jobs: o.tenant(req).engine.orderQueue(parseWith(queueOrderBody, req.body).jobIds) }));
@@ -297,9 +312,11 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   registerWebhookAndNotifierRoutes(app, { admin, tenant: o.tenant });
   // A job's actions (issue #501), a job source's intake actions (issue #440), the logins' (issue #476), the failures' (issue #509).
-  for (const register of ROUTE_GROUPS) register(app, { operator, admin, tenant: o.tenant, tenants: o.tenants, edge: o.artifacts, access: o.access });
+  for (const register of ROUTE_GROUPS) register(app, { operator, admin, tenant: o.tenant, tenants: o.tenants, edge: o.artifacts, access: o.access, updater: o.updater });
   registerAutoAnswerRoutes(app, { operator, admin, tenant: o.tenant, clock: o.clock });
   registerAccessRoutes(app, { instance, access: o.access, by: (req) => userName(sessionOf(req)!) });
+  registerSharedSecretRoutes(app, { instance, tenant: o.tenant });
+  registerApiTokenRoutes(app, { allow, sessions, sessionOf, access: o.access, tenants: o.tenants, signIn, caller: o.caller });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
   // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.
@@ -335,8 +352,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.report;
   });
 
-  // Self-update and the master key (issues #44, #659): the hopper's admin's alone.
-  registerInstanceRoutes(app, { instance, updater: o.updater, masterKey: o.masterKey });
+  // Self-update, the master key and the shared GitHub rate limiter (issues #44, #659, #436): the hopper's admin's alone.
+  registerInstanceRoutes(app, { instance, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, by: (req) => userName(sessionOf(req)!) });
 
   // design.md "Connected accounts": answers the provider's new GET /api/connected-accounts status — the
   // device code once the provider shows it. The user's own accounts: their session's user alone.
@@ -385,7 +402,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   app.post('/ui/api/logout', allow('viewer'), async (req) => {
-    sessions.drop(String(req.headers[SESSION_HEADER]), 'logout');
+    sessions.drop(sessionOf(req)!.token, 'logout');
     return { ok: true };
   });
 }

@@ -3,7 +3,7 @@
 // that explains an allow.
 import { createHash } from 'node:crypto';
 import {
-  OPERATIONS, ASSET_KINDS, type LiveRequesters, type SystemSecretAsk, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
+  OPERATIONS, ASSET_KINDS, type ApiTokenAsk, type ApiTokenBoxAsk, type LiveRequesters, type SharedSecretAsk, type SystemSecretAsk, type Operation, type OperationProfile, type RelationshipTuple, type Requester, type Asset, type AssetKind,
 } from '../domain/types.ts';
 
 export const templateObject = (template: string): string => `template:${template}`;
@@ -35,6 +35,20 @@ export function requesterTuples(live: readonly LiveRequesters[]): RelationshipTu
 export const artifactObject = (a: { userId: string; id: string }): string => `artifact:${a.userId}/${a.id}`;
 /** A source item (issue #662), by its owner and the SHA-256 of its key: a key is a URL, which an object id cannot carry. */
 export const itemObject = (i: { ownerId: string; key: string }): string => `item:${i.ownerId}/${createHash('sha256').update(i.key).digest('hex')}`;
+/** The vault grant of a user's item (issue #652): its key hashed, as an item's. */
+export const vaultGrantObject = (g: { ownerId: string; key: string }): string => `vault_grant:${g.ownerId}/${createHash('sha256').update(g.key).digest('hex')}`;
+/** A GitHub login (issue #652), lowercased: GitHub logins compare without case. */
+export const githubLoginObject = (login: string): string => `github_login:${encodeURIComponent(login.toLowerCase())}`;
+/** A user's intake (issue #652). */
+export const intakeObject = (userId: string): string => `intake:${userId}`;
+/** The check whether `login` may start the user's jobs (issue #652): the user's trusted actors told for this check only. */
+export function intakeActorCheck(userId: string, login: string, actors: readonly string[]): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = intakeObject(userId);
+  return {
+    tuple: { subject: githubLoginObject(login), relation: 'can_start_jobs', object },
+    contextual: [...new Set(actors.map((a) => githubLoginObject(a)))].map((subject) => ({ subject, relation: 'trusted_actor', object })),
+  };
+}
 export const linkObject = (l: { userId: string; shareId: string }): string => `link:${l.userId}/${l.shareId}`;
 export function shareTuples(shares: readonly { ownerId: string; artifactId: string; shareId: string; userId?: string }[]): RelationshipTuple[] {
   return shares.map((s) => ({
@@ -58,6 +72,44 @@ export function systemSecretCheck(ask: SystemSecretAsk): { tuple: RelationshipTu
       { subject: userObject(ask.owner), relation: 'owner', object },
       ...(ask.admin && ask.requester.kind === 'user' ? [{ subject, relation: 'admin', object }] : []),
     ],
+  };
+}
+/** A shared secret (issue #718): `shared_secret:<name>`, one for the whole hopper. */
+export const sharedSecretObject = (name: string): string => `shared_secret:${name}`;
+
+/**
+ * The check for an ask about a shared secret (issue #718): `can_read` or `can_change` of the user. Its readers — every
+ * user, as the wildcard, when none are named — and an admin's session are told for this check only.
+ */
+export function sharedSecretCheck(ask: SharedSecretAsk): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = sharedSecretObject(ask.name);
+  const subject = userObject(ask.userId);
+  const readers = ask.readers ? ask.readers.map(userObject) : ['user:*'];
+  return {
+    tuple: { subject, relation: `can_${ask.action}`, object },
+    contextual: [
+      ...readers.map((r) => ({ subject: r, relation: 'reader', object })),
+      ...(ask.admin ? [{ subject, relation: 'admin', object }] : []),
+    ],
+  };
+}
+/** The relation an API token's use asks for each role (issue #718). */
+export const API_TOKEN_RELATIONS = { viewer: 'can_view', operator: 'can_operate', admin: 'can_administer' } as const;
+
+/** The check for a use of an API token (issue #718): the relation of its role, of the user; the user told as its owner. */
+export function apiTokenCheck(ask: ApiTokenAsk): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = `api_token:${ask.userId}/${ask.tokenId}`;
+  const subject = userObject(ask.userId);
+  return { tuple: { subject, relation: API_TOKEN_RELATIONS[ask.role], object }, contextual: [{ subject, relation: 'owner', object }] };
+}
+
+/** The check for a box action with an API token (issue #795): `can_run_on_box`, the owner told, and `box_runner` for a box token only. */
+export function apiTokenBoxCheck(ask: ApiTokenBoxAsk): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = `api_token:${ask.userId}/${ask.tokenId}`;
+  const subject = userObject(ask.userId);
+  return {
+    tuple: { subject, relation: 'can_run_on_box', object },
+    contextual: [{ subject, relation: 'owner', object }, ...(ask.box ? [{ subject, relation: 'box_runner', object }] : [])],
   };
 }
 export const assetObject = (t: Asset): string => `asset:${t.kind}/${t.name}`;

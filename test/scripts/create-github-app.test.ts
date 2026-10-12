@@ -260,7 +260,8 @@ describe('create-github-app.ts', () => {
     const r = await go(['--force']);
     await callback(r);
     expect(await r.exited).toBe(0);
-    expect(read()).not.toContain('OLD');
+    // The old key's line is gone. Not `not.toContain('OLD')`: the new key's base64 may hold those letters.
+    expect(read().split('\n')).not.toContain('GITHUB_APP_PRIVATE_KEY=OLD');
     expect(read().split('\n')).toContain('KEEP=1');
     expect(read().match(/^GITHUB_APP_PRIVATE_KEY=/gm)).toHaveLength(1);
     expect(files().filter((f) => f.includes('tmp'))).toEqual([]);

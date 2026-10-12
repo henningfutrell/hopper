@@ -408,7 +408,9 @@ curl -H "Authorization: Bearer $ACCESS_TOKEN" https://hopper.example.com/api/que
   it makes no new user. A GitHub token reads only as the user whose connected GitHub account it is:
   once it is forgotten (Sources → **Stop working through GitHub**, offered to a user signed in another
   way) it no longer does.
-- **Reads only.** Every change (`POST /ui/api/*`) still needs a UI session.
+- **Reads only.** This door only reads. To change anything, exchange the same sign-in for an API token at
+  `POST /ui/auth/api-token`, or mint one in Settings → API tokens, and send `Authorization: Bearer hopper_at_…`
+  (help page "The operator CLI and the API", `/help/cli-and-api`).
 - The same realms and role rules decide: turning the realm off, or a rule that grants no role, closes
   this door as it closes the sign-in page. A refused token is 401 with the reason, no role is 403, an
   issuer or GitHub that could not be asked is 502.
@@ -927,7 +929,7 @@ The same for every realm, no sign-in and the login code:
   to renew it; sign in with GitHub again to restore both) and `logout`. A request carrying a token the hopper holds no session for (it ended earlier,
   the database was reset, or it is another hopper's) is logged once. Read them to tell why someone was
   sent back to sign-in: `journalctl --user -u hopper | grep 'UI session'`.
-- **Log out** (the header's button) ends the hopper session. It does not sign you out of the
+- **Sign out** (in the user menu, under your initials) ends the hopper session. It does not sign you out of the
   identity provider: signing in again may need no password.
 - Every change saved in Settings → Sign-in, and every start, applies the sign-in config to the stored
   sessions: a realm removed or turned off, no sign-in turned off, or an

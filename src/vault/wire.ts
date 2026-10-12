@@ -34,7 +34,14 @@ export const vaultOps = {
     user,
     ask: z.strictObject({ name, token: z.string().max(1000) }),
     /** The machine whose link signed the ask, as the hopper knows it; absent: no joined machine holds the key. */
-    machine: z.strictObject({ name: z.string().max(200), key: z.string().max(200), template: z.string().max(64).optional() }).optional(),
+    machine: z.strictObject({
+      name: z.string().max(200), key: z.string().max(200), template: z.string().max(64).optional(),
+      /** What a box the hopper launched was launched with (issue #708): the delivery gives it nothing else. */
+      launch: z.strictObject({
+        secrets: z.array(name).max(256),
+        profile: z.strictObject({ operation: z.string().max(32), asset: z.strictObject({ kind: z.string().max(32), name: z.string().max(253) }) }).optional(),
+      }).optional(),
+    }).optional(),
     /** Whether the job's token is one the user's link key gives (issue #563): only the hopper holds that key. */
     holds: z.boolean(),
   }),
@@ -46,10 +53,12 @@ export const vaultOps = {
     user,
     credential: name,
     target: z.discriminatedUnion('kind', [
-      z.strictObject({ kind: z.literal('aws'), mintsFor: mintsFor, roleArn: z.string().max(300), policyArns: z.array(z.string().max(300)).max(10), durationSeconds: z.number().int().min(900).max(43200) }),
+      z.strictObject({ kind: z.literal('aws'), mintsFor: mintsFor, roleArn: z.string().max(300), policyArns: z.array(z.string().max(300)).max(10), policy: z.string().max(2048).optional(), durationSeconds: z.number().int().min(900).max(43200) }),
       z.strictObject({ kind: z.literal('kube'), mintsFor: mintsFor, namespace: z.string().max(253), serviceAccount: z.string().max(253), expirationSeconds: z.number().int().min(600).max(86400) }),
     ]),
-    sessionName: z.string().max(64),
+    jobId: z.string().max(64),
+    /** A mint test (issue #781): ask STS who the minted session is, at the minting credential's STS. */
+    identify: z.boolean().optional(),
   }),
 } as const;
 

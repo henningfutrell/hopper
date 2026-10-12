@@ -3,13 +3,13 @@
 // longest waiting on top; every other listing is a history, newest first (issue #450). Each question carries its
 // job's live priority and whether it is high priority; the open ones list high-priority ones first (issue #535). Each
 // carries the forks made from it, with their review items (issue #570). `reason` keeps only the questions sent to a
-// person for that reason (issue #679).
+// person for that reason, the strongest or any hold (issue #679).
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
 import type { UserStore } from '../domain/ports.ts';
 import type { Engine } from '../engine/index.ts';
-import { ESCALATION_REASONS, highFirst, jobPriorityTag, REVIEW_SECTIONS, type Question, type QuestionFork, type QuestionStatus, type QuestionView } from '../domain/types.ts';
+import { ESCALATION_REASONS, highFirst, jobPriorityTag, REVIEW_SECTIONS, type EscalationReason, type Question, type QuestionFork, type QuestionStatus, type QuestionView } from '../domain/types.ts';
 import { forksOf, running } from '../questions/stale.ts';
 import { tldrSettings, withShownTldr } from '../tldr/index.ts';
 import { HttpError, parseWith } from './errors.ts';
@@ -23,6 +23,9 @@ export const questionsQuery = z.object({
   reason: z.enum(ESCALATION_REASONS).optional(),
 });
 const idParams = z.object({ id: z.string() });
+
+/** The question came to a person for `reason`: its strongest reason, or any hold on it (issue #679). */
+const sentFor = (q: Question, reason: EscalationReason): boolean => q.escalation?.reason === reason || (q.escalation?.holds ?? []).some((h) => h.reason === reason);
 
 /** The forks made from the question (issue #570), oldest first: each one's job and, once it wrote one, its item. */
 function questionForks(store: UserStore, q: Question): QuestionFork[] {
@@ -55,7 +58,7 @@ export function questionRoutes(app: FastifyInstance, o: { tenant: (req: FastifyR
     const t = o.tenant(req);
     // With a reason, the limit counts the questions that have it.
     const listed = t.store.questions.list({ ...(q.status === 'all' ? {} : { status: [q.status] }), ...(q.reason ? {} : { limit: q.limit }), order: q.status === 'open' ? 'oldest-first' : 'newest-first' });
-    const questions = (q.reason ? listed.filter((x) => x.escalation?.reason === q.reason).slice(0, q.limit) : listed).map((x) => questionView(t, x));
+    const questions = (q.reason ? listed.filter((x) => sentFor(x, q.reason!)).slice(0, q.limit) : listed).map((x) => questionView(t, x));
     return { questions: q.status === 'open' ? highFirst(questions, (x) => x.high) : questions };
   });
 

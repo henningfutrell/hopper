@@ -14,8 +14,10 @@ import { SecretUnreadable } from '../secrets/sealer.ts';
 import type { Clock, CredentialMinter, UserStore } from '../domain/ports.ts';
 import { profileProblem, TEMPLATE_NAME, type Asset, type OperationProfile, type VaultAccess } from '../domain/access.ts';
 import { mintsForProblem } from '../domain/minting.ts';
-import { AT_WORK, boxAsk, clientOf, type ClientTarget } from './box.ts';
+import { limitsProblem, toolSet, toolsProblem, type TemplateLimits } from '../domain/sandboxes.ts';
+import { AT_WORK, boxAsk, clientOf, launchedOf, launchRefusal, type ClientTarget } from './box.ts';
 import { createMinting, mintHere, type MintAsk, type MintFrom } from './mint.ts';
+import { createMintTest, type MintTestAnswer } from './mint-test.ts';
 import { systemReadRefusal } from './system-read.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS, type RadiusRules, type TemplateRadius } from '../domain/blast-radius.ts';
 import { givesOf, isSystemSecret, templateView, VAULT_REFERENCE_MAX, VAULT_SCOPE_MAX, VAULT_SECRET_NAME, VAULT_VALUE_MAX, type ConfiguredBackend, type Template, type TemplateView, type VaultBackendView, type VaultSecret, type VaultView } from '../domain/vault.ts';
@@ -23,12 +25,13 @@ import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/te
 import type { SealerState } from '../secrets/sealer.ts';
 import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 
-/** Where a vault secret is kept: the context it is sealed for. Its id, so a fold into another user keeps it. */
-export const vaultContext = (id: string): string => `vault:${id}/value`;
+import { templateChecks, type TemplateChecks } from './checks.ts';
+import { resealRows, vaultContext } from './reseal.ts';
+export { vaultContext };
 
 export type VaultResult = { ok: true } | { ok: false; code: 'invalid' | 'not_found' | 'conflict' | 'unavailable'; error: string };
 
-export interface VaultService {
+export interface VaultService extends TemplateChecks {
   view(): VaultView;
   /**
    * Sets a secret, or a new value or scope for one: sealed, never kept or answered in clear. Or (issue #585) points it at
@@ -38,9 +41,11 @@ export interface VaultService {
   remove(name: string, by: string): VaultResult;
   /**
    * Saves a template: its image, scope and operation profiles (absent: the ones it has). A widened scope, a new image or
-   * a new profile waits for a person's approval; a profile dropped has its approval revoked.
+   * a new profile waits for a person's approval; a profile dropped has its approval revoked. `readOnly` (issue #716): it
+   * takes the read-only check; a template keeps that through every save. A save makes its last check stale. `askedBy`
+   * (issue #715): the job that asked for it, which the check's report goes to; the first one is kept through every save.
    */
-  saveTemplate(t: { name: string; image: string; secrets: readonly string[]; profiles?: readonly OperationProfile[] }, by: string): Promise<VaultResult>;
+  saveTemplate(t: { name: string; image: string; secrets: readonly string[]; profiles?: readonly OperationProfile[]; limits?: TemplateLimits; tools?: readonly string[]; readOnly?: boolean; askedBy?: string }, by: string): Promise<VaultResult>;
   /** Removes a template and revokes every approval access holds for it; refused, naming them, while boxes of it are attached (issue #604). */
   removeTemplate(name: string, by: string): Promise<VaultResult>;
   /** A person approves a template as it is now: its image, its whole scope, and every read profile; never a write, sync or apply profile. */
@@ -73,6 +78,8 @@ export interface VaultService {
   mint(ask: MintAsk, machineKey: string, from?: MintFrom): Promise<{ value: string } | { refused: string }>;
   /** Mints from the minting credential `name` for `target`, here: its value opened or read in its backend, then STS or the Kubernetes API. */
   mintFrom: MintFrom;
+  /** A person's mint test (issue #781): an AWS read session for `asset` (`aws-role/<account>/<role>`), and who STS says it is. */
+  testMint(asset: string, by: string, from?: MintFrom): Promise<MintTestAnswer>;
   /** Each template's scope as its rating reads it, with this user's blast-radius rules: what access rates it from (issue #584). */
   templateScopes(): { name: string; scope: TemplateScope; rules: RadiusRules }[];
   /** Seals again, under the current key, every secret an older key sealed. How many it sealed again. */
@@ -111,6 +118,8 @@ export function createVaultService(o: {
   holds?: (parts: ProxyTokenParts) => boolean;
   /** The vault backends the plugins config names now (issue #585); none when absent. */
   backends?: () => ConfiguredBackend[];
+  /** The shared secret a row name `shared/<name>` names (issue #718): a template may name one. Absent: none. */
+  shared?: (row: string) => VaultSecret | undefined;
 }): VaultService {
   const { vault, events } = o.store;
   const { sealer } = o.keys;
@@ -169,17 +178,21 @@ export function createVaultService(o: {
     ...(o.access ? { access: o.access } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}),
   });
 
+  const testMint = createMintTest({ store: o.store });
+
   function scopeOf(machine: string): { template?: string; secrets: string[] } {
-    const name = clientOf(o.targets, (m) => m.name === machine)?.template;
+    const m = clientOf(o.targets, (x) => x.name === machine);
+    const name = m?.template;
     const t = name === undefined ? undefined : vault.template(name);
-    return { ...(name !== undefined ? { template: name } : {}), secrets: t ? givesOf(t).filter((n) => !isSystemSecret(n)) : [] };
+    return { ...(name !== undefined ? { template: name } : {}), secrets: launchedOf(m, t ? givesOf(t).filter((n) => !isSystemSecret(n)) : []) };
   }
 
   const approvedOf = (name: string): OperationProfile[] => o.access?.approvedProfiles(name) ?? [];
   const rules = (): RadiusRules => (o.store.settings.getBlastRadius() ?? DEFAULT_BLAST_RADIUS_SETTINGS).rules;
   /** What the rating reads of a template: its secrets' names and scope lines, never a value, and its profiles. */
+  const held = (n: string): VaultSecret | undefined => vault.get(n) ?? o.shared?.(n);
   const scopeOfTemplate = (t: Template): TemplateScope => ({
-    secrets: t.secrets.filter((n) => !isSystemSecret(n)).map((n) => { const s = vault.get(n); return { name: n, ...(s?.scope ? { scope: s.scope } : {}) }; }),
+    secrets: t.secrets.filter((n) => !isSystemSecret(n)).map((n) => { const s = held(n); return { name: n, ...(s?.scope ? { scope: s.scope } : {}) }; }),
     profiles: t.profiles ?? [],
   });
   const viewOf = (t: Template): TemplateView => {
@@ -237,27 +250,30 @@ export function createVaultService(o: {
       });
     },
 
-    async saveTemplate({ name, image, secrets, profiles }, by) {
+    async saveTemplate({ name, image, secrets, profiles, limits, tools, readOnly, askedBy }, by) {
       if (!TEMPLATE_NAME.test(name)) return fail('invalid', 'a template name is lowercase letters, digits, `.`, `_` or `-`, at most 64, starting with a letter or digit');
       if (!image.trim() || /\s/.test(image.trim()) || image.length > 300) return fail('invalid', 'image must be an image reference, as `podman run` takes it');
       const scope = [...new Set(secrets)];
       const system = scope.filter(isSystemSecret);
       if (system.length) return fail('invalid', `${system.join(', ')} is in the vault's system scope: the hopper keeps it for its own use, so it is in no template's scope`);
-      const missing = scope.filter((n) => !vault.get(n));
+      const missing = scope.filter((n) => !held(n));
       if (missing.length) return fail('invalid', `the vault holds no secret ${missing.join(', ')}`);
       const minting = scope.filter((n) => vault.get(n)?.mints);
       if (minting.length) return fail('invalid', `${minting.join(', ')} is a minting credential: the hopper mints from it and never gives it out, so it is in no template's scope`);
-      const problem = (profiles ?? []).map(profileProblem).find((p) => p !== undefined);
+      const problem = (profiles ?? []).map(profileProblem).find((p) => p !== undefined) ?? (limits ? limitsProblem(limits) : undefined) ?? (tools ? toolsProblem(tools) : undefined);
       if (problem) return fail('invalid', problem);
       if (profiles?.length && !o.access) return noAccess();
       const was = vault.template(name);
-      const declared = profiles ? [...new Map(profiles.map((p) => [keyOf(p), { operation: p.operation, asset: { kind: p.asset.kind, name: p.asset.name } }])).values()] : was?.profiles ?? [];
+      const declared = profiles ? [...new Map(profiles.map((p) => [keyOf(p), { operation: p.operation, asset: { kind: p.asset.kind, name: p.asset.name }, ...(p.backend ? { backend: p.backend } : {}) }])).values()] : was?.profiles ?? [];
+      // Limits and tools left out keep the ones it has (issues #708, #716).
+      const adds = tools ? toolSet(tools) : was?.tools ?? [];
       o.store.tx(() => {
         vault.saveTemplate({
-          name, image: image.trim(), secrets: scope, ...(declared.length ? { profiles: declared } : {}), savedBy: by, savedAt: o.clock.now().toISOString(),
+          name, image: image.trim(), secrets: scope, ...(declared.length ? { profiles: declared } : {}), ...((limits ?? was?.limits) ? { limits: limits ?? was?.limits } : {}),
+          ...(adds.length ? { tools: adds } : {}), ...(readOnly || was?.readOnly ? { readOnly: true } : {}), ...((was?.askedBy ?? askedBy) ? { askedBy: was?.askedBy ?? askedBy } : {}), savedBy: by, savedAt: o.clock.now().toISOString(),
           ...(was?.approval ? { approval: was.approval } : {}),
         });
-        events.append({ type: 'template.saved', data: { template: name, image: image.trim(), secrets: scope, profiles: declared, by } });
+        events.append({ type: 'template.saved', data: { template: name, image: image.trim(), ...(adds.length ? { tools: adds } : {}), secrets: scope, profiles: declared, by } });
       });
       // A profile dropped loses its approval: access holds none the template does not declare.
       for (const p of approvedOf(name)) if (!declared.some((d) => keyOf(d) === keyOf(p))) await o.access!.revokeProfile(name, p, by);
@@ -283,8 +299,9 @@ export function createVaultService(o: {
       const low = viewOf(t).pending.profiles.filter((p) => !highRadius(p));
       if (low.length && !o.access) return noAccess();
       o.store.tx(() => {
-        vault.saveTemplate({ ...t, approval: { image: t.image, secrets: [...t.secrets], by, at: o.clock.now().toISOString() } });
-        events.append({ type: 'vault.approved', data: { template: name, image: t.image, secrets: t.secrets, by } });
+        const tools = t.tools?.length ? { tools: [...t.tools] } : {};
+        vault.saveTemplate({ ...t, approval: { image: t.image, ...tools, secrets: [...t.secrets], by, at: o.clock.now().toISOString() } });
+        events.append({ type: 'vault.approved', data: { template: name, image: t.image, ...tools, secrets: t.secrets, by } });
       });
       for (const p of low) await approveIn(t, p, by);
       return { ok: true } as const;
@@ -334,6 +351,8 @@ export function createVaultService(o: {
       const { machine: m, job } = box;
       if (isSystemSecret(ask.name)) return refuse(await systemReadRefusal(o.access, o.userId ?? '', job.id, ask.name));
       if (vault.get(ask.name)?.mints) return refuse(`${ask.name} is a minting credential: the hopper mints from it and never gives it out`);
+      const launched = launchRefusal(m, ask.name);
+      if (launched) return refuse(launched);
       if (!scopeOf(m.name).secrets.includes(ask.name)) return refuse(`${m.template} is not approved for ${ask.name}: a person adds it to the template and approves it`);
       const secret = vault.get(ask.name);
       if (!secret) return refuse(`the vault holds no secret ${ask.name}`);
@@ -355,23 +374,10 @@ export function createVaultService(o: {
 
     mint: (ask, machineKey, from) => mint(ask, machineKey, from ?? mintFrom),
     mintFrom,
+    testMint: (asset, by, from) => testMint(asset, by, from ?? mintFrom),
 
-    resealAll() {
-      if (!sealer) return 0;
-      let n = 0;
-      for (const s of vault.list()) {
-        if (isSystemSecret(s.name)) continue;
-        const sealed = vault.sealed(s.id);
-        if (sealed === undefined || sealer.current(sealed)) continue;
-        try {
-          vault.replace(s, sealer.seal(sealer.open(sealed, vaultContext(s.id)), vaultContext(s.id)));
-          n++;
-        } catch (e) {
-          o.logger.warn(`hopper: vault secret ${s.name}: ${(e as Error).message}`);
-        }
-      }
-      return n;
-    },
+    ...templateChecks(o.store, { access: o.access, mintFrom }),
+    resealAll: () => resealRows({ vault, sealer, mine: (name) => !isSystemSecret(name), what: 'vault secret', logger: o.logger }),
   };
 }
 

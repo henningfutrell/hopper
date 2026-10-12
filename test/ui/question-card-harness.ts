@@ -58,7 +58,7 @@ export function fakeDaemon(o: Boot) {
       const status = o.mutationStatus ?? 200;
       if (status === 200) return json(200, { ...question, status: 'closed' });
       if (o.mutationError) return json(status, { error: o.mutationError });
-      return json(status, o.needs ? { error: `role ${o.role} may not do this; it needs ${o.needs}`, needs: o.needs } : { error: 'missing or invalid x-hopper-session' });
+      return json(status, o.needs ? { error: `role ${o.role} may not do this; it needs ${o.needs}`, needs: o.needs } : { error: 'missing or invalid x-hopper-session', session: 'ended' });
     }
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });

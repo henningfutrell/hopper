@@ -70,8 +70,9 @@ describe('systemd/hopper.service', () => {
     expect(text).toMatch(/HOPPER_MASTER_KEY/);
   });
 
-  it('install.sh copies WHATS-NEW.md into the install: the Updates panel says what the installed version brought (issue #165)', () => {
+  it('install.sh copies WHATS-NEW.md and whats-new/ into the install: the Updates panel says what the installed version brought (issues #165, #824)', () => {
     expect(readFileSync(INSTALL, 'utf8')).toMatch(/cp "\$APP_DIR\/WHATS-NEW\.md" "\$target\/"/);
+    expect(readFileSync(INSTALL, 'utf8')).toMatch(/cp -r "\$APP_DIR\/whats-new" "\$target\/whats-new"/);
   });
 
   it('install.sh offers Postgres only: no SQLite file, no migrate-local (issue #53)', () => {

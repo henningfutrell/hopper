@@ -1,16 +1,21 @@
 // Settings (issue #151): the configuration plane, one view with a section per part — the version (issue #165)
 // and the version history (issue #246) first (issue #363), then the question gates (escalation levels, standing rules,
-// risk rules), the question history, the decider (issue #550; named Decider in issue #661), auto-park (issue #650), the TL;DR (issue #569), the job rules (issue #172), yolo mode (issue #579), artifacts (issue #624), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
-// sign-in (issue #185), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
+// risk rules), the question history, the decider (issue #550; named Decider in issue #661), auto-park (issue #650), the issue thread (issue #435), the TL;DR (issue #569), the job rules (issue #172), the intake's trusted actors (issue #652), yolo mode (issue #579), the GitHub rate limit (issue #436), Contribution (issue #429), GitHub watches (issue #427), artifacts (issue #624), Your reports (issue #694), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
+// sign-in (issue #185), API tokens (issue #718), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the version. A moved section's old hash (#settings/minor-decisions) is replaced by its new one.
-import { CirclePause, FolderOpen, Grid3x3, History, Info, KeyRound, KeySquare, ListChecks, LockKeyhole, Puzzle, Route, Scale, ScrollText, ShieldCheck, TextQuote, Users as UsersIcon, Webhook, Zap, type LucideIcon } from 'lucide-react';
+import { Bug, CirclePause, Eye, FolderOpen, Gauge, GitFork, Grid3x3, History, Info, KeyRound, KeySquare, ListChecks, LockKeyhole, MessagesSquare, Puzzle, Route, Scale, ScrollText, ShieldCheck, TextQuote, Ticket, type LucideIcon, UserCheck, Users as UsersIcon, Webhook, Zap } from 'lucide-react';
 import { useEffect } from 'react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
 import { cn } from '@/lib/utils';
 import { Access } from '@/views/access';
+import { ApiTokens } from '@/views/api-tokens';
 import { ArtifactSettings } from '@/views/artifact-settings';
 import { AutoPark } from '@/views/auto-park';
+import { BugReports } from '@/views/bug-reports';
+import { GitHubRateLimiter } from '@/views/github-rate-limiter';
+import { Contribution } from '@/views/contribution';
+import { GitHubWatches } from '@/views/github-watches';
 import { JobRules } from '@/views/job-rules';
 import { MinorDecisions } from '@/views/minor-decisions';
 import { PermissionMatrix } from '@/views/permission-matrix';
@@ -19,14 +24,16 @@ import { QuestionGates } from '@/views/question-gates';
 import { QuestionHistory } from '@/views/question-history';
 import { Realms } from '@/views/realms';
 import { Routing } from '@/views/routing';
+import { ThreadAsk } from '@/views/thread-ask';
 import { TldrSettings } from '@/views/tldr-settings';
 import { Users } from '@/views/users';
 import { Vault } from '@/views/vault';
 import { VersionHistory } from '@/views/version-history';
 import { Webhooks } from '@/views/webhooks';
 import { YoloMode } from '@/views/yolo-mode';
+import { IntakeActors } from '@/views/intake-actors';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'history', 'decider', 'auto-park', 'tldr', 'job-rules', 'yolo-mode', 'artifacts', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'access', 'permissions'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'history', 'decider', 'auto-park', 'thread-ask', 'tldr', 'job-rules', 'intake', 'yolo-mode', 'github-rate-limit', 'contribution', 'github-watches', 'artifacts', 'reports', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'api-tokens', 'access', 'permissions'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -35,16 +42,23 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   history: { label: 'Question history', icon: History, view: QuestionHistory },
   decider: { label: 'Decider', icon: Scale, view: MinorDecisions },
   'auto-park': { label: 'Auto-park', icon: CirclePause, view: AutoPark },
+  'thread-ask': { label: 'Issue thread', icon: MessagesSquare, view: ThreadAsk },
   tldr: { label: 'TL;DR', icon: TextQuote, view: TldrSettings },
   'job-rules': { label: 'Job rules', icon: ListChecks, view: JobRules },
+  intake: { label: 'Intake', icon: UserCheck, view: IntakeActors },
   'yolo-mode': { label: 'Yolo mode', icon: Zap, view: YoloMode },
+  'github-rate-limit': { label: 'GitHub rate limit', icon: Gauge, view: GitHubRateLimiter },
+  contribution: { label: 'Contribution', icon: GitFork, view: Contribution },
+  'github-watches': { label: 'GitHub watches', icon: Eye, view: GitHubWatches },
   artifacts: { label: 'Artifacts', icon: FolderOpen, view: ArtifactSettings },
+  reports: { label: 'Your reports', icon: Bug, view: BugReports },
   routing: { label: 'Routing', icon: Route, view: Routing },
   plugins: { label: 'Plugins', icon: Puzzle, view: Plugins },
   webhooks: { label: 'Webhooks', icon: Webhook, view: Webhooks },
   vault: { label: 'Vault', icon: LockKeyhole, view: Vault },
   users: { label: 'Users', icon: UsersIcon, view: Users },
   'sign-in': { label: 'Sign-in', icon: KeyRound, view: Realms },
+  'api-tokens': { label: 'API tokens', icon: Ticket, view: ApiTokens },
   access: { label: 'Access', icon: KeySquare, view: Access },
   permissions: { label: 'Permission matrix', icon: Grid3x3, view: PermissionMatrix },
 };

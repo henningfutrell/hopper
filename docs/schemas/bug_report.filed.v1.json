@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "issue",
+        "comment"
+      ]
+    },
+    "number": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "url": {
+      "type": "string"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    },
+    "fromJob": {
+      "type": "boolean",
+      "const": true
+    },
+    "id": {
+      "type": "string"
+    },
+    "later": {
+      "type": "boolean",
+      "const": true
+    }
+  },
+  "required": [
+    "repo",
+    "kind",
+    "number",
+    "url",
+    "by"
+  ],
+  "additionalProperties": false
+}

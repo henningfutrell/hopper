@@ -59,7 +59,9 @@ describe('a newer job of its item supersedes a failure waiting on a person', () 
     const stale = store.handoffs.create({ ...was, status: 'open', openedAt: new Date().toISOString() });
     const record = store.failures.forJob(job.id)!;
     store.failures.update(record.id, { outcome: 'surfaced', nextJobId: undefined, note: undefined });
-    expect((await failuresOf(a)).counts.needsPerson).toBe(1);
+    // Read in the same tick as the writes (issue #756): the background sweep runs every tick and may close the row
+    // before an HTTP round trip reads it.
+    expect(failures.view().counts.needsPerson).toBe(1);
 
     // A sweep already under way may have read before the row was written: the next one sees it.
     await failures.sweep();

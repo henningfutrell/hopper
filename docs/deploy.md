@@ -13,7 +13,7 @@ with Podman** ("In containers, with Podman"); the host install is the other way.
 | | where |
 |---|---|
 | `HOPPER_DATABASE_URL` | `postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]`, or `HOPPER_DATABASE_URL_FILE` naming a mounted file holding it. Required. Put Postgres near the hopper: every store call waits one round trip. |
-| Credentials the hopper is given | for outside services, from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GITHUB_APP_PRIVATE_KEY`, `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY` (with the user's secret prefix, `HOPPER_USER_<ID>_`, as Settings → Plugins names them; as `_FILE` they can change without a restart), a realm's secrets only when the realm is set up from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_CLIENT_SECRET`, docs/sign-in.md "Sign-in from the environment"; typed in Settings otherwise, and stored); `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where its own login is not on the machine (a variable only: the CLI reads it). A job's `GH_TOKEN` is no runtime secret: the hopper hands each job the connected account's token. A leftover `HOPPER_SECRET_KEY` line: delete it. |
+| Credentials the hopper is given | for outside services, from the runtime (docs/design.md "Secrets"): each one the variable `NAME`, or the mounted file the variable `NAME_FILE` names (never both) — `GITHUB_APP_PRIVATE_KEY`, `GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY` (with the user's secret prefix, `HOPPER_USER_<ID>_`, as Settings → Plugins names them; as `_FILE` they can change without a restart), a realm's secrets only when the realm is set up from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_CLIENT_SECRET`, docs/sign-in.md "Sign-in from the environment"; typed in Settings otherwise, and stored); `CLAUDE_CODE_OAUTH_TOKEN` for the claude CLI where its own login is not on the machine (a variable only: the CLI reads it). A job holds no GitHub token: its `git` and GitHub steps go through the hopper, which uses the connected account's token (docs/design.md "Git through the hopper"). A leftover `HOPPER_SECRET_KEY` line: delete it. |
 | Secrets the hopper owns, and the master key | kept in the database, encrypted under the **master key** `HOPPER_MASTER_KEY` (32 bytes, `openssl rand -hex 32`): the vault secrets, and the hopper's own secrets in the vault's system scope — each webhook's signing secret, the connected account's tokens, each sign-in realm's client secret or bind password, each user's TypeSafe API key —, listed with an audit trail on Settings → Vault and never given to a job. Given at launch as a variable, never from a file or a volume: "The master key" below. |
 | Process settings | `HOPPER_*` variables: port, LAN names and peers, public URL, tick, limits (`src/config.ts`). |
 | Plugins | Optional. `HOPPER_PLUGIN_DIR` (plugins put there by hand; a container mounts it read-only) and `HOPPER_PLUGIN_STORE` (seeds the plugin store setting on a hopper that never had one set; the plugin store is set in the UI, Plugins → Plugin store, and defaults to the one the Pages site publishes: docs/plugins.md). Store installs are kept in the database and restored into the work dir at start: they need no plugin dir and no volume. |
@@ -59,7 +59,8 @@ and give the receiver the new one. From then on the variable is not read: delete
 Every secret the hopper keeps is sealed under one key, the **master key**. The database keeps only its
 fingerprint (an HMAC of a fixed label under the key), never the key. The key comes from the launch, as the
 variable `HOPPER_MASTER_KEY`. It is never read from a file or a volume: a container is ephemeral, and a key
-kept beside it is lost with it.
+kept beside it is lost with it. No KMS gives the master key: `HOPPER_KMS_URL` changes only the key of the vault's
+own secrets (`docs/design.md` "A KMS as the master key's source: not built").
 
 **Keep the master key in a password manager.** Without it, a new container on the same database opens none
 of the secrets. Keep it apart from the database's backups: a backup with its key beside it holds every secret.
@@ -79,11 +80,17 @@ of the secrets. Keep it apart from the database's backups: a backup with its key
   banner name the missing key by its fingerprint. Nothing is deleted. Nothing that needs a secret works: no
   secret is stored or opened, and no new GitHub token is kept. Do not connect GitHub again: give the key and
   restart.
-- **Moving from the old token key.** An install from before kept its key in the compose secrets volume
-  (`token_key`) or as `HOPPER_TOKEN_KEY` in `daemon.env`. While `HOPPER_MASTER_KEY` is unset, the hopper reads
-  that key, checks it against the secrets it keeps, and shows it once in the UI to be saved. Give it as
+- **Moving from the old token key.** An install from before kept its key in the compose `secrets` volume
+  (`token_key`) or as `HOPPER_TOKEN_KEY` in `daemon.env`. While `HOPPER_MASTER_KEY` is unset, a host install reads
+  `HOPPER_TOKEN_KEY`, checks it against the secrets it keeps, and shows it once in the UI to be saved. Give it as
   `HOPPER_MASTER_KEY`, and restart. The log then says the old key is not read and can be removed: delete the
-  `HOPPER_TOKEN_KEY` line, or the `token_key` file. The compose file makes no `token_key` any more.
+  `HOPPER_TOKEN_KEY` line. The compose file no longer mounts the `secrets` volume or reads its `token_key`: save the key
+  from the UI and put it in `.env` **before** you update (the update script refuses until then). A compose install
+  that updated without it starts limited, and nothing is lost: the key is still in the old volume. Read it once,
+  put it in `.env` as `HOPPER_MASTER_KEY`, and recreate the hopper:
+  `podman run --rm -v hopper_secrets:/s:ro docker.io/library/alpine:3 cat /s/token_key`. Once the hopper starts with
+  the key, remove the old volume: `podman volume rm hopper_secrets` (with the stack stopped, or after
+  `podman compose up -d --remove-orphans`).
 
 **The master key never goes to a log.** The hopper logs only where the key came from and its fingerprint, and
 every log line goes through a mask that removes the key in any form. To see the key's status without the key:
@@ -97,6 +104,25 @@ anyone who can read that journal or a copy of it has the key. Search for the lin
 If either count is not 0, rotate the key now (below). Deleting the log lines is not enough: rotate.
 
 ### Rotating the master key
+
+**With one command** (issue #659): the hopper's admin rotates the key from Settings → Vault → Master key → **Rotate the
+master key**, or from the operator CLI: `hopper master-key rotate` (in compose:
+`podman compose exec hopper hopper master-key rotate`). The hopper makes a new key and seals every secret it keeps
+again under it, in one transaction: if anything fails, nothing changes. The running hopper goes on under the new key,
+with no restart. The new key is shown once — in the UI banner, or in the command's answer (`key`) —, never in the log.
+
+1. Save the new key in your password manager now.
+2. Put it in place of the old one at launch, before the next start: in compose, `HOPPER_MASTER_KEY=<the new key>` in
+   `.env`; on a host install, in `~/.config/hopper/daemon.env`. A start with the old key is refused: `the master key
+   does not match this database: it was rotated …`. Nothing changes then: give the new key.
+3. Click **I saved it** in the banner. Delete the old key from your password manager and from every place it was
+   written.
+
+The answer also says how many secrets were sealed again (`resealed`), and how many the old key sealed that do not open
+(`unreadable`, left as they were; they did not open before either). With the vault in a container of its own
+(`HOPPER_VAULT_URL`), the command is refused: that container keeps the key it started with. Rotate at launch instead:
+
+**At launch** (the vault in a container of its own, or a key you made yourself):
 
 1. Make a new key: `openssl rand -hex 32`. Save it in your password manager.
 2. Give it as `HOPPER_MASTER_KEY`, and the old one as `HOPPER_MASTER_KEY_PREVIOUS` (one per line). In
@@ -128,11 +154,11 @@ a running container: `--force-recreate` does. A plain `restart` keeps the old en
 
 The connected account's tokens are among them: no new GitHub sign-in. A secret that neither key opens is named at
 start (`start check: system secret <name> cannot be opened: …`) and on Settings → Vault.
-Keep the key with the database: a hopper on the database with neither key reads the connection as
+Keep using the same key with this database: a hopper on the database with neither key reads the connection as
 *cannot be read* and asks for the key back. Connecting again instead makes another GitHub grant (docs/design.md
 "One grant per connection").
 
-Mounted secrets: in compose, a `secrets:` entry (added to `compose.yaml`) appears at `/run/secrets/<name>` — set
+Mounted secrets: in compose, a `secrets:` entry (in `compose.override.yaml`; never edit `compose.yaml`) appears at `/run/secrets/<name>` — set
 `<NAME>_FILE=/run/secrets/<name>`; in Kubernetes, a Secret volume; under systemd, `LoadCredential=` in
 a drop-in with `Environment=<NAME>_FILE=%d/<name>`.
 
@@ -172,11 +198,14 @@ Without it, a new container on the same database is limited ("The master key" ab
 
 | service | |
 |---|---|
-| `secrets` | runs once per start: makes a random database password on the first one, in the `secrets` volume, and writes the database URL from it. Each file is readable only by the one service that uses it. Nobody types or keeps the password. It holds no master key. |
-| `postgres` | the database (`POSTGRES_PASSWORD_FILE`), on no host port; data in the `postgres` volume. It sets the password again at each start, so a lost `secrets` volume makes a new password and the database keeps working. |
-| `hopper` | the image `HOPPER_IMAGE` names (default `ghcr.io/henningfutrell/hopper:latest`). `HOPPER_DATABASE_URL_FILE` from `secrets`. Its home, `/home/node`, is the `home` volume: the claude sign-in and git's identity. |
+| `postgres` | the database (`POSTGRES_PASSWORD_FILE`), on no host port; data in the `postgres` volume. Before it starts, it makes a random database password and the database URL from it, and OpenFGA's and the vault container's preshared keys, in `runtime-secrets`, and sets the password again once it takes connections. Each file is readable only by the one service that uses it. Nobody types or keeps the password. |
+| `hopper` | the image `HOPPER_IMAGE` names (default `ghcr.io/henningfutrell/hopper:latest`). `HOPPER_DATABASE_URL_FILE` from `runtime-secrets`. Its home, `/home/node`, is the `home` volume: the claude sign-in and git's identity. |
 | `openfga-migrate` | brings OpenFGA's tables in the `openfga` schema up to its version, then exits; retries until postgres has made the schema. Nothing depends on it ("Access: OpenFGA" below). |
 | `openfga` | OpenFGA, which access asks before every credential a job is given; on no host port, behind a preshared key `postgres` makes. |
+
+No secret is in a persistent volume (issue #659). `runtime-secrets` is in memory (tmpfs): the services share it while
+any of them runs, it is gone after a full stop, and `postgres` makes its files again at the next start. The master key
+is only in `.env`.
 
 - **The container is not a machine** (issue #141). The image sets `HOPPER_LOCAL_MACHINE=false`: no
   `local` machine, and the boot removes one an earlier version wrote into the plugins config. Jobs run on
@@ -206,7 +235,8 @@ Without it, a new container on the same database is limited ("The master key" ab
 - **Settings and secrets: `.env` beside `compose.yaml`**, optional (`.env.example`, mode 600). Compose
   reads it for the file's own variables and passes all of it to the hopper.
 - **The UI** is published on this computer's loopback, `127.0.0.1:${HOPPER_PORT:-4790}`, the same port
-  inside and out. Those requests reach the daemon from the compose network, so they are LAN requests:
+  inside and out. `HOPPER_BIND` in `.env` names another address: `HOPPER_BIND=0.0.0.0` publishes it on every
+  interface, for a LAN install (issue #697). Those requests reach the daemon from the compose network, so they are LAN requests:
   `/api/` needs a UI session (docs/design.md "Reaching the UI across the LAN"). `HOPPER_LAN_PEERS`
   defaults to the private ranges and `HOPPER_LAN_NAMES` to `hopper`, the name a reverse proxy on the
   compose network reaches it by; set `HOPPER_PUBLIC_URL` for one.
@@ -218,25 +248,68 @@ Without it, a new container on the same database is limited ("The master key" ab
 - **Upgrade: you update a container install, never the hopper** (issues #51, #409, #494). Self-update and
   Auto-update do not apply to a container: the UI offers neither Update now nor the Auto-update switch, and the
   server ignores an auto-update setting for it. When the update check finds a newer build, the update notice
-  and Settings → Version give these commands with the selected channel's tag.
+  and Settings → Version give the commands below with the selected channel's tag.
   - **The channel is the image tag.** `HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel>` in `.env` beside
     `compose.yaml`, where `<channel>` is the channel picked in Settings → Version: `dev`, `beta` or `stable`.
     Unset, it is `:latest`, the same image as `:stable`. A container on `:latest` with the channel set to `dev`
     never reaches `dev`'s head by pulling, so the notice says "this container runs the `stable` image; the
-    selected channel is `dev`: switch the image tag". **Switch channels** by changing `HOPPER_IMAGE` and running
-    the commands below; pick the same channel in Settings → Version.
+    selected channel is `dev`: switch the image tag". **Switch channels** by running the update below with the
+    channel's image (it sets `HOPPER_IMAGE`); pick the same channel in Settings → Version.
   - **Before you update, check that `.env` holds `HOPPER_MASTER_KEY`.** The new container gets the key only from
-    there. An install from before keeps it in the secrets volume's `token_key`: the hopper reads that one until
-    `HOPPER_MASTER_KEY` is set, and shows it once to be saved ("The master key" above).
-  - **Pull and recreate the hopper's container alone**, in the folder that holds `compose.yaml`. Postgres and
-    every volume stay as they are:
+    there. An install from before keeps it in the old `secrets` volume's `token_key`, which the new compose file does
+    not read: save the key the UI shows, and put it in `.env` first ("The master key" above). The update script
+    refuses until then.
+  - **Update with the compose file the new image ships with, the whole stack** (issue #697). Every image carries
+    the `compose.yaml` of its commit. In the folder that holds `compose.yaml`, make the update script from the image of
+    the channel, read it, then run it:
 
     ```sh
-    podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper   # Podman
-    docker compose pull hopper && docker compose up -d --force-recreate --no-deps hopper   # Docker
+    podman run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update podman > hopper-update.sh   # Podman
+    docker run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update docker > hopper-update.sh   # Docker
+    sh hopper-update.sh
     ```
 
-    `--force-recreate`: podman-compose keeps the old container on a newly pulled image without it.
+    (`hopper update podman-compose` for podman-compose without `podman compose`; `--image <ref>` for another image.)
+    In order, the script:
+    1. stops when `.env` lacks `HOPPER_MASTER_KEY` and the running hopper made its key at this start (a recreate
+       would lose it);
+    2. backs up the database (`hopper-backup-<time>.dump`, `pg_dump -Fc`), `compose.yaml` (as
+       `compose.yaml.bak-<commit>`) and `.env`;
+    3. pulls the image;
+    4. moves the install's own settings from the old `compose.yaml` to `.env` — the published port's address
+       (`HOPPER_BIND`), the port, and `HOPPER_*` settings written into the file —; sets `HOPPER_IMAGE` to the image;
+       and moves what `.env` cannot hold to `compose.override.yaml`: a service of the install's own with the volumes it
+       names, a host folder mounted into a service, a key of a service the hopper never sets, and the project name when
+       the install gave its own (another one would start the stack on new, empty volumes). It adds to an existing
+       `compose.override.yaml` (kept as `compose.override.yaml.bak-<commit>`), keeps its comments, replaces nothing it
+       has, and shows the change. A service the hopper once shipped and no longer does is dropped, and said so;
+    5. puts in the image's `compose.yaml`, stamped `# hopper version: <branch> <commit>`, and shows the change;
+    6. pulls the images of the whole stack and recreates it (`up -d --force-recreate`, never `--no-deps hopper`);
+    7. checks that the hopper and OpenFGA answer.
+
+    It stops at the first step that fails and says how to go back: put back `compose.yaml.bak-<commit>`,
+    `.env.bak-<commit>` and `compose.override.yaml.bak-<commit>` (or remove a `compose.override.yaml` it made), then
+    `podman compose up -d --force-recreate`.
+  - **Never update the hopper's container alone** (`pull hopper`, `up -d --no-deps hopper`). It keeps the old
+    compose file: a version that adds a required service (OpenFGA, issue #559) or a setting never gets it, and
+    features fail. **Never edit `compose.yaml`**: each update replaces it whole. Put your own settings in `.env`
+    (`HOPPER_IMAGE`, `HOPPER_MASTER_KEY`, `HOPPER_BIND`, `HOPPER_PORT`, `HOPPER_LAN_NAMES`, `HOPPER_PUBLIC_URL`, …) or in
+    `compose.override.yaml`, which compose reads beside it.
+  - **The hopper checks its stack** (issue #697). At start, and each minute while the UI is open, a container hopper
+    compares the stack it runs in with the compose file of its own version: each service that must run (no profile,
+    or one `COMPOSE_PROFILES` in `.env` turns on), by its name on the compose network; the settings that file gives the
+    hopper's container; and the version `hopper-vault` runs. A gap is logged at start and shown in a banner over every
+    view: what is missing, what is off until then, and the fix — the update script made from the image the hopper runs.
+    `GET /api/update/drift` answers the same (`StackDrift`). It sees only from inside its container: a service of the
+    install's own, and the versions of OpenFGA and Postgres, are not compared.
+  - **An agent that updates a hopper** follows the update skill: `GET /api/update/skill` on the running hopper, or
+    `podman run --rm <image> hopper update skill`. `GET /api/update/compose` answers the compose file the running
+    build ships with, and its version.
+  - **From a beta install on an old compose file** (one without `openfga`): run the update above once. It keeps
+    a LAN install's `0.0.0.0` as `HOPPER_BIND=0.0.0.0` in `.env`, moves its own services and mounts (a container
+    socket for boxes, say) to `compose.override.yaml`, adds OpenFGA, and keeps the old files as the backups. Until then
+    the stack banner names the gaps.
+    An image from before this change has no `hopper update`: make the script from the new image, as above.
   - **Optionally, remove the image it replaced:** `podman image prune -f --filter label=org.opencontainers.image.title=hopper`
     (`docker image prune …` the same). It removes only untagged hopper images, so repeated upgrades do not
     pile up images.
@@ -267,11 +340,55 @@ Podman keep separate volumes: moving such a stack from Docker to Podman moves th
 is the `job-hopper_postgres` volume, which `deploy/compose.yaml` still serves. Move it into the new stack
 once, before the hopper's first start, with `pg_dump` from one and `psql` into the other.
 
+### The hopper's network
+
+`compose.yaml` makes its own network, `hopper_default`, on every `up` (issue #711). The name is fixed in the file, so it
+is the same whatever the compose project is called, and it is never a network you make first. Every service is on it:
+the hopper, Postgres, OpenFGA and the optional services. Each sandbox box the hopper starts joins it too
+(`HOPPER_SANDBOX_NETWORK`, default `hopper_default`). On it, `http://hopper:4790` reaches the hopper, with no
+`HOPPER_PUBLIC_URL`.
+
+A container you start yourself, a seat for an ssh target for example, joins it with one command:
+
+```sh
+podman network connect hopper_default <container>
+```
+
+**Off-network machines.** Every 30 s the hopper asks each ssh target which of its addresses the machine reaches. When
+the machine reaches none, the Machines view shows it as **off-network**, with why. When the ssh target names a container,
+it also shows the command above for that container, with a Copy button. The machine takes no new job until it reaches
+the hopper. Its jobs wait with the reason (`… is off-network: … Fix: podman network connect …`); they do not fail. The
+other fix is a link base that the machine reaches: set `HOPPER_PUBLIC_URL` in `.env`, then recreate the hopper.
+
+**Fallback: a seat in another Podman engine** (a rootful Podman, or another user's rootless one). Such a container
+cannot join `hopper_default`. It can reach the hopper through `host.containers.internal`, but only on an address the
+port is published on. The hopper publishes its port on `127.0.0.1` only, which the gateway does not reach. To use the
+fallback:
+
+1. In that engine, find the address `host.containers.internal` names:
+   `podman run --rm docker.io/library/alpine:3 getent hosts host.containers.internal`.
+2. Publish the port on that address too, in a `compose.override.yaml` beside `compose.yaml` (compose adds it to the
+   loopback port; with `compose.sandboxes.yaml` already saved there, add the lines to that file):
+
+   ```yaml
+   services:
+     hopper:
+       ports:
+         - "<that address>:4790:4790"
+   ```
+
+3. Add the name to the hopper's LAN names in `.env`: `HOPPER_LAN_NAMES=hopper,host.containers.internal`. The seat's
+   address must be in `HOPPER_LAN_PEERS` (by default, the private ranges).
+4. `podman compose up -d`. The next probe finds `http://host.containers.internal:4790`, and the seat's jobs use it.
+
+Publish on that address only, never on every interface: the port then stays off the LAN.
+
 ## Access: OpenFGA
 
-Before the vault gives a job a credential, access asks OpenFGA whether the job's template is approved for it
-(issue #559, docs/design.md "Access: OpenFGA decides each mint"). With no OpenFGA, or one the hopper cannot reach,
-every credential is denied, and Settings → Access says why.
+Access (OpenFGA) decides each mint and each renewal, each shared-secret read and each vault grant (issue #559,
+docs/design.md "Access: OpenFGA decides each mint"). With no OpenFGA, or one the hopper cannot reach, the vault mints
+nothing, gives no shared secret, and nobody can grant a job the vault; Settings → Access says why. Intake asks it too (`intake#can_start_jobs`): without
+OpenFGA no login is a trusted actor, every issue is a request card, and Approve and Accept the new text are refused.
 
 - **In containers** it is set up: `compose.yaml` runs `docker.io/openfga/openfga` as `openfga-migrate` and `openfga`,
   with its tables in the `openfga` schema of the hopper's Postgres. The `postgres` service writes OpenFGA's config
@@ -283,10 +400,20 @@ every credential is denied, and Settings → Access says why.
 - **Elsewhere**: run OpenFGA (`openfga migrate`, then `openfga run`, its datastore any it supports), and set
   `HOPPER_OPENFGA_URL` and, with `--authn-method preshared`, `HOPPER_OPENFGA_KEY` (or `HOPPER_OPENFGA_KEY_FILE`).
   The key is read at each call: rotate it in OpenFGA and the runtime together.
-- **Update OpenFGA** by changing the image tag in `compose.yaml` (`openfga-migrate` and `openfga` together), then
-  `podman compose up -d`.
+- **Update OpenFGA** with the hopper: the `compose.yaml` each hopper image ships with names the OpenFGA version it
+  runs, and the update puts it in (issue #697). Do not change the tag in `compose.yaml` by hand.
 - **What the hopper keeps**: the approvals and the model are in its own database, so an emptied or new OpenFGA is
   filled again from it within 30 seconds; OpenFGA holds nothing only it knows.
+- **Without OpenFGA** (issue #696): every page shows a banner that says why access checks are off, with this fix, and
+  How to update says it too. A change that needs Access — the TypeSafe API key on Settings → Decider — is off with
+  the same reason, and a save tried anyway answers 503 `access checks are unavailable: OpenFGA is not reachable`.
+  Intake trusts nobody, so no issue becomes a job until OpenFGA is back. Your other secrets, your GitHub connection
+  and your session stay as they were.
+  `GET /api/access/status` answers the state to any reader.
+- **Upgrade from an older `compose.yaml`** (a beta install from before issue #559 has no `openfga` service): do not
+  copy services into it. Run the update ("In containers, with Podman" → Upgrade, issue #697): it puts in the
+  `compose.yaml` the image ships with, which has OpenFGA, keeps your own settings in `.env`, and starts the whole
+  stack. The banner goes within a minute of OpenFGA answering.
 
 ### Minting short-lived credentials
 
@@ -299,23 +426,131 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   want for that operation (for `hopper-read`, the `view` cluster role). Make an identity whose token may only
   `create` on `serviceaccounts/token` for those service accounts. In Settings → Vault, set a secret with *Mints for*
   `cluster/<name>` and the value `{"server": "https://…:6443", "token": "…", "certificateAuthorityData": "<base64 PEM>"}`.
-  Each token the hopper mints lives 10 minutes.
+  Each token the hopper mints lives 10 minutes. For read on a whole cluster, this sets up both service accounts in the
+  namespace `hopper` (for a namespace, put `hopper-read` and its binding in that namespace, and let the role below
+  reach it there):
+
+  ```yaml
+  apiVersion: v1
+  kind: Namespace
+  metadata: { name: hopper }
+  ---
+  apiVersion: v1
+  kind: ServiceAccount
+  metadata: { name: hopper-read, namespace: hopper }
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRoleBinding
+  metadata: { name: hopper-read-view }
+  roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: view }
+  subjects: [{ kind: ServiceAccount, name: hopper-read, namespace: hopper }]
+  ---
+  apiVersion: v1
+  kind: ServiceAccount
+  metadata: { name: hopper-minter, namespace: hopper }
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: Role
+  metadata: { name: hopper-minter, namespace: hopper }
+  rules: [{ apiGroups: [""], resources: [serviceaccounts/token], resourceNames: [hopper-read], verbs: [create] }]
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: RoleBinding
+  metadata: { name: hopper-minter, namespace: hopper }
+  roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: hopper-minter }
+  subjects: [{ kind: ServiceAccount, name: hopper-minter, namespace: hopper }]
+  ```
+
+  Then `kubectl -n hopper create token hopper-minter --duration=8760h` gives the minting credential's `token`; renew it
+  before it expires.
 - **AWS.** Make an IAM user (or role) that may only `sts:AssumeRole` the roles templates may reach. In Settings →
   Vault, set a secret with *Mints for* `aws-account/<id>` and the value `{"AccessKeyId": "…", "SecretAccessKey": "…"}`
   (optional `Region`, and `Endpoint` for an STS other than AWS's). Each session lives 15 minutes; a `read` session
-  carries the `ReadOnlyAccess` session policy.
+  carries the `ReadOnlyAccess` session policy. The hopper names each session `hopper-<job id>`. When the role's trust
+  policy allows only one session name (a condition on `sts:RoleSessionName`), add `"SessionName": "<that name>"` to
+  the value; when it allows a prefix (`StringLike`, `ci-*`), add `"SessionNamePrefix": "ci-"`, and the hopper names
+  each session `ci-<job id>`. Then the IAM role needs no change. To check it before a job needs it, run
+  `hopper vault mint-test aws-role/<id>/<role>`: the hopper mints a read session (named `hopper-mint-test`,
+  `<prefix>mint-test`, or the fixed name) and shows the role STS says it assumed, as `aws sts get-caller-identity` would.
+  When STS refuses, it shows why.
+- **A read-only AWS setup, step by step** (issue #715). Two IAM identities: the **minting identity** whose keys the
+  hopper holds, and the **read role** it assumes. Tag each new IAM resource as your organization's rules say (for
+  example its MAP tag, `map-migrated`, when the account is in a migration program): add `--tags Key=map-migrated,Value=<id>`
+  to each `create-user`, `create-role` and `create-policy` below.
+  1. The read role, `hopper-read`, with AWS's `ReadOnlyAccess` (or `ViewOnlyAccess`, which reads no data) and a trust
+     policy that lets only the minting identity assume it:
+
+     ```sh
+     aws iam create-role --role-name hopper-read --max-session-duration 3600 \
+       --permissions-boundary arn:aws:iam::aws:policy/ReadOnlyAccess \
+       --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::<id>:user/hopper-minter"},"Action":"sts:AssumeRole"}]}'
+     aws iam attach-role-policy --role-name hopper-read --policy-arn arn:aws:iam::aws:policy/ReadOnlyAccess
+     ```
+
+     The permissions boundary keeps the role at read, even when someone attaches a wider policy to it later.
+  2. The minting identity, `hopper-minter`, that may only assume that role:
+
+     ```sh
+     aws iam create-user --user-name hopper-minter
+     aws iam put-user-policy --user-name hopper-minter --policy-name hopper-mint \
+       --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Resource":"arn:aws:iam::<id>:role/hopper-read"}]}'
+     aws iam create-access-key --user-name hopper-minter
+     ```
+
+  3. In Settings → Vault, set a secret with *Mints for* `aws-account/<id>` and the access key as its value, as above.
+  4. Check it: `hopper vault mint-test aws-role/<id>/hopper-read`.
+
+  Every read session the hopper mints carries two session policies: `ReadOnlyAccess`, and an inline policy that denies
+  every `Create`, `Delete`, `Put`, `Update` and `Modify` action, IAM's other writes, and `sts:AssumeRole` on any role
+  but `hopper-read` (docs/design.md "A read-only infra box"). So a read session cannot write, even when the role can. A
+  template that asks for read on `aws-role/<id>/hopper-read` gets these sessions, and its read-only check proves the writes
+  fail. The check runs again once a day.
+
+  **A Terraform workspace** (issue #715, part 2). A template reads one with two needs: `read/terraform-workspace/<name>`
+  and `read/aws-role/<id>/hopper-read`, the role its AWS provider and its S3 state backend are read with. The workspace
+  gets no credential of its own: its probes run with that role's read session, and the template must have exactly one
+  `aws-role` read need. The state backend needs no policy of its own: the deny policy refuses `s3:PutObject`,
+  `s3:DeleteObject` and the DynamoDB lock table's `PutItem`, `DeleteItem` and `UpdateItem`, and `ReadOnlyAccess` reads the
+  state. Use `ReadOnlyAccess` for such a role, not `ViewOnlyAccess`: `ViewOnlyAccess` does not read S3 objects, so
+  `terraform plan` cannot read the state. Run `plan` with `-lock=false` (the read-only wrapper adds it), as a lock is a write.
+  The box installs providers only from its image (issue #715, part 3): the AWS provider, at the version pinned in
+  `src/sandbox/tools.ts`, and no other. A workspace that needs another provider, or pins another AWS provider version in
+  its `.terraform.lock.hcl` or its version constraint, cannot `init` there.
+
+  **The workspace's state backend** (issue #715, part 6). Set it on the workspace's profile: Settings → Vault, **Edit**
+  the template, **State backend** (bucket, region, key prefix); or
+  `hopper template save <name> --image <image> --backend <workspace>=<bucket>[/<key prefix>]@<region>`. The read-only check
+  then runs `terraform.state-push-direct`: past the wrapper, `init` with that S3 backend at the key
+  `<key prefix>/hopper-read-only-check/terraform.tfstate` and `state push` of a state of its own, which `s3:PutObject` must
+  refuse. It never names the workspace's own state key. `init` only reads the bucket (`ListBucket`, `HeadObject`). If the
+  push goes through, the check deletes that key (`aws s3api delete-object`, with the `aws` tool a workspace need adds) and
+  fails. With no backend, the probe is *not run* and the check fails: a state write is not proven refused. No new IAM
+  resource is needed: the read role, the deny policy and the bucket are the ones above. A bucket policy that lets the
+  role write under the key prefix fails the check, as it should.
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
   `aws-role/<id>/<role>`), and a person approves them on Settings → Vault. A minting credential is never given to a box,
   and no template lists it in its scope.
+- **A vault grant** is needed too: a job gets a minted credential only after a person grants it the vault
+  (Settings → Vault, Vault grants).
+- **The read-only check** (issue #797) uses the same minting credentials: before a check box of a template of read
+  needs starts, the hopper mints a read session for each `aws-role` and a `hopper-read` token for each cluster or
+  namespace, and the box's probes run with them. A need with no minting credential fails the check and says which one
+  to add. The AWS session is named `hopper-read-only-check` (or `<prefix>read-only-check`, or the fixed `SessionName`).
+  Set `Region` in an AWS minting credential when the account's services are not in `us-east-1`.
+- **Where the check runs** (issue #708): beside the hopper when it is given a container runtime socket
+  (`compose.sandboxes.yaml`). With none, it runs on a machine of the template's user that joined with Add machine, is
+  dialled in, and has rootless Podman or Docker. The minted read credentials then go down that machine's link into
+  the check box there. With neither, the template waits for its check. A client older than this release refuses the
+  check box, and the check fails with that reason; run it again once the machine has the new client.
 ## Optional services
 
 `compose.yaml` has required services and optional ones (issue #586). Nothing outside the stack is required.
 
 - **Required**: `postgres`, `hopper`, `openfga` (and `openfga-migrate`, which runs once). A plain
   `podman compose up -d` starts only these, and the vault works: it runs in the hopper, under the master key.
-- **Optional**: `hopper-vault`, `kms` and `vault`, each behind a compose profile of the same name. The hopper starts
-  and works without them. No required service depends on them, and none is on a host port. `vault` is HashiCorp
-  Vault, a vault backend ("Vault backends" below); the other two are here.
+- **Optional**: `hopper-vault`, `kms`, `vault` and `tunnel`, each behind a compose profile of the same name. The hopper
+  starts and works without them. No required service depends on them, and none is on a host port. `vault` is HashiCorp
+  Vault, a vault backend ("Vault backends" below); the others are here.
 
 Turn them on with lines in the `.env` file beside `compose.yaml`, then run `podman compose up -d`:
 
@@ -324,6 +559,7 @@ Turn them on with lines in the `.env` file beside `compose.yaml`, then run `podm
 | The vault in a container of its own | `COMPOSE_PROFILES=hopper-vault` and `HOPPER_VAULT_URL=http://hopper-vault:4791` |
 | That, with a local KMS | `COMPOSE_PROFILES=hopper-vault,kms`, `HOPPER_VAULT_URL=http://hopper-vault:4791` and `HOPPER_KMS_URL=http://kms:8080` |
 | A local KMS, with the vault in the hopper | `COMPOSE_PROFILES=kms` and `HOPPER_KMS_URL=http://kms:8080` |
+| The API reached from anywhere, through an ngrok tunnel | `COMPOSE_PROFILES=tunnel`, `NGROK_AUTHTOKEN`, `HOPPER_PUBLIC_URL` and `HOPPER_TUNNEL_API=http://tunnel:4040` ("The tunnel" below) |
 
 Check: Settings → Vault (http://127.0.0.1:4790/#settings/vault) shows no problem. `podman compose ps` lists
 `hopper-vault` and `kms` as running. To turn a service off, remove its lines and run
@@ -335,7 +571,7 @@ The hopper's vault runs in its own container, from the hopper's image (`node src
 key and the secret values, in the hopper's Postgres. Templates and their approvals, and secrets kept in a vault backend,
 stay in the hopper. The hopper holds none of the vault's keys: it asks the vault at `HOPPER_VAULT_URL` with the
 preshared key `HOPPER_VAULT_KEY`. The `postgres` service makes that key on its first start
-(`vault_key` in the `secrets` volume). A stack from before gets it with the new `compose.yaml`: `podman compose up -d`
+(`vault_key` in `runtime-secrets`). A stack from before gets it with the new `compose.yaml`: `podman compose up -d`
 recreates `postgres` once.
 
 - The vault keeps its write-only rule and every check of a delivery (docs/design.md "The vault in a container of its own").
@@ -363,13 +599,65 @@ first ask. Its keys are in the `kms` volume.
   the KMS again at the next request; a vault in the hopper asks again at the next restart.
 - local-kms checks no credentials. A KMS that checks them (AWS KMS) is not supported yet.
 
+### The tunnel (`tunnel`)
+
+An ngrok agent forwards the hopper's public URL to its API (issue #795). An agent that acts for you (Grok Bot) then
+reaches the hopper from anywhere, with an API token ("API tokens" in docs/design.md). This machine needs no inbound port
+and no public address: the agent dials out to ngrok. The hopper tells your Grok Bot routine where it is reached.
+
+1. In the ngrok dashboard (https://dashboard.ngrok.com/domains), reserve a domain. Copy your authtoken from
+   https://dashboard.ngrok.com/get-started/your-authtoken.
+2. Add these lines to `.env`, beside `compose.yaml`:
+   ```
+   COMPOSE_PROFILES=tunnel
+   NGROK_AUTHTOKEN=<your authtoken>
+   HOPPER_PUBLIC_URL=https://<the reserved domain>
+   HOPPER_TUNNEL_API=http://tunnel:4040
+   ```
+   Keep other profiles in the same line, comma-separated (`COMPOSE_PROFILES=hopper-vault,tunnel`).
+3. Run `podman compose up -d`.
+
+Check: `podman compose logs hopper` shows `the tunnel is up: https://<the reserved domain>`.
+`curl -s -o /dev/null -w '%{http_code}\n' https://<the reserved domain>/api/jobs` answers `401` (the API, with no
+token) and `https://<the reserved domain>/` answers `404` (the UI is not on the tunnel).
+
+What it does, and what it keeps out:
+
+- **Its own network.** The tunnel forwards to `http://hopper:<port>` over the `hopper_tunnel` network, which only the
+  hopper shares. It never forwards to the hopper's loopback: an internet request is a **public request**, which reads
+  the API only with a session or an API token. No box the hopper starts is on that network, so none reaches the ngrok
+  agent's local API.
+- **Only the API at the edge.** ngrok answers `404` for every path but `/api/`, `/ui/api/` and `/ui/auth/api-token`,
+  and for the event stream (`/api/events/stream`, whose session is in the query). The UI, its sign-in pages and the
+  installer stay off the internet.
+- **A limit per caller at the edge.** 120 requests a minute per address, and 5 API-token exchanges a minute per address.
+- **A limit per caller in the hopper.** The edge names each caller's address to the hopper (`x-hopper-caller`, after it
+  drops one the caller sent). The hopper reads that header only from the ngrok agent, so its sign-in limit (20 a minute,
+  the API-token exchange on its own count) counts each caller. A stranger cannot use up your agent's exchanges.
+- **The URL must be fixed.** The Host guard takes `HOPPER_PUBLIC_URL` only. A random URL that changes at each start
+  does not pass it: the log says so (`the tunnel's endpoint is not HOPPER_PUBLIC_URL`), and nothing is announced.
+- **Grok Bot is told.** While the tunnel is up, the Grok Bot routine gets `hopper.reachable` with the URL: at start,
+  when the tunnel comes back, and every 5 minutes (docs/design.md "Grok Bot routine webhook").
+- **No box action without a box token.** The token an agent gets for its own sign-in reads, holds and cancels. To let it
+  start jobs, answer questions, merge, update or change a machine, mint a box token for it in Settings → API tokens (tick
+  Box token), for an hour at most (docs/design.md "Box tokens").
+
+Residual risk, stated: callers behind one address (a NAT, a shared egress) share one count of each limit. The ngrok log
+shows the authtoken when ngrok refuses it.
+
+To turn it off: remove the four lines and run `podman compose up -d --remove-orphans`.
+
 ## Sandbox boxes the hopper starts
 
-Optional (issue #603). Give the hopper your rootless Podman socket, and it starts, stops and removes sandbox boxes
-itself. Without it, Add machine → *A sandbox box* shows a line that you run.
+Optional (issues #603, #708). Give the hopper your rootless Podman socket, and it starts, stops and removes sandbox
+boxes itself. Without it, Add machine → *A sandbox box* shows a line that you run. The line carries the same sandbox
+flags as the boxes the hopper starts: one builder makes both. Its CPUs and memory start at the template's defaults
+(the hopper's for a box of no template); change them before *Show the line*, within the template's max.
 
-**Requirement: rootless Podman.** The hopper refuses a rootful Podman socket (root on the computer) and has no Docker
-path for this.
+**Requirement: a rootless runtime.** Podman is the default whenever it is reachable. Rootless Docker works too, through
+the Docker Engine API (never the docker CLI): `HOPPER_DOCKER_SOCKET` names its socket, used when no Podman socket is
+given or Podman is not reached, or always with `HOPPER_SANDBOX_RUNTIME=docker`. The hopper refuses a rootful socket of
+either (root on the computer), and an image that runs as root.
 
 Turn it on, in the directory of `compose.yaml`:
 
@@ -389,23 +677,60 @@ What the hopper then does:
 
 | When | The hopper |
 |---|---|
-| A person adds a sandbox box (Machines → Add machine → *A sandbox box* → **Start the box**) | starts the container `hopper-sandbox-<agent>` (or `hopper-sandbox-<template>`, with `-2`, `-3`, … when taken) with the box line's sandbox flags, its home the volume `<name>-home`, and a join code minted for it. The box joins as that machine. A template's box runs only once its image is approved (Settings → Vault). |
-| A person removes that machine | stops the container and removes it, with its volume, within about 20 seconds. `/tmp` in the box is a tmpfs: it goes with the container. |
-| The hopper starts | finds the boxes it started (label `io.hopper.box` = its instance id) and removes each one that no machine names and no live join code waits for. A box another hopper started is left alone. |
+| A person adds a sandbox box (Machines → Add machine → *A sandbox box* → **Start the box**) | writes a sandbox record, then starts the container `hopper-sandbox-<agent>` (or `hopper-sandbox-<template>`, with `-2`, `-3`, … when taken) with the sandbox flags, the resource limits of the launch (what the person set under *A sandbox box*, within the template's maximums; it starts at the template's defaults, or 4 CPUs and 8 GiB for a box of no template; a template's defaults and maximums are set on its form in Settings → Vault), its home the volume `<name>-home`, and a join code minted for it. Then it runs the box's start check: from inside the box, the box fetches the hopper at its address. Until that passes (at most 30 seconds), the launch does not answer; if it does not pass, the launch fails with what the check wrote and removes the box. The box joins as that machine, and its record is then *ready*. A template's box runs only once its image is approved (Settings → Vault). |
+| A box has tools (a template's, or `--tool` on a launch) | first builds the image with them added through the same runtime, once per base image and set of tools, as `localhost/hopper-box-tools:<hash>`. The build fetches each tool from its own release and checks its SHA-256, so the runtime needs network access to awscli.amazonaws.com, get.helm.sh, dl.k8s.io, releases.hashicorp.com, Docker Hub and Debian's mirrors. Old tools images stay in the runtime's storage: `podman image prune` or `podman rmi` removes them. |
+| A person removes that machine | stops the container and removes it within about 20 seconds, and its record. Its home volume stays, so a box of that name later keeps its sign-in, unless the template's limits say `keepHome: false`. `/tmp` in the box is a tmpfs: it goes with the container. |
+| A box's time limit passes (a template's `ttlMinutes`, or the launch's) | stops the container and removes it, and its record. The home volume stays, as above. A box of no template has no time limit unless the launch names one. |
+| The hopper starts | reads its sandbox records and the boxes it started (label `io.hopper.box` = its instance id). A box of its own with no record that a machine names (one started before the records) is taken on as a record; one that no machine names and no live join code waits for is removed, its home volume kept. A box another hopper started is left alone. |
 | It cannot stop or remove a box | shows the box and the reason on Machines, under *Sandbox boxes not removed*, and tries again every 10 seconds. |
+| Every 10 seconds | runs each box's start check again, in the box. A box that cannot reach the hopper is shown on Machines, under *Sandbox boxes that cannot reach the hopper*, with what the check wrote, and the hopper logs it once. It is ready again when its check passes. |
 
 The sandbox network is `hopper_default` for the hopper in its container and `host` for a hopper on the host;
-`HOPPER_SANDBOX_NETWORK` names another (a compose project of another name: `<project>_default`). A box reaches the
-hopper as `http://<first HOPPER_LAN_NAMES name>:<port>` on that network, or `http://127.0.0.1:<port>` on the host.
+`HOPPER_SANDBOX_NETWORK` names another (a compose project of another name: `<project>_default`). On the host network,
+a box reaches the hopper at `http://127.0.0.1:<port>`. Else the hopper reads its own container's names on that network
+and takes the first that is also in `HOPPER_LAN_NAMES`: on the compose network that is `hopper`, which compose.yaml
+sets. When the hopper's container is not on that network, or none of its names there is in `HOPPER_LAN_NAMES`, Add
+machine says so and what to do, and starts nothing. A hopper on the host with another network uses its first
+`HOPPER_LAN_NAMES` name, and the start check says whether a box there reaches it.
+
+When a launch fails with `the hopper does not answer at <address>`, the rest of the line is curl's own words from
+inside the box: `Could not resolve host` (the name is not known on that network), `Failed to connect` (nothing
+listens there), or `returned error: 403` / `421` (the hopper refused the box: its address is not in
+`HOPPER_LAN_PEERS`, or the name is not in `HOPPER_LAN_NAMES`).
 
 **Residual risk.** The socket is your account: whoever controls the hopper's process can start any container as you.
 The hopper itself only starts locked-down boxes — every capability dropped, no new privileges, a read-only root,
-nothing of the computer mounted — from the published box image or an approved template's image, and a request to it
-can name only an agent or a template, never an image, a mount or a flag. An admin UI session can start and remove
+the image's own non-root user, CPU and memory limits, nothing of the computer mounted — from the published box image
+or an approved template's image, and a request to it can name only an agent or a template and parameters within the
+template's limits, never an image, a mount or a flag. An admin UI session can start and remove
 boxes, as it can add and remove any machine.
 
 Turn it off: remove `compose.override.yaml` and run `podman compose up -d`. The boxes it started keep
 running; remove their machines in the Machines view first if you want them gone.
+
+### Sandbox boxes on another machine
+
+A machine that joined with Add machine → *A computer* can hold sandbox boxes too (issue #708). The hopper starts
+them in that machine's own rootless Podman (or rootless Docker when Podman is not there), through the machine's
+client: no socket of that machine is given to the hopper, and nothing listens on the machine. On the machine, once:
+
+```sh
+systemctl --user enable --now podman.socket
+loginctl enable-linger "$USER"
+```
+
+The second line keeps your user's services, the socket included, running after you sign out. Under WSL, also keep
+the distro running: WSL stops an idle distro, and its containers with it.
+
+Then Machines → Add machine → *A sandbox box* shows **on** with the hopper's computer and each machine online now:
+pick the machine, then **Start the box**. The box is on that machine's network and reaches the hopper at the address
+the machine's client dialled in on, and its start check proves that from inside it, as for a box beside the hopper. The machine's client checks each call again: it creates only a container with the
+sandbox flags and no mount of the machine, and stops or removes only the boxes the hopper made. While the machine is
+away, its boxes and their records stay, past their time limit too; the hopper checks them when the machine dials in
+again. A box with tools on a machine runs a tools image the hopper builds in that machine's runtime, through its
+client, once per base image and set of tools; the client builds only a tools image, from the hopper's one
+Containerfile. A client of an older release refuses the build: the hopper loads its own release there once no job
+runs on it.
 
 ## Vault backends (optional)
 
@@ -460,7 +785,9 @@ HOPPER_DATABASE_URL="postgres://hopper:$POSTGRES_PASSWORD@127.0.0.1:5433/hopper"
 installs `hopper.service` and `hopper-herdr.service`, writes `HOPPER_DATABASE_URL` into
 `~/.config/hopper/daemon.env` (mode 600, the unit's EnvironmentFile) when it is not there yet,
 and writes the starter rules when the database has none (edit them in Settings → Question gates).
-Secrets go in the same `daemon.env`.
+Secrets go in the same `daemon.env`. The first start makes the master key and shows it once in the UI: save it, add
+`HOPPER_MASTER_KEY=<it>` to `daemon.env`, and run `systemctl --user restart hopper` ("The master key"). No OpenFGA is
+installed: set `HOPPER_OPENFGA_URL` ("Access: OpenFGA"), or every credential is denied.
 Open the UI at `http://localhost:4790/` and sign in with GitHub: the first person to do so is the admin.
 
 A managed Postgres works the same: put its URL (with `sslmode=require`) in `daemon.env`.
@@ -650,10 +977,25 @@ bash scripts/promote.sh stable [commit]   # a commit of beta (default: its head)
 
 It refuses unless the commit is on the branch one step below (`stable` never takes a commit straight from
 `dev`), the move is a fast-forward of the steadier branch, and the commit's image built on the branch below
-(the `image` run, asked of `gh`). Then it pushes, as the maintainer, so the steadier branch's image build
+(the `image` run, asked of `gh`), and the commit has no What's new fragments left in `whats-new/`. Then it pushes, as the maintainer, so the steadier branch's image build
 starts. `beta` and `stable` therefore only ever hold what ran one step below; nothing is merged or committed
 on them. A fix for something found on `beta` or `stable` lands on `dev` like any change and is promoted from
 there. There is no schedule and nothing promotes on its own: the maintainer decides.
+
+**Assemble What's new first (issue #824).** Pull requests add their What's new lines as fragments in
+`whats-new/`, never in `WHATS-NEW.md`. Before `promote.sh beta`, move them into `WHATS-NEW.md` on `dev`:
+
+```sh
+node scripts/whats-new.ts assemble        # in a branch of dev; then open a pull request to dev and merge it
+```
+
+Then promote the merge of that pull request. The move keeps each line's text, so it brings no update news.
+
+**What a hopper updates to (issue #652).** A hopper offers its channel's head only when that commit is the merge of a
+pull request whose checks passed (asked of GitHub's API). Promote a merge commit of `dev` (`scripts/promote.sh` takes
+`dev`'s head by default, which is one). A direct push to a channel's branch, or a pull request merged with no checks or
+failed checks, is **held**: the update notice says "Update held" and why, and no hopper applies it until a merged pull
+request with passing checks is the branch's head.
 
 **A change with a store migration.** Moving a hopper to a steadier channel installs that channel's head,
 which can be older than the build that already migrated its database. So a migration must leave a store
@@ -686,6 +1028,32 @@ is set to `stable` when it starts on a version with these channels (store migrat
 reached `stable`, `main` was moved to it one last time, so a hopper still on an older version, which follows
 `main`, updates once to it and from then on follows `stable`. Nothing is promoted to `main` after that. No release tag was ever published, so a hopper on `release` had nothing to update to: choose
 a channel in its Settings, or install again.
+
+## Repository setup
+
+A job pushes only to a branch of its own work, and yolo mode merges only a trusted or approved job's pull request, after its checks pass (a repository with no checks:
+after a two-minute grace window). GitHub keeps everyone
+else off the release branches. Sources → **Repository setup** checks each job repository and names what is missing
+(`docs/design.md` "Repository setup"). For the hopper's own repository (https://github.com/henningfutrell/hopper),
+and the same for any job repository:
+
+1. **Protect `dev`, `beta` and `stable`** (the default branch and each release branch the repository has):
+   Settings → Rules → Rulesets → New branch ruleset (https://github.com/henningfutrell/hopper/settings/rules), or
+   Settings → Branches (classic branch protection). Target the three branches. Turn on:
+   - **Require a pull request before merging.** Leave the bypass list empty, or name only the repository admin: then
+     nobody else pushes to the branch directly.
+   - **Require status checks to pass**, and add **`pr / test`** (the PR check, "Local development and tests" below).
+   - **Block force pushes** (a ruleset's "Block force pushes"; classic: leave "Allow force pushes" off).
+   `scripts/promote.sh` moves `beta` and `stable` by a push: run it as the repository admin, on the bypass list.
+2. **Secret scanning and push protection:** Settings → Code security
+   (https://github.com/henningfutrell/hopper/settings/security_analysis) → Secret Protection, and Push protection: on.
+3. **Actions:** the PR check uses `pull_request` with a read-only token and no secrets. Settings → Actions → General
+   (https://github.com/henningfutrell/hopper/settings/actions) → Workflow permissions: **Read repository contents and
+   packages permissions**.
+
+GitHub shows branch protection and the security settings only to a repository admin. Connected as anyone else, Sources
+says which points it could not read (`unknown`), never that they are off. `hopper repo checks <repo>` prints the same as
+JSON.
 
 ## Rename from job-hopper
 

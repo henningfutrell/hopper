@@ -1,5 +1,6 @@
 // A proposal as a set of paths (issue #651): its TL;DR and problem statement, then each path as its own sub-card —
-// title, TL;DR, tradeoff badges, a recommended badge, what it creates — that expands to its full Markdown. A person
+// title and a recommended badge, its TL;DR as Markdown, its tradeoffs and other labelled fields as rows, what it creates
+// (issue #755) — that expands to its full Markdown. A person
 // checks one or more paths, adds a note to each, and continues with them; or asks for more paths (the selection goes
 // along and is kept), steers, or rejects all. Zero paths: the reason, and only Accept, Ask for more paths and Steer.
 // A path a reviewer level added says so; one it found not viable says why and cannot be checked. After the
@@ -46,7 +47,10 @@ export function ProblemStatement({ v }: { v: ReviewVersion }) {
         </div>
       )}
       {set.recommendation && (
-        <div data-slot="recommendation" className="text-sm"><span className="font-medium">Recommended: </span>{set.recommendation}</div>
+        <div data-slot="recommendation" className="grid gap-0.5 text-sm">
+          <div className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Recommended</div>
+          <Markdown text={set.recommendation} />
+        </div>
       )}
     </div>
   );
@@ -73,20 +77,17 @@ export function PathCard({ path, pick, faded, children }: { path: ProposalPath; 
             )}
             {path.addedBy && <span data-slot="added-by" className="rounded border px-1 text-[10px] text-muted-foreground">added by {path.addedBy}</span>}
           </div>
-          {path.summary && <div data-slot="path-summary" className="text-sm">{path.summary}</div>}
+          {path.summary && <div data-slot="path-summary" className="text-sm"><Markdown text={path.summary} /></div>}
           {path.notViable && <div data-slot="not-viable" className="text-xs text-bad">Not viable ({path.notViable.by}): {path.notViable.why}</div>}
         </div>
       </div>
-      {TRADEOFFS.some(([t]) => path.tradeoffs[t]) && (
-        <div className="flex flex-wrap gap-1">
-          {TRADEOFFS.filter(([t]) => path.tradeoffs[t]).map(([t, label]) => (
-            <span key={t} data-tradeoff={t} title={`${label}: ${path.tradeoffs[t]}`} className="max-w-full truncate rounded border bg-muted/40 px-1.5 py-0.5 text-[11px]">
-              <span className="text-muted-foreground">{label}:</span> {path.tradeoffs[t]}
-            </span>
-          ))}
+      <PathFields path={path} />
+      {path.creates && (
+        <div data-slot="path-creates" className="grid gap-0.5 border-t pt-2 text-xs">
+          <div className="font-medium text-muted-foreground">Creates</div>
+          <Markdown text={path.creates} />
         </div>
       )}
-      {path.creates && <div className="text-xs text-muted-foreground"><span className="font-medium">Creates:</span> {path.creates}</div>}
       {path.text && (
         <Collapsible>
           <CollapsibleTrigger className="group flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
@@ -101,6 +102,28 @@ export function PathCard({ path, pick, faded, children }: { path: ProposalPath; 
       )}
       {children}
     </div>
+  );
+}
+
+/**
+ * A path's tradeoffs, then the labelled fields the format does not name, one row each: the label, then its words as
+ * Markdown. Rows line up from path to path, and the label column stays narrow on a phone.
+ */
+function PathFields({ path }: { path: ProposalPath }) {
+  const rows: [string, string, string][] = [
+    ...TRADEOFFS.flatMap(([t, label]): [string, string, string][] => (path.tradeoffs[t] ? [[t, label, path.tradeoffs[t]]] : [])),
+    ...(path.otherFields ?? []).map((f): [string, string, string] => [f.label, f.label, f.text]),
+  ];
+  if (rows.length === 0) return null;
+  return (
+    <dl data-slot="path-fields" className="grid grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+      {rows.map(([key, label, text]) => (
+        <div key={key} data-field={key} {...(TRADEOFFS.some(([t]) => t === key) ? { 'data-tradeoff': key } : {})} className="col-span-2 grid grid-cols-subgrid">
+          <dt className="font-medium text-muted-foreground">{label}</dt>
+          <dd className="min-w-0"><Markdown text={text} /></dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

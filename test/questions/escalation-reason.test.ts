@@ -21,7 +21,10 @@ describe('the escalation reason', () => {
     expect(await escalationOf(r, 'May I change CI?')).toEqual({
       reason: 'guard',
       guards: [{ name: 'credentials', describe: 'credentials, secrets, passwords, keys or tokens' }],
+      holds: [{ reason: 'guard', by: 'risk', guards: [{ name: 'credentials', describe: 'credentials, secrets, passwords, keys or tokens' }] }],
       recommendation: { by: 'fable', answer: 'Go ahead and rotate the api key', confidence: 'high' },
+      // No Decider: the keyword risk rules checked the answer (issue #679), and the card says so.
+      riskCheck: { by: 'rules' },
     });
   });
 
@@ -34,7 +37,10 @@ describe('the escalation reason', () => {
 
   it('the top level not sure enough: low_confidence', async () => {
     const r = rig({ levels: { fable: () => ({ ...ANSWERED, confidence: 'medium' }) } });
-    expect(await escalationOf(r)).toEqual({ reason: 'low_confidence', recommendation: { by: 'fable', answer: 'use postgres', confidence: 'medium' } });
+    expect(await escalationOf(r)).toEqual({
+      reason: 'low_confidence', holds: [{ reason: 'low_confidence', confidence: 'medium', threshold: 'high' }],
+      recommendation: { by: 'fable', answer: 'use postgres', confidence: 'medium' }, riskCheck: { by: 'rules' },
+    });
   });
 
   it('the top level sent it up: frontier_escalated, its recommendation kept', async () => {
@@ -49,7 +55,7 @@ describe('the escalation reason', () => {
 
   it('a lower level\'s answer stays the recommendation when the top level fails', async () => {
     const r = rig({ levels: { jr: () => ({ ...ANSWERED, confidence: 'low' }), fable: () => ({ nope: true }) } });
-    expect(await escalationOf(r)).toEqual({ reason: 'no_answer', recommendation: { by: 'jr', answer: 'use postgres', confidence: 'low' } });
+    expect(await escalationOf(r)).toEqual({ reason: 'no_answer', recommendation: { by: 'jr', answer: 'use postgres', confidence: 'low' }, riskCheck: { by: 'rules' } });
   });
 
   it('auto-answer off and a high-priority job have their own reasons', async () => {
@@ -58,10 +64,24 @@ describe('the escalation reason', () => {
     expect(await escalationOf(off)).toMatchObject({ reason: 'auto_answer_off' });
     const high = rig({ levels: { fable: () => ANSWERED } });
     const q = high.question();
+    high.mem.store.settings.setAutoAnswer({ enabled: true, threshold: 'high', holdHighPriority: true });
     high.mem.setJob(q.jobId, { priority: 90 });
     high.svc.handle(q.id);
     await settle();
     expect(high.mem.store.questions.get(q.id)!.escalation).toMatchObject({ reason: 'high_priority', recommendation: { by: 'fable' } });
+  });
+
+  it('every hold, each guard with what it catches; the reason is the strongest, the guards all of them', async () => {
+    const r = rig({ levels: { fable: () => ({ ...ANSWERED, answer: 'Go ahead, rotate the api key', confidence: 'medium' }) } });
+    expect(await escalationOf(r, 'May I chmod the build directory?')).toMatchObject({
+      reason: 'guard',
+      guards: [{ name: 'credentials' }, { name: 'permissions' }],
+      holds: [
+        { reason: 'guard', by: 'risk', guards: [{ name: 'credentials', describe: expect.any(String) }] },
+        { reason: 'guard', by: 'guard', guards: [{ name: 'permissions', describe: expect.any(String) }] },
+        { reason: 'low_confidence', confidence: 'medium', threshold: 'high' },
+      ],
+    });
   });
 
   it('the attempt reasons no longer say "(no rules yet)"', async () => {

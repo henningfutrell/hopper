@@ -3,7 +3,8 @@
 // (an issue body like `{"op":"ask","message":"Is this risky?"}`): the prompt's first line, or the body's first line
 // inside the untrusted block of a GitHub issue's prompt (issue #652).
 // Registered through AppSeams.executors as "scripted"; it records every payload it ran. An op may
-// carry `progress: number[]`: each fraction is reported (job.progressed) before the op runs.
+// carry `progress: (string | [number, number])[]`: each is reported (job.progressed) before the op runs, a string as
+// a progress message, a pair as a task count, done of total (issue #794).
 // `ships(fn)` plays a job that ships its work (issue #171): fn runs (a test merges the job's pull
 // request in the fake GitHub) before each finished outcome is returned. The op `before-nudge` (issue #627) ships, then
 // asks the engine's check before a nudge, keeps its answer in `checks`, and finishes.
@@ -71,7 +72,12 @@ export function createScriptedExecutor(): ScriptedExecutor {
         return { kind: 'finished', result: {} };
       }
       const steps = op.job.spec.payload.progress;
-      if (Array.isArray(steps)) for (const f of steps) ctx.progress(Number(f), `step ${String(f)}`);
+      if (Array.isArray(steps)) {
+        for (const s of steps) {
+          if (Array.isArray(s)) ctx.progress(undefined, { done: Number(s[0]), total: Number(s[1]) });
+          else ctx.progress(String(s));
+        }
+      }
       return shipped(ctx, inner.run(op));
     },
     resume: (ctx, answer) => shipped(ctx, inner.resume!(scripted(ctx), answer)),

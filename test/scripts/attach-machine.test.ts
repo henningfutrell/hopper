@@ -4,7 +4,7 @@
 // on PATH — ssh runs the remote command in a local shell with HOME pointing at a temp dir — so
 // nothing leaves this process tree. ssh-keygen is the real one.
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -46,7 +46,7 @@ beforeEach(() => {
     '[ "$target" = unreachable ] && { echo "ssh: connect to host unreachable: No route" >&2; exit 255; }',
     'exec sh -c "$*"',
   ].join('\n'));
-  stub('herdr', '[ -e "$HOME/.running" ] && echo "status: running" || echo "status: not running"');
+  stub('herdr', '[ "$1" = --version ] && { echo "herdr 0.9.3"; exit 0; }; [ -e "$HOME/.running" ] && echo "status: running" || echo "status: not running"');
   stub('claude', 'echo 2.1.288');
   stub('systemctl', 'case "$*" in *"enable --now"*) touch "$HOME/.running";; esac');
   stub('loginctl', 'echo Linger=${FAKE_LINGER:-yes}');
@@ -70,6 +70,16 @@ describe('attach-machine.sh', () => {
     expect(r.stdout).toContain('Plugins → Machine sources, add an ssh instance named laptop');
     // No herdr binary to set: the hopper calls herdr by name there (issue #311).
     expect(r.stdout).toContain(`  ssh: laptop\n  lanes: 2\n  hostKey: ${HOST_KEY}\n`);
+  });
+
+  // Issue #741: the hopper owns the herdr there, at a path with its version in it; the session server starts from it.
+  it('installs this machine\'s herdr at the hopper\'s versioned path there and links it as current', () => {
+    const r = run(['laptop']);
+    expect(r.status).toBe(0);
+    const owned = join(home, '.local/share/hopper/herdr/0.9.3/herdr');
+    expect(readFileSync(owned, 'utf8')).toBe(readFileSync(join(bin, 'herdr'), 'utf8'));
+    expect(readlinkSync(join(home, '.local/share/hopper/herdr/current'))).toBe('0.9.3');
+    expect(r.stdout).toContain('==> install the hopper\'s herdr 0.9.3 at ~/.local/share/hopper/herdr/0.9.3/herdr on laptop');
   });
 
   it('lets the hopper in with its own key only, restricted, once however often it runs (issue #59)', () => {

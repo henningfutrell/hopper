@@ -1,8 +1,12 @@
-import type { BlastRadiusInput, CleanupDue, DeciderPolicy, ExecutorUnavailable, Job, JobId, Lane, MachineSnapshot, PriorityLanesInput, ProblemBlock, StartPlan, WaitPlan } from '../domain/types.ts';
+import type { BlastRadiusInput, CleanupDue, DeciderPolicy, ExecutorUnavailable, ExpectedCost, Job, JobId, Lane, MachineSnapshot, PlacementPick, PriorityLanesInput, ProblemBlock, StartPlan, WaitPlan } from '../domain/types.ts';
 import { freePriority, holdingBestFree, isHigh, keptFor, pickLane, priorityLaneNames, type LaneSlots } from './priority-lanes.ts';
 import { gateHold, gateKeeps } from './gate.ts';
+import { isSpecialty } from '../domain/elbow-in.ts';
+import { roomToElbowIn } from './elbow-in.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
+import { fitting, place, type PlacedCost } from './placement-cost.ts';
+import { jevPicked } from './lane-calls.ts';
 
 /** One executor's share of a machine: its own cap, and the lanes its jobs hold there. */
 export interface ExecutorState {
@@ -26,7 +30,7 @@ export interface MachineState {
   /** Idle lanes, not yet given to a job, in id order. */
   freeIdle: Lane[];
   assigned: number;
-  /** Lanes over the cap this Decision gave critical jobs: at most 1 (issue #373). */
+  /** Lanes over the cap this Decision gave critical jobs (at most 1, issue #373) or specialty jobs (issue #762). */
   overCap: number;
   /** Lanes busy or draining, and starts, of jobs not pinned to it (issue #372). */
   unpinned: number;
@@ -38,6 +42,8 @@ export interface MachineState {
   slots: LaneSlots;
   /** The blast-radius gate (issue #542): a job it keeps from this machine is placed elsewhere. */
   gate?: BlastRadiusInput;
+  /** What the jobs this Decision placed here are expected to cost (issue #688). */
+  placed: PlacedCost;
 }
 
 export interface Candidate {
@@ -63,6 +69,21 @@ export const diskHolds = (m: MachineSnapshot, job: Job): boolean => m.disk?.low 
  * that can, never fails there. A job resuming there returns to the pane it holds.
  */
 export const workTreeHolds = (m: MachineSnapshot, job: Job): boolean => m.workTreeProblem !== undefined && job.pendingAnswer === undefined;
+
+/**
+ * A machine whose jobs cannot reach the hopper takes no new job (issue #698): they would have no GitHub proxy and no
+ * git. The job waits for a machine that reaches it, never fails there. A job resuming there returns to the pane it holds.
+ */
+export const addressHolds = (m: MachineSnapshot, job: Job): boolean => m.addressProblem !== undefined && job.pendingAnswer === undefined;
+
+/**
+ * A machine whose herdr client its herdr server does not take takes no new job (issue #741): every job start there
+ * would fail. The job waits for a machine whose herdr works, never fails there. A job resuming there returns to the pane it holds.
+ */
+export const herdrHolds = (m: MachineSnapshot, job: Job): boolean => m.herdrProblem !== undefined && job.pendingAnswer === undefined;
+
+/** Why such a machine holds a job (issue #711): it is off-network, why, and the command that joins it when one fits. */
+const offNetwork = (m: MachineSnapshot): string => `is off-network: ${m.addressProblem}${m.addressFix ? `. Fix: ${m.addressFix}` : ''}`;
 
 /**
  * A sandbox box whose template is not approved takes no new job (issue #602): the job waits for a machine that can
@@ -94,8 +115,16 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
       return `no machine running executor ${executor} has a usable work tree: ${known.map((m) => `${m.id}: ${m.workTreeProblem}`).join('; ')}`;
     }
     const tree = known.filter((m) => !workTreeHolds(m, job));
-    if (tree.every((m) => templateHolds(m, job))) return `${tree.map((m) => `${m.id}: ${m.template!.waiting}`).join('; ')}: ${NO_NEW_JOB}`;
-    const usable = tree.filter((m) => !templateHolds(m, job));
+    if (tree.every((m) => addressHolds(m, job))) {
+      return `no machine running executor ${executor} reaches the hopper: ${tree.map((m) => `${m.id} ${offNetwork(m)}`).join('; ')}`;
+    }
+    const reaching = tree.filter((m) => !addressHolds(m, job));
+    if (reaching.every((m) => herdrHolds(m, job))) {
+      return `no machine running executor ${executor} has a working herdr: ${reaching.map((m) => `${m.id}: ${m.herdrProblem}`).join('; ')}`;
+    }
+    const working = reaching.filter((m) => !herdrHolds(m, job));
+    if (working.every((m) => templateHolds(m, job))) return `${working.map((m) => `${m.id}: ${m.template!.waiting}`).join('; ')}: ${NO_NEW_JOB}`;
+    const usable = working.filter((m) => !templateHolds(m, job));
     if (usable.every((m) => diskHolds(m, job))) return `disk low on ${usable.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
     return undefined;
   }
@@ -105,6 +134,8 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (!pinned.executors.includes(executor)) return `pinned machine ${pin} does not run executor ${executor}`;
   if (homeless(pinned)) return `pinned machine ${pin}: its home is not known yet (it has not answered a probe)`;
   if (workTreeHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.workTreeProblem}`;
+  if (addressHolds(pinned, job)) return `pinned machine ${pin} ${offNetwork(pinned)}`;
+  if (herdrHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.herdrProblem}`;
   if (templateHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.template!.waiting}`;
   if (diskHolds(pinned, job)) return `pinned machine ${pin} disk low (${freeOf(pinned)}): ${NO_NEW_JOB}`;
   return undefined;
@@ -211,18 +242,27 @@ export function bringsToGate(job: Job, machines: MachineSnapshot[], problems: re
   if (!gate || job.pendingAnswer !== undefined) return undefined;
   const pin = pinOf(job);
   const usable = machines.filter((m) => m.online && m.executors.includes(job.spec.executor) && (pin === undefined || m.id === pin)
-    && !homeless(m) && !workTreeHolds(m, job) && !templateHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job)));
+    && !homeless(m) && !workTreeHolds(m, job) && !addressHolds(m, job) && !herdrHolds(m, job) && !templateHolds(m, job) && !diskHolds(m, job) && !problems.some((b) => problemHits(b, m.id, job)));
   return gateHold(job, usable, gate);
 }
 
 function eligible(s: MachineState, job: Job): boolean {
   const pin = pinOf(job);
   return problemFree(s, job) && gateKeeps(s.machine.id, job, s.gate) === undefined && s.machine.online && !homeless(s.machine) && s.machine.executors.includes(job.spec.executor) && !diskHolds(s.machine, job)
-    && !workTreeHolds(s.machine, job) && !templateHolds(s.machine, job)
+    && !workTreeHolds(s.machine, job) && !addressHolds(s.machine, job) && !herdrHolds(s.machine, job) && !templateHolds(s.machine, job)
     && (pin === undefined || pin === s.machine.id);
 }
 
-const fits = (s: MachineState, job: Job, pl?: PriorityLanesInput): boolean => eligible(s, job) && roomForJob(s, job, pl) > 0;
+/**
+ * Issue #788: before `job` is placed, each machine holds a priority lane for every high-priority job after it in the
+ * order that could run there; none once they are placed.
+ */
+function holdFor(states: MachineState[], ahead: Job[], job: Job): void {
+  if (ahead[0] === job) ahead.shift();
+  for (const s of states) s.slots.wanted = ahead.filter((h) => eligible(s, h) && roomFor(s, h.spec.executor) > 0).length;
+}
+
+const fitsLane = (s: MachineState, job: Job, pl?: PriorityLanesInput): boolean => eligible(s, job) && roomForJob(s, job, pl) > 0;
 
 /**
  * Where a critical job that fits nowhere may take a lane past its caps (issue #373): an eligible
@@ -233,6 +273,12 @@ function squeezes(s: MachineState, job: Job): boolean {
   const e = s.executors.get(job.spec.executor);
   return eligible(s, job) && e !== undefined && s.band !== 'hard' && e.band !== 'hard'
     && s.occupied + s.assigned <= s.cap;
+}
+
+/** Where a specialty job that fits nowhere may elbow in past the caps (issue #762): an eligible machine with room to. */
+function elbowsIn(s: MachineState, job: Job): boolean {
+  const e = s.executors.get(job.spec.executor);
+  return eligible(s, job) && e !== undefined && roomToElbowIn(s, e.band);
 }
 
 /** Of two machines, the better pick for `job`: most placement pressure, then most room, then lowest id. */
@@ -262,8 +308,8 @@ function waitReason(job: Job, states: MachineState[], pl?: PriorityLanesInput): 
   if (e.band === 'hard') return `waiting for a lane: usage hard limit stops executor ${ex} on ${id} (used ${percent(e.usedFrac)})`;
   const kept = keptFor(s.slots, job, pl) > 0 ? freePriority(s.slots) : [];
   if (roomFor(s, ex) > 0 && kept.length > 0 && (pinOf(job) === id || s.unpinned < unpinnedCap(s))) {
-    // Only its priority lanes are free (issue #535).
-    return `waiting for a lane: machine ${id} keeps ${priorityLaneNames(kept)} free for high-priority jobs, the other ${s.occupied + s.assigned} are in use`;
+    // Only priority lanes held for high-priority jobs still to be placed are free (issues #535, #788).
+    return `waiting for a lane: machine ${id} holds ${priorityLaneNames(kept)} for high-priority jobs still to be placed, the other ${s.occupied + s.assigned} are in use`;
   }
   if (roomFor(s, ex) > 0) {
     // Only its reserved lanes are free (issue #372).
@@ -279,36 +325,48 @@ function waitReason(job: Job, states: MachineState[], pl?: PriorityLanesInput): 
 
 /**
  * Step 7: give each ordered job a machine and an idle lane, or leave it waiting for one. A high-priority job goes
- * to the machine holding the best free priority lane first (issue #535).
+ * to the machine holding the best free priority lane first (issue #535). Of the machines it may go to, one where its expected
+ * cost fits goes first, and of those Jev's applied pick of its machine (issue #688).
  */
-export function assign(ordered: Candidate[], states: MachineState[], policy: DeciderPolicy, pl?: PriorityLanesInput): { start: StartPlan[]; wait: WaitPlan[] } {
+export function assign(ordered: Candidate[], states: MachineState[], policy: DeciderPolicy, pl?: PriorityLanesInput, costs?: Record<JobId, ExpectedCost>, picks?: Record<JobId, PlacementPick>): { start: StartPlan[]; wait: WaitPlan[] } {
   const start: StartPlan[] = [];
   const wait: WaitPlan[] = [];
   const critical = policy.pacing?.criticalPriority ?? 0;
+  const ahead = pl ? ordered.map((c) => c.job).filter((j) => isHigh(j, pl)) : [];
   for (const { job, effectivePriority, note } of ordered) {
     const ex = job.spec.executor;
-    const fitting = states.filter((s) => fits(s, job, pl));
-    // A critical job that fits nowhere takes one lane over the cap (issue #373); the extra lane drains when it ends.
-    const squeezed = fitting.length === 0 && critical > 0 && job.priority >= critical;
-    const options = squeezed ? states.filter((s) => squeezes(s, job)) : fitting;
-    if (options.length === 0) {
+    holdFor(states, ahead, job);
+    const fits = states.filter((s) => fitsLane(s, job, pl));
+    // A specialty job that fits nowhere elbows in past the cap (issue #762); else a critical one takes one lane over it
+    // (issue #373). The extra lane drains when its job ends.
+    const elbowing = fits.length === 0 && isSpecialty(job) ? states.filter((s) => elbowsIn(s, job)) : [];
+    const elbowed = elbowing.length > 0;
+    const squeezed = fits.length === 0 && !elbowed && critical > 0 && job.priority >= critical;
+    const able = elbowed ? elbowing : squeezed ? states.filter((s) => squeezes(s, job)) : fits;
+    if (able.length === 0) {
       wait.push({ jobId: job.id, reason: waitReason(job, states, pl) });
       continue;
     }
+    const { options: fit, note: costed } = fitting(able, costs?.[job.id]);
+    const { options, note: jev } = jevPicked(fit, picks?.[job.id]);
     const pick = (pl && isHigh(job, pl) ? holdingBestFree(options, pl) : undefined) ?? options.reduce((a, b) => better(a, b, job, pl));
     const pressure = pick.executors.get(ex)!.pressure;
     const picked = pickLane(pick.machine.id, pick.machine.maxLanes, pick.slots, pick.freeIdle, job, pl);
     const lane = picked ? picked.lane : pick.freeIdle.shift();
     pick.assigned += 1;
     if (pinOf(job) !== pick.machine.id) pick.unpinned += 1;
-    const overCap = squeezed && pick.occupied + pick.assigned > pick.cap;
+    const overCap = (squeezed || elbowed) && pick.occupied + pick.assigned > pick.cap;
     if (overCap) pick.overCap += 1;
     pick.executors.get(ex)!.assigned += 1;
+    place(pick.placed, costs?.[job.id]);
     const why = [
-      ...(overCap ? [`critical priority: one lane over the cap ${pick.cap}`]
+      ...(elbowed ? [overCap ? `specialty: elbows in over the lane cap ${pick.cap}` : `specialty: elbows in past the executor's lane cap or the reserved lanes (cap ${pick.cap})`]
+        : overCap ? [`critical priority: one lane over the cap ${pick.cap}`]
         : squeezed ? [`critical priority: past the executor's lane cap or the reserved lanes (cap ${pick.cap})`]
           : [`${room(pick)} room left (cap ${pick.cap})`]),
       ...(pressure > 0 ? [`placement pressure ${pressure.toFixed(3)}/h`] : []),
+      ...(costed ? [costed] : []),
+      ...(jev ? [jev] : []),
       ...(note ? [note] : []),
     ];
     const where = `${picked?.priority ? `priority lane ${picked.priority} ` : ''}${lane ? `${picked?.priority ? '(idle)' : `idle lane ${lane.id}`}` : picked?.priority ? '(new)' : 'new lane'}`;

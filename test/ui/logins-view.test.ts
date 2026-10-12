@@ -53,7 +53,7 @@ function fakeDaemon(d: Daemon) {
     }
     if (path.startsWith('/ui/api/')) {
       posts.push(`${init.method ?? 'GET'} ${path}`);
-      if (d.mutationStatus) return json(d.mutationStatus, { error: 'no session' });
+      if (d.mutationStatus) return json(d.mutationStatus, { error: 'missing or invalid x-hopper-session', session: 'ended' });
       return json(200, {});
     }
     return json(200, routes[path] ?? {});
@@ -119,6 +119,15 @@ afterEach(async () => {
 });
 
 describe('the Logins view', () => {
+  it('names what asks — the tool at its host, the account, the scopes — and the lane (issue #698)', async () => {
+    await boot('#logins', { logins: [pending({ host: 'github.com', account: 'dev-account-7', scopes: ['repo', 'read:org'] })] });
+    const d = card()!.querySelector('[data-slot="login-details"]')!;
+    expect(d.textContent).toContain('gh at github.com');
+    expect(d.textContent).toContain('dev-account-7');
+    expect(d.textContent).toContain('repo, read:org');
+    expect(d.textContent).toContain('desk/lane-1');
+  });
+
   it('a pending login: code, URL, machine, tool, the job it blocks, a countdown; the nav badge and the header count it', async () => {
     await boot('#logins', { logins: [pending()] });
     const c = card()!;

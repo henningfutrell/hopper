@@ -8,6 +8,12 @@
     "image": {
       "type": "string"
     },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "secrets": {
       "type": "array",
       "items": {
@@ -49,6 +55,25 @@
             "required": [
               "kind",
               "name"
+            ],
+            "additionalProperties": false
+          },
+          "backend": {
+            "type": "object",
+            "properties": {
+              "bucket": {
+                "type": "string"
+              },
+              "region": {
+                "type": "string"
+              },
+              "keyPrefix": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "bucket",
+              "region"
             ],
             "additionalProperties": false
           }

@@ -1,10 +1,13 @@
 // The settings repositories' ports, apart from store.ts for its size (re-exported there): a user's settings and the
 // instance's. Each value is absent until set.
 
+import type { RateLimiterSettings } from './github-rate-limit.ts';
+import type { IntakeActorSettings } from './intake-origin.ts';
 import type { IntakeMigration } from './intake.ts';
+import type { ReadPolicy } from './read-policy.ts';
 import type {
-  AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
-  PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings,
+  AutoAnswerSettings, AutoParkSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
+  PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings,
 } from './types.ts';
 
 /** A user's settings (in the user schema). */
@@ -30,6 +33,12 @@ export interface UserSettingsRepository {
   /** The usage limits the user set (issue #522); absent: never set, the defaults apply. */
   getUsageLimits(): UsageLimitPair | undefined;
   setUsageLimits(limits: UsageLimitPair): void;
+  /** Each machine's lane tuning settings (issue #688); a machine absent: never saved, the defaults apply. */
+  getLaneTuning(): LaneTuningSettings;
+  setLaneTuning(settings: LaneTuningSettings): void;
+  /** Each machine's dismissed lane recommendation (issue #688); a machine absent: none dismissed. */
+  getLaneDismissals(): LaneDismissals;
+  setLaneDismissals(dismissals: LaneDismissals): void;
   /** The priority lane settings the user saved (issue #535); absent: never saved, the defaults apply. */
   getPriorityLanes(): PriorityLaneSettings | undefined;
   setPriorityLanes(settings: PriorityLaneSettings): void;
@@ -39,6 +48,9 @@ export interface UserSettingsRepository {
   /** The blast-radius settings the user saved (issue #542); absent: never saved, the defaults apply. */
   getBlastRadius(): BlastRadiusSettings | undefined;
   setBlastRadius(settings: BlastRadiusSettings): void;
+  /** The read policy (issue #716): the assets the hopper approves read on with no person, for a template a job asks for; absent: never set, none. */
+  getReadPolicy(): ReadPolicy | undefined;
+  setReadPolicy(policy: ReadPolicy): void;
   /** A machine's last discovery (issue #542); absent: never discovered. */
   getDiscovery(machineId: string): DiscoveryRecord | undefined;
   setDiscovery(record: DiscoveryRecord): void;
@@ -65,12 +77,27 @@ export interface UserSettingsRepository {
   /** Auto-park (issue #650): how long a question waits on a person before its job parks by itself; absent: never set. */
   getAutoPark(): AutoParkSettings | undefined;
   setAutoPark(settings: AutoParkSettings): void;
+  /** Asking on the issue thread (issue #435): the policy for own and other repositories; absent: never set. */
+  getThreadAsk(): ThreadAskSettings | undefined;
+  setThreadAsk(settings: ThreadAskSettings): void;
   /** The TL;DR setting (issue #569); absent: never set, on. */
   getTldr(): TldrSettings | undefined;
   setTldr(settings: TldrSettings): void;
   /** Yolo mode (issue #579): whether jobs may merge their own pull requests; absent: never set (off). */
+  /** GitHub watches (issue #427): how often each polls; absent: never set, the default. */
+  getGitHubWatch(): GitHubWatchSettings | undefined;
+  setGitHubWatch(settings: GitHubWatchSettings): void;
   getYoloMode(): YoloModeSettings | undefined;
   setYoloMode(settings: YoloModeSettings): void;
+  /** Contribution (issue #429): whether jobs may work through a fork of a repository their user cannot push to; absent: off. */
+  getContribution(): ContributionSettings | undefined;
+  setContribution(settings: ContributionSettings): void;
+  /** The intake's trusted actors (issue #652); undefined: none named, so the connected login only. */
+  getIntakeActors(): IntakeActorSettings | undefined;
+  setIntakeActors(settings: IntakeActorSettings): void;
+  /** The job repositories whose "Add PR checks" recommendation the person dismissed (issue #677), `owner/repo` lowercased; none: []. */
+  getRepoChecksDismissed(): string[];
+  setRepoChecksDismissed(repos: string[]): void;
   /** The one-time backfills that completed on this store (issue #637: `done-check`), each with when. */
   getBackfills(): Record<string, string>;
   setBackfills(done: Record<string, string>): void;
@@ -93,6 +120,9 @@ export interface InstanceSettingsRepository {
   /** The store installs, by id (issue #93). */
   getPluginInstalls(): PluginInstall[];
   setPluginInstalls(installs: readonly PluginInstall[]): void;
+  /** The shared rate limiter's settings (issue #436); absent fields were never set, their defaults apply. */
+  getGitHubRateLimiter(): Partial<RateLimiterSettings>;
+  setGitHubRateLimiter(settings: RateLimiterSettings): void;
   /** The plugin store setting (issue #445); undefined: never set. */
   getPluginStoreSource(): PluginStoreSource | undefined;
   setPluginStoreSource(source: PluginStoreSource): void;
@@ -104,4 +134,13 @@ export interface InstanceSettingsRepository {
   /** The fingerprint of the master key a person said they saved (issue #659); undefined: none. */
   masterKeySaved(): string | undefined;
   setMasterKeySaved(fingerprint: string): void;
+  /** The last master key rotation (issue #659): the fingerprint of the key it replaced, and when; undefined: none. */
+  masterKeyRotation(): MasterKeyRotation | undefined;
+  setMasterKeyRotation(rotation: MasterKeyRotation): void;
+}
+
+/** A master key rotation (issue #659): the replaced key's fingerprint (never the key), and when. */
+export interface MasterKeyRotation {
+  from: string;
+  at: string;
 }

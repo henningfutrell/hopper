@@ -4,7 +4,8 @@
 # passes only when all of them passed, so it is the one check to require. The tests that need a host service a
 # clean runner does not give (containers they start themselves, a real sshd, LDAP, a vault) are left out
 # (test/support/host-services.ts); the suite's own Postgres still starts through testcontainers. Read-only and
-# with no secrets, so a fork's pull request is safe: `pull_request`, never `pull_request_target`.
+# with no secrets, so a fork's pull request is safe: `pull_request`, never `pull_request_target`. `gates` also checks
+# What's new (issue #824): the checkout is the merge of the pull request into its base, so `HEAD^1` is the base.
 name: pr
 
 on:
@@ -25,11 +26,17 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
       - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Only on a pull request into dev: a promotion (dev to beta, beta to stable) carries lines already folded into
+      # WHATS-NEW.md on dev, which the check would read as direct edits.
+      - run: node scripts/whats-new.ts check HEAD^1
+        if: github.base_ref == 'dev'
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build:ui

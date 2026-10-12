@@ -44,7 +44,11 @@ describe('auto-answer', () => {
     expect(q!.attempts).toEqual([expect.objectContaining({ tier: 'frontier', confidence: 'high', outcome: 'accepted' })]);
     expect((await a.events('types=question.escalated_to_human')).filter((e) => e.jobId === job.id)).toHaveLength(0);
     const gates = (await a.api('GET', '/api/question-gates')).body as QuestionGatesView;
-    expect(gates.autoAnswer).toEqual({ enabled: true, threshold: 'high', stats: { windowDays: 30, answered: 1, corrected: 0, agreement: 1 } });
+    expect(gates.autoAnswer).toEqual({
+      enabled: true, threshold: 'high', holdHighPriority: false, stats: { windowDays: 30, answered: 1, corrected: 0, agreement: 1 },
+      // The confidence spread (issue #679): the level's answer it did not escalate, at high.
+      calibration: [{ level: 'frontier', high: 1, medium: 0, low: 0, none: 0, total: 1, below: 0, flagged: false }],
+    });
   });
 
   it('a risky question reaches a person, whatever the level says', async () => {
@@ -66,6 +70,16 @@ describe('auto-answer', () => {
     const job = await a.pull({ op: 'ask', message: 'Which colour?' });
     const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
     expect(q.attempts[0]).toMatchObject({ answer: 'Blue.', outcome: 'escalated' });
+  });
+
+  it('issue #679: "hold high-priority questions for me" is off by default; an admin turns it on, and it is an event', async () => {
+    const a = await start();
+    const token = await a.login();
+    const r = await a.ui<AutoAnswerView>('/ui/api/auto-answer', { holdHighPriority: true }, { token });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ enabled: true, threshold: 'high', holdHighPriority: true });
+    expect((await a.events('types=auto_answer.settings_changed'))[0]!.data).toMatchObject({ from: { holdHighPriority: false }, to: { holdHighPriority: true } });
+    expect((await a.ui('/ui/api/auto-answer', { holdHighPriority: 'yes' }, { token })).status).toBe(400);
   });
 
   it('a person corrects an auto-answer: the question keeps what it replaced, and the job gets the correction with its next answer', async () => {

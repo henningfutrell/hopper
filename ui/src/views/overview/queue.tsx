@@ -188,8 +188,9 @@ export function WaitingPanel() {
             <span className="num mt-0.5 w-5 shrink-0 text-xs text-muted-foreground">{position}</span>
             <JobTitle job={job} className="flex-1" />
             {job.accepted === false && <a href="#queue" className="text-xs text-warn hover:underline">accept in Queue →</a>}
+            {job.originPending && <a href="#sources" className="text-xs text-warn hover:underline" title="Its issue waits as a request card in Sources">approve in Sources →</a>}
             <GatePassButton job={job} />
-            {authed && job.status === 'held' && !job.approved && job.accepted !== false && !job.textChange && !heldAtGate(job) && (
+            {authed && job.status === 'held' && !job.approved && job.accepted !== false && !job.textChange && !job.originPending && !heldAtGate(job) && (
               <Button size="xs" variant="outline" onClick={() => act(`/ui/api/jobs/${job.id}/approve`, {}, 'Job approved')}><Check />Approve</Button>
             )}
             {authed && <RejectButton job={job} />}

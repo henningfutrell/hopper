@@ -9,8 +9,8 @@ web UI, and an HTTP API with its reference at `/docs/`.
 Install page, step by step: https://henningfutrell.github.io/hopper/install.html (`site/install.html`).
 User guide, what it does with a job once it runs and what you can do: https://henningfutrell.github.io/hopper/guide.html (`site/guide.html`).
 
-- **Jobs are pulled, never pushed.** A job is an issue with the `hopper` label, by an author you
-  allow. No route creates a job.
+- **Jobs are pulled, never pushed.** A job is an issue with the `hopper` label, assigned to you,
+  from a trusted origin; any other is a request you approve in Sources. No route creates a job.
 - **Everything it keeps is in its database.** Config is the plugins, rules and sign-in configs and
   the webhook subscriptions, all in that database and all edited in the UI; there is no config file.
   Secrets come from its environment.
@@ -69,7 +69,7 @@ Pick one. Recommended: the published image with Podman.
 
 ### With Podman (recommended)
 
-The daemon and its Postgres, in containers from the public image
+The daemon, its Postgres and OpenFGA (access checks), in containers from the public image
 `ghcr.io/henningfutrell/hopper` (`latest` follows `stable`; Intel/AMD and ARM): no host install, nothing to
 build, nothing to set first. Needs Podman ≥ 4.7 with `podman-compose` (or Docker's compose; `docker
 compose` works the same everywhere below).
@@ -79,7 +79,7 @@ mkdir hopper && cd hopper
 curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml      # compose.yaml in this repository
 podman compose up -d
 # open http://localhost:4790/ and sign in with GitHub: the first person to do so is the admin
-# save the master key it shows once (UI banner, or podman compose logs hopper) in your password manager, then:
+# save the master key it shows once (the UI banner only, never the log) in your password manager, then:
 echo 'HOPPER_MASTER_KEY=<the 64 hex digits>' >> .env && podman compose up -d --force-recreate --no-deps hopper
 podman compose exec hopper claude                                    # once: /login, then /exit
 # then Sources → GitHub account: choose the repositories jobs may come from
@@ -87,7 +87,7 @@ systemctl --user enable podman-restart.service                        # once: st
 ```
 
 The container is not a machine: jobs run on attached machines ("Add machines"). Settings and secrets: a
-`.env` beside `compose.yaml` (`.env.example`). Upgrade: you do it, the hopper never updates a container (`docs/deploy.md` "Upgrade": the channel is the `HOPPER_IMAGE` tag; `podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper`, then optionally `podman image prune -f --filter label=org.opencontainers.image.title=hopper`).
+`.env` beside `compose.yaml` (`.env.example`). Upgrade: you do it, the hopper never updates a container (`docs/deploy.md` "Upgrade": the channel is the image tag; every image carries its own `compose.yaml`: `podman run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update podman > hopper-update.sh`, read it, `sh hopper-update.sh` — the whole stack, never the hopper alone; then optionally `podman image prune -f --filter label=org.opencontainers.image.title=hopper`). Never edit `compose.yaml`: your settings go in `.env` (`HOPPER_BIND=0.0.0.0` for a LAN install) or `compose.override.yaml`.
 Details: `docs/deploy.md` "In containers, with Podman".
 
 The other ways each need a Postgres URL; the bundled one is `deploy/compose.yaml`.
@@ -116,8 +116,9 @@ HOPPER_DATABASE_URL="postgres://hopper:$POSTGRES_PASSWORD@127.0.0.1:5433/hopper"
 ```
 
 `install.sh` writes the database URL to `~/.config/hopper/daemon.env` (mode 600); put secrets
-there too. The first start makes the master key and shows it once (`journalctl --user -u hopper`, and the UI):
-save it in your password manager and add `HOPPER_MASTER_KEY=<it>` to `daemon.env` (`docs/deploy.md` "The master key"). Run it again to upgrade. Remove with `scripts/uninstall.sh`.
+there too. The first start makes the master key and shows it once, in the UI only (**Show the key (once)**), never in the log:
+save it in your password manager and add `HOPPER_MASTER_KEY=<it>` to `daemon.env` (`docs/deploy.md` "The master key").
+The host install runs no OpenFGA: until `HOPPER_OPENFGA_URL` names one, every credential is denied (`docs/deploy.md` "Access: OpenFGA"). Run it again to upgrade. Remove with `scripts/uninstall.sh`.
 
 ### From a checkout, in the foreground
 
@@ -169,8 +170,9 @@ GitHub becomes admin** — sign in yourself before anyone else reaches the UI. E
 GitHub realm's role rules grant (Settings → Sign-in: usernames, or numeric ids;
 [docs/sign-in.md](docs/sign-in.md#github)).
 
-Signing in connects your GitHub: issues labelled `hopper` and assigned to you become your jobs —
-whoever opened them, in the repositories you choose under **Sources → GitHub account** — and your jobs
+Signing in connects your GitHub: issues labelled `hopper` and assigned to you become your jobs
+when you or a trusted actor (Settings → Intake) wrote, labelled and assigned them — others show in Sources as
+requests to approve —, in the repositories you choose under **Sources → GitHub account** — and your jobs
 act as you on GitHub, with the app marked on what they do. Until you choose at least one repository, no job comes in.
 
 The hopper's app reaches only the repositories it is **installed** on. It is public: install it on your
@@ -235,7 +237,8 @@ Named so you know they are not missing steps. None is the path for a self-hosted
 
 1. Sign in with GitHub (or **Sources → GitHub account → Connect GitHub**), then choose the job
    repositories in **Sources → GitHub account**: the issues in them that are labelled `hopper` and
-   assigned to you are taken, whoever opened them. To tune a source, or to use
+   assigned to you are taken when a trusted actor wrote, labelled and assigned them; any other is a request
+   card in Sources with **Approve** (help page "How issues become jobs", `/help/intake`). To tune a source, or to use
    [your own App](#a-github-app-of-your-own), open the instance in Settings → Plugins → Job sources —
    `github-account` or `github-app` (your App) — and set its options:
 
@@ -248,7 +251,8 @@ Named so you know they are not missing steps. None is the path for a self-hosted
    A job runs in the work tree of the machine that runs it, and the hopper fetches or clones the
    issue's repository there first ([Where jobs work](#where-jobs-work)). Restart the daemon
    (`systemctl --user restart hopper`, or the container).
-2. Label an issue `hopper` and assign it to yourself. The issue body is the job's prompt. Unassign it
+2. Label an issue `hopper` and assign it to yourself. Its title and body are the job's text, as first run or approved; a later edit holds the
+   job until you pick **Rerun the original** or **Accept the new text**. Unassign it
    and a waiting job leaves the queue; a running one is flagged in the UI for you to stop or let finish.
    **Reject** a waiting job (Queue, or the Overview's Waiting list), with a reason if you like: the issue is
    left alone and not taken again until it is assigned to you again, or you run it again.
@@ -260,12 +264,16 @@ Named so you know they are not missing steps. None is the path for a self-hosted
    ([High priority and priority lanes](https://henningfutrell.github.io/hopper/guide.html#priority)). `hopper:research` or
    `hopper:proposal` (or a `## Research` or `## Proposal` heading in the body) ask for a research report or a
    proposal in place of the work ([Research reports](https://henningfutrell.github.io/hopper/guide.html#research), [Proposals](https://henningfutrell.github.io/hopper/guide.html#proposals)).
+   `hopper:specialty` lets a job elbow in: when every lane is full, it may start one lane past a machine's lane cap
+   (one per machine by default, the machine's `elbowIns` option); no other job does.
    A job is done when its pull request is open and ready for review; you review and merge it, and the
-   merge closes the issue. To let jobs merge their own pull requests once the checks pass, turn on
+   merge closes the issue. To let the hopper merge a ready pull request once its checks pass (or, for a
+   repository with no checks, two minutes after its last push), turn on
    yolo mode in Settings → Yolo mode, for every repository or only some — off by default, and read
-   its warning first.
+   its warning first. The hopper also tends a waiting pull request with merge conflicts or failing checks
+   (help page "Pull requests", `/help/pull-requests`).
 
-When a job asks a question, it climbs the escalation levels: by default one level, Fable, answers
+When a job asks a question, it climbs the escalation levels: by default one level, `level-1` (model `fable`), answers
 what it is sure of and the job gets the answer with no action from you (auto-answer; risky,
 consequential and high-priority questions always come to you, and you can correct an auto-answer
 later in Settings → Question history), and what it should not decide waits for you in the UI's
@@ -291,7 +299,7 @@ that is online, runs the job's executor, and has the most room left — unless a
 | Kind | Use it for | The hopper reaches it by | It needs |
 |---|---|---|---|
 | [a computer, with one line](#a-computer-or-a-sandbox-box-one-line) | the computer the hopper's container runs on, a laptop, a desktop: it dials in | its own connection to the hopper's URL | Node.js ≥ 24, herdr, `claude` |
-| [a sandbox box, with one line](#a-computer-or-a-sandbox-box-one-line) | jobs that must reach nothing of your computer | its own connection to the hopper's URL | Podman or Docker beside the hopper |
+| [a sandbox box, with one line](#a-computer-or-a-sandbox-box-one-line) | jobs that must reach nothing of your computer | its own connection to the hopper's URL | rootless Podman or Docker beside the hopper, or on a joined computer |
 | [this host](#this-host) | the start: jobs on the hopper's own machine | nothing to reach | herdr and `claude`; set up by the install |
 | [ssh target](#an-ssh-target) | a computer that cannot run the client (no Node.js 24) | ssh, with its own key | sshd, and herdr with `claude` or [Cursor's agent](#cursors-agent) |
 | [container target](#a-container-target) | plain shell commands, sandboxed: no network, no agent | `docker exec`, through a socket proxy | docker on the hopper's host |
@@ -322,42 +330,21 @@ line carries a one-time join code: it works once, for 10 minutes.
   The hopper keeps the client current by itself. Should Machines say a computer's client cannot be
   updated, it shows the line to run there: the same install with no join code, which reinstalls the
   client and keeps the machine.
-- **A Windows computer**, outside WSL: the hopper types POSIX shell commands into each job's pane,
-  and herdr opens panes in PowerShell there, so a job fails at once with `… is PowerShell, and the
-  hopper needs a POSIX shell …`. Give the client's herdr session Git Bash as its shell: start that
-  session with `HERDR_CONFIG_PATH` naming a herdr config of its own, and with `CHERE_INVOKING=1` so
-  bash stays in the pane's directory. The config:
-
-  ```toml
-  [terminal]
-  default_shell = 'C:/Program Files/Git/usr/bin/bash.exe'
-  shell_mode = 'login'
-  ```
-
-  Name `usr\bin\bash.exe`, not Git's `bin\bash.exe`: that one is a launcher that starts a second
-  bash, and herdr then sees the pane as busy.
-
-  With no systemd there, start that herdr session (`herdr --session hopper-client server`) and the
-  client yourself, from your home directory, never from the client's own directory: Windows cannot
-  replace a directory a process is in, and that breaks a release load. Start the client again when it
-  exits 75, as it does after each new client release:
-
-  ```powershell
-  Set-Location $HOME
-  do { node "$HOME\.local\lib\hopper-client\main.ts"; $code = $LASTEXITCODE } while ($code -eq 75)
-  ```
-
-  For the machine's Claude usage, `claude` must be on the client's PATH as `claude.exe` (the native
-  installer's): the client runs it with no shell.
+- **A Windows computer**: not supported natively. Run the machine inside WSL, with systemd on and
+  `podman.socket` started (`systemctl --user enable --now podman.socket`), and run the line in the WSL
+  distro, not in PowerShell. A client on Windows itself (Node.js for Windows, Git Bash) is refused at
+  the join: `Windows isn't supported natively. Run the client inside WSL.` The steps:
+  https://henningfutrell.github.io/hopper/install.html#windows-machine
 - **A sandbox box** (Podman or Docker): run the line on the computer the hopper runs on. It starts the
-  container `hopper-sandbox-claude` from `ghcr.io/henningfutrell/hopper:box-claude` on the hopper's network,
+  container `hopper-sandbox-claude` (`hopper-sandbox-<template>` for a box of a template) from `ghcr.io/henningfutrell/hopper:box-claude` on the hopper's network,
   locked down — every capability dropped, no new privileges, a read-only root, its own home volume,
   nothing of the computer mounted. Sign its agent in once:
   `podman exec -it hopper-sandbox-claude claude`; the sign-in stays in its home volume, as does its identity,
   so a recreated box is the same machine. The join code is used once: after the join, nothing in the box
   holds it, and a restart does not need it. Given your rootless Podman socket, the hopper starts the box itself:
-  Add machine → *A sandbox box* → **Start the box**, no line to run; removing the machine then stops the box
-  and removes it with its volume (`docs/deploy.md` "Sandbox boxes the hopper starts").
+  Add machine → *A sandbox box* → **Start the box**, no line to run; removing the machine, or the end of its time limit, stops the box
+  and removes it; its home volume stays unless its template says not to keep it (`docs/deploy.md` "Sandbox boxes the hopper starts").
+  Templates, approval and what a box's jobs may get: the help pages "Sandbox boxes" and "The vault" (`/help/sandboxes`, `/help/vault`).
 
 A machine is removed in the Machines view; its next dial-in is refused. A script that adds machines
 mints a code with `hopper join-code` (the operator CLI) and runs the same line. Make the jobs' working
@@ -511,8 +498,9 @@ authentication".
 | Where | What |
 |---|---|
 | UI, `/` | the board, questions, machines, usage, plugins, routing, webhooks, events, decisions |
+| Help, `/help/` | how each feature works and how to use it, for the version that runs; Help in the user menu opens it. Agents read `/help/index.json` and `/help/<page>.md`; a job runs `sh "$HOPPER_SKILL" help` |
 | API reference, `/docs/` | every route, with parameters and bodies; try them from the page. The book icon in the UI's top bar opens it |
-| `hopper help` | the operator CLI: config records as JSON, users, join codes; and the operator's actions on the running hopper for a script — `hopper job accept\|reject\|rerun`, `hopper queue order\|gate`, `hopper question answer\|close\|dismiss`; and the Failures actions with no UI sign-in — `hopper problem list\|release\|resolve`, `hopper handoff list\|continue\|fixed\|done-by-hand\|wont-do`, `hopper failure list\|retry` ([design](docs/design.md#failures-from-the-operator-cli-issue-623-2026-10-10)) |
+| `hopper help` | the operator CLI: config records as JSON, users, join codes; and the operator's actions on the running hopper for a script — `hopper job accept\|reject\|rerun\|rework\|keep-original\|accept-new-text`, `hopper queue order\|gate`, `hopper question list\|answer\|close\|dismiss`, `hopper prs`, `hopper pr merge\|close`, `hopper repo checks`, `hopper yolo`; and the Failures actions with no UI sign-in — `hopper problem list\|release\|resolve`, `hopper handoff list\|continue\|fixed\|done-by-hand\|wont-do`, `hopper failure list\|retry` ([design](docs/design.md#failures-from-the-operator-cli-issue-623-2026-10-10)) |
 | `node src/main.ts --help` | the daemon's settings, with defaults |
 
 Settings holds the rest: the job rules every job's prompt carries, the plugins, the routing, the
@@ -523,8 +511,10 @@ priority lanes, the blast-radius gate, usage limits — and what to do in each: 
 
 <img src="docs/screenshots/job-rules.webp" width="49%" alt="Settings → Job rules: the rules text every job's prompt carries, and the fixed part after it."> <img src="docs/screenshots/plugins.webp" width="49%" alt="Settings → Plugins: the shipped plugins, each switched on or off, with what it does.">
 
-The API: `GET /api/*` reads, free on loopback and with a UI session (`x-hopper-session`) from
-anywhere else; the only changes are `POST /ui/api/*`, behind a UI session whose role allows them.
+The API: `GET /api/*` reads, free on loopback, and with a UI session (`x-hopper-session`) or an API token
+(`Authorization: Bearer hopper_at_…`) from anywhere else; the only changes are `POST /ui/api/*`, behind a UI session or
+an API token whose role allows them. A box action (start a job, run a command, merge, update, change a machine) needs a
+box token, which only a person mints.
 The OpenAPI document is `/docs/openapi.json` (or `.yaml`).
 
 ## Read on
@@ -532,6 +522,7 @@ The OpenAPI document is `/docs/openapi.json` (or `.yaml`).
 | | |
 |---|---|
 | [User guide](https://henningfutrell.github.io/hopper/guide.html) (`site/guide.html`) | using it: research, proposals, phase shifts, Jev, Needs a person, parking, priority, client updates, usage limits |
+| Help pages, `/help/` (`help/`) | each feature, for the version you run: deploy and update, intake, lanes, questions, pull requests, the vault, sandbox boxes, artifacts, the CLI and the API |
 | `docs/deploy.md` | deploy recipes, secrets, mounted secret files |
 | `docs/sign-in.md` | sign-in, roles, reaching the UI across the LAN or a public URL |
 | `docs/plugins.md` | writing a plugin; the plugin store |

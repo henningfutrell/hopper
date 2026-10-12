@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { ExecutionContext } from '../../src/domain/ports.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
+import type { TaskCount } from '../../src/domain/task-count.ts';
 import { createPrintAgentExecutor, type PrintAgent } from '../../src/executors/index.ts';
 import { STATUS_NOTE_NUDGE } from '../../src/executors/herdr/index.ts';
 import { userSystemd } from '../support/systemd.ts';
@@ -41,15 +42,16 @@ const reply = (text: string) => { process.env.FAKE_AGENT_REPLY = text; };
 
 function ctxFor(payload: Record<string, unknown>, o: { state?: Record<string, unknown>; signal?: AbortSignal; credentials?: Record<string, string> } = {}) {
   const saved: Record<string, unknown>[] = [];
+  const progress: { message?: string; tasks?: TaskCount }[] = [];
   const job: Job = {
     id: ID, spec: { executor: 'agent', payload, machineId: HERE.id }, priority: 50, status: 'running', approved: false,
     createdAt: '', updatedAt: '', attempts: 1, ...(o.state ? { executorState: o.state } : {}),
   };
   const ctx: ExecutionContext = {
-    job, laneId: 'local/lane-1', machine: HERE, signal: o.signal ?? new AbortController().signal, progress() {}, saveState: (s) => { saved.push(s); },
+    job, laneId: 'local/lane-1', machine: HERE, signal: o.signal ?? new AbortController().signal, progress: (message, tasks) => { progress.push({ message, tasks }); }, saveState: (s) => { saved.push(s); },
     workTree() {}, ...(o.credentials ? { credentials: async () => o.credentials! } : {}),
   };
-  return { ctx, saved };
+  return { ctx, saved, progress };
 }
 
 /** Per agent: its arguments in the test, how a first turn and a resumed turn call its CLI, and its session id. */
@@ -95,6 +97,14 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     expect(call!.env).toEqual({ TMPDIR: `/tmp/hopper-${ID}`, HOPPER_JOB_ID: ID, HOPPER_REPO: 'o/r', HOPPER_URL: 'http://hopper.test' });
     expect(call!.argv.slice(0, -1)).toEqual(first('m-1'));
     expect(call!.argv.at(-1)).toMatch(/^Write a greeting\n\n\[hopper publishing rule\][\s\S]*HOPPER_FAILED followed by the reason\.$/);
+  });
+
+  // Issue #794: the last task count the turn wrote is the job's progress.
+  it('reports the last task count the turn wrote', async () => {
+    reply('Wrote the test.\nHOPPER_TASKS 1/2\nWrote greeting.txt.\nHOPPER_TASKS 2/2\n\nHOPPER_DONE');
+    const t = ctxFor({ prompt: 'Write a greeting', cwd: work });
+    expect((await ex.run(t.ctx)).kind).toBe('finished');
+    expect(t.progress.filter((p) => p.tasks).map((p) => p.tasks)).toEqual([{ done: 2, total: 2 }]);
   });
 
   it('a question pauses the job with its session; the answer resumes that session', async () => {

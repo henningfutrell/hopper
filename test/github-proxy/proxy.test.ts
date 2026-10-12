@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { mintLinkKey } from '../../src/client/link.ts';
 import type { Job, NewEvent } from '../../src/domain/types.ts';
 import {
-  checkRequest, createGitHubProxy, createProxyLimiter, holdsProxyToken, parseProxyToken, PROXY_LIMITS, proxyRequest, proxyToken,
+  checkRequest, createGitHubProxy, createProxyLimiter, filedNote, holdsProxyToken, parseProxyToken, PROXY_LIMITS, proxyRequest, proxyToken,
   type ProxyRequest, type ProxyUser,
 } from '../../src/github-proxy/index.ts';
 
@@ -87,6 +87,32 @@ describe('who may ask what', () => {
   });
 });
 
+describe('issue lineage: an issue a job files is a child of the job\'s issue (issue #729)', () => {
+  const repos = ['octo/tools', 'octo/site'];
+  const required: ProxyRequest = { op: 'issue.create', repo: 'octo/site', title: 't', body: 'b', required: true };
+
+  it('a request may mark the issue a required child; from a form it comes as text', () => {
+    expect(proxyRequest.parse({ op: 'issue.create', repo: 'o/r', title: 't', body: 'b', required: 'true' })).toEqual({ op: 'issue.create', repo: 'o/r', title: 't', body: 'b', required: true });
+    expect(proxyRequest.safeParse({ op: 'issue.comment', repo: 'o/r', number: 1, body: 'b', required: 'true' }).success).toBe(false);
+  });
+
+  it('only the hopper\'s own job with an issue of its own files a required child', () => {
+    expect(checkRequest(required, { jobId: 'j', own: true, repo: 'octo/tools', issue: 7 }, repos)).toEqual({ ok: true });
+    expect(checkRequest(required, { jobId: 'j', own: true, repo: 'octo/tools' }, repos))
+      .toEqual({ ok: false, reason: 'a required child is a child of the job\'s own issue, and this job has none: file it with no --required' });
+    expect(checkRequest(required, { jobId: 'j', own: false, repo: 'guest/own', issue: 7 }, repos))
+      .toEqual({ ok: false, reason: 'a job of another user files no required child: file it with no --required' });
+  });
+
+  it('the filed issue names its parent: a follow-up, or a required child that keeps the parent from done', () => {
+    expect(filedNote('job-1', 'r1', { repo: 'octo/tools', number: 7, required: false })).toBe(
+      '\n\n---\nFollow-up of octo/tools#7.\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
+    expect(filedNote('job-1', 'r1', { repo: 'octo/tools', number: 7, required: true })).toBe(
+      '\n\n---\nRequired child of octo/tools#7: that issue is not done while this one is open.\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
+    expect(filedNote('job-1', 'r1')).toBe('\n\n---\nFiled through hopper for job `job-1` (request `r1`). It is not a job: it waits for a person to triage it.');
+  });
+});
+
 describe('the rate limits', () => {
   it('count per job and per machine, per operation, over the last hour', () => {
     let now = 0;
@@ -116,7 +142,7 @@ describe('the broker when the hopper cannot act', () => {
   it('no GitHub connection: 503 with why, on the job\'s timeline', async () => {
     const proxy = createGitHubProxy({
       user: () => user, limiter: createProxyLimiter({ now: () => new Date() }), log: () => {},
-      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], api: () => ({ problem: 'the hopper\'s GitHub is not connected' }) } }),
+      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => ({ problem: 'the hopper\'s GitHub is not connected' }) } }),
     });
     expect(await proxy.handle(bearer, create)).toMatchObject({ status: 503, body: { error: 'refused: the hopper\'s GitHub is not connected' } });
     expect(events.at(-1)).toMatchObject({ type: 'github_proxy.refused', jobId: 'job-1', data: { reason: 'the hopper\'s GitHub is not connected', own: true, machine: 'm' } });
@@ -126,7 +152,7 @@ describe('the broker when the hopper cannot act', () => {
     let asked = 0;
     const proxy = createGitHubProxy({
       user: () => user, limiter: { take: () => 'over' }, log: () => {},
-      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], api: () => ({ perform: async () => { asked++; return { number: 1, url: 'u' }; }, defaultBranch: async () => 'dev' }) } }),
+      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => ({ perform: async () => { asked++; return { number: 1, url: 'u' }; }, repo: async () => { throw new Error('not read'); } }) } }),
     });
     expect(await proxy.handle(bearer, create)).toMatchObject({ status: 429, body: { error: 'refused: over' } });
     expect(asked).toBe(0);
@@ -135,7 +161,7 @@ describe('the broker when the hopper cannot act', () => {
   it('a request it does not take: 400 naming the field', async () => {
     const proxy = createGitHubProxy({
       user: () => user, limiter: createProxyLimiter({ now: () => new Date() }), log: () => {},
-      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], api: () => ({ problem: 'x' }) } }),
+      hopper: () => ({ user, connection: { jobRepositories: () => ['octo/tools'], contribution: () => false, login: () => 'owner', api: () => ({ problem: 'x' }) } }),
     });
     const r = await proxy.handle(bearer, { op: 'issue.create', repo: 'octo/tools', title: 't' });
     expect(r.status).toBe(400);

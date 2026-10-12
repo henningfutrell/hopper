@@ -1,7 +1,7 @@
 // Yolo mode in the UI (issue #579), pure: one row per job repository and per repository set apart, each saying
 // whether its jobs may merge and why; the summary; and the change a save sends — only what differs.
 import { describe, expect, it } from 'vitest';
-import { YOLO_WARNING, yoloPatch, yoloRows, yoloSummary } from '../../ui/src/model/yolo-mode.ts';
+import { YOLO_WARNING, repoMerges, yoloPatch, yoloRows, yoloSummary } from '../../ui/src/model/yolo-mode.ts';
 
 const view = (on: boolean, repos: Record<string, boolean> = {}, choices = ['owner/a', 'owner/b']) => ({ on, repos, choices: { repos: choices } });
 
@@ -30,6 +30,14 @@ describe('yolo mode model', () => {
     expect(yoloPatch(v, { on: false, repos: { 'owner/b': 'on' } })).toBeUndefined();
     expect(yoloPatch(v, { on: true, repos: { 'owner/b': 'on' } })).toEqual({ on: true });
     expect(yoloPatch(v, { on: false, repos: { 'owner/a': 'off', 'owner/b': 'default' } })).toEqual({ repos: { 'owner/a': false, 'owner/b': null } });
+  });
+
+  it('repoMerges: the own setting of a repository wins, else the default; case does not matter (issue #737)', () => {
+    const v = view(false, { 'owner/b': true });
+    expect(repoMerges(v, 'Owner/B')).toBe(true);
+    expect(repoMerges(v, 'owner/a')).toBe(false);
+    expect(repoMerges(view(true, { 'owner/a': false }), 'owner/a')).toBe(false);
+    expect(repoMerges(view(true), 'owner/c')).toBe(true);
   });
 
   it('the warning says what it allows', () => {

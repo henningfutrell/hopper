@@ -92,6 +92,21 @@ describe('App adapter: issues and comments', () => {
     expect(await h.api.referencingPullRequests('owner/a', 2)).toEqual([]);
   });
 
+  it('crossReferences reads the closing pull requests and the mentions of an issue over GraphQL (issue #430)', async () => {
+    const closing = { url: 'https://github.com/owner/a/pull/9', createdAt: '2026-10-02T10:30:00Z', isDraft: false };
+    const mention = (url: string, body: string, repo: string) => ({ url, createdAt: '2026-10-02T10:40:00Z', isDraft: false, state: 'OPEN' as const, body, repo });
+    h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [issue(1, {
+      openPullRequests: [closing], mentionedBy: [mention(closing.url, 'Fixes #1', 'owner/a'), mention('https://github.com/other/b/pull/3', 'Refs owner/a#1', 'other/b')],
+    })] }] }] });
+    expect(await h.api.crossReferences('owner/a', 1)).toEqual({
+      mentions: [
+        { kind: 'pull_request', repo: 'owner/a', url: closing.url, text: 'Fixes #1' },
+        { kind: 'pull_request', repo: 'other/b', url: 'https://github.com/other/b/pull/3', text: 'Refs owner/a#1' },
+      ],
+      closing: [{ kind: 'pull_request', repo: 'owner/a', url: closing.url }],
+    });
+  });
+
   it('pullRequest reads a pull request by its number over GraphQL, with when its head commit was made; an issue or nothing is undefined (issue #618)', async () => {
     const open = { url: 'https://github.com/owner/a/pull/9', createdAt: '2026-10-02T10:30:00Z', isDraft: false, mergeable: 'MERGEABLE', headCommittedAt: '2026-10-03T08:00:00Z' };
     const merged = {

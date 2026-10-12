@@ -68,6 +68,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   const reaped = new Map<string, Reaped>();
   /** When each running job's pane output last changed (issue #630): at a timeout, its liveness. */
   const outputAt = new Map<string, number>();
+  /** Each job's device codes reported or shown so far (issue #698), in memory only: a code on screen is a new login once. */
+  const codes = new Map<string, Set<string>>();
 
   /** The herdr a pane lives on: this machine's, or the attached machine's over ssh. */
   function herdrOn(p: Where): HerdrClient {
@@ -172,18 +174,18 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     const result = await watchTurn({
       herdr: herdrOn(s), clock, sleep, pollMs: o.pollMs, idleNudgeMs: nudgeGapMs(notes.count, o.idleNudgeMs), stallMs: o.idleNudgeMs, untilWorking: notes.quiet, ctx, agentName: s.agentName,
       paneId: s.paneId, anchor: turn.anchor, seqAtSend: turn.seq, blockedAtSend: turn.blockedAtSend, markersAfter: turn.markersAfter,
-      timeoutMs: p.timeoutMs, expectedMs: p.expectedMs, startedAt: notes.startedAt,
+      timeoutMs: p.timeoutMs, startedAt: notes.startedAt,
       onQuestion: (seq, lapsesAt, waitLines) => ctx.saveState({ ...s, turn: waitLines === undefined ? turn : { ...turn, markersAfter: waitLines }, parkedSeq: seq, lapsesAt }),
-      onOutput: (at) => outputAt.set(ctx.job.id, at),
+      onOutput: (at) => outputAt.set(ctx.job.id, at), knownCodes: codes.get(ctx.job.id) ?? codes.set(ctx.job.id, new Set()).get(ctx.job.id)!,
       ...(login ? { login: loginWait(ctx, login, () => ctx.saveState({ ...s, login: undefined })) } : {}),
     });
     if ('authPending' in result) {
       // A login (issue #476): to the logins, never a question; the job waits, no nudge, for Claude to go on by itself.
       const unreadable = (notes.unreadable ?? 0) + 1;
-      const taken = takeLogin(ctx, result.authPending, clock.now(), unreadable, notes.steered === true, login);
+      const taken = takeLogin(ctx, result.authPending, clock.now(), unreadable, notes.steered === true, login, { seen: result.seen === true, codes: codes.get(ctx.job.id) });
       if ('failed' in taken) return { kind: 'failed', error: taken.failed };
-      // A GitHub login steered to the hopper (issue #563): the same login reported next goes to the user.
-      if ('say' in taken) return send(ctx, s, p, taken.say, lastLineOf(taken.say), { count: notes.count, startedAt: notes.startedAt, ...(taken.steered ? { steered: true } : { unreadable }) });
+      // A GitHub login steered to the hopper (issue #563): the same login reported next fails the job (issue #695).
+      if ('say' in taken) return send(ctx, taken.login ? { ...s, login: taken.login } : s, p, taken.say, lastLineOf(taken.say), { count: notes.count, startedAt: notes.startedAt, ...(taken.steered ? { steered: true } : { unreadable }) });
       const waiting = { ...s, turn, login: taken.login, parkedSeq: undefined, lapsesAt: undefined };
       ctx.saveState(waiting);
       return watch(ctx, waiting, p, turn, { count: 0, startedAt: notes.startedAt, quiet: true });
@@ -192,7 +194,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       // The user acted on the login the job waits on (issue #476).
       const next = afterLoginAct(result.login, login?.tool ?? 'the');
       if ('failed' in next) return { kind: 'failed', error: next.failed };
-      ctx.progress(0, next.progress);
+      ctx.progress(next.progress);
       return send(ctx, { ...s, login: undefined }, p, next.say, lastLineOf(next.say), { count: 0, startedAt: notes.startedAt });
     }
     if ('lostSend' in result) {
@@ -205,7 +207,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       }
       const again = { ...notes, lost: sends };
       if (!unsent) {
-        ctx.progress(0, 'the prompt never reached claude: sent it again');
+        ctx.progress('the prompt never reached claude: sent it again');
         return send(ctx, s, p, turn.text!, turn.anchor, again);
       }
       // Pasted but never submitted (seen live): Enter submits it; sending it again would paste it twice.
@@ -214,7 +216,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const next: TurnAnchor = { ...turn, seq: agent.stateChangeSeq };
       ctx.saveState({ ...s, turn: next, parkedSeq: undefined, lapsesAt: undefined });
       await herdr.sendKeys(s.paneId, ['enter']);
-      ctx.progress(0, "the prompt sat unsent in claude's input: submitted it");
+      ctx.progress("the prompt sat unsent in claude's input: submitted it");
       return watch(ctx, s, p, next, again);
     }
     if (!('statusNote' in result)) return result;
@@ -288,7 +290,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       await herdrOn(whereOn(ctx.machine)).reap(ctx.job.id);
       const started = await startIn(ctx, p, (s) => { state = s; }, session);
       if ('kind' in started || 'interrupt' in started) return started;
-      ctx.progress(0, session ? `resumed agent session ${session}` : 'started a fresh agent session in the kept work tree: none was recorded');
+      ctx.progress(session ? `resumed agent session ${session}` : 'started a fresh agent session in the kept work tree: none was recorded');
       return session ? send(ctx, started, p, answer, lastLineOf(answer)) : send(ctx, started, p, `${p.prompt}\n\n${answer}\n\n${protocolFooter(p.cwd, ctx.jobRules, jobScratchOf(p.cwd, ctx.job.id), started.jobWorktree, started.sharedDependencies === true, started.checkout)}`, FOOTER_ANCHOR);
     });
   }
@@ -345,7 +347,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         const turn: TurnAnchor = { ...s.turn, seq: agent.stateChangeSeq, blockedAtSend: true };
         ctx.saveState({ ...s, turn, parkedSeq: undefined, lapsesAt: undefined });
         await herdr.sendText(s.paneId, option);
-        ctx.progress(0, `picked option ${option} of the dialog`);
+        ctx.progress(`picked option ${option} of the dialog`);
         return watch(ctx, s, p, turn);
       });
     },
@@ -397,7 +399,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       if (open) throw new Error(`pane ${state!.paneId} may still be open: ${open}`);
       const said = reaped.get(job.id);
       reaped.delete(job.id);
-      outputAt.delete(job.id);
+      outputAt.delete(job.id); codes.delete(job.id);
       return said;
     },
 

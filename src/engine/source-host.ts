@@ -2,7 +2,8 @@
 // write is one store.tx that re-reads the job (compare-and-set), so a re-sort can never land on a
 // job a Decision has just claimed. design.md "Job sources".
 import type { RerunResult, SourceHost, SourceItem, SourceRef } from '../domain/ports.ts';
-import { asksOf, isRerunnable, REVIEW_SECTIONS, TERMINAL_STATUSES } from '../domain/types.ts';
+import { SPECIALTY_LABEL } from '../domain/elbow-in.ts';
+import { asksOf, isRerunnable, reworkBrief, REVIEW_SECTIONS, TERMINAL_STATUSES } from '../domain/types.ts';
 import type { Job, JobSourceRef, JobSpec, RoutedBy, SpecFromConfig } from '../domain/types.ts';
 import { routeItem } from '../routing/index.ts';
 import type { Commands } from './commands.ts';
@@ -26,8 +27,13 @@ function refFor(item: SourceItem, source: { name: string; kind: string }): JobSo
     ...(item.number !== undefined ? { number: item.number } : {}),
     ...(item.assignee !== undefined ? { assignee: item.assignee } : {}),
     labels: [...item.labels],
+    ...(item.parts ? { parts: { ...item.parts } } : {}),
+    ...(item.origin ? { origin: item.origin } : {}),
   };
 }
+
+/** A person's Run again or Rework of a job (issue #652): the new job keeps the origin of the job it follows. */
+const originFrom = (item: SourceItem, job: Job): SourceItem => (item.origin || !job.source?.origin ? item : { ...item, origin: job.source.origin });
 
 /**
  * What the item and the routing rule give a job's spec (issue #375). The job's own work tree is a routing
@@ -80,6 +86,8 @@ function specFor(item: SourceItem, source: { name: string }, priority: number, r
     // Labelled hopper:research or hopper:proposal, or with a Research or Proposal heading in its body (issues #537,
     // #543; the layout of #542): the job is asked for the research or the proposal, not the work — research first.
     ...Object.fromEntries(asksOf(item.labels, item.body ?? '').map((k) => [REVIEW_SECTIONS[k].specFlag, true as const])),
+    // Labelled hopper:specialty (issue #762): it may elbow in past a machine's lane cap; no other job may.
+    ...(item.labels.includes(SPECIALTY_LABEL) ? { specialty: true as const } : {}),
   };
   return withParts(spec, f, routedBy);
 }
@@ -186,6 +194,13 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         const job = store.jobs.get(jobId);
         if (!job || TERMINAL_STATUSES.includes(job.status)) return false;
         let changed = false;
+        // A job queued before origins were judged (issue #652, the backfill): its issue is offered once it is of a trusted
+        // origin or a person approved it; the job takes that origin, and its hold goes.
+        if (job.originPending && item.origin && job.source) {
+          store.jobs.update(jobId, { originPending: undefined, source: { ...job.source, origin: item.origin } });
+          store.events.append({ type: 'job.origin_judged', jobId, data: { key: item.key, origin: item.origin } });
+          changed = true;
+        }
         // Only a job that has not started: a started one resumes in the pane and work tree it ran in.
         // Its item's text changed while it waits (issue #662): held, its text kept. The task text is never refreshed.
         if (refreshText(c, job, item, source)) changed = true;
@@ -219,6 +234,9 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         return changed;
       });
     },
+
+    // A reply on the issue thread (issue #435): the question settles as a person's answer, and its job resumes.
+    answerFromThread: (questionId, answer, by) => c.questions.settleWith(questionId, answer, by, 'a reply on the issue thread') !== undefined,
 
     finishOperatorLed(jobId) {
       return store.tx(() => {
@@ -258,10 +276,24 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
 
     rerun(jobId, item, source, by = 'user', brief, acting) {
       return store.tx(() => {
-        if (!store.jobs.get(jobId)) throw new EngineError('not_found', `job ${jobId} not found`);
+        const ended = store.jobs.get(jobId);
+        if (!ended) throw new EngineError('not_found', `job ${jobId} not found`);
         // A sync that offered the item between the source giving it back and now made the new job already.
-        const job = ingest(item, source, brief) ?? store.jobs.getBySourceKey(item.key)!;
+        const job = ingest(originFrom(item, ended), source, brief) ?? store.jobs.getBySourceKey(item.key)!;
         store.events.append({ type: 'job.rerun', jobId, data: { by, ...acting } });
+        return job;
+      });
+    },
+
+    rework(jobId, item, source, rework, acting) {
+      return store.tx(() => {
+        const ended = store.jobs.get(jobId);
+        if (!ended) throw new EngineError('not_found', `job ${jobId} not found`);
+        // It no longer follows its pull request: the new job does, once it ends done (issue #724).
+        store.jobs.update(jobId, { sourceState: { ...ended.sourceState, source: rework.state } });
+        const made = ingest(originFrom(item, ended), source, reworkBrief(rework.pullRequest, rework.notes)) ?? store.jobs.getBySourceKey(item.key)!;
+        const job = store.jobs.update(made.id, { rework: { pullRequest: rework.pullRequest, notes: rework.notes, at: nowIso(c), ...acting } });
+        store.events.append({ type: 'job.rework_requested', jobId, data: { pullRequest: rework.pullRequest, notes: rework.notes, nextJobId: job.id, ...acting } });
         return job;
       });
     },

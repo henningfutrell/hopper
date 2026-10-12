@@ -1,9 +1,12 @@
 import { randomBytes } from 'node:crypto';
+import type { RateLimiterSettings } from '../domain/github-rate-limit.ts';
+import type { IntakeActorSettings } from '../domain/intake-origin.ts';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, DiscoveryRecord, FailureSettings, MinorDecisionSettings, PriorityLaneSettings, NamedCause, LoginExpiryAction, PluginInstall, ReviewKind, ReviewSettings, PluginStoreSource, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, PhaseShiftSettings, TldrSettings, YoloModeSettings } from '../domain/types.ts';
+import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, ContributionSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
+import type { MasterKeyRotation } from '../domain/settings-store.ts';
 
 /** Each review section's settings row (issues #537, #543). */
 const REVIEW_SETTINGS_KEYS: Readonly<Record<ReviewKind, string>> = { proposal: 'proposalSettings', research: 'researchSettings' };
@@ -82,6 +85,21 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     setUsageLimits(limits) {
       write('usageLimits', JSON.stringify({ soft: limits.soft, hard: limits.hard }));
     },
+    getLaneTuning() {
+      const text = read('laneTuning');
+      return text === undefined ? {} : JSON.parse(text) as LaneTuningSettings;
+    },
+    setLaneTuning(settings) {
+      write('laneTuning', JSON.stringify(Object.fromEntries(Object.entries(settings).sort(([a], [b]) => a.localeCompare(b))
+        .map(([id, t]) => [id, { autoTune: t.autoTune, minLanes: t.minLanes, maxLanes: t.maxLanes }]))));
+    },
+    getLaneDismissals() {
+      const text = read('laneDismissals');
+      return text === undefined ? {} : JSON.parse(text) as LaneDismissals;
+    },
+    setLaneDismissals(dismissals) {
+      write('laneDismissals', JSON.stringify(dismissals));
+    },
     getPriorityLanes() {
       const text = read('priorityLanes');
       return text === undefined ? undefined : JSON.parse(text) as PriorityLaneSettings;
@@ -97,6 +115,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setPriorityLaneChoice(lanes) {
       write('priorityLaneChoice', JSON.stringify([...lanes]));
+    },
+    getReadPolicy() {
+      const text = read('readPolicy');
+      return text === undefined ? undefined : { assets: (JSON.parse(text) as { assets: string[] }).assets };
+    },
+    setReadPolicy(p) {
+      write('readPolicy', JSON.stringify({ assets: [...p.assets] }));
     },
     getBlastRadius() {
       const text = read('blastRadius');
@@ -165,7 +190,8 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
       return text === undefined ? undefined : JSON.parse(text) as AutoAnswerSettings;
     },
     setAutoAnswer(settings) {
-      write('autoAnswer', JSON.stringify({ enabled: settings.enabled, threshold: settings.threshold }));
+      // `holdHighPriority` (issue #679): absent in a record from before it, read as off; the build before ignores it.
+      write('autoAnswer', JSON.stringify({ enabled: settings.enabled, threshold: settings.threshold, ...(settings.holdHighPriority === undefined ? {} : { holdHighPriority: settings.holdHighPriority }) }));
     },
     getAutoPark() {
       const text = read('autoPark');
@@ -174,19 +200,29 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     setAutoPark(settings) {
       write('autoPark', JSON.stringify({ minutes: settings.minutes, highPriorityMinutes: settings.highPriorityMinutes }));
     },
-    getTldr() {
-      const text = read('tldr');
-      return text === undefined ? undefined : JSON.parse(text) as TldrSettings;
-    },
-    setTldr(settings) {
-      write('tldr', JSON.stringify({ enabled: settings.enabled }));
-    },
+    getThreadAsk: () => { const text = read('threadAsk'); return text === undefined ? undefined : JSON.parse(text) as ThreadAskSettings; },
+    setThreadAsk: (s) => write('threadAsk', JSON.stringify({ ownRepos: s.ownRepos, otherRepos: s.otherRepos })),
+    getTldr() { const text = read('tldr'); return text === undefined ? undefined : JSON.parse(text) as TldrSettings; },
+    setTldr(settings) { write('tldr', JSON.stringify({ enabled: settings.enabled })); },
+    getGitHubWatch: () => { const t = read('githubWatch'); return t === undefined ? undefined : JSON.parse(t) as GitHubWatchSettings; },
+    setGitHubWatch: (s) => write('githubWatch', JSON.stringify({ intervalSeconds: s.intervalSeconds })),
     getYoloMode() {
       const text = read('yoloMode');
       return text === undefined ? undefined : JSON.parse(text) as YoloModeSettings;
     },
     setYoloMode(settings) {
       write('yoloMode', JSON.stringify({ on: settings.on, repos: settings.repos }));
+    },
+    getContribution() { const text = read('contribution'); return text === undefined ? undefined : JSON.parse(text) as ContributionSettings; },
+    setContribution(settings) { write('contribution', JSON.stringify({ on: settings.on })); },
+    getIntakeActors() { const text = read('intakeActors'); return text === undefined ? undefined : JSON.parse(text) as IntakeActorSettings; },
+    setIntakeActors(settings) { write('intakeActors', JSON.stringify({ actors: settings.actors })); },
+    getRepoChecksDismissed() {
+      const text = read('repoChecksDismissed');
+      return text === undefined ? [] : JSON.parse(text) as string[];
+    },
+    setRepoChecksDismissed(repos) {
+      write('repoChecksDismissed', JSON.stringify([...repos]));
     },
     getBackfills() {
       const text = read('backfills');
@@ -219,7 +255,7 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
   };
 }
 
-/** The instance's settings: self-update, the plugin store (issue #445) and the store installs. */
+/** The instance's settings: self-update, the shared rate limiter (issue #436), the plugin store (issue #445) and the store installs. */
 export function createInstanceSettingsRepository(c: StoreContext): InstanceSettingsRepository {
   const { read, write } = keyValues(c);
   return {
@@ -242,6 +278,8 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
     setPluginInstalls(installs) {
       write('pluginInstalls', JSON.stringify([...installs].sort((a, b) => a.id.localeCompare(b.id))));
     },
+    getGitHubRateLimiter: () => JSON.parse(read('githubRateLimiter') ?? '{}') as Partial<RateLimiterSettings>,
+    setGitHubRateLimiter: (s) => write('githubRateLimiter', JSON.stringify({ slowBelowPercent: s.slowBelowPercent, reserve: s.reserve, batchSize: s.batchSize })),
     getPluginStoreSource() {
       const text = read('pluginStore');
       return text === undefined ? undefined : JSON.parse(text) as PluginStoreSource;
@@ -259,5 +297,10 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
     setMasterKeyFingerprint: (fingerprint) => write('masterKeyFingerprint', fingerprint),
     masterKeySaved: () => read('masterKeySaved'),
     setMasterKeySaved: (fingerprint) => write('masterKeySaved', fingerprint),
+    masterKeyRotation() {
+      const text = read('masterKeyRotation');
+      return text === undefined ? undefined : JSON.parse(text) as MasterKeyRotation;
+    },
+    setMasterKeyRotation: (rotation) => write('masterKeyRotation', JSON.stringify({ from: rotation.from, at: rotation.at })),
   };
 }

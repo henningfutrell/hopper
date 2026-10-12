@@ -281,14 +281,15 @@ export async function recheckSession(): Promise<void> {
 }
 
 /** A UI mutation. Failures toast; a rejected session drops to the landing page. Resolves true on success. */
-export async function act(path: string, body: unknown = {}, done?: string): Promise<boolean> {
-  return (await actFor(path, body, done)).ok;
-}
+export const act = async (path: string, body: unknown = {}, done?: string): Promise<boolean> => (await actFor(path, body, done)).ok;
 
-/** `act`, with the failure's reason for a view that shows it in place (issue #459). */
-export async function actFor(path: string, body: unknown = {}, done?: string): Promise<{ ok: true } | { ok: false; error: string }> {
+/** `act`, with the failure's reason for a view that shows it in place (issue #459). `refused` reads a refusal from an
+ *  answer that is not an HTTP error (an intake action's `failed`, issue #811): it is then a failure too. */
+export async function actFor(path: string, body: unknown = {}, done?: string, refused?: (answer: unknown) => string | undefined): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    await post(path, body);
+    const answer = await post(path, body);
+    const why = refused?.(answer);
+    if (why !== undefined) throw new Error(why);
     if (done) toast.success(done);
     refreshLiveSoon();
     return { ok: true };

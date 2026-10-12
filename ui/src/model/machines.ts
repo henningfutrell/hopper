@@ -68,10 +68,53 @@ export function workTreeText(m: MachineSnapshot): string | null {
   return m.workTree ?? `${JOBS_DIR} (the jobs directory)`;
 }
 
+/** The work trees a machine keeps per repository (issue #691), `owner/name → path`, sorted; null when it maps none. */
+export function workTreesText(m: MachineSnapshot): string | null {
+  const trees = Object.entries(m.workTrees ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  return trees.length ? trees.map(([repo, path]) => `${repo} → ${path}`).join('; ') : null;
+}
+
 /** A sandbox box's template the Machines view shows (issue #602): its name, and whether it takes jobs; null for a machine of no template. */
 export function templateText(m: MachineSnapshot): string | null {
   if (!m.template) return null;
   return m.template.waiting ? `${m.template.name}: takes no job, ${m.template.waiting}` : `${m.template.name}, approved: takes jobs`;
+}
+
+/**
+ * The machines a sandbox box can start on besides the computer the hopper runs on (issue #708): client targets online
+ * now, through their own Podman. Not a sandbox box itself: a box has no runtime to start another in.
+ */
+export const boxHosts = (machines: Pick<MachineSnapshot, 'id' | 'online' | 'client'>[]): string[] =>
+  machines.filter((m) => m.client && m.online && !m.id.startsWith('hopper-sandbox-')).map((m) => m.id);
+
+/**
+ * A machine off the hopper's network on Machines (issue #711): why its jobs cannot reach the hopper, and the command that
+ * joins it to the hopper's network when one fits; null for a machine whose jobs reach it.
+ */
+export function offNetwork(m: MachineSnapshot): { problem: string; fix?: string } | null {
+  if (m.addressProblem === undefined) return null;
+  return { problem: m.addressProblem, ...(m.addressFix ? { fix: m.addressFix } : {}) };
+}
+
+/** One side of a machine's herdr as Machines shows it (issue #741): its version, then its protocol and binary when read. */
+function herdrSide(what: string, side: { version?: string; protocol?: number; binary?: string } | undefined): string | null {
+  if (!side) return null;
+  const said = [side.protocol !== undefined ? `protocol ${side.protocol}` : null, side.binary ?? null].filter((x) => x !== null).join(', ');
+  return `${what}${side.version ? ` ${side.version}` : ''}${said ? ` (${said})` : ''}`;
+}
+
+/** An ssh target's herdr client and server versions on Machines (issue #741); null when its probe read none. */
+export function herdrText(m: MachineSnapshot): string | null {
+  const sides = [herdrSide('client', m.herdr?.client), herdrSide('server', m.herdr?.server)].filter((x) => x !== null);
+  return sides.length ? sides.join(', ') : null;
+}
+
+/** The herdr the hopper owns on an ssh target (issue #741): its version, and whether every herdr call there runs it, or why not; null when not read. */
+export function ownedHerdrText(m: MachineSnapshot): string | null {
+  const o = m.herdr?.owned;
+  if (!o) return null;
+  const use = o.inUse ? 'in use' : `not in use${o.note ? `: ${o.note}` : ''}`;
+  return o.version ? `${o.version}, ${use}` : use;
 }
 
 /** An Edit form as typed: its name, lanes, executors, label, the details of its connection, and (ssh) whether it runs herdr. */
@@ -278,8 +321,8 @@ export function reservedText(m: Pick<MachineSnapshot, 'maxLanes' | 'reservedLane
 export const BOX_AGENTS = ['claude'] as const;
 export type BoxAgent = (typeof BOX_AGENTS)[number];
 
-/** What Add machine adds: a computer, or a sandbox box on the computer the hopper runs on, in Podman or Docker. */
-export type JoinChoice = { kind: 'computer' } | { kind: 'box'; agent: BoxAgent; engine: 'podman' | 'docker'; template?: { name: string; image: string } };
+/** What Add machine adds: a computer, or a sandbox box on the computer the hopper runs on, in Podman or Docker (the line's container runtime). */
+export type JoinChoice = { kind: 'computer' } | { kind: 'box'; agent: BoxAgent; runtime: 'podman' | 'docker'; template?: { name: string; image: string } };
 
 /** Where a box reaches the hopper from, and the image it runs. */
 export interface BoxPlace { boxUrl: string; boxNetwork: string; boxImage: string }
@@ -303,17 +346,18 @@ export const boxSignInLine = (container: string, agent: BoxAgent): string => `po
 
 /**
  * The one line Add machine shows (design.md "Joining a machine"). A computer runs the install the hopper
- * serves, from the URL this page is open at. A box is a locked-down container: every capability dropped,
- * no new privileges, a read-only root, its own home volume, nothing of the computer mounted.
+ * serves, from the URL this page is open at. A box is a locked-down container: `flags` are the sandbox flags
+ * and limits the hopper builds for the boxes it starts too (GET /api/sandboxes `line`, issue #708) — every
+ * capability dropped, no new privileges, a read-only root —, its own home volume, nothing of the computer mounted.
  */
-export function joinLine(choice: JoinChoice, o: { origin: string; code: string; join: BoxPlace }): string {
+export function joinLine(choice: JoinChoice, o: { origin: string; code: string; join: BoxPlace; flags: string }): string {
   if (choice.kind === 'computer') return `curl -fsSL '${o.origin}/client/install' | sh -s -- '${o.origin}#${o.code}'`;
   // A box of a template (issue #558) is named after it and runs its image.
   const box = `hopper-sandbox-${choice.template?.name ?? choice.agent}`;
   const image = choice.template?.image ?? `${o.join.boxImage}:box-${choice.agent}`;
   return [
-    `${choice.engine} run -d --name ${box} --restart unless-stopped --network ${o.join.boxNetwork}`,
-    '--cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp',
+    `${choice.runtime} run -d --name ${box} --restart unless-stopped --network ${o.join.boxNetwork}`,
+    o.flags,
     `-v ${box}-home:/home/agent -e HOPPER_CLIENT_NAME=${box} -e HOPPER_JOIN='${o.join.boxUrl}#${o.code}' ${image}`,
   ].join(' ');
 }

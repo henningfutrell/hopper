@@ -90,6 +90,8 @@ export interface FakeHerdrOptions {
   survey?: Survey;
   /** What a discovery finds on the machine (issue #542). Default nothing. */
   discovery?: DiscoveryFacts;
+  /** What the reach check says on the machine (issue #695): why it cannot reach the hopper. Default it reaches it. */
+  unreached?: string;
   /** The machine runs a systemd user manager: the pane's shell enters the job's scope (issue #410). Default no systemd. */
   scopes?: boolean;
   /** Claude stays up through ctrl+c, so it never exits before its pane closes. */
@@ -100,6 +102,8 @@ export interface FakeHerdrOptions {
   windowsShell?: 'powershell' | 'cmd';
   /** Work trees that are the top of a git repository: a job worktree command there makes one (issue #379). */
   repositories?: string[];
+  /** The repository (`owner/name`) each of `repositories` is a checkout of (issue #431). One not named is the job's own. */
+  origins?: Record<string, string>;
   /** Git refuses to make a job worktree. */
   worktreeFails?: boolean;
   /** What sharing dependencies in a job worktree says (issue #410). Default `none`: no lockfile. */

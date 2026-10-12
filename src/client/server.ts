@@ -5,11 +5,13 @@
 // answers `{code, stdout, stderr}` — the binary and the session are the client's own, never the
 // request's; `POST /release` answers `{release, loads, home, disk, resources}`, the id of the release this process runs
 // (release.ts, issue #70), `loads: 'manifest'` — it loads any release its manifest vouches for (issue #545; a
-// client before that says nothing, and checks a fixed list of file names) — and this user's home, where `~` in a job's work tree resolves (issue #323), the disk it is on (issue #401) and this machine's CPU, memory and swap (issue #560, resources.ts); `POST /load {release}` writes the hopper's release into the install dir
+// client before that says nothing, and checks a fixed list of file names) — and this user's home, where `~` in a job's work tree resolves (issue #323), the disk it is on (issue #401) and this machine's CPU, memory and swap (issue #560, resources.ts), and its client door (issue #695, door.ts); `POST /load {release}` writes the hopper's release into the install dir
 // and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files);
 // `POST /reap {jobId, scratch?}`, `POST /survey {roots}` and `POST /credential` (issue #441, credential.ts) run fixed
 // scripts on this machine (issue #410): the reap of an ended job, what the sweep asks, a running job's token; `{code, stdout, stderr}`;
 // `POST /discover` runs the discovery script (issue #542, discover.ts): only reads, no argument of the request's; `{code, stdout, stderr}`;
+// `POST /reach {url}` runs the reach check (issue #695, reach.ts): whether this machine reaches the hopper at that URL; `{code, stdout, stderr}`;
+// `POST /runtime` carries a container runtime call of the hopper's to this machine's own Podman or Docker, checked (issue #708, runtime.ts);
 // `POST /claude {args, timeoutMs?}` runs `<claudeBin> <args>` for a usage read (issue #366) — only the two
 // read-only calls `claude-plan` makes, nothing else — with no shell, stdin closed, in a fresh private dir
 // removed after with the project dir claude keeps for it, and answers `{code, stdout, stderr}`; `POST /work-tree
@@ -22,10 +24,13 @@
 import { execFile } from 'node:child_process';
 import { statfsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { performServerHandshake, type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
+import { serveLink, type PingTiming } from './keepalive.ts';
+import { type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import { credentialOf } from './credential.ts';
 import { DISCOVER_TIMEOUT_MS, discoverArgv } from './discover.ts';
+import { reachOf } from './reach.ts';
+import { defaultRuntimeSockets, runtimeRoute, type RuntimeSockets } from './runtime.ts';
 import { level, runClaude } from './level.ts';
 import { checkRelease, installRelease, readRelease } from './release.ts';
 import { createResourceMeter } from './resources.ts';
@@ -52,12 +57,18 @@ export interface ClientOptions {
   log?: (line: string) => void;
   /** Delays between dials; default 1 s, 2 s, 5 s, 10 s, then 30 s. */
   backoffMs?: readonly number[];
+  /** The link's keepalive (keepalive.ts, issue #752); default PING_TIMING. */
+  ping?: PingTiming;
   /** The directory this client's files are installed in: its release is read from it at start, and a load writes there. */
   installDir: string;
   /** A release was loaded into installDir: restart to run it. Called after the answer is sent. */
   onLoaded?: (release: string) => void;
   /** The vault's helper (vault.ts, issue #558): said in `/release` as `vault`, so the hopper gives each job its path as HOPPER_SECRET. */
   vaultHelper?: string;
+  /** The client door's URL (door.ts, issue #695), once it is open: said in `/release` as `door`, so the hopper gives it to each job as HOPPER_URL. */
+  door?: () => string | undefined;
+  /** Where this machine's own Podman and Docker sockets are (runtime.ts, issue #708); default under its runtime dir. */
+  runtimeSockets?: () => RuntimeSockets;
 }
 
 export interface Client { stop(): Promise<void> }
@@ -103,7 +114,7 @@ function readBody(stream: ServerHttp2Stream): Promise<string | 'too large'> {
 }
 
 /** One request on the tunnel: verified, then run; the answer signed. */
-const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree', '/discover']);
+const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree', '/discover', '/reach', '/runtime']);
 /** How long a reap or a survey may take: stopping a scope waits up to its 10 s stop timeout. */
 const SCRIPT_TIMEOUT_MS = 60000;
 
@@ -133,12 +144,13 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
     return answer(401, { error: `refused: ${v.why}` });
   }
   nonce = v.nonce;
-  if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome(), resources: resources(), ...(o.vaultHelper ? { vault: o.vaultHelper } : {}) });
+  if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome(), resources: resources(), ...(o.vaultHelper ? { vault: o.vaultHelper } : {}), ...(o.door?.() ? { door: o.door() } : {}) });
   if (path === '/load') return load(o, releases, stream, body, answer);
-  if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree') return fixed(path, body, answer);
+  if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree' || path === '/reach') return fixed(path, body, answer);
   // Discovery (issue #542): the fixed script, no argument of the request's.
   if (path === '/discover') return answer(200, await runArgv(discoverArgv(), DISCOVER_TIMEOUT_MS));
   if (path === '/level') return level(o.claudeBin ?? 'claude', body, answer);
+  if (path === '/runtime') { const r = await runtimeRoute(o.runtimeSockets?.() ?? defaultRuntimeSockets(), body); return answer(r.status, r.payload); }
   let parsed: { args?: unknown; timeoutMs?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
   const timeoutMs = typeof parsed.timeoutMs === 'number' && parsed.timeoutMs > 0 ? Math.min(parsed.timeoutMs, MAX_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
@@ -152,13 +164,14 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
 
 /**
  * A signed call of a fixed script, run with no shell of the request's: a reap or survey, its argv from the
- * body; a running job's credential (issue #441), its content on stdin; or the machine's work tree made (issue #361).
+ * body; a running job's credential (issue #441), its content on stdin; the machine's work tree made (issue #361); or the reach check (issue #695).
  */
-async function fixed(path: '/reap' | '/survey' | '/credential' | '/work-tree', body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
+async function fixed(path: '/reap' | '/survey' | '/credential' | '/work-tree' | '/reach', body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
   let parsed: unknown;
   try { parsed = JSON.parse(body); } catch { return answer(400, { error: 'body must be JSON' }); }
   if (path === '/work-tree') { const r = workTreeCall(parsed, homedir()); return answer(r.status, r.payload); }
-  const call = path === '/credential' ? credentialOf(parsed) : scriptArgvOf(path, parsed);
+  // The reach check (issue #695): the fixed script, its one argument a URL.
+  const call = path === '/credential' ? credentialOf(parsed) : path === '/reach' ? reachOf(parsed) : scriptArgvOf(path, parsed);
   if (typeof call === 'string') return answer(400, { error: call });
   answer(200, Array.isArray(call) ? await runArgv(call, SCRIPT_TIMEOUT_MS) : await runArgv(call.argv, SCRIPT_TIMEOUT_MS, call.input));
 }
@@ -224,7 +237,7 @@ export function startClient(o: ClientOptions): Client {
     o.dial().then((socket) => {
       if (stopped) { socket.destroy(); close(); return; }
       link = socket;
-      const session = performServerHandshake(socket);
+      const session = serveLink(socket, () => { log('hopper-client: the hopper did not answer a PING; the link is dead'); socket.destroy(); }, o.ping);
       session.on('stream', (stream, headers) => {
         serve(o, nonces, releases, stream, headers).catch((e: unknown) => {
           log(`hopper-client: ${(e as Error).message}`);

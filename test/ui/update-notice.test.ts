@@ -52,12 +52,12 @@ describe('the container update notice, slim (issue #521)', () => {
     window.location.hash = '#settings/version';
     await render('../../ui/src/views/settings.tsx', 'Settings', image);
     const block = () => document.querySelector('[data-slot="image-update"]')!;
-    expect(block().textContent).not.toContain('docker compose');
+    expect(block().textContent).not.toContain('docker run');
     expect(pick('Podman')?.getAttribute('aria-pressed')).toBe('true');
     await act(async () => pick('Docker')!.click());
-    expect(block().textContent).toContain('docker compose pull hopper && docker compose up -d --force-recreate --no-deps hopper');
+    expect(block().textContent).toContain('docker run --rm --pull=always ghcr.io/henningfutrell/hopper:dev hopper update docker > hopper-update.sh');
     expect(block().textContent).toContain('docker image prune -f --filter label=org.opencontainers.image.title=hopper');
-    expect(block().textContent).not.toContain('podman compose');
+    expect(block().textContent).not.toContain('podman run');
     expect(localStorage.getItem('jh_container_tool')).toBe('Docker');
   });
 
@@ -66,13 +66,13 @@ describe('the container update notice, slim (issue #521)', () => {
     await render('../../ui/src/app/update.tsx', 'UpdateNotice', image);
     const notice = document.querySelector('[data-update-notice]')!;
     expect(notice.querySelector('[data-slot="image-update"]')).toBeNull();
-    expect(notice.textContent).not.toContain('compose pull');
+    expect(notice.textContent).not.toContain('hopper update');
     expect(notice.textContent).not.toContain('running jobs would be lost');
     expect([...notice.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Update now');
     await act(async () => button(notice, 'How to update')!.click());
-    expect(notice.textContent).toContain('podman compose pull hopper && podman compose up -d --force-recreate --no-deps hopper');
-    expect(notice.textContent).not.toContain('docker compose');
-    expect(notice.textContent).toContain('HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev');
+    expect(notice.textContent).toContain('podman run --rm --pull=always ghcr.io/henningfutrell/hopper:dev hopper update podman > hopper-update.sh');
+    expect(notice.textContent).toContain('sh hopper-update.sh');
+    expect(notice.textContent).not.toContain('docker run');
     expect(notice.textContent).toContain('2 running jobs would be lost');
   });
 
@@ -82,8 +82,8 @@ describe('the container update notice, slim (issue #521)', () => {
     await render('../../ui/src/app/update.tsx', 'UpdateNotice', image);
     const notice = document.querySelector('[data-update-notice]')!;
     await act(async () => button(notice, 'How to update')!.click());
-    expect(notice.textContent).toContain('docker compose pull hopper');
-    expect(notice.textContent).not.toContain('podman compose');
+    expect(notice.textContent).toContain('docker run --rm --pull=always');
+    expect(notice.textContent).not.toContain('podman run');
   });
 
   it('What\'s new and How to update open one at a time', async () => {
@@ -95,5 +95,24 @@ describe('the container update notice, slim (issue #521)', () => {
     await act(async () => button(notice, "What's new")!.click());
     expect(notice.textContent).toContain('You can now do a new thing.');
     expect(notice.querySelector('[data-slot="image-update"]')).toBeNull();
+  });
+});
+
+describe('the update notice names the commit (issue #652)', () => {
+  it('an available update: the commit, and the pull request whose checks passed, linked', async () => {
+    const pullRequest = { number: 9, url: 'https://github.com/o/r/pull/9' };
+    await render('../../ui/src/app/update.tsx', 'UpdateNotice', { ...image, target: { ...image.target, pullRequest } });
+    const line = document.querySelector('[data-update-notice] [data-slot="update-target"]')!;
+    expect(line.textContent).toBe('dev beef000 · pull request #9, checks passed');
+    expect(line.querySelector('a')?.getAttribute('href')).toBe('https://github.com/o/r/pull/9');
+  });
+
+  it('a held update: why, the commit, and nothing to apply or run', async () => {
+    await render('../../ui/src/app/update.tsx', 'UpdateNotice', { ...image, state: 'held', reason: 'beef000 is not the merge of a pull request' });
+    const notice = document.querySelector('[data-update-notice]')!;
+    expect(notice.textContent).toContain('Update held: beef000 is not the merge of a pull request');
+    expect(notice.querySelector('[data-slot="update-target"]')?.textContent).toBe('dev beef000');
+    expect(button(notice, 'How to update')).toBeUndefined();
+    expect(button(notice, 'Update now')).toBeUndefined();
   });
 });

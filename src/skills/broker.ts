@@ -12,6 +12,8 @@ import { machineOfLane } from '../domain/raised-by.ts';
 import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 import { askedSkill, catalogText, credentialText, kindsInWords, linkText, mintedLinkText, skillOf, SKILLS, type LinkForm, type Skill, type SkillCredential } from './catalog.ts';
+import { TEMPLATE_SKILL, type TemplateAnswer } from './template-request.ts';
+import { helpForAgent } from '../help/book.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
@@ -28,6 +30,8 @@ export interface SkillUser {
   mintsFor(form: LinkForm, asset: Asset): boolean;
   /** The vault asks a person for a credential the box's template does not give (issue #583): waiting, or declined. */
   need(ask: CredentialNeed, asker: { job: Job; machine: string; template: string }): { waiting: string } | { declined: string };
+  /** A template request (issue #716): the hopper makes the template the job's needs say, or says why not. */
+  requestTemplate(needs: string | undefined, job: Job): Promise<TemplateAnswer>;
 }
 
 /** A vault secret a box may be given, as its metadata says (issue #583: the skill a person gave it for, the kind, their words). */
@@ -121,6 +125,19 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
     if (!name) {
       record('skill.listed');
       return { status: 200, text: catalogText() };
+    }
+    if (name === TEMPLATE_SKILL) {
+      const t = await user.requestTemplate(field(body, 'needs'), job);
+      if ('reason' in t) return no(t.status, t.reason);
+      if (t.status === 202) return { status: 202, text: `${t.text} Add --wait to have the hopper tell you when it is ready.\n` };
+      record('skill.loaded');
+      return { status: 200, text: `${t.text}\n` };
+    }
+    if (name === 'help') {
+      const h = helpForAgent(said);
+      if ('no' in h) return no(404, h.no);
+      record('skill.loaded');
+      return { status: 200, text: `${h.text}\n` };
     }
     const known = skillOf(name);
     // A service the hopper has no skill for: asked in the job's words, or one a person already gave a credential for.

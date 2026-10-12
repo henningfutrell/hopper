@@ -9,7 +9,7 @@ An additive (optional) field keeps the version; a removed, renamed or retyped fi
 
 Events stored before phase 3 read as v1 and are not re-validated.
 
-Stored events are never rewritten. Superseded versions stay readable and documented: `job.prioritized.v1`, `decision.made.v1`, `jev.mode_changed.v1`, `job.prioritized.v2`, `decision.made.v2`, `router.mode_changed.v1`, `question.escalated.v1`, `question.answered.v1`, `proposal.submitted.v1`, `proposal.escalated.v1`
+Stored events are never rewritten. Superseded versions stay readable and documented: `job.prioritized.v1`, `decision.made.v1`, `jev.mode_changed.v1`, `job.prioritized.v2`, `decision.made.v2`, `router.mode_changed.v1`, `job.progressed.v1`, `question.escalated.v1`, `question.answered.v1`, `proposal.submitted.v1`, `proposal.escalated.v1`
 (phase 5 renamed Jev → router: `jev.mode_changed` became `router.mode_changed`; slice 2 made question
 stages instance names: `question.escalated.target` and `question.answered.by` were `opus | fable | human` in v1;
 issue #211 removed the router mode: `router.mode_changed` is retired, and v3 of `job.prioritized` and
@@ -142,17 +142,20 @@ Version 1 (`docs/schemas/job.started.v1.json`). The executor began running a cla
 
 ## `job.progressed`
 
-Version 1 (`docs/schemas/job.progressed.v1.json`). An executor reported progress; at most one per job per 500 ms.
+Version 2 (`docs/schemas/job.progressed.v2.json`). An executor reported progress: a progress message, the job's task count (done of total), or both; at most one per job per 500 ms.
 
 | field | type | required |
 |---|---|---|
-| `progress` | number | yes |
 | `message` | string | no |
+| `tasks` | object | no |
 
 ```json
 {
-  "progress": 0.5,
-  "message": "half"
+  "message": "Running the checks",
+  "tasks": {
+    "done": 2,
+    "total": 5
+  }
 }
 ```
 
@@ -221,7 +224,7 @@ Version 1 (`docs/schemas/job.requeued.v1.json`). A job went back to the queue (r
 
 ## `job.reattached`
 
-Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: the owner typed the answer into a waiting job's pane; the job runs again on a lane.
+Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's live external work again (the herdr pane and Claude) without sending anything. `reason` `daemon restart`: restart recovery kept a running job running on its lane. `reason` `answered in the pane`: the owner typed the answer into a waiting job's pane; the job runs again on a lane. `reason` `link restored` (issue #752): the machine's link is back after `job.link_lost` and the job's pane is alive; it goes on from its saved turn.
 
 | field | type | required |
 |---|---|---|
@@ -230,6 +233,24 @@ Version 1 (`docs/schemas/job.reattached.v1.json`). The executor watches a job's 
 ```json
 {
   "reason": "daemon restart"
+}
+```
+
+## `job.link_lost`
+
+Version 1 (`docs/schemas/job.link_lost.v1.json`). The link to the running job's machine (`machine`) dropped while it was watched (issue #752). The job is held: it stays `running` on its lane, and the hopper asks every second whether its pane is alive again. `since`: when the link was found down. `failsAt`: when the job fails if the link is not back (the link grace). It goes on with `job.reattached` (reason `link restored`), or fails with "machine <id> did not reconnect within <n> s" and its cleanup deferred.
+
+| field | type | required |
+|---|---|---|
+| `machine` | string | yes |
+| `since` | string | yes |
+| `failsAt` | string | yes |
+
+```json
+{
+  "machine": "lab",
+  "since": "2026-10-10T12:00:00.000Z",
+  "failsAt": "2026-10-10T12:02:00.000Z"
 }
 ```
 
@@ -390,7 +411,7 @@ Version 1 (`docs/schemas/question.asked.v1.json`). A running job paused on a que
 
 ## `question.escalated`
 
-Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stage — `target` is an escalation level's instance name, or `human` — or the human was re-notified. `reason` says why it climbed: the reply or the failure of the level below, or a risk rule hit. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
+Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stage — `target` is an escalation level's instance name, or `human` — or the human was re-notified. `reason` says why it climbed: the reply or the failure of the level below, or a risk rule hit. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`). A risk hold the Decider made (issue #679) carries `decider` in place of `guards`: its `risk`, `categories`, `confidence` and `threshold`, or the `error` it failed with.
 
 | field | type | required |
 |---|---|---|
@@ -425,7 +446,7 @@ Version 2 (`docs/schemas/question.escalated.v2.json`). A question entered a stag
 
 ## `question.escalated_to_human`
 
-Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reached the human stage: every level escalated, there are no levels, or a risk rule hit. Once per question, right after its `question.escalated` with `target` `human`; never on a level hop or a re-notification. Subscribe to it to hear only the questions the owner must answer: the Grok Bot routine webhook listens to it and to no `question.escalated` (issue #481). `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
+Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reached the human stage: every level escalated, there are no levels, or a risk rule hit. Once per question, right after its `question.escalated` with `target` `human`; never on a level hop or a re-notification. Subscribe to it to hear only the questions the owner must answer: the Grok Bot routine webhook listens to it and to no `question.escalated` (issue #481). `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`). A risk hold the Decider made (issue #679) carries `decider` in place of `guards`: its `risk`, `categories`, `confidence` and `threshold`, or the `error` it failed with.
 
 | field | type | required |
 |---|---|---|
@@ -441,6 +462,7 @@ Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reach
 | `raisedBy` | object | no |
 | `priority` | number | no |
 | `high` | boolean | no |
+| `holds` | object[] | no |
 
 ```json
 {
@@ -457,7 +479,21 @@ Version 1 (`docs/schemas/question.escalated_to_human.v1.json`). A question reach
     "laneId": "desk/lane-1"
   },
   "priority": 75,
-  "high": true
+  "high": true,
+  "holds": [
+    {
+      "reason": "guard",
+      "by": "risk",
+      "guards": [
+        "credentials"
+      ]
+    },
+    {
+      "reason": "low_confidence",
+      "confidence": "medium",
+      "threshold": "high"
+    }
+  ]
 }
 ```
 
@@ -551,7 +587,7 @@ Version 1 (`docs/schemas/question.lapsed.v1.json`). Nobody answered a dialog in 
 
 ## `update.available`
 
-Version 1 (`docs/schemas/update.available.v1.json`). A check found a newer target on the update channel than the installed commit (once per target). `ref` is the branch of the channel; `changes` counts its commits not installed (an operator detail; the UI shows the bullets of WHATS-NEW.md instead).
+Version 1 (`docs/schemas/update.available.v1.json`). A check found a newer target on the update channel than the installed commit (once per target). `ref` is the branch of the channel; `changes` counts its commits not installed (an operator detail; the UI shows the bullets of WHATS-NEW.md instead). `pullRequest` (issue #652): the number of the pull request the target is the merge of, whose checks passed; only such a target is announced, a held one never.
 
 | field | type | required |
 |---|---|---|
@@ -559,13 +595,15 @@ Version 1 (`docs/schemas/update.available.v1.json`). A check found a newer targe
 | `to` | string | yes |
 | `ref` | string | yes |
 | `changes` | integer | yes |
+| `pullRequest` | integer | no |
 
 ```json
 {
   "from": "a1b2c3d",
   "to": "e4f5a6b",
   "ref": "stable",
-  "changes": 3
+  "changes": 3,
+  "pullRequest": 775
 }
 ```
 
@@ -734,17 +772,39 @@ Version 1 (`docs/schemas/job.claimed_by_operator.v1.json`). An operator claimed 
 
 ## `job.rerun`
 
-Version 1 (`docs/schemas/job.rerun.v1.json`). The user (`by: "user"`), or the failure assessor (`by: "assessor"`: a retry, a redirect, a held job released — issue #509), asked for an ended job's item to run again (UI Run again, a re-run): its source gave the item back (on GitHub: a closed issue reopened, the end labels gone) and the new job was queued in the same step, its `job.queued` just before this event and its `rerunOf` this job. The ended job is kept as it ended; a failed one is no longer a locked entry. A person's run again from Failures — a failure's Retry, a hand-off's I fixed it, or Continue in a new job — names who: `person`, and the way, `via` `ui` or `cli` (issue #623).
+Version 1 (`docs/schemas/job.rerun.v1.json`). The user (`by: "user"`), or the failure assessor (`by: "assessor"`: a retry, a redirect, a held job released — issue #509), or the hopper's tending of a waiting pull request (`by: "tending"`: merge conflicts or failing checks, issue #736; `job.pull_request_tended` follows), asked for an ended job's item to run again (UI Run again, a re-run): its source gave the item back (on GitHub: a closed issue reopened, the end labels gone) and the new job was queued in the same step, its `job.queued` just before this event and its `rerunOf` this job. The ended job is kept as it ended; a failed one is no longer a locked entry. A person's run again from Failures — a failure's Retry, a hand-off's I fixed it, or Continue in a new job — names who: `person`, and the way, `via` `ui` or `cli` (issue #623).
 
 | field | type | required |
 |---|---|---|
-| `by` | `user` \| `assessor` | yes |
+| `by` | `user` \| `assessor` \| `tending` | yes |
 | `person` | string | no |
-| `via` | `ui` \| `cli` | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 
 ```json
 {
   "by": "user"
+}
+```
+
+## `job.rework_requested`
+
+Version 1 (`docs/schemas/job.rework_requested.v1.json`). A person sent a finished job's open pull request back for rework (issue #724: the card in Pull requests, `hopper job rework`, or `POST /ui/api/jobs/:id/rework`), with notes: the pull request became a draft and stays open on its branch, the job no longer follows it, and the new job of its item (`nextJobId`, its `rerunOf` this job) reworks it, told the notes. That job is done only when it pushed to the pull request after the rework and marked it ready. `person` and `via` (`ui`, `cli`): who acted and the way.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `notes` | string | yes |
+| `nextJobId` | string | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "notes": "Rename the flag.",
+  "nextJobId": "j-2",
+  "person": "operator",
+  "via": "ui"
 }
 ```
 
@@ -1083,15 +1143,135 @@ Version 1 (`docs/schemas/source.issues_assigned.v1.json`). The user assigned the
 }
 ```
 
+## `source.request_approved`
+
+Version 1 (`docs/schemas/source.request_approved.v1.json`). A person approved a request card (issue #652): an issue not of a trusted origin — `actors` says who wrote, labelled and assigned it, and whether each is a trusted actor —, whose title and body hash as `hash`. Its text is the item's snapshot (`approved`): the next sync takes it, and its job runs that text. `person` and `via`: who approved it. Never the text.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `hash` | string | yes |
+| `author` | string | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
+| `actors` | object[] | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/issues/8",
+  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "author": "stranger",
+  "person": "octocat",
+  "via": "ui",
+  "actors": [
+    {
+      "role": "author",
+      "login": "stranger",
+      "trusted": false
+    },
+    {
+      "role": "labelled",
+      "login": "octocat",
+      "trusted": true
+    },
+    {
+      "role": "assigned",
+      "login": "octocat",
+      "trusted": true
+    }
+  ]
+}
+```
+
+## `intake.actors_changed`
+
+Version 1 (`docs/schemas/intake.actors_changed.v1.json`). The user's trusted actors changed in Settings → Intake (issue #652): the GitHub logins whose issues, labels and assignments start the user's jobs. `from` and `to` the logins named (empty: the connected login only), `by` who changed them.
+
+| field | type | required |
+|---|---|---|
+| `from` | string[] | yes |
+| `to` | string[] | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": [],
+  "to": [
+    "octocat",
+    "teammate"
+  ],
+  "by": "octocat"
+}
+```
+
+## `job.origin_judged`
+
+Version 1 (`docs/schemas/job.origin_judged.v1.json`). A job queued before origins were judged (issue #652, the backfill: tenant migration 39) got its item's origin: its issue is of a trusted origin (`trusted`), or a person approved its request card (`approved`). Its hold for its origin ends. Until then the job does not start.
+
+| field | type | required |
+|---|---|---|
+| `key` | string | yes |
+| `origin` | `trusted` \| `approved` | yes |
+
+```json
+{
+  "key": "https://github.com/octo-org/hello/issues/7",
+  "origin": "approved"
+}
+```
+
+## `source.request_opened`
+
+Version 1 (`docs/schemas/source.request_opened.v1.json`). A new request card (issue #798): an open labelled issue assigned to the user that is not of a trusted origin, so it is no job until a person approves it (issue #652). `why` says why it is not trusted; `hash` is the hash of its title and body. Recorded once per item and text: an edit to its title or body opens it again. Never the text. It shows in Not taken, with Approve; the Grok Bot routine notifier posts it.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `hash` | string | yes |
+| `author` | string | yes |
+| `why` | string[] | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/issues/8",
+  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "author": "helper[bot]",
+  "why": [
+    "written by an app or a bot (helper[bot])"
+  ]
+}
+```
+
+## `source.backburner_lifted`
+
+Version 1 (`docs/schemas/source.backburner_lifted.v1.json`). A person took an item off the backburner from Not taken or Sources (issue #798): its `hopper:backburner` label was removed. The source syncs at once, so it is taken when nothing else keeps it out.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/issues/9"
+}
+```
+
 ## `auth.pending`
 
-Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
+Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`). A risk hold the Decider made (issue #679) carries `decider` in place of `guards`: its `risk`, `categories`, `confidence` and `threshold`, or the `error` it failed with. `host` (issue #698): the host of the URL to open — what asks —, never its path or query. The Grok Bot routine notifier posts it (issue #698).
 
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
 | `kind` | `device_code` | yes |
 | `tool` | string | yes |
+| `host` | string | no |
 | `expiresAt` | string | yes |
 | `intervalSec` | integer | no |
 | `run` | string | yes |
@@ -1105,6 +1285,7 @@ Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (
   "loginId": "l1",
   "kind": "device_code",
   "tool": "gh",
+  "host": "github.com",
   "expiresAt": "2026-10-08T18:15:00.000Z",
   "run": "herdr-claude"
 }
@@ -1130,7 +1311,7 @@ Version 1 (`docs/schemas/auth.completed.v1.json`). The machine went on after the
 
 ## `auth.expired`
 
-Version 1 (`docs/schemas/auth.expired.v1.json`). The login's code ran out (`expiresAt`) before the machine went on. By the logins setting, the job then fails with the reason (the default) or holds for a new code.
+Version 1 (`docs/schemas/auth.expired.v1.json`). The login's code ran out (`expiresAt`) before the machine went on. By the logins setting, the job then holds for a new code (the default since issue #698) or fails with the reason. The Grok Bot routine notifier posts it.
 
 | field | type | required |
 |---|---|---|
@@ -1190,7 +1371,7 @@ Version 1 (`docs/schemas/auth.failed.v1.json`). What waited on the login ended f
 
 ## `job.assessed`
 
-Version 1 (`docs/schemas/job.assessed.v1.json`). The failure assessor judged a failed job (issue #509): its error normalised to a `signature`, matched to a known cause (`causeId`), its `class` (`transient`, `shared` or `job`), its `decision` — `retry` (runs again at `retryAt`, within the retry limit), `hold` or `redirect` (grouped into the problem `problemId`; a redirected job runs again at once, kept off the problem's machine), or `person` — with its `reasons` and a `summary` for a person. `attempt`: its run in its chain of retries. `auto: false`: that decision's automatic action is off in the failures settings, so it waits for a person. Once per failed job. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
+Version 1 (`docs/schemas/job.assessed.v1.json`). The failure assessor judged a failed job (issue #509): its error normalised to a `signature`, matched to a known cause (`causeId`), its `class` (`transient`, `shared` or `job`), its `decision` — `retry` (runs again at `retryAt`, within the retry limit), `hold` or `redirect` (grouped into the problem `problemId`; a redirected job runs again at once, kept off the problem's machine), or `person` — with its `reasons` and a `summary` for a person. `attempt`: its run in its chain of retries. `auto: false`: that decision's automatic action is off in the failures settings, so it waits for a person. Once per failed job. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`). A risk hold the Decider made (issue #679) carries `decider` in place of `guards`: its `risk`, `categories`, `confidence` and `threshold`, or the `error` it failed with.
 
 | field | type | required |
 |---|---|---|
@@ -1267,7 +1448,7 @@ Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (iss
 | `by` | `user` \| `check` | yes |
 | `released` | integer | yes |
 | `person` | string | no |
-| `via` | `ui` \| `cli` | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 | `note` | string | no |
 
 ```json
@@ -1289,7 +1470,7 @@ Version 1 (`docs/schemas/failure.released.v1.json`). A person released a problem
 | `title` | string | yes |
 | `released` | integer | yes |
 | `person` | string | yes |
-| `via` | `ui` \| `cli` | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
 
 ```json
 {
@@ -1303,7 +1484,7 @@ Version 1 (`docs/schemas/failure.released.v1.json`). A person released a problem
 
 ## `handoff.opened`
 
-Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off to a person (issue #516): automatic handling has ended for it, and it waits in Failures, Needs a person, until a person resolves it (issue #551) or its item runs again — never dropped by age or a restart. `reason`: `retry_limit` (its retries used up), `person` (a job-specific failure), `auto_off` (its decision's automatic action is off in the failures settings), `not_retried` (a run again the assessor decided was refused), or `dismissed` (its locked entry dismissed with nothing else to end it). `summary` and `recordId`: its assessment. `notify: false`: the failures setting says not to tell anyone, and no webhook delivers it. Once per hand-off. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold.
+Version 1 (`docs/schemas/handoff.opened.v1.json`). A failed job was handed off to a person (issue #516): automatic handling has ended for it, and it waits in Failures, Needs a person, until a person resolves it (issue #551) or its item runs again — never dropped by age or a restart. `reason`: `retry_limit` (its retries used up), `person` (a job-specific failure), `auto_off` (its decision's automatic action is off in the failures settings), `not_retried` (a run again the assessor decided was refused), or `dismissed` (its locked entry dismissed with nothing else to end it). `summary` and `recordId`: its assessment. `notify: false`: the failures setting says not to tell anyone, and no webhook delivers it. Once per hand-off. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`). A risk hold the Decider made (issue #679) carries `decider` in place of `guards`: its `risk`, `categories`, `confidence` and `threshold`, or the `error` it failed with.
 
 | field | type | required |
 |---|---|---|
@@ -1340,7 +1521,7 @@ Version 1 (`docs/schemas/handoff.closed.v1.json`). A hand-off ended (issue #516)
 | `nextJobId` | string | no |
 | `resolution` | `continue` \| `fixed` \| `done_by_hand` \| `wont_do` | no |
 | `person` | string | no |
-| `via` | `ui` \| `cli` | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 
 ```json
 {
@@ -2065,23 +2246,25 @@ Version 1 (`docs/schemas/job.gate_passed.v1.json`). A person let a job held at t
 
 ## `minor_decision.picked`
 
-Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-answer`, `failure-assessment`) and picked one of its `options` with a `confidence` — or could not (`error`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`) and the decision went on as before. A question's pick names it (`questionId`).
+Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
 
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
 | `by` | string | yes |
 | `options` | object[] | yes |
 | `pick` | string | no |
 | `confidence` | number | no |
 | `error` | string | no |
+| `categories` | `credentials` \| `destructive` \| `publish` \| `pay` \| `permissions` \| `ci` \| `data` \| `other`[] | no |
 | `mode` | `off` \| `shadow` \| `active` | yes |
 | `threshold` | number | yes |
 | `applied` | boolean | yes |
-| `notApplied` | `shadow` \| `below_threshold` \| `consequential` \| `no_pick` | no |
+| `notApplied` | `shadow` \| `below_threshold` \| `consequential` \| `no_pick` \| `too_late` | no |
 | `consequential` | string[] | no |
 | `questionId` | string | no |
+| `machineId` | string | no |
 
 ```json
 {
@@ -2110,12 +2293,12 @@ Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a de
 
 ## `minor_decision.compared`
 
-Version 1 (`docs/schemas/minor_decision.compared.v1.json`). What was decided after Jev's pick was not applied (issue #550): `actual`, by `decidedBy` (an escalation level, `human`, or `person` for a failed job), and whether it `agreed` with Jev's `pick`. Feeds the decision point's agreement rate.
+Version 1 (`docs/schemas/minor_decision.compared.v1.json`). What was decided after Jev's pick was not applied (issue #550): `actual`, by `decidedBy` (an escalation level, `human`, `person` for a failed job, or `rules` for an ordering the rules made without Jev, issue #796, or for what the keyword risk rules said of a `question-risk` pick, issue #679: `real` when one matched, else `none`; a `low` risk agrees with `none`), and whether it `agreed` with Jev's `pick`. Feeds the decision point's agreement rate.
 
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
 | `pick` | string | yes |
 | `actual` | string | yes |
 | `agreed` | boolean | yes |
@@ -2139,7 +2322,7 @@ Version 1 (`docs/schemas/minor_decision.overridden.v1.json`). A person said what
 | field | type | required |
 |---|---|---|
 | `pickId` | string | yes |
-| `point` | `question-answer` \| `failure-assessment` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
 | `pick` | string | no |
 | `actual` | string | yes |
 
@@ -2158,7 +2341,7 @@ Version 1 (`docs/schemas/minor_decision.settings_changed.v1.json`). An admin cha
 
 | field | type | required |
 |---|---|---|
-| `point` | `question-answer` \| `failure-assessment` | yes |
+| `point` | `question-risk` \| `failure-assessment` \| `lane-count` \| `job-machine` \| `intake-order` \| `merge-order` \| `question-answer` | yes |
 | `from` | object | yes |
 | `to` | object | yes |
 
@@ -2307,7 +2490,7 @@ Version 1 (`docs/schemas/question.corrected.v1.json`). A person corrected an esc
 
 ## `auto_answer.settings_changed`
 
-Version 1 (`docs/schemas/auto_answer.settings_changed.v1.json`). An admin changed the auto-answer settings (issue #632): whether a level's answer goes into the job with no person (`enabled`), and the least confidence it needs (`threshold`: `low`, `medium` or `high`), `from` and `to`.
+Version 1 (`docs/schemas/auto_answer.settings_changed.v1.json`). An admin changed the auto-answer settings (issue #632): whether a level's answer goes into the job with no person (`enabled`), the least confidence it needs (`threshold`: `low`, `medium` or `high`), and whether a high-priority job's question goes to a person (`holdHighPriority`, issue #679; absent before it), `from` and `to`.
 
 | field | type | required |
 |---|---|---|
@@ -2319,11 +2502,13 @@ Version 1 (`docs/schemas/auto_answer.settings_changed.v1.json`). An admin change
 {
   "from": {
     "enabled": true,
-    "threshold": "high"
+    "threshold": "high",
+    "holdHighPriority": false
   },
   "to": {
     "enabled": true,
-    "threshold": "medium"
+    "threshold": "medium",
+    "holdHighPriority": false
   },
   "by": "admin"
 }
@@ -2353,9 +2538,111 @@ Version 1 (`docs/schemas/auto_park.settings_changed.v1.json`). An admin changed 
 }
 ```
 
+## `github_rate_limiter.settings_changed`
+
+Version 1 (`docs/schemas/github_rate_limiter.settings_changed.v1.json`). The hopper's admin changed the shared rate limiter's settings (issue #436): below which share of a GitHub rate limit, in percent, calls are spread to its reset (`slowBelowPercent`), how many calls are kept in reserve (`reserve`), and how many polls run at once in a batch (`batchSize`). `from` and `to`. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "slowBelowPercent": 25,
+    "reserve": 50,
+    "batchSize": 10
+  },
+  "to": {
+    "slowBelowPercent": 40,
+    "reserve": 50,
+    "batchSize": 10
+  },
+  "by": "admin"
+}
+```
+
+## `question.thread_held`
+
+Version 1 (`docs/schemas/question.thread_held.v1.json`). A question at the human stage of a GitHub job waits on a person before it goes on its issue thread (issue #435): the policy for the repository (`otherRepos` or `ownRepos`) is `review`. Approve it to post it; an answer in the hopper works as before.
+
+| field | type | required |
+|---|---|---|
+| `questionId` | string | yes |
+| `repo` | string | yes |
+| `number` | integer | yes |
+
+```json
+{
+  "questionId": "q1",
+  "repo": "someone/library",
+  "number": 12
+}
+```
+
+## `question.thread_approved`
+
+Version 1 (`docs/schemas/question.thread_approved.v1.json`). A person approved a held question for its issue thread (issue #435); the next sync of its source posts it (`question.thread_posted`).
+
+| field | type | required |
+|---|---|---|
+| `questionId` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "questionId": "q1",
+  "by": "admin"
+}
+```
+
+## `question.thread_posted`
+
+Version 1 (`docs/schemas/question.thread_posted.v1.json`). A question at the human stage of a GitHub job went on its issue thread as one comment (issue #435), `url`. Its job is parked; the first reply by the connected account or a maintainer of the repository (author association owner, member or collaborator) answers it (`question.answered`, `by: thread:<login>`) and resumes the job. `approvedBy`: who approved it; absent: the policy posted it with no review.
+
+| field | type | required |
+|---|---|---|
+| `questionId` | string | yes |
+| `url` | string | yes |
+| `approvedBy` | string | no |
+
+```json
+{
+  "questionId": "q1",
+  "url": "https://github.com/someone/library/issues/12#issuecomment-1",
+  "approvedBy": "admin"
+}
+```
+
+## `thread_ask.settings_changed`
+
+Version 1 (`docs/schemas/thread_ask.settings_changed.v1.json`). An admin changed the policy for asking on the issue thread (issue #435): for repositories the connected account owns (`ownRepos`) and for any other (`otherRepos`), `post`, `review` or `off`. `from` and `to`.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "ownRepos": "post",
+    "otherRepos": "review"
+  },
+  "to": {
+    "ownRepos": "post",
+    "otherRepos": "off"
+  },
+  "by": "admin"
+}
+```
+
 ## `github_proxy.done`
 
-Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the hopper's own GitHub connection: `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.close`, `pr.create`, `pr.view`, `pr.ready`) on `repo`, `number` and `url` where it is; or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `own`: the job is the hopper's own user's. For another user's job the same event is also in the log of the hopper's own user, with `forUser` and `job`.
+Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the hopper's own GitHub connection: `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.close`, `pr.create`, `pr.view`, `pr.ready`) on `repo`, `number` and `url` where it is; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `own`: the job is the hopper's own user's. For another user's job the same event is also in the log of the hopper's own user, with `forUser` and `job`.
 
 `data` is `{}`.
 
@@ -2373,7 +2660,7 @@ Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub op
 
 ## `github_proxy.refused`
 
-Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a GitHub operation a running job asked for (issue #563), and told the job `reason`: a request it does not take, a repository it does not work on, an operation another user's job may not ask, a rate limit, or no GitHub connection; for a git push (issue #652), a push to another repository than the job's own, or to its default or a release branch, a tag or a delete. Fields as `github_proxy.done`; `op` and `repo` when the request named them, and a push's `refs` when it was read.
+Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a GitHub operation a running job asked for (issue #563), and told the job `reason`: a request it does not take, a repository it does not work on, an operation another user's job may not ask, a rate limit, or no GitHub connection; for a git push (issue #652), a push to another repository than the job's own (or, with Contribution on, its user's fork of it, issue #429), to one its user cannot push to, or to its default or a release branch, a tag or a delete. Fields as `github_proxy.done`; `op` and `repo` when the request named them, and a push's `refs` when it was read.
 
 | field | type | required |
 |---|---|---|
@@ -2411,7 +2698,7 @@ Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused
 | `own` | boolean | yes |
 | `forUser` | string | no |
 | `job` | string | no |
-| `op` | `issue.create` \| `issue.comment` \| `issue.view` \| `issue.close` \| `pr.create` \| `pr.view` \| `pr.ready` \| string | yes |
+| `op` | `issue.create` \| `issue.comment` \| `issue.view` \| `issue.close` \| `pr.create` \| `pr.view` \| `pr.ready` \| `repo.view` \| `repo.fork` \| string | yes |
 | `repo` | string | yes |
 | `refs` | string[] | no |
 | `error` | string | yes |
@@ -2498,14 +2785,37 @@ Version 1 (`docs/schemas/vault.secret_migrated.v1.json`). One of the hopper's ow
 }
 ```
 
+## `vault.master_key_rotated`
+
+Version 1 (`docs/schemas/vault.master_key_rotated.v1.json`). The hopper's admin rotated the master key (issue #659): every secret the old key sealed, in every vault, was sealed again under a new key in one transaction (`resealed`); `unreadable` counts the ones the old key sealed that did not open, left as they were. `from` and `to` are the two keys' short fingerprints, never a key; `by` pressed it. The new key is shown once, to them. Appended to every user's log.
+
+| field | type | required |
+|---|---|---|
+| `from` | string | yes |
+| `to` | string | yes |
+| `by` | string | yes |
+| `resealed` | integer | yes |
+| `unreadable` | integer | yes |
+
+```json
+{
+  "from": "9c1e04b7a2d35f60",
+  "to": "4b7d2e91c0a6f358",
+  "by": "admin",
+  "resealed": 12,
+  "unreadable": 0
+}
+```
+
 ## `template.saved`
 
-Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584), and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
+Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image, the tools the hopper adds to it (issue #716), and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584) — a `terraform-workspace` profile with its state `backend` (`bucket`, `region`, `keyPrefix`; issue #715), which the read-only check probes and no approval covers —, and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
 
 | field | type | required |
 |---|---|---|
 | `template` | string | yes |
 | `image` | string | yes |
+| `tools` | string[] | no |
 | `secrets` | string[] | yes |
 | `profiles` | object[] | no |
 | `by` | string | yes |
@@ -2548,12 +2858,13 @@ Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (iss
 
 ## `vault.approved`
 
-Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not.
+Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not.
 
 | field | type | required |
 |---|---|---|
 | `template` | string | yes |
 | `image` | string | yes |
+| `tools` | string[] | no |
 | `secrets` | string[] | yes |
 | `by` | string | yes |
 
@@ -2605,6 +2916,45 @@ Version 1 (`docs/schemas/template.profile_approved.v1.json`). An operation profi
     "name": "lab"
   },
   "level": "high",
+  "by": "Ada"
+}
+```
+
+## `template.checked`
+
+Version 1 (`docs/schemas/template.checked.v1.json`). The read-only check of a template ended (issue #716): `passed`, or `failed` with the probes that failed and any problem. A probe the check did not run (`not-run`, issue #715: a workspace need with no state backend) is a failed probe: unproven, never passed. A template a job asked for with read needs only takes no box and no job until the check of its current version passed. `artifact` (issue #715): the artifact that holds its report, of the job that asked for the template; absent when no job did.
+
+| field | type | required |
+|---|---|---|
+| `template` | string | yes |
+| `state` | `passed` \| `failed` | yes |
+| `failed` | string[] | yes |
+| `problem` | string | no |
+| `artifact` | string | no |
+
+```json
+{
+  "template": "asked-3f9a1c2b7d10",
+  "state": "failed",
+  "failed": [
+    "aws.iam-create-user on 123456789012 (allowed)"
+  ],
+  "artifact": "0b6f7c1e-5d2a-4c8e-9f31-7a2d4e6b8c90"
+}
+```
+
+## `template.check_requested`
+
+Version 1 (`docs/schemas/template.check_requested.v1.json`). A person asked for the read-only check of a template to run again (issue #716): its last check is dropped, and the next check pass runs one.
+
+| field | type | required |
+|---|---|---|
+| `template` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "template": "asked-3f9a1c2b7d10",
   "by": "Ada"
 }
 ```
@@ -2719,6 +3069,94 @@ Version 1 (`docs/schemas/vault.mint_refused.v1.json`). A box asked the vault to 
 }
 ```
 
+## `vault.mint_tested`
+
+Version 1 (`docs/schemas/vault.mint_tested.v1.json`). A person tested an AWS minting credential (issue #781, `hopper vault mint-test`): the vault minted a read session for the `aws-role`, as for a job, and asked STS who it is. `arn` is the role the session assumed, with `sessionName`; `reason` when no session was minted or STS refused. Never a key.
+
+| field | type | required |
+|---|---|---|
+| `asset` | object \| string | yes |
+| `credential` | string | no |
+| `sessionName` | string | no |
+| `arn` | string | no |
+| `expiresAt` | string | no |
+| `reason` | string | no |
+| `by` | string | yes |
+
+```json
+{
+  "asset": {
+    "kind": "aws-role",
+    "name": "123456789012/diag"
+  },
+  "credential": "AWS_LAB",
+  "sessionName": "hopper-mint-test",
+  "arn": "arn:aws:sts::123456789012:assumed-role/diag/hopper-mint-test",
+  "expiresAt": "2026-10-09T12:15:00.000Z",
+  "by": "Ada"
+}
+```
+
+## `vault.check_minted`
+
+Version 1 (`docs/schemas/vault.check_minted.v1.json`). The vault minted a short-lived read credential for a read-only check box of a template (issue #797): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the read need on the asset, from the minting credential named, after Access allowed the template it (`decision`, a decision of the check on Settings → Access). The check runs no job; `check` is its check box. Never the credential.
+
+| field | type | required |
+|---|---|---|
+| `kind` | `aws` \| `kube` | yes |
+| `operation` | `read` \| `write` \| `sync` \| `apply` | yes |
+| `asset` | object | yes |
+| `template` | string | yes |
+| `check` | string | yes |
+| `credential` | string | yes |
+| `decision` | string | yes |
+| `expiresAt` | string | yes |
+
+```json
+{
+  "kind": "aws",
+  "operation": "read",
+  "asset": {
+    "kind": "aws-role",
+    "name": "123456789012/readonly"
+  },
+  "template": "asked-0afb8cc6",
+  "check": "hopper-check-asked-0afb8cc6-mgk2x0",
+  "credential": "AWS_LAB",
+  "decision": "6c1d2e3f-0000-4000-8000-000000000004",
+  "expiresAt": "2026-10-11T12:15:00.000Z"
+}
+```
+
+## `vault.check_mint_refused`
+
+Version 1 (`docs/schemas/vault.check_mint_refused.v1.json`). A read-only check box of a template got no read credential for one read need (issue #797), and the check failed with the reason: the vault mints for none of the asset's kind (`mint.kind` absent), Access denied it, no minting credential covers the asset, or the outside service refused. `decision` when Access answered; never a value.
+
+| field | type | required |
+|---|---|---|
+| `mint` | object | yes |
+| `template` | string | yes |
+| `check` | string | yes |
+| `reason` | string | yes |
+| `decision` | string | no |
+
+```json
+{
+  "mint": {
+    "kind": "kube",
+    "operation": "read",
+    "asset": {
+      "kind": "cluster",
+      "name": "lab"
+    }
+  },
+  "template": "asked-0afb8cc6",
+  "check": "hopper-check-asked-0afb8cc6-mgk2x0",
+  "reason": "no minting credential mints for cluster lab: a person adds one on Settings → Vault",
+  "decision": "6c1d2e3f-0000-4000-8000-000000000005"
+}
+```
+
 ## `vault.credential_asked`
 
 Version 1 (`docs/schemas/vault.credential_asked.v1.json`). A job on a box loaded a skill whose credential its template does not give (issue #583), and the hopper asked a person for one: a credential request. The skill, the template, the machine, the job, and what the job said it needs it for. Once per job and request.
@@ -2799,6 +3237,83 @@ Version 1 (`docs/schemas/vault.credential_declined.v1.json`). A person declined 
 }
 ```
 
+## `vault.read_policy_set`
+
+Version 1 (`docs/schemas/vault.read_policy_set.v1.json`). An admin set the read policy (issue #716): the assets the hopper approves read on with no person, for a template a job asks for (`sandbox-template`). Write, sync and apply always wait for a person. Empty: the hopper approves nothing by itself.
+
+| field | type | required |
+|---|---|---|
+| `assets` | string[] | yes |
+| `by` | string | yes |
+
+```json
+{
+  "assets": [
+    "cluster/lab",
+    "aws-account/*"
+  ],
+  "by": "Ada"
+}
+```
+
+## `vault.grant_asked`
+
+Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the vault for a secret or a minted credential, and its item has no vault grant (issue #652): it was refused, and the hopper asked a person to grant it the vault (Settings → Vault). The job, its item's key, the machine, the template, and the first thing it asked for (a secret's name, or `<kind> <operation> <asset>`). Once per job.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | yes |
+| `key` | string | yes |
+| `machine` | string | yes |
+| `template` | string | yes |
+| `name` | string | yes |
+
+```json
+{
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "key": "https://github.com/octo-org/hello/issues/7",
+  "machine": "hopper-sandbox-web",
+  "template": "web",
+  "name": "KUBE_TOKEN"
+}
+```
+
+## `vault.granted`
+
+Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | yes |
+| `key` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "key": "https://github.com/octo-org/hello/issues/7",
+  "by": "octocat"
+}
+```
+
+## `vault.grant_revoked`
+
+Version 1 (`docs/schemas/vault.grant_revoked.v1.json`). A person took back a job's item's vault grant (issue #652): its jobs get nothing from the vault again until a person grants it again. `by` who took it back.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | yes |
+| `key` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "key": "https://github.com/octo-org/hello/issues/7",
+  "by": "octocat"
+}
+```
+
 ## `yolo_mode.changed`
 
 Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode (issue #579): whether jobs may merge their own pull requests once the repo's checks pass — `on` for every job repository, `repos` per repository (`owner/repo`, lowercased), which wins. `from` and `to` the settings, `by` who changed them. Done never depends on it.
@@ -2827,13 +3342,15 @@ Version 1 (`docs/schemas/yolo_mode.changed.v1.json`). An admin changed yolo mode
 
 ## `job.pull_request_merged`
 
-Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pull request, followed after its end (issue #579), was merged: its item is done (`hopper:done` on GitHub). `part`: it shipped part of the item, and the next part may now be taken. `byHopper`: the hopper merged it itself (yolo mode on for its repository, issue #637).
+Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pull request, followed after its end (issue #579), was merged: its item is done (`hopper:done` on GitHub). `part`: it shipped part of the item, and the next part may now be taken; a merge that did not close the item is a part (issue #721), and a merge recorded as the whole item before issue #721 that did not close it is recorded again, once, as a part. A part that makes every part the item declares done marks the item done (issue #729). `byHopper`: the hopper merged it itself (yolo mode on for its repository, issue #637). `person`, `via`: a person pressed Merge now (issue #677), in the UI or the operator CLI.
 
 | field | type | required |
 |---|---|---|
 | `pullRequest` | string | yes |
 | `part` | boolean | yes |
 | `byHopper` | boolean | no |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 
 ```json
 {
@@ -2844,7 +3361,25 @@ Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pul
 
 ## `job.pull_request_closed`
 
-Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pull request, followed after its end (issue #579), was closed without a merge: its item is flagged (`hopper:pr-closed` on GitHub) until a person acts. `part`: it shipped part of the item.
+Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pull request, followed after its end (issue #579), was closed without a merge: its item is flagged (`hopper:pr-closed` on GitHub) until a person acts. `part`: it shipped part of the item. `person`, `via`: a person pressed Close PR (issue #677), in the UI or the operator CLI.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `part` | boolean | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/13",
+  "part": true
+}
+```
+
+## `job.pull_request_abandoned`
+
+Version 1 (`docs/schemas/job.pull_request_abandoned.v1.json`). A finished job's item was closed as not planned on GitHub while its pull request, followed after its end, was still open (issue #428): the job is abandoned upstream. The hopper follows the pull request no more and never merges it, and leaves it open; `hopper:pr-ready` comes off and no end label goes on. A reopened issue with that pull request still open is followed again. `part`: it shipped part of the item.
 
 | field | type | required |
 |---|---|---|
@@ -2854,23 +3389,57 @@ Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pul
 ```json
 {
   "pullRequest": "https://github.com/owner/repo/pull/13",
-  "part": true
+  "part": false
 }
 ```
 
 ## `job.finish_briefed`
 
-Version 1 (`docs/schemas/job.finish_briefed.v1.json`). A job that ended done left its own pull request with merge conflicts or as a draft (issue #626): one fixed step finishes it, so the job goes on in its own session with that step's fixed brief, in place of a failure and a hand-off. `step`: `rebase` (onto its base branch; merge conflicts come first) or `mark_ready` (a draft, marked ready for review). At most two per run; then the job is judged as any other.
+Version 1 (`docs/schemas/job.finish_briefed.v1.json`). A job that ended done left its own pull request with merge conflicts, failing checks or as a draft (issues #626, #736): one fixed step finishes it, so the job goes on in its own session with that step's fixed brief, in place of a failure and a hand-off. `step`: `rebase` (onto its base branch; merge conflicts come first), `fix_checks` (its failing checks, issue #736) or `mark_ready` (a draft, marked ready for review). At most three per run; then the job is judged as any other.
 
 | field | type | required |
 |---|---|---|
 | `pullRequest` | string | yes |
-| `step` | `rebase` \| `mark_ready` | yes |
+| `step` | `rebase` \| `fix_checks` \| `mark_ready` | yes |
 
 ```json
 {
   "pullRequest": "https://github.com/owner/repo/pull/14",
   "step": "rebase"
+}
+```
+
+## `job.pull_request_tended`
+
+Version 1 (`docs/schemas/job.pull_request_tended.v1.json`). A PR waiting job's pull request got merge conflicts with its base branch, or failing checks, while it waited (issue #736): the hopper ran its item again (`job.rerun`, by `tending`) with the tend brief, so a new job brings the same pull request back to ready, and this job follows it no more. `step`: `rebase` or `fix_checks`. `nextJobId`: the new job. A rebase is never capped (issue #786); at most three `fix_checks` tends in a row of one pull request, then it waits on a person.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `step` | `rebase` \| `fix_checks` | yes |
+| `nextJobId` | string | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "step": "rebase",
+  "nextJobId": "j2"
+}
+```
+
+## `job.pull_request_followed`
+
+Version 1 (`docs/schemas/job.pull_request_followed.v1.json`). A done job — or a failed one that is no failed tend, issue #786 — that followed no pull request — it ended before the hopper followed pull requests, or its follow ended — is the newest job of its item, and its item is open, or closed as completed with an open pull request that closes it by keyword or ships part of it (issue #786), and has an open pull request on its source (issue #763): the sync loop reconciled it, and the job follows that pull request from now on, as PR waiting. It shows on the Pull requests list, and yolo mode merges it and tending tends it as any followed one. `part`: it ships part of the item ("Part of #N").
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `part` | boolean | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "part": false
 }
 ```
 
@@ -3014,12 +3583,13 @@ Version 1 (`docs/schemas/artifact.share_revoked.v1.json`). A share of an artifac
 
 ## `artifact.removed`
 
-Version 1 (`docs/schemas/artifact.removed.v1.json`). An artifact was removed, with its shares (issue #624): by a person or its job (`removed`, `by`), or by the retention in Settings → Artifacts (`retention`).
+Version 1 (`docs/schemas/artifact.removed.v1.json`). An artifact was removed, with its shares (issue #624): by a person or its job (`removed`, `by`), or by the retention in Settings → Artifacts (`retention`), or merged into another artifact, which holds its revisions now (`merged`, `into`, issue #687).
 
 | field | type | required |
 |---|---|---|
 | `artifact` | string | yes |
-| `reason` | `removed` \| `retention` | yes |
+| `reason` | `removed` \| `retention` \| `merged` | yes |
+| `into` | string | no |
 | `by` | string | no |
 
 ```json
@@ -3128,7 +3698,7 @@ Version 1 (`docs/schemas/tldr.settings_changed.v1.json`). An admin turned the TL
 
 ## `artifact.revised`
 
-Version 1 (`docs/schemas/artifact.revised.v1.json`). An artifact has a new latest revision (issue #675): a job put a file to it (`by` the job), or a person restored an older revision (`restoredFrom`), which is copied, not moved. Its id, its links and its shares stay. `note`: what changed, in one line. The older revisions stay readable.
+Version 1 (`docs/schemas/artifact.revised.v1.json`). An artifact has a new latest revision (issue #675): a job put a file to it (`by` the job), or a person restored an older revision (`restoredFrom`), which is copied, not moved; or a person revised it with a file or another artifact's latest content (`copiedFrom`), or merged another artifact into it, whose revisions are added oldest first, each still `by` the job that made it (`mergedFrom`, issue #687). Its id, its links and its shares stay. `note`: what changed, in one line. The older revisions stay readable.
 
 | field | type | required |
 |---|---|---|
@@ -3142,6 +3712,8 @@ Version 1 (`docs/schemas/artifact.revised.v1.json`). An artifact has a new lates
 | `by` | string | yes |
 | `note` | string | no |
 | `restoredFrom` | integer | no |
+| `copiedFrom` | string | no |
+| `mergedFrom` | string | no |
 | `masked` | integer | no |
 | `warning` | string | no |
 
@@ -3205,7 +3777,7 @@ Version 1 (`docs/schemas/item.snapshot_recorded.v1.json`). An item's approved te
 |---|---|---|
 | `key` | string | yes |
 | `hash` | string | yes |
-| `reason` | `intake` \| `backfill` \| `accepted` | yes |
+| `reason` | `intake` \| `backfill` \| `accepted` \| `approved` | yes |
 
 ```json
 {
@@ -3249,7 +3821,7 @@ Version 1 (`docs/schemas/item.original_kept.v1.json`). A person kept the origina
 | `snapshotHash` | string | yes |
 | `liveHash` | string | yes |
 | `person` | string | yes |
-| `via` | `ui` \| `cli` | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
 
 ```json
 {
@@ -3272,7 +3844,7 @@ Version 1 (`docs/schemas/item.new_text_accepted.v1.json`). The owner accepted an
 | `toHash` | string | yes |
 | `editors` | string[] | yes |
 | `person` | string | yes |
-| `via` | `ui` \| `cli` | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
 
 ```json
 {
@@ -3284,5 +3856,401 @@ Version 1 (`docs/schemas/item.new_text_accepted.v1.json`). The owner accepted an
   ],
   "person": "octocat",
   "via": "ui"
+}
+```
+
+## `lanes.recommended`
+
+Version 1 (`docs/schemas/lanes.recommended.v1.json`). A machine's lane recommendation changed (issue #688): the `lanes` it can run, from its resource history (`headroom`, the most lanes it ran without resource pressure or slow progress, and what each lane's cost leaves room for) and the usage it burns (`usage`: `free`, `near` the soft limit, past the `soft` limit, at the `hard` limit), within its bounds, next to the `configured` lanes the decider uses. `reason` in plain words; `confidence` 0..1 from the history it stands on. Recorded, not applied: an admin applies it. Recorded when the recommended or the configured lanes change. `mode` (`shadow`) only in one recorded while active mode was there. `decidedBy: jev`: the lanes are Jev's applied pick at the `lane-count` decision point (issue #550), and `rules` the rules' own recommendation.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `lanes` | integer | yes |
+| `configured` | integer | yes |
+| `headroom` | integer | no |
+| `reason` | string | yes |
+| `confidence` | number | yes |
+| `usage` | `free` \| `near` \| `soft` \| `hard` | yes |
+| `mode` | string | no |
+| `decidedBy` | string | no |
+| `rules` | object | no |
+
+```json
+{
+  "machineId": "laptop",
+  "lanes": 4,
+  "configured": 2,
+  "headroom": 4,
+  "confidence": 1,
+  "usage": "free",
+  "reason": "no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more"
+}
+```
+
+## `lanes.tuning_changed`
+
+Version 1 (`docs/schemas/lanes.tuning_changed.v1.json`). An admin changed a machine's lane tuning settings (issue #688): auto-tune on or off, and the least and most lanes a recommendation may name. `from` and `to`, and `by`. `mode` (`shadow`, `active`) only in a change saved while active mode was there.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "machineId": "laptop",
+  "from": {
+    "autoTune": true,
+    "minLanes": 1,
+    "maxLanes": 8
+  },
+  "to": {
+    "autoTune": true,
+    "minLanes": 1,
+    "maxLanes": 3
+  },
+  "by": "admin"
+}
+```
+
+## `lanes.applied`
+
+Version 1 (`docs/schemas/lanes.applied.v1.json`). An admin applied a machine's lane recommendation (issue #688): its configured lanes went `from` → `to`, set as an edit of the machine sets them. `reason` in plain words, `confidence` 0..1 from the history it stands on, `by`: who. An admin can undo it. Without `by` (and with `configured`): the hopper applied it itself in active mode, before each one was an admin's.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `from` | integer | yes |
+| `to` | integer | yes |
+| `configured` | integer | no |
+| `reason` | string | yes |
+| `confidence` | number | yes |
+| `by` | string | no |
+
+```json
+{
+  "machineId": "laptop",
+  "from": 2,
+  "to": 4,
+  "reason": "no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more",
+  "confidence": 1,
+  "by": "admin"
+}
+```
+
+## `lanes.undone`
+
+Version 1 (`docs/schemas/lanes.undone.v1.json`). An admin undid the last lane recommendation applied to a machine (issue #688): its configured lanes went back `from` → `to`. `by`: who.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `from` | integer | yes |
+| `to` | integer | yes |
+| `by` | string | yes |
+
+```json
+{
+  "machineId": "laptop",
+  "from": 4,
+  "to": 2,
+  "by": "admin"
+}
+```
+
+## `lanes.dismissed`
+
+Version 1 (`docs/schemas/lanes.dismissed.v1.json`). An admin dismissed a machine's lane recommendation (issue #688): the `lanes` it recommended at the `configured` lanes, and why (`reason`). Not offered again until the recommendation or the configured lanes move. `by`: who.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `lanes` | integer | yes |
+| `configured` | integer | yes |
+| `reason` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "machineId": "laptop",
+  "lanes": 4,
+  "configured": 2,
+  "reason": "no resource pressure up to 2 lanes in use; a lane uses about 2.0 GiB of memory and 10% CPU: room for 2 more",
+  "by": "admin"
+}
+```
+
+## `bug_report.filed`
+
+Version 1 (`docs/schemas/bug_report.filed.v1.json`). A person filed a bug report with Report a bug (issue #694), through their own GitHub connection, on the hopper's own repository `repo`: a new issue labelled `user-report` (`kind: issue`), or a comment on a similar open one (`kind: comment`). Its `number` and `url`, the `jobId` it was about, and `by`. `fromJob`: a running job filed it about itself through the hopper (`hopper-gh report bug`), with its user's connection; `by` is then `job <id>`. `later`: a report kept while GitHub could not take it (`bug_report.kept`), sent now; `id` is its report. Never its text.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `kind` | `issue` \| `comment` | yes |
+| `number` | integer | yes |
+| `url` | string | yes |
+| `jobId` | string | no |
+| `by` | string | yes |
+| `fromJob` | boolean | no |
+| `id` | string | no |
+| `later` | boolean | no |
+
+```json
+{
+  "repo": "henningfutrell/hopper",
+  "kind": "issue",
+  "number": 712,
+  "url": "https://github.com/henningfutrell/hopper/issues/712",
+  "jobId": "b3f1c2d4",
+  "by": "octocat"
+}
+```
+
+## `bug_report.failed`
+
+Version 1 (`docs/schemas/bug_report.failed.v1.json`). A bug report was not filed (issue #694): GitHub refused it for good. `error` says why; `jobId`, `by` and `fromJob` as in `bug_report.filed`.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `error` | string | yes |
+| `jobId` | string | no |
+| `by` | string | yes |
+| `fromJob` | boolean | no |
+
+```json
+{
+  "repo": "henningfutrell/hopper",
+  "error": "your GitHub is not connected: connect it in Sources → Connect GitHub",
+  "by": "octocat"
+}
+```
+
+## `bug_report.kept`
+
+Version 1 (`docs/schemas/bug_report.kept.v1.json`). A bug report was kept to send later (issue #694): no GitHub connection, or GitHub could not take it now (no answer, no access to the repository, a rate limit, its own failure). `problem` says why; `id` is the report in Your reports. The hopper sends it later (`bug_report.filed` with `later`). `jobId`, `by` and `fromJob` as in `bug_report.filed`. Never its text.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `id` | string | yes |
+| `problem` | string | yes |
+| `jobId` | string | no |
+| `by` | string | yes |
+| `fromJob` | boolean | no |
+
+```json
+{
+  "repo": "henningfutrell/hopper",
+  "id": "c2a7e9d1",
+  "problem": "your GitHub is not connected: connect it in Sources → Connect GitHub",
+  "by": "octocat"
+}
+```
+
+## `repo_checks.job_queued`
+
+Version 1 (`docs/schemas/repo_checks.job_queued.v1.json`). A person queued the "Add PR checks to <repo>" job for job repository `repo` (`owner/repo`, lowercased), which has no checks (issue #677): an issue filed through their own GitHub connection with the hopper label, assigned to their connected account, so a job source takes it. `existing`: an open issue of that title was there, and none was filed. Its `number` and `url`, and `by`.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `number` | integer | yes |
+| `url` | string | yes |
+| `existing` | boolean | yes |
+| `by` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "number": 41,
+  "url": "https://github.com/owner/repo/issues/41",
+  "existing": false,
+  "by": "octocat"
+}
+```
+
+## `repo_checks.dismissed`
+
+Version 1 (`docs/schemas/repo_checks.dismissed.v1.json`). A person dismissed (`dismissed: true`) or brought back (`false`) the "Add PR checks" recommendation for job repository `repo` (`owner/repo`, lowercased; issue #677). The "no checks" warning stays. `by` who did it.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `dismissed` | boolean | yes |
+| `by` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "dismissed": true,
+  "by": "octocat"
+}
+```
+
+## `job.child_issue_filed`
+
+Version 1 (`docs/schemas/job.child_issue_filed.v1.json`). A running job filed an issue through the hopper (issue #729, issue lineage): `child`, a child of the job's own issue `parent` (each `repo` and `number`; the child's `url`). `required`: the job marked it a required child (`--required`), and the hopper linked it as a GitHub sub-issue of the parent, so the parent is not done while it is open (`subIssue`; `false` with `subIssueError` when GitHub refused the link: the issue is filed all the same). Else a follow-up: the issue's text names its parent, and nothing waits on it. `requestId` names the request, as in `github_proxy.done`.
+
+| field | type | required |
+|---|---|---|
+| `requestId` | string | yes |
+| `parent` | object | yes |
+| `child` | object | yes |
+| `required` | boolean | yes |
+| `subIssue` | boolean | no |
+| `subIssueError` | string | no |
+
+```json
+{
+  "requestId": "r1",
+  "parent": {
+    "repo": "octo/tools",
+    "number": 7
+  },
+  "child": {
+    "repo": "octo/tools",
+    "number": 42,
+    "url": "https://github.com/octo/tools/issues/42"
+  },
+  "required": true,
+  "subIssue": true
+}
+```
+
+## `contribution.changed`
+
+Version 1 (`docs/schemas/contribution.changed.v1.json`). An admin turned Contribution on or off (issue #429): whether a job of a repository its user cannot push to may work through a fork — the hopper forks it into the user's account, the job pushes there and opens its pull request on the repository from the fork. `from` and `to` (`on`), and `by`, who. It applies to the next request a job makes.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "on": false
+  },
+  "to": {
+    "on": true
+  },
+  "by": "owner"
+}
+```
+
+## `pointed_job.created`
+
+Version 1 (`docs/schemas/pointed_job.created.v1.json`). A person made a pointed job through the API (issue #425): `id`, on the issue or pull request `pointer` (`kind`, `number`, `url`) of the GitHub repository `repo`; `source` what made it (`api`), `by` who. It starts `queued`. Never its directive.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `repo` | string | yes |
+| `pointer` | object | yes |
+| `source` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "id": "p1",
+  "repo": "octo-org/hello",
+  "pointer": {
+    "kind": "issue",
+    "number": 7,
+    "url": "https://github.com/octo-org/hello/issues/7"
+  },
+  "source": "api",
+  "by": "octocat"
+}
+```
+
+## `pointed_job.status_changed`
+
+Version 1 (`docs/schemas/pointed_job.status_changed.v1.json`). A pointed job moved from status `from` to `to` (issue #425), along the allowed transitions: queued → running | abandoned; running → awaiting_review | queued | abandoned; awaiting_review → merged | running | abandoned. `lane`: the lane that works it, when it moved to running. `by` who moved it. A refused move records nothing.
+
+| field | type | required |
+|---|---|---|
+| `id` | string | yes |
+| `from` | `queued` \| `running` \| `awaiting_review` \| `merged` \| `abandoned` | yes |
+| `to` | `queued` \| `running` \| `awaiting_review` \| `merged` \| `abandoned` | yes |
+| `lane` | string | no |
+| `by` | string | yes |
+
+```json
+{
+  "id": "p1",
+  "from": "queued",
+  "to": "running",
+  "lane": "local/lane-1",
+  "by": "octocat"
+}
+```
+
+## `github_watch.changed`
+
+Version 1 (`docs/schemas/github_watch.changed.v1.json`). A GitHub watch saw its pointed job's item change (issue #427): one event per poll that found a change, with every change of that poll in `changes` — `state` (`from`, `to`: `open`, `closed` or `merged`; `reason` GitHub's state reason; `mergedAt`), `labels` (`added`, `removed`), `comments` (`added`: `id`, `author`, `at`; `removed`: how many went), `reviews` (`added`: `id`, `author`, `state`, `at`), `linkedPullRequests` (`added`, `removed`, by URL). `pointedJob`, `repo`, `pointer`: what is watched. A job on a question posted on its issue thread is watched too (issue #435): then `pointedJob` is the job's id, and the event carries `jobId`, on the job's timeline. A poll that sees no change, and the first poll of a watch, record nothing. Never a comment's text.
+
+| field | type | required |
+|---|---|---|
+| `pointedJob` | string | yes |
+| `repo` | string | yes |
+| `pointer` | object | yes |
+| `changes` | object | yes |
+
+```json
+{
+  "pointedJob": "p1",
+  "repo": "octo-org/hello",
+  "pointer": {
+    "kind": "issue",
+    "number": 7,
+    "url": "https://github.com/octo-org/hello/issues/7"
+  },
+  "changes": {
+    "labels": {
+      "added": [
+        "ready"
+      ],
+      "removed": []
+    },
+    "comments": {
+      "added": [
+        {
+          "id": 1201,
+          "author": "octocat",
+          "at": "2026-10-11T12:00:00Z"
+        }
+      ],
+      "removed": 0
+    }
+  }
+}
+```
+
+## `github_watch.settings_changed`
+
+Version 1 (`docs/schemas/github_watch.settings_changed.v1.json`). A person changed how often the GitHub watches poll (issue #427): `from` and `to`, each `intervalSeconds`. The rounds start again at once on the new interval, with no restart.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "intervalSeconds": 60
+  },
+  "to": {
+    "intervalSeconds": 300
+  },
+  "by": "octocat"
 }
 ```

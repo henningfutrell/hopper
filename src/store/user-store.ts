@@ -2,6 +2,7 @@
 // search_path is that schema (the `?schema=` of the database URL, db.ts).
 import { USER_CONFIG, type Clock, type IdGen, type UserStore } from '../domain/ports.ts';
 import { createArtifactRepository } from './artifacts.ts';
+import { createBugReportRepository } from './bug-reports.ts';
 import { createContext } from './context.ts';
 import { openDb } from './db.ts';
 import { createDecisionRepository } from './decisions.ts';
@@ -14,7 +15,11 @@ import { createLaneRepository } from './lanes.ts';
 import { createFailureRepository, createProblemRepository } from './failures.ts';
 import { createHandoffRepository } from './handoffs.ts';
 import { createItemSnapshotRepository } from './item-snapshots.ts';
+import { createIssueGraphRepository } from './issue-graph.ts';
+import { createVaultGrantRepository } from './vault-grants.ts';
 import { createLoginRepository } from './logins.ts';
+import { createPointedJobRepository } from './pointed-jobs.ts';
+import { createGitHubWatchRepository } from './github-watches.ts';
 import { createReviewItemRepository } from './review-items.ts';
 import { createQuestionRepository } from './questions.ts';
 import { createUserSettingsRepository } from './settings.ts';
@@ -65,6 +70,11 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     problems: createProblemRepository(ctx),
     handoffs: createHandoffRepository(ctx),
     itemSnapshots: createItemSnapshotRepository(ctx),
+    vaultGrants: createVaultGrantRepository(ctx),
+    bugReports: createBugReportRepository(ctx),
+    issueGraph: createIssueGraphRepository(ctx),
+    pointedJobs: createPointedJobRepository(ctx),
+    githubWatches: createGitHubWatchRepository(ctx),
     settings: createUserSettingsRepository(ctx),
     connectedAccounts: createConnectedAccountRepository(ctx),
     usageHistory: createUsageHistoryRepository(ctx),
