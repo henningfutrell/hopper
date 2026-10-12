@@ -50,6 +50,14 @@ describe('the read-only check\'s report (issue #715)', () => {
 
     const passed = checkReport(template, { ...check, state: 'passed', probes: [check.probes[0]!], problem: undefined as never });
     expect(passed.summary).toBe('passed: 1 probe, every write refused, every read worked');
+
+    // A probe the check did not run (issue #715: a workspace with no state backend) is not a pass: its row says NOT RUN and why.
+    const notRun = checkReport(template, { ...check, problem: undefined as never, probes: [check.probes[0]!, {
+      id: 'terraform.state-push-direct', asset: 'shop-prod', expect: 'denied', outcome: 'not-run', passed: false, output: 'not run: no backend configured.',
+    }] });
+    expect(notRun.summary).toBe('failed: 1 of 2 probes failed (terraform.state-push-direct on shop-prod (not-run))');
+    expect(notRun.content.toString('utf8')).toContain('<td>NOT RUN</td><td>terraform.state-push-direct</td>');
+    expect(notRun.content.toString('utf8')).toContain('not run: no backend configured.');
   });
 
   function setup(report: CheckTemplates['report']) {

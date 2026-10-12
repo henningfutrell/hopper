@@ -72,6 +72,11 @@ export function toolsText(t: { tools?: readonly string[]; approval?: { tools?: r
 /** `write on cluster x`. */
 export const profileText = (p: OperationProfile): string => `${p.operation} on ${p.asset.kind} ${p.asset.name}`;
 
+/** A terraform workspace profile's state backend (issue #715): where the read-only check pushes a state of its own, or that it has none. */
+export const backendText = (p: OperationProfile): string => (p.backend
+  ? `${p.asset.name}: state in s3://${[p.backend.bucket, p.backend.keyPrefix].filter(Boolean).join('/')} (${p.backend.region})`
+  : `${p.asset.name}: no state backend, so the read-only check cannot prove a state write is refused`);
+
 /** The hopper's high-radius operations (src/blast-radius/template.ts): a profile of one needs its own explicit approval (issue #584). */
 const HIGH = ['write', 'sync', 'apply'];
 export const highRadius = (p: OperationProfile): boolean => HIGH.includes(p.operation);

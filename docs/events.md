@@ -2809,7 +2809,7 @@ Version 1 (`docs/schemas/vault.master_key_rotated.v1.json`). The hopper's admin 
 
 ## `template.saved`
 
-Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image, the tools the hopper adds to it (issue #716), and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584), and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
+Version 1 (`docs/schemas/template.saved.v1.json`). A template was saved (issue #558): its image, the tools the hopper adds to it (issue #716), and its scope, the vault secrets its boxes may ask for, its operation profiles (issue #584) — a `terraform-workspace` profile with its state `backend` (`bucket`, `region`, `keyPrefix`; issue #715), which the read-only check probes and no approval covers —, and who saved it. A scope wider than the one approved, or a new image, waits for a person (`vault.approved`); a new profile waits for its approval (`template.profile_approved`).
 
 | field | type | required |
 |---|---|---|
@@ -2922,7 +2922,7 @@ Version 1 (`docs/schemas/template.profile_approved.v1.json`). An operation profi
 
 ## `template.checked`
 
-Version 1 (`docs/schemas/template.checked.v1.json`). The read-only check of a template ended (issue #716): `passed`, or `failed` with the probes that failed and any problem. A template a job asked for with read needs only takes no box and no job until the check of its current version passed. `artifact` (issue #715): the artifact that holds its report, of the job that asked for the template; absent when no job did.
+Version 1 (`docs/schemas/template.checked.v1.json`). The read-only check of a template ended (issue #716): `passed`, or `failed` with the probes that failed and any problem. A probe the check did not run (`not-run`, issue #715: a workspace need with no state backend) is a failed probe: unproven, never passed. A template a job asked for with read needs only takes no box and no job until the check of its current version passed. `artifact` (issue #715): the artifact that holds its report, of the job that asked for the template; absent when no job did.
 
 | field | type | required |
 |---|---|---|

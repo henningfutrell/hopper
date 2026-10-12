@@ -23,6 +23,7 @@
 //   Scenario: a parameter outside the template's limits is refused with the daemon's reason; nothing starts
 //   Scenario: revoke and remove a template
 //   Scenario: a template's tools are saved with --tool, and a launch names fewer of them (issue #716, item 2)
+//   Scenario: a terraform workspace's state backend is saved with --backend, and kept by a later save (issue #715)
 //   Scenario: the read policy is shown, set and cleared (issue #716, item 1); an entry it cannot read is refused
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
@@ -159,6 +160,21 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(r).toMatchObject({ code: 0 });
     expect(runtime.images.get(runtime.boxes.get(json<{ container: string }>(r).container)!.spec.image)).toContain('io.hopper.tools="kubectl"');
     expect(await hopper(a, ['sandbox', 'launch', '--template', 'kube', '--tool', 'aws'])).toMatchObject({ code: 2, err: expect.stringContaining('does not add aws') });
+  });
+
+  it('saves a terraform workspace\'s state backend with --backend, and a later save keeps it (issue #715)', async () => {
+    const { a } = await boot();
+    const ws = (r: Awaited<ReturnType<typeof hopper>>) => json<TemplateView[]>(r).find((x) => x.name === 'tf')!.profiles;
+    const saved = await hopper(a, ['template', 'save', 'tf', '--image', IMAGE, '--profile', 'read/terraform-workspace/shop-prod', '--profile', 'read/aws-role/1/r', '--backend', 'shop-prod=shop-state/env/prod@eu-west-1']);
+    expect(saved).toMatchObject({ code: 0 });
+    const backend = { bucket: 'shop-state', region: 'eu-west-1', keyPrefix: 'env/prod' };
+    expect(ws(saved)).toEqual([{ operation: 'read', asset: { kind: 'terraform-workspace', name: 'shop-prod' }, backend }, { operation: 'read', asset: { kind: 'aws-role', name: '1/r' } }]);
+    // Profiles named again with no --backend keep the backend; --backend alone changes it on the profiles the template has.
+    expect(ws(await hopper(a, ['template', 'save', 'tf', '--image', IMAGE, '--profile', 'read/terraform-workspace/shop-prod']))).toEqual([{ operation: 'read', asset: { kind: 'terraform-workspace', name: 'shop-prod' }, backend }]);
+    expect(ws(await hopper(a, ['template', 'save', 'tf', '--image', IMAGE, '--backend', 'shop-prod=other-state@us-east-1']))[0]!.backend).toEqual({ bucket: 'other-state', region: 'us-east-1' });
+    expect(await hopper(a, ['template', 'save', 'tf', '--image', IMAGE, '--backend', 'shop-prod'])).toMatchObject({ code: 2, err: expect.stringContaining('<workspace>=<bucket>[/<key prefix>]@<region>') });
+    expect(await hopper(a, ['template', 'save', 'tf', '--image', IMAGE, '--backend', 'other=b-1@us-east-1'])).toMatchObject({ code: 2, err: expect.stringContaining('no terraform-workspace profile other') });
+    expect(await hopper(a, ['template', 'save', 'tf', '--image', IMAGE, '--backend', 'shop-prod=Bad_Bucket@us-east-1'])).toMatchObject({ code: 2, err: expect.stringContaining('not an S3 bucket name') });
   });
 
   it('revokes and removes a template', async () => {

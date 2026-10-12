@@ -5,6 +5,7 @@
 // `cleanup`, and the check fails. The catalog is data: issue #715 added the terraform wrapper's probes here.
 import type { OperationProfile } from '../domain/access.ts';
 import type { Probe, ProbeCatalog, ProbeRun } from '../domain/read-only-check.ts';
+import { stateProbeKey } from '../domain/state-backend.ts';
 
 /** The words of a refusal from AWS, Kubernetes, helm, terraform, or a read-only wrapper on PATH. */
 export const DENIAL = /AccessDenied|UnauthorizedOperation|not authorized to perform|is forbidden|Forbidden|refused by the read-only wrapper/;
@@ -110,6 +111,25 @@ export const PROBES: readonly Probe[] = [
     id: 'terraform.destroy-direct', title: 'destroy a parameter held in state (the real binary, past any wrapper)', kinds: ['terraform-workspace'], tool: 'terraform', expect: 'denied',
     script: `${HELD}\n"$HOPPER_TOOLS/terraform" destroy -auto-approve -input=false -lock=false -refresh=false -no-color`,
   },
+  {
+    // Issue #715, part 6: a state write past the wrapper is refused by the account. A state of the check's own, pushed to
+    // the check's own key in the workspace's bucket (never the workspace's state): init only reads the bucket, and the
+    // push is the one write. Allowed, the cleanup deletes that key, and the probe fails. Not run with no backend.
+    id: 'terraform.state-push-direct', title: 'push a state to the check\'s own key in the workspace\'s bucket (the real binary, past any wrapper)', kinds: ['terraform-workspace'], tool: 'terraform', expect: 'denied',
+    backend: true, denial: /PutObject[\s\S]*(AccessDenied|not authorized)/,
+    script: `mkdir -p "$HOME/tf-backend" && cd "$HOME/tf-backend" && rm -rf .terraform || exit 1
+cat > main.tf <<'TF'
+terraform {
+  backend "s3" {}
+}
+TF
+cat > probe.tfstate <<'STATE'
+{"version":4,"terraform_version":"1.0.0","serial":1,"lineage":"hopper-read-only-check","outputs":{},"resources":[]}
+STATE
+"$HOPPER_TOOLS/terraform" init -input=false -no-color -reconfigure -backend-config="bucket=$HOPPER_STATE_BUCKET" -backend-config="key=$HOPPER_STATE_KEY" -backend-config="region=$HOPPER_STATE_REGION" >/dev/null || exit 1
+"$HOPPER_TOOLS/terraform" state push -lock=false probe.tfstate`,
+    cleanup: 'aws s3api delete-object --bucket "$HOPPER_STATE_BUCKET" --key "$HOPPER_STATE_KEY" --region "$HOPPER_STATE_REGION"',
+  },
   // Issue #715: each state or infrastructure write terraform has, on PATH, is refused by the read-only wrapper before it
   // reaches the account or the state. Past the wrapper, `apply-direct` and `destroy-direct` above show the account refuses on its own.
   ...WRAPPED.map(([id, title, command]): Probe => ({
@@ -133,6 +153,13 @@ terraform init -input=false -no-color`,
   },
 ];
 
+/** A probe that writes to the need's state backend: its environment, or why it is not run (issue #715). */
+function backendOf(n: OperationProfile): Pick<ProbeRun, 'vars' | 'notRun'> {
+  const b = n.backend;
+  if (!b) return { notRun: `not run: no backend configured. A person sets the state backend of ${n.asset.kind} ${n.asset.name} (its bucket, region and key prefix) in Settings → Vault` };
+  return { vars: { HOPPER_STATE_BUCKET: b.bucket, HOPPER_STATE_REGION: b.region, HOPPER_STATE_KEY: stateProbeKey(b) } };
+}
+
 /** A catalog of these probes: for each read need, every probe of its asset's kind, once per asset. */
 export function probeCatalog(probes: readonly Probe[]): ProbeCatalog {
   return {
@@ -142,7 +169,7 @@ export function probeCatalog(probes: readonly Probe[]): ProbeCatalog {
         const key = `${probe.id} ${n.asset.kind} ${n.asset.name}`;
         if (seen.has(key)) return [];
         seen.add(key);
-        return [{ probe, kind: n.asset.kind, asset: n.asset.name }];
+        return [{ probe, kind: n.asset.kind, asset: n.asset.name, ...(probe.backend ? backendOf(n) : {}) }];
       }));
     },
   };

@@ -67,26 +67,31 @@ function credentialFor(run: ProbeRun, credentials: readonly CheckCredential[]): 
 
 /** The script a check box runs for these probes, each with the credential minted for its asset (`checkEnv` gives the box them). */
 export function checkScript(runs: readonly ProbeRun[], credentials: readonly CheckCredential[] = []): string {
-  const steps = runs.map((r, n) => {
-    const { probe, asset } = r;
-    const dir = `"$HOME/p${n}"`;
-    const env = `${credentialFor(r, credentials)}ASSET=${quote(asset)}`;
-    const run = `${env} timeout ${PROBE_S} sh ${dir}/probe.sh > ${dir}/out 2>&1 < /dev/null; code=$?`;
-    const cleanup = probe.cleanup ? `\nif [ "$code" -eq 0 ]; then ${env} timeout ${PROBE_S} sh ${dir}/cleanup.sh > /dev/null 2>&1 < /dev/null; fi` : '';
-    return [
-      `# ${probe.id} on ${asset}`,
-      `mkdir -p ${dir}`,
-      file(`${dir}/probe.sh`, probe.script, n),
-      ...(probe.cleanup ? [file(`${dir}/cleanup.sh`, probe.cleanup, n)] : []),
-      `${run}${cleanup}`,
-      `printf '${MARK} %s %s %s\\n' ${n} "$code" "$(tail -c ${PROBE_OUTPUT_MAX * 2} ${dir}/out | base64 | tr -d '\\n')"`,
-    ].join('\n');
-  });
+  // A probe that is not run (issue #715) writes no line: its result says why.
+  const steps = runs.flatMap((r, n) => (r.notRun !== undefined ? [] : [step(r, n, credentials)]));
   return `# Made by the hopper (issue #716): the read-only check. Each write must be refused, each read must work.
 export HOME="\${HOPPER_CHECK_DIR:-/tmp/hopper-check}" HOPPER_TOOLS="\${HOPPER_TOOLS:-${TOOLS_DIR}}"
 mkdir -p "$HOME" && cd "$HOME" || exit 1
 ${[...takeCredentials(credentials), ...steps].join('\n')}
 `;
+}
+
+/** One probe's step: its snippet and cleanup as files, run with its asset's credential and its own variables. */
+function step(r: ProbeRun, n: number, credentials: readonly CheckCredential[]): string {
+  const { probe, asset } = r;
+  const dir = `"$HOME/p${n}"`;
+  const vars = Object.entries(r.vars ?? {}).map(([name, value]) => `${name}=${quote(value)} `).join('');
+  const env = `${credentialFor(r, credentials)}${vars}ASSET=${quote(asset)}`;
+  const run = `${env} timeout ${PROBE_S} sh ${dir}/probe.sh > ${dir}/out 2>&1 < /dev/null; code=$?`;
+  const cleanup = probe.cleanup ? `\nif [ "$code" -eq 0 ]; then ${env} timeout ${PROBE_S} sh ${dir}/cleanup.sh > /dev/null 2>&1 < /dev/null; fi` : '';
+  return [
+    `# ${probe.id} on ${asset}`,
+    `mkdir -p ${dir}`,
+    file(`${dir}/probe.sh`, probe.script, n),
+    ...(probe.cleanup ? [file(`${dir}/cleanup.sh`, probe.cleanup, n)] : []),
+    `${run}${cleanup}`,
+    `printf '${MARK} %s %s %s\\n' ${n} "$code" "$(tail -c ${PROBE_OUTPUT_MAX * 2} ${dir}/out | base64 | tr -d '\\n')"`,
+  ].join('\n');
 }
 
 /** What a probe did, from its exit code and output. */
@@ -104,6 +109,7 @@ export function readResults(runs: readonly ProbeRun[], logs: string): ProbeResul
   }
   return runs.map((run, n) => {
     const base = { id: run.probe.id, asset: run.asset, expect: run.probe.expect };
+    if (run.notRun !== undefined) return { ...base, outcome: 'not-run', passed: false, output: run.notRun };
     const got = lines.get(n);
     if (!got) return { ...base, outcome: 'error', passed: false, output: 'it did not run' };
     const outcome = outcomeOf(run, got.exit, got.output);

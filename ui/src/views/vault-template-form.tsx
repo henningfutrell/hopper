@@ -13,6 +13,7 @@ import { limitsDraft, templateLimits } from '@/model/sandbox-launch';
 import type { AssetKind, Operation, OperationProfile, SharedSecretView, TemplateView, VaultSecret } from '@/model/wire';
 import { LimitsInput } from './sandbox-limits';
 import { ToolsInput } from './vault-tools';
+import { BackendsInput } from './vault-state-backend';
 import type { Send } from './vault';
 
 const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply'];
@@ -94,6 +95,7 @@ export function TemplateForm({ t, secrets: all, shared = [], busy, send, onDone 
       </div>
       <ToolsInput tools={tools} busy={busy} onChange={setTools} />
       <ProfilesInput profiles={profiles} busy={busy} onChange={setProfiles} />
+      <BackendsInput key={profiles.filter((p) => p.asset.kind === 'terraform-workspace').map((p) => p.asset.name).join(' ')} profiles={profiles} busy={busy} onChange={setProfiles} />
       <LimitsInput draft={limits} busy={busy} problem={saved.ok ? undefined : saved.error} onChange={setLimits} />
       <p className="text-xs text-muted-foreground">A new secret, a new image, a change of tools or a new profile waits for your approval before any box gets it. A profile you remove loses its approval. Limits apply to the next box with no approval: they give a box nothing.</p>
       <div className="flex flex-wrap gap-2">
