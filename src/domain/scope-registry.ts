@@ -14,7 +14,7 @@ export interface RegistryRoute { method: string; path: string; summary: string; 
 /** The sections, in order, and the route areas each holds. An area not named here goes under OTHER. */
 export const SCOPE_SECTIONS: readonly { id: string; title: string; description: string; areas: readonly string[] }[] = [
   { id: 'jobs', title: 'Jobs', description: 'Jobs and the queue: read them, approve, cancel, run again, park and order them.', areas: ['jobs', 'queue', 'queue-gate', 'pointed-jobs', 'auto-park', 'priority-lanes', 'failures', 'backfill', 'tldr'] },
-  { id: 'intake', title: 'Intake', description: 'Where jobs come from: the job sources, request cards, who is trusted, and the GitHub connection.', areas: ['sources', 'intake-actors', 'connected-accounts', 'repo-checks'] },
+  { id: 'intake', title: 'Intake', description: 'Where jobs come from: the job sources, direct jobs, request cards, who is trusted, and the GitHub connection.', areas: ['sources', 'direct-jobs', 'intake-actors', 'connected-accounts', 'repo-checks'] },
   { id: 'questions', title: 'Questions and reviews', description: 'What jobs ask a person: questions, research, proposals, and the logins they wait on.', areas: ['questions', 'question-gates', 'auto-answer', 'thread-ask', 'phase-shifts', 'research', 'proposals', 'sections', 'logins'] },
   { id: 'pull-requests', title: 'Pull requests', description: 'The pull requests jobs open: merge, close, yolo mode, contribution and GitHub watches.', areas: ['pull-requests', 'yolo-mode', 'contribution', 'github-watches', 'github-rate-limiter'] },
   { id: 'infra', title: 'Infra changes', description: 'Plans of infrastructure changes, their approval, out-of-band changes and the blast radius.', areas: ['infra-plans', 'out-of-band', 'blast-radius'] },
