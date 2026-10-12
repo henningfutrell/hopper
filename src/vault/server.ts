@@ -19,6 +19,7 @@ import { createVaultService, type VaultService } from './service.ts';
 import { createCredentialMinter } from './minter.ts';
 import type { MintTarget } from '../domain/minting.ts';
 import { VAULT_KEY_VARIABLE, VAULT_OP_PATH, vaultOps, type VaultOp } from './wire.ts';
+import type { AgentCredentialAsk } from './agent-credential.ts';
 
 const digest = (s: string): Buffer => createHash('sha256').update(s, 'utf8').digest();
 
@@ -121,5 +122,6 @@ function run(vault: VaultService, op: VaultOp, b: Record<string, unknown>): unkn
     case 'remove': return vault.remove(body.name, body.by);
     case 'deliver': return vault.deliver(body.ask, body.machine?.key ?? '');
     case 'mint': return vault.mintFrom(body.credential, body.target, body.jobId, body.identify);
+    case 'agent-credential': return vault.agentCredential((b as { ask: AgentCredentialAsk }).ask);
   }
 }

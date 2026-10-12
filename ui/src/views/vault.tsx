@@ -34,13 +34,14 @@ import { ReadPolicy } from './vault-read-policy';
 import { TemplateRequest } from './vault-template-request';
 import { sameProfile, TemplateForm } from './vault-template-form';
 import { limitsText, type TemplateLimits } from '@/model/sandbox-launch';
+import { agentCredentialText } from '@/model/vault-agent-credential';
 import { MasterKeyRotation } from '@/app/master-key';
 import { CheckAgain, GateRows } from './vault-check';
 import { useCanAdmin } from '@/store/selectors';
 
 type Edit = { action: 'set'; name: string; scope?: string; value: string; mints?: Asset | null } | { action: 'remove'; name: string }
   | { action: 'set-in-backend'; name: string; scope?: string; backend: string; reference: string; mints?: Asset | null } | { action: 'system-in-backend'; name: string; backend: string; reference: string }
-  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; limits: TemplateLimits } | { action: 'remove-template' | 'approve-template' | 'revoke-template' | 'check-template'; name: string }
+  | { action: 'save-template'; name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; limits: TemplateLimits; agentCredential: string | null } | { action: 'remove-template' | 'approve-template' | 'revoke-template' | 'check-template'; name: string }
   | ({ action: 'approve-profile'; name: string } & OperationProfile)
   | { action: 'give-credential'; request: string; name: string; kind: string; note?: string; value?: string } | { action: 'decline-credential'; request: string; reason: string };
 export type VaultEdit = Edit;
@@ -156,6 +157,7 @@ function TemplateItem({ t, secrets, shared, can, busy, send }: { t: TemplateView
         <dt className="text-muted-foreground">Scope</dt><dd className="font-mono break-words">{t.secrets.join(', ') || 'none'}</dd>
         <dt className="text-muted-foreground">Profiles</dt><dd className="font-mono break-words">{t.profiles.map((p) => `${profileText(p)}${t.pending.profiles.some((x) => sameProfile(x, p)) ? ' (waits)' : ''}`).join(', ') || 'none'}</dd>
         <dt className="text-muted-foreground">Limits</dt><dd className="break-words">{limitsText(t.limits)}</dd>
+        <dt className="text-muted-foreground">Agent credential</dt><dd className="break-words">{agentCredentialText(t)}</dd>
         <dt className="text-muted-foreground">Gives now</dt><dd className="font-mono break-words">{t.gives.join(', ') || 'nothing'}</dd>
         <GateRows t={t} />
       </dl>

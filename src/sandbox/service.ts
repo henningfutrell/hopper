@@ -14,9 +14,12 @@ import { launchScopeOf, type LaunchedProfile } from './params.ts';
 import { HOPPER_PROBES } from './probes.ts';
 import { reconcilePass, type Problems } from './reconcile.ts';
 import { createPlacements, LOCAL, NO_RUNTIME, type ClientTargets } from './runtime.ts';
+import type { AgentCredentialOf } from './agent-credential.ts';
+import type { AgentCredentialAsk } from '../vault/agent-credential.ts';
 
 export { BOX_IMAGE, BOX_LABEL, LaunchRefused, SANDBOX_LABEL, USER_LABEL, type LaunchRequest } from './launch.ts';
 export { usersTemplates } from './check.ts';
+export { usersAgentCredentials } from './agent-credential.ts';
 export { hopperAddress, ownContainer } from './address.ts';
 export { cachedSandboxes } from './records.ts';
 
@@ -67,6 +70,8 @@ export interface SandboxesOptions {
   checks?: CheckTemplates;
   /** The probes of the read-only check; absent: the hopper's catalog (src/sandbox/probes.ts). */
   probes?: ProbeCatalog;
+  /** The users' vaults, for a template's agent credential at launch (issue #708, part 10). Absent: no box gets one. */
+  agentCredentials?: AgentCredentialOf;
 }
 
 export interface Sandboxes {
@@ -148,6 +153,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       const record = await launchBox({
         runtime: at.runtime, repo: o.repo, instanceId: o.instanceId, machine: at.machine, network: at.network, joinUrl: at.joinUrl, now: o.clock.now(),
         id: randomUUID(), mint: (container, template) => o.mint(userId, container, template), launching, startCheckMs: o.startCheckMs ?? START_CHECK_MS,
+        ...(o.agentCredentials ? { agentCredential: (ask: AgentCredentialAsk) => o.agentCredentials!(userId, ask) } : {}),
       }, userId, l);
       o.logger.info(`hopper: sandbox box ${record.name} started (${record.image}, ${at.runtime.kind} on ${at.machine}); it joins as a machine`);
       return { container: record.name };

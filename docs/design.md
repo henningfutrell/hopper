@@ -4663,6 +4663,8 @@ deleted the home volume.
   image built in that machine's runtime — "Tools on a client target" below.
 - **The read-only check on a client target (part 8, 2026-10-11).** A hopper given no runtime runs the read-only check
   (issue #716) on a client target of the template's user — "The read-only check on a client target" below.
+- **The agent credential (part 10, 2026-10-12).** A box of a template that names an agent credential starts with its
+  agent signed in — "The agent credential" below.
 - **The line's limits (part 6, 2026-10-11).** The line Add machine shows for a box the hopper does not start gets its
   `run` flags with its join code: `POST /ui/api/machines/join` with `box: { cpus?, memoryMb? }` answers `flags`, built
   by `runFlags` from `lineFlags` (`launch.ts`), which resolves the CPUs and memory against the template as a launch
@@ -4743,6 +4745,60 @@ the placement (beside the hopper, else the first client target dialled in with a
 client target with its leftover check box removed first, and a template that waits with nowhere to run.
 `test/adapters/podman-check.test.ts` (real rootless Podman): the check run through a real client on that Podman passed,
 its output read through the client, and nothing of it left.
+
+### The agent credential (issue #708 part 10, 2026-10-12)
+
+Owner direction (2026-10-10): sandbox agent auth is inheritable from an approved source instead of a per-box `/login`;
+a new box of an approved template starts signed in where policy allows, and a one-time `/login` is the fallback. Before
+it, a person signed each box's agent in by hand (its home volume keeps the sign-in), and a box that nobody signed in
+stopped its first job at Claude's login screen.
+
+- **The source is the vault.** A template names one of its own secrets as its **agent credential**
+  (`Template.agentCredential`; `save-template` `agentCredential`, absent keeps it, `null` drops it; Settings → Vault, the
+  template's form; `hopper template save --agent-credential <secret>|none`). A name that is not one of its secrets, or a
+  shared secret (`shared/<name>`), is refused (400): a shared secret's read is Access's decision per user, which a launch
+  does not ask. The value is a Claude token, what `claude setup-token` prints (`sk-ant-oat…`).
+- **Only a setup token.** A `/login`'s credentials file holds a refresh token that rotates at each renewal: one box
+  renewing it signs every other box out (the field review saw this on a fleet). A setup token is good for a year and no
+  box renews it, so any number of boxes share it. Any other value refuses the launch (`agentCredentialValueProblem`,
+  `src/domain/agent-credential.ts`), and the refusal never says the value.
+- **Policy: the template's approval and the launch's scope.** The vault (`agentCredential`, `src/vault/agent-credential.ts`)
+  gives it only when the template's approved scope holds the secret (`givesOf`), and only when the launch's resolved
+  `secrets` name it (part 4): a launch that leaves it out starts a box that is not signed in. An agent credential that
+  waits for approval refuses every launch of the template (409), so no box starts quietly signed out. It is not part of
+  the approval itself: it names one of the secrets the approval already covers.
+- **At launch, once** (`launchCredential`, `src/sandbox/agent-credential.ts`). The launch asks the user's vault after it
+  picks the box's name and before it makes anything: a refusal is 409 and leaves no record, volume or container. The
+  value goes in the box's create body as `CLAUDE_CODE_OAUTH_TOKEN`. The box's entrypoint starts herdr with that
+  environment, and every job pane inherits it, so Claude in each job is signed in. No box image changes. The record keeps
+  `agentCredential`, the secret's name, never the value. `vault.agent_credential_given` records each give (the name, the
+  template, the box); a refusal is `vault.refused` with the box as its machine. Neither carries the value.
+- **Wherever the vault runs.** With the vault in a container of its own (issue #586) the template's checks run there and
+  the value crosses back (op `agent-credential`); one kept in a vault backend is read in the hopper, which runs the
+  backends. On a client target the value goes in the create the machine's client carries, and the client's create
+  checks take it as any other variable.
+- **Not per job, so no vault grant.** A vault grant (issue #652) gates what a *job* asks of the vault. The agent
+  credential is given to the *box*, before any job, as the hand sign-in it replaces was: that one sat in the box's home
+  volume, readable by every job on the box. The approval of the template is the person's decision that covers it.
+- **The fallback.** A template that names none, a launch that leaves it out, and a box from the line Add machine shows
+  (it has no record) start as before: a person signs the agent in once in the box, and its home volume keeps it.
+- **Residual risk, stated.** The token is in the box's environment, so every process in the box can read it, as every
+  job could read the hand sign-in in its home. It is in the container's config: the runtime's `inspect` shows it to the
+  account that owns the runtime socket, which the hopper already holds. A box keeps the token it started with until it
+  is removed: a new value reaches new boxes. A token a person revokes at Anthropic stops every box that holds it; set a
+  new one and launch the boxes again.
+
+**Verification (part 10).** `test/integration/sandbox-agent-credential.test.ts` (real composition root, a runtime
+double): an approved template's box gets the token in its environment, its record names the secret, and no event, log
+line or sandbox view holds the value, with the vault in the hopper and in a container of its own; a launch that leaves
+it out starts a box that is not signed in; an agent credential that waits for approval, and a value that is no setup
+token, refuse the launch with nothing made; a save keeps it, `null` drops it, and a name outside the secrets or a shared
+secret is refused. `test/integration/sandbox-remote.test.ts`: on a client target, the token is in the create the
+machine's Podman got. `test/integration/operator-cli-vault.test.ts`: `--agent-credential`. `test/vault/agent-credential.test.ts`,
+`test/ui/vault-agent-credential.test.ts`: the value's form, and the page's model. By hand, real rootless Podman: in the
+box image under the sandbox flags (read-only root, every capability dropped, the home volume), herdr's server started as
+the entrypoint starts it, a job tab made through herdr's CLI with a job variable; its pane saw both that variable and
+`CLAUDE_CODE_OAUTH_TOKEN` from the box's environment. Not checked here: a real Claude sign-in from a real setup token.
 
 ### The start check and the proven address (issue #708 part 3, 2026-10-11)
 

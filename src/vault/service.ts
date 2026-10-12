@@ -26,12 +26,13 @@ import type { SealerState } from '../secrets/sealer.ts';
 import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 
 import { templateChecks, type TemplateChecks } from './checks.ts';
+import { agentCredentialProblem, agentCredentials, type AgentCredentials } from './agent-credential.ts';
 import { resealRows, vaultContext } from './reseal.ts';
 export { vaultContext };
 
 export type VaultResult = { ok: true } | { ok: false; code: 'invalid' | 'not_found' | 'conflict' | 'unavailable'; error: string };
 
-export interface VaultService extends TemplateChecks {
+export interface VaultService extends TemplateChecks, AgentCredentials {
   view(): VaultView;
   /**
    * Sets a secret, or a new value or scope for one: sealed, never kept or answered in clear. Or (issue #585) points it at
@@ -44,8 +45,9 @@ export interface VaultService extends TemplateChecks {
    * a new profile waits for a person's approval; a profile dropped has its approval revoked. `readOnly` (issue #716): it
    * takes the read-only check; a template keeps that through every save. A save makes its last check stale. `askedBy`
    * (issue #715): the job that asked for it, which the check's report goes to; the first one is kept through every save.
+   * `agentCredential` (issue #708, part 10): one of its secrets its boxes' agent signs in with; absent keeps it, null drops it.
    */
-  saveTemplate(t: { name: string; image: string; secrets: readonly string[]; profiles?: readonly OperationProfile[]; limits?: TemplateLimits; tools?: readonly string[]; readOnly?: boolean; askedBy?: string }, by: string): Promise<VaultResult>;
+  saveTemplate(t: { name: string; image: string; secrets: readonly string[]; profiles?: readonly OperationProfile[]; limits?: TemplateLimits; tools?: readonly string[]; readOnly?: boolean; askedBy?: string; agentCredential?: string | null }, by: string): Promise<VaultResult>;
   /** Removes a template and revokes every approval access holds for it; refused, naming them, while boxes of it are attached (issue #604). */
   removeTemplate(name: string, by: string): Promise<VaultResult>;
   /** A person approves a template as it is now: its image, its whole scope, and every read profile; never a write, sync or apply profile. */
@@ -195,10 +197,7 @@ export function createVaultService(o: {
     secrets: t.secrets.filter((n) => !isSystemSecret(n)).map((n) => { const s = held(n); return { name: n, ...(s?.scope ? { scope: s.scope } : {}) }; }),
     profiles: t.profiles ?? [],
   });
-  const viewOf = (t: Template): TemplateView => {
-    const approved = approvedOf(t.name);
-    return templateView(t, approved, rateTemplate(scopeOfTemplate(t), approved, rules()));
-  };
+  const viewOf = (t: Template): TemplateView => { const approved = approvedOf(t.name); return templateView(t, approved, rateTemplate(scopeOfTemplate(t), approved, rules())); };
   const keyOf = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
   const declares = (t: Template, p: OperationProfile): boolean => (t.profiles ?? []).some((x) => keyOf(x) === keyOf(p));
   const approveIn = async (t: Template, p: OperationProfile, by: string): Promise<void> => {
@@ -250,7 +249,7 @@ export function createVaultService(o: {
       });
     },
 
-    async saveTemplate({ name, image, secrets, profiles, limits, tools, readOnly, askedBy }, by) {
+    async saveTemplate({ name, image, secrets, profiles, limits, tools, readOnly, askedBy, agentCredential }, by) {
       if (!TEMPLATE_NAME.test(name)) return fail('invalid', 'a template name is lowercase letters, digits, `.`, `_` or `-`, at most 64, starting with a letter or digit');
       if (!image.trim() || /\s/.test(image.trim()) || image.length > 300) return fail('invalid', 'image must be an image reference, as `podman run` takes it');
       const scope = [...new Set(secrets)];
@@ -260,17 +259,18 @@ export function createVaultService(o: {
       if (missing.length) return fail('invalid', `the vault holds no secret ${missing.join(', ')}`);
       const minting = scope.filter((n) => vault.get(n)?.mints);
       if (minting.length) return fail('invalid', `${minting.join(', ')} is a minting credential: the hopper mints from it and never gives it out, so it is in no template's scope`);
-      const problem = (profiles ?? []).map(profileProblem).find((p) => p !== undefined) ?? (limits ? limitsProblem(limits) : undefined) ?? (tools ? toolsProblem(tools) : undefined);
+      const was = vault.template(name);
+      const credential = agentCredential === null ? undefined : agentCredential ?? was?.agentCredential;
+      const problem = (profiles ?? []).map(profileProblem).find((p) => p !== undefined) ?? (limits ? limitsProblem(limits) : undefined) ?? (tools ? toolsProblem(tools) : undefined) ?? (credential !== undefined ? agentCredentialProblem(credential, scope) : undefined);
       if (problem) return fail('invalid', problem);
       if (profiles?.length && !o.access) return noAccess();
-      const was = vault.template(name);
       const declared = profiles ? [...new Map(profiles.map((p) => [keyOf(p), { operation: p.operation, asset: { kind: p.asset.kind, name: p.asset.name }, ...(p.backend ? { backend: p.backend } : {}) }])).values()] : was?.profiles ?? [];
       // Limits and tools left out keep the ones it has (issues #708, #716).
       const adds = tools ? toolSet(tools) : was?.tools ?? [];
       o.store.tx(() => {
         vault.saveTemplate({
           name, image: image.trim(), secrets: scope, ...(declared.length ? { profiles: declared } : {}), ...((limits ?? was?.limits) ? { limits: limits ?? was?.limits } : {}),
-          ...(adds.length ? { tools: adds } : {}), ...(readOnly || was?.readOnly ? { readOnly: true } : {}), ...((was?.askedBy ?? askedBy) ? { askedBy: was?.askedBy ?? askedBy } : {}), savedBy: by, savedAt: o.clock.now().toISOString(),
+          ...(adds.length ? { tools: adds } : {}), ...(readOnly || was?.readOnly ? { readOnly: true } : {}), ...((was?.askedBy ?? askedBy) ? { askedBy: was?.askedBy ?? askedBy } : {}), ...(credential !== undefined ? { agentCredential: credential } : {}), savedBy: by, savedAt: o.clock.now().toISOString(),
           ...(was?.approval ? { approval: was.approval } : {}),
         });
         events.append({ type: 'template.saved', data: { template: name, image: image.trim(), ...(adds.length ? { tools: adds } : {}), secrets: scope, profiles: declared, by } });
@@ -376,7 +376,7 @@ export function createVaultService(o: {
     mintFrom,
     testMint: (asset, by, from) => testMint(asset, by, from ?? mintFrom),
 
-    ...templateChecks(o.store, { access: o.access, mintFrom }),
+    ...templateChecks(o.store, { access: o.access, mintFrom }), ...agentCredentials(o.store, valueOf),
     resealAll: () => resealRows({ vault, sealer, mine: (name) => !isSystemSecret(name), what: 'vault secret', logger: o.logger }),
   };
 }
