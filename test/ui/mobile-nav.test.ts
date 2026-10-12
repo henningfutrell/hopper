@@ -6,7 +6,12 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
-import { MobileNav, Sidebar, VIEWS, viewLabel } from '@/app/nav';
+
+type Component = (p: { view: string }) => ReturnType<typeof createElement>;
+const navPath = '../../ui/src/app/nav.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
+const { MobileNav, Sidebar, VIEWS, viewLabel } = (await import(navPath)) as {
+  MobileNav: Component; Sidebar: Component; VIEWS: readonly string[]; viewLabel: (v: string) => string;
+};
 
 let root: Root | null = null;
 afterEach(() => { act(() => root?.unmount()); root = null; document.body.innerHTML = ''; });
@@ -35,7 +40,7 @@ describe('the navigation drawer at a phone width', () => {
 
   it('keeps the drawer to the screen height and the list clear of the bottom safe area', async () => {
     const drawer = await openDrawer();
-    expect(classes(drawer)).toEqual(expect.arrayContaining(['h-dvh', 'max-h-dvh', 'flex', 'flex-col']));
+    expect(classes(drawer)).toEqual(expect.arrayContaining(['data-[side=left]:inset-y-0', 'max-h-dvh', 'flex', 'flex-col']));
     const list = drawer.querySelector('[data-slot="nav-scroll"]')!;
     expect(list.getAttribute('class')).toContain('pb-[max(0.75rem,env(safe-area-inset-bottom))]');
   });

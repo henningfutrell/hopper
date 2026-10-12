@@ -90,7 +90,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
 }
 
 export function Sidebar({ view }: { view: View }) {
-  return <aside className="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-52 shrink-0 border-r p-3 lg:block"><Links view={view} /></aside>;
+  return <aside className="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-52 shrink-0 overflow-y-auto overscroll-contain border-r p-3 lg:block"><Links view={view} /></aside>;
 }
 
 export function MobileNav({ view }: { view: View }) {
@@ -98,9 +98,13 @@ export function MobileNav({ view }: { view: View }) {
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild><Button variant="ghost" size="icon-sm" className="lg:hidden" aria-label="Open navigation"><Menu /></Button></SheetTrigger>
-      <SheetContent side="left" className="w-64 p-3 pt-12">
+      {/* The drawer is the screen's height and its list scrolls on its own (issue #905): a phone shows fewer entries
+          than there are. The close button stays above the list; the list's end stays clear of the bottom safe area. */}
+      <SheetContent side="left" className="max-h-dvh w-64 gap-0 p-0 pt-12">
         <SheetTitle className="sr-only">Navigation</SheetTitle>
-        <Links view={view} onPick={() => setOpen(false)} />
+        <div data-slot="nav-scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <Links view={view} onPick={() => setOpen(false)} />
+        </div>
       </SheetContent>
     </Sheet>
   );
