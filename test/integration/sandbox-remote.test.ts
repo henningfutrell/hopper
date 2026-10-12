@@ -8,6 +8,7 @@
 //   Scenario: a machine that is not a client target, or not dialled in, is refused, and nothing starts; a machine that
 //     hangs up is not dialled in at once (its link closes on the hopper's end too)
 //   Scenario: the box on the machine is ready once it joins, and goes when its time limit passes
+//   Scenario: a box on the machine stuck stopping still goes when its time limit passes; its home volume stays
 //   Scenario: while the machine is away its boxes are kept; once it dials in again they are checked
 //   Scenario: a box with tools on the machine runs the tools image built there; the hopper's own runtime builds nothing
 //   Scenario: a box of a template with an agent credential starts on the machine signed in (issue #708, part 10): the
@@ -133,6 +134,17 @@ describe('sandbox boxes on an attached machine', () => {
     await a.app.sandboxes.reconcile();
     await a.app.sandboxes.reconcile();
     expect((await view(a, session)).boxes.map((b) => b.state)).toEqual(['ready']);
+
+    await a.app.sandboxes.reconcile(new Date(Date.now() + 31 * 60_000));
+    expect(onStudio(libpod, 'hopper-sandbox-claude')).toBeUndefined();
+    expect(libpod.volumes.has('hopper-sandbox-claude-home')).toBe(true);
+    expect((await view(a, session)).boxes).toEqual([]);
+  });
+
+  it('a box on the machine stuck stopping still goes when its time limit passes; its home volume stays', async () => {
+    const { a, session, libpod } = await boot();
+    await launch(a, session, { machine: 'studio', params: { ttlMinutes: 30 } });
+    onStudio(libpod, 'hopper-sandbox-claude')!.state = 'stopping';
 
     await a.app.sandboxes.reconcile(new Date(Date.now() + 31 * 60_000));
     expect(onStudio(libpod, 'hopper-sandbox-claude')).toBeUndefined();

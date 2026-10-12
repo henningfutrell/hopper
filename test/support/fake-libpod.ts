@@ -76,6 +76,8 @@ export function createFakeLibpod(): FakeLibpod {
       }
       if (r.method === 'GET' && m[2] === '/healthcheck') return health ? { status: 200, body: { Status: health.Status, FailingStreak: 0, Log: null } } : { status: 409, body: { message: `container ${c.id} has no defined healthcheck` } };
       if (r.method === 'POST' && m[2] === '/start') { c.state = 'running'; return { status: 204 }; }
+      // A container stuck stopping refuses another stop; only a forced remove takes it.
+      if (r.method === 'POST' && m[2] === '/stop' && c.state === 'stopping') return { status: 500, body: { message: `container ${c.id} is stopping` } };
       if (r.method === 'POST' && m[2] === '/stop') { c.state = 'exited'; return { status: 204 }; }
       if (r.method === 'POST' && m[2] === '/wait') { c.state = 'exited'; return { status: 200, text: String(c.run?.exit ?? 0) }; }
       if (r.method === 'GET' && m[2] === '/logs') return { status: 200, bytes: c.run?.logs ?? Buffer.alloc(0) };
