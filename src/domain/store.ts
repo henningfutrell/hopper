@@ -476,6 +476,8 @@ export interface UserStore {
   jobStream: JobStreamRepository;
   /** The artifacts jobs make for a person to see, and their shares (issue #624). */
   artifacts: ArtifactRepository;
+  /** The infra plans jobs record, and their approvals (issue #870). */
+  infraPlans: import('./infra-plans.ts').InfraPlanRepository;
   questions: QuestionRepository;
   /** Each review section's items, by kind: proposals (issue #537), research reports (issue #543). */
   reviews: Readonly<Record<ReviewKind, ReviewItemRepository>>;

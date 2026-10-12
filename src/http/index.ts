@@ -7,6 +7,7 @@ import { accessRoutes } from './access.ts';
 import { artifactLibRoutes } from '../artifacts/libs.ts';
 import { artifactRoutes, createArtifactEdge } from './artifacts.ts';
 import { jobArtifactRoutes } from './job-artifacts.ts';
+import { jobInfraPlanRoutes } from './job-infra-plans.ts';
 import { apiReferenceRoutes } from './api-reference.ts';
 import { helpRoutes } from './help.ts';
 import type { Access } from '../authz/service.ts';
@@ -56,6 +57,7 @@ import { vaultRoutes } from './vault.ts';
 import { bugReportReadRoutes } from './ui/bug-reports.ts';
 import { pointedJobReadRoutes } from './ui/pointed-jobs.ts';
 import { githubWatchReadRoutes } from './ui/github-watches.ts';
+import { infraPlanReadRoutes } from './ui/infra-plans.ts';
 import { webhookRoutes } from './webhooks.ts';
 
 export type { TenantParts, Tenants } from './tenants.ts';
@@ -139,6 +141,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   bugReportReadRoutes(app, tenant); // Your reports (issue #694)
   pointedJobReadRoutes(app, tenant); // Pointed jobs (issue #425)
   githubWatchReadRoutes(app, tenant); // GitHub watches (issue #427)
+  infraPlanReadRoutes(app, tenant); // Infra changes (issue #870)
   sourceRoutes(app, tenant);
   accountRoutes(app, tenant);
   connectedAccountsRoutes(app, tenant);
@@ -169,6 +172,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   // served off /api/ under the policy of its kind, by a signed URL or a public link.
   const artifactEdge = createArtifactEdge({ clock: o.clock, lan: o.lan, port: o.port, tenants: o.tenants });
   jobArtifactRoutes(app, { tenants: o.tenants, edge: artifactEdge, github });
+  jobInfraPlanRoutes(app, { tenants: o.tenants }); // Infra plans (issue #870), with the same token
   artifactRoutes(app, { ...tenant, tenants: o.tenants, access: o.access, edge: artifactEdge, clock: o.clock });
   staticRoutes(app, o.uiDir);
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));

@@ -27,7 +27,8 @@ import { registerTldrRoutes } from './tldr.ts';
 import { registerVaultRoutes } from './vault.ts';
 import { registerVaultGrantRoutes } from './vault-grants.ts';
 import { registerMintTestRoutes } from './vault-mint-test.ts';
+import { registerInfraPlanRoutes } from './infra-plans.ts';
 import { registerYoloModeRoutes } from './yolo-mode.ts';
 import { registerContributionRoutes } from './contribution.ts';
 
-export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerIntakeActorRoutes, registerLoginRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes, registerVaultGrantRoutes, registerMintTestRoutes, registerYoloModeRoutes, registerContributionRoutes, registerArtifactRoutes, registerAutoParkRoutes, registerTldrRoutes, registerLaneTuningRoutes, registerBugReportRoutes, registerPullRequestActRoutes, registerRepoChecksRoutes, registerThreadAskRoutes, registerPointedJobRoutes, registerGitHubWatchRoutes] as const;
+export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerIntakeActorRoutes, registerLoginRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes, registerVaultGrantRoutes, registerMintTestRoutes, registerYoloModeRoutes, registerContributionRoutes, registerArtifactRoutes, registerAutoParkRoutes, registerTldrRoutes, registerLaneTuningRoutes, registerBugReportRoutes, registerPullRequestActRoutes, registerRepoChecksRoutes, registerThreadAskRoutes, registerPointedJobRoutes, registerGitHubWatchRoutes, registerInfraPlanRoutes] as const;

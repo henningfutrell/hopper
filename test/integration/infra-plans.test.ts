@@ -22,6 +22,7 @@
 //   Scenario: the code moved since the plan: the apply is refused, and STS is not asked
 //   Scenario: a current, approved plan mints the write credential, and the audit names the plan
 //   Scenario: a plan for another asset, and a plan that is not whole, are refused
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { InfraPlan, PlanView } from '../../src/domain/infra-plans.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -31,7 +32,6 @@ import { fakeSts, type FakeApi } from '../support/fake-mint-apis.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { boxes, helper, runningJob } from '../support/vault-box.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
-import { KEY } from '../support/webhooks.ts';
 
 const ACCOUNT = '123456789012';
 const ROLE = `aws-role/${ACCOUNT}/deploy`;
@@ -52,7 +52,7 @@ afterEach(async () => {
 async function boot(): Promise<{ a: TestApp; session: string; dir: string; job: string; token: string; sts: FakeApi; github: FakeForge }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  process.env.FAKE_HERDR_DIR = `${db.dbPath}-herdr`;
+  process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
   process.env.FAKE_HERDR_RUNNING = '1';
   const sts = await fakeSts(ACCOUNT);
   cleanups.push(sts.close);
@@ -61,7 +61,7 @@ async function boot(): Promise<{ a: TestApp; session: string; dir: string; job: 
   github.tokens.set('test-account-token', 'owner');
   github.heads = { 'octo/infra@issue-1': A };
   t = await startTestApp({
-    dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY },
+    dbPath: db.dbPath,
     env: { HOPPER_GITHUB_URL: github.url, HOPPER_GITHUB_CLIENT_ID: 'gh-client-id', HOPPER_GITHUB_APP_SLUG: 'hopper-test' },
     plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } },
     seams: { authorizationServer: createFakeAuthorizationServer() },

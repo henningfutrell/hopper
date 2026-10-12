@@ -3005,7 +3005,7 @@ Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret
 
 ## `vault.minted`
 
-Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Settings → Access); `renewal` when the job had one for that profile before. Never the credential.
+Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Settings → Access); `renewal` when the job had one for that profile before. `plan` (issue #870): the approved, current plan an operation that changes infrastructure named. Never the credential.
 
 | field | type | required |
 |---|---|---|
@@ -3019,6 +3019,7 @@ Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived 
 | `decision` | string | yes |
 | `expiresAt` | string | yes |
 | `renewal` | boolean | yes |
+| `plan` | string | no |
 
 ```json
 {
@@ -4272,5 +4273,69 @@ Version 1 (`docs/schemas/github_watch.settings_changed.v1.json`). A person chang
     "intervalSeconds": 300
   },
   "by": "octocat"
+}
+```
+
+## `infra.plan_recorded`
+
+Version 1 (`docs/schemas/infra.plan_recorded.v1.json`). A job recorded a plan of an infrastructure change (issue #870): what made it (`tool`), the asset an apply of it is minted a credential for, the workspace or app it changes (`target`), the repository, branch (`ref`) and commit it was made at, its pull request, the read profile it was made with (`read`), the job's issue, whether a saved plan file came with it (`file`), and when it goes stale (`expiresAt`). Never its text or its file. A plan is never changed once kept.
+
+| field | type | required |
+|---|---|---|
+| `plan` | string | yes |
+| `tool` | `terraform` \| `helm` \| `gitops` | yes |
+| `asset` | object | yes |
+| `target` | string | yes |
+| `repo` | string | yes |
+| `ref` | string | yes |
+| `commit` | string | yes |
+| `pullRequest` | integer | no |
+| `read` | string | no |
+| `issue` | string | no |
+| `file` | boolean | yes |
+| `expiresAt` | string | yes |
+
+```json
+{
+  "plan": "0b7e5a3c-0000-4000-8000-000000000870",
+  "tool": "terraform",
+  "asset": {
+    "kind": "aws-role",
+    "name": "123456789012/deploy"
+  },
+  "target": "uat-network",
+  "repo": "octo-org/infra",
+  "ref": "issue-12",
+  "commit": "e83c5163316f89bfbde7d9ab23ca2e25604af290",
+  "pullRequest": 13,
+  "read": "read/aws-role/123456789012/readonly",
+  "issue": "https://github.com/octo-org/infra/issues/12",
+  "file": true,
+  "expiresAt": "2026-10-12T11:00:00.000Z"
+}
+```
+
+## `infra.plan_approved`
+
+Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan of an infrastructure change (issue #870), on Infra changes: until the plan is stale, an apply that names it, made at the commit its branch is at, is minted the credential it asks. On the timeline of the job that recorded the plan.
+
+| field | type | required |
+|---|---|---|
+| `plan` | string | yes |
+| `tool` | `terraform` \| `helm` \| `gitops` | yes |
+| `asset` | object | yes |
+| `target` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "plan": "0b7e5a3c-0000-4000-8000-000000000870",
+  "tool": "terraform",
+  "asset": {
+    "kind": "aws-role",
+    "name": "123456789012/deploy"
+  },
+  "target": "uat-network",
+  "by": "Ada"
 }
 ```

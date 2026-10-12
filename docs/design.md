@@ -67,6 +67,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
+| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`. Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts` | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
@@ -14346,3 +14347,55 @@ a clock, not a ticking age, so no card renders each second.
 Tests: `test/integration/job-last-events.test.ts` (real database and HTTP: one event per job, the newest; none with no
 job), `test/ui/jobs-view-model.test.ts` (filters, order, choices, last event), `test/ui/jobs-view.test.ts` (the whole app
 over a fake daemon: the card's facts, both filters, a status change from the stream with 250 jobs).
+
+## Infra plans: no apply without a plan (issue #870, part 1, 2026-10-12)
+
+Owner's principle (issue #870): no apply without a plan. Plans and infrastructure changes never slide under the radar:
+each one is surfaced to people. Before this, a box of a template with an approved `write`, `sync` or `apply` profile was
+minted its credential at each ask, with nothing that tied the change to a reviewed plan.
+
+- **A plan is a record of its own** (`InfraPlan`, `src/domain/infra-plans.ts`; tenant migration 46, `infra_plans`), apart
+  from artifacts, and never changed once kept. It holds what made it (`tool`: `terraform`, `helm`, `gitops`), the raw
+  plan (`text`: `terraform show` of the plan file, the `helm diff`, the GitOps diff; at most 1 MiB) and, for terraform,
+  the saved plan file (`terraform plan -out`, at most 8 MiB, its size and SHA-256 beside it), the `asset` an apply of it is
+  minted a credential for (an `aws-role`, a `cluster`, a `namespace`), the `target` (the workspace or app it changes), the
+  `repo`, the branch (`ref`) and full `commit` it was made at, its `pullRequest`, the read profile it was made with
+  (`read`, as the job says it), the job and its issue (who asked for it), `createdAt`, and `expiresAt` (60 minutes later).
+- **A job records one**: `POST /job/infra-plans`, with its proxy token, JSON (`file` in base64): 201 with its id; a plan
+  that is not whole is a 400 that says why. `GET /job/infra-plans/:id` answers it with its approval; `?file=1` gives the
+  plan file back as it was put, so terraform applies only the saved plan. `infra.plan_recorded` on the job's timeline.
+- **A person approves it**: Settings → Vault, panel **Infra changes** (every plan, newest first, with its state:
+  waits for approval, approved, stale), or `POST /ui/api/infra-plans` `{ action: "approve", plan }` (admin, a box
+  action). The approval is a row of its own (`infra_plan_approvals`), so the plan does not change; a second is a 409.
+  `infra.plan_approved` on the timeline of the job that recorded it. A job never approves a plan.
+- **The apply gate** (`applyRefusal`, `headRefusal`; `InfraPlans.gate`, `src/infra-plans/service.ts`). Before the vault
+  mints a credential for any operation but `read` (`src/vault/mint.ts`, after Access allowed it), the ask must name a
+  plan (`$HOPPER_SECRET aws apply aws-role/<account>/<role> --plan <id>`, the same for `kube`) that is kept, is a plan of
+  that asset, is not stale, is approved, and was made at the commit its branch is at now: the hopper reads the branch's
+  head on GitHub with the user's connection at each ask. Any other ask mints nothing (`vault.mint_refused`, with why),
+  and the outside service is not asked. A head that cannot be read refuses too. A vault with no gate mints only reads.
+  `vault.minted` names the plan. A renewal asks again, so a plan that went stale while it ran is not renewed.
+- **The client** sends the plan in its ask (`VaultAsk.plan`), bound into the sealed answer's authenticated data only when
+  it names one, so a client from before this opens its answers to a read as before; it sends no plan, so its applies are
+  refused.
+
+**Why every operation but read.** `write`, `sync` and `apply` each mint a credential that can change the asset; a gate on
+`apply` alone would leave the same change one word away.
+
+**Not built here (the next parts of #870).** The plain-language summary and explainer of each plan, with its risk
+callouts (destroys, IAM, prod, data, network) and blast radius; notifications to environment watchers for every plan
+and apply; approval by risk (a low-risk uat plan approved by its requester or automatically, still in the feed; prod,
+IAM, destroys and identity by the owner through the blast-radius gate); the failing check for a new resource without
+the MAP tag; a timeline of applies and drift, and the nightly drift plan; a terraform wrapper on write boxes that runs
+`apply` only of the saved plan file; routing Argo CD syncs through the gate. The `read` a plan names is recorded as the
+job says it, not checked against the job's mints.
+
+**Residual risk, stated.** The gate binds a credential to a plan, not each command to the plan: within its 15 or 10
+minutes, a minted credential can make any change its role or service account allows. The plan's commit is checked
+against its branch, not against the files the box applies from. The saved plan file, served back, is what makes the
+apply the plan's; enforcing that on the box is the wrapper above.
+
+Tests: `test/domain/infra-plans.test.ts` (the gate and the plan input, pure), `test/integration/infra-plans.test.ts` (the
+real daemon, a joined box, STS and GitHub faked: an apply with no plan, an unapproved plan, a moved head and a plan of
+another asset are refused and STS is not asked — the negative test of the issue's "Done when"; a current approved plan
+mints, its audit naming it; the plan kept whole, listed, its file given back), `test/ui/infra-plans.test.ts`.

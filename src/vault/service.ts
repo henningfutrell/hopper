@@ -16,7 +16,7 @@ import { profileProblem, TEMPLATE_NAME, type Asset, type OperationProfile, type 
 import { mintsForProblem } from '../domain/minting.ts';
 import { limitsProblem, toolSet, toolsProblem, type TemplateLimits } from '../domain/sandboxes.ts';
 import { AT_WORK, boxAsk, clientOf, launchedOf, launchRefusal, type ClientTarget } from './box.ts';
-import { createMinting, mintHere, type MintAsk, type MintFrom } from './mint.ts';
+import { createMinting, mintHere, type MintAsk, type MintFrom, type MintingOptions } from './mint.ts';
 import { createMintTest, type MintTestAnswer } from './mint-test.ts';
 import { systemReadRefusal } from './system-read.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS, type RadiusRules, type TemplateRadius } from '../domain/blast-radius.ts';
@@ -122,6 +122,8 @@ export function createVaultService(o: {
   backends?: () => ConfiguredBackend[];
   /** The shared secret a row name `shared/<name>` names (issue #718): a template may name one. Absent: none. */
   shared?: (row: string) => VaultSecret | undefined;
+  /** The apply gate (issue #870): asked before every mint of an operation but read. Absent: none is minted. */
+  plans?: MintingOptions['plans'];
 }): VaultService {
   const { vault, events } = o.store;
   const { sealer } = o.keys;
@@ -177,7 +179,7 @@ export function createVaultService(o: {
 
   const mint = createMinting({
     store: o.store, userId: o.userId ?? '', clock: o.clock,
-    ...(o.access ? { access: o.access } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}),
+    ...(o.access ? { access: o.access } : {}), ...(o.targets ? { targets: o.targets } : {}), ...(o.holds ? { holds: o.holds } : {}), ...(o.plans ? { plans: o.plans } : {}),
   });
 
   const testMint = createMintTest({ store: o.store });
