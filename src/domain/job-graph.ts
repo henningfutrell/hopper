@@ -9,6 +9,8 @@
 // connected nodes is one **job tree**, named by its root, with what blocks the root marked. Pure: no I/O, no clock — the
 // route reads the jobs, the lineage links, the issue graph and the open questions and hand-offs, and passes them in.
 import type { GraphEdge, GraphNode } from './issue-graph.ts';
+import { stageWords, summaryWords, waitsOnYou, type Piece } from './job-words.ts';
+import { phaseOf } from './phase.ts';
 import type { ChecksState } from './pull-requests.ts';
 import type { TaskCount } from './task-count.ts';
 import type { Job, JobStatus } from './types.ts';
@@ -54,9 +56,21 @@ export interface JobGraphNode {
   /** `job:<id>`, `issue:<owner/name>#<n>` (lowercase repository), `pr:<url>`, `question:<id>`, `handoff:<id>`. */
   id: string;
   kind: JobGraphNodeKind;
-  /** What a person reads on the node: a job's goal, an issue's title, a pull request's `#n`, a question's text, a hand-off's summary. */
+  /**
+   * What a person reads on the node first (issue #935): a job's goal, an issue's title (its `owner/name#n` when it has
+   * none), a pull request's job's goal, a question's text, a hand-off's summary. The repository and number are apart.
+   */
   label: string;
   stage: JobStage;
+  /** Where it stands in human terms (issue #935): `Building it (attempt 2 of 3)`, `Ready for review`, `Waiting on you: approve the plan`. */
+  stageText: string;
+  /** True when it waits on the person: a question, a hand-off, a plan or a report to read. */
+  waitsOnYou?: true;
+  /** A job's phase when it is not the work itself: `proposal` or `research`. */
+  phase?: string;
+  /** A job's run in the chain of runs again of its issue (1 the first), and how many the failure settings allow. */
+  attempt?: number;
+  attempts?: number;
   /** owner/name, when the node has one. */
   repo?: string;
   /** The issue or pull request number. */
@@ -87,6 +101,8 @@ export interface JobTree {
   blocking: string[];
   /** How many of its job nodes are in each stage. */
   stages: Partial<Record<JobStage, number>>;
+  /** The tree in one line (issue #935): "3 of 4 pieces shipped, 1 being redone, nothing waiting on you." */
+  summary: string;
 }
 
 /** The job graph: every node and typed edge, the trees, and how many jobs are in each stage. */
@@ -113,6 +129,8 @@ export interface JobGraphInput {
   issueGraph?: { nodes: readonly GraphNode[]; edges: readonly GraphEdge[] };
   questions?: readonly JobGraphWait[];
   handoffs?: readonly JobGraphWait[];
+  /** The failure settings' retries per job: a run again's attempt reads "of" one more than it. */
+  maxAttempts?: number;
 }
 
 interface Followed {
@@ -122,6 +140,8 @@ interface Followed {
 
 /** A job node's task count is part of the graph's contract: re-exported with it (and so through types.ts). */
 export type { TaskCount };
+/** A job's parts list (issue #935) is the graph's drill-in: its types go out with it (and so through types.ts). */
+export type { BomGroup, BomPart, BomStatus, JobBom } from './job-bom.ts';
 
 const followedOf = (job: Job): Followed => (job.sourceState?.source ?? {}) as Followed;
 
@@ -199,27 +219,37 @@ export function jobGraph(input: JobGraphInput): JobGraph {
   const issueNode = (repo: string, number: number, extra: Partial<JobGraphNode> = {}): string => {
     const id = issueNodeId(repo, number);
     const before = nodes.get(id);
-    nodes.set(id, { id, kind: 'issue', label: ref(repo, number), stage: 'no_job', repo, number, url: `https://github.com/${repo}/issues/${number}`, ...before, ...extra });
+    nodes.set(id, { id, kind: 'issue', label: ref(repo, number), stage: 'no_job', stageText: '', repo, number, url: `https://github.com/${repo}/issues/${number}`, ...before, ...extra });
     return id;
   };
-  const prNode = (pr: JobGraphPullRequest, stage: JobStage): string => {
+  const prNode = (pr: JobGraphPullRequest, stage: JobStage, label = 'Pull request'): string => {
     const id = pullRequestNodeId(pr.url);
     const m = PR_URL.exec(pr.url);
-    nodes.set(id, { id, kind: 'pull_request', label: m ? `PR #${m[2]}` : 'PR', stage, url: pr.url, pullRequest: pr, ...(m ? { repo: m[1], number: Number(m[2]) } : {}) });
+    nodes.set(id, { id, kind: 'pull_request', label, stage, stageText: '', url: pr.url, pullRequest: pr, ...(m ? { repo: m[1], number: Number(m[2]) } : {}) });
     return id;
   };
 
   const jobs = [...input.jobs].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   const byId = new Map(jobs.map((j) => [j.id, j]));
+  // Each issue's newest job: the issue reads its stage, its words, and whether a run again redoes a failed run.
+  const newestOf = new Map<string, Job>();
+  const attemptOf = (job: Job): number => {
+    let n = 1;
+    for (let prev = job.rerunOf, seen = new Set([job.id]); prev && byId.has(prev) && !seen.has(prev); prev = byId.get(prev)!.rerunOf) { seen.add(prev); n++; }
+    return n;
+  };
   // The issue nodes, from the jobs: each issue takes the stage and parts of its newest job.
   for (const job of jobs) {
     const s = job.source;
     const stage = stageOf(job);
     const pr = pullRequestOf(job);
     const id = jobNodeId(job.id);
+    const phase = phaseOf(job);
+    const attempt = attemptOf(job);
     nodes.set(id, {
-      id, kind: 'job', label: job.spec.goal || s?.title || job.spec.executor, stage, jobId: job.id, status: job.status,
-      stageSince: stageSinceOf(job),
+      id, kind: 'job', label: job.spec.goal || s?.title || job.spec.executor, stage, stageText: '', jobId: job.id, status: job.status,
+      stageSince: stageSinceOf(job), ...(phase !== 'work' ? { phase } : {}),
+      ...(attempt > 1 ? { attempt, ...(input.maxAttempts !== undefined ? { attempts: input.maxAttempts + 1 } : {}) } : {}),
       ...(s?.repo ? { repo: s.repo } : {}), ...(s?.number !== undefined ? { number: s.number } : {}), ...(s?.url ? { url: s.url } : {}),
       ...(job.tasks ? { tasks: job.tasks } : {}), ...(job.laneId ? { laneId: job.laneId } : {}),
       ...(pr ? { pullRequest: pr } : {}),
@@ -229,9 +259,10 @@ export function jobGraph(input: JobGraphInput): JobGraph {
     });
     if (s?.repo && s.number !== undefined) {
       const parts = partsOf(job);
-      issueNode(s.repo, s.number, { label: s.title ? `${ref(s.repo, s.number)} ${s.title}` : ref(s.repo, s.number), stage, ...(s.url ? { url: s.url } : {}), ...(parts ? { parts } : {}) });
+      issueNode(s.repo, s.number, { label: s.title || ref(s.repo, s.number), stage, ...(s.url ? { url: s.url } : {}), ...(parts ? { parts } : {}) });
+      newestOf.set(issueNodeId(s.repo, s.number), job);
     }
-    if (pr) prNode(pr, pr.state === 'merged' ? 'done' : pr.state === 'open' || pr.state === 'unknown' ? (waitsOnMerge(job) ? 'partly_done' : 'pr_open') : 'cancelled');
+    if (pr) prNode(pr, pr.state === 'merged' ? 'done' : pr.state === 'open' || pr.state === 'unknown' ? (waitsOnMerge(job) ? 'partly_done' : 'pr_open') : 'cancelled', job.spec.goal || s?.title);
   }
 
   // The lineage links (issue #729) add the issues they name; the issue graph (issue #437) adds sub-issues and closers of
@@ -271,7 +302,7 @@ export function jobGraph(input: JobGraphInput): JobGraph {
     const closed = n.attrs.state === 'CLOSED' || n.attrs.state === 'closed';
     nodes.set(id, {
       ...before,
-      ...(typeof n.attrs.title === 'string' ? { label: `${ref(before.repo!, before.number!)} ${n.attrs.title}` } : {}),
+      ...(typeof n.attrs.title === 'string' ? { label: n.attrs.title } : {}),
       // An issue no job here works shows where GitHub has it: closed is done; open still has no job.
       ...(before.stage === 'no_job' && closed ? { stage: 'done' } : {}),
     });
@@ -316,17 +347,39 @@ export function jobGraph(input: JobGraphInput): JobGraph {
       const id = kind === 'question' ? questionNodeId(w.id) : handoffNodeId(w.id);
       const text = w.text.replace(/\s+/g, ' ').trim();
       nodes.set(id, {
-        id, kind, label: text.length > WAIT_LABEL ? `${text.slice(0, WAIT_LABEL - 1)}…` : text, stage: 'waiting', jobId: w.jobId, stageSince: w.since,
+        id, kind, label: text.length > WAIT_LABEL ? `${text.slice(0, WAIT_LABEL - 1)}…` : text, stage: 'waiting', stageText: '', jobId: w.jobId, stageSince: w.since,
         ...(job.source?.repo ? { repo: job.source.repo } : {}),
       });
       edge(jobNodeId(w.jobId), edgeKind, id);
     }
   }
 
+  // The words (issue #935): an issue says what its newest job says.
+  for (const n of nodes.values()) {
+    const newest = n.kind === 'issue' ? newestOf.get(n.id) : undefined;
+    const worded = newest ? nodes.get(jobNodeId(newest.id))! : n;
+    n.stageText = stageWords(worded);
+    if (waitsOnYou(worded)) n.waitsOnYou = true;
+  }
   const allNodes = [...nodes.values()];
   const allEdges = [...edges.values()];
-  const trees = treesOf(allNodes, allEdges);
+  const trees = treesOf(allNodes, allEdges).map((t) => ({ ...t, summary: treeSummary(t, nodes, allEdges, newestOf, byId) }));
   return { nodes: allNodes, edges: allEdges, trees, stages: countStages(allNodes) };
+}
+
+/**
+ * A tree in one line: its pieces are its issues (its jobs, when it has none); a piece is being redone when its newest
+ * job runs a failed one again. What waits on you: its questions and hand-offs, and its jobs waiting on a plan or report.
+ */
+function treeSummary(t: Omit<JobTree, 'summary'>, nodes: ReadonlyMap<string, JobGraphNode>, edges: readonly JobGraphEdge[], newestOf: ReadonlyMap<string, Job>, byId: ReadonlyMap<string, Job>): string {
+  const members = t.nodes.map((id) => nodes.get(id)!);
+  const issues = members.filter((n) => n.kind === 'issue');
+  const redone = (job: Job | undefined) => job?.rerunOf !== undefined && byId.get(job.rerunOf)?.status === 'failed';
+  const pieces: Piece[] = (issues.length ? issues : members.filter((n) => n.kind === 'job'))
+    .map((n) => ({ stage: n.stage, redone: redone(n.kind === 'issue' ? newestOf.get(n.id) : byId.get(n.jobId!)), you: n.waitsOnYou === true }));
+  const asking = new Set(edges.filter((e) => e.kind === 'asks' || e.kind === 'hands_off').map((e) => e.from));
+  const waiting = members.filter((n) => n.waitsOnYou && n.kind !== 'issue' && !asking.has(n.id)).length;
+  return summaryWords(pieces, waiting);
 }
 
 const countStages = (nodes: readonly JobGraphNode[]): Partial<Record<JobStage, number>> => {
@@ -342,7 +395,7 @@ const KIND_RANK: Record<JobGraphNodeKind, number> = { issue: 0, job: 1, pull_req
  * The job trees: each group of connected nodes, rooted at a node no edge leads into (an issue first), else at its first
  * node. `blocking`: the root's unsettled descendants and every node on a way from the root to one.
  */
-export function treesOf(nodes: readonly JobGraphNode[], edges: readonly JobGraphEdge[]): JobTree[] {
+export function treesOf(nodes: readonly JobGraphNode[], edges: readonly JobGraphEdge[]): Omit<JobTree, 'summary'>[] {
   const out = new Map<string, string[]>();
   const into = new Map<string, number>();
   const near = new Map<string, string[]>();
@@ -356,7 +409,7 @@ export function treesOf(nodes: readonly JobGraphNode[], edges: readonly JobGraph
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const order = [...nodes].sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || a.id.localeCompare(b.id));
   const placed = new Set<string>();
-  const trees: JobTree[] = [];
+  const trees: Omit<JobTree, 'summary'>[] = [];
   for (const start of order) {
     if (placed.has(start.id)) continue;
     const group: string[] = [];

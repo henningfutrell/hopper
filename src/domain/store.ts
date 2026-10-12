@@ -70,6 +70,8 @@ export interface EventLog {
   between(types: readonly EventType[], since: string): DomainEvent[];
   /** The newest event of each of these jobs that has one, one per job (issue #434: the Jobs view's last event). */
   lastOfJobs(jobIds: readonly string[]): DomainEvent[];
+  /** One job's newest events, at most `limit`, oldest first (issue #935: the job page's timeline and parts list). */
+  ofJob(jobId: string, limit: number): DomainEvent[];
   subscribe(listener: (event: DomainEvent) => void): () => void;
 }
 
