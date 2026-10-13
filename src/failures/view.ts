@@ -6,6 +6,7 @@
 import type { UserStore } from '../domain/ports.ts';
 import { highFirst, jobPriorityTag, type Allowed, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
 import { handoffCard } from './card.ts';
+import { keptWorkViews } from './kept-work.ts';
 import { knownCauses } from './causes.ts';
 import { RAN_AGAIN, SETTLED } from './handoff.ts';
 import { profileOf } from './profile.ts';
@@ -113,7 +114,7 @@ function problemView(store: Reads, p: Problem): ProblemView {
   };
 }
 
-export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs'>, settings: FailureSettings, now: Date, resumable: (job: Job) => boolean): FailuresView {
+export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 'events'>, settings: FailureSettings, now: Date, resumable: (job: Job) => boolean): FailuresView {
   const dayAgo = new Date(now.getTime() - DAY_MS).toISOString();
   const handoffs = [...store.handoffs.list({ status: 'open' }), ...store.handoffs.list({ status: 'closed', closedSince: dayAgo, limit: 50 })];
   const resolved = store.problems.list({ status: 'resolved', limit: 50 }).filter((p) => (p.resolvedAt ?? '') >= dayAgo);
@@ -130,6 +131,8 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs'>, 
     // Each with its TL;DR (issue #569) only while it is shown.
     handoffs: highFirst(handoffs.map((h) => ({ ...handoffView(store, withShownTldr('handoff', h, tldr), resumable), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true),
     causes: knownCauses(store.settings.getNamedCauses()),
+    // Work not pushed (issue #1010): ended jobs whose reap kept work, each with Push it and Discard.
+    keptWork: keptWorkViews(store, resumable),
     problems: [...store.problems.list({ status: 'open' }), ...resolved].map((p) => problemView(store, p)),
     // Nothing waits on an ended one (issues #529, #618): out of the open failures, in Ended for a day, still in the profile.
     recent: store.failures.list({ limit: SCAN, notOutcome: [...SETTLED, ...RAN_AGAIN] }).filter((r) => endedAt(store, r) === undefined).slice(0, RECENT).map(recordView),

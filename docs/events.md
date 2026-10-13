@@ -868,11 +868,14 @@ Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (iss
 
 ## `job.work_removed`
 
-Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410) removed the scratch dir a reap had kept (`job.work_kept`): its work is now committed and pushed. `paths` is the scratch dir removed.
+Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or the job's next reap, removed the scratch dir a reap had kept (`job.work_kept`): its work is now committed and pushed. `paths` is the scratch dir removed. With `discarded` (issue #1010), a person discarded the kept work in Failures, Work not pushed: the scratch dir was removed whatever it held; `person` and `via` say who and the way.
 
 | field | type | required |
 |---|---|---|
 | `paths` | string[] | yes |
+| `discarded` | boolean | no |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 
 ```json
 {
@@ -949,12 +952,13 @@ Version 1 (`docs/schemas/job.unparked.v1.json`). A person re-queued a parked job
 
 ## `job.continued`
 
-Version 1 (`docs/schemas/job.continued.v1.json`). A failed job goes on in its own agent session: the job is queued again, pinned to the machine it ran on, and its claim resumes that session in its work tree (`claude --resume`). A person resolved its hand-off with Continue (issue #551), told the failure and the person's note: `handoffId`, the hand-off it resolved. Or the failure assessor continued a timed-out job still at work (issue #630), told it timed out while at work: `recordId`, its failure record.
+Version 1 (`docs/schemas/job.continued.v1.json`). A failed job goes on in its own agent session: the job is queued again, pinned to the machine it ran on, and its claim resumes that session in its work tree (`claude --resume`). A person resolved its hand-off with Continue (issue #551), told the failure and the person's note: `handoffId`, the hand-off it resolved. Or the failure assessor continued a timed-out job still at work (issue #630), told it timed out while at work: `recordId`, its failure record. Or a person chose Push it on its work not pushed (issue #1010), told to push the work its work tree kept and open the pull request: `keptWork`.
 
 | field | type | required |
 |---|---|---|
 | `handoffId` | string | no |
 | `recordId` | string | no |
+| `keptWork` | boolean | no |
 
 ```json
 {

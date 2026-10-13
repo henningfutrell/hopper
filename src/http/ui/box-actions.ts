@@ -29,6 +29,7 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/repo-checks/queue', kind: 'start a job' },
   { route: '/ui/api/failures/:id/retry', kind: 'start a job' },
   { route: '/ui/api/failures/problems/:id/release', kind: 'start a job' },
+  { route: '/ui/api/failures/kept-work/:id/push', kind: 'start a job' }, // issue #1010: the job goes on
   ...askFor, ...phaseShifts, ...reviewDecisions,
   { route: '/ui/api/blast-radius/discover', kind: 'run a command' },
   { route: '/ui/api/plugins', kind: 'run a command' },
@@ -54,6 +55,7 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/windows-hosts', kind: 'change work on a machine' },
   { route: '/ui/api/lanes/apply', kind: 'change work on a machine' },
   { route: '/ui/api/lanes/undo', kind: 'change work on a machine' },
+  { route: '/ui/api/failures/kept-work/:id/discard', kind: 'change work on a machine' }, // issue #1010: removes work not pushed
 ];
 
 const ROUTES = new Set(BOX_ACTIONS.map((b) => b.route));

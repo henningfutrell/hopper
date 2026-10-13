@@ -163,7 +163,7 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
       }
     },
     async closePane(paneId) { await run(['pane', 'close', paneId]); },
-    reap: (jobId, scratch, keep) => shell.reap(jobId, scratch, keep),
+    reap: (jobId, scratch, keep, discard) => shell.reap(jobId, scratch, keep, discard),
     survey: (roots) => shell.survey(roots),
     discover: () => shell.discover(),
     reach: (url) => shell.reach(url),

@@ -135,7 +135,7 @@ export const EVENT_SCHEMAS = {
   // (issue #921): a checkpoint taken on `machineId`; `bytes` compressed, whether it holds the agent session, the commits not pushed.
   'job.unparked': strict({ to: z.enum(['queued', 'waiting_answer']), elsewhere: z.literal(true).optional() }), 'job.checkpointed': strict({ machineId: z.string(), bytes: z.number().int(), session: z.boolean(), commits: z.number().int() }),
   // A person's Continue names its hand-off (issue #551); the assessor's, its failure record (issue #630).
-  'job.continued': strict({ handoffId: z.string().optional(), recordId: z.string().optional() }),
+  'job.continued': strict({ handoffId: z.string().optional(), recordId: z.string().optional(), keptWork: z.literal(true).optional() }),
   'job.reattached': strict({ reason: z.string() }),
   'job.link_lost': strict({ machine: z.string(), since: z.string(), failsAt: z.string() }),
   // A job's own wait (issue #483).
@@ -209,7 +209,8 @@ export const EVENT_SCHEMAS = {
   // A locked entry dismissed (issue #355): the failed job stays failed, out of the queue.
   'job.dismissed': strict({ by: z.enum(['user']) }),
   'job.work_kept': strict({ paths: z.array(z.string()).min(1) }),
-  'job.work_removed': strict({ paths: z.array(z.string()).min(1) }),
+  // `discarded` (issue #1010): a person discarded the kept work, unpushed; who, and the way.
+  'job.work_removed': strict({ paths: z.array(z.string()).min(1), discarded: z.literal(true).optional(), ...actingIfPerson }),
   // Issue #371: the job's cleanup could not reach its machine; it is tried again until it goes through.
   'job.cleanup_deferred': strict({ error: z.string() }),
   'job.cleaned_up': strict({ deferredAt: z.string(), by: z.enum(['user']).optional() }),

@@ -272,6 +272,9 @@ describe('what a client takes in a /reap or /survey body (issue #410)', () => {
     expect(scriptArgvOf('/reap', { jobId: JOB })).toEqual(reapArgv(JOB));
     expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.hopper-scratch/${JOB}`, keep: true })).toEqual(reapArgv(JOB, `/w/.hopper-scratch/${JOB}`, true));
     expect(scriptArgvOf('/reap', { jobId: JOB, keep: 'yes' })).toBe('keep must be true or false');
+    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.hopper-scratch/${JOB}`, discard: true })).toEqual(reapArgv(JOB, `/w/.hopper-scratch/${JOB}`, false, true));
+    expect(scriptArgvOf('/reap', { jobId: JOB, discard: 'yes' })).toBe('discard must be true or false');
+    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.hopper-scratch/${JOB}`, keep: true, discard: true })).toBe('keep and discard cannot both be true');
     expect(scriptArgvOf('/reap', { jobId: '-rf' })).toBe('jobId must be a job id');
     expect(scriptArgvOf('/reap', { jobId: 'a*' })).toBe('jobId must be a job id');
     expect(scriptArgvOf('/reap', { jobId: JOB, scratch: '/home/me' })).toBe('scratch must be the job\'s own scratch dir');

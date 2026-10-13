@@ -19,7 +19,8 @@ export interface SectionCounts {
   questions: { n: number; high: number };
   reviews: Readonly<Record<ReviewKind, { n: number; high: number }>>;
   logins: { n: number; high: number; warn: boolean };
-  failures: { problems: number; handoffs: number; high: number };
+  /** `kept`: work not pushed (issue #1010) that no open hand-off counts already. */
+  failures: { problems: number; handoffs: number; kept: number; high: number };
   parked: { n: number; high: number };
 }
 
@@ -35,6 +36,6 @@ export function sectionBadges(c: SectionCounts): Record<SectionKind, SectionBadg
     research: review('research'),
     logins: { n: c.logins.n, high: c.logins.high, cls: c.logins.warn ? 'bg-warn text-background' : 'bg-foreground text-background', title: `${waits(c.logins.n, 'login')}${c.logins.warn ? '; one expires soon' : ''}${highOf(c.logins.high)}` },
     parked: { n: c.parked.n, high: c.parked.high, cls: 'bg-muted text-muted-foreground', title: `${plural(c.parked.n, 'parked job')} ${c.parked.n === 1 ? 'waits' : 'wait'} to be picked up${highOf(c.parked.high)}` },
-    failures: { n: c.failures.problems + c.failures.handoffs, high: c.failures.high, cls: 'bg-bad text-background', title: `${plural(c.failures.problems, 'open problem')}, ${plural(c.failures.handoffs, 'job needs', 'jobs need')} a person${highOf(c.failures.high)}` },
+    failures: { n: c.failures.problems + c.failures.handoffs + c.failures.kept, high: c.failures.high, cls: 'bg-bad text-background', title: `${plural(c.failures.problems, 'open problem')}, ${plural(c.failures.handoffs, 'job needs', 'jobs need')} a person${c.failures.kept ? `, ${plural(c.failures.kept, 'job')} with work not pushed` : ''}${highOf(c.failures.high)}` },
   };
 }

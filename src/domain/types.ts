@@ -514,6 +514,7 @@ export * from './proposal-paths.ts';
 export * from './phase.ts';
 export * from './sections.ts';
 export * from './failures.ts';
+export * from './kept-work.ts';
 export * from './yolo-mode.ts';
 export * from './contribution.ts';
 export * from './pull-requests.ts';

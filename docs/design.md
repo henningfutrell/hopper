@@ -11013,6 +11013,42 @@ own, and the domain word is *hand-off* (*dead letter* stays a not-term, as for t
 stays in the Queue beside its hand-off (Won't do dismisses it; Clear did, before issue #551); entering notifies by a setting, default on. No setting
 moves the badge: the Failures entry carries it.
 
+### Work not pushed (issue #1010, 2026-10-13)
+
+The reap and the sweep keep an ended job's scratch dir when a repository in it holds uncommitted or unpushed work
+(`job.work_kept`, issue #401). Nothing showed it but a log line on each sweep, so the work sat there with no way out.
+Now Failures lists it, and each has an action that moves it.
+
+- **The list** (`src/domain/kept-work.ts`, pure; `src/failures/kept-work.ts`). An ended job whose newest work event is
+  `job.work_kept` (`keptWorkOf`, the newest 1000 work events) is **work not pushed**: `keptWork` in `GET /api/failures`,
+  newest first, each with its paths, its machine (`machineRanOn`), its open hand-off, and `actions.push` and
+  `actions.discard` (`{ ok }` or `{ ok: false, why }`). The Failures badge and `GET /api/sections` count each one that
+  no open hand-off counts already.
+- **Push it** (`POST /ui/api/failures/kept-work/:id/push`, operator, a box action, an optional note). Taken for a failed
+  job whose own agent session resumes (`Engine.resumable`), the newest of its item. The job goes on in its own session and
+  kept work tree, told `pushBrief`: look at the work tree, commit, push, open the pull request, as a draft when the work
+  is not finished, and the note. With an open hand-off it resolves it as Continue (`handoff.closed`, `end:
+  "continued"`); else `SourceRegistry.continueJob` with `{ keptWork: true }` (`job.continued`). Its source takes the item
+  back as for Run again. The next reap at its end that keeps nothing records `job.work_removed` (`cleanup.ts`), so it
+  leaves the list.
+- **Discard** (`POST /ui/api/failures/kept-work/:id/discard`, operator, a box action; the UI asks first). `Sweep.discard`
+  (`Engine.discardWork`) reaps the job's scratch dir on its machine with `discard` (the reap script's `$3`, a client
+  target's `/reap` body `discard: true`): its git worktrees removed with `--force --force`, the dir removed whatever it
+  holds; then `job.work_removed` with `discarded`, `person` and `via`. Refused, with why, when no work is kept, the job
+  has not ended, or its machine is unknown, offline or out of reach. A client older than this ignores `discard` and keeps
+  the work: the refusal says to update it.
+- **Quieter sweep.** The sweep logs kept work only when it keeps it the first time.
+
+Not done here, carried in issue #1010: Push it for a cancelled or finished job (Run again takes only a failed, finished
+or rejected job, and Continue only a failed one); a Stuck view with counts by cause and one bulk action per cause; a
+check of each hand-off card's recommended action against the causes that refuse it; Run again and tending for direct
+jobs.
+
+**Verification:** `test/domain/kept-work.test.ts`, `test/engine/sweep.test.ts` (discard, its refusals, the log once),
+`test/client/reap-discard.test.ts` and `test/client/reap.test.ts` (the script for real: dirty and unpushed work removed,
+the worktree entry gone, nothing outside the job's scratch dir), `test/integration/kept-work.test.ts` (Push it through
+the hand-off, resuming the session; Discard, its event, a second discard refused).
+
 ## Parked jobs (issue #501, 2026-10-08)
 
 A person takes a running job, or one on a question, out of its lane for an open-ended time — days or weeks —

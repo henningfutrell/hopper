@@ -1,14 +1,16 @@
 // GET /api/sections (issue #543, design.md "Sections"): every section type in nav order, with what is open in it, how
 // many of those wait on a person, and how many of those are high priority (#535), and the event types it emits. A
 // section's open rule is its own, and stays where the section is: an open question at the human tier, its job not parked
-// on it; a pending login; an open problem or hand-off; a review item open or being revised, waiting on a person at the
+// on it; a pending login; an open problem or hand-off, or work not pushed (issue #1010); a review item open or being revised, waiting on a person at the
 // human stage; a parked job, waiting on a person to pick it up (issue #565).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { UserStore } from '../domain/ports.ts';
-import { jobPriorityTag, REVIEW_OPEN_STATUSES, SECTION_KINDS, SECTIONS, type JobId, type SectionKind, type SectionSummary } from '../domain/types.ts';
+import { jobPriorityTag, keptWorkOf, REVIEW_OPEN_STATUSES, SECTION_KINDS, SECTIONS, TERMINAL_STATUSES, WORK_EVENTS, type JobId, type SectionKind, type SectionSummary } from '../domain/types.ts';
 import type { TenantParts } from './tenants.ts';
 
 type Counts = Omit<SectionSummary, 'kind' | 'label' | 'events'>;
+/** The work trail read back for work not pushed: the newest this many events. */
+const KEPT_SCAN = 1000;
 
 function count(store: UserStore, kind: SectionKind): Counts {
   const lanes = store.settings.getPriorityLanes();
@@ -36,7 +38,11 @@ function count(store: UserStore, kind: SectionKind): Counts {
   }
   const problems = store.problems.list({ status: 'open' });
   const handoffs = store.handoffs.list({ status: 'open' });
-  return { open: problems.length + handoffs.length, waiting: problems.length + handoffs.length, high: high(handoffs.map((h) => h.jobId)) };
+  // Work not pushed (issue #1010): an ended job's kept work waits on a person too, unless its hand-off counts it already.
+  const kept = keptWorkOf(store.events.recent(KEPT_SCAN, [...WORK_EVENTS]))
+    .filter((k) => { const job = store.jobs.get(k.jobId); return job !== undefined && TERMINAL_STATUSES.includes(job.status) && store.handoffs.forJob(k.jobId)?.status !== 'open'; });
+  const n = problems.length + handoffs.length + kept.length;
+  return { open: n, waiting: n, high: high([...handoffs.map((h) => h.jobId), ...kept.map((k) => k.jobId)]) };
 }
 
 export function sectionRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {

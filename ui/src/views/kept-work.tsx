@@ -1,0 +1,80 @@
+// Work not pushed (issue #1010, design.md "Work not pushed"): in Failures, each ended job whose reap kept work not pushed —
+// where its work tree is, and the repositories holding the work —, with Push it (its own session goes on in its kept work
+// tree, told to push and open the pull request; a note for it) and Discard (asked first: the work is lost), or why Push
+// it is not taken now. Shown only when there is some.
+import { GitBranch, Trash2, Upload } from 'lucide-react';
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Confirm } from '@/components/confirm';
+import { Textarea } from '@/components/ui/textarea';
+import { JobTitle } from '@/components/job';
+import { Panel } from '@/components/panel';
+import { StatusBadge } from '@/components/status';
+import { useNow } from '@/hooks/use-now';
+import { ago } from '@/model/format';
+import type { KeptWorkView } from '@/model/wire';
+import { failureAct } from '@/store';
+import { useCanOperate, useJobIndex } from '@/store/selectors';
+import { ReportBugButton } from '@/app/bug-report';
+
+/** One job's work not pushed (issue #1010): where it is, and its ways out — or why not now. */
+function KeptWorkRow({ k }: { k: KeptWorkView }) {
+  const canAct = useCanOperate();
+  const job = useJobIndex().get(k.jobId);
+  const now = useNow();
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const id = encodeURIComponent(k.jobId);
+  const run = async (path: string, body: unknown, done: string) => {
+    setBusy(true);
+    if (await failureAct(`/ui/api/failures/kept-work/${id}/${path}`, body, done)) setNote('');
+    setBusy(false);
+  };
+  return (
+    <li data-kept-work={k.jobId} className="space-y-2 px-4 py-3">
+      <div className="flex items-start gap-2">
+        {job ? <JobTitle job={job} /> : <span className="font-mono text-xs text-muted-foreground">job {k.jobId.slice(0, 8)}</span>}
+        <span className="ml-auto flex shrink-0 items-center gap-2">
+          <StatusBadge status={k.status} />
+          <ReportBugButton jobId={k.jobId} />
+        </span>
+      </div>
+      <p className="text-sm">The job ended with work that is not pushed. Its work tree is kept{k.machineId ? <> on <span className="font-mono">{k.machineId}</span></> : ''}.</p>
+      <ul className="space-y-0.5 text-xs text-muted-foreground">
+        {k.paths.map((p) => <li key={p} className="flex items-center gap-1.5 break-all font-mono"><GitBranch className="size-3 shrink-0" aria-hidden />{p}</li>)}
+      </ul>
+      {canAct && (
+        <div className="space-y-2">
+          {k.actions.push.ok && <Textarea aria-label="Note for the job" placeholder="Note for the job (optional)" value={note} onChange={(e) => setNote(e.target.value)} rows={2} className="text-sm" />}
+          <div className="flex flex-wrap items-center gap-2">
+            {k.actions.push.ok
+              ? <Button size="sm" disabled={busy} onClick={() => void run('push', note.trim() ? { note: note.trim() } : {}, 'The job goes on to push its work')}><Upload />Push it</Button>
+              : <span data-slot="push-why" className="text-xs text-muted-foreground">Push it: not now — {k.actions.push.why}.</span>}
+            {k.actions.discard.ok && (
+              <Confirm title="Discard the work?" action="Discard" onConfirm={() => void run('discard', {}, 'Work discarded')}
+                description="The job's work tree is removed on its machine with all its work that is not pushed. You cannot undo this.">
+                <Button size="sm" variant="outline" disabled={busy}><Trash2 />Discard</Button>
+              </Confirm>
+            )}
+          </div>
+          {k.actions.push.ok && <p className="text-xs text-muted-foreground">Push it: the job goes on in its own session and work tree. It pushes the work and opens the pull request, as a draft when the work is not finished.{k.handoffId ? ' Its hand-off in Needs a person closes as Continue.' : ''}</p>}
+        </div>
+      )}
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span className="num" title={k.at}>kept {ago(k.at, now)}</span>
+      </div>
+    </li>
+  );
+}
+
+/** Work not pushed (issue #1010): only when there is some. */
+export function WorkNotPushed({ kept }: { kept: KeptWorkView[] }) {
+  if (!kept.length) return null;
+  return (
+    <div data-section="work-not-pushed">
+      <Panel title="Work not pushed" icon={GitBranch} count={kept.length} list bodyClassName="p-0" className="border-warn/40">
+        <ul className="divide-y">{kept.map((k) => <KeptWorkRow key={k.jobId} k={k} />)}</ul>
+      </Panel>
+    </div>
+  );
+}

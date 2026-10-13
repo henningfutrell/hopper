@@ -23,6 +23,9 @@ export const offered = (a: Allowed | undefined, canAct: boolean): boolean => can
 /** The nav badge: open problems. */
 export const openProblems = (f: FailuresView | null): number => f?.problems.filter((p) => p.status === 'open').length ?? 0;
 
+/** Work not pushed (issue #1010) that no open hand-off counts already: each waits on a person too. */
+export const keptAlone = (f: FailuresView | null): number => f?.keptWork.filter((k) => k.handoffId === undefined).length ?? 0;
+
 /** Needs a person (issue #516): the open hand-offs. Still open means still counted. */
 export const openHandoffs = (f: FailuresView | null): number => f?.handoffs.filter((h) => h.status === 'open').length ?? 0;
 

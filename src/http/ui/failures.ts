@@ -1,11 +1,13 @@
 // The UI session's actions on failures (issue #509): resolve a problem, release its held jobs, run a surfaced
-// failure's job again, resolve a hand-off (issues #516, #551) (operator); the failures settings and the known causes a person names (admin). Each refuses
+// failure's job again, resolve a hand-off (issues #516, #551), push or discard work not pushed (issue #1010) (operator); the failures settings and the known causes a person names (admin). Each refuses
 // with the reason the Failures view reads from `actions`, so the view offers only what is taken.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { FAILURE_DECISIONS, FAILURE_SETTING_BOUNDS, HANDOFF_RESOLUTIONS } from '../../domain/types.ts';
 import type { FailureAction } from '../../failures/index.ts';
+import { pushKeptWork } from '../../failures/kept-work.ts';
 import { HttpError, parseWith } from '../errors.ts';
+import type { Operation } from '../openapi-operation.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
 import { actingOf } from './sessions.ts';
 
@@ -38,6 +40,15 @@ export const handoffResolveBody = z.strictObject({
   link: z.url({ protocol: /^https?$/, error: 'link must be an http or https URL' }).max(2000).optional(),
 }).refine((b) => b.action !== 'wont_do' || (b.note ?? '') !== '', { message: 'Won\'t do says why: give a note', path: ['note'] })
   .refine((b) => b.link === undefined || b.action === 'done_by_hand', { message: 'only Done by hand takes a link', path: ['link'] });
+
+/** Push it on work not pushed (issue #1010): a note, if any, told to the job that goes on. */
+export const keptWorkPushBody = z.strictObject({ note: z.string().trim().max(NOTE_MAX).optional() });
+
+/** Push it and Discard on work not pushed (issue #1010), as the OpenAPI document lists them. */
+export const KEPT_WORK_OPERATIONS: Operation[] = [
+  { method: 'post', path: '/ui/api/failures/kept-work/:id/push', tag: 'Failures', summary: 'Push work not pushed', description: 'Work not pushed (issue #1010): a failed job whose reap kept work in its scratch dir — uncommitted, or commits no remote has — goes on in its own agent session and kept work tree, told to push the work and open the pull request (a draft when the work is not finished), with the `note`, if any. With an open hand-off, it resolves it as Continue (`handoff.closed`, `end: "continued"`); else `job.continued` with `keptWork`. Its source takes the item back, as for Run again. A box action. 409: it has no work kept, it is not failed, its session cannot resume, or a newer job of its item exists (the item\'s `actions.push` in `keptWork` of `GET /api/failures` says why).', role: 'operator', body: keptWorkPushBody, returns: '`{ job, handoff? }`: the job, queued again, and the hand-off it resolved', errors: [400, 401, 404, 409] },
+  { method: 'post', path: '/ui/api/failures/kept-work/:id/discard', tag: 'Failures', summary: 'Discard work not pushed', description: 'Work not pushed (issue #1010): the ended job\'s kept scratch dir is removed on its machine, whatever it holds — its git worktrees removed with --force —, then `job.work_removed` with `discarded` and who acted (`person`, `via`). The work is lost. A box action. 409: it has no work kept, it has not ended, or its machine is unknown, offline, out of reach, or kept it all the same (a client older than this hopper: update it, then discard again).', role: 'operator', returns: '`{ jobId, paths }`: the scratch dir removed', errors: [401, 404, 409] },
+];
 
 /** A problem's resolution (issue #623): a note, if any, kept in its `failure.resolved`. */
 export const problemResolveBody = z.strictObject({ note: z.string().trim().max(NOTE_MAX).optional() });
@@ -73,6 +84,14 @@ export function registerFailureRoutes(app: FastifyInstance, o: { operator: Guard
     const { action, note, link } = parseWith(handoffResolveBody, req.body);
     return answer(await o.tenant(req).failures.resolveHandoff(parseWith(idParams, req.params).id, { action, ...(note ? { note } : {}), ...(link ? { link } : {}) }, actingIn(req)));
   });
+  // Work not pushed (issue #1010): Push it goes on in the job's own session; Discard removes its kept scratch dir.
+  app.post('/ui/api/failures/kept-work/:id/push', o.operator, async (req) => {
+    const { note } = parseWith(keptWorkPushBody, req.body ?? {});
+    const t = o.tenant(req);
+    const d = { store: t.store, resumable: t.engine.resumable, continueJob: t.registry.continueJob, resolveHandoff: t.failures.resolveHandoff };
+    return answer(await pushKeptWork(d, parseWith(idParams, req.params).id, note || undefined, actingIn(req)));
+  });
+  app.post('/ui/api/failures/kept-work/:id/discard', o.operator, async (req) => o.tenant(req).engine.discardWork(parseWith(idParams, req.params).id, actingIn(req)));
   app.post('/ui/api/failures/:id/retry', o.operator, async (req) => answer(await o.tenant(req).failures.retry(parseWith(idParams, req.params).id, actingIn(req))));
   // Read at each assessment and sweep: applies without a restart.
   app.post('/ui/api/failures/settings', o.admin, async (req) => {
