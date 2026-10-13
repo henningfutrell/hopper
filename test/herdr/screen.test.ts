@@ -150,6 +150,14 @@ describe('readTurn', () => {
     expect(t.failedReason).toBe('the repo is missing');
   });
 
+  it('reads the whole FAILED reason: every line after the marker, never cut at a colon (issue #1007)', () => {
+    const t = readTurn(screen(['❯ go', '● Cannot proceed.', '  HOPPER_FAILED: this seat job cannot run commands in it:', '  the box is a machine of its own,', '  and the hopper does not move this job there.'], CHROME), 'go');
+    expect(t.lastMarker).toBe('failed');
+    expect(t.failedReason).toBe('this seat job cannot run commands in it:\nthe box is a machine of its own,\nand the hopper does not move this job there.');
+    const bare = readTurn(screen(['❯ go', '● Cannot proceed.', '  HOPPER_FAILED', '  The step cannot run:', '  - no template covers the need'], CHROME), 'go');
+    expect(bare.failedReason).toBe('The step cannot run:\n- no template covers the need');
+  });
+
   it('takes the last marker when a turn has several', () => {
     const t = readTurn(screen(['❯ go', '● First', '  HOPPER_QUESTION', '● Never mind, done.', '  HOPPER_DONE'], CHROME), 'go');
     expect(t.lastMarker).toBe('done');
