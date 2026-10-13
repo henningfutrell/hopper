@@ -13,15 +13,18 @@ import type { SocketCall } from './socket-http.ts';
 
 const reason = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+/** A socket call carried down a machine's link to its client, in place of a local socket: the adapters' calls, and the container meter's (issue #947). */
+export const relayCall = (relay: RuntimeRelay): SocketCall => async (_socket, method, path, body, timeoutMs) => {
+  const a = await relay.call({
+    method, path,
+    ...(Buffer.isBuffer(body) ? { tar: body.toString('base64') } : body !== undefined ? { body } : {}),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+  });
+  return { status: a.status, text: a.text, ...(a.base64 !== undefined ? { bytes: Buffer.from(a.base64, 'base64') } : {}) };
+};
+
 export function createRemoteRuntime(machine: string, relay: RuntimeRelay): ContainerRuntime {
-  const via: SocketCall = async (_socket, method, path, body, timeoutMs) => {
-    const a = await relay.call({
-      method, path,
-      ...(Buffer.isBuffer(body) ? { tar: body.toString('base64') } : body !== undefined ? { body } : {}),
-      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-    });
-    return { status: a.status, text: a.text, ...(a.base64 !== undefined ? { bytes: Buffer.from(a.base64, 'base64') } : {}) };
-  };
+  const via = relayCall(relay);
   let inner: { kind: 'podman' | 'docker'; runtime: ContainerRuntime } | undefined;
 
   /** The machine's runtime, as its client names it now; throws with what is wrong. */

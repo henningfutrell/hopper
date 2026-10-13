@@ -13,7 +13,7 @@ import { waitFor } from '../support/wait.ts';
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
 
-const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 100 } }];
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 100, promptSteadyMs: 100 } }];
 const CODE = 'WDJB-MJHT';
 const DONE: FakeTurn = { steps: ['● Pushing'], output: ['● BashOutput(codex)', '  ⎿  Successfully logged in', '● Pushed the branch.', '  HOPPER_DONE'] };
 

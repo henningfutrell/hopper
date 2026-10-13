@@ -90,7 +90,7 @@ describe('attached machines', () => {
       ],
     });
     let problem: string | undefined = 'its work tree /srv/owner-only cannot be made: Permission denied';
-    const a = await startTestApp({ dbPath, seams: { machineProbe: () => Promise.resolve({ online: true, home: '/home/far', ...(problem ? { workTreeProblem: problem } : {}) }) } });
+    const a = await startTestApp({ dbPath, seams: { machineProbe: () => Promise.resolve({ online: true, home: '/home/far', ...(problem ? { workTreeProblem: problem } : {}) }), machineProbeEveryMs: 200 } });
     apps.push(a);
     await waitFor(async () => (await a.api('GET', '/api/machines')).body.machines.some((m: { id: string; workTreeProblem?: string }) => m.id === 'laptop' && m.workTreeProblem));
     const job = await a.pull({}, { executor: 'where' });
@@ -99,7 +99,7 @@ describe('attached machines', () => {
     expect(held.status).toBe('held');
     expect(held.holdReason).toBe(`no machine running executor where has a usable work tree: laptop: ${problem}`);
     problem = undefined;
-    const done = await a.waitForStatus(job.id, 'finished', 90000);
+    const done = await a.waitForStatus(job.id, 'finished');
     expect(done.result).toEqual({ machine: 'laptop', ssh: 'laptop' });
-  }, 120000);
+  });
 });

@@ -5,6 +5,7 @@
 //   Scenario: the containers of the hopper's own compose project and its own boxes are read; others are left out
 //   Scenario: CPU is the cores busy since the read before; a first read gives none unless the runtime says
 //   Scenario: memory is the use less the page cache it could drop, against its limit; no limit is none
+//   Scenario: the cores it sees and the most memory it may use (its limit, else the computer's) come from its stats
 //   Scenario: network and disk bytes are summed; restarts, start time and health come from inspect
 //   Scenario: the writable layer and each named volume carry their size from the disk use
 //   Scenario: a container that does not run is listed with its state and no use
@@ -41,7 +42,7 @@ const INSPECT: Record<string, unknown> = {
 
 let usage = 1_000_000_000;
 const stats = (id: string) => ({
-  cpu_stats: { cpu_usage: { total_usage: id === 'bbb222postgres' ? usage : 5_000_000_000 } },
+  cpu_stats: { cpu_usage: { total_usage: id === 'bbb222postgres' ? usage : 5_000_000_000 }, online_cpus: 8 },
   precpu_stats: { cpu_usage: {} },
   memory_stats: { usage: 600 * 1024 * 1024, limit: id === 'bbb222postgres' ? 2 * GiB : 16 * GiB, stats: { inactive_file: 100 * 1024 * 1024 } },
   networks: { eth0: { rx_bytes: 1000, tx_bytes: 200 }, eth1: { rx_bytes: 24, tx_bytes: 6 } },
@@ -81,13 +82,15 @@ describe('the container meter', () => {
     expect(pg).toMatchObject({
       name: 'hopper-postgres-1', image: 'postgres:17-alpine', state: 'running', health: 'healthy', restarts: 2,
       startedAt: '2026-10-12T09:00:00.123Z', cpuLimitCores: 2,
-      memUsedBytes: 500 * 1024 * 1024, memLimitBytes: 2 * GiB,
+      memUsedBytes: 500 * 1024 * 1024, memLimitBytes: 2 * GiB, memMaxBytes: 2 * GiB, cores: 8,
       netRxBytes: 1024, netTxBytes: 206, diskReadBytes: 8192, diskWriteBytes: 8192,
       layerBytes: 12_345, volumes: [{ name: 'hopper_postgres', bytes: 50_000_000 }],
     });
     // No memory limit set: none, though the runtime says the computer's memory.
     expect(first.containers.find((c) => c.service === 'hopper')).toMatchObject({ volumes: [{ name: 'hopper_home' }] });
     expect(first.containers.find((c) => c.service === 'hopper')!.memLimitBytes).toBeUndefined();
+    // What it may use at most is the computer's memory then: the share of it the history keeps (issue #947).
+    expect(first.containers.find((c) => c.service === 'hopper')!.memMaxBytes).toBe(16 * GiB);
     expect(first.containers.find((c) => c.service === 'hopper-sandbox-claude')).toMatchObject({ cpuLimitCores: 1.5 });
     expect(first.containers.find((c) => c.service === 'hopper-sandbox-claude')!.startedAt).toBeUndefined();
 

@@ -16,7 +16,7 @@ const cleanups: (() => void)[] = [];
 
 const DONE = { output: ['● Painted the shed blue.', '  HOPPER_DONE'] };
 const WORKING = { steps: ['● Sanding'], output: [], end: 'working' as const };
-const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }];
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000, promptSteadyMs: 100 } }];
 const item = { executor: 'herdr-claude', prompt: 'Paint the shed', env: {} };
 const GH = `ghp_${'a1B2'.repeat(9)}`;
 const BASE = 'b'.repeat(40);

@@ -1,17 +1,20 @@
 // Resources (issue #947, design.md "Stack resources"): what every container of the hopper's stack and each of its sandbox
-// boxes uses now — by its service: CPU, memory against its limit, network, disk, restarts and uptime —, and what its
-// Postgres does. Read from GET /api/resources when the page opens and every READ_EVERY_MS while it is shown; a part
-// that cannot be read says why. The machines' own resources over time are on Usage and Machines (issue #560).
-import { AlertTriangle, Boxes, Container, Database, RefreshCw } from 'lucide-react';
+// boxes — beside the hopper and on each client target — uses now — by its service: CPU, memory against its limit, network, disk, restarts and uptime —, and what its
+// Postgres and OpenFGA do. Read from GET /api/resources when the page opens and every READ_EVERY_MS while it is shown; a part
+// that cannot be read says why. Below, the stack's resources over time, from GET /api/resources/history: the shares the
+// stack recorder keeps each minute. The machines' own resources over time are on Usage and Machines (issue #560).
+import { AlertTriangle, Boxes, Container, Database, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Empty, Panel } from '@/components/panel';
+import { UsageGraphCard } from '@/components/usage-graph-card';
 import { Button } from '@/components/ui/button';
 import { get } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import {
-  containerTone, cpuText, diskText, memoryFrac, memoryText, networkText, postgresLines, restartsText, uptimeText, volumesText,
+  containerTone, cpuText, diskText, memoryFrac, memoryText, networkText, openFgaLines, postgresLines, restartsText, uptimeText, volumesText,
 } from '@/model/stack-resources';
-import type { ContainerReading, StackResources } from '@/model/wire';
+import { stackLines } from '@/model/stack-history';
+import type { ContainerReading, StackHistory, StackResources } from '@/model/wire';
 import { useServerNow } from '@/store/selectors';
 
 /** CPU is the use since the read before: a read this often keeps it current. */
@@ -35,6 +38,9 @@ function useResources(): [Load, () => void] {
   return [state, () => { setState({ kind: 'loading' }); setRound((n) => n + 1); }];
 }
 
+const linesOfStack = (h: StackHistory) => stackLines(h.series);
+const NO_SAMPLES = 'No stack samples in this range yet. The hopper keeps one of each part every minute from now on; a part it cannot read leaves a gap.';
+
 const TONE = { ok: 'text-ok', warn: 'text-warn', bad: 'text-bad' } as const;
 
 function Metric({ label, children }: { label: string; children: React.ReactNode }) {
@@ -56,6 +62,7 @@ function ContainerRow({ c, now }: { c: ContainerReading; now: number }) {
         <span className={cn('text-xs', TONE[containerTone(c)])}>{c.health ? `${c.state}, ${c.health}` : c.state}</span>
         <span className="text-xs text-muted-foreground">{uptimeText(c, now)}</span>
         <span className="text-xs text-muted-foreground">{restartsText(c)}</span>
+        {c.machine && <span className="text-xs text-muted-foreground">on {c.machine}</span>}
         <span className="ml-auto truncate text-xs text-muted-foreground" title={`${c.name} · ${c.image}`}>{c.image}</span>
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
@@ -82,6 +89,19 @@ function Problem({ children }: { children: React.ReactNode }) {
   );
 }
 
+function Lines({ slot, lines }: { slot: string; lines: { label: string; text: string }[] }) {
+  return (
+    <dl data-slot={slot} className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
+      {lines.map((l) => (
+        <div key={l.label} className="min-w-0">
+          <dt className="text-[11px] text-muted-foreground">{l.label}</dt>
+          <dd className="num break-words text-sm">{l.text}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export function Resources() {
   const now = useServerNow();
   const [state, reload] = useResources();
@@ -94,35 +114,37 @@ export function Resources() {
       </div>
     );
   }
-  const { containers, postgres } = state.data;
+  const { containers, remoteBoxes, postgres, openfga } = state.data;
   const list = 'containers' in containers ? containers.containers : [];
   const stack = list.filter((c) => c.group === 'stack');
-  const boxes = list.filter((c) => c.group === 'sandbox');
+  // The boxes beside the hopper, then those on each client target; a client target that cannot be read says why.
+  const boxes = [...list.filter((c) => c.group === 'sandbox'), ...remoteBoxes.flatMap((m) => ('containers' in m ? m.containers : []))];
+  const unread = remoteBoxes.flatMap((m) => ('problem' in m ? [m] : []));
   return (
     <div className="max-w-4xl space-y-3">
-      <p className="text-sm text-muted-foreground">What each part of the hopper&apos;s stack uses now, by its service. CPU is the use since the read before; the page reads again every 10 seconds while it is open. Network and disk count since the container started.</p>
+      <p className="text-sm text-muted-foreground">What each part of the hopper&apos;s stack uses now, by its service. CPU is the use since the read before; the page reads again every 10 seconds while it is open. Network and disk count since the container started; OpenFGA&apos;s checks count since it started.</p>
       <Panel title="Containers" icon={Container} count={stack.length || ''}>
         {'problem' in containers ? <Problem>{containers.problem}</Problem>
           : stack.length === 0 ? <Empty>No container of the hopper&apos;s compose project. A hopper on the computer itself has none.</Empty>
           : <ul className="divide-y">{stack.map((c) => <ContainerRow key={c.name} c={c} now={now} />)}</ul>}
       </Panel>
-      {boxes.length > 0 && (
-        <Panel title="Sandbox boxes" icon={Boxes} count={boxes.length}>
-          <ul className="divide-y">{boxes.map((c) => <ContainerRow key={c.name} c={c} now={now} />)}</ul>
+      {(boxes.length > 0 || unread.length > 0) && (
+        <Panel title="Sandbox boxes" icon={Boxes} count={boxes.length || ''}>
+          <div className="space-y-3">
+            {unread.map((m) => <Problem key={m.machine}>{m.machine}: {m.problem}</Problem>)}
+            {boxes.length > 0 && <ul className="divide-y">{boxes.map((c) => <ContainerRow key={c.service} c={c} now={now} />)}</ul>}
+          </div>
         </Panel>
       )}
       <Panel title="Postgres" icon={Database}>
-        {'problem' in postgres ? <Problem>{postgres.problem}</Problem> : (
-          <dl data-slot="postgres-reading" className="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
-            {postgresLines(postgres).map((l) => (
-              <div key={l.label} className="min-w-0">
-                <dt className="text-[11px] text-muted-foreground">{l.label}</dt>
-                <dd className="num break-words text-sm">{l.text}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
+        {'problem' in postgres ? <Problem>{postgres.problem}</Problem> : <Lines slot="postgres-reading" lines={postgresLines(postgres)} />}
       </Panel>
+      <Panel title="OpenFGA" icon={ShieldCheck}>
+        {'problem' in openfga ? <Problem>{openfga.problem}</Problem> : <Lines slot="openfga-reading" lines={openFgaLines(openfga)} />}
+      </Panel>
+      <UsageGraphCard<StackHistory> path="/api/resources/history" linesOf={linesOfStack} title="Stack resources over time" what="stack history"
+        recordedBy={null} empty={NO_SAMPLES} />
+      <p className="text-xs text-muted-foreground">Each line is a share: a container&apos;s CPU of its CPU limit, else of the cores it sees; its memory of its limit, else of the computer&apos;s; Postgres&apos;s connections of the most it allows; OpenFGA&apos;s failed checks of its checks since the minute before. Sandbox boxes&apos; lines are hidden until you show them.</p>
     </div>
   );
 }

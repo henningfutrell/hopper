@@ -24,6 +24,7 @@ export interface HerdrClaudeOptions {
   sharedDependencies: boolean;
   pollMs: number;
   idleNudgeMs: number;
+  promptSteadyMs: number;
 }
 
 /**
@@ -63,6 +64,9 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       }),
       pollMs: z.number().int().positive().default(1000),
       idleNudgeMs: z.number().int().positive().default(20000),
+      promptSteadyMs: z.number().int().positive().default(2000).meta({
+        description: 'prompt steady ms: how long Claude\'s input box stays on screen at startup before Claude is taken as ready',
+      }),
     }),
     async detect(sys, o) {
       if (seam) return { status: 'available', detail: 'herdr seam (tests)' };
@@ -109,6 +113,7 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
         herdr: seam ?? createHerdrCliClient({ bin: o.bin, session: o.session, userEnv: ctx.userEnv }), remote, local, paneEnv: ctx.userEnv,
         clock: ctx.clock, claudeArgs: claudeArgsFor(o.yolo, o.args), trustWorkdir: o.trustWorkdir, yolo: o.yolo, unattended: o.unattended,
         jobWorktrees: o.jobWorktrees, sharedDependencies: o.sharedDependencies, pollMs: o.pollMs, idleNudgeMs: o.idleNudgeMs,
+        promptSteadyMs: o.promptSteadyMs,
       });
     },
   };

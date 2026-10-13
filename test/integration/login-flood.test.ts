@@ -11,7 +11,7 @@ import { waitFor } from '../support/wait.ts';
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
 
-const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 100 } }];
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 100, promptSteadyMs: 100 } }];
 const CODE = 'QWER-TYUI';
 const POLLING = ['     Waiting for authorization...', '     authorization_pending: polling again in 5s', '     slow_down: polling every 10s now'];
 

@@ -538,8 +538,8 @@ export interface InstanceStore {
   /** Access (issue #559): the models, the approvals pushed to OpenFGA, the mint decisions. */
   access: AccessRepository;
   /** The instance's vault (issue #658): the system secrets of the whole hopper — its sign-in realms' secrets. The hopper's
-   * Postgres as Postgres itself says (issue #947): connections, size, cache, locks, transactions, statements. */
-  vault: InstanceVault; databaseStats: import('./stack-resources.ts').DatabaseStats;
+   * Postgres as Postgres itself says (issue #947): connections, size, cache, locks, transactions, statements; the stack samples. */
+  vault: InstanceVault; databaseStats: import('./stack-resources.ts').DatabaseStats; stackHistory: import('./stack-resources.ts').StackHistoryRepository;
   /** Open the user's store: one more connection, its schema migrated on the tenant track. The caller closes it. */
   userStore(user: User): UserStore;
   /** What the users' schemas keep sealed under the master key (issue #659); a vault a KMS data key seals is left out. */

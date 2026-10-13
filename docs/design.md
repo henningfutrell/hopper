@@ -71,12 +71,12 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per host, stopped at the timeout, recorded, results kept an hour (`service.ts`), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
-| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
+| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
-| `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API) and the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`) | engine, http, store, plugins |
+| `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); remote access — the tunnel's settings, its authtoken in the instance's vault, its status and the tunnel service's ask (`remote-access.ts`, `ui/remote-access.ts`, issue #880); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
@@ -633,7 +633,7 @@ user added later never gets admin's (`userProcessEnv`). Checked live (Claude Cod
 `test/herdr/real-fresh-home.test.ts`, opt-in `HOPPER_REAL_CLAUDE`): in an empty home, a job worktree whose work tree's
 `CLAUDE.md` imports a file outside it reaches Claude's prompt with no key pressed.
 
-*Up is Claude's input box* (`promptShown`: a rule, the `❯` line, a rule below), on screen for 2 s (`PROMPT_STEADY_MS`,
+*Up is Claude's input box* (`promptShown`: a rule, the `❯` line, a rule below), on screen for 2 s (the option `promptSteadyMs`, default `PROMPT_STEADY_MS`,
 counted in polls: Claude draws it before it says it is not signed in). Never herdr's word alone: herdr calls Claude
 `idle` and `interactive_ready` at its first-run theme picker (seen live), where the start before sent the job's prompt.
 
@@ -3285,7 +3285,9 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 - **herdr-claude options:** `bin` (`herdr`), `claudeBin` (`claude`), `session` (`hopper`;
   `default` refused), `args` (`[--dangerously-skip-permissions]`), `cwd`
   (`~/workbench/app-workflows`, `~` expanded), `trustWorkdir` (true), `pollMs` (1000),
-  `idleNudgeMs` (20000; `idleQuestionMs` before issue #163, renamed by tenant migration 2). Detection: `which bin`, then `which claudeBin` — never `--version`,
+  `idleNudgeMs` (20000; `idleQuestionMs` before issue #163, renamed by tenant migration 2), `promptSteadyMs` (2000: how
+  long Claude's input box stays on screen at startup before Claude is taken as ready, issue #533; the tests set it short,
+  issue #949). Detection: `which bin`, then `which claudeBin` — never `--version`,
   never a model call, nothing launched. `claudeBin` exists for detection only: herdr starts
   `claude` itself (`--kind claude`, resolved on herdr's PATH). `test`: no options, always available.
 - **6d, as built:** no `kind` option. `screen.ts` parses only Claude Code's TUI, so a `kind`
@@ -5098,7 +5100,8 @@ hand, and the hopper never saw that container. This is the path #704's machines 
   new privileges, a read-only root, only a tmpfs at `/tmp`, only a `hopper-sandbox-*` home volume at `/home/agent`, a
   non-root user, the `io.hopper.box` label, a `hopper-sandbox-*` name) and no other field (so no `privileged`, no bind
   mount, no device, no added capability); start, stop, inspect and remove act only on a container that carries the
-  `io.hopper.box` label (checked by an inspect first), and a volume is removed only by a box's home volume name. A
+  `io.hopper.box` label (checked by an inspect first), and so do its one-shot stats for the stack resources (issue #947:
+  `stream=false` and no other query), and a volume is removed only by a box's home volume name. A
   refusal answers 403 in the runtime's own shape, so the adapter reports it as the runtime's refusal. These checks
   restate the builder on purpose: the client imports nothing of the hopper's.
 - **Idempotent create.** Every box carries `io.hopper.sandbox` = its record's id. A create whose answer is lost (a link
@@ -15357,6 +15360,62 @@ Tests: `test/domain/infra-watchers.test.ts` (a plan's watchers, the list's check
 plan recorded, approved and applied is posted three times, each naming its watchers, never the credential or the plan's
 text), `test/ui/infra-plans.test.ts` (the watchers as a person types them).
 
+## Infra plans: the apply wrapper on write boxes (issue #870, part 5, 2026-10-12)
+
+The issue asks that terraform apply only the saved plan file, and that a plan hold the read credential it was made with.
+Before this, the apply gate bound a credential to a plan, but a box with that credential ran any `terraform apply` it
+liked: of the saved file, of a fresh plan, or with `-target` or `-var`. And a plan's `read` was kept as the job said it.
+
+- **The apply wrapper** (`TERRAFORM_APPLY_WRAPPER`, `src/sandbox/terraform-wrapper.ts`). Every tools image with terraform
+  that is not read-only — a write box's — puts a `terraform` first on `PATH`, in `/opt/hopper-tools/apply-wrapper`, in
+  front of the real binary in `/opt/hopper-tools/bin` (`$HOPPER_TOOLS`). A read-only image keeps the read-only wrapper
+  ("A read-only infra box"); an image with no terraform gets neither.
+  - `terraform apply` needs `HOPPER_PLAN`, the id the hopper answered when it recorded the plan. The wrapper fetches the
+    plan's saved file from the hopper, with the job's proxy token (`GET /job/infra-plans/:id?file=1`, the route that
+    already served it), and runs the real binary's `apply` with that file, then removes it. A plan file the caller names
+    must be that file, by its SHA-256; it is applied in its place. No `HOPPER_PLAN`, an id the hopper does not know, a
+    plan with no saved file, a job with no way to the hopper, or another file: refused, saying why, and the real binary
+    does not run.
+  - An apply takes only the flags that leave the saved plan as it is: `-auto-approve`, `-input`, `-no-color`,
+    `-compact-warnings`, `-json`, `-lock`, `-lock-timeout`, `-parallelism`. Any other flag (`-destroy`, `-target`,
+    `-replace`, `-var`, `-var-file`, `-refresh-only`, `-state`, …) is refused: the job plans again with what it needs.
+  - Each other command that writes infrastructure or state with no plan is refused: `destroy` (a destroy is a plan too:
+    `terraform plan -destroy -out`), `import`, `refresh`, `taint`, `untaint`, `force-unlock`, `state rm`, `mv`, `push`
+    and `replace-provider`, `workspace delete`. The rest (`init`, `plan`, `show`, `state pull`, `workspace select`, …)
+    goes to the real binary as given. `TF_CLI_ARGS*` are cleared, so no flag slips past it.
+  - Each refusal says `refused by the apply wrapper`. It is written into the image in base64 by one `RUN`, as the
+    read-only wrapper is; the image's tag hashes the Containerfile, so a write box's image is built again once.
+- **A plan's read credential** (`readRefusal`, `readProfileOf`, `src/domain/infra-plans.ts`, pure). A plan that names
+  `read` is kept only when the vault minted that job a read credential of that profile (`vault.minted`, operation `read`,
+  since the job was made): else a 400 that names what the vault did mint it. A plan that names none is kept as before: a
+  job may plan with a vault secret.
+
+**Why fetch the file, not trust the box's copy.** The plan the hopper keeps is the one a person approved and the notifiers
+sent. The box's copy is the job's to change; fetched, the bytes applied are the bytes recorded.
+
+**Why the vault stays the boundary.** The wrapper is one layer in the box, which the job controls: it can call
+`$HOPPER_TOOLS/terraform` past it. The real binary gets a write credential only through the apply gate, for an approved,
+current plan; the wrapper binds the command to the saved plan of that gate.
+
+**The nightly drift plan** is the out-of-band collector (issue #871, "Out-of-band changes" part 3): `--terraform <dir>`
+runs `terraform plan -detailed-exitcode` against live state, on a schedule outside the hopper (a nightly cron job, a
+Kubernetes CronJob: `docs/deploy.md` "The out-of-band collector"), and a non-empty plan on unchanged code is drift, kept,
+sent to the notifiers and shown on Infra. The hopper has no schedule for jobs, so it adds none here.
+
+**Residual risk, stated.** The plan's `HOPPER_PLAN` and the plan the AWS profile's `--plan` names are both the job's to
+set; the apply gate checks the credential's plan, the wrapper the file's. A job that calls the real binary past the
+wrapper, with a credential minted for an approved plan, can still apply what its role allows for that credential's life:
+part 1's residual risk. The summary is still read from the JSON the job sends, not made from the saved file.
+
+**Not built here.** Routing Argo CD syncs through the same gate: the issue's next step after drift, issue #959.
+
+Tests: `test/sandbox/terraform-apply-wrapper.test.ts` (a real `sh` and `curl`, a fake real binary and a fake hopper: an
+apply with no plan refused; the saved file fetched with the job's token and applied, and removed; another file, an
+unknown plan, a refused flag and each other write refused, the real binary not run), `test/sandbox/tools.test.ts` (a write
+image puts the wrapper first on PATH; a read-only image and one with no terraform do not), `test/domain/infra-plans.test.ts`
+(the read check), `test/integration/infra-plans.test.ts` (the real daemon: a plan naming a read the job was not minted is
+a 400, and kept once the job was minted it).
+
 ## Git efficiency (issue #858 part 1, 2026-10-12)
 
 The git half of issue #822. Before: a job in a work tree that was not its repository got a full `git clone` of it (in
@@ -15715,29 +15774,104 @@ not granted, transactions open over 5 minutes and the oldest open one, and state
 (`shared_preload_libraries`) and makes it in `public` once Postgres takes connections, apart from the password step, so it
 never holds the stack's health back. Not installed, or installed but not loaded: `statements` says why.
 
+**OpenFGA** (`src/stack-resources/openfga.ts`, the **OpenFGA meter**; part 2 of the issue). OpenFGA serves its own metrics
+in the Prometheus text format, on by default, at `:2112/metrics`; the hopper reads them at the host of `HOPPER_OPENFGA_URL`
+on that port (no setting of its own: compose's `openfga` serves it on the compose network, and the port is OpenFGA's
+default). From `grpc_server_handled_total` of `openfga.v1.OpenFGAService`, method `Check`: the checks, and the failed ones
+(any code but `OK`; OpenFGA's own validation errors show as `Code(2000)`, and count). From OpenFGA's histogram
+`openfga_request_duration_ms` (method `check`, every label set summed): the mean check time, as OpenFGA measures it (whole
+ms per check, so a fast check reads 0 and the mean is below 1). Both count since OpenFGA started, as pg_stat_statements
+counts since its reset. A line reader of its own, not a library: it reads two counters, and the one npm parser of the format
+has had no release since 2019. It waits 2 seconds; no OpenFGA, an error status or no answer is the part's `problem`.
+
 **The read** (`GET /api/resources`, `StackResources`): `containers` (the readings, or `problem`: no socket, not reached),
-`postgres` (the reading, or `problem`), `at`. Read when asked, nothing kept, `no-store`. An instance read
+`postgres` (the reading, or `problem`), `openfga` (the reading, or `problem`), `at`. Read when asked, nothing kept, `no-store`. An instance read
 (`assertInstanceRead`): the hopper's admin, or loopback without a session. A part that fails says why and the rest is
 read.
 
 **UI.** Resources (`#resources`, in Sources & machines, `ui/src/views/resources.tsx`): a row per container of the stack
 and, apart, per sandbox box — service, state and health, uptime, restarts, image; CPU (against its quota), memory against
-its limit with a bar, network, disk read and written and its layer, volumes with their size — and Postgres's readings. It
+its limit with a bar, network, disk read and written and its layer, volumes with their size —, Postgres's readings, and
+OpenFGA's: the mean check time and the share of checks that failed. It
 reads when it opens and every 10 seconds while the page is shown (CPU is the use since the read before).
 
-**Not built yet** (the rest of the issue, its next parts): the readings over time (a recorder like the machine one, a
-graph, the same history retention); OpenFGA's check latency and error rate from its own metrics endpoint (`:2112`);
-Solr's query latency, index size and documents waiting (issue #945, not in the stack yet); the vault and KMS beyond the
-container basics; a container target's or a client target's boxes (their runtime is the machine's, through its client).
+### Stack resources over time (part 3 of the issue)
+
+The machine resources keep a machine sample a minute (issue #560); the stack resources now do the same, for the whole
+hopper rather than per user, so the Resources page shows each part's use over the last day, week or month.
+
+**What is kept.** Only what reads as a share, so the usage graph draws it unchanged on its 0–100% axis: per running
+container its **CPU** (cores busy, of its CPU quota, else of the cores it sees — the runtime stats' `online_cpus`, now on the
+container reading as `cores`) and its **memory** (in use, of its limit, else of the most it may use — the stats'
+`memory_stats.limit`, the computer's memory when it has no limit, now `memMaxBytes`); Postgres's **connections** (of
+`max_connections`, service `postgres`); and OpenFGA's **failed checks** (the share of its checks since the record before
+that failed, service `openfga`; fewer checks than before is a restart, and gives nothing). Latency, sizes and byte counts
+are not shares and are not kept: the page reads them now.
+
+**Recording.** The **stack recorder** (`src/stack-resources/history.ts`) reads `GET /api/resources`'s read every minute, on
+the usage recorder's loop (`createRecordLoop`), and keeps a **stack sample** per service and metric in `stack_samples`
+(instance schema, migration 38; key: service, metric, time). A part that cannot be read, or a container that does not run,
+adds nothing: the graph shows a gap. Every hour, samples older than 30 days (`STACK_HISTORY_RETENTION_DAYS`) are pruned:
+there is no instance setting for the history retention (the usage history's is each user's), and a sample a minute per
+service and metric adds up — about 15 lines for a full stack, 650 000 rows in 30 days.
+
+**The graph** (`GET /api/resources/history`, `StackHistory`): the machine resource graph's query and step
+(`resourceGraphRange`, `src/http/machine-history.ts`), per service, metric and step the peak, and the gaps by the same rule
+(`src/store/stack-history.ts`). The same instance read as `GET /api/resources`. On the Resources page, *Stack resources over
+time* (`ui/src/model/stack-history.ts`): a line per service and metric, a colour per service, a dash per metric; a sandbox
+box's lines are hidden until shown, since boxes come and go. It reads again once a minute; no SSE event, as nothing else waits on it.
+
+### Sandbox boxes on client targets (part 4 of the issue)
+
+A sandbox box the hopper started on a client target (issue #708) runs in that machine's own Podman (else Docker), which the
+hopper reaches only through the machine's client: the remote runtime. The **remote box meter**
+(`src/stack-resources/remote.ts`) reads them for the stack resources.
+
+**Which machines.** Each machine a sandbox record names that is not `local`, once per user and machine; no record on a
+client target, no machine is read. The machine's relay is the sandbox module's own (`sandboxClientsOf`).
+
+**How.** The container meter itself (`containers.ts`), with the machine's name and its runtime's API prefix (the Podman or
+Docker adapter's), its calls carried down the machine's link (`relayCall`, `src/sandbox/remote.ts`). Libpod's list, inspect
+and per-container stats answer in the Docker-compatible shapes the meter reads (checked live against rootless Podman 5).
+Only this hopper's boxes there (`io.hopper.box` its instance id); no compose project, since none on that machine is the
+hopper's. No disk use: the client carries no `/system/df`, which counts every image and volume on the machine. A meter
+is kept per user, machine and runtime kind, so CPU is the use since the read before; a machine that holds no box any more
+forgets it.
+
+**The client's check** (`src/client/runtime.ts`). One more call: `GET <prefix>/containers/<id>/stats`, only on a container the
+hopper labelled as its box, and only with the query `stream=false` and nothing else. A stream would hold the link's call
+open until its time out. A client of a release before this one refuses it (403): the boxes then show their state, uptime
+and limits, and no CPU or memory, until the hopper loads its client release there (never while a job runs).
+
+**The read.** `GET /api/resources` has `remoteBoxes`: per machine, by name, its box readings (`machine` set, `service`
+`<machine>/<container name>`, as two machines may each have a box of one name), or `problem` (no such client target now, no
+runtime there, no answer). The stack recorder keeps their CPU and memory as for a box beside the hopper. On the Resources
+page they show under *Sandbox boxes*, after the boxes beside the hopper, each with *on <machine>*; a machine that cannot be
+read says why there.
+
+**Not built yet** (the rest of the issue, its next part): Solr's query latency, index size and documents waiting (issue
+#945, not in the stack yet). A container target is not a box and has none: it is a container a person runs, reached only
+through the docker socket proxy, which lets through ping, inspect and exec, never stats.
 
 Tests: `test/adapters/container-meter.test.ts` (the project and the boxes chosen, CPU between reads and the runtime's own,
 memory less the cache against its limit, network and disk summed, the disk use's sizes and its failure, a stopped
-container, a hopper not in a container, a runtime that does not answer), `test/integration/stack-resources.test.ts` (the
-meter's readings and the real Postgres's, no socket, a meter that throws, no pg_stat_statements),
+container, a hopper not in a container, a runtime that does not answer), `test/adapters/openfga-meter.test.ts` (checks, failed checks and the
+mean time from OpenFGA v1.22.0's text, other methods and the health check left out, no check yet, the metrics URL, an error
+status, no answer), `test/integration/stack-resources.test.ts` (the
+meter's readings and the real Postgres's, no socket, a meter that throws, no pg_stat_statements, OpenFGA's reading, no
+OpenFGA, an OpenFGA meter that fails),
 `test/integration/instance-admin.test.ts` (an instance read), `test/scripts/compose.test.ts` (pg_stat_statements loaded),
-`test/ui/resources-view.test.ts` (the rows, Postgres, what cannot be read). Live: the meter against this computer's
+`test/ui/resources-view.test.ts` (the rows, Postgres, what cannot be read, the graph's lines),
+`test/integration/stack-history.test.ts` (a record's shares, OpenFGA's failed checks between records and after a restart,
+a box on a client target, the peak per step and the gaps, the retention), `test/ui/stack-history.test.ts` (the lines),
+`test/adapters/remote-box-meter.test.ts` (through the real client: only this hopper's boxes there, by machine, CPU between
+reads, a machine read once, no client target or no runtime, a client that refuses the stats), `test/client/runtime.test.ts`
+(a box's one-shot stats carried; another container's, or a stream, refused). Live: the meter against this computer's
 rootless Podman and its hopper stack (every service, a CPU-bound container read at one core, its limits); the Postgres
-reading against `postgres:17-alpine` with pg_stat_statements loaded.
+reading against `postgres:17-alpine` with pg_stat_statements loaded; the OpenFGA metric names against `openfga/openfga:v1.22.0`
+(checks allowed, denied and refused) and its endpoint read from inside the hopper's container on the compose network; the
+remote box meter through the client's end against rootless Podman 5 (a labelled box at a 0.5-core quota read at 0.50 cores,
+its memory against its 256 MiB limit).
 
 ## Search (issue #945, part 1, 2026-10-12)
 

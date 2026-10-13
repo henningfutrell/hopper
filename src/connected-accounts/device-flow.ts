@@ -72,7 +72,8 @@ export function deviceFlow(app: HopperApp): DeviceFlow {
   return {
     async start() {
       const { data } = await createDeviceCode({ clientType: 'github-app', clientId: app.clientId, request });
-      let intervalMs = Math.max(data.interval, 1) * 1000;
+      // GitHub's interval, never faster; every second when it gives none.
+      let intervalMs = (data.interval > 0 ? data.interval : 1) * 1000;
       const expiresAt = new Date(Date.now() + data.expires_in * 1000);
       return {
         userCode: data.user_code, verificationUri: data.verification_uri, expiresAt,

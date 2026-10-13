@@ -225,7 +225,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // How the hopper reaches each attached machine (issue #74: the machine-source context's `target`).
   const target = createTargetPool({
     // A box of a template not approved takes no new job (issue #602): the template's approval, read at every list.
-    clock, logger, templateWait: (name) => approvalWait(name, store.vault.template(name)), ...(o.network ? { network: o.network } : {}),
+    clock, logger, templateWait: (name) => approvalWait(name, store.vault.template(name)), ...(o.network ? { network: o.network } : {}), probeEveryMs: seams.machineProbeEveryMs,
     // A client target that dials in is probed at once, not at the next 30 s.
     reachedAt: (m) => ('client' in m ? o.links.dialledAt(user.id, m.client.key) : 0),
     probe: seams.machineProbe

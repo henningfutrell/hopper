@@ -4,13 +4,14 @@
 // head is read on GitHub at each ask, so a plan made before the code moved is never applied. Approval by risk (part 3):
 // an operator approves a low-risk uat plan, or the hopper does when the plan is kept and auto-approve is on; an admin
 // approves any other; nobody approves a plan that failed a check. The environment watchers (part 4): who the notifiers
-// name for each plan, approval and apply, by the plan's environments; an admin names them.
+// name for each plan, approval and apply, by the plan's environments; an admin names them. A plan's read credential (part
+// 5): the one a plan names is one the vault minted for its job.
 import { createHash, randomUUID } from 'node:crypto';
-import type { OperationProfile } from '../domain/access.ts';
+import type { Asset, OperationProfile } from '../domain/access.ts';
 import { changesOf } from '../domain/infra-plan-changes.ts';
 import { summarize } from '../domain/infra-plan-summary.ts';
 import {
-  applyRefusal, approveRefusal, approverOf, AUTO_APPROVER, DEFAULT_INFRA_PLAN_SETTINGS, headRefusal, planInputProblem, PLAN_FILE_MAX, PLAN_ID, PLAN_TTL_MINUTES,
+  applyRefusal, approveRefusal, approverOf, AUTO_APPROVER, DEFAULT_INFRA_PLAN_SETTINGS, headRefusal, planInputProblem, PLAN_FILE_MAX, PLAN_ID, PLAN_TTL_MINUTES, readProfileOf, readRefusal,
   type InfraPlan, type InfraPlanSettings, type KeptPlanView, type PlanApply, type PlanApproval, type PlanInput, type PlanView,
 } from '../domain/infra-plans.ts';
 import { normalWatchers, watchersProblem, type InfraWatchers } from '../domain/infra-watchers.ts';
@@ -71,11 +72,18 @@ export function createInfraPlans(o: InfraPlansOptions): InfraPlans {
       data: { plan: plan.id, tool: plan.tool, asset: plan.asset, target: plan.target, by: approval.by, ...(approval.auto ? { auto: true } : {}), ...(plan.summary ? { level: plan.summary.level } : {}) },
     });
   };
+  /** The read credentials the vault minted for the job (part 5), as a plan names each, each once. */
+  const mintedReads = (job: Job): string[] => [...new Set(o.store.events.between(['vault.minted'], job.createdAt).flatMap((e) => {
+    const d = e.data as { job?: string; operation?: string; asset?: Asset };
+    return e.jobId === job.id && d.operation === 'read' && d.asset ? [readProfileOf(d.asset)] : [];
+  }))];
   return {
     record(job, input, file) {
       const problem = planInputProblem(input);
       if (problem) return { status: 400, no: problem };
       if (file && (file.length === 0 || file.length > PLAN_FILE_MAX)) return { status: 400, no: `the plan file must be 1 to ${PLAN_FILE_MAX} bytes` };
+      const unminted = readRefusal(input.read, input.read === undefined ? [] : mintedReads(job));
+      if (unminted) return { status: 400, no: unminted };
       const changes = changesOf(input.tool, input.text, input.json);
       if (typeof changes === 'string') return { status: 400, no: changes };
       const { json: _json, ...said } = input;

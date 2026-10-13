@@ -17,7 +17,7 @@ let cleanup: (() => void) | undefined;
 const ask = (text: string) => ({ output: [`● ${text}`, '  HOPPER_QUESTION'] });
 const ASK = ask('Which colour should the shed be?');
 const DONE = { output: ['● Painted the shed blue.', '  HOPPER_DONE'] };
-const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }];
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000, promptSteadyMs: 100 } }];
 const item = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: {} };
 const HIGH = { priority: 80, priorityReason: 'label:hopper:high' };
 /** 0.3 s, in minutes. */
