@@ -1,8 +1,8 @@
 // The shared rate limiter in the UI (ui/src/model/github-rate-limiter.ts, issue #436), pure: the summary of the
 // settings, the change a save sends — only what differs, refused when a value is not a whole number in its range —, one
-// line per rate-limit bucket, and the cache's hit rate.
+// line per rate-limit bucket, the cache's hit rate, and the calls per hour by kind (issue #985).
 import { describe, expect, it } from 'vitest';
-import { bucketLine, cacheLine, rateLimiterPatch, rateLimiterSummary } from '../../ui/src/model/github-rate-limiter.ts';
+import { bucketLine, cacheLine, hourlyRows, rateLimiterPatch, rateLimiterSummary } from '../../ui/src/model/github-rate-limiter.ts';
 
 const S = { slowBelowPercent: 25, reserve: 50, batchSize: 10, intakeReserve: 1000, intakeSyncMinutes: 15, prCycleMinutes: 3 };
 const draft = (d: Partial<Record<keyof typeof S, string>>) => ({ slowBelowPercent: '25', reserve: '50', batchSize: '10', intakeReserve: '1000', intakeSyncMinutes: '15', prCycleMinutes: '3', ...d });
@@ -40,5 +40,19 @@ describe('the shared rate limiter model', () => {
   it('the cache: hits of all conditional answers', () => {
     expect(cacheLine({ entries: 120, hits: 360, misses: 120 })).toBe('120 answers kept; 360 of 480 answers were cache hits (75 %), each a call not spent.');
     expect(cacheLine({ entries: 0, hits: 0, misses: 0 })).toBe('No answers kept yet.');
+  });
+
+  it('calls per hour: one row a kind, in a fixed order, then all of them', () => {
+    const k = (calls: number, points = 0) => ({ calls, points });
+    expect(hourlyRows({ intake: k(8, 8), reconcile: k(4, 4), pr_cycle: k(20, 21), per_job_read: k(7, 2), write: k(3), watch: k(0), job: k(5) })).toEqual([
+      { kind: 'intake', label: 'Intake sync', calls: 8, points: 8 },
+      { kind: 'reconcile', label: 'Reconcile', calls: 4, points: 4 },
+      { kind: 'pr_cycle', label: 'Pull requests in motion', calls: 20, points: 21 },
+      { kind: 'per_job_read', label: 'Job reads', calls: 7, points: 2 },
+      { kind: 'write', label: 'Writes', calls: 3, points: 0 },
+      { kind: 'watch', label: 'GitHub watches', calls: 0, points: 0 },
+      { kind: 'job', label: 'Requests of jobs', calls: 5, points: 0 },
+      { kind: 'all', label: 'All', calls: 47, points: 35 },
+    ]);
   });
 });

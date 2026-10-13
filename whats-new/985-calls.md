@@ -1,0 +1,1 @@
+- Settings → GitHub rate limit now shows how many calls the hopper made to GitHub in the last hour, for each kind of work. The hopper also asks GitHub which repositories the app can reach only when it looks at all your repositories, not every minute.

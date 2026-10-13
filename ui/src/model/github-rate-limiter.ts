@@ -1,6 +1,7 @@
 // The shared rate limiter in the UI (issue #436), pure: the summary of the settings, the change a save sends, one line
-// per rate-limit bucket, and the cache's hit rate. The intake reserve is issue #983's, the intake sync interval and the in-motion cycle issue #985's.
-import type { RateBucket, RateLimiterSettings, RateLimiterView } from './wire.ts';
+// per rate-limit bucket, the cache's hit rate, and the calls per hour by kind. The intake reserve is issue #983's, the
+// intake sync interval, the in-motion cycle and the calls per hour issue #985's.
+import type { GitHubCallKind, HourlyCalls, RateBucket, RateLimiterSettings, RateLimiterView } from './wire.ts';
 
 /** Each setting's label and range, as the daemon allows it. */
 const FIELDS: Record<keyof RateLimiterSettings, { label: string; min: number; max: number }> = {
@@ -55,4 +56,18 @@ export function cacheLine(c: RateLimiterView['cache']): string {
   const all = c.hits + c.misses;
   if (all === 0) return 'No answers kept yet.';
   return `${c.entries} answers kept; ${c.hits} of ${all} answers were cache hits (${Math.round((c.hits / all) * 100)} %), each a call not spent.`;
+}
+
+/** Each kind of call as a row names it, in the order the rows show. */
+const KINDS: Record<GitHubCallKind, string> = {
+  intake: 'Intake sync', reconcile: 'Reconcile', pr_cycle: 'Pull requests in motion', per_job_read: 'Job reads',
+  write: 'Writes', watch: 'GitHub watches', job: 'Requests of jobs',
+};
+
+export interface HourlyRow { kind: GitHubCallKind | 'all'; label: string; calls: number; points: number }
+
+/** The calls of the last hour: one row a kind, then all of them. */
+export function hourlyRows(h: HourlyCalls): HourlyRow[] {
+  const rows: HourlyRow[] = (Object.keys(KINDS) as GitHubCallKind[]).map((kind) => ({ kind, label: KINDS[kind], calls: h[kind]?.calls ?? 0, points: h[kind]?.points ?? 0 }));
+  return [...rows, { kind: 'all', label: 'All', calls: rows.reduce((n, r) => n + r.calls, 0), points: rows.reduce((n, r) => n + r.points, 0) }];
 }

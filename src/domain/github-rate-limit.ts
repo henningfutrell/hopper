@@ -49,7 +49,17 @@ export interface RateBucket {
   holdUntil?: number;
 }
 
-/** As GET /api/github-rate-limiter answers it: the settings, what GitHub last told of each bucket, the cache and the waits. */
+/**
+ * What a GitHub call was for (issue #985): intake (the listings that look for new jobs), reconcile, the in-motion cycle
+ * (`pr_cycle`), a job's other reads, a write, a GitHub watch, or a running job's own request through the hopper.
+ */
+export const GITHUB_CALL_KINDS = ['intake', 'reconcile', 'pr_cycle', 'per_job_read', 'write', 'watch', 'job'] as const;
+export type GitHubCallKind = (typeof GITHUB_CALL_KINDS)[number];
+
+/** The calls GitHub charged in the last hour, by kind; `points`: what the GraphQL ones spent of the graphql rate limit. */
+export type HourlyCalls = Record<GitHubCallKind, { calls: number; points: number }>;
+
+/** As GET /api/github-rate-limiter answers it: the settings, what GitHub last told of each bucket, the cache, the waits and the calls of the last hour. */
 export interface RateLimiterView {
   settings: RateLimiterSettings;
   /** One per credential and resource, the fewest calls left first; no credential is named. */
@@ -58,6 +68,8 @@ export interface RateLimiterView {
   cache: { entries: number; hits: number; misses: number };
   /** Calls the limiter made wait, and for how long in all, in ms. */
   waits: { count: number; totalMs: number };
+  /** The calls GitHub charged in the last hour, by kind (issue #985); a 304 is a cache hit, not a call. */
+  hourly: HourlyCalls;
 }
 
 type Headers = Record<string, string | number | undefined>;

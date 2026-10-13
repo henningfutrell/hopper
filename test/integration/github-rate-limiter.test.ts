@@ -1,6 +1,7 @@
 // The shared rate limiter's settings (issue #436): the instance's, in the database; the hopper's admin changes them at
 // POST /ui/api/github-rate-limiter and the process's limiter takes them at once, with no restart; a restart keeps them.
-// GET /api/github-rate-limiter shows what GitHub last told of each bucket, from any call made through `makeRequest`.
+// GET /api/github-rate-limiter shows what GitHub last told of each bucket, from any call made through `makeRequest`, and
+// the calls of the last hour by kind (issue #985).
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -126,6 +127,9 @@ describe('the shared rate limiter settings (issue #436)', () => {
     const v = await view(a);
     expect(v.buckets).toContainEqual({ resource: 'core', limit: 5000, remaining: 4321, resetAt: 4_102_444_800_000 });
     expect(v.cache.entries).toBeGreaterThanOrEqual(1);
+    // The calls of the last hour by kind (issue #985): this one is a read no read of a source names.
+    expect(v.hourly.per_job_read.calls).toBeGreaterThanOrEqual(1);
+    expect(Object.keys(v.hourly).sort()).toEqual(['intake', 'job', 'per_job_read', 'pr_cycle', 'reconcile', 'watch', 'write']);
     expect(JSON.stringify(v)).not.toContain('secret-436');
   });
 });

@@ -9,12 +9,14 @@
 // GitHubRateLimited with the time it may go, so a sync pass ends and says when, instead of holding to the reset.
 // Each call let go is counted for the sync pass it is made in (issue #858, `traffic.ts`).
 // An intake call (`intake`, issue #983) also waits at the intake reserve, so intake never spends the calls job work needs.
+// Each call GitHub charged — not a 304 — counts for the last hour under its kind (issue #985), a GraphQL call with the
+// points it spent: the drop in its bucket's calls left since the last answer of the same window.
 import { createHash } from 'node:crypto';
 import { setTimeout as sleepMs } from 'node:timers/promises';
 import type { request as octokitRequest } from '@octokit/request';
 import {
   DEFAULT_RATE_LIMITER, bucketFromHeaders, holdAfter, resourceOf, waitBefore,
-  type RateBucket, type RateLimiterSettings, type RateLimiterView,
+  type GitHubCallKind, type RateBucket, type RateLimiterSettings, type RateLimiterView,
 } from '../domain/github-rate-limit.ts';
 import { githubTraffic, type GitHubTraffic } from './traffic.ts';
 
@@ -35,8 +37,9 @@ export class GitHubRateLimited extends Error {
 /**
  * How a caller waits: `deferAfterMs`, a longer wait is not waited (GitHubRateLimited). Absent: every wait is waited.
  * `intake`: a read that looks for new jobs; at the intake reserve or below it waits for the reset (issue #983).
+ * `kind`: what the calls are for, when the caller knows it (a GitHub watch, a job's own request); else the read tells it (issue #985).
  */
-export interface LimiterCall { deferAfterMs?: number; intake?: boolean }
+export interface LimiterCall { deferAfterMs?: number; intake?: boolean; kind?: GitHubCallKind }
 
 export interface GitHubLimiter {
   /** The `request.hook` of `@octokit/request`. */
@@ -131,6 +134,19 @@ export function createGitHubLimiter(o: {
     if (hold !== undefined) b.holdUntil = Math.max(hold, b.holdUntil ?? 0);
   }
 
+  /**
+   * The points a GraphQL answer spent (issue #985): the drop in calls left since the last answer of the same window; the
+   * whole window's use when it is a new window; 1 when nothing was known before. A REST call spends no points.
+   */
+  function pointsOf(key: string, resource: string, headers: Headers | undefined): number {
+    if (resource !== 'graphql') return 0;
+    const seen = headers ? bucketFromHeaders(headers) : undefined;
+    const b = buckets.get(key);
+    if (!seen || !b || !Number.isFinite(b.remaining) || seen.resetAt < b.resetAt) return 1;
+    if (seen.resetAt > b.resetAt) return Math.max(0, seen.limit - seen.remaining);
+    return Math.max(0, b.remaining - seen.remaining);
+  }
+
   function keep(cacheKey: string, cached: Cached): void {
     cache.delete(cacheKey);
     cache.set(cacheKey, cached);
@@ -140,7 +156,8 @@ export function createGitHubLimiter(o: {
   async function hook(request: Request, options: Options, call: LimiterCall = {}): Promise<Response> {
     const parsed = request.endpoint.parse(options);
     const credential = createHash('sha256').update(String(parsed.headers.authorization ?? '')).digest('hex').slice(0, 16);
-    const key = `${credential} ${resourceOf(parsed.url)}`;
+    const resource = resourceOf(parsed.url);
+    const key = `${credential} ${resource}`;
     const isGet = parsed.method === 'GET';
     // Per credential, media type and URL: one URL asked as JSON and as raw text are two answers.
     const cacheKey = `${credential} ${String(parsed.headers.accept ?? '')} ${parsed.url}`;
@@ -149,12 +166,16 @@ export function createGitHubLimiter(o: {
 
     const counted = await admit(key, call);
     // Octokit's merged options keep the route's template (`/repos/{owner}/{repo}/issues`): one route, whatever the repository.
-    traffic.call(parsed.method, String(options.url ?? parsed.url), (options as { query?: unknown }).query);
+    const route = String(options.url ?? parsed.url);
+    const query = (options as { query?: unknown }).query;
+    traffic.call(parsed.method, route, query);
+    const charged = (headers: Headers | undefined) => traffic.charged(parsed.method, route, query, { ...(call.kind ? { kind: call.kind } : {}), points: pointsOf(key, resource, headers) });
     let done!: () => void;
     if (!counted) probes.set(key, new Promise<void>((r) => { done = r; }));
     try {
       // Merged options always carry the route's url.
       const response = await request(send as typeof send & { url: string });
+      charged(response.headers as Headers);
       learn(key, response.headers as Headers);
       if (isGet) {
         stats.misses++;
@@ -164,6 +185,7 @@ export function createGitHubLimiter(o: {
       return response;
     } catch (err) {
       const e = err as { status?: number; response?: { headers?: Headers } };
+      if (e.status !== undefined && e.status !== 304) charged(e.response?.headers);
       learn(key, e.response?.headers, e.status);
       if (e.status === 304 && cached) {
         stats.hits++;
@@ -189,6 +211,7 @@ export function createGitHubLimiter(o: {
         .sort((a, b) => a.remaining - b.remaining || a.resource.localeCompare(b.resource)),
       cache: { entries: cache.size, hits: stats.hits, misses: stats.misses },
       waits: { count: stats.waits, totalMs: stats.waitedMs },
+      hourly: traffic.hourly(),
     }),
   };
 }

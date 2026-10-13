@@ -128,4 +128,24 @@ describe('intake from the listing cache (issue #985)', () => {
     await source.discover({ due: true });
     expect(count('listAssignedIssues')).toBe(2);
   });
+
+  it('app mode: the installed repositories are asked with each listing, not between; a sync a person asked for asks at once', async () => {
+    const gh = createFakeGitHub({ app: { botLogin: 'hopper-owner[bot]', installedRepos: [REPO, OTHER] } });
+    let now = Date.parse('2026-10-13T10:00:00.000Z');
+    const source = createGitHubSource({
+      name: 'github-app', kind: 'github-app', mode: 'app', assignee: () => 'owner', api: gh, trust: testTrust(),
+      config: githubConfig({ repos: [] }), clock: { now: () => new Date(now) }, listingEveryMs: () => 15 * MIN,
+    });
+    const count = () => gh.calls.filter((c) => c.method === 'listInstalledRepos').length;
+    await source.discover({ due: true });
+    now += 5 * MIN;
+    await source.discover({ due: true });
+    expect(count()).toBe(1);
+    await source.discover();
+    expect(count()).toBe(2);
+    now += 15 * MIN;
+    await source.discover({ due: true });
+    expect(count()).toBe(3);
+    expect(source.describe().installedRepos).toEqual([REPO, OTHER]);
+  });
 });
