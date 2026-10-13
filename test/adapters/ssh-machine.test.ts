@@ -10,6 +10,7 @@ import { createAttachedMachineSource, probeHerdrOverSsh, probeSsh, resolveSshTar
 import { DF_COMMAND, diskOf } from '../../src/machines/disk.ts';
 import { RESOURCES_COMMAND } from '../../src/machines/resources.ts';
 import { TEST_HOST_KEY, testSshAuth } from '../support/ssh.ts';
+import { systemPath } from '../support/system-path.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 const SSH = fileURLToPath(new URL('../herdr/fake-ssh-bin.mjs', import.meta.url));
@@ -170,7 +171,7 @@ describe('probeHerdrOverSsh', () => {
     mkdirSync(join(dir, 'there', '.local', 'bin'), { recursive: true });
     symlinkSync(HERDR, join(dir, 'there', '.local', 'bin', 'herdr'));
     // Never this computer's own herdr, wherever its PATH has it.
-    process.env.PATH = '/usr/bin:/bin';
+    process.env.PATH = systemPath();
   });
   afterEach(() => {
     process.env = { ...saved };
@@ -282,7 +283,7 @@ describe('resolveSshTarget', () => {
     process.env.HOME = home;
     process.env.SHELL = '/bin/sh';
     // Never this computer's own herdr, wherever its PATH has it.
-    process.env.PATH = '/usr/bin:/bin';
+    process.env.PATH = systemPath();
     mkdirSync(join(home, '.ssh'), { mode: 0o700 });
     // The stand-in resolves <target> to <target>.example port 2222.
     writeFileSync(join(home, '.ssh', 'known_hosts'), [
@@ -307,7 +308,7 @@ describe('resolveSshTarget', () => {
 
   it('herdr on its PATH: the ed25519 key the user\'s known_hosts holds for it, and no herdr path (issue #311)', async () => {
     executable(join(home, 'tools', 'herdr'));
-    process.env.PATH = `${join(home, 'tools')}:/usr/bin:/bin`;
+    process.env.PATH = systemPath(join(home, 'tools'));
     expect(await resolve('laptop')).toEqual({ hostKey: TEST_HOST_KEY });
   });
 

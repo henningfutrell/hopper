@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { HerdrError, createHerdrCliClient } from '../../src/executors/herdr/index.ts';
 import { userSshConfig } from '../../src/executors/ssh.ts';
 import { testSshAuth } from '../support/ssh.ts';
+import { systemPath } from '../support/system-path.ts';
 
 const HERDR = fileURLToPath(new URL('./fake-herdr-bin.mjs', import.meta.url));
 const SSH = fileURLToPath(new URL('./fake-ssh-bin.mjs', import.meta.url));
@@ -27,7 +28,7 @@ beforeEach(() => {
   mkdirSync(join(dir, 'there', '.local', 'bin'), { recursive: true });
   symlinkSync(HERDR, join(dir, 'there', '.local', 'bin', 'herdr'));
   // Never this computer's own herdr, wherever its PATH has it.
-  process.env.PATH = '/usr/bin:/bin';
+  process.env.PATH = systemPath();
 });
 
 afterEach(() => {
@@ -58,7 +59,7 @@ describe('herdr CLI client over ssh', () => {
     const bin = join(dir, 'path-bin');
     mkdirSync(bin);
     writeFileSync(join(bin, 'herdr'), `#!/bin/sh\necho "{\\"result\\":{\\"from\\":\\"path\\"}}"\n`, { mode: 0o755 });
-    process.env.PATH = `${bin}:/usr/bin:/bin`;
+    process.env.PATH = systemPath(bin);
     expect(await remote().run(['workspace', 'list'])).toMatchObject({ type: 'workspace_list' });
   });
 
@@ -67,7 +68,7 @@ describe('herdr CLI client over ssh', () => {
     const bin = join(dir, 'path-bin');
     mkdirSync(bin);
     writeFileSync(join(bin, 'herdr'), `#!/bin/sh\necho "{\\"result\\":{\\"from\\":\\"path\\"}}"\n`, { mode: 0o755 });
-    process.env.PATH = `${bin}:/usr/bin:/bin`;
+    process.env.PATH = systemPath(bin);
     expect(await remote().run(['status'])).toEqual({ from: 'path' });
   });
 

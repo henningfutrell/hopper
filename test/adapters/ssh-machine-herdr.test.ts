@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAttachedMachineSource, probeHerdrOverSsh, type MachineProbe } from '../../src/machines/index.ts';
 import { testSshAuth } from '../support/ssh.ts';
+import { systemPath } from '../support/system-path.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 const SSH = fileURLToPath(new URL('../herdr/fake-ssh-bin.mjs', import.meta.url));
@@ -58,7 +59,7 @@ describe('probeHerdrOverSsh: the herdr versions', () => {
     mkdirSync(join(dir, 'there', '.local', 'bin'), { recursive: true });
     symlinkSync(HERDR, join(dir, 'there', '.local', 'bin', 'herdr'));
     // Never this computer's own herdr, wherever its PATH has it.
-    process.env.PATH = '/usr/bin:/bin';
+    process.env.PATH = systemPath();
   });
   afterEach(() => {
     process.env = { ...saved };
