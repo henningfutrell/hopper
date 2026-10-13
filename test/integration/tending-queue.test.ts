@@ -199,6 +199,41 @@ describe('one queue per set of pull requests that conflict (issue #939)', () => 
   });
 });
 
+describe('rework goes back at once (issue #938)', () => {
+  /** A tend pushes, and its pull request's checks pass. */
+  const fixed = (gh: FakeGitHub) => (url: string) => { gh.pushToPullRequest(url, new Date().toISOString()); gh.setChecks(url, 'passing'); };
+
+  it('pull requests with failed checks are all sent back in the same sync, held by no head, beside the rebase the queue starts', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    // Git cannot say whether they conflict: before, one tend at a time.
+    const [first, second, third] = await waitingPullRequests(gh, app, REPO, 3, { tend: fixed(gh) });
+    gh.setConflicting(first!.url, true);
+    gh.setChecks(second!.url, 'failing');
+    gh.setChecks(third!.url, 'failing');
+    await app.sync();
+    expect((await tends(app)).sort()).toEqual([[first!.job.id, 'rebase'], [second!.job.id, 'fix_checks'], [third!.job.id, 'fix_checks']].sort());
+    for (const w of [second!, third!]) expect(sourceOf(await app.job(w.job.id))?.heldBehind).toBeUndefined();
+    for (const w of [first!, second!, third!]) await tendDone(app, w.job.id);
+  });
+
+  it('yolo on: a pull request with failed checks is sent back while a pull request that conflicts with it waits for its checks', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const token = await app.login();
+    expect((await app.ui('/ui/api/yolo-mode', { repos: { [REPO]: true } }, { token })).status).toBe(200);
+    const [head, failing] = await waitingPullRequests(gh, app, REPO, 2, { checks: 'passing', tend: fixed(gh) });
+    gh.setConflictBetween(head!.url, failing!.url, true);
+    gh.pushToPullRequest(head!.url, new Date().toISOString());
+    gh.setChecks(head!.url, 'pending');
+    gh.setChecks(failing!.url, 'failing');
+    await app.sync();
+    expect(await tends(app)).toEqual([[failing!.job.id, 'fix_checks']]);
+    expect(sourceOf(await app.job(failing!.job.id))?.heldBehind).toBeUndefined();
+    await tendDone(app, failing!.job.id);
+  });
+});
+
 describe('merge-order: Jev picks the head of the tending queue (issue #796)', () => {
   it('active: a sure pick is tended first', async () => {
     const gh = createFakeGitHub();
