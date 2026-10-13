@@ -1,0 +1,1 @@
+- Search now finds your artifacts by their title, summary and text, and your infra plans by what they change. Each match opens the artifact, or the Infra page for a plan.

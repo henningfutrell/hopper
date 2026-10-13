@@ -16049,7 +16049,7 @@ reading against `postgres:17-alpine` with pg_stat_statements loaded; the OpenFGA
 remote box meter through the client's end against rootless Podman 5 (a labelled box at a 0.5-core quota read at 0.50 cores,
 its memory against its 256 MiB limit).
 
-## Search (issue #945, parts 1 and 2, 2026-10-12)
+## Search (issue #945, parts 1 to 3, 2026-10-12)
 
 Owner direction: Solr in the hopper stack now, and search built on it from the start, not keyword search first.
 
@@ -16077,20 +16077,37 @@ direct job's, its goal, else its prompt's first line), `brief` (a direct job's b
 characters), `status`, `labels`, `repo`, `source`, `requester` (the issue's author, the direct job's submitter, else
 `spec.submittedBy`), `machine` and `lane`, `result` (and the pull request when it finished partly done), `questions` (each
 question with its answer), `failure` (its error), `verdict` (the failure assessor's decision, summary and reasons), and
-`created`, `updated`, `finished`. A direct job's document is `private`. **Never indexed:** every text is masked first
+`created`, `updated`, `finished`. A direct job's document is `private`.
+
+**Part 3: artifacts and infra plans.** `type` `artifact` (`artifactDocument`): its `title`, `brief` (its summary and its
+latest revision's note), `repo` (its issue's, else its job's), `job`, `created`, `updated` (its latest revision), and
+`content`, its text where that is cheap: a text kind (markdown, text, CSV, JSON, HTML, SVG) of at most 1 MiB, HTML and
+SVG as their words (scripts, styles and comments out, each tag a space, entities decoded: an HTML deck's slide text). An
+image, a PDF or a file is indexed by its metadata alone. No HTML library: none in the dependencies does this, and search
+needs the words, not a parse; Solr escapes what it answers. `type` `infra-plan` (`planDocument`): `title` `<target>
+(<tool> plan)`, `brief` (its summary in plain words, each risk's words, its blast radius, each check that failed),
+`status` (`approved` once approved, `failed` when a check failed, else `recorded`; stale is a matter of the clock, not of
+the index), `repo`, `job`, `updated` (its approval's time). **The plan's own text is never indexed**: it can hold resource
+values a summary leaves out. An artifact or plan of a direct job is `private`, as the job is. A hit's `url` is its view:
+`#job/<id>`, `#artifacts/<id>`, or `#infra` for a plan (it has no view of its own); the Search view links each the same way,
+with the type named beside the title and an artifact's matched text as a snippet.
+
+**Never indexed:** every text is masked first
 (`maskSecrets`, `src/secrets/mask.ts`: GitHub tokens, 32-byte keys, private keys, cloud and API keys), and the vault, the
 system secrets, connected accounts, sign-in and webhook secrets are never read to build a document.
 
 **Index updates: pending index updates.** A user's search subscribes to its event log: each event that names a job puts
-the job in memory, and the pass (every 2 s) marks those jobs in `search_pending` (tenant migration 50: `key` `job:<id>`,
+the job in memory, an `artifact.*` event its artifact (and a merge's target, `into`), an `infra.plan_*` event its plan
+(`keysOf`, `src/search/index.ts`; keys `artifact:<id>`, `infra-plan:<id>`), and the pass (every 2 s) marks those jobs in `search_pending` (tenant migration 50: `key` `job:<id>`,
 `version`, `marked_at`; a table only, the build before runs on it), then takes the oldest marks (100 per write, 10 writes
 per pass), builds each document again and writes it (`commitWithin` 1 s); a job no longer in the store is removed from the
-index. A mark is cleared only at the version taken, so a job marked again during the write is written again. Solr not
+index (a removed artifact too). A mark is cleared only at the version taken, so a document marked again during the
+write is written again. Solr not
 reached or refusing: nothing is cleared, search is **degraded** with Solr's own words, and the pass waits longer each time
 (2 s doubled, up to a minute). Stop marks what is still in memory, so the next start writes it.
 
 **Backfill.** At the first pass that reaches Solr, a user with no document in the core (a new core, a lost volume, an
-install from before) has every job marked (`markAllJobs`). **Reindex** (`POST /ui/api/search/reindex`, least role
+install from before) has every job, artifact and infra plan marked (`markAll`). **Reindex** (`POST /ui/api/search/reindex`, least role
 operator) marks them again when a person asks; the pass then writes them in the background. `GET /api/search/status`
 says `backfill: { at, done }`: done once nothing it marked is pending.
 
@@ -16131,17 +16148,19 @@ same routes for a script: `hopper search <words>… [--type|--status|--label|--r
 [--limit|--offset <n>]`, `--suggest <words>`, `--index` (the index's state), `--reindex` (operator); it prints the answer as
 JSON, and a bad filter is the daemon's 400.
 
-**Not built yet** (the next parts of the issue): the other documents — artifacts (metadata, and text where it is cheap:
-markdown, slide text), linked issues and pull requests, intake items, infra plan summaries — and the `type` values for
-them; the CoS's use of the API. Solr's readings are on the Resources page ("Stack resources", Solr, issue #947).
+**Not built yet** (the next parts of the issue): the other documents — linked issues and pull requests, intake items —
+and the `type` values for them; the CoS's use of the API. Solr's readings are on the Resources page ("Stack resources", Solr, issue #947).
 
-Tests: `test/search/document.test.ts` (the fields, masked secrets, a direct job private), `test/adapters/solr-index.test.ts`
+Tests: `test/search/document.test.ts` (the fields, masked secrets, a direct job private; part 3: an artifact's metadata and
+text, an HTML deck's words, no text of an image, an artifact of a direct job private, a plan's summary and status and
+never its text), `test/adapters/solr-index.test.ts`
 (a real Solr: the schema put in twice, an unknown field refused, words, highlights escaped, facets, every filter,
 suggest, two hoppers and two users apart, Solr not reached), `test/integration/search.test.ts` (a real Solr and the
 daemon: a job found by its words after its events, private direct jobs, no secret indexed, degraded while Solr is down
-and caught up after, the backfill and Reindex, Access not asked, and `hopper search`), `test/ui/search.test.ts` (part 2:
+and caught up after, the backfill and Reindex, Access not asked, and `hopper search`; part 3: an artifact found by its text and a plan by its
+summary with their links and the type facet, a removed artifact gone, Reindex marking artifacts too), `test/ui/search.test.ts` (part 2:
 the highlight read as text, the search in the hash, the Search view's hits, facets and degraded state, the search box's
-type-ahead), `test/authz/model.test.ts`, `test/update/drift.test.ts`
+type-ahead; part 3: each type's link and the text snippet), `test/authz/model.test.ts`, `test/update/drift.test.ts`
 and `test/scripts/compose.test.ts` (the `solr` service). The Solr tests use `HOPPER_TEST_SOLR_URL` when it names a core,
 else start Solr in a container (`test/support/solr.ts`).
 

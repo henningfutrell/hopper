@@ -217,7 +217,7 @@ describe('Search (issue #945)', () => {
       rt.store.events.append({ type: 'infra.plan_approved', jobId: job.id, data: { plan: plan.id, tool: plan.tool, asset: plan.asset, target: plan.target, by: 'octo' } });
     });
     await found(app, 'q=security&status=approved', [plan.id], 'the plan approved');
-    expect((await app.api<SuggestAnswer>('GET', '/api/search/suggest?q=outa')).body.suggestions.map((x) => x.type).sort()).toEqual(['artifact']);
+    expect((await app.api<SuggestAnswer>('GET', '/api/search/suggest?q=outa')).body.suggestions.map((x) => x.type).sort()).toEqual(['artifact', 'job']);
   });
 
   it('takes a removed artifact out of the index, and writes the artifacts and plans again on Reindex (part 3)', async () => {

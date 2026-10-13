@@ -1,7 +1,7 @@
 // The Search view (issue #945, design.md "Search"): the search the hash holds (#search/q=…&status=…, model/search.ts), read
-// from GET /api/search — the same route the operator CLI and an agent use. Each hit links to its job's view, its title and
-// up to two snippets with the matched words marked (read as text, never HTML); the facets count what matched and filter
-// when picked; the page moves on by 20. When search is degraded or not set up it says why and shows no hits: nothing
+// from GET /api/search — the same route the operator CLI and an agent use. Each hit links to its view (a job's, an
+// artifact's, Infra for a plan), its title and up to two snippets with the matched words marked (read as text, never
+// HTML); the facets count what matched and filter when picked; the page moves on by 20. When search is degraded or not set up it says why and shows no hits: nothing
 // else in the hopper waits on it.
 import { AlertTriangle, ChevronLeft, ChevronRight, Search as SearchIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { get } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { highlightParts, hitHref, PAGE, parseSearch, picked, searchHash, searchPath, snippets, toggleFilter, type SearchFilters } from '@/model/search';
+import { highlightParts, hitHref, PAGE, parseSearch, picked, searchHash, searchPath, snippets, toggleFilter, TYPE_LABEL, type SearchFilters } from '@/model/search';
 import type { SearchAnswer, SearchFacet } from '@/model/wire';
 import { useSection } from '@/app/nav';
 
@@ -34,7 +34,10 @@ function HitRow({ h }: { h: Hit }) {
     <li data-slot="search-hit" className="grid gap-1 border-b py-2.5 text-sm last:border-b-0">
       <div className="flex min-w-0 items-center justify-between gap-2">
         <a href={hitHref(h)} className="min-w-0 truncate font-medium hover:underline">{title ? <Highlight html={title} /> : h.title}</a>
-        <StatusBadge status={h.status} />
+        <span className="flex shrink-0 items-center gap-1.5">
+          {TYPE_LABEL[h.type] && <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">{TYPE_LABEL[h.type]}</Badge>}
+          {h.status && <StatusBadge status={h.status} />}
+        </span>
       </div>
       {snippets(h.highlights).map((s, i) => (
         <p key={i} className="line-clamp-2 text-xs text-muted-foreground"><span className="font-medium">{s.label}:</span> <Highlight html={s.html} /></p>
