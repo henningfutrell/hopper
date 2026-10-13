@@ -306,5 +306,7 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
     setRemoteAccess: (s) => write('remoteAccess', JSON.stringify(remoteAccessRecord(s))),
     getHostLinkBase: () => read('hostLinkBase') ?? '',
     setHostLinkBase: (base) => write('hostLinkBase', base),
+    getAllowedHosts() { const text = read('allowedHosts'); return text === undefined ? [] : JSON.parse(text) as string[]; },
+    setAllowedHosts: (hosts) => write('allowedHosts', JSON.stringify([...hosts])),
   };
 }

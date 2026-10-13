@@ -17,7 +17,7 @@ import { machineOfLane } from './domain/raised-by.ts';
 import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
-import { createRemoteAccess, createServer, tunnelCaller } from './http/index.ts';
+import { createAllowedHosts, createRemoteAccess, createServer, tunnelCaller, type TailnetSource } from './http/index.ts';
 import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
@@ -91,7 +91,7 @@ export interface AppSeams extends UserSeams {
   containerRuntime?: ContainerRuntime; containerMeter?: import('./domain/stack-resources.ts').ContainerMeter; remoteBoxMeter?: import('./domain/stack-resources.ts').RemoteBoxMeter; openFgaMeter?: import('./domain/stack-resources.ts').OpenFgaMeter; solrMeter?: import('./domain/stack-resources.ts').SolrMeter;
   /** How long a sandbox launch waits for the box's start check (issue #708); default START_CHECK_MS. The search index (issue #945); default Solr at HOPPER_SOLR_URL, else none; null: none. And
    * Cloudflare's and ngrok's APIs, which remote access mints the tunnel at (issue #968); default the real ones. */
-  startCheckMs?: number; searchIndex?: SearchIndex | null; /** How long a sandbox request's box may take to start (issue #1002); default START_MS. */ sandboxStartMs?: number; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>;
+  startCheckMs?: number; searchIndex?: SearchIndex | null; /** How long a sandbox request's box may take to start (issue #1002); default START_MS. */ sandboxStartMs?: number; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>; /** This host's tailnet (issue #1024); default tailscaled's local API, else the Tailscale interface; null: none. */ tailnet?: TailnetSource | null;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
   /** `stackProbe`: what the hopper sees of its stack (issue #697); default the compose network's names and the vault container's /health. */
   update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter; stackProbe?: StackProbe; release?: ReleaseCheck };
@@ -113,7 +113,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, startCheckMs: _check, sandboxStartMs: _start, searchIndex: _search, tunnelProviders: _tunnel, ...shared } = seams;
+  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, startCheckMs: _check, sandboxStartMs: _start, searchIndex: _search, tunnelProviders: _tunnel, tailnet: _tailnet, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -246,9 +246,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   }
   // The instance's vault events (issue #658) reach every user's log now that their runtimes exist.
   secrets.connect((e) => runtimes.events.append(e));
-  // Remote access (issue #880): the tunnel's settings, set in the UI, its authtoken in the instance's vault (an install's
-  // NGROK_AUTHTOKEN and HOPPER_PUBLIC_URL from before moved there once), and its watch.
-  const remoteAccess = createRemoteAccess({ settings: store.settings, secrets: secrets.system, events: runtimes.events, port: () => port, tunnelApis: config.tunnelApis, ...(seams.tunnelProviders ? { providers: seams.tunnelProviders } : {}), env, publicUrl: config.publicUrl, now: () => clock.now(), logger });
+  // Remote access (issue #880): the tunnel's settings, set in the UI, its authtoken in the instance's vault (an install's NGROK_AUTHTOKEN and
+  // HOPPER_PUBLIC_URL from before moved there once), and its watch. The allowed hosts (issue #1024): the admin's, and this host's tailnet's.
+  const remoteAccess = createRemoteAccess({ settings: store.settings, secrets: secrets.system, events: runtimes.events, port: () => port, tunnelApis: config.tunnelApis, ...(seams.tunnelProviders ? { providers: seams.tunnelProviders } : {}), env, publicUrl: config.publicUrl, now: () => clock.now(), logger }), allowedHosts = createAllowedHosts({ settings: store.settings, events: runtimes.events, tailnet: seams.tailnet, lanNames: config.lanNames, port: () => port, logger });
   // The hopper's app's client secret turns GitHub sign-in by redirect on (issue #258). A bad one (NAME and
   // NAME_FILE both set, an unreadable file) stops the start; read again at each use, so a rotated one counts.
   const secret = runtimeSecrets(env);
@@ -323,7 +323,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       },
     },
     port: () => port, signIn, signInEnvironment,
-    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url }, remoteAccess, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
+    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
     client: { links, release: clientRelease, installScript: readFileSync(join(APP_DIR, 'scripts', 'client-install.sh'), 'utf8') },
   });
 
@@ -362,7 +362,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
         await access.stop();
         const passes = sandboxes.stop();
         // A link is an upgraded socket: the server does not track it, so it would hold the close open.
-        links.closeAll();
+        links.closeAll(); allowedHosts.stop();
         await Promise.all([server.close(), passes, remoteAccess.stop()]);
         await runtimes.stop();
         instance.close();
