@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // Settings → Host link (issue #712), rendered against a fake of the daemon's HTTP: it shows the default the hopper uses
-// when none is set, and the admin saves an address, or clears it for the default again.
+// when none is set, and the admin saves an address, or clears it for the default again. On a hopper in WSL it shows how to
+// test the Windows link from PowerShell, and the .wslconfig fixes.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,7 +10,7 @@ type El = ReturnType<typeof createElement>;
 let root: Root | undefined;
 let posts: unknown[] = [];
 
-async function render(first: { hostLinkBase: string; default: string }) {
+async function render(first: { hostLinkBase: string; default: string; wsl: boolean }) {
   posts = [];
   let current = first;
   localStorage.setItem('jh_session', 'a'.repeat(64));
@@ -56,7 +57,7 @@ afterEach(async () => {
 
 describe('Settings → Host link (issue #712)', () => {
   it('shows the default when none is set, saves an address, and clears it for the default again', async () => {
-    await render({ hostLinkBase: '', default: 'http://localhost:4790' });
+    await render({ hostLinkBase: '', default: 'http://localhost:4790', wsl: false });
     const input = document.querySelector<HTMLInputElement>('input[aria-label="Host link base"]')!;
     expect(input.value).toBe('');
     expect(input.placeholder).toBe('http://localhost:4790');
@@ -71,5 +72,25 @@ describe('Settings → Host link (issue #712)', () => {
     await click('Save');
     expect(posts[1]).toEqual({ hostLinkBase: '' });
     expect(document.querySelector('[data-slot="host-link"]')!.textContent).toContain('(the default)');
+  });
+
+  it('on a plain Linux host shows no Windows hint', async () => {
+    await render({ hostLinkBase: '', default: 'http://localhost:4790', wsl: false });
+    expect(document.querySelector('[data-slot="host-link-wsl"]')).toBeNull();
+  });
+
+  it('in WSL shows how to test the link from Windows, the .wslconfig fixes, and that a client in this distro checks it', async () => {
+    await render({ hostLinkBase: '', default: 'http://localhost:4790', wsl: true });
+    const hint = document.querySelector('[data-slot="host-link-wsl"]')!.textContent!;
+    expect(hint).toContain('Invoke-WebRequest http://localhost:4790/api/health');
+    expect(hint).toContain('localhostForwarding=true');
+    expect(hint).toContain('networkingMode=mirrored');
+    expect(hint).toContain('wsl --shutdown');
+    expect(hint).toContain('Add machine → A computer');
+  });
+
+  it('in WSL tests the host link base the admin set, not the default', async () => {
+    await render({ hostLinkBase: 'http://127.0.0.1:4790', default: 'http://localhost:4790', wsl: true });
+    expect(document.querySelector('[data-slot="host-link-wsl"]')!.textContent).toContain('Invoke-WebRequest http://127.0.0.1:4790/api/health');
   });
 });
