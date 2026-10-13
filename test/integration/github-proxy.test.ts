@@ -145,6 +145,22 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(eventsOf(t.app, ADMIN_ID, 'github_proxy.failed')).toHaveLength(1);
   });
 
+  it('reads the full log of a failed check for the job; one GitHub refuses says why (issue #993)', async () => {
+    const t = await start();
+    t.github.jobLogs = new Map<number, string | number>([[115379122001, '2026-10-13T10:00:02.0000000Z Error: the store is closed\n'], [7, 403]]);
+    const { job, env } = await running(t);
+
+    const r = await hopperGh(t.root, env, ['check', 'log', '115379122001', '--repo', 'octo/tools']);
+    expect(r.code).toBe(0);
+    expect(json(r)).toMatchObject({ ok: true, op: 'check.log', repo: 'octo/tools', number: 115379122001, log: '2026-10-13T10:00:02.0000000Z Error: the store is closed\n' });
+    expect(t.github.requests.find((x) => x.path === '/api/v3/repos/octo/tools/actions/jobs/115379122001/logs')?.auth).toBe('token test-account-token');
+    expect(eventsOf(t.app, ADMIN_ID, 'github_proxy.done')).toEqual([expect.objectContaining({ jobId: job.id, data: expect.objectContaining({ op: 'check.log', repo: 'octo/tools', number: 115379122001 }) })]);
+
+    const refused = await hopperGh(t.root, env, ['check', 'log', '7', '--repo', 'octo/tools']);
+    expect(refused.code).toBe(1);
+    expect(String(json(refused).error)).toContain('the hopper\'s GitHub connection may not read Actions logs');
+  });
+
   it('closes the job\'s own issue as completed, and marks its pull request ready for review; another issue is refused (issue #652)', async () => {
     const t = await start();
     t.github.issues.push({ repo: 'octo/tools', number: 7, title: 'Nothing to change', body: 'Check it.', author: 'someone', labels: ['hopper'] });

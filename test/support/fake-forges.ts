@@ -73,6 +73,11 @@ export interface FakeForge extends ContentsForge, RepoChecksForge, SubIssuesForg
   installationsDown?: boolean;
   /** GitHub: a new issue or comment answers this status and is not made (issue #694: no access to the repository, GitHub down). */
   issuesRefused?: number;
+  /**
+   * GitHub: the logs of GitHub Actions jobs (issue #993), by job id: its text, served as GitHub serves it — a redirect to
+   * a storage URL that needs no token —, or the status GitHub answers for it (403: the app may not read Actions).
+   */
+  jobLogs?: Map<number, string | number>;
   /** GitHub: the refresh grant answers this status, refusing nothing (issue #441: a 5xx, a rate limit). */
   refreshDown?: number;
   /** The credentials revoke requests named (issue #514), in order. */
@@ -92,7 +97,7 @@ export interface FakeForge extends ContentsForge, RepoChecksForge, SubIssuesForg
   close(): Promise<void>;
 }
 
-type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string };
+type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string; text?: string };
 
 async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; refreshTokens: Map<string, { login: string; web: boolean }>; devices: Device[]; mint: FakeForge['mint']; revoked: string[][]; gitRoot?: string }): Promise<FakeForge> {
   const requests: ForgeRequest[] = [];
@@ -109,6 +114,7 @@ async function serve(handler: (base: string) => Handler, extra: { issues: FakeIs
       const token = /^(?:token|bearer)\s+(\S+)$/i.exec(auth)?.[1];
       const out = handle(r, token ? extra.tokens.get(token) : undefined);
       if (out.location) { res.writeHead(out.status, { location: out.location }); res.end(); return; }
+      if (out.text !== undefined) { res.writeHead(out.status, { 'content-type': 'text/plain; charset=utf-8' }); res.end(out.text); return; }
       send(res, out.status, out.body);
     })().catch((err: unknown) => send(res, 500, { message: String(err) }));
   });
@@ -242,6 +248,9 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         for (const c of credentials) { tokens.delete(c); refreshTokens.delete(c); }
         return { status: 202, body: {} };
       }
+      const blob = /^\/job-logs\/(\d+)$/.exec(r.path);
+      const blobText = blob ? forge?.jobLogs?.get(Number(blob[1])) : undefined;
+      if (r.method === 'GET' && typeof blobText === 'string') return { status: 200, text: blobText };
       if (!r.path.startsWith('/api/v3/')) return { status: 404, body: { message: 'Not Found' } };
       if (!login) return { status: 401, body: { message: 'Bad credentials' } };
       const usedNow = grants.find((g) => r.auth.endsWith(` ${g.access}`)); if (usedNow) usedNow.used = ++tick;
@@ -296,6 +305,13 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const repo = m[1]!;
       const rest = m[2] ?? '';
       const sub = subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest) ?? commentEditRoute(issues, r.method, repo, rest, r.body) ?? contentsRoute(forge ?? {}, base, r.method, repo, rest, r.query, r.body); if (sub) return sub;
+      const jl = /^actions\/jobs\/(\d+)\/logs$/.exec(rest);
+      if (r.method === 'GET' && jl) {
+        const log = forge?.jobLogs?.get(Number(jl[1]));
+        if (log === undefined) return { status: 404, body: { message: 'Not Found' } };
+        if (typeof log === 'number') return { status: log, body: { message: log === 403 ? 'Resource not accessible by integration' : 'refused' } };
+        return { status: 302, location: `${base}/job-logs/${jl[1]}` };
+      }
       if (r.method === 'POST' && rest === 'labels') return { status: 201, body: { name: r.body.name } };
       if (r.method === 'GET' && rest === 'issues') {
         return { status: 200, body: issues.filter((i) => i.repo === repo && (i.state ?? 'open') === 'open' && i.labels.includes(r.query.labels ?? '')).map(restIssue) };

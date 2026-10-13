@@ -87,6 +87,22 @@ describe('who may ask what', () => {
   });
 });
 
+describe('a failed check\'s log (issue #993)', () => {
+  const repos = ['octo/tools'];
+  const read: ProxyRequest = { op: 'check.log', repo: 'octo/tools', number: 115379122001 };
+
+  it('names the GitHub Actions job by its number', () => {
+    expect(proxyRequest.parse({ op: 'check.log', repo: 'o/r', number: '115379122001' })).toEqual({ op: 'check.log', repo: 'o/r', number: 115379122001 });
+    expect(proxyRequest.safeParse({ op: 'check.log', repo: 'o/r' }).success).toBe(false);
+  });
+
+  it('the hopper\'s own job reads it on the hopper\'s repositories; another user\'s job does not', () => {
+    expect(checkRequest(read, { jobId: 'j', own: true, repo: 'octo/tools' }, repos)).toEqual({ ok: true });
+    expect(checkRequest({ ...read, repo: 'else/where' }, { jobId: 'j', own: true, repo: 'octo/tools' }, repos)).toMatchObject({ ok: false });
+    expect(checkRequest(read, { jobId: 'j', own: false, repo: 'guest/own' }, repos)).toMatchObject({ ok: false, reason: expect.stringContaining('may only file an issue') });
+  });
+});
+
 describe('issue lineage: an issue a job files is a child of the job\'s issue (issue #729)', () => {
   const repos = ['octo/tools', 'octo/site'];
   const required: ProxyRequest = { op: 'issue.create', repo: 'octo/site', title: 't', body: 'b', required: true };
