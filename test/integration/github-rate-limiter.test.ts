@@ -91,10 +91,24 @@ describe('the shared rate limiter settings (issue #436)', () => {
     githubLimiter.configure(DEFAULT_RATE_LIMITER);
   });
 
+  it('the in-motion cycle (issue #985): every 3 minutes by default, the admin changes it, and a restart keeps it', async () => {
+    const { a, dbPath } = await boot();
+    const token = await a.login();
+    expect((await view(a)).settings.prCycleMinutes).toBe(3);
+    expect((await a.ui<RateLimiterView>('/ui/api/github-rate-limiter', { prCycleMinutes: 5 }, { token })).status).toBe(200);
+    expect(githubLimiter.settings().prCycleMinutes).toBe(5);
+    await a.stop();
+    apps.splice(0);
+    githubLimiter.configure(DEFAULT_RATE_LIMITER);
+    const { a: again } = await boot(dbPath);
+    expect((await view(again)).settings).toEqual({ ...DEFAULT_RATE_LIMITER, prCycleMinutes: 5 });
+    githubLimiter.configure(DEFAULT_RATE_LIMITER);
+  });
+
   it('refuses a value out of range, a fraction, an unknown setting and an empty change', async () => {
     const { a } = await boot();
     const token = await a.login();
-    for (const body of [{ slowBelowPercent: 101 }, { reserve: -1 }, { batchSize: 0 }, { reserve: 1.5 }, { intakeReserve: 5001 }, { intakeSyncMinutes: 0 }, { intakeSyncMinutes: 1441 }, { other: 1 }, {}]) {
+    for (const body of [{ slowBelowPercent: 101 }, { reserve: -1 }, { batchSize: 0 }, { reserve: 1.5 }, { intakeReserve: 5001 }, { intakeSyncMinutes: 0 }, { intakeSyncMinutes: 1441 }, { prCycleMinutes: 0 }, { prCycleMinutes: 1441 }, { other: 1 }, {}]) {
       expect((await a.ui('/ui/api/github-rate-limiter', body, { token })).status).toBe(400);
     }
     expect((await view(a)).settings).toEqual(DEFAULT_RATE_LIMITER);

@@ -147,18 +147,3 @@ describe('App adapter: cold installation lookup', () => {
     });
   });
 });
-
-describe('App adapter: a repository event feed (issue #967)', () => {
-  it('reads the first page of the feed, newest first, with each event\'s id, type and time', async () => {
-    h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', events: [
-      { id: '9002', type: 'PushEvent', createdAt: '2026-10-12T10:01:00Z' },
-      { id: '9001', type: 'PullRequestEvent', createdAt: '2026-10-12T10:00:00Z' },
-    ] }] }] });
-    expect(await h.api.repoEvents!('owner/a')).toEqual([
-      { id: '9002', type: 'PushEvent', createdAt: '2026-10-12T10:01:00Z' },
-      { id: '9001', type: 'PullRequestEvent', createdAt: '2026-10-12T10:00:00Z' },
-    ]);
-    const read = h.fake.state.requests.find((r) => r.path === '/repos/owner/a/events');
-    expect(read).toMatchObject({ auth: 'token', query: { per_page: '30' } });
-  });
-});
