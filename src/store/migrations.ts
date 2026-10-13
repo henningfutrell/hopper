@@ -11,17 +11,17 @@ import { ownerToAdmin } from './migration-admin.ts';
 import { noBootstrapUser } from './migration-no-bootstrap.ts';
 import { sessionsRenew, sessionsTheBuildBeforeReads } from './migration-session-lifetime.ts';
 import { attachedMachinesToInstances } from './migration-attached-machines.ts';
-import { remoteAccessProvider } from './migration-remote-access.ts';
+import { RECENT_INSTANCE_MIGRATIONS } from './migrations-recent.ts';
 
 // Schema changes never drop a queue (persisted state is the user's). A migration is SQL, or a
 // function for a rewrite SQL cannot say plainly (JSON bodies); each runs in one transaction.
 //
 // The schema version is the `schema_version` table (design.md "Database"). A new store is created at
-// BASE, version 6; every migration after it is appended to MIGRATIONS. This is the instance track:
+// BASE, version 6; every migration after it is appended to MIGRATIONS — from 37 on, in migrations-recent.ts. This is the instance track:
 // since migration 17 (issue #158) a user's tables live in a user schema with a track of its own
 // (tenant-migrations.ts); a change to them goes there.
 // A function migration is given the version the store had when this run began: 0 for a new store.
-type Migration = string | ((db: Db, from: number) => void);
+export type Migration = string | ((db: Db, from: number) => void);
 
 const BASE_VERSION = 6;
 
@@ -204,17 +204,8 @@ const MIGRATIONS: readonly Migration[] = [
   // 36: box tokens (issue #795): an API token a person minted with `box`, which alone may do box actions. Every token
   // there is is no box token. The build before never reads the column: there every API token may do what its role allows.
   'ALTER TABLE ui_sessions ADD COLUMN box INTEGER NOT NULL DEFAULT 0;',
-  // 37: grants (issue #881): a grant a person minted for an agent, its refresh tokens (only their hashes; a rotated one
-  // kept for reuse detection), and the grant each API token was refreshed from. Tables and a column only: the build
-  // before never reads them, and reads such an API token as one of its own until it ends (15 minutes at most).
-  'CREATE TABLE IF NOT EXISTS api_grants (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS api_grant_tokens (token_hash TEXT PRIMARY KEY, grant_id TEXT NOT NULL, issued_at TEXT NOT NULL, rotated_at TEXT); CREATE INDEX IF NOT EXISTS api_grant_tokens_grant ON api_grant_tokens (grant_id); ALTER TABLE ui_sessions ADD COLUMN grant_id TEXT;',
-  // 38: the stack's resources over time (issue #947): one stack sample per service, metric and time. A table only: the
-  // build before never reads it.
-  'CREATE TABLE IF NOT EXISTS stack_samples (at TIMESTAMPTZ NOT NULL, service TEXT NOT NULL, metric TEXT NOT NULL, grp TEXT NOT NULL, value DOUBLE PRECISION NOT NULL, PRIMARY KEY (service, metric, at)); CREATE INDEX IF NOT EXISTS stack_samples_at ON stack_samples (at);',
-  // 39: remote access names its provider (issue #968). A record from before is ngrok's, and its domain is the one its
-  // tunnel runs at, with the authtoken given by hand: `provisioned`, which the hopper keeps when remote access is turned
-  // off (it minted none of it). The build before reads `enabled` and `domain` only, as before.
-  remoteAccessProvider,
+  // 37 on: in migrations-recent.ts, where a new one is appended.
+  ...RECENT_INSTANCE_MIGRATIONS,
 ];
 
 

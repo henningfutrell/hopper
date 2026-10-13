@@ -1,0 +1,1 @@
+- When two pull requests each add a line to the same list, in a file your repository marks as one that only grows, the hopper now brings the second one up to date at once, without a job.

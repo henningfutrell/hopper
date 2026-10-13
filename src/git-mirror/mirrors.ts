@@ -11,8 +11,9 @@
 // second gets merge conflicts. Neither head fetched, or git failing: git cannot say.
 // The base merge (issue #967): the hopper merges a pull request's base branch, as this pass fetched it, into the pull
 // request's head, in the mirror, and pushes the merge commit to the pull request's branch — no job, no lane. A conflict
-// is resolved only in a Markdown file where both sides only added lines at the same place (no line of the merge base is in
-// the conflict): both additions are kept, the base branch's first (`WHATS-NEW.md` lines, design sections). Any other
+// is resolved only in a Markdown file, or a file the base branch's `.gitattributes` marks `hopper-merge=additions` (a
+// migrations list), where both sides only added lines at the same place (no line of the merge base is in the conflict):
+// both additions are kept, the base branch's first (`WHATS-NEW.md` lines, design sections, migrations). Any other
 // conflict is a real one: nothing is pushed, and the files are named. The push leases the branch at the head as fetched
 // (`--force-with-lease`), so a branch that moved, or a fork's branch that is not in the repository, is never written.
 // What a pull request changes (issue #935 part 2, design.md "A job's parts list"): its commits after the merge base with
@@ -76,6 +77,12 @@ const MARKER = 40;
 const AUTHOR = { GIT_AUTHOR_NAME: 'hopper', GIT_AUTHOR_EMAIL: 'hopper@noreply.invalid', GIT_COMMITTER_NAME: 'hopper', GIT_COMMITTER_EMAIL: 'hopper@noreply.invalid' };
 /** A file whose added lines a base merge may keep from both sides (issue #967). */
 const UNION = /\.md$/i;
+/**
+ * The git attribute by which a repository marks more such files (issue #967), read from its base branch only, so a pull
+ * request cannot mark its own: `<path> hopper-merge=additions` in `.gitattributes`.
+ */
+const ADDITIONS_ATTR = 'hopper-merge';
+const ADDITIONS = 'additions';
 
 /**
  * Both sides' additions of a `git merge-file --diff3` result (issue #967), the base branch's (`theirs`) first; undefined
@@ -264,21 +271,34 @@ export function createGitMirrors(o: { dir: string; log(line: string): void; traf
 
   /**
    * Each conflicted file resolved by keeping both sides' additions (issue #967), as a blob written to the mirror; or the
-   * files that are not: not Markdown, not in all three of the merge base and both sides, or one side changed a line.
+   * files that are not: not Markdown nor marked by the base branch, not in all three of the merge base and both sides, or
+   * one side changed a line.
    */
   async function resolve(run: Run, head: string, base: string, files: string[]): Promise<{ blobs: Blob[] } | { files: string[] }> {
     const mb = await run(['merge-base', head, base]);
+    const marked = await additionsFiles(run, base, files.filter((f) => !UNION.test(f)));
     const blobs: Blob[] = [];
     const not: string[] = [];
     for (const path of files) {
-      const blob = mb.code === 0 ? await resolveOne(run, head, mb.stdout.trim(), base, path) : undefined;
+      const may = UNION.test(path) || marked.has(path);
+      const blob = may && mb.code === 0 ? await resolveOne(run, head, mb.stdout.trim(), base, path) : undefined;
       if (blob) blobs.push(blob); else not.push(path);
     }
     return not.length > 0 ? { files: not } : { blobs };
   }
 
+  /** Which of `files` the base branch's `.gitattributes` marks `hopper-merge=additions` (issue #967); git failing: none. */
+  async function additionsFiles(run: Run, base: string, files: string[]): Promise<Set<string>> {
+    if (files.length === 0) return new Set();
+    const r = await run(['check-attr', '-z', `--source=${base}`, ADDITIONS_ATTR, '--', ...files]);
+    const marked = new Set<string>();
+    if (r.code !== 0) return marked;
+    const out = r.stdout.split('\0');
+    for (let i = 0; i + 2 < out.length; i += 3) if (out[i + 2] === ADDITIONS) marked.add(out[i]!);
+    return marked;
+  }
+
   async function resolveOne(run: Run, head: string, mergeBase: string, base: string, path: string): Promise<Blob | undefined> {
-    if (!UNION.test(path)) return undefined;
     const mode = (await run(['ls-tree', head, '--', path])).stdout.split(/\s/)[0];
     if (mode !== '100644') return undefined;
     const merged = await run(['merge-file', '-p', '--diff3', `--marker-size=${MARKER}`, '--object-id', `${head}:${path}`, `${mergeBase}:${path}`, `${base}:${path}`]);

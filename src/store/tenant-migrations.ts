@@ -1,8 +1,9 @@
 // The tenant track (issue #158, design.md "Users: one hopper, separate users"): the migrations of a
 // user schema, with its own `schema_version`. Version 1 is the tenant tables exactly as they were at
 // instance version 16 — where instance migration 17 moved owner's. A new user's schema is created at
-// TENANT_BASE; a later change to a user's tables is appended to TENANT_MIGRATIONS and runs on every
-// user schema as its store opens. Schema changes never drop a queue (persisted state is the user's).
+// TENANT_BASE; a later change to a user's tables is appended to TENANT_MIGRATIONS — from 48 on, in
+// tenant-migrations-recent.ts — and runs on every user schema as its store opens. Schema changes never
+// drop a queue (persisted state is the user's).
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import type { Db } from './db.ts';
 import { documentsToRecords } from './migration-config.ts';
@@ -29,7 +30,7 @@ import { INFRA_PLAN_TABLES } from './infra-plans.ts';
 import { OUT_OF_BAND_TABLES } from './out-of-band.ts';
 import { ISSUE_GRAPH_TABLES } from './issue-graph.ts';
 import { POINTED_JOB_TABLE } from './pointed-jobs.ts';
-import { CHECKPOINT_TABLE, DIRECT_JOB_TABLE, PROMOTION_TABLE, SEARCH_PENDING_TABLE } from './migration-recent-tables.ts';
+import { RECENT_TENANT_MIGRATIONS } from './tenant-migrations-recent.ts';
 import { GITHUB_WATCH_TABLE } from './github-watches.ts';
 import { itemSnapshotsBackfill } from './migration-item-snapshots.ts';
 import { commentHoldsReleased } from './migration-comment-holds.ts';
@@ -38,7 +39,7 @@ import { laneRecommendationsOnly } from './migration-lane-recommendations.ts';
 import { VAULT_GRANT_TABLE } from './vault-grants.ts';
 import { newerStore } from './migrations.ts';
 
-type Migration = string | ((db: Db) => void);
+export type Migration = string | ((db: Db) => void);
 
 export const TENANT_BASE_VERSION = 1;
 
@@ -358,11 +359,8 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   INFRA_PLAN_TABLES,
   // 47: Out-of-band changes (issue #871): each change a job's check reported, a person's mark, the controller identities. Tables only: the build before runs on it.
   OUT_OF_BAND_TABLES,
-  // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
-  // 49: Direct jobs (issue #901): each job a person submitted straight to the hopper. A table only: the build before runs on it.
-  // 50: Pending index updates (issue #945): the search documents to write to Solr again. A table only: the build before runs on it.
-  // 51: Promotions to GitHub (issue #946): where each direct job was posted. A table only: the build before runs on it.
-  CHECKPOINT_TABLE, DIRECT_JOB_TABLE, SEARCH_PENDING_TABLE, PROMOTION_TABLE,
+  // 48 on: in tenant-migrations-recent.ts, where a new one is appended.
+  ...RECENT_TENANT_MIGRATIONS,
 ];
 
 /** A user schema's version once migrated. */
