@@ -46,6 +46,8 @@ describe('Run again on a GitHub job', () => {
     // The answer is the new job, already in the hopper: no later sync is needed to create it.
     expect(r.body).toMatchObject({ rerunOf: first!.id, source: { key: issue.url } });
     expect(r.body.id).not.toBe(first!.id);
+    // A person's Run again makes no tend job (issue #967): only tending's may elbow in past a lane cap.
+    expect(r.body.spec.tend).toBeUndefined();
     expect((await jobsFor()).map((j) => j.id)).toContain(r.body.id);
     expect(gh.calls).toContainEqual(expect.objectContaining({ method: 'removeLabels', args: [REPO, issue.number, expect.arrayContaining(['hopper:failed', 'hopper:claimed'])] }));
     expect((await a.events('types=job.rerun')).map((e) => e.jobId)).toEqual([first!.id]);
