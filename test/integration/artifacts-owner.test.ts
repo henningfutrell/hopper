@@ -51,7 +51,7 @@ describe('share with the owner (issue #673)', () => {
     const shared = await h.artifact(a, job, ['share', art.id, '--owner', '--json']);
     expect(shared.code).toBe(0);
     const out = JSON.parse(shared.stdout) as { ok: boolean; owner: boolean; url: string; posted: string };
-    expect(out).toMatchObject({ ok: true, owner: true, url: `${a.url}/#artifacts/${art.id}` });
+    expect(out).toMatchObject({ ok: true, owner: true, url: `http://localhost:${new URL(a.url).port}/#artifacts/${art.id}` });
     expect(out.posted).toMatch(/\/octo-org\/hello\/issues\/7#issuecomment-\d+$/);
 
     const [comment] = commentsOf(github);

@@ -281,7 +281,7 @@ describe('a question escalated to the human', () => {
     expect(body).toMatchObject({ type: 'question.escalated', jobId: job.id, questionId: q.id, schemaVersion: 2 });
     expect(body.data).toEqual({
       questionId: q.id, target: 'human', reason: expect.any(String), text: 'Is this risky?', jobId: job.id,
-      goal: 'tidy up', answerUrl: `${a.url}/#question-${q.id}`, notifyCount: 1, raisedBy: q.raisedBy, priority: 50, high: false,
+      goal: 'tidy up', answerUrl: `http://localhost:${new URL(a.url).port}/#question-${q.id}`, notifyCount: 1, raisedBy: q.raisedBy, priority: 50, high: false,
     });
   });
 
@@ -297,7 +297,7 @@ describe('a question escalated to the human', () => {
     expect(body).toMatchObject({ type: 'question.escalated_to_human', jobId: job.id, questionId: q.id, schemaVersion: 1 });
     expect(body.data).toEqual({
       questionId: q.id, reason: expect.any(String), text: 'Is this risky?', jobId: job.id,
-      goal: 'tidy up', answerUrl: `${a.url}/#question-${q.id}`, notifyCount: 1, raisedBy: q.raisedBy, priority: 50, high: false,
+      goal: 'tidy up', answerUrl: `http://localhost:${new URL(a.url).port}/#question-${q.id}`, notifyCount: 1, raisedBy: q.raisedBy, priority: 50, high: false,
     });
     const events = ofJob(await a.events(), job.id);
     expect(events.filter((e) => e.type === 'question.escalated').map((e) => e.data.target)).toEqual(['opus', 'fable', 'human']);

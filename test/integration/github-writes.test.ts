@@ -69,7 +69,7 @@ describe.each<Mode>(['account', 'app'])('issue writes (%s source)', (mode) => {
     const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
     expect((await a.events('types=job.progressed')).filter((e) => e.jobId === job.id)).not.toHaveLength(0);
     const escalated = (await a.events('types=question.escalated')).find((e: DomainEvent) => e.questionId === q.id && e.data.target === 'human')!;
-    expect(escalated.data.answerUrl).toBe(`${a.url}/#question-${q.id}`);
+    expect(escalated.data.answerUrl).toBe(`http://localhost:${new URL(a.url).port}/#question-${q.id}`);
 
     // The owner's reply on the issue is not an answer: there is no question comment to reply to.
     gh.addComment(REPO, issue.number, 'owner', 'go ahead from the issue');

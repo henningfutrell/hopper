@@ -2,6 +2,6 @@
 export { ARTIFACT_SWEEP_MS, createUserArtifacts, isRefusal, type PutRequest, type Refusal, type ShareMade, type ShareRequest, type UserArtifacts } from './service.ts';
 export { CONTENT_PATH, CONTENT_URL_SECONDS, contentHeaders, createContentSigner, htmlPolicy, INERT_POLICY, LINK_PATH, type ContentGrant, type ContentSigner } from './content.ts';
 export * from './script.ts';
-export { artifactBase, artifactUrl } from './links.ts';
+export { artifactUrl, defaultHostLinkBase, personBase } from './links.ts';
 export { ARTIFACT_STREAM_TYPES, streamArtifactEvents } from './stream.ts';
 export { ARTIFACT_LIB_PATH, ARTIFACT_LIBS, artifactLibRoutes, copyArtifactLibs } from './libs.ts';

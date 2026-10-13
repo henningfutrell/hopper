@@ -23,7 +23,7 @@
 // Nothing here changes anything.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ArtifactViewer, Access } from '../authz/service.ts';
-import { artifactBase, artifactUrl, CONTENT_PATH, contentHeaders, createContentSigner, LINK_PATH, type ContentSigner } from '../artifacts/index.ts';
+import { artifactUrl, personBase, CONTENT_PATH, contentHeaders, createContentSigner, LINK_PATH, type ContentSigner } from '../artifacts/index.ts';
 import { shareLive, type Artifact, type ArtifactRevision, type ArtifactRevisionView, type ArtifactShare, type ArtifactView, type ArtifactsView } from '../domain/artifacts.ts';
 import type { Clock } from '../domain/ports.ts';
 import { HttpError } from './errors.ts';
@@ -39,9 +39,9 @@ import { CLI_REALM } from './ui/sessions.ts';
 export interface ArtifactEdge {
   signer: ContentSigner;
   /**
-   * Where a link a job reports points (issue #673), and a notification's: the user's link base (Settings → Artifacts),
-   * else the public URL, else the first LAN name that is an IPv4 address or a `.local` name — a bare name is often a
-   * container's, which no LAN client resolves —, else the first LAN name, else loopback.
+   * Where a link a job reports points (issues #673, #712), and a notification's: `personBase` — the user's link base
+   * (Settings → Artifacts), else the public URL, else the host link base, else a LAN name that is an IPv4 address or a
+   * `.local` name, else localhost. Never a bare LAN name: it is often a container's, which no LAN client resolves.
    */
   base(t: Pick<TenantParts, 'artifacts'>): string;
   /** The origin of the Host a request came in on (issue #673): what the viewer used, so a link opens where they are. */
@@ -63,11 +63,11 @@ export interface ArtifactEdge {
   revisionView(r: ArtifactRevision, owner: string, viewer: string): ArtifactRevisionView;
 }
 
-export function createArtifactEdge(o: { clock: Clock; lan: Lan; port: () => number; tenants: Pick<Tenants, 'user'> }): ArtifactEdge {
+export function createArtifactEdge(o: { clock: Clock; lan: Lan; port: () => number; tenants: Pick<Tenants, 'user'>; hostLinkBase: () => string }): ArtifactEdge {
   const signer = createContentSigner({ now: () => o.clock.now().getTime(), key: (owner) => o.tenants.user(owner)?.artifacts.contentKey() });
   const edge: ArtifactEdge = {
     signer,
-    base: (t) => artifactBase({ linkBase: t.artifacts.settings().linkBase, publicUrl: o.lan.publicUrl, lanNames: o.lan.names, port: o.port() }),
+    base: (t) => personBase({ linkBase: t.artifacts.settings().linkBase, publicUrl: o.lan.publicUrl, hostLinkBase: o.hostLinkBase(), lanNames: o.lan.names, port: o.port() }),
     baseOf(req) {
       const host = (req.headers.host ?? '').toLowerCase();
       // The Host guard let it in: it is loopback, a LAN name, the public URL's host or the remote access domain.

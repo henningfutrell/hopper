@@ -92,10 +92,11 @@ export interface UserRuntimeOptions {
   installedDir: string;
   /** How often the plugins config's version is checked. */
   pluginsConfigIntervalMs: number;
-  /** A UI link to a view, by its hash (no `#`): one question, `question-<id>`; the Logins view, `logins` (issue #698). Notifications carry them. */
-  uiUrl(hash: string): string;
-  /** The base of an artifact's link in a notification, given the user's link base (issue #673). */
-  artifactLinkBase(linkBase: string): string;
+  /**
+   * The base of a person's link, given the user's link base (issues #673, #712): a UI link to a view by its hash — one
+   * question, `question-<id>`; the Logins view, `logins` (issue #698) — and an artifact's link. Notifications carry them.
+   */
+  linkBase(userLinkBase: string): string;
   /** Where the hopper is reached from outside now (issue #795, the tunnel watch). Search (issue #945): the index (absent: none), this hopper's instance id, and Access, which decides each hit. */
   reach?: () => string | undefined; search?: SearchWiring;
   /** A GitHub account this user connected from Sources: link it, so signing in with it lands here (issue #214). */
@@ -183,6 +184,7 @@ const JEV_TIMEOUT_MS = 30_000;
 /** Build one user's parts; start the plugin host, the webhook dispatcher and the notifiers. The engine and source sync start with `start()`. */
 export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRuntime> {
   const { user, store, config, seams, clock, logger } = o;
+  const linkBase = (): string => o.linkBase(store.artifacts.settings().linkBase), uiUrl = (hash: string): string => `${linkBase()}/#${hash}`; // a person's links (issue #712)
   // The plugins config is the one truth: the built-in instances are written on the start that finds none.
   ensurePluginsConfig({ config: store.config, answerTimeoutMs: config.answerTimeoutMs, localMachine: config.localMachine, userId: user.id, logger });
   // Every secret comes from the runtime, under the user's prefix (issue #56, #158) — but the TypeSafe API key, the
@@ -258,7 +260,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     },
   });
   // The GitHub proxy (issue #563): a client target's jobs reach the hopper where it dialled in.
-  const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), publicUrl: () => config.publicUrl ?? o.reach?.() });
+  const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase), artifactUrl: (id) => artifactUrl(linkBase(), id), publicUrl: () => config.publicUrl ?? o.reach?.() });
   const notEnded = () => store.jobs.list({ status: [...IN_FLIGHT_STATUSES] });
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine);
   let searchChanged = (_keys: readonly string[]): void => undefined; const host = createPluginHost({ // searchChanged: set once search exists (issue #945)
@@ -316,7 +318,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const questions = createQuestionService({
     store, clock, levels, logins, stageTimeoutMs: config.answerTimeoutMs, config: store.config, gated, risk: minorDecisions,
     renotifyMs: config.humanRenotifyMs, humanTimeoutMs: config.humanTimeoutMs,
-    answerUrl: (id) => o.uiUrl(`question-${id}`),
+    answerUrl: (id) => uiUrl(`question-${id}`),
     onAnswered: (q: Question) => engine.onAnswered(q),
     onExpired: (q: Question) => engine.onExpired(q),
     // onShift: a level's suggested phase shift (issue #548), made when the phase-shift settings allow the level.
@@ -329,7 +331,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     onDecided: (p) => engine.onDecided(p), onRevise: (p, brief) => engine.onRevise(p, brief),
   });
   let { running, fixed } = splitSources(host.jobSources());
-  const directJobs = createDirectJobs({ store, host: () => engine.sourceHost, url: (id) => o.uiUrl(`direct-jobs/${id}`), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), now: () => clock.now().toISOString() });
+  const directJobs = createDirectJobs({ store, host: () => engine.sourceHost, url: (id) => uiUrl(`direct-jobs/${id}`), artifactUrl: (id) => artifactUrl(linkBase(), id), now: () => clock.now().toISOString() });
   const jobSources = () => [...running.map((r) => r.source), directJobs.source, ...(seams.sources ?? [])];
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
@@ -380,7 +382,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const stopFailureLog = logFailures(store);
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
-  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => o.uiUrl(`question-${id}`), loginsUrl: () => o.uiUrl('logins'), infraUrl: () => o.uiUrl('infra'), infraPlan: (id) => { const p = store.infraPlans.get(id); return p ? planNotice(p, store.infraPlans.approval(id), store.settings.getInfraWatchers() ?? {}) : undefined; }, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), ...(o.reach ? { reach: o.reach } : {}) });
+  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => uiUrl(`question-${id}`), loginsUrl: () => uiUrl('logins'), infraUrl: () => uiUrl('infra'), infraPlan: (id) => { const p = store.infraPlans.get(id); return p ? planNotice(p, store.infraPlans.approval(id), store.settings.getInfraWatchers() ?? {}) : undefined; }, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(linkBase(), id), ...(o.reach ? { reach: o.reach } : {}) });
   // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them; lane tuning (issue #688) after new samples.
   const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), afterMachineRecord: () => engine.laneTuning.record(), store, clock, logger });
   const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
@@ -388,7 +390,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // steps (issue #1004): in the boxes the job's own sandbox requests started, through the sandbox module.
   const sandboxRequests = userSandboxRequests({ userId: user.id, store, templates: () => vault.view().templates, sandboxes: o.sandboxes, clock }), windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }), ...(o.sandboxes ? { boxes: stepBoxes({ userId: user.id, requests: sandboxRequests, sandboxes: o.sandboxes, token: (jobId) => proxyToken(hopperLink.privateKey, user.id, jobId), helper: async (box) => (await host.machines().list()).find((m) => m.id === box)?.client?.vault }) } : {}) });
   // Search (issue #945): the user's documents in the index, kept from job events; each hit decided by Access.
-  const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : o.uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
+  const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
   return {
     search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, directJobs, sandboxRequests,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors,

@@ -304,5 +304,7 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
     setMasterKeyRotation: (rotation) => write('masterKeyRotation', JSON.stringify({ from: rotation.from, at: rotation.at })),
     getRemoteAccess() { const text = read('remoteAccess'); return text === undefined ? undefined : JSON.parse(text) as RemoteAccessSettings; },
     setRemoteAccess: (s) => write('remoteAccess', JSON.stringify(remoteAccessRecord(s))),
+    getHostLinkBase: () => read('hostLinkBase') ?? '',
+    setHostLinkBase: (base) => write('hostLinkBase', base),
   };
 }
