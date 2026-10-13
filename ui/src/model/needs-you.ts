@@ -39,7 +39,7 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
   research: { label: 'Research', href: '#research', what: 'research reports that wait for you to accept or steer them' },
   logins: { label: 'Logins', href: '#logins', what: 'logins a job waits on, and connections that ended' },
   failures: { label: 'Failures', href: '#failures', what: 'open problems, jobs handed off to a person, and work not pushed' },
-  'pull-requests': { label: 'Pull requests', href: '#pull-requests', what: 'pull requests the hopper gave up on: fix them, or close them' },
+  'pull-requests': { label: 'Pull requests', href: '#pull-requests', what: 'pull requests the hopper gave up on: tend them again, fix them, or close them' },
   sorting: { label: 'Pre-sort', href: '#queue', what: 'jobs that wait on the pre-sort before a lane takes them' },
 };
 
