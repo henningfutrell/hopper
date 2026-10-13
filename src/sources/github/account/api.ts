@@ -7,6 +7,7 @@ import { GitHubApiError, isPermanent, webOriginOf } from '../api.ts';
 import type { GitHubApi } from '../api.ts';
 import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../app/graphql.ts';
 import { batchGraphQL } from '../app/graphql-batch.ts';
+import { listRepos } from '../app/graphql-listing.ts';
 import { SOURCE_DEFER_AFTER_MS, makeRequest, rateLimitedError } from '../app/http.ts';
 import * as rest from '../app/rest.ts';
 
@@ -62,6 +63,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     repoEvents: (repo) => call(`event feed of ${repo}`, (t) => rest.repoEvents(intake, t, repo)),
     addAssignees: (repo, number, logins) => call(`assign ${repo}#${number}`, (t) => rest.addAssignees(req, t, repo, number, logins)),
     listAssignedIssues: (label) => call('issues assigned to the account', (t) => rest.listAssignedIssues(intake, t, label)),
+    listRepos: (repos, labels) => call(`list ${repos.length} repositories`, (t) => listRepos(intake, t, repos, labels)),
     reopenIssue: (repo, number) => call(`reopen ${repo}#${number}`, (t) => rest.reopenIssue(req, t, repo, number)),
     closeAsCompleted: (repo, number) => call(`close ${repo}#${number}`, (t) => rest.closeIssue(req, t, repo, number)),
     postComment: (repo, number, body) => call(`comment on ${repo}#${number}`, (t) => rest.postComment(req, t, repo, number, body)),

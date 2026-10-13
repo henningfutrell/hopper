@@ -14,6 +14,10 @@ export interface FakeIssueInput {
   state?: 'open' | 'closed';
   /** A pull request: the issues list returns it (with `pull_request`), the adapter skips it. */
   pullRequest?: boolean;
+  /** A pull request's head, base, mergeable and check rollup state as a repository listing reads them (issue #985). */
+  pull?: FakePullFields;
+  /** Default: when the fake started. */
+  updatedAt?: string;
   closedBy?: string;
   closedAt?: string;
   stateReason?: string;
@@ -25,6 +29,9 @@ export interface FakeIssueInput {
   mentionedBy?: FakeMention[];
   comments?: FakeCommentInput[];
 }
+
+/** What a repository listing reads of a pull request (issue #985); `checks`: GitHub's rollup state, absent for no checks. */
+export interface FakePullFields { headRef?: string; headOid?: string; base?: string; isDraft?: boolean; mergeable?: string; checks?: string }
 
 /** A pull request as GraphQL tells it; `headCommittedAt`: when its head commit was made (issue #618). */
 export interface FakePullRequest { url: string; createdAt: string; isDraft: boolean; mergeable?: string; headCommittedAt?: string }
@@ -72,6 +79,7 @@ export interface FakeIssue {
   labels: string[];
   state: 'open' | 'closed';
   pullRequest: boolean;
+  pull?: FakePullFields;
   closedBy?: string;
   closedAt?: string;
   stateReason?: string;
@@ -130,11 +138,12 @@ export function buildState(o: FakeGitHubOptions, now: string): FakeState {
         issues.set(i.number, {
           number: i.number, title: i.title ?? `Issue ${i.number}`, body: i.body ?? '', author: i.author ?? 'owner', assignees: [...(i.assignees ?? [i.author ?? 'owner'])],
           labels: [...(i.labels ?? [])], state: i.state ?? 'open', pullRequest: i.pullRequest ?? false,
+          ...(i.pull ? { pull: { ...i.pull } } : {}),
           ...(i.closedBy ? { closedBy: i.closedBy } : {}),
           ...(i.closedAt ? { closedAt: i.closedAt } : {}),
           ...(i.stateReason ? { stateReason: i.stateReason } : {}),
           ...(i.closedByPullRequest ? { closedByPullRequest: { ...i.closedByPullRequest } } : {}),
-          openPullRequests: (i.openPullRequests ?? []).map((pr) => ({ ...pr })), mentionedBy: (i.mentionedBy ?? []).map((m) => ({ ...m })), updatedAt: now, comments,
+          openPullRequests: (i.openPullRequests ?? []).map((pr) => ({ ...pr })), mentionedBy: (i.mentionedBy ?? []).map((m) => ({ ...m })), updatedAt: i.updatedAt ?? now, comments,
         });
       }
       state.repos.set(`${r.owner}/${r.name}`, {

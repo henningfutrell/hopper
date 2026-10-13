@@ -6,7 +6,8 @@
 // open ones whose merge will close it. And `repository(owner, name).issueOrPullRequest(number)` (issue #618): a pull
 // request any issue of the repo knows, by its number; an issue; or NOT_FOUND. And an issue's cross-references (issue
 // #430): its closing pull requests — the open ones and the merged one that closed it — and the pull requests that mention it.
-// And an issue's place (issue #437).
+// And an issue's place (issue #437). And repository listings (issue #985): `r<i>: repository(owner, name)` aliases, each
+// its open issues and pull requests that carry one of `$labels`, paged by cursor.
 
 import { tokenReaches } from './fake-routes.ts';
 import type { FakeCtx, FakeReply, FakeReq } from './fake-routes.ts';
@@ -113,9 +114,56 @@ function batched(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
   return { status: 200, body: { data, ...(errors.length ? { errors } : {}) } };
 }
 
+/** A listed issue or pull request, as a repository listing's query asks it. */
+function listed(repo: FakeRepo, i: FakeIssue) {
+  const node = {
+    number: i.number, url: `https://github.com/${repo.owner}/${repo.name}/${i.pullRequest ? 'pull' : 'issues'}/${i.number}`, title: i.title,
+    updatedAt: i.updatedAt, author: { login: i.author }, labels: { nodes: i.labels.map((name) => ({ name })) }, assignees: { nodes: i.assignees.map((login) => ({ login })) },
+  };
+  if (!i.pullRequest) return node;
+  const p = i.pull ?? {};
+  return {
+    ...node, isDraft: p.isDraft ?? false, headRefName: p.headRef ?? `issue-${i.number}`, headRefOid: p.headOid ?? `h${i.number}`, baseRefName: p.base ?? 'main',
+    mergeable: p.mergeable ?? 'UNKNOWN', commits: { nodes: [{ commit: { statusCheckRollup: p.checks ? { state: p.checks } : null } }] },
+  };
+}
+
+/** A repository listing (issue #985): each `r<i>` alias, each connection it asks from its cursor (the index after the last). */
+function listing(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
+  const query = b.query ?? '';
+  const vars = (b.variables ?? {}) as Record<string, unknown>;
+  const labels = (vars.labels as string[] | undefined) ?? [];
+  const data: Record<string, unknown> = {};
+  const errors: unknown[] = [];
+  for (const m of query.matchAll(/(r\d+): repository\(owner: \$(o\d+), name: \$(n\d+)\) \{/g)) {
+    const [, alias, o, n] = m as unknown as [string, string, string, string];
+    const repo = ctx.state.repos.get(`${String(vars[o])}/${String(vars[n])}`);
+    if (!repo || !tokenReaches(req.token!, repo)) {
+      data[alias] = null;
+      errors.push({ type: 'NOT_FOUND', path: [alias], message: `Could not resolve to a Repository with the name '${String(vars[o])}/${String(vars[n])}'.` });
+      continue;
+    }
+    const selection = blockAt(query, m.index + m[0].length - 1);
+    const answer: Record<string, unknown> = {};
+    for (const [field, pulls] of [['issues', false], ['pullRequests', true]] as const) {
+      const asked = new RegExp(`${field}\\(states: OPEN, labels: \\$labels, first: (\\d+), after: \\$(\\w+)\\)`).exec(selection);
+      if (!asked) continue;
+      const first = ctx.opts.pageSize ?? Number(asked[1]);
+      const start = vars[asked[2]!] ? Number(vars[asked[2]!]) : 0;
+      const all = [...repo.issues.values()].filter((i) => i.state === 'open' && i.pullRequest === pulls && i.labels.some((l) => labels.includes(l)))
+        .sort((x, y) => x.number - y.number);
+      const end = Math.min(start + first, all.length);
+      answer[field] = { pageInfo: { hasNextPage: end < all.length, endCursor: String(end) }, nodes: all.slice(start, end).map((i) => listed(repo, i)) };
+    }
+    data[alias] = answer;
+  }
+  return { status: 200, body: { data, ...(errors.length ? { errors } : {}) } };
+}
+
 export function graphql(ctx: FakeCtx, req: FakeReq): FakeReply {
   const b = (req.body ?? {}) as GqlBody;
   const query = b.query ?? '';
+  if (/r0: repository\(owner/.test(query)) return listing(ctx, req, b);
   if (/q0: repository\(owner/.test(query)) return batched(ctx, req, b);
   if (/repository\(owner/.test(query)) return closer(ctx, req, b);
   const login = b.variables?.login ?? '';

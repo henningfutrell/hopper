@@ -121,7 +121,7 @@ const FAILED = new Set(['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE', 'ERROR']);
  * The rollup's state, but failing once one of its checks failed (issue #927): GitHub keeps the rollup pending while other
  * checks still run, and a failure must not wait for them.
  */
-const rollupChecks = (r: Rollup | null | undefined): ChecksState | undefined => {
+export const rollupChecks = (r: Rollup | null | undefined): ChecksState | undefined => {
   const state = CHECKS[r?.state ?? ''];
   if (state !== 'pending') return state;
   return r?.contexts?.nodes?.some((n) => FAILED.has(n?.conclusion ?? n?.state ?? '')) ? 'failing' : state;
