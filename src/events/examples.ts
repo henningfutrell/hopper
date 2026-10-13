@@ -246,6 +246,8 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'repo_checks.dismissed': { repo: 'owner/repo', dismissed: true, by: 'octocat' },
   'job.child_issue_filed': { requestId: 'r1', parent: { repo: 'octo/tools', number: 7 }, child: { repo: 'octo/tools', number: 42, url: 'https://github.com/octo/tools/issues/42' }, required: true, subIssue: true },
   'direct_job.submitted': { id: 'd1', by: 'octocat', via: 'api', labels: ['sme:identity'], authorizations: ['keycloak:otp-reset'] },
+  'direct_job.promoted': { id: 'd1', repo: 'octo-org/ops', kind: 'issue', number: 12, url: 'https://github.com/octo-org/ops/issues/12', by: 'octocat', artifacts: 1, update: false },
+  'direct_job.promotion_revoked': { id: 'd1', repo: 'octo-org/ops', kind: 'issue', number: 12, by: 'octocat' },
   'pointed_job.created': { id: 'p1', repo: 'octo-org/hello', pointer: { kind: 'issue', number: 7, url: 'https://github.com/octo-org/hello/issues/7' }, source: 'api', by: 'octocat' },
   'pointed_job.status_changed': { id: 'p1', from: 'queued', to: 'running', lane: 'local/lane-1', by: 'octocat' },
   'github_watch.changed': {

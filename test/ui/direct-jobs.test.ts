@@ -8,12 +8,12 @@ const draft = (more: Partial<ReturnType<typeof emptyDirectDraft>> = {}) => ({ ..
 
 const view = (job?: DirectJobView['job']): DirectJobView => ({
   id: 'd1', title: 'Unlock a sign-in', brief: 'Clear it.', labels: ['sme:identity'], authorizations: ['keycloak:otp-reset'],
-  submittedBy: { person: 'ada', via: 'ui' }, submittedAt: '2026-10-12T10:00:00.000Z', ...(job ? { job } : {}),
+  submittedBy: { person: 'ada', via: 'ui' }, submittedAt: '2026-10-12T10:00:00.000Z', artifacts: [], ...(job ? { job } : {}),
 });
 
 describe('the direct job form', () => {
   it('starts empty, with no repository and the default priority', () => {
-    expect(emptyDirectDraft()).toEqual({ title: '', brief: '', labels: '', authorizations: '', repo: '', priority: '' });
+    expect(emptyDirectDraft()).toEqual({ title: '', brief: '', labels: '', authorizations: '', repo: '', priority: '', promoteWhenDone: false });
   });
 
   it('says what is missing or wrong before it can be sent', () => {

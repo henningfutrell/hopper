@@ -5,11 +5,11 @@ import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 
-export const DIRECT_USAGE = `  hopper job submit --title <t> (--brief <text> | --brief-file <f>) [--label <l>]... [--authorize <a>]... [--repo <owner/repo>] [--executor <e>] [--priority <0-100>]
+export const DIRECT_USAGE = `  hopper job submit --title <t> (--brief <text> | --brief-file <f>) [--label <l>]... [--authorize <a>]... [--repo <owner/repo>] [--executor <e>] [--priority <0-100>] [--promote-when-done]
                                                      submit a job straight to the hopper, with no GitHub issue; its brief and results stay in the hopper
   hopper job direct [<id>]                           the direct jobs, or one: its job's status, result and open questions`;
 
-const SUBMIT = 'job submit --title <t> (--brief <text> | --brief-file <f>) [--label <l>]... [--authorize <a>]... [--repo <owner/repo>] [--executor <e>] [--priority <0-100>]';
+const SUBMIT = 'job submit --title <t> (--brief <text> | --brief-file <f>) [--label <l>]... [--authorize <a>]... [--repo <owner/repo>] [--executor <e>] [--priority <0-100>] [--promote-when-done]';
 
 const readText = (file: string): string => {
   try { return readFileSync(file, 'utf8'); } catch (e) { throw new OperatorRefusal(`--brief-file ${file}: ${(e as Error).message}`); }
@@ -24,7 +24,7 @@ export function directCall(verb: string | undefined, args: string[]): Call | und
   if (verb !== 'submit') return undefined;
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     title: { type: 'string' }, brief: { type: 'string' }, 'brief-file': { type: 'string' }, label: { type: 'string', multiple: true },
-    authorize: { type: 'string', multiple: true }, repo: { type: 'string' }, executor: { type: 'string' }, priority: { type: 'string' },
+    authorize: { type: 'string', multiple: true }, repo: { type: 'string' }, executor: { type: 'string' }, priority: { type: 'string' }, 'promote-when-done': { type: 'boolean' },
   } });
   if (positionals.length > 0 || !values.title || (values.brief === undefined) === (values['brief-file'] === undefined)) throw usage(SUBMIT);
   const priority = values.priority === undefined ? undefined : Number(values.priority);
@@ -33,5 +33,6 @@ export function directCall(verb: string | undefined, args: string[]): Call | und
   return { role: 'operator', path: '/ui/api/direct-jobs', body: async () => ({
     title: values.title, brief, labels: values.label ?? [], authorizations: values.authorize ?? [],
     ...(values.repo ? { repo: values.repo } : {}), ...(values.executor ? { executor: values.executor } : {}), ...(priority !== undefined ? { priority } : {}),
+    ...(values['promote-when-done'] ? { promoteWhenDone: true } : {}),
   }) };
 }

@@ -258,7 +258,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     },
   });
   // The GitHub proxy (issue #563): a client target's jobs reach the hopper where it dialled in.
-  const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase) });
+  const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), publicUrl: () => config.publicUrl ?? o.reach?.() });
   const notEnded = () => store.jobs.list({ status: [...IN_FLIGHT_STATUSES] });
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine);
   const host = createPluginHost({
@@ -329,7 +329,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     onDecided: (p) => engine.onDecided(p), onRevise: (p, brief) => engine.onRevise(p, brief),
   });
   let { running, fixed } = splitSources(host.jobSources());
-  const directJobs = createDirectJobs({ store, host: () => engine.sourceHost, url: (id) => o.uiUrl(`direct-job-${id}`), now: () => clock.now().toISOString() });
+  const directJobs = createDirectJobs({ store, host: () => engine.sourceHost, url: (id) => o.uiUrl(`direct-jobs/${id}`), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), now: () => clock.now().toISOString() });
   const jobSources = () => [...running.map((r) => r.source), directJobs.source, ...(seams.sources ?? [])];
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');

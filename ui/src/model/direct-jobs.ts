@@ -4,9 +4,9 @@
 import type { DirectJobInput, DirectJobView } from './wire.ts';
 
 /** What the form keeps: every field as typed. Labels split at commas and lines, authorizations at lines. */
-export interface DirectJobDraft { title: string; brief: string; labels: string; authorizations: string; repo: string; priority: string }
+export interface DirectJobDraft { title: string; brief: string; labels: string; authorizations: string; repo: string; priority: string; promoteWhenDone: boolean }
 
-export const emptyDirectDraft = (): DirectJobDraft => ({ title: '', brief: '', labels: '', authorizations: '', repo: '', priority: '' });
+export const emptyDirectDraft = (): DirectJobDraft => ({ title: '', brief: '', labels: '', authorizations: '', repo: '', priority: '', promoteWhenDone: false });
 
 const REPO = /^[^/\s]+\/[^/\s]+$/;
 const PRIORITY = /^\d{1,3}$/;
@@ -29,9 +29,12 @@ export function directJobRequest(d: DirectJobDraft): DirectJobInput {
   const priority = d.priority.trim();
   return {
     title: d.title.trim(), brief: d.brief.trim(), labels: words(d.labels, /[,\n]/), authorizations: words(d.authorizations, /\n/),
-    ...(repo ? { repo } : {}), ...(priority ? { priority: Number(priority) } : {}),
+    ...(repo ? { repo } : {}), ...(priority ? { priority: Number(priority) } : {}), ...(d.promoteWhenDone ? { promoteWhenDone: true } : {}),
   };
 }
+
+/** The list with each direct job offered for promotion first (issue #946): it waits on a person. Else as listed. */
+export const offeredFirst = (list: readonly DirectJobView[]): DirectJobView[] => [...list.filter((d) => d.offer), ...list.filter((d) => !d.offer)];
 
 /** The state a direct job shows: its job's status, and how many of its questions wait. */
 export function directJobState(d: DirectJobView): { status: string; label: string } {
