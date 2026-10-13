@@ -19,8 +19,7 @@ import type { MachineLinks } from '../machines/links.ts';
 import type { MachineJoin } from '../plugins/attached-edit.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
-import { createSshStepHost, createWindowsSteps, readWindowsHosts, type WindowsSteps } from '../windows-steps/index.ts';
-import { createSandboxSteps, type SandboxSteps } from '../sandbox/steps.ts';
+import { createSshStepHost, createWindowsSteps, readWindowsHosts, type WindowsSteps } from '../windows-steps/index.ts'; import { createSandboxSteps, type SandboxSteps } from '../sandbox/steps.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
 import { createClientReleaseKeeper, createOwnedHerdrKeeper, createTargetPool, probeOwnedHerdr, withClientWorkTree, probeContainer, probeSsh } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
@@ -170,9 +169,7 @@ export interface UserRuntime {
   /** The GitHub proxy's view of this user (issue #563). */
   githubProxy: UserGitHubProxy;
   /** A job's step run on a Windows host the user set up (issue #731); search (issue #945): the index kept from job events, and the permission-checked search; the boxes the user's jobs ask for (issue #991). */
-  windowsSteps: WindowsSteps; search: UserSearch; sandboxRequests: SandboxRequests;
-  /** A job's Linux sandbox step (issue #1007): one command in a step box of a template that covers its needs, its credentials minted for it. */
-  sandboxSteps: SandboxSteps;
+  windowsSteps: WindowsSteps; search: UserSearch; sandboxRequests: SandboxRequests; sandboxSteps: SandboxSteps; // a job's Linux sandbox steps (issue #1007)
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */

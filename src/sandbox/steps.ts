@@ -15,11 +15,11 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { OperationProfile } from '../domain/access.ts';
+import type { Minted, MintReach } from '../domain/minting.ts';
 import { checkWait } from '../domain/read-only-check.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
 import type { TemplateView } from '../domain/vault.ts';
 import { stepRequestOf, type StepResult } from '../domain/windows-steps.ts';
-import type { StepMintAnswer, StepMintAsk } from '../vault/step-mint.ts';
 import { maskSecrets, STEP_KEEP_MS, type StepStart } from '../windows-steps/service.ts';
 import { stepEnv, stepSecrets, STEP_BOX_INPUTS_MAX_BYTES, type StepBox, type StepBoxResult, type StepCredential } from './step.ts';
 
@@ -43,8 +43,8 @@ export function coveringTemplate(templates: readonly TemplateView[], needs: read
 export interface SandboxStepsOptions {
   /** The user's templates now, as the vault shows them. */
   templates(): TemplateView[];
-  /** The vault's mint for one need of a step (src/vault/step-mint.ts). */
-  mint(ask: StepMintAsk): Promise<StepMintAnswer>;
+  /** The vault's mint for one need of the step box `step` (src/vault/step-mint.ts, given by the composition root); `plan`: the approved plan a change applies. */
+  mint(ask: { template: string; step: string; job: string; profile: OperationProfile; plan?: string }): Promise<{ minted: Minted; reach: MintReach } | { refused: string }>;
   /** Runs the step box (the sandbox module's `step`); absent: this hopper runs no step box. */
   run?: (box: Omit<StepBox, 'userId' | 'instanceId' | 'network'>, io: { log(chunk: string): void; signal: AbortSignal }) => Promise<StepBoxResult>;
   /** Where each step's own directory goes on this machine: the hopper's work dir (scratch). */

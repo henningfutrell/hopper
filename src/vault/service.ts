@@ -26,8 +26,7 @@ import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/te
 import type { SealerState } from '../secrets/sealer.ts';
 import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 
-import { probeMarksFor, templateChecks, type TemplateChecks } from './checks.ts';
-import { stepMinting, type StepMinting } from './step-mint.ts';
+import { probeMarksFor, templateChecks, type TemplateChecks } from './checks.ts'; import { stepMinting, type StepMinting } from './step-mint.ts';
 import { agentCredentialProblem, agentCredentials, type AgentCredentials } from './agent-credential.ts';
 import { resealRows, vaultContext } from './reseal.ts';
 export { vaultContext };

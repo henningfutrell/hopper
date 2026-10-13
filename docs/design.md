@@ -9553,7 +9553,8 @@ person or the CLI started the box (issue #769).
 - **The answers.** 202 while the request waits for a person or the box starts; 200 when it runs: the box's name, who
   approved it, and the skills it loads for each asset — and, for a job that does not run on a box of that template,
   that it runs elsewhere (issue #1009), and how it runs each command in the box as a **box step** (`sh "$HOPPER_STEP"
-  box <box>`, issue #1004, "Box steps"); 403 when declined; 503 when the start failed. Asked again, the
+  box <box>`, issue #1004, "Box steps"); a single command run by its needs, with no box asked for first, is a **need
+  step** (`sh "$HOPPER_STEP" need …`, issue #1007, "Need steps"); 403 when declined; 503 when the start failed. Asked again, the
   job gets the same request and the same box. A box that went makes the next ask a new request. A start that failed
   stays failed: a new one on each event would start the box again and again. A person starts one by hand instead.
 - **YOLO** (`sandboxYolo`). Both toggles on. A job that needs AWS gets a running box with no human step. Off by
@@ -17121,3 +17122,89 @@ Tests: `test/ui/sandbox-runs-view.test.ts` (Approve all listed sends both while 
 sends every approval while none has answered, each card shows its progress then its result; a refusal on one leaves the
 others approved and says why), `test/sandbox/requests.test.ts` (20 runs approved at once each answer at once, and their
 boxes start side by side).
+
+## Sandbox steps (issue #1007, 2026-10-13)
+
+Owner rules (issue #1007, rolling up #990, #998, #1003, #1004, #1006): no seat holds an AWS, Kubernetes, terraform or
+vault credential; no routing rule or machine pin sends infra work to a box; no person starts a box by hand for a job. A
+job on any seat that needs an account or a cluster asks the hopper while it runs; the hopper runs that one step in a
+sandbox with credentials minted for it, and gives the output back. The job goes on on its seat. Before it, a job's
+`sandbox` ask started a box that joined as a machine, and the job could not reach it (#1004, #1009): job 89486b46 failed
+with "this seat job cannot run commands in it".
+
+Two kinds of sandbox step, one way in (`hopper-step`, `HOPPER_STEP`, `/job/step`, the job's proxy token):
+
+| | Windows sandbox step | Linux sandbox step |
+|---|---|---|
+| asked as | `sh "$HOPPER_STEP" run HOST …` | `sh "$HOPPER_STEP" need NEEDS --why … …` |
+| runs | on a **Windows host** a person set up, over ssh, PowerShell | in a **step box**: a one-shot container of a ready template that covers the needs, `sh` |
+| credentials | vault secrets the host gives, by name, after the job's vault grant | each need's **minted credential**, for the step only, after Access and the apply gate |
+| skill text | `windows-step` | `sandbox-step` |
+
+Both stream the output to the job as it comes, then answer the exit code and the outputs (`GET /job/step/:id`), keep the
+result an hour, and record `step.started`, `step.finished`, `step.refused` on the job's timeline. "Windows sandbox steps"
+above holds the Windows half; this section the Linux half.
+
+- **The ask.** `POST /job/step?needs=&why=&plan=&planId=&command=&timeout=&output=…`, the inputs as a tar body (at most
+  64 KiB: they travel in the box's environment). NEEDS as a template request writes them, `<operation>/<kind>/<asset>`.
+  A need the vault mints nothing for (only `aws-role`, `cluster` and `namespace` are minted) is a 400 before any template
+  is made. `--secret` is refused: a step gets what its needs name, never a vault secret by name.
+- **The template** (`coveringTemplate`, `src/sandbox/steps.ts`). A template of the user's that is ready — approved, its
+  image the approved one, every profile approved, its read-only check passed when it takes one — and that declares every
+  need. More needs are fine: the step is minted only what it named, so a wider template gives it nothing more. The one
+  with the fewest profiles wins. None: the route asks for the template through the skill waits as `sandbox-template`
+  asks (`TEMPLATE_SKILL`, with `why` and `plan`), so it is made once and never twice (`asked-<hash>` of the needs, and
+  issue #998's reuse), approved only by the read policy, the auto-approve policy, a remembered write approval, skip
+  template approval or a person, and checked before its first step when it is read-only. While it waits the answer is
+  202 `waiting: …`, and the wait opens a watch that ends the job's own wait (`HOPPER_WAITING`) when it is ready (issue
+  #998). `ready=1` asks only that, and runs no step.
+- **hopper-step waits by itself.** `need` asks with `ready=1` first; on 202 it says the reason once and asks again every
+  10 s (`HOPPER_STEP_POLL_S`), for `--wait` seconds (default 1800). Ready, it runs the step: one approval of a write need
+  and the step goes on with no other action. When `--wait` runs out first, it tells the job to end its turn with
+  `HOPPER_WAITING`; the watch wakes it, and it runs the same command again.
+- **The mints** (`mintForStep`, `src/vault/step-mint.ts`; with the vault in a container, minted where the minting
+  credential is, as a check box's). Per need, before the inputs are taken: the job at work; Access asked as a live job
+  of the template (`decideCheckMint`, the step box as the check), so only a profile approved for the template is minted;
+  for an operation but read, the apply gate (issue #870) — an approved, current infra plan, `--plan-id`; the minting
+  credential for the account or cluster; the job still at work. `vault.minted` with the step box as its `machine` and the
+  job, or `vault.mint_refused`; never a credential. A refusal is a 403 that names the need and why.
+- **The step box** (`runStepBox`, `src/sandbox/step.ts`, through the sandbox module's `step`: beside the hopper, else
+  on a client target of the user's with a runtime, as a check runs). The template's image with its tools, under the
+  sandbox flags, the step label `io.hopper.step` (the reconcile pass leaves it; the check pass's sweep removes one no step
+  holds), `STEP_BOX_SCRIPT` as its one-shot script. The credentials, the command, the outputs and the inputs come in its
+  environment, never in the script: the script writes the AWS profiles (`[<account>-<role>]`, the first `AWS_PROFILE`)
+  and the kubeconfig (a context per cluster or namespace, the first current) under the box's home with umask 077, takes
+  them out of the environment, extracts the inputs in `$HOME/work`, and runs the command there with `sh -c`. One AWS role
+  is also the AWS CLI's own variables. After the command it prints the outputs as a tar in base64 between two marks,
+  which the job's log never shows (`shownSoFar`, `splitOutput`). The box's output is read every second and streamed with
+  each credential's value masked (`maskSecrets`); the exit code is the command's; a timeout or the job's request gone
+  stops the box. The box and its home volume are removed after it, whatever came before.
+- **What the job learns.** `sandbox-step` in the skill catalog, its full help `SANDBOX_STEP_HELP`; and the `sandbox`
+  answer for a job not on the box names `hopper-step need` (issue #1009's text changed).
+
+**Decided here.** The step runs one command, not the rest of the job: the job's work tree, agent and GitHub stay on its
+seat. A superset template is used for a step but never for a `sandbox` box: the box is given every profile of its
+template, the step only its needs. The step box is the check box's mechanism, not a sandbox box: it joins no hopper, so
+no lane, join code or reconcile record is made for it, and nothing outlives the step.
+
+**Also in this change.** A job's FAILED reason is read whole: every line after the marker, at most 4000 characters
+(`failedReason`, `src/executors/herdr/screen.ts`); before, it was cut after its first line, often at a colon. A job picked
+up with a question 5 h old waits the full auto-park timeout again (`test/integration/auto-park.test.ts`): the pick up
+already restarted the timer (issue #692), and the path that re-parked jobs in #1006 was not found.
+
+**Not built.** `terraform apply` in a step box: the apply wrapper fetches the plan file with the job's proxy token, which
+a step box does not hold. A step's output on the job stream (the response carries it). Inputs over 64 KiB. Approving a
+template and starting a box in the UI hanging the HTTP server (#1003) is its own change.
+
+**Residual risk, stated.** A step's command runs with its credentials: it can print them, and the mask is a guard
+against an accident, not a boundary. The credential lives for its mint's time (an AWS session 15 minutes, a token 10)
+and holds what its role or service account allows. A template a person approved for one job's needs now serves any
+job of the user's whose needs it declares; the step is still minted only what it names, after Access.
+
+Tests: `test/sandbox/step.test.ts` (the box's environment; the real script under `sh`: credentials into files and out of
+the environment, inputs, output, exit code, outputs back, the box gone; a stop; the template a step takes),
+`test/integration/sandbox-steps.test.ts` (the real daemon and `hopper-step`, OpenFGA and the container runtime as doubles,
+STS faked: a read in the policy after the check, with no person, and again with no second template; a person's wider
+template minted only the need; a write that waits, one approval, then the apply gate; a need the vault mints nothing
+for), `test/integration/job-sandboxes.test.ts` (the answer names `hopper-step need`), `test/herdr/screen.test.ts`
+(the whole FAILED reason), `test/integration/auto-park.test.ts` (a question 5 h old), `test/domain/job-bom.test.ts`.
