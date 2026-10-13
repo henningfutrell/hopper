@@ -4,19 +4,20 @@
 import { describe, expect, it } from 'vitest';
 import { bucketLine, cacheLine, rateLimiterPatch, rateLimiterSummary } from '../../ui/src/model/github-rate-limiter.ts';
 
-const S = { slowBelowPercent: 25, reserve: 50, batchSize: 10, intakeReserve: 1000 };
-const draft = (d: Partial<Record<keyof typeof S, string>>) => ({ slowBelowPercent: '25', reserve: '50', batchSize: '10', intakeReserve: '1000', ...d });
+const S = { slowBelowPercent: 25, reserve: 50, batchSize: 10, intakeReserve: 1000, intakeSyncMinutes: 15 };
+const draft = (d: Partial<Record<keyof typeof S, string>>) => ({ slowBelowPercent: '25', reserve: '50', batchSize: '10', intakeReserve: '1000', intakeSyncMinutes: '15', ...d });
 
 describe('the shared rate limiter model', () => {
   it('the summary says when calls slow, what is kept back and how polls run', () => {
-    expect(rateLimiterSummary(S)).toBe('Calls slow below 25 % of a rate limit; 50 calls are kept in reserve; intake stops at 1000 calls left, for job work; GitHub watches poll 10 at a time.');
-    expect(rateLimiterSummary({ slowBelowPercent: 0, reserve: 0, batchSize: 1, intakeReserve: 0 })).toBe('Calls slow only when none is left; no calls are kept in reserve; intake keeps no calls for job work; GitHub watches poll one at a time.');
+    expect(rateLimiterSummary(S)).toBe('Calls slow below 25 % of a rate limit; 50 calls are kept in reserve; intake stops at 1000 calls left, for job work; intake lists the repositories every 15 min; GitHub watches poll 10 at a time.');
+    expect(rateLimiterSummary({ slowBelowPercent: 0, reserve: 0, batchSize: 1, intakeReserve: 0, intakeSyncMinutes: 1 })).toBe('Calls slow only when none is left; no calls are kept in reserve; intake keeps no calls for job work; intake lists the repositories every minute; GitHub watches poll one at a time.');
   });
 
   it('a save sends only what differs; nothing differs, nothing to save', () => {
     expect(rateLimiterPatch(S, draft({}))).toEqual({ ok: true, patch: undefined });
     expect(rateLimiterPatch(S, draft({ reserve: ' 200 ', batchSize: '5' }))).toEqual({ ok: true, patch: { reserve: 200, batchSize: 5 } });
     expect(rateLimiterPatch(S, draft({ intakeReserve: '2000' }))).toEqual({ ok: true, patch: { intakeReserve: 2000 } });
+    expect(rateLimiterPatch(S, draft({ intakeSyncMinutes: '30' }))).toEqual({ ok: true, patch: { intakeSyncMinutes: 30 } });
   });
 
   it('a value out of range, a fraction or no number is refused with the field named', () => {
@@ -24,6 +25,7 @@ describe('the shared rate limiter model', () => {
     expect(rateLimiterPatch(S, draft({ reserve: '1.5' }))).toEqual({ ok: false, error: 'Reserve: a whole number from 0 to 5000' });
     expect(rateLimiterPatch(S, draft({ batchSize: '' }))).toEqual({ ok: false, error: 'Batch size: a whole number from 1 to 100' });
     expect(rateLimiterPatch(S, draft({ intakeReserve: '5001' }))).toEqual({ ok: false, error: 'Kept for job work: a whole number from 0 to 5000' });
+    expect(rateLimiterPatch(S, draft({ intakeSyncMinutes: '0' }))).toEqual({ ok: false, error: 'Intake sync every: a whole number from 1 to 1440' });
   });
 
   it('a bucket: calls left of the limit, when it resets, and a hold after a refusal', () => {
