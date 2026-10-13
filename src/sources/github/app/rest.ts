@@ -41,6 +41,16 @@ function commentFrom(c: RestComment): GitHubComment {
 
 const auth = (token: string) => ({ authorization: `token ${token}` });
 
+/**
+ * The log of GitHub Actions job `jobId` (issue #993): GitHub answers a redirect to its storage, which the request follows;
+ * the text, as it comes.
+ */
+export async function jobLog(req: Request, token: string, repo: string, jobId: number): Promise<string> {
+  const r = await req('GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs', { ...splitRepo(repo), job_id: jobId, headers: auth(token) });
+  const data: unknown = r.data;
+  return typeof data === 'string' ? data : data instanceof ArrayBuffer ? new TextDecoder().decode(data) : String(data ?? '');
+}
+
 export async function getIssue(req: Request, token: string, repo: string, number: number): Promise<GitHubIssue> {
   const r = await req('GET /repos/{owner}/{repo}/issues/{issue_number}', { ...splitRepo(repo), issue_number: number, headers: auth(token) });
   return issueFrom(r.data as RestIssue, repo);

@@ -115,7 +115,7 @@ describe('the tend brief with the hopper\'s read of the logs (issue #993)', () =
     expect(brief).toContain('Ask a person for a log only when the hopper could not read it, and say why it could not.');
   });
 
-  it('a check that is no GitHub Actions job gets no log command', () => {
-    expect(tendBrief(PR, 'fix_checks', { failed: [{ name: 'ci/external', url: 'https://ci.example.org/build/3' }] })).not.toContain('check log');
+  it('a check that is no GitHub Actions job gets no log command of its own', () => {
+    expect(tendBrief(PR, 'fix_checks', { failed: [{ name: 'ci/external', url: 'https://ci.example.org/build/3' }] })).not.toContain('The full log:');
   });
 });

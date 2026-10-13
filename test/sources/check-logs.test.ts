@@ -38,9 +38,7 @@ describe('the read of failed checks\' logs (issue #993)', () => {
   });
 
   it('a port that cannot read logs leaves the checks as they are', async () => {
-    const gh = createFakeGitHub();
-    const { jobLog: _no, ...api } = gh;
-    expect(await createCheckLogs(api).read([{ name: 'a', url: job(42) }])).toEqual([{ name: 'a', url: job(42) }]);
+    expect(await createCheckLogs({}).read([{ name: 'a', url: job(42) }])).toEqual([{ name: 'a', url: job(42) }]);
   });
 
   it(`keeps at most ${MAX_KEPT_LOGS} logs`, async () => {

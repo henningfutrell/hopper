@@ -30,7 +30,8 @@
             "pr.view",
             "pr.ready",
             "repo.view",
-            "repo.fork"
+            "repo.fork",
+            "check.log"
           ]
         },
         {

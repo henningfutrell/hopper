@@ -128,6 +128,8 @@ When a waiting pull request gets merge conflicts with its base branch, or failin
 - Merge conflicts: rebase onto the base branch, resolve the conflicts, push.
 - Failing checks: read the failing checks, fix the cause, push.
 
+For failing checks, the hopper reads the log of each check that GitHub Actions ran, and puts its errors and summary in the brief: a failing test, an assertion, or an error that no test caught. The job can read the full log through the hopper with `sh "$HOPPER_GH" check log <job> --repo <owner/repo>`. A job does not ask you to paste a log. It asks only when the hopper cannot read the log, and then it says why.
+
 The new job works on the same pull request and opens no new one. If it cannot fix it, it fails and says which files or checks, and why. The card then waits for a person.
 
 The hopper tends one pull request at most three times in a row. A draft is never tended. The hopper does not act on review comments by itself: to ask for changes, use **Send back for rework**.
@@ -157,6 +159,7 @@ When the hopper merges a pull request (yolo mode or **Merge now**) that did not 
 | A job failed with `not complete:` | It ended done with no ready pull request. Open the job to read what the hopper looked at. |
 | The issue stays open after a merge | The pull request was a part, or a person merged a pull request with no `Closes #N`. Close the issue, or let the next part run. |
 | A repository shows `no checks` | Select **Queue job** to add checks, or add a workflow yourself. |
+| A brief or a job says the hopper may not read Actions logs | The hopper's GitHub App needs the **Actions: read** permission. Add it on the app's settings page on GitHub, then accept the new permission on each installation. |
 
 **Merge now**, **Close PR** and **Send back for rework** need the operator role. Yolo mode needs an admin.
 

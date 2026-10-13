@@ -24,7 +24,8 @@
 // a tend job at work, or a pull request on its way to the hopper's merge. Jev's pick first (`merge-order`, `tend-order.ts`),
 // then the rules' order (`tendOrder`). A pull request whose checks stay pending
 // holds it no more than `PENDING_HOLD_MS` after its last push; one not seen yet holds nothing (issue #927). A `fix_checks`
-// brief names the checks that failed, and the first fix of a row may run a flaky one again once (issue #927).
+// brief names the checks that failed, and the first fix of a row may run a flaky one again once (issue #927). It quotes each
+// failed GitHub Actions job's log, trimmed, which the source reads (`JobSource.checkLogs`, issue #993), or says why it could not.
 // One queue per set of pull requests that conflict (issue #939): a head holds only the due pull requests the source says
 // conflict with it (`JobSource.conflictBetween`, the hopper's mirror), and two due ones that do not conflict are tended at
 // the same time. Where the source cannot say, they conflict, as before. What holds one is kept on its job (`heldBehind`).
@@ -167,11 +168,16 @@ export function createAfterDone(c: AfterDoneContext) {
     return { step, url: s.pullRequest, checks: { failed: s.seen?.failedChecks ?? [], rerun: inRow === 0 } };
   }
 
-  /** Tend the job's followed pull request when it needs it (issue #736): its item runs again with the tend brief. */
-  async function tendIfDue(jobId: string): Promise<void> {
+  /**
+   * Tend the job's followed pull request when it needs it (issue #736): its item runs again with the tend brief. A
+   * `fix_checks` brief carries the failed checks' logs, as the source read them (issue #993).
+   */
+  async function tendIfDue(source: JobSource, jobId: string): Promise<void> {
     const due = tendDue(store.jobs.get(jobId));
     if (!due) return;
-    const r = await c.tend(jobId, tendBrief(due.url, due.step, due.checks));
+    const checks = due.step === 'fix_checks' && source.checkLogs && due.checks.failed?.length
+      ? { ...due.checks, failed: await source.checkLogs(due.checks.failed) } : due.checks;
+    const r = await c.tend(jobId, tendBrief(due.url, due.step, checks));
     if (!r.ok) {
       // Kept, so the card says why (issue #967): a refusal is never shown as a tend to come.
       keepHold(jobId, 'tendRefused', r.message);
@@ -277,7 +283,7 @@ export function createAfterDone(c: AfterDoneContext) {
           continue;
         }
         started.push({ pullRequest: d.pullRequest, why: 'tending' });
-        await tendIfDue(d.jobId).catch((e: unknown) => { c.failed(d.jobId, e); });
+        await tendIfDue(source, d.jobId).catch((e: unknown) => { c.failed(d.jobId, e); });
       }
     }
     for (const j of jobs) keepHold(j.id, 'heldBehind', held.get(j.id));

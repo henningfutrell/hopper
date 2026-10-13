@@ -493,6 +493,7 @@ export * from './lane-tuning.ts';
 export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView };
 export * from './plugins.ts';
 export * from './item-snapshots.ts';
+export * from './check-logs.ts';
 
 // ---- Queue gate (issue #159): src/domain/queue-gate.ts (re-exported here) ---------------
 

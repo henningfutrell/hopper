@@ -247,6 +247,11 @@ export interface GitHubApi {
   merge(repo: string, number: number): Promise<void>;
   /** Close pull request `number` of `repo` without a merge (issue #677: a person's Close PR). */
   closeWithoutMerge(repo: string, number: number): Promise<void>;
+  /**
+   * The log of GitHub Actions job `jobId` of `repo` (issue #993): what a failed check printed, the whole text. Through the
+   * shared rate limiter as every call. GitHub refuses it (403) without the Actions read permission. Absent: not read.
+   */
+  jobLog?(repo: string, jobId: number): Promise<string>;
   /** Make open pull request `number` of `repo` a draft (issue #724: a person sent it back for rework). A draft stays one. GitHub's refusal throws. */
   toDraft(repo: string, number: number): Promise<void>;
 

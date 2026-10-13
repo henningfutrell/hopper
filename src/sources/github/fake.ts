@@ -13,6 +13,7 @@
 
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
 import { GitHubApiError } from './api.ts';
+import { fakeJobLogs } from './fake-job-logs.ts';
 import type { BranchPullRequest, ClosingPullRequest, GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem, IssueEvent, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
 import { createFakeCrossReferences } from './fake-cross-references.ts';
@@ -80,6 +81,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const projects = new Map<string, GitHubProjectItem[] | Error>();
   const failures = new Map<Method, Error[]>();
   const calls: { method: Method; args: unknown[] }[] = [];
+  const jobLogs = fakeJobLogs((m, a) => enter(m, a));
   let commentId = 1000;
   let tick = 0;
   const stamp = () => new Date(Date.UTC(2026, 9, 2, 9, 0, tick++)).toISOString();
@@ -228,6 +230,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       if (p.state !== 'open') throw new GitHubApiError(`Pull request is ${p.state} (HTTP 422): ${p.url}`, true, 422);
       p.isDraft = true;
     },
+    jobLog: jobLogs.jobLog,
   };
 
   // A connected account's listing across repos; the app's installation token has none.
@@ -288,6 +291,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
     closePullRequest(url) { pull(url).state = 'closed'; },
     markReady(url) { pull(url).isDraft = false; },
+    setJobLog: jobLogs.setJobLog,
     setConflicting(url, conflicting) { pull(url).conflicting = conflicting; }, ...conflicts.methods,
     pushToPullRequest(url, at, o = {}) { Object.assign(pull(url), { headCommittedAt: at, conflicting: o.conflicting ?? false }); },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {

@@ -29,6 +29,7 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
   sh "$HOPPER_GH" pr ready N      --repo OWNER/NAME      (mark a draft ready for review)
   sh "$HOPPER_GH" repo view      --repo OWNER/NAME      (canPush: whether your user can push to it; hasIssues)
   sh "$HOPPER_GH" repo fork      --repo OWNER/NAME      (this job's own repository only, when your user cannot push to it)
+  sh "$HOPPER_GH" check log JOB  --repo OWNER/NAME      (a failed check's full log; JOB: the last number of the check's link)
   sh "$HOPPER_GH" report bug --title TITLE (--body TEXT | --body-file FILE) [--comment-on N] [--force]
                                                          (report a bug in the hopper itself)
 
@@ -40,6 +41,8 @@ required child: the hopper links it as a sub-issue of this job's issue, which is
 git fetch and git push to GitHub go through the hopper too: this machine holds no GitHub token for them. A job
 pushes only to a new branch of its own work on this job's own repository, never to its default or a release branch.
 A pull request: push the branch first (git push), on this job's own repository.
+A failed check's log: check log reads the log of a GitHub Actions job through the hopper. Never ask a person to paste a
+log. Ask a person only when check log says that the hopper cannot read it, and say why.
 Contributing to a repository your user cannot push to (repo view says canPush false; a push there is refused so):
 work through a fork. repo fork forks this job's repository into your user's account, or answers the fork it has, and
 says what to do next: clone the fork, read the repository's contributing rules (CONTRIBUTING.md, the pull request
@@ -61,7 +64,7 @@ ${PROXY_HELP}
 HOPPER_GH_HELP
 }
 case "$1 $2" in
-  'issue create'|'issue comment'|'issue view'|'issue close'|'pr create'|'pr view'|'pr ready'|'repo view'|'repo fork'|'report bug') op="$1.$2"; shift 2 ;;
+  'issue create'|'issue comment'|'issue view'|'issue close'|'pr create'|'pr view'|'pr ready'|'repo view'|'repo fork'|'check log'|'report bug') op="$1.$2"; shift 2 ;;
   'help '*|' ') help; exit 0 ;;
   *) help >&2; exit 2 ;;
 esac
