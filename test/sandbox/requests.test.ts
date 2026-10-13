@@ -1,0 +1,99 @@
+// Issue #991: sandbox requests, a job's ask for a box of a template. One per job and template; it waits for a person
+// unless skip sandbox approval is on; approved, the box starts; every step an event on the job's timeline.
+import { describe, expect, it } from 'vitest';
+import { editedApprovals, NO_SKIPS, sandboxYolo, type SandboxApprovals } from '../../src/domain/sandbox-approvals.ts';
+import type { NewEvent } from '../../src/domain/types.ts';
+import type { TemplateView } from '../../src/domain/vault.ts';
+import { createSandboxRequests } from '../../src/sandbox/requests.ts';
+
+const T = { name: 'asked-1' } as TemplateView;
+
+function setup(o: { approvals?: SandboxApprovals; launch?: () => Promise<{ container: string }> } = {}) {
+  const events: NewEvent[] = [];
+  const alive = new Set<string>();
+  const atWork = new Set(['job-1', 'job-2']);
+  let n = 0;
+  const requests = createSandboxRequests({
+    record: (e) => events.push(e),
+    approvals: () => o.approvals ?? NO_SKIPS,
+    template: (name) => (name === T.name ? T : undefined),
+    launch: o.launch ?? (async () => { const container = `box-${++n}`; alive.add(container); return { container }; }),
+    alive: (c) => alive.has(c),
+    atWork: (j) => atWork.has(j),
+    jobTitle: (j) => `title of ${j}`,
+    clock: { now: () => new Date('2026-10-13T10:00:00Z') },
+    newId: () => `r${events.length}`,
+  });
+  return { requests, events, alive, atWork, types: () => events.map((e) => e.type) };
+}
+
+describe('sandbox requests (issue #991)', () => {
+  it('waits for a person; asked again, the same request; approved, the box starts', async () => {
+    const s = setup();
+    const r = s.requests.ask('job-1', T.name);
+    expect(r).toMatchObject({ jobId: 'job-1', jobTitle: 'title of job-1', template: T.name, state: 'waiting' });
+    expect(s.requests.ask('job-1', T.name).id).toBe(r.id);
+    expect(s.requests.list()).toHaveLength(1);
+    expect(s.requests.approve(r.id, 'Ada')).toEqual({ ok: true });
+    await s.requests.idle();
+    expect(s.requests.ask('job-1', T.name)).toMatchObject({ id: r.id, state: 'running', container: 'box-1', approvedBy: 'Ada' });
+    expect(s.types()).toEqual(['vault.sandbox_requested', 'vault.sandbox_approved', 'vault.sandbox_started']);
+    expect(s.events.every((e) => e.jobId === 'job-1')).toBe(true);
+    expect(s.events[1]!.data).toMatchObject({ request: r.id, template: T.name, by: 'Ada' });
+    expect(s.requests.approve(r.id, 'Ada')).toMatchObject({ ok: false, code: 'conflict' });
+  });
+
+  it('skip sandbox approval starts the box the moment the job asks, and the event names the toggle', async () => {
+    const s = setup({ approvals: { skipTemplateApproval: false, skipSandboxApproval: true } });
+    expect(s.requests.ask('job-1', T.name).state).toBe('starting');
+    await s.requests.idle();
+    expect(s.requests.ask('job-1', T.name)).toMatchObject({ state: 'running', approvedBy: 'skip sandbox approval' });
+    expect(s.events.find((e) => e.type === 'vault.sandbox_approved')!.data).toMatchObject({ by: 'skip sandbox approval' });
+  });
+
+  it('a declined request stays declined with its reason; another job asks on its own', () => {
+    const s = setup();
+    const r = s.requests.ask('job-1', T.name);
+    expect(s.requests.decline(r.id, 'not now', 'Ada')).toEqual({ ok: true });
+    expect(s.requests.ask('job-1', T.name)).toMatchObject({ state: 'declined', reason: 'not now' });
+    expect(s.requests.ask('job-2', T.name)).toMatchObject({ state: 'waiting' });
+    expect(s.requests.decline('nope', 'x', 'Ada')).toMatchObject({ ok: false, code: 'not_found' });
+  });
+
+  it('a start that failed, or a box that went, makes the next ask a new request', async () => {
+    let fail = true;
+    const up = new Set<string>();
+    const s = setup({ approvals: { skipTemplateApproval: false, skipSandboxApproval: true }, launch: async () => { if (fail) throw new Error('no runtime'); up.add('box-x'); return { container: 'box-x' }; } });
+    const first = s.requests.ask('job-1', T.name);
+    await s.requests.idle();
+    expect(s.requests.list()[0]).toMatchObject({ state: 'failed', reason: 'no runtime' });
+    fail = false;
+    const second = s.requests.ask('job-1', T.name);
+    expect(second.id).not.toBe(first.id);
+    await s.requests.idle();
+    for (const b of up) s.alive.add(b);
+    expect(s.requests.ask('job-1', T.name)).toMatchObject({ id: second.id, state: 'running', container: 'box-x' });
+    // box-x went: the next ask is a new request.
+    s.alive.delete('box-x');
+    expect(s.requests.ask('job-1', T.name).id).not.toBe(second.id);
+  });
+
+  it('a request of a job no longer at work is forgotten', () => {
+    const s = setup();
+    s.requests.ask('job-1', T.name);
+    s.atWork.delete('job-1');
+    expect(s.requests.list()).toEqual([]);
+  });
+});
+
+describe('the sandbox approval toggles (issue #991)', () => {
+  it('YOLO sets both; each toggle named sets itself; absent keeps', () => {
+    expect(sandboxYolo(NO_SKIPS)).toBe(false);
+    const yolo = editedApprovals(NO_SKIPS, { yolo: true });
+    expect(yolo).toEqual({ skipTemplateApproval: true, skipSandboxApproval: true });
+    expect(sandboxYolo(yolo)).toBe(true);
+    expect(editedApprovals(yolo, { skipSandboxApproval: false })).toEqual({ skipTemplateApproval: true, skipSandboxApproval: false });
+    expect(editedApprovals(yolo, { yolo: false })).toEqual(NO_SKIPS);
+    expect(editedApprovals(NO_SKIPS, {})).toEqual(NO_SKIPS);
+  });
+});
