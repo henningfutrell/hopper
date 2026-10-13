@@ -2,7 +2,7 @@
 // are the UI session's (src/http/ui/vault.ts).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { profileRef } from '../domain/confirmation-asks.ts';
-import { NO_SKIPS } from '../domain/sandbox-approvals.ts';
+import { autoApproveOf, NO_SKIPS, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
 import type { ProfileAsk, VaultView } from '../domain/vault.ts';
 import { BOX_IMAGE } from '../sandbox/launch.ts';
 import type { TemplateRequestUser } from '../skills/template-request.ts';
@@ -25,9 +25,12 @@ export async function vaultAnswer(parts: Pick<TenantParts, 'vault' | 'store'> & 
   return {
     ...view, readPolicy: parts.store.settings.getReadPolicy()?.assets ?? [], ...(asks.length ? { asks } : {}),
     // Sandboxes jobs start (issue #991): the toggles, and the requests of jobs at work.
-    sandboxApprovals: parts.store.settings.getSandboxApprovals() ?? NO_SKIPS, sandboxRequests: parts.sandboxRequests?.list() ?? [],
+    // The auto-approve policy (issue #1001) answered in full, the default where none was set.
+    sandboxApprovals: approvalsInFull(parts.store.settings.getSandboxApprovals() ?? NO_SKIPS), sandboxRequests: parts.sandboxRequests?.list() ?? [],
   };
 }
+
+const approvalsInFull = (a: SandboxApprovals): SandboxApprovals => ({ ...a, autoApprove: autoApproveOf(a) });
 
 /**
  * The user's side of a template request (issue #716): their templates, through the vault's own save and approve, their

@@ -301,7 +301,7 @@ export interface TemplateView extends Template {
  */
 export interface TemplatePreview {
   template: string; image: string; tools: string[]; needs: string[]; readOnly: boolean;
-  approvedBy: 'the read policy' | 'skip template approval' | 'a person'; waits: string[]; exists?: 'same' | 'changed';
+  approvedBy: 'the read policy' | 'the auto-approve policy' | 'skip template approval' | 'a person'; waits: string[]; exists?: 'same' | 'changed';
 }
 
 const sameProfile = (a: OperationProfile, b: OperationProfile): boolean => a.operation === b.operation && a.asset.kind === b.asset.kind && a.asset.name === b.asset.name;

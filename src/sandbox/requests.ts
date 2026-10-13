@@ -6,8 +6,12 @@
 // and the box joins as a machine. Every step is an event on the job's timeline. A person declines a request with a
 // reason the job is told; a start that failed stays failed. A request whose job is no longer at work is forgotten;
 // its box ends at its time limit.
+// Issue #1001: a run needs no separate approval when the user's auto-approve policy holds its template's blast radius,
+// or when a person approved the template this job asked for, or waited on: that approval was given for this job's run.
 import { randomUUID } from 'node:crypto';
-import { SKIP_SANDBOX_APPROVER, type SandboxApprovals, type SandboxRequestView } from '../domain/sandbox-approvals.ts';
+import {
+  AUTO_APPROVER, autoApproves, NO_PERSON, SKIP_SANDBOX_APPROVER, templateApprovalBy, type SandboxApprovals, type SandboxRequestView,
+} from '../domain/sandbox-approvals.ts';
 import type { NewEvent } from '../domain/types.ts';
 import type { TemplateView } from '../domain/vault.ts';
 
@@ -31,6 +35,8 @@ export type SandboxRequestResult = { ok: true } | { ok: false; code: 'not_found'
 export interface SandboxRequests {
   /** The job's request for a box of the template: the one it has, else a new one (approved at once when the toggle says so). */
   ask(jobId: string, template: string): SandboxRequestView;
+  /** The job waited on the template for a person's approval (issue #1001): that approval covers the job's run. */
+  waited(jobId: string, template: string): void;
   /** A person approves a waiting request: the box starts. */
   approve(id: string, by: string): SandboxRequestResult;
   /** A person declines a waiting request, with the reason the job is told. */
@@ -45,18 +51,35 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
   const newId = o.newId ?? (() => randomUUID());
   const requests = new Map<string, SandboxRequestView>();
   const starting = new Set<Promise<void>>();
+  /** `<job> <template>`: the templates each job at work waited on for a person (issue #1001). */
+  const waitedOn = new Set<string>();
   const event = (r: SandboxRequestView, type: NewEvent['type'], data: Record<string, unknown> = {}): void => {
     o.record({ type, jobId: r.jobId, data: { request: r.id, template: r.template, ...data } });
   };
 
   const forget = (): void => {
     for (const [id, r] of requests) if (!o.atWork(r.jobId)) requests.delete(id);
+    for (const k of waitedOn) if (!o.atWork(k.slice(0, k.indexOf(' ')))) waitedOn.delete(k);
   };
 
-  const start = (r: SandboxRequestView, by: string): void => {
+  /**
+   * Who approves the job's run with no second person, or undefined: skip sandbox approval; the auto-approve policy, for
+   * the template's radius; a person's approval of the template the job asked for or waited on.
+   */
+  const approverOf = (jobId: string, template: string): { by: string; radius?: string } | undefined => {
+    if (o.approvals().skipSandboxApproval) return { by: SKIP_SANDBOX_APPROVER };
+    const t = o.template(template);
+    if (!t) return undefined;
+    if (autoApproves(o.approvals(), t.radius?.level)) return { by: AUTO_APPROVER, radius: t.radius.level };
+    const person = t.approval?.by;
+    const forJob = t.askedBy === jobId || waitedOn.has(`${jobId} ${template}`);
+    return person && !NO_PERSON.includes(person) && forJob ? { by: templateApprovalBy(person) } : undefined;
+  };
+
+  const start = (r: SandboxRequestView, by: string, data: Record<string, unknown> = {}): void => {
     r.state = 'starting';
     r.approvedBy = by;
-    event(r, 'vault.sandbox_approved', { by });
+    event(r, 'vault.sandbox_approved', { by, ...data });
     const fail = (reason: string): void => {
       r.state = 'failed';
       r.reason = reason;
@@ -93,8 +116,12 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
       const r: SandboxRequestView = { id: newId(), jobId, ...(title ? { jobTitle: title } : {}), template, state: 'waiting', askedAt: o.clock.now().toISOString() };
       requests.set(r.id, r);
       event(r, 'vault.sandbox_requested');
-      if (o.approvals().skipSandboxApproval) start(r, SKIP_SANDBOX_APPROVER);
+      const approver = approverOf(jobId, template);
+      if (approver) start(r, approver.by, approver.radius ? { radius: approver.radius } : {});
       return { ...r };
+    },
+    waited(jobId, template) {
+      waitedOn.add(`${jobId} ${template}`);
     },
     approve(id, by) {
       const r = waiting(id);

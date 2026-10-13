@@ -35,6 +35,8 @@ export interface SkillUser {
   requestTemplate(needs: string | undefined, job: Job): Promise<TemplateAnswer>;
   /** A sandbox request (issue #991): the job's ask for a box of the template, and where it is now. */
   sandbox(template: string, job: Job): SandboxRequestView;
+  /** The job's sandbox ask waits on the template for a person (issue #1001): their approval then covers the job's run. */
+  sandboxWaits?(template: string, job: Job): void;
 }
 
 /** A vault secret a box may be given, as its metadata says (issue #583: the skill a person gave it for, the kind, their words). */
@@ -180,7 +182,10 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       const t = await user.requestTemplate(field(body, 'needs'), job);
       if ('reason' in t) return no(t.status, t.reason);
       const later = ' Add --wait to have the hopper tell you when the box runs.\n';
-      if (t.status === 202) return { status: 202, text: `${t.text} Then the hopper starts the box.${later}` };
+      if (t.status === 202) {
+        user.sandboxWaits?.(t.template, job);
+        return { status: 202, text: `${t.text} Then the hopper starts the box.${later}` };
+      }
       const r = user.sandbox(t.template, job);
       if (r.state === 'waiting') return { status: 202, text: `waiting: the box of template ${t.template} waits for a person to approve the sandbox run on Access requests.${later}` };
       if (r.state === 'starting') return { status: 202, text: `waiting: the box of template ${t.template} starts now, approved by ${r.approvedBy ?? 'a person'}.${later}` };

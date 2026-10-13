@@ -23,7 +23,7 @@ function user(o: { policy?: string[]; approvals?: SandboxApprovals } = {}) {
     async approve(name, by) {
       calls.push(`approve ${name} by ${by}`);
       const t = templates.get(name)!;
-      templates.set(name, { ...t, approval: { by } as never, check: { passed: true } as never, pending: { ...t.pending, image: false, profiles: t.pending.profiles.filter((p) => p.operation !== 'read') } });
+      templates.set(name, { ...t, approval: { by } as never, pending: { ...t.pending, image: false, profiles: t.pending.profiles.filter((p) => p.operation !== 'read') } });
       return { ok: true };
     },
     async approveProfile(name, profile, by) {

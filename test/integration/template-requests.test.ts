@@ -26,7 +26,7 @@
 //     Then it is told a person is asked: the template saved, nothing of it approved (the policy approves only all-read needs)
 //     When an admin approves write on cluster lab for the template
 //     Then the job's wait ends with the template ready
-//   Scenario: with no read policy, even a read need waits for a person
+//   Scenario: with no read policy, a read need is approved by the auto-approve policy (issue #1001); with low off, it waits
 //   Scenario: a template a person changed since a job asked for it is never widened back by a job
 //   Scenario: a revoked template is not approved again by the policy
 //   Scenario: needs the hopper cannot read are refused, saying how to write them
@@ -182,13 +182,20 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
     expect((await check(a, token, t!.name, LAB_WRITE)).allowed).toBe(true);
   });
 
-  it('with no read policy, even a read need waits for a person', async () => {
+  it('with no read policy, a read need is approved by the auto-approve policy; with low off, it waits for a person', async () => {
     const { a, token } = await boot();
     const creds = await runningJob(a);
+    const auto = await skill(a, creds, ['sandbox-template', '--needs', 'read/aws-account/123456789012']);
+    expect(auto.code, auto.stdout).toBe(3);
+    expect(auto.stdout).toContain('is approved; waiting for the read-only check');
+    expect((await asked(a, token)).find((t) => t.profiles[0]?.asset.kind === 'aws-account')?.approval?.by).toBe('the auto-approve policy');
+    expect((await a.events()).find((e) => e.type === 'vault.approved')?.data).toMatchObject({ by: 'the auto-approve policy' });
+
+    expect((await a.ui('/ui/api/sandbox-approvals', { autoApprove: { low: false } }, { token })).status).toBe(200);
     const r = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab']);
     expect(r.code, r.stdout).toBe(3);
     expect(r.stdout).toContain('the read policy does not hold read on cluster lab');
-    const [t] = await asked(a, token);
+    const t = (await asked(a, token)).find((x) => x.profiles[0]?.asset.kind === 'cluster');
     expect(t!.approval).toBeUndefined();
     expect((await check(a, token, t!.name, LAB_READ)).allowed).toBe(false);
   });

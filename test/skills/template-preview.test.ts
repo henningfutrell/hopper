@@ -37,8 +37,9 @@ describe('the template a request makes, shown before it is made (issue #708)', (
     });
   });
 
-  it('with no read policy, every template waits for a person', () => {
-    expect(previewTemplate(user(), 'read/cluster/lab')).toMatchObject({ approvedBy: 'a person', waits: ['the read policy does not hold read on cluster lab'] });
+  it('with no read policy and low auto-approve off, every template waits for a person', () => {
+    const off = { ...user(), approvals: () => ({ skipTemplateApproval: false, skipSandboxApproval: false, autoApprove: { low: false, medium: false, high: false } }) };
+    expect(previewTemplate(off, 'read/cluster/lab')).toMatchObject({ approvedBy: 'a person', waits: ['the read policy does not hold read on cluster lab'] });
   });
 
   it('says when the template is there already, and when a person changed it since', () => {
