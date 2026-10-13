@@ -28,6 +28,11 @@
       ],
       "additionalProperties": false
     },
+    "rememberWritesHours": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
     "by": {
       "type": "string"
     }

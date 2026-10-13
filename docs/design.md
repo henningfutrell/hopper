@@ -9612,14 +9612,61 @@ person. It holds no vault secret: each credential a skill on it needs is still a
 Access. An admin turns low off on Settings → Vault to have a person approve each read again; the read policy then
 decides as before.
 
-**Not built (left of issue #1001).** A write approval remembered per asset and access for later asks, until revoked or an
-admin-set time limit. A job's purpose required in its ask, and the template and run cards that show it with the job's
-title and link, the planned actions, the asset in plain words, and a readable name in place of `asked-<hash>`.
+**Built since: part 2** below (remembered write approvals; cards that say what the sandbox is for).
 
 Tests: `test/skills/template-auto-approve.test.ts`, `test/sandbox/requests.test.ts`, `test/store/sandbox-settings.test.ts`,
-`test/integration/job-sandboxes.test.ts` (a person approves the template a job asked for, and its run starts; another
-job's run waits; the policy set over the API), `test/ui/sandbox-runs-view.test.ts` (two cards approved in a row, each its
-own progress; Approve all listed; the policy's switches).
+`test/integration/job-sandboxes.test.ts` (a person approves the template a job asked for, and its run starts; the policy
+set over the API), `test/ui/sandbox-runs-view.test.ts` (two cards approved in a row, each its own progress; Approve all
+listed; the policy's switches).
+
+## Fewer sandbox approvals, part 2 (issue #1001, 2026-10-13)
+
+Issue #1001's done line: a repeat write ask on an approved account and namespace runs with zero clicks, and an admin
+approves or declines from the card alone, without opening the job.
+
+- **Remembered write approvals** (`src/domain/remembered-writes.ts`, pure; the user's settings, key `rememberedWrites`, no
+  migration: absent reads as none). A person's approval of a write, sync or apply profile (`POST /ui/api/vault`
+  `approve-profile`, which Approve all listed sends too) is remembered for that asset and access, `by` and `at`; a later
+  approval of the same replaces it. An approval no person gave (`NO_PERSON`: the read policy, the auto-approve policy,
+  skip template or sandbox approval, a remembered approval itself) is never remembered, so nothing extends itself.
+  - A template the hopper makes now (`automaticApprover`, after the read policy and the auto-approve policy, before skip
+    template approval) and a sandbox run (`createSandboxRequests`, after the auto-approve policy) are approved `by` **a
+    remembered write approval** when the remembered approvals cover it (`rememberedCovers`): no vault secret, at least one
+    change, every change remembered, and every read approved with no person (the read policy holds it, or the
+    auto-approve policy holds low). Reads only are never covered here: they stay the two policies'.
+  - The repeat ask: a second job's same needs reuse the approved template (issue #998), and its run is covered. Zero clicks.
+  - **The time limit** (`SandboxApprovals.rememberWritesHours`): an admin's, in hours, 0 to 8760; 0 keeps each approval
+    until forgotten; absent, 168. It counts from each approval's `at` at the moment of use, so a shorter limit takes effect
+    at once. An approval that ended is left out of every use and of the view, and dropped at the next remember.
+  - **Forget**: an admin, on Settings → Vault, panel **Sandbox approvals**, or `POST /ui/api/sandbox-approvals`
+    `forgetWrite` (`operation`, `asset`): `vault.write_forgotten`. `rememberWritesHours` on the same route; both are box
+    actions, as the route is. The vault's view answers `rememberedWrites`, each with `expiresAt` when it ends, and
+    `sandboxApprovals.rememberWritesHours` in full.
+- **The job says why, and its plan** (`src/skills/broker.ts`). `sandbox` and `sandbox-template` take `--why` (required, at
+  most 300 characters) and `--plan` (at most 2000; required when a need changes an asset: the commands, and for each
+  change what it changes and whether it can be undone). Missing: a 400 that says how. A template made by the ask keeps
+  them (`Template.purpose`, `plan`, kept through every save as `askedBy` is); the sandbox request keeps the asking job's,
+  with its issue or pull request (`jobUrl`). A watch asks again with them (`waits.ts`). An API caller's `request-template`
+  needs none: the caller is a person.
+- **The cards** (`ui/src/views/sandbox-ask.tsx`). Each template card and sandbox run card shows, before its buttons: a
+  readable name (`TemplateView.label`, the purpose's first words, at most 48 characters) with `asked-<hash>` beside it;
+  **Why**; **Job**, its title and a link to its issue or pull request (`TemplateView.askedByJob`, from the job the hopper
+  knows); **Plan**; and each need in plain words: the operation, the asset, the name and scope of the minting credential
+  the vault holds for it (a namespace's cluster's, an AWS role's account's), and whether it reads or changes the asset.
+
+**Decided here.** The template's name stays `asked-<hash>` of the needs: it is how the same needs find the same template,
+and a name from the purpose would make a second template for the same needs. The label is shown, not stored. The asset's
+plain words come from the vault's minting credentials, which a person named, never from the job: a job could call a
+production account a test one.
+
+**Residual risk, stated.** A person's one approval of a change on an asset now lets any later job make that change there,
+until the time limit (a week by default) or a forget. Each such approval is an event that names a remembered write
+approval, on the job's timeline. An admin sets the limit to 1 hour to have a person decide almost each time.
+
+Tests: `test/domain/remembered-writes.test.ts`, `test/skills/template-remembered.test.ts`, `test/sandbox/requests.test.ts`,
+`test/store/sandbox-settings.test.ts`, `test/integration/job-sandboxes.test.ts` (a repeat write ask runs with zero clicks,
+until forgotten; an ask with no `--why`, or a change with no `--plan`, refused; the template and the run keep them; the
+time limit over the API), `test/ui/sandbox-runs-view.test.ts` (the cards; the remembered list, Forget, the time limit).
 
 ## Template requests over the API (issue #718, 2026-10-11)
 
