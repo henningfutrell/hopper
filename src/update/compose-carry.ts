@@ -1,12 +1,11 @@
-// What an install changed in its compose.yaml, moved out of it (issue #697): the compose file the image ships with replaces it whole at
-// each update. The install's own settings — the published port's bind address (HOPPER_BIND) and port, and the hopper's
-// settings it set in place or with another default than the new file's — and the lines of an old `.env` become the defaults
-// of the new compose.yaml's own variables (`hopper update carry`, issue #894: no `.env`, so compose reads no file but its
-// compose files). What compose.yaml cannot name moves to compose.override.yaml, which compose reads beside it (`hopper update
-// override`): a service of the install's own with the volumes it names, a host folder mounted into a service, a key of a
-// service the hopper never sets, a setting compose.yaml does not name, and the project name, when the install gave its own.
-// A secret is in no file: the master key and every other secret are given at launch. The update script runs both.
-import { parseEnv } from 'node:util';
+// What an install changed in its compose.yaml, carried over (issues #697, #970): the compose file the image ships with
+// replaces it whole at each update. The install's own settings — the published port's bind address (HOPPER_BIND) and port,
+// and the hopper's settings it set in place or with another default than the new file's — become the defaults of the new
+// compose.yaml's own variables (`hopper update carry`). No `.env` is read or written (issues #894, #970): compose reads no
+// file but its compose files. What compose.yaml cannot name belongs in compose.override.yaml, which compose reads beside it
+// (`carryOverride` says what): a service of the install's own with the volumes it names, a host folder mounted into a
+// service, a key of a service the hopper never sets, a setting compose.yaml does not name, and the project name, when the
+// install gave its own. A secret is in no file: the master key and every other secret are given at launch.
 import { isMap, parse, parseDocument, type Document } from 'yaml';
 
 /** The settings to keep, as `KEY=value` lines in order, and what a person must move by hand. */
@@ -107,10 +106,10 @@ function localValue(key: string, old: string, next: string | undefined): string 
   return next === undefined || r?.[1] === key ? old : undefined;
 }
 
-/** The `.env` lines that keep what `oldText` (an install's compose.yaml) changed, against `newText` (the compose file the update puts in). */
+/** The `KEY=value` settings that keep what `oldText` (an install's compose.yaml) changed, against `newText` (the compose file the update puts in). */
 export function carryLocalSettings(oldText: string, newText: string): Carried {
   const old = services(oldText);
-  if (typeof old === 'string') return { env: [], notes: [`the old compose.yaml was not read (${old}): nothing carried; move its local settings to .env or compose.override.yaml by hand`] };
+  if (typeof old === 'string') return { env: [], notes: [`the old compose.yaml was not read (${old}): nothing carried; move its local settings to compose.override.yaml by hand`] };
   const hopper = old.hopper;
   if (!hopper) return { env: [], notes: ['the old compose.yaml has no hopper service: nothing carried'] };
   const next = services(newText);
@@ -144,25 +143,15 @@ const variableOf = (key: string): RegExp => new RegExp(`(?<!\\$)\\$\\{${key}(?::
 const PROFILES_LINE = /^ {4}profiles: \[([^\]]*)\]\n/gm;
 
 /**
- * The compose.yaml an update puts in: `shipped` (the image's own) with what the install set — in `old` (its compose.yaml)
- * and in `dotenv` (its old `.env`, which wins, as compose read it last) — as the defaults of the file's own variables, and
- * `image` as HOPPER_IMAGE's; `launch` (the settings the update was launched with, `KEY=value` lines) wins over both, as
- * it did in compose. COMPOSE_PROFILES turns its services on in the file. A secret is in no file: a launch setting.
+ * The compose.yaml an update puts in: `shipped` (the image's own) with what the install set in `old` (its compose.yaml) as
+ * the defaults of the file's own variables, and `image` as HOPPER_IMAGE's. COMPOSE_PROFILES turns its services on in the
+ * file. A secret is in no file: a launch setting.
  */
-export function carryCompose(o: { old: string; shipped: string; dotenv: string; launch?: string; image: string }): CarriedCompose {
+export function carryCompose(o: { old: string; shipped: string; image: string }): CarriedCompose {
   const local = carryLocalSettings(o.old, o.shipped);
   const values = new Map<string, string>();
   for (const line of local.env) values.set(line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1));
   const notes = [...local.notes];
-  for (const [what, text] of [['.env', o.dotenv], ['the launch settings', o.launch ?? '']] as const) {
-    let read: Record<string, string> = {};
-    try {
-      read = parseEnv(text) as Record<string, string>;
-    } catch (e) {
-      notes.push(`${what} not read (${(e as Error).message}): nothing moved from it`);
-    }
-    for (const [k, v] of Object.entries(read)) if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) values.set(k, v);
-  }
   values.set('HOPPER_IMAGE', o.image);
   let compose = o.shipped;
   const overrideEnv: Record<string, string> = {};
@@ -170,7 +159,7 @@ export function carryCompose(o: { old: string; shipped: string; dotenv: string; 
     const named = variableOf(key).test(compose);
     if (isSecretName(key)) {
       if (!named) overrideEnv[key] = `\${${key}:-}`;
-      notes.push(`${key}: in no file: give it at launch${key === MASTER_KEY ? ' (the update takes it from .env or the running hopper)' : ''}`);
+      notes.push(`${key}: in no file: give it at launch${key === MASTER_KEY ? ' (the update stops without it)' : ''}`);
       continue;
     }
     if (key === 'COMPOSE_PROFILES') {

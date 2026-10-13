@@ -79,13 +79,13 @@ The page reads the status every 10 seconds.
 | `Off` | Remote access is off. The hopper is not reached from the internet. |
 | `Up` | Agents reach the API at the URL it shows. |
 | `Down` | The tunnel stopped, with its last error, or it is starting. |
-| `No tunnel service` | The provider's service (`cloudflared` or `tunnel`) did not ask for its settings in the last 30 seconds. Run the update script, or `podman compose up -d`. |
+| `No tunnel service` | The provider's service (`cloudflared` or `tunnel`) did not ask for its settings in the last 30 seconds. Run the update, or `podman compose up -d`. |
 
 ## From an install before
 
 An install that pasted an ngrok authtoken and a domain by hand keeps them. Remote access goes on running. When you turn it off, the hopper keeps them, because it did not make them. To let the hopper make and remove them, select ngrok, paste an ngrok API key, and select **Save**.
 
-An older install gave the tunnel `NGROK_AUTHTOKEN`, `HOPPER_PUBLIC_URL` and `COMPOSE_PROFILES=tunnel` in a `.env` file. At its first start, the hopper moves the authtoken into its vault, takes the domain from `HOPPER_PUBLIC_URL`, and turns remote access on. See [Run and update the hopper](deploy-and-update.md).
+An older install gave the tunnel `NGROK_AUTHTOKEN`, `HOPPER_PUBLIC_URL` and `COMPOSE_PROFILES=tunnel` in a `.env` file. At its first start, the hopper moves the authtoken into its vault, takes the domain from `HOPPER_PUBLIC_URL`, and turns remote access on. Then remove those three from the `.env` file, and delete it when nothing else is in it: the hopper reads none. Keep `HOPPER_PUBLIC_URL` only when a reverse proxy also serves the UI at that address. See [Run and update the hopper](deploy-and-update.md).
 
 ## Risks
 

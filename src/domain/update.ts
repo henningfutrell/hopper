@@ -111,12 +111,12 @@ export interface StackGap {
   off?: string;
 }
 
-/** GET /api/update/drift (issue #697): how the stack differs from the compose file of this version; one fix for every gap, the update script made from `image`. */
+/** GET /api/update/drift (issue #697): how the stack differs from the compose file of this version; one fix for every gap, the update commands with `image`. */
 export interface StackDrift {
   /** `unchecked`: not a container install, or a build that ships no compose file (`reason`). */
   state: 'checked' | 'unchecked';
   reason?: string;
   gaps: StackGap[];
-  /** The image the hopper runs, the update script is made from. */
+  /** The image the hopper runs, the update commands name. */
   image?: string;
 }

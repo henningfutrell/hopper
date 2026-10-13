@@ -308,18 +308,23 @@ copy, and how to check it works:
 
 <h2 id="upgrade">Upgrade</h2>
 <p><strong>With Podman:</strong> you update it; the hopper never updates a container itself. In the hopper's folder,
-make the update script from the newest image, read it, then run it. It backs up the database, <code>compose.yaml</code>
-and <code>.env</code>; puts in the new image's <code>compose.yaml</code> and moves your own settings to <code>.env</code>;
-then pulls and starts the whole stack and checks it. It keeps your settings, database and sign-ins. Never update the
-hopper's container alone: a new version can add services it needs. When an update is out, the hopper's update notice
-shows these commands and how many running jobs the restart would end: wait until none. Then remove the image it replaced.</p>
-<div class="cmd"><pre>podman run --rm --pull=always ghcr.io/henningfutrell/hopper:stable hopper update podman &gt; hopper-update.sh</pre><button type="button" data-copy="podman run --rm --pull=always ghcr.io/henningfutrell/hopper:stable hopper update podman &gt; hopper-update.sh">Copy</button></div>
-<div class="cmd"><pre>sh hopper-update.sh</pre><button type="button" data-copy="sh hopper-update.sh">Copy</button></div>
+run these compose commands, one at a time. First give the master key (paste it from your password manager; nothing is
+shown). Then back up the database, make the new image's <code>compose.yaml</code> with your own settings in it, read the
+change, put it in, and pull and start the whole stack. The last command stops before anything changes when the master key
+is not given. It keeps your settings, database and sign-ins. Never update the hopper's container alone: a new version can
+add services it needs. When an update is out, the hopper's update notice shows these commands and how many running jobs
+the restart would end: wait until none. Then remove the image it replaced.</p>
+<div class="cmd"><pre>read -rs HOPPER_MASTER_KEY &amp;&amp; export HOPPER_MASTER_KEY</pre><button type="button" data-copy="read -rs HOPPER_MASTER_KEY &amp;&amp; export HOPPER_MASTER_KEY">Copy</button></div>
+<div class="cmd"><pre>podman compose exec -T postgres pg_dump -U hopper -d hopper -Fc &gt; hopper-backup.dump</pre><button type="button" data-copy="podman compose exec -T postgres pg_dump -U hopper -d hopper -Fc &gt; hopper-backup.dump">Copy</button></div>
+<div class="cmd"><pre>podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:stable hopper update carry --image ghcr.io/henningfutrell/hopper:stable &lt; compose.yaml &gt; compose.yaml.next</pre><button type="button" data-copy="podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:stable hopper update carry --image ghcr.io/henningfutrell/hopper:stable &lt; compose.yaml &gt; compose.yaml.next">Copy</button></div>
+<div class="cmd"><pre>diff -u compose.yaml compose.yaml.next</pre><button type="button" data-copy="diff -u compose.yaml compose.yaml.next">Copy</button></div>
+<div class="cmd"><pre>cp compose.yaml compose.yaml.bak &amp;&amp; mv compose.yaml.next compose.yaml</pre><button type="button" data-copy="cp compose.yaml compose.yaml.bak &amp;&amp; mv compose.yaml.next compose.yaml">Copy</button></div>
+<div class="cmd"><pre>: "${HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: read -rs HOPPER_MASTER_KEY &amp;&amp; export HOPPER_MASTER_KEY}" &amp;&amp; HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:stable podman compose pull &amp;&amp; HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:stable podman compose up -d</pre><button type="button" data-copy=": &quot;${HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: read -rs HOPPER_MASTER_KEY &amp;&amp; export HOPPER_MASTER_KEY}&quot; &amp;&amp; HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:stable podman compose pull &amp;&amp; HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:stable podman compose up -d">Copy</button></div>
 <div class="cmd"><pre>podman image prune -f --filter label=org.opencontainers.image.title=hopper</pre><button type="button" data-copy="podman image prune -f --filter label=org.opencontainers.image.title=hopper">Copy</button></div>
 <p class="note">The image tag is the update channel: <code>ghcr.io/henningfutrell/hopper:dev</code> (or <code>:beta</code>,
-<code>:stable</code>). The script sets it as <code>HOPPER_IMAGE</code> in <code>.env</code>; unset, it is <code>:latest</code>, the same as <code>:stable</code>.
-Pick the same channel in the hopper's Settings → Version. Your own settings go in <code>.env</code> (for a LAN install,
-<code>HOPPER_BIND=0.0.0.0</code>) or in <code>compose.override.yaml</code>, never in <code>compose.yaml</code>: each update replaces it.</p>
+<code>:stable</code>). The update writes it into <code>compose.yaml</code> as the default of <code>HOPPER_IMAGE</code>; unset, it is <code>:latest</code>, the same as <code>:stable</code>.
+Pick the same channel in the hopper's Settings → Version. Give your own settings at launch (for a LAN install,
+<code>export HOPPER_BIND=0.0.0.0</code>) or put them in <code>compose.override.yaml</code>, never in <code>compose.yaml</code>: each update replaces it.</p>
 <p><strong>On the machine itself:</strong> run the install command again. It updates hopper and keeps your
 settings, database and running jobs. The UI also tells you when an update is out, says what is new, and can
 apply it for you.</p>
