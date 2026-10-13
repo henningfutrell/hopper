@@ -138,7 +138,7 @@ describe('the hopper label means full automation', () => {
     await new Promise((done) => setTimeout(done, 600));
     expect((await a.job(job.id)).status).toBe('waiting_answer');
     const again = await a.waitForStatus(job.id, 'parked', 5000);
-    expect(again.parked).toMatchObject({ auto: true, why: 'Parked automatically: the question waited 1.2 min.' });
+    expect(again.parked).toMatchObject({ auto: true, why: 'Parked automatically: the question waited 1.2 s.' });
   });
 
   it('off: the question stays with the hopper, nothing is posted and the job does not park for it', async () => {
