@@ -9513,7 +9513,9 @@ person or the CLI started the box (issue #769).
   `vault.sandbox_started` with the box's name, or `vault.sandbox_failed` with the reason. Each event is on the job's
   timeline. The job's `--wait` ends on them (`src/skills/waits.ts`).
 - **The answers.** 202 while the request waits for a person or the box starts; 200 when it runs: the box's name, who
-  approved it, and the skills it loads for each asset; 403 when declined; 503 when the start failed. Asked again, the
+  approved it, and the skills it loads for each asset — and, for a job that does not run on a box of that template,
+  that it runs elsewhere: its commands do not reach the box, the skills load only in a job on the box, and a person puts
+  that work on the box as a job (a routing rule that sets the box's machine) (issue #1009); 403 when declined; 503 when the start failed. Asked again, the
   job gets the same request and the same box. A box that went makes the next ask a new request. A start that failed
   stays failed: a new one on each event would start the box again and again. A person starts one by hand instead.
 - **YOLO** (`sandboxYolo`). Both toggles on. A job that needs AWS gets a running box with no human step. Off by
@@ -9528,7 +9530,7 @@ person or the CLI started the box (issue #769).
 
 **Decided here, from issue #769's open questions.** What the job does with the box: the hopper starts it, and it joins
 as a machine of its template, as a box from Add machine does; the job learns its name. How the rest of the job's work
-reaches the box stays on issue #769. Who pays: the template's defaults, within its limits; a request names none. When it
+reaches the box stays on issue #769; until then the answer says plainly that the job is not on the box (issue #1009). Who pays: the template's defaults, within its limits; a request names none. When it
 ends: at the template's time limit, never with the job; a request of a job no longer at work is forgotten.
 
 **Residual risk, stated.** With skip template approval on, any job at work may get a template with write, sync or apply
