@@ -16158,4 +16158,4 @@ work; migration numbers given out at merge time, so two pull requests cannot cla
 by the base merge); and a pull request blocked by another named on its card.
 
 Verified: the base merge against real git (`test/git-mirror/base-merge.test.ts`: an origin over `file://` with blob filters,
-as GitHub serves one), and the tending queue with the in-memory GitHub (`test/integration/tending-queue.test.ts`).
+as GitHub serves one), and the tending queue with the in-memory GitHub (`test/integration/base-merge.test.ts`).
