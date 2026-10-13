@@ -1,6 +1,7 @@
 // The in-memory GitHub's git answers (issue #939, fake.ts): whether two pull requests conflict with each other, as a test
 // set it; and the base merge (issue #967): what the hopper's mirror does for a pull request, as a test set it — pushed,
-// which is a push to the pull request (`pushed`), or the conflicts it does not resolve. Never set: git cannot say, as
+// which is a push to the pull request (`pushed`: a new head commit, no merge conflicts, its checks run again), or the
+// conflicts it does not resolve. Never set: git cannot say, as
 // where the hopper has no mirror.
 import type { BaseMerge } from '../../domain/pull-requests.ts';
 import type { GitHubApi } from './api.ts';

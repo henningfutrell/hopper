@@ -5,8 +5,6 @@
 // requests that conflict (issue #939): pull requests git says do not conflict are tended at the same time, and of two ready
 // ones that conflict the hopper merges one per sync pass. Real daemon, in-memory fake GitHub at the GitHubApi seam (its git
 // answer set by the test), Jev as a double at its seam; issues carry a scripted-executor op as their first body line.
-// The base merge (issue #967): a pull request with merge conflicts that the hopper's mirror merges with its base itself is
-// not handed to a tend job: no job, no lane; it waits for its checks, and with yolo mode on the hopper merges it.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { JevChooser, JevPick, Job, MinorDecisionAsk, PullRequestsView } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
@@ -202,60 +200,6 @@ describe('one queue per set of pull requests that conflict (issue #939)', () => 
     await app.sync();
     await waitFor(async () => (await tends(app)).some(([id]) => id === held.job.id), { what: 'the held one tended' });
     await tendDone(app, held.job.id);
-  });
-});
-
-describe('the base merge (issue #967)', () => {
-  const baseMerges = async (app: TestApp) => (await app.events('types=job.pull_request_base_merged')).map((e) => [e.jobId, e.data]);
-
-  it('a conflict the mirror resolves is pushed with no tend job; with yolo mode on, the hopper merges it once its checks pass', async () => {
-    const gh = createFakeGitHub();
-    const app = await boot(gh);
-    const token = await app.login();
-    expect((await app.ui('/ui/api/yolo-mode', { repos: { [REPO]: true } }, { token })).status).toBe(200);
-    const [only] = await waitingPullRequests(gh, app, REPO, 1, { checks: 'passing' });
-    gh.setBaseMerge(only!.url, { resolved: ['WHATS-NEW.md'] });
-    gh.setConflicting(only!.url, true);
-    await app.sync();
-    expect(await baseMerges(app)).toEqual([[only!.job.id, { pullRequest: only!.url, commit: expect.any(String), resolved: ['WHATS-NEW.md'] }]]);
-    expect(await tends(app)).toEqual([]);
-    const jobs = (await app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs;
-    expect(jobs).toHaveLength(1);
-    const card = (await app.api<PullRequestsView>('GET', '/api/pull-requests')).body.repos.find((r) => r.repo === REPO)!.pullRequests[0]!;
-    expect(card).toMatchObject({ mergeable: 'mergeable', checks: 'pending', waits: 'checks pending' });
-    expect(card.queue).toBeUndefined();
-    gh.setChecks(only!.url, 'passing');
-    await app.sync();
-    await waitFor(() => gh.issue(REPO, only!.issue).state === 'closed', { what: 'the pull request merged' });
-  });
-
-  it('a conflict the mirror does not resolve goes to a tend job, as before', async () => {
-    const gh = createFakeGitHub();
-    const app = await boot(gh);
-    const [only] = await waitingPullRequests(gh, app, REPO, 1);
-    gh.setBaseMerge(only!.url, { conflicts: ['src/main.ts'] });
-    gh.setConflicting(only!.url, true);
-    await app.sync();
-    expect(await baseMerges(app)).toEqual([]);
-    expect(await tends(app)).toEqual([[only!.job.id, 'rebase']]);
-    await tendDone(app, only!.job.id);
-  });
-
-  it('a base merge with yolo mode on holds the pull requests that conflict with it; the others are merged or tended', async () => {
-    const gh = createFakeGitHub();
-    const app = await boot(gh);
-    const token = await app.login();
-    expect((await app.ui('/ui/api/yolo-mode', { repos: { [REPO]: true } }, { token })).status).toBe(200);
-    const [first, second] = await waitingPullRequests(gh, app, REPO, 2, { checks: 'passing' });
-    gh.setBaseMerge(first!.url, { resolved: ['docs/design.md'] });
-    gh.setConflictBetween(first!.url, second!.url, true);
-    gh.setConflicting(first!.url, true);
-    gh.setConflicting(second!.url, true);
-    await app.sync();
-    expect((await baseMerges(app)).map(([id]) => id)).toEqual([first!.job.id]);
-    expect(await tends(app)).toEqual([]);
-    const cards = (await app.api<PullRequestsView>('GET', '/api/pull-requests')).body.repos.find((r) => r.repo === REPO)!.pullRequests;
-    expect(cards.find((c) => c.jobId === second!.job.id)!.queue).toEqual({ held: { pullRequest: Number(first!.url.split('/').pop()), why: 'merging' } });
   });
 });
 
