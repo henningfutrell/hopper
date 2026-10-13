@@ -2,8 +2,9 @@
 // fetch or its push — done on GitHub with the connection of the job's own user. In order: the job's proxy token (git
 // sends it as the password of Basic auth, from the job's credential helper) and its job at work; the repository: a push
 // only to the job's own one, and only there when it is one of the user's job repositories; then a push's ref updates,
-// read before anything reaches GitHub (`checkPush`). A fetch of a repository the user's jobs do not use goes to GitHub
-// without credentials, as anyone's would. A push is an event on the job's timeline (`github_proxy.done`, `.refused`,
+// read before anything reaches GitHub (`checkPush`). A fetch goes to GitHub with the user's connection whatever the
+// repository (issue #1015): the job repositories decide intake and where a job pushes, not what it reads, so a job reads
+// any repository its user sees; git's fetch (`git-upload-pack`) only reads, and the token never leaves the hopper. A push is an event on the job's timeline (`github_proxy.done`, `.refused`,
 // `.failed`, op `git.push`); a fetch is not. The contribution flow (issue #429): a job whose user cannot push to its own
 // repository is refused before GitHub refuses it, with what to do; with the user's Contribution on, the job's fork — a
 // fork of its own repository in the user's account, as GitHub says — is pushed to and fetched with the user's connection
@@ -102,12 +103,12 @@ export function createGitProxy(o: GitProxyOptions) {
   const traffic = o.traffic ?? githubTraffic;
 
   /** The request on GitHub; a token GitHub refuses is renewed once and the request made again. */
-  async function forward(r: GitRequest, at: { repo: string; service: GitService; advertise: boolean }, git: GitConnection, withToken: boolean): Promise<GitAnswer> {
+  async function forward(r: GitRequest, at: { repo: string; service: GitService; advertise: boolean }, git: GitConnection): Promise<GitAnswer> {
     const url = `${git.url.replace(/\/+$/, '')}/${at.repo}.git/${at.advertise ? `info/refs?service=${at.service}` : at.service}`;
-    const send = async (token: string | undefined) => call(url, {
+    const send = async (token: string) => call(url, {
       method: r.method,
       headers: {
-        ...(token ? { authorization: `Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}` } : {}),
+        authorization: `Basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`,
         ...(r.contentType ? { 'content-type': r.contentType } : {}),
         ...(r.contentEncoding ? { 'content-encoding': r.contentEncoding } : {}),
         ...(r.gitProtocol ? { 'git-protocol': r.gitProtocol } : {}),
@@ -115,9 +116,9 @@ export function createGitProxy(o: GitProxyOptions) {
       },
       ...(r.body ? { body: new Uint8Array(r.body) } : {}),
     });
-    let token = withToken ? await git.token() : undefined;
+    let token = await git.token();
     let res = await send(token);
-    if (res.status === 401 && token) {
+    if (res.status === 401) {
       await res.body?.cancel();
       token = await git.renew(token);
       res = await send(token);
@@ -194,7 +195,7 @@ export function createGitProxy(o: GitProxyOptions) {
       }
       if (!push && at.advertise) traffic.gitFetch(at.repo, job.id);
       try {
-        const answer = await forward(r, at, git, usedHere || fork);
+        const answer = await forward(r, at, git);
         if (push && !at.advertise) {
           if (answer.status === 200) record('github_proxy.done', { refs: refs.map((c) => c.ref) });
           else record('github_proxy.failed', { refs: refs.map((c) => c.ref), error: `GitHub answered ${answer.status}` });

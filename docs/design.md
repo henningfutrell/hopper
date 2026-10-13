@@ -12589,8 +12589,9 @@ The broker (`createGitProxy`, `src/github-proxy/git-broker.ts`), in order:
    git's own report (`ng <ref> <reason>`, in side band 1 when asked for), so git shows `! [remote rejected] … (<reason>)`;
 6. GitHub: the request as git sent it, to `<web origin>/<owner>/<name>.git/…`, with Basic `x-access-token:<token>` of the
    job's **own user's** connection (not the hopper's oldest user's: a push is the job's user's act), the response streamed
-   back. A 401 renews the token once. A fetch of a repository the user's jobs do not use goes **without credentials**,
-   as anyone's would: a public repository clones, a private one does not.
+   back. A 401 renews the token once. A fetch of any repository goes with that connection too (issue #1015, "Jobs read
+   beyond the job repositories"): a private repository the user sees clones; one the user does not see is refused by
+   GitHub.
 
 **Audit.** A push is an event on the job's timeline: `github_proxy.done` (op `git.push`, `repo`, `refs`),
 `github_proxy.refused` (`reason`, `refs` once read) or `github_proxy.failed`. A fetch is not recorded.
@@ -12628,7 +12629,7 @@ setup check and pull-request checks workflow; deploying only a merged and checke
 Tests: `test/integration/git-proxy.test.ts` (the real daemon, a fake GitHub serving git with `git-http-backend`, the real
 git with the job's variables: clone and push a branch with the user's token, a forced update; `dev` and `stable` refused
 and a delete refused, nothing changed on GitHub; another repository refused; a repository outside the job repositories
-read without credentials; a bad token and an ended job refused; no `GH_TOKEN`, `GH_CONFIG_DIR` or `SSH_AUTH_SOCK`),
+read with the user's connection; a bad token and an ended job refused; no `GH_TOKEN`, `GH_CONFIG_DIR` or `SSH_AUTH_SOCK`),
 `test/github-proxy/git.test.ts` (the pkt-lines, the push check, the path, the git config),
 `test/integration/github-proxy.test.ts` (close the job's own issue, mark ready, another issue refused),
 `test/integration/connected-account-renewal.test.ts` (a source job's variables and files hold no token),
@@ -16925,3 +16926,31 @@ limit while another starts; a late start leaves the request failed), `test/http/
 `test/integration/sandbox-start-hangs.test.ts` (the real daemon: a start whose image pull never ends; the approval, the
 health, the queue and the vault answer in under 500 ms; another request is declined and another job runs; the request
 fails at its limit and the job is told).
+
+## Jobs read beyond the job repositories (issue #1015, 2026-10-13)
+
+Seen: a job could not clone a private repository of the person's organization to read one branch of it. It was no job
+repository, so the git broker fetched it without credentials, and GitHub refused. The job repositories are an intake
+filter: where jobs come from and where a job writes. They were also limiting what a job reads, which nobody asked for.
+
+- **A git fetch goes with the job's user's connection, whatever the repository** (`createGitProxy`,
+  `src/github-proxy/git-broker.ts`). A job clones and fetches any repository its user's GitHub connection sees. A fetch
+  is `git-upload-pack`: it only reads. The token stays in the hopper; the job gets the repository, never the token.
+- **A push is unchanged**: only to the job's own repository, when it is a job repository, or to the job's fork, under the
+  ref check. A push to a repository the job only reads is refused before anything reaches GitHub.
+- **The GitHub proxy's reads go anywhere too** (`checkRequest`, `src/github-proxy/policy.ts`). The hopper's own job may
+  ask `issue.view`, `pr.view`, `repo.view` and `check.log` on any repository the hopper's connection sees. Every write —
+  `issue.create`, `issue.comment`, `issue.close`, `pr.create`, `pr.ready`, `repo.fork` — stays on the job repositories
+  (and the job's fork). Another user's job still only files an issue.
+- **No narrower token is minted.** The issue suggested a scoped mint. The hopper never hands the token to the job, and a
+  fetch cannot write, so a token limited to reads would guard nothing the broker does not already guard. A connected
+  account's token is a user token, which GitHub does not scope per repository; a GitHub App installation token can be,
+  but only for the repositories the app is installed on, which would refuse the case this issue is about.
+- **Residual risk, said plainly.** A job now reads every repository its user sees, private ones included. What it reads
+  it may put in what it writes: its own repository, its pull request, an issue it files. That is the same reach as the
+  person's own `gh` login, which a job had before issue #652; the trusted origin (issue #652) still decides which issues
+  become jobs.
+
+Tests: `test/integration/git-proxy.test.ts` (a private repository outside the job repositories clones with the user's
+connection; a push there is refused and never reaches GitHub), `test/github-proxy/proxy.test.ts` (the own job's reads on
+any repository; every write elsewhere refused; another user's job refused).

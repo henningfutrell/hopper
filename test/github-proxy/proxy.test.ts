@@ -85,6 +85,21 @@ describe('who may ask what', () => {
     expect(checkRequest({ ...create, repo: 'else/where' }, own, repos)).toEqual({ ok: false, reason: 'else/where is not one of the repositories the hopper works on, so it does nothing there for a job' });
     expect(checkRequest(create, own, [])).toMatchObject({ ok: false });
   });
+
+  it('the hopper\'s own job reads on any repository its connection sees; it writes only on the job repositories (issue #1015)', () => {
+    for (const req of [
+      { op: 'issue.view', repo: 'else/where', number: 1 }, { op: 'pr.view', repo: 'else/where', number: 1 },
+      { op: 'repo.view', repo: 'else/where' }, { op: 'check.log', repo: 'else/where', number: 1 },
+    ] as ProxyRequest[]) {
+      expect(checkRequest(req, own, repos)).toEqual({ ok: true });
+      expect(checkRequest(req, other, repos)).toMatchObject({ ok: false, reason: expect.stringContaining('may only file an issue') });
+    }
+    for (const req of [
+      create, { op: 'issue.comment', repo: 'else/where', number: 1, body: 'b' }, { op: 'issue.close', repo: 'else/where', number: 1 },
+      { op: 'pr.ready', repo: 'else/where', number: 1 }, { op: 'repo.fork', repo: 'else/where' },
+      { op: 'pr.create', repo: 'else/where', head: 'b', title: 't', body: 'b' },
+    ] as ProxyRequest[]) expect(checkRequest({ ...req, repo: 'else/where' }, own, repos)).toMatchObject({ ok: false });
+  });
 });
 
 describe('a failed check\'s log (issue #993)', () => {
@@ -96,9 +111,9 @@ describe('a failed check\'s log (issue #993)', () => {
     expect(proxyRequest.safeParse({ op: 'check.log', repo: 'o/r' }).success).toBe(false);
   });
 
-  it('the hopper\'s own job reads it on the hopper\'s repositories; another user\'s job does not', () => {
+  it('the hopper\'s own job reads it, on any repository (issue #1015); another user\'s job does not', () => {
     expect(checkRequest(read, { jobId: 'j', own: true, repo: 'octo/tools' }, repos)).toEqual({ ok: true });
-    expect(checkRequest({ ...read, repo: 'else/where' }, { jobId: 'j', own: true, repo: 'octo/tools' }, repos)).toMatchObject({ ok: false });
+    expect(checkRequest({ ...read, repo: 'else/where' }, { jobId: 'j', own: true, repo: 'octo/tools' }, repos)).toEqual({ ok: true });
     expect(checkRequest(read, { jobId: 'j', own: false, repo: 'guest/own' }, repos)).toMatchObject({ ok: false, reason: expect.stringContaining('may only file an issue') });
   });
 });

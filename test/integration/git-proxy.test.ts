@@ -15,8 +15,9 @@
 //     Then the push is refused with the reason, nothing changes on GitHub, and the refusal is on its timeline
 //   Scenario: a job pushes to another repository than its own
 //     Then the push is refused with the reason
-//   Scenario: a job reads a repository the hopper does not work on
-//     Then the hopper reads it without credentials, as anyone could
+//   Scenario: a job reads a repository its jobs do not use (issue #1015)
+//     Given a private repository outside the job repositories that the user's connection sees
+//     Then the hopper reads it with the user's connection, and pushes nothing there
 //   Scenario: the job's variables carry no GitHub token and no ssh agent
 import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -215,13 +216,20 @@ describe('git through the hopper (issue #652)', () => {
     expect((await branchesOf(t, 'octo/site')).stdout).not.toContain('issue-7-elsewhere');
   });
 
-  it('reads a repository the hopper does not work on without credentials, as anyone could', async () => {
+  it('reads a private repository its jobs do not use with its user\'s connection, and pushes nothing there (issue #1015)', async () => {
     const t = await start();
-    const { git } = await running(t);
+    writeFileSync(join(t.gitRoot, 'elsewhere/lib.git', 'hopper-private'), '');
+    const { home, git } = await running(t);
     expect((await git(['clone', '--quiet', `${t.github.url}/elsewhere/lib.git`, 'lib'])).code).toBe(0);
     const reads = t.github.gitRequests.filter((r) => r.path.startsWith('/elsewhere/lib'));
     expect(reads.length).toBeGreaterThan(0);
-    for (const r of reads) expect(r.auth).toBe('');
+    for (const r of reads) expect(r.auth).not.toBe('');
+    const work = join(home, 'lib');
+    await git(['commit', '--quiet', '--allow-empty', '-m', 'Not mine'], work);
+    const r = await git(['push', 'origin', 'HEAD:refs/heads/issue-7-elsewhere'], work);
+    expect(r.code).not.toBe(0);
+    expect(r.stderr).toContain('a job pushes only to its own repository (octo/tools)');
+    expect(t.github.gitRequests.filter((x) => x.path.startsWith('/elsewhere/lib') && x.path.endsWith('/git-receive-pack'))).toEqual([]);
   });
 
   it('refuses a token that is no job\'s, and a job no longer at work', async () => {
