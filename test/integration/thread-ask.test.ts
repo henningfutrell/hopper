@@ -123,6 +123,24 @@ describe('the hopper label means full automation', () => {
     expect((await questionOf(a, job.id)).answeredBy).toBe('thread:maintainer');
   });
 
+  it('picked up with its question still open, it waits the park timeout from the pick-up, not one tick (issue #1006)', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
+    const gh = createFakeGitHub();
+    const a = await boot(herdr, gh);
+    const token = await a.login();
+    // 1.2 s, in minutes.
+    await a.ui('/ui/api/auto-park', { minutes: 0.02 }, { token });
+    const { job } = await blocked(a, gh, OWN);
+    await a.waitForStatus(job.id, 'parked', 5000);
+
+    const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/requeue`, {}, { token });
+    expect(r.body.status).toBe('waiting_answer');
+    await new Promise((done) => setTimeout(done, 600));
+    expect((await a.job(job.id)).status).toBe('waiting_answer');
+    const again = await a.waitForStatus(job.id, 'parked', 5000);
+    expect(again.parked).toMatchObject({ auto: true, why: 'Parked automatically: the question waited 1.2 min.' });
+  });
+
   it('off: the question stays with the hopper, nothing is posted and the job does not park for it', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
     const gh = createFakeGitHub();
