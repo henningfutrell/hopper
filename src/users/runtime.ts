@@ -47,7 +47,7 @@ import { installations, whoIs } from '../connected-accounts/identity.ts';
 
 import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } from './history.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
-import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts';
+import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts'; import { createOutbound, type Outbound, type OutboundGuard } from '../outbound/index.ts';
 import { approvalWait, clientTargets as vaultTargets, openUserVault, type LaunchScope, type Vault, withLaunch } from '../vault/index.ts';
 import type { JobStream } from '../job-stream/index.ts';
 import { openJobStream } from './job-stream.ts';
@@ -121,7 +121,7 @@ export interface UserRuntimeOptions {
   /** The whole hopper's system secrets (issue #658): the sign-in realms', shown on the vault's page; its shared secrets (issue #718). */
   instanceSecrets?: SystemSecrets; sharedSecrets?: Parameters<typeof openUserVault>[0]['shared'];
   /** What each box of this user was launched with, by machine name (issue #708): the vault gives it nothing else. Absent: no box is narrowed. `sandboxes`: a job's sandbox request starts its box there (issue #991); absent: none starts. */
-  launchScopes?(userId: string): Map<string, LaunchScope>; sandboxes?: SandboxLauncher;
+  launchScopes?(userId: string): Map<string, LaunchScope>; sandboxes?: SandboxLauncher; outboundGuard: OutboundGuard; // the process's (issue #1014)
 }
 
 
@@ -148,7 +148,7 @@ export interface UserRuntime {
   typesafeKey: TypesafeKey;
   /** The TL;DR of every long card (issue #569): its sweep. */
   tldrs: Tldrs;
-  dispatcher: WebhookDispatcher; executors: ExecutorRegistry;
+  dispatcher: WebhookDispatcher; executors: ExecutorRegistry; outbound: Outbound; // the user's outbound sends (issue #1014)
   directJobs: DirectJobs; // issue #901: jobs a person submits straight to the hopper, with no GitHub issue
   /** The user's connected GitHub account (issue #214). */
   connectedAccounts: ConnectedAccountsService;
@@ -196,7 +196,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     ...(seams.jev ? { seamJev: seams.jev } : {}), timeoutMs: JEV_TIMEOUT_MS, clock, logger,
   });
   const dataDir = userWorkDir(config.workDir, user);
-  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 }); const outbound = createOutbound({ guard: o.outboundGuard, clock, log: store.outboundSends }); // deliveries and notifier posts, into the send log (issue #1014)
   // The CLIs' logins of a user added later are their own (GH_CONFIG_DIR, CLAUDE_CONFIG_DIR in their work dir).
   const cliEnv = userCliEnv(config.workDir, user);
   for (const dir of Object.values(cliEnv)) mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -268,7 +268,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     config: store.config, dataDir, clock, logger, userEnv: cliEnv,
     defaultMachines: builtin.machines, defaultExecutors: builtin.executors,
     kit: createDetectionKit({ env: { ...o.env, ...cliEnv }, secret, secretName: (n) => `${user.secretPrefix}${n}` }),
-    builtins: withSeams(seams),
+    builtins: withSeams(seams, outbound),
     jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow, o.access && ((login, actors) => o.access!.decideIntakeActor(user.id, login, actors)), { dataDir, logger }, (keys) => searchChanged(keys)), connectedAccounts },
     machineContext: { executors: () => executorNames(), target },
     executorContext: { client: clientNamed },
@@ -303,7 +303,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const levels = (): readonly EscalationLevel[] => seams.levels ?? host.levels();
   // The webhook signing secrets (issues #451, #658): system secrets in the user's vault. A subscription from before reads its variable.
   const webhookSecrets = createWebhookSecrets({ store, system, runtime: runtimeSecrets(o.env), prefix: user.secretPrefix });
-  const dispatcher = createWebhookDispatcher({ store, clock, secretOf: (sub) => webhookSecrets.of(sub), baseMs: config.webhookBaseMs });
+  const dispatcher = createWebhookDispatcher({ store, clock, secretOf: (sub) => webhookSecrets.of(sub), outbound, baseMs: config.webhookBaseMs });
   // The service calls the engine and the engine calls the service: the engine's handlers are
   // reached through closures that run only after `engine` exists (design.md "Construction
   // contract added").
@@ -392,7 +392,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
   return {
     search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, needSteps, directJobs, sandboxRequests,
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors,
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound,
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
@@ -418,7 +418,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
         await questions.stop();
         await Promise.all(REVIEW_KINDS.map((k) => reviews[k].stop()));
         await engine.stop();
-        await dispatcher.stop(); await host.stopNotifiers();
+        await dispatcher.stop(); await host.stopNotifiers(); outbound.stop();
         stopFailureLog();
         host.stop(); stopBackendReads();
         store.close();

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Clock, UserStore, WebhookDispatcher } from '../domain/ports.ts';
 import type { DomainEvent, WebhookDelivery, WebhookSubscription } from '../domain/types.ts';
 import { EVENT_EXAMPLES } from '../events/examples.ts';
+import { heldWhy, type Outbound, type OutboundRequest } from '../outbound/index.ts';
 import { sign } from './signer.ts';
 
 export interface WebhookDispatcherOptions {
@@ -12,6 +13,12 @@ export interface WebhookDispatcherOptions {
    * issue #451): a replaced or rotated secret signs from the next. Throws with why there is none.
    */
   secretOf: (sub: WebhookSubscription) => string;
+  /**
+   * The user's outbound sends (issue #1014, design.md "Outbound sends"): each new delivery is asked of its destination's
+   * guard — a duplicate is not made, one asked while the circuit is open fails —, each POST waits for a token, and each
+   * POST and held send goes into the send log.
+   */
+  outbound: Outbound;
   baseMs: number;
   timeoutMs?: number;
   maxAttempts?: number;
@@ -46,11 +53,17 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     return sub.active && (sub.events.includes('*') || sub.events.includes(event.type));
   }
 
+  const request = (sub: WebhookSubscription, event: Pick<DomainEvent, 'id' | 'type' | 'jobId'>): OutboundRequest =>
+    ({ sender: 'webhook', name: sub.name, url: sub.url, kind: event.type, key: `${sub.id}:${event.id}`, ...(event.jobId ? { jobId: event.jobId } : {}) });
+
   function enqueue(event: DomainEvent): void {
     for (const sub of store.webhooks.list()) {
       if (!matches(sub, event)) continue;
+      const asked = o.outbound.ask(request(sub, event));
+      if (asked === 'duplicate') continue;
       const d = store.webhooks.createDelivery(sub.id, event);
-      for (const l of [...listeners]) l(d);
+      if (asked === 'circuit-open') update(d.id, { status: 'failed', lastError: heldWhy(asked), nextAttemptAt: undefined });
+      else for (const l of [...listeners]) l(d);
     }
     // Listeners must not re-enter synchronously (ports.ts): defer the sweep.
     setImmediate(sweep);
@@ -81,8 +94,9 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     }
   }
 
-  async function post(d: WebhookDelivery, sub: WebhookSubscription, event: DomainEvent): Promise<void> {
+  async function post(d: WebhookDelivery, sub: WebhookSubscription, event: DomainEvent, r: OutboundRequest): Promise<void> {
     const { statusCode, error } = await send(sub, event, d.id);
+    o.outbound.posted(r, { ...(statusCode !== undefined ? { status: statusCode } : {}), ...(error !== undefined ? { error } : {}) });
     const attempts = d.attempts + 1;
     if (error === undefined) {
       update(d.id, { status: 'delivered', attempts, lastStatusCode: statusCode, lastError: undefined, nextAttemptAt: undefined });
@@ -106,8 +120,16 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
       update(d.id, { status: 'failed', lastError: 'event not found', nextAttemptAt: undefined });
       return;
     }
+    const r = request(sub, event);
+    if (o.outbound.isOpen(r)) {
+      o.outbound.held(r, 'circuit-open');
+      update(d.id, { status: 'failed', lastError: heldWhy('circuit-open'), nextAttemptAt: undefined });
+      return;
+    }
+    // No token: the delivery stays due, and a later sweep sends it; no attempt is spent.
+    if (o.outbound.take(r) > 0) return;
     update(d.id, { nextAttemptAt: after(timeoutMs + IN_FLIGHT_GRACE_MS) });
-    await post(d, sub, event);
+    await post(d, sub, event, r);
   }
 
   function sweep(): void {
@@ -154,8 +176,12 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
       const type = sub.events.find((t) => t !== '*') ?? 'webhook.test';
       const example = (EVENT_EXAMPLES as Record<string, Record<string, unknown> | undefined>)[type] ?? {};
       const event = { seq: 0, schemaVersion: 1, id, type, at, data: { ...example, test: true, subscription: sub.name } };
-      const r = await send(sub, event, id);
-      return { ok: r.error === undefined, ...(r.statusCode !== undefined ? { status: r.statusCode } : {}), detail: r.error ?? `HTTP ${r.statusCode}` };
+      // A person's test passes the guard too, with no dedupe key: a press is never a duplicate.
+      const r = await o.outbound.send({ sender: 'webhook', name: sub.name, url: sub.url, kind: type }, async () => {
+        const res = await send(sub, event, id);
+        return { ...(res.statusCode !== undefined ? { status: res.statusCode } : {}), ...(res.error !== undefined ? { error: res.error } : {}) };
+      });
+      return { ok: r.error === undefined, ...(r.status !== undefined ? { status: r.status } : {}), detail: r.error ?? `HTTP ${r.status}` };
     },
   };
 }

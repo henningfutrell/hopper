@@ -10,6 +10,7 @@ import { DIRECT_JOB_TABLE } from './direct-jobs.ts';
 import { SEARCH_PENDING_TABLE } from './search-pending.ts';
 import { PROMOTION_TABLE } from './promotions.ts';
 import { GITHUB_LISTING_TABLES } from './github-listings.ts';
+import { OUTBOUND_SEND_TABLE } from './outbound-sends.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -27,4 +28,6 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   `ALTER TABLE machine_samples ADD COLUMN vm_held DOUBLE PRECISION;
    ALTER TABLE machine_samples ADD COLUMN host_mem_free DOUBLE PRECISION;
    ALTER TABLE machine_samples ADD COLUMN host_mem_total DOUBLE PRECISION`,
+  // 54: The send log (issue #1014): each outbound send to a webhook, and each one the outbound guard held. A table only: the build before runs on it.
+  OUTBOUND_SEND_TABLE,
 ];
