@@ -12,7 +12,7 @@
 // profile and, for an admin, the settings. An action shows only when the daemon says it takes it now (`actions`) and the role may act; it
 // updates live, read again on each assessor event. The assessment summary and a person's note are rendered as Markdown,
 // sanitized (issue #569); the raw error stays as it was written. Each hand-off card and failure row has Report a bug on its
-// job (issue #694), for an operator or admin.
+// job (issue #694), for an operator or admin. Work not pushed (issue #1010, kept-work.tsx) after Needs a person.
 import { Archive, History, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,7 @@ import { cn } from '@/lib/utils';
 import { ReportBugButton } from '@/app/bug-report';
 import { FailureProfilePanel, NameCause } from './failure-profile';
 import { FailureSettingsPanel } from './failure-settings';
+import { WorkNotPushed } from './kept-work';
 
 /** Where a problem applies, in words. */
 function scopeText(p: ProblemView): string {
@@ -283,6 +284,7 @@ export function Failures() {
     <div className="space-y-3">
       <div data-section="failure-counts" className={`text-sm ${left ? 'text-foreground' : 'text-muted-foreground'}`}>{countsText(failures.counts)}</div>
       <NeedsAPerson handoffs={failures.handoffs} />
+      <WorkNotPushed kept={failures.keptWork} />
       {open.length
         ? <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">{open.map((p) => <ProblemCard key={p.id} p={p} />)}</div>
         : <Panel title="Open problems" icon={OctagonAlert}><Empty>no open problem</Empty></Panel>}

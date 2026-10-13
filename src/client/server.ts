@@ -7,7 +7,7 @@
 // (release.ts, issue #70), `loads: 'manifest'` — it loads any release its manifest vouches for (issue #545; a
 // client before that says nothing, and checks a fixed list of file names) — and this user's home, where `~` in a job's work tree resolves (issue #323), the disk it is on (issue #401) and this machine's CPU, memory and swap (issue #560, resources.ts), and its client door (issue #695, door.ts); `POST /load {release}` writes the hopper's release into the install dir
 // and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files);
-// `POST /reap {jobId, scratch?}`, `POST /survey {roots}` and `POST /credential` (issue #441, credential.ts) run fixed
+// `POST /reap {jobId, scratch?, keep?, discard?}`, `POST /survey {roots}` and `POST /credential` (issue #441, credential.ts) run fixed
 // scripts on this machine (issue #410): the reap of an ended job, what the sweep asks, a running job's token; `{code, stdout, stderr}`;
 // `POST /discover` runs the discovery script (issue #542, discover.ts): only reads, no argument of the request's; `{code, stdout, stderr}`;
 // `POST /reach {url}` runs the reach check (issue #695, reach.ts): whether this machine reaches the hopper at that URL; `{code, stdout, stderr}`;
@@ -291,8 +291,8 @@ export const REAP_DONE = 'hopper-reaped';
 export const SURVEY_DONE = 'hopper-surveyed';
 
 // $1 the job id, $2 its scratch dir or empty, $3 `keep` to keep the scratch dir whatever it holds (a timed-out
-// job's, issue #630: it may go on there). Run with HOPPER_JOB_ID unset, so neither it nor what it starts matches the
-// processes it stops.
+// job's, issue #630: it may go on there), or `discard` to remove it whatever it holds (a person discarded the work
+// it kept, issue #1010). Run with HOPPER_JOB_ID unset, so neither it nor what it starts matches the processes it stops.
 const REAP_SCRIPT = [
   'id=$1; s=$2; k=$3;',
   // The job's scope: every process in it, whatever it did to its environment or session.
@@ -316,7 +316,7 @@ const REAP_SCRIPT = [
   'repos() { find "$s" -name node_modules -prune -o -name .git -print -prune 2>/dev/null; };',
   // A worktree (.git a file) answers for its own HEAD; a clone for HEAD and every branch it has. A
   // node_modules link to the shared dependencies (issue #410) is no work of the job's.
-  'kept=$(repos | while IFS= read -r g; do',
+  'kept=; [ "$k" = discard ] || kept=$(repos | while IFS= read -r g; do',
   '  d=${g%/.git}; r="HEAD --branches"; [ -f "$g" ] && r=HEAD;',
   '  if ! st=$(git -C "$d" status --porcelain 2>/dev/null) || [ -n "$(printf "%s\\n" "$st" | grep -vx "?? node_modules")" ] || ! un=$(git -C "$d" log --oneline -1 $r --not --remotes 2>/dev/null) || [ -n "$un" ]; then',
   '    printf "hopper-kept %s\\n" "$d";',
@@ -332,8 +332,9 @@ const REAP_SCRIPT = [
   '  repos | while IFS= read -r g; do',
   '    [ -f "$g" ] || continue; d=${g%/.git};',
   '    [ -L "$d/node_modules" ] && rm -f "$d/node_modules";',
-  // Never --force: it is clean and pushed, so git removes it and its repository keeps no entry.
-  '    c=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && git --git-dir="$c" worktree remove "$d" 2>/dev/null;',
+  // Never --force, but for a discard: it is clean and pushed, so git removes it and its repository keeps no entry.
+  '    f=; [ "$k" = discard ] && f="--force --force";',
+  '    c=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && git --git-dir="$c" worktree remove $f "$d" 2>/dev/null;',
   '  done;',
   '  rm -rf "$s";',
   'fi;',
@@ -360,9 +361,11 @@ const SURVEY_SCRIPT = [
 
 /**
  * The argv that reaps a job on the machine it runs on: its scope and processes stopped, its scratch dir (when given)
- * removed unless it holds work — or kept whatever it holds (`keep`, issue #630).
+ * removed unless it holds work — or kept whatever it holds (`keep`, issue #630), or removed whatever it holds
+ * (`discard`, issue #1010).
  */
-export const reapArgv = (jobId: string, scratch = '', keep = false): string[] => ['env', '-u', 'HOPPER_JOB_ID', 'sh', '-c', REAP_SCRIPT, 'sh', jobId, scratch, ...(keep ? ['keep'] : [])];
+export const reapArgv = (jobId: string, scratch = '', keep = false, discard = false): string[] =>
+  ['env', '-u', 'HOPPER_JOB_ID', 'sh', '-c', REAP_SCRIPT, 'sh', jobId, scratch, ...(keep ? ['keep'] : discard ? ['discard'] : [])];
 
 /** The argv that lists what jobs left on the machine: scopes, processes, and the scratch dirs under `roots`. */
 export const surveyArgv = (roots: readonly string[]): string[] => ['env', '-u', 'HOPPER_JOB_ID', 'sh', '-c', SURVEY_SCRIPT, 'sh', ...roots];
@@ -402,7 +405,7 @@ const isRoot = (path: unknown): path is string => typeof path === 'string' && pa
 
 /** The argv a `/reap` or `/survey` body asks for; else why it is refused. */
 export function scriptArgvOf(path: '/reap' | '/survey', body: unknown): string[] | string {
-  const b = (typeof body === 'object' && body !== null ? body : {}) as { jobId?: unknown; scratch?: unknown; roots?: unknown; keep?: unknown };
+  const b = (typeof body === 'object' && body !== null ? body : {}) as { jobId?: unknown; scratch?: unknown; roots?: unknown; keep?: unknown; discard?: unknown };
   if (path === '/survey') {
     if (!Array.isArray(b.roots) || b.roots.length > 256 || !b.roots.every(isRoot)) return 'roots must be at most 256 absolute paths';
     return surveyArgv(b.roots);
@@ -410,5 +413,7 @@ export function scriptArgvOf(path: '/reap' | '/survey', body: unknown): string[]
   if (!isJobId(b.jobId)) return 'jobId must be a job id';
   if (b.scratch !== undefined && !isScratchOf(b.scratch, b.jobId)) return 'scratch must be the job\'s own scratch dir';
   if (b.keep !== undefined && typeof b.keep !== 'boolean') return 'keep must be true or false';
-  return reapArgv(b.jobId, b.scratch, b.keep === true);
+  if (b.discard !== undefined && typeof b.discard !== 'boolean') return 'discard must be true or false';
+  if (b.keep === true && b.discard === true) return 'keep and discard cannot both be true';
+  return reapArgv(b.jobId, b.scratch, b.keep === true, b.discard === true);
 }

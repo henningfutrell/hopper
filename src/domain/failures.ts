@@ -2,6 +2,7 @@
 // assessed — its error normalised to a signature, matched to a known cause, and decided: run again (transient),
 // grouped into a problem (a shared cause, held or redirected), handed to a person (job-specific), or — a timed-out
 // job still at work (issue #630) — continued.
+import type { KeptWorkView } from './kept-work.ts';
 import type { Tldr } from './tldr.ts';
 
 /** What the assessor decides for a failed job. `continue` (issue #630): a timed-out job still at work goes on. */
@@ -37,8 +38,11 @@ export type PendingRun = 'retry' | 'redirect' | 'release' | 'continue';
  */
 export interface JobLiveness { outputAt?: string; pushed?: boolean; pullRequest?: boolean }
 
-/** What continued a failed job: a person's Continue on its hand-off (issue #551), or the assessor's (issue #630) on its record. */
-export type ContinuedBy = { handoffId: string } | { recordId: string };
+/**
+ * What continued a failed job: a person's Continue on its hand-off (issue #551), the assessor's (issue #630) on its
+ * record, or a person's Push it on its work not pushed (issue #1010).
+ */
+export type ContinuedBy = { handoffId: string } | { recordId: string } | { keptWork: true };
 
 /** Where a problem applies: a machine, an executor on it, or (neither) every machine. */
 export interface ProblemScope { machineId?: string; executor?: string }
@@ -399,6 +403,8 @@ export interface FailuresView {
   handoffs: HandoffView[];
   /** Open problems, then those resolved in the last day. */
   problems: ProblemView[];
+  /** Work not pushed (issue #1010): every ended job whose reap kept work, newest first, with Push it and Discard. */
+  keptWork: KeptWorkView[];
   /** The newest assessed failures still open: none that ended (issue #618). */
   recent: FailureRecordView[];
   /**

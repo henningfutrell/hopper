@@ -329,32 +329,3 @@ describe('the reap at a timeout (issue #630): the scratch dir kept, and what the
     expect(existsSync(scratch)).toBe(false);
   });
 });
-
-describe('the reap that discards kept work (issue #1010): a person said the work is not wanted', () => {
-  const discarding = (dir = scratch): string => { const [file, ...args] = reapArgv(JOB, dir, false, true); return execFileSync(file!, args, { encoding: 'utf8', timeout: 30000 }); };
-
-  it('removes the scratch dir with its uncommitted and unpushed work, and the worktree entry in its repository', () => {
-    const dirty = join(scratch, 'dirty');
-    cloneAt(dirty);
-    writeFileSync(join(dirty, 'a.txt'), 'changed\n');
-    const main = join(root, 'main');
-    cloneAt(main);
-    const ahead = join(scratch, 'ahead');
-    git(main, 'worktree', 'add', '-q', '-b', 'ahead', ahead, 'origin/main');
-    writeFileSync(join(ahead, 'd.txt'), 'd\n');
-    git(ahead, 'add', '.');
-    git(ahead, 'commit', '-q', '-m', 'd');
-    writeFileSync(join(ahead, 'e.txt'), 'e\n');
-    expect(readReap(discarding())).toEqual({ kept: [] });
-    expect(existsSync(scratch)).toBe(false);
-    expect(git(main, 'worktree', 'list')).not.toContain(ahead);
-    expect(existsSync(join(main, 'a.txt'))).toBe(true);
-  });
-
-  it('touches nothing but a job scratch dir', () => {
-    const elsewhere = join(root, 'work');
-    writeFileSync(join(elsewhere, 'keep.txt'), 'x');
-    expect(readReap(discarding(elsewhere))).toEqual({ kept: [] });
-    expect(existsSync(join(elsewhere, 'keep.txt'))).toBe(true);
-  });
-});

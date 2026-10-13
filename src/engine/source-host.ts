@@ -3,7 +3,7 @@
 // job a Decision has just claimed. design.md "Job sources".
 import type { RerunResult, SourceHost, SourceItem, SourceRef } from '../domain/ports.ts';
 import { SPECIALTY_LABEL } from '../domain/elbow-in.ts';
-import { asksOf, isRerunnable, reworkBrief, REVIEW_SECTIONS, TERMINAL_STATUSES } from '../domain/types.ts';
+import { asksOf, isRerunnable, machineRanOn, reworkBrief, REVIEW_SECTIONS, TERMINAL_STATUSES } from '../domain/types.ts';
 import type { Job, JobSourceRef, JobSpec, RoutedBy, SpecFromConfig } from '../domain/types.ts';
 import { routeItem } from '../routing/index.ts';
 import type { Commands } from './commands.ts';
@@ -13,13 +13,6 @@ import { changedSince, gateItem, holdForChange, recordSnapshot, refreshText } fr
 import { carryNotes } from './notes.ts';
 
 const clamp = (p: number): number => Math.max(0, Math.min(100, p));
-
-/** The machine a failed job's agent session ran on (issue #551): its pane's lane's, else where it resumes or is pinned. */
-function machineRanOn(job: Job): string | undefined {
-  const lane = typeof job.executorState?.laneId === 'string' ? job.executorState.laneId : job.laneId;
-  const at = lane?.lastIndexOf('/lane-') ?? -1;
-  return lane && at > 0 ? lane.slice(0, at) : job.resumeOn ?? job.spec.machineId;
-}
 
 function refFor(item: SourceItem, source: { name: string; kind: string }): JobSourceRef {
   return {

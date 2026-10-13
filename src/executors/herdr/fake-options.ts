@@ -149,7 +149,7 @@ export interface FakeHerdrClient extends HerdrClient {
   /** Each seed of Claude's config the shell ran (issue #533): its arguments, the work tree, trust and yolo. */
   readonly seeds: string[][];
   /** Each reap through the machine's connection (issue #410): the job and its scratch dir. */
-  readonly reaps: { jobId: string; scratch?: string; keep?: boolean }[];
+  readonly reaps: { jobId: string; scratch?: string; keep?: boolean; discard?: boolean }[];
   /** Each credential file kept on the machine through its connection (issue #441), in order. */
   readonly credentials: { jobId: string; dir: string; file: string; content: string; make?: boolean }[];
   /** Each checkpoint taken through the machine's connection (issue #921). */

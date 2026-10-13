@@ -27,9 +27,10 @@ export interface Survey {
 export interface MachineShell {
   /**
    * Stops the job's scope and every process carrying its id; removes `scratch` (its own) unless it holds work not
-   * pushed, or `keep` (a timed-out job's, issue #630: it may go on there). Says what it kept and what was pushed.
+   * pushed, or `keep` (a timed-out job's, issue #630: it may go on there); `discard` removes it whatever it holds (a
+   * person discarded its kept work, issue #1010). Says what it kept and what was pushed.
    */
-  reap(jobId: string, scratch?: string, keep?: boolean): Promise<Reaped>;
+  reap(jobId: string, scratch?: string, keep?: boolean, discard?: boolean): Promise<Reaped>;
   /** What jobs left there: scopes, processes, and the scratch dirs under `roots`. */
   survey(roots: string[]): Promise<Survey>;
   /**

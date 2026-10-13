@@ -8,10 +8,13 @@
 //   work was kept (job.work_kept): removed unless it still holds work not pushed. Work kept that the sweep
 //   then removes is recorded as job.work_removed; work it keeps for the first time, as job.work_kept.
 // A job id the hopper does not know is never touched: it may be another hopper's, or a test's.
-import type { Job, MachineSnapshot } from '../domain/types.ts';
+// Work kept is logged once, when first kept; the next passes keep it quietly (issue #1010). A person may discard it
+// (issue #1010, design.md "Work not pushed"): its scratch dir is reaped on its machine whatever it holds.
+import type { ActingPerson, Job, MachineSnapshot } from '../domain/types.ts';
 import type { MachineShell, Survey } from '../domain/ports.ts';
-import { TERMINAL_STATUSES } from '../domain/types.ts';
+import { keptScratchOf, keptWorkOf, machineRanOn, TERMINAL_STATUSES, WORK_EVENTS } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
+import { EngineError } from './errors.ts';
 
 export const SWEEP_EVERY_MINUTES = 10;
 export const SCRATCH_MAX_AGE_HOURS = 24;
@@ -49,6 +52,12 @@ const maxAgeMs = (m: MachineSnapshot): number => (m.sweep?.scratchMaxAgeHours ??
 export interface Sweep {
   /** Sweep every online machine that is due (`all`: every online machine now). Never throws; one at a time. */
   run(all?: boolean): Promise<void>;
+  /**
+   * Discard an ended job's kept work (issue #1010): its scratch dir reaped on its machine whatever it holds, then
+   * `job.work_removed` with `discarded` and who. Throws `not_found`, or `conflict` with why: no work kept, the job not
+   * ended, its machine unknown, offline or out of reach, or the machine kept it all the same (a client older than this).
+   */
+  discard(jobId: string, by: ActingPerson): Promise<{ jobId: string; paths: string[] }>;
 }
 
 export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'machines' | 'clock' | 'stopping'>, log: (line: string) => void = (l) => console.warn(l)): Sweep {
@@ -65,16 +74,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   };
 
   /** Jobs whose work was kept and not removed since: the newest work event of each. */
-  function keptJobs(): Set<string> {
-    const seen = new Set<string>();
-    const kept = new Set<string>();
-    for (const e of c.store.events.recent(KEPT_EVENTS, ['job.work_kept', 'job.work_removed'])) {
-      if (!e.jobId || seen.has(e.jobId)) continue;
-      seen.add(e.jobId);
-      if (e.type === 'job.work_kept') kept.add(e.jobId);
-    }
-    return kept;
-  }
+  const keptJobs = (): Set<string> => new Set(keptWorkOf(c.store.events.recent(KEPT_EVENTS, [...WORK_EVENTS])).map((k) => k.jobId));
 
   async function sweepOne(m: MachineSnapshot, shell: MachineShell, roots: string[], jobOf: (id: string) => Job | undefined, kept: Set<string>): Promise<void> {
     const found = await shell.survey(roots);
@@ -87,14 +87,43 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
         log(`hopper: the sweep could not reap job ${r.jobId} on ${m.id}: ${(e as Error).message}`);
         continue;
       }
-      log(`hopper: the sweep reaped job ${r.jobId} on ${m.id}${r.scratch ? `, its scratch dir ${said.kept.length ? 'kept: it holds work not pushed' : 'removed'}` : ''}`);
+      // Kept again is no news: logged only the first time.
+      const again = r.scratch !== undefined && said.kept.length > 0 && kept.has(r.jobId);
+      if (!again) log(`hopper: the sweep reaped job ${r.jobId} on ${m.id}${r.scratch ? `, its scratch dir ${said.kept.length ? 'kept: it holds work not pushed' : 'removed'}` : ''}`);
       if (!r.scratch || c.stopping()) continue;
       if (said.kept.length > 0 && !kept.has(r.jobId)) c.store.events.append({ type: 'job.work_kept', jobId: r.jobId, data: { paths: said.kept } });
       if (said.kept.length === 0 && kept.has(r.jobId)) c.store.events.append({ type: 'job.work_removed', jobId: r.jobId, data: { paths: [r.scratch] } });
     }
   }
 
+  const refuse = (jobId: string, why: string): EngineError => new EngineError('conflict', `job ${jobId}'s work cannot be discarded: ${why}`);
+
   return {
+    async discard(jobId, by) {
+      const job = c.store.jobs.get(jobId);
+      if (!job) throw new EngineError('not_found', `job ${jobId} not found`);
+      const kept = keptWorkOf(c.store.events.recent(1, [...WORK_EVENTS], jobId))[0];
+      if (!kept) throw new EngineError('conflict', `job ${jobId} has no work kept`);
+      if (!TERMINAL_STATUSES.includes(job.status)) throw new EngineError('conflict', `job ${jobId} is ${job.status}: only an ended job's work is discarded`);
+      const scratch = keptScratchOf(kept, job);
+      if (!scratch) throw refuse(jobId, 'its scratch dir is not known');
+      const machineId = machineRanOn(job);
+      const m = machineId ? (await c.machines.list()).find((x) => x.id === machineId) : undefined;
+      if (!machineId || !m) throw refuse(jobId, machineId ? `its machine ${machineId} is gone` : 'its machine is not known');
+      if (!m.online) throw refuse(jobId, `its machine ${m.id} is offline`);
+      const shell = shellOf(m);
+      if (!shell) throw refuse(jobId, `no executor reaches its machine ${m.id}`);
+      let said;
+      try {
+        said = await shell.reap(jobId, scratch, false, true);
+      } catch (e) {
+        throw refuse(jobId, (e as Error).message);
+      }
+      if (said.kept.length > 0) throw refuse(jobId, `the machine ${m.id} kept it: update its client, then discard it again`);
+      log(`hopper: job ${jobId}'s kept work was discarded on ${m.id}, its scratch dir removed`);
+      c.store.events.append({ type: 'job.work_removed', jobId, data: { paths: [scratch], discarded: true, ...by } });
+      return { jobId, paths: [scratch] };
+    },
     async run(all = false) {
       if (busy || c.stopping()) return;
       busy = true;

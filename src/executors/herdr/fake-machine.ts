@@ -6,10 +6,10 @@ import type { FakeHerdrClient, FakeHerdrOptions } from './fake-options.ts';
 
 export function fakeMachineShell(o: FakeHerdrOptions, fake: () => FakeHerdrClient, onMachine: (method: keyof HerdrClient, ...args: unknown[]) => void): MachineShell {
   return {
-    async reap(jobId, scratch, keep) {
+    async reap(jobId, scratch, keep, discard) {
       onMachine('reap', jobId, scratch);
-      fake().reaps.push({ jobId, ...(scratch ? { scratch } : {}), ...(keep ? { keep } : {}) });
-      return { kept: [...(o.reapKeeps ?? [])], ...(o.reapPushes?.length ? { pushed: [...o.reapPushes] } : {}) };
+      fake().reaps.push({ jobId, ...(scratch ? { scratch } : {}), ...(keep ? { keep } : {}), ...(discard ? { discard } : {}) });
+      return { kept: discard ? [] : [...(o.reapKeeps ?? [])], ...(o.reapPushes?.length ? { pushed: [...o.reapPushes] } : {}) };
     },
     survey: async (roots) => (onMachine('survey', roots), o.survey ?? { scopes: [], processes: [], scratch: [] }),
     discover: async () => (onMachine('discover'), o.discovery ?? { path: [], bins: [], versions: {}, aws: [], kube: [], credentials: { env: [], files: [] } }),

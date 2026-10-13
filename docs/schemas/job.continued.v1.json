@@ -7,6 +7,10 @@
     },
     "recordId": {
       "type": "string"
+    },
+    "keptWork": {
+      "type": "boolean",
+      "const": true
     }
   },
   "additionalProperties": false

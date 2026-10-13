@@ -18,7 +18,7 @@ import { shellQuote, sshArgv, type SshTransport } from './ssh.ts';
 /** A reap waits up to 10 s per scope stop and 3 s for processes; a survey reads /proc once. */
 const TIMEOUT_MS = 60000;
 
-type Call = { reap: { jobId: string; scratch?: string; keep?: boolean } } | { survey: { roots: string[] } }
+type Call = { reap: { jobId: string; scratch?: string; keep?: boolean; discard?: boolean } } | { survey: { roots: string[] } }
   | { credential: { jobId: string; dir: string; file: string; content: string; make: boolean } } | { discover: true } | { reach: { url: string } }
   | { checkpoint: { jobId: string; worktree: string; session: string } };
 
@@ -26,8 +26,8 @@ function shellOver(where: string, run: (call: Call) => Promise<ClientAnswer>): M
   const unfinished = (what: string, r: ClientAnswer): Error =>
     new Error(`the ${what} on ${where} did not finish (exit ${r.code}): ${(r.stderr.trim() || r.stdout.trim()).slice(-500)}`);
   return {
-    async reap(jobId, scratch, keep) {
-      const r = await run({ reap: { jobId, ...(scratch ? { scratch } : {}), ...(keep ? { keep } : {}) } });
+    async reap(jobId, scratch, keep, discard) {
+      const r = await run({ reap: { jobId, ...(scratch ? { scratch } : {}), ...(keep ? { keep } : {}), ...(discard ? { discard } : {}) } });
       const said = readReap(r.stdout);
       if (!said) throw unfinished('reap', r);
       return said;
@@ -66,7 +66,7 @@ function shellOver(where: string, run: (call: Call) => Promise<ClientAnswer>): M
   };
 }
 
-const argvOf = (call: Call): string[] => ('reap' in call ? reapArgv(call.reap.jobId, call.reap.scratch, call.reap.keep)
+const argvOf = (call: Call): string[] => ('reap' in call ? reapArgv(call.reap.jobId, call.reap.scratch, call.reap.keep, call.reap.discard)
   : 'survey' in call ? surveyArgv(call.survey.roots) : 'discover' in call ? discoverArgv() : 'reach' in call ? reachArgv(call.reach.url)
     : 'checkpoint' in call ? checkpointArgv(call.checkpoint.jobId, call.checkpoint.worktree, call.checkpoint.session)
     : credentialArgv(call.credential.jobId, call.credential.dir, call.credential.file, call.credential.make));

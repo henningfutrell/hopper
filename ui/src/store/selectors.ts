@@ -8,7 +8,7 @@ import { loginsBadge } from '@/model/logins';
 import { allows } from '@/model/roles';
 import { reviewBadge } from '@/model/reviews';
 import { sectionBadges, type SectionBadge } from '@/model/sections';
-import { openHandoffs, openProblems } from '@/model/failures';
+import { keptAlone, openHandoffs, openProblems } from '@/model/failures';
 import { highHandoffs, highQuestions, isHighJob } from '@/model/priority';
 import { awaitsOwner, notParked } from '@/model/questions';
 import { awaitingSort } from '@/model/queue';
@@ -113,7 +113,7 @@ export function useSectionBadges(): Record<SectionKind, SectionBadge> {
     questions: { n: questions, high: highQ },
     reviews: { proposal: reviewBadge(reviews.proposal.items), research: reviewBadge(reviews.research.items) },
     logins,
-    failures: { problems: openProblems(failures), handoffs: openHandoffs(failures), high: highHandoffs(failures) },
+    failures: { problems: openProblems(failures), handoffs: openHandoffs(failures), kept: keptAlone(failures), high: highHandoffs(failures) },
     parked,
   }), [questions, highQ, reviews, logins, failures, parked]);
 }

@@ -51,42 +51,43 @@ describe('what the sweep reaps (issue #410)', () => {
   });
 });
 
-describe('the sweep runner (issue #410)', () => {
-  function rig(o: { found?: Survey; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean } = {}) {
-    let now = Date.parse('2026-10-08T00:00:00Z');
-    const jobs = [job('done', 'finished', '/w'), job('run', 'running', '/v'), job('old', 'failed', '/w')];
-    const events: { type: string; jobId?: string; data: unknown }[] = (o.kept ?? []).map((id) => ({ type: 'job.work_kept', jobId: id, data: { paths: ['x'] } }));
-    const surveyed: string[][] = [];
-    const reaps: { jobId: string; scratch?: string; discard?: boolean }[] = [];
-    const logs: string[] = [];
-    const shell: MachineShell = {
-      async survey(roots) { surveyed.push(roots); return o.found ?? none; },
-      async reap(jobId, scratch, _keep, discard) {
-        reaps.push({ jobId, ...(scratch ? { scratch } : {}), ...(discard ? { discard } : {}) });
-        return { kept: scratch && (!discard || o.oldClient) && o.keeps?.includes(jobId) ? [`${scratch}/repo`] : [] };
+/** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
+function rig(o: { found?: Survey; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean } = {}) {
+  let now = Date.parse('2026-10-08T00:00:00Z');
+  const jobs = [job('done', 'finished', '/w'), job('run', 'running', '/v'), job('old', 'failed', '/w')];
+  const events: { type: string; jobId?: string; data: unknown }[] = (o.kept ?? []).map((id) => ({ type: 'job.work_kept', jobId: id, data: { paths: ['x'] } }));
+  const surveyed: string[][] = [];
+  const reaps: { jobId: string; scratch?: string; discard?: boolean }[] = [];
+  const logs: string[] = [];
+  const shell: MachineShell = {
+    async survey(roots) { surveyed.push(roots); return o.found ?? none; },
+    async reap(jobId, scratch, _keep, discard) {
+      reaps.push({ jobId, ...(scratch ? { scratch } : {}), ...(discard ? { discard } : {}) });
+      return { kept: scratch && (!discard || o.oldClient) && o.keeps?.includes(jobId) ? [`${scratch}/repo`] : [] };
+    },
+    async keepCredential() { throw new Error('not asked'); },
+    async reach() { throw new Error('not asked'); },
+    async discover() { throw new Error('not asked'); },
+  };
+  const executor = { name: 'x', validate: () => null, run: async () => ({ kind: 'failed' as const, error: '' }), machineShell: (m: MachineSnapshot) => (m.id === 'unreachable' ? undefined : shell) } satisfies Executor;
+  const machines = o.machines ?? [{ id: 'm', label: 'm', maxLanes: 1, online: true, executors: ['x'] }];
+  const sweep = createSweep({
+    clock: { now: () => new Date(now) },
+    stopping: () => false,
+    machines: { list: async () => machines },
+    executors: { get: (n: string) => (n === 'x' ? executor : undefined), names: () => ['x'] } as never,
+    store: {
+      jobs: { list: () => jobs, get: (id: string) => jobs.find((j) => j.id === id) },
+      events: {
+        recent: (_limit: number, types: string[], jobId?: string) => events.filter((e) => types.includes(e.type) && (!jobId || e.jobId === jobId)).reverse() as unknown as DomainEvent[],
+        append: (e: { type: string; jobId?: string; data: unknown }) => { events.push(e); return e as unknown as DomainEvent; },
       },
-      async keepCredential() { throw new Error('not asked'); },
-      async reach() { throw new Error('not asked'); },
-      async discover() { throw new Error('not asked'); },
-    };
-    const executor = { name: 'x', validate: () => null, run: async () => ({ kind: 'failed' as const, error: '' }), machineShell: (m: MachineSnapshot) => (m.id === 'unreachable' ? undefined : shell) } satisfies Executor;
-    const machines = o.machines ?? [{ id: 'm', label: 'm', maxLanes: 1, online: true, executors: ['x'] }];
-    const sweep = createSweep({
-      clock: { now: () => new Date(now) },
-      stopping: () => false,
-      machines: { list: async () => machines },
-      executors: { get: (n: string) => (n === 'x' ? executor : undefined), names: () => ['x'] } as never,
-      store: {
-        jobs: { list: () => jobs, get: (id: string) => jobs.find((j) => j.id === id) },
-        events: {
-          recent: (_limit: number, types: string[], jobId?: string) => events.filter((e) => types.includes(e.type) && (!jobId || e.jobId === jobId)).reverse() as unknown as DomainEvent[],
-          append: (e: { type: string; jobId?: string; data: unknown }) => { events.push(e); return e as unknown as DomainEvent; },
-        },
-      } as never,
-    }, (l) => logs.push(l));
-    return { sweep, surveyed, reaps, events, logs, advance: (ms: number) => { now += ms; } };
-  }
+    } as never,
+  }, (l) => logs.push(l));
+  return { sweep, surveyed, reaps, events, logs, advance: (ms: number) => { now += ms; } };
+}
 
+describe('the sweep runner (issue #410)', () => {
   it('asks each online machine about the work trees of the jobs it knows, then reaps what the plan says', async () => {
     const r = rig({ found: { scopes: [], processes: ['done', 'run'], scratch: [] } });
     await r.sweep.run(true);

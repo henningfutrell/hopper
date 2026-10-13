@@ -71,12 +71,14 @@ describe('Work not pushed (issue #1010)', () => {
     const job = await a.pull({}, herdrItem);
     await a.waitForStatus(job.id, 'failed', 8000);
     await keptOf(a, job.id);
+    // Its own scratch dir, as the reap at its end named it.
+    const scratch = herdr.reaps.find((x) => x.jobId === job.id && x.scratch)!.scratch!;
 
     const r = await a.ui<{ jobId: string; paths: string[] }>(`/ui/api/failures/kept-work/${job.id}/discard`, {}, { token });
     expect(r.status).toBe(200);
-    expect(herdr.reaps.at(-1)).toEqual({ jobId: job.id, scratch: `/tmp/.hopper-scratch/${job.id}`, discard: true });
+    expect(herdr.reaps.at(-1)).toEqual({ jobId: job.id, scratch, discard: true });
     const removed = (await a.events('types=job.work_removed')).filter((e) => e.jobId === job.id);
-    expect(removed).toEqual([expect.objectContaining({ data: expect.objectContaining({ paths: [`/tmp/.hopper-scratch/${job.id}`], discarded: true, via: 'ui' }) })]);
+    expect(removed).toEqual([expect.objectContaining({ data: expect.objectContaining({ paths: [scratch], discarded: true, via: 'ui' }) })]);
     expect((await failuresOf(a)).keptWork.find((k) => k.jobId === job.id)).toBeUndefined();
     // Nothing kept now: a second discard is refused, and says why.
     const again = await a.ui<{ error: string }>(`/ui/api/failures/kept-work/${job.id}/discard`, {}, { token });
