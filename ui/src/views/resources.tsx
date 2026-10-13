@@ -1,5 +1,5 @@
 // Resources (issue #947, design.md "Stack resources"): what every container of the hopper's stack and each of its sandbox
-// boxes uses now — by its service: CPU, memory against its limit, network, disk, restarts and uptime —, and what its
+// boxes — beside the hopper and on each client target — uses now — by its service: CPU, memory against its limit, network, disk, restarts and uptime —, and what its
 // Postgres and OpenFGA do. Read from GET /api/resources when the page opens and every READ_EVERY_MS while it is shown; a part
 // that cannot be read says why. Below, the stack's resources over time, from GET /api/resources/history: the shares the
 // stack recorder keeps each minute. The machines' own resources over time are on Usage and Machines (issue #560).
@@ -62,6 +62,7 @@ function ContainerRow({ c, now }: { c: ContainerReading; now: number }) {
         <span className={cn('text-xs', TONE[containerTone(c)])}>{c.health ? `${c.state}, ${c.health}` : c.state}</span>
         <span className="text-xs text-muted-foreground">{uptimeText(c, now)}</span>
         <span className="text-xs text-muted-foreground">{restartsText(c)}</span>
+        {c.machine && <span className="text-xs text-muted-foreground">on {c.machine}</span>}
         <span className="ml-auto truncate text-xs text-muted-foreground" title={`${c.name} · ${c.image}`}>{c.image}</span>
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
@@ -113,10 +114,12 @@ export function Resources() {
       </div>
     );
   }
-  const { containers, postgres, openfga } = state.data;
+  const { containers, remoteBoxes, postgres, openfga } = state.data;
   const list = 'containers' in containers ? containers.containers : [];
   const stack = list.filter((c) => c.group === 'stack');
-  const boxes = list.filter((c) => c.group === 'sandbox');
+  // The boxes beside the hopper, then those on each client target; a client target that cannot be read says why.
+  const boxes = [...list.filter((c) => c.group === 'sandbox'), ...remoteBoxes.flatMap((m) => ('containers' in m ? m.containers : []))];
+  const unread = remoteBoxes.flatMap((m) => ('problem' in m ? [m] : []));
   return (
     <div className="max-w-4xl space-y-3">
       <p className="text-sm text-muted-foreground">What each part of the hopper&apos;s stack uses now, by its service. CPU is the use since the read before; the page reads again every 10 seconds while it is open. Network and disk count since the container started; OpenFGA&apos;s checks count since it started.</p>
@@ -125,9 +128,12 @@ export function Resources() {
           : stack.length === 0 ? <Empty>No container of the hopper&apos;s compose project. A hopper on the computer itself has none.</Empty>
           : <ul className="divide-y">{stack.map((c) => <ContainerRow key={c.name} c={c} now={now} />)}</ul>}
       </Panel>
-      {boxes.length > 0 && (
-        <Panel title="Sandbox boxes" icon={Boxes} count={boxes.length}>
-          <ul className="divide-y">{boxes.map((c) => <ContainerRow key={c.name} c={c} now={now} />)}</ul>
+      {(boxes.length > 0 || unread.length > 0) && (
+        <Panel title="Sandbox boxes" icon={Boxes} count={boxes.length || ''}>
+          <div className="space-y-3">
+            {unread.map((m) => <Problem key={m.machine}>{m.machine}: {m.problem}</Problem>)}
+            {boxes.length > 0 && <ul className="divide-y">{boxes.map((c) => <ContainerRow key={c.service} c={c} now={now} />)}</ul>}
+          </div>
         </Panel>
       )}
       <Panel title="Postgres" icon={Database}>

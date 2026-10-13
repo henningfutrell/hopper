@@ -27,12 +27,12 @@ export function samplesOf(r: StackResources, before: OpenFgaReading | undefined)
   const add = (service: string, group: StackSample['group'], metric: StackSample['metric'], value: number | undefined) => {
     if (value !== undefined && Number.isFinite(value)) out.push({ at: r.at, service, group, metric, value });
   };
-  if ('containers' in r.containers) {
-    for (const c of r.containers.containers) {
-      if (c.state !== 'running') continue;
-      add(c.service, c.group, 'cpu', share(c.cpuCores, c.cpuLimitCores ?? c.cores));
-      add(c.service, c.group, 'memory', share(c.memUsedBytes, c.memLimitBytes ?? c.memMaxBytes));
-    }
+  // The containers beside the hopper, and the sandbox boxes on each client target, labelled `<machine>/<name>`.
+  const containers = [...('containers' in r.containers ? r.containers.containers : []), ...r.remoteBoxes.flatMap((m) => ('containers' in m ? m.containers : []))];
+  for (const c of containers) {
+    if (c.state !== 'running') continue;
+    add(c.service, c.group, 'cpu', share(c.cpuCores, c.cpuLimitCores ?? c.cores));
+    add(c.service, c.group, 'memory', share(c.memUsedBytes, c.memLimitBytes ?? c.memMaxBytes));
   }
   if (!('problem' in r.postgres)) add('postgres', 'stack', 'connections', share(r.postgres.connections.total, r.postgres.connections.max));
   if (!('problem' in r.openfga) && before) {

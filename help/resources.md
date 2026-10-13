@@ -16,7 +16,7 @@ One row for each container of the hopper's compose stack: the hopper, Postgres, 
 | Disk | The bytes read and written since it started, and the size of its own writable layer. |
 | Volumes | Each named volume it mounts, with its size. |
 
-Sandbox boxes that this hopper started show under **Sandbox boxes**, with the same readings.
+Sandbox boxes that this hopper started show under **Sandbox boxes**, with the same readings. A box on another machine (a client target) shows there too, with *on* and the machine's name. The hopper reads it through that machine's client, from the machine's own Podman or Docker. Its service is the machine's name, a slash, and the box's name. It has no layer or volume sizes. When the hopper cannot read a machine (the machine is gone, has no Podman or Docker, or does not answer), the page says why. A machine whose client is older shows its boxes without CPU and memory, until the hopper updates the client.
 
 The hopper reads the containers through the container runtime's socket. It is the same socket it starts sandbox boxes through. Without it, the page says so, and shows only Postgres. To give the hopper the socket, see [Sandbox boxes](sandboxes.md).
 
@@ -57,4 +57,4 @@ Each part has its own colour. Each line shows the highest value in its step. A g
 
 ## Through the API
 
-`GET /api/resources` gives the same readings as JSON. Each container has its service as its label. `GET /api/resources/history` gives the graph. See the API reference at `/docs/`.
+`GET /api/resources` gives the same readings as JSON. Each container has its service as its label. The boxes on other machines are in `remoteBoxes`, one entry for each machine. `GET /api/resources/history` gives the graph. See the API reference at `/docs/`.
