@@ -105,7 +105,7 @@ A save keeps what it leaves out. Each template shows its **blast radius** rating
 No box of a template takes a job or gets anything from the vault until a person approves the template. A template that waits shows on **Access requests**, panel **Template approvals**, with its approve buttons. You edit, revoke and remove templates on **Settings → Vault**.
 
 - **Approve** approves the image, the tools, the secrets and the **read** profiles.
-- A **write**, **sync** or **apply** profile is high-radius. It needs its own approval: **Approve `<profile>`**, or `hopper template approve-profile <name> <operation>/<kind>/<asset>`.
+- A **write**, **sync** or **apply** profile is high-radius. It needs an explicit approval: the card shows one **Approve all listed** action that approves the template and each listed profile, or `hopper template approve-profile <name> <operation>/<kind>/<asset>`.
 - A new secret, a new image, a change of tools or a new profile waits for approval again. Until then, boxes get only what was approved. A profile you remove loses its approval at once.
 - Limits are not part of the approval. A change of limits applies to the next box.
 - **Revoke** stops it at once: its boxes take no new job and get nothing from the vault. Jobs that run there now keep running.
@@ -142,8 +142,8 @@ sh "$HOPPER_SKILL" sandbox --needs "write/aws-account/123456789012" --wait
 ```
 
 1. The hopper finds the template for these needs and uses it again. When there is none, the hopper makes it (see [Templates a job asks for](#templates-a-job-asks-for)).
-2. A new template waits for a person on **Access requests → Template approvals**, unless the read policy approves it or **Skip template approval** is on.
-3. The sandbox run waits for a person on **Access requests → Sandbox runs**, unless **Skip sandbox approval** is on. Select **Approve** to start the box, or write why not and select **Decline**. The job is told the reason.
+2. A new template waits for a person on **Access requests → Template approvals**, unless the read policy approves it, the auto-approve policy holds its blast radius, or **Skip template approval** is on. By default, a template that only reads is approved with no person.
+3. The sandbox run waits for a person on **Access requests → Sandbox runs**, unless the auto-approve policy holds the template's blast radius, **Skip sandbox approval** is on, or a person approved the template this job asked for. Select **Approve** to start the box, or write why not and select **Decline**. The job is told the reason.
 4. The hopper starts the box with the template's defaults. The box joins as a machine of that template. The job's `--wait` ends with the box's name and the skills the box loads.
 
 The same job that asks again gets the same box. A box ends at the template's time limit. A run that did not start says why; a person can start a box with `hopper sandbox launch --template <name>`.
@@ -158,9 +158,13 @@ An admin sets these in **Settings → Vault**, panel **Sandbox approvals**. They
 | **Skip sandbox approval** | A sandbox run starts the moment a job asks, a high-blast-radius one too. |
 | **YOLO** | Both toggles. Nobody has to do anything. |
 
+**Auto-approve by blast radius.** In the same panel, one switch for each level: **Auto-approve low radius**, **medium** and **high**. A new template a job asks for, and a sandbox run, of a level that is on is approved with no person, `by: the auto-approve policy`. By default, low is on: a box that only reads, with no vault secret. Medium and high ask a person. The read policy approves first; YOLO stays the override.
+
+When you approve a template that a job asked for, the run of that job starts with your approval: `by: the template's approval by <you>`. Another job that asks for the same template still waits for a run approval.
+
 Each approval a toggle gives is still an event, and it names the toggle: `by: skip template approval` on `vault.approved` and `template.profile_approved`, `by: skip sandbox approval` on `vault.sandbox_approved`. The job's timeline shows each one.
 
-Through the API: `POST /ui/api/sandbox-approvals` with `yolo`, `skipTemplateApproval` or `skipSandboxApproval`, and `POST /ui/api/sandbox-requests` with `approve` or `decline`. Both are box actions: an API token needs a box grant.
+Through the API: `POST /ui/api/sandbox-approvals` with `yolo`, `skipTemplateApproval`, `skipSandboxApproval` or `autoApprove` (`{ "low": true, "medium": false, "high": false }`, each level named sets itself), and `POST /ui/api/sandbox-requests` with `approve` or `decline`. Both are box actions: an API token needs a box grant.
 
 A read template still takes the read-only check before its first box, with YOLO too.
 
@@ -174,7 +178,7 @@ sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-account/1
 
 Each **need** is `<operation>/<kind>/<asset>`, at most 16. You can also write a line in plain words, for example `kubectl get pods in namespace web on cluster lab` (see **Needs in plain words** below). The hopper makes the template `asked-<hash>` from the needs: the box image, the tools the needs use, no vault secret, and one operation profile per need. The same needs always get the same template.
 
-The hopper approves it with no person only when it makes it now and every need is a `read` on an asset the **read policy** holds, or when **Skip template approval** is on. Anything else waits for a person on **Access requests**. A job never widens, approves or re-approves a template. To get a box of it too, the job asks for `sandbox` in place of `sandbox-template`.
+The hopper approves it with no person only when it makes it now and every need is a `read` on an asset the **read policy** holds, when the **auto-approve policy** holds its blast radius (by default: read only), or when **Skip template approval** is on. Anything else waits for a person on **Access requests**. A job never widens, approves or re-approves a template. To get a box of it too, the job asks for `sandbox` in place of `sandbox-template`.
 
 An admin can ask for a template the same way on **Settings → Vault**, panel **Template request**. Write what the box must do, one line each, in plain words or as needs, and select **Show the template**. The hopper shows the template it makes from them before it makes it: its name, its image, its tools, its needs, and who approves it. When it waits for a person, the panel says why. Then select **Ask for it**. If you change the needs, show the template again before you ask for it.
 
@@ -192,7 +196,7 @@ A line in plain words names the assets and what the box does on them. The hopper
 
 ### The read policy
 
-The read policy lists the assets on which the hopper may approve read with no person. It is empty by default, so the hopper approves nothing by itself. An admin sets it in **Settings → Vault**, panel **Read policy**, one entry per line:
+The read policy lists the assets on which the hopper may approve read with no person. It is empty by default. The auto-approve policy then decides by blast radius: by default it approves read only. An admin sets it in **Settings → Vault**, panel **Read policy**, one entry per line:
 
 - an asset, for example `cluster/lab`; or
 - a prefix with `*`, for example `aws-account/*` or `namespace/lab/*`.

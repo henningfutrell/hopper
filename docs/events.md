@@ -2977,7 +2977,7 @@ Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (iss
 
 ## `vault.approved`
 
-Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not.
+Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001) or `skip template approval`.
 
 | field | type | required |
 |---|---|---|
@@ -3400,18 +3400,24 @@ Version 1 (`docs/schemas/vault.read_policy_set.v1.json`). An admin set the read 
 
 ## `vault.sandbox_approvals_set`
 
-Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the sandbox approval toggles (issue #991): `skipTemplateApproval`, a template the hopper makes for a job is approved at once, its write, sync and apply profiles with it; `skipSandboxApproval`, a box a job asks for starts at once, a high-blast-radius one too. Both on is sandbox YOLO.
+Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the sandbox approval toggles (issue #991): `skipTemplateApproval`, a template the hopper makes for a job is approved at once, its write, sync and apply profiles with it; `skipSandboxApproval`, a box a job asks for starts at once, a high-blast-radius one too. Both on is sandbox YOLO. `autoApprove` (issue #1001): the blast radius levels whose templates and runs are approved with no person.
 
 | field | type | required |
 |---|---|---|
 | `skipTemplateApproval` | boolean | yes |
 | `skipSandboxApproval` | boolean | yes |
+| `autoApprove` | object | no |
 | `by` | string | yes |
 
 ```json
 {
   "skipTemplateApproval": true,
   "skipSandboxApproval": true,
+  "autoApprove": {
+    "low": true,
+    "medium": false,
+    "high": false
+  },
   "by": "Ada"
 }
 ```
@@ -3434,13 +3440,14 @@ Version 1 (`docs/schemas/vault.sandbox_requested.v1.json`). A running job asked 
 
 ## `vault.sandbox_approved`
 
-Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was approved (issue #991): `by` a person, or `skip sandbox approval` when the toggle approved it. The hopper starts the box now. On the job's timeline.
+Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was approved (issue #991): `by` a person, `skip sandbox approval` when the toggle approved it, `the auto-approve policy` with the template's `radius` (issue #1001), or `the template's approval by <person>` when a person approved the template this job asked for. The hopper starts the box now. On the job's timeline.
 
 | field | type | required |
 |---|---|---|
 | `request` | string | yes |
 | `template` | string | yes |
 | `by` | string | yes |
+| `radius` | `low` \| `medium` \| `high` | no |
 
 ```json
 {

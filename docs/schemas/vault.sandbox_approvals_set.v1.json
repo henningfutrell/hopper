@@ -8,6 +8,26 @@
     "skipSandboxApproval": {
       "type": "boolean"
     },
+    "autoApprove": {
+      "type": "object",
+      "properties": {
+        "low": {
+          "type": "boolean"
+        },
+        "medium": {
+          "type": "boolean"
+        },
+        "high": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "additionalProperties": false
+    },
     "by": {
       "type": "string"
     }

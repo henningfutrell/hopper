@@ -70,7 +70,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per host, stopped at the timeout, recorded, results kept an hour (`service.ts`), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
-| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
+| `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
 | `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
@@ -9567,11 +9567,59 @@ had approved one with the same profile under another name.
 
 **Not changed.** A template still waits for its read-only check after its approval, and the check runs on the sandbox
 module's pass; a check that failed still waits for a person to run it again. A sandbox run still waits for a person
-unless skip sandbox approval is on.
+unless skip sandbox approval is on (since issue #1001, also the auto-approve policy or the template's approval: "Fewer
+sandbox approvals").
 
 Tests: `test/integration/skill-wait-wakes-job.test.ts` (the real daemon over the fake herdr, the real `hopper-skill`: a
 job on its own wait asked for a sandbox without `--wait`; a person approves the template and its profile; the box starts
 and the hopper ends the job's wait with its name; asked again, one watch), `test/skills/template-reuse.test.ts`.
+
+## Fewer sandbox approvals (issue #1001, part 1, 2026-10-13)
+
+Seen on a hopper: an admin was asked to approve too much. Each job ask made a template approval, then a sandbox run
+approval, then one explicit approval per write profile; a read-only dig waited on all of it. While one approval was
+pending, every other approval button on the page was disabled.
+
+- **The auto-approve policy** (`SandboxApprovals.autoApprove`, `src/domain/sandbox-approvals.ts`; the user's settings,
+  key `sandboxApprovals`, no migration: a value saved before it reads as the default). For each blast radius level
+  (`low`, `medium`, `high`), whether a template the hopper makes for a job, and a sandbox run of a template, of that level
+  is approved with no person. **Default: low on, medium and high off.** A template a job asks for holds no vault secret,
+  so it is low when every need is a read and high when one is a write, sync or apply ("A template's blast radius").
+  - A template: after the read policy, which still approves first what it holds, the policy approves a template the
+    hopper makes now whose level it holds (`requestTemplate`, `automaticApprover`), its write, sync and apply profiles
+    with it: `vault.approved`, `template.profile_approved`, each `by` **the auto-approve policy**. Then skip template
+    approval, as before. A template that is there already is never approved by it. A template of read needs only still
+    takes its read-only check before its first box.
+  - A run (`createSandboxRequests`): approved at once when the template's level is one the policy holds,
+    `vault.sandbox_approved` `by` **the auto-approve policy** with `radius`.
+  - Set on Settings → Vault, panel **Sandbox approvals** (`Auto-approve low radius`, …), or `POST
+    /ui/api/sandbox-approvals` with `autoApprove` (each level named sets itself). `vault.sandbox_approvals_set` carries
+    the whole policy; the vault's view answers it in full. Sandbox YOLO stays the override.
+- **A template's approval covers its job's run.** A person who approves a template a job asked for (its `askedBy`), or one
+  the job's `sandbox` ask waited on (`SandboxRequests.waited`, kept in memory while the job is at work), approved the
+  run for that job: the job's run starts with no second approval, `by` **the template's approval by <person>**. Another
+  job's run of the same template still waits for a person, unless the policy or skip sandbox approval approves it. An
+  approval given by the read policy, the auto-approve policy or skip template approval covers no run: those toggles
+  keep their own meaning.
+- **Approve all listed.** A template card on Access requests with a write, sync or apply profile shows one action, in one
+  confirm, that approves the template (when it waits) and then each listed profile, in place of one button per profile.
+- **Approvals do not block each other.** A template card and a sandbox run card each keep their own pending state: while
+  one approval is pending, only that card says `Approving…`, and every other card stays clickable. The route returns once
+  the decision is recorded; the box starts in the background, and its card shows `starts now`, then `runs`.
+
+**Residual risk, stated.** By default, any job at work may get a box that reads any asset it names, approved with no
+person. It holds no vault secret: each credential a skill on it needs is still asked of a person, or minted after
+Access. An admin turns low off on Settings → Vault to have a person approve each read again; the read policy then
+decides as before.
+
+**Not built (left of issue #1001).** A write approval remembered per asset and access for later asks, until revoked or an
+admin-set time limit. A job's purpose required in its ask, and the template and run cards that show it with the job's
+title and link, the planned actions, the asset in plain words, and a readable name in place of `asked-<hash>`.
+
+Tests: `test/skills/template-auto-approve.test.ts`, `test/sandbox/requests.test.ts`, `test/store/sandbox-settings.test.ts`,
+`test/integration/job-sandboxes.test.ts` (a person approves the template a job asked for, and its run starts; another
+job's run waits; the policy set over the API), `test/ui/sandbox-runs-view.test.ts` (two cards approved in a row, each its
+own progress; Approve all listed; the policy's switches).
 
 ## Template requests over the API (issue #718, 2026-10-11)
 
