@@ -65,7 +65,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
-| `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
+| `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
@@ -16157,8 +16157,8 @@ Their outputs are **artifacts** of the job, kept private in the hopper and shown
   <public URL>/#direct-jobs/<id>`, which needs a hopper sign-in; `Promoted by <their GitHub login>.`; and `Requested by
   <the submitter>.` only with `includeRequester`. Links are made only on the hopper's public URL (`HOPPER_PUBLIC_URL`, or
   the remote access URL while it is on): a LAN address is a machine detail. Without one, things are named by id. An
-  artifact is linked, never attached or committed: GitHub's API takes no attachment, and a private artifact stays behind
-  the hopper's sign-in.
+  artifact is linked, never attached: GitHub's API takes no attachment, and a private artifact stays behind the hopper's
+  sign-in. A small text artifact the person ticks is committed instead (part 2, below).
 - **The scan** (`src/promotions/scan.ts`). Before posting, the title and the whole text are scanned: a secret (GitHub
   tokens, 32-byte keys, private keys, AWS, Anthropic, OpenAI and Slack keys — `maskSecrets`) is always refused (422);
   personal data (email addresses, phone numbers in international form, IP addresses, private host names, home
@@ -16188,8 +16188,38 @@ Their outputs are **artifacts** of the job, kept private in the hopper and shown
   ticks are editable, the footer and the notes are shown, and **Confirm and post** waits for **Post to this public
   repository** on a public one.
 
-**Not built yet (the next parts).** Committing a small artifact to a branch of the repository, so it shows on GitHub
-without a hopper sign-in; promoting from the job view (#935) as well as from Direct jobs.
+**Part 2: committed artifacts and the job view (2026-10-12).** The issue asks that small artifacts be "attached or
+committed to a branch", big or private ones linked. GitHub's API takes no attachment, so a small artifact is committed.
+
+- **What may be committed** (`commitRefusal`, `src/domain/promotions.ts`). A text artifact (`TEXT_KINDS`: HTML, SVG, CSV,
+  Markdown, JSON, text) of at most 256 KiB (`COMMIT_MAX_BYTES`). The hopper scans only text, so an image, a PDF or another
+  file is linked only; so is a bigger one. The preview's `artifacts[].commit` says where each would go
+  (`{ branch, path }`) or why it is linked only (`{ no }`).
+- **Only when the person ticks it.** The post takes `commit`: the ids of linked artifacts to commit (an id not in
+  `artifacts`, or one `commitRefusal` refuses, is 400). Nothing is committed by default. Each one's file name and content
+  are scanned as the text is (`scanText`, `postRefusal`): a secret is 422; personal data is 422 on a public repository,
+  and on another without `allowPersonalData`. The public repository's confirm covers the commit too.
+- **Where.** The promotion's own branch `hopper-promotion/<direct job id>` (`promotionBranch`), made from the default
+  branch's head when it is not there, never the default branch itself; the path `hopper-promotions/<direct job
+  id>/<artifact id>-<file name>` (`promotionPath`). With the person's own connection (`PromotionGitHub.branch`,
+  `putFile`: the git refs and contents APIs), never a job's. The commit message is neutral: `Promote <file name>, revision
+  <n>, from the hopper` (`commitMessage`). The commits are made after every check passed and before the issue or comment
+  is posted; the footer then links each committed artifact to its file on GitHub, `(revision <n>, committed to branch
+  …)`. The preview's footer cannot know the ticks, so it shows every artifact as a hopper link.
+- **Made again.** Promoting again updates each ticked file in place (its `sha` read first), a new commit on the same
+  branch. The record keeps, per artifact, `committed` (`branch`, `path`, `url`) in the promotion's JSON (no migration:
+  the build before reads the row and leaves the field out). A revoke leaves the branch and its files: the preview's notes
+  say so. `direct_job.promoted` is unchanged (version 1): it counts the linked artifacts, never the text.
+- **Promote from the job view** (issue #935). A job whose source is `direct` (`directJobOf`, `ui/src/model/promotions.ts`)
+  shows, under its facts on `#job/<id>`, its direct job's title with a link to Direct jobs and the same promotion part
+  (`JobPromotion`, `ui/src/views/direct-job-promotion.tsx`, reading `GET /api/direct-jobs/:id`): the offer, the
+  promotion, **Revoke** and **Promote to GitHub**. A job from anything else reads no direct job.
+
+Tests: `test/promotions/promotion.test.ts` (what may be committed, the branch and path, the footer's lines),
+`test/integration/direct-job-promotions.test.ts` (a commit to the branch with the person's token, updated when promoted
+again; a binary, an unlinked, a personal-data and a secret artifact refused; the fake GitHub's branches and files are
+`test/support/fake-contents.ts`), `test/ui/promotions.test.ts`, `test/ui/direct-jobs-view.test.ts` (the commit tick) and
+`test/ui/job-view-promotion.test.ts` (the job view).
 
 ## PR tending without lanes, part 1 (issue #967, 2026-10-12)
 
