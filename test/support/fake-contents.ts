@@ -18,13 +18,15 @@ export interface ContentsForge {
 const DEFAULT_SHA = 'f'.repeat(40);
 
 /** The answer to a ref or contents request of `repo`; undefined: `rest` is neither. */
-export function contentsRoute(f: ContentsForge, base: string, method: string, repo: string, rest: string, query: Record<string, string>, body: Record<string, unknown>): { status: number; body: unknown } | undefined {
+export function contentsRoute(f: ContentsForge, base: string, method: string, repo: string, raw: string, query: Record<string, string>, body: Record<string, unknown>): { status: number; body: unknown } | undefined {
   const branches = (f.branches ??= {});
   const files = (f.files ??= {});
+  // A client may send a ref or a path with its slashes encoded (`heads%2Fname`), as @octokit/request does.
+  const rest = decodeURIComponent(raw);
   const shaOf = (branch: string): string | undefined => branches[`${repo}@${branch}`] ?? (branch === 'dev' ? DEFAULT_SHA : undefined);
   const ref = /^git\/ref\/heads\/(.+)$/.exec(rest);
   if (method === 'GET' && ref) {
-    const branch = decodeURIComponent(ref[1]!);
+    const branch = ref[1]!;
     const sha = shaOf(branch);
     return sha ? { status: 200, body: { ref: `refs/heads/${branch}`, object: { sha, type: 'commit' } } } : { status: 404, body: { message: 'Not Found' } };
   }
@@ -36,7 +38,7 @@ export function contentsRoute(f: ContentsForge, base: string, method: string, re
   }
   const c = /^contents\/(.+)$/.exec(rest);
   if (!c) return undefined;
-  const path = c[1]!.split('/').map(decodeURIComponent).join('/');
+  const path = c[1]!;
   if (method === 'GET') {
     const file = files[`${repo}@${query.ref ?? 'dev'}:${path}`];
     return file ? { status: 200, body: { type: 'file', path, sha: file.sha } } : { status: 404, body: { message: 'Not Found' } };

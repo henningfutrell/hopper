@@ -4,7 +4,8 @@
 // /api/jobs/:id/bom, job-bom.tsx), in the order a person reads it: a plain-words header — what was asked, where it
 // stands, what is next — with what waits on the person pinned under it; the job's own graph, a node per part; the
 // timeline of everything that happened, newest first (the parts list's events and the ones the UI holds); and the parts
-// as a filterable table. A new event of the job reads the parts list again.
+// as a filterable table. A new event of the job reads the parts list again. A direct job's job shows its promotion to
+// GitHub under its facts (issue #946), as Direct jobs does.
 import { ArrowLeft, Briefcase } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { EventLine } from '@/components/event-line';
@@ -13,10 +14,12 @@ import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { get } from '@/lib/api';
 import { laneName, machineName } from '@/model/board';
+import { directJobOf } from '@/model/promotions';
 import type { DomainEvent, Job } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useJobName } from '@/store/selectors';
 import { useSection } from '@/app/nav';
+import { JobPromotion } from './direct-job-promotion';
 import { BomGraph, BomTable, JobHeader, useJobBom, WaitingPinned } from './job-bom';
 
 type Read = { state: 'reading' } | { state: 'found'; job: Job } | { state: 'none' };
@@ -90,6 +93,7 @@ export function JobView() {
               </Fact>
             )}
             {read.job.error && <Fact label="error"><span className="text-bad">{read.job.error}</span></Fact>}
+            {directJobOf(read.job) && <JobPromotion directJobId={directJobOf(read.job)!} />}
           </>
         )}
       </Panel>

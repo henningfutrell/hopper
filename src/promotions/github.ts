@@ -1,12 +1,17 @@
 // Promote to GitHub's calls (issue #946), with the promoting person's own GitHub connection, never a job's: a repository's
 // visibility, the issue a comment goes on, a new issue, an issue edited, its labels added, a comment and a comment
-// edited. The same `@octokit/request` binding and token renewal as Report a bug (src/bug-reports/github.ts).
+// edited; part 2: the promotion's own branch made from the default branch, and a file put on it (the contents API). The
+// same `@octokit/request` binding and token renewal as Report a bug (src/bug-reports/github.ts).
 import type { RepoVisibility } from '../domain/promotions.ts';
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
 import { makeRequest, splitRepo, statusOf } from '../sources/github/app/http.ts';
 
 export interface PromotionGitHub {
-  repo(repo: string): Promise<{ visibility: RepoVisibility; hasIssues: boolean }>;
+  repo(repo: string): Promise<{ visibility: RepoVisibility; hasIssues: boolean; defaultBranch: string }>;
+  /** Make the branch at the head of `from`, unless it is there. */
+  branch(repo: string, name: string, from: string): Promise<void>;
+  /** Put a file on a branch, made or replaced: the file's URL. */
+  putFile(repo: string, f: { branch: string; path: string; message: string; content: Buffer }): Promise<{ url: string }>;
   /** An issue, or a pull request, by number: what a comment goes on. */
   issue(repo: string, number: number): Promise<{ number: number; url: string; state: 'open' | 'closed' }>;
   create(repo: string, issue: { title: string; body: string; labels: string[] }): Promise<{ number: number; url: string }>;
@@ -37,10 +42,26 @@ export function createPromotionGitHub(o: { apiUrl: string } & TokenSource): Prom
   const headers = (token: string) => ({ authorization: `token ${token}` });
   return {
     repo: (repo) => withToken(async (token) => {
-      const d = (await req('GET /repos/{owner}/{repo}', { ...splitRepo(repo), headers: headers(token) })).data as { private?: boolean; visibility?: string; has_issues?: boolean };
+      const d = (await req('GET /repos/{owner}/{repo}', { ...splitRepo(repo), headers: headers(token) })).data as { private?: boolean; visibility?: string; has_issues?: boolean; default_branch?: string };
       const visibility: RepoVisibility = d.visibility === 'internal' ? 'internal' : d.private === true || d.visibility === 'private' ? 'private' : 'public';
-      return { visibility, hasIssues: d.has_issues !== false };
+      return { visibility, hasIssues: d.has_issues !== false, defaultBranch: d.default_branch ?? 'main' };
     }, failed(`the repository ${repo}`)),
+    branch: (repo, name, from) => withToken(async (token) => {
+      const at = { ...splitRepo(repo), headers: headers(token) };
+      const there = await req('GET /repos/{owner}/{repo}/git/ref/{ref}', { ...at, ref: `heads/${name}` }).then(() => true, (e: unknown) => { if (statusOf(e) === 404) return false; throw e; });
+      if (there) return;
+      const head = (await req('GET /repos/{owner}/{repo}/git/ref/{ref}', { ...at, ref: `heads/${from}` })).data as { object: { sha: string } };
+      await req('POST /repos/{owner}/{repo}/git/refs', { ...at, ref: `refs/heads/${name}`, sha: head.object.sha });
+    }, failed(`the branch ${name} of ${repo}`)),
+    putFile: (repo, f) => withToken(async (token) => {
+      const at = { ...splitRepo(repo), path: f.path, headers: headers(token) };
+      const was = await req('GET /repos/{owner}/{repo}/contents/{path}', { ...at, ref: f.branch })
+        .then((r) => (r.data as { sha?: string }).sha, (e: unknown) => { if (statusOf(e) === 404) return undefined; throw e; });
+      const d = (await req('PUT /repos/{owner}/{repo}/contents/{path}', {
+        ...at, branch: f.branch, message: f.message, content: f.content.toString('base64'), ...(was ? { sha: was } : {}),
+      })).data as { content: { html_url: string } };
+      return { url: d.content.html_url };
+    }, failed(`${f.path} on ${repo}`)),
     issue: (repo, number) => withToken(async (token) => {
       const d = (await req('GET /repos/{owner}/{repo}/issues/{issue_number}', { ...splitRepo(repo), issue_number: number, headers: headers(token) })).data as { number: number; html_url: string; state: string };
       return { number: d.number, url: d.html_url, state: d.state === 'closed' ? 'closed' : 'open' };

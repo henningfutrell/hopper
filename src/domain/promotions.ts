@@ -1,14 +1,19 @@
 // Promote to GitHub (issue #946, design.md "Promote to GitHub"): a direct job's outputs stay private in the hopper until a
 // person promotes them — an issue, or a comment on an issue they pick, on a repository they choose, posted with their own
 // GitHub connection after a preview they edit and confirm. What carries over and how it reads, the record a promotion
-// leaves, when an artifact promoted is stale, and when a direct job is offered for promotion. Pure.
+// leaves, when an artifact promoted is stale, and when a direct job is offered for promotion. Part 2: a small text
+// artifact the person ticks is committed to the promotion's own branch, so it opens on GitHub with no hopper sign-in. Pure.
+import { TEXT_KINDS, type ArtifactKind } from './artifacts.ts';
 import type { DirectJobView } from './direct-jobs.ts';
 
 /** Where a promotion goes: a new issue, or a comment on an issue the person picks. */
 export type PromotionTarget = { kind: 'issue' } | { kind: 'comment'; number: number };
 
-/** An artifact as a promotion links it: the revision it linked. */
-export interface PromotedArtifact { id: string; title: string; revision: number }
+/** Where a committed artifact is on GitHub: the promotion's branch, its path there and, once committed, the file's URL. */
+export interface CommittedFile { branch: string; path: string; url?: string }
+
+/** An artifact as a promotion links it: the revision it linked, and where it was committed, when it was. */
+export interface PromotedArtifact { id: string; title: string; revision: number; committed?: CommittedFile }
 
 /** A promotion of a direct job, as kept: one live per direct job; a revoked one stays as a record. */
 export interface Promotion {
@@ -48,8 +53,11 @@ export type RepoVisibility = 'public' | 'private' | 'internal';
 /** What a scan of the text found: a secret is never posted; personal data only on a private repository, when allowed. */
 export interface ScanFinding { kind: 'secret' | 'personal'; what: string }
 
-/** An artifact the preview offers: the job's, each linked, never attached. */
+/** An artifact of a direct job's job, as the direct job and the preview read it: each linked. */
 export interface PromotionArtifact extends PromotedArtifact { summary?: string; kind: string; url: string }
+
+/** An artifact the preview offers: `commit` says where it would be committed when the person ticks it, or why it is linked only. */
+export interface DraftArtifact extends PromotionArtifact { commit: { branch: string; path: string } | { no: string } }
 
 /** The preview: what would be posted, for the person to edit and confirm. Changes nothing. */
 export interface PromotionDraft {
@@ -60,7 +68,7 @@ export interface PromotionDraft {
   /** The text the person edits: the brief and the results, cleaned. The artifacts and the footer are added when posted. */
   body: string;
   labels: string[];
-  artifacts: PromotionArtifact[];
+  artifacts: DraftArtifact[];
   /** Whether the requester is named. */
   includeRequester: boolean;
   /** The text below the body as it would be posted now: the artifacts, the hopper's link, who promoted it. */
@@ -81,6 +89,8 @@ export interface PromotionRequest {
   labels: string[];
   /** The ids of the job's artifacts to link. */
   artifacts: string[];
+  /** The ids of the linked artifacts to commit to the promotion's branch: small text artifacts only. */
+  commit?: string[];
   includeRequester?: boolean;
   /** The repository is public, and the person posts there anyway. */
   confirmPublic?: boolean;
@@ -90,6 +100,25 @@ export interface PromotionRequest {
 
 /** What the confirm step says of a revoke, and what a revoke answers. */
 export const REVOKE_NOTE = 'A revoke ends the link in the hopper only. It does not unpublish anything: GitHub keeps the issue or the comment, and its text, until a person removes it there.';
+
+/** The largest artifact committed to a branch: a bigger one is linked. */
+export const COMMIT_MAX_BYTES = 256 * 1024;
+
+/** Why an artifact is not committed, only linked; undefined: it may be committed. Only text is scanned before it is posted. */
+export function commitRefusal(a: { kind: ArtifactKind | string; size: number }): string | undefined {
+  if (!(TEXT_KINDS as readonly string[]).includes(a.kind)) return 'only a text artifact is committed: the hopper cannot scan this kind for secrets and personal data, so it is linked';
+  if (a.size > COMMIT_MAX_BYTES) return `too big to commit (more than ${COMMIT_MAX_BYTES / 1024} KiB): it is linked`;
+  return undefined;
+}
+
+/** The promotion's own branch: committed artifacts go there, never to the default branch. */
+export const promotionBranch = (directJobId: string): string => `hopper-promotion/${directJobId}`;
+
+/** Where an artifact is committed on the promotion's branch: under the direct job, its id before its file name. */
+export const promotionPath = (directJobId: string, a: { id: string; name: string }): string => `hopper-promotions/${directJobId}/${a.id}-${a.name}`;
+
+/** The commit message of a committed artifact: neutral, its file name and revision only. */
+export const commitMessage = (a: { name: string; revision: number }): string => `Promote ${a.name}, revision ${a.revision}, from the hopper`;
 
 /** The hopper's own labels never carry over: on GitHub they could start a job. */
 const HOPPER_LABEL = /^hopper(?::|$)/i;
@@ -141,6 +170,9 @@ export function promotionFooter(f: PromotionFooter): string {
   const base = f.publicUrl?.replace(/\/+$/, '');
   const line = (a: PromotionFooter['artifacts'][number]): string => {
     const summary = a.summary ? ` — ${a.summary}` : '';
+    const c = a.committed;
+    if (c?.url) return `- [${a.title}](${c.url})${summary} (revision ${a.revision}, committed to branch \`${c.branch}\`)`;
+    if (c) return `- ${a.title}${summary} (revision ${a.revision}, to be committed to branch \`${c.branch}\` as \`${c.path}\`)`;
     return base ? `- [${a.title}](${base}/#artifacts/${a.id})${summary} (revision ${a.revision})` : `- ${a.title}${summary} (revision ${a.revision}, artifact ${a.id} in the hopper)`;
   };
   const from = base ? `From the hopper: ${base}/#direct-jobs/${f.directJobId}` : `From the hopper: direct job ${f.directJobId}`;

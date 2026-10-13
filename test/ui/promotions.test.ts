@@ -57,8 +57,8 @@ describe('the promote form (issue #946)', () => {
   });
 
   it('knows the direct job a job was made for, from its source', () => {
-    expect(directJobOf({ source: { source: 'direct', kind: 'direct', key: 'direct:d1' } })).toBe('d1');
-    expect(directJobOf({ source: { source: 'github', kind: 'issue', key: 'https://github.invalid/o/r/issues/1' } })).toBeUndefined();
+    expect(directJobOf({ source: { source: 'direct', key: 'direct:d1' } })).toBe('d1');
+    expect(directJobOf({ source: { source: 'github', key: 'https://github.invalid/o/r/issues/1' } })).toBeUndefined();
     expect(directJobOf({})).toBeUndefined();
   });
 });
