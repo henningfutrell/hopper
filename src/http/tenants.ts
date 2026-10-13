@@ -37,6 +37,7 @@ import type { SecretProblem } from './webhooks.ts';
 import type { UserMachineLink } from '../users/runtime.ts';
 import type { UserGitHubProxy } from '../users/github-proxy.ts';
 import type { WindowsSteps } from '../windows-steps/index.ts';
+import type { NeedSteps } from '../sandbox/need-steps.ts';
 import type { SandboxRequests } from '../sandbox/requests.ts';
 import type { UsageRecorder } from '../usage/history.ts';
 import type { ResourceRecorder } from '../machines/history.ts';
@@ -85,6 +86,8 @@ export interface TenantParts {
   githubProxy: UserGitHubProxy;
   /** Windows sandbox steps (issue #731): the user's Windows hosts, and their jobs' steps on them. */
   windowsSteps: WindowsSteps;
+  /** need steps (issue #1007): their jobs' steps in need boxes of a template that covers their needs. */
+  needSteps: NeedSteps;
   /** Direct jobs (issue #901): jobs a person submits straight to the hopper, with no GitHub issue. */
   directJobs: DirectJobs;
   /** Search (issue #945): the user's index and the permission-checked search. */

@@ -241,11 +241,17 @@ function blockText(lines: string[], index: number): string {
     .join('\n');
 }
 
+/** The most of a FAILED reason the job keeps. */
+const FAILED_REASON_MAX = 4000;
+
+/**
+ * The FAILED reason: the rest of the marker line, then every line after it in the turn (issue #1007: a reason that goes
+ * on past its first line, or that the terminal wrapped, was cut there — often just after a colon).
+ */
 function failedReason(lines: string[], index: number): string {
   const rest = normaliseMarkerLine(lines[index]!).slice('HOPPER_FAILED'.length).replace(/^[\s:—–-]+/, '').trim();
-  if (rest) return rest;
-  const next = lines.slice(index + 1).map(stripGutter).find((l) => l !== '');
-  return next ?? '';
+  const after = lines.slice(index + 1).filter((l) => markerOf(l) === null).map(stripGutter).filter((l) => l !== '');
+  return [...(rest ? [rest] : []), ...after].join('\n').slice(0, FAILED_REASON_MAX);
 }
 
 /**

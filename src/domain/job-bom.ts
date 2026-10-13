@@ -176,7 +176,7 @@ function work(job: Job, events: readonly DomainEvent[], related: readonly Job[],
       const n = typeof d.commits === 'number' ? d.commits : 0;
       out.push({ id: `checkpoint:${e.seq}`, group: 'machines', kind: 'checkpoint', label: `Checkpoint on ${str(d.machineId) ?? 'its machine'}`, status: 'recorded', at: e.at, detail: `${n} ${n === 1 ? 'commit' : 'commits'}, ${d.session ? 'with its session' : 'no session'}` });
     }
-    if (e.type === 'step.started') out.push({ id: `step:${str(d.step) ?? e.seq}`, group: 'machines', kind: 'step', label: str(d.box) ? `Box step in ${str(d.box)!}` : `Windows step on ${str(d.host) ?? 'a host'}`, status: 'recorded', at: e.at, ...(str(d.command) ? { detail: str(d.command)! } : {}) });
+    if (e.type === 'step.started') out.push({ id: `step:${str(d.step) ?? e.seq}`, group: 'machines', kind: 'step', label: str(d.template) ? `Need step in template ${str(d.template)!}` : str(d.box) ? `Box step in ${str(d.box)!}` : `Windows step on ${str(d.host) ?? 'a host'}`, status: 'recorded', at: e.at, ...(str(d.command) ? { detail: str(d.command)! } : {}) });
   }
   return out;
 }

@@ -219,7 +219,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const artifactEdge = createArtifactEdge({ clock: o.clock, lan: o.lan, port: o.port, tenants: o.tenants, hostLinkBase: () => o.instance.settings.getHostLinkBase() });
   jobArtifactRoutes(app, { tenants: o.tenants, edge: artifactEdge, github });
   jobInfraPlanRoutes(app, { tenants: o.tenants }); // Infra plans (issue #870), with the same token
-  jobStepRoutes(app, { tenants: o.tenants }); // Windows sandbox steps (issue #731), with the same token
+  jobStepRoutes(app, { tenants: o.tenants, skillWaits }); // sandbox steps, Windows (issue #731) and Linux (issue #1007), with the same token
   artifactRoutes(app, { ...tenant, tenants: o.tenants, access: o.access, edge: artifactEdge, clock: o.clock });
   staticRoutes(app, o.uiDir);
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));

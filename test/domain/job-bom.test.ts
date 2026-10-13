@@ -35,6 +35,15 @@ const input = (over: Partial<JobBomInput>): JobBomInput => ({ job: job('running'
 const part = (bom: ReturnType<typeof jobBom>, id: string) => bom.parts.find((p) => p.id === id);
 
 describe('a job\'s parts list (issue #935)', () => {
+  it('lists a Windows step on its host, and a need step in its need box with its template (issue #1007)', () => {
+    const bom = jobBom(input({ events: [
+      event('step.started', { step: 's1', host: 'build-host', command: 'msbuild App.sln' }),
+      event('step.started', { step: 's2', host: 'hopper-need-asked-1-ab', template: 'asked-1', needs: ['read/aws-role/1/ro'], command: 'aws sts get-caller-identity' }),
+    ] }));
+    expect(part(bom, 'step:s1')).toMatchObject({ label: 'Windows step on build-host', detail: 'msbuild App.sln' });
+    expect(part(bom, 'step:s2')).toMatchObject({ label: 'Need step in template asked-1', detail: 'aws sts get-caller-identity' });
+  });
+
   it('lists what was asked: the issue, the follow-ups it filed, and added scope', () => {
     const bom = jobBom(input({ events: [
       event('job.child_issue_filed', { parent: { repo: 'acme/app', number: 7 }, child: { repo: 'acme/app', number: 9, url: 'https://github.com/acme/app/issues/9' }, required: false }),

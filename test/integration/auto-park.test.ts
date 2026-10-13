@@ -114,6 +114,29 @@ describe('auto-park', () => {
     expect(new Date(again.at).getTime() - new Date(unparked.at).getTime()).toBeGreaterThanOrEqual(300);
   });
 
+  it('picked up with a question 5 h old, it waits the full timeout again; the answer then resumes it (issue #1007)', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
+    const a = await boot(herdr);
+    const token = await a.login();
+    const job = await a.pull({}, item);
+    const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
+    expect((await a.ui(`/ui/api/jobs/${job.id}/park`, {}, { token })).status).toBe(200);
+    await a.waitForStatus(job.id, 'parked', 5000);
+    // The question reached a person 5 h ago, and never waited again since.
+    const { store } = a.user();
+    const old = new Date(Date.now() - 5 * 60 * 60_000).toISOString();
+    store.questions.update(q.id, { escalatedToHumanAt: old, waitRestartedAt: undefined });
+
+    const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/requeue`, {}, { token });
+    expect(r.body.status).toBe('waiting_answer');
+    expect(store.questions.get(q.id)!.waitRestartedAt).toBeDefined();
+    await sleep(1500);
+    expect((await a.job(job.id)).status).toBe('waiting_answer');
+
+    expect((await a.ui(`/ui/api/questions/${q.id}/answer`, { answer: 'Blue.' }, { token })).status).toBe(200);
+    await a.waitForStatus(job.id, 'finished', 8000);
+  }, 30_000);
+
   it('time at the escalation levels does not count; a question the frontier level answers never parks', async () => {
     // The level takes longer than the timeout, then answers the colour sure of it and sends the size up.
     const frontier = createFakeLevel({
