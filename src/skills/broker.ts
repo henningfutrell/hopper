@@ -199,9 +199,9 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       if (r.state === 'failed') return no(503, `the box of template ${t.template} did not start: ${r.reason ?? 'no reason given'}. A person starts one: hopper sandbox launch --template ${t.template}.`);
       record('skill.loaded');
       const skills = t.text.slice(t.text.indexOf('\nOn the box'));
-      // Issue #1009: the job stays where it runs. Its commands do not reach the box, so the answer says so plainly
-      // (how a job's work reaches the box is issue #769).
-      const elsewhere = box.template === t.template ? '' : `\n\nThis job runs on ${machine === undefined ? 'no machine' : `machine ${machine}`}, not on box ${r.container!}: its commands do not reach the box, and the skills above load only in a job that runs on the box. The hopper does not move this job there. Tell a person that the work that needs these assets must run as a job on machine ${r.container!} (a routing rule that sets machine ${r.container!} puts a job there), or find another way.`;
+      // Issue #1009: the job stays where it runs, and the answer says so. Issue #1004: it runs its work in the box as box
+      // steps; the skills above load only in a job on the box, so it is told how a step reaches the vault there.
+      const elsewhere = box.template === t.template ? '' : `\n\nThis job runs on ${machine === undefined ? 'no machine' : `machine ${machine}`}, not on box ${r.container!}. The hopper does not move this job there: it runs each command that needs these assets in the box, as a box step, and gives back its output, exit code and outputs:\n  sh "$HOPPER_STEP" box ${r.container!} --command '<the command>'\nIn a box step, $HOPPER_SECRET is the vault's helper in the box: point each tool at it, and the vault mints a short-lived credential each time. The skills above load only in a job on the box: load the box-step skill instead (sh "$HOPPER_SKILL" box-step) for the inputs, the outputs and the tools' set-up.`;
       return {
         status: 200,
         text: `${SANDBOX_SKILL}: box ${r.container!} of template ${t.template} runs, approved by ${r.approvedBy ?? 'a person'}. It joins the hopper as a machine of that template; it ends at the template's time limit.${skills}${elsewhere}\n`,

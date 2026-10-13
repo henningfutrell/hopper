@@ -102,6 +102,23 @@ export interface ContainerRuntime {
   remove(id: string): Promise<void>;
   /** The containers that carry every one of these labels; none given: every container. */
   list(labels?: Record<string, string>): Promise<ContainerInfo[]>;
+  /**
+   * Run a command in the running container as its own user (issue #1004, a box step), and answer its exit code. Each
+   * chunk it writes goes to `out` as it comes, with its stream. `signal` ends the wait, not the command: the caller stops
+   * it in the box. Throws when it could not run. Absent: this runtime runs no command in a box (one on another machine).
+   */
+  exec?(id: string, run: ExecRun): Promise<number>;
+  /** Extract the tar file `tar` (on this machine) into the directory `dir` of the running container, owned by its user. */
+  copyIn?(id: string, dir: string, tar: string): Promise<void>;
+}
+
+/** A command run in a box (issue #1004): its argv (no shell but the one it names), and its environment beside the box's. */
+export interface ExecRun {
+  cmd: string[];
+  env?: Record<string, string>;
+  /** 1: its stdout; 2: its stderr. */
+  out(chunk: Buffer, stream: 1 | 2): void;
+  signal?: AbortSignal;
 }
 
 /**

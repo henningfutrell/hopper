@@ -2,6 +2,7 @@
 // The primary runtime, and the default whenever it is reachable (src/sandbox/runtime.ts). The create body is
 // src/sandbox/flags.ts's: the sandbox flags are never a request's.
 import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
+import { execCalls } from './exec.ts';
 import { infoOf, startCheckOf, type Inspected } from './inspected.ts';
 import { libpodCreateBody, STOP_S } from './flags.ts';
 import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
@@ -27,6 +28,8 @@ export function createPodmanRuntime(socket: string, via: SocketCall = socketCall
 
   return {
     kind: 'podman',
+    // A command in a box and a copy into it (issue #1004): only over the socket here, never through a machine's relay.
+    ...(via === socketCall ? execCalls(socket, API, 'podman') : {}),
 
     async problem() {
       let a: Answer;

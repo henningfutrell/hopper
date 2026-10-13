@@ -8,6 +8,9 @@
     "host": {
       "type": "string"
     },
+    "box": {
+      "type": "string"
+    },
     "exit": {
       "type": "integer",
       "minimum": -9007199254740991,
@@ -29,7 +32,6 @@
   },
   "required": [
     "step",
-    "host",
     "exit",
     "seconds"
   ],

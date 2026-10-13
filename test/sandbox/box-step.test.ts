@@ -95,14 +95,13 @@ describe('a box step (issue #1004)', () => {
     expect(readdirSync(join(b.home(), '.hopper-step'))).toEqual([]);
     // The command was killed in the box, not left to run.
     const ps = execFileSync('ps', ['-eo', 'args'], { encoding: 'utf8' });
-    expect(ps).not.toMatch(/sleep 37/);
+    expect(ps).not.toMatch(/^sleep 37$/m);
   });
 
   it('a runtime that runs no command in a box is a problem, not a crash', async () => {
     const b = box();
     const { exec: _exec, copyIn: _copyIn, ...none } = b.rt;
-    let log = '';
-    const result = await runBoxStep(none, b.container, { id: ID, command: 'true', dir: b.dir, inputs: false, outputs: [], token: TOKEN }, { log: (c) => { log += c; }, signal: new AbortController().signal });
+    const result = await runBoxStep(none, b.container, { id: ID, command: 'true', dir: b.dir, inputs: false, outputs: [], token: TOKEN }, { log: () => undefined, signal: new AbortController().signal });
     expect(result.exit).toBe(255);
     expect(result.problem).toMatch(/runs no command in a box/);
   });

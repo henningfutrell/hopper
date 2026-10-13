@@ -5,12 +5,19 @@ import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
 import { NO_SKIPS } from '../domain/sandbox-approvals.ts';
 import type { UserStore } from '../domain/ports.ts';
 import type { TemplateView } from '../domain/vault.ts';
+import type { StepResult } from '../domain/windows-steps.ts';
+import type { BoxStepCall } from '../sandbox/box-step.ts';
 import { createSandboxRequests, type SandboxRequests } from '../sandbox/requests.ts';
+import type { StepBoxes } from '../windows-steps/service.ts';
 
-/** Starts a box of a template for a job's sandbox request, and says whether a box of the user's is still there. */
+/**
+ * Starts a box of a template for a job's sandbox request, says whether a box of the user's is still there, and runs a
+ * job's box step in it (issue #1004).
+ */
 export interface SandboxLauncher {
   launch(userId: string, template: TemplateView): Promise<{ container: string }>;
   alive(userId: string, container: string): boolean;
+  step(userId: string, container: string, step: BoxStepCall, io: { log(chunk: string): void; signal: AbortSignal }): Promise<StepResult>;
   /** How long a start may take before its request fails (issue #1002); default START_MS. */
   startMs?: number;
 }
@@ -36,4 +43,23 @@ export function userSandboxRequests(o: {
     clock: o.clock,
     ...(o.sandboxes?.startMs !== undefined ? { startMs: o.sandboxes.startMs } : {}),
   });
+}
+
+/**
+ * The boxes a job's steps run in (issue #1004, design.md "Box steps"): the boxes the job's own sandbox requests started,
+ * that are still there. A step runs in one through the sandbox module, with the job's proxy token and the box's vault
+ * helper, as its client named it.
+ */
+export function stepBoxes(o: {
+  userId: string; requests: SandboxRequests; sandboxes: SandboxLauncher; token(jobId: string): string; helper(box: string): Promise<string | undefined>;
+}): StepBoxes {
+  return {
+    of: (job) => o.requests.list()
+      .filter((r) => r.jobId === job.id && r.state === 'running' && r.container !== undefined && o.sandboxes.alive(o.userId, r.container))
+      .map((r) => ({ name: r.container!, template: r.template })),
+    run: async (job, box, step, io) => {
+      const helper = await o.helper(box);
+      return o.sandboxes.step(o.userId, box, { ...step, token: o.token(job.id), ...(helper ? { helper } : {}) }, io);
+    },
+  };
 }

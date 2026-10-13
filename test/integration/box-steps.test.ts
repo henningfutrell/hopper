@@ -15,11 +15,10 @@
 //   Scenario: while the step runs, the box's vault helper asks for the job, and the vault takes the ask as the job's on
 //     the box; outside a step, the same ask from the box is refused: the job does not run there
 import { execFile } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chmodSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { joinHopper } from '../../src/client/join.ts';
 import { startLinkedClient } from '../../src/client/main.ts';
@@ -64,6 +63,9 @@ type Run = { code: number; stdout: string; stderr: string };
 async function seatJobWithBox(): Promise<{ a: TestApp; session: string; runtime: FakeContainerRuntime; job: string; creds: string; box: string; answer: string }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
+  // The box's client answers the hopper's herdr probe through the fake herdr (test/herdr/fake-herdr-bin.mjs).
+  process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
+  process.env.FAKE_HERDR_RUNNING = '1';
   const runtime = createFakeContainerRuntime();
   const a = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, plugins: { machines: lanes(3) }, seams: { authorizationServer: createFakeAuthorizationServer(), containerRuntime: runtime } });
   apps.push(a);

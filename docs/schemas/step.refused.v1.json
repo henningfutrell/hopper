@@ -7,6 +7,9 @@
     },
     "host": {
       "type": "string"
+    },
+    "box": {
+      "type": "string"
     }
   },
   "required": [

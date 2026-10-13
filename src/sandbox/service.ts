@@ -8,6 +8,8 @@ import type { SandboxesView } from '../domain/machines.ts';
 import type { ContainerRuntime, SandboxRecord } from '../domain/sandboxes.ts';
 import type { SandboxRepository } from '../domain/store.ts';
 import type { ProbeCatalog } from '../domain/read-only-check.ts';
+import type { StepResult } from '../domain/windows-steps.ts';
+import { runBoxStep, type BoxStepCall } from './box-step.ts';
 import { createCheckPass, type CheckTemplates } from './check.ts';
 import { launchBox, type LaunchRequest } from './launch.ts';
 import { launchScopeOf, type LaunchedProfile } from './params.ts';
@@ -17,6 +19,7 @@ import { createPlacements, LOCAL, NO_RUNTIME, type ClientTargets } from './runti
 import type { AgentCredentialOf } from './agent-credential.ts';
 import type { AgentCredentialAsk } from '../vault/agent-credential.ts';
 
+export type { BoxStepCall } from './box-step.ts';
 export { BOX_IMAGE, BOX_LABEL, LaunchRefused, SANDBOX_LABEL, USER_LABEL, type LaunchRequest } from './launch.ts';
 export { usersTemplates } from './check.ts';
 export { usersAgentCredentials } from './agent-credential.ts';
@@ -82,6 +85,11 @@ export interface Sandboxes {
    * it starts anything; any other error: it did not start.
    */
   launch(userId: string, l: LaunchRequest): Promise<{ container: string }>;
+  /**
+   * Run one box step (issue #1004) in the user's box `name`: a box beside the hopper, through its runtime's exec. Never
+   * rejects: a box that is not there, or not beside the hopper, is the result's `problem`.
+   */
+  step(userId: string, name: string, step: BoxStepCall, io: { log(chunk: string): void; signal: AbortSignal }): Promise<StepResult>;
   /** One reconcile pass, at `now` (default the clock's). */
   reconcile(now?: Date): Promise<void>;
   /** One read-only check pass (issue #716): each template that is due is checked; a pass that runs already is joined. */
@@ -157,6 +165,14 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       }, userId, l);
       o.logger.info(`hopper: sandbox box ${record.name} started (${record.image}, ${at.runtime.kind} on ${at.machine}); it joins as a machine`);
       return { container: record.name };
+    },
+
+    async step(userId, name, step, io) {
+      const r = o.repo.list().find((x) => x.userId === userId && x.name === name);
+      if (!r || !r.containerId) return { exit: 255, problem: `no box ${name}: it went` };
+      if (r.machine !== LOCAL) return { exit: 255, problem: `box ${name} runs on ${r.machine}: a box step runs only in a box beside the hopper` };
+      if (!o.runtime) return { exit: 255, problem: NO_RUNTIME };
+      return runBoxStep(o.runtime, r.containerId, step, io);
     },
 
     reconcile,

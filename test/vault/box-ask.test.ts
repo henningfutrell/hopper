@@ -37,7 +37,7 @@ describe('a box step\'s vault ask (issue #1004)', () => {
   });
 
   it('a job not at work is refused, box step or not', () => {
-    const ended = { ...job, status: 'done' } as Job;
+    const ended = { ...job, status: 'finished' } as Job;
     expect(boxAsk(options({ job: () => ended, stepsOn: () => true }), token, 'ka')).toMatchObject({ refused: expect.stringMatching(/not at work/) });
   });
 });
