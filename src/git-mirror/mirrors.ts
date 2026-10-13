@@ -9,9 +9,16 @@
 // Two pull requests of one repository conflict with each other (issue #939) when `git merge-tree --write-tree <a> <b>` of
 // their heads, as this pass fetched them, has conflicts: their own changes touch the same lines. Merge both, and the
 // second gets merge conflicts. Neither head fetched, or git failing: git cannot say.
+// The base merge (issue #967): the hopper merges a pull request's base branch, as this pass fetched it, into the pull
+// request's head, in the mirror, and pushes the merge commit to the pull request's branch — no job, no lane. A conflict
+// is resolved only in a Markdown file where both sides only added lines at the same place (no line of the merge base is in
+// the conflict): both additions are kept, the base branch's first (`WHATS-NEW.md` lines, design sections). Any other
+// conflict is a real one: nothing is pushed, and the files are named. The push leases the branch at the head as fetched
+// (`--force-with-lease`), so a branch that moved, or a fork's branch that is not in the repository, is never written.
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import type { BaseMerge } from '../domain/pull-requests.ts';
 import { githubTraffic, type GitHubTraffic } from '../github-limiter/traffic.ts';
 
 /** Where git fetches a repository, and the token it fetches with; none: a public repository, fetched as anyone's. */
@@ -21,6 +28,9 @@ export interface GitRemote { url: string; token?: string }
 export interface PullRequestHead { number: number; base: string; headOid: string }
 
 export type Mergeability = 'clean' | 'conflicting';
+
+/** A pull request whose base branch the hopper merges into its head (issue #967): its number, base and head branch. */
+export interface BaseMergeTarget { number: number; base: string; headRef: string }
 
 export interface GitMirrors {
   /**
@@ -33,6 +43,11 @@ export interface GitMirrors {
    * of their heads after this pass's fetch; undefined: git cannot say.
    */
   conflictBetween(repo: string, remote: () => Promise<GitRemote>, base: string, a: number, b: number): Promise<boolean | undefined>;
+  /**
+   * Merge the base branch into pull request `pr` of `repo` and push the merge commit to its branch (issue #967), as this
+   * pass fetched both; undefined: git cannot say (outside a pass, not fetched, a name git must not take, the push refused).
+   */
+  baseMerge(repo: string, remote: () => Promise<GitRemote>, pr: BaseMergeTarget): Promise<BaseMerge | undefined>;
 }
 
 /** One git command in a mirror: its exit code and what it printed. Tests may give their own. */
@@ -43,6 +58,36 @@ const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 /** A branch name as a refspec may hold it: no option, no `..`, no glob, no `:`. */
 const BRANCH = /^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]+$/;
 const PULL = 'refs/remotes/origin/pull/';
+/** A conflict marker of `git merge-file --diff3` at `MARKER` characters: longer than any line a file is likely to hold. */
+const MARKER = 40;
+/** Who a base merge's commit is by (issue #967): the hopper, no person. */
+const AUTHOR = { GIT_AUTHOR_NAME: 'hopper', GIT_AUTHOR_EMAIL: 'hopper@noreply.invalid', GIT_COMMITTER_NAME: 'hopper', GIT_COMMITTER_EMAIL: 'hopper@noreply.invalid' };
+/** A file whose added lines a base merge may keep from both sides (issue #967). */
+const UNION = /\.md$/i;
+
+/**
+ * Both sides' additions of a `git merge-file --diff3` result (issue #967), the base branch's (`theirs`) first; undefined
+ * when a conflict holds a line of the merge base: one side changed or removed a line, which is a real conflict.
+ */
+export function keepBothAdditions(merged: string): string | undefined {
+  const [open, mid, sep, close] = ['<', '|', '=', '>'].map((c) => c.repeat(MARKER));
+  const out: string[] = [];
+  let ours: string[] = [], base: string[] = [], theirs: string[] = [];
+  let at: 'none' | 'ours' | 'base' | 'theirs' = 'none';
+  for (const line of merged.split('\n')) {
+    if (at === 'none' && line.startsWith(`${open!} `)) { at = 'ours'; ours = []; base = []; theirs = []; continue; }
+    if (at === 'ours' && line.startsWith(`${mid!} `)) { at = 'base'; continue; }
+    if (at === 'base' && line === sep) { at = 'theirs'; continue; }
+    if (at === 'theirs' && line.startsWith(`${close!} `)) {
+      if (base.length > 0) return undefined;
+      out.push(...theirs, ...ours);
+      at = 'none';
+      continue;
+    }
+    (at === 'ours' ? ours : at === 'base' ? base : at === 'theirs' ? theirs : out).push(line);
+  }
+  return at === 'none' ? out.join('\n') : undefined;
+}
 
 export const runGit: GitRun = (args, env) => new Promise((resolve) => {
   execFile('git', args, { env: { ...process.env, ...env }, timeout: TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 }, (e, stdout, stderr) => {
@@ -161,5 +206,88 @@ export function createGitMirrors(o: { dir: string; log(line: string): void; traf
       o.log(`hopper: git mirror of ${repo}: merge-tree of #${a} and #${b}: ${said(r)}`);
       return undefined;
     },
+    async baseMerge(repo, remote, pr) {
+      if (!BRANCH.test(pr.headRef) || pr.headRef === pr.base) return undefined;
+      const at = await fetchedIn(repo, remote, pr.base);
+      const head = at?.f.heads.get(pr.number);
+      if (!at || !head) return undefined;
+      const problem = (why: string): undefined => { o.log(`hopper: git mirror of ${repo}: base merge of #${pr.number}: ${why}`); return undefined; };
+      const run = (args: string[], env: Record<string, string> = {}) => git(['--git-dir', at.path, ...args], { ...at.f.env, ...env });
+      const base = await run(['rev-parse', `refs/remotes/origin/${pr.base}`]);
+      if (base.code !== 0) return problem(said(base));
+      const baseOid = base.stdout.trim();
+      const tree = await run(['merge-tree', '--write-tree', '--name-only', '-z', head, baseOid]);
+      if (tree.code !== 0 && tree.code !== 1) return problem(`merge-tree: ${said(tree)}`);
+      const [treeOid, ...rest] = tree.stdout.split('\0');
+      const conflicted = tree.code === 0 ? [] : [...new Set(rest.slice(0, rest.indexOf('')))];
+      const resolved = await resolve(run, head, baseOid, conflicted);
+      if ('files' in resolved) return { outcome: 'conflicts', files: resolved.files };
+      const finalTree = await withBlobs(run, at.path, treeOid!, resolved.blobs);
+      if (!finalTree) return problem('could not write the merged tree');
+      const commit = await run(['commit-tree', finalTree, '-p', head, '-p', baseOid, '-m', `Merge branch '${pr.base}' into ${pr.headRef}`], AUTHOR);
+      if (commit.code !== 0) return problem(`commit-tree: ${said(commit)}`);
+      const oid = commit.stdout.trim();
+      const pushed = await run(['push', '--quiet', '--porcelain', `--force-with-lease=refs/heads/${pr.headRef}:${head}`, 'origin', `${oid}:refs/heads/${pr.headRef}`]);
+      if (pushed.code !== 0) return problem(`push refused: ${said(pushed)}`);
+      at.f.heads.set(pr.number, oid);
+      return { outcome: 'pushed', commit: oid, resolved: resolved.blobs.map((b) => b.path) };
+    },
   };
+
+  type Run = (args: string[], env?: Record<string, string>) => ReturnType<GitRun>;
+  interface Blob { path: string; mode: string; oid: string }
+
+  /**
+   * Each conflicted file resolved by keeping both sides' additions (issue #967), as a blob written to the mirror; or the
+   * files that are not: not Markdown, not in all three of the merge base and both sides, or one side changed a line.
+   */
+  async function resolve(run: Run, head: string, base: string, files: string[]): Promise<{ blobs: Blob[] } | { files: string[] }> {
+    const mb = await run(['merge-base', head, base]);
+    const blobs: Blob[] = [];
+    const not: string[] = [];
+    for (const path of files) {
+      const blob = mb.code === 0 ? await resolveOne(run, head, mb.stdout.trim(), base, path) : undefined;
+      if (blob) blobs.push(blob); else not.push(path);
+    }
+    return not.length > 0 ? { files: not } : { blobs };
+  }
+
+  async function resolveOne(run: Run, head: string, mergeBase: string, base: string, path: string): Promise<Blob | undefined> {
+    if (!UNION.test(path)) return undefined;
+    const mode = (await run(['ls-tree', head, '--', path])).stdout.split(/\s/)[0];
+    if (mode !== '100644') return undefined;
+    const merged = await run(['merge-file', '-p', '--diff3', `--marker-size=${MARKER}`, '--object-id', `${head}:${path}`, `${mergeBase}:${path}`, `${base}:${path}`]);
+    if (merged.code <= 0) return undefined;
+    const text = keepBothAdditions(merged.stdout);
+    if (text === undefined) return undefined;
+    const oid = await hashBlob(run, text);
+    return oid ? { path, mode, oid } : undefined;
+  }
+
+  /** Write `text` as a blob in the mirror; undefined: git failed. */
+  async function hashBlob(run: Run, text: string): Promise<string | undefined> {
+    const file = join(o.dir, `.hopper-blob-${process.pid}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(o.dir, { recursive: true, mode: 0o700 });
+    writeFileSync(file, text);
+    try {
+      const r = await run(['hash-object', '-w', '--no-filters', file]);
+      return r.code === 0 ? r.stdout.trim() : undefined;
+    } finally {
+      rmSync(file, { force: true });
+    }
+  }
+
+  /** `tree` with each of `blobs` in its place, through an index file of its own; undefined: git failed. */
+  async function withBlobs(run: Run, path: string, tree: string, blobs: Blob[]): Promise<string | undefined> {
+    if (blobs.length === 0) return tree;
+    const index = { GIT_INDEX_FILE: join(path, `hopper-base-merge-${process.pid}-${Math.random().toString(36).slice(2)}.index`) };
+    try {
+      if ((await run(['read-tree', tree], index)).code !== 0) return undefined;
+      for (const b of blobs) if ((await run(['update-index', '--cacheinfo', `${b.mode},${b.oid},${b.path}`], index)).code !== 0) return undefined;
+      const w = await run(['write-tree'], index);
+      return w.code === 0 ? w.stdout.trim() : undefined;
+    } finally {
+      rmSync(index.GIT_INDEX_FILE, { force: true });
+    }
+  }
 }

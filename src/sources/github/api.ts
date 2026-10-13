@@ -7,7 +7,8 @@ import type { ChecksState, FailedCheck } from '../../domain/pull-requests.ts';
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
 import type { IssueCrossReferences } from '../../domain/cross-references.ts';
 import type { IssuePlace } from '../../domain/issue-graph.ts';
-import type { GitRemote } from '../../git-mirror/mirrors.ts';
+import type { BaseMergeTarget, GitRemote } from '../../git-mirror/mirrors.ts';
+import type { BaseMerge } from '../../domain/pull-requests.ts';
 
 export interface GitHubIssue {
   /** owner/repo */
@@ -223,6 +224,11 @@ export interface GitHubApi {
    * (issue #939, `gitAnswers`); undefined: git cannot say. Absent: no mirror.
    */
   conflictBetween?(repo: string, base: string, a: number, b: number): Promise<boolean | undefined>;
+  /**
+   * Merge the base branch into pull request `pr` of `repo` in the hopper's mirror and push the merge commit to its branch
+   * (issue #967, `gitAnswers`); undefined: git cannot. A write: it drops what the pass read of `repo`. Absent: no mirror.
+   */
+  baseMerge?(repo: string, pr: BaseMergeTarget): Promise<BaseMerge | undefined>;
   /** Every repo (owner/repo) the app is installed on, across installations: the allowlist. */
   listInstalledRepos?(): Promise<{ repo: string; installationId: number }[]>;
 }

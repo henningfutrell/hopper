@@ -3352,7 +3352,7 @@ Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the v
 
 ## `vault.granted`
 
-Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it.
+Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`) — on Settings → Vault, or as the submitter of a direct job that authorizes `vault` (issue #901): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it.
 
 | field | type | required |
 |---|---|---|
@@ -3496,6 +3496,26 @@ Version 1 (`docs/schemas/job.pull_request_tended.v1.json`). A PR waiting job's p
   "pullRequest": "https://github.com/owner/repo/pull/14",
   "step": "rebase",
   "nextJobId": "j2"
+}
+```
+
+## `job.pull_request_base_merged`
+
+Version 1 (`docs/schemas/job.pull_request_base_merged.v1.json`). A PR waiting job's pull request had merge conflicts with its base branch, and the hopper merged the base branch into it in its own mirror and pushed the merge commit to its branch (issue #967): no job, no lane. `commit`: the merge commit. `resolved`: the Markdown files whose conflict it resolved by keeping the lines both sides added, the base branch's first. The job still follows the pull request; its checks run again. A conflict it does not resolve goes to a tend job (`job.pull_request_tended`).
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `commit` | string | yes |
+| `resolved` | string[] | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "commit": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+  "resolved": [
+    "WHATS-NEW.md"
+  ]
 }
 ```
 

@@ -152,7 +152,9 @@ describe('Pull requests view', () => {
   });
 
   it('what the hopper does about a card that needs tending, in plain words (issue #927)', () => {
-    expect(doingText(card({ waits: 'conflicts', queue: { next: true } }))).toBe('the hopper tends it next');
+    expect(doingText(card({ waits: 'conflicts', queue: { next: true } }))).toBe('the hopper tends it on its next sync');
+    expect(doingText(card({ waits: 'conflicts', queue: { refused: 'its issue is not assigned to the connected account' } })))
+      .toBe('the hopper cannot tend it: its issue is not assigned to the connected account');
     expect(doingText(card({ waits: 'checks failing', queue: { held: { pullRequest: 904, why: 'merging' } } }))).toBe('held behind #904, which the hopper merges first: they conflict');
     expect(doingText(card({ waits: 'conflicts', queue: { held: { pullRequest: 904, why: 'tending' } } }))).toBe('held behind #904, which a job works on now: they conflict');
     expect(doingText(card({ waits: 'checks failing', gaveUp: 'checks still fail after 3 fixes: a person must look at them' }))).toBe('the hopper gave up: checks still fail after 3 fixes: a person must look at them');
@@ -164,6 +166,8 @@ describe('Pull requests view', () => {
     expect(doingText(card({ waits: 'tending', tendJobId: job, tendStep: 'rebase', base: 'dev' }))).toBe('the hopper rebases it onto dev: job abcdef01 works on it now');
     expect(doingText(card({ waits: 'tending', tendJobId: job, tendStep: 'rebase' }))).toBe('the hopper rebases it onto its base branch: job abcdef01 works on it now');
     expect(doingText(card({ waits: 'tending', tendJobId: job, tendStep: 'fix_checks' }))).toBe('the hopper fixes its failed checks: job abcdef01 works on it now');
+    expect(doingText(card({ waits: 'tending', tendJobId: job, tendStep: 'rebase', base: 'dev', tendWaits: 'all 2 lanes of the machine are busy' })))
+      .toBe('the hopper rebases it onto dev: job abcdef01 waits to start: all 2 lanes of the machine are busy');
     expect(doingText(card({ waits: 'checks pending', yolo: true }))).toBe('the hopper merges it when its checks pass');
     expect(doingText(card({ waits: 'checks not started', yolo: true }))).toBe('the hopper merges it when its checks pass, or when no check starts within 2 minutes of its last push');
     expect(doingText(card({ waits: 'ready', yolo: true }))).toBe('the hopper merges it on its next sync');

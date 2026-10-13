@@ -62,7 +62,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
-| `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939) | engine, http, store, plugins, decider, sources |
+| `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
@@ -1985,6 +1985,25 @@ same pass is not merged: GitHub would refuse that merge (`mergeError`) once it s
 `seen.mergeHeldBehind`, its card waits `merge held` and says behind which, and the next sync sees it conflict with the new
 base and tends it. Where the mirror cannot say, the merge is made, as before. A person's Merge now is not gated.
 
+**The base merge** (issue #967, `src/git-mirror/mirrors.ts` `baseMerge`, `JobSource.baseMerge`). A tend is a job, and a
+job waits for a lane: with every lane busy (the Claude usage cap held the hopper to two lanes), pull requests with only a
+simple conflict waited for hours. So a `rebase` tend the queue starts is first asked of the source. The **hopper's mirror**
+merges the base branch, as the sync pass fetched it, into the pull request's head (`git merge-tree --write-tree`), with no
+job and no lane. A conflict is resolved only in a Markdown file (`*.md`) where both sides only added lines at the same
+place — no line of the merge base is in the conflict (`git merge-file --diff3`, `keepBothAdditions`): both additions are
+kept, the base branch's first. That is a `WHATS-NEW.md` line, or two design sections added at the end of
+`docs/design.md`. Any other conflict — a code file, a line one side changed or removed, a file not on all three sides —
+is a real one: nothing is pushed, and the tend job runs as before. Clean, the hopper makes the merge commit (parents: the
+head, then the base; author `hopper`, no person) and pushes it to the pull request's branch with
+`--force-with-lease=refs/heads/<branch>:<head as fetched>`: a branch that moved since the fetch, or a fork's branch that
+is not in the repository, is never written, and the refusal is logged. Pushed, `job.pull_request_base_merged` records the
+commit and the files resolved, and what the job saw of its pull request says no merge conflicts and its checks pending from
+now, so with yolo mode on it heads its queue at once and the pull requests that conflict with it wait for its merge. The
+checks run on the merge commit as on any push, and yolo mode merges only once they pass. The push uses the source's own
+credential, as the mirror's fetch does (an App installation token, or the connected account's): a push the token may not
+make (one that changes a workflow file, without that permission) is refused and goes to a tend job. Where the source has no
+mirror, or outside a sync pass, there is no base merge.
+
 What issue #939 did not do, by the path a person selected: a batch of ready pull requests merged into one trial branch with
 one run of the checks, and a bisect of a batch that fails. The tree with every ready pull request merged is still not
 tested before the merges: two pull requests with green checks that break each other, without a merge conflict, can still
@@ -1992,11 +2011,14 @@ break the base branch, as before. Checks run on each pull request against the ba
 the tending queue only stop merge conflicts.
 
 What the hopper does about each pull request that needs tending shows on its card in Pull requests (issue #927,
-`PullRequestCard.queue`, `gaveUp`): "the hopper tends it next", "held behind #N" with why (a job works on it, or it waits
+`PullRequestCard.queue`, `gaveUp`): "the hopper tends it on its next sync", "the hopper cannot tend it" with the source's
+refusal (issue #967: `tendRefused`, kept on the job until a tend starts; before, a refused tend left the card at "the hopper
+tends it next" for hours), "held behind #N" with why (a job works on it, or it waits
 for its checks to merge), or "the hopper gave up" with why (its checks still fail after `MAX_TENDS` fixes, or its tend job
 failed: then why is that job's own reason, `Job.error`, on one line, at most 300 characters). A stall is never silent.
 Every other open card says what the hopper does now, too (`doingText`, `ui/src/model/pull-requests.ts`): its tend job's step
-("the hopper rebases it onto dev: job N works on it now", `PullRequestCard.tendStep`), the merge it waits to make ("merges
+("the hopper rebases it onto dev: job N works on it now", `PullRequestCard.tendStep`; a tend job queued or held: "job N
+waits to start:" and the lane cap that binds or its hold, `tendWaits`, issue #967), the merge it waits to make ("merges
 it when its checks pass", "on its next sync", "tries the merge again on each sync"), or nothing, and who acts then (yolo mode
 off, checks it may not read, a draft).
 
@@ -16116,3 +16138,24 @@ Their outputs are **artifacts** of the job, kept private in the hopper and shown
 
 **Not built yet (the next parts).** Committing a small artifact to a branch of the repository, so it shows on GitHub
 without a hopper sign-in; promoting from the job view (#935) as well as from Direct jobs.
+
+## PR tending without lanes, part 1 (issue #967, 2026-10-12)
+
+Pull requests with merge conflicts and passing checks waited for hours: each tend is a job, the jobs compete for lanes, and
+the Claude usage cap held the hopper to two lanes. A card said "the hopper tends it next" while nothing happened.
+
+This part:
+
+- **The base merge** ("Tending a waiting pull request", "The base merge"): a simple conflict — the base merged with no
+  conflict, or only lines both sides added to a Markdown file — is merged and pushed by the hopper itself, in its mirror,
+  with no job and no lane. Only a real conflict becomes a tend job.
+- **The card says why.** A tend job queued or held says why it waits to start (its lane cap or hold). A tend the source
+  refused says why, in place of "tends it next".
+
+Left for later parts of issue #967, by the issue's ask: tending started by GitHub's events, not only by each sync; merged
+and closed pull requests reconciled at once; a lane kept for rework jobs, so a real conflict never waits behind feature
+work; migration numbers given out at merge time, so two pull requests cannot claim the same number (a migration renumbered
+by the base merge); and a pull request blocked by another named on its card.
+
+Verified: the base merge against real git (`test/git-mirror/base-merge.test.ts`: an origin over `file://` with blob filters,
+as GitHub serves one), and the tending queue with the in-memory GitHub (`test/integration/base-merge.test.ts`).

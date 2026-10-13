@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pullRequest": {
+      "type": "string"
+    },
+    "commit": {
+      "type": "string"
+    },
+    "resolved": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "pullRequest",
+    "commit",
+    "resolved"
+  ],
+  "additionalProperties": false
+}

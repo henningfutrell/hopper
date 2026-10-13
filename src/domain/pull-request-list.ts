@@ -7,6 +7,7 @@
 // next, held behind a head of its repository's tending queue that conflicts with it, or given up on, and why; a ready one
 // whose merge is held says behind which (issue #939). What holds each is kept on its job by the sync (`Holds`, `seen`).
 // A card a tend job works on says the step, and one whose tend job failed is given up on, in the words of that job's failure.
+// A tend job not at work yet says why it waits (issue #967): no free lane, or its hold; a tend the source refused says why.
 import type { Job } from './types.ts';
 import { followsWhenEnded, MAX_TENDS, noChecksSettled, readyToMerge, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Holds, QueueHead } from './tending-queue.ts';
@@ -61,8 +62,14 @@ export interface PullRequestCard {
   /**
    * One with merge conflicts or failing checks (issue #927): tended next, or held behind a pull request of its repository's
    * tending queue that conflicts with it (issue #939), and why. A ready one whose merge is held: behind the one merged first.
+   * One whose tend the source refused (issue #967): why, so a refusal is never shown as "next".
    */
-  queue?: { next: true } | { held: { pullRequest: number; why: QueueHead['why'] } };
+  queue?: { next: true } | { held: { pullRequest: number; why: QueueHead['why'] } } | { refused: string };
+  /**
+   * Its tend job is not at work yet (issue #967): why it waits — the lane cap that binds, or its hold; no reason kept, no
+   * free lane yet. Absent: it works, or there is no tend job.
+   */
+  tendWaits?: string;
   /** The hopper tends it no more, and why (issue #927): it waits on a person. */
   gaveUp?: string;
 }
@@ -115,6 +122,9 @@ function waitOf(named: boolean, seen: PullRequestSeen | undefined, yolo: boolean
   return seen.mergeHeldBehind ? 'merge held' : 'ready';
 }
 
+/** A tend job's statuses before it is at work (issue #967): its card says why it waits. */
+const NOT_AT_WORK: readonly string[] = ['queued', 'held'];
+
 function cardOf(job: Job, yolo: boolean, now: number, tendJob: Job | undefined): PullRequestCard {
   const f = followedOf(job);
   const seen = f.seen;
@@ -127,6 +137,7 @@ function cardOf(job: Job, yolo: boolean, now: number, tendJob: Job | undefined):
     draft: seen?.draft ?? false, ...(seen?.base ? { base: seen.base } : {}), ...(seen?.openedAt ? { openedAt: seen.openedAt } : {}),
     ...(job.finishedAt ? { since: job.finishedAt } : {}), yolo,
     ...(state === 'open' ? { waits } : {}), ...(tendJob ? { tendJobId: tendJob.id } : {}), ...(tendJob && f.tended ? { tendStep: f.tended.step } : {}),
+    ...(tendJob && NOT_AT_WORK.includes(tendJob.status) ? { tendWaits: tendJob.waitReason ?? tendJob.holdReason ?? 'no free lane yet' } : {}),
     ...(seen?.mergeError ? { mergeError: seen.mergeError } : {}),
   };
 }
@@ -169,7 +180,8 @@ function withQueue(cards: PullRequestCard[], waiting: Job[], tendJobs: Job[], ge
     if (c.state !== 'open' || (c.waits !== 'conflicts' && c.waits !== 'checks failing' && c.waits !== 'tend failed')) return c;
     const gaveUp = gaveUpOn(job, c, tendJobs.find((t) => t.id === c.tendJobId), get);
     if (gaveUp) return { ...c, gaveUp };
-    return { ...c, ...(f.heldBehind ? heldAs(f.heldBehind.pullRequest, f.heldBehind.why) : { queue: { next: true } }) };
+    if (f.heldBehind) return { ...c, ...heldAs(f.heldBehind.pullRequest, f.heldBehind.why) };
+    return { ...c, queue: f.tendRefused ? { refused: f.tendRefused } : { next: true } };
   });
 }
 
