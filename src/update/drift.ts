@@ -2,7 +2,7 @@
 // stack it runs in with the compose file its own image ships with — each service that must run (no profile, or a profile
 // COMPOSE_PROFILES turns on; not a one-shot), the settings the file gives the hopper's container, and the version of the
 // vault in its own container. An update that recreated the hopper service alone on an old compose.yaml leaves exactly
-// these gaps. Each is named with what it turns off; the one fix is the update script.
+// these gaps. Each is named with what it turns off; the one fix is the update's compose commands (issue #970).
 import { parse } from 'yaml';
 import type { StackProbe } from '../domain/ports.ts';
 
@@ -10,7 +10,7 @@ export type { StackProbe };
 import type { InstallKind, StackDrift, StackGap } from '../domain/types.ts';
 import { readInstallInfo } from './install.ts';
 import { readShippedCompose } from './shipped-compose.ts';
-import { makeScriptCommand, PUBLISHED_IMAGE, UPDATE_SCRIPT_FILE } from './update-script.ts';
+import { PUBLISHED_IMAGE, updateCommands, updateLines } from './update-commands.ts';
 
 interface ComposeService {
   profiles?: unknown;
@@ -83,7 +83,7 @@ export async function checkStack(o: { kind: InstallKind | undefined; compose: st
 
 /**
  * The drift check of this hopper (the composition root's): the compose file `appDir` ships with against the stack, and the
- * image the fix is made from — HOPPER_IMAGE from .env, else the published image of install.json's branch.
+ * image the fix names — HOPPER_IMAGE the hopper was started with, else the published image of install.json's branch.
  */
 export function createStackDrift(o: { appDir: string; env: Record<string, string | undefined>; probe: StackProbe }): () => Promise<StackDrift> {
   return async () => {
@@ -104,4 +104,4 @@ export function startStackDrift(o: Parameters<typeof createStackDrift>[0] & { lo
 
 /** The log line of a drifted stack; undefined when nothing differs. */
 export const driftLine = (d: StackDrift): string | undefined => (d.gaps.length === 0 ? undefined
-  : `hopper: the stack differs from the compose file of this version: ${d.gaps.map((g) => g.what).join('; ')}. Fix: run the update script (docs/deploy.md "Upgrade")${d.image ? `: ${makeScriptCommand('podman', d.image)}, then sh ${UPDATE_SCRIPT_FILE}` : ''}`);
+  : `hopper: the stack differs from the compose file of this version: ${d.gaps.map((g) => g.what).join('; ')}. Fix: update the whole stack (docs/deploy.md "Update")${d.image ? `: ${updateLines(updateCommands('podman', d.image)).join(' ; ')}` : ''}`);

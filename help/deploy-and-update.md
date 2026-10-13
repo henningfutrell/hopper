@@ -131,43 +131,52 @@ For a container install, the channel is also the image tag: `ghcr.io/henningfutr
 
 ## Update a container install
 
-You update a container install. The hopper never updates its own container, and it has no Update now or Auto-update there. Each image carries the compose file of its version. The update script puts that file in and starts the whole stack.
+You update a container install. The hopper never updates its own container, and it has no Update now or Auto-update there. Each image carries the compose file of its version. The update is plain compose commands: they put that file in and start the whole stack.
 
-1. Have the master key ready. The script takes it from the running hopper. It stops if the running hopper made its key at this start: then save the key from the UI, and give it at launch when you run the script (`read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY`).
-2. Look at the update notice. It says how many running jobs a restart would end. Wait until there are none.
-3. In the folder that holds `compose.yaml`, make the update script from the image of your channel:
-
-   ```sh
-   podman run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update podman > hopper-update.sh
-   ```
-
-   For Docker, use `docker run … hopper update docker`. For podman-compose alone, use `hopper update podman-compose`.
-4. Read `hopper-update.sh`. Then run it:
+1. Look at the update notice. It says how many running jobs a restart would end. Wait until there are none.
+2. Go to the folder that holds `compose.yaml`. Run these commands one at a time. The update notice gives them with the image of your channel.
+3. Give the master key. Paste it from your password manager. Nothing is shown, and it goes in no file:
 
    ```sh
-   sh hopper-update.sh
+   read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY
    ```
 
-5. Optional: remove the image it replaced:
+   The update needs the key. Without it, a recreated hopper starts limited. If you do not have the key, open the UI and save the key it shows first.
+4. Back up the database:
+
+   ```sh
+   podman compose exec -T postgres pg_dump -U hopper -d hopper -Fc > hopper-backup.dump
+   ```
+
+5. Make the compose file of the new version. It is the file the image ships with, with your own settings as the defaults of its variables and `HOPPER_IMAGE` the new image:
+
+   ```sh
+   podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update carry --image ghcr.io/henningfutrell/hopper:<channel> < compose.yaml > compose.yaml.next
+   ```
+
+   Read what it says. When your old `compose.yaml` has a part that the new one cannot hold (a service of your own, a mounted folder), it shows that part. Add it to `compose.override.yaml`.
+6. Read the change, then put the new file in. The old file stays as `compose.yaml.bak`:
+
+   ```sh
+   diff -u compose.yaml compose.yaml.next
+   cp compose.yaml compose.yaml.bak && mv compose.yaml.next compose.yaml
+   ```
+
+7. Pull and start the whole stack. The command stops before anything changes when the master key is not given:
+
+   ```sh
+   : "${HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY}" && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose pull && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose up -d
+   ```
+
+8. Optional: remove the image it replaced:
 
    ```sh
    podman image prune -f --filter label=org.opencontainers.image.title=hopper
    ```
 
-The script does these steps in order, and stops at the first step that fails:
+For Docker, use `docker run` and `docker compose`. For podman-compose alone, use `podman-compose` in place of `podman compose`. When `podman compose ps` shows no hopper, but `podman-compose ps` does, run `export PODMAN_COMPOSE_PROVIDER=podman-compose` first.
 
-1. Reads the launch settings: the master key and other secrets, from its own environment, an old `.env` (one time, to move it), or the running hopper. It writes the key to no file.
-2. Backs up the database (`hopper-backup-<time>.dump`), `compose.yaml`, `compose.override.yaml` and an old `.env`.
-3. Pulls the image.
-4. Makes the compose file of the new version, with your own settings as the defaults of its variables and `HOPPER_IMAGE` the new image. What it does not name goes to `compose.override.yaml`. It shows both changes.
-5. Pulls the images of the whole stack.
-6. Stops the old stack.
-7. Puts the new files in, removes the old `.env`, and starts the whole stack. A service that is new in the version is made.
-8. Checks that the hopper and OpenFGA answer.
-
-When step 7 or 8 fails, the script puts the old files back and starts the old stack again. Its last line says so. Fix the cause and run the script again.
-
-**An install with a `.env` from before.** The first update moves it. Its settings go into `compose.yaml` and `compose.override.yaml`, and its secrets are given at launch. The script removes `.env` and keeps a backup, `.env.bak-<commit>`. The backup holds the master key: save the key in your password manager, then delete the backup. From then on, give the key at launch for each `podman compose up` that recreates the hopper. The next update takes it from the running hopper.
+To go back: `podman compose down`, then `cp compose.yaml.bak compose.yaml`, give the master key, and `podman compose up -d`. To restore the database too: `podman compose exec -T postgres pg_restore -U hopper -d hopper --clean < hopper-backup.dump`.
 
 To change the channel, run the update with the image of the new channel. Then pick the same channel in Settings → Version.
 
@@ -175,7 +184,7 @@ Do not update the hopper service alone (`pull hopper`, `up -d --no-deps hopper`)
 
 ### Stack drift
 
-A container hopper compares its stack with the compose file of its own version, at start and while the UI is open. When a required service is missing, a setting is missing, or `hopper-vault` runs another version, a banner says "This hopper's stack differs from the compose file of its version". It names what is off. The fix is always the update script, never a hand edit. `GET /api/update/drift` gives the same answer.
+A container hopper compares its stack with the compose file of its own version, at start and while the UI is open. When a required service is missing, a setting is missing, or `hopper-vault` runs another version, a banner says "This hopper's stack differs from the compose file of its version". It names what is off. The fix is always the update of the whole stack, never a hand edit. `GET /api/update/drift` gives the same answer.
 
 An agent that updates a hopper follows the agent update skill: `GET /api/update/skill`, or `hopper update skill`.
 
@@ -230,8 +239,8 @@ podman compose exec -T postgres pg_restore -U hopper -d hopper --clean < hopper-
 | The UI does not open | Run `podman compose ps`. Check that `postgres`, `openfga` and `hopper` run. Read `podman compose logs hopper`. |
 | `the master key does not match this database` | Give the key this database was set up with. After a rotation, give the new key. |
 | A "Limited" banner | Give `HOPPER_MASTER_KEY` at launch and recreate the hopper (`podman compose up -d --force-recreate --no-deps hopper`). |
-| "Access checks are off" | OpenFGA does not run. Run the update script, or `podman compose up -d`. Read `podman compose logs openfga openfga-migrate`. |
-| "This hopper's stack differs from the compose file of its version" | Run the update script with the image the hopper runs. |
+| "Access checks are off" | OpenFGA does not run. Run the update (see "Update a container install"), or `podman compose up -d`. Read `podman compose logs openfga openfga-migrate`. |
+| "This hopper's stack differs from the compose file of its version" | Run the update commands with the image the hopper runs: the banner gives them. |
 | The hopper stops at start and names two schema versions | The database is from a newer version. Run that newer version again, or restore a backup from before it. |
 | `unrecognized command "podman compose"` | Your Podman is older than 4.7. Use `podman-compose`, or install a newer Podman. |
 | Host install: `did not answer /api/health` | Read `journalctl --user -u hopper -n 50`. |

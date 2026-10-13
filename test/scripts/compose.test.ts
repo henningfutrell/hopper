@@ -262,10 +262,10 @@ describe('the install page', () => {
     expect(page).toContain('data-copy="podman compose up -d"');
     expect(page).not.toContain('login-code');
     expect(page).toContain('The first person to sign in with GitHub is the admin');
-    // Updated by its user (issue #494), with the release's compose file and the whole stack (issue #697).
-    expect(page).toContain('data-copy="podman run --rm --pull=always ghcr.io/henningfutrell/hopper:stable hopper update podman &gt; hopper-update.sh"');
-    expect(page).toContain('data-copy="sh hopper-update.sh"');
-    expect(page).not.toContain('--no-deps hopper"');
+    // Updated by its user (issue #494): the release's compose file, the whole stack (#697), plain compose commands (#970).
+    expect(page).toContain('data-copy="podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:stable hopper update carry --image ghcr.io/henningfutrell/hopper:stable &lt; compose.yaml &gt; compose.yaml.next"');
+    expect(page).toContain('HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: read -rs HOPPER_MASTER_KEY &amp;&amp; export HOPPER_MASTER_KEY}&quot; &amp;&amp; HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:stable podman compose pull &amp;&amp; HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:stable podman compose up -d"');
+    expect(page).not.toMatch(/hopper-update\.sh|--no-deps hopper"/);
     expect(page).toContain('data-copy="podman image prune -f --filter label=org.opencontainers.image.title=hopper"');
   });
 

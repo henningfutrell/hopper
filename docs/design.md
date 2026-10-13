@@ -80,7 +80,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
 | `src/remote-access/` | the tunnel providers (issue #968): what the hopper asks of Cloudflare's and ngrok's APIs with the admin's credential — mint a tunnel, its token and its host name, and release them again (`provider.ts`, `cloudflare.ts`, `ngrok.ts`) | `src/http/`, `src/store/`, `src/vault/`: it is given the credential, keeps nothing, and knows no route |
-| `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
+| `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update commands and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-commands.ts`, `update-skill.ts`, issues #697, #970) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
@@ -93,7 +93,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
 | `src/cli.ts` | the operator CLI `hopper`: config records as JSON, login codes, users, `help` — against the daemon's database | engine, executors |
 | `src/cli-operator.ts` | the operator CLI's operator actions (issue #374): `job`, `queue`, `question`, each the UI's `POST /ui/api/*` on the running daemon under a UI session minted for the one call; what one action is (`cli-operator-call.ts`) and `artifact` (`cli-operator-artifact.ts`, issue #673), `report` (`cli-operator-report.ts`, issue #694) and `auto-park` (`cli-operator-auto-park.ts`) beside it; `typesafe-key` and `master-key status` (`cli-operator-keys.ts`, issues #657, #685) | engine, executors, store |
-| `src/cli-update.ts` | the operator CLI's `hopper update` (issue #697): the update script of a container install, its carry and override steps, the compose file this build ships with and the agent update skill — no database (`src/update/`) | engine, executors, store, http |
+| `src/cli-update.ts` | the operator CLI's `hopper update` (issues #697, #970): the carry of a container install's compose.yaml, the compose file this build ships with and the agent update skill — no database (`src/update/`) | engine, executors, store, http |
 
 ## The decider
 
@@ -6840,7 +6840,36 @@ that the hopper sets up remote access itself. Remote access stays optional and o
   and run no agent; starting a container from the UI would need the container runtime's socket in the hopper, which is
   more exposure than an idle loop.
 
+### The update is plain compose commands; the master key is required (issue #970, 2026-10-12)
+
+The issue: the update notice ran a one-off container that printed a 180-line generated script, and the person ran that. The
+script read an old `.env`, backed it up, fed it to `hopper update carry` and removed it, and the notice said settings move to
+`.env`. It took the master key from the running container (`compose exec hopper printenv`); when it could not read the key's
+status it printed a note and went on, so the stack could come back limited.
+
+- **Plain compose commands, no script** (`src/update/update-commands.ts` `updateCommands`; the UI's twin in
+  `ui/src/model/update.ts`, which imports nothing of `src/`). In the folder of `compose.yaml`, one at a time: give the
+  master key (`read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY`); back up the database (`compose exec -T postgres
+  pg_dump -Fc > hopper-backup.dump`); `<runtime> run --rm -i --pull=always <image> hopper update carry --image <image> <
+  compose.yaml > compose.yaml.next`; `diff -u`; `cp compose.yaml compose.yaml.bak && mv compose.yaml.next compose.yaml`;
+  then `: "${HOPPER_MASTER_KEY:?…}" && HOPPER_IMAGE=<image> <compose> pull && HOPPER_IMAGE=<image> <compose> up -d`. The
+  update notice, the drift banner and its log line, the agent update skill, the help, `docs/deploy.md` "Update", the README
+  and the install page give the same commands. `PODMAN_COMPOSE_PROVIDER` (issue #924) is one line of advice, not logic.
+- **No `.env`, read or written.** `hopper update carry` takes the old `compose.yaml` on stdin and nothing else:
+  `HOPPER_UPDATE_ENV`, `HOPPER_UPDATE_LAUNCH`, `HOPPER_UPDATE_OVERRIDE`, `hopper update override` and
+  `hopper update <tool>` are gone. What the old file has that the new one cannot name, `carryOverride` prints on stderr
+  for the person to add to `compose.override.yaml`; nothing is written there by itself.
+- **The master key is required from the launch environment.** The last command stops, before compose runs, when
+  `HOPPER_MASTER_KEY` is not given; no key is read from the running container or a file. The KMS (`kms` profile) wraps
+  only the vault's data key, never the master key, so it gives no way around this.
+- **Residual risk, stated.** No automatic rollback and no health check: the person keeps `compose.yaml.bak` and
+  `hopper-backup.dump`, and the steps say how to go back. A setting given at launch is no longer written into
+  `compose.yaml` as a default by the update; one an earlier update wrote stays. A `compose up` run by hand without the key
+  still recreates the hopper limited: nothing is lost, and the key is given again.
+
 ### No .env; the update starts what is new and rolls back (issue #894, 2026-10-12)
+
+Superseded in part by issue #970 (above): the script, its `.env` move and its rollback are gone.
 
 The issue: compose read a `.env` beside `compose.yaml` and passed all of it to the hopper, so the master key and other
 secrets sat in a file on the host, beside the stack they open. The update script recreated the stack with
@@ -6916,42 +6945,23 @@ setting never reached it, installs drifted apart, and features failed in confusi
 `compose.yaml` of its commit (`Dockerfile`, `/app/compose.yaml`); `src/update/shipped-compose.ts` reads it, stamped on
 its first line `# hopper version: <branch> <commit>` from install.json (`unknown` when the build does not know them),
 and `GET /api/update/compose` answers it (`ShippedCompose`; 404 with the reason for a build that ships none). The one
-update is **the update script**: `hopper update <podman|podman-compose|docker> [--image <ref>]` (`src/cli-update.ts`,
-no database) prints it (`src/update/update-script.ts`); it is run from the image to update to —
-`podman run --rm --pull=always <image> hopper update podman > hopper-update.sh`, then `sh hopper-update.sh` in the folder
-of `compose.yaml` — so the compose file it puts in is always the target's. `--image` defaults to the published image
-of install.json's branch. The script, POSIX `sh`, under `umask 077`, in eight steps (issue #894): refuses a folder with no
-`compose.yaml`; (1) reads the launch settings — its own shell, an old `.env` once (its lines, the shell's winning, as in
-compose), and the running hopper's `HOPPER_MASTER_KEY` (`compose exec -T hopper printenv`) —, and stops when the key is
-given nowhere and `hopper master-key status` of the running hopper says it was made at this start (`generated`,
-`old-token-key`: a recreate would lose it), and says so when the status cannot be read; (2) backs up the database
-(`pg_dump -Fc` to `hopper-backup-<time>.dump`), `compose.yaml` (`compose.yaml.bak-<the old stamp's commit, else the
-time>`), `compose.override.yaml` and an old `.env` (`*.bak-<the same>`); (3) pulls the image; (4) runs `hopper update carry
---image <ref>` in it (`--network none`, the old `compose.yaml` on stdin, the old `.env` in `HOPPER_UPDATE_ENV`;
-`src/update/compose-carry.ts` `carryCompose`), which answers the new `compose.yaml`: the image's own, with what the install
-set as the defaults of the file's own variables — the first published port's address as `HOPPER_BIND` (none: every
-interface, `0.0.0.0`), a fixed published port as `HOPPER_PORT`, each hopper setting written in place or under another
-default than the new file's, the old `.env`'s lines (which win, as compose read them last), and the image as
-`HOPPER_IMAGE`'s; `COMPOSE_PROFILES` turns its services on in the file (their `profiles:` line removed) and stays the
-hopper's `COMPOSE_PROFILES` default; a secret (`isSecretName`: KEY, TOKEN, SECRET or PASSWORD, not `_FILE`, `_URL`, `_API`)
-is never written. Then `hopper update override` the same way (`carryOverride`), with the install's own
-`compose.override.yaml` in `HOPPER_UPDATE_OVERRIDE`, which answers that file with what `compose.yaml` cannot name added —
-a hopper setting the new file does not name (`services.hopper.environment`; a secret only as `${NAME:-}`); a service the
-new file lacks and the hopper never shipped, with the top-level volumes it names; a host path mounted into a service (a
-shipped file mounts only named volumes); a key of a service no shipped file ever set; the install's own project `name`
-(another would start the stack on new, empty volumes) — its comments kept, nothing it has replaced, each move named. Both
-are written as `.next` files, each with its `diff -u`; each secret they name with an empty default is taken from the shell,
-else from the running hopper. (5) `compose pull` of the whole stack, on the `.next` files; (6) `compose down` (a failure is
-a note: a box on the hopper's network keeps the network); (7) the new files put in, the old `.env` removed, and a plain
-`compose up -d` — never `--force-recreate`: podman-compose cannot force-recreate a service that has no container yet, so a
-release that added a service (`tunnel`) left the whole stack down —, never `--no-deps`; (8) checks that the hopper answers
-`/api/health` and OpenFGA `/healthz`, from inside the hopper's container. A failure in steps 1–4 changes nothing but the
-backups. **A failure in step 7 or 8 rolls back by itself**: `compose down`, the old `compose.yaml`,
-`compose.override.yaml` (or none) and `.env` put back, `compose up -d` of the old stack, and it says whether the old stack
-runs again. The database is not restored: a migration leaves a store the build before still runs on. After a success it
-says the old `.env` is gone and its backup holds the master key, to be saved and deleted. The compose file's own
+update is **the update commands** (issue #970, "The update is plain compose commands" above): plain compose commands
+in the folder of `compose.yaml`, the new file made from the image to update to — `hopper update carry --image <ref>`
+(`src/cli-update.ts`, no database; `src/update/compose-carry.ts` `carryCompose`), the old `compose.yaml` on stdin — so the
+compose file put in is always the target's. It answers the new `compose.yaml`: the image's own, with what the install set
+as the defaults of the file's own variables — the first published port's address as `HOPPER_BIND` (none: every interface,
+`0.0.0.0`), a fixed published port as `HOPPER_PORT`, each hopper setting written in place or under another default than the
+new file's, and the image as `HOPPER_IMAGE`'s; `COMPOSE_PROFILES` turns its services on in the file (their `profiles:` line
+removed) and stays the hopper's `COMPOSE_PROFILES` default; a secret (`isSecretName`: KEY, TOKEN, SECRET or PASSWORD, not
+`_FILE`, `_URL`, `_API`) is never written. What `compose.yaml` cannot name (`carryOverride`) is printed on stderr for
+`compose.override.yaml` — a hopper setting the new file does not name (`services.hopper.environment`; a secret only as
+`${NAME:-}`); a service the new file lacks and the hopper never shipped, with the top-level volumes it names; a host path
+mounted into a service (a shipped file mounts only named volumes); a key of a service no shipped file ever set; the
+install's own project `name` (another would start the stack on new, empty volumes). Then `compose pull` and a plain
+`compose up -d` of the whole stack — never `--force-recreate` (podman-compose cannot force-recreate a service that has no
+container yet), never `--no-deps` — refused before compose runs without `HOPPER_MASTER_KEY` at launch. The compose file's own
 settings, so it can be replaced whole: the published port's address is `HOPPER_BIND` (default `127.0.0.1`), beside `HOPPER_PORT`. The
-notice's commands are the script's two lines and the prune. **The agent update skill** (`src/update/update-skill.ts`):
+notice's commands are the update commands and the prune. **The agent update skill** (`src/update/update-skill.ts`):
 the same update as steps for an agent — the compose file of the image updated to, always; never the hopper service alone; settings
 given at launch or in `compose.override.yaml`, never edited into `compose.yaml` — served as Markdown at `GET /api/update/skill` and printed by
 `hopper update skill`.
@@ -6968,7 +6978,7 @@ settings the file's `hopper` service gives its container, by name, against the h
 `hopper-vault` answers at `/health` (its build's, from install.json) against the hopper's, when it runs. Each gap is a
 `StackGap` (`service`, `setting`, `version`) with what it turns off. `GET /api/update/drift` answers a `StackDrift`, with
 `image` — `HOPPER_IMAGE` from the hopper's own environment (compose.yaml names it there), else the published image of install.json's branch — that the fix, the update
-script, is made from; `unchecked` with the reason for an install, or a build that ships no compose file. The check runs
+commands, names; `unchecked` with the reason for an install, or a build that ships no compose file. The check runs
 at start (a gap is a warning line in the log, with the fix) and at each read. The UI reads it once signed in and each
 minute, and shows one banner over every view (`ui/src/app/drift.tsx`): the gaps, what each turns off, and the fix for the
 container tool this browser chose. When OpenFGA is one of them the OpenFGA banner (issue #696) gives way: one cause, said
@@ -7186,7 +7196,7 @@ hopper keeps is in its database, its secrets come from the runtime ("Deployable"
 **compose.yaml pulls it.** The `hopper` service is `image: ${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}`
 — the full name, so Podman never asks which registry a short name means. No build: the first start is
 a download. `HOPPER_SOURCE` is gone (no compatibility); an image built from a checkout is
-`HOPPER_IMAGE=localhost/hopper`. Upgrade (since issue #697: the update script the target image makes, `hopper update podman`, on the compose file that image ships with and the whole stack; then `podman image prune -f --filter label=org.opencontainers.image.title=hopper`; "Self-update" above) — the prune removes the replaced image, now untagged, and no other (issue #401: every upgrade left one behind; the `Dockerfile` labels a local build the same way the published one is labelled). Self-update
+`HOPPER_IMAGE=localhost/hopper`. Upgrade (since issue #697, as plain compose commands since issue #970: the compose file the target image ships with, `hopper update carry`, and the whole stack; then `podman image prune -f --filter label=org.opencontainers.image.title=hopper`; "Self-update" above) — the prune removes the replaced image, now untagged, and no other (issue #401: every upgrade left one behind; the `Dockerfile` labels a local build the same way the published one is labelled). Self-update
 still does not apply to a container: since issue #409 its update check and version history do (above).
 
 **No one-shot service.** podman-compose maps `depends_on` to Podman's `--requires`, which refuses to
@@ -7503,7 +7513,7 @@ password and URL, OpenFGA's and the vault container's preshared keys — are in 
 shared by the services while any of them runs, gone after a full stop, made again at the next start; Postgres sets
 the database password again each time, so the database keeps working. No `token_key` is made or read: the old
 `secrets` volume of an install from before is no longer mounted, and `HOPPER_TOKEN_KEY_FILE` is gone from the compose
-file (the update script refuses to update a hopper whose key is still the old token key, and the carry never moves a
+file (the update refuses without the master key given at launch, and the carry never moves a
 variable naming one of the compose file's own start files into the new file's defaults). Recreating the hopper anywhere with the same
 database and `HOPPER_MASTER_KEY` keeps every secret.
 
