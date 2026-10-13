@@ -2,13 +2,14 @@
 // Each command validates, writes in one transaction, emits its event, and lets the event
 // listener schedule the next Decision. Jobs are created only by ingest (source-host.ts).
 import { TERMINAL_STATUSES } from '../domain/types.ts';
-import type { ActingPerson, Job, UsageReading } from '../domain/types.ts';
+import type { ActingPerson, Job, JobNote, UsageReading } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import type { Cleanups } from './cleanup.ts';
 import { parkRefusal, recordPark, recordUnpark, releaseParked } from './park.ts';
 import type { Runner } from './runner.ts';
 import { recordEndWait, type WaitEnder } from './wait.ts';
+import { recordNote } from './notes.ts';
 import { acceptNewText, keepOriginal } from './item-snapshots.ts';
 
 const isTerminal = (job: Job): boolean => TERMINAL_STATUSES.includes(job.status);
@@ -48,6 +49,11 @@ export interface Commands {
    * Conflict unless it is `waiting_on`.
    */
   endWait(id: string, note?: string, by?: WaitEnder): Job;
+  /**
+   * A person's note to a job (issue #997): queued on it until its session gets it — at the next turn boundary while it
+   * runs, with its task or the answer it resumes with — or a new job of its item carries it. Conflict for an ended job.
+   */
+  addNote(id: string, text: string, acting: ActingPerson): JobNote;
   /** Issue #371: what a job's deferred cleanup could not reach was closed by hand; it is no longer tried, and its item's jobs may run. */
   markCleanedUp(id: string): Job;
   /** Rerun the original (issue #662): a job held for its changed item runs the snapshot's text. item.original_kept. */
@@ -136,6 +142,8 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
     },
 
     endWait: (id, note, by) => store.tx(() => recordEndWait(c, id, note, by)),
+
+    addNote: (id, text, acting) => store.tx(() => recordNote(c, id, text, acting)),
 
     markCleanedUp: (id) => cleanups.markCleanedUp(id),
 

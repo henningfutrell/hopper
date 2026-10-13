@@ -14,15 +14,14 @@ import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText } from './
 import { readPaneAnswer } from './pane-answer.ts';
 import { checkpointOn, payloadOn, relocation, taskText } from './relocate.ts';
 import { answerDialog, readyFor } from './before-send.ts';
+import { paneEnds } from './pane-ends.ts';
 import { jobScratchOf, startInPane, type PaneState, type StartDeps, type TurnAnchor } from './start.ts';
-import { heldElsewhere, heldOf, lastLineOf, paneStateOf, realSleep, samePane, timeoutLiveness, whereOn, type HeldPane, type RemoteHerdr, type Scratch, type Where } from './panes.ts';
+import { heldElsewhere, heldOf, lastLineOf, paneStateOf, realSleep, samePane, timeoutLiveness, whereOn, type HeldPane, type RemoteHerdr, type Where } from './panes.ts';
 
 export type { ClientTarget, RemoteHerdr } from './panes.ts';
 
 /** Sends of one text that never reach Claude (lost sends, issue #278) before the job fails. */
 const MAX_SENDS = 3;
-/** How long Claude has to exit by itself before the reap stops it with the job's other processes. */
-const EXIT_WAIT_MS = 5000;
 
 export interface HerdrClaudeExecutorOptions {
   /** This machine's herdr. */
@@ -90,37 +89,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   });
 
 
-  /**
-   * The reap (issues #401, #410): Claude gets a moment to exit by itself, then the job's machine — through
-   * its own connection, never the pane — stops the job's scope and its processes, Claude among them if it
-   * is still up, and removes its scratch dir unless it holds work not pushed — or keeps it (`scratch` false: a
-   * parked job's, issue #501). Undefined when the machine could not be reached: the sweep reaps it later.
-   */
-  async function reap(herdr: HerdrClient, pane: HeldPane, scratch: Scratch = 'remove'): Promise<Reaped | undefined> {
-    for (let waited = 0; waited < EXIT_WAIT_MS && await herdr.getAgent(pane.agentName).catch(() => null) !== null; waited += o.pollMs) {
-      await sleep(o.pollMs, new AbortController().signal);
-    }
-    return herdr.reap(pane.jobId, scratch !== 'none' ? jobScratchOf(pane.cwd, pane.jobId) : undefined, scratch === 'keep');
-  }
-
-  /**
-   * esc, ctrl+c twice, the reap, close. Never rejects: the pane may already be gone. Answers why the
-   * pane may still be open — its herdr not reached, or the close refused — or undefined once it is
-   * closed or gone (issue #371). `scratch` `none`: the reap does not look at the scratch dir (a parked job's, issue
-   * #501); `keep`: it says what is there and keeps it (a timed-out job's, issue #630).
-   */
-  async function exitAndClose(pane: HeldPane, scratch: Scratch = 'remove'): Promise<string | undefined> {
-    const close = async (herdr: HerdrClient): Promise<string | undefined> => {
-      await herdr.sendKeys(pane.paneId, ['esc']).catch(() => {});
-      await herdr.sendKeys(pane.paneId, ['ctrl+c', 'ctrl+c']).catch(() => {});
-      const said = await reap(herdr, pane, scratch).catch(() => undefined);
-      if (said && scratch !== 'none') reaped.set(pane.jobId, said);
-      return herdr.closePane(pane.paneId).then(() => undefined, (e: unknown) => (e instanceof HerdrError && e.code === 'pane_not_found' ? undefined : `herdr: ${(e as Error).message}`));
-    };
-    const open = await Promise.resolve().then(() => close(herdrOn(pane))).catch((e: unknown) => `herdr: ${(e as Error).message}`);
-    for (const [lane, held] of lanes) if (samePane(held, pane)) lanes.delete(lane);
-    return open;
-  }
+  // The reap and the close of a job's pane (pane-ends.ts), with the lanes and what the reap kept here.
+  const { reap, exitAndClose } = paneEnds({ pollMs: o.pollMs, sleep, herdrOn, reaped, lanes });
 
   async function settle(result: ExecutionOutcome | Interrupt, pane: HeldPane): Promise<ExecutionOutcome> {
     if (!('interrupt' in result)) return result;
@@ -173,7 +143,15 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       onQuestion: (seq, lapsesAt, waitLines) => ctx.saveState({ ...s, turn: waitLines === undefined ? turn : { ...turn, markersAfter: waitLines }, parkedSeq: seq, lapsesAt }),
       onOutput: (at) => outputAt.set(ctx.job.id, at), knownCodes: codes.get(ctx.job.id) ?? codes.set(ctx.job.id, new Set()).get(ctx.job.id)!,
       ...(login ? { login: loginWait(ctx, login, () => ctx.saveState({ ...s, login: undefined })) } : {}),
+      ...(ctx.notes ? { notesWaiting: ctx.notes.waiting } : {}),
     });
+    if ('notes' in result) {
+      // A person's notes at the turn boundary (issue #997): typed in as the next turn, the job's own outcome left to it.
+      const text = ctx.notes?.take('turn');
+      if (text === undefined) return watch(ctx, s, p, turn, notes, login);
+      ctx.progress('typed in the notes a person sent');
+      return send(ctx, s, p, text, lastLineOf(text), { count: 0, startedAt: notes.startedAt });
+    }
     if ('authPending' in result) {
       // A login (issue #476): to the logins, never a question; the job waits, no nudge, for Claude to go on by itself.
       const unreadable = (notes.unreadable ?? 0) + 1;
@@ -290,16 +268,23 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     });
   }
 
+  /** The answer a job resumes with, and after it the notes a person sent while it waited (issue #997). */
+  function withNotes(ctx: ExecutionContext, answer: string): string {
+    const notes = ctx.notes?.take('resume');
+    return notes === undefined ? answer : `${answer}\n\n${notes}`;
+  }
+
   function reopen(ctx: ExecutionContext, saved: PaneState | undefined, answer: string): Promise<ExecutionOutcome> {
     if (ctx.job.parked?.elsewhere) return relocate(ctx, answer);
     const session = ctx.job.agentSession;
     if (!saved) return Promise.resolve({ kind: 'failed', error: 'the parked job has no pane state: its work tree is not known' });
+    const told = withNotes(ctx, answer);
     const p = { ...resolvePayload(ctx.job, ctx.machine), cwd: saved.cwd, makeWorkTree: false };
     ctx.workTree(saved.jobWorktree ?? saved.cwd);
     return startAndSend(ctx, p, {
       first: () => herdrOn(whereOn(ctx.machine)).reap(ctx.job.id), ...(session ? { resume: session } : {}),
       said: session ? `resumed agent session ${session}` : 'started a fresh agent session in the kept work tree: none was recorded',
-    }, (s) => (session ? [answer, lastLineOf(answer)] : [taskText(ctx, p, s, answer), FOOTER_ANCHOR]));
+    }, (s) => (session ? [told, lastLineOf(told)] : [taskText(ctx, p, s, told), FOOTER_ANCHOR]));
   }
 
   /** A parked job picked up to resume elsewhere (issue #921): a new pane and job worktree there, its checkpoint restored, its session resumed. */
@@ -307,7 +292,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
     const r = relocation(ctx);
     if ('kind' in r) return Promise.resolve(r);
     ctx.workTree(r.p.cwd);
-    return startAndSend(ctx, r.p, { resume: r.session, restore: r.restore, said: r.said }, () => [answer, lastLineOf(answer)]);
+    const text = withNotes(ctx, answer);
+    return startAndSend(ctx, r.p, { resume: r.session, restore: r.restore, said: r.said }, () => [text, lastLineOf(text)]);
   }
 
   return {
@@ -321,7 +307,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const p = payloadOn(ctx);
       if ('kind' in p) return p;
       ctx.workTree(p.cwd);
-      return startAndSend(ctx, p, {}, (s) => [taskText(ctx, p, s), FOOTER_ANCHOR]);
+      // Notes a person sent before it started (issue #997) go in its task.
+      return startAndSend(ctx, p, {}, (s) => [taskText(ctx, p, s, ctx.notes?.take('start')), FOOTER_ANCHOR]);
     },
 
     resume(ctx, answer) {
@@ -346,7 +333,10 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
         // the dialog and goes to Claude as text.
         const option = agent.status === 'blocked' && s.turn
           ? dialogOption(await herdr.read(s.paneId, { source: 'visible', lines: 60 }), answer) : undefined;
-        if (!option || !s.turn) return send(ctx, s, p, answer, lastLineOf(answer));
+        if (!option || !s.turn) {
+          const text = withNotes(ctx, answer);
+          return send(ctx, s, p, text, lastLineOf(text));
+        }
         const turn: TurnAnchor = { ...s.turn, seq: agent.stateChangeSeq, blockedAtSend: true };
         ctx.saveState({ ...s, turn, parkedSeq: undefined, lapsesAt: undefined });
         await herdr.sendText(s.paneId, option);

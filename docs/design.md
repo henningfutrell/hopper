@@ -11936,7 +11936,7 @@ When it must, a person gives it a short-lived box token.
   | run a command | `/ui/api/blast-radius/discover`; `/ui/api/plugins` (an instance's options may hold a command) |
   | approve or merge work | `/ui/api/pull-requests/merge` (Close PR is not: it runs nothing) |
   | update the hopper or a client | `/ui/api/update` (a client updates with the hopper); `/ui/api/plugin-store` |
-  | change work on a machine | `/ui/api/questions/:id/answer`, `correct` (typed into the job's pane); `/ui/api/jobs/:id/end-wait`, `keep-original`, `accept-new-text`; `/ui/api/logins/:id/new-code`; `/ui/api/machines`, `machines/join`, `machines/sandbox`; `/ui/api/windows-hosts` (issue #731); `/ui/api/lanes/apply`, `lanes/undo` |
+  | change work on a machine | `/ui/api/questions/:id/answer`, `correct` (typed into the job's pane); `/ui/api/jobs/:id/end-wait`, `notes` (typed into the job's session, issue #997), `keep-original`, `accept-new-text`; `/ui/api/logins/:id/new-code`; `/ui/api/machines`, `machines/join`, `machines/sandbox`; `/ui/api/windows-hosts` (issue #731); `/ui/api/lanes/apply`, `lanes/undo` |
 
   A new route that does any of these goes on the list in the same change. `test/integration/box-tokens.test.ts` walks
   every `POST /ui/api/*` path with a token that is no box token: each listed one is refused for want of a box token, and
@@ -16754,3 +16754,48 @@ Tested: the excerpt and the brief (`test/domain/check-logs.test.ts`), the source
 through the real script and a fake GitHub that redirects to the log as GitHub does (`test/integration/github-proxy.test.ts`),
 and a red check with an uncaught error whose error reaches the tend job with no question asked, and a refused log whose
 reason does (`test/integration/pull-request-tending.test.ts`).
+
+## Notes to a running job (issue #997, 2026-10-13)
+
+A person, or an agent over the API, could not give a note to a job already at work. Notes went in only when a job
+started again: a hand-off's Continue or I fixed it, Run again, Rework, End the wait. Nothing outside the executor could
+type into a running session. Seen live: a job waiting on AWS access could not be given the instance's details; the only
+way was to wait and run it again.
+
+- **The note** (`src/domain/job-notes.ts`, `JobNote`): its `text` (agent text, Markdown, at most 4000 characters), who
+  sent it (`by`: the session's person, never written to GitHub) and how (`via`: `ui`, `api`, `cli`), `at`, and its `state`:
+  `queued`, `delivered` (`delivery` `start` | `turn` | `resume`, `deliveredAt`) or `carried` (`carriedTo`). Kept on the job,
+  `job.notes`, oldest first, in its JSON: it outlives a restart. No schema change.
+- **Sent** (`POST /ui/api/jobs/:id/notes { text }`, least role `operator`, a box action: it changes work on a machine).
+  `src/engine/notes.ts` `recordNote`: a job that may still run takes one — queued, held, claimed, running, on a question, on
+  its own wait, parked, or failed as the newest job of its item (a later run carries it); else 409. `job.note_added { noteId,
+  text, person, via }`. `GET /api/jobs/:id/notes` lists them. A note ends no wait and lifts no hold: the job gets it when it
+  goes on.
+- **Delivered** where the job's session reads text, never mid-turn and never over a dialog. The run's context carries
+  `notes` (`ExecutionContext.notes`, `runNotes`): `waiting()` reads the store, `take(how)` marks the queued notes delivered
+  in one tx (`job.note_delivered { noteIds, delivery }`) and answers the text (`notesText`: a fixed head line, the notes, a
+  fixed last line, no person named). herdr-claude takes them:
+  - **at a turn boundary** (`delivery: 'turn'`): the monitor (`watchTurn`) asks `notesWaiting` only when Claude is ready and
+    its turn is over — it ended (not a lost send), or the watch waits for Claude to work by itself (after the nudges
+    stopped) — and the turn did not end on a question, a proposal, a research report or a login. The executor sends the
+    notes as the next turn (`send`: `readyFor`, the turn anchor, the lost-send retry) and watches it, under the same
+    timeout. The turn's own outcome is dropped: a `HOPPER_DONE`, `HOPPER_FAILED` or `HOPPER_WAITING` before the note is
+    said again after it, if it still holds. Background work does not hold a note back: Claude is ready at its input box.
+  - **in its task** as it starts (`start`), before the protocol footer;
+  - **after the answer** it resumes with (`resume`), when the answer goes in as text. An answer that picks a dialog's
+    option, or answers a dialog before the job's text, goes alone; the notes follow at the next turn boundary.
+  A print-mode agent (cursor-agent) takes them as it starts or resumes: it has no turn boundary the hopper types into.
+  Another executor leaves them queued.
+- **Waiting jobs.** On a question, its own wait (#483), a hold, parked (#501), waiting for a template or sandbox approval
+  (#991, #992): the notes stay queued and go in when it goes on — with the answer, the end of the wait, the pick up, or as
+  its first turn ends after Claude went on by itself.
+- **Carried** (`carryNotes`, from `ingest` in `source-host.ts`): a new job of the item — Run again, the assessor's rerun,
+  Rework, a hand-off's I fixed it, Retry — takes the earlier job's queued notes, queued on it with `carriedFrom`; on the
+  earlier job they are `carried`, `carriedTo` the new job. `job.note_carried { noteIds, nextJobId }`. Continue resumes the
+  same job: its notes stay on it and go in with its brief.
+- **UI.** The job view (`#job/<id>`) lists the notes under the job's facts (`ui/src/views/job-notes.tsx`): who sent each,
+  how, when, and its state in plain words; **Add note** for an operator while the job takes notes. The three events are
+  in the job's timeline (`event-line.tsx`).
+- **Residual risk.** A note is typed into the job's agent session as the person wrote it: it is the person's instruction,
+  with the same weight as an answer. The box action gate keeps it from an API token that is no box token.
+- **Not built.** A note on the Dashboard rows and the operator CLI (the route takes it); a note that ends a wait.

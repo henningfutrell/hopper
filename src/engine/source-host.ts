@@ -10,6 +10,7 @@ import type { Commands } from './commands.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import { changedSince, gateItem, holdForChange, recordSnapshot, refreshText } from './item-snapshots.ts';
+import { carryNotes } from './notes.ts';
 
 const clamp = (p: number): number => Math.max(0, Math.min(100, p));
 
@@ -159,7 +160,13 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       if (gate.record && invalid === undefined) recordSnapshot(c, job, item.key, gate.record, 'intake');
       if (change && invalid === undefined) holdForChange(c, job.id, item.key, change);
       // Every new job waits at the queue gate (issue #159) until the pre-sort or the user accepts it.
-      if (invalid === undefined) return store.jobs.update(job.id, { accepted: false, fromConfig, ...(known ? { rerunOf: known.id } : {}) });
+      if (invalid === undefined) {
+        const queued = store.jobs.update(job.id, { accepted: false, fromConfig, ...(known ? { rerunOf: known.id } : {}) });
+        // The notes its item's earlier job never delivered go on to this one (issue #997).
+        if (!known) return queued;
+        carryNotes(c, known, job.id);
+        return store.jobs.get(job.id)!;
+      }
       // Created and failed together: the source reports claimed, then failed — once.
       store.events.append({ type: 'job.failed', jobId: job.id, data: { error: invalid, ...priorityTagOf(c, job.id) } });
       return store.jobs.update(job.id, { status: 'failed', error: invalid, finishedAt: nowIso(c), ...(known ? { rerunOf: known.id } : {}) });

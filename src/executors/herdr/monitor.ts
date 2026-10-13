@@ -45,6 +45,15 @@ export interface LoginWait {
 }
 
 /**
+ * A person's note waits for the job (issue #997) and the turn is at its boundary: Claude ready, its turn over, and not on
+ * a question, a report or a login a person must act on. The executor takes the notes and sends them as the next turn.
+ */
+export type NotesWaiting = { notes: true };
+
+/** The markers a turn ends on that wait on a person: the notes go with the answer, never in their place. */
+const WAITS_ON_A_PERSON = ['question', 'proposal', 'research', 'auth'];
+
+/**
  * A lost send (issue #278): Claude has sat ready since the send, its state never moved, and the turn
  * anchor is nowhere on screen or the text sits unsent in its input box. What was sent never reached
  * Claude; the executor submits the input box, or sends it again.
@@ -90,6 +99,8 @@ export interface TurnWatch {
   onOutput?: (at: number) => void;
   /** The device codes this job already reported or showed (issue #698): one still on screen is not a new login. */
   knownCodes?: ReadonlySet<string>;
+  /** Whether a person's notes wait for the job (issue #997): asked only at a turn boundary. */
+  notesWaiting?: () => boolean;
 }
 
 /** A device code the turn shows that the job did not report (issue #698), as the fields a report would have. */
@@ -125,7 +136,7 @@ export async function blockedQuestion(w: Pick<TurnWatch, 'herdr' | 'paneId' | 'c
   return { kind: 'question', question: { text: hideCodes(text, recent), recentOutput: hideCodes(tail(recent, OUTPUT_LINES), recent), detectedBy: 'blocked', ...lapsesAt } };
 }
 
-export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interrupt | StatusNote | LostSend | AuthPending | LoginActed> {
+export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interrupt | StatusNote | LostSend | AuthPending | LoginActed | NotesWaiting> {
   const { herdr, clock, ctx } = w;
   const started = w.startedAt ?? clock.now().getTime();
   let lastLine = '';
@@ -192,8 +203,12 @@ export async function watchTurn(w: TurnWatch): Promise<ExecutionOutcome | Interr
       const asked = (o: ExecutionOutcome): ExecutionOutcome => { w.onQuestion?.(agent.stateChangeSeq, o.kind === 'question' ? o.question.lapsesAt : undefined); return o; };
       if (agent.status === 'blocked' && (moved || !w.blockedAtSend || stalled)) return asked(await blockedQuestion(w, recent));
       const ended = worked && ready && (moved || stalled);
+      const lost = ended && !moved && (!turn.anchorFound || inputBoxText(recent) !== '');
+      // A turn boundary (issue #997): the turn ended, or Claude sits ready in a watch that waits for it to work by itself.
+      const boundary = ready && !login && (ended ? !lost && !WAITS_ON_A_PERSON.includes(turn.lastMarker ?? '') : !worked);
+      if (boundary && w.notesWaiting?.()) return { notes: true };
       if (!ended) { idleSince = null; waitedOn = undefined; }
-      else if (!moved && (!turn.anchorFound || inputBoxText(recent) !== '')) return { lostSend: true };
+      else if (lost) return { lostSend: true };
       else if (turn.lastMarker === 'done') {
         return { kind: 'finished', result: { summary: hideCodes(turn.assistantText, recent).slice(0, SUMMARY_CHARS), paneId: w.paneId } };
       } else if (turn.lastMarker === 'failed') {

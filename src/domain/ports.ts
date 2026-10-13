@@ -8,6 +8,8 @@ import type {
   Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread,
 } from './types.ts';
 import type { UserStore } from './store.ts';
+import type { NoteDelivery } from './job-notes.ts';
+export type { NoteDelivery } from './job-notes.ts';
 import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
@@ -64,6 +66,12 @@ export interface ExecutionContext {
    * not tell. Absent → nudge.
    */
   beforeNudge?(): Promise<NudgeCheck>;
+  /**
+   * The notes a person sent the job (issue #997): whether any wait for its session, and `take` them — the text to type
+   * in, the notes then recorded delivered `how` — or undefined with none. An executor takes them only where its session
+   * can read text: as it starts, at a turn boundary, with an answer it types in. Absent → none.
+   */
+  notes?: { waiting(): boolean; take(how: NoteDelivery): string | undefined };
 }
 
 /**

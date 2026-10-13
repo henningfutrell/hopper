@@ -42,6 +42,7 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/questions/:id/answer', kind: 'change work on a machine' },
   { route: '/ui/api/questions/:id/correct', kind: 'change work on a machine' },
   { route: '/ui/api/jobs/:id/end-wait', kind: 'change work on a machine' },
+  { route: '/ui/api/jobs/:id/notes', kind: 'change work on a machine' }, // issue #997: typed into the job's session
   { route: '/ui/api/jobs/:id/keep-original', kind: 'change work on a machine' },
   { route: '/ui/api/jobs/:id/accept-new-text', kind: 'change work on a machine' },
   { route: '/ui/api/logins/:id/new-code', kind: 'change work on a machine' },

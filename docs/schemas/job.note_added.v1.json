@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "noteId": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api"
+      ]
+    }
+  },
+  "required": [
+    "noteId",
+    "text",
+    "person",
+    "via"
+  ],
+  "additionalProperties": false
+}

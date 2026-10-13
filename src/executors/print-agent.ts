@@ -172,12 +172,15 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
       ctx.workTree(tree.cwd);
       // Saved before the turn: a job that ends any way at all is reaped where it ran.
       ctx.saveState(stateOf(ctx, tree.cwd));
-      return turn(ctx, tree.cwd, `${p.prompt}\n\n${protocolFooter(tree.cwd, ctx.jobRules, jobScratchOf(tree.cwd, ctx.job.id))}`);
+      // Notes a person sent before it started (issue #997) go in its task; it has no turn boundary the hopper types into.
+      const notes = ctx.notes?.take('start');
+      return turn(ctx, tree.cwd, `${p.prompt}\n\n${notes ? `${notes}\n\n` : ''}${protocolFooter(tree.cwd, ctx.jobRules, jobScratchOf(tree.cwd, ctx.job.id))}`);
     },
     resume(ctx, answer) {
       const s = ctx.job.executorState as Partial<PrintAgentState> | undefined;
       if (!s?.chatId || !s.cwd) return Promise.resolve({ kind: 'failed', error: `${label}: no session to resume` });
-      return turn(ctx, s.cwd, answer, s.chatId);
+      const notes = ctx.notes?.take('resume');
+      return turn(ctx, s.cwd, notes ? `${answer}\n\n${notes}` : answer, s.chatId);
     },
     /** The reap (issue #410): the job's scope and processes stopped, its scratch dir removed unless it holds work not pushed. */
     async cleanup(job) {

@@ -1014,6 +1014,62 @@ Version 1 (`docs/schemas/job.checkpointed.v1.json`). A checkpoint of a job at wo
 }
 ```
 
+## `job.note_added`
+
+Version 1 (`docs/schemas/job.note_added.v1.json`). A person, or an agent over the API, sent a note to the job (issue #997, `POST /ui/api/jobs/:id/notes`): `noteId`, its `text`, who (`person`) and how (`via`: `ui`, `api`, `cli`). It is queued on the job (`notes`) until the job's session gets it: at the next turn boundary while it runs, in its task as it starts, with the answer as it resumes. A job that waits — on a question, its own wait, a hold, parked — keeps it queued; a new job of its item carries it (`job.note_carried`).
+
+| field | type | required |
+|---|---|---|
+| `noteId` | string | yes |
+| `text` | string | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "noteId": "note-1",
+  "text": "The instance is up on port 8443.",
+  "person": "ada",
+  "via": "ui"
+}
+```
+
+## `job.note_delivered`
+
+Version 1 (`docs/schemas/job.note_delivered.v1.json`). The job's executor typed the queued notes (`noteIds`) into its session (issue #997). `delivery`: `turn` (at a turn boundary while it ran: Claude ready, its turn over, never on a question, a report or a login), `start` (in its task) or `resume` (after the answer it resumed with).
+
+| field | type | required |
+|---|---|---|
+| `noteIds` | string[] | yes |
+| `delivery` | `start` \| `turn` \| `resume` | yes |
+
+```json
+{
+  "noteIds": [
+    "note-1"
+  ],
+  "delivery": "turn"
+}
+```
+
+## `job.note_carried`
+
+Version 1 (`docs/schemas/job.note_carried.v1.json`). A new job of the job's item (run again, rework, I fixed it) took the notes it never delivered (`noteIds`, issue #997): queued on `nextJobId`, `carried` on this job.
+
+| field | type | required |
+|---|---|---|
+| `noteIds` | string[] | yes |
+| `nextJobId` | string | yes |
+
+```json
+{
+  "noteIds": [
+    "note-1"
+  ],
+  "nextJobId": "job-2"
+}
+```
+
 ## `source.stalled`
 
 Version 1 (`docs/schemas/source.stalled.v1.json`). A job source has been in error since `since` for longer than the stall threshold (30 minutes): nothing new is pulled from it. Recorded once per run of failures; `error` is its last error. The notifiers send it.
