@@ -101,12 +101,18 @@ export const sandboxRunsWaiting = (v: VaultView | null): SandboxRequestView[] =>
 export const accessRequestsWaiting = (v: VaultView | null): number =>
   v === null ? 0 : (v.requests?.length ?? 0) + (v.grantAsks?.length ?? 0) + v.templates.filter(templateWaits).length + sandboxRunsWaiting(v).length;
 
-/** What the sandbox approval toggles mean now (issue #991), in words. */
+/** The auto-approve policy in force (issue #1001): the view answers it in full; absent, the default. */
+export const autoApproveOf = (a: SandboxApprovals | undefined): NonNullable<SandboxApprovals['autoApprove']> => ({ low: true, medium: false, high: false, ...a?.autoApprove });
+
+/** What the sandbox approval toggles and the auto-approve policy mean now (issues #991, #1001), in words. */
 export function sandboxApprovalsText(a: SandboxApprovals | undefined): string {
   if (a?.skipTemplateApproval && a.skipSandboxApproval) return 'YOLO is on: a job gets its sandbox with no person. New templates are approved at once, and every sandbox run starts the moment a job asks, high blast radius too.';
-  if (a?.skipTemplateApproval) return 'New templates are approved at once. A person approves each sandbox run.';
-  if (a?.skipSandboxApproval) return 'A person approves each new template. Sandbox runs start the moment a job asks, high blast radius too.';
-  return 'A person approves each new template and each sandbox run.';
+  const auto = autoApproveOf(a);
+  const levels = (['low', 'medium', 'high'] as const).filter((l) => auto[l]);
+  const policy = levels.length ? `Templates and runs of ${levels.join(', ')} blast radius are approved with no person. ` : '';
+  if (a?.skipTemplateApproval) return `${policy}Other new templates are approved at once. A person approves each other sandbox run.`;
+  if (a?.skipSandboxApproval) return `${policy}A person approves each other new template. Sandbox runs start the moment a job asks, high blast radius too.`;
+  return `${policy}A person approves each ${levels.length ? 'other ' : ''}new template and sandbox run.`;
 }
 
 /** What a template's card says of its approval: approved, or what waits for a person. */

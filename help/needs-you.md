@@ -47,8 +47,8 @@ The nav badge counts the request cards. A second, dashed badge counts the issues
 |---|---|
 | **Asked for** | A job needs a credential the vault does not give. Give one, or decline with a reason. |
 | **Vault grants** | A job on a box asked the vault with no grant. Select **Grant**. Granted items show here, with **Revoke**. |
-| **Template approvals** | A template is new, or has a new image, secret or profile. Select **Approve**. A write, sync or apply profile has its own **Approve** button. |
-| **Sandbox runs** | A job asked for a sandbox. Select **Approve** to start the box, or write why not and select **Decline**. Runs that start, run or end show below. Skip this step with **Skip sandbox approval** on Settings → Vault. |
+| **Template approvals** | A template is new, or has a new image, secret or profile. Select **Approve**. When the card lists a write, sync or apply profile, select **Approve all listed** to approve the template and each profile. |
+| **Sandbox runs** | A job asked for a sandbox. Select **Approve** to start the box, or write why not and select **Decline**. Runs that start, run or end show below. A run of a template you approved for the same job, or of a blast radius the auto-approve policy holds, does not wait here. Skip this step with **Skip sandbox approval** on Settings → Vault. Each card's approval is its own: you can approve several cards in a row. |
 
 The page also links to **Settings → API tokens**, where you mint a box token for an agent that approves or merges through the API.
 

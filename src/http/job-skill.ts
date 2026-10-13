@@ -47,6 +47,7 @@ function skillUser(tenants: Tenants, id: string): SkillUser | undefined {
     requestTemplate: (needs, job) => requestTemplate(templateRequestUser(parts), needs, `job ${job.id}`, job.id),
     // Issue #991: a box of that template for the job, started once a person or skip sandbox approval approves it.
     sandbox: (template, job) => parts.sandboxRequests.ask(job.id, template),
+    sandboxWaits: (template, job) => parts.sandboxRequests.waited(job.id, template),
   };
 }
 

@@ -5,7 +5,7 @@
 import { Ticket } from 'lucide-react';
 import { Panel } from '@/components/panel';
 import { useCanAdmin } from '@/store/selectors';
-import { sendVault, useVault, useVaultStore } from '@/store/vault';
+import { sendDecision, sendVault, useVault, useVaultStore } from '@/store/vault';
 import { AskedFor } from './vault-requests';
 import { VaultGrants } from './vault-grants';
 import { TemplateApprovals } from './template-approvals';
@@ -22,8 +22,9 @@ export function AccessRequests() {
       {!view && error && <p role="alert" className="text-sm text-bad break-words">Could not read the vault: {error}</p>}
       <AskedFor requests={view?.requests ?? []} can={can} busy={busy} send={sendVault} />
       <VaultGrants view={view} />
-      <TemplateApprovals templates={view?.templates ?? []} {...(view?.asks ? { asks: view.asks } : {})} can={can} busy={busy} send={sendVault} />
-      <SandboxRuns view={view} can={can} busy={busy} />
+      {/* Issue #1001: each template and run card decides on its own; one pending blocks no other. */}
+      <TemplateApprovals templates={view?.templates ?? []} {...(view?.asks ? { asks: view.asks } : {})} can={can} send={sendDecision} />
+      <SandboxRuns view={view} can={can} />
       <Panel title="Box tokens" icon={Ticket}>
         <p className="text-sm text-muted-foreground">An agent that approves or merges work, or starts a job, through the API needs a box token: a token of a grant minted with Box grant on. Mint one, or end one, on <a href="#settings/api-tokens" className="underline">Settings → API tokens</a>.</p>
       </Panel>

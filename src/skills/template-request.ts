@@ -13,11 +13,15 @@
 // Issue #998: a template already approved for exactly these needs — the same operation profiles, no vault secret, nothing
 // waiting for a person — is used for them, whatever its name, and no second template is made. A person may have saved it,
 // or changed an asked-for template to these needs. A template that gives a box more than the needs is never used for them.
+// Issue #1001: after the read policy, the user's **auto-approve policy** approves a template it makes now whose blast
+// radius is a level the policy holds — by default low: read needs only, as a requested template holds no vault secret.
 import { createHash } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
 import { checkWait } from '../domain/read-only-check.ts';
 import { inReadPolicy, type ReadPolicy } from '../domain/read-policy.ts';
-import { NO_SKIPS, SKIP_TEMPLATE_APPROVER, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
+import { AUTO_APPROVER, autoApproves, NO_SKIPS, SKIP_TEMPLATE_APPROVER, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
+import { DEFAULT_BLAST_RADIUS_SETTINGS } from '../domain/types.ts';
+import { rateTemplate } from '../blast-radius/template.ts';
 import type { TemplatePreview, TemplateView } from '../domain/vault.ts';
 import { toolsForNeeds } from '../sandbox/tools.ts';
 import { SKILLS } from './catalog.ts';
@@ -133,10 +137,22 @@ function approvedFor(u: Pick<TemplateRequestUser, 'templates'>, needs: readonly 
 
 const approverOf = (t: TemplateView): TemplatePreview['approvedBy'] => {
   const by = t.approval?.by;
-  return by === READ_POLICY_APPROVER || by === SKIP_TEMPLATE_APPROVER ? by : 'a person';
+  return by === READ_POLICY_APPROVER || by === SKIP_TEMPLATE_APPROVER || by === AUTO_APPROVER ? by : 'a person';
 };
 
 const skipsTemplate = (u: Pick<TemplateRequestUser, 'approvals'>): boolean => (u.approvals?.() ?? NO_SKIPS).skipTemplateApproval;
+
+/**
+ * Who approves a template made now for these needs with no person, in order: the read policy (every need a read it
+ * holds), the auto-approve policy (issue #1001: the template's blast radius is a level it holds), skip template approval.
+ * Undefined: a person. A requested template holds no vault secret, so its radius comes from the needs alone.
+ */
+function automaticApprover(u: Pick<TemplateRequestUser, 'policy' | 'approvals'>, needs: readonly OperationProfile[]): TemplatePreview['approvedBy'] | undefined {
+  if (outsidePolicy(needs, u.policy()).length === 0) return READ_POLICY_APPROVER;
+  const level = rateTemplate({ secrets: [], profiles: [...needs] }, [], DEFAULT_BLAST_RADIUS_SETTINGS.rules).level;
+  if (autoApproves(u.approvals?.(), level)) return AUTO_APPROVER;
+  return skipsTemplate(u) ? SKIP_TEMPLATE_APPROVER : undefined;
+}
 
 /** The template these needs make, and who approves it; or why the needs cannot be read. It saves nothing. */
 export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'templates' | 'policy' | 'image' | 'approvals'>, said: string | undefined): TemplatePreview | string {
@@ -151,13 +167,11 @@ export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'templ
       readOnly: reused.readOnly === true, approvedBy: approverOf(reused), waits: [], exists: 'same',
     };
   }
-  const outside = outsidePolicy(needs, u.policy());
-  const skip = outside.length > 0 && skipsTemplate(u);
-  const waits = skip ? [] : outside;
+  const approver = automaticApprover(u, needs);
   return {
     template: name, image: u.image, tools: toolsForNeeds(needs), needs: needs.map(inWords),
     readOnly: needs.every((p) => p.operation === 'read'),
-    approvedBy: outside.length === 0 ? READ_POLICY_APPROVER : skip ? SKIP_TEMPLATE_APPROVER : 'a person', waits,
+    approvedBy: approver ?? 'a person', waits: approver ? [] : outsidePolicy(needs, u.policy()),
     ...(was ? { exists: sameNeeds(was.profiles, needs) ? 'same' as const : 'changed' as const } : {}),
   };
 }
@@ -179,14 +193,13 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
     const readOnly = needs.every((p) => p.operation === 'read');
     const saved = await u.save({ name, image: u.image, secrets: [], profiles: needs, tools: toolsForNeeds(needs), readOnly, ...(job ? { askedBy: job } : {}) }, by);
     if (!saved.ok) return { status: STATUS[saved.code] ?? 503, reason: saved.error };
-    // The policy approves only a template it makes now, and only when every need is a read it holds. Else skip template
-    // approval (issue #991) approves a template it makes now: as it is, then each write, sync or apply profile.
-    const byPolicy = outsidePolicy(needs, u.policy()).length === 0;
-    if (byPolicy || skipsTemplate(u)) {
-      const approver = byPolicy ? READ_POLICY_APPROVER : SKIP_TEMPLATE_APPROVER;
+    // Only a template made now is approved with no person (automaticApprover): as it is, then each write, sync or apply
+    // profile, unless the read policy approved it, which holds reads only.
+    const approver = automaticApprover(u, needs);
+    if (approver) {
       const approved = await u.approve(name, approver);
       if (!approved.ok) return { status: STATUS[approved.code] ?? 503, reason: approved.error };
-      for (const p of byPolicy ? [] : u.template(name)?.pending.profiles ?? []) {
+      for (const p of approver === READ_POLICY_APPROVER ? [] : u.template(name)?.pending.profiles ?? []) {
         const done = await u.approveProfile(name, p, approver);
         if (!done.ok) return { status: STATUS[done.code] ?? 503, reason: done.error };
       }
