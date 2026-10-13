@@ -40,8 +40,9 @@
 # (HOPPER_BIND=0.0.0.0 publishes the UI on every interface, for a LAN install), and the update keeps it. The update moves
 # what an older file had of your own there by itself, and the hopper says when its stack differs from this file.
 #
-# Required services: postgres, hopper, openfga (and openfga-migrate, which runs once), and tunnel, which runs no ngrok
-# until remote access is turned on in the UI (Settings → Remote access, issue #880). A plain `podman compose up -d` starts
+# Required services: postgres, hopper, openfga (and openfga-migrate, which runs once), and tunnel and cloudflared, which
+# run no tunnel agent until remote access is turned on in the UI with their provider (Settings → Remote access, issues
+# #880, #968): then the one picked runs ngrok or cloudflared. A plain `podman compose up -d` starts
 # only these, and the vault works: it runs in the hopper, under the master key.
 #
 # Optional services (issue #586, docs/deploy.md "Optional services"), each behind a compose profile; the hopper starts
@@ -65,7 +66,7 @@ services:
   # connections: `runtime-secrets` is in memory (tmpfs), so each start of the stack after a full stop makes a new password,
   # and the database keeps working (issue #659). No secret is in a persistent volume, and no master key is kept here. Each file is readable only by the one service that needs it (postgres: uid 70;
   # the hopper and hopper-vault: uid 1000; OpenFGA: uid 65532). hopper-vault's preshared key (issue #586) is made the
-  # same way, and so is the tunnel service's key (issue #880), in its own volume `tunnel-key` (the hopper and the tunnel: uid 1000). No one-shot service for it: podman-compose cannot start a container whose
+  # same way, and so is the tunnel service's key (issue #880), in its own volume `tunnel-key` (the hopper and the tunnel services: uid 1000). No one-shot service for it: podman-compose cannot start a container whose
   # dependency has exited. OpenFGA's (issue #559): its preshared key, and its config — the database URL with the
   # `openfga` schema, that key — rewritten at each start; the schema is made once Postgres takes connections.
   # pg_stat_statements (issue #947) is loaded, and made once Postgres takes connections: the Resources page shows statement
@@ -136,9 +137,11 @@ services:
       HOPPER_VAULT_KEY_FILE: /run/hopper-secrets/vault_key
       # The KMS (profile `kms`), used here only when the vault runs here; unset: the master key.
       HOPPER_KMS_URL: ${HOPPER_KMS_URL:-}
-      # The tunnel (issue #880): its agent's local API, asked whether the remote access URL is up, and the key the tunnel
-      # service asks for its settings with. Remote access itself is set in the UI (Settings → Remote access).
+      # The tunnel (issues #880, #968): each agent's local API — ngrok's, cloudflared's —, asked whether the remote access URL
+      # is up, and the key the tunnel services ask for their settings with. Remote access itself is set in the UI (Settings →
+      # Remote access).
       HOPPER_TUNNEL_API: ${HOPPER_TUNNEL_API:-http://tunnel:4040}
+      HOPPER_CLOUDFLARED_API: ${HOPPER_CLOUDFLARED_API:-http://cloudflared:2000}
       HOPPER_TUNNEL_KEY_FILE: /run/hopper-tunnel/key
       # The token of the optional `vault` service below (issue #585): read-only, made by that service on its first
       # start. Nothing reads it until a hashicorp-vault vault backend is added in Settings → Plugins.
@@ -249,13 +252,14 @@ services:
     restart: unless-stopped
     volumes:
       - kms:/data
-  # The tunnel (issues #795, #880, docs/deploy.md "Remote access"): an ngrok agent that forwards the remote access URL to
-  # the hopper, so an agent (Grok Bot) reaches its API from anywhere, with no inbound port on this machine. It holds
-  # nothing: remote access is turned on, and its ngrok authtoken and domain are set, in the hopper's UI (Settings → Remote
-  # access), kept in the hopper's vault. This service asks the hopper for them every 10 s (GET /tunnel/agent, with the key
-  # postgres makes at each start of the stack, in memory: the `tunnel-key` volume), starts ngrok with them, starts it
-  # again when they change and stops it when remote access is turned off. The token is in ngrok's environment only, and
-  # masked in its log. Off, it runs no ngrok. It forwards to http://hopper over the `tunnel` network, which only the
+  # The tunnel (issues #795, #880, #968, docs/deploy.md "Remote access"): an ngrok agent that forwards the remote access URL
+  # to the hopper, so an agent (Grok Bot) reaches its API from anywhere, with no inbound port on this machine. It holds
+  # nothing: remote access is turned on with ngrok in the hopper's UI (Settings → Remote access), and the hopper mints the
+  # authtoken and the domain with the admin's ngrok API key, kept in the hopper's vault. This service asks the hopper for
+  # them every 10 s (GET /tunnel/agent, with the key postgres makes at each start of the stack, in memory: the
+  # `tunnel-key` volume), starts ngrok with them, starts it again when they change and stops it when remote access is
+  # turned off or switched to Cloudflare. The token is in ngrok's environment only, and masked in its log. Off, it runs
+  # no ngrok. It forwards to http://hopper over the `tunnel` network, which only the
   # hopper shares, never to the hopper's loopback: an internet request is a public request (the API only with a session
   # or an API token), and no box reaches the agent's local API. Its edge lets only the API through (/api/ but the event
   # stream, /ui/api/, /ui/auth/api-token, and /ui/auth/token/refresh where a grant's agent trades its refresh token):
@@ -352,6 +356,60 @@ services:
         done
     networks: [tunnel]
 
+  # The Cloudflare tunnel (issue #968, docs/deploy.md "Remote access"): cloudflared, which runs the tunnel the hopper
+  # minted at Cloudflare when remote access is on with Cloudflare Tunnel. Like `tunnel`, it holds nothing: it asks the
+  # hopper every 10 s (GET /tunnel/agent?cloudflared=…, with the key in `tunnel-key`) for the tunnel's token, runs
+  # cloudflared with it (in its environment only), starts it again when it changes and stops it when remote access is
+  # off or with ngrok: then no cloudflared runs. The tunnel's ingress is set at Cloudflare by the hopper: only the API
+  # paths reach http://hopper over the `tunnel` network, every other path is 404 at cloudflared; the hopper holds that edge
+  # and the per-caller limit too, for each caller Cloudflare names in cf-connecting-ip. Its metrics server (:2000, on the
+  # `tunnel` network only) answers the hopper's ask whether it is ready (HOPPER_CLOUDFLARED_API). The hopper's image,
+  # which carries the cloudflared binary of Cloudflare's own image: that image has no shell to ask with.
+  cloudflared:
+    image: ${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HOPPER_PORT: ${HOPPER_PORT:-4790}
+    volumes:
+      - tunnel-key:/run/hopper-tunnel:ro
+    # The image's own check asks the hopper's daemon, which does not run here.
+    healthcheck:
+      disable: true
+    entrypoint: [sh, -eu, -c]
+    command:
+      - |
+        until [ -s /run/hopper-tunnel/key ]; do sleep 1; done
+        key=$$(cat /run/hopper-tunnel/key)
+        a="http://hopper:$${HOPPER_PORT}/tunnel/agent"
+        pid=; last=; report=stopped
+        stop() { if [ -n "$$pid" ]; then kill "$$pid" 2>/dev/null || true; wait "$$pid" 2>/dev/null || true; fi; pid=; }
+        trap 'stop; exit 0' TERM INT
+        while :; do
+          # cloudflared stopped: it starts again at the next ask.
+          if [ -n "$$pid" ] && ! kill -0 "$$pid" 2>/dev/null; then
+            wait "$$pid" 2>/dev/null || true; pid=; report=exited; last=
+          elif [ -n "$$pid" ]; then report=running; fi
+          if conf=$$(curl -fsS -m 5 -H "authorization: Bearer $$key" "$$a?cloudflared=$$report" 2>/dev/null); then
+            if [ "$$conf" != "$$last" ]; then
+              stop; last=$$conf; report=stopped
+              tok=$$(printf '%s\n' "$$conf" | sed -n 's/^token=//p')
+              if [ -n "$$tok" ]; then
+                echo "cloudflared: starting the tunnel"
+                TUNNEL_TOKEN=$$tok cloudflared tunnel --no-autoupdate --metrics 0.0.0.0:2000 run &
+                pid=$$!; report=running
+              else
+                echo "cloudflared: remote access is off, or runs through ngrok"
+              fi
+              unset tok
+            fi
+          fi
+          sleep 10 & wait $$! || true
+        done
+    networks: [tunnel]
+
   # HashiCorp Vault (issue #585), optional: a vault backend the hopper's vault can keep secrets in. It starts only when
   # asked for, and the hopper never needs it — without it the hopper starts and its own vault works:
   #   podman compose --profile vault up -d
@@ -407,7 +465,8 @@ services:
 networks:
   default:
     name: hopper_default
-  # The tunnel's (issues #795, #880): the hopper and the tunnel only. No box joins it, so none reaches the tunnel agent's local API.
+  # The tunnel's (issues #795, #880, #968): the hopper and the tunnel services only. No box joins it, so none reaches a
+  # tunnel agent's local API.
   tunnel:
     name: hopper_tunnel
   # Search's (issue #945): the hopper and Solr only.

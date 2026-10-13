@@ -47,7 +47,7 @@ describe('the tunnel (issues #795, #880): an ngrok agent that forwards the remot
 
   it('runs in a plain `compose up`, with no line in .env: remote access is turned on in the UI', () => {
     expect(Object.keys(r.services)).toContain('tunnel');
-    expect(svc(r, 'hopper').environment).toMatchObject({ HOPPER_TUNNEL_API: 'http://tunnel:4040', HOPPER_TUNNEL_KEY_FILE: '/run/hopper-tunnel/key' });
+    expect(svc(r, 'hopper').environment).toMatchObject({ HOPPER_TUNNEL_API: 'http://tunnel:4040', HOPPER_CLOUDFLARED_API: 'http://cloudflared:2000', HOPPER_TUNNEL_KEY_FILE: '/run/hopper-tunnel/key' });
   });
 
   it('holds no token and no URL: nothing from .env reaches it but the port', () => {
@@ -76,7 +76,7 @@ describe('the tunnel (issues #795, #880): an ngrok agent that forwards the remot
     expect(tunnel.volumes).toEqual([expect.objectContaining({ source: 'tunnel-key', target: '/run/hopper-tunnel', read_only: true })]);
     for (const [name, s] of Object.entries(r.services)) {
       const mounts = (s.volumes ?? []).filter((v) => v.source === 'tunnel-key').length;
-      expect(mounts, name).toBe(['hopper', 'postgres', 'tunnel'].includes(name) ? 1 : 0);
+      expect(mounts, name).toBe(['hopper', 'postgres', 'tunnel', 'cloudflared'].includes(name) ? 1 : 0);
     }
     expect(svc(r, 'postgres').command!.join('\n')).toMatch(/\/run\/hopper-tunnel\/key/);
     expect(script).toMatch(/wget [^\n]*authorization: Bearer \$\$?key[^\n]*\/tunnel\/agent|wget [^\n]*authorization: Bearer \$\$?key[^\n]*\$\$?a/);
@@ -104,5 +104,38 @@ describe('the tunnel (issues #795, #880): an ngrok agent that forwards the remot
     expect(set).toBeGreaterThan(drop);
     expect(script.slice(drop, set)).toMatch(/- x-hopper-caller/);
     expect(script.slice(set)).toMatch(/x-hopper-caller: "\$\$?\{conn\.client_ip\}"/);
+  });
+});
+
+describe('cloudflared (issue #968): Cloudflare\'s agent, run only while remote access is on with Cloudflare Tunnel', () => {
+  const r = render();
+  const cf = svc(r, 'cloudflared');
+  const script = cf.command!.join('\n');
+
+  it('runs in a plain `compose up` from the hopper\'s image, on no host port, and nothing waits on it', () => {
+    expect(cf.image).toBe(svc(r, 'hopper').image);
+    expect(cf.restart).toBe('unless-stopped');
+    expect(cf.ports ?? []).toEqual([]);
+    for (const name of ['hopper', 'postgres', 'openfga', 'tunnel']) expect(Object.keys(svc(r, name).depends_on ?? {})).not.toContain('cloudflared');
+  });
+
+  it('holds nothing but the port: it asks the hopper for the token with the key in memory', () => {
+    const on = svc(render('CLOUDFLARE_API_TOKEN=t0ken\nTUNNEL_TOKEN=t0ken\n'), 'cloudflared');
+    expect(Object.keys(on.environment ?? {})).toEqual(['HOPPER_PORT']);
+    expect(JSON.stringify(on)).not.toContain('t0ken');
+    expect(cf.volumes).toEqual([expect.objectContaining({ source: 'tunnel-key', target: '/run/hopper-tunnel', read_only: true })]);
+    expect(script).toMatch(/curl [^\n]*authorization: Bearer \$\$?key[^\n]*\$\$?a\?cloudflared=/);
+  });
+
+  it('gives cloudflared the token in its environment only, never on its command line, and starts no agent while told nothing', () => {
+    expect(script).toMatch(/TUNNEL_TOKEN=\$\$?tok cloudflared tunnel --no-autoupdate --metrics 0\.0\.0\.0:2000 run/);
+    expect(script).not.toMatch(/--token[ =]/);
+    expect(script).toMatch(/if \[ -n "\$\$?tok" \]/);
+  });
+
+  it('is on the tunnel\'s network alone, and forwards nothing to the hopper\'s loopback', () => {
+    expect(Object.keys(cf.networks ?? {})).toEqual(['tunnel']);
+    expect(cf.network_mode).toBeUndefined();
+    expect(script).not.toMatch(/127\.0\.0\.1|localhost/);
   });
 });

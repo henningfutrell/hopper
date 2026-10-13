@@ -32,6 +32,10 @@ RUN pip3 install --no-cache-dir --break-system-packages typesafe-sdk==0.7.4 && p
 # herdr's CLI (herdr.dev; the installer checks the release's SHA-256): the herdr-claude executor
 # detects it before it runs jobs on attached machines.
 RUN curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR=/usr/local/bin sh && herdr --version
+# cloudflared (issue #968): the compose service `cloudflared` runs the hopper's image with it, for remote access through
+# Cloudflare Tunnel. Copied from Cloudflare's own image, pinned; the daemon never runs it.
+COPY --from=docker.io/cloudflare/cloudflared:2026.10.0 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
+RUN cloudflared --version
 # The claude CLI, for the escalation levels, the usage reading and Jev's Haiku gates. It signs
 # in from the environment (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY). INSTALL_CLAUDE=false skips it.
 ARG INSTALL_CLAUDE=true

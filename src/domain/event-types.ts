@@ -71,7 +71,7 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'machine.discovered': 1, 'machine.discovery_failed': 1, 'machine.radius_grew': 1, 'machine.actor_mismatch': 1, 'blast_radius.settings_changed': 1, 'job.gate_passed': 1,
   'minor_decision.picked': 1, 'minor_decision.compared': 1, 'minor_decision.overridden': 1, 'minor_decision.settings_changed': 1,
   'job.phase_changed': 1, 'job.forked': 1, 'job.fork_resolved': 1, 'phase_shifts.settings_changed': 1,
-  'question.corrected': 1, 'auto_answer.settings_changed': 1, 'auto_park.settings_changed': 1, 'github_rate_limiter.settings_changed': 1, 'remote_access.changed': 1,
+  'question.corrected': 1, 'auto_answer.settings_changed': 1, 'auto_park.settings_changed': 1, 'github_rate_limiter.settings_changed': 1, 'remote_access.changed': 2,
   'question.thread_held': 1, 'question.thread_approved': 1, 'question.thread_posted': 1, 'thread_ask.settings_changed': 1,
   'github_proxy.done': 1, 'github_proxy.refused': 1, 'github_proxy.failed': 1,
   'vault.secret_set': 1, 'vault.secret_removed': 1, 'vault.secret_read': 1, 'vault.secret_migrated': 1, 'vault.master_key_rotated': 1, 'template.saved': 1, 'template.removed': 1, 'vault.approved': 1, 'vault.revoked': 1, 'template.profile_approved': 1, 'template.checked': 1, 'template.check_requested': 1, 'vault.delivered': 1, 'vault.refused': 1, 'vault.minted': 1, 'vault.mint_refused': 1, 'vault.mint_tested': 1, 'vault.check_minted': 1, 'vault.check_mint_refused': 1,

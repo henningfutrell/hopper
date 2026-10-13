@@ -112,11 +112,19 @@ export const vaultGrantEvents = {
 };
 
 // The shared rate limiter (issue #436): the hopper's admin changed its settings.
-const remoteAccessSettings = strict({ enabled: z.boolean(), domain: z.string().optional(), restartedAt: z.string().optional() });
+const remoteAccessProvider = z.enum(['cloudflare', 'ngrok']);
+const remoteAccessSettings = strict({
+  enabled: z.boolean(), provider: remoteAccessProvider.optional(), domain: z.string().optional(), restartedAt: z.string().optional(),
+  provisioned: z.union([
+    strict({ provider: z.literal('ngrok'), domain: z.string(), credentialId: z.string().optional(), reservedDomainId: z.string().optional() }),
+    strict({ provider: z.literal('cloudflare'), domain: z.string(), accountId: z.string(), zoneId: z.string(), tunnelId: z.string(), dnsRecordId: z.string() }),
+  ]).optional(),
+  leftover: z.array(z.string()).optional(),
+});
 const rateLimiterSettings = strict({ slowBelowPercent: z.number().int().min(0).max(100), reserve: z.number().int().min(0), batchSize: z.number().int().min(1) });
 export const rateLimiterEvents = {
   'github_rate_limiter.settings_changed': strict({ from: rateLimiterSettings, to: rateLimiterSettings, by: z.string() }),
-  'remote_access.changed': strict({ from: remoteAccessSettings, to: remoteAccessSettings, authtoken: z.enum(['set', 'removed']).optional(), by: z.string() }),
+  'remote_access.changed': strict({ from: remoteAccessSettings, to: remoteAccessSettings, credential: z.enum(['set', 'removed']).optional(), by: z.string() }),
 };
 
 // Pointed jobs (issue #425, src/http/ui/pointed-jobs.ts): a pointed job made, and each move of its status.

@@ -28,14 +28,14 @@ export const VAULT_REFERENCE_MAX = 500;
  * (the instance's vault), its sign-in realms' secrets. Each is a row of a vault's table named `system/<name>` — a name no
  * vault secret can take —, sealed as any other; but it is none of the vault's own secrets: not listed, in no template,
  * never given to a job, a machine or a box, or minted from. Only the hopper opens one, in its own process; one exception, the
- * tunnel's authtoken (issue #880), which the hopper answers to the tunnel service alone ("Remote access").
+ * tunnel's token (issues #880, #968), which the hopper answers to its tunnel service alone ("Remote access").
  */
 /** The TypeSafe API key (issue #657), the key a user's artifact content URLs are signed under (issue #673), the GitHub
- * connection's tokens, each webhook's signing secret, each sign-in realm's secret (issue #658) and the tunnel's ngrok
- * authtoken (issue #880). */
+ * connection's tokens, each webhook's signing secret, each sign-in realm's secret (issue #658), and remote access's: each
+ * provider's credential and the tunnel token the hopper minted with it (issues #880, #968). */
 export type SystemSecretName =
   | 'typesafe-api-key'
-  | 'remote-access.ngrok-authtoken'
+  | `remote-access.${'ngrok-authtoken' | 'ngrok-api-key' | 'cloudflare-api-token' | 'cloudflare-tunnel-token'}`
   | 'artifact-content-key'
   | `connected-account.${'github'}.${'access-token' | 'refresh-token'}`
   | `webhook.${string}.signing-secret`

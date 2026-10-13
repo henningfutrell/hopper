@@ -5,13 +5,19 @@ import type { SystemSecretAudit, SystemSecretView } from './wire.ts';
 /** A date and time in the viewer's own form. */
 const when = (iso: string): string => new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 
+/** Remote access's system secrets (issue #968): each provider's credential, and the tunnel token the hopper minted with it. */
+const REMOTE_ACCESS: Record<string, string> = {
+  'cloudflare-api-token': 'Cloudflare API token', 'cloudflare-tunnel-token': 'Cloudflare tunnel token',
+  'ngrok-api-key': 'ngrok API key', 'ngrok-authtoken': 'ngrok authtoken',
+};
+
 /** What the hopper keeps the secret for, in words. */
 export function systemSecretTitle(s: Pick<SystemSecretView, 'name' | 'kind'>): string {
   if (s.kind === 'typesafe') return 'TypeSafe API key (Jev)';
   if (s.kind === 'artifact') return 'Artifact content URL signing key';
   if (s.kind === 'connected-account') return s.name.endsWith('.refresh-token') ? 'GitHub connection: refresh token' : 'GitHub connection: access token';
   if (s.kind === 'webhook') return 'Webhook signing secret';
-  if (s.kind === 'remote-access') return 'Remote access: ngrok authtoken';
+  if (s.kind === 'remote-access') return `Remote access: ${REMOTE_ACCESS[s.name.slice('remote-access.'.length)] ?? s.name}`;
   const [, realm, setting] = s.name.split('.');
   return `Sign-in realm ${realm ?? ''}: ${setting === 'bindPassword' ? 'bind password' : 'client secret'}`;
 }
