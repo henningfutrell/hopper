@@ -5,7 +5,9 @@ import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ShippedCompose, StackDrift, UpdateStatus, VersionHistory } from '../../src/domain/types.ts';
+import { runCli } from '../../src/cli.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { waitFor } from '../support/wait.ts';
 import { copyBuilder, createInstall, createUpstream, readInstall, releaseCheck, tempDir } from '../update/support.ts';
 
@@ -138,6 +140,32 @@ describe('self-update over HTTP', () => {
     expect(d.body).toMatchObject({ state: 'checked', image: 'ghcr.io/henningfutrell/hopper:beta' });
     expect(d.body.gaps.map((g) => `${g.kind} ${g.name}`)).toEqual(['service openfga', 'setting HOPPER_OPENFGA_URL']);
     expect(asked).toContain('openfga');
+  });
+
+  it('hopper update drift: the operator reads the drift with no sign-in in a browser; exit 3 while a gap is open, else 0 (issue #1017)', async () => {
+    const w = world();
+    const root = tempDir('jh-update-it-');
+    cleanups.push(() => rmSync(root, { recursive: true, force: true }));
+    const appDir = createInstall(root, w.up.dir, w.c1, 'beta', 'image');
+    writeFileSync(join(appDir, 'compose.yaml'), 'name: hopper\nservices:\n  hopper:\n    environment: {}\n  openfga:\n    image: o\n');
+    let up = false;
+    const stackProbe = { resolves: async () => up, vaultCommit: async () => null };
+    const app = await startTestApp({ dbPath: w.dbPath, seams: { update: { appDir, builder: copyBuilder(), release: releaseCheck(), restart: async () => {}, stackProbe } } });
+    apps.push(app);
+    await app.login();
+    const drift = async () => {
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = await runCli(['update', 'drift', '--url', app.url], { env: { HOPPER_DATABASE_URL: databaseUrlFor(w.dbPath) }, stdin: () => '', out: (x) => out.push(x), err: (x) => err.push(x) });
+      return { code, out: out.join(''), err: err.join('') };
+    };
+    const gap = await drift();
+    expect(gap.code, gap.err).toBe(3);
+    expect(JSON.parse(gap.out)).toMatchObject({ state: 'checked', image: 'ghcr.io/henningfutrell/hopper:beta', gaps: [{ kind: 'service', name: 'openfga' }] });
+    up = true;
+    const whole = await drift();
+    expect(whole.code, whole.err).toBe(0);
+    expect(JSON.parse(whole.out)).toMatchObject({ state: 'checked', gaps: [] });
   });
 
   it('says why when this build ships no compose file (issue #697)', async () => {

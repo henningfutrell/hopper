@@ -93,7 +93,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/startup-log.ts` | the daemon's startup lines (listening, parts, sign-in) | — |
 | `src/cli.ts` | the operator CLI `hopper`: config records as JSON, login codes, users, `help` — against the daemon's database | engine, executors |
 | `src/cli-operator.ts` | the operator CLI's operator actions (issue #374): `job`, `queue`, `question`, each the UI's `POST /ui/api/*` on the running daemon under a UI session minted for the one call; what one action is (`cli-operator-call.ts`) and `artifact` (`cli-operator-artifact.ts`, issue #673), `report` (`cli-operator-report.ts`, issue #694) and `auto-park` (`cli-operator-auto-park.ts`) beside it; `typesafe-key` and `master-key status` (`cli-operator-keys.ts`, issues #657, #685) | engine, executors, store |
-| `src/cli-update.ts` | the operator CLI's `hopper update` (issues #697, #970): the carry of a container install's compose.yaml, the compose file this build ships with and the agent update skill — no database (`src/update/`) | engine, executors, store, http |
+| `src/cli-update.ts` | the operator CLI's `hopper update` (issues #697, #970): the carry of a container install's compose.yaml, the compose file this build ships with and the agent update skill — no database (`src/update/`); `hopper update drift` (`cli-update-drift.ts`, issue #1017) is an operator read of the running daemon, `GET /api/update/drift`, as `cli-operator.ts` makes it | engine, executors, store, http |
 
 ## The decider
 
@@ -6997,7 +6997,10 @@ settings the file's `hopper` service gives its container, by name, against the h
 `StackGap` (`service`, `setting`, `version`) with what it turns off. `GET /api/update/drift` answers a `StackDrift`, with
 `image` — `HOPPER_IMAGE` from the hopper's own environment (compose.yaml names it there), else the published image of install.json's branch — that the fix, the update
 commands, names; `unchecked` with the reason for an install, or a build that ships no compose file. The check runs
-at start (a gap is a warning line in the log, with the fix) and at each read. The UI reads it once signed in and each
+at start (a gap is a warning line in the log, with the fix) and at each read. `hopper update drift` (issue #1017,
+`src/cli-update-drift.ts`) reads it as the operator CLI reads the daemon — a viewer session minted in the database for the
+one GET, dropped after —, so a headless update checks the stack with no sign-in in a browser; exit 3 while a gap is open
+(a `Call`'s `exit`), else 0. The UI reads it once signed in and each
 minute, and shows one banner over every view (`ui/src/app/drift.tsx`): the gaps, what each turns off, and the fix for the
 container tool this browser chose. When OpenFGA is one of them the OpenFGA banner (issue #696) gives way: one cause, said
 once; what needs Access stays off with its reason, as #696 made it. Not compared: a service of the install's own, and the

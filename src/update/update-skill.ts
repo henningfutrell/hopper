@@ -46,8 +46,8 @@ Do them in order. Do not do the update another way.
 5. Podman: when \`podman compose ps\` shows no hopper, but \`podman-compose ps\` does, give \`${PODMAN_PROVIDER_HINT}\`
    and run the last command again.
 6. Check the result: \`podman compose ps\` (or \`docker compose ps\`) shows postgres, openfga, tunnel, cloudflared, solr and hopper running;
-   the UI opens; Settings → Version names the new commit; and \`GET /api/update/drift\` answers no gaps (the UI shows
-   no "stack differs" banner). A gap names what is still missing; the fix is these commands again, never a hand edit.
+   the UI opens; Settings → Version names the new commit; and \`podman compose exec hopper hopper update drift\` exits 0
+   with no gaps (exit 3: a gap is open; the UI shows the same in a "stack differs" banner). A gap names what is still missing; the fix is these commands again, never a hand edit.
 7. Optional: remove the image the update replaced: \`${podman.prune}\`.
 
 ## Go back by hand

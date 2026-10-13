@@ -321,7 +321,9 @@ is only in the hopper's environment, given at launch.
     hopper's container; and the version `hopper-vault` runs. A gap is logged at start and shown in a banner over every
     view: what is missing, what is off until then, and the fix — the update's commands with the image the hopper runs.
     `GET /api/update/drift` answers the same (`StackDrift`). It sees only from inside its container: a service of the
-    install's own, and the versions of OpenFGA and Postgres, are not compared.
+    install's own, and the versions of OpenFGA and Postgres, are not compared. A headless update reads it with no
+    sign-in in a browser (issue #1017): `podman compose exec hopper hopper update drift` prints the `StackDrift` as JSON,
+    and exits 3 while a gap is open, else 0.
   - **An agent that updates a hopper** follows the update skill: `GET /api/update/skill` on the running hopper, or
     `podman run --rm <image> hopper update skill`. `GET /api/update/compose` answers the compose file the running
     build ships with, and its version.

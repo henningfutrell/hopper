@@ -31,6 +31,7 @@ import { DIRECT_USAGE, directCall } from './cli-operator-direct.ts';
 import { REPORT_USAGE, reportCall } from './cli-operator-report.ts';
 import { SEARCH_USAGE, searchCall } from './cli-operator-search.ts';
 import { VAULT_USAGE, sandboxCall, templateCall, vaultCall } from './cli-operator-vault.ts';
+import { driftCall } from './cli-update-drift.ts';
 
 export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'vault', 'template', 'sandbox', 'token', 'report', 'search'] as const;
 
@@ -245,6 +246,7 @@ function proposalCall(args: string[]): Call {
 }
 
 function callOf(command: string, args: string[], stdin: () => string): Call {
+  if (command === 'update') return driftCall(args);
   if (command === 'master-key') return masterKeyCall(args);
   if (command === 'lanes') return lanesCall(args);
   if (command === 'token') return tokenCall(args);
@@ -298,11 +300,11 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 
 /**
  * `hopper job|queue|question|problem|handoff|failure|prs|pr|repo|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|vault|template|sandbox|report|search …`: one operator action on the running daemon, as `userOf` names the user.
- * Prints the daemon's answer as JSON.
+ * Prints the daemon's answer as JSON; the exit code the call gives it.
  */
 export async function runOperatorAction(
   instance: InstanceStore, command: string, args: string[], userOf: (id: string | undefined) => User, io: OperatorIo,
-): Promise<void> {
+): Promise<number> {
   const { rest, url: rawUrl, user: userId } = common(args);
   const call = callOf(command, rest, io.stdin);
   const url = daemonUrl(rawUrl, io.env);
@@ -333,6 +335,7 @@ export async function runOperatorAction(
   try {
     const answer = call.body ? await send(call.path, await call.body(send)) : await send(call.path);
     io.out(`${JSON.stringify(call.pick ? call.pick(answer) : answer, null, 2)}\n`);
+    return call.exit ? call.exit(answer) : 0;
   } finally {
     sessions.drop(session.token, 'logout');
   }
