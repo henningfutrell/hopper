@@ -15038,6 +15038,80 @@ Tests: `test/domain/issue-graph.test.ts`, `test/sources/issue-place.test.ts` (th
 hand-off over the real database and HTTP server), `test/ui/jobs-view-model.test.ts` and `test/ui/jobs-view.test.ts` (the
 question node, its edge and its details).
 
+**Part 3: plain words (issue #935, 2026-10-12).** The graph read as technical and centred on pull requests: an issue node
+led with `owner/name#n`, so a long title was cut; a stage read `PR open`; an edge read `job of`; and every node not
+settled was said to **block** its root, also a job that only works on its issue.
+
+- **Titles lead.** An issue node's `label` is its title alone (its `owner/name#n` when it has none); a pull request node's
+  is the goal of the job that opened it. The repository and number stay in `repo` and `number`, and the view draws them
+  in small type under the title.
+- **Stage words** (`src/domain/job-words.ts`, pure). Each node carries `stageText`: Queued, Building it (attempt 2 of
+  3), Plan, Research, Waiting on you: answer a question / approve the plan / accept the research / answer it / take it
+  over, A person works on it, Parked, Ready for review, Checks failed, Has merge conflicts, Draft, Part shipped, Merged,
+  Done, Failed, Cancelled, Not started. An issue says what its newest job says. `waitsOnYou` marks a node that waits on
+  the person. The attempt counts the failed runs a run again redoes (`attemptIn`), and its "of" is the failure settings'
+  `maxAttempts` plus one, which the route passes in; a next part is no new attempt. The words are made on the server, as
+  the UI imports nothing of `src/` at runtime, and so an agent over the API reads the same words.
+- **A summary per tree.** `JobTree.summary` is one line: "3 of 4 pieces shipped, 1 being redone, nothing waiting on
+  you." A piece is an issue of the tree (a job, when the tree has no issue); shipped is `done`; being redone, an issue
+  whose newest job runs a failed one again; what waits on you counts the question and hand-off nodes, and the jobs that
+  wait on a plan or report with no such node.
+- **Edges as sentences** (`EDGE_TEXT`, the view's own copy): is being worked on by, produced, continues in, is being
+  redone as, is waiting on the merge of, needs this first (blocked by), goes in after (stacked on), is waiting on your
+  answer to. Only `blocked_by` says something must come first. The ring the view draws round a node not settled stays,
+  but it reads "not settled yet", never "blocks".
+
+## A job's parts list (issue #935, 2026-10-12)
+
+Requirement (issue #935): for each job, everything it touched or made — a bill of materials —, grouped, each item with
+its status and its own page, over the API too (issue #718's parity); and a drill-in job page: a plain-words header, the
+job's own graph with each part as a node, a timeline newest first, and the parts as a filterable table; running parts
+stay live, and what waits on the person is pinned at the top.
+
+**The model** (`jobBom`, `src/domain/job-bom.ts`, pure; its types go out through `job-graph.ts`, as `types.ts` is at its
+line limit). Nothing new is recorded: the parts are read from what the job's record, its events and its rows already say.
+
+| Group | Parts, and where each comes from |
+|---|---|
+| What was asked (`asked`) | its issue (`source`); each issue it filed (`job.child_issue_filed`); rework asked (`job.rework_requested`); a changed spec (`job.respecified`) |
+| Work (`work`) | each run (`job.started`); its task list (`tasks`); its lane; the time it took or runs so far; each job that ran it again, ran its next part, or forked from it |
+| Code (`code`) | its pull request, checks and branch (its source state); the commits its latest checkpoint names (`checkpoint.commits`, issue #921), oldest first; its merge or close (`job.pull_request_merged`, `job.pull_request_closed`) |
+| Outputs (`outputs`) | its artifacts and each revision (`artifact.revised`); its plan or research report (`proposalId`, `researchId`) |
+| Infra (`infra`) | each plan and its approval (`infra.plan_recorded`, `infra.plan_approved`); each minted credential with its operation, asset and end (`vault.minted`); drift its check found (`infra.out_of_band_recorded`); a vault grant it asked for (`vault.grant_asked`, `vault.granted`) |
+| Decisions (`decisions`) | each question, and who answered it — a person, or the level by name (rules, a model) —; each override of a Decider pick (`minor_decision.overridden`); its hand-off |
+| Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); each checkpoint, with its commits and whether it holds the session (`job.checkpointed`); each Windows sandbox step (`step.started`) |
+
+Each part's `status` is `waiting_on_you`, `running`, `open`, `done`, `failed`, `cancelled` or `recorded` (a fact, not a
+piece of work: a lane, a branch, a credential); `href` is its page in the UI (`#questions`, `#artifacts/<id>/<n>`,
+`#infra`, `#job/<id>`…) and `url` its place on GitHub. What waits on the person comes first, then the groups in order.
+`header` says what was asked, where it stands (the stage words above) and what is next (`nextWords`: "You: answer the
+question.", "Review and merge the pull request.", "The agent works on it: 1 of 3 tasks done."); `summary` counts the
+parts that are work, not records. `events` is the job's events, newest first.
+
+**The route.** `GET /api/jobs/:id/bom` (`src/http/jobs.ts`), the user's own; 404 for a job it does not know. It reads the
+job's newest 2000 events (`EventLog.recent` takes a job now, over the `events_job` index of tenant migration 45), its
+questions, its newest hand-off, its artifacts, and the jobs among the newest 1000 that ran it again or forked from it.
+A read, so an API token needs `jobs:read`.
+
+**The page** (`ui/src/views/job.tsx`, `ui/src/views/job-bom.tsx`, `ui/src/model/job-bom.ts`). The job view at
+`#job/<id>` keeps its facts and adds, in order: the header with what waits on the person pinned under it; the job's own
+graph — the job, a node per group it has, a node per part, laid out with d3's tidy tree as the job trees are, a part
+with a page a link to it —; the timeline, the parts list's events with the ones the UI holds, newest first; and the
+parts table, filtered by group, status and text. The page reads the parts list again, debounced, each time an event of
+the job arrives on the stream, so a running part changes with no reload. A daemon with no such route (a parts list that
+cannot be read) leaves the page as it was: facts and timeline.
+
+**Left for later** (the pull request says so): cost and usage per job (the job cost profiles are made per finished job
+over machine samples, apart from this read), the commits pushed after the last checkpoint, merge order, help pages and
+What's new lines a job wrote, the test databases of a run — none has a record tied to a job yet.
+
+Tests: `test/domain/job-bom.test.ts` (each group, the order, the header and summary, the timeline),
+`test/domain/job-graph.test.ts` (titles, stage words, tree summaries), `test/integration/job-bom.test.ts` (a job that asked a
+question and opened a pull request, over the real database and HTTP server; 404), `test/ui/job-bom-model.test.ts` (filters,
+pinned parts, the layout, edge sentences), `test/ui/job-bom-view.test.ts` (the whole app over a fake daemon: header, pinned,
+graph, table filters, timeline, a live read again), `test/ui/jobs-view.test.ts` (title, small reference and stage words on
+a node, the tree summary).
+
 ## Infra plans: no apply without a plan (issue #870, part 1, 2026-10-12)
 
 Owner's principle (issue #870): no apply without a plan. Plans and infrastructure changes never slide under the radar:

@@ -46,7 +46,7 @@ describe('the job graph (issue #900)', () => {
     ] });
     expect(node(g, jobNodeId('run'))).toMatchObject({ kind: 'job', stage: 'running', tasks: { done: 2, total: 5 }, laneId: 'm1/lane-1', stageSince: '2026-10-02T01:00:00.000Z', repo: 'acme/app', number: 1 });
     expect(node(g, jobNodeId('pr'))).toMatchObject({ stage: 'pr_open', stageSince: '2026-10-02T02:00:00.000Z', pullRequest: { url: PR(7), state: 'open', checks: 'failing', conflicting: true } });
-    expect(node(g, pullRequestNodeId(PR(7)))).toMatchObject({ kind: 'pull_request', label: 'PR #7', stage: 'pr_open' });
+    expect(node(g, pullRequestNodeId(PR(7)))).toMatchObject({ kind: 'pull_request', label: 'goal pr', number: 7, stage: 'pr_open' });
     expect(g.stages).toEqual({ running: 1, pr_open: 1 });
   });
 
@@ -103,7 +103,7 @@ describe('the job graph (issue #900)', () => {
     const g = jobGraph({ jobs: [job('root', 'finished', followed(PR(8), 'open'), 1)], issueGraph });
     expect(kinds(g)).toContain(`${issueNodeId('acme/app', 1)} parent ${issueNodeId('acme/app', 6)}`);
     expect(kinds(g)).toContain(`${pullRequestNodeId(PR(8))} closes ${issueNodeId('acme/app', 1)}`);
-    expect(node(g, issueNodeId('acme/app', 1)).label).toBe('acme/app#1 Root work');
+    expect(node(g, issueNodeId('acme/app', 1))).toMatchObject({ label: 'Root work', repo: 'acme/app', number: 1 });
     // The sub-issue is closed on GitHub and no job works it: it is done.
     expect(node(g, issueNodeId('acme/app', 6)).stage).toBe('done');
   });
@@ -173,6 +173,61 @@ describe('the job graph (issue #900)', () => {
     expect(kinds(g)).toContain(`${pullRequestNodeId(PR(11))} stacked_on ${pullRequestNodeId(PR(10))}`);
     expect(kinds(g).filter((k) => k.includes('stacked_on'))).toHaveLength(1);
     expect(node(g, jobNodeId('high')).pullRequest).toMatchObject({ base: 'issue-1-part', headRef: 'issue-2' });
+  });
+});
+
+describe('the job graph in plain words (issue #935)', () => {
+  it('leads a node with its title, the repository and number apart', () => {
+    const g = jobGraph({ jobs: [job('a', 'running', {}, 3)] });
+    expect(node(g, issueNodeId('acme/app', 3))).toMatchObject({ label: 'issue 3', repo: 'acme/app', number: 3 });
+    expect(node(g, jobNodeId('a'))).toMatchObject({ label: 'goal a', repo: 'acme/app', number: 3 });
+  });
+
+  it('says each stage in human terms', () => {
+    const g = jobGraph({
+      maxAttempts: 2,
+      jobs: [
+        job('run', 'running', {}, 1),
+        job('first', 'failed', {}, 2), job('second', 'running', { rerunOf: 'first' }, 2),
+        job('plan', 'running', { spec: { executor: 'test', payload: {}, goal: 'p', proposal: true } } as Partial<Job>, 3),
+        job('ask', 'waiting_answer', { proposalId: 'p1', spec: { executor: 'test', payload: {}, goal: 'p', proposal: true } } as Partial<Job>, 4),
+        job('q', 'waiting_answer', { questionId: 'q1' }, 5),
+        job('review', 'finished', followed(PR(1), 'open', { checks: 'passing' }), 6),
+        job('red', 'finished', followed(PR(2), 'open', { checks: 'failing' }), 7),
+        job('merged', 'finished', followed(PR(3), 'merged'), 8),
+        job('part', 'finished', { partlyDone: PR(4), ...followed(PR(4), 'open') }, 9),
+      ],
+      questions: [{ id: 'q1', jobId: 'q', text: 'Which?', since: '2026-10-02T00:00:00.000Z' }],
+    });
+    const words = (id: string) => node(g, id).stageText;
+    expect(words(jobNodeId('run'))).toBe('Building it');
+    expect(words(jobNodeId('second'))).toBe('Building it (attempt 2 of 3)');
+    expect(words(jobNodeId('plan'))).toBe('Plan');
+    expect(words(jobNodeId('ask'))).toBe('Waiting on you: approve the plan');
+    expect(words(jobNodeId('q'))).toBe('Waiting on you: answer a question');
+    expect(words(questionNodeId('q1'))).toBe('Waiting on you: answer it');
+    expect(words(jobNodeId('review'))).toBe('Ready for review');
+    expect(words(jobNodeId('red'))).toBe('Checks failed');
+    expect(words(jobNodeId('merged'))).toBe('Merged');
+    expect(words(pullRequestNodeId(PR(3)))).toBe('Merged');
+    expect(words(jobNodeId('part'))).toBe('Part shipped: the rest runs after the merge');
+    expect(words(issueNodeId('acme/app', 1))).toBe('Building it');
+    expect(node(g, jobNodeId('q')).waitsOnYou).toBe(true);
+    expect(node(g, questionNodeId('q1')).waitsOnYou).toBe(true);
+    expect(node(g, jobNodeId('run')).waitsOnYou).toBeUndefined();
+  });
+
+  it('sums up each tree in one line: pieces shipped, being redone, waiting on you', () => {
+    const g = jobGraph({
+      jobs: [
+        job('r', 'finished', followed(PR(1), 'merged'), 1), job('a', 'finished', {}, 2), job('b', 'finished', {}, 3),
+        job('c1', 'failed', {}, 4), job('c2', 'running', { rerunOf: 'c1' }, 4),
+      ],
+      links: [2, 3, 4].map((n) => ({ parent: { repo: 'acme/app', number: 1 }, child: { repo: 'acme/app', number: n }, required: true })),
+    });
+    expect(g.trees[0]!.summary).toBe('3 of 4 pieces shipped, 1 being redone, nothing waiting on you.');
+    const asks = jobGraph({ jobs: [job('w', 'waiting_answer', {}, 1)], questions: [{ id: 'q', jobId: 'w', text: 'Which?', since: '2026-10-02T00:00:00.000Z' }] });
+    expect(asks.trees[0]!.summary).toBe('0 of 1 piece shipped, 1 waiting on you.');
   });
 });
 
