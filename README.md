@@ -21,11 +21,11 @@ User guide, what it does with a job once it runs and what you can do: https://he
   none: each person's first sign-in makes their user, and the first person to sign in with GitHub is the
   admin (`docs/sign-in.md` "Who signs in as which user").
 
-![The hopper overview, busy: nine lanes on four machines running jobs, a lane timeline of finished and failed runs, the waiting queue with held jobs, and recent ended jobs.](docs/screenshots/queue.webp)
+![The hopper dashboard, busy: nine lanes on four machines running jobs, a lane timeline of finished and failed runs, the waiting queue with held jobs, and recent ended jobs.](docs/screenshots/queue.webp)
 
 <p>
 <img src="docs/screenshots/lanes.webp" width="520" alt="Animated: lanes finish their jobs and pick up the next ones from the waiting queue, which gets shorter.">
-<img src="docs/screenshots/phone.webp" width="200" alt="The overview on a phone: the numbers of running, waiting and ended jobs, and the lane timeline.">
+<img src="docs/screenshots/phone.webp" width="200" alt="The dashboard on a phone: the numbers of running, waiting and ended jobs, and the lane timeline.">
 <img src="docs/screenshots/phone-question.webp" width="200" alt="The Questions view on a phone: a job's question with each escalation level's suggested answer and the answer box.">
 </p>
 
@@ -256,7 +256,7 @@ Named so you know they are not missing steps. None is the path for a self-hosted
 2. Label an issue `hopper` and assign it to yourself. Its title and body are the job's text, as first run or approved; a later edit holds the
    job until you pick **Rerun the original** or **Accept the new text**. Unassign it
    and a waiting job leaves the queue; a running one is flagged in the UI for you to stop or let finish.
-   **Reject** a waiting job (Queue, or the Overview's Waiting list), with a reason if you like: the issue is
+   **Reject** a waiting job (Queue, or the Dashboard's Waiting list), with a reason if you like: the issue is
    left alone and not taken again until it is assigned to you again, or you run it again.
 3. Watch it in the UI. The labels say where it is: `hopper:claimed` (running), `hopper:pr-ready`
    (its pull request waits for your review), `hopper:partly-done` (it shipped a part; the rest runs once

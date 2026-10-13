@@ -16,7 +16,7 @@ const ASK = { output: ['● Which colour should the shed be?', '  HOPPER_QUESTIO
 const DONE = { output: ['● Painted the shed blue.', '  HOPPER_DONE'] };
 /** A turn that never ends by itself: the job is mid-turn when it is parked. */
 const WORKING = { steps: ['● Sanding'], output: [], end: 'working' as const };
-const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }];
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000, promptSteadyMs: 100 } }];
 const item = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: {} };
 
 async function boot(herdr: FakeHerdrClient, o: { dbPath?: string; env?: Record<string, string>; laneCount?: number } = {}): Promise<TestApp> {

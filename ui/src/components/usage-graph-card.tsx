@@ -2,9 +2,10 @@
 // a stretch zoomed to — at the graph step the hopper picks for it, and a legend that names each line and
 // toggles it. Zoom in and out by the buttons, a pinch, Ctrl/⌘ + scroll, or a drag across; Reset goes back
 // to the preset. New samples redraw it as the stream tells of them (SSE usage.recorded), and once a minute
-// besides. The Overview's shows the user's own accounts and saves the preset for them; Settings → Users
+// besides. The Dashboard's shows the user's own accounts and saves the preset for them; Settings → Users
 // shows the instance admin the lines summed over every user. The resource graphs (issue #560) use it too, with
-// their own lines (`linesOf`), redrawn as the stream tells of new machine samples (SSE machine.recorded).
+// their own lines (`linesOf`), redrawn as the stream tells of new machine samples (SSE machine.recorded); so does the
+// stack's (issue #947), read again once a minute only.
 import { useCallback, useMemo, useState } from 'react';
 import { LineChart, RotateCcw, ZoomIn, ZoomOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -46,8 +47,8 @@ export function UsageGraphCard<T extends GraphData>({ path, seriesOf, linesOf, s
   path: string; save?: (view: UsageGraphView) => void; title: string; empty: string;
   /** What it reads, as its loading and error lines name it. */
   what?: string;
-  /** Which stream count reads it again: new usage samples, or new machine samples. */
-  recordedBy?: 'usage' | 'machine';
+  /** Which stream count reads it again: new usage samples, or new machine samples; null: none, only the minute's read. */
+  recordedBy?: 'usage' | 'machine' | null;
   className?: string;
 } & ({ seriesOf: (data: T) => UsageSeries[]; linesOf?: never } | { linesOf: (data: T) => GraphLine[]; seriesOf?: never })) {
   const [data, setData] = useState<T | null>(null);
@@ -58,7 +59,7 @@ export function UsageGraphCard<T extends GraphData>({ path, seriesOf, linesOf, s
   const [zoom, setZoom] = useState<Stretch | null>(null);
   // Lines the legend toggled: hidden (true) or shown (false); the rest as by default (informational ones hidden).
   const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(new Map());
-  const recorded = useHopper((s) => s.recorded[recordedBy]);
+  const recorded = useHopper((s) => (recordedBy ? s.recorded[recordedBy] : 0));
 
   const load = useCallback(async () => {
     try {

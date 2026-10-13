@@ -483,6 +483,7 @@ export type * from './routing.ts';
 export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
 export * from './usage-history.ts';
 export * from './machine-history.ts';
+export * from './stack-resources.ts';
 export * from './lane-tuning.ts';
 export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView };
 export * from './plugins.ts';

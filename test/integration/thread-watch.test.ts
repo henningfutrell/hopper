@@ -29,7 +29,7 @@ import { waitFor } from '../support/wait.ts';
 const REPO = 'owner/hopper-sandbox';
 const ASK = { output: ['● Which colour should the shed be?', '  HOPPER_QUESTION'] };
 const DONE = { output: ['● Painted the shed.', '  HOPPER_DONE'] };
-const EXECUTORS = [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }];
+const EXECUTORS = [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000, promptSteadyMs: 100 } }];
 
 const apps: TestApp[] = [];
 const cleanups: (() => unknown)[] = [];

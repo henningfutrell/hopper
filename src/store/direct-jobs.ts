@@ -13,8 +13,8 @@ export const DIRECT_JOB_TABLE = `
 
 export function createDirectJobRepository(c: StoreContext): DirectJobRepository {
   return {
-    add(input) {
-      const d: DirectJob = { id: c.idGen(), ...input };
+    add(input, id) {
+      const d: DirectJob = { id: id ?? c.idGen(), ...input };
       c.db.run('INSERT INTO direct_jobs (id, submitted_at, body) VALUES (?, ?, ?)', d.id, d.submittedAt, JSON.stringify(d));
       return d;
     },

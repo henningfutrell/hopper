@@ -214,7 +214,7 @@ function HistoryRetention() {
   return (
     <Panel title="Usage history" icon={History} bodyClassName="space-y-2">
       <p className="text-xs text-muted-foreground">
-        Every reading of every usage source is kept, for the Overview's usage graph. Readings older than this are deleted.
+        Every reading of every usage source is kept, for the Dashboard's usage graph. Readings older than this are deleted.
       </p>
       {days === null ? <Empty>loading</Empty> : (
         <form className="flex items-center gap-2 text-sm" onSubmit={save}>

@@ -22,6 +22,9 @@
 // merged, as above — unless the followed pull request is still open on GitHub: it is followed to its end (issues #786, #927). Closed as not planned while its pull request is still open, or none is found yet: abandoned — followed
 // no more, never merged, its pull request left as it is; the waiting labels come off and no end label goes on. A person's
 // act still goes through. Reopened with that pull request open, reconciling follows it again (issue #763).
+// A merge held (issue #939, merge-gate.ts): ready, it conflicts with a pull request of its repository the hopper merged
+// earlier in the same sync pass, so the hopper does not merge it (`seen.mergeHeldBehind`); the next sync sees it conflict
+// with the new base and tends it. A person's Merge now still merges it.
 
 import { rechecksMerge, readyToMerge, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen } from '../../domain/types.ts';
 import type { Clock } from '../../domain/ports.ts';
@@ -30,6 +33,7 @@ import { GitHubApiError, type GitHubApi } from './api.ts';
 import { closesByKeyword, isClosedAsCompleted, isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
 import { LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
 import { allPartsDone, partsOf } from './parts.ts';
+import { mergeGateOf } from './merge-gate.ts';
 import { ensureLabels, type ReportContext } from './report.ts';
 
 interface Followed { pullRequest?: string; follow?: string; part?: boolean; seen?: PullRequestSeen; mergeChecked?: boolean }
@@ -84,8 +88,8 @@ async function stateOf(api: GitHubApi, repo: string, number: number, s: Followed
 }
 
 /**
- * An open pull request: what is seen of it, and, yolo mode on and it ready, the hopper's merge. A person's act (issue
- * #677): merged or closed now, GitHub's refusal thrown.
+ * An open pull request: what is seen of it, and, yolo mode on and it ready, the hopper's merge, through the merge gate
+ * (issue #939). A person's act (issue #677): merged or closed now, GitHub's refusal thrown.
  */
 async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct): Promise<{ ended: 'merged' | 'closed' } | { seen: PullRequestSeen }> {
   const repo = job.source!.repo!;
@@ -108,7 +112,8 @@ async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRe
   // Whatever its job's origin (issue #805): the trust decision was made when the job ran, before its pull request.
   if (pr.state !== 'open' || !ctx.yoloMode?.(repo) || !readyToMerge(seen, now)) return { seen };
   try {
-    await ctx.api.merge(repo, numberOf(url));
+    const heldBehind = await mergeGateOf(ctx.api).merge(repo, pr.base, url, () => ctx.api.merge(repo, numberOf(url)));
+    if (heldBehind) return { seen: { ...seen, mergeHeldBehind: heldBehind } };
     return { ended: 'merged' };
   } catch (err) {
     if (err instanceof GitHubApiError && !err.permanent) throw err;

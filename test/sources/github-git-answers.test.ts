@@ -8,6 +8,8 @@
 //     Then each open one's conflicts are git's, and the repository is fetched once in the pass
 //   Scenario: a read outside a pass, a closed pull request, an adapter with no git
 //     Then GitHub's answer stays
+//   Scenario: whether two pull requests conflict with each other (issue #939)
+//     Then git says, in a pass; with an adapter with no git, the port has no such answer
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createGitHubTraffic } from '../../src/github-limiter/traffic.ts';
@@ -62,5 +64,18 @@ describe('git answers (issue #858 part 2)', () => {
     expect((await outside.api.pullRequest('acme/app', 2))?.conflicting).toBe(false);
     const noGit = passReads(gitAnswers(stub(o.heads, o.url, { git: false }), mirrors), 'github', traffic);
     expect((await noGit.pass(() => noGit.api.pullRequest('acme/app', 2)))?.conflicting).toBe(false);
+  });
+
+  it('says whether two pull requests conflict with each other, in a pass (issue #939)', async () => {
+    const o = origin();
+    const traffic = createGitHubTraffic({ log: () => undefined });
+    const mirrors = createGitMirrors({ dir: join(o.root, 'mirrors'), traffic, log: () => undefined });
+    const reads = passReads(gitAnswers(stub(o.heads, o.url), mirrors), 'github', traffic);
+    const said = await reads.pass(async () => [
+      await reads.api.conflictBetween!('acme/app', 'dev', 1, 3),
+      await reads.api.conflictBetween!('acme/app', 'dev', 1, 4),
+    ]);
+    expect(said).toEqual([true, false]);
+    expect(passReads(gitAnswers(stub(o.heads, o.url, { git: false }), mirrors), 'github', traffic).api.conflictBetween).toBeUndefined();
   });
 });

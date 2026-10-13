@@ -6,7 +6,7 @@ import { infoOf, startCheckOf, type Inspected } from './inspected.ts';
 import { libpodCreateBody, STOP_S } from './flags.ts';
 import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
 
-const API = '/v5.0.0/libpod';
+export const API = '/v5.0.0/libpod';
 const PULL_MS = 15 * 60_000;
 /** A build fetches every tool it adds (issue #716). */
 const BUILD_MS = 30 * 60_000;

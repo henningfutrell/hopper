@@ -63,8 +63,8 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(r.networks?.default).toMatchObject({ name: 'hopper_default' });
     expect(r.networks?.default?.external).toBeFalsy();
     // The hopper is on the tunnel's network too (issue #795); the tunnel on that one alone: no other service, and no box,
-    // reaches the tunnel agent.
-    const nets: Record<string, string[]> = { hopper: ['default', 'tunnel'], tunnel: ['tunnel'] };
+    // reaches the tunnel agent. The same for Solr (issue #945): on search's network, with the hopper alone.
+    const nets: Record<string, string[]> = { hopper: ['default', 'search', 'tunnel'], tunnel: ['tunnel'], solr: ['search'] };
     for (const [name, s] of Object.entries(r.services)) expect(Object.keys(s.networks ?? { default: null }).sort(), name).toEqual(nets[name] ?? ['default']);
     expect(render(undefined, { COMPOSE_PROJECT_NAME: 'other' }).networks?.default).toMatchObject({ name: 'hopper_default' });
   });
@@ -123,8 +123,15 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect((postgres as Service & { healthcheck?: { test: string[] } }).healthcheck?.test.join(' ')).toMatch(/pg_isready -U hopper -d hopper && test -f \/run\/hopper-secrets\/password_set/);
   });
 
+  it('loads pg_stat_statements, so the Resources page shows statement latency (issue #947)', () => {
+    const script = postgres.command!.join('\n');
+    expect(script).toMatch(/exec docker-entrypoint\.sh postgres -c shared_preload_libraries=pg_stat_statements/);
+    // Made once Postgres takes connections, apart from the password step: it never holds the stack's health back.
+    expect(script).toMatch(/touch \$\$?s\/password_set; psql [^\n]*CREATE EXTENSION IF NOT EXISTS pg_stat_statements SCHEMA public[^\n]*\|\| true/);
+  });
+
   it('has no one-shot service anything depends on: podman-compose cannot start a container whose dependency has exited (issue #125)', () => {
-    expect(Object.keys(r.services).sort()).toEqual(['hopper', 'openfga', 'openfga-migrate', 'postgres', 'tunnel']);
+    expect(Object.keys(r.services).sort()).toEqual(['hopper', 'openfga', 'openfga-migrate', 'postgres', 'solr', 'tunnel']);
     for (const s of Object.values(r.services)) expect(Object.keys(s.depends_on ?? {})).not.toContain('openfga-migrate');
   });
 
@@ -162,13 +169,25 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(svc(withVault, 'hopper').depends_on?.vault).toBeUndefined();
   });
 
+  it('runs Solr for search, required, standalone, with one core, on no host port and on a network with the hopper alone (issue #945)', () => {
+    const solr = svc(r, 'solr');
+    expect(solr.image).toMatch(/^docker\.io\/library\/solr:\d+\.\d+\.\d+(-slim)?$/);
+    expect((solr as Service & { profiles?: string[] }).profiles ?? []).toEqual([]);
+    expect(solr.command).toEqual(['solr-precreate', 'hopper']);
+    expect(solr.ports ?? []).toEqual([]); expect(solr.volumes).toContainEqual(expect.objectContaining({ source: 'solr', target: '/var/solr' }));
+    expect(r.networks?.search).toMatchObject({ name: 'hopper_search' });
+    // Search down stops nothing: the hopper does not wait for Solr, and no credential is kept for it.
+    expect([hopper.environment?.HOPPER_SOLR_URL, hopper.depends_on?.solr]).toEqual(['http://solr:8983/solr/hopper', undefined]);
+    expect(Object.keys(hopper.environment ?? {}).filter((k) => k.startsWith('HOPPER_SOLR_'))).toEqual(['HOPPER_SOLR_URL']);
+  });
+
   it('keeps Postgres off every host port', () => {
     expect(postgres.ports ?? []).toEqual([]);
   });
 
   it('keeps the hopper\'s home in a volume: herdr and claude sign-ins and job checkouts survive a rebuild', () => {
     expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: 'home', target: '/home/node' }));
-    expect(Object.keys(r.volumes).sort()).toEqual(['home', 'postgres', 'runtime-secrets', 'tunnel-key', 'vault-token']);
+    expect(Object.keys(r.volumes).sort()).toEqual(['home', 'postgres', 'runtime-secrets', 'solr', 'tunnel-key', 'vault-token']);
   });
 });
 

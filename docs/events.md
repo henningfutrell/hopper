@@ -3053,7 +3053,7 @@ Version 1 (`docs/schemas/vault.refused.v1.json`). A box asked for a vault secret
 
 ## `vault.minted`
 
-Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Settings → Access); `renewal` when the job had one for that profile before. `plan` (issue #870): the approved, current plan an operation that changes infrastructure named. `principal` (issue #871): who the credential writes as, as an audit log names it (the assumed role's session, the service account), so a write it made while valid is not out of band. Never the credential.
+Version 1 (`docs/schemas/vault.minted.v1.json`). The vault minted a short-lived credential for a job on a box (issue #580): an AWS role session (`aws`) or a Kubernetes token (`kube`) for the operation on the asset, from the minting credential named, after Access allowed it. `decision` is the id of Access's decision (Settings → Access); `renewal` when the job had one for that profile before. `plan` (issue #870): the approved, current plan an operation that changes infrastructure named. `principal` (issue #871): who the credential writes as, as an audit log names it (the assumed role's session, the service account), so a write it made while valid is not out of band. A mint that names a plan and is no renewal is an apply: the notifiers send it as `infra.plan_applied`, with the watchers of the plan's environments (issue #870 part 4). Never the credential.
 
 | field | type | required |
 |---|---|---|
@@ -4356,7 +4356,7 @@ Version 1 (`docs/schemas/direct_job.submitted.v1.json`). A person submitted a di
 
 ## `infra.plan_recorded`
 
-Version 1 (`docs/schemas/infra.plan_recorded.v1.json`). A job recorded a plan of an infrastructure change (issue #870): what made it (`tool`), the asset an apply of it is minted a credential for, the workspace or app it changes (`target`), the repository, branch (`ref`) and commit it was made at, its pull request, the read profile it was made with (`read`), the job's issue, whether a saved plan file came with it (`file`), when it goes stale (`expiresAt`), and its `summary` (issue #870 part 2): what it changes in plain words, its `level` (`low` or `high`), its risk callouts (`destroy`, `iam`, `prod`, `data`, `network`), and whether it `failed` a check (a new AWS resource without the MAP tag: nobody approves such a plan). Never its text or its file. A plan is never changed once kept.
+Version 1 (`docs/schemas/infra.plan_recorded.v1.json`). A job recorded a plan of an infrastructure change (issue #870): what made it (`tool`), the asset an apply of it is minted a credential for, the workspace or app it changes (`target`), the repository, branch (`ref`) and commit it was made at, its pull request, the read profile it was made with (`read`), the job's issue, whether a saved plan file came with it (`file`), when it goes stale (`expiresAt`), and its `summary` (issue #870 part 2): what it changes in plain words, its `level` (`low` or `high`), its risk callouts (`destroy`, `iam`, `prod`, `data`, `network`), and whether it `failed` a check (a new AWS resource without the MAP tag: nobody approves such a plan). Never its text or its file. A plan is never changed once kept. The notifiers send it, with the watchers of its environments (part 4).
 
 | field | type | required |
 |---|---|---|
@@ -4404,7 +4404,7 @@ Version 1 (`docs/schemas/infra.plan_recorded.v1.json`). A job recorded a plan of
 
 ## `infra.plan_approved`
 
-Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan of an infrastructure change (issue #870), on Infra: until the plan is stale, an apply that names it, made at the commit its branch is at, is minted the credential it asks. On the timeline of the job that recorded the plan.
+Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A plan of an infrastructure change was approved (issue #870), on Infra: until the plan is stale, an apply that names it, made at the commit its branch is at, is minted the credential it asks. By risk (part 3): an operator or an admin approves a low-risk plan in uat only, an admin any other. `by`, who; `auto` when the hopper approved it itself, as the plan was kept, with auto-approve on; `level`, the plan's risk level, when it has a summary. On the timeline of the job that recorded the plan. The notifiers send it, with the watchers of the plan's environments (part 4).
 
 | field | type | required |
 |---|---|---|
@@ -4413,6 +4413,8 @@ Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan
 | `asset` | object | yes |
 | `target` | string | yes |
 | `by` | string | yes |
+| `auto` | boolean | no |
+| `level` | `low` \| `high` | no |
 
 ```json
 {
@@ -4423,7 +4425,8 @@ Version 1 (`docs/schemas/infra.plan_approved.v1.json`). A person approved a plan
     "name": "123456789012/deploy"
   },
   "target": "uat-network",
-  "by": "Ada"
+  "by": "Ada",
+  "level": "low"
 }
 ```
 
@@ -4502,6 +4505,53 @@ Version 1 (`docs/schemas/infra.controllers_changed.v1.json`). An admin changed t
     "arn:aws:sts::123456789012:assumed-role/atlantis/*"
   ],
   "by": "Ada"
+}
+```
+
+## `infra.settings_changed`
+
+Version 1 (`docs/schemas/infra.settings_changed.v1.json`). An admin turned auto-approve of infra plans on or off (issue #870 part 3): on, the hopper approves a low-risk plan in uat only when a job records it. `from` and `to` (`autoApprove`), and `by`, who. It applies to the next plan kept.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "autoApprove": false
+  },
+  "to": {
+    "autoApprove": true
+  },
+  "by": "owner"
+}
+```
+
+## `infra.watchers_changed`
+
+Version 1 (`docs/schemas/infra.watchers_changed.v1.json`). An admin named the environment watchers (issue #870 part 4): who is told of each plan, approval and apply, by the environments the plan names (`prod`, `uat`, `staging`, `dev`, `qa`), and of every plan (`*`). Names as the notifier's receiver knows them. `from` and `to` are the whole lists; `by`, who.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {},
+  "to": {
+    "*": [
+      "ops-lead"
+    ],
+    "prod": [
+      "prod-owner"
+    ]
+  },
+  "by": "owner"
 }
 ```
 

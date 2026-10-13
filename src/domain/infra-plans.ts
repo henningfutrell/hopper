@@ -4,7 +4,8 @@
 // `read`) only for an apply that names a plan of the same asset, made at the commit its branch is at now, not stale, and
 // approved by a person. The types, the limits, the checks and the repository port. Pure.
 import { profileProblem, type Asset, type OperationProfile } from './access.ts';
-import type { PlanSummary } from './infra-plan-summary.ts';
+import type { PlanRisk, PlanSummary } from './infra-plan-summary.ts';
+import { roleAllows, type UiRole } from './sign-in.ts';
 import { profileInWords } from './minting.ts';
 
 /** What made the plan: `terraform plan -out`, `helm diff`, or a GitOps (Argo CD) diff. */
@@ -63,15 +64,31 @@ export interface InfraPlan extends Omit<PlanInput, 'asset' | 'json'> {
   expiresAt: string;
 }
 
-/** A person's approval of a plan: a row of its own, so the plan itself never changes. */
-export interface PlanApproval { plan: string; by: string; at: string }
+/**
+ * An approval of a plan: a row of its own, so the plan itself never changes. A person's, or the hopper's own (`auto`,
+ * `by` the hopper) when auto-approve is on and the plan is one an operator may approve.
+ */
+export interface PlanApproval { plan: string; by: string; at: string; auto?: true }
 
-/** A plan as the hopper shows it: the plan, without its text, and its approval. */
+/** Who approves a plan, by its risk (issue #870 part 3): an operator (or an admin), an admin only, or nobody. */
+export type PlanApprover = 'operator' | 'admin' | 'nobody';
+
+/** The plans' settings, an admin's: whether the hopper approves a plan an operator may approve when the plan is kept. */
+export interface InfraPlanSettings { autoApprove: boolean }
+export const DEFAULT_INFRA_PLAN_SETTINGS: InfraPlanSettings = { autoApprove: false };
+
+/** Who `auto` approvals name. */
+export const AUTO_APPROVER = 'the hopper';
+
+/** A plan as the hopper shows it: the plan, without its text, its approval, and who may approve it and why. */
 export interface PlanView extends Omit<InfraPlan, 'text'> {
   approval?: PlanApproval;
+  approver: { who: PlanApprover; why: string };
   /** Issue #909: an API token asked to approve it, and a person is to confirm it; only while it waits. */
   asked?: { asker: string; at: string };
 }
+/** A plan as the repository keeps it: who may approve it is read from its summary each time, never kept. */
+export type KeptPlanView = Omit<PlanView, 'approver'>;
 
 /** An apply (issue #896): a credential the vault minted for an approved plan, from its `vault.minted` event. Never the credential. */
 export interface PlanApply { plan: string; at: string; operation: string; asset: Asset; job: string; expiresAt: string; renewal: boolean }
@@ -81,7 +98,7 @@ export interface InfraPlanRepository {
   get(id: string): InfraPlan | undefined;
   file(id: string): Buffer | undefined;
   /** The newest first, at most `limit`, without their text. */
-  list(limit: number): PlanView[];
+  list(limit: number): KeptPlanView[];
   approve(a: PlanApproval): void;
   approval(id: string): PlanApproval | undefined;
 }
@@ -101,6 +118,18 @@ export function planInputProblem(p: PlanInput): string | undefined {
   if (Buffer.byteLength(p.text) > PLAN_TEXT_MAX) return `text must be at most ${PLAN_TEXT_MAX} bytes`;
   if (p.json !== undefined && Buffer.byteLength(p.json) > PLAN_JSON_MAX) return `json must be at most ${PLAN_JSON_MAX} bytes`;
   return undefined;
+}
+
+/** The read profile of a credential the vault minted for `asset`, as a plan names it: `read/<kind>/<asset>`. */
+export const readProfileOf = (asset: Asset): string => `read/${asset.kind}/${asset.name}`;
+
+/**
+ * Why a plan's `read` is not a read credential the vault minted for its job (`minted`, as `readProfileOf` says each), or
+ * undefined (part 5). A plan that names none is kept: the job may have planned with a vault secret.
+ */
+export function readRefusal(read: string | undefined, minted: readonly string[]): string | undefined {
+  if (read === undefined || minted.includes(read)) return undefined;
+  return `read names ${read}, but the vault minted this job no such read credential (it minted ${minted.length ? minted.join(', ') : 'none'}): a plan names the read credential it was made with`;
 }
 
 const sameAsset = (a: Asset, b: Asset): boolean => a.kind === b.kind && a.name === b.name;
@@ -130,3 +159,33 @@ export const failedChecks = (plan: Pick<InfraPlan, 'summary'>): string | undefin
 export const headRefusal = (plan: InfraPlan, head: string): string | undefined => (head === plan.commit
   ? undefined
   : `the code moved since plan ${plan.id}: ${plan.repo} ${plan.ref} is at ${head.slice(0, 12)} now, the plan was made at ${plan.commit.slice(0, 12)}. Plan again`);
+
+const RISK_WORDS: Record<PlanRisk, string> = { destroy: 'destroys', iam: 'IAM and identity', prod: 'prod', data: 'data', network: 'network' };
+
+/**
+ * Who approves a plan, and why (approval by risk, issue #870 part 3). A low-risk plan whose every environment named is uat:
+ * an operator — the person who runs the jobs —, or the hopper when auto-approve is on. Any other: an admin only, as the
+ * blast-radius gate's Let through is (prod, IAM and identity, destroys, data, a diff the hopper cannot read, another
+ * environment or none named, a plan kept before summaries). A plan that failed a check: nobody.
+ */
+export function approverOf(plan: Pick<InfraPlan, 'summary'>): { who: PlanApprover; why: string } {
+  const s = plan.summary;
+  const failed = failedChecks(plan);
+  if (failed) return { who: 'nobody', why: `it failed its checks: ${failed}` };
+  if (!s) return { who: 'admin', why: 'it was kept before plans had a summary' };
+  if (s.level === 'high') {
+    const risks = s.risks.filter((r) => r.risk !== 'network').map((r) => RISK_WORDS[r.risk]);
+    return { who: 'admin', why: `high risk: ${risks.length > 0 ? risks.join(', ') : 'the hopper found no change it knows in the diff'}` };
+  }
+  if (s.environments.length > 0 && s.environments.every((e) => e === 'uat')) return { who: 'operator', why: 'low risk, in uat only' };
+  return { who: 'admin', why: `low risk, but not in uat only: ${s.environments.length > 0 ? `in ${s.environments.join(', ')}` : 'environment not named'}` };
+}
+
+/** Why a person of `role` may not approve the plan, or undefined. */
+export function approveRefusal(plan: Pick<InfraPlan, 'id' | 'summary'>, role: UiRole): string | undefined {
+  const { who, why } = approverOf(plan);
+  if (who === 'nobody') return `plan ${plan.id} failed its checks, so nobody approves it: ${failedChecks(plan)}`;
+  if (who === 'admin' && !roleAllows(role, 'admin')) return `plan ${plan.id} is ${why}: only an admin approves it`;
+  if (!roleAllows(role, 'operator')) return `plan ${plan.id} is ${why}: an operator or an admin approves it`;
+  return undefined;
+}

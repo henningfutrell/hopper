@@ -230,3 +230,29 @@ describe('the job graph in plain words (issue #935)', () => {
     expect(asks.trees[0]!.summary).toBe('0 of 1 piece shipped, 1 waiting on you.');
   });
 });
+
+describe('the tend attempts of a pull request (issue #927)', () => {
+  const tended = (id: string, step: string, nextJobId: string, over: Partial<Job> = {}) =>
+    job(id, 'finished', { sourceState: { source: { pullRequest: PR(5), follow: 'tended', tended: { pullRequest: PR(5), step, nextJobId } } }, ...over });
+
+  it('its node lists each tend, oldest first: the job, the step, its status, and when it started and ended', () => {
+    const a = tended('a', 'rebase', 'b');
+    const b = tended('b', 'fix_checks', 'c', { rerunOf: 'a', startedAt: '2026-10-02T01:00:00.000Z', finishedAt: '2026-10-02T01:10:00.000Z' });
+    const c = job('c', 'running', { rerunOf: 'b', startedAt: '2026-10-02T02:00:00.000Z' });
+    const g = jobGraph({ jobs: [a, b, c] });
+    expect(node(g, pullRequestNodeId(PR(5))).tends).toEqual([
+      { jobId: 'b', step: 'rebase', status: 'finished', startedAt: '2026-10-02T01:00:00.000Z', endedAt: '2026-10-02T01:10:00.000Z' },
+      { jobId: 'c', step: 'fix_checks', status: 'running', startedAt: '2026-10-02T02:00:00.000Z' },
+    ]);
+  });
+
+  it('while a tend job works on it, the pull request is open, not ended', () => {
+    const g = jobGraph({ jobs: [tended('a', 'rebase', 'b'), job('b', 'running', { rerunOf: 'a' })] });
+    expect(node(g, pullRequestNodeId(PR(5))).stage).toBe('pr_open');
+  });
+
+  it('a pull request no tend touched has no attempts', () => {
+    const g = jobGraph({ jobs: [job('a', 'finished', followed(PR(5), 'open'))] });
+    expect(node(g, pullRequestNodeId(PR(5)))).not.toHaveProperty('tends');
+  });
+});

@@ -56,12 +56,15 @@ import type { RateLimiterControl } from '../github-limiter/settings.ts';
 import { instanceRoutes } from './instance.ts';
 import { usageHistoryRoutes } from './usage-history.ts';
 import { machineHistoryRoutes } from './machine-history.ts';
+import { stackResourceRoutes } from './stack-resources.ts';
+import type { StackResourcesReader } from '../stack-resources/index.ts';
 import { userRoutes } from './users.ts';
 import { createInstanceAdmin } from './instance-admin.ts';
 import { vaultRoutes } from './vault.ts';
 import { bugReportReadRoutes } from './ui/bug-reports.ts';
 import { pointedJobReadRoutes } from './ui/pointed-jobs.ts';
 import { directJobReadRoutes } from './ui/direct-jobs.ts';
+import { searchReadRoutes } from './search.ts';
 import { githubWatchReadRoutes } from './ui/github-watches.ts';
 import { infraPlanReadRoutes } from './ui/infra-plans.ts';
 import { webhookRoutes } from './webhooks.ts';
@@ -72,7 +75,7 @@ export { createRemoteAccess, type RemoteAccess } from './remote-access.ts';
 
 export interface ServerOptions {
   /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */
-  instance: Pick<InstanceStore, 'uiSessions' | 'apiGrants' | 'loginCodes' | 'joinCodes' | 'users' | 'identities' | 'signInConfig' | 'settings' | 'tx'>;
+  instance: Pick<InstanceStore, 'uiSessions' | 'apiGrants' | 'loginCodes' | 'joinCodes' | 'users' | 'identities' | 'signInConfig' | 'settings' | 'stackHistory' | 'tx'>;
   /** Every user's running parts (issue #158): a tenant route reads and changes the request's user's. */
   tenants: Tenants;
   /** The plugin store (the instance's): GET /api/plugin-store, POST /ui/api/plugin-store. */
@@ -91,6 +94,8 @@ export interface ServerOptions {
   masterKey: MasterKeyStatus;
   /** The shared GitHub rate limiter's settings (issue #436): GET /api/github-rate-limiter, POST /ui/api/github-rate-limiter. */
   rateLimiter: RateLimiterControl;
+  /** What every container of the stack and its Postgres use (issue #947): GET /api/resources. */
+  stackResources: StackResourcesReader;
   /** Remote access (issue #880): GET /api/remote-access, POST /ui/api/remote-access, and the tunnel service's GET /tunnel/agent. */
   remoteAccess: RemoteAccess;
   clock: Clock;
@@ -161,6 +166,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   bugReportReadRoutes(app, tenant); // Your reports (issue #694)
   pointedJobReadRoutes(app, tenant); // Pointed jobs (issue #425)
   directJobReadRoutes(app, tenant); // Direct jobs (issue #901)
+  searchReadRoutes(app, tenant); // Search (issue #945)
   githubWatchReadRoutes(app, tenant); // GitHub watches (issue #427)
   infraPlanReadRoutes(app, tenant); // Infra (issue #870)
   sourceRoutes(app, tenant);
@@ -176,6 +182,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   instanceRoutes(app, { tenants: o.tenants, clock: o.clock, instanceAdmin });
   usageHistoryRoutes(app, { ...tenant, tenants: o.tenants, clock: o.clock, instanceAdmin });
   machineHistoryRoutes(app, { ...tenant, clock: o.clock });
+  stackResourceRoutes(app, { stackResources: o.stackResources, history: o.instance.stackHistory, instanceAdmin, clock: o.clock });
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions, grants });
   realmRoutes(app, { realms, instanceAdmin });
   accessRoutes(app, { access: o.access, instanceAdmin });

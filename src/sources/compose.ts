@@ -19,7 +19,7 @@ import type { GitHubApi } from './github/index.ts';
 import { createGitHubSource } from './github/index.ts';
 import { gitHubThread } from './github/thread.ts';
 import { passReads } from './github/pass-reads.ts';
-import { gitAnswers } from './github/git-answers.ts';
+import { conflictBetweenOf, gitAnswers } from './github/git-answers.ts';
 import type { GitMirrors } from '../git-mirror/mirrors.ts';
 import { sourceConfig, type GitHubAccountOptions, type GitHubAppOptions } from './config.ts';
 
@@ -85,7 +85,7 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
     paused: () => appProblem(app()) ?? (assignee() ? undefined : NO_ASSIGNEE),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
   });
-  return { ...source, pass: reads.pass };
+  return { ...source, pass: reads.pass, conflictBetween: conflictBetweenOf(api) };
 }
 
 /**
@@ -181,8 +181,9 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       const s = current();
       return s?.crossReferences ? s.crossReferences(job) : Promise.reject(new SourceError(why(), false));
     },
-    // Unconnected, nothing is merged (issue #796).
+    // Unconnected, nothing is merged (issue #796), and nothing is said of conflicts (issue #939).
     mergesOnReady: (repo) => current()?.mergesOnReady?.(repo) ?? false,
+    conflictBetween: conflictBetweenOf(api),
     rerun(job) {
       const s = current();
       return s?.rerun ? s.rerun(job) : Promise.reject(new SourceError(why(), false));

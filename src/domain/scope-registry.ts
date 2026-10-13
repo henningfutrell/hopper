@@ -22,7 +22,7 @@ const actionWords = (action: string): string => {
 
 /** The sections, in order, and the route areas each holds. An area not named here goes under OTHER. */
 export const SCOPE_SECTIONS: readonly { id: string; title: string; description: string; areas: readonly string[] }[] = [
-  { id: 'jobs', title: 'Jobs', description: 'Jobs and the queue: read them, approve, cancel, run again, park and order them.', areas: ['jobs', 'queue', 'queue-gate', 'pointed-jobs', 'auto-park', 'priority-lanes', 'failures', 'backfill', 'tldr'] },
+  { id: 'jobs', title: 'Jobs', description: 'Jobs and the queue: read and search them, approve, cancel, run again, park and order them.', areas: ['jobs', 'queue', 'queue-gate', 'pointed-jobs', 'auto-park', 'priority-lanes', 'failures', 'backfill', 'tldr', 'search'] },
   { id: 'intake', title: 'Intake', description: 'Where jobs come from: the job sources, direct jobs, request cards, who is trusted, and the GitHub connection.', areas: ['sources', 'direct-jobs', 'intake-actors', 'connected-accounts', 'repo-checks'] },
   { id: 'questions', title: 'Questions and reviews', description: 'What jobs ask a person: questions, research, proposals, and the logins they wait on.', areas: ['questions', 'question-gates', 'auto-answer', 'thread-ask', 'phase-shifts', 'research', 'proposals', 'sections', 'logins'] },
   { id: 'pull-requests', title: 'Pull requests', description: 'The pull requests jobs open: merge, close, yolo mode, contribution and GitHub watches.', areas: ['pull-requests', 'yolo-mode', 'contribution', 'github-watches', 'github-rate-limiter'] },
@@ -30,7 +30,7 @@ export const SCOPE_SECTIONS: readonly { id: string; title: string; description: 
   { id: 'vault', title: 'Vault and credentials', description: 'The vault, its templates and credential requests, a job\'s vault grant, Access and the master key.', areas: ['vault', 'access', 'master-key'] },
   { id: 'machines', title: 'Machines', description: 'Where jobs run: machines, sandboxes, lanes and Windows hosts.', areas: ['machines', 'sandboxes', 'lanes', 'windows-hosts'] },
   { id: 'decider', title: 'Decider and rules', description: 'How the hopper decides: Jev\'s picks, the rules, the job rules and the routing.', areas: ['minor-decisions', 'typesafe-key', 'rules', 'job-rules', 'routing', 'decisions', 'router'] },
-  { id: 'state', title: 'State and usage', description: 'What the hopper is doing: health, events, usage, accounts, users and the instance.', areas: ['health', 'events', 'usage', 'usage-history', 'accounts', 'instance', 'scopes'] },
+  { id: 'state', title: 'State and usage', description: 'What the hopper is doing: health, events, usage, accounts, users, the instance and the resources of its stack.', areas: ['health', 'events', 'usage', 'usage-history', 'accounts', 'instance', 'resources', 'scopes'] },
   { id: 'sign-in', title: 'Sign-in and users', description: 'Who signs in and how: the realms, the users, a login link for another device, and the end of a session.', areas: ['realms', 'users', 'device-link', 'logout'] },
   { id: 'settings', title: 'Settings', description: 'The hopper\'s own settings: plugins, notifiers, webhooks, self-update, remote access, API tokens, artifacts and bug reports.', areas: ['plugins', 'plugin-store', 'notifiers', 'webhooks', 'update', 'remote-access', 'api-tokens', 'artifacts', 'bug-reports'] },
 ];

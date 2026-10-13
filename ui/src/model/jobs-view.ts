@@ -4,7 +4,7 @@
 // row also shows its last event — the newest of what GET /api/jobs/last-events answered and the events the stream
 // brought since.
 import { hierarchy, tree as d3tree } from 'd3';
-import type { DomainEvent, JobGraph, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobStage, JobTree } from './wire.ts';
+import type { DomainEvent, JobGraph, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphTend, JobStage, JobTree } from './wire.ts';
 
 /** A colour of the status palette (components/status.tsx `Tone`): the model names it, the view paints it. */
 export type Tone = 'busy' | 'ok' | 'bad' | 'warn' | 'question' | 'operator' | 'muted';
@@ -140,6 +140,10 @@ export function layoutTree(graph: JobGraph, t: JobTree): TreeLayout {
 
 /** A node's progress, as its task count says: `x/y`, or nothing before it has a task list. */
 export const tasksText = (n: JobGraphNode): string | undefined => (n.tasks ? `${n.tasks.done}/${n.tasks.total}` : undefined);
+
+/** One tend of a pull request in a few words (issue #927): `rebase by job abcdef01: running`. */
+export const tendText = (t: Pick<JobGraphTend, 'jobId' | 'step' | 'status'>): string =>
+  `${t.step === 'fix_checks' ? 'fix checks' : 'rebase'} by job ${t.jobId.slice(0, 8)}: ${t.status.replace('_', ' ')}`;
 
 /** A pull request's state and checks in a few words: `open · checks failing`, `merged`, `draft · conflicts`. */
 export function pullRequestText(pr: NonNullable<JobGraphNode['pullRequest']>): string {

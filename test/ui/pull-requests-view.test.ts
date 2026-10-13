@@ -144,6 +144,7 @@ describe('Pull requests view', () => {
     expect(waitsText(card({ waits: 'conflicts', base: 'dev' }))).toBe('conflicts with dev');
     expect(waitsText(card({ waits: 'conflicts' }))).toBe('conflicts with its base branch');
     expect(waitsText(card({ waits: 'ready' }))).toBe('ready, merging');
+    expect(waitsText(card({ waits: 'merge held' }))).toBe('ready, waits for another pull request to merge first');
     expect(waitsText(card({ waits: 'checks not started' }))).toBe('waiting for checks to start');
     expect(waitsText(card({ waits: 'checks failing' }))).toBe('checks failed');
     expect(waitsText(card({ waits: 'no pull request' }))).toBe('no pull request found yet');
@@ -152,10 +153,26 @@ describe('Pull requests view', () => {
 
   it('what the hopper does about a card that needs tending, in plain words (issue #927)', () => {
     expect(doingText(card({ waits: 'conflicts', queue: { next: true } }))).toBe('the hopper tends it next');
-    expect(doingText(card({ waits: 'checks failing', queue: { held: { pullRequest: 904, why: 'merging' } } }))).toBe('held behind #904, which waits for its checks to merge');
-    expect(doingText(card({ waits: 'conflicts', queue: { held: { pullRequest: 904, why: 'tending' } } }))).toBe('held behind #904, which a job works on now');
+    expect(doingText(card({ waits: 'checks failing', queue: { held: { pullRequest: 904, why: 'merging' } } }))).toBe('held behind #904, which the hopper merges first: they conflict');
+    expect(doingText(card({ waits: 'conflicts', queue: { held: { pullRequest: 904, why: 'tending' } } }))).toBe('held behind #904, which a job works on now: they conflict');
     expect(doingText(card({ waits: 'checks failing', gaveUp: 'checks still fail after 3 fixes: a person must look at them' }))).toBe('the hopper gave up: checks still fail after 3 fixes: a person must look at them');
-    expect(doingText(card({}))).toBe('');
+    expect(doingText(card({ state: 'closed', waits: undefined }))).toBe('');
+  });
+
+  it('what the hopper does about every open card, in plain words (issue #927)', () => {
+    const job = 'abcdef0123456789';
+    expect(doingText(card({ waits: 'tending', tendJobId: job, tendStep: 'rebase', base: 'dev' }))).toBe('the hopper rebases it onto dev: job abcdef01 works on it now');
+    expect(doingText(card({ waits: 'tending', tendJobId: job, tendStep: 'rebase' }))).toBe('the hopper rebases it onto its base branch: job abcdef01 works on it now');
+    expect(doingText(card({ waits: 'tending', tendJobId: job, tendStep: 'fix_checks' }))).toBe('the hopper fixes its failed checks: job abcdef01 works on it now');
+    expect(doingText(card({ waits: 'checks pending', yolo: true }))).toBe('the hopper merges it when its checks pass');
+    expect(doingText(card({ waits: 'checks not started', yolo: true }))).toBe('the hopper merges it when its checks pass, or when no check starts within 2 minutes of its last push');
+    expect(doingText(card({ waits: 'ready', yolo: true }))).toBe('the hopper merges it on its next sync');
+    expect(doingText(card({ waits: 'not checked yet', yolo: true }))).toBe('the hopper reads it from GitHub on its next sync');
+    expect(doingText(card({ waits: 'no pull request' }))).toBe('the hopper looks for its pull request on each sync');
+    expect(doingText(card({ waits: 'merge refused', yolo: true }))).toBe('the hopper tries the merge again on each sync');
+    expect(doingText(card({ waits: 'checks unknown', yolo: true }))).toBe('nothing: the hopper may not read its checks, so a person merges it');
+    expect(doingText(card({ waits: 'yolo off' }))).toBe('nothing: yolo mode is off, so a person merges it');
+    expect(doingText(card({ waits: 'draft' }))).toBe('nothing: the hopper does not tend a draft, so a person marks it ready');
   });
 
   it('yolo mode has one switch, in Settings: each group links to it and turns nothing itself (issue #897)', async () => {

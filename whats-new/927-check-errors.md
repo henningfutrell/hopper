@@ -1,0 +1,1 @@
+- When a check fails on a pull request, the job that fixes it now gets the errors the check reported, so it can start on the fix at once.

@@ -1,0 +1,3 @@
+- Each pull request in Pull requests now says what the hopper does about it right now, for example that a job rebases it or that it merges when its checks pass.
+- When the job that fixes a pull request fails, Needs you shows it with the reason. A conflict between two designs says which choice a person must make.
+- In Jobs, a pull request shows each attempt to fix it, with its job and how long it took.

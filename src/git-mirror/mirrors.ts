@@ -6,6 +6,9 @@
 // Then `git merge-tree --write-tree <base> <head>` answers: 0 clean, 1 conflicts. A blob git needs for a file both sides
 // changed comes on demand. Git cannot say — outside a pass, a fetch that failed, another base than the one fetched, a head
 // that moved since the fetch, git failing — and the caller keeps GitHub's answer. Scratch only: a fetch makes it again.
+// Two pull requests of one repository conflict with each other (issue #939) when `git merge-tree --write-tree <a> <b>` of
+// their heads, as this pass fetched them, has conflicts: their own changes touch the same lines. Merge both, and the
+// second gets merge conflicts. Neither head fetched, or git failing: git cannot say.
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -25,6 +28,11 @@ export interface GitMirrors {
    * undefined: git cannot say. `remote` is asked once per pass, for the fetch.
    */
   mergeability(repo: string, remote: () => Promise<GitRemote>, pr: PullRequestHead): Promise<Mergeability | undefined>;
+  /**
+   * Whether pull requests `a` and `b` of `repo`, both into `base`, conflict with each other (issue #939), as git says
+   * of their heads after this pass's fetch; undefined: git cannot say.
+   */
+  conflictBetween(repo: string, remote: () => Promise<GitRemote>, base: string, a: number, b: number): Promise<boolean | undefined>;
 }
 
 /** One git command in a mirror: its exit code and what it printed. Tests may give their own. */
@@ -120,22 +128,37 @@ export function createGitMirrors(o: { dir: string; log(line: string): void; traf
     return { base, heads, env };
   }
 
+  /** This pass's fetch of `repo` with `base`; undefined: outside a pass, a name git must not take, or the fetch failed. */
+  async function fetchedIn(repo: string, remote: () => Promise<GitRemote>, base: string): Promise<{ path: string; f: Fetched } | undefined> {
+    const pass = traffic.passId();
+    if (pass === undefined || !REPO.test(repo) || repo.split('/').some((p) => p.startsWith('.')) || !BRANCH.test(base)) return undefined;
+    const path = mirrorPathOf(o.dir, repo);
+    let state = repos.get(repo);
+    if (state?.pass !== pass) {
+      state = { pass, fetched: fetch(repo, path, remote, base) };
+      repos.set(repo, state);
+    }
+    const f = await state.fetched;
+    return f && f.base === base ? { path, f } : undefined;
+  }
+
   return {
     async mergeability(repo, remote, pr) {
-      const pass = traffic.passId();
-      if (pass === undefined || !REPO.test(repo) || repo.split('/').some((p) => p.startsWith('.')) || !BRANCH.test(pr.base)) return undefined;
-      const path = mirrorPathOf(o.dir, repo);
-      let state = repos.get(repo);
-      if (state?.pass !== pass) {
-        state = { pass, fetched: fetch(repo, path, remote, pr.base) };
-        repos.set(repo, state);
-      }
-      const f = await state.fetched;
-      if (!f || f.base !== pr.base || f.heads.get(pr.number) !== pr.headOid) return undefined;
-      const r = await git(['--git-dir', path, 'merge-tree', '--write-tree', `refs/remotes/origin/${pr.base}`, pr.headOid], f.env);
+      const at = await fetchedIn(repo, remote, pr.base);
+      if (!at || at.f.heads.get(pr.number) !== pr.headOid) return undefined;
+      const r = await git(['--git-dir', at.path, 'merge-tree', '--write-tree', `refs/remotes/origin/${pr.base}`, pr.headOid], at.f.env);
       if (r.code === 0) return 'clean';
       if (r.code === 1) return 'conflicting';
       o.log(`hopper: git mirror of ${repo}: merge-tree of #${pr.number}: ${said(r)}`);
+      return undefined;
+    },
+    async conflictBetween(repo, remote, base, a, b) {
+      const at = await fetchedIn(repo, remote, base);
+      const [ha, hb] = [at?.f.heads.get(a), at?.f.heads.get(b)];
+      if (!at || !ha || !hb) return undefined;
+      const r = await git(['--git-dir', at.path, 'merge-tree', '--write-tree', ha, hb], at.f.env);
+      if (r.code === 0 || r.code === 1) return r.code === 1;
+      o.log(`hopper: git mirror of ${repo}: merge-tree of #${a} and #${b}: ${said(r)}`);
       return undefined;
     },
   };

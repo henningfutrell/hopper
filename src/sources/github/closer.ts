@@ -10,7 +10,7 @@
 
 import { GitHubApiError } from './api.ts';
 import type { BranchPullRequest, ClosingPullRequest, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
-import { MAX_FAILED_CHECKS, type ChecksState, type FailedCheck } from '../../domain/pull-requests.ts';
+import { MAX_CHECK_REPORTED, MAX_CHECK_REPORTED_CHARS, MAX_FAILED_CHECKS, type ChecksState, type FailedCheck } from '../../domain/pull-requests.ts';
 import type { CrossReferenceKind, IssueCrossReferences, Mention } from '../../domain/cross-references.ts';
 
 /**
@@ -22,7 +22,7 @@ const HEAD_COMMIT = 'headRefOid headRefName baseRefName commits(last: 1) { nodes
  * The head commit with each check's end (issue #927), for the one pull request a follow reads: a failed check counts while
  * others still run. Not in the lists, where 100 checks of 100 pull requests would cost too much of the rate limit.
  */
-const HEAD_COMMIT_CHECKS = 'headRefOid headRefName baseRefName commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state contexts(first: 100) { nodes { __typename ... on CheckRun { name conclusion detailsUrl } ... on StatusContext { context state targetUrl } } } } } } }';
+const HEAD_COMMIT_CHECKS = 'headRefOid headRefName baseRefName commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state contexts(first: 100) { nodes { __typename ... on CheckRun { name conclusion detailsUrl annotations(first: 20) { nodes { path title message annotationLevel location { start { line } } } } } ... on StatusContext { context state targetUrl } } } } } } }';
 
 export const CLOSING_PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) { issue(number: $number) {
@@ -58,7 +58,11 @@ export const OPEN_REPO_PULL_REQUESTS_QUERY = `query($owner: String!, $name: Stri
   }
 }`;
 
-interface Context { name?: string; conclusion?: string | null; detailsUrl?: string | null; context?: string; state?: string; targetUrl?: string | null }
+interface Annotation { path?: string | null; title?: string | null; message?: string | null; annotationLevel?: string | null; location?: { start?: { line?: number | null } | null } | null }
+interface Context {
+  name?: string; conclusion?: string | null; detailsUrl?: string | null; context?: string; state?: string; targetUrl?: string | null;
+  annotations?: { nodes?: (Annotation | null)[] } | null;
+}
 interface Rollup { state?: string; contexts?: { nodes?: (Context | null)[] } }
 interface Closer { __typename?: string; url?: string; createdAt?: string; mergedAt?: string | null }
 interface Referenced {
@@ -123,12 +127,30 @@ const rollupChecks = (r: Rollup | null | undefined): ChecksState | undefined => 
   return r?.contexts?.nodes?.some((n) => FAILED.has(n?.conclusion ?? n?.state ?? '')) ? 'failing' : state;
 };
 
-/** Each check that failed (issue #927), with its link, at most `MAX_FAILED_CHECKS`: what a `fix_checks` tend is told. */
+/** The runner's own line for a step that exited non-zero: it says nothing a fix can use. */
+const EXIT_LINE = /^Process completed with exit code \d+\.?$/;
+
+/**
+ * What a failed check run reported (issue #927): its failure annotations, `path:line: title: message`, at most
+ * `MAX_CHECK_REPORTED`, each cut to `MAX_CHECK_REPORTED_CHARS`. Not the runner's exit line.
+ */
+const reportedOf = (c: Context): string[] =>
+  (c.annotations?.nodes ?? []).flatMap((a): string[] => {
+    const message = a?.message?.trim();
+    if (!a || !message || a.annotationLevel !== 'FAILURE' || EXIT_LINE.test(message)) return [];
+    const line = a.location?.start?.line;
+    const text = [a.path ? `${a.path}${line ? `:${line}` : ''}` : undefined, a.title?.trim() || undefined, message].filter(Boolean).join(': ');
+    return [text.length > MAX_CHECK_REPORTED_CHARS ? `${text.slice(0, MAX_CHECK_REPORTED_CHARS - 3)}...` : text];
+  }).slice(0, MAX_CHECK_REPORTED);
+
+/** Each check that failed (issue #927), with its link and what it reported, at most `MAX_FAILED_CHECKS`: what a `fix_checks` tend is told. */
 const failedChecksOf = (r: Rollup | null | undefined): FailedCheck[] =>
   (r?.contexts?.nodes ?? []).flatMap((n): FailedCheck[] => {
     const name = n?.name ?? n?.context;
     const url = n?.detailsUrl ?? n?.targetUrl;
-    return n && name && FAILED.has(n.conclusion ?? n.state ?? '') ? [{ name, ...(url ? { url } : {}) }] : [];
+    if (!n || !name || !FAILED.has(n.conclusion ?? n.state ?? '')) return [];
+    const reported = reportedOf(n);
+    return [{ name, ...(url ? { url } : {}), ...(reported.length ? { reported } : {}) }];
   }).slice(0, MAX_FAILED_CHECKS);
 
 /** Its head commit, base, the head's time and checks, when GitHub said; checks the app may not read: unknown (issue #855). */

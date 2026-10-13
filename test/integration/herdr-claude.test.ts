@@ -11,7 +11,7 @@ let cleanup: (() => void) | undefined;
 
 const ASK = { output: ['● Which colour should the shed be?', '  HOPPER_QUESTION'] };
 const DONE = { steps: ['● Painting'], output: ['● Painted the shed.', '  HOPPER_DONE'] };
-const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }];
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000, promptSteadyMs: 100 } }];
 
 async function start(herdr: FakeHerdrClient, env: Record<string, string> = {}): Promise<TestApp> {
   const db = tempDbPath();
@@ -24,7 +24,7 @@ async function start(herdr: FakeHerdrClient, env: Record<string, string> = {}): 
 async function startNudging(herdr: FakeHerdrClient): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  const executors = [EXECUTORS[0]!, { ...EXECUTORS[1]!, options: { pollMs: 10, idleNudgeMs: 50 } }];
+  const executors = [EXECUTORS[0]!, { ...EXECUTORS[1]!, options: { pollMs: 10, idleNudgeMs: 50, promptSteadyMs: 100 } }];
   t = await startTestApp({ dbPath: db.dbPath, plugins: { executors }, seams: { herdr } });
   return t;
 }

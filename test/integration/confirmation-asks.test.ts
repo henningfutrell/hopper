@@ -65,7 +65,7 @@ function record(a: TestApp, target: string, json: string): string {
     tool: 'terraform', asset: ROLE, target, repo: 'octo/infra', ref: 'issue-1', commit: COMMIT, text: 'Plan: 1 to change.', json,
   });
   if ('no' in plan) throw new Error(plan.no);
-  return plan.id;
+  return plan.plan.id;
 }
 
 const asks = (a: TestApp) => a.user().store.events.recent(50, ['approval.confirmation_asked']);

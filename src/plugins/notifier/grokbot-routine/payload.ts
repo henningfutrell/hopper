@@ -4,10 +4,20 @@
 // snapshot, not where its job is now), the priority and whether it is high priority (issue #535), the issue's labels, repo and number, what
 // detected the question, and how long it has been open. The question is the agent's Markdown source (issue #569), led by
 // its TL;DR when it is long. A login (issue #698) carries what asks and what waits, never its URL or code.
-import type { DomainEvent, Job, Question } from '../../sdk.ts';
+// A direct job's notice (issue #901) names the direct job and its submitter, the person who submitted it, so the receiver
+// tells that person.
+import { DIRECT_SOURCE } from '../../../domain/direct-jobs.ts';
+import type { DomainEvent, InfraPlanNotice, Job, Question } from '../../sdk.ts';
+
+/** A direct job's id and submitter; nothing for a job of any other source. */
+const directOf = (job: Job | undefined) => {
+  const s = job?.source;
+  if (s?.kind !== DIRECT_SOURCE || !s.key.startsWith(`${DIRECT_SOURCE}:`)) return {};
+  return { directJob: s.key.slice(DIRECT_SOURCE.length + 1), submitter: s.author ?? null };
+};
 
 const base = (kind: string, at: string, job: Job | undefined, jobId: string | undefined) => ({
-  source: 'hopper', kind, at, jobId: jobId ?? null, issueTitle: job?.source?.title ?? null, issueUrl: job?.source?.url ?? null,
+  source: 'hopper', kind, at, jobId: jobId ?? null, ...directOf(job), issueTitle: job?.source?.title ?? null, issueUrl: job?.source?.url ?? null,
 });
 
 export interface QuestionBody {
@@ -61,6 +71,24 @@ export function intakePayload(e: DomainEvent, job: Job | undefined, infraUrl?: s
     return { ...b, change: d.change, signal: d.source, target: d.target, what: d.what, who: d.who ?? null, happenedAt: d.at, ...(infraUrl ? { infraUrl } : {}) };
   }
   return b;
+}
+
+/**
+ * A plan of an infrastructure change (issue #870 part 4): kept (`infra.plan_recorded`), approved (`infra.plan_approved`),
+ * or applied (`infra.plan_applied`, from a `vault.minted` that names it). What it changes, where, its risk, who approves
+ * it, and `watchers`, the names the receiver tells: the watchers of the plan's environments. Never the plan's text or
+ * file, and never the credential or the machine of an apply. `infraUrl` is the Infra page.
+ */
+export function planPayload(e: DomainEvent, job: Job | undefined, notice: InfraPlanNotice | undefined, infraUrl: string | undefined): Record<string, unknown> {
+  const kind = e.type === 'vault.minted' ? 'infra.plan_applied' : e.type;
+  const d = e.data as { plan: string; by?: string; auto?: true; operation?: string; expiresAt?: string };
+  const { approval: _approval, issue: _issue, ...plan } = notice ?? { plan: d.plan, risks: [], environments: [], watchers: [] };
+  return {
+    ...base(kind, e.at, job, e.jobId), ...plan,
+    ...(e.type === 'infra.plan_approved' ? { approvedBy: d.by ?? null, ...(d.auto ? { auto: true } : {}) } : {}),
+    ...(e.type === 'vault.minted' ? { operation: d.operation, expiresAt: d.expiresAt } : {}),
+    ...(infraUrl ? { infraUrl } : {}),
+  };
 }
 
 /** A new artifact (issue #673): what a job made for the person to see, and where they open it. */

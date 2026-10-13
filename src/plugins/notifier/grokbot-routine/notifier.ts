@@ -1,12 +1,12 @@
 // The Grok Bot routine webhook (design.md "Grok Bot routine webhook"): one POST per question that
-// reaches the human (`question.escalated_to_human`, issue #481: never a level hop or a re-notification), per stop of intake (issue #358: `source.stalled`, `connected_account.expired`), per new artifact (issue #673: `artifact.created`, with its link), per job end (issue #795: `job.finished`, `job.failed`), and per login a job waits on (issue #698: `auth.pending`, a new code too, and `auth.expired`, never its URL or code), per out-of-band infrastructure change (issue #871: `infra.out_of_band_recorded`), the URL and key read from the runtime at each use.
+// reaches the human (`question.escalated_to_human`, issue #481: never a level hop or a re-notification), per stop of intake (issue #358: `source.stalled`, `connected_account.expired`), per new artifact (issue #673: `artifact.created`, with its link), per job end (issue #795: `job.finished`, `job.failed`), and per login a job waits on (issue #698: `auth.pending`, a new code too, and `auth.expired`, never its URL or code), per out-of-band infrastructure change (issue #871: `infra.out_of_band_recorded`), per plan of an infrastructure change, its approval and its apply (issue #870 part 4: `infra.plan_recorded`, `infra.plan_approved`, and a `vault.minted` that names a plan and is no renewal, sent as `infra.plan_applied`, each with the watchers of the plan's environments), the URL and key read from the runtime at each use.
 // Issue #795: `hopper.reachable` says where the hopper is reached from outside while its tunnel is up — at start, on a new
 // URL, on recovery, and on a heartbeat — so the receiver never has to poll for it.
 // Issue #378: the questions already open at the human are offered once each when the routine becomes
 // configured (a question escalated while it was not is not lost); Send test event and Send open
 // questions are the UI's actions. In memory only: no store row, no event.
 import type { Clock, DomainEvent, Notifier, NotifierActionResult, NotifierEvents, PluginLogger, Question } from '../../sdk.ts';
-import { artifactPayload, intakePayload, jobPayload, loginPayload, questionPayload, reachablePayload, testPayload } from './payload.ts';
+import { artifactPayload, intakePayload, jobPayload, loginPayload, planPayload, questionPayload, reachablePayload, testPayload } from './payload.ts';
 
 /** The routine's URL and bearer key now, or why there are none. */
 export type Routine = { url: string; key: string } | { problem: string };
@@ -34,6 +34,9 @@ function wanted(e: DomainEvent): boolean {
   if (e.type === 'source.stalled' || e.type === 'connected_account.expired' || e.type === 'artifact.created' || e.type === 'source.request_opened') return true;
   if (e.type === 'job.finished' || e.type === 'job.failed') return true;
   if (e.type === 'auth.pending' || e.type === 'auth.expired' || e.type === 'infra.out_of_band_recorded') return true;
+  if (e.type === 'infra.plan_recorded' || e.type === 'infra.plan_approved') return true;
+  // An apply (issue #870 part 4): a credential minted for a plan; its renewal is the same apply going on.
+  if (e.type === 'vault.minted') return typeof e.data.plan === 'string' && e.data.renewal !== true;
   return e.type === 'question.escalated_to_human';
 }
 
@@ -111,6 +114,10 @@ export function createGrokBotNotifier(o: GrokBotNotifierOptions): Notifier {
       const job = e.jobId ? feed?.job(e.jobId) : undefined;
       if (e.type === 'job.finished' || e.type === 'job.failed') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), jobPayload(e, job));
       if (e.type === 'auth.pending' || e.type === 'auth.expired') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), loginPayload(e, job, clock.now(), feed?.loginsUrl?.()));
+      if (e.type === 'infra.plan_recorded' || e.type === 'infra.plan_approved' || e.type === 'vault.minted') {
+        const kind = e.type === 'vault.minted' ? 'infra.plan_applied' : e.type;
+        return deliver(`grokbot: ${kind} ${e.jobId ?? ''}`.trim(), planPayload(e, job, feed?.infraPlan?.(String(e.data.plan)), feed?.infraUrl?.()));
+      }
       if (e.type === 'artifact.created') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), artifactPayload(e, job, feed?.artifactUrl?.(String(e.data.artifact))));
       if (e.type !== 'question.escalated_to_human') return deliver(`grokbot: ${e.type} ${e.jobId ?? ''}`.trim(), intakePayload(e, job, e.type === 'infra.out_of_band_recorded' ? feed?.infraUrl?.() : undefined));
       const q = feed?.question(e.data.questionId as string);

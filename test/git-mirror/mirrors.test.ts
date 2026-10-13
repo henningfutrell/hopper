@@ -9,6 +9,8 @@
 //     Then the mirror is fetched again, once
 //   Scenario: outside a sync pass, a head that moved, another base
 //     Then git cannot say, and nothing is fetched outside a pass
+//   Scenario: two pull requests that change the same lines, and two that do not (issue #939)
+//     Then merge-tree of their heads says they conflict, or not, with one fetch; an unknown one, git cannot say
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createGitHubTraffic } from '../../src/github-limiter/traffic.ts';
@@ -75,5 +77,21 @@ describe("the hopper's mirror (issue #858 part 2)", () => {
     const said = lines.filter((l) => l.startsWith('hopper: git mirror of acme/app:'));
     expect(said).toHaveLength(1);
     expect(lines.join('\n')).not.toContain('ghs_secret');
+  });
+
+  it('says whether two pull requests conflict with each other (issue #939), with one fetch', async () => {
+    const o = origin();
+    const { m, traffic, fetches } = mirrors(join(o.root, 'mirrors'));
+    const remote = async () => ({ url: o.url });
+    const said = await traffic.pass('github', async () => [
+      await m.conflictBetween('acme/app', remote, 'dev', 1, 3),
+      await m.conflictBetween('acme/app', remote, 'dev', 1, 4),
+      await m.conflictBetween('acme/app', remote, 'dev', 3, 4),
+      await m.conflictBetween('acme/app', remote, 'dev', 1, 9),
+      await m.conflictBetween('acme/app', remote, 'main', 1, 4),
+    ]);
+    expect(said).toEqual([true, false, false, undefined, undefined]);
+    expect(fetches).toHaveLength(1);
+    expect(await m.conflictBetween('acme/app', remote, 'dev', 1, 3)).toBeUndefined();
   });
 });

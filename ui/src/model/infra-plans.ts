@@ -1,8 +1,10 @@
 // The Infra page (issues #870, #896, design.md "Infra plans: no apply without a plan"), pure: one line per plan — what it
 // changes, the asset an apply of it is minted a credential for, and the commit it was made at — its state now, who it
-// waits for, and its explainer: the summary in plain words, the risk callouts, the blast radius and the checks. One line
-// per apply, and the applies and drift timeline: plans, approvals, applies and out-of-band changes, newest first.
-import type { OutOfBandView, PlanApply, PlanView } from '../../../src/domain/types.ts';
+// waits for, and its explainer: the summary in plain words, the risk callouts, the blast radius and the checks — and
+// whether this person may approve it: by its risk (part 3), an operator a low-risk plan in uat only, an admin any other,
+// nobody a plan that failed a check. One line per apply, and the applies and drift timeline: plans, approvals, applies and
+// out-of-band changes, newest first. The environment watchers (part 4) as a person types them: one environment a line.
+import type { InfraWatchers, OutOfBandView, PlanApply, PlanView } from '../../../src/domain/types.ts';
 import { changeHeadline } from './out-of-band.ts';
 
 export const planHeadline = (p: Omit<PlanView, 'approval'>): string =>
@@ -10,16 +12,29 @@ export const planHeadline = (p: Omit<PlanView, 'approval'>): string =>
 
 export type PlanState = { kind: 'waiting' | 'approved' | 'stale' | 'failed'; words: string };
 
-/** Failed a check, waiting for an admin, approved, or stale at `now` (ms): a failed or stale plan is applied by nothing. */
+/** Failed a check, waiting for a person, approved, or stale at `now` (ms): a failed or stale plan is applied by nothing. */
 export function planState(p: PlanView, now: number): PlanState {
   if (p.summary?.failed) return { kind: 'failed', words: 'Failed its checks: nobody approves it. The job fixes the code and plans again' };
   const left = Date.parse(p.expiresAt) - now;
   if (left <= 0) return { kind: 'stale', words: 'Stale: the job plans again' };
   const minutes = `stale in ${Math.ceil(left / 60_000)} min`;
-  return p.approval ? { kind: 'approved', words: `Approved by ${p.approval.by}: ${minutes}` } : { kind: 'waiting', words: `Waits for an admin to approve it: ${minutes}` };
+  if (p.approval) return { kind: 'approved', words: `Approved by ${p.approval.by}${p.approval.auto ? ` (auto-approve: ${p.approver.why})` : ''}: ${minutes}` };
+  return { kind: 'waiting', words: `Waits for ${p.approver.who === 'admin' ? 'an admin' : 'an operator or an admin'} to approve it (${p.approver.why}): ${minutes}` };
 }
 
-/** The plans that wait for an admin at `now` (issue #897: Needs you, the Infra badge); none for an answer with no plans. */
+/**
+ * Whether to offer this person Approve (a plan that waits, whose risk their role allows), and for a high-risk plan the
+ * confirmation that says what it changes and why only an admin approves it.
+ */
+export function planApprove(p: PlanView, now: number, can: { operate: boolean; admin: boolean }): { show: boolean; confirm?: string } {
+  if (planState(p, now).kind !== 'waiting') return { show: false };
+  const allowed = p.approver.who === 'admin' ? can.admin : p.approver.who === 'operator' && can.operate;
+  if (!allowed) return { show: false };
+  if (p.approver.who !== 'admin' || p.summary?.level !== 'high') return { show: true };
+  return { show: true, confirm: `${p.summary.words}. This plan is ${p.approver.why}. Once you approve it, the vault mints a credential that changes infrastructure for an apply of it, until it is stale.` };
+}
+
+/** The plans that wait for a person at `now` (issue #897: Needs you, the Infra badge); none for an answer with no plans. */
 export const plansWaiting = (v: { plans?: PlanView[] } | undefined, now: number): number =>
   Array.isArray(v?.plans) ? v.plans.filter((p) => planState(p, now).kind === 'waiting').length : 0;
 
@@ -63,3 +78,23 @@ export function infraTimeline(plans: PlanView[], applies: PlanApply[], changes: 
   ];
   return entries.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
 }
+
+/**
+ * The environment watchers in a text a person typed: one environment a line, `prod: prod-owner, ops-lead`; `*` names the
+ * watchers of every plan. Blank lines and empty names are dropped; the hopper checks the rest. A line with no colon is
+ * said, so nothing is saved by mistake.
+ */
+export function watchersFrom(text: string): InfraWatchers | string {
+  const out: InfraWatchers = {};
+  for (const [i, line] of text.split('\n').entries()) {
+    if (!line.trim()) continue;
+    const colon = line.indexOf(':');
+    if (colon < 0) return `line ${i + 1} has no colon: write the environment, a colon, then the watchers`;
+    const env = line.slice(0, colon).trim();
+    out[env] = [...(out[env] ?? []), ...line.slice(colon + 1).split(',').map((n) => n.trim()).filter((n) => n.length > 0)];
+  }
+  return out;
+}
+
+/** The watchers as a person types them, one environment a line. */
+export const watchersText = (w: InfraWatchers): string => Object.entries(w).map(([env, names]) => `${env}: ${names.join(', ')}`).join('\n');

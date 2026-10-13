@@ -5,14 +5,15 @@
 // carries out its path, a job to its pull request, and a partly done job to the pull request whose merge lets the rest run;
 // an issue to an issue that blocks it, a pull request to the one whose branch it is based on, and a job to its open
 // question or hand-off, which are nodes too: each waits on a person. Each node has its **stage**: queued, running, waiting, PR open, partly done, done, failed or cancelled — and an issue no
-// job works yet, no job. Each group of
+// job works yet, no job. A pull request the hopper tended lists each tend attempt, oldest first (issue #927). Each group of
 // connected nodes is one **job tree**, named by its root, with what blocks the root marked. Pure: no I/O, no clock — the
 // route reads the jobs, the lineage links, the issue graph and the open questions and hand-offs, and passes them in.
 import type { GraphEdge, GraphNode } from './issue-graph.ts';
 import { attemptIn, treeSummary, wordNodes } from './job-words.ts';
 import { phaseOf } from './phase.ts';
-import type { ChecksState } from './pull-requests.ts';
+import type { ChecksState, Tended, TendStep } from './pull-requests.ts';
 import type { TaskCount } from './task-count.ts';
+import { countStages, treesOf } from './job-trees.ts';
 import type { Job, JobStatus } from './types.ts';
 
 /** Where a job stands in its life, in the words the Jobs view uses. */
@@ -20,7 +21,6 @@ export const JOB_STAGES = ['queued', 'running', 'waiting', 'pr_open', 'partly_do
 export type JobStage = typeof JOB_STAGES[number];
 
 /** A stage that ends nothing more: no node in it blocks its tree's root. */
-const SETTLED: readonly JobStage[] = ['done', 'cancelled'];
 
 export type JobGraphNodeKind = 'job' | 'issue' | 'pull_request' | 'question' | 'handoff';
 
@@ -88,7 +88,12 @@ export interface JobGraphNode {
   partlyDone?: { pullRequest: string; afterMerge: string };
   /** An issue's parts, as its newest job last saw them (issue #729). */
   parts?: { done: number; total: number };
+  /** A pull request's node: each tend of it (issue #927), oldest first. Absent: never tended. */
+  tends?: JobGraphTend[];
 }
+
+/** One tend of a pull request (issue #927): the job the hopper ran to take the step, its status, and when it started and ended. */
+export interface JobGraphTend { jobId: string; step: TendStep; status: JobStatus; startedAt?: string; endedAt?: string }
 
 export interface JobGraphEdge { from: string; to: string; kind: JobGraphEdgeKind }
 
@@ -133,12 +138,13 @@ export interface JobGraphInput {
 }
 
 interface Followed {
-  pullRequest?: string; follow?: string; parts?: unknown;
+  pullRequest?: string; follow?: string; parts?: unknown; tended?: Tended;
   seen?: { checks?: ChecksState | 'none'; draft?: boolean; conflicting?: boolean; base?: string; headRef?: string };
 }
 
 /** A job node's task count is part of the graph's contract: re-exported with it (and so through types.ts). */
 export type { TaskCount };
+export { treesOf };
 /** A job's parts list (issue #935) is the graph's drill-in: its types go out with it (and so through types.ts). */
 export type { BomGroup, BomPart, BomStatus, JobBom } from './job-bom.ts';
 
@@ -208,6 +214,9 @@ const partsOf = (job: Job): { done: number; total: number } | undefined => {
 
 const ref = (repo: string, number: number): string => `${repo}#${number}`;
 
+/** A followed pull request's states while it is open: followed, not followed yet, or handed to a tend or a rework (issue #927). */
+const STILL_OPEN: readonly string[] = ['open', 'unknown', 'tended', 'reworked'];
+
 /** The job graph of `input`. Deterministic: the same input gives the same nodes, edges and trees, in the same order. */
 export function jobGraph(input: JobGraphInput): JobGraph {
   const nodes = new Map<string, JobGraphNode>();
@@ -255,7 +264,17 @@ export function jobGraph(input: JobGraphInput): JobGraph {
       issueNode(s.repo, s.number, { label: s.title || ref(s.repo, s.number), stage, ...(s.url ? { url: s.url } : {}), ...(parts ? { parts } : {}) });
       newestOf.set(issueNodeId(s.repo, s.number), job);
     }
-    if (pr) prNode(pr, pr.state === 'merged' ? 'done' : pr.state === 'open' || pr.state === 'unknown' ? (waitsOnMerge(job) ? 'partly_done' : 'pr_open') : 'cancelled', job.spec.goal || s?.title);
+    if (pr) prNode(pr, pr.state === 'merged' ? 'done' : STILL_OPEN.includes(pr.state) ? (waitsOnMerge(job) ? 'partly_done' : 'pr_open') : 'cancelled', job.spec.goal || s?.title);
+  }
+  // The tends (issue #927): each job a tend handed its job's pull request to, on that pull request's node.
+  for (const job of jobs) {
+    const t = followedOf(job).tended;
+    const next = t ? byId.get(t.nextJobId) : undefined;
+    const pr = t ? nodes.get(pullRequestNodeId(t.pullRequest)) : undefined;
+    if (!t || !next || !pr) continue;
+    const tend: JobGraphTend = { jobId: next.id, step: t.step, status: next.status,
+      ...(next.startedAt ? { startedAt: next.startedAt } : {}), ...(next.finishedAt ? { endedAt: next.finishedAt } : {}) };
+    nodes.set(pr.id, { ...pr, tends: [...pr.tends ?? [], tend] });
   }
 
   // The lineage links (issue #729) add the issues they name; the issue graph (issue #437) adds sub-issues and closers of
@@ -353,63 +372,4 @@ export function jobGraph(input: JobGraphInput): JobGraph {
   const allEdges = [...edges.values()];
   const trees = treesOf(allNodes, allEdges).map((t) => ({ ...t, summary: treeSummary(t, nodes, allEdges, newestOf, byId) }));
   return { nodes: allNodes, edges: allEdges, trees, stages: countStages(allNodes) };
-}
-
-
-const countStages = (nodes: readonly JobGraphNode[]): Partial<Record<JobStage, number>> => {
-  const out: Partial<Record<JobStage, number>> = {};
-  for (const n of nodes) if (n.kind === 'job') out[n.stage] = (out[n.stage] ?? 0) + 1;
-  return out;
-};
-
-/** Root order: an issue before a job before a pull request, then by id. */
-const KIND_RANK: Record<JobGraphNodeKind, number> = { issue: 0, job: 1, pull_request: 2, question: 3, handoff: 4 };
-
-/**
- * The job trees: each group of connected nodes, rooted at a node no edge leads into (an issue first), else at its first
- * node. `blocking`: the root's unsettled descendants and every node on a way from the root to one.
- */
-export function treesOf(nodes: readonly JobGraphNode[], edges: readonly JobGraphEdge[]): Omit<JobTree, 'summary'>[] {
-  const out = new Map<string, string[]>();
-  const into = new Map<string, number>();
-  const near = new Map<string, string[]>();
-  for (const n of nodes) { out.set(n.id, []); near.set(n.id, []); into.set(n.id, 0); }
-  for (const e of edges) {
-    out.get(e.from)!.push(e.to);
-    near.get(e.from)!.push(e.to);
-    near.get(e.to)!.push(e.from);
-    into.set(e.to, into.get(e.to)! + 1);
-  }
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const order = [...nodes].sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || a.id.localeCompare(b.id));
-  const placed = new Set<string>();
-  const trees: Omit<JobTree, 'summary'>[] = [];
-  for (const start of order) {
-    if (placed.has(start.id)) continue;
-    const group: string[] = [];
-    for (const stack = [start.id]; stack.length > 0;) {
-      const id = stack.pop()!;
-      if (placed.has(id)) continue;
-      placed.add(id);
-      group.push(id);
-      stack.push(...near.get(id)!);
-    }
-    const members = order.filter((n) => group.includes(n.id));
-    const root = (members.find((n) => into.get(n.id) === 0) ?? members[0]!).id;
-    // A node blocks the root when it is unsettled, or leads to one that does; a cycle counts once.
-    const blocks = new Map<string, boolean>();
-    const visit = (id: string): boolean => {
-      const known = blocks.get(id);
-      if (known !== undefined) return known;
-      blocks.set(id, false);
-      let b = !SETTLED.includes(byId.get(id)!.stage) && id !== root;
-      for (const to of out.get(id)!) if (visit(to)) b = true;
-      blocks.set(id, b);
-      return b;
-    };
-    visit(root);
-    const blocking = members.filter((n) => blocks.get(n.id) === true && n.id !== root).map((n) => n.id);
-    trees.push({ root, nodes: members.map((n) => n.id), blocking, stages: countStages(members) });
-  }
-  return trees;
 }

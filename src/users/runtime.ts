@@ -56,7 +56,8 @@ import { liveExecutors } from './executors.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 import { machineLanesEditor } from './machine-lanes.ts';
-import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts';
+import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts'; import { createUserSearch, type SearchWiring, type UserSearch } from '../search/index.ts';
+import { planNotice } from '../domain/infra-watchers.ts';
 
 export type { UserSeams } from './seams.ts';
 
@@ -95,8 +96,8 @@ export interface UserRuntimeOptions {
   uiUrl(hash: string): string;
   /** The base of an artifact's link in a notification, given the user's link base (issue #673). */
   artifactLinkBase(linkBase: string): string;
-  /** Where the hopper is reached from outside now (issue #795, the tunnel watch). */
-  reach?: () => string | undefined;
+  /** Where the hopper is reached from outside now (issue #795, the tunnel watch). Search (issue #945): the index (absent: none), this hopper's instance id, and Access, which decides each hit. */
+  reach?: () => string | undefined; search?: SearchWiring;
   /** A GitHub account this user connected from Sources: link it, so signing in with it lands here (issue #214). */
   linkIdentity?(provider: ConnectedAccountProvider, subject: string): void;
   /** Of these source keys, those another user of this hopper has a job for (issue #440): a claim may be theirs. */
@@ -166,7 +167,8 @@ export interface UserRuntime {
   machineHistory: ResourceRecorder;
   /** The GitHub proxy's view of this user (issue #563). */
   githubProxy: UserGitHubProxy;
-  windowsSteps: WindowsSteps; // issue #731: a job's step run on a Windows host the user set up
+  /** A job's step run on a Windows host the user set up (issue #731); search (issue #945): the index kept from job events, and the permission-checked search. */
+  windowsSteps: WindowsSteps; search: UserSearch;
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */
@@ -223,7 +225,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // How the hopper reaches each attached machine (issue #74: the machine-source context's `target`).
   const target = createTargetPool({
     // A box of a template not approved takes no new job (issue #602): the template's approval, read at every list.
-    clock, logger, templateWait: (name) => approvalWait(name, store.vault.template(name)), ...(o.network ? { network: o.network } : {}),
+    clock, logger, templateWait: (name) => approvalWait(name, store.vault.template(name)), ...(o.network ? { network: o.network } : {}), probeEveryMs: seams.machineProbeEveryMs,
     // A client target that dials in is probed at once, not at the next 30 s.
     reachedAt: (m) => ('client' in m ? o.links.dialledAt(user.id, m.client.key) : 0),
     probe: seams.machineProbe
@@ -377,15 +379,16 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const stopFailureLog = logFailures(store);
   dispatcher.start();
   // Issue #378: the notifiers also read the questions open at the human (oldest first) and where each is answered.
-  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => o.uiUrl(`question-${id}`), loginsUrl: () => o.uiUrl('logins'), infraUrl: () => o.uiUrl('infra'), highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), ...(o.reach ? { reach: o.reach } : {}) });
+  host.startNotifiers({ subscribe: (l) => store.events.subscribe(l), job: (id) => store.jobs.get(id), question: (id) => store.questions.get(id), waitingOnHuman: () => highFirst(store.questions.list({ status: ['open'], order: 'oldest-first' }).filter((q) => q.tier === 'human'), (q) => jobPriorityTag(store.jobs, store.settings.getPriorityLanes(), q.jobId)?.high === true), answerUrl: (id) => o.uiUrl(`question-${id}`), loginsUrl: () => o.uiUrl('logins'), infraUrl: () => o.uiUrl('infra'), infraPlan: (id) => { const p = store.infraPlans.get(id); return p ? planNotice(p, store.infraPlans.approval(id), store.settings.getInfraWatchers() ?? {}) : undefined; }, highPriority: () => prioritySettingsOf(store.settings.getPriorityLanes()).highPriority, tldr: (q) => tldrs.tldrOrSummary('question', q), artifactUrl: (id) => artifactUrl(o.artifactLinkBase(store.artifacts.settings().linkBase), id), ...(o.reach ? { reach: o.reach } : {}) });
   // The usage history (issue #385) and machine resources over time (issue #560): the machines as the engine lists them; lane tuning (issue #688) after new samples.
   const history = createHistoryRecorders({ readings: () => engine.getUsage(), sources: () => engine.getUsageSources(), machines: () => host.machines().list(), afterMachineRecord: () => engine.laneTuning.record(), store, clock, logger });
   const { jobStream, artifacts } = openJobStream({ userId: user.id, store, clock, logger, keys, ...(seams.jobStream?.inlineMax !== undefined ? { inlineMax: seams.jobStream.inlineMax } : {}) });
   // Windows sandbox steps (issue #731): the user's Windows hosts read at each step; over ssh with the hopper's own key.
   const windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }) });
-  let started = false, stopped: Promise<void> | undefined;
+  // Search (issue #945): the user's documents in the index, kept from job events; each hit decided by Access.
+  const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, url: (_type, ref) => o.uiUrl(`job/${ref}`), clock, logger }); let started = false, stopped: Promise<void> | undefined;
   return {
-    jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, directJobs,
+    search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, directJobs,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
@@ -395,7 +398,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined) },
     async start() {
       if (started) return; started = true;
-      await engine.start();
+      search.start(); await engine.start(); // search first: every job event from here on marks its job for the index
       await failures.backfill.once(); // the done-check backfill (issue #637), before the sync and the assessor judge the same failures
       sync.start();
       history.start(); minorDecisions.start(); tldrs.start(); failures.start();
@@ -404,7 +407,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     },
     stop() {
       stopped ??= (async () => {
-        jobStream.stop(); await proxy.githubProxy.bugReports.stop(); await proxy.githubProxy.watches.stop();
+        await search.stop(); jobStream.stop(); await proxy.githubProxy.bugReports.stop(); await proxy.githubProxy.watches.stop();
         await failures.stop();
         minorDecisions.stop(); await tldrs.stop();
         await sync.stop();

@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { jobGraph } from '../../src/domain/job-graph.ts';
 import type { DomainEvent, Job, JobStatus } from '../../src/domain/types.ts';
-import { filterChoices, jobRows, lastEvents, layoutTree, NO_FILTER, NODE_W, pullRequestText, shownTrees, stageCounts } from '../../ui/src/model/jobs-view.ts';
+import { filterChoices, jobRows, lastEvents, layoutTree, NO_FILTER, NODE_W, pullRequestText, shownTrees, stageCounts, tendText } from '../../ui/src/model/jobs-view.ts';
 
 const job = (id: string, status: JobStatus, repo: string | null, at: string, over: Partial<Job> = {}): Job => ({
   id, spec: { executor: 'test', payload: {}, goal: `goal ${id}` }, priority: 50, status, approved: false,
@@ -102,5 +102,12 @@ describe('lastEvents', () => {
   it('skips events with no job', () => {
     const none = { ...event(9, 'x'), jobId: undefined } as DomainEvent;
     expect(lastEvents([none]).size).toBe(0);
+  });
+});
+
+describe('tendText (issue #927)', () => {
+  it('says one tend of a pull request: the step, its job, and where that job is', () => {
+    expect(tendText({ jobId: 'abcdef0123456789', step: 'rebase', status: 'running' })).toBe('rebase by job abcdef01: running');
+    expect(tendText({ jobId: 'abcdef0123456789', step: 'fix_checks', status: 'waiting_answer' })).toBe('fix checks by job abcdef01: waiting answer');
   });
 });

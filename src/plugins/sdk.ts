@@ -8,6 +8,7 @@ import type {
   MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, ReviewReply, ReviewRequest, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
 } from '../domain/ports.ts';
 import type { VaultBackend } from '../domain/vault.ts';
+import type { InfraPlanNotice } from '../domain/infra-watchers.ts';
 import type { ClientTransport } from '../executors/client.ts';
 import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, RaisedBy, Role, UsageReading } from '../domain/types.ts';
 import type { Rejection } from '../domain/rejection.ts';
@@ -16,7 +17,7 @@ import type { GitMirrors } from '../git-mirror/mirrors.ts';
 
 export type {
   Advice, AdviceAction, AnswerRequest, AttachedMachine, Clock, ConnectedAccountTokens, Detection, DomainEvent, EscalationLevel, ExecutionContext, LevelReply,
-  ExecutionOutcome, Executor, Job, JobSource, MachineSnapshot, MachineSource, Notifier, NotifierActionResult, NotifierEvents, PreSortReject, Question, QuestionAttempt, QueueEntry, RaisedBy,
+  ExecutionOutcome, Executor, InfraPlanNotice, Job, JobSource, MachineSnapshot, MachineSource, Notifier, NotifierActionResult, NotifierEvents, PreSortReject, Question, QuestionAttempt, QueueEntry, RaisedBy,
   QueueSorter, ReviewReply, ReviewRequest, Role, Router, SourceItem, SourceReport, SourceSignal, UsageReading, UsageSource, VaultBackend,
 };
 

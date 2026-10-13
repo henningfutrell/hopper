@@ -42,6 +42,17 @@
     },
     "by": {
       "type": "string"
+    },
+    "auto": {
+      "type": "boolean",
+      "const": true
+    },
+    "level": {
+      "type": "string",
+      "enum": [
+        "low",
+        "high"
+      ]
     }
   },
   "required": [

@@ -4,6 +4,7 @@ import type { RemoteAccessSettings } from '../domain/remote-access.ts';
 import type { IntakeActorSettings } from '../domain/intake-origin.ts';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
+import type { InfraPlanSettings } from '../domain/infra-plans.ts';
 import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, ContributionSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
@@ -216,6 +217,8 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     getContribution() { const text = read('contribution'); return text === undefined ? undefined : JSON.parse(text) as ContributionSettings; },
     setContribution(settings) { write('contribution', JSON.stringify({ on: settings.on })); },
+    getInfraPlans() { const text = read('infraPlans'); return text === undefined ? undefined : JSON.parse(text) as InfraPlanSettings; },
+    setInfraPlans(settings) { write('infraPlans', JSON.stringify({ autoApprove: settings.autoApprove })); }, getInfraWatchers() { const text = read('infraWatchers'); return text === undefined ? undefined : JSON.parse(text) as Record<string, string[]>; }, setInfraWatchers(watchers) { write('infraWatchers', JSON.stringify(watchers)); },
     getIntakeActors() { const text = read('intakeActors'); return text === undefined ? undefined : JSON.parse(text) as IntakeActorSettings; },
     // `actors` stays the logins (issue #930): the build before ids reads them; `accounts` holds each one's GitHub user id.
     setIntakeActors: (s) => write('intakeActors', JSON.stringify({ actors: s.actors, ...(s.accounts ? { accounts: s.accounts.map((a) => ({ id: a.id, login: a.login, type: a.type, ...(a.avatarUrl ? { avatarUrl: a.avatarUrl } : {}) })) } : {}) })),
@@ -304,10 +307,7 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
       return text === undefined ? undefined : JSON.parse(text) as MasterKeyRotation;
     },
     setMasterKeyRotation: (rotation) => write('masterKeyRotation', JSON.stringify({ from: rotation.from, at: rotation.at })),
-    getRemoteAccess() {
-      const text = read('remoteAccess');
-      return text === undefined ? undefined : JSON.parse(text) as RemoteAccessSettings;
-    },
+    getRemoteAccess() { const text = read('remoteAccess'); return text === undefined ? undefined : JSON.parse(text) as RemoteAccessSettings; },
     setRemoteAccess: (s) => write('remoteAccess', JSON.stringify({ enabled: s.enabled, ...(s.domain ? { domain: s.domain } : {}), ...(s.restartedAt ? { restartedAt: s.restartedAt } : {}) })),
   };
 }

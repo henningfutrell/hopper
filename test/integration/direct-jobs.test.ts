@@ -13,11 +13,16 @@
 //   Scenario: an agent submits through a box token; an API token that is no box token is refused
 //   Scenario: a submission with no brief, or a repository that is not owner/name, is refused, and nothing is kept
 //   Scenario: Run again takes the same submission again
+//   Scenario: the authorization vault grants the job's item the vault at submit, after Access, recorded with who
+//     When the person submits a direct job that authorizes vault
+//     Then its item has a vault grant by that person, and vault.granted records it
+//     And a submission that does not authorize vault makes no grant
+//   Scenario: Access that cannot be asked refuses the vault authorization (503), and nothing is kept
 import { afterEach, describe, expect, it } from 'vitest';
 import { ADMIN_ID, type DomainEvent } from '../../src/domain/types.ts';
 import type { DirectJobView } from '../../src/domain/direct-jobs.ts';
 import { rawRequest } from '../support/http.ts';
-import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
+import { createFakeAuthorizationServer, type FakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { KEY } from '../support/webhooks.ts';
 import { waitFor } from '../support/wait.ts';
@@ -29,10 +34,10 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) await c();
 });
 
-async function start() {
+async function start(server: FakeAuthorizationServer = createFakeAuthorizationServer()) {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  const app = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, seams: { authorizationServer: createFakeAuthorizationServer() } });
+  const app = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, seams: { authorizationServer: server } });
   apps.push(app);
   return { app, token: await app.login() };
 }
@@ -119,5 +124,34 @@ describe('Direct jobs (issue #901)', () => {
     }, { what: 'Run again' });
     expect(again.rerunOf).toBe(job.id);
     expect((await readBack(app, directJob.id, (d) => d.job?.id === again.id)).job!.id).toBe(again.id);
+  });
+
+  it('grants the job\'s item the vault at submit when the submitter authorizes vault, recorded with who', async () => {
+    const { app, token } = await start();
+    const { directJob, job } = (await app.ui<{ directJob: DirectJobView; job: { id: string } }>('/ui/api/direct-jobs', submission({ op: 'echo' }, { authorizations: ['vault', 'keycloak:otp-reset'] }), { token })).body;
+    const key = `direct:${directJob.id}`;
+    const [granted] = eventsOf(app, 'vault.granted');
+    expect(granted).toMatchObject({ jobId: job.id, data: { job: job.id, key, by: directJob.submittedBy.person } });
+    const vault = (await app.api<{ grants: { key: string; job: string; by: string }[] }>('GET', '/api/vault')).body;
+    expect(vault.grants).toEqual([expect.objectContaining({ key, job: job.id, by: directJob.submittedBy.person })]);
+    const payload = (await app.job(job.id)).spec.payload as { prompt: string };
+    expect(payload.prompt).toContain('vault: granted by the submitter');
+
+    const plain = (await app.ui<{ directJob: DirectJobView; job: { id: string } }>('/ui/api/direct-jobs', submission({ op: 'echo' }), { token })).body;
+    expect(eventsOf(app, 'vault.granted')).toHaveLength(1);
+    expect((await app.job(plain.job.id)).spec.payload).toMatchObject({ prompt: expect.stringContaining('vault: not granted') });
+  });
+
+  it('refuses the vault authorization when Access cannot be asked (503), and keeps nothing', async () => {
+    const server = createFakeAuthorizationServer();
+    const { app, token } = await start(server);
+    server.reachable = false;
+    const r = await app.ui<{ error: string }>('/ui/api/direct-jobs', submission({ op: 'echo' }, { authorizations: ['vault'] }), { token });
+    expect(r.status).toBe(503);
+    expect(r.body.error).toMatch(/OpenFGA cannot be asked/);
+    expect(eventsOf(app, 'direct_job.submitted')).toEqual([]);
+    expect(eventsOf(app, 'vault.granted')).toEqual([]);
+    server.reachable = true;
+    expect((await app.api('GET', '/api/direct-jobs')).body.directJobs).toEqual([]);
   });
 });

@@ -12,6 +12,7 @@ import { Briefcase, ChevronDown, ChevronRight, CircleHelp, List, Network } from 
 import { memo, useEffect, useMemo, useState } from 'react';
 import { detailOf, eventTone } from '@/components/event-line';
 import { GhLink } from '@/components/job';
+import { NodeTends } from '@/components/node-tends';
 import { Empty, Panel } from '@/components/panel';
 import { FIELD } from '@/components/plugin-form';
 import { COLOR, StatusBadge, TEXT, type Tone } from '@/components/status';
@@ -216,6 +217,7 @@ function NodeDetails({ graph, id, laneOf, now, onClose }: { graph: JobGraph; id:
         {node.pullRequest && <><dt>pull request</dt><dd><PullRequest pr={node.pullRequest} /></dd></>}
         {node.partlyDone && <><dt>after merge</dt><dd>{node.partlyDone.afterMerge}</dd></>}
       </dl>
+      {node.tends && <NodeTends tends={node.tends} now={now} />}
       {(into.length > 0 || out.length > 0) && (
         <ul className="space-y-0.5 text-muted-foreground">
           {into.map((e) => <li key={`in ${e.from} ${e.kind}`}>{label(e.from)} <span className="text-foreground">{EDGE_TEXT[e.kind]}</span> this</li>)}

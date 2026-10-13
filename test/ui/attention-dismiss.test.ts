@@ -55,7 +55,7 @@ let root: Root | undefined;
 async function boot(stored?: string, o: { notice: boolean } = { notice: true }) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#overview';
+  window.location.hash = '#dashboard';
   localStorage.clear();
   if (stored !== undefined) localStorage.setItem(KEY, stored);
   calls = [];
@@ -76,7 +76,7 @@ async function reload(o?: { notice: boolean }) {
   await boot(stored, o);
 }
 
-const attention = () => document.querySelector<HTMLElement>('[data-overview-panel="attention"]');
+const attention = () => document.querySelector<HTMLElement>('[data-dashboard-panel="attention"]');
 const items = () => [...attention()!.querySelectorAll<HTMLElement>('[data-notice]')].map((e) => e.dataset.notice);
 const notice = () => document.querySelector<HTMLElement>('[data-update-notice]');
 const button = (scope: ParentNode, name: string) =>

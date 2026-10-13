@@ -46,7 +46,7 @@ function fakeDaemon(role: Role, extra: { parked?: unknown[]; questions?: unknown
     ] },
     '/api/accounts': { accounts: [] }, '/api/usage': { readings: [], sources: [], machines: [], limits: { soft: 0.7, hard: 0.95, defaults: { soft: 0.7, hard: 0.95 }, set: false } },
     '/api/logins': { now: T, settings: { onExpiry: 'fail', warnSec: 60 }, logins: [] },
-    // The Overview's graphs: no samples.
+    // The Dashboard's graphs: no samples.
     '/api/usage/history': { view: { range: { preset: '24h' } }, from: '2026-10-08T12:00:00.000Z', to: T, stepMs: 900000, retentionDays: 90, series: [] },
     '/api/machines/history': { view: { range: { preset: '24h' } }, from: '2026-10-08T12:00:00.000Z', to: T, stepMs: 900000, retentionDays: 90, series: [] },
   };
@@ -112,7 +112,7 @@ describe('a parked job\'s question', () => {
   });
 
   it('leaves Attention', async () => {
-    await boot('admin', '#overview');
+    await boot('admin', '#dashboard');
     expect(document.querySelector('[data-notice="question:q-live"]')).not.toBeNull();
     expect(document.querySelector('[data-notice="question:q-later"]')).toBeNull();
     expect(document.querySelector('[data-notice="question:q-old"]')).toBeNull();

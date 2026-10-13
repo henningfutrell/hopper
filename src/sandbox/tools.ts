@@ -4,13 +4,14 @@
 // checked by its SHA-256 before it is kept —, and copies only the result into /opt/hopper-tools. The tag is a hash of
 // the Containerfile and the base image's id, so the same tools on the same base build once. A read-only template's image
 // (issue #715) also puts the read-only terraform wrapper first on PATH, in front of the real binary, and holds the
-// providers terraform may install in a mirror it installs from alone: a box downloads no provider.
+// providers terraform may install in a mirror it installs from alone: a box downloads no provider. Any other image with
+// terraform (a write box, issue #870) puts the apply wrapper first on PATH: terraform applies only a recorded plan.
 //
 // The versions and sums are pinned by hand: a new release is a change here, read and reviewed like any other.
 import { createHash } from 'node:crypto';
 import type { AssetKind, OperationProfile } from '../domain/access.ts';
 import { toolSet, type BoxTool } from '../domain/sandboxes.ts';
-import { PROVIDER_MIRROR, TERRAFORM_CLI_CONFIG, TERRAFORM_WRAPPER } from './terraform-wrapper.ts';
+import { PROVIDER_MIRROR, TERRAFORM_CLI_CONFIG, TERRAFORM_APPLY_WRAPPER, TERRAFORM_WRAPPER } from './terraform-wrapper.ts';
 
 /** The repository the hopper tags the images it builds in. Local: it is never pushed. */
 export const TOOLS_IMAGE = 'localhost/hopper-box-tools';
@@ -19,6 +20,8 @@ const FETCH_BASE = 'docker.io/library/debian:bookworm-slim@sha256:7c7b2c966bc9ee
 const DIR = '/opt/hopper-tools';
 /** Where a read-only image keeps its wrappers: first on PATH, in front of `${DIR}/bin`. */
 const READ_ONLY_DIR = `${DIR}/read-only`;
+/** Where any other image with terraform keeps the apply wrapper: first on PATH, in front of `${DIR}/bin` (issue #870). */
+const APPLY_WRAPPER_DIR = `${DIR}/apply-wrapper`;
 /** A read-only image's terraform CLI config: providers from the mirror only. */
 const CLI_CONFIG = `${DIR}/terraform.rc`;
 
@@ -100,21 +103,27 @@ const readOnlySteps = (): string => `${step('terraform-provider-aws', AWS_PROVID
 RUN mkdir -p ${READ_ONLY_DIR} && echo ${b64(TERRAFORM_WRAPPER)} | base64 -d > ${READ_ONLY_DIR}/terraform && chmod 755 ${READ_ONLY_DIR}/terraform \\
     && echo ${b64(TERRAFORM_CLI_CONFIG)} | base64 -d > ${CLI_CONFIG}`;
 
+/** The apply wrapper step of any other image with terraform (issue #870): the wrapper, in base64, as the read-only one. */
+const applyWrapperStep = (): string => `# the apply wrapper: no apply without a plan (issue #870)
+RUN mkdir -p ${APPLY_WRAPPER_DIR} && echo ${b64(TERRAFORM_APPLY_WRAPPER)} | base64 -d > ${APPLY_WRAPPER_DIR}/terraform && chmod 755 ${APPLY_WRAPPER_DIR}/terraform`;
+
 /**
  * The image of `base` with `tools` added: its tag and its Containerfile. `readOnly` (a read-only template's boxes, issue
- * #715): terraform runs through the read-only wrapper, and installs providers only from the image's mirror.
+ * #715): terraform runs through the read-only wrapper, and installs providers only from the image's mirror. Else
+ * terraform runs through the apply wrapper (issue #870): it applies only the saved file of a plan the hopper recorded.
  */
 export function toolsImage(base: { image: string; id?: string | undefined }, tools: readonly string[], o: { readOnly?: boolean | undefined } = {}): { tag: string; containerfile: string } {
   const set = toolSet(tools);
   const wrapped = o.readOnly === true && set.includes('terraform');
+  const gated = !wrapped && set.includes('terraform');
   const containerfile = `# Made by the hopper (issue #716): ${base.image} with ${set.join(', ')}. Each download is pinned and checked by its SHA-256.
 FROM ${FETCH_BASE} AS fetch
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip && rm -rf /var/lib/apt/lists/* && mkdir -p ${DIR}/bin
-${set.map((tool) => step(tool, RECIPES[tool])).join('\n')}${wrapped ? `\n${readOnlySteps()}` : ''}
+${set.map((tool) => step(tool, RECIPES[tool])).join('\n')}${wrapped ? `\n${readOnlySteps()}` : ''}${gated ? `\n${applyWrapperStep()}` : ''}
 
 FROM ${base.image}
 COPY --from=fetch ${DIR}/ ${DIR}/
-ENV PATH=${wrapped ? `${READ_ONLY_DIR}:` : ''}${DIR}/bin:\${PATH}${wrapped ? `\nENV TF_CLI_CONFIG_FILE=${CLI_CONFIG}` : ''}
+ENV PATH=${wrapped ? `${READ_ONLY_DIR}:` : gated ? `${APPLY_WRAPPER_DIR}:` : ''}${DIR}/bin:\${PATH}${wrapped ? `\nENV TF_CLI_CONFIG_FILE=${CLI_CONFIG}` : ''}
 LABEL io.hopper.tools="${set.join(' ')}"
 `;
   const hash = createHash('sha256').update(`${base.id ?? ''}\n${containerfile}`).digest('hex').slice(0, 16);

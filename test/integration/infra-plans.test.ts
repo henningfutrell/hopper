@@ -24,6 +24,15 @@
 //   Scenario: a plan for another asset, and a plan that is not whole, are refused
 //   Scenario: each plan is kept with its summary in plain words: Infra lists it, the timeline says it
 //   Scenario: a new AWS resource without the MAP tag fails the plan: kept and shown, nobody approves it, nothing applies it
+//   Scenario: a plan names the read credential it was made with only when the vault minted the job that one (part 5)
+//
+// Feature: approval by risk (part 3)
+//   Scenario: an operator approves a low-risk uat plan; a prod plan only an admin approves
+//   Scenario: with auto-approve on, the hopper approves a low-risk uat plan when it is kept, and says so; a prod plan waits
+//
+// Feature: environment watchers (part 4): no plan and no apply slides under the radar
+//   Scenario: an admin names the watchers of each environment; an operator cannot
+//   Scenario: a plan recorded, approved and applied is sent to the notifier, each time naming the watchers of its environments
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { InfraPlan, PlanApply, PlanView } from '../../src/domain/infra-plans.ts';
@@ -34,6 +43,9 @@ import { fakeSts, type FakeApi } from '../support/fake-mint-apis.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { boxes, helper, runningJob } from '../support/vault-box.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
+import { rawRequest } from '../support/http.ts';
+import { createServer, type Server } from 'node:http';
+import { waitFor } from '../support/wait.ts';
 
 const ACCOUNT = '123456789012';
 const ROLE = `aws-role/${ACCOUNT}/deploy`;
@@ -59,7 +71,7 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) c();
 });
 
-async function boot(): Promise<{ a: TestApp; session: string; dir: string; job: string; token: string; sts: FakeApi; github: FakeForge }> {
+async function boot(secrets: Record<string, string> = {}): Promise<{ a: TestApp; session: string; dir: string; job: string; token: string; sts: FakeApi; github: FakeForge }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   process.env.FAKE_HERDR_DIR = join(db.dbPath, '..');
@@ -73,8 +85,9 @@ async function boot(): Promise<{ a: TestApp; session: string; dir: string; job: 
   t = await startTestApp({
     dbPath: db.dbPath,
     env: { HOPPER_GITHUB_URL: github.url, HOPPER_GITHUB_CLIENT_ID: 'gh-client-id', HOPPER_GITHUB_APP_SLUG: 'hopper-test' },
+    secrets: { ...secrets },
     plugins: { executors: [{ name: 'test', plugin: 'test' }], machines: [], machineDefaults: { lanes: 1, executors: ['scripted'] } },
-    seams: { authorizationServer: createFakeAuthorizationServer() },
+    seams: { authorizationServer: createFakeAuthorizationServer(), grokbot: { baseMs: 20 } },
   });
   const a = t;
   connectGitHub(a, ['octo/infra']);
@@ -103,9 +116,10 @@ async function asJob(a: TestApp, job: string, method: string, path: string, body
   return { status: res.status, json: (await res.json()) as Record<string, unknown> };
 }
 
+const READ = `read/aws-role/${ACCOUNT}/deploy`;
 const PLAN = {
   tool: 'terraform', asset: ROLE, target: 'uat-network', repo: 'octo/infra', ref: 'issue-1', commit: A, pullRequest: 4,
-  read: `read/aws-role/${ACCOUNT}/deploy`, text: 'Terraform will perform the following actions:\n  + aws_security_group_rule.a\nPlan: 1 to add, 0 to change, 0 to destroy.',
+  text: 'Terraform will perform the following actions:\n  + aws_security_group_rule.a\nPlan: 1 to add, 0 to change, 0 to destroy.',
   file: FILE.toString('base64'), json: tfJson(MAP),
 };
 
@@ -128,9 +142,10 @@ describe('no apply without a plan', () => {
   });
 
   it('keeps a job\'s plan whole, lists it on Infra, and gives its plan file back as it was put', async () => {
-    const { a, session, job } = await boot();
-    const plan = await record(a, job);
-    expect(plan).toMatchObject({ tool: 'terraform', asset: { kind: 'aws-role', name: `${ACCOUNT}/deploy` }, target: 'uat-network', repo: 'octo/infra', ref: 'issue-1', commit: A, pullRequest: 4, read: PLAN.read, job, file: { size: FILE.length } });
+    const { a, session, dir, token, job } = await boot();
+    expect((await helper(dir, ['aws', 'read', ROLE], token)).code).toBe(0);
+    const plan = await record(a, job, { ...PLAN, read: READ });
+    expect(plan).toMatchObject({ tool: 'terraform', asset: { kind: 'aws-role', name: `${ACCOUNT}/deploy` }, target: 'uat-network', repo: 'octo/infra', ref: 'issue-1', commit: A, pullRequest: 4, read: READ, job, file: { size: FILE.length } });
     expect(Date.parse(plan.expiresAt) - Date.parse(plan.createdAt)).toBe(60 * 60 * 1000);
 
     const listed = (await a.api<{ plans: PlanView[] }>('GET', '/api/infra-plans', undefined, { 'x-hopper-session': session })).body.plans;
@@ -191,6 +206,20 @@ describe('no apply without a plan', () => {
     expect(blind.json.error).toMatch(/^json must hold terraform show -json/);
   });
 
+  it('keeps a plan that names its read credential only when the vault minted the job that one (part 5)', async () => {
+    const { a, dir, token, job } = await boot();
+    const unminted = await asJob(a, job, 'POST', '/job/infra-plans', { ...PLAN, read: READ });
+    expect(unminted.status).toBe(400);
+    expect(unminted.json.error).toBe(`read names ${READ}, but the vault minted this job no such read credential (it minted none): a plan names the read credential it was made with`);
+    expect((await helper(dir, ['aws', 'read', ROLE], token)).code).toBe(0);
+    const other = await asJob(a, job, 'POST', '/job/infra-plans', { ...PLAN, read: `read/aws-role/${ACCOUNT}/other` });
+    expect(other.status).toBe(400);
+    expect(other.json.error).toMatch(new RegExp(`\\(it minted ${READ}\\)`));
+    expect((await record(a, job, { ...PLAN, read: READ })).read).toBe(READ);
+    // A plan that names no read credential is kept as before.
+    expect((await record(a, job)).read).toBeUndefined();
+  });
+
   it('keeps each plan with its summary in plain words; Infra lists it and the timeline says it', async () => {
     const { a, session, job } = await boot();
     const plan = await record(a, job);
@@ -216,5 +245,119 @@ describe('no apply without a plan', () => {
     expect(refused.code).not.toBe(0);
     expect(refused.stderr).toMatch(/failed its checks/);
     expect(sts.seen).toHaveLength(0);
+  });
+
+  /** An operator's box token (issue #795), with the infra plans' scopes (issue #909): an agent that may approve work, as an operator. */
+  async function operatorToken(a: TestApp, session: string): Promise<string> {
+    const r = await a.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'operator', role: 'operator', box: true, scopes: ['infra-plans:edit', 'infra-plans:settings'] }, { token: session });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    return r.body.token;
+  }
+  const asOperator = async (a: TestApp, token: string, body: unknown): Promise<{ status: number; text: string }> => rawRequest(a.url, {
+    method: 'POST', path: '/ui/api/infra-plans', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const PROD = { ...PLAN, target: 'prod-network' };
+
+  it('lets an operator approve a low-risk uat plan; only an admin approves a prod plan', async () => {
+    const { a, session, job } = await boot();
+    const operator = await operatorToken(a, session);
+    const low = await record(a, job);
+    const prod = await record(a, job, PROD);
+    const listed = (await a.api<{ plans: PlanView[] }>('GET', '/api/infra-plans', undefined, { 'x-hopper-session': session })).body.plans;
+    expect(listed.find((p) => p.id === low.id)!.approver).toEqual({ who: 'operator', why: 'low risk, in uat only' });
+    expect(listed.find((p) => p.id === prod.id)!.approver).toEqual({ who: 'admin', why: 'high risk: prod' });
+
+    expect((await asOperator(a, operator, { action: 'approve', plan: low.id })).status).toBe(200);
+    const refused = await asOperator(a, operator, { action: 'approve', plan: prod.id });
+    expect(refused.status).toBe(403);
+    expect(refused.text).toMatch(/is high risk: prod: only an admin approves it/);
+    // Issue #909: a token whose role may not approve the plan asks no person either.
+    expect((await a.events()).filter((e) => e.type === 'approval.confirmation_asked')).toEqual([]);
+    expect((await a.ui('/ui/api/infra-plans', { action: 'approve', plan: prod.id }, { token: session })).status).toBe(200);
+    expect((await a.events()).filter((e) => e.type === 'infra.plan_approved').map((e) => e.data)).toEqual([
+      expect.objectContaining({ plan: low.id, level: 'low' }), expect.objectContaining({ plan: prod.id, level: 'high' }),
+    ]);
+  });
+
+  it('with auto-approve on, approves a low-risk uat plan when it is kept and says so; a prod plan still waits for an admin', async () => {
+    const { a, session, dir, token, sts, job } = await boot();
+    const operator = await operatorToken(a, session);
+    expect((await rawRequest(a.url, { method: 'POST', path: '/ui/api/infra-plans/settings', headers: { authorization: `Bearer ${operator}`, 'content-type': 'application/json' }, body: JSON.stringify({ autoApprove: true }) })).status).toBe(403);
+    const on = await a.ui<{ settings: { autoApprove: boolean } }>('/ui/api/infra-plans/settings', { autoApprove: true }, { token: session });
+    expect(on.status).toBe(200);
+    expect(on.body.settings).toEqual({ autoApprove: true });
+    expect((await a.events()).find((e) => e.type === 'infra.settings_changed')).toMatchObject({ data: { from: { autoApprove: false }, to: { autoApprove: true }, by: expect.any(String) } });
+
+    const said = await asJob(a, job, 'POST', '/job/infra-plans', PLAN);
+    expect(said.status).toBe(201);
+    const low = said.json.plan as PlanView;
+    expect(low.approval).toMatchObject({ plan: low.id, by: 'the hopper', auto: true });
+    const prod = await record(a, job, PROD);
+    expect(prod).not.toHaveProperty('approval');
+
+    const listed = (await a.api<{ plans: PlanView[]; settings: { autoApprove: boolean } }>('GET', '/api/infra-plans', undefined, { 'x-hopper-session': session })).body;
+    expect(listed.settings).toEqual({ autoApprove: true });
+    expect(listed.plans.find((p) => p.id === low.id)!.approval).toMatchObject({ auto: true });
+    expect(listed.plans.find((p) => p.id === prod.id)!.approval).toBeUndefined();
+    expect((await a.events()).filter((e) => e.type === 'infra.plan_approved').map((e) => e.data)).toEqual([expect.objectContaining({ plan: low.id, by: 'the hopper', auto: true, level: 'low' })]);
+
+    const minted = await helper(dir, ['aws', 'apply', ROLE, '--plan', low.id], token);
+    expect(minted.code, minted.stderr).toBe(0);
+    expect(sts.seen).toHaveLength(1);
+    expect((await helper(dir, ['aws', 'apply', ROLE, '--plan', prod.id], token)).stderr).toMatch(/is not approved/);
+  });
+});
+
+describe('environment watchers', () => {
+  /** The Grok Bot routine's receiver, on loopback. */
+  async function receiver(): Promise<{ url: string; hits: Record<string, unknown>[] }> {
+    const hits: Record<string, unknown>[] = [];
+    const server: Server = createServer((req, res) => {
+      let raw = '';
+      req.on('data', (c) => (raw += c));
+      req.on('end', () => { hits.push(JSON.parse(raw) as Record<string, unknown>); res.end(); });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    cleanups.push(() => { server.closeAllConnections(); server.close(); });
+    return { url: `http://127.0.0.1:${(server.address() as { port: number }).port}/routine`, hits };
+  }
+  const WATCHERS = { '*': ['ops-lead'], uat: ['qa-team'], prod: ['prod-owner'] };
+
+  it('lets an admin name the watchers of each environment; an operator cannot', async () => {
+    const { a, session } = await boot();
+    const set = await a.ui<{ watchers: Record<string, string[]> }>('/ui/api/infra-plans/watchers', { watchers: { ...WATCHERS, uat: [' qa-team ', 'qa-team'] } }, { token: session });
+    expect(set.status, JSON.stringify(set.body)).toBe(200);
+    expect(set.body.watchers).toEqual(WATCHERS);
+    expect((await a.api<{ watchers: Record<string, string[]> }>('GET', '/api/infra-plans', undefined, { 'x-hopper-session': session })).body.watchers).toEqual(WATCHERS);
+    expect((await a.events()).filter((e) => e.type === 'infra.watchers_changed').map((e) => e.data)).toEqual([{ from: {}, to: WATCHERS, by: expect.any(String) }]);
+
+    const bad = await a.ui('/ui/api/infra-plans/watchers', { watchers: { production: ['a'] } }, { token: session });
+    expect(bad.status).toBe(400);
+    expect(JSON.stringify(bad.body)).toMatch(/production is not an environment the hopper knows/);
+    const r = await a.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'operator', role: 'operator', scopes: ['infra-plans:watchers'] }, { token: session });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    const operator = await rawRequest(a.url, { method: 'POST', path: '/ui/api/infra-plans/watchers', headers: { authorization: `Bearer ${r.body.token}`, 'content-type': 'application/json' }, body: JSON.stringify({ watchers: {} }) });
+    expect(operator.status).toBe(403);
+  });
+
+  it('sends each plan recorded, approved and applied to the notifier, naming the watchers of its environments', async () => {
+    const hook = await receiver();
+    const { a, session, dir, token, job } = await boot({ GROKBOT_WEBHOOK_URL: hook.url, GROKBOT_WEBHOOK_KEY: 'k' });
+    expect((await a.ui('/ui/api/infra-plans/watchers', { watchers: WATCHERS }, { token: session })).status).toBe(200);
+    const plan = await record(a, job);
+    expect((await a.ui('/ui/api/infra-plans', { action: 'approve', plan: plan.id }, { token: session })).status).toBe(200);
+    const minted = await helper(dir, ['aws', 'apply', ROLE, '--plan', plan.id], token);
+    expect(minted.code, minted.stderr).toBe(0);
+
+    const kinds = ['infra.plan_recorded', 'infra.plan_approved', 'infra.plan_applied'];
+    await waitFor(() => kinds.every((k) => hook.hits.some((h) => h.kind === k)), { what: 'a post for the plan, its approval and its apply' });
+    for (const kind of kinds) {
+      expect(hook.hits.find((h) => h.kind === kind)).toEqual(expect.objectContaining({
+        plan: plan.id, target: 'uat-network', environments: ['uat'], level: 'low', watchers: ['ops-lead', 'qa-team'], approver: { who: 'operator', why: 'low risk, in uat only' },
+      }));
+    }
+    expect(hook.hits.find((h) => h.kind === 'infra.plan_applied')).toEqual(expect.objectContaining({ operation: 'apply', jobId: job }));
+    expect(JSON.stringify(hook.hits)).not.toContain(JSON.parse(minted.stdout).AccessKeyId);
+    expect(JSON.stringify(hook.hits)).not.toContain(PLAN.text);
   });
 });

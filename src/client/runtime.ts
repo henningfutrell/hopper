@@ -10,6 +10,7 @@
 // it builds only a tools image, with the adapters' own build options, from a context of one Containerfile.
 // A check box (the read-only check, issue #716) is made the same way, under its own label and name; it alone runs a
 // script in place of its entrypoint, and it alone is waited on and has its output read.
+// A box's one-shot stats (`stream=false`, nothing else) are read for the stack resources (issue #947); never a stream.
 // A refused call answers 403 in the runtime's own shape, `{message}`. The checks restate src/sandbox/flags.ts's
 // builder on purpose: this end imports nothing of hopper, and it holds the line even if the hopper's end is wrong.
 // Imports nothing of hopper but its own directory: it is installed on the target as plain files.
@@ -165,8 +166,11 @@ function buildProblem(kind: RuntimeKind, q: URLSearchParams, c: RuntimeCall): st
   return undefined;
 }
 
-/** `container`, with `checkOnly`: a call only a check box takes — its end awaited, its output read. */
-type Check = { container: string; checkOnly?: true } | { volume: string } | { create: true } | { build: true } | 'open';
+/**
+ * `container`, with `checkOnly`: a call only a check box takes — its end awaited, its output read; with `stats`: a box's
+ * one-shot stats (issue #947).
+ */
+type Check = { container: string; checkOnly?: true; stats?: true } | { volume: string } | { create: true } | { build: true } | 'open';
 
 /** What a call is, as the adapters make it: undefined, it is no call of theirs. */
 function routeOf(kind: RuntimeKind, method: string, route: string): Check | undefined {
@@ -184,6 +188,7 @@ function routeOf(kind: RuntimeKind, method: string, route: string): Check | unde
   if (a === 'containers' && n === 2 && method === 'DELETE') return { container: b! };
   if (a === 'containers' && n === 3 && ((method === 'GET' && (c === 'json' || (kind === 'podman' && c === 'healthcheck'))) || (method === 'POST' && (c === 'start' || c === 'stop')))) return { container: b! };
   if (a === 'containers' && n === 3 && ((method === 'POST' && c === 'wait') || (method === 'GET' && c === 'logs'))) return { container: b!, checkOnly: true };
+  if (a === 'containers' && n === 3 && method === 'GET' && c === 'stats') return { container: b!, stats: true };
   return undefined;
 }
 
@@ -225,6 +230,8 @@ export async function runtimeAnswer(sockets: RuntimeSockets, c: RuntimeCall | { 
   }
   if (check !== 'open' && 'volume' in check && !NAME.test(check.volume)) return refused(`${check.volume} is not a sandbox box's home volume`);
   if (check !== 'open' && 'container' in check) {
+    // A stream would hold the link's call open until its time out: only the one-shot read.
+    if (check.stats && (query.size !== 1 || query.get('stream') !== 'false')) return refused("a box's stats are read once, with stream=false and nothing else");
     const seen = await call(here.socket, 'GET', `${prefix}/containers/${encodeURIComponent(check.container)}/json`, undefined, timeout);
     if (seen.status === 404) return seen;
     if (seen.status < 200 || seen.status >= 300) return seen;

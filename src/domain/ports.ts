@@ -233,6 +233,8 @@ export interface NotifierEvents {
   tldr?(q: Question): string | undefined;
   /** Where the hopper is reached from outside now (issues #795, #880): the remote access URL while its tunnel is up. Absent or undefined: not reached. */
   reach?(): string | undefined;
+  /** A plan as a notification says it (issue #870 part 4): what it changes, its risk, who approves it, its watchers. Undefined: no such plan. */
+  infraPlan?(id: string): import('./infra-watchers.ts').InfraPlanNotice | undefined;
 }
 
 /**
@@ -757,6 +759,10 @@ export type * from './sandboxes.ts';
 // ---- Windows sandbox steps (issue #731): the host a step runs on, src/domain/windows-steps.ts ----
 
 export type { WindowsStepHost } from './windows-steps.ts';
+
+// ---- Search (issue #945): the search index, src/domain/search.ts ----
+
+export type { SearchIndex } from './search.ts';
 
 // ---- Persistence: src/domain/store.ts (re-exported here, one vocabulary) ----------------
 

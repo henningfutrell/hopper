@@ -25,7 +25,7 @@ const RETURN_KEY = 'jh_return';
 /** Keep the page to come back to, across the sign-in's round trip through the identity provider. */
 export function rememberReturn(hash: string): void {
   const back = returnTo(hash);
-  try { if (back) localStorage.setItem(RETURN_KEY, back); } catch { /* storage blocked: the overview after sign-in */ }
+  try { if (back) localStorage.setItem(RETURN_KEY, back); } catch { /* storage blocked: the dashboard after sign-in */ }
 }
 
 /** The page kept by `rememberReturn`, once. */

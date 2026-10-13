@@ -13,6 +13,7 @@ These pages tell you how the hopper works and how to use it, for the version you
 - [Questions and deciders](questions.md)
 - [Pull requests](pull-requests.md)
 - [Infra: plans and out-of-band changes](infra.md)
+- [Resources: what the stack uses](resources.md)
 - [The vault](vault.md)
 - [Remote access](remote-access.md)
 - [Sandbox boxes](sandboxes.md)

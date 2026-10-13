@@ -218,6 +218,8 @@
         "infra.out_of_band_recorded",
         "infra.out_of_band_marked",
         "infra.controllers_changed",
+        "infra.settings_changed",
+        "infra.watchers_changed",
         "approval.confirmation_asked",
         "api_grant.minted",
         "api_grant.refreshed",

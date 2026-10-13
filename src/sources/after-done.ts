@@ -20,16 +20,19 @@
 // hopper followed pull requests is shown, merged and tended as a job's own. A throw is asked again next sync.
 // A pull request is followed to its end (issue #786): a failed job's is reconciled, followed and tended as a done job's —
 // but a failed tend's (`failedTend`), which waits on a person —, and a rebase tend is never capped, only `fix_checks`.
-// The tending queue (issue #796): after every follow of the sync, at most one tend starts per job repository, and none
-// while its head holds it (`queueHead`): a tend job at work, or a pull request on its way to the hopper's merge. The next
-// is the rules' first (`tendOrder`), or Jev's pick (`merge-order`, `tend-order.ts`). A pull request whose checks stay pending
+// The tending queue (issue #796): after every follow of the sync, a tend starts only when no head holds it (`queueHeads`):
+// a tend job at work, or a pull request on its way to the hopper's merge. Jev's pick first (`merge-order`, `tend-order.ts`),
+// then the rules' order (`tendOrder`). A pull request whose checks stay pending
 // holds it no more than `PENDING_HOLD_MS` after its last push; one not seen yet holds nothing (issue #927). A `fix_checks`
 // brief names the checks that failed, and the first fix of a row may run a flaky one again once (issue #927).
+// One queue per set of pull requests that conflict (issue #939): a head holds only the due pull requests the source says
+// conflict with it (`JobSource.conflictBetween`, the hopper's mirror), and two due ones that do not conflict are tended at
+// the same time. Where the source cannot say, they conflict, as before. What holds one is kept on its job (`heldBehind`).
 // Cross-references (issue #430): before each follow, the cross-references of the job's item (`JobSource.crossReferences`) are
 // asked again and kept on the job (`crossReferences`), when they changed. A throw is only logged: the follow goes on, and
 // they are asked again next sync.
 import type { JobSource, PullRequestActResult, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
-import { queueHead, repoOf, tendOrder, type TendDue } from '../domain/tending-queue.ts';
+import { queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
 import { SourceError } from '../domain/ports.ts';
 import {
@@ -164,20 +167,66 @@ export function createAfterDone(c: AfterDoneContext) {
     store.events.append({ type: 'job.pull_request_tended', jobId, data: { pullRequest: due.url, step: due.step, nextJobId: r.job.id } });
   }
 
+  /** Keep what holds the job's pull request (issue #939), when it changed; undefined: nothing holds it. */
+  function keepHold<K extends keyof Holds>(jobId: string, key: K, value: Holds[K]): void {
+    const s = (store.jobs.get(jobId)?.sourceState?.source ?? {}) as Record<string, unknown>;
+    if (JSON.stringify(s[key]) === JSON.stringify(value)) return;
+    const { [key]: _was, ...rest } = s;
+    c.setSource(jobId, value === undefined ? rest : { ...rest, [key]: value });
+  }
+
   /**
-   * The next tend of each job repository whose tending queue is free (issue #796): of the source's jobs whose followed pull
-   * request needs tending, one per repository, the rules' first or Jev's pick.
+   * Whether the job's pull request conflicts with pull request `other` of its repository (issue #939), as the source says;
+   * undefined: it cannot say. A throw is only logged.
+   */
+  async function conflict(source: JobSource, job: Job, other: string): Promise<boolean | undefined> {
+    const s = job.sourceState?.source as { pullRequest?: string; seen?: PullRequestSeen } | undefined;
+    if (!source.conflictBetween || !s?.pullRequest || !s.seen?.base || !job.source?.repo) return undefined;
+    try {
+      return await source.conflictBetween(job.source.repo, s.seen.base, s.pullRequest, other);
+    } catch (e) {
+      console.warn(`hopper: ${source.name}: whether ${s.pullRequest} and ${other} conflict failed, asked again next sync: ${(e as Error).message}`);
+      return undefined;
+    }
+  }
+
+  /** The first of `heads` the job's pull request conflicts with (issue #939); where the source cannot say, it conflicts. */
+  async function heldBy(source: JobSource, job: Job, heads: readonly QueueHead[]): Promise<QueueHead | undefined> {
+    for (const h of heads) if (await conflict(source, job, h.pullRequest) !== false) return h;
+    return undefined;
+  }
+
+  /**
+   * The tends of each job repository (issue #796), one queue per set of pull requests that conflict (issue #939): of the
+   * source's jobs whose followed pull request needs tending, each one no head and no tend started before it conflicts with,
+   * Jev's pick first, then the rules' order. Each other is held behind the first that conflicts with it.
    */
   async function tendNext(source: JobSource, listed: Job[]): Promise<void> {
     const get = (id: string) => store.jobs.get(id);
     const jobs = listed.map((j) => get(j.id) ?? j);
     const due = jobs.filter((j) => c.finalReported(j)).flatMap((j): TendDue[] => { const d = tendDue(j); return d ? [{ jobId: j.id, pullRequest: d.url, step: d.step }] : []; });
     const merges = (repo: string) => source.mergesOnReady?.(repo) ?? false;
+    const held = new Map<string, QueueHead>();
     for (const repo of new Set(due.map((d) => repoOf(get(d.jobId)!)))) {
-      if (repo === undefined || queueHead(repo, jobs, get, merges, c.now())) continue;
-      const head = await pickHead(c.jevFirst, repo, tendOrder(due.filter((d) => repoOf(get(d.jobId)!) === repo), get), get);
-      await tendIfDue(head.jobId).catch((e: unknown) => { c.failed(head.jobId, e); });
+      if (repo === undefined) continue;
+      const heads = queueHeads(repo, jobs, get, merges, c.now());
+      const free: TendDue[] = [];
+      for (const d of tendOrder(due.filter((x) => repoOf(get(x.jobId)!) === repo), get)) {
+        const h = await heldBy(source, get(d.jobId)!, heads);
+        if (h) held.set(d.jobId, h); else free.push(d);
+      }
+      if (free.length === 0) continue;
+      const first = await pickHead(c.jevFirst, repo, free, get);
+      const started: QueueHead[] = [];
+      for (const d of [first, ...free.filter((x) => x !== first)]) {
+        const h = await heldBy(source, get(d.jobId)!, started);
+        if (h) { held.set(d.jobId, h); continue; }
+        keepHold(d.jobId, 'heldBehind', undefined);
+        started.push({ pullRequest: d.pullRequest, why: 'tending' });
+        await tendIfDue(d.jobId).catch((e: unknown) => { c.failed(d.jobId, e); });
+      }
     }
+    for (const j of jobs) keepHold(j.id, 'heldBehind', held.get(j.id));
   }
 
   /** May follow its item's open pull request (issues #763, #786): no failed tend, and the newest job of its item. */

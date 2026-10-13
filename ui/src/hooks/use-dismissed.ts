@@ -1,4 +1,4 @@
-// The dismissed notices (model/dismissed.ts), remembered per browser like the overview layout.
+// The dismissed notices (model/dismissed.ts), remembered per browser like the dashboard layout.
 // Storage blocked: dismissals hold for this tab only.
 import { useEffect, useSyncExternalStore } from 'react';
 import { dismiss, forgetCleared, parseDismissed, undismiss } from '@/model/dismissed';
