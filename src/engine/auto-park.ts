@@ -6,7 +6,8 @@
 // by it: a question a risk rule or the consequential guard sent to a person (`keptBy`), a job with no agent session to
 // resume (its pick up needs a person's confirmation, issue #530), and one a fork of its question still works for. The
 // answer to its question re-queues it (`src/engine/answers.ts`). A question asked on its issue thread (issue #435: it has a
-// `thread` record, posted or held for review) parks its job at once, whatever the timeout, with its own `why`.
+// `thread` record, posted or held for review) parks its job at once, whatever the timeout, with its own `why`; once a
+// person picked the job up with it still open (`waitRestartedAt`), it waits the timeout as any other (issue #1006).
 import { DEFAULT_AUTO_PARK, THREAD_PARK_WHY, autoParkMinutes, autoParkWhy, type AutoParkSettings, type Job, type Question } from '../domain/types.ts';
 import type { UserStore } from '../domain/ports.ts';
 import { HUMAN } from '../questions/service.ts';
@@ -24,7 +25,7 @@ function dueAfter(c: EngineContext, job: Job, settings: AutoParkSettings): { min
   const q = job.questionId ? store.questions.get(job.questionId) : undefined;
   if (!q || q.status !== 'open' || q.tier !== HUMAN || !q.escalatedToHumanAt || q.keptBy) return undefined;
   if (job.agentSession === undefined || parkRefusal(c, job) || forkRuns(store, q)) return undefined;
-  if (q.thread) return { minutes: 0, q, why: THREAD_PARK_WHY };
+  if (q.thread && !q.waitRestartedAt) return { minutes: 0, q, why: THREAD_PARK_WHY };
   const minutes = autoParkMinutes(settings, priorityTagOf(c, job.id).high === true);
   return minutes > 0 ? { minutes, q, why: autoParkWhy(minutes) } : undefined;
 }

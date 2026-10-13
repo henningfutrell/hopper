@@ -15158,8 +15158,9 @@ criteria" above). Everything else in that rule stands.
   (`src/engine/auto-park.ts`, the same conditions: an agent session, no fork at work), whatever the park timeout, with
   `why` "Parked: its question goes on the issue thread, and a reply there resumes it." A parked job's question never
   expires, so the wait on the thread has no deadline. A job that cannot park keeps its pane and waits as before; the
-  reply answers it all the same. Picked up with its question still open, it waits on the thread again, so it parks again
-  on the next tick: answer it, or set the policy to `off`, to keep it running.
+  reply answers it all the same. Picked up with its question still open, it waits the park timeout from the pick-up
+  (`waitRestartedAt`), as any other question, so the person has the full timeout to answer it (issue #1006); 0 keeps it
+  running.
 - **The reply** (`threadReply`): the first comment after the question's, not hopper-marked, not empty, by the
   connected account (`source.assignee`) or by a maintainer — GitHub's `author_association` `OWNER`, `MEMBER` or
   `COLLABORATOR` (`GitHubComment.association`). Anyone else's comment answers nothing. It settles the question
