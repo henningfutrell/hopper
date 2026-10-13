@@ -131,7 +131,7 @@ describe('the skill catalog and broker (issue #582)', () => {
     expect(lines.at(-2)).toMatch(/sh "\$HOPPER_SKILL" NAME/);
     expect(lines.at(-1)).toMatch(/^A credential for any other service: sh "\$HOPPER_SKILL" SERVICE --credential/);
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(160);
-    // Issue #1007 added sandbox-step: still a few short lines.
+    // Issue #1007 added need-step: still a few short lines.
     expect(catalog.stdout.length).toBeLessThan(900);
     expect(eventsOf(a, 'skill.listed')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ machine: 'desk' }) })]);
 

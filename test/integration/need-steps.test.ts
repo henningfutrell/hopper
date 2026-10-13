@@ -5,15 +5,15 @@
 // with the minted credentials (test/support/read-only-check.ts); STS and a Kubernetes API are faked on loopback; OpenFGA
 // is a double at its seam.
 //
-// Feature: Linux sandbox steps
+// Feature: need steps
 //   Scenario: a read need inside the read policy: the template is made and approved by the policy, its read-only check
 //     passes, and the step runs with no person; the job's own environment never holds a credential
 //     Given the read policy holds aws-role/123456789012/*
 //     When a job runs `hopper-step need "read/aws-role/123456789012/readonly" --command "aws sts get-caller-identity"`
 //     Then hopper-step waits for the template's read-only check, and asks again by itself
 //     When the check pass runs
-//     Then the step runs in a step box of that template with the minted AWS session, and its output comes back
-//     And the step and the mint are on the job's timeline, the step box as the machine; the box is gone after it
+//     Then the step runs in a need box of that template with the minted AWS session, and its output comes back
+//     And the step and the mint are on the job's timeline, the need box as the machine; the box is gone after it
 //     When the job runs the same need again
 //     Then it runs at once in the same template: no second template, no second check
 //   Scenario: a template a person saved that declares the need and more is used: the step is minted only its need
@@ -25,7 +25,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, TemplateView, VaultView } from '../../src/domain/types.ts';
-import { STEP_LABEL } from '../../src/sandbox/step.ts';
+import { NEED_LABEL } from '../../src/sandbox/need-box.ts';
 import { STEP_SCRIPT } from '../../src/windows-steps/script.ts';
 import { MINTED_AWS } from '../support/fake-mint-apis.ts';
 import { ACCOUNT, boot, runningJob, stopAll, vault, type Booted, type Run } from '../support/read-only-check.ts';
@@ -36,7 +36,7 @@ afterEach(stopAll);
 const READ = `read/aws-role/${ACCOUNT}/readonly`;
 const WHY = ['--why', 'Check which role the dig runs as'];
 
-/** Booted, with each step box's script run with a home of its own (as a box's home volume). */
+/** Booted, with each need box's script run with a home of its own (as a box's home volume). */
 async function bootSteps(policy: string[]): Promise<Booted> {
   const b = await boot(policy);
   const run = b.cloud.runScript;
@@ -70,9 +70,9 @@ function step(b: Booted, creds: string, args: string[]): { waiting: Promise<void
 
 const templates = async (b: Booted): Promise<TemplateView[]> => (await b.a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': b.token })).body.templates;
 const ofJob = async (b: Booted, jobId: string): Promise<DomainEvent[]> => (await b.a.events()).filter((e) => e.jobId === jobId);
-const stepBoxes = (b: Booted) => [...b.runtime.ran.values()].filter((s) => s.labels[STEP_LABEL] !== undefined);
+const stepBoxes = (b: Booted) => [...b.runtime.ran.values()].filter((s) => s.labels[NEED_LABEL] !== undefined);
 
-describe('Linux sandbox steps (issue #1007)', () => {
+describe('need steps (issue #1007)', () => {
   it('a read need inside the read policy runs with no person, after the read-only check; the same need again reuses the template', async () => {
     const b = await bootSteps([`aws-role/${ACCOUNT}/*`]);
     const { creds, jobId } = await stepJob(b);
@@ -89,18 +89,18 @@ describe('Linux sandbox steps (issue #1007)', () => {
     expect(r.stderr).toContain('hopper-step: the template is ready; the step runs now');
     expect(r.stderr).toContain('hopper-step: exit 0');
 
-    // One step box of the template: its image, the step label, the minted session in its environment only; then gone.
+    // One need box of the template: its image, the step label, the minted session in its environment only; then gone.
     const [box] = stepBoxes(b);
-    expect(box!.name).toMatch(new RegExp(`^hopper-step-${t!.name}-`));
+    expect(box!.name).toMatch(new RegExp(`^hopper-need-${t!.name}-`));
     expect(box!.env.AWS_SESSION_TOKEN).toBe(MINTED_AWS.SessionToken);
     expect(box!.script).not.toContain(MINTED_AWS.SessionToken);
     expect(b.runtime.boxes.size).toBe(0);
     expect(b.runtime.volumes.size).toBe(0);
 
     const events = await ofJob(b, jobId);
-    expect(events.find((e) => e.type === 'step.started')?.data).toMatchObject({ host: box!.name, template: t!.name, needs: [READ], command: 'aws sts get-caller-identity' });
+    expect(events.find((e) => e.type === 'step.started')?.data).toMatchObject({ box: box!.name, template: t!.name, needs: [READ], command: 'aws sts get-caller-identity' });
     expect(events.find((e) => e.type === 'vault.minted')?.data).toMatchObject({ kind: 'aws', operation: 'read', machine: box!.name, template: t!.name, job: jobId, credential: 'AWS_LAB', renewal: false });
-    expect(events.find((e) => e.type === 'step.finished')?.data).toMatchObject({ host: box!.name, exit: 0 });
+    expect(events.find((e) => e.type === 'step.finished')?.data).toMatchObject({ box: box!.name, exit: 0 });
     expect(JSON.stringify(events)).not.toContain(MINTED_AWS.SessionToken);
 
     // The same need again: at once, in the same template; no second template, no second check.
@@ -121,7 +121,7 @@ describe('Linux sandbox steps (issue #1007)', () => {
     const { creds, jobId } = await stepJob(b);
     const r = await step(b, creds, ['need', READ, '--command', 'aws sts get-caller-identity']).end;
     expect(r.code, r.stdout + r.stderr).toBe(0);
-    expect(stepBoxes(b)[0]!.name).toMatch(/^hopper-step-dig-/);
+    expect(stepBoxes(b)[0]!.name).toMatch(/^hopper-need-dig-/);
     const minted = (await ofJob(b, jobId)).filter((e) => e.type === 'vault.minted');
     expect(minted.map((e) => (e.data as { asset: unknown }).asset)).toEqual([role]);
     expect(stepBoxes(b)[0]!.env.HOPPER_STEP_KUBECONFIG).toBeUndefined();
@@ -146,7 +146,7 @@ describe('Linux sandbox steps (issue #1007)', () => {
     expect(r.stdout + r.stderr).toContain(`${write}: no apply without a plan`);
     expect(stepBoxes(b)).toHaveLength(0);
     const events = await ofJob(b, jobId);
-    expect(events.find((e) => e.type === 'vault.mint_refused')?.data).toMatchObject({ machine: expect.stringMatching(/^hopper-step-/), template: t!.name, job: jobId });
+    expect(events.find((e) => e.type === 'vault.mint_refused')?.data).toMatchObject({ machine: expect.stringMatching(/^hopper-need-/), template: t!.name, job: jobId });
     expect(events.find((e) => e.type === 'step.refused')?.data).toMatchObject({ reason: expect.stringContaining('no apply without a plan') });
     expect(events.filter((e) => e.type === 'vault.minted')).toHaveLength(0);
   });

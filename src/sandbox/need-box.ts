@@ -1,4 +1,4 @@
-// A Linux sandbox step's box (issue #1007, design.md "Sandbox steps"): one command of a job's run in a one-shot box of a
+// A need step's box (issue #1007, design.md "Need steps"): one command of a job's run in a one-shot box of a
 // template that covers the job's needs — the template's image with its tools, under the sandbox flags, as a read-only
 // check box runs (check.ts) —, with the credentials the vault minted for that step only. The job keeps its own machine
 // and its own work; only the step that needs the account or the cluster runs here.
@@ -16,30 +16,30 @@ import type { BoxTool, ContainerRuntime, ResourceLimits } from '../domain/sandbo
 import { boxImage, USER_LABEL } from './launch.ts';
 import { DEFAULT_LIMITS } from './params.ts';
 
-/** The label on every step box: its value is the hopper's instance id. The reconcile pass leaves it; the step removes it. */
-export const STEP_LABEL = 'io.hopper.step';
+/** The label on every need box: its value is the hopper's instance id. The reconcile pass leaves it; the step removes it. */
+export const NEED_LABEL = 'io.hopper.need';
 /** The most a step's inputs tar may hold: it travels in the box's environment. */
-export const STEP_BOX_INPUTS_MAX_BYTES = 64 * 1024;
+export const NEED_BOX_INPUTS_MAX_BYTES = 64 * 1024;
 /** The most a step's outputs tar may hold: it comes back in the box's output. */
-export const STEP_BOX_OUTPUTS_MAX_BYTES = 16 * 1024 * 1024;
+export const NEED_BOX_OUTPUTS_MAX_BYTES = 16 * 1024 * 1024;
 /** How often the box's output is read while the step runs, to stream it to the job. */
-export const STEP_POLL_MS = 1000;
+export const NEED_POLL_MS = 1000;
 /** Where the step's command runs in the box, its inputs extracted and its outputs taken from. */
-export const STEP_WORK_DIR = '$HOME/work';
+export const NEED_WORK_DIR = '$HOME/work';
 const OUTPUTS_MARK = 'HOPPER-STEP-OUTPUTS';
 const END_MARK = 'HOPPER-STEP-END';
 const LIMITS: ResourceLimits = { cpus: DEFAULT_LIMITS.cpus.default, memoryMb: DEFAULT_LIMITS.memoryMb.default };
 
-/** One need's minted credential, as the step box takes it. */
-export interface StepCredential { profile: OperationProfile; minted: Minted; reach: MintReach }
+/** One need's minted credential, as the need box takes it. */
+export interface NeedCredential { profile: OperationProfile; minted: Minted; reach: MintReach }
 
 /** A profile's or context's name for an asset: its name, `/` as `-`. */
 export const credentialName = (p: OperationProfile): string => p.asset.name.replaceAll('/', '-');
 
 /** The box's environment: the command, the outputs, the inputs, and the credentials' files and variables. */
-export function stepEnv(s: { command: string; outputs: readonly string[]; inputs?: Buffer; credentials: readonly StepCredential[] }): Record<string, string> {
-  const aws = s.credentials.filter((c): c is StepCredential & { minted: Extract<Minted, { kind: 'aws' }>; reach: Extract<MintReach, { kind: 'aws' }> } => c.minted.kind === 'aws' && c.reach.kind === 'aws');
-  const kube = s.credentials.filter((c): c is StepCredential & { minted: Extract<Minted, { kind: 'kube' }>; reach: Extract<MintReach, { kind: 'kube' }> } => c.minted.kind === 'kube' && c.reach.kind === 'kube');
+export function needEnv(s: { command: string; outputs: readonly string[]; inputs?: Buffer; credentials: readonly NeedCredential[] }): Record<string, string> {
+  const aws = s.credentials.filter((c): c is NeedCredential & { minted: Extract<Minted, { kind: 'aws' }>; reach: Extract<MintReach, { kind: 'aws' }> } => c.minted.kind === 'aws' && c.reach.kind === 'aws');
+  const kube = s.credentials.filter((c): c is NeedCredential & { minted: Extract<Minted, { kind: 'kube' }>; reach: Extract<MintReach, { kind: 'kube' }> } => c.minted.kind === 'kube' && c.reach.kind === 'kube');
   const env: Record<string, string> = { HOPPER_STEP_COMMAND: s.command, HOPPER_STEP_OUTPUTS: s.outputs.join('\n') };
   if (s.inputs && s.inputs.length > 0) env.HOPPER_STEP_INPUTS = s.inputs.toString('base64');
   if (aws.length > 0) {
@@ -66,15 +66,15 @@ export function stepEnv(s: { command: string; outputs: readonly string[]; inputs
 }
 
 /** Every credential's secret values: masked in the log the job reads. */
-export const stepSecrets = (credentials: readonly StepCredential[]): string[] =>
+export const needSecrets = (credentials: readonly NeedCredential[]): string[] =>
   credentials.flatMap((c) => (c.minted.kind === 'aws' ? [c.minted.SecretAccessKey, c.minted.SessionToken, c.minted.AccessKeyId] : [c.minted.token]));
 
 /**
- * The script the step box runs: the credentials and the inputs into files, out of the environment; the command in the
+ * The script the need box runs: the credentials and the inputs into files, out of the environment; the command in the
  * work directory; then the outputs, after the mark. Its exit code is the command's.
  */
-export const STEP_BOX_SCRIPT = `umask 077
-mkdir -p "${STEP_WORK_DIR}" || exit 125
+export const NEED_BOX_SCRIPT = `umask 077
+mkdir -p "${NEED_WORK_DIR}" || exit 125
 if [ -n "\${HOPPER_STEP_AWS_CREDENTIALS:-}" ]; then
   mkdir -p "$HOME/.aws" && printf '%s\\n' "$HOPPER_STEP_AWS_CREDENTIALS" > "$HOME/.aws/credentials" && printf '%s\\n' "$HOPPER_STEP_AWS_CONFIG" > "$HOME/.aws/config" || exit 125
   export AWS_SHARED_CREDENTIALS_FILE="$HOME/.aws/credentials" AWS_CONFIG_FILE="$HOME/.aws/config"
@@ -84,7 +84,7 @@ if [ -n "\${HOPPER_STEP_KUBECONFIG:-}" ]; then
   export KUBECONFIG="$HOME/.kube/config"
 fi
 unset HOPPER_STEP_AWS_CREDENTIALS HOPPER_STEP_AWS_CONFIG HOPPER_STEP_KUBECONFIG
-cd "${STEP_WORK_DIR}" || exit 125
+cd "${NEED_WORK_DIR}" || exit 125
 if [ -n "\${HOPPER_STEP_INPUTS:-}" ]; then
   printf '%s' "$HOPPER_STEP_INPUTS" | base64 -d | tar -xf - || { echo 'hopper-step: the inputs could not be extracted'; exit 125; }
 fi
@@ -94,7 +94,7 @@ command=$HOPPER_STEP_COMMAND; outputs=$HOPPER_STEP_OUTPUTS
 unset HOPPER_STEP_COMMAND HOPPER_STEP_OUTPUTS
 sh -c "$command"
 code=$?
-cd "${STEP_WORK_DIR}" || exit "$code"
+cd "${NEED_WORK_DIR}" || exit "$code"
 if [ -n "$outputs" ]; then
   set --
   while IFS= read -r o; do [ -n "$o" ] && set -- "$@" "$o"; done <<HOPPER_OUTPUTS
@@ -119,7 +119,7 @@ export function splitOutput(text: string): { log: string; outputs?: Buffer; prob
   if (end === -1) return { log: text.slice(0, at), problem: 'the outputs did not all come back' };
   const outputs = Buffer.from(rest.slice(0, end).replace(/\s+/g, ''), 'base64');
   const after = rest.slice(end + END_MARK.length).replace(/^\r?\n/, '');
-  if (outputs.length > STEP_BOX_OUTPUTS_MAX_BYTES) return { log: text.slice(0, at) + after, problem: `the outputs hold more than ${STEP_BOX_OUTPUTS_MAX_BYTES / (1024 * 1024)} MiB` };
+  if (outputs.length > NEED_BOX_OUTPUTS_MAX_BYTES) return { log: text.slice(0, at) + after, problem: `the outputs hold more than ${NEED_BOX_OUTPUTS_MAX_BYTES / (1024 * 1024)} MiB` };
   return { log: text.slice(0, at) + after, outputs };
 }
 
@@ -135,7 +135,7 @@ export function shownSoFar(text: string): string {
   return text;
 }
 
-export interface StepBox {
+export interface NeedBox {
   name: string;
   userId: string;
   instanceId: string;
@@ -146,15 +146,15 @@ export interface StepBox {
   timeoutMs: number;
 }
 
-/** What a step box came to: the command's exit code, its outputs tar, and the hopper's problem, if any. */
-export interface StepBoxResult { exit: number; outputs?: Buffer; problem?: string }
+/** What a need box came to: the command's exit code, its outputs tar, and the hopper's problem, if any. */
+export interface NeedBoxResult { exit: number; outputs?: Buffer; problem?: string }
 
 /**
- * Runs one step box to its end: its output to `log` as it comes, at most every `pollMs`. `signal` stops it (the job's
+ * Runs one need box to its end: its output to `log` as it comes, at most every `pollMs`. `signal` stops it (the job's
  * request gone). Never rejects: a failure of its own is `problem`, exit 125. The box and its volume are removed after it.
  */
-export async function runStepBox(runtime: ContainerRuntime, box: StepBox, io: { log(chunk: string): void; signal: AbortSignal; pollMs?: number }): Promise<StepBoxResult> {
-  const labels = { [STEP_LABEL]: box.instanceId, [USER_LABEL]: box.userId };
+export async function runNeedBox(runtime: ContainerRuntime, box: NeedBox, io: { log(chunk: string): void; signal: AbortSignal; pollMs?: number }): Promise<NeedBoxResult> {
+  const labels = { [NEED_LABEL]: box.instanceId, [USER_LABEL]: box.userId };
   const volume = `${box.name}-home`;
   let id = '';
   let shown = 0;
@@ -166,7 +166,7 @@ export async function runStepBox(runtime: ContainerRuntime, box: StepBox, io: { 
   try {
     const { image, user } = await boxImage(runtime, box.template.image, box.template.tools ? [...box.template.tools] : undefined, box.template.readOnly);
     await runtime.createVolume(volume, labels);
-    id = await runtime.create({ name: box.name, image, network: box.network, volume, labels, user, env: box.env, limits: LIMITS, script: STEP_BOX_SCRIPT });
+    id = await runtime.create({ name: box.name, image, network: box.network, volume, labels, user, env: box.env, limits: LIMITS, script: NEED_BOX_SCRIPT });
     if (io.signal.aborted) return { exit: 125, problem: 'stopped before it started' };
     await runtime.start(id);
     let ended = false;
@@ -174,7 +174,7 @@ export async function runStepBox(runtime: ContainerRuntime, box: StepBox, io: { 
     const stopped = new Promise<'stopped'>((resolve) => { io.signal.addEventListener('abort', () => resolve('stopped'), { once: true }); });
     const poll = (async () => {
       while (!ended && !io.signal.aborted) {
-        await new Promise((r) => setTimeout(r, io.pollMs ?? STEP_POLL_MS));
+        await new Promise((r) => setTimeout(r, io.pollMs ?? NEED_POLL_MS));
         if (ended || io.signal.aborted) return;
         output = await runtime.logs(id).catch(() => output);
         show(output);
@@ -190,7 +190,7 @@ export async function runStepBox(runtime: ContainerRuntime, box: StepBox, io: { 
       await runtime.stop(id).catch(() => undefined);
       output = await runtime.logs(id).catch(() => output);
       show(output);
-      return { exit: 125, problem: `the step box did not end: ${first.error}` };
+      return { exit: 125, problem: `the need box did not end: ${first.error}` };
     }
     output = await runtime.logs(id).catch(() => output);
     show(output);
@@ -200,7 +200,7 @@ export async function runStepBox(runtime: ContainerRuntime, box: StepBox, io: { 
     if (tail) io.log(tail);
     return { exit: first.exit, ...(split.outputs ? { outputs: split.outputs } : {}), ...(split.problem ? { problem: split.problem } : {}) };
   } catch (e) {
-    return { exit: 125, problem: `the step box did not run: ${e instanceof Error ? e.message : String(e)}` };
+    return { exit: 125, problem: `the need box did not run: ${e instanceof Error ? e.message : String(e)}` };
   } finally {
     if (id) await runtime.remove(id).catch(() => {});
     await runtime.removeVolume(volume).catch(() => {});

@@ -16,7 +16,7 @@ import { launchScopeOf, type LaunchedProfile } from './params.ts';
 import { HOPPER_PROBES } from './probes.ts';
 import { reconcilePass, type Problems } from './reconcile.ts';
 import { createPlacements, LOCAL, NO_RUNTIME, type ClientTargets } from './runtime.ts';
-import { runStepBox, STEP_LABEL, type StepBox, type StepBoxResult } from './step.ts';
+import { runNeedBox, NEED_LABEL, type NeedBox, type NeedBoxResult } from './need-box.ts';
 import type { AgentCredentialOf } from './agent-credential.ts';
 import type { AgentCredentialAsk } from '../vault/agent-credential.ts';
 
@@ -96,7 +96,7 @@ export interface Sandboxes {
    * environment, beside the hopper, else on a client target of the user's dialled in with a runtime there (as a read-only
    * check runs). Never rejects: no place to run it, or a failure of its own, is `problem`.
    */
-  needStep(userId: string, box: Omit<StepBox, 'userId' | 'instanceId' | 'network'>, io: { log(chunk: string): void; signal: AbortSignal; pollMs?: number }): Promise<StepBoxResult>;
+  needStep(userId: string, box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'>, io: { log(chunk: string): void; signal: AbortSignal; pollMs?: number }): Promise<NeedBoxResult>;
   /** One reconcile pass, at `now` (default the clock's). */
   reconcile(now?: Date): Promise<void>;
   /** One read-only check pass (issue #716): each template that is due is checked; a pass that runs already is joined. */
@@ -148,11 +148,11 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
   const checkPass = o.checks
     ? createCheckPass({ ...(o.runtime ? { local: o.runtime } : {}), place: places.forCheck, credentials: o.checks, instanceId: o.instanceId, probes: o.probes ?? HOPPER_PROBES, clock: o.clock, logger: o.logger }, o.checks)
     : undefined;
-  // The step boxes running now (issue #1007): a sweep removes the hopper's other step boxes, left by a hopper that stopped mid-step.
+  // The need boxes running now (issue #1007): a sweep removes the hopper's other need boxes, left by a hopper that stopped mid-step.
   const stepping = new Set<string>();
   const sweepSteps = async (): Promise<void> => {
     if (!o.runtime) return;
-    for (const box of await o.runtime.list({ [STEP_LABEL]: o.instanceId }).catch(() => [])) {
+    for (const box of await o.runtime.list({ [NEED_LABEL]: o.instanceId }).catch(() => [])) {
       if (stepping.has(box.name)) continue;
       await o.runtime.remove(box.id).catch(() => {});
       await o.runtime.removeVolume(`${box.name}-home`).catch(() => {});
@@ -197,7 +197,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
       if (!at) return { exit: 125, problem: `${NO_RUNTIME}; and no machine of the user's with a container runtime is dialled in` };
       stepping.add(box.name);
       try {
-        const r = await runStepBox(at.runtime, { ...box, userId, instanceId: o.instanceId, network: at.network }, io);
+        const r = await runNeedBox(at.runtime, { ...box, userId, instanceId: o.instanceId, network: at.network }, io);
         o.logger.info(`hopper: need box ${box.name} ended with ${r.exit}${at.runtime === o.runtime ? '' : ` on ${at.machine}`}${r.problem ? `: ${r.problem}` : ''}`);
         return r;
       } finally {

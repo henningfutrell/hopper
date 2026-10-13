@@ -109,7 +109,7 @@ export const SKILLS: readonly Skill[] = [
   },
   {
     // Issue #1004: one step in a sandbox box this job's own sandbox request started, run by the hopper through the box's
-    // container runtime; `hopper-step box` (src/windows-steps/script.ts).
+    // container runtime; `hopper-need box` (src/windows-steps/script.ts).
     name: 'box-step',
     line: 'run a step in this job\'s sandbox box',
     text: BOX_STEP_HELP,

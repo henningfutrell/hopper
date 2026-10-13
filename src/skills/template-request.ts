@@ -235,7 +235,7 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
     template: name,
     text: `${TEMPLATE_SKILL}: template ${name} is ready, ${who}, for: ${needs.map(inWords).join(', ')}.
 A box of it does this work. Ask the hopper to start one: sh "$HOPPER_SKILL" ${SANDBOX_SKILL} --needs "<the same needs>" --wait. A person can also start one: hopper sandbox launch --template ${name}.
-To run one command that needs it from this job, with no box to start, run it as a sandbox step: sh "$HOPPER_STEP" need "<the same needs>" --why "…" --command "…".
+To run one command that needs it from this job, with no box to start, run it as a need step: sh "$HOPPER_STEP" need "<the same needs>" --why "…" --command "…".
 On the box, load the skill for each asset; the hopper asks a person for each credential the first time:
 ${loads(needs)}`,
   };

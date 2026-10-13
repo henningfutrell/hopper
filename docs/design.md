@@ -17123,7 +17123,7 @@ sends every approval while none has answered, each card shows its progress then 
 others approved and says why), `test/sandbox/requests.test.ts` (20 runs approved at once each answer at once, and their
 boxes start side by side).
 
-## Sandbox steps (issue #1007, 2026-10-13)
+## Need steps (issue #1007, 2026-10-13)
 
 Owner rules (issue #1007, rolling up #990, #998, #1003, #1004, #1006): no seat holds an AWS, Kubernetes, terraform or
 vault credential; no routing rule or machine pin sends infra work to a box; no person starts a box by hand for a job. A
@@ -17134,12 +17134,12 @@ with "this seat job cannot run commands in it".
 
 Two kinds of sandbox step, one way in (`hopper-step`, `HOPPER_STEP`, `/job/step`, the job's proxy token):
 
-| | Windows sandbox step | Linux sandbox step |
+| | Windows sandbox step | Need step |
 |---|---|---|
 | asked as | `sh "$HOPPER_STEP" run HOST …` | `sh "$HOPPER_STEP" need NEEDS --why … …` |
-| runs | on a **Windows host** a person set up, over ssh, PowerShell | in a **step box**: a one-shot container of a ready template that covers the needs, `sh` |
+| runs | on a **Windows host** a person set up, over ssh, PowerShell | in a **need box**: a one-shot container of a ready template that covers the needs, `sh` |
 | credentials | vault secrets the host gives, by name, after the job's vault grant | each need's **minted credential**, for the step only, after Access and the apply gate |
-| skill text | `windows-step` | `sandbox-step` |
+| skill text | `windows-step` | `need-step` |
 
 Both stream the output to the job as it comes, then answer the exit code and the outputs (`GET /job/step/:id`), keep the
 result an hour, and record `step.started`, `step.finished`, `step.refused` on the job's timeline. "Windows sandbox steps"
@@ -17149,7 +17149,7 @@ above holds the Windows half; this section the Linux half.
   64 KiB: they travel in the box's environment). NEEDS as a template request writes them, `<operation>/<kind>/<asset>`.
   A need the vault mints nothing for (only `aws-role`, `cluster` and `namespace` are minted) is a 400 before any template
   is made. `--secret` is refused: a step gets what its needs name, never a vault secret by name.
-- **The template** (`coveringTemplate`, `src/sandbox/steps.ts`). A template of the user's that is ready — approved, its
+- **The template** (`coveringTemplate`, `src/sandbox/need-steps.ts`). A template of the user's that is ready — approved, its
   image the approved one, every profile approved, its read-only check passed when it takes one — and that declares every
   need. More needs are fine: the step is minted only what it named, so a wider template gives it nothing more. The one
   with the fewest profiles wins. None: the route asks for the template through the skill waits as `sandbox-template`
@@ -17162,16 +17162,16 @@ above holds the Windows half; this section the Linux half.
   10 s (`HOPPER_STEP_POLL_S`), for `--wait` seconds (default 1800). Ready, it runs the step: one approval of a write need
   and the step goes on with no other action. When `--wait` runs out first, it tells the job to end its turn with
   `HOPPER_WAITING`; the watch wakes it, and it runs the same command again.
-- **The mints** (`mintForStep`, `src/vault/step-mint.ts`; with the vault in a container, minted where the minting
+- **The mints** (`mintForNeedStep`, `src/vault/need-mint.ts`; with the vault in a container, minted where the minting
   credential is, as a check box's). Per need, before the inputs are taken: the job at work; Access asked as a live job
-  of the template (`decideCheckMint`, the step box as the check), so only a profile approved for the template is minted;
+  of the template (`decideCheckMint`, the need box as the check), so only a profile approved for the template is minted;
   for an operation but read, the apply gate (issue #870) — an approved, current infra plan, `--plan-id`; the minting
-  credential for the account or cluster; the job still at work. `vault.minted` with the step box as its `machine` and the
+  credential for the account or cluster; the job still at work. `vault.minted` with the need box as its `machine` and the
   job, or `vault.mint_refused`; never a credential. A refusal is a 403 that names the need and why.
-- **The step box** (`runStepBox`, `src/sandbox/step.ts`, through the sandbox module's `step`: beside the hopper, else
+- **The need box** (`runNeedBox`, `src/sandbox/need-box.ts`, through the sandbox module's `needStep`: beside the hopper, else
   on a client target of the user's with a runtime, as a check runs). The template's image with its tools, under the
-  sandbox flags, the step label `io.hopper.step` (the reconcile pass leaves it; the check pass's sweep removes one no step
-  holds), `STEP_BOX_SCRIPT` as its one-shot script. The credentials, the command, the outputs and the inputs come in its
+  sandbox flags, the step label `io.hopper.need` (the reconcile pass leaves it; the check pass's sweep removes one no step
+  holds), `NEED_BOX_SCRIPT` as its one-shot script. The credentials, the command, the outputs and the inputs come in its
   environment, never in the script: the script writes the AWS profiles (`[<account>-<role>]`, the first `AWS_PROFILE`)
   and the kubeconfig (a context per cluster or namespace, the first current) under the box's home with umask 077, takes
   them out of the environment, extracts the inputs in `$HOME/work`, and runs the command there with `sh -c`. One AWS role
@@ -17179,12 +17179,12 @@ above holds the Windows half; this section the Linux half.
   which the job's log never shows (`shownSoFar`, `splitOutput`). The box's output is read every second and streamed with
   each credential's value masked (`maskSecrets`); the exit code is the command's; a timeout or the job's request gone
   stops the box. The box and its home volume are removed after it, whatever came before.
-- **What the job learns.** `sandbox-step` in the skill catalog, its full help `SANDBOX_STEP_HELP`; and the `sandbox`
+- **What the job learns.** `need-step` in the skill catalog, its full help `NEED_STEP_HELP`; and the `sandbox`
   answer for a job not on the box names `hopper-step need` (issue #1009's text changed).
 
 **Decided here.** The step runs one command, not the rest of the job: the job's work tree, agent and GitHub stay on its
 seat. A superset template is used for a step but never for a `sandbox` box: the box is given every profile of its
-template, the step only its needs. The step box is the check box's mechanism, not a sandbox box: it joins no hopper, so
+template, the step only its needs. The need box is the check box's mechanism, not a sandbox box: it joins no hopper, so
 no lane, join code or reconcile record is made for it, and nothing outlives the step.
 
 **Also in this change.** A job's FAILED reason is read whole: every line after the marker, at most 4000 characters
@@ -17192,8 +17192,8 @@ no lane, join code or reconcile record is made for it, and nothing outlives the 
 up with a question 5 h old waits the full auto-park timeout again (`test/integration/auto-park.test.ts`): the pick up
 already restarted the timer (issue #692), and the path that re-parked jobs in #1006 was not found.
 
-**Not built.** `terraform apply` in a step box: the apply wrapper fetches the plan file with the job's proxy token, which
-a step box does not hold. A step's output on the job stream (the response carries it). Inputs over 64 KiB. Approving a
+**Not built.** `terraform apply` in a need box: the apply wrapper fetches the plan file with the job's proxy token, which
+a need box does not hold. A step's output on the job stream (the response carries it). Inputs over 64 KiB. Approving a
 template and starting a box in the UI hanging the HTTP server (#1003) is its own change.
 
 **Residual risk, stated.** A step's command runs with its credentials: it can print them, and the mask is a guard
@@ -17203,7 +17203,7 @@ job of the user's whose needs it declares; the step is still minted only what it
 
 Tests: `test/sandbox/step.test.ts` (the box's environment; the real script under `sh`: credentials into files and out of
 the environment, inputs, output, exit code, outputs back, the box gone; a stop; the template a step takes),
-`test/integration/sandbox-steps.test.ts` (the real daemon and `hopper-step`, OpenFGA and the container runtime as doubles,
+`test/integration/need-steps.test.ts` (the real daemon and `hopper-step`, OpenFGA and the container runtime as doubles,
 STS faked: a read in the policy after the check, with no person, and again with no second template; a person's wider
 template minted only the need; a write that waits, one approval, then the apply gate; a need the vault mints nothing
 for), `test/integration/job-sandboxes.test.ts` (the answer names `hopper-step need`), `test/herdr/screen.test.ts`

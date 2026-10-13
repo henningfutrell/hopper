@@ -39,7 +39,8 @@ describe('the sandbox module stops', () => {
       clock: { now: () => new Date('2026-10-11T00:00:00.000Z') }, logger: { info() {}, warn() {} },
     });
     sandboxes.start();
-    expect(listed).toBe(1);
+    // The reconcile pass, and (issue #1007) the sweep of need boxes no step holds: both wait on the list.
+    expect(listed).toBe(2);
     let stopped = false;
     const stop = sandboxes.stop().then(() => { stopped = true; });
     await new Promise((resolve) => setTimeout(resolve, 50));

@@ -8,7 +8,7 @@
 //                                      the inputs as the body (a tar, application/x-tar; empty: none). 200: the step's
 //                                      output, streamed as it comes, its id in `x-hopper-step`; else `no: <reason>`
 //   POST /job/step?needs=&why=&plan=&planId=&command=&timeout=&output=...[&ready=1]
-//                                      a Linux step (issue #1007): the same, in a step box of a ready template that covers
+//                                      a Linux step (issue #1007): the same, in a need box of a ready template that covers
 //                                      the needs, its credentials minted for it. No such template yet: it is asked for as
 //                                      `sandbox-template` asks (`why`, `plan`), and 202 `waiting: …` while it waits for a
 //                                      person or its check; the wait opens a watch that ends the job's own wait (issue #998).
@@ -29,7 +29,7 @@ import { mintKindFor } from '../domain/minting.ts';
 import type { Job, JobStatus } from '../domain/types.ts';
 import { STEP_INPUTS_MAX_BYTES } from '../domain/windows-steps.ts';
 import { parseProxyToken } from '../github-proxy/token.ts';
-import { SANDBOX_STEP_INPUTS_MAX_BYTES } from '../sandbox/steps.ts';
+import { NEED_STEP_INPUTS_MAX_BYTES } from '../sandbox/need-steps.ts';
 import type { SkillWaits } from '../skills/index.ts';
 import { needsOf, TEMPLATE_SKILL } from '../skills/template-request.ts';
 import type { StepStart } from '../windows-steps/service.ts';
@@ -120,7 +120,7 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
         // A need the vault mints nothing for is refused before any template is made for it.
         const unminted = read.find((p) => mintKindFor(p.asset.kind) === undefined);
         if (unminted) return no(reply, 400, `${unminted.operation}/${unminted.asset.kind}/${unminted.asset.name}: the hopper mints a credential for a step for an aws-role, a cluster or a namespace only: name aws-role/<account>/<role>, cluster/<name> or namespace/<cluster>/<ns>`);
-        const steps = who.t.sandboxSteps;
+        const steps = who.t.needSteps;
         let template = steps.covering(read);
         if (!template) {
           // No ready template covers the needs: asked for as a template request is — made once, approved only by a person or
@@ -129,7 +129,7 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
           const asked = await o.skillWaits.handle(req.headers.authorization, { name: TEMPLATE_SKILL, needs, ...(why ? { why } : {}), ...(plan ? { plan } : {}) });
           if (asked.status !== 200) return reply.code(asked.status).type('text/plain; charset=utf-8').send(asked.text);
           template = steps.covering(read);
-          if (!template) return no(reply, 503, 'the template for these needs is ready, but no step box can run it yet: ask again in a minute');
+          if (!template) return no(reply, 503, 'the template for these needs is ready, but no need box can run it yet: ask again in a minute');
         }
         // `ready`: only whether a template is ready for the needs (hopper-step asks so while it waits), no step run.
         if (one(query.ready) !== undefined) return reply.type('text/plain; charset=utf-8').send(`ready: template ${template.name} covers ${read.length === 1 ? 'the need' : `the ${read.length} needs`}\n`);
@@ -139,7 +139,7 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
           ...(command !== undefined ? { command } : {}), ...(timeout !== undefined ? { timeout } : {}), ...(planId !== undefined ? { plan: planId } : {}),
         });
         if ('no' in started) return no(reply, started.status, started.no);
-        return runStarted(req, reply, started, SANDBOX_STEP_INPUTS_MAX_BYTES);
+        return runStarted(req, reply, started, NEED_STEP_INPUTS_MAX_BYTES);
       }
       const host = one(query.host);
       const box = one(query.box);
@@ -156,7 +156,7 @@ export function jobStepRoutes(app: FastifyInstance, o: { tenants: Tenants; skill
       const who = askerOf(o.tenants, req.headers.authorization);
       if ('status' in who) return no(reply, who.status, who.text);
       const { id } = req.params as { id: string };
-      const r = who.t.windowsSteps.result(who.job, id) ?? who.t.sandboxSteps.result(who.job, id);
+      const r = who.t.windowsSteps.result(who.job, id) ?? who.t.needSteps.result(who.job, id);
       if (!r) return no(reply, 404, `no step ${id} of this job's: a step's result is kept for an hour after it ends`);
       reply.header(STEP_HEADER.exit, String(r.result.exit)).type('application/x-tar');
       if (r.result.problem) reply.header(STEP_HEADER.problem, headerSafe(r.result.problem));

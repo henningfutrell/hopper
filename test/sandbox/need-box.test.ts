@@ -1,5 +1,5 @@
-// A Linux sandbox step's box (issue #1007, src/sandbox/step.ts): the box's environment from the minted credentials, and
-// one step box run to its end at the container runtime double, whose one-shot container runs the step's real script
+// A need step's box (issue #1007, src/sandbox/need-box.ts): the box's environment from the minted credentials, and
+// one need box run to its end at the container runtime double, whose one-shot container runs the step's real script
 // under `sh` with a home of its own: the credentials into files and out of the environment, the inputs extracted, the
 // command's output streamed, its exit code, the outputs back as a tar, and the box and its volume gone after it.
 import { execFileSync } from 'node:child_process';
@@ -9,17 +9,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ContainerSpec } from '../../src/domain/ports.ts';
-import { runStepBox, shownSoFar, splitOutput, stepEnv, stepSecrets, STEP_LABEL, type StepCredential } from '../../src/sandbox/step.ts';
-import { coveringTemplate } from '../../src/sandbox/steps.ts';
+import { runNeedBox, shownSoFar, splitOutput, needEnv, needSecrets, NEED_LABEL, type NeedCredential } from '../../src/sandbox/need-box.ts';
+import { coveringTemplate } from '../../src/sandbox/need-steps.ts';
 import type { TemplateView } from '../../src/domain/vault.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
 
-const AWS: StepCredential = {
+const AWS: NeedCredential = {
   profile: { operation: 'read', asset: { kind: 'aws-role', name: '123456789012/readonly' } },
   minted: { kind: 'aws', AccessKeyId: 'ASIASTEP', SecretAccessKey: 'step-secret-key', SessionToken: 'step-session-token', Expiration: '2030-01-01T00:15:00Z' },
   reach: { kind: 'aws', region: 'eu-west-1' },
 };
-const KUBE: StepCredential = {
+const KUBE: NeedCredential = {
   profile: { operation: 'read', asset: { kind: 'namespace', name: 'lab/web' } },
   minted: { kind: 'kube', token: 'step-kube-token', expirationTimestamp: '2030-01-01T00:10:00Z' },
   reach: { kind: 'kube', server: 'https://lab.example:6443', certificateAuthorityData: 'Q0E=' },
@@ -41,11 +41,11 @@ function runtime(): FakeContainerRuntime {
   return r;
 }
 
-const box = (env: Record<string, string>) => ({ name: 'hopper-step-asked-1-abcd', userId: 'u1', instanceId: 'i1', network: 'hopper_default', template: { image: 'ghcr.io/henningfutrell/hopper:box-claude' }, env, timeoutMs: 30_000 });
+const box = (env: Record<string, string>) => ({ name: 'hopper-need-asked-1-abcd', userId: 'u1', instanceId: 'i1', network: 'hopper_default', template: { image: 'ghcr.io/henningfutrell/hopper:box-claude' }, env, timeoutMs: 30_000 });
 
-describe('a Linux sandbox step\'s box (issue #1007)', () => {
+describe('a need step\'s box (issue #1007)', () => {
   it('one AWS role is the AWS CLI\'s own variables and a profile; each cluster or namespace a kubeconfig context', () => {
-    const env = stepEnv({ command: 'aws sts get-caller-identity', outputs: ['out'], credentials: [AWS, KUBE] });
+    const env = needEnv({ command: 'aws sts get-caller-identity', outputs: ['out'], credentials: [AWS, KUBE] });
     expect(env).toMatchObject({
       HOPPER_STEP_COMMAND: 'aws sts get-caller-identity', HOPPER_STEP_OUTPUTS: 'out',
       AWS_ACCESS_KEY_ID: 'ASIASTEP', AWS_SECRET_ACCESS_KEY: 'step-secret-key', AWS_SESSION_TOKEN: 'step-session-token', AWS_REGION: 'eu-west-1', AWS_PROFILE: '123456789012-readonly',
@@ -57,9 +57,9 @@ describe('a Linux sandbox step\'s box (issue #1007)', () => {
       clusters: [{ name: 'lab-web', cluster: { server: 'https://lab.example:6443', 'certificate-authority-data': 'Q0E=' } }],
       contexts: [{ name: 'lab-web', context: { cluster: 'lab-web', user: 'lab-web', namespace: 'web' } }],
     });
-    expect(stepSecrets([AWS, KUBE])).toEqual(['step-secret-key', 'step-session-token', 'ASIASTEP', 'step-kube-token']);
+    expect(needSecrets([AWS, KUBE])).toEqual(['step-secret-key', 'step-session-token', 'ASIASTEP', 'step-kube-token']);
     // Two AWS roles: profiles only, the first AWS_PROFILE; no AWS CLI variables that would pick one of them.
-    const two = stepEnv({ command: 'x', outputs: [], credentials: [AWS, { ...AWS, profile: { operation: 'read', asset: { kind: 'aws-role', name: '210987654321/readonly' } } }] });
+    const two = needEnv({ command: 'x', outputs: [], credentials: [AWS, { ...AWS, profile: { operation: 'read', asset: { kind: 'aws-role', name: '210987654321/readonly' } } }] });
     expect(two.AWS_ACCESS_KEY_ID).toBeUndefined();
     expect(two.AWS_PROFILE).toBe('123456789012-readonly');
     expect(two.HOPPER_STEP_AWS_CREDENTIALS).toContain('[210987654321-readonly]');
@@ -80,7 +80,7 @@ describe('a Linux sandbox step\'s box (issue #1007)', () => {
       'exit 3',
     ].join('\n');
     const log: string[] = [];
-    const result = await runStepBox(r, box(stepEnv({ command, outputs: ['out', 'missing'], inputs, credentials: [AWS, KUBE] })), { log: (c) => log.push(c), signal: new AbortController().signal, pollMs: 10 });
+    const result = await runNeedBox(r, box(needEnv({ command, outputs: ['out', 'missing'], inputs, credentials: [AWS, KUBE] })), { log: (c) => log.push(c), signal: new AbortController().signal, pollMs: 10 });
     expect(result.exit).toBe(3);
     expect(result.problem).toBeUndefined();
     const text = log.join('');
@@ -95,7 +95,7 @@ describe('a Linux sandbox step\'s box (issue #1007)', () => {
     execFileSync('tar', ['-xf', join(out, 'o.tar'), '-C', out]);
     expect(readFileSync(join(out, 'out', 'report.txt'), 'utf8')).toBe('report\n');
     const [spec] = [...r.ran.values()];
-    expect(spec!.labels[STEP_LABEL]).toBe('i1');
+    expect(spec!.labels[NEED_LABEL]).toBe('i1');
     expect(spec!.script).not.toContain('step-session-token');
     expect(r.boxes.size).toBe(0);
     expect(r.volumes.size).toBe(0);
@@ -104,7 +104,7 @@ describe('a Linux sandbox step\'s box (issue #1007)', () => {
   it('a step the job stops waiting for is stopped and removed', async () => {
     const r = runtime();
     const stop = new AbortController();
-    const running = runStepBox(r, box(stepEnv({ command: 'sleep 2', outputs: [], credentials: [] })), { log: () => {}, signal: stop.signal, pollMs: 10 });
+    const running = runNeedBox(r, box(needEnv({ command: 'sleep 2', outputs: [], credentials: [] })), { log: () => {}, signal: stop.signal, pollMs: 10 });
     setTimeout(() => stop.abort(), 100);
     expect(await running).toEqual({ exit: 125, problem: 'the job stopped waiting for it' });
     expect(r.boxes.size).toBe(0);
@@ -113,7 +113,7 @@ describe('a Linux sandbox step\'s box (issue #1007)', () => {
   it('a box that does not start is a problem, never a throw', async () => {
     const r = runtime();
     r.createFails = 'no such image';
-    expect(await runStepBox(r, box({}), { log: () => {}, signal: new AbortController().signal })).toEqual({ exit: 125, problem: 'the step box did not run: no such image' });
+    expect(await runNeedBox(r, box({}), { log: () => {}, signal: new AbortController().signal })).toEqual({ exit: 125, problem: 'the need box did not run: no such image' });
   });
 
   it('the job never reads the outputs, nor a tail that may begin their mark', () => {

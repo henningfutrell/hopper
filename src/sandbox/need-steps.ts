@@ -1,5 +1,5 @@
-// One user's Linux sandbox steps (issue #1007, design.md "Sandbox steps"): a running job names what its step needs
-// (`read/aws-role/<account>/<role>`), and the hopper runs that one command in a step box of a template that covers the
+// One user's need steps (issue #1007, design.md "Need steps"): a running job names what its step needs
+// (`read/aws-role/<account>/<role>`), and the hopper runs that one command in a need box of a template that covers the
 // needs, with credentials minted for that step only, then gives the job the output, the exit code and the outputs. The
 // job stays on its own machine; no credential ever reaches it.
 //
@@ -9,8 +9,8 @@
 // the needs, the job's route asks for the template as `sandbox-template` does (src/skills/template-request.ts), which
 // makes it once and never twice, and the step waits until it is ready.
 //
-// Recorded on the job's timeline as a Windows step is (`step.started`, `step.finished`, `step.refused`), the step box
-// as its `host`; the result and the outputs are kept an hour for the job to fetch, then swept.
+// Recorded on the job's timeline as a Windows step is (`step.started`, `step.finished`, `step.refused`), the need box
+// as its `box`; the result and the outputs are kept an hour for the job to fetch, then swept.
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,7 +21,7 @@ import type { Job, NewEvent } from '../domain/types.ts';
 import type { TemplateView } from '../domain/vault.ts';
 import { stepRequestOf, type StepResult } from '../domain/windows-steps.ts';
 import { maskSecrets, STEP_KEEP_MS, type StepStart } from '../windows-steps/service.ts';
-import { stepEnv, stepSecrets, STEP_BOX_INPUTS_MAX_BYTES, type StepBox, type StepBoxResult, type StepCredential } from './step.ts';
+import { needEnv, needSecrets, NEED_BOX_INPUTS_MAX_BYTES, type NeedBox, type NeedBoxResult, type NeedCredential } from './need-box.ts';
 
 /** The most of a step's command an event keeps. */
 const COMMAND_IN_EVENT = 300;
@@ -40,13 +40,13 @@ export function coveringTemplate(templates: readonly TemplateView[], needs: read
     .sort((a, b) => a.profiles.length - b.profiles.length || a.name.localeCompare(b.name))[0];
 }
 
-export interface SandboxStepsOptions {
+export interface NeedStepsOptions {
   /** The user's templates now, as the vault shows them. */
   templates(): TemplateView[];
-  /** The vault's mint for one need of the step box `step` (src/vault/step-mint.ts, given by the composition root); `plan`: the approved plan a change applies. */
+  /** The vault's mint for one need of the need box `step` (src/vault/need-mint.ts, given by the composition root); `plan`: the approved plan a change applies. */
   mint(ask: { template: string; step: string; job: string; profile: OperationProfile; plan?: string }): Promise<{ minted: Minted; reach: MintReach } | { refused: string }>;
-  /** Runs the step box (the sandbox module's `step`); absent: this hopper runs no step box. */
-  run?: (box: Omit<StepBox, 'userId' | 'instanceId' | 'network'>, io: { log(chunk: string): void; signal: AbortSignal }) => Promise<StepBoxResult>;
+  /** Runs the need box (the sandbox module's `step`); absent: this hopper runs no need box. */
+  run?: (box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'>, io: { log(chunk: string): void; signal: AbortSignal }) => Promise<NeedBoxResult>;
   /** Where each step's own directory goes on this machine: the hopper's work dir (scratch). */
   dir: string;
   record(event: NewEvent): void;
@@ -56,27 +56,27 @@ export interface SandboxStepsOptions {
 }
 
 /** A Linux step's fields as the job sent them, its needs read already, and the template that covers them. */
-export interface SandboxStepFields { template: TemplateView; needs: OperationProfile[]; command?: string; timeout?: string; outputs: string[]; plan?: string }
+export interface NeedStepFields { template: TemplateView; needs: OperationProfile[]; command?: string; timeout?: string; outputs: string[]; plan?: string }
 
-export interface SandboxSteps {
+export interface NeedSteps {
   /** The ready template that covers the needs; undefined: none yet. */
   covering(needs: readonly OperationProfile[]): TemplateView | undefined;
   /** Check `fields` for `job` and mint its credentials: a step to run, or a no with its HTTP status. A no is a `step.refused` event. */
-  start(job: Job, fields: SandboxStepFields): Promise<StepStart | { status: number; no: string }>;
+  start(job: Job, fields: NeedStepFields): Promise<StepStart | { status: number; no: string }>;
   /** A step's result, with its outputs tar when it has one; undefined: no step of this job's by that id, or swept. */
   result(job: Job, id: string): { result: StepResult; outputs?: string } | undefined;
   /** Remove results older than the keep. */
   sweep(): void;
 }
 
-export function createSandboxSteps(o: SandboxStepsOptions): SandboxSteps {
+export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
   const newId = o.newId ?? (() => randomUUID());
   const keepMs = o.keepMs ?? STEP_KEEP_MS;
   const results = new Map<string, { jobId: string; result: StepResult; at: number }>();
   const dirOf = (id: string) => join(o.dir, id);
 
   const refuse = (job: Job, status: number, no: string, box?: string) => {
-    o.record({ type: 'step.refused', jobId: job.id, data: { reason: no, ...(box ? { host: box } : {}) } });
+    o.record({ type: 'step.refused', jobId: job.id, data: { reason: no, ...(box ? { box } : {}) } });
     return { status, no };
   };
 
@@ -103,9 +103,9 @@ export function createSandboxSteps(o: SandboxStepsOptions): SandboxSteps {
       if ('problem' in request) return refuse(job, 400, request.problem);
       if (!o.run) return refuse(job, 503, 'this hopper runs no sandbox step: it is given no container runtime (docs/deploy.md "Sandbox boxes the hopper starts")');
       const id = newId();
-      const box = `hopper-step-${t.name}-${id.slice(0, 8)}`;
+      const box = `hopper-need-${t.name}-${id.slice(0, 8)}`;
       // Minted now, before the inputs come: a no costs the job no upload. Held in memory for this step only.
-      const credentials: StepCredential[] = [];
+      const credentials: NeedCredential[] = [];
       for (const profile of needs) {
         const r = await o.mint({ template: t.name, step: box, job: job.id, profile, ...(fields.plan ? { plan: fields.plan } : {}) });
         if ('refused' in r) return refuse(job, 403, `${keyOf(profile)}: ${r.refused}`, box);
@@ -122,16 +122,16 @@ export function createSandboxSteps(o: SandboxStepsOptions): SandboxSteps {
           refuse(job, 400, reason, box);
         },
         async run({ inputsBytes, log: toJob, signal }) {
-          const masked = maskSecrets(stepSecrets(credentials), toJob);
+          const masked = maskSecrets(needSecrets(credentials), toJob);
           const started = Date.now();
           o.record({ type: 'step.started', jobId: job.id, data: {
-            step: id, host: box, template: t.name, needs: needs.map(keyOf), command: request.command.slice(0, COMMAND_IN_EVENT), timeoutSeconds: request.timeoutSeconds,
+            step: id, box, template: t.name, needs: needs.map(keyOf), command: request.command.slice(0, COMMAND_IN_EVENT), timeoutSeconds: request.timeoutSeconds,
             inputsBytes, outputs: request.outputs,
           } });
           let result: StepResult;
           try {
             const inputs = inputsBytes > 0 ? readFileSync(join(dir, 'inputs.tar')) : undefined;
-            const env = stepEnv({ command: request.command, outputs: request.outputs, ...(inputs ? { inputs } : {}), credentials });
+            const env = needEnv({ command: request.command, outputs: request.outputs, ...(inputs ? { inputs } : {}), credentials });
             const r = await run({ name: box, template: { image: t.image, ...(t.tools ? { tools: t.tools } : {}), ...(t.readOnly ? { readOnly: true } : {}) }, env, timeoutMs: request.timeoutSeconds * 1000 }, { log: masked.write, signal });
             if (r.outputs) writeFileSync(join(dir, 'outputs.tar'), r.outputs, { mode: 0o600 });
             result = { exit: r.exit, ...(r.outputs ? { outputsBytes: r.outputs.length } : {}), ...(r.problem ? { problem: r.problem } : {}) };
@@ -145,7 +145,7 @@ export function createSandboxSteps(o: SandboxStepsOptions): SandboxSteps {
           }
           if (/timed out|did not end/.test(result.problem ?? '')) result = { ...result, problem: `timed out after ${request.timeoutSeconds} s` };
           o.record({ type: 'step.finished', jobId: job.id, data: {
-            step: id, host: box, exit: result.exit, seconds: Math.round((Date.now() - started) / 1000),
+            step: id, box, exit: result.exit, seconds: Math.round((Date.now() - started) / 1000),
             ...(result.outputsBytes !== undefined ? { outputsBytes: result.outputsBytes } : {}), ...(result.problem ? { problem: result.problem } : {}),
           } });
           results.set(id, { jobId: job.id, result, at: Date.now() });
@@ -163,5 +163,5 @@ export function createSandboxSteps(o: SandboxStepsOptions): SandboxSteps {
   };
 }
 
-/** The most a Linux step's inputs may hold: they travel in the step box's environment. */
-export const SANDBOX_STEP_INPUTS_MAX_BYTES = STEP_BOX_INPUTS_MAX_BYTES;
+/** The most a Linux step's inputs may hold: they travel in the need box's environment. */
+export const NEED_STEP_INPUTS_MAX_BYTES = NEED_BOX_INPUTS_MAX_BYTES;
