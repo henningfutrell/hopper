@@ -15900,7 +15900,7 @@ reading against `postgres:17-alpine` with pg_stat_statements loaded; the OpenFGA
 remote box meter through the client's end against rootless Podman 5 (a labelled box at a 0.5-core quota read at 0.50 cores,
 its memory against its 256 MiB limit).
 
-## Search (issue #945, part 1, 2026-10-12)
+## Search (issue #945, parts 1 and 2, 2026-10-12)
 
 Owner direction: Solr in the hopper stack now, and search built on it from the start, not keyword search first.
 
@@ -15966,15 +15966,32 @@ user's documents (tenancy), so the viewer is always the owner and nothing is cou
 **When Solr is down** search answers `degraded` and why, the hits empty; every other route works as before, and the
 updates wait in `search_pending` until Solr takes them.
 
+**In the UI and the operator CLI** (part 2). The **search box** in the header (`ui/src/app/search-box.tsx`, tablet width and
+up) asks `GET /api/search/suggest` 150 ms after a person stops typing (two characters at least) and lists the titles, each a
+link to its job; Enter opens the **Search view** on the words. The Search view (`#search/<search>`, `ui/src/views/search.tsx`;
+the Search entry in the Jobs nav group opens it on a phone) keeps the whole search in the hash — `q`, each `type`,
+`status`, `label` and `repo` picked, `offset` — URL-encoded as one part (`ui/src/model/search.ts`), so a link and the back
+button work. It reads `GET /api/search` (20 a page): the total, each hit with a link to its job view (`#job/<id>`, not the
+answer's `url`, which may name the public URL), its title and at most two snippets (asked, result, question, failure,
+verdict, in that order) with the matched words marked, its status, repository, labels and when it changed; and the facets
+(status, labels, repository, type), each value with its count, which filters when picked and stops when picked again (a
+picked value stays shown with 0 when nothing matches it). Highlights are **never put into the page as HTML**: they are read
+as text, only `<mark>` and `</mark>` taken as tags and Solr's entities decoded, so a job's own markup shows as text. Search
+degraded or not set up: the view says so with why, and no hits. **`hopper search`** (`src/cli-operator-search.ts`) is the
+same routes for a script: `hopper search <words>… [--type|--status|--label|--repo <v>]… [--from|--to <ISO time>]
+[--limit|--offset <n>]`, `--suggest <words>`, `--index` (the index's state), `--reindex` (operator); it prints the answer as
+JSON, and a bad filter is the daemon's 400.
+
 **Not built yet** (the next parts of the issue): the other documents — artifacts (metadata, and text where it is cheap:
 markdown, slide text), linked issues and pull requests, intake items, infra plan summaries — and the `type` values for
-them; the UI's search box and results view; `hopper search` in the operator CLI; the CoS's use of the API. Solr's readings
-are on the Resources page ("Stack resources", Solr, issue #947).
+them; the CoS's use of the API. Solr's readings are on the Resources page ("Stack resources", Solr, issue #947).
 
 Tests: `test/search/document.test.ts` (the fields, masked secrets, a direct job private), `test/adapters/solr-index.test.ts`
 (a real Solr: the schema put in twice, an unknown field refused, words, highlights escaped, facets, every filter,
 suggest, two hoppers and two users apart, Solr not reached), `test/integration/search.test.ts` (a real Solr and the
 daemon: a job found by its words after its events, private direct jobs, no secret indexed, degraded while Solr is down
-and caught up after, the backfill and Reindex, Access not asked), `test/authz/model.test.ts`, `test/update/drift.test.ts`
+and caught up after, the backfill and Reindex, Access not asked, and `hopper search`), `test/ui/search.test.ts` (part 2:
+the highlight read as text, the search in the hash, the Search view's hits, facets and degraded state, the search box's
+type-ahead), `test/authz/model.test.ts`, `test/update/drift.test.ts`
 and `test/scripts/compose.test.ts` (the `solr` service). The Solr tests use `HOPPER_TEST_SOLR_URL` when it names a core,
 else start Solr in a container (`test/support/solr.ts`).

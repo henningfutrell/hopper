@@ -5,6 +5,7 @@
 // with GitHub: then the session ended with it, and the page asks the daemon at once and goes to sign-in (issue #513). Pending logins are
 // counted here on every screen, warning when one expires soon, a link to the Logins view (issue #477). Yolo mode shows here
 // on every screen (issue #897): off, on, or on in some repositories, a link to its one switch in Settings → Yolo mode.
+// The search box (issue #945, search-box.tsx) finds jobs from every screen at tablet width and up; a phone uses the Search entry.
 // On a phone the wordmark, the help link and the API reference give way (Help stays in the user menu), so the version badge with its channel, the connection dot and
 // the user menu are all the bar holds (issues #497, #666).
 import { BookOpen, CircleHelp, KeyRound, Zap } from 'lucide-react';
@@ -20,6 +21,7 @@ import { recheckSession, useHopper } from '@/store';
 import { cn } from '@/lib/utils';
 import { useYoloMode } from '@/store/polled';
 import { useLoginsBadge, useSignedInWith } from '@/store/selectors';
+import { SearchBox } from './search-box';
 import { UpdateButton } from './update';
 import { UserMenu } from './user-menu';
 
@@ -41,6 +43,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           <span className="max-sm:sr-only">hopper</span>
         </div>
         <UpdateButton version={health?.version} />
+        <div className="hidden min-w-0 flex-1 justify-center md:flex"><SearchBox /></div>
         <div className="ml-auto flex items-center gap-1 text-xs sm:gap-3">
           {ended && !signedInWithGitHub && (
             <a data-connection-ended href="#sources" title={ended}
