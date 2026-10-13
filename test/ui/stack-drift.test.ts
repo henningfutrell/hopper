@@ -31,9 +31,12 @@ const DRIFTED: StackDrift = {
 };
 
 describe('a stack drifted from the compose file of this version (#697)', () => {
-  it('driftFix: the update script made from the image the hopper runs, for each container tool', () => {
-    expect(driftFix(IMAGE, 'Podman')).toEqual([`podman run --rm --pull=always ${IMAGE} hopper update podman > hopper-update.sh`, 'sh hopper-update.sh']);
-    expect(driftFix(IMAGE, 'Docker')[0]).toBe(`docker run --rm --pull=always ${IMAGE} hopper update docker > hopper-update.sh`);
+  it('driftFix: the update commands with the image the hopper runs, for each container tool (issue #970)', () => {
+    const fix = driftFix(IMAGE, 'Podman');
+    expect(fix[0]).toBe('read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY');
+    expect(fix).toContain(`podman run --rm -i --pull=always ${IMAGE} hopper update carry --image ${IMAGE} < compose.yaml > compose.yaml.next`);
+    expect(fix.at(-1)).toMatch(new RegExp(`HOPPER_IMAGE=${IMAGE} podman compose up -d$`));
+    expect(driftFix(IMAGE, 'Docker').at(-1)).toMatch(new RegExp(`HOPPER_IMAGE=${IMAGE} docker compose up -d$`));
   });
 
   it('driftNamesOpenFga: only when OpenFGA is a missing service', () => {
@@ -60,8 +63,8 @@ describe('a stack drifted from the compose file of this version (#697)', () => {
     expect(text).toContain('the service openfga is not running in this stack');
     expect(text).toContain('the TypeSafe API key cannot be saved');
     expect(text).toContain('HOPPER_OPENFGA_URL');
-    expect(text).toContain(`${IMAGE} hopper update podman > hopper-update.sh`);
-    expect(text).toContain('sh hopper-update.sh');
+    expect(text).toContain(`${IMAGE} hopper update carry --image ${IMAGE}`);
+    expect(text).toContain(`HOPPER_IMAGE=${IMAGE} podman compose up -d`);
     expect(text).toMatch(/[Nn]ever recreate the hopper.s container alone/);
   });
 });

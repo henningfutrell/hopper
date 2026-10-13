@@ -1,0 +1,161 @@
+// Issues #697, #970: the update of a container install is plain compose commands, the same in the update notice, the drift
+// fix and the agent skill. No generated script and no .env: back up the database, make the new compose.yaml from the image
+// (`hopper update carry`, the install's own settings in it), read the change, put it in, then pull and start the whole
+// stack — never the hopper service alone. The last command refuses before compose runs when the master key is not given at
+// launch: a recreate without it starts the hopper limited. Run here in sh against a stub container tool that records each call.
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { runCli, type CliIo } from '../../src/cli.ts';
+import { COMPOSE_TOOLS, updateCommands, updateLines } from '../../src/update/update-commands.ts';
+import { UPDATE_SKILL } from '../../src/update/update-skill.ts';
+import { driftLine } from '../../src/update/drift.ts';
+import { updateCommands as uiUpdateCommands } from '../../ui/src/model/update.ts';
+
+const ROOT = join(import.meta.dirname, '..', '..');
+const IMAGE = 'ghcr.io/henningfutrell/hopper:beta';
+const KEY = 'a'.repeat(64);
+const SHIPPED = readFileSync(join(ROOT, 'compose.yaml'), 'utf8');
+const OLD_LAN = readFileSync(join(ROOT, 'test', 'fixtures', 'compose', 'old-lan.yaml'), 'utf8');
+
+const dirs: string[] = [];
+afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
+
+async function cli(argv: string[], stdin = '') {
+  const out: string[] = [];
+  const err: string[] = [];
+  const io: CliIo = { env: {}, stdin: () => stdin, out: (t) => out.push(t), err: (t) => err.push(t) };
+  const code = await runCli(argv, io);
+  return { code, out: out.join(''), err: err.join('') };
+}
+
+/** A stub `podman` that logs each call with the HOPPER_IMAGE it was given, and runs `run … <image> hopper …` as this checkout's CLI. */
+function stubPodman(bin: string): void {
+  writeFileSync(join(bin, 'podman'), `#!/bin/sh
+printf '%s | HOPPER_IMAGE=%s\\n' "$*" "\${HOPPER_IMAGE:-}" >> "$STUB_LOG"
+case "$*" in
+  "compose exec -T postgres pg_dump"*) echo DUMP ;;
+  run\\ *) while [ "$1" != hopper ]; do shift; done; shift; exec '${process.execPath}' '${join(ROOT, 'src', 'cli.ts')}' "$@" ;;
+esac
+exit 0
+`);
+  chmodSync(join(bin, 'podman'), 0o755);
+}
+
+/** An install's folder with `compose`, and each update command but the master key's prompt run in order, in `shell`. */
+function update(compose: string, o: { masterKey?: string; shell?: string } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'jh-update-'));
+  dirs.push(dir);
+  writeFileSync(join(dir, 'compose.yaml'), compose);
+  const bin = join(dir, '.bin');
+  mkdirSync(bin);
+  stubPodman(bin);
+  const log = join(dir, '.calls');
+  writeFileSync(log, '');
+  const u = updateCommands('podman', IMAGE);
+  // The person runs them one at a time: a failed diff (the files differ) stops nothing.
+  const script = [u.backup, u.carry, `${u.diff} || true`, u.swap, u.up].join('\n');
+  const r = spawnSync(o.shell ?? 'sh', ['-c', script], {
+    cwd: dir, encoding: 'utf8',
+    env: { PATH: `${bin}:/usr/bin:/bin`, HOME: dir, STUB_LOG: log, ...(o.masterKey ? { HOPPER_MASTER_KEY: o.masterKey } : {}) },
+  });
+  const calls = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean);
+  return { dir, status: r.status, out: `${r.stdout}${r.stderr}`, calls, read: (f: string) => readFileSync(join(dir, f), 'utf8') };
+}
+
+describe('the update commands (issue #970)', () => {
+  it('are plain compose commands for each tool: the new compose.yaml from the image, then pull and up -d of the whole stack', () => {
+    expect(updateCommands('podman', IMAGE)).toEqual({
+      give: 'read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY',
+      backup: 'podman compose exec -T postgres pg_dump -U hopper -d hopper -Fc > hopper-backup.dump',
+      carry: `podman run --rm -i --pull=always ${IMAGE} hopper update carry --image ${IMAGE} < compose.yaml > compose.yaml.next`,
+      diff: 'diff -u compose.yaml compose.yaml.next',
+      swap: 'cp compose.yaml compose.yaml.bak && mv compose.yaml.next compose.yaml',
+      up: `: "\${HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY}" && HOPPER_IMAGE=${IMAGE} podman compose pull && HOPPER_IMAGE=${IMAGE} podman compose up -d`,
+      prune: 'podman image prune -f --filter label=org.opencontainers.image.title=hopper',
+    });
+    expect(updateCommands('docker', IMAGE).up).toMatch(/&& HOPPER_IMAGE=\S+ docker compose pull && HOPPER_IMAGE=\S+ docker compose up -d$/);
+    expect(updateCommands('podman-compose', IMAGE).up).toMatch(/podman-compose pull && HOPPER_IMAGE=\S+ podman-compose up -d$/);
+    expect(updateCommands('podman-compose', IMAGE).carry).toMatch(/^podman run /);
+    for (const tool of COMPOSE_TOOLS) expect(updateLines(updateCommands(tool, IMAGE)).join('\n')).not.toMatch(/--no-deps|hopper-update\.sh|printenv/);
+  });
+
+  it('the update notice gives the same commands as the hopper (the UI\'s own copy)', () => {
+    expect(uiUpdateCommands('Podman', IMAGE)).toEqual(updateCommands('podman', IMAGE));
+    expect(uiUpdateCommands('Docker', IMAGE)).toEqual(updateCommands('docker', IMAGE));
+  });
+
+  it('bring an old LAN install to the image\'s compose.yaml with its settings in it, the old one kept, the whole stack started', () => {
+    const r = update(OLD_LAN, { masterKey: KEY });
+    expect(r.status, r.out).toBe(0);
+    const compose = r.read('compose.yaml');
+    expect(compose).toMatch(/^# hopper version: /);
+    expect(compose).toContain(`\${HOPPER_IMAGE:-${IMAGE}}`);
+    expect(compose).toContain('"${HOPPER_BIND:-0.0.0.0}:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"');
+    expect(compose).toContain('${HOPPER_PUBLIC_URL:-https://hopper.example.test}');
+    expect(compose).not.toContain(KEY);
+    expect(r.read('compose.yaml.bak')).toBe(OLD_LAN);
+    expect(r.read('hopper-backup.dump')).toBe('DUMP\n');
+    // What the new file cannot hold is said, for compose.override.yaml; nothing is written there by itself.
+    expect(r.out).toMatch(/Add this to compose\.override\.yaml/);
+    expect(r.out).toContain('whoami:');
+    expect(r.out).not.toContain(KEY);
+    expect(r.calls).toEqual([
+      'compose exec -T postgres pg_dump -U hopper -d hopper -Fc | HOPPER_IMAGE=',
+      `run --rm -i --pull=always ${IMAGE} hopper update carry --image ${IMAGE} | HOPPER_IMAGE=`,
+      `compose pull | HOPPER_IMAGE=${IMAGE}`,
+      `compose up -d | HOPPER_IMAGE=${IMAGE}`,
+    ]);
+  });
+
+  for (const shell of ['sh', 'bash']) {
+    it(`refuse before compose runs when the master key is not given (${shell})`, () => {
+      const r = update(SHIPPED, { shell });
+      expect(r.status).not.toBe(0);
+      expect(r.out).toMatch(/HOPPER_MASTER_KEY: is not given: the update stops\. Give it first: read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY/);
+      expect(r.calls.filter((c) => /^compose (pull|up)/.test(c))).toEqual([]);
+    });
+  }
+
+  it('the drift log line gives the same commands', () => {
+    const line = driftLine({ state: 'checked', image: IMAGE, gaps: [{ kind: 'service', name: 'openfga', what: 'the service openfga is not running in this stack' }] })!;
+    expect(line).toContain(updateCommands('podman', IMAGE).carry);
+    expect(line).toContain(updateCommands('podman', IMAGE).up);
+  });
+});
+
+describe('hopper update (issue #970)', () => {
+  it('carry: the new compose.yaml on stdout from the old one on stdin; it needs both', async () => {
+    const r = await cli(['update', 'carry', '--image', IMAGE], SHIPPED);
+    expect(r.code, r.err).toBe(0);
+    expect(r.out).toContain(`\${HOPPER_IMAGE:-${IMAGE}}`);
+    expect((await cli(['update', 'carry', '--image', IMAGE])).code).toBe(1);
+    expect((await cli(['update', 'carry'], SHIPPED)).code).toBe(2);
+  });
+
+  it('makes no update script any more', async () => {
+    for (const tool of COMPOSE_TOOLS) {
+      const r = await cli(['update', tool, '--image', IMAGE]);
+      expect(r.code).toBe(2);
+      expect(r.out).toBe('');
+    }
+  });
+
+  it('no update path names .env: the commands, the CLI, the agent skill, the notice and the help', async () => {
+    const carried = await cli(['update', 'carry', '--image', IMAGE], OLD_LAN);
+    const usage = await cli(['update']);
+    const helpText = readFileSync(join(ROOT, 'help', 'deploy-and-update.md'), 'utf8');
+    const help = helpText.slice(helpText.indexOf('## Update a container install'), helpText.indexOf('## Host install'));
+    expect(help).toContain('hopper update carry');
+    const texts = [
+      ...COMPOSE_TOOLS.flatMap((t) => updateLines(updateCommands(t, IMAGE))),
+      ...updateLines(uiUpdateCommands('Docker', IMAGE)),
+      carried.out, carried.err, usage.err, UPDATE_SKILL,
+      readFileSync(join(ROOT, 'ui', 'src', 'app', 'update.tsx'), 'utf8').replace(/^\/\/.*$/gm, ''),
+      help,
+    ];
+    for (const text of texts) expect(text).not.toMatch(/(^|[\s`'"(/])\.env\b/m);
+  });
+});

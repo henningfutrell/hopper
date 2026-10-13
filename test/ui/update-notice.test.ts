@@ -55,7 +55,8 @@ describe('the container update notice, slim (issue #521)', () => {
     expect(block().textContent).not.toContain('docker run');
     expect(pick('Podman')?.getAttribute('aria-pressed')).toBe('true');
     await act(async () => pick('Docker')!.click());
-    expect(block().textContent).toContain('docker run --rm --pull=always ghcr.io/henningfutrell/hopper:dev hopper update docker > hopper-update.sh');
+    expect(block().textContent).toContain('docker run --rm -i --pull=always ghcr.io/henningfutrell/hopper:dev hopper update carry --image ghcr.io/henningfutrell/hopper:dev < compose.yaml > compose.yaml.next');
+    expect(block().textContent).toContain('HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev docker compose up -d');
     expect(block().textContent).toContain('docker image prune -f --filter label=org.opencontainers.image.title=hopper');
     expect(block().textContent).not.toContain('podman run');
     expect(localStorage.getItem('jh_container_tool')).toBe('Docker');
@@ -70,8 +71,10 @@ describe('the container update notice, slim (issue #521)', () => {
     expect(notice.textContent).not.toContain('running jobs would be lost');
     expect([...notice.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Update now');
     await act(async () => button(notice, 'How to update')!.click());
-    expect(notice.textContent).toContain('podman run --rm --pull=always ghcr.io/henningfutrell/hopper:dev hopper update podman > hopper-update.sh');
-    expect(notice.textContent).toContain('sh hopper-update.sh');
+    expect(notice.textContent).toContain('read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY');
+    expect(notice.textContent).toContain('podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:dev hopper update carry --image ghcr.io/henningfutrell/hopper:dev < compose.yaml > compose.yaml.next');
+    expect(notice.textContent).toContain('HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev podman compose pull && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev podman compose up -d');
+    expect(notice.textContent).not.toContain('.env');
     expect(notice.textContent).not.toContain('docker run');
     expect(notice.textContent).toContain('2 running jobs would be lost');
   });
@@ -82,7 +85,7 @@ describe('the container update notice, slim (issue #521)', () => {
     await render('../../ui/src/app/update.tsx', 'UpdateNotice', image);
     const notice = document.querySelector('[data-update-notice]')!;
     await act(async () => button(notice, 'How to update')!.click());
-    expect(notice.textContent).toContain('docker run --rm --pull=always');
+    expect(notice.textContent).toContain('docker run --rm -i --pull=always');
     expect(notice.textContent).not.toContain('podman run');
   });
 

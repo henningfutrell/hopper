@@ -30,15 +30,19 @@ describe('update model', () => {
       status({ state: 'available', channel, installed: { ...installed, kind: 'image', branch }, target: { commit: B, ref: channel }, ...o });
 
     for (const channel of ['dev', 'beta', 'stable'] as const) {
-      it(`${channel}: the update script made by the channel's image, run on the whole stack, and the prune (issue #697)`, () => {
+      it(`${channel}: plain compose commands with the channel's image, the whole stack, the master key required, and the prune (issues #697, #970)`, () => {
         const u = imageUpdate(image(channel, channel))!;
         expect(headline(image(channel, channel))).toBe(`Update available: pull the ${channel} image and recreate the container`);
         expect(u.image).toBe(`ghcr.io/henningfutrell/hopper:${channel}`);
-        expect(u.commands).toEqual([
-          { tool: 'Podman', make: `podman run --rm --pull=always ghcr.io/henningfutrell/hopper:${channel} hopper update podman > hopper-update.sh`, run: 'sh hopper-update.sh', prune: 'podman image prune -f --filter label=org.opencontainers.image.title=hopper' },
-          { tool: 'Docker', make: `docker run --rm --pull=always ghcr.io/henningfutrell/hopper:${channel} hopper update docker > hopper-update.sh`, run: 'sh hopper-update.sh', prune: 'docker image prune -f --filter label=org.opencontainers.image.title=hopper' },
-        ]);
-        expect(JSON.stringify(u)).not.toMatch(/--no-deps|volume|down/);
+        const img = `ghcr.io/henningfutrell/hopper:${channel}`;
+        const [podman, docker] = u.commands;
+        expect(podman!.tool).toBe('Podman');
+        expect(podman!.carry).toBe(`podman run --rm -i --pull=always ${img} hopper update carry --image ${img} < compose.yaml > compose.yaml.next`);
+        expect(podman!.up).toMatch(new RegExp(`^: "\\$\\{HOPPER_MASTER_KEY:\\?.*\\}" && HOPPER_IMAGE=${img} podman compose pull && HOPPER_IMAGE=${img} podman compose up -d$`));
+        expect(podman!.prune).toBe('podman image prune -f --filter label=org.opencontainers.image.title=hopper');
+        expect(docker!.tool).toBe('Docker');
+        expect(docker!.up).toContain(`HOPPER_IMAGE=${img} docker compose pull && HOPPER_IMAGE=${img} docker compose up -d`);
+        expect(JSON.stringify(u)).not.toMatch(/--no-deps|volume|down|\.env|hopper-update\.sh/);
         expect(u.mismatch).toBeUndefined();
       });
     }
