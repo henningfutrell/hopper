@@ -32,6 +32,7 @@ const READ: StackResources = {
     oldestTransactionS: 4, statements: { calls: 1200, meanMs: 0.42 },
   },
   openfga: { checks: 400, errors: 6, meanMs: 1.25 },
+  remoteBoxes: [],
 };
 
 const at = (m: number) => new Date(NOW - m * 60_000).toISOString();
@@ -94,6 +95,22 @@ describe('the Resources page', () => {
     expect(box).toContain('hopper-sandbox-claude');
     expect(box).toContain('100 MiB, no limit');
     expect(document.body.textContent).toContain('Sandbox boxes');
+  });
+
+  it('shows the sandbox boxes on each client target by their machine, and says why a machine cannot be read', async () => {
+    await render({
+      ...READ,
+      remoteBoxes: [
+        { machine: 'gone', problem: 'no client target gone' },
+        { machine: 'laptop', containers: [{ service: 'laptop/hopper-sandbox-kube', group: 'sandbox', machine: 'laptop', name: 'hopper-sandbox-kube', image: 'box:1', state: 'running', cpuCores: 0.5, cores: 4, memUsedBytes: 200 * MiB }] },
+      ],
+    });
+    const [, , local, remote] = rows();
+    expect(local).toContain('hopper-sandbox-claude');
+    expect(remote).toContain('laptop/hopper-sandbox-kube');
+    expect(remote).toContain('on laptop');
+    expect(remote).toContain('0.5 cores');
+    expect(document.body.textContent).toContain('gone: no client target gone');
   });
 
   it('shows Postgres: connections against its maximum, size, cache hits, locks, transactions and statement latency', async () => {

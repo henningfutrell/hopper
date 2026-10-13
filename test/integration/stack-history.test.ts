@@ -6,10 +6,11 @@
 //
 // Feature: the stack's resources over time
 //   Scenario: each record keeps every running container's CPU and memory as shares, Postgres's connections, and OpenFGA's failed checks
+//   Scenario: a sandbox box on a client target keeps its CPU and memory under its machine's name
 //   Scenario: per graph step the peak; a stretch with no sample is a gap; a sample at the same time is kept once
 //   Scenario: samples past the stack history retention are pruned
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ContainerReading, OpenFgaReading, StackHistory, StackSample } from '../../src/domain/types.ts';
+import type { ContainerReading, MachineBoxes, OpenFgaReading, StackHistory, StackSample } from '../../src/domain/types.ts';
 import { STACK_HISTORY_RETENTION_DAYS } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
@@ -36,12 +37,12 @@ const CONTAINERS: ContainerReading[] = [
   { service: 'hopper-sandbox-claude', group: 'sandbox', name: 'hopper-sandbox-claude', image: 'box:1', state: 'running', cpuCores: 0.3, cpuLimitCores: 1.5 },
 ];
 
-async function boot(openfga?: { now: OpenFgaReading }): Promise<TestApp> {
+async function boot(openfga?: { now: OpenFgaReading }, remote: MachineBoxes[] = []): Promise<TestApp> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   const a = await startTestApp({
     dbPath: db.dbPath,
-    seams: { containerMeter: { read: async () => ({ containers: CONTAINERS }) }, ...(openfga ? { openFgaMeter: { read: async () => openfga.now } } : {}) },
+    seams: { containerMeter: { read: async () => ({ containers: CONTAINERS }) }, remoteBoxMeter: { read: async () => remote }, ...(openfga ? { openFgaMeter: { read: async () => openfga.now } } : {}) },
   });
   apps.push(a);
   return a;
@@ -87,6 +88,18 @@ describe('the stack\'s resources over time', () => {
     openfga.now = { checks: 10, errors: 1 };
     await a.app.stackHistory.record();
     expect((await history(a, 'range=24h')).body.series.some((s) => s.metric === 'check-errors')).toBe(false);
+  });
+
+  it('a sandbox box on a client target keeps its CPU and memory under its machine\'s name', async () => {
+    const a = await boot(undefined, [
+      { machine: 'laptop', containers: [{ service: 'laptop/hopper-sandbox-kube', group: 'sandbox', machine: 'laptop', name: 'hopper-sandbox-kube', image: 'box:1', state: 'running', cpuCores: 1, cores: 4, memUsedBytes: 1 * GiB, memMaxBytes: 8 * GiB }] },
+      { machine: 'gone', problem: 'no client target gone' },
+    ]);
+    await a.app.stackHistory.record();
+    const r = await history(a, 'range=24h');
+    expect(lastOf(r.body, 'laptop/hopper-sandbox-kube', 'cpu')).toBeCloseTo(0.25);
+    expect(lastOf(r.body, 'laptop/hopper-sandbox-kube', 'memory')).toBeCloseTo(0.125);
+    expect(r.body.series.find((s) => s.service === 'laptop/hopper-sandbox-kube')!.group).toBe('sandbox');
   });
 
   it('per graph step the peak; a stretch with no sample is a gap; a sample at the same time is kept once', async () => {
