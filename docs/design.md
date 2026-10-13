@@ -9541,6 +9541,38 @@ doubles: YOLO, a running box with no human step, each approval an event naming i
 both off, a person approves the template and the run and the job's wait ends; a decline; the toggles, a box action),
 `test/ui/sandbox-runs-view.test.ts`.
 
+## An answer ends the job's own wait (issue #998, 2026-10-13)
+
+Seen on a hopper: a job asked for a sandbox, its template waited for a person, and the job ended its turn with
+HOPPER_WAITING. A person approved the template, and the job still waited: nothing woke it. The job's own wait ("A job's
+own wait") ends only when its agent goes on by itself or a person ends it, and the job had asked without `--wait`, so no
+background command was there to end. Its next ask for the same read need then made a second template, though a person
+had approved one with the same profile under another name.
+
+- **Every 202 opens a watch** (`src/skills/waits.ts`). With `--wait`, as before: a new watch, which the job's command
+  reads on its stream. With no `--wait`, the hopper opens one too, so it hears the answer: one per job and request (the
+  same fields asked again keep the watch it has, with no second one). The answer says so: `watch: <id>: when the answer
+  is ready, the hopper ends this job's own wait (HOPPER_WAITING) with it.` The watch's deadline is the default hour.
+- **The hopper ends the job's wait.** When a watch ends with an answer — the skill (200) or a no — and its job is
+  `waiting_on`, the hopper ends that wait as a person's end-wait does (`Engine.endWait`, `by: hopper`): the job is queued
+  again, pinned to its machine, and told in its pane `[hopper] The hopper ended your wait (<what it waited for>): the
+  answer to a request you made is ready. The answer: <the answer> …`. `job.wait_ended` with `by: hopper`. A job not on its
+  own wait is not touched; one whose agent went on meanwhile is left as it is. A watch that expires ends no wait.
+- **A template approved for the same needs is used** (`requestTemplate`, `previewTemplate`). Before the hopper makes
+  `asked-<hash>`, it looks for a template with exactly the needs as its profiles, no vault secret and nothing waiting for
+  a person (`approvedFor`): one whose read-only check passed first. Found, the request answers with it and saves nothing;
+  `sandbox` starts a box of it. The template the needs name still wins when it is approved for them. A template with a
+  secret, a wider set of profiles, or anything waiting is never used for a job's needs: it would give the box more than
+  the job asked for, or skip a person's approval.
+
+**Not changed.** A template still waits for its read-only check after its approval, and the check runs on the sandbox
+module's pass; a check that failed still waits for a person to run it again. A sandbox run still waits for a person
+unless skip sandbox approval is on.
+
+Tests: `test/integration/skill-wait-wakes-job.test.ts` (the real daemon over the fake herdr, the real `hopper-skill`: a
+job on its own wait asked for a sandbox without `--wait`; a person approves the template and its profile; the box starts
+and the hopper ends the job's wait with its name; asked again, one watch), `test/skills/template-reuse.test.ts`.
+
 ## Template requests over the API (issue #718, 2026-10-11)
 
 Issue #718's acceptance: an agent with no UI session asks the hopper for a read-only diagnostics template, launches a
@@ -13666,6 +13698,8 @@ person's question list as if it needed an answer), or ended failed though it was
   (one more over the cap when none is idle), `wait` cleared, `job.reattached { reason: 'the wait ended in the pane' }`, and the
   runner watches the turn with the wait already taken left out. Its own background poll ending is what wakes Claude: the
   hopper runs no check of its own.
+- **The hopper ends it** (issue #998, "An answer ends the job's own wait"). When an answer the job asked the hopper for
+  (a skill request that answered 202) is ready, the hopper ends the wait with it, as a person does below, `by: hopper`.
 - **A person ends it.** `POST /ui/api/jobs/:id/end-wait { note? }` (least role `operator`; 409 unless `waiting_on`): queued
   again with `waitEndedNote` pending, which pins it to `resumeOn` as an answer does; its claim types it into the pane (`[hopper] A
   person ended your wait: what you waited for (<for>) has happened. The person's note: <note> Check it, then go on with the

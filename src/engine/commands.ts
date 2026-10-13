@@ -8,7 +8,7 @@ import { EngineError } from './errors.ts';
 import type { Cleanups } from './cleanup.ts';
 import { parkRefusal, recordPark, recordUnpark, releaseParked } from './park.ts';
 import type { Runner } from './runner.ts';
-import { recordEndWait } from './wait.ts';
+import { recordEndWait, type WaitEnder } from './wait.ts';
 import { acceptNewText, keepOriginal } from './item-snapshots.ts';
 
 const isTerminal = (job: Job): boolean => TERMINAL_STATUSES.includes(job.status);
@@ -43,10 +43,11 @@ export interface Commands {
    */
   requeue(id: string, o?: { freshSession?: boolean; elsewhere?: boolean }): Job;
   /**
-   * End a job's own wait (issue #483), a person's act: it is queued again, pinned to its machine, and told in its pane that what it
-   * waited for has happened, with `note`. Conflict unless it is `waiting_on`.
+   * End a job's own wait (issue #483), a person's act, or the hopper's with an answer the job asked it for (issue #998): it
+   * is queued again, pinned to its machine, and told in its pane that what it waited for has happened, with `note`.
+   * Conflict unless it is `waiting_on`.
    */
-  endWait(id: string, note?: string): Job;
+  endWait(id: string, note?: string, by?: WaitEnder): Job;
   /** Issue #371: what a job's deferred cleanup could not reach was closed by hand; it is no longer tried, and its item's jobs may run. */
   markCleanedUp(id: string): Job;
   /** Rerun the original (issue #662): a job held for its changed item runs the snapshot's text. item.original_kept. */
@@ -134,7 +135,7 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
       return next;
     },
 
-    endWait: (id, note) => store.tx(() => recordEndWait(c, id, note)),
+    endWait: (id, note, by) => store.tx(() => recordEndWait(c, id, note, by)),
 
     markCleanedUp: (id) => cleanups.markCleanedUp(id),
 

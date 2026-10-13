@@ -1,0 +1,1 @@
+- A job that needs the same access as a sandbox template you already approved uses that template, and does not ask you to approve a new one.

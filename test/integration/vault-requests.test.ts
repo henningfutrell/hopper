@@ -169,7 +169,7 @@ describe('the vault asks for the credentials new work needs (issue #583)', () =>
     expect((await skill(a, creds, [])).stdout).toContain('A credential for any other service: sh "$HOPPER_SKILL" SERVICE --credential "<what it takes>"');
     const asked = await skill(a, creds, [SERVICE, ...ASK, '--why', 'deploy the web service']);
     expect(asked.code).toBe(3);
-    expect(asked.stdout).toMatch(/^waiting: the hopper asked the user for an API token for example-api \(they may give another kind\)\. Add --wait to have the hopper tell you when it is ready\.\n$/);
+    expect(asked.stdout).toMatch(/^waiting: the hopper asked the user for an API token for example-api \(they may give another kind\)\. Add --wait to have the hopper tell you when it is ready\.\nwatch: [\w-]+: when the answer is ready, the hopper ends this job's own wait \(HOPPER_WAITING\) with it\.\n$/);
     const r = await requestFor(a, SERVICE);
     expect(r).toMatchObject({ known: false, template: 'web', secret: SERVICE, kinds: [{ id: 'asked', title: 'an API token' }], asked: [{ job, machine: 'hopper-sandbox-web', why: 'deploy the web service' }] });
     expect((await a.events()).filter((e) => e.type === 'vault.credential_asked')).toEqual([

@@ -11,7 +11,9 @@
 //                     template request (issue #716, `name` sandbox-template, `needs`) saves the template the needs
 //                     say, never widening one, and approves it only inside the user's read policy or with skip
 //                     template approval on. A sandbox request (issue #991, `name` sandbox, `needs`) then asks for a box
-//                     of that template, which starts once a person or skip sandbox approval approves it.
+//                     of that template, which starts once a person or skip sandbox approval approves it. Issue #998:
+//                     a 202 with no `wait` opens a watch too, one per job and request; when it is answered and the job
+//                     is on its own wait (HOPPER_WAITING), the hopper ends that wait with the answer.
 import type { FastifyInstance } from 'fastify';
 import type { Access } from '../authz/service.ts';
 import { createSkillBroker, createSkillWaits, SKILL_PATH, type SkillUser, type SkillWaits } from '../skills/index.ts';
@@ -59,7 +61,20 @@ export function jobSkillRoutes(app: FastifyInstance, o: { tenants: Tenants; acce
     broker,
     user(id) {
       const parts = o.tenants.user(id);
-      return parts ? { stream: parts.jobStream, subscribe: (l) => parts.store.events.subscribe(l) } : undefined;
+      if (!parts) return undefined;
+      return {
+        stream: parts.jobStream, subscribe: (l) => parts.store.events.subscribe(l),
+        // Issue #998: an answer the job asked for ends its own wait (HOPPER_WAITING), as a person's end-wait does.
+        endWait(jobId, answer) {
+          if (parts.store.jobs.get(jobId)?.status !== 'waiting_on') return;
+          try {
+            parts.engine.endWait(jobId, answer, 'hopper');
+          } catch (e) {
+            // Its agent went on by itself meanwhile: nothing waits any more.
+            console.warn(`hopper: skills: ending the wait of job ${jobId} failed: ${(e as Error).message}`);
+          }
+        },
+      };
     },
     log: (line) => console.warn(line),
   });
