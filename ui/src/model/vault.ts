@@ -84,6 +84,19 @@ export const highRadius = (p: OperationProfile): boolean => HIGH.includes(p.oper
 /** The template's profiles that wait for their own explicit approval: approving the template does not approve them. */
 export const explicitApprovals = (t: TemplateView): OperationProfile[] => t.pending.profiles.filter(highRadius);
 
+/**
+ * The edits that approve all a template card lists (issue #1001): the template as it is (when it waits), then each
+ * explicit profile. Sent side by side (issue #1018): neither waits for the other.
+ */
+export function allListed(t: TemplateView): ({ action: 'approve-template'; name: string } | ({ action: 'approve-profile'; name: string } & OperationProfile))[] {
+  const reads = t.pending.profiles.filter((p) => !highRadius(p));
+  const whole = !t.approval || t.pending.image || t.pending.secrets.length > 0 || reads.length > 0;
+  return [
+    ...(whole ? [{ action: 'approve-template' as const, name: t.name }] : []),
+    ...explicitApprovals(t).map((p) => ({ action: 'approve-profile' as const, name: t.name, ...p })),
+  ];
+}
+
 /** An API token's ask to approve this profile of the template (issue #909), in words; undefined: none. */
 export function profileAskOf(asks: readonly ProfileAsk[] | undefined, template: string, p: OperationProfile): string | undefined {
   const a = asks?.find((x) => x.template === template && x.operation === p.operation && x.asset.kind === p.asset.kind && x.asset.name === p.asset.name);

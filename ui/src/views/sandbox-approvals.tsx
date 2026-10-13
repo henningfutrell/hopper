@@ -4,9 +4,12 @@
 // toggles that skip a person, and YOLO, both. Approving and the toggles are an admin's.
 // Issue #1001: each run card decides on its own — while its approval is pending, only it says so, and the others stay
 // clickable; the box starts in the background. Settings → Vault also sets the auto-approve policy, per blast radius level.
+// Issue #1018: a card's Approve goes through the Access requests approvals (store/access-approvals.ts), the same as
+// Approve selected, so the card shows its own progress and result whichever started it.
 import { Boxes, Check, Loader2, Rocket, TriangleAlert, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { ApprovalState, SelectBox } from '@/components/approval-state';
 import { Confirm } from '@/components/confirm';
 import { Empty, Panel } from '@/components/panel';
 import { TemplateRadiusBadge } from '@/components/template-radius';
@@ -18,6 +21,7 @@ import { autoApproveOf, profileText, rememberedKey, sandboxApprovalsText, sandbo
 import type { SandboxApprovals as Approvals, RememberedWriteView, SandboxRequestView, TemplateView, VaultSecret, VaultView } from '@/model/wire';
 import { SandboxAsk } from './sandbox-ask';
 import { useHopper } from '@/store';
+import { approveItems, runItem, runKey, toggleSelected, useAccessApprovals } from '@/store/access-approvals';
 import { useVaultStore, viewAnswer } from '@/store/vault';
 
 /** Posts one sandbox change and keeps the vault's view it answers. `quiet`: a card's own decision, which marks nothing else busy. */
@@ -42,14 +46,18 @@ const STATE_TEXT: Record<SandboxRequestView['state'], string> = {
 
 function Waiting({ r, template, secrets, can }: { r: SandboxRequestView; template?: TemplateView | undefined; secrets: readonly VaultSecret[]; can: boolean }) {
   const [reason, setReason] = useState('');
-  const [pending, setPending] = useState<'approve' | 'decline' | null>(null);
-  const decide = (what: 'approve' | 'decline', body: unknown, done: string): void => {
-    setPending(what);
-    void sendSandbox('/ui/api/sandbox-requests', body, done, true).finally(() => setPending(null));
+  const [declining, setDeclining] = useState(false);
+  const approval = useAccessApprovals((s) => s.items[runKey(r)]);
+  const selected = useAccessApprovals((s) => s.selected.includes(runKey(r)));
+  const pending = declining || approval?.state === 'pending';
+  const decline = (): void => {
+    setDeclining(true);
+    void sendSandbox('/ui/api/sandbox-requests', { action: 'decline', id: r.id, reason: reason.trim() }, `${r.template}: declined`, true).finally(() => setDeclining(false));
   };
   return (
     <li data-sandbox-request={r.id} className="space-y-2 rounded-md border border-warn/50 p-3">
       <div className="flex flex-wrap items-center gap-2">
+        {can && <SelectBox label={template?.label ?? r.template} checked={selected} disabled={pending} onChange={(on) => toggleSelected(runKey(r), on)} />}
         <Boxes className="size-4 text-warn" />
         {template?.label && <span className="text-sm font-medium break-all">{template.label}</span>}
         <span className={template?.label ? 'font-mono text-xs text-muted-foreground break-all' : 'font-mono text-sm font-medium break-all'}>{r.template}</span>
@@ -60,13 +68,13 @@ function Waiting({ r, template, secrets, can }: { r: SandboxRequestView; templat
       <p className="text-xs text-muted-foreground">Asked at {r.askedAt}.</p>
       {can ? (
         <div className="flex flex-wrap items-center gap-2">
-          <Confirm title={`Start a box of ${r.template}?`} action="Approve" onConfirm={() => decide('approve', { action: 'approve', id: r.id }, `${r.template}: the box starts`)}
+          <Confirm title={`Start a box of ${r.template}?`} action="Approve" onConfirm={() => void approveItems([runItem(r)])}
             description={<>The hopper starts a sandbox box of <span className="font-mono">{r.template}</span> with its defaults. It joins as a machine and gets what the template is approved for{template?.radius ? <>, blast radius {template.radius.level}</> : null}.</>}>
-            <Button size="sm" disabled={pending !== null}><Check />Approve</Button>
+            <Button size="sm" disabled={pending}><Check />Approve</Button>
           </Confirm>
           <Input className="h-8 max-w-64 text-sm" placeholder="Why not (the job is told)" value={reason} onChange={(e) => setReason(e.target.value)} aria-label={`Why not start ${r.template}`} />
-          <Button size="sm" variant="outline" disabled={pending !== null || reason.trim() === ''} onClick={() => decide('decline', { action: 'decline', id: r.id, reason: reason.trim() }, `${r.template}: declined`)}><X />Decline</Button>
-          {pending && <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin" />{pending === 'approve' ? 'Approving…' : 'Declining…'}</span>}
+          <Button size="sm" variant="outline" disabled={pending || reason.trim() === ''} onClick={decline}><X />Decline</Button>
+          {declining ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin" />Declining…</span> : <ApprovalState approval={approval} />}
         </div>
       ) : <p className="text-xs text-muted-foreground">An admin approves it here.</p>}
     </li>

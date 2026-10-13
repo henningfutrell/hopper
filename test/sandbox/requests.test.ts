@@ -116,6 +116,21 @@ describe('a box starts outside the approval (issue #1002)', () => {
     expect(s.events.find((e) => e.type === 'vault.sandbox_failed')).toMatchObject({ jobId: 'job-1', data: { request: stuck.id } });
   });
 
+  it('20 runs approved at once each answer at once, and their boxes start side by side, not one after another (issue #1018)', async () => {
+    const pending: ((v: { container: string }) => void)[] = [];
+    const s = setup({ launch: () => new Promise((resolve) => { pending.push(resolve); }) });
+    const jobs = Array.from({ length: 20 }, (_, i) => `job-b${i}`);
+    for (const j of jobs) s.atWork.add(j);
+    const asked = jobs.map((j) => s.requests.ask(j, T.name));
+    expect(asked.map((r) => s.requests.approve(r.id, 'Ada'))).toEqual(asked.map(() => ({ ok: true })));
+    expect(s.requests.list().every((r) => r.state === 'starting')).toBe(true);
+    await new Promise((r) => setImmediate(r));
+    expect(pending).toHaveLength(20);
+    pending.forEach((resolve, i) => resolve({ container: `box-b${i}` }));
+    await s.requests.idle();
+    expect(s.requests.list().every((r) => r.state === 'running')).toBe(true);
+  });
+
   it('a start that ends after its time limit leaves the request failed', async () => {
     let finish = (_: { container: string }): void => {};
     const s = setup({ startMs: 20, launch: () => new Promise((resolve) => { finish = resolve; }) });
