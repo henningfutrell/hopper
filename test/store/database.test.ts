@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { numberPlaceholders, openDb, parseDatabaseUrl } from '../../src/store/db.ts';
 import { testPostgres } from '../support/database.ts';
+import { stallingProxy } from '../support/stalling-proxy.ts';
 import { spec, useTempStore } from './helpers.ts';
 
 const t = useTempStore();
@@ -92,6 +93,65 @@ describe('postgres', () => {
     try { db.get('SELECT 1 AS one'); } catch { /* the broken call */ }
     expect(db.get('SELECT 1 AS one')).toEqual({ one: 1 });
     db.close();
+  });
+
+  // Issue #1003: a call that waited for no answer left its connection busy, so every call after it
+  // waited its full time too, and the daemon answered no request while its timers still ran.
+  it('a statement that waits on a lock fails in its time, and the next call on the connection answers at once', () => {
+    const url = t.url();
+    const holder = openDb(url);
+    holder.exec('CREATE TABLE x (id TEXT PRIMARY KEY, n INTEGER)');
+    holder.run('INSERT INTO x (id, n) VALUES (?, ?)', 'a', 0);
+    holder.exec('BEGIN');
+    holder.run('UPDATE x SET n = 1 WHERE id = ?', 'a');
+    const db = openDb(url, { timeoutMs: 1000 });
+    let started = performance.now();
+    expect(() => db.run('UPDATE x SET n = 2 WHERE id = ?', 'a')).toThrow(/postgres: .*\(57014\)/);
+    expect(performance.now() - started).toBeLessThan(5000);
+    started = performance.now();
+    expect(db.get('SELECT 1 AS one')).toEqual({ one: 1 });
+    expect(performance.now() - started).toBeLessThan(1000);
+    holder.exec('ROLLBACK');
+    holder.close();
+    db.close();
+  });
+
+  it('a connection that stops answering is dropped in its time, and the next call connects again', async () => {
+    const proxy = await stallingProxy(t.url());
+    try {
+      const db = openDb(proxy.url, { timeoutMs: 1000 });
+      expect(db.get('SELECT 1 AS one')).toEqual({ one: 1 });
+      await proxy.stall(true);
+      let started = performance.now();
+      expect(() => db.get('SELECT 2 AS two')).toThrow(/postgres: no answer in 1\.1 s/);
+      expect(performance.now() - started).toBeLessThan(5000);
+      await proxy.stall(false);
+      started = performance.now();
+      expect(db.get('SELECT 3 AS three')).toEqual({ three: 3 });
+      expect(performance.now() - started).toBeLessThan(1000);
+      db.close();
+    } finally {
+      await proxy.close();
+    }
+  });
+
+  it('a connection dropped inside a transaction fails the transaction, and the store works after its rollback', async () => {
+    const proxy = await stallingProxy(t.url());
+    try {
+      const db = openDb(proxy.url, { timeoutMs: 1000 });
+      db.exec('CREATE TABLE x (id TEXT PRIMARY KEY)');
+      db.exec('BEGIN');
+      db.run('INSERT INTO x (id) VALUES (?)', 'a');
+      await proxy.stall(true);
+      expect(() => db.run('INSERT INTO x (id) VALUES (?)', 'b')).toThrow(/postgres: no answer/);
+      await proxy.stall(false);
+      expect(() => db.run('INSERT INTO x (id) VALUES (?)', 'c')).toThrow(/lost inside a transaction/);
+      db.exec('ROLLBACK');
+      expect(db.all('SELECT id FROM x')).toEqual([]);
+      db.close();
+    } finally {
+      await proxy.close();
+    }
   });
 
   it('a transaction rolled back leaves nothing, a committed one everything', () => {
