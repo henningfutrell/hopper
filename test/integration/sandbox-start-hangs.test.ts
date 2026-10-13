@@ -26,6 +26,8 @@ import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts
 import { KEY } from '../support/webhooks.ts';
 
 const NEEDS = 'write/aws-account/123456789012';
+/** Why the job asks, and what the box will change (issue #1001): a need that changes an asset takes a plan. */
+const ASK = ['--why', 'Create the bucket for the report', '--plan', 'aws s3 mb s3://report (undo: aws s3 rb s3://report)'];
 const START_MS = 2000;
 
 const apps: TestApp[] = [];
@@ -74,8 +76,8 @@ describe('a box that does not start holds nothing else (issue #1002)', () => {
     expect((await a.ui('/ui/api/sandbox-approvals', { skipTemplateApproval: true }, { token })).status).toBe(200);
 
     const first = await runningJob(a), second = await runningJob(a);
-    expect((await skill(a, first, ['sandbox', '--needs', NEEDS])).code).toBe(3);
-    expect((await skill(a, second, ['sandbox', '--needs', NEEDS])).code).toBe(3);
+    expect((await skill(a, first, ['sandbox', '--needs', NEEDS, ...ASK])).code).toBe(3);
+    expect((await skill(a, second, ['sandbox', '--needs', NEEDS, ...ASK])).code).toBe(3);
     const [stuck, other] = (await view()).sandboxRequests!;
     expect(stuck).toMatchObject({ state: 'waiting' });
 
@@ -106,7 +108,7 @@ describe('a box that does not start holds nothing else (issue #1002)', () => {
     }
     expect(failed).toMatchObject({ reason: 'the box did not start in 2 s' });
     expect((await a.events()).find((e) => e.type === 'vault.sandbox_failed')).toMatchObject({ jobId: stuck!.jobId, data: { request: stuck!.id, reason: 'the box did not start in 2 s' } });
-    const told = await skill(a, first, ['sandbox', '--needs', NEEDS]);
+    const told = await skill(a, first, ['sandbox', '--needs', NEEDS, ...ASK]);
     expect(told.code).toBe(1);
     expect(told.stdout).toContain('the box did not start in 2 s');
   });
