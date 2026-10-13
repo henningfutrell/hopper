@@ -26,7 +26,7 @@ const VIEW = { secrets: [MINTS], templates: [HIGH], sandboxRequests: [WAITING, W
 
 interface Call { path: string; method: string; body?: Record<string, unknown> }
 
-function fakeDaemon(o: { hold?: boolean } = {}) {
+function fakeDaemon(o: { hold?: boolean; holdVault?: boolean; refuse?: string } = {}) {
   const calls: Call[] = [];
   let release = (): void => {};
   const held = new Promise<void>((r) => { release = r; });
@@ -44,7 +44,9 @@ function fakeDaemon(o: { hold?: boolean } = {}) {
     const body = init.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
     calls.push({ path, method: init.method ?? 'GET', ...(body ? { body } : {}) });
     if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'github', name: 'alice', instanceAdmin: true }, signIn: { local: true, origin: location.origin, realms: [] } });
+    if (path === '/ui/api/sandbox-requests' && body?.id === o.refuse) return json(409, { error: `sandbox request ${o.refuse} is starting, not waiting` });
     if (path === '/ui/api/sandbox-requests' && o.hold) { await held; return json(200, VIEW); }
+    if (path === '/ui/api/vault' && o.holdVault) { await held; return json(200, VIEW); }
     if (path === '/ui/api/sandbox-requests' || path === '/ui/api/sandbox-approvals' || path === '/ui/api/vault') return json(200, VIEW);
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
@@ -61,7 +63,7 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-async function boot(hash: string, ready: () => unknown, o: { hold?: boolean } = {}) {
+async function boot(hash: string, ready: () => unknown, o: { hold?: boolean; holdVault?: boolean; refuse?: string } = {}) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   window.location.hash = hash;
@@ -169,6 +171,55 @@ describe('approvals that do not block each other (issue #1001)', () => {
       { action: 'approve-template', name: HIGH.name },
       { action: 'approve-profile', name: HIGH.name, ...WRITE },
     ]);
+  });
+});
+
+describe('approve several at once (issue #1018)', () => {
+  const template = (): HTMLElement => document.querySelector<HTMLElement>(`[data-template-approval="${HIGH.name}"]`)!;
+  const select = async (el: HTMLElement): Promise<void> => { await act(async () => { el.querySelector<HTMLInputElement>('input[type="checkbox"][data-slot="select"]')!.click(); }); };
+  const bar = (): HTMLElement => document.querySelector<HTMLElement>('[data-slot="approve-selected"]')!;
+
+  it('Approve all listed sends the template and its profile side by side: the second does not wait for the first', async () => {
+    const daemon = await boot('#access-requests', template, { holdVault: true });
+    await act(async () => { buttonIn(template(), 'Approve all listed').click(); });
+    await confirmed();
+    await vi.waitFor(() => expect(daemon.calls.filter((x) => x.path === '/ui/api/vault')).toHaveLength(2));
+    await act(async () => { daemon.release(); });
+  });
+
+  it('one Approve selected sends every selected approval at once; each card shows its own progress, then its result', async () => {
+    const daemon = await boot('#access-requests', runs, { hold: true, holdVault: true });
+    expect(buttonIn(bar(), 'Approve selected').disabled).toBe(true);
+    await select(card('q1'));
+    await select(card('q3'));
+    await select(template());
+    await act(async () => { buttonIn(bar(), 'Approve selected (3)').click(); });
+    await confirmed();
+    // Every approval is on the wire while none has answered.
+    await vi.waitFor(() => expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-requests' || x.path === '/ui/api/vault')).toHaveLength(4));
+    expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-requests').map((x) => x.body)).toEqual([{ action: 'approve', id: 'q1' }, { action: 'approve', id: 'q3' }]);
+    expect(daemon.calls.filter((x) => x.path === '/ui/api/vault').map((x) => x.body)).toEqual([
+      { action: 'approve-template', name: HIGH.name },
+      { action: 'approve-profile', name: HIGH.name, ...WRITE },
+    ]);
+    for (const el of [card('q1'), card('q3'), template()]) expect(el.textContent).toContain('Approving…');
+    await act(async () => { daemon.release(); });
+    await vi.waitFor(() => expect(card('q1').textContent).toContain('Approved'));
+    expect(card('q3').textContent).toContain('Approved');
+    expect(template().textContent).toContain('Approved');
+    expect(bar().textContent).toContain('3 approved');
+  });
+
+  it('a failure on one does not stop the rest: the others are approved, and the one that failed says why', async () => {
+    const daemon = await boot('#access-requests', runs, { refuse: 'q1' });
+    await act(async () => { buttonIn(bar(), 'Select all waiting').click(); });
+    await act(async () => { buttonIn(bar(), 'Approve selected (3)').click(); });
+    await confirmed();
+    await vi.waitFor(() => expect(card('q1').textContent).toContain('sandbox request q1 is starting, not waiting'));
+    await vi.waitFor(() => expect(card('q3').textContent).toContain('Approved'));
+    expect(template().textContent).toContain('Approved');
+    expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-requests' || x.path === '/ui/api/vault')).toHaveLength(4);
+    expect(bar().textContent).toContain('2 approved, 1 failed');
   });
 });
 
