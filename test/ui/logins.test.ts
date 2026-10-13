@@ -70,6 +70,16 @@ describe('the logins together', () => {
     expect(loginsBadge([a, login({ id: 'c', status: 'completed' })], T0, SETTINGS)).toEqual({ n: 1, warn: false, high: 0 });
   });
 
+  it('an expired code a job waits to renew still counts (issue #1016): with onExpiry renew or hold; never with fail, nor for a run that cannot ask', () => {
+    const expired = login({ id: 'e', status: 'expired' }, 60);
+    expect(loginsBadge([expired], T0 + 120_000, { ...SETTINGS, onExpiry: 'renew' })).toEqual({ n: 1, warn: true, high: 0 });
+    expect(loginsBadge([expired], T0 + 120_000, { ...SETTINGS, onExpiry: 'hold' })).toEqual({ n: 1, warn: true, high: 0 });
+    expect(loginsBadge([expired], T0 + 120_000, SETTINGS)).toEqual({ n: 0, warn: false, high: 0 });
+    expect(loginsBadge([login({ id: 'p', status: 'expired', renewable: false }, 60)], T0 + 120_000, { ...SETTINGS, onExpiry: 'renew' })).toEqual({ n: 0, warn: false, high: 0 });
+    // Past expiresAt by the clock, before the server's auth.expired: it counts the same.
+    expect(loginsBadge([login({ id: 'q' }, 60)], T0 + 120_000, { ...SETTINGS, onExpiry: 'renew' })).toEqual({ n: 1, warn: true, high: 0 });
+  });
+
   it('several open logins sort by time left, the shortest first; ended ones after, the latest end first', () => {
     const long = login({ id: 'long' }, 900);
     const short = login({ id: 'short' }, 120);
@@ -86,6 +96,7 @@ describe('the logins together', () => {
     expect(onCard(expired, T0 + 60_000 + ENDED_ON_CARD_MS - 1, SETTINGS)).toBe(true);
     expect(onCard(expired, T0 + 60_000 + ENDED_ON_CARD_MS, SETTINGS)).toBe(false);
     expect(onCard(expired, T0 + 60_000 + ENDED_ON_CARD_MS, { ...SETTINGS, onExpiry: 'hold' })).toBe(true);
+    expect(onCard(expired, T0 + 60_000 + ENDED_ON_CARD_MS, { ...SETTINGS, onExpiry: 'renew' })).toBe(true);
     expect(onCard(login(), T0 + 3_600_000, SETTINGS)).toBe(true);
   });
 });

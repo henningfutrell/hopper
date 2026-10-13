@@ -102,10 +102,30 @@ describe('a job that waits on a device login', () => {
     expect(types).toEqual(['auth.pending', 'auth.expired', 'auth.failed']);
   });
 
-  it('by default (onExpiry hold, issue #698), the expired login waits for a new code, which the same login takes', async () => {
+  it('by default (onExpiry renew, issue #1016), an expired code is renewed by itself: the job is told to start the login again, and the same login takes the new code', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [authTurn({ expiresIn: 1, wakes: false }), authTurn({ code: 'QRST-2345', polls: 60 }), DONE] });
     const a = await start(herdr);
     const token = await a.login();
+    const job = await a.pull({}, item());
+    const login = await pendingLogin(a);
+    await waitFor(() => herdr.prompts.length === 2, { timeoutMs: 8000 });
+    expect(herdr.prompts[1]!.text).toContain('The codex code expired before the user completed the login');
+    await waitFor(async () => (await loginsOf(a, token)).logins[0]!.userCode === 'QRST-2345', { timeoutMs: 8000 });
+    const logins = (await loginsOf(a, token)).logins;
+    expect(logins).toHaveLength(1);
+    expect(logins[0]).toMatchObject({ id: login.id, status: 'pending' });
+    await a.waitForStatus(job.id, 'finished', 8000);
+    const types = (await a.events()).filter((e) => e.jobId === job.id).map((e) => e.type).filter((x) => x.startsWith('auth.'));
+    expect(types).toEqual(['auth.pending', 'auth.expired', 'auth.pending', 'auth.completed']);
+    expect((await a.events()).find((e) => e.type === 'auth.expired')!.data).toMatchObject({ renewing: true });
+    expect(JSON.stringify((await a.events()).filter((e) => e.type === 'job.progressed' && e.jobId === job.id))).toContain('asked the job for a new codex code');
+  });
+
+  it('with onExpiry hold (issue #698), the expired login waits for a new code, which the same login takes', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [authTurn({ expiresIn: 1, wakes: false }), authTurn({ code: 'QRST-2345', polls: 60 }), DONE] });
+    const a = await start(herdr);
+    const token = await a.login();
+    expect((await a.ui('/ui/api/logins/settings', { onExpiry: 'hold' }, { token })).status).toBe(200);
     const job = await a.pull({}, item());
     const login = await pendingLogin(a);
     await waitFor(async () => (await loginsOf(a)).logins[0]!.status === 'expired', { timeoutMs: 8000 });
