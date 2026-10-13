@@ -125,7 +125,7 @@ describe('notes to a job', () => {
     freshDb();
     const a = await boot();
     const token = await a.login();
-    const job = await a.pull({});
+    const job = await a.pull({ op: 'echo', message: 'done' });
     await a.waitForStatus(job.id, 'finished', 8000);
     expect((await send(a, token, job.id, NOTE)).status).toBe(409);
     const empty = await a.ui(`/ui/api/jobs/${job.id}/notes`, { text: '   ' }, { token });

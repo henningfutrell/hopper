@@ -34,7 +34,7 @@ describe('herdr-claude executor: notes to a running job', () => {
     const stub = notesStub();
     const base = contextFor(jobWith({ prompt: 'Reach the service', timeoutMs: HOUR }));
     // The person sends the note while the job shows its first step.
-    const ctx: ExecutionContext = { ...base.ctx, notes: stub.notes, progress: (m, t) => { base.ctx.progress(m, t); if (m === '● Reading the logs' && stub.takes.length === 0) stub.queued.push(NOTE_TEXT); } };
+    const ctx: ExecutionContext = { ...base.ctx, notes: stub.notes, progress: (m, t) => { base.ctx.progress(m, t); if (m?.includes('Reading the logs') && stub.takes.length === 0) stub.queued.push(NOTE_TEXT); } };
     expect(await executor.run(ctx)).toMatchObject({ kind: 'finished', result: { summary: 'Used the new address. Done.' } });
     expect(herdr.prompts).toHaveLength(2);
     expect(herdr.prompts[1]!.text).toContain(NOTE_TEXT);

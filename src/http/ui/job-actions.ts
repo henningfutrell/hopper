@@ -1,11 +1,11 @@
 // The UI session's actions on one job: cancel, approve, operator-led, reject, run again, rework (issue #724), park and re-queue
-// (issue #501), end its own wait (issue #483), dismiss, mark cleaned up; for a job held because its item changed since
+// (issue #501), end its own wait (issue #483), send it a note (issue #997), dismiss, mark cleaned up; for a job held because its item changed since
 // the snapshot (issue #662), keep the original text, or accept the new text — the owner only, as Access decides. Least role: operator.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpError, parseWith } from '../errors.ts';
 import type { TenantParts } from '../tenants.ts';
-import { endWaitBody, rejectBody, requeueBody, reworkBody } from './job-bodies.ts';
+import { endWaitBody, noteBody, rejectBody, requeueBody, reworkBody } from './job-bodies.ts';
 import type { Access } from '../../authz/service.ts';
 import { signedInOf } from '../tenants.ts';
 import { actingOf } from './sessions.ts';
@@ -21,6 +21,11 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
   const signedIn = (req: FastifyRequest) => {
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to act on a changed item');
+    return s;
+  };
+  const signedInWith = (req: FastifyRequest) => {
+    const s = signedInOf(req);
+    if (!s) throw new HttpError(401, 'sign in to send a note');
     return s;
   };
   app.post('/ui/api/jobs/:id/cancel', o.operator, async (req) => o.tenant(req).engine.cancel(parseWith(idParams, req.params).id, 'cancelled in UI'));
@@ -44,6 +49,11 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
   app.post('/ui/api/jobs/:id/end-wait', o.operator, async (req) => {
     const { note } = parseWith(endWaitBody, req.body ?? {});
     return o.tenant(req).engine.endWait(parseWith(idParams, req.params).id, note || undefined);
+  });
+  // A note to a job (issue #997): queued on it until its session gets it, by whoever sent it, through the UI or an API token.
+  app.post('/ui/api/jobs/:id/notes', o.operator, async (req) => {
+    const { text } = parseWith(noteBody, req.body ?? {});
+    return o.tenant(req).engine.addNote(parseWith(idParams, req.params).id, text, actingOf(signedInWith(req)));
   });
   app.post('/ui/api/jobs/:id/keep-original', o.operator, async (req) =>
     o.tenant(req).engine.keepOriginalText(parseWith(idParams, req.params).id, actingOf(signedIn(req))));

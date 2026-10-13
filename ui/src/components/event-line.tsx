@@ -28,12 +28,20 @@ const TYPE_TONE: Record<string, Tone> = {
   'artifact.posted': 'ok', 'artifact.revised': 'ok',
   'lanes.recommended': 'warn', 'lanes.tuning_changed': 'warn', 'lanes.applied': 'warn', 'lanes.undone': 'warn', 'lanes.dismissed': 'warn',
   'bug_report.filed': 'ok', 'bug_report.failed': 'bad',
+  'job.note_added': 'question', 'job.note_delivered': 'ok',
 };
 export const eventTone = (type: string): Tone => TYPE_TONE[type] ?? 'muted';
+
+const NOTE_DELIVERY: Record<string, string> = { start: 'in its task', turn: 'at a turn boundary', resume: 'with the answer' };
+const noteCount = (ids: unknown): string => (Array.isArray(ids) && ids.length !== 1 ? `${ids.length} notes` : 'note');
 
 export function detailOf(e: DomainEvent): string {
   const d = e.data as Record<string, unknown>;
   if (e.type === 'minor_decision.picked') return pickedEventDetail(d);
+  // Notes to a job (issue #997): who sent one and what it says; how it went in; which job took the ones not delivered.
+  if (e.type === 'job.note_added') return `note from ${String(d.person)} (${String(d.via)}): ${String(d.text)}`;
+  if (e.type === 'job.note_delivered') return `${noteCount(d.noteIds)} typed into its session ${NOTE_DELIVERY[String(d.delivery)] ?? ''}`.trim();
+  if (e.type === 'job.note_carried') return `${noteCount(d.noteIds)} carried to job ${String(d.nextJobId).slice(0, 8)}`;
   // Phase shifts (issue #548): from which phase to which, and why; a fork, what it is for.
   if (e.type === 'job.phase_changed') return `${String(d.from)} → ${String(d.to)}: ${String(d.reason)}`;
   if (e.type === 'job.forked') return `${String(d.to)} forked as ${String(d.forkId).slice(0, 8)}${typeof d.note === 'string' ? `: ${d.note}` : ''}`;

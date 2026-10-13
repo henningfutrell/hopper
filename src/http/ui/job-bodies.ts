@@ -1,6 +1,7 @@
 // The bodies of the job and question actions of the UI session.
 import { z } from 'zod';
 import { MAX_REWORK_NOTES } from '../../domain/pull-requests.ts';
+import { MAX_NOTE_CHARS } from '../../domain/job-notes.ts';
 
 export const answerBody = z.object({ answer: z.string().trim().min(1, 'answer must not be empty') });
 /** Reject's optional reason (issue #387): kept on the job and in its timeline, never written to the issue. */
@@ -16,6 +17,10 @@ export const reworkBody = z.object({
 export const requeueBody = z.object({ freshSession: z.boolean().optional(), elsewhere: z.boolean().optional() }).strict();
 /** Ending a job's own wait (issue #483): the person's optional note, typed into its pane with it. */
 export const endWaitBody = z.object({ note: z.string().trim().max(2000, 'note must be at most 2000 characters').optional() }).strict();
+/** A note to a job (issue #997): typed into its session at the next turn boundary, or kept until it resumes. Required. */
+export const noteBody = z.object({
+  text: z.string().trim().min(1, 'text must not be empty').max(MAX_NOTE_CHARS, `text must be at most ${MAX_NOTE_CHARS} characters`),
+}).strict();
 /**
  * Assign to me, or release a claim, on items a job source listed (issue #440); approve a request card (issue #652): one
  * item, with the hash of its title and body as the person read them; take items off the backburner (issue #798).

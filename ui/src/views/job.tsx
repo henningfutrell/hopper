@@ -5,7 +5,7 @@
 // stands, what is next — with what waits on the person pinned under it; the job's own graph, a node per part; the
 // timeline of everything that happened, newest first (the parts list's events and the ones the UI holds); and the parts
 // as a filterable table. A new event of the job reads the parts list again. A direct job's job shows its promotion to
-// GitHub under its facts (issue #946), as Direct jobs does.
+// GitHub under its facts (issue #946), as Direct jobs does. Its notes and Add note follow its facts (issue #997).
 import { ArrowLeft, Briefcase } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { EventLine } from '@/components/event-line';
@@ -20,6 +20,7 @@ import { useHopper } from '@/store';
 import { useJobName } from '@/store/selectors';
 import { useSection } from '@/app/nav';
 import { JobPromotion } from './direct-job-promotion';
+import { JobNotes } from './job-notes';
 import { BomGraph, BomTable, JobHeader, useJobBom, WaitingPinned } from './job-bom';
 
 type Read = { state: 'reading' } | { state: 'found'; job: Job } | { state: 'none' };
@@ -97,6 +98,7 @@ export function JobView() {
           </>
         )}
       </Panel>
+      {read.state === 'found' && <JobNotes job={read.job} />}
       {bom && <Panel title="Its parts" count={bom.parts.length} bodyClassName="p-3"><BomGraph bom={bom} title={read.state === 'found' ? read.job.spec.goal || id : id} /></Panel>}
       <Panel title="Timeline" count={events.length} bodyClassName="space-y-1 font-mono">
         <div data-slot="job-timeline" className="space-y-1">

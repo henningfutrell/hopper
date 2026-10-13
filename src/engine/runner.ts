@@ -18,6 +18,7 @@ import { elsewhereBrief, freshStartBrief, recordPark, releaseParked, startsFresh
 import { withCorrection } from './answers.ts';
 import { forkResume } from './phase-shifts.ts';
 import { nudgeCheck } from './nudge-check.ts';
+import { runNotes } from './notes.ts';
 
 const PROGRESS_EVERY_MS = 500;
 
@@ -196,6 +197,8 @@ export function createRunner(c: EngineContext, cleanup: Cleanup): Runner {
       progress: (msg, tasks) => progress.report(msg, tasks),
       // Before a nudge (issue #627): the job's source, then what it waits on a person for.
       beforeNudge: () => nudgeCheck(c, j),
+      // A person's notes (issue #997), read from the store each time: one sent mid-run goes in at the next turn boundary.
+      notes: runNotes(c, job.id),
       saveState: (state) => { if (!c.stopping()) store.jobs.update(job.id, { executorState: state }); },
       workTree: (path) => { if (!c.stopping()) store.jobs.update(job.id, { workTree: path }); },
       agentSession: (id) => { if (!c.stopping()) store.jobs.update(job.id, { agentSession: id }); },

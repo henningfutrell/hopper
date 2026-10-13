@@ -18,6 +18,7 @@ import type { JobPhaseFields } from './phase.ts';
 import type { FollowOnOf } from './proposal-paths.ts';
 import type { JobRework } from './pull-requests.ts';
 import type { TaskCount } from './task-count.ts';
+import type { JobNote } from './job-notes.ts';
 
 export type JobId = string;
 export type MachineId = string;
@@ -201,6 +202,11 @@ export interface Job extends JobPhaseFields, JobMachineLink {
   rerunOf?: JobId;
   /** Set when this job reworks a pull request a person sent back (issue #724): it, the notes, who. */
   rework?: JobRework;
+  /**
+   * Notes a person sent the job (issue #997), oldest first: queued until its session gets them — at the next turn
+   * boundary while it runs, with its task or the answer it resumes with —, or a new job of its item carries them.
+   */
+  notes?: JobNote[];
   /** When the user dismissed this failed job (issue #355): it is no longer a locked entry. */
   dismissedAt?: string;
   /**
@@ -426,6 +432,7 @@ export interface Decision {
 // ---- Events ------------------------------------------------------------------------
 export * from './event-types.ts';
 export * from './checkpoints.ts';
+export * from './job-notes.ts';
 
 export interface DomainEvent<T = Record<string, unknown>> {
   /** Monotonic, assigned by the store on append. */

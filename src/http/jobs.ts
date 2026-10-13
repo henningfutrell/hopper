@@ -116,6 +116,14 @@ export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     });
   });
 
+  // A job's notes (issue #997), oldest first: each with who sent it, how, and where it is — queued, delivered, carried.
+  app.get('/api/jobs/:id/notes', async (req) => {
+    const { id } = parseWith(idParams, req.params);
+    const job = o.tenant(req).store.jobs.get(id);
+    if (!job) throw new HttpError(404, `job ${id} not found`);
+    return { notes: job.notes ?? [] };
+  });
+
   app.get('/api/jobs/:id', async (req) => {
     const { id } = parseWith(idParams, req.params);
     const job = o.tenant(req).store.jobs.get(id);
