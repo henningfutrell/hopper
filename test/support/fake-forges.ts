@@ -20,7 +20,7 @@ import type { AddressInfo } from 'node:net';
 import { commentEditRoute, editIssue, forksRoute, type ForksForge } from './fake-forks.ts';
 import { serveGit } from './fake-git.ts';
 import { readBody, send } from './fake-http.ts';
-import { repoChecksRoute, type RepoChecksForge } from './fake-repo-checks.ts';
+import { jobLogBlobRoute, jobLogsRoute, repoChecksRoute, type JobLogsForge, type RepoChecksForge } from './fake-repo-checks.ts';
 import { issueIdOf, subIssuesRoute, type SubIssuesForge } from './fake-sub-issues.ts';
 import { watchRoute, type WatchForge } from './fake-github-watch.ts';
 import { contentsRoute, headsRoute, type ContentsForge, type HeadsForge } from './fake-heads.ts';
@@ -52,7 +52,7 @@ export interface ForgeRequest { method: string; path: string; query: Record<stri
 
 interface Device { code: string; userCode: string; state: 'pending' | 'approved' | 'denied'; login?: string }
 
-export interface FakeForge extends ContentsForge, RepoChecksForge, SubIssuesForge, ForksForge, WatchForge, HeadsForge, PeopleForge {
+export interface FakeForge extends ContentsForge, RepoChecksForge, SubIssuesForge, ForksForge, WatchForge, HeadsForge, PeopleForge, JobLogsForge {
   url: string;
   requests: ForgeRequest[];
   issues: FakeIssue[];
@@ -92,7 +92,7 @@ export interface FakeForge extends ContentsForge, RepoChecksForge, SubIssuesForg
   close(): Promise<void>;
 }
 
-type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string };
+type Handler = (r: ForgeRequest, login: string | undefined) => { status: number; body?: unknown; location?: string; text?: string };
 
 async function serve(handler: (base: string) => Handler, extra: { issues: FakeIssue[]; tokens: Map<string, string>; refreshTokens: Map<string, { login: string; web: boolean }>; devices: Device[]; mint: FakeForge['mint']; revoked: string[][]; gitRoot?: string }): Promise<FakeForge> {
   const requests: ForgeRequest[] = [];
@@ -108,7 +108,7 @@ async function serve(handler: (base: string) => Handler, extra: { issues: FakeIs
       requests.push(r);
       const token = /^(?:token|bearer)\s+(\S+)$/i.exec(auth)?.[1];
       const out = handle(r, token ? extra.tokens.get(token) : undefined);
-      if (out.location) { res.writeHead(out.status, { location: out.location }); res.end(); return; }
+      if (out.location || out.text !== undefined) { res.writeHead(out.status, out.location ? { location: out.location } : { 'content-type': 'text/plain; charset=utf-8' }); res.end(out.text); return; }
       send(res, out.status, out.body);
     })().catch((err: unknown) => send(res, 500, { message: String(err) }));
   });
@@ -242,7 +242,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         for (const c of credentials) { tokens.delete(c); refreshTokens.delete(c); }
         return { status: 202, body: {} };
       }
-      if (!r.path.startsWith('/api/v3/')) return { status: 404, body: { message: 'Not Found' } };
+      if (!r.path.startsWith('/api/v3/')) return jobLogBlobRoute(forge, r.method, r.path) ?? { status: 404, body: { message: 'Not Found' } };
       if (!login) return { status: 401, body: { message: 'Bad credentials' } };
       const usedNow = grants.find((g) => r.auth.endsWith(` ${g.access}`)); if (usedNow) usedNow.used = ++tick;
       const path = r.path.slice('/api/v3'.length);
@@ -295,7 +295,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       if (!m) return { status: 404, body: { message: 'Not Found' } };
       const repo = m[1]!;
       const rest = m[2] ?? '';
-      const sub = subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest) ?? commentEditRoute(issues, r.method, repo, rest, r.body) ?? contentsRoute(forge ?? {}, base, r.method, repo, rest, r.query, r.body); if (sub) return sub;
+      const sub = subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest) ?? commentEditRoute(issues, r.method, repo, rest, r.body) ?? contentsRoute(forge ?? {}, base, r.method, repo, rest, r.query, r.body) ?? jobLogsRoute(forge, base, r.method, rest); if (sub) return sub;
       if (r.method === 'POST' && rest === 'labels') return { status: 201, body: { name: r.body.name } };
       if (r.method === 'GET' && rest === 'issues') {
         return { status: 200, body: issues.filter((i) => i.repo === repo && (i.state ?? 'open') === 'open' && i.labels.includes(r.query.labels ?? '')).map(restIssue) };

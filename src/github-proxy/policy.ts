@@ -5,7 +5,8 @@
 // decides what it does with it:
 // - a job of that same user (**its own job**) may file and read issues, comment, open a pull request from
 //   its pushed branch on its own repository, mark one ready for review there, close its own issue as completed
-//   (issue #652: it holds no GitHub token of its own), and read pull requests, on the hopper's job repositories;
+//   (issue #652: it holds no GitHub token of its own), and read pull requests and a failed check's log (issue #993), on
+//   the hopper's job repositories;
 // - a job of any other user (**another user's job**, treated as untrusted) may only file an issue there.
 // Nothing a job asks for carries labels or assignees: a filed issue never becomes a job by itself.
 // An issue a job files is a child of the job's own issue (issue #729, issue lineage): a follow-up, or — `required`, only
@@ -16,7 +17,7 @@
 // job's own repository owned by the user, as GitHub says (the broker reads it): the fork is no job repository.
 import { z } from 'zod';
 
-export const PROXY_OPS = ['issue.create', 'issue.comment', 'issue.view', 'issue.close', 'pr.create', 'pr.view', 'pr.ready', 'repo.view', 'repo.fork'] as const;
+export const PROXY_OPS = ['issue.create', 'issue.comment', 'issue.view', 'issue.close', 'pr.create', 'pr.view', 'pr.ready', 'repo.view', 'repo.fork', 'check.log'] as const;
 export type ProxyOp = (typeof PROXY_OPS)[number];
 
 const repo = z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'repo must be owner/name');
@@ -39,6 +40,8 @@ export const proxyRequest = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('pr.ready'), repo, number }),
   z.strictObject({ op: z.literal('repo.view'), repo }),
   z.strictObject({ op: z.literal('repo.fork'), repo }),
+  // A failed check's full log (issue #993): `number` is its GitHub Actions job, the last number of the check's link.
+  z.strictObject({ op: z.literal('check.log'), repo, number }),
 ]);
 export type ProxyRequest = z.infer<typeof proxyRequest>;
 

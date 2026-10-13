@@ -3,6 +3,9 @@
 // `token()` is asked at every call; a token GitHub refuses (401) is renewed once and the call made again. A repository's
 // read (`repo`) is what the contribution flow (issue #429) decides on: whether the user can push to it, whether it takes
 // issues, and what it is a fork of. A fork made for a repository that takes no issues gets its own issues turned on.
+import { MAX_JOB_LOG_CHARS, whyNoLog } from '../domain/check-logs.ts';
+import { webOriginOf } from '../sources/github/api.ts';
+import { jobLog } from '../sources/github/app/rest.ts';
 import { makeRequest, splitRepo, statusOf, type Request } from '../sources/github/app/http.ts';
 import { contributionSteps, type ProxyRequest } from './policy.ts';
 
@@ -99,12 +102,23 @@ async function fork(req: Request, headers: Record<string, string>, repo: string)
   };
 }
 
-async function call(req: Request, token: string, r: ProxyRequest, subIssueOf?: SubIssueOf): Promise<ProxyResult> {
+/**
+ * A failed check's full log (issue #993): its end when it is longer than `MAX_JOB_LOG_CHARS`, where the failure is. Read
+ * through the shared rate limiter as every call; its link is the check run's page, which GitHub names by the job's id.
+ */
+async function checkLog(req: Request, token: string, webOrigin: string, repo: string, job: number): Promise<ProxyResult> {
+  const log = await jobLog(req, token, repo, job);
+  const truncated = log.length > MAX_JOB_LOG_CHARS;
+  return { number: job, url: `${webOrigin}/${repo}/runs/${job}`, log: truncated ? log.slice(-MAX_JOB_LOG_CHARS) : log, ...(truncated ? { truncated: true } : {}) };
+}
+
+async function call(req: Request, token: string, r: ProxyRequest, webOrigin: string, subIssueOf?: SubIssueOf): Promise<ProxyResult> {
   const headers = { authorization: `token ${token}` };
   const at = splitRepo(r.repo);
   switch (r.op) {
     case 'repo.view': return { ...(await readRepo(req, headers, r.repo)) };
     case 'repo.fork': return fork(req, headers, r.repo);
+    case 'check.log': return checkLog(req, token, webOrigin, r.repo, r.number);
     case 'issue.create': {
       const d = (await req('POST /repos/{owner}/{repo}/issues', { ...at, title: r.title, body: r.body, headers })).data as RestIssue;
       return { number: d.number, url: d.html_url, ...(subIssueOf ? await linkSubIssue(req, headers, subIssueOf, d.id) : {}) };
@@ -150,7 +164,13 @@ function messageOf(err: unknown, what: string): string {
   return `GitHub answered ${statusOf(err) ?? 'no status'} to ${what}: ${message}${detail ? ` (${detail})` : ''}`;
 }
 
-const errorOf = (err: unknown, r: ProxyRequest): ProxyGitHubError => new ProxyGitHubError(messageOf(err, `${r.op} on ${r.repo}`), statusOf(err));
+/** GitHub's failure as the job reads it; for a check's log (issue #993), why the hopper could not read it. */
+function errorOf(err: unknown, r: ProxyRequest): ProxyGitHubError {
+  if (r.op !== 'check.log') return new ProxyGitHubError(messageOf(err, `${r.op} on ${r.repo}`), statusOf(err));
+  const e = err as { message?: unknown; response?: { data?: { message?: unknown } } };
+  const message = typeof e.response?.data?.message === 'string' ? e.response.data.message : typeof e.message === 'string' ? e.message : String(err);
+  return new ProxyGitHubError(`the log of Actions job ${r.number} of ${r.repo}: ${whyNoLog(statusOf(err), message)}`, statusOf(err));
+}
 
 /** The user's token as asked at each call: renewed once when GitHub refuses it (401), and the call made again. */
 export interface TokenSource { token(): Promise<string>; renew(refused: string): Promise<string> }
@@ -179,7 +199,7 @@ export function createProxyApi(o: { apiUrl: string } & TokenSource): ProxyApi {
   const req = makeRequest(o.apiUrl);
   const withToken = tokenCaller(o);
   return {
-    perform: (r, subIssueOf) => withToken((token) => call(req, token, r, subIssueOf), (err) => errorOf(err, r)),
+    perform: (r, subIssueOf) => withToken((token) => call(req, token, r, webOriginOf(o.apiUrl), subIssueOf), (err) => errorOf(err, r)),
     repo: (repo) => withToken(
       (token) => readRepo(req, { authorization: `token ${token}` }, repo),
       (err) => new ProxyGitHubError(`GitHub answered ${statusOf(err) ?? 'no status'} reading ${repo}: ${(err as Error).message}`, statusOf(err)),

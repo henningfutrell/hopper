@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { MAX_TENDS, tendBrief, type FailuresView, type Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
+import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { waitFor } from '../support/wait.ts';
@@ -92,6 +93,38 @@ describe('tending a waiting pull request (issue #736)', () => {
     // Issue #927: the brief names the checks that failed and quotes what they reported, and the first fix may run a flaky one again once.
     expect(String(app.scripted.payloads.at(-1)!.prompt)).toContain(tendBrief(url, 'fix_checks', { failed, rerun: true }));
     expect((await app.events('types=job.pull_request_tended')).map((e) => [e.jobId, e.data])).toEqual([[job.id, { pullRequest: url, step: 'fix_checks', nextJobId: tender!.id }]]);
+  });
+
+  it('a check that fails with an uncaught error: the hopper reads its log, and the tend brief carries the error; no question is asked (issue #993)', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { issue, url } = await pullRequestWaiting(gh, app, (pr) => { gh.pushToPullRequest(pr, new Date().toISOString()); gh.setChecks(pr, 'passing'); });
+    gh.setJobLog(REPO, 42, [' Test Files  120 passed (120)', 'Error: the store is closed', ' ❯ Store.read src/store/db.ts:40:11', '', '     Errors  1 error',
+      '##[error]Process completed with exit code 1.'].map((l) => `2026-10-13T10:00:02.0000000Z ${l}`).join('\n'));
+    // No annotation: an uncaught error names no test and no file.
+    gh.setChecks(url, 'failing', [{ name: 'test (6)', url: `https://github.com/${REPO}/actions/runs/18/job/42` }]);
+    await app.sync();
+    const tender = await nextJob(app, issue.url, 2);
+    await app.waitForStatus(tender!.id, 'finished');
+    const prompt = String(app.scripted.payloads.at(-1)!.prompt);
+    expect(prompt).toContain('  > Error: the store is closed\n  > ❯ Store.read src/store/db.ts:40:11');
+    expect(prompt).toContain(`  The full log: sh "$HOPPER_GH" check log 42 --repo ${REPO}`);
+    expect(prompt).not.toContain('Process completed');
+    expect(gh.calls.filter((c) => c.method === 'jobLog')).toEqual([{ method: 'jobLog', args: [REPO, 42] }]);
+    expect(await app.events('types=question.asked')).toEqual([]);
+  });
+
+  it('a check log GitHub refuses: the tend brief says why, so only then may the job ask a person for it (issue #993)', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { issue, url } = await pullRequestWaiting(gh, app, (pr) => { gh.pushToPullRequest(pr, new Date().toISOString()); gh.setChecks(pr, 'passing'); });
+    gh.setJobLog(REPO, 42, new GitHubApiError('Resource not accessible by integration', true, 403));
+    gh.setChecks(url, 'failing', [{ name: 'test (6)', url: `https://github.com/${REPO}/actions/runs/18/job/42` }]);
+    await app.sync();
+    const tender = await nextJob(app, issue.url, 2);
+    await app.waitForStatus(tender!.id, 'finished');
+    expect(String(app.scripted.payloads.at(-1)!.prompt)).toContain(
+      '  The hopper could not read its log: GitHub refused it (403: Resource not accessible by integration): the hopper\'s GitHub connection may not read Actions logs.');
   });
 
   it('a job that cannot resolve the conflicts ends failed, saying why, and waits on a person', async () => {

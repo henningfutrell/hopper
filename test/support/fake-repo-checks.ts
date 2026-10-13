@@ -2,7 +2,10 @@
 // its default branch's protection and rulesets, its workflow files through the contents API, and the check rollups of its
 // newest pull requests through GraphQL. A repository not named has none. Its setup (issue #652): the branches it has,
 // each one's protection — shown in full only to a repository admin — and rulesets, and its secret scanning and push
-// protection, shown only to an admin.
+// protection, shown only to an admin. The logs of its GitHub Actions jobs (issue #993) are fake-job-logs.ts, exported from
+// here beside the checks.
+
+export { jobLogBlobRoute, jobLogsRoute, type JobLogsForge } from './fake-job-logs.ts';
 
 /** One branch's protection and rules (issue #652). `protection` absent: the branch has no branch protection. */
 export interface FakeBranch {
