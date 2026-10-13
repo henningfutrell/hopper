@@ -3,7 +3,8 @@
 // version brought, channel, auto-update, check now), open at any time and on any screen (issue #165), and the same
 // details as Settings → Version, which links to Settings → Version history (issue #246). The update's notes and the installed version's notes are two labelled sections that scroll with the page (issue #493). Applying keeps running jobs running; the page reloads once the daemon runs the new commit.
 // A container install is updated by its user (issue #494): no Update now, no Auto-update, and the exact commands for the selected channel's image tag:
-// since issue #697 the update script that image makes, on the compose file that image ships with and the whole stack.
+// since issue #697 the compose file that image ships with and the whole stack; since issue #970 as plain compose commands, no
+// script and no .env, the master key required at launch.
 // The notice is one line until asked (issue #521): What's new and How to update open below it, one at a time; the commands are one container tool's, the one this browser chose last.
 // An install whose compose.yaml has no OpenFGA (issue #696): How to update says to add it, with the fix.
 // The header badge names the channel on dev and beta, and both channels when the running build is another channel's (issue #497).
@@ -19,7 +20,7 @@ import { dismissNotice, useDismissed } from '@/hooks/use-dismissed';
 import { useNow } from '@/hooks/use-now';
 import { noticeKey } from '@/model/dismissed';
 import { ago } from '@/model/format';
-import { CHANNELS, CONTAINER_TOOLS, channelBadge, headline, imageUpdate, showNotice, targetLine } from '@/model/update';
+import { CHANNELS, CONTAINER_TOOLS, PODMAN_PROVIDER_HINT, channelBadge, headline, imageUpdate, showNotice, targetLine } from '@/model/update';
 import type { UpdateStatus } from '@/model/wire';
 import { cn } from '@/lib/utils';
 import { accessDown } from '@/model/access-status';
@@ -84,9 +85,9 @@ function Command({ text }: { text: string }) {
 }
 
 /**
- * How to update a container install (issue #697): the channel's image makes the update script, which backs up, puts in that
- * compose file that image ships with, keeps the install's own settings in .env and starts the whole stack — for the chosen container
- * tool; then the prune; and what a recreate would end now.
+ * How to update a container install (issues #697, #970): plain compose commands in the folder that holds compose.yaml, for the
+ * chosen container tool — give the master key, back up the database, make and read the new compose.yaml that image ships
+ * with, put it in, then pull and start the whole stack; then the prune; and what a recreate would end now.
  */
 function ImageUpdateSteps({ s }: { s: UpdateStatus }) {
   const tool = useContainerTool();
@@ -98,16 +99,25 @@ function ImageUpdateSteps({ s }: { s: UpdateStatus }) {
     <div data-slot="image-update" className="space-y-2 text-xs">
       {u.mismatch && <p className={TEXT.warn}>{u.mismatch}.</p>}
       <div className="flex flex-wrap items-center gap-2">
-        <p className="min-w-0 flex-1">In the folder that holds <code>compose.yaml</code>, make the update script from the {s.channel} channel's image, read it, then run it:</p>
+        <p className="min-w-0 flex-1">In the folder that holds <code>compose.yaml</code>, run these commands, one at a time, with the {s.channel} channel's image. First give the master key (paste it from your password manager; nothing is shown):</p>
         <div data-slot="container-tool" className="flex gap-1">
           {CONTAINER_TOOLS.map((t) => (
             <Button key={t} data-tool={t} size="xs" variant={t === tool ? 'secondary' : 'ghost'} aria-pressed={t === tool} onClick={() => setContainerTool(t)}>{t}</Button>
           ))}
         </div>
       </div>
-      <Command text={c.make} />
-      <Command text={c.run} />
-      <p className="text-muted-foreground">It backs up the database, <code>compose.yaml</code> and <code>.env</code>; puts in the <code>compose.yaml</code> that image ships with and moves your own settings to <code>.env</code>; sets <code>HOPPER_IMAGE</code>; then pulls and starts the whole stack and checks it. Never recreate the hopper's container alone: a new version can add services. Then, optionally, remove the image it replaced:</p>
+      <Command text={c.give} />
+      <p className="text-muted-foreground">Back up the database:</p>
+      <Command text={c.backup} />
+      <p className="text-muted-foreground">Make the <code>compose.yaml</code> that image ships with, with your own settings in it. Read what it says, and read the change:</p>
+      <Command text={c.carry} />
+      <Command text={c.diff} />
+      <p className="text-muted-foreground">Put it in (the old one stays as <code>compose.yaml.bak</code>):</p>
+      <Command text={c.swap} />
+      <p className="text-muted-foreground">Pull and start the whole stack. Without the master key this stops before anything changes. Never recreate the hopper's container alone: a new version can add services.</p>
+      <Command text={c.up} />
+      {tool === 'Podman' && <p className="text-muted-foreground">When <code>podman compose ps</code> shows no hopper but <code>podman-compose ps</code> does, run <code>{PODMAN_PROVIDER_HINT}</code> first.</p>}
+      <p className="text-muted-foreground">Then, optionally, remove the image it replaced:</p>
       <Command text={c.prune} />
       <p className={s.restartBlockers > 0 ? TEXT.warn : 'text-muted-foreground'} data-slot="restart-blockers">{u.blockers}</p>
       {access !== undefined && (

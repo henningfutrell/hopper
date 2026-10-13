@@ -22,25 +22,59 @@ export type ContainerTool = (typeof CONTAINER_TOOLS)[number];
 export const parseContainerTool = (text: string | null): ContainerTool => (text === 'Docker' ? 'Docker' : 'Podman');
 
 /**
- * How the user updates a container install (issues #494, #697): in the folder that holds compose.yaml, the selected
- * channel's image makes the update script (`hopper update <tool>`, src/update/update-script.ts), which brings the whole
- * stack to the compose file that image ships with — never the hopper's container alone on an old one.
+ * How the user updates a container install (issues #494, #697, #970): plain compose commands in the folder that holds
+ * compose.yaml (src/update/update-commands.ts, its twin: the UI imports nothing of src/). The selected channel's image makes
+ * the new compose.yaml (`hopper update carry`); the whole stack is pulled and started on it — never the hopper's container
+ * alone —, and the last command stops before compose runs when the master key is not given at launch.
  */
 export interface ImageUpdate {
-  /** The selected channel's image: the script sets it as HOPPER_IMAGE in `.env`. */
+  /** The selected channel's image: the commands give it as HOPPER_IMAGE. */
   image: string;
-  /** Make the script from the image, run it; then the optional prune of the replaced image. */
-  commands: { tool: ContainerTool; make: string; run: string; prune: string }[];
+  /** The commands for each tool, in order; then the optional prune of the replaced image. */
+  commands: ({ tool: ContainerTool } & UpdateCommands)[];
   /** Set when the running image is another channel's than the selected one. */
   mismatch?: string;
   /** What a recreate would end now: the restart blockers, as the host updater waits on them. */
   blockers: string;
 }
 
-/** The file the update script is saved as (src/update/update-script.ts UPDATE_SCRIPT_FILE). */
-const SCRIPT = 'hopper-update.sh';
+export interface UpdateCommands {
+  give: string;
+  backup: string;
+  carry: string;
+  diff: string;
+  swap: string;
+  up: string;
+  prune: string;
+}
+
+/** Give the master key at launch: nothing is shown, nothing is written to a file. */
+export const GIVE_MASTER_KEY = 'read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY';
+/** Stops the command line when the master key is not given: compose never runs without it. */
+const REQUIRE_MASTER_KEY = `: "\${HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: ${GIVE_MASTER_KEY}}"`;
+/** For `podman compose` when the stack answers to podman-compose (issue #924). */
+export const PODMAN_PROVIDER_HINT = 'export PODMAN_COMPOSE_PROVIDER=podman-compose';
 
 const cli = (tool: ContainerTool) => tool.toLowerCase();
+
+/** The update's commands for `tool`, to `image`, in order. */
+export function updateCommands(tool: ContainerTool, image: string): UpdateCommands {
+  const r = cli(tool);
+  const c = `${r} compose`;
+  return {
+    give: GIVE_MASTER_KEY,
+    backup: `${c} exec -T postgres pg_dump -U hopper -d hopper -Fc > hopper-backup.dump`,
+    carry: `${r} run --rm -i --pull=always ${image} hopper update carry --image ${image} < compose.yaml > compose.yaml.next`,
+    diff: 'diff -u compose.yaml compose.yaml.next',
+    swap: 'cp compose.yaml compose.yaml.bak && mv compose.yaml.next compose.yaml',
+    up: `${REQUIRE_MASTER_KEY} && HOPPER_IMAGE=${image} ${c} pull && HOPPER_IMAGE=${image} ${c} up -d`,
+    prune: `${r} ${PRUNE}`,
+  };
+}
+
+/** The commands as lines to run, in order (the prune aside). */
+export const updateLines = (u: UpdateCommands): string[] => [u.give, u.backup, u.carry, u.diff, u.swap, u.up];
+
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
@@ -71,12 +105,7 @@ export function imageUpdate(s: UpdateStatus): ImageUpdate | undefined {
   const image = `${IMAGE}:${s.channel}`;
   return {
     image,
-    commands: CONTAINER_TOOLS.map((tool) => ({
-      tool,
-      make: `${cli(tool)} run --rm --pull=always ${image} hopper update ${cli(tool)} > ${SCRIPT}`,
-      run: `sh ${SCRIPT}`,
-      prune: `${cli(tool)} ${PRUNE}`,
-    })),
+    commands: CONTAINER_TOOLS.map((tool) => ({ tool, ...updateCommands(tool, image) })),
     mismatch: mismatch && `this container ${runsWords(s, mismatch)}: switch the image tag`,
     blockers: n > 0
       ? `${plural(n, 'running job', 'running jobs')} would be lost by recreating the container: wait until none runs.`

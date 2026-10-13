@@ -1,5 +1,5 @@
 // A stack drifted from the compose file of its version (issue #697): one banner over every view, from GET /api/update/drift
-// — each gap, what it turns off, and the fix: the update script made from the image the hopper runs, for the container tool
+// — each gap, what it turns off, and the fix: the update's compose commands with the image the hopper runs (issue #970), for the container tool
 // this browser chose. Not dismissable: it ends when the stack matches. Read once signed in, then each minute. When OpenFGA is
 // one of its gaps, the OpenFGA banner (#696) gives way: one cause, said once.
 import { Layers } from 'lucide-react';
@@ -46,8 +46,8 @@ export function DriftBanner({ drift }: { drift: StackDrift | null }) {
       </ul>
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <p className="min-w-0 flex-1 text-muted-foreground">
-          The fix: in the folder that holds <code>compose.yaml</code>, make the update script from the image this hopper runs, read it, then run it.
-          It puts in the <code>compose.yaml</code> of this version and starts the whole stack. Never recreate the hopper's container alone.
+          The fix: in the folder that holds <code>compose.yaml</code>, run these commands, one at a time. They put in the <code>compose.yaml</code> of
+          the image this hopper runs, then pull and start the whole stack, with the master key given. Never recreate the hopper's container alone.
         </p>
         <div className="flex gap-1">
           {CONTAINER_TOOLS.map((t) => (
@@ -57,7 +57,7 @@ export function DriftBanner({ drift }: { drift: StackDrift | null }) {
       </div>
       {fix
         ? fix.map((line) => <pre key={line} className="overflow-x-auto rounded bg-muted px-2 py-1 font-mono text-[11px]">{line}</pre>)
-        : <p className="text-xs text-muted-foreground">This hopper does not know its image: name it with <code>hopper update podman --image &lt;image&gt;</code>.</p>}
+        : <p className="text-xs text-muted-foreground">This hopper does not know its image: give <code>HOPPER_IMAGE</code> at launch, then see How to update.</p>}
     </div>
   );
 }
