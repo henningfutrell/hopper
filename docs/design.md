@@ -7336,7 +7336,10 @@ interleaved. Postgres is reached through one worker thread (`synckit`, `src/stor
 the calling thread blocks on; the worker holds one `pg` client per open store, so a transaction's
 statements share one connection. A call fails after
 30 s rather than hanging the daemon; a dropped connection fails the call it broke and the next call
-outside a transaction connects again. Cost: every query blocks the event loop for one round trip —
+outside a transaction connects again. A call that waits never leaves its connection busy (issue #1003): Postgres
+cancels a statement after 25 s (`statement_timeout`: a lock that is not let go), and the worker drops a connection
+that gives no answer in 27.5 s (a network that drops what it carries, as WSL's can), so the call fails with its reason
+and the calls after it do not each wait 30 s behind it — which stopped every request while the timers still ran. Cost: every query blocks the event loop for one round trip —
 sub-millisecond to a database on the same host or LAN, but put Postgres near the hopper (a 20 ms
 link × ~50 queries a tick is a second of stall). An async Store was rejected: ~230 call sites, and a
 new class of interleaving bug between the tick and the UI's mutations.
