@@ -136,6 +136,9 @@ export interface IssueEvent {
   assignee?: string;
 }
 
+/** One event of a repository's event feed (issue #967): its id (increasing), GitHub's type (`PullRequestEvent`, `PushEvent`, …), when. */
+export interface RepoEvent { id: string; type: string; createdAt: string }
+
 export interface GitHubProjectItem {
   /** The issue url. */
   url: string;
@@ -169,6 +172,11 @@ export interface GitHubApi {
   assignedAt(repo: string, number: number, login: string): Promise<string | undefined>;
   /** The issue's `labeled` and `assigned` events, oldest first (issue #652: who added the label and the assignment). */
   issueEvents(repo: string, number: number): Promise<IssueEvent[]>;
+  /**
+   * The newest events of `repo`'s event feed, newest first (issue #967: whether a pull request or a branch moved between
+   * syncs). One page, asked conditionally, so an unchanged feed costs no call. Absent: not read.
+   */
+  repoEvents?(repo: string): Promise<RepoEvent[]>;
   /** Add assignees to an issue (Assign to me in Sources, issue #440): the user's own act, never the hopper's. */
   addAssignees(repo: string, number: number, logins: string[]): Promise<void>;
   /** Reopen a closed issue (Run again, issue #354); an open one stays open. */

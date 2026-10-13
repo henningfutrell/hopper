@@ -57,6 +57,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     removeLabels: (repo, number, labels) => call(`remove labels ${repo}#${number}`, (t) => rest.removeLabels(req, t, repo, number, labels)),
     assignedAt: (repo, number, login) => call(`events of ${repo}#${number}`, (t) => rest.assignedAt(req, t, repo, number, login)),
     issueEvents: (repo, number) => call(`events of ${repo}#${number}`, (t) => rest.issueEvents(req, t, repo, number)),
+    repoEvents: (repo) => call(`event feed of ${repo}`, (t) => rest.repoEvents(req, t, repo)),
     addAssignees: (repo, number, logins) => call(`assign ${repo}#${number}`, (t) => rest.addAssignees(req, t, repo, number, logins)),
     listAssignedIssues: (label) => call('issues assigned to the account', (t) => rest.listAssignedIssues(req, t, label)),
     reopenIssue: (repo, number) => call(`reopen ${repo}#${number}`, (t) => rest.reopenIssue(req, t, repo, number)),

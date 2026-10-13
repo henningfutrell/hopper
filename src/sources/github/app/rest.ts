@@ -1,7 +1,7 @@
 // Issue, comment-read and label calls of the App adapter, each with an installation token for the
 // issue's repo. REST shapes mapped onto the GitHubApi port's types.
 
-import type { GitHubComment, GitHubIssue, IssueEvent, SubIssue } from '../api.ts';
+import type { GitHubComment, GitHubIssue, IssueEvent, RepoEvent, SubIssue } from '../api.ts';
 import { paginate, splitRepo, statusOf } from './http.ts';
 import type { Request } from './http.ts';
 import type { PostedComment } from '../api.ts';
@@ -165,4 +165,12 @@ export async function listAssignedIssues(req: Request, token: string, label: str
   const issues = await paginate(req, 'GET /issues', { filter: 'assigned', labels: label, state: 'open', per_page: 100 },
     `token ${token}`, (d) => d as RestIssueWithRepo[]);
   return issues.filter((i) => i.pull_request === undefined && i.repository?.full_name).map((i) => issueFrom(i, i.repository!.full_name!));
+}
+
+interface RestRepoEvent { id: string | number; type?: string | null; created_at?: string | null }
+
+/** The newest events of the repository's feed, one page, newest first (issue #967); a GET, so the limiter asks it conditionally. */
+export async function repoEvents(req: Request, token: string, repo: string): Promise<RepoEvent[]> {
+  const r = await req('GET /repos/{owner}/{repo}/events', { ...splitRepo(repo), per_page: 30, headers: auth(token) });
+  return (r.data as RestRepoEvent[]).map((e) => ({ id: String(e.id), type: e.type ?? '', createdAt: e.created_at ?? '' }));
 }

@@ -25,6 +25,12 @@ export interface Slot {
   failing?: { since: string; stalled: boolean };
   /** Removed from the plugins config (issue #356): pulls nothing, goes once its jobs ended and are reported. */
   removed?: boolean;
+  /** A pull request of its jobs merged or closed while it synced (issue #967): the next sync runs at once. */
+  again?: boolean;
+  /** Its source is asked whether its repositories moved now (issue #967, `sync-watch.ts`). */
+  watching?: boolean;
+  /** The last error of that ask, logged once when it changes. */
+  watchError?: string;
 }
 
 export function newSlot(source: JobSource): Slot {

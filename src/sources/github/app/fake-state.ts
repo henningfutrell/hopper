@@ -31,7 +31,10 @@ export interface FakePullRequest { url: string; createdAt: string; isDraft: bool
 
 export interface FakeMention extends FakePullRequest { state: 'OPEN' | 'CLOSED' | 'MERGED'; body: string; repo: string; mergedAt?: string }
 
-export interface FakeRepoInput { owner: string; name: string; labels?: string[]; issues?: FakeIssueInput[] }
+/** One event of a repository's feed (issue #967), as GitHub lists it: newest first. */
+export interface FakeRepoEvent { id: string; type: string; createdAt: string }
+
+export interface FakeRepoInput { owner: string; name: string; labels?: string[]; issues?: FakeIssueInput[]; events?: FakeRepoEvent[] }
 
 export interface FakeInstallationInput {
   id: number;
@@ -85,6 +88,7 @@ export interface FakeRepo {
   installationId: number;
   labels: Set<string>;
   issues: Map<number, FakeIssue>;
+  events: FakeRepoEvent[];
 }
 
 export interface FakeTokenRecord {
@@ -134,7 +138,7 @@ export function buildState(o: FakeGitHubOptions, now: string): FakeState {
         });
       }
       state.repos.set(`${r.owner}/${r.name}`, {
-        owner: r.owner, name: r.name, installationId: inst.id, labels: new Set(r.labels ?? []), issues,
+        owner: r.owner, name: r.name, installationId: inst.id, labels: new Set(r.labels ?? []), issues, events: r.events ?? [],
       });
     }
   }

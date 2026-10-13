@@ -2,22 +2,28 @@
 // set it; and the base merge (issue #967): what the hopper's mirror does for a pull request, as a test set it — pushed,
 // which is a push to the pull request (`pushed`: a new head commit, no merge conflicts, its checks run again), or the
 // conflicts it does not resolve. Never set: git cannot say, as
-// where the hopper has no mirror.
+// where the hopper has no mirror. Two pull requests set to conflict: the merge of one gives the other merge conflicts with
+// its base (issue #967, `conflictsWith`), as the mirror would see the moved base.
 import type { BaseMerge } from '../../domain/pull-requests.ts';
 import type { GitHubApi } from './api.ts';
 
 /** What a test sets the base merge of a pull request to do (issue #967). */
 export type FakeBaseMerge = { resolved: string[] } | { conflicts: string[] };
 
-export function fakeConflicts(enter: (method: 'conflictBetween' | 'baseMerge', args: unknown[]) => void, pushed: (url: string) => void): Required<Pick<GitHubApi, 'conflictBetween' | 'baseMerge'>> & {
+type FakeConflictMethods = Required<Pick<GitHubApi, 'conflictBetween' | 'baseMerge'>> & {
   setConflictBetween(a: string, b: string, conflict: boolean): void;
   setBaseMerge(url: string, answer: FakeBaseMerge | undefined): void;
+};
+
+/** `methods`: what the fake answers and does; `conflictsWith`: the pull requests set to conflict with `url`. */
+export function fakeConflicts(enter: (method: 'conflictBetween' | 'baseMerge', args: unknown[]) => void, pushed: (url: string) => void): {
+  methods: FakeConflictMethods; conflictsWith(url: string): string[];
 } {
   const between = new Map<string, boolean>();
   const merges = new Map<string, FakeBaseMerge>();
   const pair = (a: string, b: string): string => [a, b].sort().join(' ');
   let commits = 0;
-  return {
+  const methods: FakeConflictMethods = {
     async conflictBetween(repo, _base, a, b) {
       enter('conflictBetween', [repo, a, b]);
       return between.get(pair(`https://github.com/${repo}/pull/${a}`, `https://github.com/${repo}/pull/${b}`));
@@ -34,4 +40,7 @@ export function fakeConflicts(enter: (method: 'conflictBetween' | 'baseMerge', a
     setConflictBetween(a, b, conflict) { between.set(pair(a, b), conflict); },
     setBaseMerge(url, answer) { if (answer) merges.set(url, answer); else merges.delete(url); },
   };
+  const conflictsWith = (url: string): string[] =>
+    [...between].filter(([k, conflict]) => conflict && k.split(' ').includes(url)).map(([k]) => k.split(' ').find((u) => u !== url)!);
+  return { methods, conflictsWith };
 }

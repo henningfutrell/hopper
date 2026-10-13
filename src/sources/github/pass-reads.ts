@@ -12,7 +12,7 @@ import type { GitHubApi } from './api.ts';
 const READS = [
   'listOpenIssues', 'getIssue', 'subIssues', 'listComments', 'issueEdits', 'issuePlace', 'projectItems', 'assignedAt', 'issueEvents',
   'closingPullRequest', 'openClosingPullRequests', 'referencingPullRequests', 'crossReferences', 'pullRequest', 'openPullRequests',
-  'listAssignedIssues', 'listInstalledRepos',
+  'listAssignedIssues', 'listInstalledRepos', 'repoEvents',
 ] as const;
 const WRITES = ['ensureLabel', 'addLabels', 'removeLabels', 'addAssignees', 'reopenIssue', 'closeAsCompleted', 'postComment', 'merge', 'closeWithoutMerge', 'toDraft', 'baseMerge'] as const;
 /** Reads whose first argument is not a repository: any write drops them. */
