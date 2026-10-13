@@ -12,16 +12,16 @@
 // Recorded on the job's timeline as a Windows step is (`step.started`, `step.finished`, `step.refused`), the need box
 // as its `box`; the result and the outputs are kept an hour for the job to fetch, then swept.
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { OperationProfile } from '../domain/access.ts';
 import type { Minted, MintReach } from '../domain/minting.ts';
 import { checkWait } from '../domain/read-only-check.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
 import type { TemplateView } from '../domain/vault.ts';
-import { stepRequestOf, type StepResult } from '../domain/windows-steps.ts';
+import { STEP_INPUTS_MAX_BYTES, stepRequestOf, type StepResult } from '../domain/windows-steps.ts';
 import { maskSecrets, STEP_KEEP_MS, type StepStart } from '../windows-steps/service.ts';
-import { needEnv, needSecrets, NEED_BOX_INPUTS_MAX_BYTES, type NeedBox, type NeedBoxResult, type NeedCredential } from './need-box.ts';
+import { needEnv, needSecrets, type NeedBox, type NeedBoxResult, type NeedCredential } from './need-box.ts';
 
 /** The most of a step's command an event keeps. */
 const COMMAND_IN_EVENT = 300;
@@ -45,6 +45,8 @@ export interface NeedStepsOptions {
   templates(): TemplateView[];
   /** The vault's mint for one need of the need box `step` (src/vault/need-mint.ts, given by the composition root); `plan`: the approved plan a change applies. */
   mint(ask: { template: string; step: string; job: string; profile: OperationProfile; plan?: string }): Promise<{ minted: Minted; reach: MintReach } | { refused: string }>;
+  /** The saved plan file of an infra plan, as the hopper keeps it (src/infra-plans/service.ts); undefined: none. */
+  planFile(id: string): Buffer | undefined;
   /** Runs the need box (the sandbox module's `step`); absent: this hopper runs no need box. */
   run?: (box: Omit<NeedBox, 'userId' | 'instanceId' | 'network'>, io: { log(chunk: string): void; signal: AbortSignal }) => Promise<NeedBoxResult>;
   /** Where each step's own directory goes on this machine: the hopper's work dir (scratch). */
@@ -113,6 +115,8 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
       }
       const dir = dirOf(id);
       mkdirSync(dir, { recursive: true, mode: 0o700 });
+      // The apply wrapper in the need box applies only this file: the box holds no proxy token to fetch it (issue #1007).
+      const planFile = fields.plan ? o.planFile(fields.plan) : undefined;
       const run = o.run;
       return {
         id, request, inputsFile: join(dir, 'inputs.tar'),
@@ -130,9 +134,12 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
           } });
           let result: StepResult;
           try {
-            const inputs = inputsBytes > 0 ? readFileSync(join(dir, 'inputs.tar')) : undefined;
-            const env = needEnv({ command: request.command, outputs: request.outputs, ...(inputs ? { inputs } : {}), credentials });
-            const r = await run({ name: box, template: { image: t.image, ...(t.tools ? { tools: t.tools } : {}), ...(t.readOnly ? { readOnly: true } : {}) }, env, timeoutMs: request.timeoutSeconds * 1000 }, { log: masked.write, signal });
+            const env = needEnv({ command: request.command, outputs: request.outputs, ...(fields.plan ? { plan: fields.plan } : {}), credentials });
+            const files = { ...(inputsBytes > 0 ? { inputs: join(dir, 'inputs.tar') } : {}), ...(planFile ? { plan: planFile } : {}) };
+            const r = await run({
+              name: box, template: { image: t.image, ...(t.tools ? { tools: t.tools } : {}), ...(t.readOnly ? { readOnly: true } : {}) }, env, timeoutMs: request.timeoutSeconds * 1000,
+              dir, ...(Object.keys(files).length > 0 ? { files } : {}),
+            }, { log: masked.write, signal });
             if (r.outputs) writeFileSync(join(dir, 'outputs.tar'), r.outputs, { mode: 0o600 });
             result = { exit: r.exit, ...(r.outputs ? { outputsBytes: r.outputs.length } : {}), ...(r.problem ? { problem: r.problem } : {}) };
           } catch (e) {
@@ -163,5 +170,5 @@ export function createNeedSteps(o: NeedStepsOptions): NeedSteps {
   };
 }
 
-/** The most a Linux step's inputs may hold: they travel in the need box's environment. */
-export const NEED_STEP_INPUTS_MAX_BYTES = NEED_BOX_INPUTS_MAX_BYTES;
+/** The most a Linux step's inputs may hold: as a Windows step's, copied into the need box (a machine's runtime takes 64 KiB). */
+export const NEED_STEP_INPUTS_MAX_BYTES = STEP_INPUTS_MAX_BYTES;

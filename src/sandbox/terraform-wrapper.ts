@@ -97,7 +97,8 @@ esac
 // The apply wrapper (issue #870, part 5; design.md "Infra plans: the apply wrapper on write boxes"). Every other image
 // with terraform has it first on PATH, in front of the real binary in $HOPPER_TOOLS: no apply without a plan. `apply`
 // runs only the saved plan file of a plan the hopper recorded — the plan HOPPER_PLAN names, fetched from the hopper with
-// the job's proxy token (`GET /job/infra-plans/:id?file=1`) — and a plan file the caller names must be that file, by its
+// the job's proxy token (`GET /job/infra-plans/:id?file=1`), or, in a need box (issue #1007), which holds no proxy token,
+// the file the hopper put there, HOPPER_PLAN_FILE — and a plan file the caller names must be that file, by its
 // SHA-256. An apply flag that would change what the saved plan does is refused, and so is each other command that writes
 // infrastructure or state with no plan: destroy (a destroy is a plan too), import, refresh, taint, untaint,
 // force-unlock, `state rm|mv|push|replace-provider`, `workspace delete`. The rest goes to the real binary as given.
@@ -177,12 +178,18 @@ if [ -n "$named" ]; then
   case $named in /*) path=$named ;; *) path="$dir/$named" ;; esac
   [ -r "$path" ] || refuse apply "$named cannot be read."
 fi
-[ -n "\${HOPPER_URL:-}" ] && [ -r "\${HOPPER_TOKEN_FILE:-}" ] || refuse apply "the job has no way to the hopper (HOPPER_URL, HOPPER_TOKEN_FILE), so the saved file of plan $plan cannot be fetched."
-tmp=$(mktemp "\${TMPDIR:-/tmp}/hopper-plan.XXXXXX") || refuse apply "no temporary file for the plan."
-trap 'rm -f "$tmp"' EXIT
-code=$(printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")" | curl -sS -H @- -o "$tmp" -w '%{http_code}' "$HOPPER_URL/job/infra-plans/$plan?file=1" 2>/dev/null) \\
-  || refuse apply "the hopper cannot be reached at $HOPPER_URL, so the saved file of plan $plan cannot be fetched."
-[ "$code" = 200 ] || refuse apply "the hopper gives no saved plan file for plan $plan ($code): $(head -c 500 "$tmp")"
+if [ -n "\${HOPPER_PLAN_FILE:-}" ]; then
+  # A need box (issue #1007): the hopper put the plan's saved file there; the box holds no proxy token to fetch it.
+  tmp=$HOPPER_PLAN_FILE
+  [ -r "$tmp" ] || refuse apply "the saved file of plan $plan the hopper put in this box ($tmp) cannot be read."
+else
+  [ -n "\${HOPPER_URL:-}" ] && [ -r "\${HOPPER_TOKEN_FILE:-}" ] || refuse apply "the job has no way to the hopper (HOPPER_URL, HOPPER_TOKEN_FILE), so the saved file of plan $plan cannot be fetched."
+  tmp=$(mktemp "\${TMPDIR:-/tmp}/hopper-plan.XXXXXX") || refuse apply "no temporary file for the plan."
+  trap 'rm -f "$tmp"' EXIT
+  code=$(printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")" | curl -sS -H @- -o "$tmp" -w '%{http_code}' "$HOPPER_URL/job/infra-plans/$plan?file=1" 2>/dev/null) \\
+    || refuse apply "the hopper cannot be reached at $HOPPER_URL, so the saved file of plan $plan cannot be fetched."
+  [ "$code" = 200 ] || refuse apply "the hopper gives no saved plan file for plan $plan ($code): $(head -c 500 "$tmp")"
+fi
 if [ -n "$path" ] && [ "$(sha256sum < "$path" | cut -d' ' -f1)" != "$(sha256sum < "$tmp" | cut -d' ' -f1)" ]; then
   refuse apply "$named is not the saved plan file of plan $plan: apply the plan the hopper recorded, or record this one."
 fi
