@@ -44,6 +44,12 @@ export interface FollowsPullRequests {
    * yolo mode and its checks say, or closed without a merge; GitHub's refusal throws, and nothing is kept of it.
    */
   follow?(job: Job, act?: PullRequestAct): Promise<FollowUp | undefined>;
+  /**
+   * Whether a pull request or a branch of one of `repos` moved since the source was asked last (issue #967): a pull request
+   * opened, closed, merged or reopened, or a push. The first ask of a repository only learns where it stands: false. Asked
+   * between syncs; true starts a sync at once. A throw is a no. Absent: the sync timer alone.
+   */
+  moved?(repos: string[]): Promise<boolean>;
   /** Whether the hopper merges a ready pull request of `repo` (yolo mode): its tending queue waits for that merge (issue #796). Absent: never. */
   mergesOnReady?(repo: string): boolean;
   /**

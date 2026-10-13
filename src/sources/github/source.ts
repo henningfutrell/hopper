@@ -20,6 +20,7 @@ import { closedAsComplete, notComplete, ownPullRequestOpen, partlyDone, unfinish
 import { followPullRequest } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
+import { movedReader } from './moved.ts';
 import { partsOf, tickedParts } from './parts.ts';
 import { sendBack } from './rework.ts';
 import { gitHubThread } from './thread.ts';
@@ -359,14 +360,11 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return followPullRequest({ api, labelledRepos, clock: o.clock, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}) }, job, act);
     },
     unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs),
+    moved: movedReader(api),
     crossReferences: (job) => crossReferencesOfJob(api, job),
     mergesOnReady: (repo) => o.yoloMode?.(repo) ?? false,
-    closedAsComplete(job) {
-      return closedAsComplete(api, job);
-    },
-    workState(job) {
-      return workState(api, job);
-    },
+    closedAsComplete: (job) => closedAsComplete(api, job),
+    workState: (job) => workState(api, job),
     pullRequestOpen(job) {
       return ownPullRequestOpen(api, job);
     },

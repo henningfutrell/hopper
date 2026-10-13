@@ -1525,7 +1525,7 @@ remains. The only mutations are the owner's actions in the local UI, behind a UI
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
+| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its signals (`sync-signals.ts`), its watch (`sync-watch.ts`, issue #967: a sync at once when a followed repository moved, or after a merge), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
 | `src/events/` | versioned payload schemas (zod) per event type, the envelope, JSON Schema export | everything but `domain/` and `zod` |
 | `src/http/ui/` | UI session: login codes, session cookie, CSRF, origin/host guard, the UI-only mutation routes | engine internals beyond the engine's public commands |
 
@@ -1940,7 +1940,8 @@ cannot resume, or any other state, the job fails `not complete:` and is handed t
 
 **Tending a waiting pull request** (issue #736: conflicts must not pile up for a person). A PR waiting job's pull request
 can go bad after its job ended: its base branch moves and it has merge conflicts with it, or a check fails. Each sync
-follows it (`follow.ts`) and keeps what it saw (`seen`); after that follow, off the job's report chain, the sync loop's
+— on the timer, on the **sync watch** when its repository moved, and at once after a merge or close (issue #967, "PR
+tending without lanes, part 4") — follows it (`follow.ts`) and keeps what it saw (`seen`); after that follow, off the job's report chain, the sync loop's
 after-done half (`src/sources/after-done.ts`) asks `tendStep(seen)`: merge conflicts → `rebase`, else failing checks →
 `fix_checks`; a draft is a person's and is never tended. A step due, the job's item **runs again** on Run again's own path
 (`job.rerun`, `by: "tending"`), its prompt followed by the **tend brief** (`tendBrief`: work on that pull request's
@@ -16392,3 +16393,46 @@ requests reconciled at once; a pull request blocked by another one named on its 
 Tested: the base merge of an additions file against real git (`test/git-mirror/base-merge-additions.test.ts`: both
 additions kept, the base branch's first; a changed line is a real conflict; a file only the pull request marks is not
 resolved), and the repository's own marks (`test/store/migration-lists.test.ts`).
+
+## PR tending without lanes, part 4: a sync on GitHub's events (issue #967, 2026-10-12)
+
+A pull request's status changed only at a sync, and tending ran only then: a pull request merged on GitHub stayed on the
+list until the next sync, and each merge left the other pull requests to wait a full poll interval for their base merge.
+
+Now:
+
+- **The sync watch** (`src/sources/sync-watch.ts`). Every `WATCH_MS` (15 seconds) between syncs, the sync loop asks each
+  source that can say (`JobSource.moved`) whether a pull request or a branch moved in the repositories whose pull requests
+  its jobs follow (`follow: open`) or tend (`follow: tended`). Moved: a sync of that source at once, so a merged or closed
+  pull request is reconciled, and a moved base branch is tended, in seconds. A source that syncs now, is removed, or follows
+  nothing is not asked. One ask per source at a time. A failed ask starts no sync: it is logged once when it changes, and
+  the next tick asks again. The sync timer still runs.
+- **GitHub's event feed** (`src/sources/github/moved.ts`, `GitHubApi.repoEvents`). The GitHub source reads the first page
+  of each repository's feed (`GET /repos/{owner}/{repo}/events`). A `PullRequestEvent` (opened, closed, merged, reopened) or
+  a `PushEvent` newer than the newest event the last ask saw is a move; any other event is not. The first ask of a
+  repository only learns its newest event, and this is kept in memory: a restart starts afresh, and its first sync reads
+  everything. A move in one repository is a move even when the read of another failed; with no move, a failed read throws.
+  The read is a GET, so the shared rate limiter asks it conditionally (ETag): an unchanged feed is a 304, which costs no call
+  of the rate limit. The hopper still takes no inbound webhooks: it pulls.
+- **A sync again after a merge or close.** A `job.pull_request_merged` or `job.pull_request_closed` recorded while its source
+  syncs makes the next sync of that source run at once (`Slot.again`), not after the poll interval. Recorded between syncs
+  (a person's Merge now or Close PR), it starts a sync at once. So after the hopper's own merge, the next sync sees the new
+  base and starts the base merges of the others. A sync that merges nothing waits for the timer: this never loops.
+
+Residual: GitHub's event feed lags its events, from about half a minute to some minutes when GitHub is busy. A move it shows
+late is one the sync timer may see first. A pull request's checks finishing is not in the feed; that is still seen at the
+next sync.
+
+Not taken: GitHub's webhooks. They need a public URL that GitHub can reach, and the hopper pulls by design ("Remote access":
+it takes no inbound webhooks).
+
+With parts 1 to 4, the issue's ask is met: a simple conflict is merged in the hopper's mirror with no job and no lane (part
+1); a real conflict's tend job elbows in past the lane cap (part 2); migration numbers are given out at merge time (part 3);
+each card says why it waits, and names the pull request that holds it (part 1 and issue #939, `heldBehind`); and tending
+starts on GitHub's events and at once after a merge (this part).
+
+Tested: the sync loop with a scripted source (`test/sources/sync-moved.test.ts`: a move starts a sync before the timer, only
+followed and tended repositories are asked, a failed ask is no sync, a merge syncs again at once and a sync with no merge
+waits), and the GitHub source over the fake GitHub's feeds (`test/sources/github-moved.test.ts`: the first ask learns, an
+opened, merged and closed pull request and a push are moves, other events are not, a failed read does not hide a move
+elsewhere).

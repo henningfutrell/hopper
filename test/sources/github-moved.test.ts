@@ -12,10 +12,10 @@ describe('moved: the repository event feed', () => {
   it('the first ask learns where each repository stands; a pull request opened after it is a move, once', async () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
-    gh.openClosingPullRequest(REPO, 1, { createdAt: AT });
+    gh.openPullRequest(REPO, 1, { createdAt: AT });
     expect(await source.moved!([REPO])).toBe(false);
     expect(await source.moved!([REPO])).toBe(false);
-    gh.openClosingPullRequest(REPO, 1, { createdAt: AT });
+    gh.openPullRequest(REPO, 1, { createdAt: AT });
     expect(await source.moved!([REPO])).toBe(true);
     expect(await source.moved!([REPO])).toBe(false);
   });
@@ -23,8 +23,8 @@ describe('moved: the repository event feed', () => {
   it('a merge, a close without a merge and a push are moves', async () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
-    const a = gh.openClosingPullRequest(REPO, 1, { createdAt: AT });
-    const b = gh.openClosingPullRequest(REPO, 1, { createdAt: AT });
+    const a = gh.openPullRequest(REPO, 1, { createdAt: AT });
+    const b = gh.openPullRequest(REPO, 1, { createdAt: AT });
     await source.moved!([REPO]);
     gh.mergePullRequest(a.url);
     expect(await source.moved!([REPO])).toBe(true);
