@@ -5528,6 +5528,29 @@ session still ends after its idle timeout or its maximum (issue #439, "Session l
 token or a device link in flight. Accepted for a home LAN; the peer list keeps the VPN and container
 networks out. A device link is as strong as the login code file and works once.
 
+### The host link base (issue #712, 2026-10-13)
+
+On a hopper in a container (compose, rootless Podman in WSL among them), the first LAN name is the container's bare name,
+`hopper`, which only the container network resolves. The links people get named it — a notification's question link
+(`answerUrl`), the UI links a notifier sends (`uiUrl`), and, with no `.local` or IP LAN name, none of the artifact links
+— so they did not open on the computer that runs the hopper.
+
+- **Two bases.** Containers and boxes reach the hopper at the **hopper address** (LAN names, `jobHopperUrl`,
+  `reachBase`; issue #711), unchanged. People open the **host link base**, an instance setting (`hostLinkBase` in the
+  instance's `settings`, empty until set; no migration: the build before never reads it).
+- **The order** (`personBase`, `src/artifacts/links.ts`): the user's link base (Settings → Artifacts), else the public
+  URL's origin, else the host link base when set, else a LAN name that is an IPv4 address or ends in `.local` (issue #673,
+  as before), else `http://localhost:<port>`. A bare LAN name is never a person's link. The host link base ranks over a LAN
+  name, so an admin who sets it picks the address; it ranks under the public URL, which is reached from anywhere.
+- **Settings → Host link**, the instance admin's: `GET /api/host-link` answers `HostLinkView` (`hostLinkBase`, `default`);
+  `POST /ui/api/host-link` sets it to an origin the hopper answers to (the same check as a link base: else 400 with the
+  list), or empty for the default. It applies to the next link, without a restart.
+- **Why `localhost`, not `127.0.0.1`.** WSL forwards a Windows `localhost` to a port the WSL side binds on loopback, in
+  NAT mode with `localhostForwarding` and in mirrored mode; the Host guard lets `localhost:<port>` in. Why it is a setting
+  and not `.env`: every setting is edited in the UI; and `HOPPER_PUBLIC_URL` refuses loopback, so it cannot be reused.
+
+No new listener and no new route that changes a job: a link holds no secret, and the Host guard does not change.
+
 ## UI manages everything (issue #18, 2026-10-03)
 
 Owner review (2026-10-03), after the reworked UI went live: the layout is kept; the UI cannot yet add
@@ -13466,8 +13489,9 @@ whoever may see it. **Which `<hopper>`** (issue #673; the first real artifact's 
 bare name no LAN client resolved): a person's read builds it from the Host they asked on (`ArtifactEdge.baseOf`; the
 Host guard already let it in), so a link opens where they are; a link a job reports (`put`, `list`, `get`, a public
 link), and a notification's, use the user's **link base** (Settings → Artifacts: an origin the hopper answers to, checked
-against them when it is saved, else refused with the list), else the public URL, else the first LAN name that is an
-IPv4 address or ends in `.local`, else the first LAN name, else loopback (`ArtifactEdge.base`). A link on GitHub is
+against them when it is saved, else refused with the list), else the public URL, else the **host link base** when set
+(issue #712, "The host link base"), else the first LAN name that is an IPv4 address or ends in `.local`, else
+`http://localhost:<port>` — never a bare LAN name (`ArtifactEdge.base`, `personBase`). A link on GitHub is
 still only ever the public URL's (below). Its content is never under `/api/` and needs no UI session: an `<img>` or `<iframe>` carries no
 `x-hopper-session`, so the read that checked the viewer signs a **content URL** (`/artifact-content/<name>?v=<token>`,
 `src/artifacts/content.ts`): HMAC-SHA-256 of owner, artifact, viewer and an expiry an hour away, under the owner's
@@ -14484,7 +14508,7 @@ start, plainly; a job never falls back to a GitHub sign-in.
 
 **Which URL** (`jobHopperUrl`, `src/github-proxy/reach.ts`, pure). This machine: loopback. A client target: its client
 door (below); a client older than it, the URL it dialled in at. An ssh or container target, and a client not dialled
-in yet: `reachBase` (`src/artifacts/links.ts`, shared with the artifact links): the user's link base (Settings →
+in yet: `reachBase` (`src/artifacts/links.ts`; a person's links use `personBase` there, issue #712): the user's link base (Settings →
 Artifacts), else the public URL's origin, else the first LAN name that is an IPv4 address or ends in `.local`, else the
 first LAN name. A bare name is given only when the hopper knows no other: an agent box in the hopper's own network
 reaches it; any other machine fails the reach check, which names the setting that fixes it. None at all: the job gets no
