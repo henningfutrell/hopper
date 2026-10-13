@@ -120,6 +120,17 @@ export function createUserSearch(o: {
     return issueDocument({ scope, ...place, ...(job ? { job } : {}), ...(snapshot ? { snapshot } : {}), ...(intake ? { intake } : {}) });
   };
 
+  /**
+   * What a job's write brings along: its issue in the issue graph and the pull requests that close it. Each names the job,
+   * and the issue its job's status, so they are written with it.
+   */
+  const itemsOfJob = (jobId: string): [SearchType, string][] => {
+    const key = store.jobs.get(jobId)?.source?.key;
+    if (!isItemUrl(key) || !store.issueGraph.node(key)) return [];
+    const closing = store.issueGraph.edgesOf(key).filter((e) => e.kind === 'closes' && e.to === key).map((e): [SearchType, string] => ['pull-request', e.from]);
+    return [['issue', key], ...closing];
+  };
+
   const documentOf = (type: SearchType, ref: string): SearchDocument | undefined => {
     if (type === 'artifact') {
       const artifact = store.artifacts.get(ref);
@@ -158,11 +169,19 @@ export function createUserSearch(o: {
         const taken = store.searchPending.take(BATCH);
         if (taken.length === 0) break;
         const docs: SearchDocument[] = [], gone: string[] = [];
+        const written = new Set<string>();
+        const add = (type: SearchType, ref: string): void => {
+          const id = searchDocumentId(scope, type, ref);
+          if (written.has(id)) return;
+          written.add(id);
+          const d = documentOf(type, ref);
+          if (d) docs.push(d); else gone.push(id);
+        };
         for (const t of taken) {
           const k = parsePendingKey(t.key);
           if (!k) continue;
-          const d = documentOf(k.type, k.ref);
-          if (d) docs.push(d); else gone.push(searchDocumentId(scope, k.type, k.ref));
+          add(k.type, k.ref);
+          if (k.type === 'job') for (const [type, ref] of itemsOfJob(k.ref)) add(type, ref);
         }
         await ix.put(docs);
         await ix.remove(gone);

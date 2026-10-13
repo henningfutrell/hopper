@@ -16158,7 +16158,8 @@ system secrets, connected accounts, sign-in and webhook secrets are never read t
 the job in memory, an `artifact.*` event its artifact (and a merge's target, `into`), an `infra.plan_*` event its plan
 (`keysOf`, `src/search/index.ts`; keys `artifact:<id>`, `infra-plan:<id>`), a `source.*` intake event or `item.snapshot_recorded`
 each issue it names (`issue:<url>`), and each read of the issue graph a source keeps every issue and pull request it gave
-(`graphKeys`; `issue:<url>`, `pull-request:<url>`; the source context names them to the user's search, `changed`), and the pass (every 2 s) marks those jobs in `search_pending` (tenant migration 50: `key` `job:<id>`,
+(`graphKeys`; `issue:<url>`, `pull-request:<url>`; the source context names them to the user's search, `changed`); a job
+written brings along its issue and the pull requests that close it, which name the job and its status (`itemsOfJob`), and the pass (every 2 s) marks those jobs in `search_pending` (tenant migration 50: `key` `job:<id>`,
 `version`, `marked_at`; a table only, the build before runs on it), then takes the oldest marks (100 per write, 10 writes
 per pass), builds each document again and writes it (`commitWithin` 1 s); a job no longer in the store is removed from the
 index (a removed artifact too). A mark is cleared only at the version taken, so a document marked again during the
