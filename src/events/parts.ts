@@ -9,6 +9,7 @@ import { CONFIDENCES, RISK_CATEGORIES, RISK_LEVELS } from '../domain/types.ts';
 export { INFRA_PLAN_EVENT_SCHEMAS as infraPlanEvents } from './infra-plan-schemas.ts';
 export { API_GRANT_EVENT_SCHEMAS as apiGrantEvents } from './api-grant-schemas.ts';
 export { WINDOWS_STEP_EVENT_SCHEMAS as windowsStepEvents } from './windows-step-schemas.ts';
+export { SANDBOX_REQUEST_EVENT_SCHEMAS as sandboxRequestEvents } from './sandbox-request-schemas.ts';
 
 const strict = z.strictObject;
 

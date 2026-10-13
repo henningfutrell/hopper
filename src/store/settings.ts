@@ -8,8 +8,7 @@ import type { InfraPlanSettings } from '../domain/infra-plans.ts';
 import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, ContributionSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
-import type { MasterKeyRotation } from '../domain/settings-store.ts';
-import type { SandboxApprovals } from '../domain/sandbox-approvals.ts';
+import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts';
 
 /** Each review section's settings row (issues #537, #543). */
 const REVIEW_SETTINGS_KEYS: Readonly<Record<ReviewKind, string>> = { proposal: 'proposalSettings', research: 'researchSettings' };
@@ -34,6 +33,7 @@ export const jobRepositoriesKey = (provider: ConnectedAccountProvider): string =
 export function createUserSettingsRepository(c: StoreContext): UserSettingsRepository {
   const { read, write } = keyValues(c);
   return {
+    ...sandboxSettings(read, write), // the read policy (issue #716) and the sandbox approval toggles (issue #991)
     getQueueGate() {
       const text = read('queueGate');
       return text === undefined ? undefined : JSON.parse(text) as QueueGate;
@@ -118,22 +118,6 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setPriorityLaneChoice(lanes) {
       write('priorityLaneChoice', JSON.stringify([...lanes]));
-    },
-    getReadPolicy() {
-      const text = read('readPolicy');
-      return text === undefined ? undefined : { assets: (JSON.parse(text) as { assets: string[] }).assets };
-    },
-    setReadPolicy(p) {
-      write('readPolicy', JSON.stringify({ assets: [...p.assets] }));
-    },
-    getSandboxApprovals() {
-      const text = read('sandboxApprovals');
-      if (text === undefined) return undefined;
-      const a = JSON.parse(text) as Partial<SandboxApprovals>;
-      return { skipTemplateApproval: a.skipTemplateApproval === true, skipSandboxApproval: a.skipSandboxApproval === true };
-    },
-    setSandboxApprovals(a) {
-      write('sandboxApprovals', JSON.stringify({ skipTemplateApproval: a.skipTemplateApproval, skipSandboxApproval: a.skipSandboxApproval }));
     },
     getBlastRadius() {
       const text = read('blastRadius');
