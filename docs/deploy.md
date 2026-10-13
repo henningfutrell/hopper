@@ -601,6 +601,26 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   dialled in, and has rootless Podman or Docker. The minted read credentials then go down that machine's link into
   the check box there. With neither, the template waits for its check. A client older than this release refuses the
   check box, and the check fails with that reason; run it again once the machine has the new client.
+## Search
+
+Search (issue #945, docs/design.md "Search") finds your jobs by their words, filters and facets: `GET /api/search`,
+type-ahead at `GET /api/search/suggest`, the index's state at `GET /api/search/status`. It reads a Solr core the hopper
+keeps from its job events.
+
+- **In containers** it is set up: `compose.yaml` runs `docker.io/library/solr` as the service `solr`, one core (`hopper`)
+  in standalone mode on the volume `solr`, on no host port and on the network `hopper_search` that it shares with the
+  hopper alone. The hopper gets `HOPPER_SOLR_URL=http://solr:8983/solr/hopper`. Solr has no credential: nothing else
+  reaches it. A stack from before gets it with the update, which puts in the new `compose.yaml`.
+- **Elsewhere**: run Solr in standalone mode with one core made from its default config (`solr-precreate hopper`), and
+  set `HOPPER_SOLR_URL` to the core's URL. Keep the core off every network a job or a person reaches: it holds your jobs'
+  words. The hopper puts its schema into the core itself at each start.
+- **Unset** `HOPPER_SOLR_URL`: search answers `not-configured`; nothing else changes.
+- **What the hopper keeps**: Postgres is the source of truth. A lost `solr` volume loses nothing: at the next start the
+  hopper finds the core empty and writes every job again. **Reindex** (`POST /ui/api/search/reindex`) does that when you
+  ask. No secret, vault value or credential is ever written to the index.
+- **Solr down**: search answers `degraded` and why, and the rest of the hopper goes on. Changes wait in the database and
+  are written when Solr is back. The stack check names a missing `solr` service.
+
 ## Optional services
 
 `compose.yaml` has required services and optional ones (issue #586). Nothing outside the stack is required.

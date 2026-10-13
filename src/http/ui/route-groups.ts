@@ -3,7 +3,7 @@
 // the priority lane settings (issue #535), the review sections' — proposals, research (issues #537, #543), the blast
 // radius' (issue #542), the decider calls' (issue #550), the phase shifts from a question (issue #548), yolo mode (issue #579), Contribution (issue #429), artifacts (issue #624),
 // auto-park (issue #650), the TL;DR (issue #569), lane tuning (issue #688), Report a bug (issue #694), Merge now and Close PR (issue #677),
-// repositories with no checks (issue #677), the mint test (issue #781), asking on the issue thread (issue #435), pointed jobs (issue #425), direct jobs (issue #901), GitHub watches (issue #427), the Windows hosts (issue #731).
+// repositories with no checks (issue #677), the mint test (issue #781), asking on the issue thread (issue #435), pointed jobs (issue #425), direct jobs (issue #901), GitHub watches (issue #427), the Windows hosts (issue #731), search's Reindex (issue #945).
 import { registerArtifactRoutes } from './artifacts.ts';
 import { registerAutoParkRoutes } from './auto-park.ts';
 import { registerBugReportRoutes } from './bug-reports.ts';
@@ -32,5 +32,6 @@ import { registerInfraPlanRoutes } from './infra-plans.ts';
 import { registerYoloModeRoutes } from './yolo-mode.ts';
 import { registerContributionRoutes } from './contribution.ts';
 import { registerWindowsHostRoutes } from './windows-hosts.ts';
+import { registerSearchRoutes } from '../search.ts';
 
-export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerIntakeActorRoutes, registerLoginRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes, registerVaultGrantRoutes, registerMintTestRoutes, registerYoloModeRoutes, registerContributionRoutes, registerArtifactRoutes, registerAutoParkRoutes, registerTldrRoutes, registerLaneTuningRoutes, registerBugReportRoutes, registerPullRequestActRoutes, registerRepoChecksRoutes, registerThreadAskRoutes, registerPointedJobRoutes, registerDirectJobRoutes, registerGitHubWatchRoutes, registerInfraPlanRoutes, registerWindowsHostRoutes] as const;
+export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerIntakeActorRoutes, registerLoginRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes, registerVaultGrantRoutes, registerMintTestRoutes, registerYoloModeRoutes, registerContributionRoutes, registerArtifactRoutes, registerAutoParkRoutes, registerTldrRoutes, registerLaneTuningRoutes, registerBugReportRoutes, registerPullRequestActRoutes, registerRepoChecksRoutes, registerThreadAskRoutes, registerPointedJobRoutes, registerDirectJobRoutes, registerGitHubWatchRoutes, registerInfraPlanRoutes, registerWindowsHostRoutes, registerSearchRoutes] as const;

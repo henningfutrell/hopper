@@ -129,6 +129,8 @@ services:
       # OpenFGA, asked before every credential a job is given (issue #559), and its preshared key.
       HOPPER_OPENFGA_URL: ${HOPPER_OPENFGA_URL:-http://openfga:8080}
       HOPPER_OPENFGA_KEY_FILE: /run/hopper-secrets/openfga_key
+      # Search (issue #945): the Solr core below. No credential: only the hopper shares its network.
+      HOPPER_SOLR_URL: ${HOPPER_SOLR_URL:-http://solr:8983/solr/hopper}
       # The vault in its own container (profile `hopper-vault`, issue #586) and its preshared key; unset: it runs here.
       HOPPER_VAULT_URL: ${HOPPER_VAULT_URL:-}
       HOPPER_VAULT_KEY_FILE: /run/hopper-secrets/vault_key
@@ -157,8 +159,9 @@ services:
     ports:
       # HOPPER_BIND: the address the UI is published on; 0.0.0.0 reaches it from the LAN (issue #697).
       - "${HOPPER_BIND:-127.0.0.1}:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"
-    # `tunnel` (issues #795, #880): the network the hopper shares with the tunnel alone (below).
-    networks: [default, tunnel]
+    # `tunnel` (issues #795, #880): the network the hopper shares with the tunnel alone (below). `search` (issue #945): the
+    # one it shares with Solr alone.
+    networks: [default, tunnel, search]
 
   # OpenFGA (issue #559): access asks it before every credential a job is given. Its tables are the `openfga` schema of
   # the hopper's Postgres; its config is the file postgres writes, read from its working directory. On no host port:
@@ -186,6 +189,27 @@ services:
         condition: service_healthy
     volumes:
       - runtime-secrets:/run/hopper-secrets:ro
+
+  # Search (issue #945): one Solr core in standalone mode. Postgres is the source of truth: the hopper writes each job to the
+  # index from its events and builds the whole index again when it finds the core empty, so losing the `solr` volume loses
+  # nothing. The core is made from Solr's default config at the first start; the hopper puts its own fields in at each
+  # start. On no host port, and on a network of its own with the hopper: no box and no other service reaches it, so it
+  # needs no credential. Down: search says it is degraded, and the rest of the hopper goes on.
+  solr:
+    image: docker.io/library/solr:9.11.0-slim
+    restart: unless-stopped
+    command: [solr-precreate, hopper]
+    environment:
+      SOLR_HEAP: 512m
+    volumes:
+      - solr:/var/solr
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:8983/solr/hopper/admin/ping > /dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks: [search]
 
   # Optional (profile `hopper-vault`, issue #586): the hopper's vault in a container of its own, from the hopper's image.
   # It holds the vault's key — the master key, or the data key the KMS opens — and the secret values, in the hopper's
@@ -386,6 +410,9 @@ networks:
   # The tunnel's (issues #795, #880): the hopper and the tunnel only. No box joins it, so none reaches the tunnel agent's local API.
   tunnel:
     name: hopper_tunnel
+  # Search's (issue #945): the hopper and Solr only.
+  search:
+    name: hopper_search
 
 volumes:
   # The files Postgres makes at each start (the database password and URL, OpenFGA's and hopper-vault's preshared keys):
@@ -406,6 +433,8 @@ volumes:
       o: size=64k,mode=0755
   postgres:
   home:
+  # The search index (issue #945): rebuilt from Postgres when lost.
+  solr:
   vault-data:
   vault-keys:
   vault-token:

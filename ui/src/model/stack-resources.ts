@@ -1,6 +1,6 @@
 // Stack resources in words (issue #947, design.md "Stack resources"): each container's CPU, memory, network, disk,
-// restarts and uptime, the hopper's Postgres, and OpenFGA's checks, as the Resources page writes them. Pure: `now` is passed in.
-import type { ContainerReading, OpenFgaReading, PostgresReading } from '@/model/wire';
+// restarts and uptime, the hopper's Postgres, OpenFGA's checks, and Solr's queries and index, as the Resources page writes them. Pure: `now` is passed in.
+import type { ContainerReading, OpenFgaReading, PostgresReading, SolrPart } from '@/model/wire';
 import { duration } from './format';
 
 const UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB'] as const;
@@ -87,4 +87,20 @@ export function openFgaLines(f: OpenFgaReading): { label: string; text: string }
     { label: 'Check latency', text: f.meanMs === undefined ? 'no check time yet' : `${ms(f.meanMs)} ms mean over ${f.checks} checks` },
     { label: 'Errors', text: f.errors === 0 ? `no failed checks of ${f.checks}` : `${f.errors} of ${f.checks} checks failed (${(Math.round((f.errors / f.checks) * 1000) / 10).toFixed(1)}%)` },
   ];
+}
+
+/** The documents waiting to be indexed: every user's pending index updates. */
+export function waitingText(pending: number): string {
+  return pending === 0 ? 'nothing waiting' : `${plural(pending, 'document', 'documents')} waiting`;
+}
+
+/** Solr's query time, failed queries, index and the documents waiting; Solr not read: only what waits. */
+export function solrLines(s: SolrPart): { label: string; text: string }[] {
+  const waiting = s.pending === undefined ? [] : [{ label: 'To index', text: waitingText(s.pending) }];
+  if ('problem' in s) return waiting;
+  const queries = s.queries === 0 ? [{ label: 'Queries', text: 'no queries yet' }] : [
+    { label: 'Query latency', text: s.meanMs === undefined ? 'no query time yet' : `${ms(s.meanMs)} ms mean${s.p95Ms === undefined ? '' : `, ${ms(s.p95Ms)} ms at the 95th percentile`}, over ${s.queries} queries` },
+    { label: 'Errors', text: s.errors === 0 ? `no failed queries of ${s.queries}` : `${s.errors} of ${s.queries} queries failed (${(Math.round((s.errors / s.queries) * 1000) / 10).toFixed(1)}%)` },
+  ];
+  return [...queries, { label: 'Index', text: `${plural(s.docs, 'document', 'documents')}, ${sizeText(s.indexBytes)}` }, ...waiting];
 }

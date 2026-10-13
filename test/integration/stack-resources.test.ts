@@ -8,8 +8,12 @@
 //   Scenario: statement latency says why there is none when pg_stat_statements is not installed
 //   Scenario: OpenFGA's checks as its meter reads them; with no OpenFGA, or a meter that fails, it says why
 //   Scenario: the sandbox boxes on each client target as their meter reads them; none with no box there
+//   Scenario: Solr's queries and index as its meter reads them, with the documents waiting to be indexed
+//   Scenario: with no Solr, Solr says why; Solr down: the documents waiting still show, with why Solr cannot be read
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ContainerMeter, ContainerReading, OpenFgaMeter, PostgresReading, RemoteBoxMeter, StackResources } from '../../src/domain/types.ts';
+import type { ContainerMeter, ContainerReading, OpenFgaMeter, PostgresReading, RemoteBoxMeter, SolrMeter, StackResources } from '../../src/domain/types.ts';
+import type { SearchIndex } from '../../src/domain/search.ts';
+import { waitFor } from '../support/wait.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
 const apps: TestApp[] = [];
@@ -24,10 +28,10 @@ const POSTGRES: ContainerReading = {
   startedAt: '2026-10-12T09:00:00.000Z', restarts: 1, cpuCores: 0.25, memUsedBytes: 300 * 1024 ** 2, netRxBytes: 10, netTxBytes: 20,
 };
 
-async function boot(meter?: ContainerMeter, openFgaMeter?: OpenFgaMeter, remoteBoxMeter?: RemoteBoxMeter): Promise<TestApp> {
+async function boot(meter?: ContainerMeter, openFgaMeter?: OpenFgaMeter, remoteBoxMeter?: RemoteBoxMeter, solr?: { solrMeter?: SolrMeter; searchIndex?: SearchIndex }): Promise<TestApp> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  const a = await startTestApp({ dbPath: db.dbPath, seams: { ...(meter ? { containerMeter: meter } : {}), ...(openFgaMeter ? { openFgaMeter } : {}), ...(remoteBoxMeter ? { remoteBoxMeter } : {}) } });
+  const a = await startTestApp({ dbPath: db.dbPath, seams: { ...(meter ? { containerMeter: meter } : {}), ...(openFgaMeter ? { openFgaMeter } : {}), ...(remoteBoxMeter ? { remoteBoxMeter } : {}), ...solr } });
   apps.push(a);
   return a;
 }
@@ -102,5 +106,28 @@ describe('stack resources', () => {
     expect(r.status).toBe(200);
     expect(r.body.remoteBoxes).toEqual(remote);
     expect(r.body.containers).toEqual({ containers: [POSTGRES] });
+  });
+
+  it('answers Solr\'s queries and index as its meter reads them, with the documents waiting to be indexed', async () => {
+    const reading = { queries: 120, errors: 3, meanMs: 4.5, p95Ms: 12.25, docs: 42, indexBytes: 81_920 };
+    const a = await boot(undefined, undefined, undefined, { solrMeter: { read: async () => reading } });
+    const r = await a.api<StackResources>('GET', '/api/resources');
+    expect(r.status).toBe(200);
+    expect(r.body.solr).toEqual({ ...reading, pending: 0 });
+  });
+
+  it('with no Solr, Solr says why; Solr down, the documents waiting still show with why Solr cannot be read', async () => {
+    const none = await boot();
+    expect((await none.api<StackResources>('GET', '/api/resources')).body.solr).toEqual({ problem: expect.stringContaining('HOPPER_SOLR_URL') });
+    const refused = async (): Promise<never> => { throw new Error('Solr not reached: ECONNREFUSED'); };
+    const down: SearchIndex = { ensureSchema: refused, put: refused, remove: refused, count: refused, search: refused, suggest: refused };
+    const a = await boot(undefined, undefined, undefined, { searchIndex: down, solrMeter: { read: async () => { throw new Error('Solr\'s metrics did not answer: ECONNREFUSED'); } } });
+    const job = await a.pull({ op: 'echo', message: 'done' });
+    await a.waitForStatus(job.id, 'finished');
+    const solr = await waitFor(async () => {
+      const s = (await a.api<StackResources>('GET', '/api/resources')).body.solr;
+      return 'pending' in s && (s.pending ?? 0) >= 1 ? s : undefined;
+    }, { timeoutMs: 15_000, what: 'a document waiting' });
+    expect(solr).toEqual({ problem: 'Solr\'s metrics did not answer: ECONNREFUSED', pending: 1 });
   });
 });
