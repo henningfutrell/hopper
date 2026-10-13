@@ -17,7 +17,7 @@ describe('the read-only check\'s report as a job artifact (issue #715)', () => {
     const { a, token, cloud } = await boot(['cluster/lab']);
     const creds = await runningJob(a);
     const [job] = a.user().store.jobs.list();
-    await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab']);
+    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab']);
     const t = await asked(a, token);
     expect(t.askedBy).toBe(job!.id);
     await a.app.sandboxes.check();

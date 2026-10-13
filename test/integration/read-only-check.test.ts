@@ -116,7 +116,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
     const { a, token, runtime, cloud } = await boot(['cluster/lab']);
     cloud.setMode('writable');
     const creds = await runningJob(a);
-    expect((await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab'])).code).toBe(3);
+    expect((await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab'])).code).toBe(3);
     await a.app.sandboxes.check();
     const t = await asked(a, token);
     expect(t.check).toMatchObject({ state: 'failed' });
@@ -126,7 +126,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
     const refused = await launch(a, token, t.name);
     expect(refused.status).toBe(409);
     expect(refused.body.error).toContain(`it failed (${failed.join('; ')}). A person runs it again in Settings → Vault, or with hopper template check ${t.name}`);
-    const told = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab']);
+    const told = await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab']);
     expect(told.code).toBe(3);
     expect(told.stdout).toContain(`waiting: template ${t.name} is approved; waiting for the read-only check of ${t.name}: it failed`);
     // A failed check is not run again by itself.
@@ -146,7 +146,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
   it('a save makes the check stale: it runs again on the template as it is now', async () => {
     const { a, token, runtime } = await boot(['cluster/lab']);
     const creds = await runningJob(a);
-    await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab']);
+    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab']);
     await a.app.sandboxes.check();
     const t = await asked(a, token);
     expect(t.check?.state).toBe('passed');
@@ -169,7 +169,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
   it('a template with a write need, and one a person saved, take no read-only check', async () => {
     const { a, token, runtime } = await boot(['cluster/*']);
     const creds = await runningJob(a);
-    await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab write/cluster/lab']);
+    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab write/cluster/lab', '--plan', 'kubectl scale deploy/web --replicas=2 (undo: scale back)']);
     const t = await asked(a, token);
     expect(t.readOnly).toBeUndefined();
     expect((await vault(a, token, { action: 'approve-template', name: t.name })).status).toBe(200);
@@ -189,7 +189,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
   it('a check box that ends badly, or does not start, fails the check with the reason', async () => {
     const { a, token, runtime, cloud } = await boot(['cluster/lab']);
     const creds = await runningJob(a);
-    await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab']);
+    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab']);
     const t = await asked(a, token);
     // Every probe line is there, but the script itself ended with 137 (killed): no pass.
     runtime.runScript = async (spec) => { const r = await cloud.runScript(spec); return { ...r, exit: 137 }; };
@@ -208,7 +208,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
   it('a check box no run holds (a hopper stopped mid-check) is removed, and its check runs again', async () => {
     const { a, token, runtime } = await boot(['cluster/lab']);
     const creds = await runningJob(a);
-    await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab']);
+    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab']);
     const t = await asked(a, token);
     // As a hopper stopped mid-check leaves it: a check box, and the check `running`.
     const instanceId = a.app.instance.settings.instanceId();
@@ -223,7 +223,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
   it('a need the vault cannot mint a credential for fails the check, saying why, and runs no check box', async () => {
     const { a, token, runtime, kube } = await boot(['cluster/*', 'aws-account/*']);
     const creds = await runningJob(a);
-    await skill(a, creds, ['sandbox-template', '--needs', `read/cluster/other read/aws-account/${ACCOUNT}`]);
+    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', `read/cluster/other read/aws-account/${ACCOUNT}`]);
     await a.app.sandboxes.check();
     const t = await asked(a, token);
     expect(t.check).toMatchObject({ state: 'failed', probes: [] });
@@ -239,7 +239,7 @@ describe('the read-only check before a requested template\'s first box (issue #7
   it('a read Access does not allow fails the check, saying so, and mints nothing', async () => {
     const { a, token, runtime, kube } = await boot(['cluster/lab']);
     const creds = await runningJob(a);
-    await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab']);
+    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab']);
     const t = await asked(a, token);
     const access = (await a.api<AccessView>('GET', '/api/access', undefined, { 'x-hopper-session': token })).body;
     const approval = access.templates.find((x) => x.template === t.name)!.approvals[0]!;
@@ -277,7 +277,7 @@ exec "$(dirname "$0")/helm.real" "$@"
 `);
     chmodSync(join(cloud.dir, 'helm'), 0o755);
     const creds = await runningJob(a);
-    await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab']);
+    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab']);
     await a.app.sandboxes.check();
     const t = await asked(a, token);
     expect(t.check).toMatchObject({ state: 'failed' });
@@ -303,7 +303,7 @@ exec "$(dirname "$0")/helm.real" "$@"
     // A save that leaves the marks out keeps them; the job's request of the same needs changes nothing.
     expect((await vault(a, token, { action: 'save-template', name: t.name, image: t.image, secrets: [] })).status).toBe(200);
     expect((await asked(a, token)).probeMarks).toEqual({ 'helm.list': 'expect-denied' });
-    expect((await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab'])).code).toBe(3);
+    expect((await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab'])).code).toBe(3);
     expect((await asked(a, token)).probeMarks).toEqual({ 'helm.list': 'expect-denied' });
 
     // With the mark, a write that goes through still fails the check.

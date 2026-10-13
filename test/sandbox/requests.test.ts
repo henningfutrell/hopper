@@ -5,6 +5,7 @@ import { AUTO_APPROVER, editedApprovals, NO_SKIPS, sandboxYolo, templateApproval
 import type { NewEvent } from '../../src/domain/types.ts';
 import type { TemplateView } from '../../src/domain/vault.ts';
 import { createSandboxRequests } from '../../src/sandbox/requests.ts';
+import { REMEMBERED_APPROVER } from '../../src/domain/remembered-writes.ts';
 
 const T = { name: 'asked-1' } as TemplateView;
 
@@ -184,5 +185,47 @@ describe('runs approved with no separate run approval (issue #1001)', () => {
     const s = on([t]);
     s.requests.waited('job-3', t.name);
     expect(s.requests.ask('job-3', t.name)).toMatchObject({ state: 'starting', approvedBy: templateApprovalBy('Ada') });
+  });
+});
+
+describe('a remembered write approval and the purpose of a run (issue #1001)', () => {
+  const WRITE = { operation: 'write', asset: { kind: 'aws-account', name: '123456789012' } } as const;
+  const HIGH = { name: 'asked-w', secrets: [], profiles: [WRITE], radius: { level: 'high', reasons: [] }, approval: { by: 'Ada' }, askedBy: 'job-1' } as unknown as TemplateView;
+  function remembering(o: { remembered?: boolean; secrets?: string[] } = {}) {
+    const events: NewEvent[] = [];
+    const t = { ...HIGH, secrets: o.secrets ?? [] };
+    const requests = createSandboxRequests({
+      record: (e) => events.push(e),
+      approvals: () => NO_SKIPS,
+      template: (name) => (name === t.name ? t : undefined),
+      launch: async () => ({ container: 'box-1' }),
+      alive: () => true,
+      atWork: () => true,
+      jobTitle: (j) => `title of ${j}`,
+      jobUrl: (j) => `https://github.com/acme/infra/issues/${j.slice(-1)}`,
+      remembered: () => (o.remembered === false ? [] : [{ ...WRITE, by: 'Ada', at: '2026-10-13T09:00:00.000Z' }]),
+      policy: () => undefined,
+      clock: { now: () => new Date('2026-10-13T10:00:00Z') },
+      newId: () => `r${events.length}`,
+    });
+    return { requests, events };
+  }
+
+  it('another job\'s run of a template whose writes are remembered starts with no person, by the remembered approval', async () => {
+    const s = remembering();
+    expect(s.requests.ask('job-2', HIGH.name)).toMatchObject({ state: 'starting', approvedBy: REMEMBERED_APPROVER });
+    expect(s.events.find((e) => e.type === 'vault.sandbox_approved')!.data).toMatchObject({ by: REMEMBERED_APPROVER });
+    await s.requests.idle();
+  });
+
+  it('without a remembered approval, or with a vault secret, it waits for a person', () => {
+    expect(remembering({ remembered: false }).requests.ask('job-2', HIGH.name).state).toBe('waiting');
+    expect(remembering({ secrets: ['KUBE_TOKEN'] }).requests.ask('job-2', HIGH.name).state).toBe('waiting');
+  });
+
+  it('keeps the job\'s purpose, its plan and its link on the run', () => {
+    const s = remembering({ remembered: false });
+    const r = s.requests.ask('job-2', HIGH.name, { purpose: 'Create the cluster role for X', plan: 'kubectl apply -f role.yaml' });
+    expect(r).toMatchObject({ jobTitle: 'title of job-2', jobUrl: 'https://github.com/acme/infra/issues/2', purpose: 'Create the cluster role for X', plan: 'kubectl apply -f role.yaml' });
   });
 });
