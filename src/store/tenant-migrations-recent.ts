@@ -9,6 +9,7 @@ import { CHECKPOINT_TABLE } from './checkpoints.ts';
 import { DIRECT_JOB_TABLE } from './direct-jobs.ts';
 import { SEARCH_PENDING_TABLE } from './search-pending.ts';
 import { PROMOTION_TABLE } from './promotions.ts';
+import { GITHUB_LISTING_TABLES } from './github-listings.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -19,4 +20,6 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   SEARCH_PENDING_TABLE,
   // 51: Promotions to GitHub (issue #946): where each direct job was posted. A table only: the build before runs on it.
   PROMOTION_TABLE,
+  // 52: The listing cache (issue #985): each repository's latest repository listing. Tables only: the build before runs on them.
+  GITHUB_LISTING_TABLES,
 ];

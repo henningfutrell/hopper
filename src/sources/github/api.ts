@@ -9,6 +9,7 @@ import type { IssueCrossReferences } from '../../domain/cross-references.ts';
 import type { IssuePlace } from '../../domain/issue-graph.ts';
 import type { BaseMergeTarget, GitRemote } from '../../git-mirror/mirrors.ts';
 import type { BaseMerge } from '../../domain/pull-requests.ts';
+import type { RepoListing } from '../../domain/github-listing.ts';
 
 export interface GitHubIssue {
   /** owner/repo */
@@ -223,6 +224,12 @@ export interface GitHubApi {
    * Absent on the App adapter: an installation token has no user.
    */
   listAssignedIssues?(label: string): Promise<GitHubIssue[]>;
+  /**
+   * The open issues and pull requests of `repos` that carry one of `labels` (issue #985, a **repository listing**): batched
+   * GraphQL, about one request for each 25 repositories with one credential. A repository GitHub does not answer for is in
+   * `repoErrors`, never a throw. Absent: not read.
+   */
+  listRepos?(repos: string[], labels: string[]): Promise<RepoListing>;
 
   // ---- GitHub App mode only (absent on the connected account's adapter) ----------------------------
 

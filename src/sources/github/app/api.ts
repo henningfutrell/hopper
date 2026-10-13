@@ -10,6 +10,8 @@ import type { AppAuth } from './auth.ts';
 import type { GitHubApp, GitHubAppLoad } from './config.ts';
 import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from './graphql.ts';
 import { batchGraphQL } from './graphql-batch.ts';
+import { listRepos } from './graphql-listing.ts';
+import type { RepoListing } from '../../../domain/github-listing.ts';
 import { SOURCE_DEFER_AFTER_MS, makeRequest, paginate, splitRepo, statusOf, toApiError } from './http.ts';
 import * as rest from './rest.ts';
 
@@ -128,6 +130,25 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
           l.installs.set(r.full_name, inst.id);
           out.push({ repo: r.full_name, installationId: inst.id });
         }
+      }
+      return out;
+    }),
+    // One listing for each installation's token (issue #985): a repository the app is not installed on fails only itself.
+    listRepos: (repos, labels) => call(`list ${repos.length} repositories`, async (l) => {
+      const out: RepoListing = { repos: new Map(), repoErrors: new Map() };
+      const byInstallation = new Map<number, string[]>();
+      const unique = [...new Set(repos)];
+      const found = await Promise.allSettled(unique.map((repo) => installationFor(l, repo)));
+      found.forEach((f, i) => {
+        const repo = unique[i]!;
+        if (f.status === 'fulfilled') byInstallation.set(f.value, [...(byInstallation.get(f.value) ?? []), repo]);
+        else if (f.reason instanceof GitHubApiError && f.reason.permanent) out.repoErrors.set(repo, f.reason.message);
+        else throw f.reason;
+      });
+      for (const [id, some] of byInstallation) {
+        const got = await listRepos(intake, await l.auth.installationToken(id), some, labels);
+        for (const [repo, items] of got.repos) out.repos.set(repo, items);
+        for (const [repo, error] of got.repoErrors) out.repoErrors.set(repo, error);
       }
       return out;
     }),

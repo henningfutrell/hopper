@@ -105,8 +105,8 @@ describe('repository listings (issue #985)', () => {
       { id: 11, account: 'owner', repos: [repo('a', [{ number: 1, labels: ['hopper'] }])] },
       { id: 12, account: 'other', repos: [repo('b', [{ number: 2, labels: ['hopper'] }], 'other')] },
     ] });
-    const { token } = await h.api.gitRemote('owner/a');
-    const got = await listRepos(makeRequest(h.fake.url), token, ['owner/a', 'other/b'], LABELS);
+    const { token } = await h.api.gitRemote!('owner/a');
+    const got = await listRepos(makeRequest(h.fake.url), token!, ['owner/a', 'other/b'], LABELS);
     expect(numbers(got.repos.get('owner/a'))).toEqual([1]);
     expect(got.repoErrors.get('other/b')).toMatch(/Could not resolve to a Repository/);
     expect(graphqlRequests(h)).toHaveLength(1);
