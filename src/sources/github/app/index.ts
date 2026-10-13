@@ -7,3 +7,4 @@ export { createGitHubAppApi } from './api.ts';
 export type { AppStatus, GitHubAppApi } from './api.ts';
 export { createFakeGitHubServer, verifyAppJwt } from './fake-server.ts';
 export type { FakeGitHubOptions, FakeGitHubServer } from './fake-server.ts';
+export { endPull } from './fake-pull-end.ts';

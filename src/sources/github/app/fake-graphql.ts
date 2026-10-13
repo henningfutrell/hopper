@@ -36,6 +36,12 @@ function closer(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
     const url = `https://github.com/${repo.owner}/${repo.name}/pull/${n}`;
     const all = [...repo.issues.values()].flatMap((i) => [...i.openPullRequests.map((p) => ({ ...p, state: 'OPEN' })), ...i.mentionedBy]);
     const pr = all.find((p) => p.url === url);
+    // A pull request with an entry of its own (issue #985): its head, base, mergeable and checks, as the batched reads tell them.
+    const own = repo.issues.get(n);
+    if (own?.pullRequest && own.pull) {
+      const mergedAt = (pr as { mergedAt?: string } | undefined)?.mergedAt;
+      return { status: 200, body: { data: { repository: { issueOrPullRequest: { __typename: 'PullRequest', url, ...pullState(own), ...(mergedAt ? { mergedAt } : {}) } } } } };
+    }
     if (pr) {
       const { body: _b, repo: _r, ...rest } = pr as typeof pr & { body?: string; repo?: string };
       return { status: 200, body: { data: { repository: { issueOrPullRequest: { __typename: 'PullRequest', ...withHead(rest) } } } } };
