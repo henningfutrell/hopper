@@ -26,6 +26,8 @@ const refused = (err: unknown) => (err as { status?: unknown }).status === 401;
 
 export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<string>; renew?(refused: string): Promise<string> }): GitHubApi {
   const req = makeRequest(o.apiUrl, undefined, { deferAfterMs: SOURCE_DEFER_AFTER_MS });
+  // The reads that look for new jobs stop at the intake reserve, so a job's own calls still go (issue #983).
+  const intake = makeRequest(o.apiUrl, undefined, { deferAfterMs: SOURCE_DEFER_AFTER_MS, intake: true });
   const ask = batchGraphQL(req);
   const call = async <T>(what: string, fn: (token: string) => Promise<T>): Promise<T> => {
     const token = await o.token();
@@ -45,21 +47,21 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     }
   };
   return {
-    listOpenIssues: (repo, label) => call(`list issues ${repo}`, (t) => rest.listOpenIssues(req, t, repo, label)),
+    listOpenIssues: (repo, label) => call(`list issues ${repo}`, (t) => rest.listOpenIssues(intake, t, repo, label)),
     getIssue: (repo, number) => call(`get ${repo}#${number}`, (t) => rest.getIssue(req, t, repo, number)),
     subIssues: (repo, number) => call(`sub-issues of ${repo}#${number}`, (t) => rest.subIssues(req, t, repo, number)),
     listComments: (repo, number) => call(`comments ${repo}#${number}`, (t) => rest.listComments(req, t, repo, number)),
     issueEdits: (repo, number) => call(`edits of ${repo}#${number}`, (t) => issueEdits(ask, t, repo, number)),
     issuePlace: (repo, number) => call(`place of ${repo}#${number}`, (t) => issuePlace(ask, t, repo, number)),
-    projectItems: (owner, number) => call(`project ${owner}/projects/${number}`, (t) => projectItems(req, t, owner, number)),
+    projectItems: (owner, number) => call(`project ${owner}/projects/${number}`, (t) => projectItems(intake, t, owner, number)),
     ensureLabel: (repo, name, color, description) => call(`label ${repo} ${name}`, (t) => rest.ensureLabel(req, t, repo, name, color, description)),
     addLabels: (repo, number, labels) => call(`add labels ${repo}#${number}`, (t) => rest.addLabels(req, t, repo, number, labels)),
     removeLabels: (repo, number, labels) => call(`remove labels ${repo}#${number}`, (t) => rest.removeLabels(req, t, repo, number, labels)),
     assignedAt: (repo, number, login) => call(`events of ${repo}#${number}`, (t) => rest.assignedAt(req, t, repo, number, login)),
     issueEvents: (repo, number) => call(`events of ${repo}#${number}`, (t) => rest.issueEvents(req, t, repo, number)),
-    repoEvents: (repo) => call(`event feed of ${repo}`, (t) => rest.repoEvents(req, t, repo)),
+    repoEvents: (repo) => call(`event feed of ${repo}`, (t) => rest.repoEvents(intake, t, repo)),
     addAssignees: (repo, number, logins) => call(`assign ${repo}#${number}`, (t) => rest.addAssignees(req, t, repo, number, logins)),
-    listAssignedIssues: (label) => call('issues assigned to the account', (t) => rest.listAssignedIssues(req, t, label)),
+    listAssignedIssues: (label) => call('issues assigned to the account', (t) => rest.listAssignedIssues(intake, t, label)),
     reopenIssue: (repo, number) => call(`reopen ${repo}#${number}`, (t) => rest.reopenIssue(req, t, repo, number)),
     closeAsCompleted: (repo, number) => call(`close ${repo}#${number}`, (t) => rest.closeIssue(req, t, repo, number)),
     postComment: (repo, number, body) => call(`comment on ${repo}#${number}`, (t) => rest.postComment(req, t, repo, number, body)),

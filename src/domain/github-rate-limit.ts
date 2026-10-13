@@ -10,14 +10,20 @@ export interface RateLimiterSettings {
   reserve: number;
   /** Polls that run at the same time in one batch of a poll round. */
   batchSize: number;
+  /**
+   * Calls kept for job work (issue #983): at or below this many left, intake — the reads that look for new jobs — makes
+   * no call until the bucket resets, so a job's reads and writes (its report, a rerun) still go. Never below `reserve`.
+   */
+  intakeReserve: number;
 }
 
-export const DEFAULT_RATE_LIMITER: RateLimiterSettings = { slowBelowPercent: 25, reserve: 50, batchSize: 10 };
+export const DEFAULT_RATE_LIMITER: RateLimiterSettings = { slowBelowPercent: 25, reserve: 50, batchSize: 10, intakeReserve: 1000 };
 
 export const RATE_LIMITER_RANGES: Record<keyof RateLimiterSettings, { min: number; max: number }> = {
   slowBelowPercent: { min: 0, max: 100 },
   reserve: { min: 0, max: 5000 },
   batchSize: { min: 1, max: 100 },
+  intakeReserve: { min: 0, max: 5000 },
 };
 
 /** A rate-limit bucket as GitHub last told it, per credential and resource; `holdUntil` after GitHub refused a call. */

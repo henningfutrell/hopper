@@ -35,6 +35,8 @@ interface InstalledRepo { full_name: string }
 /** `app`: the identity now (github-app options + the key's variable); `keyEnv` names that variable in messages. */
 export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; baseUrl?: string; clock: Clock }): GitHubAppApi {
   const req = makeRequest(o.baseUrl ?? 'https://api.github.com', undefined, { deferAfterMs: SOURCE_DEFER_AFTER_MS });
+  // The reads that look for new jobs stop at the intake reserve, so a job's own calls still go (issue #983).
+  const intake = makeRequest(o.baseUrl ?? 'https://api.github.com', undefined, { deferAfterMs: SOURCE_DEFER_AFTER_MS, intake: true });
   const ask = batchGraphQL(req);
   let loaded: Loaded | undefined;
   let authError: string | undefined;
@@ -120,7 +122,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
       const out: { repo: string; installationId: number }[] = [];
       for (const inst of await listInstallations(l)) {
         const token = await l.auth.installationToken(inst.id);
-        const repos = await paginate(req, 'GET /installation/repositories', { per_page: 100 }, `token ${token}`,
+        const repos = await paginate(intake, 'GET /installation/repositories', { per_page: 100 }, `token ${token}`,
           (d) => (d as { repositories?: InstalledRepo[] }).repositories ?? []);
         for (const r of repos) {
           l.installs.set(r.full_name, inst.id);
@@ -129,7 +131,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
       }
       return out;
     }),
-    listOpenIssues: (repo, label) => call(`list issues ${repo}`, async (l) => rest.listOpenIssues(req, await tokenFor(l, repo), repo, label)),
+    listOpenIssues: (repo, label) => call(`list issues ${repo}`, async (l) => rest.listOpenIssues(intake, await tokenFor(l, repo), repo, label)),
     getIssue: (repo, number) => call(`get ${repo}#${number}`, async (l) => rest.getIssue(req, await tokenFor(l, repo), repo, number)),
     subIssues: (repo, number) => call(`sub-issues of ${repo}#${number}`, async (l) => rest.subIssues(req, await tokenFor(l, repo), repo, number)),
     listComments: (repo, number) => call(`comments ${repo}#${number}`, async (l) => rest.listComments(req, await tokenFor(l, repo), repo, number)),
@@ -141,7 +143,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
     removeLabels: (repo, number, labels) => call(`remove labels ${repo}#${number}`, async (l) =>
       rest.removeLabels(req, await tokenFor(l, repo), repo, number, labels)),
     issueEvents: (repo, number) => call(`events of ${repo}#${number}`, async (l) => rest.issueEvents(req, await tokenFor(l, repo), repo, number)),
-    repoEvents: (repo) => call(`event feed of ${repo}`, async (l) => rest.repoEvents(req, await tokenFor(l, repo), repo)),
+    repoEvents: (repo) => call(`event feed of ${repo}`, async (l) => rest.repoEvents(intake, await tokenFor(l, repo), repo)),
     assignedAt: (repo, number, login) => call(`events of ${repo}#${number}`, async (l) => rest.assignedAt(req, await tokenFor(l, repo), repo, number, login)),
     addAssignees: (repo, number, logins) => call(`assign ${repo}#${number}`, async (l) => rest.addAssignees(req, await tokenFor(l, repo), repo, number, logins)),
     reopenIssue: (repo, number) => call(`reopen ${repo}#${number}`, async (l) => rest.reopenIssue(req, await tokenFor(l, repo), repo, number)),
@@ -166,7 +168,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
       if (!l.accounts) await listInstallations(l);
       const id = l.accounts!.get(owner) ?? l.accounts!.values().next().value;
       if (id === undefined) throw new GitHubApiError(`project ${owner}/projects/${number}: the app has no installations`, true);
-      return projectItems(req, await l.auth.installationToken(id), owner, number);
+      return projectItems(intake, await l.auth.installationToken(id), owner, number);
     }),
   };
 }
