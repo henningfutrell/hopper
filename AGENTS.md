@@ -32,7 +32,7 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   (`docs/design.md` "Reaching the UI across the LAN", issue #16). No route creates or changes a job, question, webhook or setting except
   through the UI session below: jobs come only from job sources; webhook subscriptions are rows in the
   database and nothing else (issue #78), which the UI session may edit (`POST /ui/api/webhooks`, issue #18). Every request passes the Host guard
-  (`127.0.0.1:<port>` / `localhost:<port>` / a LAN name with the port / the public URL's host / the remote access domain while remote access is on (issue #880), else 421). One exception, a
+  (`127.0.0.1:<port>` / `localhost:<port>` / a LAN name with the port — this host's tailnet names and addresses and the admin's allowed hosts count as LAN names, and while it is on a tailnet a peer in Tailscale's ranges as a LAN peer (issue #1024) — / the public URL's host / the remote access domain while remote access is on (issue #880), else 421). One exception, a
   machine's (issue #308, `docs/design.md` "Joining a machine"): `POST /client/join` adds the one client target a join
   code names — the code minted through an admin's UI session or the operator CLI, kept hashed, spent by the join — and
   a machine's dial-in (`GET /client/connect`, signed with its client token) changes nothing. A running job's (issue #563,

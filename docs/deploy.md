@@ -256,6 +256,12 @@ is only in the hopper's environment, given at launch.
   `/api/` needs a UI session (docs/design.md "Reaching the UI across the LAN"). `HOPPER_LAN_PEERS`
   defaults to the private ranges and `HOPPER_LAN_NAMES` to `hopper`, the name a reverse proxy on the
   compose network reaches it by; set `HOPPER_PUBLIC_URL` for one.
+- **Over Tailscale** (issue #1024, docs/design.md "Reaching the UI across a tailnet"). With `HOPPER_BIND=0.0.0.0`, a
+  device on the host's tailnet reaches the UI at the host's MagicDNS name or tailnet address with the port, after sign-in.
+  The hopper finds those names itself from tailscaled, which a container sees only when the host's socket directory is
+  mounted: in `compose.override.yaml`, `services.hopper.volumes: ["/var/run/tailscale:/var/run/tailscale:ro"]`. Without
+  it, add the names in Settings → Allowed hosts. A tailnet peer whose address the container sees as `100.64.0.0/10` needs
+  that mount too, or that range in `HOPPER_LAN_PEERS`.
 - **Health:** the image's HEALTHCHECK reads `/api/health` on loopback inside the container.
 - **Keep it running.** Every container restarts unless stopped. Rootless Podman has no daemon, so
   nothing starts them after a reboot by itself: `systemctl --user enable podman-restart.service` (it

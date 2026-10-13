@@ -49,6 +49,7 @@ import { stateRoutes } from './state.ts';
 import { staticRoutes } from './static.ts';
 import { installTenancy, tenantOf, type Tenants } from './tenants.ts';
 import { registerUiRoutes } from './ui/index.ts';
+import type { AllowedHosts } from './allowed-hosts.ts';
 import type { CallerOf } from './ui/sign-in.ts';
 import type { Sandboxes } from '../sandbox/service.ts';
 import { createUiSessions, identityName } from './ui/sessions.ts';
@@ -74,6 +75,8 @@ import { webhookRoutes } from './webhooks.ts';
 export type { TenantParts, Tenants } from './tenants.ts';
 export { installTunnelEdge, tunnelCaller, watchTunnel, type TunnelWatch } from './tunnel.ts';
 export { createRemoteAccess, type RemoteAccess } from './remote-access.ts';
+export { createAllowedHosts } from './allowed-hosts.ts';
+export type { TailnetSource } from './tailnet.ts';
 
 export interface ServerOptions {
   /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */
@@ -100,6 +103,8 @@ export interface ServerOptions {
   stackResources: StackResourcesReader;
   /** Remote access (issue #880): GET /api/remote-access, POST /ui/api/remote-access, and the tunnel service's GET /tunnel/agent. */
   remoteAccess: RemoteAccess;
+  /** The hosts the admin allowed and this host's tailnet (issue #1024): GET /api/allowed-hosts, POST /ui/api/allowed-hosts. `lan` reads them. */
+  allowedHosts: AllowedHosts;
   clock: Clock;
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
@@ -220,7 +225,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
-    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, hostLink: o.instance.settings,
+    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, allowedHosts: o.allowedHosts, hostLink: o.instance.settings,
   });
   return app;
 }

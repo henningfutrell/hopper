@@ -162,6 +162,9 @@ export interface InstanceSettingsRepository {
   /** The host link base (issue #712): the address people open, an origin; empty: never set, the default applies. */
   getHostLinkBase(): string;
   setHostLinkBase(base: string): void;
+  /** The hosts the admin allowed beyond the LAN names (issue #1024); empty: never set. */
+  getAllowedHosts(): string[];
+  setAllowedHosts(hosts: readonly string[]): void;
 }
 
 /** A master key rotation (issue #659): the replaced key's fingerprint (never the key), and when. */

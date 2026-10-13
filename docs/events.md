@@ -2729,6 +2729,26 @@ Version 2 (`docs/schemas/remote_access.changed.v2.json`). The hopper's admin cha
 }
 ```
 
+## `allowed_hosts.changed`
+
+Version 1 (`docs/schemas/allowed_hosts.changed.v1.json`). The hopper's admin changed the allowed hosts (issue #1024): the host names and addresses the UI answers to beyond the LAN names and the ones this host has on its tailnet. `from` and `to` are the whole lists; `by`, who. An instance event: in every user's log.
+
+| field | type | required |
+|---|---|---|
+| `from` | string[] | yes |
+| `to` | string[] | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": [],
+  "to": [
+    "hopper.example.net"
+  ],
+  "by": "admin"
+}
+```
+
 ## `question.thread_held`
 
 Version 1 (`docs/schemas/question.thread_held.v1.json`). A question at the human stage of a GitHub job waits on a person before it goes on its issue thread (issue #435): the policy for the repository (`otherRepos` or `ownRepos`) is `review`. Approve it to post it; an answer in the hopper works as before.

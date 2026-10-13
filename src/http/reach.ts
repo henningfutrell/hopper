@@ -3,7 +3,9 @@
 // with the port) or public (Host the public URL's host, as a reverse proxy passes it on, or the remote access
 // domain while remote access is on, as the tunnel passes it on: issue #880); a LAN or
 // public request comes from loopback or a LAN peer range. A LAN peer naming a loopback Host is a LAN
-// request: a port a container publishes on its host's loopback arrives that way (issue #119). Anything else is refused: another Host is
+// request: a port a container publishes on its host's loopback arrives that way (issue #119). The tailnet's names and addresses
+// this host has, found at runtime, and the hosts the admin allowed in Settings are LAN names too, read at each request; while
+// this host is on a tailnet, a peer in the tailnet's ranges is a LAN peer (issue #1024). Anything else is refused: another Host is
 // 421 (DNS rebinding), another peer is 403. A LAN or public request reads /api/ only with a UI session.
 import { BlockList, isIPv4, isIPv6 } from 'node:net';
 
@@ -16,12 +18,23 @@ export interface Lan {
   publicUrl?: string | undefined;
   /** The remote access URL (`https://<domain>`, issue #880) while remote access is on, read at each request; undefined: off. */
   tunnelUrl?: () => string | undefined;
+  /** More LAN names, read at each request (issue #1024): the tailnet's names and addresses this host has, and the hosts the admin allowed. */
+  moreNames?: () => readonly string[];
+  /** Whether this host is on a tailnet now (issue #1024): a peer in the tailnet's ranges is then a LAN peer. */
+  tailnet?: () => boolean;
 }
+
+/** The ranges Tailscale gives a tailnet's devices their addresses from (issue #1024). */
+export const TAILNET_RANGES = ['100.64.0.0/10', 'fd7a:115c:a1e0::/48'] as const;
 
 export type Reach = { reach: 'local' | 'lan' | 'public' } | { refuse: 403 | 421; why: string };
 
 export const loopbackHosts = (port: number): string[] => [`127.0.0.1:${port}`, `localhost:${port}`];
-export const lanHosts = (port: number, lan: Lan): string[] => lan.names.map((n) => `${n}:${port}`);
+/** A name's Host header value with the port: an IPv6 address in brackets. */
+const withPort = (name: string, port: number): string => (isIPv6(name) ? `[${name}]:${port}` : `${name}:${port}`);
+/** Every LAN name: the configured ones, then the ones read at each request (issue #1024), each once, lowercase. */
+export const lanNames = (lan: Lan): string[] => [...new Set([...lan.names, ...(lan.moreNames?.() ?? [])].map((n) => n.toLowerCase()))];
+export const lanHosts = (port: number, lan: Lan): string[] => lanNames(lan).map((n) => withPort(n, port));
 /** The public URL's and the remote access URL's Host header values (each host, with the port only when it is not the scheme's default). */
 export const publicHosts = (lan: Lan): string[] => [lan.publicUrl, lan.tunnelUrl?.()].filter((u) => u !== undefined).map((u) => new URL(u).host);
 /** The origin a public request with Host `host` reached: the public URL's or the remote access URL's; undefined: neither. */
@@ -45,20 +58,24 @@ export function peerList(cidrs: readonly string[]): BlockList {
   return list;
 }
 
+const tailnetPeers = peerList(TAILNET_RANGES);
+const listedIn = (list: BlockList, peer: string): boolean => list.check(peer, isIPv6(peer) ? 'ipv6' : 'ipv4');
+
 export function classifyRequest(req: { host: string | undefined; peer: string | undefined }, port: number, lan: Lan, peers = peerList(lan.peers)): Reach {
   const host = (req.host ?? '').toLowerCase();
   const peer = unmapped(req.peer ?? '');
   const local = isLoopback(peer);
-  const known = [...loopbackHosts(port), ...lanHosts(port, lan), ...publicHosts(lan)];
+  const lanKnown = lanHosts(port, lan);
+  const known = [...loopbackHosts(port), ...lanKnown, ...publicHosts(lan)];
   if (!local) {
-    const listed = peer !== '' && lan.peers.length > 0 && peers.check(peer, isIPv6(peer) ? 'ipv6' : 'ipv4');
-    if (!listed) return { refuse: 403, why: `peer ${peer || '(unknown)'} is not on loopback or in HOPPER_LAN_PEERS` };
-    if (lanHosts(port, lan).includes(host) || loopbackHosts(port).includes(host)) return { reach: 'lan' };
+    const listed = peer !== '' && ((lan.peers.length > 0 && listedIn(peers, peer)) || (lan.tailnet?.() === true && listedIn(tailnetPeers, peer)));
+    if (!listed) return { refuse: 403, why: `peer ${peer || '(unknown)'} is not on loopback, in HOPPER_LAN_PEERS or on this host's tailnet` };
+    if (lanKnown.includes(host) || loopbackHosts(port).includes(host)) return { reach: 'lan' };
     if (publicHosts(lan).includes(host)) return { reach: 'public' };
     return { refuse: 421, why: `misdirected request: Host must be ${known.join(' or ')}` };
   }
   if (loopbackHosts(port).includes(host)) return { reach: 'local' };
-  if (lanHosts(port, lan).includes(host)) return { reach: 'lan' };
+  if (lanKnown.includes(host)) return { reach: 'lan' };
   if (publicHosts(lan).includes(host)) return { reach: 'public' };
   return { refuse: 421, why: `misdirected request: Host must be ${known.join(' or ')}` };
 }

@@ -162,6 +162,8 @@ export async function startTestApp(o: {
     // OpenFGA, as a deploy runs it (issue #652: no issue is of a trusted origin without it); a test of a hopper without
     // OpenFGA names `authorizationServer: undefined`.
     authorizationServer: createFakeAuthorizationServer(),
+    // No tailnet (issue #1024): a test never reads this machine's tailscaled; a test that wants one puts a double here.
+    tailnet: null,
     ...o.seams,
     executors: [scripted, ...(o.seams?.executors ?? [])],
     // Each user's own manual source and fake usage; the seams' sources run for admin only.

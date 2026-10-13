@@ -1,7 +1,7 @@
 // Who may ask what (design.md "Reaching the UI across the LAN"): a request is local or LAN by its
 // peer address and Host, and a LAN request needs a UI session for every /api/ route.
 import { describe, expect, it } from 'vitest';
-import { classifyRequest, publicHosts, publicOriginOf, type Lan } from '../../src/http/reach.ts';
+import { classifyRequest, lanHosts, publicHosts, publicOriginOf, type Lan } from '../../src/http/reach.ts';
 
 const PORT = 4790;
 const lan: Lan = { names: ['server', '192.0.2.29'], peers: ['192.0.2.0/24', '100.64.0.0/10'] };
@@ -71,5 +71,36 @@ describe('the remote access domain', () => {
     expect(publicHosts(both)).toEqual(['hopper.example.com', 'h.example.ngrok.app']);
     expect(publicOriginOf(both, 'hopper.example.com')).toBe('https://hopper.example.com');
     expect(classifyRequest({ host: 'hopper.example.com', peer: '10.89.1.2' }, PORT, both)).toEqual({ reach: 'public' });
+  });
+});
+
+// A tailnet (issue #1024): the names and addresses this host has on its tailnet, found at runtime, and the hosts the
+// admin allowed are LAN names, read at each request; while this host is on a tailnet, a peer in its ranges is a LAN peer.
+describe('more LAN names and the tailnet', () => {
+  let names: string[] = [];
+  let on = false;
+  const tailnet: Lan = { names: ['hopper'], peers: ['10.0.0.0/8'], moreNames: () => names, tailnet: () => on };
+
+  it('a name read at the request is a LAN Host with the port, and 421 once it is gone', () => {
+    names = ['box.example.ts.net', '100.101.102.103', 'fd7a:115c:a1e0::1'];
+    for (const host of [`box.example.ts.net:${PORT}`, `BOX.example.ts.net:${PORT}`, `100.101.102.103:${PORT}`, `[fd7a:115c:a1e0::1]:${PORT}`]) {
+      expect(classifyRequest({ host, peer: '10.89.0.4' }, PORT, tailnet), host).toEqual({ reach: 'lan' });
+      expect(classifyRequest({ host, peer: '127.0.0.1' }, PORT, tailnet), host).toEqual({ reach: 'lan' });
+    }
+    expect(lanHosts(PORT, tailnet)).toEqual([`hopper:${PORT}`, `box.example.ts.net:${PORT}`, `100.101.102.103:${PORT}`, `[fd7a:115c:a1e0::1]:${PORT}`]);
+    expect(classifyRequest({ host: 'box.example.ts.net', peer: '10.89.0.4' }, PORT, tailnet)).toMatchObject({ refuse: 421 });
+    names = [];
+    expect(classifyRequest({ host: `box.example.ts.net:${PORT}`, peer: '10.89.0.4' }, PORT, tailnet)).toMatchObject({ refuse: 421 });
+  });
+
+  it('a peer in the tailnet ranges is a LAN peer only while this host is on a tailnet', () => {
+    names = ['box.example.ts.net'];
+    on = false;
+    for (const peer of ['100.100.1.2', 'fd7a:115c:a1e0::9']) expect(classifyRequest({ host: `box.example.ts.net:${PORT}`, peer }, PORT, tailnet), peer).toMatchObject({ refuse: 403 });
+    on = true;
+    for (const peer of ['100.100.1.2', '::ffff:100.100.1.2', 'fd7a:115c:a1e0::9']) expect(classifyRequest({ host: `box.example.ts.net:${PORT}`, peer }, PORT, tailnet), peer).toEqual({ reach: 'lan' });
+    expect(classifyRequest({ host: `box.example.ts.net:${PORT}`, peer: '198.51.100.5' }, PORT, tailnet)).toMatchObject({ refuse: 403 });
+    expect(classifyRequest({ host: `evil.example:${PORT}`, peer: '100.100.1.2' }, PORT, tailnet)).toMatchObject({ refuse: 421 });
+    on = false;
   });
 });
