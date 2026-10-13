@@ -1,6 +1,6 @@
 # The Jobs view
 
-The Jobs view shows where every job stands, and how the jobs, their issues and their pull requests connect. Open it from **Jobs** in the navigation. The Overview tells you if the hopper is healthy. The Jobs view tells you where each piece of work is.
+The Jobs view shows where every job stands, and how the jobs, their issues and their pull requests connect. Open it from **Jobs** in the navigation. The Dashboard tells you if the hopper is healthy. The Jobs view tells you where each piece of work is.
 
 ## What it is
 

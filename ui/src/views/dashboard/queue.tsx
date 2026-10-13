@@ -1,5 +1,5 @@
 // Waiting (queue order), the jobs on a question, the operator-led jobs, the parked jobs, the jobs on their own wait and the locked entries below it, and Ended (the last 24 hours, newest first).
-// Each row names its job group, as the cards count them (tested: test/ui/overview-counts.test.ts).
+// Each row names its job group, as the cards count them (tested: test/ui/dashboard-counts.test.ts).
 import { AssessmentLine } from '@/components/assessment';
 import { Archive, Check, DoorOpen, Hourglass, Lock, Play, RotateCcw, SquareX, X } from 'lucide-react';
 import { Confirm } from '@/components/confirm';
@@ -63,7 +63,7 @@ function CleanupDeferredFlag({ job, className }: { job: Job; className?: string 
 
 /**
  * The locked entries (issue #355): failed jobs kept in the queue, never run by themselves, until run again
- * or dismissed. Under the Overview's Waiting jobs, and in the Queue view's own panel (`heading` false).
+ * or dismissed. Under the Dashboard's Waiting jobs, and in the Queue view's own panel (`heading` false).
  */
 export function LockedRows({ heading = true }: { heading?: boolean }) {
   const locked = useHopper((s) => s.locked);
@@ -109,7 +109,7 @@ const WAITING_MEANING: Record<string, string> = {
 
 /**
  * The parked jobs (issue #501): out of their lanes, no pane or agent, their work tree and agent session kept on their
- * machine until picked up. Under the Overview's Waiting jobs, and in the Queue view's own panel (`heading` false). One
+ * machine until picked up. Under the Dashboard's Waiting jobs, and in the Queue view's own panel (`heading` false). One
  * auto-park parked (issue #650) says why.
  */
 export function ParkedRows({ heading = true }: { heading?: boolean }) {
@@ -150,7 +150,7 @@ function EndWaitButton({ job }: { job: Job }) {
 /**
  * The jobs on their own wait (issue #483): each said what it waits for, which only a person or the outside world can do. No
  * question, no lane; its pane stays on its machine. It goes on by itself when its own check sees it happen, or a person ends
- * the wait. Under the Overview's Waiting jobs, and in the Queue view's own panel (`heading` false).
+ * the wait. Under the Dashboard's Waiting jobs, and in the Queue view's own panel (`heading` false).
  */
 export function WaitingOnRows({ heading = true }: { heading?: boolean }) {
   const { waitingOn } = useJobBoard();

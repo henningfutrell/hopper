@@ -1,0 +1,1 @@
+- When you submit a job without a GitHub issue, you can now give it the vault in the same step: add vault to what you allow it to do.

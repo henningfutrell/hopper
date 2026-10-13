@@ -1,0 +1,1 @@
+- The Resources page now also shows OpenFGA: how long a permission check takes, and how many checks failed.

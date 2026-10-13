@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Issues #362, #354: the Ended panel offers Run again only where the daemon takes it — a failed or
-// finished job, its end reported, whether or not its issue is closed (Run again reopens it). The overview
+// finished job, its end reported, whether or not its issue is closed (Run again reopens it). The dashboard
 // renders inside the whole app against a fake of the daemon's HTTP surface and a fake SSE.
 import { createElement } from 'react';
 import { act } from 'react';
@@ -47,7 +47,7 @@ let root: Root | undefined;
 async function boot() {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#overview';
+  window.location.hash = '#dashboard';
   localStorage.clear();
   vi.stubGlobal('fetch', fakeDaemon());
   vi.stubGlobal('EventSource', FakeEventSource);
@@ -55,10 +55,10 @@ async function boot() {
   const app = '../../ui/src/app/app.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { App } = (await import(app)) as { App: () => ReturnType<typeof createElement> };
   await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(App)); });
-  await vi.waitFor(() => expect(document.querySelector('[data-overview-panel="ended"] [data-job-id]')).not.toBeNull());
+  await vi.waitFor(() => expect(document.querySelector('[data-dashboard-panel="ended"] [data-job-id]')).not.toBeNull());
 }
 
-const row = (id: string) => document.querySelector<HTMLElement>(`[data-overview-panel="ended"] [data-job-id="${id}"]`)!;
+const row = (id: string) => document.querySelector<HTMLElement>(`[data-dashboard-panel="ended"] [data-job-id="${id}"]`)!;
 const runAgain = (id: string) => [...row(id).querySelectorAll('button')].find((b) => b.textContent?.includes('Run again'));
 
 afterEach(async () => {

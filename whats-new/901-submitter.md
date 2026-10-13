@@ -1,0 +1,1 @@
+- When a job you submitted without a GitHub issue asks a question or ends, the Grok Bot notice now names you as the person who submitted it, so you are the one told.

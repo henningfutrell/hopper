@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Issue #355: a failed job is a locked entry. The Overview's Waiting panel lists the locked entries
+// Issue #355: a failed job is a locked entry. The Dashboard's Waiting panel lists the locked entries
 // (rendered in happy-dom inside the whole app against a fake of the daemon's HTTP surface), each with
 // its failure, Run again and Dismiss.
 import { createElement } from 'react';

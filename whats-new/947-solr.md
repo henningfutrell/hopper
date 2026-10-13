@@ -1,0 +1,1 @@
+- The Resources page now also shows the search index: how long a search takes, how many failed, the size of the index, and how many items wait to go into it.

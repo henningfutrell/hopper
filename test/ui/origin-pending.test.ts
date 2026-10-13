@@ -79,7 +79,7 @@ const row = () => document.querySelector('[data-job-group="waiting"][data-job-id
 
 describe('a job held for its origin (issue #652)', () => {
   it('offers no Approve, says why, and links to Intake', async () => {
-    await boot('admin', '#overview');
+    await boot('admin', '#dashboard');
     expect(row()).not.toBeNull();
     expect(buttonIn(row()!, 'Approve')).toBeUndefined();
     expect(row()!.textContent).toContain('queued before trusted origins');

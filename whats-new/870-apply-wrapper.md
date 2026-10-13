@@ -1,0 +1,1 @@
+- A sandbox that changes infrastructure with Terraform now applies only the plan that was recorded and approved. An apply of any other plan, or with no plan, stops with a message that says what to do.

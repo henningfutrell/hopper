@@ -2,7 +2,9 @@
 // and each sandbox box of this hopper uses, read from the container runtime through its socket — the one sandbox boxes
 // start through (HOPPER_PODMAN_SOCKET, else HOPPER_DOCKER_SOCKET). Podman and Docker both serve the Docker-compatible API,
 // so one reader serves both: the list, each container's inspect and its one-shot stats, and the disk use. Read through
-// the shared socket call (src/sandbox/socket-http.ts), not a client library: four GETs need none.
+// the shared socket call (src/sandbox/socket-http.ts), not a client library: four GETs need none. On a client target
+// (`machine`), the same reader reads the hopper's boxes there through its remote runtime (remote.ts): libpod's list,
+// inspect and per-container stats answer in these shapes too.
 import type { ContainerGroup, ContainerMeter, ContainerReading } from '../domain/stack-resources.ts';
 import { ok, refusal, socketCall, type Answer, type SocketCall } from '../sandbox/socket-http.ts';
 
@@ -83,12 +85,20 @@ export function createContainerMeter(o: {
   self: string;
   /** This hopper's instance id: the boxes it started carry it. */
   instanceId: string;
+  /** The API's path prefix (the remote runtime's calls name their API version); none: the Docker-compatible API's own. */
+  prefix?: string;
+  /**
+   * The client target read (remote.ts): only this hopper's boxes there, each labelled `<machine>/<name>`, and no disk use
+   * (its client carries no such call). Absent: the computer the hopper runs on, its compose project and its boxes.
+   */
+  machine?: string;
   now?: () => number;
   via?: SocketCall;
 }): ContainerMeter {
   const via = o.via ?? socketCall;
   const now = o.now ?? Date.now;
-  const call = (path: string, timeoutMs?: number): Promise<Answer> => via(o.socket, 'GET', path, undefined, timeoutMs);
+  const call = (path: string, timeoutMs?: number): Promise<Answer> => via(o.socket, 'GET', `${o.prefix ?? ''}${path}`, undefined, timeoutMs);
+  const nameOf = (c: Listed): string => (c.Names?.[0] ?? c.Id ?? '').replace(/^\//, '');
   /** Each container's CPU time (ns) at its last read, and when: the next read's CPU is the difference. */
   const lastCpu = new Map<string, { usage: number; at: number }>();
   let df: { at: number; use: DiskUse } | undefined;
@@ -130,7 +140,7 @@ export function createContainerMeter(o: {
 
   const readOne = async (c: Listed, group: ContainerGroup, service: string, disk: DiskUse | undefined): Promise<ContainerReading> => {
     const id = c.Id ?? '';
-    const reading: ContainerReading = { service, group, name: (c.Names?.[0] ?? id).replace(/^\//, ''), image: c.Image ?? '', state: c.State ?? '' };
+    const reading: ContainerReading = { service, group, ...(o.machine !== undefined ? { machine: o.machine } : {}), name: nameOf(c), image: c.Image ?? '', state: c.State ?? '' };
     const inspected = await call(`/containers/${encodeURIComponent(id)}/json`).then((a) => (ok(a) ? JSON.parse(a.text) as Inspected : undefined), () => undefined);
     if (inspected) {
       reading.state = inspected.State?.Status ?? reading.state;
@@ -153,6 +163,10 @@ export function createContainerMeter(o: {
         if (cpu !== undefined) reading.cpuCores = cpu;
         const mem = memUsed(stats.memory_stats);
         if (mem !== undefined) reading.memUsedBytes = mem;
+        const max = stats.memory_stats?.limit;
+        if (count(max) && max > 0) reading.memMaxBytes = max;
+        const cores = stats.cpu_stats?.online_cpus;
+        if (count(cores) && cores > 0) reading.cores = cores;
         const nets = Object.values(stats.networks ?? {});
         const rx = sum(nets.map((n) => n.rx_bytes));
         const tx = sum(nets.map((n) => n.tx_bytes));
@@ -182,19 +196,20 @@ export function createContainerMeter(o: {
       try {
         listed = await call('/containers/json?all=true');
       } catch (e) {
-        return { problem: `cannot reach the container runtime at ${o.socket}: ${e instanceof Error ? e.message : String(e)}` };
+        return { problem: `cannot reach the container runtime ${o.machine !== undefined ? `on ${o.machine}` : `at ${o.socket}`}: ${e instanceof Error ? e.message : String(e)}` };
       }
       if (!ok(listed)) return { problem: refusal('the container runtime', 'list containers', listed).message };
       const all = JSON.parse(listed.text) as Listed[];
       const own = all.find((c) => o.self.length > 0 && c.Id?.startsWith(o.self));
-      const project = own?.Labels?.[PROJECT_LABEL] ?? DEFAULT_PROJECT;
+      // On a client target, no compose project is the hopper's: only its boxes.
+      const project = o.machine !== undefined ? undefined : own?.Labels?.[PROJECT_LABEL] ?? DEFAULT_PROJECT;
       const chosen = all.flatMap((c): { c: Listed; group: ContainerGroup; service: string }[] => {
         const labels = c.Labels ?? {};
-        if (labels[PROJECT_LABEL] === project) return [{ c, group: 'stack', service: labels[SERVICE_LABEL] ?? (c.Names?.[0] ?? '').replace(/^\//, '') }];
-        if (labels[BOX_LABEL] === o.instanceId) return [{ c, group: 'sandbox', service: (c.Names?.[0] ?? c.Id ?? '').replace(/^\//, '') }];
+        if (project !== undefined && labels[PROJECT_LABEL] === project) return [{ c, group: 'stack', service: labels[SERVICE_LABEL] ?? nameOf(c) }];
+        if (labels[BOX_LABEL] === o.instanceId) return [{ c, group: 'sandbox', service: o.machine !== undefined ? `${o.machine}/${nameOf(c)}` : nameOf(c) }];
         return [];
       }).sort((a, b) => (a.group === b.group ? a.service.localeCompare(b.service) : a.group === 'stack' ? -1 : 1));
-      const disk = chosen.some((x) => x.c.State === 'running') ? await diskUse() : undefined;
+      const disk = o.machine === undefined && chosen.some((x) => x.c.State === 'running') ? await diskUse() : undefined;
       const containers = await Promise.all(chosen.map((x) => readOne(x.c, x.group, x.service, disk)));
       // A container that is gone forgets its CPU time.
       const ids = new Set(chosen.map((x) => x.c.Id));

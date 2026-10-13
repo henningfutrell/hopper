@@ -62,7 +62,7 @@ function SubmitForm({ onSubmitted }: { onSubmitted: () => void }) {
           <Field label="Labels" hint="for routing, split with commas"><Input aria-label="Labels" value={draft.labels} onChange={set('labels')} placeholder="sme:identity" /></Field>
           <Field label="Repository" hint="optional, owner/name"><Input aria-label="Repository" value={draft.repo} onChange={set('repo')} /></Field>
         </div>
-        <Field label="Authorizations" hint="what you authorize it to do or reach, one per line">
+        <Field label="Authorizations" hint="what you authorize it to do or reach, one per line; vault grants it the vault">
           <Textarea aria-label="Authorizations" value={draft.authorizations} onChange={set('authorizations')} rows={2} />
         </Field>
         <div className="flex flex-wrap items-end justify-between gap-3">

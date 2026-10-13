@@ -24,12 +24,12 @@ let reads: string[] = [];
 let shellSeen = false;
 let watch: MutationObserver | undefined;
 
-const shell = () => document.querySelector('a[href="#overview"], a[href="#queue"], nav, header');
+const shell = () => document.querySelector('a[href="#dashboard"], a[href="#queue"], nav, header');
 
 async function boot(session: (path: string) => Promise<Response>) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#overview';
+  window.location.hash = '#dashboard';
   localStorage.clear();
   vi.stubGlobal('fetch', vi.fn(async (input: string) => {
     const path = String(input).split('?')[0]!;

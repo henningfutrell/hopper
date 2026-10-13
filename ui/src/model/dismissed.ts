@@ -1,5 +1,5 @@
 // Dismissed notices (issue #83): the Attention items and the update notice this browser dismissed,
-// kept per browser like the overview layout (hooks/use-dismissed.ts). A notice key names one
+// kept per browser like the dashboard layout (hooks/use-dismissed.ts). A notice key names one
 // occurrence, so a new question, failure, error text or update target shows again. A condition seen
 // cleared — the router answering, a source syncing, no update notice — is forgotten, so its next
 // occurrence shows again too. Pure: reading what a browser stored never throws.

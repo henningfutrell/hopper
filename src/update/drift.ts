@@ -25,6 +25,7 @@ const OFF: Record<string, string> = {
   kms: 'the vault\'s KMS: secrets sealed under its data key cannot be opened',
   vault: 'secrets kept in the HashiCorp Vault vault backend',
   tunnel: 'remote access: the tunnel set in Settings → Remote access does not start',
+  solr: 'search: jobs cannot be searched until Solr runs; the index catches up by itself then',
 };
 
 /** A service restarted only when it fails runs once and exits (openfga-migrate): no name on the network once it is done. */

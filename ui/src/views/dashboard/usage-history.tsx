@@ -1,4 +1,4 @@
-// The Overview's usage graph (issues #385, #502): every account's usage windows over time, one line each however
+// The Dashboard's usage graph (issues #385, #502): every account's usage windows over time, one line each however
 // many machines read the account, in one graph. The graph range is the user's, saved for them by the hopper.
 import { UsageGraphCard } from '@/components/usage-graph-card';
 import type { UsageGraphView, UsageHistory } from '@/model/wire';

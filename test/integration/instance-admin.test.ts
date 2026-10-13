@@ -59,6 +59,7 @@ async function instanceLevel(app: TestApp, token: string): Promise<Record<string
     'GET /api/instance': (await app.api('GET', '/api/instance', undefined, s)).status,
     // Issue #947: what every container of the stack and its Postgres use is the instance's.
     'GET /api/resources': (await app.api('GET', '/api/resources', undefined, s)).status,
+    'GET /api/resources/history': (await app.api('GET', '/api/resources/history', undefined, s)).status,
     'POST /ui/api/realms': (await app.ui('/ui/api/realms', { action: 'settings', local: true, version }, { token })).status,
     'POST /ui/api/users': (await app.ui('/ui/api/users', { action: 'add', name: `Someone ${Math.random().toString(36).slice(2, 8)}` }, { token })).status,
     'POST /ui/api/update': (await app.ui('/ui/api/update', { action: 'settings' }, { token })).status,

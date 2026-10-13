@@ -23,7 +23,7 @@ import { COLLAPSED, accepting, cardOpen, moved, queueColumns, setAllCards, toggl
 import type { Job, PreSort, QueueGate, QueueGateMode, YoloModeView } from '@/model/wire';
 import { repoMerges } from '@/model/yolo-mode';
 import { act, useHopper } from '@/store';
-import { LockedRows, ParkedRows, WaitingOnRows } from './overview/queue';
+import { LockedRows, ParkedRows, WaitingOnRows } from './dashboard/queue';
 import { TextChangeCard } from '@/components/text-change';
 import { useCanAdmin, useCanOperate, useJobBoard } from '@/store/selectors';
 

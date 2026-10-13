@@ -20,7 +20,7 @@ async function openDrawer() {
   Object.assign(window, { innerWidth: 390, innerHeight: 664 });
   const host = document.body.appendChild(document.createElement('div'));
   root = createRoot(host);
-  await act(async () => root!.render(createElement(MobileNav, { view: 'overview' })));
+  await act(async () => root!.render(createElement(MobileNav, { view: 'dashboard' })));
   const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="Open navigation"]')!;
   await act(async () => { trigger.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
   return document.querySelector<HTMLElement>('[data-slot="sheet-content"]')!;
@@ -58,7 +58,7 @@ describe('the sidebar on a wide screen', () => {
   it('scrolls its list when the window is not high enough', async () => {
     const host = document.body.appendChild(document.createElement('div'));
     root = createRoot(host);
-    await act(async () => root!.render(createElement(Sidebar, { view: 'overview' })));
+    await act(async () => root!.render(createElement(Sidebar, { view: 'dashboard' })));
     expect(classes(document.querySelector('aside')!)).toContain('overflow-y-auto');
   });
 });

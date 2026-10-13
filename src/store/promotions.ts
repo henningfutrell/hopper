@@ -1,4 +1,4 @@
-// Promotions to GitHub (issue #946, tenant migration 50): one row each, the record as JSON — where a direct job was
+// Promotions to GitHub (issue #946, tenant migration 51): one row each, the record as JSON — where a direct job was
 // posted, which artifact revisions it linked, who promoted it and, once revoked, who revoked it. Never the posted text:
 // GitHub has it.
 import type { Promotion, PromotionRepository } from '../domain/promotions.ts';

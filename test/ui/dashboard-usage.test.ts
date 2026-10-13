@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-// Issue #85: with more than one usage source (an account each), the overview's Usage panel showed
+// Issue #85: with more than one usage source (an account each), the dashboard's Usage panel showed
 // every account's readings at once, mixed. It shows one account: a tab per usage source picks it,
-// and the browser keeps the choice in the overview layout. One usage source: no tabs.
+// and the browser keeps the choice in the dashboard layout. One usage source: no tabs.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -48,7 +48,7 @@ let root: Root | undefined;
 async function boot(usage: unknown, stored?: string) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#overview';
+  window.location.hash = '#dashboard';
   localStorage.clear();
   if (stored !== undefined) localStorage.setItem(KEY, stored);
   vi.stubGlobal('fetch', fakeDaemon(usage));
@@ -60,7 +60,7 @@ async function boot(usage: unknown, stored?: string) {
   await vi.waitFor(() => expect(usagePanel().textContent).toContain('session'));
 }
 
-const usagePanel = () => document.querySelector<HTMLElement>('[data-overview-panel="usage"]')!;
+const usagePanel = () => document.querySelector<HTMLElement>('[data-dashboard-panel="usage"]')!;
 const gauges = () => usagePanel().textContent ?? '';
 const tabs = () => [...usagePanel().querySelectorAll<HTMLElement>('[role="tab"]')];
 const stored = () => JSON.parse(localStorage.getItem(KEY) ?? 'null') as { settings: Record<string, unknown> } | null;
@@ -71,7 +71,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-describe('Overview Usage panel with more than one account', () => {
+describe('Dashboard Usage panel with more than one account', () => {
   it('shows the first account only, with a tab per usage source', async () => {
     await boot(TWO);
     expect(tabs().map((t) => t.textContent)).toEqual(['work', 'personal']);

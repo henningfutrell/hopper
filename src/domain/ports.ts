@@ -760,6 +760,10 @@ export type * from './sandboxes.ts';
 
 export type { WindowsStepHost } from './windows-steps.ts';
 
+// ---- Search (issue #945): the search index, src/domain/search.ts ----
+
+export type { SearchIndex } from './search.ts';
+
 // ---- Persistence: src/domain/store.ts (re-exported here, one vocabulary) ----------------
 
 export type * from './store.ts';

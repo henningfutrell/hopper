@@ -7,7 +7,7 @@ import { dockerCreateBody, STOP_S } from './flags.ts';
 import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
 
 /** Docker Engine 20.10 and later answer this version. */
-const API = '/v1.41';
+export const API = '/v1.41';
 const PULL_MS = 15 * 60_000;
 /** A build fetches every tool it adds (issue #716). */
 const BUILD_MS = 30 * 60_000;

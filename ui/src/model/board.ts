@@ -1,5 +1,5 @@
 // Every job view's data, from the one job store: which group each status is in, the groups as
-// lists, the overview's numbers counted off those lists, the lane board, the waiting order, and how a lane,
+// lists, the dashboard's numbers counted off those lists, the lane board, the waiting order, and how a lane,
 // a machine or an event's subject is named.
 import { highFirst, isHighJob } from './priority.ts';
 import { raisedByOf, raisedName } from './questions.ts';

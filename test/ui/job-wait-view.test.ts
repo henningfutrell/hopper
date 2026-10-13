@@ -77,7 +77,7 @@ afterEach(async () => {
 
 describe('a job on its own wait', () => {
   it('is listed under Waiting with what it waits for and how it will know; it is no question', async () => {
-    await boot('admin', '#overview');
+    await boot('admin', '#dashboard');
     const r = row()!;
     expect(r).not.toBeNull();
     expect(r.getAttribute('data-status')).toBe('waiting_on');
@@ -89,14 +89,14 @@ describe('a job on its own wait', () => {
   });
 
   it('End the wait posts the end of its wait', async () => {
-    await boot('admin', '#overview');
+    await boot('admin', '#dashboard');
     await act(async () => { buttonIn(row()!, 'End the wait')!.click(); });
     await settle();
     expect(daemon.posts).toEqual([{ path: '/ui/api/jobs/w1/end-wait', body: {} }]);
   });
 
   it('a viewer sees the wait, and no button', async () => {
-    await boot('viewer', '#overview');
+    await boot('viewer', '#dashboard');
     expect(row()).not.toBeNull();
     expect(buttonIn(row()!, 'End the wait')).toBeUndefined();
   });

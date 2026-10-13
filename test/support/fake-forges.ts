@@ -135,7 +135,7 @@ const issueKey = (repo: string, n: number) => `${repo}#${n}`;
 const idOf = (login: string) => [...login].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 1_000_000, 7);
 
 /** GitHub: OAuth at the root (`/login/device/code`, `/login/oauth/access_token`), REST under `/api/v3`. */
-export function createFakeGitHub(o: { clientId: string; clientSecret?: string; issues?: FakeIssue[]; tokenLifetimeS?: number; tokenLimit?: number; gitRoot?: string }): Promise<FakeForge> {
+export function createFakeGitHub(o: { clientId: string; clientSecret?: string; issues?: FakeIssue[]; tokenLifetimeS?: number; tokenLimit?: number; gitRoot?: string; deviceInterval?: number }): Promise<FakeForge> {
   const issues = o.issues ?? [];
   const pulls: FakePull[] = [];
   const tokens = new Map<string, string>();
@@ -188,7 +188,8 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         if (r.body.client_id !== o.clientId || 'client_secret' in r.body) return { status: 401, body: { error: 'incorrect_client_credentials' } };
         const d: Device = { code: `dc-${++n}`, userCode: `GH${n}-CODE`, state: 'pending' };
         devices.push(d);
-        return { status: 200, body: { device_code: d.code, user_code: d.userCode, verification_uri: `${base}/login/device`, expires_in: 900, interval: 1 } };
+        // The poll interval, in seconds: short unless `deviceInterval`, so a test sign-in does not wait a second per poll (issue #949).
+        return { status: 200, body: { device_code: d.code, user_code: d.userCode, verification_uri: `${base}/login/device`, expires_in: 900, interval: o.deviceInterval ?? 0.05 } };
       }
       if (r.method === 'GET' && r.path === '/login/oauth/authorize') {
         const q = r.query;

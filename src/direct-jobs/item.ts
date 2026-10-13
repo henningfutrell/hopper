@@ -1,7 +1,7 @@
 // A direct job as its source's item (issue #901): the brief, then the hopper's own context block — the routing labels,
 // what the submitter authorized, who submitted it, the repository it may open a pull request on, and what done means.
 // The job is told its brief and results stay in the hopper: nothing of them goes to GitHub, or anywhere else. Pure.
-import { DEFAULT_DIRECT_EXECUTOR, DEFAULT_DIRECT_PRIORITY, directKey, type DirectJob } from '../domain/direct-jobs.ts';
+import { authorizesVault, DEFAULT_DIRECT_EXECUTOR, DEFAULT_DIRECT_PRIORITY, directKey, type DirectJob } from '../domain/direct-jobs.ts';
 import type { SourceItem } from '../domain/source-item.ts';
 
 /** What the job is told about where it came from, before its brief. */
@@ -28,6 +28,9 @@ export function directPrompt(d: DirectJob): string {
     `direct job: ${d.id} · title: ${d.title}`,
     `routing labels: ${list(d.labels)}`,
     `authorized by the submitter: ${list(d.authorizations)}. Do nothing that needs an authorization not on this list: ask instead.`,
+    authorizesVault(d)
+      ? 'vault: granted by the submitter — the vault\'s helper gives what your box\'s template holds, never more'
+      : 'vault: not granted — the vault gives this job nothing',
     `submitted by: ${d.submittedBy.person} (${d.submittedBy.via}) at ${d.submittedAt}`,
     d.repo ? `repository: ${d.repo} — a pull request, if the brief asks for a change, goes here` : 'repository: none — open no pull request',
     OUTPUTS_LINE,

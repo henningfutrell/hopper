@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Issue #752 in the Overview: a running job held because its machine's link dropped says so on its lane, with when
+// Issue #752 in the Dashboard: a running job held because its machine's link dropped says so on its lane, with when
 // it fails if the link is not back; a job on a live link says nothing of it. Its machine says it is out of reach. Renders the whole app against a fake of
 // the daemon's HTTP surface and a fake SSE.
 import { act, createElement } from 'react';
@@ -61,7 +61,7 @@ let root: Root | undefined;
 async function boot() {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#overview';
+  window.location.hash = '#dashboard';
   localStorage.clear();
   posts.length = 0;
   vi.stubGlobal('fetch', fakeDaemon());

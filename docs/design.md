@@ -65,19 +65,20 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
-| `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 50), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
+| `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, one at a time per host, stopped at the timeout, recorded, results kept an hour (`service.ts`), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host and a step's request are `src/domain/windows-steps.ts`, the seam `WindowsStepHost`, the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's approval (`template-request.ts`, issue #716); needs read from plain words (`needs-in-words.ts`, issue #708); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/artifacts/` | artifacts (issue #624, "Artifacts"): one user's artifacts — put, share, revoke, remove, the limits, the retention sweep (`service.ts`); the owner's revise and merge, and the masking of GitHub tokens (`revise.ts`, issue #687); the content policy per kind and the signed content URL (`content.ts`); the bundled diagram and chart libraries and their route (`libs.ts`, issue #675); where a link points (`links.ts`, issue #673, pure); `hopper-artifact` and the `artifacts` skill's text (`script.ts`); the job stream types and the artifact events put on a job's stream (`stream.ts`). Its rows through the `ArtifactRepository` port (tenant migration 34, `src/store/artifacts.ts`); its routes `src/http/artifacts.ts`, `src/http/job-artifacts.ts`, `src/http/ui/artifacts.ts` | engine, http, store, plugins, executors, decider |
-| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
+| `src/infra-plans/` | infra plans (issue #870, "Infra plans: no apply without a plan"): one user's plans — record, approve, list, and the vault's apply gate (`service.ts`), its pure checks in `src/domain/infra-plans.ts`, a plan's changes and its summary in `src/domain/infra-plan-changes.ts` and `src/domain/infra-plan-summary.ts` (part 2, "Infra plans: the summary and the MAP tag check"), who approves a plan by its risk and auto-approve (part 3, "Infra plans: approval by risk"), the environment watchers (part 4, "Infra plans: environment watchers"; pure in `src/domain/infra-watchers.ts`), a plan's read credential checked against the job's mints (part 5, "Infra plans: the apply wrapper on write boxes"). Its rows through the `InfraPlanRepository` port (tenant migration 46, `src/store/infra-plans.ts`); hung on the user's GitHub proxy part (`src/users/github-proxy.ts`), whose connection reads a plan's branch head; its routes `src/http/job-infra-plans.ts`, `src/http/ui/infra-plans.ts`. Out-of-band changes (issue #871, "Out-of-band changes"): the signals a job's check reports, judged by the one rule, kept, marked, and the controller identities (`out-of-band.ts`), the rule pure in `src/domain/out-of-band.ts`, the ready-made collector's pure half in `src/domain/out-of-band-collect.ts` (part 3); its rows through the `OutOfBandRepository` port (tenant migration 47, `src/store/out-of-band.ts`); its routes `POST /job/infra-signals` beside the plans' and `src/http/ui/out-of-band.ts` (an outside collector's report with an API token, part 2) | engine, http, store, plugins, executors, decider |
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
-| `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API) and the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`) | engine, http, store, plugins |
+| `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
+| `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); remote access — the tunnel's settings, its authtoken in the instance's vault, its status and the tunnel service's ask (`remote-access.ts`, `ui/remote-access.ts`, issue #880); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -633,7 +634,7 @@ user added later never gets admin's (`userProcessEnv`). Checked live (Claude Cod
 `test/herdr/real-fresh-home.test.ts`, opt-in `HOPPER_REAL_CLAUDE`): in an empty home, a job worktree whose work tree's
 `CLAUDE.md` imports a file outside it reaches Claude's prompt with no key pressed.
 
-*Up is Claude's input box* (`promptShown`: a rule, the `❯` line, a rule below), on screen for 2 s (`PROMPT_STEADY_MS`,
+*Up is Claude's input box* (`promptShown`: a rule, the `❯` line, a rule below), on screen for 2 s (the option `promptSteadyMs`, default `PROMPT_STEADY_MS`,
 counted in polls: Claude draws it before it says it is not signed in). Never herdr's word alone: herdr calls Claude
 `idle` and `interactive_ready` at its first-run theme picker (seen live), where the start before sent the job's prompt.
 
@@ -1303,9 +1304,10 @@ issue #477) follows the same rule: it counts what is pending and clears only whe
 share which are collapsed, kept per browser (`jh_nav_collapsed`). A collapsed group's heading shows its
 entries' badges as one (`groupBadges`, `ui/src/model/nav-groups.ts`): the counts and the high-priority
 counts summed, the most urgent colour (bad, warn, question, plain, quiet), each entry and its count in the
-title, and the backburner count summed on its own. Open, each entry shows its own badge. Needs you is
-pinned above the groups (`NAV_PINNED`), never collapsed: its badge already sums other entries', and a group
-that held it would count those twice. A view of the navigation neither pinned nor in a group fails the typecheck.
+title, and the backburner count summed on its own. Open, each entry shows its own badge. The Dashboard and
+Needs you, in that order, are pinned above the groups (`NAV_PINNED`), never collapsed. The Dashboard (issue #951)
+covers the whole system, not only jobs, and the UI opens on it; it was the Overview, and `#overview` still opens it
+(`MOVED`). Needs you's badge already sums other entries', and a group that held it would count those twice. A view of the navigation neither pinned nor in a group fails the typecheck.
 
 **Question history** (issue #37): every question stays in the `questions` table with its text,
 trail, answer and status; nothing prunes it. Settings' Question history (issue #151) lists handled ones (status not
@@ -1705,7 +1707,7 @@ Run again or a human clearing the marker made it.
 
 **Locked entries** (issue #355). A failed job does not drop out of the queue: the newest job of its
 item, failed and not dismissed, is a **locked entry** (`isLocked`, `src/domain/locked.ts`), listed in
-`/api/queue` `locked`, highest priority first, then oldest — under the Overview's Waiting jobs and in the
+`/api/queue` `locked`, highest priority first, then oldest — under the Dashboard's Waiting jobs and in the
 Queue view's Locked panel, with its failure, the job it runs again (`rerunOf`), Run again and Dismiss.
 Its status stays `failed`: the decider never sees it, so it takes no lane and no budget, and nothing
 else that reads `failed` (the Ended list, the cards, the webhooks, the source's `hopper:failed`)
@@ -2764,7 +2766,9 @@ event; in-memory only.
   the human, once each (`offered: true`). Configured already at start: nothing is re-sent on a restart.
   The UI's **Send open questions** sends every open one again, on each press.
 - Request: `Authorization: Bearer <key>`, JSON body `{ source: 'hopper', kind, at, jobId, issueTitle,
-  issueUrl }` (title/url from the job's source ref, else null); a question's `kind` is
+  issueUrl }` (title/url from the job's source ref, else null); a notice about a direct job (issue #901, "Direct jobs" part
+  4) also carries `directJob` (its id) and `submitter` (who submitted it, the job's source `author`; null when not known),
+  so the receiver tells that person; a question's `kind` is
   `question.escalated_to_human` (issue #481; `question.escalated` before) and it adds `question` (the agent's Markdown
   source, as written, and `questionFormat: 'markdown'`, issue #569), `questionId, answerUrl?` and what the job already
   knows, so a receiver can route and rank it without calling back
@@ -3282,7 +3286,9 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 - **herdr-claude options:** `bin` (`herdr`), `claudeBin` (`claude`), `session` (`hopper`;
   `default` refused), `args` (`[--dangerously-skip-permissions]`), `cwd`
   (`~/workbench/app-workflows`, `~` expanded), `trustWorkdir` (true), `pollMs` (1000),
-  `idleNudgeMs` (20000; `idleQuestionMs` before issue #163, renamed by tenant migration 2). Detection: `which bin`, then `which claudeBin` — never `--version`,
+  `idleNudgeMs` (20000; `idleQuestionMs` before issue #163, renamed by tenant migration 2), `promptSteadyMs` (2000: how
+  long Claude's input box stays on screen at startup before Claude is taken as ready, issue #533; the tests set it short,
+  issue #949). Detection: `which bin`, then `which claudeBin` — never `--version`,
   never a model call, nothing launched. `claudeBin` exists for detection only: herdr starts
   `claude` itself (`--kind claude`, resolved on herdr's PATH). `test`: no options, always available.
 - **6d, as built:** no `kind` option. `screen.ts` parses only Claude Code's TUI, so a `kind`
@@ -3652,7 +3658,7 @@ target has none. It is **low** below 5 GiB free or below a tenth free, whichever
 machine's own thresholds (issue #410): the `local`, `ssh` and `client` machine-source options
 `diskLowBelowGiB` (default 5) and `diskLowBelowPercent` (default 10). The source judges each reading
 by the thresholds as they are at that list, so a change in Plugins applies at the next Decision. The
-Machines view shows it on each card ("disk (home)", and a `disk low` badge), and the Overview's
+Machines view shows it on each card ("disk (home)", and a `disk low` badge), and the Dashboard's
 Attention panel lists each machine running low, once per machine. **A machine whose disk is low takes no
 new job** (issue #410, the decider's `fits`, `src/decider/assign.ts`): a job goes to another machine
 that runs its executor; when none can take it for that reason alone, it is held with the reason
@@ -4437,7 +4443,7 @@ pull request. Names are formal (#318's naming note): **operator-led**, never the
   job's own (opened at or after the job was created), as for any job.
 - **Not done.** An issue closed by a person as not planned (closed as completed is done, "Done is a pull request"), the label removed, or the issue gone cancels it, as for any job
   (`check()`); so does Cancel in the UI, which takes the claim off the issue.
-- **Where it shows.** `/api/queue` `operatorLed`; the Overview's Waiting panel lists them under
+- **Where it shows.** `/api/queue` `operatorLed`; the Dashboard's Waiting panel lists them under
   *Operator-led*, with the button *Operator-led* on each waiting job; the lane timeline draws each one on a
   row of its own, `operator-led`, from the claim to its end, in the operator tone while it lasts, and the
   "lanes in use" spark leaves it out; the event lines show `job.claimed_by_operator` in the same tone; the
@@ -5095,7 +5101,8 @@ hand, and the hopper never saw that container. This is the path #704's machines 
   new privileges, a read-only root, only a tmpfs at `/tmp`, only a `hopper-sandbox-*` home volume at `/home/agent`, a
   non-root user, the `io.hopper.box` label, a `hopper-sandbox-*` name) and no other field (so no `privileged`, no bind
   mount, no device, no added capability); start, stop, inspect and remove act only on a container that carries the
-  `io.hopper.box` label (checked by an inspect first), and a volume is removed only by a box's home volume name. A
+  `io.hopper.box` label (checked by an inspect first), and so do its one-shot stats for the stack resources (issue #947:
+  `stream=false` and no other query), and a volume is removed only by a box's home volume name. A
   refusal answers 403 in the runtime's own shape, so the adapter reports it as the runtime's refusal. These checks
   restate the builder on purpose: the client imports nothing of the hopper's.
 - **Idempotent create.** Every box carries `io.hopper.sandbox` = its record's id. A create whose answer is lost (a link
@@ -5353,7 +5360,7 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   — the KPI cards, the lanes, waiting, on-a-question and ended lists, the attention panel, the
   ended-per-hour chart, the lane timeline — derives from it through `jobBoard`
   (`ui/src/model/board.ts`), whose `GROUP` is the one map from status to *job group*. A card is
-  the length of the list it names; `test/ui/overview-counts.test.ts` renders the overview and
+  the length of the list it names; `test/ui/dashboard-counts.test.ts` renders the dashboard and
   checks each card against its list, before and after a stream event. Lane spans come from the
   event log, but the job store wins: a span of a job no longer running ends with the job, and a
   running job with no start in the log gets its span from `startedAt`. A span that ended on a question
@@ -5365,7 +5372,7 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   and debounces a `/api/queue` + `/api/machines` refresh (150 ms). One shared 1 s clock drives
   every ticking label. `ui/src/model/event-types.ts` is a `Record<EventType, true>`: a new event
   type that the UI does not subscribe to fails the UI typecheck.
-- **Views** (hash-routed): Overview (KPIs with sparklines, lane timeline, attention, lanes /
+- **Views** (hash-routed): Dashboard (KPIs with sparklines, lane timeline, attention, lanes /
   waiting / ended, ended-per-hour chart, usage gauges, live activity), Questions, Decisions,
   Events, Sources, Machines, Plugins (#13's panel, ported: "Settled in slice 7"), Webhooks. The job view (`#job/<id>`, issue #433, no nav entry) is where every
   timeline entry about a job links: lane timeline bars and question waits, and event lines with a job; it reads the job
@@ -5375,24 +5382,24 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
 - **Mutations unchanged**: cancel (now behind a confirm dialog), approve, answer, router mode (removed by issue #211),
   question close, plugins (options, select, rescan), logout — same `/ui/api/*` routes and session header.
 - **Theme.** Dark by default, light by toggle, remembered in `localStorage` (`jh_theme`).
-- **Overview layout** (issue #73). The Overview's panels are laid out on one three-column grid by the
-  viewer's overview layout (`ui/src/model/overview-layout.ts`, pure): each overview panel shown or
+- **Dashboard layout** (issue #73). The Dashboard's panels are laid out on one three-column grid by the
+  viewer's dashboard layout (`ui/src/model/dashboard-layout.ts`, pure): each dashboard panel shown or
   hidden, its place in the order, its width in thirds of the row, and the settings a panel has (lane
   timeline window, ended-per-hour hours 6/12/24 — the job store holds 24 h of ended jobs — and the
-  number of live activity events). Customize (a sheet on the Overview) changes it; every change applies
-  at once. Kept per browser in `localStorage` (`jh_overview`, `ui/src/hooks/use-overview-layout.ts`),
+  number of live activity events). Customize (a sheet on the Dashboard) changes it; every change applies
+  at once. Kept per browser in `localStorage` (`jh_overview`, `ui/src/hooks/use-dashboard-layout.ts`),
   like the theme: a viewer preference, so no route, no role and nothing in the database. Owner decision:
   per browser, not per user or per hopper. A stored layout is read leniently — a field it cannot use
   takes its default, an unknown panel goes, a panel added since comes back at the end, shown — so a new
   panel needs no migration of what browsers stored. Reset removes the key. Tested through the rendered
-  app: `test/ui/overview-customize.test.ts`.
-- **List boxes are bounded** (issue #84). An overview panel fills its grid cell, so the panels of one
+  app: `test/ui/dashboard-customize.test.ts`.
+- **List boxes are bounded** (issue #84). A dashboard panel fills its grid cell, so the panels of one
   row line up. A list box (attention, lanes, waiting, ended, live activity) holds its list in a body of
   one height bound (`max-h-96`, at every screen width) and scrolls past it, so one long list does not
   stretch its row and leave its neighbours ragged. `Panel` `list` in `ui/src/components/panel.tsx`.
-  Tested through the rendered app: `test/ui/overview-list-boxes.test.ts`.
+  Tested through the rendered app: `test/ui/dashboard-list-boxes.test.ts`.
 - **Dismissed notices** (issue #83). Each Attention item and the update notice has a Dismiss button
-  (X); toasts have a close button. A dismissed notice is kept per browser like the overview layout
+  (X); toasts have a close button. A dismissed notice is kept per browser like the dashboard layout
   (`localStorage` `jh_dismissed`, `ui/src/model/dismissed.ts` pure, `ui/src/hooks/use-dismissed.ts`):
   a viewer preference, so no route, no role, nothing in the database, and it changes nothing at the
   daemon — dismissing a question's Attention item leaves the question open. The notice key names one
@@ -5401,14 +5408,14 @@ responsive and fast. Builds on the at-a-glance board (issue #5).
   occurrence shows too. Question and failed-job keys keep the newest 200. Attention's header offers
   *N dismissed · show* to bring its items back; a dismissed update notice still leaves the dot on the
   header version. Tested through the rendered app: `test/ui/attention-dismiss.test.ts`.
-- **Rearranging the overview** (issue #86). Arrange on the Overview covers each shown panel; a panel
+- **Rearranging the dashboard** (issue #86). Arrange on the Dashboard covers each shown panel; a panel
   dragged onto another takes its place (`placePanel`: in front of it from after, behind it from
   before), and Move earlier / Move later step it past its shown neighbours, skipping hidden ones —
   the way without a pointer. Done ends it; outside Arrange no panel drags, so charts and text keep
   their pointer. Customize rows drag the same way. Both use the browser's own drag and drop
   (`ui/src/hooks/use-drag-to-place.ts`), no library: the platform does it, and a library's pointer
   sensors need layout the rendered-app tests (happy-dom) do not have. Same layout, same key: no
-  migration. Tested in `test/ui/overview-customize.test.ts` and `test/ui/overview-layout.test.ts`.
+  migration. Tested in `test/ui/dashboard-customize.test.ts` and `test/ui/dashboard-layout.test.ts`.
 
 ## Reaching the UI across the LAN (issue #16, 2026-10-03)
 
@@ -5657,10 +5664,10 @@ installer adds `- { name: claude, plugin: claude-plan }`. A restart role, as bef
 **UI.** A **Usage** view (`ui/src/views/usage.tsx`, model `ui/src/model/usage.ts`, tested from
 `test/ui/usage.test.ts`): Accounts, Lane effect (limits, per machine used %, cap of max lanes,
 band), and per usage source its state line and one gauge per window with "resets in" and a "does
-not throttle" tag on informational ones. The Overview's usage gauges and the Machines view read
-the same readings; with more than one usage source the Overview's Usage panel shows one account's
+not throttle" tag on informational ones. The Dashboard's usage gauges and the Machines view read
+the same readings; with more than one usage source the Dashboard's Usage panel shows one account's
 readings at a time — a tab per usage source, the account's identity above its gauges, the choice
-kept in the overview layout (`usageSource`, issue #85) (`/api/usage`, polled every 30-60 s and refreshed with every event: a usage
+kept in the dashboard layout (`usageSource`, issue #85) (`/api/usage`, polled every 30-60 s and refreshed with every event: a usage
 source reads without emitting events).
 
 **Tests never run the real claude.** `test/support/isolate.ts` puts a guard `claude` first on PATH
@@ -6894,7 +6901,7 @@ container tool this browser chose. When OpenFGA is one of them the OpenFGA banne
 once; what needs Access stays off with its reason, as #696 made it. Not compared: a service of the install's own, and the
 versions of OpenFGA and Postgres (nothing from inside the container answers them).
 
-**The notice is one line (issue #521).** Above the overview it holds the headline, *What's new*, *How to update*
+**The notice is one line (issue #521).** Above the dashboard it holds the headline, *What's new*, *How to update*
 (an image install) or *Update now* (an install), and Dismiss. What's new and How to update open below the line,
 one at a time and closed by default; the commands, the restart-blocker note and the tag mismatch live behind How
 to update, as they do in Settings → Version, never as a standing block.
@@ -8277,7 +8284,7 @@ the engine.
 **UI.** A Queue view: the gate (mode buttons, the hourly limit; admin), then two columns — **Pre-sorted**
 (unaccepted jobs in the pre-sort's order, each marked with the pre-sort's rejection if any; Accept moves
 a job to the end of the user order, Accept pre-sort takes them all, Reject) and **Your order** (accepted
-waiting jobs in queue order; up, down, to the top — within the job's priority —, Reject). Columns stack below `lg`. The Overview's
+waiting jobs in queue order; up, down, to the top — within the job's priority —, Reject). Columns stack below `lg`. The Dashboard's
 Waiting panel links an unaccepted job to it. Since issue #201 the gate names the queue sorter that makes the pre-sort, with a **Set up the
 sorter** link to Settings → Routing, and the Queue nav entry carries a badge counting the jobs waiting on
 the pre-sort (`awaitingSort`, `ui/src/model/queue.ts`); the Routing view's Queue sorter panel says it is
@@ -9058,7 +9065,7 @@ the message, no job, no other credential), `test/store/tenant-migration-14.test.
 
 ## Usage history (issue #385, 2026-10-07)
 
-Owner request: a usage-over-time graph on the Overview, and usage history recorded so it has data. Before,
+Owner request: a usage-over-time graph on the Dashboard, and usage history recorded so it has data. Before,
 a usage source reported its current reading only; nothing was kept.
 
 **Recording.** Each user runtime runs a **recorder** (`src/usage/history.ts`): every minute it polls every
@@ -9091,8 +9098,8 @@ answers per line (source, machine, usage window):
   earlier `resetsAt`: the moment the window rolled over. A drop to 0 then reads as a reset, not lost data.
 - **account**: the identity of the newest sample's account in the range.
 
-**UI.** The overview panel *Usage over time* (`usageHistory`, full row, after Usage;
-`ui/src/views/overview/usage-history.tsx` over `ui/src/components/usage-graph-card.tsx`,
+**UI.** The dashboard panel *Usage over time* (`usageHistory`, full row, after Usage;
+`ui/src/views/dashboard/usage-history.tsx` over `ui/src/components/usage-graph-card.tsx`,
 `ui/src/charts/usage-history.tsx`, model `ui/src/model/usage-history.ts`). One line per series, drawn as
 the KPI cards' sparklines (monotone 1.5 px stroke over a gradient fill fading down). The legend names each
 line `<account> · <window>` (no account: the source, and its machine); the lines of one account share a
@@ -9186,7 +9193,7 @@ are answered in the UI — so no allowlist decides answers.
 
 **Reject.** `POST /ui/api/jobs/:id/reject` takes an optional `{ reason }` (≤ 500 characters): the job ends
 `rejected` with it as its error and in `job.rejected` (none: `rejected by the user`). Offered on every
-waiting job in the Queue view and in the Overview's Waiting list, in a dialog with the reason field. On
+waiting job in the Queue view and in the Dashboard's Waiting list, in a dialog with the reason field. On
 GitHub the rejection writes nothing: the claim label goes, no `hopper:rejected`, no comment, never a close
 and no unassignment (D1 and D9 of `docs/assignment.md` are open). A shared label would turn the issue away
 for every user and every hopper on the repo. Instead the source asks the host which items' newest job was
@@ -10041,7 +10048,7 @@ the job repositories and suggest the others, M5 nothing to do (tenant migration 
 - **Why a lane is idle.** Each Decision's lane plan carries `idle` when the machine leaves lanes unused
   (`idleReason`, `src/decider/lanes.ts`): its lane count is 0, offline, home not known, disk low, usage pacing
   (lane cap below its lanes), reserved lanes, waiting jobs that cannot run there, every waiting job held (the
-  queue gate is `awaiting acceptance`), or no job waiting. The Overview's idle lanes and empty lane slots show
+  queue gate is `awaiting acceptance`), or no job waiting. The Dashboard's idle lanes and empty lane slots show
   it. A waiting job already said why (`holdReason`, `waitReason`). `decision.made` v3 gains the optional
   field; v1 and v2 keep their old lane plan (`legacyLanePlan`).
 - **GitHub writes.** Assign to me is the second kind of issue write besides labels and Run again's reopen; it
@@ -10445,7 +10452,7 @@ Retry; the profile and the known causes (an admin names a signature, or forgets 
 /api/failures` gives each problem and failure its `actions`, `{ ok }` or `{ ok: false, why }`, and the routes
 refuse with the same reasons: the view offers only what is taken, and the role (operator for the actions, admin
 for settings and causes) is checked by the UI session guard as for every mutation. A failed job's assessment shows
-under its error in the Queue and the Overview.
+under its error in the Queue and the Dashboard.
 
 Open decisions taken conservatively, each one entry to change: no model judges a failure (rules only; an unclear
 one goes to a person); every automatic action on by default, each switchable; retries move to another machine
@@ -10699,7 +10706,7 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   job. Park only where `canPark` (`ui/src/model/board.ts`, from `parkingExecutors`) says the daemon takes it;
   on a running job or one on a question it does not apply to, the job says why instead (`parkRefusal`).
   Pick up of a job that starts fresh asks first, saying it starts a fresh session in the kept work tree with
-  its question and answer as context. Only for a role that operates. The Overview's Waiting panel and the Queue view list parked jobs in their own group
+  its question and answer as context. Only for a role that operates. The Dashboard's Waiting panel and the Queue view list parked jobs in their own group
   (`/api/queue` `parked`); the Waiting card says how many are parked; they are never running and on no lane.
 - **The Parked section** (issue #565, `ui/src/views/parked.tsx`). Parked jobs have their own place, a section like
   Questions, Logins and Failures (`SECTIONS.parked`, events `job.parked` and `job.unparked`): one compact row per
@@ -10730,7 +10737,7 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   itself. **Its answer picks it up**: the answer (or a close) to an auto-parked job's question re-queues it in the
   same transaction (`onAnswered` → `recordUnpark`): `queued`, its priority as it was, pinned to its machine, and its
   claim resumes its agent session there with the answer; no Pick up. The Parked row offers **Answer** in place of
-  Answer and pick up, and the Parked row and the Overview's parked row show `why`. A job a person parked keeps the
+  Answer and pick up, and the Parked row and the Dashboard's parked row show `why`. A job a person parked keeps the
   answer until it is picked up, as before.
 - **Settings.** Who may park is the operator role, as for cancel, and roles apply live. Auto-park's timeouts above;
   no limit for parked jobs.
@@ -10880,7 +10887,7 @@ with its figures, rank and reason, `measuredAt`, `switchMargin`.
 
 **UI.** Machines: the Priority lanes panel — a sentence of the settings, every lane's reliability, start time, last
 day, rank and why, the priority lanes marked; an admin edits the settings, ticks lanes and Use these lanes, or Choose
-by reliability. Overview: the Lanes panel marks the priority lanes and names those not open.
+by reliability. Dashboard: the Lanes panel marks the priority lanes and names those not open.
 
 **Owner decisions taken as defaults** (all settings, changed live on Machines): D1 a fixed count, 1; D2 keep-free, with
 share as the other choice — no park-and-yield; D3 a low job never takes a priority lane (revised by #788: it leaves one only while a high-priority job waits
@@ -11120,7 +11127,7 @@ discovery runs at the next Decision after it comes online.
 
 **Let through** (`POST /ui/api/jobs/:id/gate-pass`, admin — it widens what the job may reach): only a job held at the
 gate (409 otherwise); `gatePass { at }`, `job.gate_passed { reason }`, and it is placed at the next Decision. The
-Overview's Waiting panel shows the hold as every hold, and for an admin **Let through**, behind a confirmation that
+Dashboard's Waiting panel shows the hold as every hold, and for an admin **Let through**, behind a confirmation that
 names what the machine is rated; Approve is not offered for a job held at the gate (approving would not move it), and a
 role the server refuses sees no button.
 
@@ -11346,7 +11353,7 @@ this**, next to Send answer, Park, Close and Dismiss, each with an optional note
 **Phase** (`src/domain/phase.ts`): a job is in one — `work`, `research` or `proposal` (`JOB_PHASES`). `Job.phase` is set
 by a shift; absent, `phaseOf` derives it from the spec (a job asked for research is in research; one asked for a
 proposal, or that reached its proposal, in proposal; else work). Every route that answers a job names it (`withPhase`:
-`/api/queue`, `/api/jobs`, the shift routes), and the UI shows it wherever a job is named (`JobTitle`: Overview, Queue,
+`/api/queue`, `/api/jobs`, the shift routes), and the UI shows it wherever a job is named (`JobTitle`: Dashboard, Queue,
 Questions, the sections), unless it is `work`.
 
 **Fork** (`mode: fork`): a separate job asked for research or a proposal about the aspect — the parent's spec with that
@@ -12442,7 +12449,7 @@ migration 29, a table only), the last approval in its body.
   snapshot carries `template: { name, waiting }` (`approvalWait`, src/domain/vault.ts, read at every machine list), and
   the decider holds a job from it as from a machine whose work tree is not usable (`templateHolds`, src/decider/assign.ts).
   A job that can run nowhere else is held with the reason (`job.held`, on its timeline); the box's lanes stay idle with
-  the reason (the Overview's lanes). Machines says "waiting for template approval". `approve-template` opens it: the
+  the reason (the Dashboard's lanes). Machines says "waiting for template approval". `approve-template` opens it: the
   next Decision places jobs there (`vault.approved` wakes the engine). A widened scope does not close it: its boxes keep
   working on what was approved. A job resuming in its pane there returns to it; a job running there keeps running.
 - **Revoked at once.** `revoke-template` (`POST /ui/api/vault`, Settings → Vault → Revoke) drops the template's approval
@@ -13509,8 +13516,8 @@ person's question list as if it needed an answer), or ended failed though it was
 - **Live job.** A `waiting_on` job's processes still run on its machine (its background poll): it is in every "at work" list —
   credentials renewed, the GitHub proxy, skills, the vault, the job stream, artifacts, Access, the sweep and the rename guard
   keep it as live — and in `jobsOnMachine`.
-- **UI.** The Overview's Waiting panel lists the jobs on their own wait in their own group ("On its own wait"), and the Queue
-  view in its own panel (`WaitingOnRows`, `ui/src/views/overview/queue.tsx`): what it waits for, how it will know, its machine,
+- **UI.** The Dashboard's Waiting panel lists the jobs on their own wait in their own group ("On its own wait"), and the Queue
+  view in its own panel (`WaitingOnRows`, `ui/src/views/dashboard/queue.tsx`): what it waits for, how it will know, its machine,
   since when; **End the wait** (operators) and Cancel. It is no question: not in Questions, its badge or Attention. The Waiting
   card counts it in its line. The lane timeline ends a span at `job.waiting`.
 - **Not built.** Parking a job on its own wait; a check the hopper runs itself (the job's own background poll covers it); a
@@ -13550,7 +13557,7 @@ check at intake. Now the text a job runs is the item's **snapshot**, and a live 
 - **Who edited it.** When the text changed, the sync loop asks the source's timeline (`JobSource.editsSince`, GitHub:
   GraphQL `userContentEdits` for the body and `RenamedTitleEvent` for the title, the newest 50 of each) for the edits since
   the snapshot (`sources/item-text.ts` `withEdits`). A timeline that cannot be read leaves them empty; the job still holds.
-- **The card** (`ui/src/components/text-change.tsx`, in the Overview's Waiting panel and the Queue view): the title
+- **The card** (`ui/src/components/text-change.tsx`, in the Dashboard's Waiting panel and the Queue view): the title
   change, the body's lines removed and added (the `diff` library), the new assignee comments — not in the prompt unless
   accepted —, who edited it, and three ways on:
   - **Rerun the original** — `POST /ui/api/jobs/:id/keep-original` (operator; `hopper job keep-original <id>`): the hold
@@ -14955,7 +14962,7 @@ ignore `jobs` and say no stops.
 
 ## The job graph (issue #900, 2026-10-12)
 
-Requirement (issue #900): the Jobs view is the at-a-glance tracker, apart from the Overview's health summary. Each job's
+Requirement (issue #900): the Jobs view is the at-a-glance tracker, apart from the Dashboard's health summary. Each job's
 stage — partly done among them, which the status alone did not show —, its task progress, lane, time in stage, pull request
 and checks; counts per stage; filters by repository and stage. Then the scope change on the issue: jobs form a graph
 (parent and sub-issues, follow-ups, partly done remainders, plan to apply, forks from questions), so the primary mode is a
@@ -15354,6 +15361,62 @@ Tests: `test/domain/infra-watchers.test.ts` (a plan's watchers, the list's check
 plan recorded, approved and applied is posted three times, each naming its watchers, never the credential or the plan's
 text), `test/ui/infra-plans.test.ts` (the watchers as a person types them).
 
+## Infra plans: the apply wrapper on write boxes (issue #870, part 5, 2026-10-12)
+
+The issue asks that terraform apply only the saved plan file, and that a plan hold the read credential it was made with.
+Before this, the apply gate bound a credential to a plan, but a box with that credential ran any `terraform apply` it
+liked: of the saved file, of a fresh plan, or with `-target` or `-var`. And a plan's `read` was kept as the job said it.
+
+- **The apply wrapper** (`TERRAFORM_APPLY_WRAPPER`, `src/sandbox/terraform-wrapper.ts`). Every tools image with terraform
+  that is not read-only — a write box's — puts a `terraform` first on `PATH`, in `/opt/hopper-tools/apply-wrapper`, in
+  front of the real binary in `/opt/hopper-tools/bin` (`$HOPPER_TOOLS`). A read-only image keeps the read-only wrapper
+  ("A read-only infra box"); an image with no terraform gets neither.
+  - `terraform apply` needs `HOPPER_PLAN`, the id the hopper answered when it recorded the plan. The wrapper fetches the
+    plan's saved file from the hopper, with the job's proxy token (`GET /job/infra-plans/:id?file=1`, the route that
+    already served it), and runs the real binary's `apply` with that file, then removes it. A plan file the caller names
+    must be that file, by its SHA-256; it is applied in its place. No `HOPPER_PLAN`, an id the hopper does not know, a
+    plan with no saved file, a job with no way to the hopper, or another file: refused, saying why, and the real binary
+    does not run.
+  - An apply takes only the flags that leave the saved plan as it is: `-auto-approve`, `-input`, `-no-color`,
+    `-compact-warnings`, `-json`, `-lock`, `-lock-timeout`, `-parallelism`. Any other flag (`-destroy`, `-target`,
+    `-replace`, `-var`, `-var-file`, `-refresh-only`, `-state`, …) is refused: the job plans again with what it needs.
+  - Each other command that writes infrastructure or state with no plan is refused: `destroy` (a destroy is a plan too:
+    `terraform plan -destroy -out`), `import`, `refresh`, `taint`, `untaint`, `force-unlock`, `state rm`, `mv`, `push`
+    and `replace-provider`, `workspace delete`. The rest (`init`, `plan`, `show`, `state pull`, `workspace select`, …)
+    goes to the real binary as given. `TF_CLI_ARGS*` are cleared, so no flag slips past it.
+  - Each refusal says `refused by the apply wrapper`. It is written into the image in base64 by one `RUN`, as the
+    read-only wrapper is; the image's tag hashes the Containerfile, so a write box's image is built again once.
+- **A plan's read credential** (`readRefusal`, `readProfileOf`, `src/domain/infra-plans.ts`, pure). A plan that names
+  `read` is kept only when the vault minted that job a read credential of that profile (`vault.minted`, operation `read`,
+  since the job was made): else a 400 that names what the vault did mint it. A plan that names none is kept as before: a
+  job may plan with a vault secret.
+
+**Why fetch the file, not trust the box's copy.** The plan the hopper keeps is the one a person approved and the notifiers
+sent. The box's copy is the job's to change; fetched, the bytes applied are the bytes recorded.
+
+**Why the vault stays the boundary.** The wrapper is one layer in the box, which the job controls: it can call
+`$HOPPER_TOOLS/terraform` past it. The real binary gets a write credential only through the apply gate, for an approved,
+current plan; the wrapper binds the command to the saved plan of that gate.
+
+**The nightly drift plan** is the out-of-band collector (issue #871, "Out-of-band changes" part 3): `--terraform <dir>`
+runs `terraform plan -detailed-exitcode` against live state, on a schedule outside the hopper (a nightly cron job, a
+Kubernetes CronJob: `docs/deploy.md` "The out-of-band collector"), and a non-empty plan on unchanged code is drift, kept,
+sent to the notifiers and shown on Infra. The hopper has no schedule for jobs, so it adds none here.
+
+**Residual risk, stated.** The plan's `HOPPER_PLAN` and the plan the AWS profile's `--plan` names are both the job's to
+set; the apply gate checks the credential's plan, the wrapper the file's. A job that calls the real binary past the
+wrapper, with a credential minted for an approved plan, can still apply what its role allows for that credential's life:
+part 1's residual risk. The summary is still read from the JSON the job sends, not made from the saved file.
+
+**Not built here.** Routing Argo CD syncs through the same gate: the issue's next step after drift, issue #959.
+
+Tests: `test/sandbox/terraform-apply-wrapper.test.ts` (a real `sh` and `curl`, a fake real binary and a fake hopper: an
+apply with no plan refused; the saved file fetched with the job's token and applied, and removed; another file, an
+unknown plan, a refused flag and each other write refused, the real binary not run), `test/sandbox/tools.test.ts` (a write
+image puts the wrapper first on PATH; a read-only image and one with no terraform do not), `test/domain/infra-plans.test.ts`
+(the read check), `test/integration/infra-plans.test.ts` (the real daemon: a plan naming a read the job was not minted is
+a 400, and kept once the job was minted it).
+
 ## Git efficiency (issue #858 part 1, 2026-10-12)
 
 The git half of issue #822. Before: a job in a work tree that was not its repository got a full `git clone` of it (in
@@ -15480,7 +15543,7 @@ rendered nothing when empty, so a person could not tell the feature was there.
 **As built:**
 - **One home each.** Every decision that waits on a person has one top-level page, where it is acted on. A buried copy
   is removed or becomes a link to that page. Settings, Sources and the vault keep configuration.
-- **Needs you.** `#needs-you`, the first nav entry (`ui/src/views/needs-you.tsx`): a row per kind — Intake, Access
+- **Needs you.** `#needs-you`, the nav entry after the Dashboard (`ui/src/views/needs-you.tsx`): a row per kind — Intake, Access
   requests, Questions, Proposals, Research, Logins, Failures, the pre-sort — with its count, its high-priority count
   (#535) and a link to its home (`needsYouRows`, `ui/src/model/needs-you.ts`; `useNeedsYou`, `ui/src/store/needs-you.ts`).
   Its nav badge is the sum. Parked jobs have no row: they wait to be picked up, not for a decision; Parked keeps its
@@ -15586,7 +15649,7 @@ end as of any job's. The operator CLI: `hopper job submit --title … (--brief �
 
 **Residual risk, stated.** `job.queued` carries the job's spec, and so its prompt — the brief —, as for every job: a
 webhook subscription to `job.queued` delivers it to the subscriber. The authorizations are told to the job and recorded;
-they do not yet make vault grants.
+the one that makes a vault grant is part 3, below.
 
 **In the UI (part 2).** The view Direct jobs (`#direct-jobs`, in the Jobs nav group; `ui/src/views/direct-jobs.tsx`,
 `ui/src/model/direct-jobs.ts`) has the submit form, for an operator or admin only: title, brief, labels (split at commas),
@@ -15596,8 +15659,28 @@ record says `via: ui`. Below it, every direct job from `GET /api/direct-jobs`, r
 questions with a link to Questions, where a person answers them, its result and its error, and a link to its job view.
 A viewer reads the list and gets no form. Nothing the view sends goes to GitHub.
 
-**Not built yet (the next parts).** Authorizations that become the job's vault grants; notifying the requester by name,
-beyond the notifiers.
+**The vault authorization (part 3).** The authorization `vault` (`VAULT_AUTHORIZATION`) is the submitter's **vault
+grant** ("Vault grants") for the direct job's item, `direct:<id>`. The route fixes the id first, and Access decides the
+grant for that item as for Grant on Settings → Vault: OpenFGA `vault_grant#can_grant` for the person signed in, the user
+whose jobs these are as `owner`. Refused: 403; OpenFGA not asked: 503. Either way nothing is kept: no record, no
+`direct_job.submitted`, no job. Allowed: the submit's one transaction also keeps the grant (`by`: the submitter, `job`: its
+first job) and appends `vault.granted { job, key, by }`, so the audit names who authorized the vault, as for a person's
+Grant. Run again keeps it (the grant is the item's); Revoke on Settings → Vault takes it back. The template's approved
+scope still bounds what the job gets, and the job's box still asks through the vault's checks: the grant widens nothing.
+Its prompt says `vault: granted by the submitter`, or `vault: not granted`. Every other authorization stays words told to
+the job and recorded: the hopper has no grant to make of them. Why one reserved word, and no field of its own: a vault
+grant is per item, never per secret ("Vault grants", residual risk), so the submitter's choice is yes or no, and the
+authorizations list is where the submitter already says what the job may reach.
+
+**The submitter by name (part 4).** Every Grok Bot routine notice about a direct job's job — its question at the human,
+its end (`job.finished` with the result, `job.failed` with the error), a login it waits on, an artifact it made, a plan of
+an infrastructure change — carries `directJob` (the id) and `submitter` (the person who submitted it: the job's source
+`author`, the record's `submittedBy.person`), so the receiver tells that person, and an agent reads the result back with
+`GET /api/direct-jobs/:id`. A job of any other source carries neither. Why the notifier, and no channel of the hopper's
+own: the hopper holds no address of a person (no mail, no chat id), and a notifier is already where the hopper tells
+someone outside; the receiver maps the name to its own channel. In the hopper, the submitter reads the job back in Direct
+jobs, as before. Residual risk, stated: as for every job, the notice carries the title (`issueTitle`) and, at the end,
+the result; a person who configures the routine trusts its receiver with them, as with `job.queued` above.
 
 ## Checkpoints and resume elsewhere (issue #921, 2026-10-12)
 
@@ -15692,29 +15775,210 @@ not granted, transactions open over 5 minutes and the oldest open one, and state
 (`shared_preload_libraries`) and makes it in `public` once Postgres takes connections, apart from the password step, so it
 never holds the stack's health back. Not installed, or installed but not loaded: `statements` says why.
 
+**OpenFGA** (`src/stack-resources/openfga.ts`, the **OpenFGA meter**; part 2 of the issue). OpenFGA serves its own metrics
+in the Prometheus text format, on by default, at `:2112/metrics`; the hopper reads them at the host of `HOPPER_OPENFGA_URL`
+on that port (no setting of its own: compose's `openfga` serves it on the compose network, and the port is OpenFGA's
+default). From `grpc_server_handled_total` of `openfga.v1.OpenFGAService`, method `Check`: the checks, and the failed ones
+(any code but `OK`; OpenFGA's own validation errors show as `Code(2000)`, and count). From OpenFGA's histogram
+`openfga_request_duration_ms` (method `check`, every label set summed): the mean check time, as OpenFGA measures it (whole
+ms per check, so a fast check reads 0 and the mean is below 1). Both count since OpenFGA started, as pg_stat_statements
+counts since its reset. A line reader of its own, not a library: it reads two counters, and the one npm parser of the format
+has had no release since 2019. It waits 2 seconds; no OpenFGA, an error status or no answer is the part's `problem`.
+
 **The read** (`GET /api/resources`, `StackResources`): `containers` (the readings, or `problem`: no socket, not reached),
-`postgres` (the reading, or `problem`), `at`. Read when asked, nothing kept, `no-store`. An instance read
+`postgres` (the reading, or `problem`), `openfga` (the reading, or `problem`), `solr` (the reading, or `problem`, each with
+`pending` while search is set up; part 5 below), `at`. Read when asked, nothing kept, `no-store`. An instance read
 (`assertInstanceRead`): the hopper's admin, or loopback without a session. A part that fails says why and the rest is
 read.
 
 **UI.** Resources (`#resources`, in Sources & machines, `ui/src/views/resources.tsx`): a row per container of the stack
 and, apart, per sandbox box — service, state and health, uptime, restarts, image; CPU (against its quota), memory against
-its limit with a bar, network, disk read and written and its layer, volumes with their size — and Postgres's readings. It
+its limit with a bar, network, disk read and written and its layer, volumes with their size —, Postgres's readings, and
+OpenFGA's: the mean check time and the share of checks that failed. It
 reads when it opens and every 10 seconds while the page is shown (CPU is the use since the read before).
 
-**Not built yet** (the rest of the issue, its next parts): the readings over time (a recorder like the machine one, a
-graph, the same history retention); OpenFGA's check latency and error rate from its own metrics endpoint (`:2112`);
-Solr's query latency, index size and documents waiting (issue #945, not in the stack yet); the vault and KMS beyond the
-container basics; a container target's or a client target's boxes (their runtime is the machine's, through its client).
+### Stack resources over time (part 3 of the issue)
+
+The machine resources keep a machine sample a minute (issue #560); the stack resources now do the same, for the whole
+hopper rather than per user, so the Resources page shows each part's use over the last day, week or month.
+
+**What is kept.** Only what reads as a share, so the usage graph draws it unchanged on its 0–100% axis: per running
+container its **CPU** (cores busy, of its CPU quota, else of the cores it sees — the runtime stats' `online_cpus`, now on the
+container reading as `cores`) and its **memory** (in use, of its limit, else of the most it may use — the stats'
+`memory_stats.limit`, the computer's memory when it has no limit, now `memMaxBytes`); Postgres's **connections** (of
+`max_connections`, service `postgres`); and OpenFGA's **failed checks** (the share of its checks since the record before
+that failed, service `openfga`; fewer checks than before is a restart, and gives nothing). Latency, sizes and byte counts
+are not shares and are not kept: the page reads them now.
+
+**Recording.** The **stack recorder** (`src/stack-resources/history.ts`) reads `GET /api/resources`'s read every minute, on
+the usage recorder's loop (`createRecordLoop`), and keeps a **stack sample** per service and metric in `stack_samples`
+(instance schema, migration 38; key: service, metric, time). A part that cannot be read, or a container that does not run,
+adds nothing: the graph shows a gap. Every hour, samples older than 30 days (`STACK_HISTORY_RETENTION_DAYS`) are pruned:
+there is no instance setting for the history retention (the usage history's is each user's), and a sample a minute per
+service and metric adds up — about 15 lines for a full stack, 650 000 rows in 30 days.
+
+**The graph** (`GET /api/resources/history`, `StackHistory`): the machine resource graph's query and step
+(`resourceGraphRange`, `src/http/machine-history.ts`), per service, metric and step the peak, and the gaps by the same rule
+(`src/store/stack-history.ts`). The same instance read as `GET /api/resources`. On the Resources page, *Stack resources over
+time* (`ui/src/model/stack-history.ts`): a line per service and metric, a colour per service, a dash per metric; a sandbox
+box's lines are hidden until shown, since boxes come and go. It reads again once a minute; no SSE event, as nothing else waits on it.
+
+### Sandbox boxes on client targets (part 4 of the issue)
+
+A sandbox box the hopper started on a client target (issue #708) runs in that machine's own Podman (else Docker), which the
+hopper reaches only through the machine's client: the remote runtime. The **remote box meter**
+(`src/stack-resources/remote.ts`) reads them for the stack resources.
+
+**Which machines.** Each machine a sandbox record names that is not `local`, once per user and machine; no record on a
+client target, no machine is read. The machine's relay is the sandbox module's own (`sandboxClientsOf`).
+
+**How.** The container meter itself (`containers.ts`), with the machine's name and its runtime's API prefix (the Podman or
+Docker adapter's), its calls carried down the machine's link (`relayCall`, `src/sandbox/remote.ts`). Libpod's list, inspect
+and per-container stats answer in the Docker-compatible shapes the meter reads (checked live against rootless Podman 5).
+Only this hopper's boxes there (`io.hopper.box` its instance id); no compose project, since none on that machine is the
+hopper's. No disk use: the client carries no `/system/df`, which counts every image and volume on the machine. A meter
+is kept per user, machine and runtime kind, so CPU is the use since the read before; a machine that holds no box any more
+forgets it.
+
+**The client's check** (`src/client/runtime.ts`). One more call: `GET <prefix>/containers/<id>/stats`, only on a container the
+hopper labelled as its box, and only with the query `stream=false` and nothing else. A stream would hold the link's call
+open until its time out. A client of a release before this one refuses it (403): the boxes then show their state, uptime
+and limits, and no CPU or memory, until the hopper loads its client release there (never while a job runs).
+
+**The read.** `GET /api/resources` has `remoteBoxes`: per machine, by name, its box readings (`machine` set, `service`
+`<machine>/<container name>`, as two machines may each have a box of one name), or `problem` (no such client target now, no
+runtime there, no answer). The stack recorder keeps their CPU and memory as for a box beside the hopper. On the Resources
+page they show under *Sandbox boxes*, after the boxes beside the hopper, each with *on <machine>*; a machine that cannot be
+read says why there.
+
+A container target is not a box and has none: it is a container a person runs, reached only through the docker socket
+proxy, which lets through ping, inspect and exec, never stats. So the stack resources do not read it.
+
+### Solr (part 5 of the issue)
+
+Solr is the search index's (issue #945, "Search"). The **Solr meter** (`src/stack-resources/solr.ts`) reads it for the stack
+resources, from Solr's own metrics API: `GET /solr/admin/metrics` on the Solr of the core `HOPPER_SOLR_URL` names (compose:
+`http://solr:8983/solr/hopper`, so `http://solr:8983/solr/admin/metrics`), JSON, four `key`s of the core's registry
+(`solr.core.<core>:…`). No setting of its own, and no credential: the hopper reaches Solr on the `search` network it shares
+with it alone.
+
+- **Query latency**: `QUERY./select.requestTimes`, the core's `/select` handler: every search, type-ahead and count the
+  hopper sends. `count` is the queries since the core was loaded; `mean_ms` and `p95_ms` are Solr's own timer, whose
+  reservoir weighs the last minutes most, so they say how Solr answers now, not since it started. No time before the first
+  query.
+- **Failed queries**: `QUERY./select.errors` `count`, since the core was loaded.
+- **The index**: `SEARCHER.searcher.numDocs` (documents a search sees now) and `INDEX.sizeInBytes` (the index on disk).
+- **Documents waiting to be indexed** (`pending`): not Solr's. They are every user's pending index updates (`search_pending`,
+  and the jobs an event named since the last pass), the sum of each user's `search.status().pending`. They grow while Solr is
+  down, so they are given with Solr's `problem` too. With no search set up (no `HOPPER_SOLR_URL`), Solr's part is only the
+  `problem`, and nothing waits.
+
+A JSON API, so no parser: the metrics API has given these names since Solr 7, and compose runs 9.11 (checked live). It waits
+2 seconds; an error status, no answer, or a core Solr does not hold is the part's `problem`. Latency, sizes and counts are not
+shares, so the stack recorder keeps none of them: the page reads them now. On the Resources page, the *Solr* panel: the mean
+and 95th percentile query time over the queries, the failed queries and their share, the documents and the index size, and
+the documents waiting; Solr not read says why, above what waits.
 
 Tests: `test/adapters/container-meter.test.ts` (the project and the boxes chosen, CPU between reads and the runtime's own,
 memory less the cache against its limit, network and disk summed, the disk use's sizes and its failure, a stopped
-container, a hopper not in a container, a runtime that does not answer), `test/integration/stack-resources.test.ts` (the
-meter's readings and the real Postgres's, no socket, a meter that throws, no pg_stat_statements),
+container, a hopper not in a container, a runtime that does not answer), `test/adapters/openfga-meter.test.ts` (checks, failed checks and the
+mean time from OpenFGA v1.22.0's text, other methods and the health check left out, no check yet, the metrics URL, an error
+status, no answer), `test/integration/stack-resources.test.ts` (the
+meter's readings and the real Postgres's, no socket, a meter that throws, no pg_stat_statements, OpenFGA's reading, no
+OpenFGA, an OpenFGA meter that fails, Solr's reading with the documents waiting, no Solr, Solr down with a document waiting),
+`test/adapters/solr-meter.test.ts` (a real Solr after documents are written and searched; the numbers from Solr 9.11's
+answer, no query yet, the metrics URL, a core Solr does not hold, an error status, no answer),
 `test/integration/instance-admin.test.ts` (an instance read), `test/scripts/compose.test.ts` (pg_stat_statements loaded),
-`test/ui/resources-view.test.ts` (the rows, Postgres, what cannot be read). Live: the meter against this computer's
+`test/ui/resources-view.test.ts` (the rows, Postgres, Solr, what cannot be read, the graph's lines),
+`test/integration/stack-history.test.ts` (a record's shares, OpenFGA's failed checks between records and after a restart,
+a box on a client target, the peak per step and the gaps, the retention), `test/ui/stack-history.test.ts` (the lines),
+`test/adapters/remote-box-meter.test.ts` (through the real client: only this hopper's boxes there, by machine, CPU between
+reads, a machine read once, no client target or no runtime, a client that refuses the stats), `test/client/runtime.test.ts`
+(a box's one-shot stats carried; another container's, or a stream, refused). Live: the meter against this computer's
 rootless Podman and its hopper stack (every service, a CPU-bound container read at one core, its limits); the Postgres
-reading against `postgres:17-alpine` with pg_stat_statements loaded.
+reading against `postgres:17-alpine` with pg_stat_statements loaded; the OpenFGA metric names against `openfga/openfga:v1.22.0`
+(checks allowed, denied and refused) and its endpoint read from inside the hopper's container on the compose network; the
+remote box meter through the client's end against rootless Podman 5 (a labelled box at a 0.5-core quota read at 0.50 cores,
+its memory against its 256 MiB limit).
+
+## Search (issue #945, part 1, 2026-10-12)
+
+Owner direction: Solr in the hopper stack now, and search built on it from the start, not keyword search first.
+
+**The container.** compose.yaml runs `solr` (`docker.io/library/solr`, slim), required like Postgres and OpenFGA, one core
+in standalone mode (not SolrCloud): `solr-precreate hopper` makes the core `hopper` from Solr's default config at its first
+start, on the volume `solr`. On no host port, and on a network of its own, `search` (`hopper_search`), that it shares with
+the hopper alone: no box and no other service reaches it, so Solr holds no credential and the hopper keeps none for it
+(nothing in `.env`, nothing in the vault). The hopper does not wait for it (`depends_on` names Postgres only). The hopper
+reads `HOPPER_SOLR_URL` (compose: `http://solr:8983/solr/hopper`); unset, search answers `not-configured` and nothing is
+marked. The stack check (issue #697) names a missing `solr` and what it turns off.
+
+**The schema is the hopper's.** `ensureSchema` (`src/search/solr.ts`) puts the hopper's fields and the field type
+`hopper_prefix` (words cut into their first 1–20 characters, for type-ahead) into the core through Solr's Schema API at
+the first pass of each start, and turns off Solr's own field guessing (`update.autoCreateFields=false`): a document with
+a field the schema lacks is refused. So the schema ships in the hopper's image, and a new build adds what it needs to the
+core it finds. Why no Node client for Solr: none has a steady release history, and the five calls this needs are plain
+HTTP; `fetch` over Solr's JSON API (recorded per the library rule in the repository law).
+
+**Postgres is the source of truth.** The index is a copy: each document is built from the database again whenever it is
+written, so a lost `solr` volume loses nothing. Every document carries the hopper's instance id and the user id
+(`instance`, `user`); every read filters on both, so two hoppers, or two users, never see each other's documents.
+
+**What part 1 indexes: jobs.** One document per job (`jobDocument`, `src/search/document.ts`): `title` (its item's, a
+direct job's, its goal, else its prompt's first line), `brief` (a direct job's brief, else its prompt, at most 32,000
+characters), `status`, `labels`, `repo`, `source`, `requester` (the issue's author, the direct job's submitter, else
+`spec.submittedBy`), `machine` and `lane`, `result` (and the pull request when it finished partly done), `questions` (each
+question with its answer), `failure` (its error), `verdict` (the failure assessor's decision, summary and reasons), and
+`created`, `updated`, `finished`. A direct job's document is `private`. **Never indexed:** every text is masked first
+(`maskSecrets`, `src/secrets/mask.ts`: GitHub tokens, 32-byte keys, private keys, cloud and API keys), and the vault, the
+system secrets, connected accounts, sign-in and webhook secrets are never read to build a document.
+
+**Index updates: pending index updates.** A user's search subscribes to its event log: each event that names a job puts
+the job in memory, and the pass (every 2 s) marks those jobs in `search_pending` (tenant migration 50: `key` `job:<id>`,
+`version`, `marked_at`; a table only, the build before runs on it), then takes the oldest marks (100 per write, 10 writes
+per pass), builds each document again and writes it (`commitWithin` 1 s); a job no longer in the store is removed from the
+index. A mark is cleared only at the version taken, so a job marked again during the write is written again. Solr not
+reached or refusing: nothing is cleared, search is **degraded** with Solr's own words, and the pass waits longer each time
+(2 s doubled, up to a minute). Stop marks what is still in memory, so the next start writes it.
+
+**Backfill.** At the first pass that reaches Solr, a user with no document in the core (a new core, a lost volume, an
+install from before) has every job marked (`markAllJobs`). **Reindex** (`POST /ui/api/search/reindex`, least role
+operator) marks them again when a person asks; the pass then writes them in the background. `GET /api/search/status`
+says `backfill: { at, done }`: done once nothing it marked is pending.
+
+**The API** (`src/http/search.ts`; the UI, the operator CLI and an agent with an API token use the same routes).
+`GET /api/search?q=&type=&status=&label=&repo=&from=&to=&limit=&offset=`: edismax over the text fields (title weighted
+highest), every word required, best match first, then the newest; `type`, `status` and `repo` any of the values given
+(comma-separated or repeated), each `label` given required, `from`/`to` on the time it was made. The answer: `state`,
+`why`, `total`, the page of `hits` — `type`, `ref`, `title`, `status`, `labels`, `repo`, `created`, `updated`, `url` (its
+job view, `#job/<id>`) and `highlights` (Solr's unified highlighter, HTML-encoded, `<mark>` around each match) — and
+`facets` (`type`, `status`, `labels`, `repo`). `GET /api/search/suggest?q=&limit=`: titles whose words start with what
+was typed. Neither is cached.
+
+**Every hit is checked against OpenFGA.** The access model has `search_hit` (`owner: [user]`, `reader: [user, user:*]`,
+`can_view: owner or reader`). For each hit of the page, and each suggestion, Access asks `search_hit#can_view` for the
+person who asks, telling for that check only the user whose work it is as `owner` and, unless the hit is private, every
+user as `reader`. A direct job's hit is private: its owner sees it, no one else. A model the hopper wrote and nobody edited
+is upgraded to the default with `search_hit`; an edited one that lacks it hides every hit and says so. OpenFGA not set
+up or not reached: every hit is hidden, and search is `degraded` with why (fail closed). **Residual risk, stated:**
+`total` and `facets` count the documents Solr matched before Access decided each hit; today a request reads only its own
+user's documents (tenancy), so the viewer is always the owner and nothing is counted that they cannot see.
+
+**When Solr is down** search answers `degraded` and why, the hits empty; every other route works as before, and the
+updates wait in `search_pending` until Solr takes them.
+
+**Not built yet** (the next parts of the issue): the other documents — artifacts (metadata, and text where it is cheap:
+markdown, slide text), linked issues and pull requests, intake items, infra plan summaries — and the `type` values for
+them; the UI's search box and results view; `hopper search` in the operator CLI; the CoS's use of the API. Solr's readings
+are on the Resources page ("Stack resources", Solr, issue #947).
+
+Tests: `test/search/document.test.ts` (the fields, masked secrets, a direct job private), `test/adapters/solr-index.test.ts`
+(a real Solr: the schema put in twice, an unknown field refused, words, highlights escaped, facets, every filter,
+suggest, two hoppers and two users apart, Solr not reached), `test/integration/search.test.ts` (a real Solr and the
+daemon: a job found by its words after its events, private direct jobs, no secret indexed, degraded while Solr is down
+and caught up after, the backfill and Reindex, Access not asked), `test/authz/model.test.ts`, `test/update/drift.test.ts`
+and `test/scripts/compose.test.ts` (the `solr` service). The Solr tests use `HOPPER_TEST_SOLR_URL` when it names a core,
+else start Solr in a container (`test/support/solr.ts`).
 
 ## Promote to GitHub (issue #946, 2026-10-12)
 
@@ -15766,7 +16030,7 @@ Their outputs are **artifacts** of the job, kept private in the hopper and shown
 - **Revoke.** `POST /ui/api/direct-jobs/:id/promotion/revoke` ends the live promotion in the hopper (`revokedAt`,
   `revokedBy`). It unpublishes nothing: GitHub keeps the issue or the comment. The confirm step says so. A later promotion
   posts anew.
-- **Record and events.** `direct_job_promotions` (tenant migration 50, a table only: the build before runs on it): the
+- **Record and events.** `direct_job_promotions` (tenant migration 51, a table only: the build before runs on it): the
   repository, kind, number, URL, the comment's id, the artifact revisions linked, who promoted it and when, the revoke.
   Never the text: GitHub has it. `direct_job.promoted` (`id`, `repo`, `kind`, `number`, `url`, `by`, `artifacts`, `update`;
   on the job's timeline) and `direct_job.promotion_revoked` — never the text.
