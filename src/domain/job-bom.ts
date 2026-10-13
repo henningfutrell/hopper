@@ -2,8 +2,15 @@
 // what was asked, the work, the code, the outputs, the infra, the decisions, the machines —, each part with its status
 // and the page it opens. A header in plain words (what was asked, where it stands, what is next), a one-line summary, and
 // the job's events, newest first, for its timeline. What waits on the person comes first. Pure: no I/O, no clock — the
-// route reads the job, its events, questions, hand-off, artifacts and the jobs that ran it again, and passes `now` in.
+// route reads the job, its events, questions, hand-off, artifacts, the jobs that ran it again and its job runs, and
+// passes `now` in.
+// Part 2: its cost and usage (its job runs, as the job cost profiles read them), its pushes through the hopper, every
+// commit of its pull request and the files it changes (as the hopper's mirror last said, kept on the followed pull
+// request), the help pages and What's new lines among them, and its place in the merge order (what holds it).
 import type { Artifact } from './artifacts.ts';
+import type { JobRun } from './job-costs.ts';
+import type { PullRequestSeen } from './pull-requests.ts';
+import type { QueueHead } from './tending-queue.ts';
 import type { Handoff } from './failures.ts';
 import { issueNodeId, jobNodeId, pullRequestNodeId, pullRequestOf, stageOf } from './job-graph.ts';
 import { nextWords, stageWords, waitsOnYou, type Worded } from './job-words.ts';
@@ -51,6 +58,8 @@ export interface JobBomInput {
   artifacts: readonly Artifact[];
   /** The jobs that ran this one again, or forked from it. */
   related: readonly Job[];
+  /** Its job runs that ended, with what the machine and usage samples show (part 2); absent or empty: none ended yet. */
+  runs?: readonly JobRun[];
   now: string;
 }
 
@@ -58,6 +67,21 @@ type Data = Record<string, unknown>;
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 const assetText = (a: unknown): string => { const x = (a ?? {}) as Data; return [str(x.kind), str(x.name)].filter(Boolean).join(' ') || 'an asset'; };
 const PR_NUMBER = /\/pull\/(\d+)/;
+const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? '' : 's'}`;
+/** A share as a percent, one decimal at most: `5.8%`, `8%`. */
+const pct = (share: number): string => `${Math.round(share * 1000) / 10}%`;
+const gib = (bytes: number): string => `${Math.round((bytes / 1024 ** 3) * 10) / 10} GiB`;
+
+/** What the job's source follows of its pull request: what was seen of it, and what holds it in the tending queue. */
+interface Followed { follow?: string; seen?: PullRequestSeen; heldBehind?: QueueHead }
+/** A pull request that ended without a merge. */
+const ENDED_PR: readonly string[] = ['closed', 'abandoned'];
+const followedOf = (job: Job): Followed => (job.sourceState?.source ?? {}) as Followed;
+
+/** A help page: a Markdown file under a `help/` directory. */
+const HELP_PAGE = /(^|\/)help\/[^/]+\.md$/i;
+/** A What's new line: a fragment under `whats-new/` (not its README), or the changelog itself. */
+const WHATS_NEW = /^(whats-new\/(?!README\.md$)[^/]+\.md|(WHATS-NEW|CHANGELOG)(\.md)?)$/i;
 
 /** A span in hours and minutes: `2h`, `1h 5m`, `12m`, `under a minute`. */
 export function spanText(fromIso: string, toIso: string): string {
@@ -95,6 +119,33 @@ function asked(job: Job, events: readonly DomainEvent[]): BomPart[] {
 }
 
 /** The work: each run, the task list, the lane, the time it took, the runs after it; and the machines it ran on. */
+/**
+ * Its cost and usage over its runs that ended: per usage window the share of its limit the runs burned for their lane
+ * (the rise divided by the lanes in use, as a job cost profile adds it up), and what they used of the machine — one lane's
+ * share of CPU, weighted by samples, and memory at its peak. Undefined: no run ended yet.
+ */
+function usage(runs: readonly JobRun[]): BomPart | undefined {
+  if (!runs.length) return undefined;
+  const burned = new Map<string, number>();
+  for (const r of runs) {
+    const lanes = Math.max(1, r.lanesBusyAvg ?? 1);
+    for (const [w, rise] of Object.entries(r.usage)) burned.set(w, (burned.get(w) ?? 0) + rise / lanes);
+  }
+  const samples = runs.reduce((n, r) => n + r.samples, 0);
+  const cpu = runs.filter((r) => r.cpu && r.samples > 0);
+  const cpuWeight = cpu.reduce((n, r) => n + r.samples, 0);
+  const memory = runs.flatMap((r) => (r.memoryBytes ? [r.memoryBytes.peak] : []));
+  const used = [
+    ...(cpuWeight ? [`CPU ${pct(cpu.reduce((n, r) => n + r.cpu!.avg * r.samples, 0) / cpuWeight)} on average, ${pct(Math.max(...cpu.map((r) => r.cpu!.peak)))} at peak`] : []),
+    ...(memory.length ? [`memory ${gib(Math.max(...memory))} at peak`] : []),
+  ];
+  const windows = [...burned].map(([w, share]) => `${pct(share)} of ${w}`);
+  return {
+    id: 'usage', group: 'work', kind: 'usage', label: windows.length ? `Usage: ${windows.join(', ')}` : 'Usage: not measured', status: 'recorded', href: '#machines',
+    detail: `${plural(runs.length, 'run')}, ${samples ? plural(samples, 'sample') : 'no samples'}${used.length ? `: ${used.join('; ')}` : ''}`,
+  };
+}
+
 function work(job: Job, events: readonly DomainEvent[], related: readonly Job[], now: string): BomPart[] {
   const out: BomPart[] = [];
   const stage = stageOf(job);
@@ -144,10 +195,32 @@ function code(job: Job, events: readonly DomainEvent[]): BomPart[] {
     }
     if (pr.headRef) out.push({ id: 'branch', group: 'code', kind: 'branch', label: pr.headRef, status: 'recorded', ...(pr.base ? { detail: `into ${pr.base}` } : {}) });
   }
-  // The commits its latest checkpoint named (issue #921): its work after the branch's base then, oldest first.
-  for (const c of [...(job.checkpoint?.commits ?? [])].reverse()) {
+  const f = followedOf(job);
+  // Its commits, oldest first: the pull request's, as the mirror last said; else the ones its latest checkpoint named
+  // (issue #921), its work after the branch's base then.
+  const fromPr = pr && f.seen?.commits;
+  for (const c of [...(fromPr ?? job.checkpoint?.commits ?? [])].reverse()) {
     const [sha, ...subject] = c.split(' ');
-    out.push({ id: `commit:${sha}`, group: 'code', kind: 'commit', label: subject.join(' ') || sha!, status: 'recorded', detail: sha!, at: job.checkpoint!.at });
+    out.push({
+      id: `commit:${sha}`, group: 'code', kind: 'commit', label: subject.join(' ') || sha!, status: 'recorded', detail: sha!,
+      ...(fromPr ? { url: `${pr.url}/commits/${sha}` } : { at: job.checkpoint!.at }),
+    });
+  }
+  if (pr && f.seen?.files) out.push({ id: 'files', group: 'code', kind: 'files', label: `${plural(f.seen.files.length, 'file')} changed`, status: 'recorded', url: `${pr.url}/files` });
+  // Its place in the merge order, while its pull request waits: what holds it (issue #939), and why.
+  const held = pr && pr.state !== 'merged' && !ENDED_PR.includes(pr.state) ? f.seen?.mergeHeldBehind ? { url: f.seen.mergeHeldBehind, why: 'the hopper merged that pull request first; they conflict' }
+    : f.heldBehind ? { url: f.heldBehind.pullRequest, why: f.heldBehind.why === 'tending' ? 'a job fixes that pull request first' : 'the hopper merges that pull request first' } : undefined : undefined;
+  if (held) {
+    const n = PR_NUMBER.exec(held.url)?.[1];
+    out.push({ id: 'merge_order', group: 'code', kind: 'merge_order', label: `Goes in after pull request${n ? ` #${n}` : ''}`, detail: held.why, status: 'open', url: held.url, href: '#pull-requests' });
+  }
+  // Its pushes through the hopper (issue #652), oldest first; one after its latest checkpoint is not in it.
+  for (const e of events) {
+    const d = e.data as Data;
+    if (e.type !== 'github_proxy.done' || d.op !== 'git.push' || !Array.isArray(d.refs)) continue;
+    const branches = d.refs.filter((r): r is string => typeof r === 'string').map((r) => r.replace(/^refs\/heads\//, ''));
+    const after = job.checkpoint && e.at > job.checkpoint.at ? ', after the latest checkpoint' : '';
+    out.push({ id: `push:${e.seq}`, group: 'code', kind: 'push', label: `Pushed ${branches.join(', ') || 'a branch'}`, status: 'done', at: e.at, ...(str(d.repo) ? { detail: `${str(d.repo)}${after}` } : after ? { detail: after.slice(2) } : {}) });
   }
   for (const e of events) {
     const d = e.data as Data;
@@ -168,6 +241,14 @@ function outputs(job: Job, events: readonly DomainEvent[], artifacts: readonly A
     const d = e.data as Data;
     if (e.type !== 'artifact.revised' || typeof d.revision !== 'number' || typeof d.artifact !== 'string') continue;
     out.push({ id: `artifact:${d.artifact}/${d.revision}`, group: 'outputs', kind: 'revision', label: `${str(d.title) ?? 'Artifact'}: revision ${d.revision}`, status: 'done', at: e.at, href: `#artifacts/${d.artifact}/${d.revision}`, ...(str(d.note) ? { detail: str(d.note)! } : {}) });
+  }
+  // The help pages and What's new lines among the files its pull request changes: done once it is merged.
+  const pr = pullRequestOf(job);
+  const f = followedOf(job);
+  for (const path of (pr && f.seen?.files) || []) {
+    const kind = HELP_PAGE.test(path) ? 'help_page' : WHATS_NEW.test(path) ? 'whats_new' : undefined;
+    if (!kind) continue;
+    out.push({ id: `file:${path}`, group: 'outputs', kind, label: `${kind === 'help_page' ? 'Help page' : 'What\'s new'}: ${path}`, status: pr!.state === 'merged' ? 'done' : ENDED_PR.includes(pr!.state) ? 'cancelled' : 'open', url: `${pr!.url}/files` });
   }
   const waiting = job.status === 'waiting_answer' && !job.questionId;
   if (job.proposalId) out.push({ id: `proposal:${job.proposalId}`, group: 'outputs', kind: 'report', label: 'Plan', status: waiting ? 'waiting_on_you' : 'done', href: '#proposals', ...(waiting ? { detail: 'waits for you to approve it' } : {}) });
@@ -224,7 +305,7 @@ export function jobBom(input: JobBomInput): JobBom {
   const events = [...input.events].sort((a, b) => a.seq - b.seq);
   const own = events.filter((e) => e.jobId === job.id);
   const parts = [
-    ...asked(job, own), ...work(job, own, input.related, now), ...code(job, own), ...outputs(job, own, input.artifacts),
+    ...asked(job, own), ...work(job, own, input.related, now), ...[usage(input.runs ?? [])].filter((p) => p !== undefined), ...code(job, own), ...outputs(job, own, input.artifacts),
     ...infra(own), ...decisions(input.questions, own, input.handoff),
   ];
   const ordered = parts.map((p, i) => ({ p, i }))

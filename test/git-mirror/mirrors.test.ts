@@ -11,6 +11,9 @@
 //     Then git cannot say, and nothing is fetched outside a pass
 //   Scenario: two pull requests that change the same lines, and two that do not (issue #939)
 //     Then merge-tree of their heads says they conflict, or not, with one fetch; an unknown one, git cannot say
+//   Scenario: what a pull request changes (issue #935 part 2)
+//     Then its commits after the merge base and the files it changes, from the pass's fetch, with no blob; outside a
+//     pass or a head that moved, git cannot say
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createGitHubTraffic } from '../../src/github-limiter/traffic.ts';
@@ -93,5 +96,24 @@ describe("the hopper's mirror (issue #858 part 2)", () => {
     expect(said).toEqual([true, false, false, undefined, undefined]);
     expect(fetches).toHaveLength(1);
     expect(await m.conflictBetween('acme/app', remote, 'dev', 1, 3)).toBeUndefined();
+  });
+
+  it('says what a pull request changes: its commits and its files, from the pass\'s fetch, with no blob (issue #935 part 2)', async () => {
+    const o = origin();
+    const dir = join(o.root, 'mirrors');
+    const { m, traffic, fetches } = mirrors(dir);
+    const remote = async () => ({ url: o.url });
+    const [one, two, moved] = await traffic.pass('github', async () => [
+      await m.changes('acme/app', remote, { number: 1, base: 'dev', headOid: o.heads[1]! }),
+      await m.changes('acme/app', remote, { number: 2, base: 'dev', headOid: o.heads[2]! }),
+      await m.changes('acme/app', remote, { number: 1, base: 'dev', headOid: o.heads[2]! }),
+    ]);
+    expect(one).toEqual({ commits: [`${o.heads[1]!.slice(0, 7)} pr one`], files: ['b.txt'] });
+    expect(two).toEqual({ commits: [`${o.heads[2]!.slice(0, 7)} pr two`], files: ['a.txt'] });
+    expect(moved).toBeUndefined();
+    expect(fetches).toHaveLength(1);
+    const blobs = git(o.root, '--git-dir', mirrorPathOf(dir, 'acme/app'), 'cat-file', '--batch-all-objects', '--batch-check=%(objecttype)').split('\n').filter((t) => t === 'blob');
+    expect(blobs).toEqual([]);
+    expect(await m.changes('acme/app', remote, { number: 1, base: 'dev', headOid: o.heads[1]! })).toBeUndefined();
   });
 });

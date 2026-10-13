@@ -105,6 +105,13 @@ export interface PullRequestSeen {
    * merged first in the same sync pass. Its URL.
    */
   mergeHeldBehind?: string;
+  /**
+   * What it changes (issue #935 part 2), as the hopper's mirror last said: its commits after its base, newest first,
+   * `<short sha> <subject>`, and the paths of the files it changes. Kept from the last read that had them: absent only
+   * until git first says.
+   */
+  commits?: string[];
+  files?: string[];
 }
 
 /**
