@@ -3323,7 +3323,7 @@ Version 1 (`docs/schemas/vault.credential_declined.v1.json`). A person declined 
 
 ## `vault.read_policy_set`
 
-Version 1 (`docs/schemas/vault.read_policy_set.v1.json`). An admin set the read policy (issue #716): the assets the hopper approves read on with no person, for a template a job asks for (`sandbox-template`). Write, sync and apply always wait for a person. Empty: the hopper approves nothing by itself.
+Version 1 (`docs/schemas/vault.read_policy_set.v1.json`). An admin set the read policy (issue #716): the assets the hopper approves read on with no person, for a template a job asks for (`sandbox-template`, `sandbox`). The read policy never approves write, sync or apply: only skip template approval does (issue #991). Empty: the read policy approves nothing.
 
 | field | type | required |
 |---|---|---|
@@ -3337,6 +3337,114 @@ Version 1 (`docs/schemas/vault.read_policy_set.v1.json`). An admin set the read 
     "aws-account/*"
   ],
   "by": "Ada"
+}
+```
+
+## `vault.sandbox_approvals_set`
+
+Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the sandbox approval toggles (issue #991): `skipTemplateApproval`, a template the hopper makes for a job is approved at once, its write, sync and apply profiles with it; `skipSandboxApproval`, a box a job asks for starts at once, a high-blast-radius one too. Both on is sandbox YOLO.
+
+| field | type | required |
+|---|---|---|
+| `skipTemplateApproval` | boolean | yes |
+| `skipSandboxApproval` | boolean | yes |
+| `by` | string | yes |
+
+```json
+{
+  "skipTemplateApproval": true,
+  "skipSandboxApproval": true,
+  "by": "Ada"
+}
+```
+
+## `vault.sandbox_requested`
+
+Version 1 (`docs/schemas/vault.sandbox_requested.v1.json`). A running job asked the hopper for a box of a template (issue #991, `sh "$HOPPER_SKILL" sandbox --needs …`): the sandbox request `request`, kept in memory. It waits for a person on Access requests unless skip sandbox approval is on. On the job's timeline.
+
+| field | type | required |
+|---|---|---|
+| `request` | string | yes |
+| `template` | string | yes |
+
+```json
+{
+  "request": "b2c1",
+  "template": "asked-3f2a9c1d0e4b"
+}
+```
+
+## `vault.sandbox_approved`
+
+Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was approved (issue #991): `by` a person, or `skip sandbox approval` when the toggle approved it. The hopper starts the box now. On the job's timeline.
+
+| field | type | required |
+|---|---|---|
+| `request` | string | yes |
+| `template` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "request": "b2c1",
+  "template": "asked-3f2a9c1d0e4b",
+  "by": "skip sandbox approval"
+}
+```
+
+## `vault.sandbox_declined`
+
+Version 1 (`docs/schemas/vault.sandbox_declined.v1.json`). A person declined a sandbox request (issue #991), with the `reason` the job is told. No box starts. On the job's timeline.
+
+| field | type | required |
+|---|---|---|
+| `request` | string | yes |
+| `template` | string | yes |
+| `reason` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "request": "b2c1",
+  "template": "asked-3f2a9c1d0e4b",
+  "reason": "not this week",
+  "by": "Ada"
+}
+```
+
+## `vault.sandbox_started`
+
+Version 1 (`docs/schemas/vault.sandbox_started.v1.json`). The box of a sandbox request started (issue #991): `container`, the sandbox box, which joins as a machine. On the job's timeline.
+
+| field | type | required |
+|---|---|---|
+| `request` | string | yes |
+| `template` | string | yes |
+| `container` | string | yes |
+
+```json
+{
+  "request": "b2c1",
+  "template": "asked-3f2a9c1d0e4b",
+  "container": "hopper-sandbox-asked-3f2a9c1d0e4b-1"
+}
+```
+
+## `vault.sandbox_failed`
+
+Version 1 (`docs/schemas/vault.sandbox_failed.v1.json`). The box of an approved sandbox request did not start (issue #991): `reason`. The job may ask again. On the job's timeline.
+
+| field | type | required |
+|---|---|---|
+| `request` | string | yes |
+| `template` | string | yes |
+| `reason` | string | yes |
+
+```json
+{
+  "request": "b2c1",
+  "template": "asked-3f2a9c1d0e4b",
+  "reason": "the start check did not pass in 30 s"
 }
 ```
 

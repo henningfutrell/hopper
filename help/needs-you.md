@@ -41,17 +41,18 @@ The nav badge counts the request cards. A second, dashed badge counts the issues
 
 ## Access requests
 
-**Access requests** shows what jobs on boxes wait on a person for. It always shows three panels. A panel with nothing in it says what will show there.
+**Access requests** shows what jobs on boxes wait on a person for. It always shows four panels. A panel with nothing in it says what will show there.
 
 | Panel | What you do |
 |---|---|
 | **Asked for** | A job needs a credential the vault does not give. Give one, or decline with a reason. |
 | **Vault grants** | A job on a box asked the vault with no grant. Select **Grant**. Granted items show here, with **Revoke**. |
 | **Template approvals** | A template is new, or has a new image, secret or profile. Select **Approve**. A write, sync or apply profile has its own **Approve** button. |
+| **Sandbox runs** | A job asked for a sandbox. Select **Approve** to start the box, or write why not and select **Decline**. Runs that start, run or end show below. Skip this step with **Skip sandbox approval** on Settings → Vault. |
 
 The page also links to **Settings → API tokens**, where you mint a box token for an agent that approves or merges through the API.
 
-**Settings → Vault** keeps the configuration: secrets, templates, the read policy, shared secrets and the hopper's own secrets. A template that waits there links to Access requests. See [The vault](vault.md) and [Sandbox boxes](sandboxes.md).
+**Settings → Vault** keeps the configuration: secrets, templates, the sandbox approvals, the read policy, shared secrets and the hopper's own secrets. A template that waits there links to Access requests. See [The vault](vault.md) and [Sandbox boxes](sandboxes.md).
 
 ## Settings keeps configuration only
 

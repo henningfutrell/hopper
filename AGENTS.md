@@ -55,8 +55,14 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   request in memory and answers that a person is asked; a person answers it through `POST /ui/api/vault`. A **template
   request** (issue #716, `docs/design.md` "Templates on request"), `sandbox-template` with the job's needs, saves the
   template those needs name through the vault's own save, never widening one a person changed, and approves it only when
-  it makes it now and the user's **read policy** holds every need as a read; it never approves anything else. A template of
-  read needs only takes no box until its read-only check passed (issue #716, `docs/design.md` "The read-only check"). A running job's
+  it makes it now and the user's **read policy** holds every need as a read, or, with the user's **skip template approval**
+  on (issue #991), as it is with its profiles, `by` that toggle; it never approves anything else. A template of
+  read needs only takes no box until its read-only check passed (issue #716, `docs/design.md` "The read-only check"). A
+  **sandbox request** (issue #991, `docs/design.md` "Sandboxes jobs start"), `sandbox` with the job's needs, asks for that
+  template as above, then for a box of it: kept in memory, it waits for a person (`POST /ui/api/sandbox-requests`, a box
+  action) unless the user's **skip sandbox approval** is on, and the box starts through the sandbox module only once
+  approved. The toggles (`POST /ui/api/sandbox-approvals`, a box action; both is sandbox YOLO) are an admin's; a job never
+  sets one, approves its own request, or names an image, a flag or a launch parameter. A running job's
   stream (issue #613, `docs/design.md` "The job stream"): `GET /job/stream` and `GET /job/stream/results/:seq`, with the
   job's proxy token, serve the job its own stream events and results, kept in the database; they change nothing. A job resuming
   elsewhere (issue #921, `docs/design.md` "Checkpoints and resume elsewhere"): `GET /job/checkpoint/patch|session`, with the
