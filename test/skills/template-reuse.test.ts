@@ -42,6 +42,8 @@ describe('a request for the needs of an approved template (issue #998)', () => {
     const r = await requestTemplate(u, NEEDS, 'job j1', 'j1');
     expect(r).toMatchObject({ status: 200, template: 'aws-readonly' });
     expect('text' in r && r.text).toContain('template aws-readonly is ready, approved by a person');
+    // Issue #1007: a job that asked for it to run one command is told how, with no box to start.
+    expect('text' in r && r.text).toContain('sh "$HOPPER_STEP" need "<the same needs>"');
     expect(saved).toEqual([]);
     expect(previewTemplate(u, NEEDS)).toMatchObject({ template: 'aws-readonly', exists: 'same', waits: [] });
   });
