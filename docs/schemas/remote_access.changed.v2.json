@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "cloudflare",
+            "ngrok"
+          ]
+        },
+        "domain": {
+          "type": "string"
+        },
+        "restartedAt": {
+          "type": "string"
+        },
+        "provisioned": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "const": "ngrok"
+                },
+                "domain": {
+                  "type": "string"
+                },
+                "credentialId": {
+                  "type": "string"
+                },
+                "reservedDomainId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "provider",
+                "domain"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "const": "cloudflare"
+                },
+                "domain": {
+                  "type": "string"
+                },
+                "accountId": {
+                  "type": "string"
+                },
+                "zoneId": {
+                  "type": "string"
+                },
+                "tunnelId": {
+                  "type": "string"
+                },
+                "dnsRecordId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "provider",
+                "domain",
+                "accountId",
+                "zoneId",
+                "tunnelId",
+                "dnsRecordId"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "leftover": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "cloudflare",
+            "ngrok"
+          ]
+        },
+        "domain": {
+          "type": "string"
+        },
+        "restartedAt": {
+          "type": "string"
+        },
+        "provisioned": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "const": "ngrok"
+                },
+                "domain": {
+                  "type": "string"
+                },
+                "credentialId": {
+                  "type": "string"
+                },
+                "reservedDomainId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "provider",
+                "domain"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "const": "cloudflare"
+                },
+                "domain": {
+                  "type": "string"
+                },
+                "accountId": {
+                  "type": "string"
+                },
+                "zoneId": {
+                  "type": "string"
+                },
+                "tunnelId": {
+                  "type": "string"
+                },
+                "dnsRecordId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "provider",
+                "domain",
+                "accountId",
+                "zoneId",
+                "tunnelId",
+                "dnsRecordId"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "leftover": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "enabled"
+      ],
+      "additionalProperties": false
+    },
+    "credential": {
+      "type": "string",
+      "enum": [
+        "set",
+        "removed"
+      ]
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "by"
+  ],
+  "additionalProperties": false
+}

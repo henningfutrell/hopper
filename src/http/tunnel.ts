@@ -1,21 +1,25 @@
-// The tunnel watch (issues #795, #880, design.md "The tunnel", "Remote access"): the compose service `tunnel` runs an ngrok
-// agent that forwards the remote access URL (`https://<domain>`, set in the UI) to the hopper. While remote access is on,
-// the hopper asks that agent's local API (HOPPER_TUNNEL_API, on a network only the two of them share) every few seconds
-// whether its endpoint at that URL is up, so a notifier can say where the hopper is reached (`hopper.reachable`) and
-// Settings → Remote access can say why it is not. It only reads: the Host guard takes the URL from the settings alone,
-// never a URL the agent reports. Each ask also looks up the agent's addresses: every request through the tunnel comes
-// from the agent, and its edge names the caller in `x-hopper-caller`, so the sign-in limit counts each caller, not the
-// agent (`tunnelCaller`).
+// The tunnel watch (issues #795, #880, #968, design.md "The tunnel", "Remote access"): a tunnel service of the compose stack
+// runs the tunnel agent of the provider picked — `tunnel` runs ngrok, `cloudflared` Cloudflare's — which forwards the
+// remote access URL (`https://<domain>`, minted by the hopper) to the hopper. While remote access is on, the hopper asks
+// that agent's local API every few seconds whether it is up — ngrok's `GET /api/tunnels` has an endpoint at that URL;
+// cloudflared's `GET /ready` has a connection to Cloudflare —, so a notifier can say where the hopper is reached
+// (`hopper.reachable`) and Settings → Remote access can say why it is not. It only reads: the Host guard takes the URL from
+// the settings alone, never a URL an agent reports. Each ask also looks up both agents' addresses: every request through a
+// tunnel comes from its agent, which names the caller (ngrok's edge in `x-hopper-caller`, Cloudflare's in
+// `cf-connecting-ip`), so a limit counts each caller, not the agent (`tunnelCaller`), and the tunnel's edge holds in the
+// hopper too (`installTunnelEdge`).
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
+import type { FastifyInstance } from 'fastify';
+import { throughTheTunnel, tokenPath, TUNNEL_RATE, type RemoteAccessProvider } from '../domain/remote-access.ts';
 
 export interface TunnelWatch {
-  /** The remote access URL while the tunnel's endpoint there is up; undefined when it is down, off, or there is no tunnel. */
+  /** The remote access URL while the tunnel there is up; undefined when it is down, off, or there is no tunnel. */
   url(): string | undefined;
   /** Why the tunnel is down, from the last ask; undefined when it is up, off, or not asked yet. */
   reason(): string | undefined;
-  /** Whether a peer address is the tunnel agent's, as HOPPER_TUNNEL_API's host resolved at the last ask. */
-  isAgent(peer: string): boolean;
+  /** Whose tunnel agent a peer address is, as each agent's host resolved at the last ask; undefined: none's. */
+  agentOf(peer: string | undefined): RemoteAccessProvider | undefined;
   /** Asks now, not at the next tick (one ask in flight is enough): a change of the settings shows at once. */
   askNow(): void;
   /** Stops asking; settles an ask in flight. */
@@ -23,10 +27,10 @@ export interface TunnelWatch {
 }
 
 export interface TunnelWatchOptions {
-  /** HOPPER_TUNNEL_API: the agent's local API (`http://tunnel:4040`). Undefined: no tunnel, nothing asked. */
-  api: string | undefined;
-  /** The remote access URL while remote access is on (read at each ask); undefined: off, nothing asked. */
-  url: () => string | undefined;
+  /** Each agent's local API: HOPPER_TUNNEL_API (`http://tunnel:4040`), HOPPER_CLOUDFLARED_API (`http://cloudflared:2000`). */
+  apis: Partial<Record<RemoteAccessProvider, string>>;
+  /** The provider and the remote access URL while remote access is on (read at each ask); undefined: off, nothing asked. */
+  target: () => { provider: RemoteAccessProvider; url: string } | undefined;
   logger: { info(m: string): void; warn(m: string): void };
   /** How often to ask. Default 10 s. */
   everyMs?: number;
@@ -35,8 +39,8 @@ export interface TunnelWatchOptions {
 const EVERY_MS = 10_000;
 const TIMEOUT_MS = 5000;
 
-/** The header the tunnel's edge sets to the caller's address (compose.yaml, its traffic policy); read from the agent only. */
-export const CALLER_HEADER = 'x-hopper-caller';
+/** The header each provider's edge names the caller's address in; read from that provider's agent only. */
+export const CALLER_HEADER: Record<RemoteAccessProvider, string> = { ngrok: 'x-hopper-caller', cloudflare: 'cf-connecting-ip' };
 
 /** `::ffff:a.b.c.d` → `a.b.c.d`; anything else unchanged. */
 const unmapped = (a: string): string => (a.toLowerCase().startsWith('::ffff:') && isIP(a.slice(7)) === 4 ? a.slice(7) : a);
@@ -54,14 +58,24 @@ const originOf = (u: unknown): string | undefined => {
   try { return typeof u === 'string' ? new URL(u).origin : undefined; } catch { return undefined; }
 };
 
-/** Up (the public URL), or why it is down, from one answer of GET /api/tunnels. */
-async function ask(api: string, publicUrl: string): Promise<{ up: string } | { down: string }> {
-  let res: Response;
+async function get(api: string, path: string, agent: string): Promise<Response | { down: string }> {
   try {
-    res = await fetch(new URL('/api/tunnels', api), { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    return await fetch(new URL(path, api), { signal: AbortSignal.timeout(TIMEOUT_MS) });
   } catch (e) {
-    return { down: `the tunnel agent at ${api} does not answer (${e instanceof Error ? e.message : String(e)})` };
+    return { down: `the ${agent} agent at ${api} does not answer (${e instanceof Error ? e.message : String(e)})` };
   }
+}
+
+/** Up (the public URL), or why it is down, from one answer of the agent's local API. */
+async function ask(provider: RemoteAccessProvider, api: string, publicUrl: string): Promise<{ up: string } | { down: string }> {
+  if (provider === 'cloudflare') {
+    const res = await get(api, '/ready', 'cloudflared');
+    if ('down' in res) return res;
+    await res.body?.cancel();
+    return res.ok ? { up: publicUrl } : { down: `cloudflared has no connection to Cloudflare yet (HTTP ${res.status}): it starts with the tunnel token, or the token was revoked` };
+  }
+  const res = await get(api, '/api/tunnels', 'ngrok');
+  if ('down' in res) return res;
   if (!res.ok) {
     await res.body?.cancel();
     return { down: `the tunnel agent answered HTTP ${res.status}` };
@@ -73,21 +87,31 @@ async function ask(api: string, publicUrl: string): Promise<{ up: string } | { d
   return { down: `the tunnel's endpoint is not the remote access URL (${publicUrl}): ${urls.join(', ')}; the Host guard refuses it` };
 }
 
+const key = (t: { provider: RemoteAccessProvider; url: string } | undefined): string => (t ? `${t.provider} ${t.url}` : '');
+
 export function watchTunnel(o: TunnelWatchOptions): TunnelWatch {
-  const { api, logger } = o;
-  if (!api) return { url: () => undefined, reason: () => undefined, isAgent: () => false, askNow: () => undefined, stop: async () => undefined };
+  const { apis, logger } = o;
+  const providers = (Object.keys(apis) as RemoteAccessProvider[]).filter((p) => apis[p]);
+  if (providers.length === 0) return { url: () => undefined, reason: () => undefined, agentOf: () => undefined, askNow: () => undefined, stop: async () => undefined };
   let up: string | undefined;
+  let upFor = '';
   let down: string | undefined;
-  let agent = new Set<string>();
+  let agents = new Map<string, RemoteAccessProvider>();
   let last = '';
   let pass: Promise<void> | undefined;
   const check = async (): Promise<void> => {
-    agent = await addressesOf(new URL(api).hostname);
-    const publicUrl = o.url();
-    const r = publicUrl === undefined ? undefined : await ask(api, publicUrl);
+    const found = new Map<string, RemoteAccessProvider>();
+    for (const p of providers) for (const a of await addressesOf(new URL(apis[p]!).hostname)) found.set(a, p);
+    agents = found;
+    const target = o.target();
+    const api = target ? apis[target.provider] : undefined;
+    const r = target === undefined ? undefined
+      : api === undefined ? { down: `this hopper asks no ${target.provider === 'cloudflare' ? 'cloudflared' : 'ngrok'} agent (${target.provider === 'cloudflare' ? 'HOPPER_CLOUDFLARED_API' : 'HOPPER_TUNNEL_API'} is not set)` }
+        : await ask(target.provider, api, target.url);
     // Turned off or changed while the ask was in flight: the next ask says.
-    if (publicUrl !== o.url()) return;
+    if (key(target) !== key(o.target())) return;
     up = r && 'up' in r ? r.up : undefined;
+    upFor = up ? key(target) : '';
     down = r && 'down' in r ? r.down : undefined;
     const now = r === undefined ? 'off' : 'up' in r ? `up ${r.up}` : `down ${r.down}`;
     if (now === last) return;
@@ -100,12 +124,12 @@ export function watchTunnel(o: TunnelWatchOptions): TunnelWatch {
   tick();
   const timer = setInterval(tick, o.everyMs ?? EVERY_MS);
   timer.unref();
-  // Read through the settings now: a URL turned off or changed is not up a moment longer.
-  const current = (): boolean => up !== undefined && up === o.url();
+  // Read through the settings now: a URL or a provider turned off or changed is not up a moment longer.
+  const current = (): boolean => up !== undefined && upFor === key(o.target());
   return {
     url: () => (current() ? up : undefined),
-    reason: () => (o.url() === undefined ? undefined : down),
-    isAgent: (peer) => agent.has(unmapped(peer)),
+    reason: () => (o.target() === undefined ? undefined : down),
+    agentOf: (peer) => (peer === undefined ? undefined : agents.get(unmapped(peer))),
     askNow: tick,
     async stop() {
       clearInterval(timer);
@@ -114,11 +138,52 @@ export function watchTunnel(o: TunnelWatchOptions): TunnelWatch {
   };
 }
 
+type Req = { ip: string; headers: Record<string, string | string[] | undefined> };
+
 /**
- * Who a request counts as for a per-caller limit: the address in `x-hopper-caller` when the peer is the tunnel agent and
- * the header is one address; else the peer's own address. A peer that is not the agent cannot pick its count by a header.
+ * Who a request counts as for a per-caller limit: the address the agent's edge names when the peer is a tunnel agent and
+ * its header is one address; else the peer's own address. A peer that is not that agent cannot pick its count by a header.
  */
-export const tunnelCaller = (tunnel: Pick<TunnelWatch, 'isAgent'>) => (req: { ip: string; headers: Record<string, string | string[] | undefined> }): string => {
-  const named = req.headers[CALLER_HEADER];
-  return tunnel.isAgent(req.ip) && typeof named === 'string' && isIP(named.trim()) !== 0 ? unmapped(named.trim()) : req.ip;
+export const tunnelCaller = (tunnel: Pick<TunnelWatch, 'agentOf'>) => (req: Req): string => {
+  const agent = tunnel.agentOf(req.ip);
+  const named = agent ? req.headers[CALLER_HEADER[agent]] : undefined;
+  return typeof named === 'string' && isIP(named.trim()) !== 0 ? unmapped(named.trim()) : req.ip;
 };
+
+const WINDOW_MS = 60_000;
+
+/**
+ * The tunnel's edge, held in the hopper too (issues #795, #968): a request through the tunnel — from a tunnel agent, with
+ * the remote access domain as its Host — reaches only the API (`throughTheTunnel`), else 404, and each caller has
+ * TUNNEL_RATE requests a minute and its token-route share of it, else 429. ngrok's traffic policy says the same at its
+ * edge; Cloudflare's ingress lets only the API paths through, and the limit is here alone. The agent's own ask of its
+ * settings names the hopper as its Host, so it is not one. A count of its own, not @fastify/rate-limit: that plugin limits
+ * the routes of one context, and this is one gate before every route.
+ */
+export function installTunnelEdge(app: FastifyInstance, o: { tunnel: Pick<TunnelWatch, 'agentOf'>; domain: () => string | undefined; now?: () => number }): void {
+  const now = o.now ?? Date.now;
+  const caller = tunnelCaller(o.tunnel);
+  const counts = new Map<string, { start: number; n: number }>();
+  const over = (k: string, max: number, at: number): boolean => {
+    let c = counts.get(k);
+    if (!c || at - c.start >= WINDOW_MS) {
+      if (counts.size > 10_000) for (const [x, v] of counts) if (at - v.start >= WINDOW_MS) counts.delete(x);
+      c = { start: at, n: 0 };
+      counts.set(k, c);
+    }
+    c.n += 1;
+    return c.n > max;
+  };
+  app.addHook('onRequest', async (req, reply) => {
+    const domain = o.domain();
+    if (domain === undefined || o.tunnel.agentOf(req.socket.remoteAddress) === undefined) return;
+    const host = (req.headers.host ?? '').toLowerCase().replace(/:\d+$/, '');
+    if (host !== domain) return;
+    if (!throughTheTunnel(req.url)) return reply.code(404).send({ error: 'not found' });
+    const who = caller({ ip: req.socket.remoteAddress ?? req.ip, headers: req.headers });
+    const at = now();
+    if (over(`r ${who}`, TUNNEL_RATE.requests, at) || (tokenPath(req.url) && over(`t ${who}`, TUNNEL_RATE.tokens, at))) {
+      return reply.code(429).header('retry-after', '60').send({ error: 'too many requests through the tunnel: wait a minute' });
+    }
+  });
+}

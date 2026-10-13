@@ -21,7 +21,8 @@ The `compose.yaml` has required services and optional services.
 | `openfga-migrate` | yes | Brings OpenFGA's tables up to date, then stops. |
 | `hopper-vault` | no (profile `hopper-vault`) | The vault in a container of its own. |
 | `kms` | no (profile `kms`) | A local KMS that wraps the vault's data key. |
-| `tunnel` | yes | Remote access through ngrok. It runs no ngrok until you turn remote access on. See [Remote access](remote-access.md). |
+| `tunnel` | yes | Remote access through ngrok. It runs no ngrok until you turn remote access on with ngrok. See [Remote access](remote-access.md). |
+| `cloudflared` | yes | Remote access through Cloudflare Tunnel. It runs no tunnel until you turn remote access on with Cloudflare Tunnel. See [Remote access](remote-access.md). |
 | `vault` | no (profile `vault`) | HashiCorp Vault, a vault backend. See [Vault](vault.md). |
 
 A plain `podman compose up -d` starts only the required services. Without an optional service, the hopper starts and works. The vault then runs in the hopper, under the master key.

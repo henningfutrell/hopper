@@ -79,8 +79,9 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
+| `src/remote-access/` | the tunnel providers (issue #968): what the hopper asks of Cloudflare's and ngrok's APIs with the admin's credential — mint a tunnel, its token and its host name, and release them again (`provider.ts`, `cloudflare.ts`, `ngrok.ts`) | `src/http/`, `src/store/`, `src/vault/`: it is given the credential, keeps nothing, and knows no route |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); remote access — the tunnel's settings, its authtoken in the instance's vault, its status and the tunnel service's ask (`remote-access.ts`, `ui/remote-access.ts`, issue #880); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
@@ -6730,7 +6731,7 @@ on the host. The hopper keeps its own secrets, entered in the UI and kept in the
 Settings → Remote access, from any browser or with an API token: no file on the host, so a phone can turn it on, restart
 it or rotate its token.
 
-- **Settings.** The instance's settings record `remoteAccess`: `{ enabled, domain?, restartedAt? }`. The domain is the
+- **Settings** (issue #968 replaced the token and domain pasted by hand: "Remote access providers" below). The instance's settings record `remoteAccess`: `{ enabled, domain?, restartedAt? }`. The domain is the
   one reserved at ngrok, kept lowercase with no scheme (`domainOf`); the remote access URL is `https://<domain>`, never a
   variable of its own. The **ngrok authtoken** is a system secret of the instance's vault, `remote-access.ngrok-authtoken`
   (kind `remote-access`), written through `SystemSecrets.keep`, never in a vault backend (the whole hopper's). It is on
@@ -6765,6 +6766,57 @@ it or rotate its token.
   while it runs: as it did before, now in memory only. Anyone with the tunnel service's key reads the authtoken: the key is
   in that container and the hopper's, and in memory on the host. A restart of the hopper reads the key file again; a full
   stop of the stack makes a new key.
+
+### Remote access providers: the hopper mints the tunnel (issue #968, 2026-10-12)
+
+The issue: #880 moved the ngrok token and domain into the vault, but a person still made and pasted them. The intent was
+that the hopper sets up remote access itself. Remote access stays optional and off by default.
+
+- **Two providers, equal.** The admin picks Cloudflare Tunnel or ngrok (`provider`); the picker offers Cloudflare first,
+  and neither is a fallback for the other. Each takes **one credential**, a system secret of the instance's vault:
+  `remote-access.cloudflare-api-token` (Account → Cloudflare Tunnel → Edit, Zone → DNS → Edit) or
+  `remote-access.ngrok-api-key`. Nothing in `.env`.
+- **Minted on turn-on** (`src/remote-access/`, one `TunnelProvider` each, plain fetch: a handful of REST calls, fewer than
+  an SDK's setup). Cloudflare: the zone the host name is in (or the first zone the token sees, at `hopper.<zone>`), a
+  named tunnel with `config_src: cloudflare`, its ingress, its token, and a proxied `CNAME` to `<id>.cfargotunnel.com`.
+  ngrok: a tunnel credential (the authtoken) and a domain — the one asked for, reserved if the account lacks it, else the
+  account's first, else one it reserves. The token is a system secret (`remote-access.<provider>-tunnel-token`, the
+  ngrok one keeping its #880 name). What was made is `provisioned` in the settings record: the host name and the ids
+  to remove it by, never a secret. A step that fails undoes the ones before it; the route answers 502 and remote access
+  stays off.
+- **Released on turn-off, switch, another host name or a new credential**, before the next mint: Cloudflare's DNS record,
+  the tunnel's connections and the tunnel; ngrok's credential and a domain it reserved (one the account had stays). What
+  cannot be removed is `leftover`, shown on the page for a person to remove; turning off never fails on it. An ngrok
+  authtoken and domain given by hand before this issue (migration 39 marks them `provisioned` with no ids) are kept on
+  turn-off: the hopper made neither.
+- **One change at a time.** `change` is serialized: each may call a provider, and the next reads what the last minted.
+- **Two services.** `tunnel` runs ngrok, as before; `cloudflared` runs Cloudflare's agent, from the hopper's own image (it
+  carries the `cloudflared` binary of Cloudflare's pinned image, which has no shell to ask with). Both are required, on
+  `hopper_tunnel` alone, mount `tunnel-key` alone, and ask `GET /tunnel/agent` (`?ngrok=` or `?cloudflared=` with their
+  report). Each is answered only while its provider is the one minted; else 204, and it runs no agent. `cloudflared` gets
+  `token=` and `restart=` lines, runs `cloudflared tunnel --no-autoupdate --metrics 0.0.0.0:2000 run` with
+  `TUNNEL_TOKEN` in its environment only.
+- **The tunnel watch** asks the minted provider's agent: ngrok's `GET /api/tunnels` as before, cloudflared's `GET /ready`
+  (`HOPPER_CLOUDFLARED_API`, `http://cloudflared:2000`). It looks up both agents' addresses (`agentOf`).
+- **The edge, in the hopper too** (`installTunnelEdge`): a request from a tunnel agent with the remote access domain as Host
+  reaches only the API paths (`throughTheTunnel`, else 404) and has the #795 limits per caller (120 requests and 5 token
+  exchanges or refreshes a minute, else 429). ngrok's traffic policy keeps both at its edge; Cloudflare's ingress, set by
+  the hopper, lets only the API paths through, and the limit is the hopper's alone (a Cloudflare rate-limit rule needs a
+  WAF permission the one credential does not carry). The caller is `cf-connecting-ip` from the cloudflared agent,
+  `x-hopper-caller` from ngrok's; neither header is read from any other peer. The agent's own ask names the hopper as its
+  Host, so the edge does not apply to it. A count of its own: @fastify/rate-limit limits one context's routes, and this
+  is one gate before every route.
+- **Copy-out panel.** `GET /api/remote-access` gives `links` while on: the public URL, `/api/`, the API-token exchange and
+  the refresh URL; the page shows each with a copy button, and the status. The hopper takes no inbound webhooks (it
+  pulls), so these are the URLs an agent calls.
+- **API parity** (#718): the same `POST /ui/api/remote-access` (`provider`, `credential`, `domain`, `enabled`, `restart`)
+  behind the `instance` guard, so an admin's API token does what the page does. `remote_access.changed` is version 2
+  (`credential` in place of `authtoken`, and `provider`, `provisioned`, `leftover` in the settings).
+- **Residual risk, stated.** The hopper holds a credential that can make tunnels and, at Cloudflare, change the zone's
+  DNS records: the guide says to give the token that zone alone. `cloudflared` runs the hopper's image, which carries
+  more than it needs; it mounts only `tunnel-key`. "Nothing tunnel-related runs while off": both services stay up, idle,
+  and run no agent; starting a container from the UI would need the container runtime's socket in the hopper, which is
+  more exposure than an idle loop.
 
 ### No .env; the update starts what is new and rolls back (issue #894, 2026-10-12)
 

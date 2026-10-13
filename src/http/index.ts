@@ -21,6 +21,7 @@ import { connectedAccountsRoutes } from './connected-accounts.ts';
 import { installHostGuard } from './host-guard.ts';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
 import { tunnelAgentRoutes, type RemoteAccess } from './remote-access.ts';
+import { installTunnelEdge } from './tunnel.ts';
 import { jobRoutes } from './jobs.ts';
 import { jobGitHubRoutes } from './job-github.ts';
 import { jobGitRoutes } from './job-git.ts';
@@ -70,7 +71,7 @@ import { infraPlanReadRoutes } from './ui/infra-plans.ts';
 import { webhookRoutes } from './webhooks.ts';
 
 export type { TenantParts, Tenants } from './tenants.ts';
-export { tunnelCaller, watchTunnel, type TunnelWatch } from './tunnel.ts';
+export { installTunnelEdge, tunnelCaller, watchTunnel, type TunnelWatch } from './tunnel.ts';
 export { createRemoteAccess, type RemoteAccess } from './remote-access.ts';
 
 export interface ServerOptions {
@@ -147,6 +148,8 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const g = grants.reconcile(o.signIn.roleOf);
   if (g.dropped + g.changed > 0) console.warn(`hopper: the sign-in config applied to grants: ${g.dropped} ended, ${g.changed} lowered`);
   installHostGuard(app, { port: o.port, lan: o.lan, sessions });
+  // Through a tunnel only the API, and a limit per caller (issues #795, #968): the tunnel's edge, held here too.
+  installTunnelEdge(app, { tunnel: o.remoteAccess.watch, domain: () => { const u = o.remoteAccess.url(); return u ? new URL(u).hostname : undefined; } });
   installTenancy(app, { tenants: o.tenants, sessions, grants, signIn: o.signIn, access: o.access, port: o.port, lan: o.lan, actionField: actionFields() });
   const tenant = { tenant: (req: Parameters<typeof tenantOf>[1]) => tenantOf(o.tenants, req) };
   apiReferenceRoutes(app, o.version);
