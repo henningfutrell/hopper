@@ -9,6 +9,8 @@ import { createSandboxRequests, type SandboxRequests } from '../sandbox/requests
 export interface SandboxLauncher {
   launch(userId: string, template: TemplateView): Promise<{ container: string }>;
   alive(userId: string, container: string): boolean;
+  /** How long a start may take before its request fails (issue #1002); default START_MS. */
+  startMs?: number;
 }
 
 const AT_WORK = ['running', 'waiting_answer', 'waiting_on'];
@@ -26,5 +28,6 @@ export function userSandboxRequests(o: {
     atWork: (id) => AT_WORK.includes(store.jobs.get(id)?.status ?? ''),
     jobTitle: (id) => { const j = store.jobs.get(id); return j?.source?.title ?? j?.spec.goal; },
     clock: o.clock,
+    ...(o.sandboxes?.startMs !== undefined ? { startMs: o.sandboxes.startMs } : {}),
   });
 }

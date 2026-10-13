@@ -91,7 +91,7 @@ export interface AppSeams extends UserSeams {
   containerRuntime?: ContainerRuntime; containerMeter?: import('./domain/stack-resources.ts').ContainerMeter; remoteBoxMeter?: import('./domain/stack-resources.ts').RemoteBoxMeter; openFgaMeter?: import('./domain/stack-resources.ts').OpenFgaMeter; solrMeter?: import('./domain/stack-resources.ts').SolrMeter;
   /** How long a sandbox launch waits for the box's start check (issue #708); default START_CHECK_MS. The search index (issue #945); default Solr at HOPPER_SOLR_URL, else none; null: none. And
    * Cloudflare's and ngrok's APIs, which remote access mints the tunnel at (issue #968); default the real ones. */
-  startCheckMs?: number; searchIndex?: SearchIndex | null; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>;
+  startCheckMs?: number; searchIndex?: SearchIndex | null; /** How long a sandbox request's box may take to start (issue #1002); default START_MS. */ sandboxStartMs?: number; tunnelProviders?: Record<import('./domain/remote-access.ts').RemoteAccessProvider, import('./remote-access/provider.ts').TunnelProvider>;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
   /** `stackProbe`: what the hopper sees of its stack (issue #697); default the compose network's names and the vault container's /health. */
   update?: { appDir?: string; builder?: UpdateBuilder; restart?: Restarter; stackProbe?: StackProbe; release?: ReleaseCheck };
@@ -113,7 +113,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, startCheckMs: _check, searchIndex: _search, tunnelProviders: _tunnel, ...shared } = seams;
+  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, solrMeter: _solrMeter, startCheckMs: _check, sandboxStartMs: _start, searchIndex: _search, tunnelProviders: _tunnel, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -206,7 +206,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // tunnel watch (issue #795, remoteAccess below): whether the remote access URL is up, so each user's Grok Bot routine is
   // told where the hopper is.
   // Search (issue #945): one Solr core for the hopper, each user's documents apart by the instance id and the user id.
-  const minter = createCredentialMinter(), sandboxRecords = cachedSandboxes(instance.sandboxes), search = { index: seams.searchIndex !== undefined ? seams.searchIndex ?? undefined : config.solrUrl ? createSolrIndex({ url: config.solrUrl }) : undefined, instanceId: instance.settings.instanceId(), access }, sandboxLauncher: SandboxLauncher = { launch: (userId, template) => sandboxes.launch(userId, { agent: BOX_AGENTS[0], template, params: {} }), alive: (userId, name) => sandboxRecords.list().some((r) => r.userId === userId && r.name === name) }; // a job's sandbox request's box (issue #991), through the sandbox module made below
+  const minter = createCredentialMinter(), sandboxRecords = cachedSandboxes(instance.sandboxes), search = { index: seams.searchIndex !== undefined ? seams.searchIndex ?? undefined : config.solrUrl ? createSolrIndex({ url: config.solrUrl }) : undefined, instanceId: instance.settings.instanceId(), access }, sandboxLauncher: SandboxLauncher = { launch: (userId, template) => sandboxes.launch(userId, { agent: BOX_AGENTS[0], template, params: {} }), alive: (userId, name) => sandboxRecords.list().some((r) => r.userId === userId && r.name === name), ...(seams.sandboxStartMs !== undefined ? { startMs: seams.sandboxStartMs } : {}) }; // a job's sandbox request's box (issue #991), through the sandbox module made below
   // The shared secrets (issue #718): the instance's, every user's vault lists them and delivers them after Access allows it.
   const runtimes = createRuntimes({
     instance, logger,

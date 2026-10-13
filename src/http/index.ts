@@ -1,6 +1,7 @@
 // The HTTP edge: read-only routes, SSE, the static UI, the API reference, and the UI session — the
 // only way to mutate (design.md "Phase 3"). Loopback, plus the LAN names when set; every request
 // passes the Host guard (AGENTS.md).
+import { watchEventLoop } from './event-loop.ts';
 import { join } from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { accessRoutes } from './access.ts';
@@ -122,6 +123,8 @@ export interface ServerOptions {
 export function createServer(o: ServerOptions): FastifyInstance {
   const app = Fastify({ logger: o.logger ?? false, forceCloseConnections: true });
   installErrorHandling(app);
+  // The event loop watchdog (issue #1002): a stall is logged with the routes in flight, and shown on /api/health.
+  const loop = watchEventLoop(app, { clock: o.clock, warn: (line) => console.warn(line) });
   // Every end of a session is logged and is an event of its user's (issue #439): early logouts can be told apart.
   const sessions = createUiSessions({
     repo: o.instance.uiSessions, clock: o.clock, signIn: o.signIn,
@@ -155,7 +158,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   apiReferenceRoutes(app, o.version);
   helpRoutes(app, o.version);
   jobRoutes(app, tenant);
-  stateRoutes(app, { ...tenant, clock: o.clock, version: o.version, port: o.port, sandboxes: o.sandboxes });
+  stateRoutes(app, { ...tenant, clock: o.clock, version: o.version, port: o.port, sandboxes: o.sandboxes, stall: loop.last });
   questionRoutes(app, tenant);
   reviewRoutes(app, tenant);
   sectionRoutes(app, tenant);

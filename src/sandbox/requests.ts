@@ -5,7 +5,9 @@
 // at once, by that toggle. Approved, the hopper starts the box through the sandbox module with the template's defaults,
 // and the box joins as a machine. Every step is an event on the job's timeline. A person declines a request with a
 // reason the job is told; a start that failed stays failed. A request whose job is no longer at work is forgotten;
-// its box ends at its time limit.
+// its box ends at its time limit. A start never runs in the request that approves it (issue #1002): the approval is
+// recorded and answered, and the box starts after, in the background, with a time limit of its own. A start that has
+// not ended in that time fails with that reason; whatever it does after is not the request's any more.
 // Issue #1001: a run needs no separate approval when the user's auto-approve policy holds its template's blast radius,
 // or when a person approved the template this job asked for, or waited on: that approval was given for this job's run.
 import { randomUUID } from 'node:crypto';
@@ -28,7 +30,12 @@ export interface SandboxRequestsOptions {
   jobTitle?(jobId: string): string | undefined;
   clock: { now(): Date };
   newId?: () => string;
+  /** How long a start may take before its request fails (issue #1002); default START_MS. */
+  startMs?: number;
 }
+
+/** How long a box's start may take, its image pull and build included, before its request fails (issue #1002). */
+export const START_MS = 20 * 60_000;
 
 export type SandboxRequestResult = { ok: true } | { ok: false; code: 'not_found' | 'conflict'; error: string };
 
@@ -80,18 +87,32 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
     r.state = 'starting';
     r.approvedBy = by;
     event(r, 'vault.sandbox_approved', { by, ...data });
-    const fail = (reason: string): void => {
+    let ended = false;
+    const end = (then: () => void): void => {
+      if (ended) return;
+      ended = true;
+      then();
+    };
+    const fail = (reason: string): void => end(() => {
       r.state = 'failed';
       r.reason = reason;
       event(r, 'vault.sandbox_failed', { reason });
-    };
-    const t = o.template(r.template);
-    if (!t) return fail(`template ${r.template} is not there any more`);
-    const p = o.launch(t).then(({ container }) => {
-      r.state = 'running';
-      r.container = container;
-      event(r, 'vault.sandbox_started', { container });
-    }, (e: unknown) => fail(e instanceof Error ? e.message : String(e)));
+    });
+    const limit = o.startMs ?? START_MS;
+    // After the approval's answer, never in it (issue #1002): nothing of the start runs in the request that approves it.
+    const p = new Promise<void>((resolve) => {
+      setImmediate(() => {
+        const timer = setTimeout(() => { fail(`the box did not start in ${minutes(limit)}`); resolve(); }, limit);
+        timer.unref();
+        const t = o.template(r.template);
+        const launched = t ? o.launch(t) : Promise.reject(new Error(`template ${r.template} is not there any more`));
+        launched.then(({ container }) => end(() => {
+          r.state = 'running';
+          r.container = container;
+          event(r, 'vault.sandbox_started', { container });
+        }), (e: unknown) => fail(e instanceof Error ? e.message : String(e))).finally(() => { clearTimeout(timer); resolve(); });
+      });
+    });
     starting.add(p);
     void p.finally(() => starting.delete(p));
   };
@@ -146,3 +167,5 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
     },
   };
 }
+
+const minutes = (ms: number): string => (ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 1000)} s`);

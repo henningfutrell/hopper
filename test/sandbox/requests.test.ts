@@ -8,7 +8,7 @@ import { createSandboxRequests } from '../../src/sandbox/requests.ts';
 
 const T = { name: 'asked-1' } as TemplateView;
 
-function setup(o: { approvals?: SandboxApprovals; launch?: () => Promise<{ container: string }> } = {}) {
+function setup(o: { approvals?: SandboxApprovals; launch?: () => Promise<{ container: string }>; startMs?: number } = {}) {
   const events: NewEvent[] = [];
   const alive = new Set<string>();
   const atWork = new Set(['job-1', 'job-2']);
@@ -23,6 +23,7 @@ function setup(o: { approvals?: SandboxApprovals; launch?: () => Promise<{ conta
     jobTitle: (j) => `title of ${j}`,
     clock: { now: () => new Date('2026-10-13T10:00:00Z') },
     newId: () => `r${events.length}`,
+    ...(o.startMs !== undefined ? { startMs: o.startMs } : {}),
   });
   return { requests, events, alive, atWork, types: () => events.map((e) => e.type) };
 }
@@ -82,6 +83,48 @@ describe('sandbox requests (issue #991)', () => {
     s.requests.ask('job-1', T.name);
     s.atWork.delete('job-1');
     expect(s.requests.list()).toEqual([]);
+  });
+});
+
+describe('a box starts outside the approval (issue #1002)', () => {
+  it('the approval answers before anything of the start runs', async () => {
+    let launched = 0;
+    const s = setup({ launch: async () => { launched++; return { container: 'box-1' }; } });
+    const r = s.requests.ask('job-1', T.name);
+    expect(s.requests.approve(r.id, 'Ada')).toEqual({ ok: true });
+    expect(launched).toBe(0);
+    expect(s.requests.list()[0]).toMatchObject({ state: 'starting' });
+    await s.requests.idle();
+    expect(launched).toBe(1);
+    expect(s.requests.list()[0]).toMatchObject({ state: 'running', container: 'box-1' });
+  });
+
+  it('a start that hangs fails at its time limit with the reason, and the job is told; other requests go on', async () => {
+    const hang = new Promise<{ container: string }>(() => {});
+    let n = 0;
+    const s = setup({ startMs: 50, launch: () => (++n === 1 ? hang : Promise.resolve({ container: 'box-2' })) });
+    const stuck = s.requests.ask('job-1', T.name);
+    s.requests.approve(stuck.id, 'Ada');
+    const other = s.requests.ask('job-2', T.name);
+    s.requests.approve(other.id, 'Ada');
+    await s.requests.idle();
+    expect(s.requests.list()).toEqual([
+      expect.objectContaining({ id: stuck.id, state: 'failed', reason: 'the box did not start in 0 s' }),
+      expect.objectContaining({ id: other.id, state: 'running', container: 'box-2' }),
+    ]);
+    expect(s.events.find((e) => e.type === 'vault.sandbox_failed')).toMatchObject({ jobId: 'job-1', data: { request: stuck.id } });
+  });
+
+  it('a start that ends after its time limit leaves the request failed', async () => {
+    let finish = (_: { container: string }): void => {};
+    const s = setup({ startMs: 20, launch: () => new Promise((resolve) => { finish = resolve; }) });
+    const r = s.requests.ask('job-1', T.name);
+    s.requests.approve(r.id, 'Ada');
+    await s.requests.idle();
+    finish({ container: 'late' });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(s.requests.list()[0]).toMatchObject({ state: 'failed' });
+    expect(s.types().filter((t) => t === 'vault.sandbox_started')).toEqual([]);
   });
 });
 
