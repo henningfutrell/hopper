@@ -48,12 +48,27 @@ describe('the UI across the LAN', () => {
     // 200 with a built UI, 503 without (ui/dist is not built in a fresh checkout); never refused.
     expect([200, 503]).toContain((await lanGet('/')).status);
     expect(JSON.parse((await lanGet('/ui/api/session')).text)).toMatchObject({ authenticated: false });
-    for (const path of ['/api/health', '/api/queue', '/api/questions', '/api/jobs']) {
+    for (const path of ['/api/queue', '/api/questions', '/api/jobs', '/api/health/x', '/api/healthz']) {
       const res = await lanGet(path);
       expect(res.status, path).toBe(401);
       expect(JSON.parse(res.text).error).toMatch(/log in/i);
     }
     expect((await streamStatus('/api/events/stream', { host: lanHost })).status).toBe(401);
+  });
+
+  it('a LAN request without a session reads the instance\'s health only (issue #712): a probe from the host learns the hopper is up', async () => {
+    for (const path of ['/api/health', '/api/health?probe=1']) {
+      const res = await lanGet(path);
+      expect(res.status, path).toBe(200);
+      const body = JSON.parse(res.text) as Record<string, unknown>;
+      delete body.eventLoopStall;
+      expect(body).toEqual({ ok: true, version: expect.any(String), uptimeS: expect.any(Number) });
+    }
+    // Only the read: a HEAD or another method on the path is no exception.
+    expect((await rawRequest(t.url, { method: 'POST', path: '/api/health', body: '{}', headers: { host: lanHost, 'content-type': 'application/json' } })).status).not.toBe(200);
+    // With a session the full answer, as before.
+    const token = await t.login();
+    expect(JSON.parse((await lanGet('/api/health', { 'x-hopper-session': token })).text)).toHaveProperty('executors');
   });
 
   it('with a UI session a LAN request reads /api/ (header) and the event stream (session query)', async () => {
@@ -63,8 +78,8 @@ describe('the UI across the LAN', () => {
     const s = await streamStatus(`/api/events/stream?after=0&session=${token}`, { host: lanHost, accept: 'text/event-stream' });
     expect(s.status).toBe(200);
     expect(s.type).toMatch(/text\/event-stream/);
-    expect((await lanGet('/api/health', { 'x-hopper-session': 'f'.repeat(64) })).status).toBe(401);
-    expect((await lanGet(`/api/health?session=${token}`)).status).toBe(401);
+    expect((await lanGet('/api/questions', { 'x-hopper-session': 'f'.repeat(64) })).status).toBe(401);
+    expect((await lanGet(`/api/questions?session=${token}`)).status).toBe(401);
   });
 
   it('loopback reads stay open without a session', async () => {
