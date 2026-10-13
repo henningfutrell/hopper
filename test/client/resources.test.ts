@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createResourceMeter, type CpuTimes } from '../../src/client/resources.ts';
+import { createResourceMeter, readWindowsMemory, type CpuTimes, type HostMemoryReader } from '../../src/client/resources.ts';
 
 const KIB = 1024;
 const GIB = 1024 ** 3;
@@ -21,11 +21,11 @@ const put = (path: string, text: string) => {
 const cpu = (busy: number, idle: number): CpuTimes => ({ user: busy, nice: 0, sys: 0, idle, irq: 0 });
 
 /** A meter over a fake root and fake os readings: the clock and the CPU times move as the test says. */
-function meter(o: { platform?: string; cpus?: () => CpuTimes[] } = {}) {
+function meter(o: { platform?: string; cpus?: () => CpuTimes[]; hostMemory?: HostMemoryReader } = {}) {
   let t = 1_000_000;
   let times = [cpu(0, 0), cpu(0, 0)];
   const read = createResourceMeter({
-    root, platform: o.platform ?? 'linux', now: () => t,
+    root, platform: o.platform ?? 'linux', now: () => t, ...(o.hostMemory ? { hostMemory: o.hostMemory } : {}),
     cpus: o.cpus ?? (() => times), parallelism: () => 2, loadavg: () => [0.5, 0.75, 1], totalmem: () => 16 * GIB, freemem: () => 4 * GIB,
   });
   return { read, advance(ms: number, next: CpuTimes[]) { t += ms; times = next; } };
@@ -93,6 +93,72 @@ describe('a machine\'s resources', () => {
     const r = meter().read();
     expect(r).toMatchObject({ cores: 2, memTotalBytes: 16 * GIB, memAvailableBytes: 8 * GIB });
     expect(r).not.toHaveProperty('container');
+  });
+
+  describe('in WSL (issue #868): the VM keeps its page cache, so Windows loses more than Linux says is used', () => {
+    const wslMeminfo = [
+      `MemTotal:       ${20 * GIB / KIB} kB`, `MemFree:         ${1 * GIB / KIB} kB`, `MemAvailable:    ${13 * GIB / KIB} kB`,
+    ].join('\n');
+    const tick = () => new Promise((r) => setImmediate(r));
+
+    it('the memory the VM holds is MemTotal less MemFree, page cache included', () => {
+      put('proc/version', 'Linux version 6.6.87.2-microsoft-standard-WSL2 (gcc) #1 SMP\n');
+      put('proc/meminfo', wslMeminfo);
+      const r = meter({ hostMemory: async () => undefined }).read();
+      expect(r).toMatchObject({ wsl: true, memTotalBytes: 20 * GIB, memAvailableBytes: 13 * GIB, vmHeldBytes: 19 * GIB });
+    });
+
+    it('Windows\' free memory comes in the background: the next read carries it, and it is read again after a minute', async () => {
+      put('proc/version', 'Linux version 6.6.87.2-microsoft-standard-WSL2\n');
+      put('proc/meminfo', wslMeminfo);
+      let asked = 0;
+      const m = meter({ hostMemory: async () => { asked += 1; return { freeBytes: (4 - asked) * GIB, totalBytes: 32 * GIB }; } });
+      expect(m.read()).not.toHaveProperty('hostMemFreeBytes');
+      await tick();
+      expect(m.read()).toMatchObject({ hostMemFreeBytes: 3 * GIB, hostMemTotalBytes: 32 * GIB });
+      expect(asked).toBe(1);
+      m.advance(61_000, [cpu(0, 0), cpu(0, 0)]);
+      m.read();
+      await tick();
+      expect(m.read()).toMatchObject({ hostMemFreeBytes: 2 * GIB });
+      expect(asked).toBe(2);
+    });
+
+    it('no host reading (no interop, as in a container): the VM\'s figures only, and the old host reading is dropped when stale', async () => {
+      put('proc/version', 'Linux version 6.6.87.2-microsoft-standard-WSL2\n');
+      put('proc/meminfo', wslMeminfo);
+      let answer: { freeBytes: number; totalBytes: number } | undefined = { freeBytes: 3 * GIB, totalBytes: 32 * GIB };
+      const m = meter({ hostMemory: async () => answer });
+      m.read();
+      await tick();
+      expect(m.read().hostMemFreeBytes).toBe(3 * GIB);
+      answer = undefined;
+      m.advance(6 * 60_000, [cpu(0, 0), cpu(0, 0)]);
+      m.read();
+      await tick();
+      const r = m.read();
+      expect(r).not.toHaveProperty('hostMemFreeBytes');
+      expect(r.vmHeldBytes).toBe(19 * GIB);
+    });
+
+    it('not WSL: no VM figure, and the host is never asked', async () => {
+      put('proc/version', 'Linux version 6.8.0-45-generic\n');
+      put('proc/meminfo', wslMeminfo);
+      let asked = 0;
+      const m = meter({ hostMemory: async () => { asked += 1; return undefined; } });
+      const r = m.read();
+      await tick();
+      expect(r).not.toHaveProperty('wsl');
+      expect(r).not.toHaveProperty('vmHeldBytes');
+      expect(asked).toBe(0);
+    });
+
+    it('Windows\' answer: free and total physical memory in KiB, one line', () => {
+      expect(readWindowsMemory('3145728 33554432\r\n')).toEqual({ freeBytes: 3 * GIB, totalBytes: 32 * GIB });
+      expect(readWindowsMemory('')).toBeUndefined();
+      expect(readWindowsMemory('9 3')).toBeUndefined();
+      expect(readWindowsMemory('Get-CimInstance: not found')).toBeUndefined();
+    });
   });
 
   it('reads this machine for real by default', () => {

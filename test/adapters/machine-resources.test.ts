@@ -30,6 +30,13 @@ describe('resources an ssh target prints', () => {
     });
   });
 
+  it('in WSL (issue #868): the memory the VM holds, MemTotal less MemFree', () => {
+    const wsl = printed.replace('hopper-res 8', `hopper-res MemFree:        ${1 * GIB / KIB} kB\nhopper-res wsl\nhopper-res 8`);
+    expect(readResources(wsl)).toMatchObject({ wsl: true, vmHeldBytes: 15 * GIB });
+    // Not WSL: MemFree is read, but no VM figure.
+    expect(readResources(printed.replace('hopper-res 8', `hopper-res MemFree:        ${1 * GIB / KIB} kB\nhopper-res 8`))).not.toHaveProperty('vmHeldBytes');
+  });
+
   it('no resource lines (a machine with no /proc): none', () => {
     expect(readResources('/home/far\nhopper-disk 1 1\nhopper-work-tree-ok')).toBeUndefined();
   });
@@ -53,5 +60,14 @@ describe('resources a client answers', () => {
     expect(resourcesOf({ ...r, memAvailableBytes: 9 * GIB })).toBeUndefined();
     // A CPU busy outside 0..1 or a bad load is dropped, the rest kept.
     expect(resourcesOf({ ...r, cpuBusyFrac: 2, load: ['a'] })).toEqual({ cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB });
+  });
+
+  it('a WSL client\'s VM figure and Windows\' memory (issue #868), each dropped when not sane', () => {
+    const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
+    const wsl = { ...r, wsl: true, vmHeldBytes: 7 * GIB, hostMemFreeBytes: 3 * GIB, hostMemTotalBytes: 32 * GIB };
+    expect(resourcesOf(wsl)).toEqual(wsl);
+    expect(resourcesOf({ ...wsl, vmHeldBytes: 9 * GIB })).not.toHaveProperty('vmHeldBytes');
+    expect(resourcesOf({ ...wsl, hostMemFreeBytes: 33 * GIB })).not.toHaveProperty('hostMemFreeBytes');
+    expect(resourcesOf({ ...wsl, hostMemTotalBytes: undefined })).not.toHaveProperty('hostMemFreeBytes');
   });
 });
