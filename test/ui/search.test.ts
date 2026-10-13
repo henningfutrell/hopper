@@ -10,10 +10,11 @@
 //   Scenario: a facet value filters the search; picked again, it no longer filters
 //   Scenario: search degraded or not set up says why, and shows no hits
 //   Scenario: the search box suggests job titles as a person types, and Enter opens the Search view with the words
+//   Scenario: an artifact's hit links to the artifact, an infra plan's to Infra, and an artifact's text is a snippet (part 3)
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { highlightParts, parseSearch, searchHash, searchPath, toggleFilter, type SearchFilters } from '../../ui/src/model/search.ts';
+import { highlightParts, hitHref, parseSearch, searchHash, searchPath, snippets, toggleFilter, type SearchFilters } from '../../ui/src/model/search.ts';
 
 type El = ReturnType<typeof createElement>;
 let root: Root | undefined;
@@ -157,5 +158,17 @@ describe('the search box', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('hits of other documents (issue #945, part 3)', () => {
+  it('links an artifact\'s hit to the artifact, an infra plan\'s to Infra, a job\'s to the job', () => {
+    expect(hitHref({ type: 'job', ref: 'j/1' })).toBe('#job/j%2F1');
+    expect(hitHref({ type: 'artifact', ref: 'a1' })).toBe('#artifacts/a1');
+    expect(hitHref({ type: 'infra-plan', ref: 'p1' })).toBe('#infra');
+  });
+
+  it('shows an artifact\'s matched text as a snippet', () => {
+    expect(snippets({ content: ['the <mark>resolver</mark> timed out'] })).toEqual([{ label: 'Text', html: 'the <mark>resolver</mark> timed out' }]);
   });
 });
