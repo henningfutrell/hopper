@@ -10,11 +10,11 @@ import { githubTraffic, type GitHubTraffic } from '../../github-limiter/traffic.
 import type { GitHubApi } from './api.ts';
 
 const READS = [
-  'listOpenIssues', 'getIssue', 'subIssues', 'listComments', 'issueEdits', 'issuePlace', 'projectItems', 'assignedAt', 'issueEvents',
+  'getIssue', 'subIssues', 'listComments', 'issueEdits', 'issuePlace', 'projectItems', 'assignedAt', 'issueEvents',
   'closingPullRequest', 'openClosingPullRequests', 'referencingPullRequests', 'crossReferences', 'pullRequest', 'openPullRequests',
   'listAssignedIssues', 'listInstalledRepos', 'repoEvents', 'listRepos',
 ] as const;
-const WRITES = ['ensureLabel', 'addLabels', 'removeLabels', 'addAssignees', 'reopenIssue', 'closeAsCompleted', 'postComment', 'merge', 'closeWithoutMerge', 'toDraft', 'baseMerge'] as const;
+export const WRITES = ['ensureLabel', 'addLabels', 'removeLabels', 'addAssignees', 'reopenIssue', 'closeAsCompleted', 'postComment', 'merge', 'closeWithoutMerge', 'toDraft', 'baseMerge'] as const;
 /** Reads whose first argument is not a repository: any write drops them. */
 const UNSCOPED = new Set<string>(['projectItems', 'listAssignedIssues', 'listInstalledRepos', 'listRepos']);
 

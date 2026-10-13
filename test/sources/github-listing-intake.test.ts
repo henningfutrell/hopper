@@ -98,6 +98,16 @@ describe('intake from the listing cache (issue #985)', () => {
     expect(count('getIssue')).toBe(2);
   });
 
+  it("a timed sync sees the hopper's own label writes, made after the listing", async () => {
+    const { gh, source, count } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    expect(await source.discover({ due: true })).toHaveLength(1);
+    await source.report({ kind: 'claimed', job: jobOf(1) });
+    // No job here is known to hold the claim: the claimed issue is not offered again.
+    expect(await source.discover({ due: true })).toEqual([]);
+    expect(count('listRepos')).toBe(1);
+  });
+
   it('an issue no longer listed (closed, unlabelled) is read from GitHub', async () => {
     const { gh, source, count } = setup({ known: true });
     gh.createIssue({ repo: REPO, labels: ['hopper'] });

@@ -71,7 +71,7 @@ describe('next sync time', () => {
 });
 
 describe('what a sync asks the source to read (issue #985)', () => {
-  it('a timed sync asks for what is due; a sync asked for (Sync now) asks for everything', async () => {
+  it('a timed sync asks for what is due; the first sync and a sync asked for (Sync now) ask for everything', async () => {
     const world = createWorld();
     const source = createFakeSource();
     const asked: unknown[] = [];
@@ -85,6 +85,6 @@ describe('what a sync asks the source to read (issue #985)', () => {
     vi.advanceTimersByTime(POLL);
     await settle();
     await sync.syncNow();
-    expect(asked).toEqual([{ due: true }, { due: true }, undefined]);
+    expect(asked).toEqual([undefined, { due: true }, undefined]);
   });
 });

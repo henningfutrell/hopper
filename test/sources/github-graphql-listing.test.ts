@@ -31,7 +31,7 @@ describe('repository listings (issue #985)', () => {
       repo('b', [{ number: 1, labels: ['hopper'] }]),
       repo('c', []),
     ] }] });
-    const got = await h.api.listRepos!(['owner/a', 'owner/b', 'owner/c'], LABELS);
+    const got = await h.api.listRepos(['owner/a', 'owner/b', 'owner/c'], LABELS);
     expect(got.repoErrors.size).toBe(0);
     expect(numbers(got.repos.get('owner/a'))).toEqual([1, 2, 5, 6]);
     expect(numbers(got.repos.get('owner/b'))).toEqual([1]);
@@ -52,7 +52,7 @@ describe('repository listings (issue #985)', () => {
   it(`60 repositories are ⌈60/${LISTING_REPOS_MAX}⌉ requests`, async () => {
     const names = Array.from({ length: 60 }, (_, i) => `r${i}`);
     h = await startApp({ installations: [{ id: 11, account: 'owner', repos: names.map((n) => repo(n, [{ number: 1, labels: ['hopper'] }])) }] });
-    const got = await h.api.listRepos!(names.map((n) => `owner/${n}`), LABELS);
+    const got = await h.api.listRepos(names.map((n) => `owner/${n}`), LABELS);
     expect([...got.repos.keys()].sort()).toEqual(names.map((n) => `owner/${n}`).sort());
     expect(graphqlRequests(h)).toHaveLength(Math.ceil(60 / LISTING_REPOS_MAX));
   });
@@ -62,7 +62,7 @@ describe('repository listings (issue #985)', () => {
       repo('a', [1, 2, 3, 4, 5].map((n) => ({ number: n, labels: ['hopper'] }))),
       repo('b', [{ number: 1, labels: ['hopper'] }]),
     ] }] });
-    const got = await h.api.listRepos!(['owner/a', 'owner/b'], LABELS);
+    const got = await h.api.listRepos(['owner/a', 'owner/b'], LABELS);
     expect(numbers(got.repos.get('owner/a'))).toEqual([1, 2, 3, 4, 5]);
     expect(numbers(got.repos.get('owner/b'))).toEqual([1]);
     const [, ...pages] = graphqlRequests(h);
@@ -70,15 +70,13 @@ describe('repository listings (issue #985)', () => {
     for (const p of pages) expect(Object.values((p.body as { variables: Record<string, unknown> }).variables)).not.toContain('b');
   });
 
-  it('lists the same issues as the REST listing of each label', async () => {
+  it('lists the open issues with any of the labels: the union of a listing of each label', async () => {
     h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [repo('a', [
       { number: 1, labels: ['hopper'] }, { number: 2, labels: ['hopper:high'] }, { number: 3, labels: ['hopper', 'hopper:high'] },
       { number: 4, labels: ['other'] }, { number: 5, labels: ['hopper'], state: 'closed' },
     ])] }] });
-    const rest = new Set<number>();
-    for (const l of LABELS) for (const i of await h.api.listOpenIssues('owner/a', l)) rest.add(i.number);
-    const got = await h.api.listRepos!(['owner/a'], LABELS);
-    expect(numbers(got.repos.get('owner/a'))).toEqual([...rest].sort((a, b) => a - b));
+    const got = await h.api.listRepos(['owner/a'], LABELS);
+    expect(numbers(got.repos.get('owner/a'))).toEqual([1, 2, 3]);
   });
 
   it('repositories of two installations ask with two tokens: one request for each', async () => {
@@ -86,7 +84,7 @@ describe('repository listings (issue #985)', () => {
       { id: 11, account: 'owner', repos: [repo('a', [{ number: 1, labels: ['hopper'] }])] },
       { id: 12, account: 'other', repos: [repo('b', [{ number: 2, labels: ['hopper'] }], 'other')] },
     ] });
-    const got = await h.api.listRepos!(['owner/a', 'other/b'], LABELS);
+    const got = await h.api.listRepos(['owner/a', 'other/b'], LABELS);
     expect(numbers(got.repos.get('owner/a'))).toEqual([1]);
     expect(numbers(got.repos.get('other/b'))).toEqual([2]);
     expect(graphqlRequests(h)).toHaveLength(2);
@@ -94,7 +92,7 @@ describe('repository listings (issue #985)', () => {
 
   it('a repository the app is not installed on fails only itself', async () => {
     h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [repo('a', [{ number: 1, labels: ['hopper'] }])] }] });
-    const got = await h.api.listRepos!(['owner/a', 'owner/gone'], LABELS);
+    const got = await h.api.listRepos(['owner/a', 'owner/gone'], LABELS);
     expect(numbers(got.repos.get('owner/a'))).toEqual([1]);
     expect(got.repos.has('owner/gone')).toBe(false);
     expect(got.repoErrors.get('owner/gone')).toMatch(/not installed/);
@@ -114,8 +112,8 @@ describe('repository listings (issue #985)', () => {
 
   it('a request GitHub fails throws: the sync asks again', async () => {
     h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [repo('a', [{ number: 1, labels: ['hopper'] }])] }] });
-    await h.api.listRepos!(['owner/a'], LABELS); // the installation and its token, before the failure
+    await h.api.listRepos(['owner/a'], LABELS); // the installation and its token, before the failure
     h.fake.fail('POST /graphql', 502, 'bad gateway', 1);
-    await expect(h.api.listRepos!(['owner/a'], LABELS)).rejects.toMatchObject({ permanent: false });
+    await expect(h.api.listRepos(['owner/a'], LABELS)).rejects.toMatchObject({ permanent: false });
   });
 });

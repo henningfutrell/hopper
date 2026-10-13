@@ -139,7 +139,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'yolo_mode.changed': { from: { on: false, repos: {} }, to: { on: false, repos: { 'owner/repo': true } }, by: 'owner' },
   'auto_answer.settings_changed': { from: { enabled: true, threshold: 'high', holdHighPriority: false }, to: { enabled: true, threshold: 'medium', holdHighPriority: false }, by: 'admin' },
   'remote_access.changed': { from: { enabled: false, provider: 'cloudflare' }, to: { enabled: true, provider: 'cloudflare', provisioned: { provider: 'cloudflare', domain: 'hopper.example.com', accountId: 'a1b2', zoneId: 'z3c4', tunnelId: 'f1e2d3c4-0000-4000-8000-000000000000', dnsRecordId: 'r5d6' } }, credential: 'set', by: 'admin' },
-  'github_rate_limiter.settings_changed': { from: { slowBelowPercent: 25, reserve: 50, batchSize: 10, intakeReserve: 1000 }, to: { slowBelowPercent: 40, reserve: 50, batchSize: 10, intakeReserve: 1000 }, by: 'admin' },
+  'github_rate_limiter.settings_changed': { from: { slowBelowPercent: 25, reserve: 50, batchSize: 10, intakeReserve: 1000, intakeSyncMinutes: 15 }, to: { slowBelowPercent: 40, reserve: 50, batchSize: 10, intakeReserve: 1000, intakeSyncMinutes: 15 }, by: 'admin' },
   'auto_park.settings_changed': { from: { minutes: 30, highPriorityMinutes: 30 }, to: { minutes: 30, highPriorityMinutes: 10 }, by: 'admin' },
   'question.thread_held': { questionId: 'q1', repo: 'someone/library', number: 12 },
   'question.thread_approved': { questionId: 'q1', by: 'admin' },

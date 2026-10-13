@@ -152,7 +152,6 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
       }
       return out;
     }),
-    listOpenIssues: (repo, label) => call(`list issues ${repo}`, async (l) => rest.listOpenIssues(intake, await tokenFor(l, repo), repo, label)),
     getIssue: (repo, number) => call(`get ${repo}#${number}`, async (l) => rest.getIssue(req, await tokenFor(l, repo), repo, number)),
     subIssues: (repo, number) => call(`sub-issues of ${repo}#${number}`, async (l) => rest.subIssues(req, await tokenFor(l, repo), repo, number)),
     listComments: (repo, number) => call(`comments ${repo}#${number}`, async (l) => rest.listComments(req, await tokenFor(l, repo), repo, number)),

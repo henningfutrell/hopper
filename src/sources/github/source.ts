@@ -8,10 +8,18 @@
 // One source, two identities (`mode`): `account` writes as the connected account's user and tells
 // hopper comments by their marker; `app` writes as the app bot, scans only the repos the app is
 // installed on, and tells hopper comments by the bot author (marker secondary). Neither searches.
+//
+// Intake reads the listing cache (issue #985, `listing.ts`): the job repositories are listed again every intake sync
+// interval, or at once when a person asked for the sync. A discover and a check read a job's issue from what was kept
+// while its listing shows no change (`listed-reads.ts`); every other read — before a write — goes to GitHub.
 
-import type { IntakeAction, IntakeChange, IntakeContext, IntakeOutcome, IntakeTrust, OutsideRepo } from '../../domain/intake.ts';
+import type { IntakeAction, IntakeChange, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import { requestHash, type IntakeRequest } from '../../domain/intake-origin.ts';
 import type { Clock, JobSource, SourceItem } from '../../domain/ports.ts';
+import type { GitHubListingRepository } from '../../domain/github-listing.ts';
+import { DEFAULT_RATE_LIMITER } from '../../domain/github-rate-limit.ts';
+import { createIntakeListing, memoryListings } from './listing.ts';
+import { listedReads } from './listed-reads.ts';
 import { CONNECTED_VIA, TERMINAL_STATUSES, type Account } from '../../domain/types.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
@@ -25,8 +33,9 @@ import { partsOf, tickedParts } from './parts.ts';
 import { sendBack } from './rework.ts';
 import { gitHubThread } from './thread.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, untrustedBlock, type SourceMode } from './context.ts';
-import { NOT_ASSIGNED, discoverIssues, isAssignedTo, labelReason, type Rejection } from './discover.ts';
+import { NOT_ASSIGNED, discoverIssues, type Rejection } from './discover.ts';
 import { intakeAct } from './intake-actions.ts';
+import { outsideReader } from './outside.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
 import { openRequests, originsOf, REQUEST_REASON } from './origin.ts';
@@ -77,10 +86,12 @@ export interface GitHubSourceOptions {
   jobArtifacts?: JobArtifacts;
   /** The user's issue graph (issue #437): each listed issue's place is kept there. Absent: none is kept. */
   issueGraph?: IssueGraphRecorder;
+  /** The listing cache (issue #985): the user's store. Absent: kept in memory. */
+  listings?: GitHubListingRepository;
+  /** The intake sync interval, in ms, read at each discover (issue #985). Default: DEFAULT_RATE_LIMITER's. */
+  listingEveryMs?: () => number;
 }
 
-/** How often the repos outside the source's scope are listed (issue #440): one listing, at most every 10 minutes. */
-export const OUTSIDE_EVERY_MS = 10 * 60_000;
 export const MIGRATION_RELEASED = 'released a claim with no holder recorded and no job in this hopper';
 export const MIGRATION_UNASSIGNED = 'not assigned to you: assign it to you to take it';
 
@@ -90,7 +101,11 @@ export const CONFIG_URL = 'https://github.com/settings/installations';
 export const CREATE_APP_HINT = 'create the app (scripts/create-github-app.sh), set its appId and slug on the github-app instance in Plugins and its key in GITHUB_APP_PRIVATE_KEY';
 
 export function createGitHubSource(o: GitHubSourceOptions): JobSource {
-  const { config, api } = o;
+  const { config } = o;
+  const listings = o.listings ?? memoryListings();
+  const reads = listedReads(o.api, listings);
+  const { api } = reads;
+  const listing = createIntakeListing({ api, listings, clock: o.clock, everyMs: o.listingEveryMs ?? (() => DEFAULT_RATE_LIMITER.intakeSyncMinutes * 60_000) });
   const { mode } = o;
   const app = mode === 'app';
   const login = o.whoami;
@@ -101,9 +116,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   let outcomes: IntakeOutcome[] = [];
   /** The labels of each issue the last discover listed, by URL: what a release removes. */
   let listedLabels = new Map<string, string[]>();
-  let outsideRepos: OutsideRepo[] = [];
-  let outsideError: string | undefined;
-  let outsideAt: number | undefined;
+  const outside = outsideReader(api, config);
   let lastDiscoverAt: string | undefined;
   let installedRepos: string[] = [];
   let nothingToScan = false;
@@ -206,30 +219,6 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   };
 
   /**
-   * Repos the account reaches outside the scope with open labelled issues for the user that would be taken there
-   * (issue #440): only suggested in Sources, never added. A connected account only (the app has no user), at most
-   * every OUTSIDE_EVERY_MS; with no scope at all, nothing is read.
-   */
-  const listOutside = async (repos: string[], assignee: string) => {
-    if (!api.listAssignedIssues || repos.length === 0) return;
-    const now = o.clock.now().getTime();
-    if (outsideAt !== undefined && now - outsideAt < OUTSIDE_EVERY_MS) return;
-    outsideAt = now;
-    try {
-      const inScope = new Set(repos.map((r) => r.toLowerCase()));
-      const byRepo = new Map<string, string[]>();
-      for (const i of await api.listAssignedIssues(config.label)) {
-        if (inScope.has(i.repo.toLowerCase()) || !isAssignedTo(i, assignee) || labelReason(i, config.hopperName)) continue;
-        byRepo.set(i.repo, [...(byRepo.get(i.repo) ?? []), i.url]);
-      }
-      outsideRepos = [...byRepo].map(([repo, items]) => ({ repo, items })).sort((a, b) => a.repo.localeCompare(b.repo));
-      outsideError = undefined;
-    } catch (err) {
-      outsideError = (err as Error).message;
-    }
-  };
-
-  /**
    * Approve a request card (issue #652): read the issue again; only when its title and body still hash as the person read
    * them, its text — with the assignee's comments the job would see — is the item's approved snapshot. False: it changed.
    */
@@ -257,15 +246,14 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...(paused ? { paused } : {}),
         repos: config.repos, ...(o.assignee() ? { assignee: o.assignee() } : {}), label: config.label, hopperName: config.hopperName, projectErrors,
         ...(o.intake?.migration() ? { intakeMigration: o.intake.migration() } : {}),
-        ...(outsideRepos.length ? { outsideRepos } : {}),
-        ...(outsideError ? { outsideError } : {}),
+        ...outside.detail(),
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),
         ...(Object.keys(graphErrors).length ? { graphErrors } : {}),
         ...(lastDiscoverAt ? { lastDiscoverAt } : {}),
       };
     },
-    async discover() {
+    discover: (d) => reads.cached(async () => {
       const bot = await botLogin();
       const assignee = o.assignee();
       const repos = bot === undefined ? config.repos : await appScope();
@@ -280,8 +268,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       }
       const intake = o.intake;
       const migrating = intake !== undefined && intake.migration() === undefined;
+      const listed = await listing.issues(repos, config.label, d?.due === true);
       const found = await discoverIssues(api, config, {
-        repos, assignee, ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}), ...(o.rejections ? { rejections: o.rejections } : {}),
+        listed, assignee, ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}), ...(o.rejections ? { rejections: o.rejections } : {}),
         ...(intake ? { holder: intake.holder, othersKnown: intake.othersKnown, migrating } : {}),
       });
       repoErrors = found.repoErrors;
@@ -289,19 +278,22 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       listedLabels = found.listed;
       for (const r of found.released) intake?.record('source.claim_released', { source: o.name, key: r.key, by: r.by, reason: r.reason });
       if (intake && migrating && found.migrated) migrate(intake, found.released.filter((r) => r.by === 'migration').map((r) => r.key));
-      await listOutside(repos, assignee);
-      const projects = await readProjects(api, config, found.issues);
+      if (listed.listed) await outside.read(repos, assignee);
+      // A listing has no body: each issue taken is read, from GitHub only when its listing changed since.
+      const taken: GitHubIssue[] = [];
+      for (const i of found.issues) { const issue = await api.getIssue(i.repo, i.number); if (issue.state === 'open') taken.push(issue); }
+      const projects = await readProjects(api, config, taken);
       projectErrors = projects.errors;
-      const urls = found.issues.map((i) => i.url);
+      const urls = taken.map((i) => i.url);
       const known = o.knownKeys && urls.length > 0 ? o.knownKeys(urls) : new Set<string>();
       const rerun = o.rerunnable && urls.length > 0 ? o.rerunnable(urls) : new Set<string>();
       // An issue whose job has not ended keeps it, unless that job waits for its origin (the backfill); any other is judged
       // by its origin (issue #652).
-      const judged = found.issues.filter((i) => !known.has(i.url) || rerun.has(i.url) || o.trust.originPending(i.url));
+      const judged = taken.filter((i) => !known.has(i.url) || rerun.has(i.url) || o.trust.originPending(i.url));
       const verdicts = await originsOf(api, o.trust, judged, config.label, assignee);
       const requests = new Map<string, IntakeRequest>();
       const items: SourceItem[] = [];
-      for (const issue of found.issues) {
+      for (const issue of taken) {
         const v = verdicts.get(issue.url);
         if (v && 'request' in v) { requests.set(issue.url, v.request); continue; }
         const item = await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), bot, assignee);
@@ -313,14 +305,14 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
       lastDiscoverAt = o.clock.now().toISOString();
       return items;
-    },
-    async check(active) {
+    }),
+    check: (active) => reads.cached(async () => {
       const mine = active.filter((j) => j.source?.source === o.name && !TERMINAL_STATUSES.includes(j.status));
       if (mine.length === 0) return [];
       const r = await checkJobs(api, config, mine);
       checkErrors = r.errors;
       return r.signals;
-    },
+    }),
     report(r) {
       return reportToGitHub({ api, labelledRepos, ...(o.intake ? { holder: o.intake.holder } : {}) }, r);
     },

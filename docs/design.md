@@ -1525,7 +1525,7 @@ remains. The only mutations are the owner's actions in the local UI, behind a UI
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its signals (`sync-signals.ts`), its watch (`sync-watch.ts`, issue #967: a sync at once when a followed repository moved, or after a merge), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
+| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass), intake from the listing cache (`github/listing.ts`) and its listed reads (`github/listed-reads.ts`, issue #985) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its signals (`sync-signals.ts`), its watch (`sync-watch.ts`, issue #967: a sync at once when a followed repository moved, or after a merge), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
 | `src/events/` | versioned payload schemas (zod) per event type, the envelope, JSON Schema export | everything but `domain/` and `zod` |
 | `src/http/ui/` | UI session: login codes, session cookie, CSRF, origin/host guard, the UI-only mutation routes | engine internals beyond the engine's public commands |
 
@@ -14662,8 +14662,8 @@ at each round. A GitHub watch still polling from an earlier round is skipped, ne
 
 **The intake reserve** (issue #983, 2026-10-12). Intake polls every selected repository; with many repositories it spent the
 whole limit, and a job's end report and a rerun's read of its issue were then refused ("GitHub rate-limited the hopper"). So
-the job sources' adapters (`src/sources/github/app/api.ts`, `account/api.ts`) make their **intake calls** — `listOpenIssues`,
-`listAssignedIssues`, `projectItems`, `listInstalledRepos`, `repoEvents` — through a `makeRequest` with `intake: true`. Such
+the job sources' adapters (`src/sources/github/app/api.ts`, `account/api.ts`) make their **intake calls** — `listRepos`
+(was `listOpenIssues`, issue #985), `listAssignedIssues`, `projectItems`, `listInstalledRepos`, `repoEvents` — through a `makeRequest` with `intake: true`. Such
 a call, at `intakeReserve` calls left or below, waits for the reset; with `deferAfterMs` it is a **deferred call**, so the
 sync pass ends and says when. Every other call — the job's own reads and writes, the report, the rerun — goes as before,
 down to `reserve`. The pacing is the same for both: an intake call takes no longer slot. A 304 still costs no call, but an
@@ -14672,7 +14672,9 @@ The other asks of the issue are already in place: conditional requests (above), 
 event feed (issue #967), and the buckets, calls left and reset time on Settings → GitHub rate limit.
 
 **Settings.** `slowBelowPercent` (0–100, default 25), `reserve` (0–5000, default 50), `batchSize` (1–100, default 10),
-`intakeReserve` (0–5000, default 1000; a record saved before it reads as the default), whole numbers. The instance's (`githubRateLimiter` in the instance settings): one limiter serves every user. Changed only
+`intakeReserve` (0–5000, default 1000; a record saved before it reads as the default), `intakeSyncMinutes` (1–1440,
+default 15, issue #985: the **intake sync interval**, "Repository listings"; a record saved before it reads as the
+default), whole numbers. The instance's (`githubRateLimiter` in the instance settings): one limiter serves every user. Changed only
 by the hopper's admin, on Settings → GitHub rate limit (`POST /ui/api/github-rate-limiter`, the `instance` guard). The
 change goes to the process's limiter at once: the next call and the next poll round use it, no restart; a pacing slot
 kept from the old settings is dropped. A change is `github_rate_limiter.settings_changed`, an instance event.
@@ -14749,8 +14751,8 @@ N×L calls a sync. A repository listing reads the same set with GraphQL, many re
 `r0: repository(owner: $o0, name: $n0) { issues(states: OPEN, labels: $labels, first: 50, after: $ai0) { … }
 pullRequests(states: OPEN, labels: $labels, …) { … } }`, `r1: …`, at most `LISTING_REPOS_MAX` = 25 to a request. So 60
 repositories are 3 requests a sync, whatever the labels.
-- GraphQL's `labels:` filter matches an item with any of the labels: the union of the REST listings of each label
-  (`test/sources/github-graphql-listing.test.ts` checks the two give the same issues).
+- GraphQL's `labels:` filter matches an item with any of the labels: the union of a listing of each label
+  (`test/sources/github-graphql-listing.test.ts`).
 - Each item: number, url, title, author, labels, assignees, `updatedAt`; a pull request also its head branch and commit,
   its base, `isDraft`, `mergeable` and its head commit's check rollup (`rollupChecks` of `closer.ts`; no rollup is `none`;
   a rollup the credential may not read is `unknown`).
@@ -14770,9 +14772,38 @@ repositories are 3 requests a sync, whatever the labels.
 repository's listing replaces its rows in one transaction. Derived data: the build before never reads the tables, and a
 lost row is read again.
 
-Not yet (later parts of issue #985): intake reads its listing from the cache, on a schedule that is a setting; per-job
-reads ask GitHub only when the listed `updatedAt` is newer than what they read; the in-motion pull request cycle replaces
-the event feeds (`moved.ts`, `WATCH_MS`); calls per hour by kind; the budget test.
+**Intake from the listing cache** (issue #985 part 2, 2026-10-13; `src/sources/github/listing.ts`). Intake never lists a
+repository with REST: `listOpenIssues` is gone from the port. A discover takes the open labelled issues of its scope from
+the listing cache, and lists again first the repositories that are due, all of them in one `listRepos`:
+- Due: a repository with no listing, or one whose last listing — or last failed ask — is older than the **intake sync
+  interval**, `intakeSyncMinutes` of the shared rate limiter (default 15; Settings → GitHub rate limit,
+  `POST /ui/api/github-rate-limiter`, the admin's). Read at each discover, so a change applies at the next one.
+- What asks: `JobSource.discover({ due: true })` is a timed sync (its timer, the sync watch, a rerun's sync). The first
+  sync after start, a sync of a source new or changed in the plugins config, and a sync a person asked for — Sync now, an
+  intake action, a new connection (`syncNow`, `intakeAction`) — call `discover()`, and every repository is listed at once.
+- The listing cache follows the hopper's own acts between listings: a read of an issue from GitHub sets its row (a closed
+  one goes), and the hopper's own label, assignee and close writes change its row. So a timed sync never takes an issue
+  again on the labels from before its own claim.
+- A repository GitHub does not answer for is a `repoErrors` entry until its next listing, and is asked again only then
+  (in memory). Every repository failing fails the discover, as before.
+- A listing has no body: each issue intake takes is read (`getIssue`), through the listed reads below.
+- The outside-scope suggestions (`listAssignedIssues`, issue #440) are read with each listing, no longer every 10 minutes.
+- The cache is the user's store (`githubListings`, in the job source context); with none (tests), in memory.
+
+**Listed reads** (`src/sources/github/listed-reads.ts`). Inside a discover and a check, `getIssue` and `listComments` of
+an issue are answered from what was kept while the listing cache still shows the `updatedAt` its listing or the read
+showed. An issue the cache does not hold — closed, unlabelled, or its repository not listed — is read from GitHub each
+time. A write to a repository drops what was kept of it. Outside a discover and a check — a report, a follow, a rerun,
+where a write may come next — every read goes to GitHub. An issue with sub-issues is never kept, and `subIssues` is never
+kept: a sub-issue that closes need not change its parent's `updatedAt`. Kept in memory: after a restart each issue is
+read once again.
+
+So between two listings a change on GitHub is seen late: a new labelled issue, an issue closed or unassigned, at most
+one interval later; Sync now sees it at once. The pull requests the jobs follow are not on this schedule: `follow.ts`
+reads them at each sync (issue #985 part 3 moves them to the in-motion cycle).
+
+Not yet (later parts of issue #985): the in-motion pull request cycle replaces the event feeds (`moved.ts`, `WATCH_MS`)
+and the reads for each job in `follow.ts`; calls per hour by kind; the budget test.
 
 ## The hopper label means full automation (issue #435, 2026-10-11)
 

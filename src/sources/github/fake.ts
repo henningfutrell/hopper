@@ -8,6 +8,8 @@
 // `assignees` says otherwise (issue #387: intake is by label and assignee).
 // Default identity: a connected account (writes appear as `login`). With `app`, writes appear as the bot and the
 // app-only methods exist: the bot login and the installed repos.
+// A repository listing (issue #985) lists the open issues of each repository with one of the labels; a repository
+// `failRepo` names is one GitHub does not answer for. Each change to an issue moves its `updatedAt`, as on GitHub.
 
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
 import { GitHubApiError } from './api.ts';
@@ -18,6 +20,7 @@ import type { FakeActor, FakeAppIdentity, FakeGitHub, Method, PullRequestInput }
 import { fakeConflicts } from './fake-conflicts.ts';
 import { fakeIssuePlace } from './fake-issue-place.ts';
 import { fakeFeed } from './fake-feed.ts';
+import { fakeListing } from './fake-listing.ts';
 
 export type { FakeActor, FakeAppIdentity, FakeGitHub, PullRequestInput } from './fake-types.ts';
 
@@ -71,7 +74,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     feed.record(p.repo, 'PullRequestEvent');
     for (const q of pulls) if (q.state === 'open' && conflicts.conflictsWith(p.url).includes(q.url)) q.conflicting = true;
     if (!p.closes) return;
-    Object.assign(issues.get(p.issue)!, { state: 'closed', closedBy: by, closedAt: at, stateReason: 'completed' });
+    Object.assign(issues.get(p.issue)!, { state: 'closed', closedBy: by, closedAt: at, stateReason: 'completed' }); touch(issues.get(p.issue)!);
     closers.set(p.issue, { url: p.url, createdAt: p.createdAt, mergedAt: at });
   };
   const pull = (url: string) => pulls.find((x) => x.url === url && x.state === 'open') ?? notOpen(url);
@@ -101,12 +104,12 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     if (err) throw err;
   };
   const open = (label: string) => [...issues.values()].filter((i) => i.state === 'open' && i.labels.includes(label));
+  /** A change to the issue: its `updatedAt` moves. */
+  const touch = (i: GitHubIssue) => { i.updatedAt = stamp(); };
+  const listing = fakeListing(issues, (m, a) => enter(m, a));
 
   const api: GitHubApi = {
-    async listOpenIssues(repo, label) {
-      enter('listOpenIssues', [repo, label]);
-      return open(label).filter((i) => i.repo === repo).map(copy);
-    },
+    listRepos: listing.listRepos,
     async getIssue(repo, n) { enter('getIssue', [repo, n]); return copy(find(repo, n)); },
     async subIssues(repo, n) {
       enter('subIssues', [repo, n]);
@@ -139,12 +142,13 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       for (const l of names) {
         if (i.labels.includes(l)) continue;
         i.labels.push(l);
-        happened(key(repo, n), { event: 'labeled', label: l }, self, stamp());
+        happened(key(repo, n), { event: 'labeled', label: l }, self, stamp()); touch(i);
       }
     },
     async removeLabels(repo, n, names) {
       enter('removeLabels', [repo, n, names]);
       const i = find(repo, n);
+      if (i.labels.some((l) => names.includes(l))) touch(i);
       i.labels = i.labels.filter((l) => !names.includes(l));
     },
     async assignedAt(repo, n, login) {
@@ -164,25 +168,25 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
         if (!i.assignees.includes(login)) i.assignees.push(login);
         const at = stamp();
         assigned.set(key(repo, n), [...(assigned.get(key(repo, n)) ?? []), { login, at }]);
-        happened(key(repo, n), { event: 'assigned', assignee: login }, self, at);
+        happened(key(repo, n), { event: 'assigned', assignee: login }, self, at); touch(i);
       }
     },
     async postComment(repo, n, body) {
       enter('postComment', [repo, n, body]);
       const i = find(repo, n);
       const c: GitHubComment = { id: ++commentId, author: o.app?.botLogin ?? human, body, createdAt: stamp(), url: `${i.url}#issuecomment-${commentId}` };
-      comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]);
+      comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]); touch(i);
       return { id: c.id, url: c.url };
     },
     async closeAsCompleted(repo, n) {
       enter('closeAsCompleted', [repo, n]);
-      Object.assign(find(repo, n), { state: 'closed', closedBy: o.app?.botLogin ?? human, closedAt: stamp(), stateReason: 'completed' });
+      const i = find(repo, n); Object.assign(i, { state: 'closed', closedBy: o.app?.botLogin ?? human, closedAt: stamp(), stateReason: 'completed' }); touch(i);
     },
     async reopenIssue(repo, n) {
       enter('reopenIssue', [repo, n]);
       const i = find(repo, n);
       i.state = 'open';
-      delete i.closedBy; delete i.closedAt; delete i.stateReason;
+      delete i.closedBy; delete i.closedAt; delete i.stateReason; touch(i);
     },
     closingPullRequest: async (repo, n) => { enter('closingPullRequest', [repo, n]); find(repo, n); const pr = closers.get(key(repo, n)); return pr ? { ...pr } : undefined; },
     async openClosingPullRequests(repo, n) {
@@ -263,7 +267,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     addComment(repo, n, author, body, association) {
       const i = find(repo, n);
       const c: GitHubComment = { id: ++commentId, author, body, createdAt: stamp(), url: `${i.url}#issuecomment-${commentId}`, ...(association ? { association } : {}) };
-      comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]);
+      comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]); touch(i);
       return { ...c };
     },
     editIssue(repo, n, change, editor, at = new Date().toISOString()) {
@@ -274,7 +278,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       edits.set(key(repo, n), [...(edits.get(key(repo, n)) ?? []), ...made]);
     },
     closeIssue(repo, n, closedBy, c = {}) {
-      Object.assign(find(repo, n), { state: 'closed', closedBy: closedBy ?? human, closedAt: c.at ?? stamp(), stateReason: c.reason ?? 'completed' });
+      const i = find(repo, n); Object.assign(i, { state: 'closed', closedBy: closedBy ?? human, closedAt: c.at ?? stamp(), stateReason: c.reason ?? 'completed' }); touch(i);
       closers.delete(key(repo, n));
     },
     openPullRequest: (repo, n, o) => openPull(repo, n, o, true),
@@ -289,8 +293,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     setConflicting(url, conflicting) { pull(url).conflicting = conflicting; }, ...conflicts.methods,
     pushToPullRequest(url, at, o = {}) { const p = pull(url); Object.assign(p, { headCommittedAt: at, conflicting: o.conflicting ?? false }); feed.record(p.repo, 'PushEvent'); },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {
-      const i = find(repo, n);
-      Object.assign(i, { state: 'closed', closedBy: human, closedAt: mergedAt, stateReason: 'completed' });
+      const i = find(repo, n); Object.assign(i, { state: 'closed', closedBy: human, closedAt: mergedAt, stateReason: 'completed' }); touch(i);
       const pr = { url: `https://github.com/${repo}/pull/${++pullNumber}`, createdAt, mergedAt };
       pulls.push({ url: pr.url, createdAt, isDraft: false, conflicting: false, headCommittedAt: createdAt, mergedAt, state: 'merged', body: `Closes #${n}`, repo, issue: key(repo, n), closes: true, headRef: `branch-${pullNumber}`, base: 'dev' });
       closers.set(key(repo, n), pr);
@@ -301,21 +304,22 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       if (!i.assignees.includes(login)) i.assignees.push(login);
       const when = at ?? new Date().toISOString();
       assigned.set(key(repo, n), [...(assigned.get(key(repo, n)) ?? []), { login, at: when }]);
-      happened(key(repo, n), { event: 'assigned', assignee: login }, by ?? human, when);
+      happened(key(repo, n), { event: 'assigned', assignee: login }, by ?? human, when); touch(i);
     },
-    unassign(repo, n, login) { const i = find(repo, n); i.assignees = i.assignees.filter((l) => l !== login); },
+    unassign(repo, n, login) { const i = find(repo, n); i.assignees = i.assignees.filter((l) => l !== login); touch(i); },
     deleteIssue(repo, n) { find(repo, n); issues.delete(key(repo, n)); },
     addLabel(repo, n, label, by) {
       repoLabels(repo).add(label);
       const i = find(repo, n);
       if (i.labels.includes(label)) return;
       i.labels.push(label);
-      happened(key(repo, n), { event: 'labeled', label }, by ?? human, new Date().toISOString());
+      happened(key(repo, n), { event: 'labeled', label }, by ?? human, new Date().toISOString()); touch(i);
     },
-    removeLabel(repo, n, label) { const i = find(repo, n); i.labels = i.labels.filter((l) => l !== label); },
+    removeLabel(repo, n, label) { const i = find(repo, n); i.labels = i.labels.filter((l) => l !== label); touch(i); },
     setProjectItems(owner, n, items) {
       projects.set(`${owner}/${n}`, items instanceof Error ? items : items.map((it, index) => ({ url: it.url, index, fields: { ...(it.fields ?? {}) } })));
     },
+    failRepo: listing.failRepo,
     failNext(method, error) { failures.set(method, [...(failures.get(method) ?? []), error]); },
     issue(repo, n) { return copy(find(repo, n)); },
     commentsOn(repo, n) { return (comments.get(key(repo, n)) ?? []).map((c) => ({ ...c })); },

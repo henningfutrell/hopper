@@ -15,7 +15,7 @@ import { useHopper } from '@/store';
 
 const draftOf = (v: RateLimiterView): RateLimiterDraft => ({
   slowBelowPercent: String(v.settings.slowBelowPercent), reserve: String(v.settings.reserve), batchSize: String(v.settings.batchSize),
-  intakeReserve: String(v.settings.intakeReserve),
+  intakeReserve: String(v.settings.intakeReserve), intakeSyncMinutes: String(v.settings.intakeSyncMinutes),
 });
 
 function Form({ view, now, onSaved }: { view: RateLimiterView; now: number; onSaved: (v: RateLimiterView) => void }) {
@@ -54,6 +54,7 @@ function Form({ view, now, onSaved }: { view: RateLimiterView; now: number; onSa
       {field('reserve', 'Reserve', 'calls')}
       {field('batchSize', 'Batch size', 'GitHub watches at a time')}
       {field('intakeReserve', 'Kept for job work', 'calls: intake stops at this many left')}
+      {field('intakeSyncMinutes', 'Intake sync every', 'minutes: intake lists the job repositories again')}
       {!checked.ok && <p role="alert" className="text-xs text-destructive">{checked.error}</p>}
       <Button size="sm" disabled={busy || !checked.ok || !checked.patch} onClick={() => void save()}>Save</Button>
       <div className="space-y-1 border-t pt-3">

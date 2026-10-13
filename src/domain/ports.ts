@@ -447,8 +447,12 @@ export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses {
    * status `disabled` when it has none, with `detail.paused` = the reason. Absent → never paused.
    */
   paused?(): string | undefined;
-  /** Eligible open items (labelled, assigned to the user's account, not already done/failed/rejected). */
-  discover(): Promise<SourceItem[]>;
+  /**
+   * Eligible open items (labelled, assigned to the user's account, not already done/failed/rejected). `due` (issue #985):
+   * a timed sync — the source reads again only what is due and the rest from what it keeps; absent, a person asked for
+   * the sync, and the source reads everything again.
+   */
+  discover(o?: { due?: boolean }): Promise<SourceItem[]>;
   /** Signals for this source's non-terminal jobs: cancellations and assignment drift. */
   check(active: Job[]): Promise<SourceSignal[]>;
   /**

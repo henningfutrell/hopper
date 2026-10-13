@@ -10,9 +10,9 @@
 // A claim with no holder predates holders: the intake migration releases it once when no user of this hopper
 // has a job for it; after that it is an older hopper's, respected like any other.
 //
-// The scope is given: a repo list (the app's installed repos, a connected account's chosen repos), listed repo
-// by repo. Never a search: the app never passes an empty list, and a connected account's source with none
-// chosen is paused (issue #321).
+// The scope is given: a repo list (the app's installed repos, a connected account's chosen repos), its open labelled
+// issues as the listing cache holds them (issue #985, `listing.ts`). Never a search: the app never passes an empty list,
+// and a connected account's source with none chosen is paused (issue #321).
 
 import type { IntakeOutcome, NotTakenGroup } from '../../domain/intake.ts';
 import type { Rejection } from '../../domain/rejection.ts';
@@ -66,7 +66,8 @@ export interface DiscoverResult {
 type DiscoverConfig = Pick<GitHubSourceConfig, 'label' | 'hopperName'>;
 
 export interface DiscoverScope {
-  repos: string[];
+  /** The scope's open labelled issues, and the repositories GitHub did not answer for (`listing.ts`). */
+  listed: { issues: GitHubIssue[]; repoErrors: Record<string, string> };
   /** The login an issue must be assigned to. */
   assignee: string;
   knownKeys?: (keys: string[]) => Set<string>;
@@ -77,24 +78,6 @@ export interface DiscoverScope {
   othersKnown?: (keys: string[]) => Set<string>;
   /** True during the intake migration: a claim with no holder and no job anywhere in this hopper is released. */
   migrating?: boolean;
-}
-
-async function fetchIssues(api: GitHubApi, config: DiscoverConfig, repos: string[]):
-Promise<{ issues: GitHubIssue[]; repoErrors: Record<string, string> }> {
-  if (repos.length === 0) return { issues: [], repoErrors: {} };
-  const issues: GitHubIssue[] = [];
-  const repoErrors: Record<string, string> = {};
-  let firstError: unknown;
-  for (const repo of repos) {
-    try {
-      issues.push(...(await api.listOpenIssues(repo, config.label)).map((i) => ({ ...i, repo })));
-    } catch (err) {
-      repoErrors[repo] = (err as Error).message;
-      firstError ??= err;
-    }
-  }
-  if (Object.keys(repoErrors).length === repos.length) throw firstError;
-  return { issues, repoErrors };
 }
 
 /** GitHub logins compare without case. */
@@ -161,7 +144,7 @@ const outcome = (i: GitHubIssue, reason?: string, action?: IntakeOutcome['action
 });
 
 export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, scope: DiscoverScope): Promise<DiscoverResult> {
-  const { issues, repoErrors } = await fetchIssues(api, config, scope.repos);
+  const { issues, repoErrors } = scope.listed;
   // The migration waits for a pass that lists every repo: a claim in a repo not read now is not judged.
   const migrated = scope.migrating === true && Object.keys(repoErrors).length === 0;
   const listed = new Map(issues.map((i) => [i.url, [...i.labels]]));

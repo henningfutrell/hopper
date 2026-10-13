@@ -16,7 +16,7 @@ describe('GitHub source discover', () => {
     expect(item).not.toHaveProperty('cwd');
     expect(item).not.toHaveProperty('defaultCwd');
     expect(item.invalid).toBeUndefined();
-    expect(gh.calls.filter((c) => c.method === 'listOpenIssues').map((c) => c.args)).toEqual([[REPO, 'hopper']]);
+    expect(gh.calls.filter((c) => c.method === 'listRepos').map((c) => c.args)).toEqual([[[REPO], ['hopper']]]);
   });
 
   it('takes an issue assigned to the account among others (issue #387); one a stranger filed is a request (issue #652)', async () => {
@@ -121,14 +121,14 @@ describe('GitHub source discover', () => {
   it('one repo failing does not hide the others; the error is shown in status', async () => {
     const { gh, source } = setup({ repos: ['owner/gone', REPO] });
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
-    gh.failNext('listOpenIssues', new GitHubApiError('gh: Not Found (HTTP 404)', true, 404));
+    gh.failRepo('owner/gone', 'gh: Not Found (HTTP 404)');
     expect((await source.discover()).map((i) => i.repo)).toEqual([REPO]);
     expect(source.describe().repoErrors).toEqual({ 'owner/gone': 'gh: Not Found (HTTP 404)' });
   });
 
   it('when every repo fails, discover rejects (the sync shows the error)', async () => {
     const { gh, source } = setup();
-    gh.failNext('listOpenIssues', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
+    gh.failNext('listRepos', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
     await expect(source.discover()).rejects.toThrow('Bad Gateway');
   });
 

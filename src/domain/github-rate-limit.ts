@@ -15,15 +15,21 @@ export interface RateLimiterSettings {
    * no call until the bucket resets, so a job's reads and writes (its report, a rerun) still go. Never below `reserve`.
    */
   intakeReserve: number;
+  /**
+   * How often intake lists the job repositories again, in minutes (issue #985): one repository listing each time, the
+   * listing cache in between. A sync a person asked for lists at once.
+   */
+  intakeSyncMinutes: number;
 }
 
-export const DEFAULT_RATE_LIMITER: RateLimiterSettings = { slowBelowPercent: 25, reserve: 50, batchSize: 10, intakeReserve: 1000 };
+export const DEFAULT_RATE_LIMITER: RateLimiterSettings = { slowBelowPercent: 25, reserve: 50, batchSize: 10, intakeReserve: 1000, intakeSyncMinutes: 15 };
 
 export const RATE_LIMITER_RANGES: Record<keyof RateLimiterSettings, { min: number; max: number }> = {
   slowBelowPercent: { min: 0, max: 100 },
   reserve: { min: 0, max: 5000 },
   batchSize: { min: 1, max: 100 },
   intakeReserve: { min: 0, max: 5000 },
+  intakeSyncMinutes: { min: 1, max: 1440 },
 };
 
 /** A rate-limit bucket as GitHub last told it, per credential and resource; `holdUntil` after GitHub refused a call. */
