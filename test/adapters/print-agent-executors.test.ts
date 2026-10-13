@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, lstatSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExecutionContext } from '../../src/domain/ports.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
 import type { TaskCount } from '../../src/domain/task-count.ts';
@@ -164,7 +164,8 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     expect(saved[0]).toEqual({ cwd: work });
     const running = (): boolean => spawnSync('pgrep', ['-f', leftover]).status === 0;
     try {
-      expect(running()).toBe(true);
+      // The CLI ends as soon as it spawned the leftover; its exec under its name can come a moment later.
+      await vi.waitFor(() => expect(running()).toBe(true), { timeout: 5000 });
       const job = { ...ctx.job, status: 'finished' as const, executorState: saved.at(-1)! };
       expect(await ex.cleanup!(job)).toEqual({ kept: [] });
       expect(running()).toBe(false);
