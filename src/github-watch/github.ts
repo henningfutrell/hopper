@@ -47,7 +47,8 @@ export class WatchGitHubError extends Error {
 }
 
 export function createWatchGitHub(o: { apiUrl: string } & TokenSource): WatchGitHub {
-  const req = makeRequest(o.apiUrl);
+  // A GitHub watch's calls count as its own kind (issue #985).
+  const req = makeRequest(o.apiUrl, undefined, { kind: 'watch' });
   const withToken = tokenCaller(o);
   return {
     snapshot(repo, pointer) {

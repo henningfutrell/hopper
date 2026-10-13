@@ -105,7 +105,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const listings = o.listings ?? memoryListings();
   const reads = listedReads(o.api, listings);
   const { api } = reads;
-  const listing = createIntakeListing({ api, listings, clock: o.clock, everyMs: o.listingEveryMs ?? (() => DEFAULT_RATE_LIMITER.intakeSyncMinutes * 60_000) });
+  const listingEveryMs = o.listingEveryMs ?? (() => DEFAULT_RATE_LIMITER.intakeSyncMinutes * 60_000);
+  const listing = createIntakeListing({ api, listings, clock: o.clock, everyMs: listingEveryMs });
   const { mode } = o;
   const app = mode === 'app';
   const login = o.whoami;
@@ -119,6 +120,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const outside = outsideReader(api, config);
   let lastDiscoverAt: string | undefined;
   let installedRepos: string[] = [];
+  /** When the installed repositories were last asked (issue #985): a timed sync asks again only each intake sync interval. */
+  let installedAt: number | undefined;
   let nothingToScan = false;
   const labelledRepos = new Set<string>();
   /** The request cards this process saw opened, as `<key> <hash>`: the events are read once per text. */
@@ -137,10 +140,17 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     return knownBot;
   };
 
-  /** The installation is the allowlist; config `repos`, when set, narrows it further. */
-  const appScope = async (): Promise<string[]> => {
+  /**
+   * The installation is the allowlist; config `repos`, when set, narrows it further. A timed sync (`due`) asks GitHub for it
+   * only each intake sync interval, as the listing (issue #985); a sync a person asked for asks at once.
+   */
+  const appScope = async (due: boolean): Promise<string[]> => {
     if (!api.listInstalledRepos) throw new Error('app mode needs the GitHub App adapter (no listInstalledRepos)');
-    installedRepos = (await api.listInstalledRepos()).map((r) => r.repo);
+    const now = o.clock.now().getTime();
+    if (!due || installedAt === undefined || now - installedAt >= listingEveryMs()) {
+      installedRepos = (await api.listInstalledRepos()).map((r) => r.repo);
+      installedAt = now;
+    }
     const wanted = new Set(config.repos.map((r) => r.toLowerCase()));
     return config.repos.length === 0 ? installedRepos : installedRepos.filter((r) => wanted.has(r.toLowerCase()));
   };
@@ -258,7 +268,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     discover: (d) => reads.cached(async () => {
       const bot = await botLogin();
       const assignee = o.assignee();
-      const repos = bot === undefined ? config.repos : await appScope();
+      const repos = bot === undefined ? config.repos : await appScope(d?.due === true);
       nothingToScan = app && repos.length === 0;
       if (nothingToScan || assignee === undefined) {
         repoErrors = {};

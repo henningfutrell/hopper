@@ -196,7 +196,8 @@ export function tokenCaller(o: TokenSource): <T>(fn: (token: string) => Promise<
 }
 
 export function createProxyApi(o: { apiUrl: string } & TokenSource): ProxyApi {
-  const req = makeRequest(o.apiUrl);
+  // A running job's requests count as its own kind (issue #985).
+  const req = makeRequest(o.apiUrl, undefined, { kind: 'job' });
   const withToken = tokenCaller(o);
   return {
     perform: (r, subIssueOf) => withToken((token) => call(req, token, r, webOriginOf(o.apiUrl), subIssueOf), (err) => errorOf(err, r)),

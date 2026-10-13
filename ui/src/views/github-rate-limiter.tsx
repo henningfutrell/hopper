@@ -1,6 +1,7 @@
 // The shared rate limiter (issue #436), in Settings, the hopper's admin's: below which share of a GitHub rate limit calls
 // slow down, how many calls are kept in reserve, and how many GitHub watches poll at once; and what the limiter sees now —
-// each rate-limit bucket, the conditional requests' cache hits and the waits. Saved to the daemon and applied at once,
+// each rate-limit bucket, the conditional requests' cache hits, the waits, and the calls of the last hour by kind (issue
+// #985). Saved to the daemon and applied at once,
 // without a restart.
 import { Gauge } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -9,7 +10,7 @@ import { Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import { bucketLine, cacheLine, rateLimiterPatch, rateLimiterSummary, type RateLimiterDraft } from '@/model/github-rate-limiter';
+import { bucketLine, cacheLine, hourlyRows, rateLimiterPatch, rateLimiterSummary, type RateLimiterDraft } from '@/model/github-rate-limiter';
 import type { RateLimiterView } from '@/model/wire';
 import { useHopper } from '@/store';
 
@@ -66,6 +67,18 @@ function Form({ view, now, onSaved }: { view: RateLimiterView; now: number; onSa
         <p data-slot="github-rate-limiter-cache">{cacheLine(view.cache)}</p>
         <p className="text-xs text-muted-foreground">{view.waits.count === 0 ? 'No call had to wait.' : `${view.waits.count} calls waited, ${Math.round(view.waits.totalMs / 1000)} s in all.`}</p>
       </div>
+      <div className="space-y-1 border-t pt-3">
+        <h3 className="text-xs font-medium uppercase text-muted-foreground">Calls in the last hour</h3>
+        <p className="text-xs text-muted-foreground">Each call GitHub counted against the rate limit. An answer from the cache (304) is not a call. Points: what the GraphQL calls spent.</p>
+        <table data-slot="github-rate-limiter-hourly" className="w-full max-w-md text-left">
+          <thead className="text-xs text-muted-foreground"><tr><th className="font-normal">Kind</th><th className="text-right font-normal">Calls</th><th className="text-right font-normal">Points</th></tr></thead>
+          <tbody>
+            {hourlyRows(view.hourly).map((r) => (
+              <tr key={r.kind} className={r.kind === 'all' ? 'border-t font-medium' : ''}><td>{r.label}</td><td className="text-right tabular-nums">{r.calls}</td><td className="text-right tabular-nums">{r.points}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -77,7 +90,7 @@ export function GitHubRateLimiter() {
   const [now, setNow] = useState(0);
   const shown = (v: RateLimiterView) => { setView(v); setNow(Date.now()); };
   // An answer without its settings is refused, never read as the defaults.
-  useEffect(() => { get<RateLimiterView>('/api/github-rate-limiter').then((v) => { if (typeof v?.settings?.reserve === 'number' && Array.isArray(v.buckets)) shown(v); }, () => {}); }, []);
+  useEffect(() => { get<RateLimiterView>('/api/github-rate-limiter').then((v) => { if (typeof v?.settings?.reserve === 'number' && Array.isArray(v.buckets) && v.hourly) shown(v); }, () => {}); }, []);
   return (
     <Panel title="GitHub rate limit" icon={Gauge} className="max-w-3xl">
       {view ? <Form key={JSON.stringify(view.settings)} view={view} now={now} onSaved={shown} /> : <p className="text-sm text-muted-foreground">Loading…</p>}
