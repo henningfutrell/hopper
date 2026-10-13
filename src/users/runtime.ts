@@ -184,8 +184,7 @@ const JEV_TIMEOUT_MS = 30_000;
 /** Build one user's parts; start the plugin host, the webhook dispatcher and the notifiers. The engine and source sync start with `start()`. */
 export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRuntime> {
   const { user, store, config, seams, clock, logger } = o;
-  const linkBase = (): string => o.linkBase(store.artifacts.settings().linkBase);
-  const uiUrl = (hash: string): string => `${linkBase()}/#${hash}`;
+  const linkBase = (): string => o.linkBase(store.artifacts.settings().linkBase), uiUrl = (hash: string): string => `${linkBase()}/#${hash}`; // a person's links (issue #712)
   // The plugins config is the one truth: the built-in instances are written on the start that finds none.
   ensurePluginsConfig({ config: store.config, answerTimeoutMs: config.answerTimeoutMs, localMachine: config.localMachine, userId: user.id, logger });
   // Every secret comes from the runtime, under the user's prefix (issue #56, #158) — but the TypeSafe API key, the
