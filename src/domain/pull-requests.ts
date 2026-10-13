@@ -312,8 +312,36 @@ function checkLines({ failed = [], rerun = false }: TendChecks): string[] {
   return [...named, ...again];
 }
 
-/** What a tend left on the job it tended (issue #736), in its source state (`tended`): it follows no more. When: `job.pull_request_tended`. */
-export interface Tended { pullRequest: string; step: TendStep; nextJobId: string }
+/**
+ * What a tend left on the job it tended (issue #736), in its source state (`tended`): it follows no more. When:
+ * `job.pull_request_tended`. `retries`: how many tend jobs in a row before this one were cancelled and tended again (issue #1010).
+ */
+export interface Tended { pullRequest: string; step: TendStep; nextJobId: string; retries?: number }
+
+/**
+ * The reasons a job is cancelled on purpose (issue #1010): a person's cancel, or its source's — the issue gone, closed,
+ * unlabelled, on the backburner or unassigned. A tend job cancelled so is not tended again: a person looks at it.
+ */
+export const DELIBERATE_CANCELS: readonly string[] = ['cancelled in UI', 'question dismissed', 'issue gone', 'issue closed', 'label removed', 'backburner', 'unassigned'];
+
+/** How many tend jobs in a row the hopper tends again after a cancel (issue #1010), and the wait before the first. */
+export const MAX_TEND_RETRIES = 3;
+export const TEND_RETRY_MS = 5 * 60_000;
+
+/**
+ * When the hopper tends a pull request again whose tend job was cancelled (issue #1010), in ms: a cancel by the sweep, a
+ * restart or anything but a person or its source is no reason to give up. The wait doubles with each retry in a row:
+ * 5, 10, then 20 minutes after the cancel. Undefined: it is not tended again — not a cancelled tend job, cancelled on
+ * purpose (`DELIBERATE_CANCELS`), or `MAX_TEND_RETRIES` cancelled in a row.
+ */
+export function tendRetryAt(tended: Tended | undefined, tendJob: Job | undefined): number | undefined {
+  if (!tended || tendJob?.id !== tended.nextJobId || tendJob.status !== 'cancelled') return undefined;
+  const reason = tendJob.sourceState?.sync?.cancelReason;
+  if (typeof reason === 'string' && DELIBERATE_CANCELS.includes(reason)) return undefined;
+  const retries = tended.retries ?? 0;
+  if (retries >= MAX_TEND_RETRIES) return undefined;
+  return Date.parse(tendJob.finishedAt ?? tendJob.createdAt) + TEND_RETRY_MS * 2 ** retries;
+}
 
 /**
  * Set on the job that reworks a pull request (issue #724): the pull request a person sent back, their notes, when, and who

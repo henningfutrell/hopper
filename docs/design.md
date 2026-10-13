@@ -1702,11 +1702,12 @@ queue gate; priority and lane caps apply as to any job), with `rerunOf` the ende
 it is (waiting for acceptance, held and why, queued, or failed at intake with its reason). A sync that
 offered the item in between already made the job: that one is answered. The ended job is kept as it
 ended. A source that cannot give the item back → 502 with its error, and nothing is recorded. **An issue no
-longer assigned to the connected account is refused** (issue #527): its new job was cancelled `unassigned` at
-once while Run again answered success (22 such jobs in one day). `takeBack` reads the issue first and throws
-`RerunRefused` before any write — 409, `job <id> cannot run again: its issue is not assigned to the connected
-account <login>: assign it (Sources, Assign to me) and run it again`; nothing is reopened, relabelled or
-recorded, and the failure assessor records it as not retried. Before
+longer assigned to the connected account is assigned to it first** (issue #1010): its new job was cancelled
+`unassigned` at once while Run again answered success (issue #527, 22 such jobs in one day), and from then until
+issue #1010 `takeBack` refused it (409, "assign it (Sources, Assign to me) and run it again") — a step the hopper
+can take itself, as Assign to me does, so Run again, Continue, Rework and tending stopped on it with no way out
+in their own view. `takeBack` now adds the connected account to the issue's assignees before any other write;
+other assignees stay. Before
 issue #354 Run again only cleared the labels and waited for a sync, and a closed issue was refused (409,
 issue #348); neither is so now. Any job made for a key that already had one carries `rerunOf`, whether
 Run again or a human clearing the marker made it.
@@ -2235,7 +2236,13 @@ the list, and nothing tended them). Two ways it fell out, each closed:
 - *Its tend job works on it.* A tended job follows its pull request no more (`follow: tended`), and its new job is not
   finished yet. The list keeps the tended job's card while that job — `tended.nextJobId` — is the newest of the item and
   has not finished: `state` `open`, `waits` `tending`, or `tend failed` once it ended failed (it waits on a person, its
-  hand-off says why), and `tendJobId` names it. The card has no Merge now or Close PR meanwhile: no job follows it. Once
+  hand-off says why), and `tendJobId` names it. A tend job **cancelled by no person and no source** (issue #1010: the
+  sweep, a restart — any reason but `DELIBERATE_CANCELS`: `cancelled in UI`, `question dismissed`, and the source's
+  `issue gone`, `issue closed`, `label removed`, `backburner`, `unassigned`) is no reason to give up: its report puts
+  `hopper:pr-ready` back, so the issue is not taken again as a new job, and `tendRetryAt` makes the same step due again
+  5, 10, then 20 minutes after each cancel in a row (`tended.retries`, at most `MAX_TEND_RETRIES`, 3). Meanwhile the
+  card waits `tending`, `tendWaits` saying when. Run again by `tending` may pass the cancelled tend job, the newest of
+  the item; the new tend job's `rerunOf` is that cancelled one. A fourth cancel in a row gives up, saying so. The card has no Merge now or Close PR meanwhile: no job follows it. Once
   the tend job finishes, its own card follows the pull request, or there is none.
 - *Its job follows none.* A done job that ended before the hopper followed pull requests, or whose follow ended, is
   **reconciled** with its source at each sync, before the follows (`src/sources/after-done.ts`, `JobSource.unfollowedPullRequests`,

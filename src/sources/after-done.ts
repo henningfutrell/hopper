@@ -30,6 +30,8 @@
 // conflict with it (`JobSource.conflictBetween`, the hopper's mirror), and two due ones that do not conflict are tended at
 // the same time. Where the source cannot say, they conflict, as before. What holds one is kept on its job (`heldBehind`).
 // A tend the source refused (issue #967) keeps why on its job (`tendRefused`), until a tend starts: its card says it.
+// A tend job cancelled by no person and no source (issue #1010) — the sweep, a restart — is no reason to give up: the same
+// step is due again after a wait that doubles each time (`tendRetryAt`), at most `MAX_TEND_RETRIES` in a row.
 // Rework goes back at once (issue #938): a `fix_checks` tend is held by no head. Every pull request with failed checks goes
 // back to its job in the same sync, limited only by free lanes; only a `rebase` waits for the head it conflicts with.
 // Cross-references (issue #430): before each follow, the cross-references of the job's item (`JobSource.crossReferences`) are
@@ -50,7 +52,7 @@ import { queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue
 import { pickHead } from './tend-order.ts';
 import { SourceError } from '../domain/ports.ts';
 import {
-  failedTend, following, followsWhenEnded, inMotion, judge, MAX_TENDS, rechecksMerge, reconcilable, tendBrief, tendsInRow, tendStep,
+  failedTend, following, followsWhenEnded, inMotion, judge, MAX_TENDS, rechecksMerge, reconcilable, tendBrief, tendRetryAt, tendsInRow, tendStep,
   type ActingPerson, type BaseMerge, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestAct, type PullRequestSeen, type Tended, type TendChecks,
 } from '../domain/types.ts';
 
@@ -158,14 +160,32 @@ export function createAfterDone(c: AfterDoneContext) {
    * Its followed pull request needs tending (issue #736), and it may be: the step, its URL, and what the brief says of its
    * checks — the ones that failed, and a rerun for the first fix of a row (issue #927); else undefined.
    */
-  function tendDue(job: Job | undefined): { step: NonNullable<ReturnType<typeof tendStep>>; url: string; checks: TendChecks } | undefined {
-    if (!job || !followsWhenEnded(job) || !following(job)) return undefined;
+  function tendDue(job: Job | undefined): { step: NonNullable<ReturnType<typeof tendStep>>; url: string; checks: TendChecks; retries?: number } | undefined {
+    if (!job || !followsWhenEnded(job)) return undefined;
+    const again = retryDue(job);
+    if (again) return again;
+    if (!following(job)) return undefined;
     const s = job.sourceState?.source as { pullRequest?: string; seen?: PullRequestSeen } | undefined;
     const step = tendStep(s?.seen);
     if (!step || !s?.pullRequest) return undefined;
     const inRow = step === 'fix_checks' ? tendsInRow(job, s.pullRequest, (id) => store.jobs.get(id)) : 0;
     if (inRow >= MAX_TENDS) return undefined;
     return { step, url: s.pullRequest, checks: { failed: s.seen?.failedChecks ?? [], rerun: inRow === 0 } };
+  }
+
+  /**
+   * A tend of the job's pull request whose tend job was cancelled by no person and no source (issue #1010), due again once
+   * its wait is over: the same step, on the job's report as last seen. Only while the cancelled tend job is the newest of
+   * the item, and its end is reported.
+   */
+  function retryDue(job: Job): { step: Tended['step']; url: string; checks: TendChecks; retries: number } | undefined {
+    const s = job.sourceState?.source as { follow?: string; tended?: Tended; seen?: PullRequestSeen } | undefined;
+    if (s?.follow !== 'tended' || !s.tended || !job.source) return undefined;
+    const tendJob = store.jobs.getBySourceKey(job.source.key);
+    const at = tendRetryAt(s.tended, tendJob);
+    if (at === undefined || at > c.now() || !c.finalReported(tendJob!)) return undefined;
+    return { step: s.tended.step, url: s.tended.pullRequest, checks: { failed: s.seen?.failedChecks ?? [], rerun: s.tended.step === 'fix_checks' && tendsInRow(job, s.tended.pullRequest, (id) => store.jobs.get(id)) === 0 },
+      retries: (s.tended.retries ?? 0) + 1 };
   }
 
   /**
@@ -186,7 +206,7 @@ export function createAfterDone(c: AfterDoneContext) {
     }
     const job = store.jobs.get(jobId);
     if (!job) return;
-    const tended: Tended = { pullRequest: due.url, step: due.step, nextJobId: r.job.id };
+    const tended: Tended = { pullRequest: due.url, step: due.step, nextJobId: r.job.id, ...(due.retries ? { retries: due.retries } : {}) };
     const { tendRefused: _r, ...was } = (job.sourceState?.source ?? {}) as Record<string, unknown>;
     c.setSource(jobId, { ...was, follow: 'tended', tended });
     store.events.append({ type: 'job.pull_request_tended', jobId, data: { pullRequest: due.url, step: due.step, nextJobId: r.job.id } });

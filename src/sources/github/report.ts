@@ -6,19 +6,19 @@
 // merge of its pull request closes the issue, never report(), and `follow.ts` follows it after (and closes it only after the
 // hopper's own merge of a pull request with no closing keyword, issue #677); failed → `hopper:failed`; rejected at the queue gate → the claim label goes and nothing
 // else (issue #387: a rejection is the user's own record, kept on the job; a shared label would turn the issue
-// away for every user and every hopper on the repo); cancelled → the claim label goes. `hopper:rejected`
+// away for every user and every hopper on the repo); cancelled → the claim label goes — a tend job's cancelled by no person
+// and no source puts `hopper:pr-ready` back (issue #1010): its pull request waits, to be tended again. `hopper:rejected`
 // written before then still keeps an issue out until a person removes it. Returns the source state unchanged.
-// Run again (`takeBack`, issues #313, #354) is one other issue write: a closed issue is reopened, the
-// end labels go and the source label comes back, so the new job runs and finishes against it. A person's resolution
+// Run again (`takeBack`, issues #313, #354) is one other issue write: an issue no longer assigned to the connected account
+// is assigned to it (issue #1010), a closed issue is reopened, the end labels go and the source label comes back, so the new job runs and finishes against it. A person's resolution
 // of a hand-off (`writeResolution`, issue #551) is the other, and the hopper's only comment: one short comment saying
 // what was done, with the person's note and link, naming no person, and the end label it leaves the issue with. Rows written under
 // earlier rules may still carry finalCommentId, claimCommentId, progressCommentId,
 // questionComments and answeredComments; they are kept as stored and never read.
 
 import { SourceError } from '../../domain/ports.ts';
-import { RerunRefused } from '../../domain/rerun-refused.ts';
 import type { SourceReport } from '../../domain/ports.ts';
-import { handedToFollowOns, type HandoffResolution, type Job } from '../../domain/types.ts';
+import { DELIBERATE_CANCELS, handedToFollowOns, type HandoffResolution, type Job } from '../../domain/types.ts';
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_READY, LABEL_REJECTED, holderLabel } from './labels.ts';
@@ -100,6 +100,12 @@ async function readyPullRequest(api: GitHubApi, repo: string, number: number): P
     ?? ready((await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number) && !parts.has(pr.url)));
 }
 
+/** A tend job (issue #967) cancelled by no person and no source (issue #1010): `tendRetryAt` tends its pull request again. */
+const tendTriedAgain = (job: Job): boolean => {
+  const reason = job.sourceState?.sync?.cancelReason;
+  return job.spec.tend === true && !(typeof reason === 'string' && DELIBERATE_CANCELS.includes(reason));
+};
+
 async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise<State> {
   const { job } = r;
   const { repo, number } = issueOf(job);
@@ -114,6 +120,9 @@ async function apply(ctx: ReportContext, r: SourceReport, state: State): Promise
       await settle(ctx, repo, number, [LABEL_FAILED]);
       return state;
     case 'cancelled':
+      // A tend job cancelled not on purpose (issue #1010): its pull request still waits, and the hopper tends it again.
+      await settle(ctx, repo, number, tendTriedAgain(job) ? [LABEL_PR_READY] : []);
+      return state;
     case 'rejected':
       await settle(ctx, repo, number, []);
       return state;
@@ -132,21 +141,20 @@ export function sourceError(err: unknown): SourceError {
  * job is cancelled while it is closed, and its pull request's merge closes it again —, the end labels
  * (`hopper:failed`, `hopper:done`, `hopper:rejected`) and `hopper:claimed` go, and the source label comes
  * back if it was taken off. Answers the issue as it stands after. An issue no longer assigned to `assignee`, the
- * connected account, is refused before anything is written (issue #527): its new job would be cancelled at once.
+ * connected account, is assigned to it first (issue #1010): else its new job would be cancelled at once (issue #527), and
+ * Run again, Continue and tending would stop on a step the hopper can take itself.
  */
 export async function takeBack(ctx: ReportContext, label: string, job: Job, assignee: string | undefined): Promise<GitHubIssue> {
   try {
     const { repo, number } = issueOf(job);
     const issue = await ctx.api.getIssue(repo, number);
-    if (assignee !== undefined && !isAssignedTo(issue, assignee)) {
-      throw new RerunRefused(`its issue is not assigned to the connected account ${assignee}: assign it (Sources, Assign to me) and run it again`);
-    }
+    if (assignee !== undefined && !isAssignedTo(issue, assignee)) await ctx.api.addAssignees(repo, number, [assignee]);
     if (issue.state === 'closed') await ctx.api.reopenIssue(repo, number);
     await ctx.api.removeLabels(repo, number, [...END_LABELS, ...claimLabels(ctx.holder)]);
     if (!issue.labels.includes(label)) await ctx.api.addLabels(repo, number, [label]);
     return await ctx.api.getIssue(repo, number);
   } catch (err) {
-    throw err instanceof RerunRefused ? err : sourceError(err);
+    throw sourceError(err);
   }
 }
 

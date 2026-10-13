@@ -8,8 +8,9 @@
 // whose merge is held says behind which (issue #939). What holds each is kept on its job by the sync (`Holds`, `seen`).
 // A card a tend job works on says the step, and one whose tend job failed is given up on, in the words of that job's failure.
 // A tend job not at work yet says why it waits (issue #967): no free lane, or its hold; a tend the source refused says why.
+// A tend job cancelled by no person and no source is tended again (issue #1010): its card waits on the tend, and says when.
 import type { Job } from './types.ts';
-import { followsWhenEnded, MAX_TENDS, noChecksSettled, readyToMerge, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
+import { followsWhenEnded, MAX_TEND_RETRIES, MAX_TENDS, noChecksSettled, readyToMerge, tendRetryAt, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Holds, QueueHead } from './tending-queue.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 
@@ -129,7 +130,9 @@ function cardOf(job: Job, yolo: boolean, now: number, tendJob: Job | undefined):
   const f = followedOf(job);
   const seen = f.seen;
   const state = f.follow === 'open' || tendJob ? 'open' : 'closed';
-  const waits = tendJob ? (['failed', 'cancelled', 'rejected'].includes(tendJob.status) ? 'tend failed' : 'tending') : waitOf(f.pullRequest !== undefined, seen, yolo, now);
+  const retryAt = tendRetryAt(f.tended, tendJob);
+  const tendEnded = tendJob !== undefined && ['failed', 'cancelled', 'rejected'].includes(tendJob.status) && retryAt === undefined;
+  const waits = tendJob ? (tendEnded ? 'tend failed' : 'tending') : waitOf(f.pullRequest !== undefined, seen, yolo, now);
   return {
     jobId: job.id, repo: job.source!.repo!, issue: { number: job.source!.number!, url: job.source!.url ?? job.source!.key },
     ...(f.pullRequest ? { pullRequest: { number: numberOf(f.pullRequest), url: f.pullRequest } } : {}),
@@ -138,6 +141,7 @@ function cardOf(job: Job, yolo: boolean, now: number, tendJob: Job | undefined):
     ...(job.finishedAt ? { since: job.finishedAt } : {}), yolo,
     ...(state === 'open' ? { waits } : {}), ...(tendJob ? { tendJobId: tendJob.id } : {}), ...(tendJob && f.tended ? { tendStep: f.tended.step } : {}),
     ...(tendJob && NOT_AT_WORK.includes(tendJob.status) ? { tendWaits: tendJob.waitReason ?? tendJob.holdReason ?? 'no free lane yet' } : {}),
+    ...(retryAt !== undefined ? { tendWaits: `its tend job was cancelled: tended again from ${new Date(retryAt).toISOString()}` } : {}),
     ...(seen?.mergeError ? { mergeError: seen.mergeError } : {}),
   };
 }
@@ -149,9 +153,12 @@ const MAX_TEND_FAILURE = 300;
  * Why a tend job ended without its step done (issue #927), from its failure: for a design-level conflict, the rebase brief
  * has it state the choice a person must make. Its reason on one line, cut to `MAX_TEND_FAILURE`.
  */
-function tendFailure(tendJob: Job, step: TendStep | undefined): string {
+function tendFailure(tendJob: Job, step: TendStep | undefined, tended: Tended | undefined): string {
   const did = step === 'fix_checks' ? 'fixed its checks' : 'rebased it';
   const why = (tendJob.error ?? '').replace(/\s+/g, ' ').trim();
+  if (tendJob.status === 'cancelled' && (tended?.retries ?? 0) >= MAX_TEND_RETRIES) {
+    return `the job that ${did} was cancelled ${MAX_TEND_RETRIES + 1} times in a row: a person must look at it`;
+  }
   if (why === '') return `the job that ${did} ended ${tendJob.status}: a person must look at it`;
   return `the job that ${did} failed: ${why.length > MAX_TEND_FAILURE ? `${why.slice(0, MAX_TEND_FAILURE - 1)}…` : why}`;
 }
@@ -161,7 +168,7 @@ function tendFailure(tendJob: Job, step: TendStep | undefined): string {
  * times in a row.
  */
 function gaveUpOn(job: Job, card: PullRequestCard, tendJob: Job | undefined, get: (id: string) => Job | undefined): string | undefined {
-  if (card.waits === 'tend failed' && tendJob) return tendFailure(tendJob, card.tendStep);
+  if (card.waits === 'tend failed' && tendJob) return tendFailure(tendJob, card.tendStep, followedOf(job).tended);
   if (card.waits !== 'checks failing' || !card.pullRequest || tendsInRow(job, card.pullRequest.url, get) < MAX_TENDS) return undefined;
   return `checks still fail after ${MAX_TENDS} fixes: a person must look at them`;
 }
