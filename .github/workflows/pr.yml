@@ -34,7 +34,7 @@ jobs:
           node-version: 24
           cache: npm
       - id: deps
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: node-modules-${{ runner.os }}-node24-${{ hashFiles('package-lock.json') }}
@@ -64,7 +64,7 @@ jobs:
       # The ssh stand-ins (test/herdr/fake-ssh-bin.mjs) run under PATH=/usr/bin:/bin, as on a host with node there.
       - run: sudo ln -sf "$(command -v node)" /usr/bin/node
       - id: deps
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: node_modules
           key: node-modules-${{ runner.os }}-node24-${{ hashFiles('package-lock.json') }}
