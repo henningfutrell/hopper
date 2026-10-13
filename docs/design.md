@@ -16087,7 +16087,8 @@ liked: of the saved file, of a fresh plan, or with `-target` or `-var`. And a pl
     already served it), and runs the real binary's `apply` with that file, then removes it. A plan file the caller names
     must be that file, by its SHA-256; it is applied in its place. No `HOPPER_PLAN`, an id the hopper does not know, a
     plan with no saved file, a job with no way to the hopper, or another file: refused, saying why, and the real binary
-    does not run.
+    does not run. In a need box (issue #1007, "Need steps"), which holds no proxy token, the hopper put the plan's saved
+    file there, `HOPPER_PLAN_FILE`: the wrapper applies that file and fetches nothing; one it cannot read is refused.
   - An apply takes only the flags that leave the saved plan as it is: `-auto-approve`, `-input`, `-no-color`,
     `-compact-warnings`, `-json`, `-lock`, `-lock-timeout`, `-parallelism`. Any other flag (`-destroy`, `-target`,
     `-replace`, `-var`, `-var-file`, `-refresh-only`, `-state`, …) is refused: the job plans again with what it needs.
@@ -17217,8 +17218,8 @@ Both stream the output to the job as it comes, then answer the exit code and the
 result an hour, and record `step.started`, `step.finished`, `step.refused` on the job's timeline. "Windows sandbox steps"
 above holds the Windows half; this section the Linux half.
 
-- **The ask.** `POST /job/step?needs=&why=&plan=&planId=&command=&timeout=&output=…`, the inputs as a tar body (at most
-  64 KiB: they travel in the box's environment). NEEDS as a template request writes them, `<operation>/<kind>/<asset>`.
+- **The ask.** `POST /job/step?needs=&why=&plan=&planId=&command=&timeout=&output=…`, the inputs as a tar body (as much
+  as a Windows step's: they are copied into the box; a need box on a machine of the user's takes 64 KiB, see below). NEEDS as a template request writes them, `<operation>/<kind>/<asset>`.
   A need the vault mints nothing for (only `aws-role`, `cluster` and `namespace` are minted) is a 400 before any template
   is made. `--secret` is refused: a step gets what its needs name, never a vault secret by name.
 - **The template** (`coveringTemplate`, `src/sandbox/need-steps.ts`). A template of the user's that is ready — approved, its
@@ -17243,14 +17244,23 @@ above holds the Windows half; this section the Linux half.
 - **The need box** (`runNeedBox`, `src/sandbox/need-box.ts`, through the sandbox module's `needStep`: beside the hopper, else
   on a client target of the user's with a runtime, as a check runs). The template's image with its tools, under the
   sandbox flags, the step label `io.hopper.need` (the reconcile pass leaves it; the check pass's sweep removes one no step
-  holds), `NEED_BOX_SCRIPT` as its one-shot script. The credentials, the command, the outputs and the inputs come in its
-  environment, never in the script: the script writes the AWS profiles (`[<account>-<role>]`, the first `AWS_PROFILE`)
+  holds), `NEED_BOX_SCRIPT` as its one-shot script. The credentials, the command and the outputs come in its environment,
+  never in the script. The step's files — the inputs and, for `--plan-id`, the plan's saved file — are copied in once the
+  box runs, as the box's user (the runtime's archive call, as a box step's): the plan file under `$HOME/.hopper-need`,
+  the inputs extracted into `$HOME/work`, then a mark that all are there, which the script waits for. A runtime with no
+  copy (one on a machine of the user's, through its client) takes them in the environment as a tar in base64, at most
+  64 KiB together; more is a problem before any box is made. The script writes the AWS profiles (`[<account>-<role>]`, the first `AWS_PROFILE`)
   and the kubeconfig (a context per cluster or namespace, the first current) under the box's home with umask 077, takes
-  them out of the environment, extracts the inputs in `$HOME/work`, and runs the command there with `sh -c`. One AWS role
+  them out of the environment, and runs the command in `$HOME/work` with `sh -c`. One AWS role
   is also the AWS CLI's own variables. After the command it prints the outputs as a tar in base64 between two marks,
   which the job's log never shows (`shownSoFar`, `splitOutput`). The box's output is read every second and streamed with
   each credential's value masked (`maskSecrets`); the exit code is the command's; a timeout or the job's request gone
   stops the box. The box and its home volume are removed after it, whatever came before.
+- **`terraform apply` in a need box.** A step with `--plan-id` gets, after its write credential is minted through the apply
+  gate, the plan's id as `HOPPER_PLAN` and the plan's saved file, as the hopper keeps it, as `HOPPER_PLAN_FILE`
+  (`planFile`, from the user's infra plans). The apply wrapper in the box applies that file ("Infra plans: the apply
+  wrapper on write boxes"): the need box holds no proxy token, so it cannot fetch it. A plan with no saved file gives the
+  box its id only, and the wrapper refuses the apply, saying why.
 - **What the job learns.** `need-step` in the skill catalog, its full help `NEED_STEP_HELP`; and the `sandbox`
   answer for a job not on the box names `hopper-step need` (issue #1009's text changed).
 
@@ -17265,8 +17275,14 @@ up with a question 5 h old waits the full auto-park timeout again (`test/integra
 already restarted the timer (issue #692); the path that re-parked jobs, a question on the issue thread, was fixed in
 issue #1006's own change.
 
-**Not built.** `terraform apply` in a need box: the apply wrapper fetches the plan file with the job's proxy token, which
-a need box does not hold. A step's output on the job stream (the response carries it). Inputs over 64 KiB. The HTTP server that hung on an approval (#1003) was fixed in its own change.
+**Not built.** A step's output on the job stream (the response carries it). The HTTP server that hung on an approval
+(#1003) was fixed in its own change. A need box on a machine of the user's takes at most 64 KiB of files: its client
+relays no copy.
+
+Tests: `test/sandbox/need-box.test.ts` (the real script under `sh`: inputs of 300 KiB and the plan file copied in, the
+environment small; a runtime with no copy takes 64 KiB and refuses more), `test/sandbox/need-steps.test.ts` (a step with
+an approved plan gives its box the saved file and the id), `test/sandbox/terraform-apply-wrapper.test.ts` (in a need box
+the wrapper applies `HOPPER_PLAN_FILE` and fetches nothing), `test/integration/need-steps.test.ts`.
 
 **Residual risk, stated.** A step's command runs with its credentials: it can print them, and the mask is a guard
 against an accident, not a boundary. The credential lives for its mint's time (an AWS session 15 minutes, a token 10)

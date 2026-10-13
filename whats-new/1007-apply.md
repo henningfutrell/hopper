@@ -1,0 +1,1 @@
+- A job can now apply an approved infrastructure plan from its own machine: the hopper runs the apply in a sandbox with a short-lived login made for it and the plan a person approved. Such a step can also take large input files now.
