@@ -4,9 +4,11 @@
 // failing checks is not done. Real daemon, in-memory fake GitHub at the GitHubApi seam; issues carry a scripted-executor
 // op as their first body line.
 import { afterEach, describe, expect, it } from 'vitest';
+import { runCli, type CliIo } from '../../src/cli.ts';
 import { MAX_TENDS, TEND_RETRY_MS, tendBrief, type FailuresView, type Job, type PullRequestCard, type PullRequestsView } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { waitFor } from '../support/wait.ts';
@@ -266,6 +268,34 @@ describe('Tend again on a pull request the hopper gave up on (issue #1010)', () 
     expect(twice.status).toBe(409);
     await app.waitForStatus(again!.id, 'finished');
     expect((await jobsFor(app, issue.url)).filter((j) => j.spec.tend)).toHaveLength(2);
+  });
+  it('a tend a person cancelled: hopper pr tend <n> tends it again on the same route, named as the operator CLI', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo', ms: 1500 }), labels: ['hopper'] });
+    let url: string | undefined;
+    app.scripted.ships((j) => { url ??= gh.openPullRequest(REPO, j.source!.number!, { createdAt: new Date().toISOString() }).url; });
+    await app.sync();
+    const [job] = await jobsFor(app, issue.url);
+    await app.waitForStatus(job!.id, 'finished');
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:pr-ready'), { what: 'hopper:pr-ready' });
+    gh.setConflicting(url!, true);
+    await app.sync();
+    const tender = await nextJob(app, issue.url, 2);
+    await app.waitForStatus(tender!.id, 'running');
+    app.user().engine.cancel(tender!.id, 'cancelled in UI');
+    await app.waitForStatus(tender!.id, 'cancelled');
+    await waitFor(async () => (await app.job(tender!.id)).sourceState?.sync?.finalReported === true, { what: 'its cancel reported' });
+    await waitFor(async () => (await cardOf(app, job!.id))?.waits === 'tend failed', { what: 'the hopper gave up' });
+
+    const out: string[] = [];
+    const io: CliIo = { env: { HOPPER_DATABASE_URL: databaseUrlFor(app.dbPath) }, stdin: () => '', out: (x) => out.push(x), err: () => undefined };
+    const code = await runCli(['pr', 'tend', url!.split('/').at(-1)!, '--json', '--url', app.url], io);
+    expect(code).toBe(0);
+    const again = await nextJob(app, issue.url, 3);
+    expect(JSON.parse(out.join(''))).toMatchObject({ job: { id: again!.id } });
+    const tended = (await app.events('types=job.pull_request_tended')).filter((e) => e.jobId === job!.id);
+    expect(tended.at(-1)!.data).toMatchObject({ nextJobId: again!.id, via: 'cli', person: 'operator CLI' });
   });
 });
 
