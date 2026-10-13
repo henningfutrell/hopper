@@ -181,7 +181,7 @@ describe('one queue per set of pull requests that conflict (issue #939)', () => 
     await tendDone(app, first!.job.id);
   });
 
-  it('yolo on: of two ready pull requests that conflict, one is merged; the other is held, then tended against the new base', async () => {
+  it('yolo on: of two ready pull requests that conflict, one is merged; the other is held, then tended against the new base at once', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
     const token = await app.login();
@@ -191,14 +191,10 @@ describe('one queue per set of pull requests that conflict (issue #939)', () => 
     await app.sync();
     const merged = await waitFor(() => waiting.find((w) => gh.issue(REPO, w.issue).state === 'closed'), { what: 'one merged' });
     const held = waiting.find((w) => w !== merged)!;
-    await waitFor(async () => sourceOf(await app.job(held.job.id))?.seen?.mergeHeldBehind === merged.url, { what: 'the other held' });
-    expect(gh.calls.filter((c) => c.method === 'merge')).toHaveLength(1);
-    const card = (await app.api<PullRequestsView>('GET', '/api/pull-requests')).body.repos.find((r) => r.repo === REPO)!.pullRequests.find((c) => c.jobId === held.job.id);
-    expect(card).toMatchObject({ waits: 'merge held', queue: { held: { pullRequest: Number(merged.url.split('/').at(-1)), why: 'merging' } } });
-    // The merge moved the base: the held one has merge conflicts now, and is tended.
-    gh.setConflicting(held.url, true);
-    await app.sync();
+    // The merge moved the base: the held one has merge conflicts now. The sync that runs at once after a merge (issue #967)
+    // tends it, with no sync asked for.
     await waitFor(async () => (await tends(app)).some(([id]) => id === held.job.id), { what: 'the held one tended' });
+    expect(gh.calls.filter((c) => c.method === 'merge')).toHaveLength(1);
     await tendDone(app, held.job.id);
   });
 });
