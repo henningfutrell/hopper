@@ -19,6 +19,13 @@ export interface ResourceReading {
   swapUsedBytes?: number;
   /** Read inside a container's cgroup limits, not the host's. */
   container?: true;
+  /** Read inside WSL (issue #868): a VM on a Windows host. */
+  wsl?: true;
+  /** WSL only: the memory the VM holds of the host, MemTotal less MemFree — page cache too, which Windows cannot use. */
+  vmHeldBytes?: number;
+  /** WSL only, with interop: the Windows host's physical memory, free and total. Absent: not read. */
+  hostMemFreeBytes?: number;
+  hostMemTotalBytes?: number;
 }
 
 /** One machine's resources and disk at one time, with its lanes in use: what the resource recorder keeps. */

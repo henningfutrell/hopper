@@ -4,8 +4,11 @@
 // the last keeps the last); memory is what is available, not what is free. On Linux memory and swap come from
 // /proc/meminfo; elsewhere (Windows, macOS) from the OS, with no swap. A process in a container whose cgroup (v2)
 // sets limits reads its limits and its own use: a memory limit as its total, a CPU quota as its cores.
+// In WSL (issue #868) the VM keeps its page cache, which Windows cannot use: the meter adds the memory the VM holds
+// (MemTotal less MemFree) and, through WSL interop, Windows' own free memory, read in the background once a minute.
 // Imports nothing of hopper: a client target runs it as a plain file.
-import { readFileSync, statfsSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { existsSync, readFileSync, statfsSync } from 'node:fs';
 import { availableParallelism, cpus, freemem, homedir, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
 
@@ -23,7 +26,19 @@ export interface ResourceReading {
   swapUsedBytes?: number;
   /** Read inside a container's cgroup limits, not the host's. */
   container?: true;
+  /** Read inside WSL (issue #868): a VM on a Windows host. */
+  wsl?: true;
+  /** WSL only: the memory the VM holds of the host, MemTotal less MemFree — page cache too, which Windows cannot use. */
+  vmHeldBytes?: number;
+  /** WSL only, with interop: the Windows host's physical memory, free and total. Absent: not read. */
+  hostMemFreeBytes?: number;
+  hostMemTotalBytes?: number;
 }
+
+/** A host's physical memory, free and total. */
+export interface HostMemory { freeBytes: number; totalBytes: number }
+/** Reads the Windows host's memory from inside WSL; undefined when it cannot (no interop). */
+export type HostMemoryReader = () => Promise<HostMemory | undefined>;
 
 export interface CpuTimes { user: number; nice: number; sys: number; idle: number; irq: number }
 
@@ -37,7 +52,37 @@ export interface ResourceMeterDeps {
   loadavg?: () => number[];
   totalmem?: () => number;
   freemem?: () => number;
+  /** WSL only: reads the Windows host's memory; default PowerShell through interop. */
+  hostMemory?: HostMemoryReader;
 }
+
+/** How often the Windows host's memory is read again, at most. */
+const HOST_INTERVAL_MS = 60_000;
+/** A host reading older than this is dropped: the host no longer answers. */
+const HOST_STALE_MS = 5 * 60_000;
+
+/** Windows' free and total physical memory in KiB, as one line: `<free> <total>`. */
+const WINDOWS_MEMORY = '$o = Get-CimInstance Win32_OperatingSystem; "$($o.FreePhysicalMemory) $($o.TotalVisibleMemorySize)"';
+/** Where powershell.exe is when the Windows path is not on PATH (interop with `appendWindowsPath=false`). */
+const POWERSHELL_PATH = '/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe';
+
+/** Windows' answer to WINDOWS_MEMORY; undefined when it is not two sane numbers. */
+export function readWindowsMemory(stdout: string): HostMemory | undefined {
+  const m = /^\s*(\d+)\s+(\d+)\s*$/.exec(stdout);
+  if (!m) return undefined;
+  const free = Number(m[1]) * 1024;
+  const total = Number(m[2]) * 1024;
+  return total > 0 && free <= total ? { freeBytes: free, totalBytes: total } : undefined;
+}
+
+/** Windows' memory through WSL interop: powershell.exe on PATH, else at its usual place. */
+const windowsMemory: HostMemoryReader = async () => {
+  const run = (cmd: string) => new Promise<string | undefined>((resolve) => {
+    execFile(cmd, ['-NoProfile', '-NonInteractive', '-Command', WINDOWS_MEMORY], { timeout: 20_000, windowsHide: true }, (err, stdout) => resolve(err ? undefined : String(stdout)));
+  });
+  const out = (await run('powershell.exe')) ?? (existsSync(POWERSHELL_PATH) ? await run(POWERSHELL_PATH) : undefined);
+  return out === undefined ? undefined : readWindowsMemory(out);
+};
 
 /** A read sooner than this after the last keeps the last CPU busy: the share over a few ms is noise. */
 const MIN_CPU_INTERVAL_MS = 1000;
@@ -76,6 +121,22 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
   const cgroup = (name: string) => join(root, 'sys/fs/cgroup', name);
   let last: { at: number; busy: number; total: number } | undefined;
   let busyFrac: number | undefined;
+  const wsl = platform === 'linux' && /microsoft/i.test(text(join(root, 'proc/version')) ?? '');
+  const hostMemory = d.hostMemory ?? windowsMemory;
+  let host: { at: number; reading: HostMemory } | undefined;
+  let hostAskedAt: number | undefined;
+  let hostAsking = false;
+
+  /** The Windows host's memory as last read, and a new read in the background when a minute has gone. */
+  const hostNow = (at: number): Pick<ResourceReading, 'hostMemFreeBytes' | 'hostMemTotalBytes'> => {
+    if (!hostAsking && (hostAskedAt === undefined || at - hostAskedAt >= HOST_INTERVAL_MS)) {
+      hostAsking = true;
+      hostAskedAt = at;
+      hostMemory().then((r) => { if (r) host = { at: hostAskedAt!, reading: r }; }, () => {}).finally(() => { hostAsking = false; });
+    }
+    if (!host || at - host.at > HOST_STALE_MS) return {};
+    return { hostMemFreeBytes: host.reading.freeBytes, hostMemTotalBytes: host.reading.totalBytes };
+  };
 
   /** The container's CPU quota in cores, when its cgroup sets one. */
   const quota = (): number | undefined => {
@@ -99,7 +160,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
     return { busy, total };
   };
 
-  const memory = (): Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container'> => {
+  const memory = (): Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes'> => {
     const max = platform === 'linux' ? limit(cgroup('memory.max')) : undefined;
     const current = max !== undefined ? limit(cgroup('memory.current')) : undefined;
     if (max !== undefined && current !== undefined) {
@@ -113,9 +174,11 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
     const available = kib('MemAvailable');
     const swapTotal = kib('SwapTotal');
     const swapFree = kib('SwapFree');
+    const free = kib('MemFree');
     return {
       memTotalBytes: total ?? (d.totalmem ?? totalmem)(),
       memAvailableBytes: available ?? (d.freemem ?? freemem)(),
+      ...(wsl && total !== undefined && free !== undefined ? { vmHeldBytes: Math.max(0, total - free) } : {}),
       ...(swapTotal !== undefined && swapFree !== undefined ? { swapTotalBytes: swapTotal, swapUsedBytes: Math.max(0, swapTotal - swapFree) } : {}),
     };
   };
@@ -136,6 +199,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
       ...(platform !== 'win32' && l.length === 3 ? { load: [l[0]!, l[1]!, l[2]!] as [number, number, number] } : {}),
       ...mem,
       ...(q !== undefined ? { container: true as const } : {}),
+      ...(wsl ? { wsl: true as const, ...hostNow(at) } : {}),
     };
   };
 }
