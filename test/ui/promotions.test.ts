@@ -4,9 +4,10 @@
 import { describe, expect, it } from 'vitest';
 import type { DirectJobView } from '../../src/domain/direct-jobs.ts';
 import type { PromotionDraft } from '../../src/domain/promotions.ts';
-import { fromPreview, offerLine, previewProblem, previewRequest, promoteProblem, promoteRequest, promotionLine, startEdits } from '../../ui/src/model/promotions.ts';
+import { directJobOf, fromPreview, offerLine, previewProblem, previewRequest, promoteProblem, promoteRequest, promotionLine, startEdits } from '../../ui/src/model/promotions.ts';
 
-const ART = { id: 'a1', title: 'Timeline', kind: 'svg', revision: 2, url: 'u' };
+const ART = { id: 'a1', title: 'Timeline', kind: 'svg', revision: 2, url: 'u', commit: { branch: 'hopper-promotion/d1', path: 'hopper-promotions/d1/a1-t.svg' } };
+const PNG = { id: 'a2', title: 'Chart', kind: 'image', revision: 1, url: 'u', commit: { no: 'only a text artifact is committed' } };
 const d = (more: Partial<DirectJobView> = {}): DirectJobView => ({
   id: 'd1', title: 't', brief: 'b', labels: [], authorizations: [], submittedBy: { person: 'ops', via: 'ui' }, submittedAt: '2026-10-12T09:00:00.000Z',
   job: { id: 'j1', status: 'finished', questions: [] }, artifacts: [], repo: 'octo-org/hello', ...more,
@@ -46,5 +47,18 @@ describe('the promote form (issue #946)', () => {
     expect(offerLine(d())).toBeUndefined();
     expect(promotionLine(d({ promotion }))).toBe('Promoted as a comment on octo-org/ops#4');
     expect(promotionLine(d({ promotion: { ...promotion, kind: 'issue', stale: ['a1', 'a2'] } }))).toBe('Promoted as issue octo-org/ops#4 · 2 artifacts changed since: promote again to update it');
+  });
+
+  it('commits no artifact unless the person ticks it, and only one it links', () => {
+    const e = fromPreview(startEdits(d()), { ...draft, artifacts: [ART, PNG] });
+    expect(e.commit).toEqual([]);
+    expect(promoteRequest({ ...e, commit: ['a1'] }).commit).toEqual(['a1']);
+    expect(promoteRequest({ ...e, artifacts: ['a2'], commit: ['a1'] })).not.toHaveProperty('commit');
+  });
+
+  it('knows the direct job a job was made for, from its source', () => {
+    expect(directJobOf({ source: { source: 'direct', kind: 'direct', key: 'direct:d1' } })).toBe('d1');
+    expect(directJobOf({ source: { source: 'github', kind: 'issue', key: 'https://github.invalid/o/r/issues/1' } })).toBeUndefined();
+    expect(directJobOf({})).toBeUndefined();
   });
 });
