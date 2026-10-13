@@ -11,24 +11,28 @@ export type Tone = 'busy' | 'ok' | 'bad' | 'warn' | 'question' | 'operator' | 'm
 
 /** Each stage as the view names and colours it, in the order the counts show. */
 export const STAGES: readonly { stage: JobStage; label: string; tone: Tone; title: string }[] = [
-  { stage: 'queued', label: 'queued', tone: 'muted', title: 'waits for a lane' },
-  { stage: 'running', label: 'running', tone: 'busy', title: 'an agent works it now' },
-  { stage: 'waiting', label: 'waiting', tone: 'question', title: 'waits on a person or the outside world: a question, an operator, parked, its own wait' },
-  { stage: 'pr_open', label: 'PR open', tone: 'warn', title: 'finished; its pull request is open' },
-  { stage: 'partly_done', label: 'partly done', tone: 'operator', title: 'shipped part of its issue; the rest runs once its pull request merges' },
-  { stage: 'done', label: 'done', tone: 'ok', title: 'finished, its pull request merged or none' },
-  { stage: 'failed', label: 'failed', tone: 'bad', title: 'failed' },
-  { stage: 'cancelled', label: 'cancelled', tone: 'muted', title: 'cancelled, or turned away at the queue gate' },
-  { stage: 'no_job', label: 'no job', tone: 'muted', title: 'an issue no job works' },
+  { stage: 'queued', label: 'Queued', tone: 'muted', title: 'waits for a lane' },
+  { stage: 'running', label: 'Building it', tone: 'busy', title: 'an agent works it now' },
+  { stage: 'waiting', label: 'Waiting', tone: 'question', title: 'waits on a person or the outside world: a question, an operator, parked, its own wait' },
+  { stage: 'pr_open', label: 'Ready for review', tone: 'warn', title: 'finished; its pull request is open' },
+  { stage: 'partly_done', label: 'Part shipped', tone: 'operator', title: 'shipped part of its issue; the rest runs once its pull request merges' },
+  { stage: 'done', label: 'Done', tone: 'ok', title: 'finished, its pull request merged or none' },
+  { stage: 'failed', label: 'Failed', tone: 'bad', title: 'failed' },
+  { stage: 'cancelled', label: 'Cancelled', tone: 'muted', title: 'cancelled, or turned away at the queue gate' },
+  { stage: 'no_job', label: 'Not started', tone: 'muted', title: 'an issue no job works' },
 ];
 const BY_STAGE = new Map(STAGES.map((s) => [s.stage, s]));
 export const stageInfo = (stage: JobStage) => BY_STAGE.get(stage)!;
 
-/** Each edge kind in plain words: what the edge says, read from its start to its end. */
+/**
+ * Each edge kind as a sentence (issue #935), read from its start to its end: "<start> <words> <end>". Only an issue's
+ * blocked-by link says that something must come first.
+ */
 export const EDGE_TEXT: Record<JobGraphEdgeKind, string> = {
-  parent: 'sub-issue', follow_up: 'follow-up', works: 'job of', next_part: 'next part', rerun: 'run again',
-  spawned: 'spawned', plan_apply: 'plan → apply', opened: 'opened', waits_on_merge: 'waits on merge', closes: 'closes',
-  blocked_by: 'blocked by', stacked_on: 'stacked on', asks: 'asks', hands_off: 'hands off',
+  parent: 'has the sub-issue', follow_up: 'led to the follow-up', works: 'is being worked on by', next_part: 'continues in',
+  rerun: 'is being redone as', spawned: 'branched off into', plan_apply: 'planned the work of', opened: 'produced',
+  waits_on_merge: 'is waiting on the merge of', closes: 'closes', blocked_by: 'needs this first:', stacked_on: 'goes in after',
+  asks: 'is waiting on your answer to', hands_off: 'is waiting on you to take over:',
 };
 
 /** Each node kind in plain words. */
@@ -90,8 +94,8 @@ export function lastEvents(...lists: readonly (readonly DomainEvent[])[]): Map<s
 export interface Placed { id: string; x: number; y: number }
 export interface TreeLayout { placed: Placed[]; width: number; height: number }
 
-export const NODE_W = 200;
-export const NODE_H = 44;
+export const NODE_W = 210;
+export const NODE_H = 54;
 const COL = NODE_W + 56;
 const ROW = NODE_H + 14;
 

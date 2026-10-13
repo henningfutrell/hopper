@@ -65,6 +65,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
+| `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
 | `src/repo-checks/` | Repositories with no checks (issue #677, "Repositories with no checks"): what GitHub shows of a repository's checks and the Add PR checks job's issue, with the person's own connection (`github.ts`, `@octokit/request`), one user's job repositories with their checks, read in the background, the recommendation, Queue job and Dismiss, the events (`service.ts`); the **repository setup** of each, read beside its checks (issue #652, `setup.ts`); the state, the workflow triggers and the job's text are `src/domain/repo-checks.ts`, the setup's rules `src/domain/repo-setup.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/repo-checks.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
@@ -15037,6 +15038,80 @@ Tests: `test/domain/issue-graph.test.ts`, `test/sources/issue-place.test.ts` (th
 hand-off over the real database and HTTP server), `test/ui/jobs-view-model.test.ts` and `test/ui/jobs-view.test.ts` (the
 question node, its edge and its details).
 
+**Part 3: plain words (issue #935, 2026-10-12).** The graph read as technical and centred on pull requests: an issue node
+led with `owner/name#n`, so a long title was cut; a stage read `PR open`; an edge read `job of`; and every node not
+settled was said to **block** its root, also a job that only works on its issue.
+
+- **Titles lead.** An issue node's `label` is its title alone (its `owner/name#n` when it has none); a pull request node's
+  is the goal of the job that opened it. The repository and number stay in `repo` and `number`, and the view draws them
+  in small type under the title.
+- **Stage words** (`src/domain/job-words.ts`, pure). Each node carries `stageText`: Queued, Building it (attempt 2 of
+  3), Plan, Research, Waiting on you: answer a question / approve the plan / accept the research / answer it / take it
+  over, A person works on it, Parked, Ready for review, Checks failed, Has merge conflicts, Draft, Part shipped, Merged,
+  Done, Failed, Cancelled, Not started. An issue says what its newest job says. `waitsOnYou` marks a node that waits on
+  the person. The attempt counts the failed runs a run again redoes (`attemptIn`), and its "of" is the failure settings'
+  `maxAttempts` plus one, which the route passes in; a next part is no new attempt. The words are made on the server, as
+  the UI imports nothing of `src/` at runtime, and so an agent over the API reads the same words.
+- **A summary per tree.** `JobTree.summary` is one line: "3 of 4 pieces shipped, 1 being redone, nothing waiting on
+  you." A piece is an issue of the tree (a job, when the tree has no issue); shipped is `done`; being redone, an issue
+  whose newest job runs a failed one again; what waits on you counts the question and hand-off nodes, and the jobs that
+  wait on a plan or report with no such node.
+- **Edges as sentences** (`EDGE_TEXT`, the view's own copy): is being worked on by, produced, continues in, is being
+  redone as, is waiting on the merge of, needs this first (blocked by), goes in after (stacked on), is waiting on your
+  answer to. Only `blocked_by` says something must come first. The ring the view draws round a node not settled stays,
+  but it reads "not settled yet", never "blocks".
+
+## A job's parts list (issue #935, 2026-10-12)
+
+Requirement (issue #935): for each job, everything it touched or made — a bill of materials —, grouped, each item with
+its status and its own page, over the API too (issue #718's parity); and a drill-in job page: a plain-words header, the
+job's own graph with each part as a node, a timeline newest first, and the parts as a filterable table; running parts
+stay live, and what waits on the person is pinned at the top.
+
+**The model** (`jobBom`, `src/domain/job-bom.ts`, pure; its types go out through `job-graph.ts`, as `types.ts` is at its
+line limit). Nothing new is recorded: the parts are read from what the job's record, its events and its rows already say.
+
+| Group | Parts, and where each comes from |
+|---|---|
+| What was asked (`asked`) | its issue (`source`); each issue it filed (`job.child_issue_filed`); rework asked (`job.rework_requested`); a changed spec (`job.respecified`) |
+| Work (`work`) | each run (`job.started`); its task list (`tasks`); its lane; the time it took or runs so far; each job that ran it again, ran its next part, or forked from it |
+| Code (`code`) | its pull request, checks and branch (its source state); the commits its latest checkpoint names (`checkpoint.commits`, issue #921), oldest first; its merge or close (`job.pull_request_merged`, `job.pull_request_closed`) |
+| Outputs (`outputs`) | its artifacts and each revision (`artifact.revised`); its plan or research report (`proposalId`, `researchId`) |
+| Infra (`infra`) | each plan and its approval (`infra.plan_recorded`, `infra.plan_approved`); each minted credential with its operation, asset and end (`vault.minted`); drift its check found (`infra.out_of_band_recorded`); a vault grant it asked for (`vault.grant_asked`, `vault.granted`) |
+| Decisions (`decisions`) | each question, and who answered it — a person, or the level by name (rules, a model) —; each override of a Decider pick (`minor_decision.overridden`); its hand-off |
+| Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); each checkpoint, with its commits and whether it holds the session (`job.checkpointed`); each Windows sandbox step (`step.started`) |
+
+Each part's `status` is `waiting_on_you`, `running`, `open`, `done`, `failed`, `cancelled` or `recorded` (a fact, not a
+piece of work: a lane, a branch, a credential); `href` is its page in the UI (`#questions`, `#artifacts/<id>/<n>`,
+`#infra`, `#job/<id>`…) and `url` its place on GitHub. What waits on the person comes first, then the groups in order.
+`header` says what was asked, where it stands (the stage words above) and what is next (`nextWords`: "You: answer the
+question.", "Review and merge the pull request.", "The agent works on it: 1 of 3 tasks done."); `summary` counts the
+parts that are work, not records. `events` is the job's events, newest first.
+
+**The route.** `GET /api/jobs/:id/bom` (`src/http/jobs.ts`), the user's own; 404 for a job it does not know. It reads the
+job's newest 2000 events (`EventLog.recent` takes a job now, over the `events_job` index of tenant migration 45), its
+questions, its newest hand-off, its artifacts, and the jobs among the newest 1000 that ran it again or forked from it.
+A read, so an API token needs `jobs:read`.
+
+**The page** (`ui/src/views/job.tsx`, `ui/src/views/job-bom.tsx`, `ui/src/model/job-bom.ts`). The job view at
+`#job/<id>` keeps its facts and adds, in order: the header with what waits on the person pinned under it; the job's own
+graph — the job, a node per group it has, a node per part, laid out with d3's tidy tree as the job trees are, a part
+with a page a link to it —; the timeline, the parts list's events with the ones the UI holds, newest first; and the
+parts table, filtered by group, status and text. The page reads the parts list again, debounced, each time an event of
+the job arrives on the stream, so a running part changes with no reload. A daemon with no such route (a parts list that
+cannot be read) leaves the page as it was: facts and timeline.
+
+**Left for later** (the pull request says so): cost and usage per job (the job cost profiles are made per finished job
+over machine samples, apart from this read), the commits pushed after the last checkpoint, merge order, help pages and
+What's new lines a job wrote, the test databases of a run — none has a record tied to a job yet.
+
+Tests: `test/domain/job-bom.test.ts` (each group, the order, the header and summary, the timeline),
+`test/domain/job-graph.test.ts` (titles, stage words, tree summaries), `test/integration/job-bom.test.ts` (a job that asked a
+question and opened a pull request, over the real database and HTTP server; 404), `test/ui/job-bom-model.test.ts` (filters,
+pinned parts, the layout, edge sentences), `test/ui/job-bom-view.test.ts` (the whole app over a fake daemon: header, pinned,
+graph, table filters, timeline, a live read again), `test/ui/jobs-view.test.ts` (title, small reference and stage words on
+a node, the tree summary).
+
 ## Infra plans: no apply without a plan (issue #870, part 1, 2026-10-12)
 
 Owner's principle (issue #870): no apply without a plan. Plans and infrastructure changes never slide under the radar:
@@ -15995,3 +16070,66 @@ the highlight read as text, the search in the hash, the Search view's hits, face
 type-ahead), `test/authz/model.test.ts`, `test/update/drift.test.ts`
 and `test/scripts/compose.test.ts` (the `solr` service). The Solr tests use `HOPPER_TEST_SOLR_URL` when it names a core,
 else start Solr in a container (`test/support/solr.ts`).
+
+## Promote to GitHub (issue #946, 2026-10-12)
+
+Follow-up to #901. Direct jobs are not only account fixes: they are diagnostics, artifacts, diagrams and presentations.
+Their outputs are **artifacts** of the job, kept private in the hopper and shown with the direct job. A person may
+**promote** a finished direct job to GitHub. Nothing is posted without a preview the person edits and confirms.
+
+- **Non-code outputs.** The direct job's prompt has an outputs line (`OUTPUTS_LINE`, `src/direct-jobs/item.ts`): put what
+  you make for a person to see — a diagnostic, a diagram, a presentation, a report — as artifacts of this job
+  (`sh "$HOPPER_ARTIFACT" put`); they stay private; make no public link. `GET /api/direct-jobs[/:id]` answers the job's
+  `artifacts` (`id`, `title`, `summary`, `kind`, `revision`, `url`), and the Direct jobs view lists them with links to
+  Artifacts.
+- **The offer.** A direct job whose job finished and that has no live promotion is offered (`offer`, `promotionOffer`):
+  `asked` when its submitter ticked **Offer to promote it to GitHub when done** (`promoteWhenDone` on the submission; the
+  CLI's `--promote-when-done`), `suggested` when its job made an artifact. An offered row is pinned at the top of Direct
+  jobs. The offer posts nothing.
+- **The preview.** `POST /ui/api/direct-jobs/:id/promotion/preview { repo?, target?, includeRequester? }` (operator; only
+  once its job finished or failed, else 409; with the person's own GitHub connection, else 409). The repository is the one
+  asked, else the live promotion's, else the direct job's. It answers: the repository's `visibility` (read from GitHub), the
+  `target` (`issue`, or `comment` on issue `number`), the `title`, the `body` — the brief, then `### Results` and the job's
+  result (text, or JSON; at most 8000 characters) — with secrets and personal data masked (`cleanText`), the routing
+  `labels` without the hopper's own (`carriedLabels`: `hopper`, `hopper:*`, which on GitHub could start a job), the job's
+  `artifacts`, the `footer` as it would be posted, the live promotion it would `update`, the scan's `findings` and the
+  `notes` (a public repository; links need a hopper sign-in; what is left out — logs, credentials, the authorizations, the
+  audit trail —; a revoke unpublishes nothing). It changes nothing.
+- **What is posted.** The body the person confirmed, then the footer (`promotionFooter`): `### Artifacts`, each chosen
+  artifact as a link to `<public URL>/#artifacts/<id>` with its summary and revision; `From the hopper:
+  <public URL>/#direct-jobs/<id>`, which needs a hopper sign-in; `Promoted by <their GitHub login>.`; and `Requested by
+  <the submitter>.` only with `includeRequester`. Links are made only on the hopper's public URL (`HOPPER_PUBLIC_URL`, or
+  the remote access URL while it is on): a LAN address is a machine detail. Without one, things are named by id. An
+  artifact is linked, never attached or committed: GitHub's API takes no attachment, and a private artifact stays behind
+  the hopper's sign-in.
+- **The scan** (`src/promotions/scan.ts`). Before posting, the title and the whole text are scanned: a secret (GitHub
+  tokens, 32-byte keys, private keys, AWS, Anthropic, OpenAI and Slack keys — `maskSecrets`) is always refused (422);
+  personal data (email addresses, phone numbers in international form, IP addresses, private host names, home
+  directories) is refused on a public repository, and on another unless the person ticks `allowPersonalData` (422). A
+  public repository needs `confirmPublic` (409). Customer data the patterns cannot find is the person's to check: the
+  preview says so.
+- **The post.** `POST /ui/api/direct-jobs/:id/promotion { repo, target, title, body, labels, artifacts, includeRequester?,
+  confirmPublic?, allowPersonalData? }` (operator), with the **promoting person's** own GitHub connection
+  (`githubProxy.promotions()`), never the job's: jobs hold no GitHub token. A new issue gets the labels and no assignee,
+  so it starts no job. A comment goes on the issue picked (409 when it is not there). An artifact not of the job is 400;
+  GitHub's refusal is 502.
+- **Made again.** One promotion is live per direct job. Promoting again edits what it posted — the issue's title and body
+  (its labels added), or the comment — and records the artifact revisions linked now. Another repository or target while
+  one is live is 409: revoke first.
+- **Stale.** The view's `promotion.stale` lists the artifacts linked whose revision is newer now; the row shows **stale**
+  and offers **Promote again**.
+- **Revoke.** `POST /ui/api/direct-jobs/:id/promotion/revoke` ends the live promotion in the hopper (`revokedAt`,
+  `revokedBy`). It unpublishes nothing: GitHub keeps the issue or the comment. The confirm step says so. A later promotion
+  posts anew.
+- **Record and events.** `direct_job_promotions` (tenant migration 51, a table only: the build before runs on it): the
+  repository, kind, number, URL, the comment's id, the artifact revisions linked, who promoted it and when, the revoke.
+  Never the text: GitHub has it. `direct_job.promoted` (`id`, `repo`, `kind`, `number`, `url`, `by`, `artifacts`, `update`;
+  on the job's timeline) and `direct_job.promotion_revoked` — never the text.
+- **UI.** On a direct job's row (`ui/src/views/direct-job-promotion.tsx`, `ui/src/model/promotions.ts`): the offer, the
+  promotion with its link, **stale** and **Revoke** (confirmed), and **Promote to GitHub** (operator or admin): the
+  repository and the target, **Name the requester**, then **Preview**; the preview's title, text, labels and artifact
+  ticks are editable, the footer and the notes are shown, and **Confirm and post** waits for **Post to this public
+  repository** on a public one.
+
+**Not built yet (the next parts).** Committing a small artifact to a branch of the repository, so it shows on GitHub
+without a hopper sign-in; promoting from the job view (#935) as well as from Direct jobs.

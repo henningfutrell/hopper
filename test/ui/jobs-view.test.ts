@@ -185,14 +185,18 @@ describe('the Jobs view (issue #434)', () => {
     expect(node('job:job-next').dataset.blocking).toBe('');
     const kinds = [...tree.querySelectorAll<SVGElement>('[data-slot="graph-edge"]')].map((e) => e.dataset.kind).sort();
     expect(kinds).toEqual(['next_part', 'waits_on_merge', 'works', 'works']);
-    expect(slot(tree, 'job-tree-blocking')).toBe('3 blocking');
+    expect(slot(tree, 'job-tree-summary')).toBe('0 of 1 piece shipped, 1 in progress, nothing waiting on you.');
+    // Plain words (issue #935): the title leads, the repository and number in small type, the stage in human terms.
+    expect(node('job:job-next').querySelector('[data-slot="graph-node-title"]')?.textContent).toBe('goal 1');
+    expect(node('job:job-next').querySelector('[data-slot="graph-node-ref"]')?.textContent).toBe('acme/site#1');
+    expect(node('job:job-next').querySelector('[data-slot="graph-node-stage"]')?.textContent).toBe('Building it');
     // Nothing blocks the other tree's root: it starts folded.
     expect(document.querySelector<HTMLElement>('[data-slot="job-tree"][data-root="issue:other-org/tools#2"]')!.dataset.open).toBeUndefined();
     await click(node('job:job-1'));
     const details = document.querySelector<HTMLElement>('[data-slot="graph-node-details"]')!;
     expect(details.dataset.nodeId).toBe('job:job-1');
     expect(details.textContent).toContain('the next part of acme/site#1 runs');
-    expect(details.textContent).toContain('next part');
+    expect(details.textContent).toContain('continues in');
   });
 
   it('shows an open question as a node of its job that blocks the root, and links its details to the job', async () => {
@@ -205,12 +209,12 @@ describe('the Jobs view (issue #434)', () => {
     const node = document.querySelector<SVGElement>(at)!;
     expect(node.dataset.kind).toBe('question');
     expect(node.dataset.blocking).toBe('');
-    expect(node.textContent).toContain('question · waiting');
+    expect(node.textContent).toContain('Waiting on you: answer it');
     expect([...tree.querySelectorAll<SVGElement>('[data-slot="graph-edge"]')].map((e) => e.dataset.kind).sort()).toEqual(['asks', 'works']);
     await click(node);
     const details = document.querySelector<HTMLElement>('[data-slot="graph-node-details"]')!;
     expect(details.querySelector<HTMLAnchorElement>('a[href="#job/job-1"]')?.textContent).toBe('Which store should the cache use?');
-    expect(details.textContent).toContain('asks this');
+    expect(details.textContent).toContain('is waiting on your answer to this');
   });
 
   it('a pull request\'s details list its tend attempts, each linked to its job (issue #927)', async () => {

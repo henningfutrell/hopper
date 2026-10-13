@@ -27,7 +27,7 @@ import type {
   ItemComment, ItemEdit, TextChange,
   MasterKeyRotated, MasterKeyView,
   ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView,
-  JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
+  BomGroup, BomPart, BomStatus, JobBom, JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -54,7 +54,7 @@ export type {
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
   MasterKeyRotated, MasterKeyView,
   ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView,
-  JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
+  BomGroup, BomPart, BomStatus, JobBom, JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
   Artifact, ArtifactKind, ArtifactRevision, ArtifactRevisionView, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
   Tldr, TldrSettings,
   ItemComment, ItemEdit, TextChange,
@@ -119,3 +119,4 @@ export type { RemoteAccessChange, RemoteAccessState, RemoteAccessStatus, RemoteA
 export type { GitHubWatch, GitHubWatchSettings, GitHubWatchView } from '../../../src/domain/github-watch.ts';
 export type { DirectJob, DirectJobInput, DirectJobQuestion, DirectJobView } from '../../../src/domain/direct-jobs.ts';
 export type { SearchAnswer, SearchFacet, SearchState, SearchStatus, SuggestAnswer } from '../../../src/domain/search.ts';
+export type { Promotion, PromotionArtifact, PromotionDraft, PromotionRequest, PromotionTarget, PromotionView, ScanFinding } from '../../../src/domain/promotions.ts';
