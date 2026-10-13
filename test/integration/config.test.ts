@@ -47,6 +47,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     expect(c).toEqual({
       host: '127.0.0.1',
       port: 4790,
+      tunnelApis: {},
       databaseUrl: 'postgres://u:p@db:5432/jh',
       workDir: join(tmpdir(), 'hopper'),
       tickMs: 2000,
@@ -93,7 +94,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       HOPPER_GITHUB_URL: 'https://github.example.com/', HOPPER_GITHUB_CLIENT_ID: 'gh-id', HOPPER_GITHUB_APP_SLUG: 'hopper-x',
     });
     expect(c).toEqual({
-      host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', workDir: '/var/tmp/jh', tickMs: 50,
+      host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', workDir: '/var/tmp/jh', tickMs: 50, tunnelApis: {},
       softLimit: 0.5, hardLimit: 0.9, pacing: { burnWindowMs: 0, resetAwarePlacement: false, criticalPriority: 0 }, routerCheapBoost: 5, webhookBaseMs: 20, laneIdleGraceMs: 100, reconnectGraceMs: 3000, linkGraceMs: 4000, doneRecheckMs: 500, answerTimeoutMs: 1000,
       humanRenotifyMs: 10, humanTimeoutMs: 20, resumeBoost: 7, maxQuestions: 1, keepPanes: true, localMachine: false,
       pluginDir: '/srv/p', publicUrl: 'https://hopper.example.com',

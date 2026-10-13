@@ -76,14 +76,14 @@ describe('superseded payload versions (stored events are never rewritten)', () =
   const v1Advice = { action: 'proceed_full', reason: 'ok', jevUsed: true, details: {}, source: 'fake', at: '2026-10-02T00:00:00.000Z' };
   const old = (type: string, data: Record<string, unknown>) => ({ ...event('job.held', data), type: type as EventType, schemaVersion: 1 });
 
-  it('no router mode: job.prioritized and decision.made are v3, router.mode_changed is retired', () => {
+  it('no router mode: job.prioritized and decision.made are v3, router.mode_changed is retired; remote_access.changed v1 kept (issue #968)', () => {
     expect(EVENT_SCHEMA_VERSIONS['job.prioritized']).toBe(3);
     expect(EVENT_SCHEMA_VERSIONS['decision.made']).toBe(3);
     expect(EVENT_TYPES).not.toContain('router.mode_changed');
     expect(EVENT_TYPES).not.toContain('jev.mode_changed');
     expect(Object.keys(LEGACY_EVENT_SCHEMAS).sort()).toEqual([
       'decision.made.v1', 'decision.made.v2', 'jev.mode_changed.v1', 'job.prioritized.v1', 'job.prioritized.v2', 'job.progressed.v1',
-      'proposal.escalated.v1', 'proposal.submitted.v1', 'question.answered.v1', 'question.escalated.v1', 'router.mode_changed.v1',
+      'proposal.escalated.v1', 'proposal.submitted.v1', 'question.answered.v1', 'question.escalated.v1', 'remote_access.changed.v1', 'router.mode_changed.v1',
     ]);
   });
 
