@@ -7,7 +7,7 @@ import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { doingText, noChecksLine, waitsText, waitingLine, yoloLine } from '../../ui/src/model/pull-requests.ts';
+import { checksText, doingText, noChecksLine, waitsText, waitingLine, yoloLine } from '../../ui/src/model/pull-requests.ts';
 import type { PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '../../src/domain/types.ts';
 
 const card = (over: Partial<PullRequestCard>): PullRequestCard => ({
@@ -152,13 +152,21 @@ describe('Pull requests view', () => {
   });
 
   it('what the hopper does about a card that needs tending, in plain words (issue #927)', () => {
-    expect(doingText(card({ waits: 'conflicts', queue: { next: true } }))).toBe('the hopper tends it on its next sync');
+    expect(doingText(card({ waits: 'conflicts', base: 'dev', queue: { next: true } }))).toBe('the hopper rebases it onto dev on its next sync');
+    expect(doingText(card({ waits: 'conflicts', queue: { next: true } }))).toBe('the hopper rebases it onto its base branch on its next sync');
+    expect(doingText(card({ waits: 'checks failing', queue: { next: true } }))).toBe('the hopper fixes its failed checks on its next sync');
     expect(doingText(card({ waits: 'conflicts', queue: { refused: 'its issue is not assigned to the connected account' } })))
       .toBe('the hopper cannot tend it: its issue is not assigned to the connected account');
     expect(doingText(card({ waits: 'checks failing', queue: { held: { pullRequest: 904, why: 'merging' } } }))).toBe('held behind #904, which the hopper merges first: they conflict');
     expect(doingText(card({ waits: 'conflicts', queue: { held: { pullRequest: 904, why: 'tending' } } }))).toBe('held behind #904, which a job works on now: they conflict');
     expect(doingText(card({ waits: 'checks failing', gaveUp: 'checks still fail after 3 fixes: a person must look at them' }))).toBe('the hopper gave up: checks still fail after 3 fixes: a person must look at them');
     expect(doingText(card({ state: 'closed', waits: undefined }))).toBe('');
+  });
+
+  it('a pull request with merge conflicts: its checks wait for the rebase, never "pending" (issue #938)', () => {
+    expect(checksText(card({ checks: 'pending', mergeable: 'conflicts' }))).toBe('checks run after the rebase');
+    expect(checksText(card({ checks: 'failing', mergeable: 'conflicts' }))).toBe('checks fail');
+    expect(checksText(card({ checks: 'pending', mergeable: 'mergeable' }))).toBe('checks pending');
   });
 
   it('what the hopper does about every open card, in plain words (issue #927)', () => {
