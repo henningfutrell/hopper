@@ -105,7 +105,7 @@ const LANE_MEANING = {
   unopened: 'Room for a lane this machine may open; none is open there now.',
 } as const;
 const CLOSES_AFTER = 'The job runs to the end; this lane then closes, because the machine has more lanes open than its lane cap allows now (a usage limit or an executor\'s lane cap).';
-const ELBOWED_IN = 'A specialty job elbowed in: it started on a lane past this machine\'s lane cap. The lane closes when the job ends, and the machine is back at its cap.';
+const ELBOWED_IN = 'A specialty job, or a job that tends a pull request, elbowed in: it started on a lane past this machine\'s lane cap. The lane closes when the job ends, and the machine is back at its cap.';
 
 function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: string; idle?: string | undefined; priority: boolean }) {
   const { job, lane } = row;

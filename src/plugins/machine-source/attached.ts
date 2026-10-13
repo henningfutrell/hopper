@@ -38,10 +38,10 @@ export const reservedLanesOption = (z: typeof Z) => z.number().int().min(0, 'res
   .meta({ description: 'lanes kept for jobs pinned to this machine; jobs that could run anywhere do not take them' });
 
 /**
- * How many lanes specialty jobs may elbow in past the machine's lane cap at once (issue #762). Absent: 1; 0: none.
+ * How many lanes specialty and tend jobs may elbow in past the machine's lane cap at once (issues #762, #967). Absent: 1; 0: none.
  */
 export const elbowInsOption = (z: typeof Z) => z.number().int().min(0, 'elbowIns must not be negative').optional()
-  .meta({ description: 'lanes a job labelled hopper:specialty may start past this machine\'s lane cap at once (default 1); 0: none' });
+  .meta({ description: 'lanes a job labelled hopper:specialty, or a job that tends a pull request, may start past this machine\'s lane cap at once (default 1); 0: none' });
 
 /**
  * When a machine's disk is low (issue #410): below either threshold it takes no new job. Plain options,
