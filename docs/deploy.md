@@ -604,8 +604,9 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
 ## Search
 
 Search (issue #945, docs/design.md "Search") finds your jobs by their words, filters and facets: `GET /api/search`,
-type-ahead at `GET /api/search/suggest`, the index's state at `GET /api/search/status`. It reads a Solr core the hopper
-keeps from its job events.
+type-ahead at `GET /api/search/suggest`, the index's state at `GET /api/search/status`. In the UI, the search box in
+the header and the Search view use them; from a shell, `hopper search`. It reads a Solr core the hopper keeps from its
+job events.
 
 - **In containers** it is set up: `compose.yaml` runs `docker.io/library/solr` as the service `solr`, one core (`hopper`)
   in standalone mode on the volume `solr`, on no host port and on the network `hopper_search` that it shares with the

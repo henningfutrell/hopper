@@ -28,6 +28,7 @@ import { PullRequests } from '@/views/pull-requests';
 import { Proposals, Research } from '@/views/review-section';
 import { Questions } from '@/views/questions';
 import { Resources } from '@/views/resources';
+import { Search } from '@/views/search';
 import { Queue } from '@/views/queue';
 import { Settings } from '@/views/settings';
 import { Sources } from '@/views/sources';
@@ -40,7 +41,7 @@ import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  'needs-you': NeedsYou, dashboard: Dashboard, jobs: Jobs, queue: Queue, 'direct-jobs': DirectJobs, intake: Intake, 'access-requests': AccessRequests, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, sources: Sources, machines: Machines, infra: Infra, usage: Usage, resources: Resources, settings: Settings, job: JobView,
+  'needs-you': NeedsYou, dashboard: Dashboard, search: Search, jobs: Jobs, queue: Queue, 'direct-jobs': DirectJobs, intake: Intake, 'access-requests': AccessRequests, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, sources: Sources, machines: Machines, infra: Infra, usage: Usage, resources: Resources, settings: Settings, job: JobView,
 };
 
 function Loading() {

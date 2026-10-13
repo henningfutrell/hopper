@@ -10,8 +10,8 @@
 // (issue #951; it was the Overview, and #overview still opens it) and Needs you are pinned above them, never collapsed: the Dashboard
 // covers the whole system and is the landing page; Needs you's badge already sums other entries', so no group sums it again. Your reports (issue #694) is a view of
 // its own (issue #897): it left Settings, which keeps configuration only. Direct jobs (issue #901) submits a job with no GitHub issue and reads it back. Resources (issue #947) shows what every
-// container of the stack and its Postgres use now.
-import { BellRing, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, Cpu, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Send, Server, Settings, ShieldQuestion, Telescope, type LucideIcon } from 'lucide-react';
+// container of the stack and its Postgres use now. Search (issue #945) finds jobs by their words: the header's search box opens it too.
+import { BellRing, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, Cpu, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Send, Server, Settings, ShieldQuestion, Telescope, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -27,7 +27,7 @@ import { groupBadges, type NavBadge } from '@/model/nav-groups';
 import { toggleNavGroup, useNavCollapsed } from '@/hooks/use-nav-collapsed';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['dashboard', 'needs-you', 'jobs', 'queue', 'direct-jobs', 'intake', 'access-requests', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'sources', 'machines', 'infra', 'usage', 'resources', 'settings'] as const;
+export const VIEWS = ['dashboard', 'needs-you', 'search', 'jobs', 'queue', 'direct-jobs', 'intake', 'access-requests', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'sources', 'machines', 'infra', 'usage', 'resources', 'settings'] as const;
 /** The routes: every view in the navigation, and the job view, which has no nav entry. */
 const ROUTES = [...VIEWS, 'job'] as const;
 export type View = (typeof ROUTES)[number];
@@ -36,7 +36,7 @@ export const NAV_PINNED = ['dashboard', 'needs-you'] as const satisfies readonly
 /** The nav groups, in nav order, each with its entries in order. A view of the navigation neither pinned nor in a group fails the typecheck. */
 export const NAV_GROUPS = [
   { id: 'waiting', label: 'Waiting on you', views: ['intake', 'access-requests', ...SECTION_KINDS] },
-  { id: 'jobs', label: 'Jobs', views: ['jobs', 'queue', 'direct-jobs', 'pull-requests', 'artifacts', 'decisions', 'events', 'reports'] },
+  { id: 'jobs', label: 'Jobs', views: ['search', 'jobs', 'queue', 'direct-jobs', 'pull-requests', 'artifacts', 'decisions', 'events', 'reports'] },
   { id: 'infra', label: 'Infra', views: ['infra'] },
   { id: 'sources-machines', label: 'Sources & machines', views: ['sources', 'machines', 'usage', 'resources'] },
   { id: 'settings', label: 'Settings', views: ['settings'] },
@@ -46,6 +46,7 @@ void everyViewGrouped;
 const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   dashboard: { label: 'Dashboard', icon: LayoutDashboard },
   'needs-you': { label: 'Needs you', icon: BellRing },
+  search: { label: 'Search', icon: Search },
   jobs: { label: 'Jobs', icon: LayoutGrid },
   queue: { label: 'Queue', icon: ListOrdered },
   'direct-jobs': { label: 'Direct jobs', icon: Send },
