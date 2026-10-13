@@ -86,4 +86,15 @@ describe('a machine row', () => {
       .toEqual({ cpu: '1.5 cores (container limit)', memory: '1.0 GB used of 4.0 GB (25%, container limit)' });
     expect(resourcesText(undefined)).toBeNull();
   });
+
+  it('a WSL machine (issue #868) says the memory its VM holds and Windows\' free memory', () => {
+    const r = { cores: 8, memTotalBytes: 20 * GIB, memAvailableBytes: 13 * GIB, wsl: true as const, vmHeldBytes: 19 * GIB };
+    expect(resourcesText({ ...r, hostMemFreeBytes: 3 * GIB, hostMemTotalBytes: 32 * GIB })!.memory)
+      .toBe('7.0 GB used of 20 GB (35%) · VM holds 19 GB · Windows 3.0 GB free of 32 GB');
+    expect(resourcesText(r)!.memory).toBe('7.0 GB used of 20 GB (35%) · VM holds 19 GB');
+  });
+
+  it('memory held and host memory are named lines', () => {
+    expect(machineLines([series('win', 'held', 0.9), series('win', 'host', 0.8)]).map((l) => l.label)).toEqual(['memory held', 'host memory']);
+  });
 });

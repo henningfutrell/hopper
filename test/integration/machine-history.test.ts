@@ -173,3 +173,55 @@ describe('lanes and usage on one machine\'s graph (issue #688)', () => {
     expect(none.body.laneChanges).toEqual([]);
   });
 });
+
+describe('a WSL machine\'s memory and the memory alert (issue #868)', () => {
+  const WSL: ResourceReading = {
+    cores: 8, memTotalBytes: 20 * GIB, memAvailableBytes: 13 * GIB, wsl: true, vmHeldBytes: 19 * GIB, hostMemFreeBytes: 3 * GIB, hostMemTotalBytes: 32 * GIB,
+  };
+
+  it('a sample keeps the memory the VM holds and Windows\' memory; the graph draws them as memory held and host memory', async () => {
+    const a = await boot();
+    a.probe.now = { ...a.probe.now, resources: WSL } as MachineProbe;
+    await onlineWith(a, (x) => x.resources?.wsl === true);
+    expect(await a.user().machineHistory.record()).toBeGreaterThanOrEqual(1);
+    const r = await history(a, '/api/machines/laptop/history?range=24h');
+    const last = (resource: string) => r.body.series.find((s) => s.resource === resource)?.points.at(-1)?.usedFrac;
+    expect(last('memory')).toBeCloseTo(0.35);
+    expect(last('held')).toBeCloseTo(0.95);
+    expect(last('host')).toBeCloseTo(29 / 32);
+  });
+
+  it('a machine with no WSL figures has no memory held or host memory line', async () => {
+    const a = await boot();
+    a.user().store.machineHistory.record([sample(Date.now() - HOUR, 0.5)]);
+    const r = await history(a, '/api/machines/laptop/history?range=24h');
+    expect(r.body.series.some((s) => s.resource === 'held' || s.resource === 'host')).toBe(false);
+  });
+
+  it('an admin sets the memory alert; Windows\' free memory under it tells machine.memory_low, back over machine.memory_recovered', async () => {
+    const a = await boot();
+    const admin = await a.login();
+    expect((await history(a, '/api/machines/history?range=24h')).body).not.toHaveProperty('memoryAlert');
+    expect((await a.ui('/ui/api/machines/memory-alert', { alert: { freeBytes: 0, minutes: 5 } }, { token: admin })).status).toBe(400);
+    const set = await a.ui<{ memoryAlert: unknown }>('/ui/api/machines/memory-alert', { alert: { freeBytes: 5 * GIB, minutes: 0 } }, { token: admin });
+    expect(set.status).toBe(200);
+    expect(set.body.memoryAlert).toEqual({ freeBytes: 5 * GIB, minutes: 0 });
+    expect((await history(a, '/api/machines/history?range=24h')).body.memoryAlert).toEqual({ freeBytes: 5 * GIB, minutes: 0 });
+
+    a.probe.now = { ...a.probe.now, resources: WSL } as MachineProbe;
+    await onlineWith(a, (x) => x.resources?.wsl === true);
+    await a.user().machineHistory.record();
+    const low = await waitFor(async () => (await a.events('types=machine.memory_low'))[0]);
+    expect(low.data).toMatchObject({ machineId: 'laptop', of: 'windows', freeBytes: 3 * GIB, totalBytes: 32 * GIB, thresholdBytes: 5 * GIB });
+
+    a.probe.now = { ...a.probe.now, resources: { ...WSL, hostMemFreeBytes: 9 * GIB } } as MachineProbe;
+    await onlineWith(a, (x) => x.resources?.hostMemFreeBytes === 9 * GIB);
+    await a.user().machineHistory.record();
+    const back = await waitFor(async () => (await a.events('types=machine.memory_recovered'))[0]);
+    expect(back.data).toMatchObject({ machineId: 'laptop', freeBytes: 9 * GIB, thresholdBytes: 5 * GIB });
+
+    const off = await a.ui<{ memoryAlert: unknown }>('/ui/api/machines/memory-alert', { alert: null }, { token: admin });
+    expect(off.body.memoryAlert).toBeNull();
+    expect((await history(a, '/api/machines/history?range=24h')).body).not.toHaveProperty('memoryAlert');
+  });
+});
