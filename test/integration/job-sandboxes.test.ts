@@ -11,14 +11,15 @@
 //     And the sandbox run is approved by skip sandbox approval, and the box starts
 //     And the job's wait ends with the box's name; each auto-approval is an event that names its toggle
 //     And the same job asking again gets the same box, and no second template
-//   Scenario: with both toggles off, a person approves the template, then the sandbox run, and the job's wait ends
+//   Scenario: with both toggles off, a person approves the template the job asked for; its run starts with that approval
+//   Scenario: a job that did not ask for the template waits for a person to approve its run (issue #1001)
 //   Scenario: a person declines the sandbox run, and the job is told why
 //   Scenario: the toggles are the admin's, a box action: shown in the vault's view, an event; an API token with no box grant refused
 import { execFile, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TemplateView, VaultView } from '../../src/domain/types.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
 import { SKILL_SCRIPT } from '../../src/skills/index.ts';
@@ -119,7 +120,7 @@ describe('sandboxes start from jobs (issue #991)', () => {
     expect([...runtime.boxes.keys()].filter((n) => n === req!.container)).toHaveLength(1);
   });
 
-  it('with both toggles off, a person approves the template, then the sandbox run, and the job\'s wait ends', async () => {
+  it('with both toggles off, a person approves the template the job asked for, its run starts with that approval, and the job\'s wait ends', async () => {
     const { a, token, runtime } = await boot();
     const creds = await runningJob(a);
     const first = await skill(a, creds, ['sandbox', '--needs', NEEDS]);
@@ -132,21 +133,34 @@ describe('sandboxes start from jobs (issue #991)', () => {
     await done.opened;
     expect((await a.ui('/ui/api/vault', { action: 'approve-template', name: t!.name }, { token })).status).toBe(200);
     expect((await a.ui('/ui/api/vault', { action: 'approve-profile', name: t!.name, ...AWS_WRITE }, { token })).status).toBe(200);
-    // The template is ready: the sandbox run waits for a person.
-    let req: NonNullable<VaultView['sandboxRequests']>[number] | undefined;
-    for (let i = 0; i < 100 && !req; i++) {
-      req = (await view(a, token)).sandboxRequests?.find((x) => x.state === 'waiting');
-      if (!req) await new Promise((r) => setTimeout(r, 50));
-    }
-    expect(req).toMatchObject({ template: t!.name, state: 'waiting' });
-    expect(runtime.boxes.size).toBe(0);
-    const approved = await a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve', id: req!.id }, { token });
-    expect(approved.status).toBe(200);
+    // Issue #1001: the person approved the template this job asked for, so its run needs no second approval.
     const end = await done.end;
     expect(end.code, end.stdout + end.stderr).toBe(0);
-    expect(end.stdout).toContain(`of template ${t!.name} runs, approved by`);
-    expect((await view(a, token)).sandboxRequests![0]).toMatchObject({ state: 'running' });
+    expect(end.stdout).toContain(`of template ${t!.name} runs, approved by the template's approval by `);
+    const [req] = (await view(a, token)).sandboxRequests!;
+    expect(req).toMatchObject({ state: 'running' });
+    expect(runtime.boxes.size).toBe(1);
     expect((await a.ui('/ui/api/sandbox-requests', { action: 'approve', id: req!.id }, { token })).status).toBe(409);
+  });
+
+  it('a job that did not ask for the template waits for a person to approve its run', async () => {
+    const { a, token, runtime } = await boot();
+    const asker = await runningJob(a);
+    const first = await skill(a, asker, ['sandbox', '--needs', NEEDS]);
+    expect(first.code, first.stdout).toBe(3);
+    const [t] = await asked(a, token);
+    expect((await a.ui('/ui/api/vault', { action: 'approve-template', name: t!.name }, { token })).status).toBe(200);
+    expect((await a.ui('/ui/api/vault', { action: 'approve-profile', name: t!.name, ...AWS_WRITE }, { token })).status).toBe(200);
+    const other = await runningJob(a);
+    const r = await skill(a, other, ['sandbox', '--needs', NEEDS]);
+    expect(r.code, r.stdout).toBe(3);
+    expect(r.stdout).toContain('waits for a person to approve the sandbox run on Access requests');
+    const req = (await view(a, token)).sandboxRequests!.find((x) => x.state === 'waiting');
+    expect(req).toMatchObject({ template: t!.name, state: 'waiting' });
+    const approved = await a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve', id: req!.id }, { token });
+    expect(approved.status).toBe(200);
+    await vi.waitFor(async () => expect((await view(a, token)).sandboxRequests!.find((x) => x.id === req!.id)?.state).toBe('running'));
+    expect(runtime.boxes.size).toBeGreaterThanOrEqual(1);
   });
 
   it('a person declines the sandbox run, and the job is told why', async () => {
@@ -167,10 +181,13 @@ describe('sandboxes start from jobs (issue #991)', () => {
 
   it('the toggles are the admin\'s, a box action: shown in the vault\'s view and an event; an API token with no box grant is refused', async () => {
     const { a, token } = await boot();
-    expect((await view(a, token)).sandboxApprovals).toEqual({ skipTemplateApproval: false, skipSandboxApproval: false });
+    expect((await view(a, token)).sandboxApprovals).toEqual({ skipTemplateApproval: false, skipSandboxApproval: false, autoApprove: { low: true, medium: false, high: false } });
     const set = await a.ui<VaultView>('/ui/api/sandbox-approvals', { yolo: true, skipSandboxApproval: false }, { token });
     expect(set.status).toBe(200);
-    expect(set.body.sandboxApprovals).toEqual({ skipTemplateApproval: true, skipSandboxApproval: false });
+    expect(set.body.sandboxApprovals).toEqual({ skipTemplateApproval: true, skipSandboxApproval: false, autoApprove: { low: true, medium: false, high: false } });
+    const policy = await a.ui<VaultView>('/ui/api/sandbox-approvals', { autoApprove: { low: false, high: true } }, { token });
+    expect(policy.body.sandboxApprovals?.autoApprove).toEqual({ low: false, medium: false, high: true });
+    expect((await a.ui('/ui/api/sandbox-approvals', { autoApprove: { extreme: true } }, { token })).status).toBe(400);
     expect((await a.events()).find((e) => e.type === 'vault.sandbox_approvals_set')?.data).toMatchObject({ skipTemplateApproval: true, skipSandboxApproval: false });
     expect((await a.ui('/ui/api/sandbox-approvals', { yolo: 'yes' }, { token })).status).toBe(400);
 

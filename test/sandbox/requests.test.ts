@@ -1,7 +1,7 @@
 // Issue #991: sandbox requests, a job's ask for a box of a template. One per job and template; it waits for a person
 // unless skip sandbox approval is on; approved, the box starts; every step an event on the job's timeline.
 import { describe, expect, it } from 'vitest';
-import { editedApprovals, NO_SKIPS, sandboxYolo, type SandboxApprovals } from '../../src/domain/sandbox-approvals.ts';
+import { AUTO_APPROVER, editedApprovals, NO_SKIPS, sandboxYolo, templateApprovalBy, type SandboxApprovals } from '../../src/domain/sandbox-approvals.ts';
 import type { NewEvent } from '../../src/domain/types.ts';
 import type { TemplateView } from '../../src/domain/vault.ts';
 import { createSandboxRequests } from '../../src/sandbox/requests.ts';
@@ -94,5 +94,52 @@ describe('the sandbox approval toggles (issue #991)', () => {
     expect(editedApprovals(yolo, { skipSandboxApproval: false })).toEqual({ skipTemplateApproval: true, skipSandboxApproval: false });
     expect(editedApprovals(yolo, { yolo: false })).toEqual(NO_SKIPS);
     expect(editedApprovals(NO_SKIPS, {})).toEqual(NO_SKIPS);
+  });
+});
+
+describe('runs approved with no separate run approval (issue #1001)', () => {
+  const HIGH = { name: 'asked-2', radius: { level: 'high', reasons: [] } } as unknown as TemplateView;
+  const LOW = { name: 'asked-3', radius: { level: 'low', reasons: [] } } as unknown as TemplateView;
+  function on(templates: TemplateView[], approvals: SandboxApprovals = NO_SKIPS) {
+    const events: NewEvent[] = [];
+    let n = 0;
+    const requests = createSandboxRequests({
+      record: (e) => events.push(e),
+      approvals: () => approvals,
+      template: (name) => templates.find((t) => t.name === name),
+      launch: async () => ({ container: `box-${++n}` }),
+      alive: () => true,
+      atWork: () => true,
+      clock: { now: () => new Date('2026-10-13T10:00:00Z') },
+      newId: () => `r${events.length}`,
+    });
+    return { requests, events };
+  }
+
+  it('a low-radius run starts at once, by the auto-approve policy, an event that names it', async () => {
+    const s = on([LOW]);
+    expect(s.requests.ask('job-1', LOW.name)).toMatchObject({ state: 'starting', approvedBy: AUTO_APPROVER });
+    await s.requests.idle();
+    expect(s.events.find((e) => e.type === 'vault.sandbox_approved')!.data).toMatchObject({ by: AUTO_APPROVER, radius: 'low' });
+  });
+
+  it('a high-radius run waits by default; with high on, it starts', () => {
+    expect(on([HIGH]).requests.ask('job-1', HIGH.name).state).toBe('waiting');
+    expect(on([{ ...HIGH, approval: { by: 'skip template approval' } } as TemplateView]).requests.ask('job-1', HIGH.name).state).toBe('waiting');
+    expect(on([HIGH], { ...NO_SKIPS, autoApprove: { low: true, medium: false, high: true } }).requests.ask('job-1', HIGH.name).state).toBe('starting');
+  });
+
+  it('a person who approved the template a job asked for approved its run for that job, not for another', () => {
+    const t = { ...HIGH, askedBy: 'job-1', approval: { by: 'Ada' } } as unknown as TemplateView;
+    const s = on([t]);
+    expect(s.requests.ask('job-1', t.name)).toMatchObject({ state: 'starting', approvedBy: templateApprovalBy('Ada') });
+    expect(s.requests.ask('job-2', t.name).state).toBe('waiting');
+  });
+
+  it('a job that waited on the template while a person approved it gets its run with that approval', () => {
+    const t = { ...HIGH, askedBy: 'job-1', approval: { by: 'Ada' } } as unknown as TemplateView;
+    const s = on([t]);
+    s.requests.waited('job-3', t.name);
+    expect(s.requests.ask('job-3', t.name)).toMatchObject({ state: 'starting', approvedBy: templateApprovalBy('Ada') });
   });
 });
