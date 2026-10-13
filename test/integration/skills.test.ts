@@ -131,7 +131,8 @@ describe('the skill catalog and broker (issue #582)', () => {
     expect(lines.at(-2)).toMatch(/sh "\$HOPPER_SKILL" NAME/);
     expect(lines.at(-1)).toMatch(/^A credential for any other service: sh "\$HOPPER_SKILL" SERVICE --credential/);
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(160);
-    expect(catalog.stdout.length).toBeLessThan(800);
+    // Issue #1007 added sandbox-step: still a few short lines.
+    expect(catalog.stdout.length).toBeLessThan(900);
     expect(eventsOf(a, 'skill.listed')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ machine: 'desk' }) })]);
 
     const github = await skill(a, job, ['github']);
@@ -141,7 +142,7 @@ describe('the skill catalog and broker (issue #582)', () => {
 
     const other = await skill(a, job, ['example-api']);
     expect(other.code).toBe(1);
-    expect(other.stdout).toMatch(/^no: the hopper has no skill example-api\. It has: github, kube-diagnostics, aws-diagnostics, sandbox, sandbox-template, artifacts, windows-step, box-step, help\. For another service, say what credential it takes: sh "\$HOPPER_SKILL" example-api --credential "<what it takes>"\. Else find another way\./);
+    expect(other.stdout).toMatch(/^no: the hopper has no skill example-api\. It has: github, kube-diagnostics, aws-diagnostics, sandbox, sandbox-template, artifacts, windows-step, box-step, need-step, help\. For another service, say what credential it takes: sh "\$HOPPER_SKILL" example-api --credential "<what it takes>"\. Else find another way\./);
     expect(eventsOf(a, 'skill.refused')).toEqual([expect.objectContaining({ jobId: job, data: expect.objectContaining({ skill: 'example-api', reason: expect.stringContaining('no skill example-api') }) })]);
   });
 

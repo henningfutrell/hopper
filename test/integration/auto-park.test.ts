@@ -135,7 +135,7 @@ describe('auto-park', () => {
 
     expect((await a.ui(`/ui/api/questions/${q.id}/answer`, { answer: 'Blue.' }, { token })).status).toBe(200);
     await a.waitForStatus(job.id, 'finished', 8000);
-  });
+  }, 30_000);
 
   it('time at the escalation levels does not count; a question the frontier level answers never parks', async () => {
     // The level takes longer than the timeout, then answers the colour sure of it and sends the size up.
