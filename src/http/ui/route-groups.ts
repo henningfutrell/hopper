@@ -30,9 +30,10 @@ import { registerVaultRoutes } from './vault.ts';
 import { registerVaultGrantRoutes } from './vault-grants.ts';
 import { registerMintTestRoutes } from './vault-mint-test.ts';
 import { registerInfraPlanRoutes } from './infra-plans.ts';
+import { registerSandboxRequestRoutes } from './sandbox-requests.ts';
 import { registerYoloModeRoutes } from './yolo-mode.ts';
 import { registerContributionRoutes } from './contribution.ts';
 import { registerWindowsHostRoutes } from './windows-hosts.ts';
 import { registerSearchRoutes } from '../search.ts';
 
-export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerIntakeActorRoutes, registerLoginRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes, registerVaultGrantRoutes, registerMintTestRoutes, registerYoloModeRoutes, registerContributionRoutes, registerArtifactRoutes, registerAutoParkRoutes, registerTldrRoutes, registerLaneTuningRoutes, registerBugReportRoutes, registerPullRequestActRoutes, registerRepoChecksRoutes, registerThreadAskRoutes, registerPointedJobRoutes, registerDirectJobRoutes, registerPromotionRoutes, registerGitHubWatchRoutes, registerInfraPlanRoutes, registerWindowsHostRoutes, registerSearchRoutes] as const;
+export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerIntakeActorRoutes, registerLoginRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes, registerVaultGrantRoutes, registerSandboxRequestRoutes, registerMintTestRoutes, registerYoloModeRoutes, registerContributionRoutes, registerArtifactRoutes, registerAutoParkRoutes, registerTldrRoutes, registerLaneTuningRoutes, registerBugReportRoutes, registerPullRequestActRoutes, registerRepoChecksRoutes, registerThreadAskRoutes, registerPointedJobRoutes, registerDirectJobRoutes, registerPromotionRoutes, registerGitHubWatchRoutes, registerInfraPlanRoutes, registerWindowsHostRoutes, registerSearchRoutes] as const;

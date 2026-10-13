@@ -7,10 +7,14 @@
 // read the user's read policy holds; anything else waits for a person, as a template saved in the UI does. A job never
 // widens a template, approves one, or approves it again after a revoke. A template of read needs only takes the
 // read-only check (issue #716, item 4; src/sandbox/check.ts) before its first box: until it passed, the job waits.
+// Issue #991: with the user's **skip template approval** on, a template it makes now that the read policy does not
+// approve is approved at once by that toggle, its write, sync and apply profiles with it. A job then asks for a box of
+// it (`sandbox`, src/sandbox/requests.ts).
 import { createHash } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
 import { checkWait } from '../domain/read-only-check.ts';
 import { inReadPolicy, type ReadPolicy } from '../domain/read-policy.ts';
+import { NO_SKIPS, SKIP_TEMPLATE_APPROVER, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
 import type { TemplatePreview, TemplateView } from '../domain/vault.ts';
 import { toolsForNeeds } from '../sandbox/tools.ts';
 import { SKILLS } from './catalog.ts';
@@ -18,6 +22,8 @@ import { needsFromWords } from './needs-in-words.ts';
 
 /** The skill name a job asks for a template by. */
 export const TEMPLATE_SKILL = 'sandbox-template';
+/** The skill name a job asks for a box by (issue #991): the template its needs make, then a box of it. */
+export const SANDBOX_SKILL = 'sandbox';
 /** The most needs one request names. */
 export const NEEDS_MAX = 16;
 /** Who approves a template the read policy holds: what its approval and its events say. */
@@ -25,7 +31,7 @@ export const READ_POLICY_APPROVER = 'the read policy';
 
 const keyOf = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
 
-const HOW = `say it in words, one line each (kubectl get pods on cluster NAME), or write each need as <operation>/<kind>/<asset>: sh "$HOPPER_SKILL" ${TEMPLATE_SKILL} --needs "read/cluster/NAME read/aws-account/ID"`;
+const HOW = `say it in words, one line each (kubectl get pods on cluster NAME), or write each need as <operation>/<kind>/<asset>: sh "$HOPPER_SKILL" ${SANDBOX_SKILL} --needs "read/cluster/NAME read/aws-account/ID"`;
 
 /** One need written out, `<operation>/<kind>/<asset>`; or why it cannot be read. */
 function writtenNeed(item: string): OperationProfile | string {
@@ -75,11 +81,15 @@ export interface TemplateRequestUser {
   template(name: string): TemplateView | undefined;
   save(t: { name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; readOnly: boolean; askedBy?: string }, by: string): Promise<Result>;
   approve(name: string, by: string): Promise<Result>;
+  approveProfile(name: string, profile: OperationProfile, by: string): Promise<Result>;
   policy(): ReadPolicy | undefined;
+  /** The sandbox approval toggles (issue #991); absent: both off. */
+  approvals?(): SandboxApprovals | undefined;
   image: string;
 }
 
-export type TemplateAnswer = { status: 200 | 202; text: string } | { status: 400 | 409 | 503; reason: string };
+/** `template`: the template's name, when the needs could be read. */
+export type TemplateAnswer = { status: 200 | 202; text: string; template: string } | { status: 400 | 409 | 503; reason: string };
 
 const STATUS: Record<string, 400 | 409 | 503> = { invalid: 400, conflict: 409 };
 
@@ -107,17 +117,21 @@ function outsidePolicy(needs: readonly OperationProfile[], policy: ReadPolicy | 
   ];
 }
 
+const skipsTemplate = (u: Pick<TemplateRequestUser, 'approvals'>): boolean => (u.approvals?.() ?? NO_SKIPS).skipTemplateApproval;
+
 /** The template these needs make, and who approves it; or why the needs cannot be read. It saves nothing. */
-export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'policy' | 'image'>, said: string | undefined): TemplatePreview | string {
+export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'policy' | 'image' | 'approvals'>, said: string | undefined): TemplatePreview | string {
   const needs = needsOf(said);
   if (typeof needs === 'string') return needs;
   const name = requestedName(needs);
   const was = u.template(name);
-  const waits = outsidePolicy(needs, u.policy());
+  const outside = outsidePolicy(needs, u.policy());
+  const skip = outside.length > 0 && skipsTemplate(u);
+  const waits = skip ? [] : outside;
   return {
     template: name, image: u.image, tools: toolsForNeeds(needs), needs: needs.map(inWords),
     readOnly: needs.every((p) => p.operation === 'read'),
-    approvedBy: waits.length === 0 ? READ_POLICY_APPROVER : 'a person', waits,
+    approvedBy: outside.length === 0 ? READ_POLICY_APPROVER : skip ? SKIP_TEMPLATE_APPROVER : 'a person', waits,
     ...(was ? { exists: sameNeeds(was.profiles, needs) ? 'same' as const : 'changed' as const } : {}),
   };
 }
@@ -135,10 +149,17 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
     const readOnly = needs.every((p) => p.operation === 'read');
     const saved = await u.save({ name, image: u.image, secrets: [], profiles: needs, tools: toolsForNeeds(needs), readOnly, ...(job ? { askedBy: job } : {}) }, by);
     if (!saved.ok) return { status: STATUS[saved.code] ?? 503, reason: saved.error };
-    // The policy approves only a template it makes now, and only when every need is a read it holds.
-    if (outsidePolicy(needs, u.policy()).length === 0) {
-      const approved = await u.approve(name, READ_POLICY_APPROVER);
+    // The policy approves only a template it makes now, and only when every need is a read it holds. Else skip template
+    // approval (issue #991) approves a template it makes now: as it is, then each write, sync or apply profile.
+    const byPolicy = outsidePolicy(needs, u.policy()).length === 0;
+    if (byPolicy || skipsTemplate(u)) {
+      const approver = byPolicy ? READ_POLICY_APPROVER : SKIP_TEMPLATE_APPROVER;
+      const approved = await u.approve(name, approver);
       if (!approved.ok) return { status: STATUS[approved.code] ?? 503, reason: approved.error };
+      for (const p of byPolicy ? [] : u.template(name)?.pending.profiles ?? []) {
+        const done = await u.approveProfile(name, p, approver);
+        if (!done.ok) return { status: STATUS[done.code] ?? 503, reason: done.error };
+      }
     }
   }
   const t = u.template(name);
@@ -146,15 +167,17 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
   const waits = waitsOf(t);
   if (waits.length > 0) {
     const why = outsidePolicy(needs, u.policy());
-    return { status: 202, text: `waiting: template ${name} waits for a person on Access requests: ${waits.join('; ')}${why.length ? ` (${why.join('; ')})` : ''}.` };
+    return { status: 202, template: name, text: `waiting: template ${name} waits for a person on Access requests: ${waits.join('; ')}${why.length ? ` (${why.join('; ')})` : ''}.` };
   }
   const checking = checkWait(t);
-  if (checking) return { status: 202, text: `waiting: template ${name} is approved; ${checking}. Each write it may make must be refused, each read must work.` };
-  const who = t.approval?.by === READ_POLICY_APPROVER ? 'approved by the read policy' : 'approved by a person';
+  if (checking) return { status: 202, template: name, text: `waiting: template ${name} is approved; ${checking}. Each write it may make must be refused, each read must work.` };
+  const approver = t.approval?.by;
+  const who = approver === READ_POLICY_APPROVER || approver === SKIP_TEMPLATE_APPROVER ? `approved by ${approver}` : 'approved by a person';
   return {
     status: 200,
+    template: name,
     text: `${TEMPLATE_SKILL}: template ${name} is ready, ${who}, for: ${needs.map(inWords).join(', ')}.
-A box of it does this work. A person starts one: Machines → Add machine → A sandbox box → ${name}, or hopper sandbox launch --template ${name}.
+A box of it does this work. Ask the hopper to start one: sh "$HOPPER_SKILL" ${SANDBOX_SKILL} --needs "<the same needs>" --wait. A person can also start one: hopper sandbox launch --template ${name}.
 On the box, load the skill for each asset; the hopper asks a person for each credential the first time:
 ${loads(needs)}`,
   };

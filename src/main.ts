@@ -26,6 +26,7 @@ import { logMasterKey, resolveMasterKey, withMasterKey, type MasterKey } from '.
 import { masterKeyRotation } from './users/master-key-rotation.ts';
 import { createRateLimiterControl } from './github-limiter/settings.ts';
 import { createMasterKeyStatus, type MasterKeyStatus } from './http/master-key.ts';
+import { BOX_AGENTS } from './http/ui/machine-join.ts';
 import { logMask } from './secrets/log-mask.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { CLIENT_SECRET_VARIABLE } from './connected-accounts/web-flow.ts';
@@ -212,6 +213,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     instance, logger,
     options: (user) => ({
       config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(sandboxRecords.list(), userId),
+      // A job's sandbox request (issue #991): the box starts through the sandbox module, made below, with the template's defaults.
+      sandboxes: { launch: (userId, template) => sandboxes.launch(userId, { agent: BOX_AGENTS[0], template, params: {} }), alive: (userId, name) => sandboxRecords.list().some((r) => r.userId === userId && r.name === name) },
       installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, uiUrl, artifactLinkBase, reach: () => remoteAccess.watch.url(),
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.

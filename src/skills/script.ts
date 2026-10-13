@@ -59,7 +59,8 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #   sh "$HOPPER_SKILL" NAME [ASSET]  load one skill (ASSET as the catalog says, e.g. cluster/prod)
 #     --why TEXT         what the job needs it for: the user reads it when the hopper asks them for a credential
 #     --credential TEXT  for a service the hopper has no skill for: the credential it takes (issue #583)
-#     --needs TEXT       for sandbox-template: what the work needs, as <operation>/<kind>/<asset> ... (issue #716)
+#     --needs TEXT       for sandbox and sandbox-template: what the work needs, as <operation>/<kind>/<asset> ...
+#                        (issues #716, #991)
 #     --wait             while the hopper waits for the user to give the credential (202), wait for the answer:
 #                        the hopper pushes it on the job stream (issue #613)
 #     --timeout SECONDS  how long --wait waits (the hopper's default: an hour)

@@ -58,6 +58,9 @@ import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 import { machineLanesEditor } from './machine-lanes.ts';
 import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts'; import { createUserSearch, type SearchWiring, type UserSearch } from '../search/index.ts'; import { searchHitRoute } from '../domain/search.ts'; import { intakeOutcomeOf } from '../sources/intake-live.ts';
 import { planNotice } from '../domain/infra-watchers.ts';
+import { NO_SKIPS } from '../domain/sandbox-approvals.ts';
+import type { TemplateView } from '../domain/vault.ts';
+import { createSandboxRequests, type SandboxRequests } from '../sandbox/requests.ts';
 
 export type { UserSeams } from './seams.ts';
 
@@ -121,6 +124,8 @@ export interface UserRuntimeOptions {
   instanceSecrets?: SystemSecrets; sharedSecrets?: Parameters<typeof openUserVault>[0]['shared'];
   /** What each box of this user was launched with, by machine name (issue #708): the vault gives it nothing else. Absent: no box is narrowed. */
   launchScopes?(userId: string): Map<string, LaunchScope>;
+  /** Starts a box of a template for a job's sandbox request (issue #991), and says whether a box of the user's is still there. Absent: no box starts. */
+  sandboxes?: { launch(userId: string, template: TemplateView): Promise<{ container: string }>; alive(userId: string, container: string): boolean };
 }
 
 
@@ -169,6 +174,8 @@ export interface UserRuntime {
   githubProxy: UserGitHubProxy;
   /** A job's step run on a Windows host the user set up (issue #731); search (issue #945): the index kept from job events, and the permission-checked search. */
   windowsSteps: WindowsSteps; search: UserSearch;
+  /** The boxes the user's jobs ask for (issue #991): kept in memory. */
+  sandboxRequests: SandboxRequests;
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */
@@ -387,8 +394,19 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }) });
   // Search (issue #945): the user's documents in the index, kept from job events; each hit decided by Access.
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : o.uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
+  // Sandboxes jobs start (issue #991): each request approved by a person, or by the user's skip sandbox approval.
+  const sandboxRequests = createSandboxRequests({
+    record: (e) => { store.events.append(e); },
+    approvals: () => store.settings.getSandboxApprovals() ?? NO_SKIPS,
+    template: (name) => vault.view().templates.find((t) => t.name === name),
+    launch: (t) => (o.sandboxes ? o.sandboxes.launch(user.id, t) : Promise.reject(new Error('this hopper starts no sandbox box'))),
+    alive: (c) => o.sandboxes?.alive(user.id, c) ?? false,
+    atWork: (id) => ['running', 'waiting_answer', 'waiting_on'].includes(store.jobs.get(id)?.status ?? ''),
+    jobTitle: (id) => { const j = store.jobs.get(id); return j?.source?.title ?? j?.spec.goal; },
+    clock,
+  });
   return {
-    search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, directJobs,
+    search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, directJobs, sandboxRequests,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,

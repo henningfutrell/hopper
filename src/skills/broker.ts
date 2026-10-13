@@ -12,7 +12,8 @@ import { machineOfLane } from '../domain/raised-by.ts';
 import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 import { askedSkill, catalogText, credentialText, kindsInWords, linkText, mintedLinkText, skillOf, SKILLS, type LinkForm, type Skill, type SkillCredential } from './catalog.ts';
-import { TEMPLATE_SKILL, type TemplateAnswer } from './template-request.ts';
+import type { SandboxRequestView } from '../domain/sandbox-approvals.ts';
+import { SANDBOX_SKILL, TEMPLATE_SKILL, type TemplateAnswer } from './template-request.ts';
 import { helpForAgent } from '../help/book.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
@@ -32,6 +33,8 @@ export interface SkillUser {
   need(ask: CredentialNeed, asker: { job: Job; machine: string; template: string }): { waiting: string } | { declined: string };
   /** A template request (issue #716): the hopper makes the template the job's needs say, or says why not. */
   requestTemplate(needs: string | undefined, job: Job): Promise<TemplateAnswer>;
+  /** A sandbox request (issue #991): the job's ask for a box of the template, and where it is now. */
+  sandbox(template: string, job: Job): SandboxRequestView;
 }
 
 /** A vault secret a box may be given, as its metadata says (issue #583: the skill a person gave it for, the kind, their words). */
@@ -133,6 +136,7 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       record('skill.loaded');
       return { status: 200, text: `${t.text}\n` };
     }
+    if (name === SANDBOX_SKILL) return sandbox();
     if (name === 'help') {
       const h = helpForAgent(said);
       if ('no' in h) return no(404, h.no);
@@ -166,6 +170,28 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       }, { job, machine, template: box.template });
       if ('declined' in r) return no(403, r.declined, decision);
       return { status: 202, text: `waiting: ${r.waiting} Add --wait to have the hopper tell you when it is ready.\n` };
+    }
+
+    /**
+     * Issue #991: the template the needs make, then a box of it. Each wait is a 202 the job's --wait ends; the box that
+     * runs is a 200 with its name and the skills it loads.
+     */
+    async function sandbox(): Promise<SkillAnswer> {
+      const t = await user.requestTemplate(field(body, 'needs'), job);
+      if ('reason' in t) return no(t.status, t.reason);
+      const later = ' Add --wait to have the hopper tell you when the box runs.\n';
+      if (t.status === 202) return { status: 202, text: `${t.text} Then the hopper starts the box.${later}` };
+      const r = user.sandbox(t.template, job);
+      if (r.state === 'waiting') return { status: 202, text: `waiting: the box of template ${t.template} waits for a person to approve the sandbox run on Access requests.${later}` };
+      if (r.state === 'starting') return { status: 202, text: `waiting: the box of template ${t.template} starts now, approved by ${r.approvedBy ?? 'a person'}.${later}` };
+      if (r.state === 'declined') return no(403, `a person declined the sandbox run of template ${t.template}: ${r.reason ?? 'no reason given'}. Find another way.`);
+      if (r.state === 'failed') return no(503, `the box of template ${t.template} did not start: ${r.reason ?? 'no reason given'}. A person starts one: hopper sandbox launch --template ${t.template}.`);
+      record('skill.loaded');
+      const skills = t.text.slice(t.text.indexOf('\nOn the box'));
+      return {
+        status: 200,
+        text: `${SANDBOX_SKILL}: box ${r.container!} of template ${t.template} runs, approved by ${r.approvedBy ?? 'a person'}. It joins the hopper as a machine of that template; it ends at the template's time limit.${skills}\n`,
+      };
     }
 
     async function link(s: Skill, l: NonNullable<Skill['link']>): Promise<SkillAnswer> {

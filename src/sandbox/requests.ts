@@ -4,7 +4,8 @@
 // A request waits for a person on Access requests unless the user's **skip sandbox approval** is on; then it is approved
 // at once, by that toggle. Approved, the hopper starts the box through the sandbox module with the template's defaults,
 // and the box joins as a machine. Every step is an event on the job's timeline. A person declines a request with a
-// reason the job is told. A request whose job is no longer at work is forgotten; its box ends at its time limit.
+// reason the job is told; a start that failed stays failed. A request whose job is no longer at work is forgotten;
+// its box ends at its time limit.
 import { randomUUID } from 'node:crypto';
 import { SKIP_SANDBOX_APPROVER, type SandboxApprovals, type SandboxRequestView } from '../domain/sandbox-approvals.ts';
 import type { NewEvent } from '../domain/types.ts';
@@ -83,8 +84,9 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
     ask(jobId, template) {
       forget();
       const had = [...requests.values()].find((r) => r.jobId === jobId && r.template === template);
-      // A box that went, or a start that failed: the job's next ask is a new request.
-      const ended = had && (had.state === 'failed' || (had.state === 'running' && !o.alive(had.container!)));
+      // A box that went: the job's next ask is a new request. A start that failed stays failed: asked again on each
+      // event, a new one would start the box again and again.
+      const ended = had && had.state === 'running' && !o.alive(had.container!);
       if (had && !ended) return { ...had };
       if (had) requests.delete(had.id);
       const title = o.jobTitle?.(jobId);
