@@ -22,4 +22,9 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   PROMOTION_TABLE,
   // 52: The listing cache (issue #985): each repository's latest repository listing. Tables only: the build before runs on them.
   GITHUB_LISTING_TABLES,
+  // 53: A WSL machine's memory (issue #868): the memory its VM holds and Windows' own memory, free and total, on each
+  // machine sample. Nullable columns only: the build before runs on them, and names its columns when it inserts.
+  `ALTER TABLE machine_samples ADD COLUMN vm_held DOUBLE PRECISION;
+   ALTER TABLE machine_samples ADD COLUMN host_mem_free DOUBLE PRECISION;
+   ALTER TABLE machine_samples ADD COLUMN host_mem_total DOUBLE PRECISION`,
 ];

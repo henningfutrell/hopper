@@ -124,6 +124,8 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'machine.discovery_failed': { machineId: 'desk', error: 'the discovery on desk did not finish (exit 255): ssh: connect to host timed out' },
   'machine.radius_grew': { machineId: 'desk', from: 'medium', to: 'high' },
   'machine.actor_mismatch': { machineId: 'deploy-box', expected: 'high', found: 'medium' },
+  'machine.memory_low': { machineId: 'win-desk', of: 'windows', freeBytes: 3_221_225_472, totalBytes: 34_359_738_368, thresholdBytes: 5_368_709_120, since: '2026-10-13T10:00:00.000Z' },
+  'machine.memory_recovered': { machineId: 'win-desk', of: 'windows', freeBytes: 9_663_676_416, totalBytes: 34_359_738_368, thresholdBytes: 5_368_709_120 },
   'blast_radius.settings_changed': {
     from: { gateAt: 'high', pass: { labels: [], repos: [] }, rules: { prodPatterns: ['prod', 'production', 'prd'], prodAccounts: [], unconfirmed: 'write' }, actors: [], everyMinutes: 60 },
     to: { gateAt: 'high', pass: { labels: ['hopper:actor'], repos: [] }, rules: { prodPatterns: ['prod', 'production', 'prd'], prodAccounts: [], unconfirmed: 'write' }, actors: [{ machineId: 'deploy-box', purpose: 'production deploys', expected: 'high' }], everyMinutes: 60 },

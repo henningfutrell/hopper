@@ -8,7 +8,7 @@ import type { InfraPlanSettings } from '../domain/infra-plans.ts';
 import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ConnectedAccountProvider, ContributionSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
-import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts';
+import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts'; import { memoryAlertSettings } from './memory-alert-settings.ts';
 
 /** Each review section's settings row (issues #537, #543). */
 const REVIEW_SETTINGS_KEYS: Readonly<Record<ReviewKind, string>> = { proposal: 'proposalSettings', research: 'researchSettings' };
@@ -29,11 +29,12 @@ function keyValues(c: StoreContext) {
 /** The settings key of a connected account's job repositories (issue #321). */
 export const jobRepositoriesKey = (provider: ConnectedAccountProvider): string => `jobRepositories:${provider}`;
 
-/** A user's settings: the queue gate, the hopper's own ssh key (issue #293), its link key (issue #308), the job repositories (issue #321), the usage graph view and history retention (issue #385), the usage limits (issue #522). */
+/** A user's settings: the queue gate, the hopper's own ssh key (issue #293), its link key (issue #308), the job repositories (issue #321), the usage graph view and history retention (issue #385), the usage limits (issue #522), the memory alert (issue #868). */
 export function createUserSettingsRepository(c: StoreContext): UserSettingsRepository {
   const { read, write } = keyValues(c);
   return {
     ...sandboxSettings(read, write), // the read policy (issue #716) and the sandbox approval toggles (issue #991)
+    ...memoryAlertSettings(read, write), // the memory alert (issue #868)
     getQueueGate() {
       const text = read('queueGate');
       return text === undefined ? undefined : JSON.parse(text) as QueueGate;

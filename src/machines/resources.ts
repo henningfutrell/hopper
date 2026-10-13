@@ -8,7 +8,7 @@ const MARK = 'hopper-res ';
 
 /** What an ssh target's probe runs: nothing printed where there is no /proc (the reading is then absent). */
 export const RESOURCES_COMMAND = `if [ -r /proc/stat ]; then { head -n1 /proc/stat; sleep 1; head -n1 /proc/stat; cat /proc/loadavg;`
-  + ` grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; nproc 2>/dev/null || getconf _NPROCESSORS_ONLN; } 2>/dev/null | sed 's/^/${MARK}/'; fi`;
+  + ` grep -E '^(MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; grep -qi microsoft /proc/version && echo wsl; nproc 2>/dev/null || getconf _NPROCESSORS_ONLN; } 2>/dev/null | sed 's/^/${MARK}/'; fi`;
 
 /** Busy and total jiffies of a `cpu` line: iowait counts as idle; guest time is already in user. */
 function jiffies(line: string): { busy: number; total: number } | undefined {
@@ -32,12 +32,15 @@ export function readResources(stdout: string): ResourceReading | undefined {
   const load = lines.map((l) => /^(\d+(?:\.\d+)?) (\d+(?:\.\d+)?) (\d+(?:\.\d+)?) /.exec(l)).find((m) => m);
   const swapTotal = mem.get('SwapTotal');
   const swapFree = mem.get('SwapFree');
+  const free = mem.get('MemFree');
+  const wsl = lines.some((l) => l.trim() === 'wsl');
   return {
     cores,
     ...(busy !== undefined ? { cpuBusyFrac: busy } : {}),
     ...(load ? { load: [Number(load[1]), Number(load[2]), Number(load[3])] as [number, number, number] } : {}),
     memTotalBytes: total, memAvailableBytes: available,
     ...(swapTotal !== undefined && swapFree !== undefined ? { swapTotalBytes: swapTotal, swapUsedBytes: Math.max(0, swapTotal - swapFree) } : {}),
+    ...(wsl ? { wsl: true as const, ...(free !== undefined ? { vmHeldBytes: Math.max(0, total - free) } : {}) } : {}),
   };
 }
 
@@ -57,5 +60,9 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
     memTotalBytes: r.memTotalBytes, memAvailableBytes: r.memAvailableBytes,
     ...(count(r.swapTotalBytes) && count(r.swapUsedBytes) ? { swapTotalBytes: r.swapTotalBytes, swapUsedBytes: r.swapUsedBytes } : {}),
     ...(r.container === true ? { container: true } : {}),
+    ...(r.wsl === true ? { wsl: true } : {}),
+    ...(count(r.vmHeldBytes) && r.vmHeldBytes <= r.memTotalBytes ? { vmHeldBytes: r.vmHeldBytes } : {}),
+    ...(count(r.hostMemFreeBytes) && count(r.hostMemTotalBytes) && r.hostMemTotalBytes > 0 && r.hostMemFreeBytes <= r.hostMemTotalBytes
+      ? { hostMemFreeBytes: r.hostMemFreeBytes, hostMemTotalBytes: r.hostMemTotalBytes } : {}),
   };
 }

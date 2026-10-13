@@ -22,7 +22,7 @@ import { mutationRefusal, sessionIn } from './guard.ts';
 import { apiTokenAnswer, registerApiTokenRoutes } from './api-tokens.ts';
 import { isBoxAction } from './box-actions.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
-import { registerMachineJoinRoutes } from './machine-join.ts';
+import { registerMachineJoinRoutes } from './machine-join.ts'; import { registerMemoryAlertRoutes } from './memory-alert.ts';
 import { registerInstanceRoutes } from './instance.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
@@ -337,7 +337,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   // Add machine (issues #308, #603): a join code for the line, or a sandbox box the hopper starts (src/http/ui/machine-join.ts).
-  registerMachineJoinRoutes(app, { admin, tenant: o.tenant, instance: o.instance, clock: o.clock, sandboxes: o.sandboxes });
+  registerMachineJoinRoutes(app, { admin, tenant: o.tenant, instance: o.instance, clock: o.clock, sandboxes: o.sandboxes }); registerMemoryAlertRoutes(app, { admin, tenant: o.tenant }); // the memory alert: issue #868
 
   // Issue #142: the plugins config `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.
   app.post('/ui/api/machines/defaults', admin, async (req) => {

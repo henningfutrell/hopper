@@ -8,6 +8,7 @@ import type { ReadPolicy } from './read-policy.ts';
 import type { SandboxApprovals } from './sandbox-approvals.ts';
 import type { RememberedWrite } from './remembered-writes.ts';
 import type { RemoteAccessSettings } from './remote-access.ts';
+import type { MemoryAlert } from './machine-history.ts';
 import type {
   AutoAnswerSettings, AutoParkSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
   PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings,
@@ -33,6 +34,9 @@ export interface UserSettingsRepository {
   /** How many days usage samples are kept (issue #385); absent: never chosen. */
   getHistoryRetentionDays(): number | undefined;
   setHistoryRetentionDays(days: number): void;
+  /** The memory alert (issue #868); absent: off, or never set. */
+  getMemoryAlert(): MemoryAlert | undefined;
+  setMemoryAlert(alert: MemoryAlert | null): void;
   /** The usage limits the user set (issue #522); absent: never set, the defaults apply. */
   getUsageLimits(): UsageLimitPair | undefined;
   setUsageLimits(limits: UsageLimitPair): void;

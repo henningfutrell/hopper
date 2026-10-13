@@ -2,7 +2,8 @@
 // machine's lines of the request's user, and GET /api/machines/:id/history, one machine's — the graph range asked
 // in the query (the usage graph's query), else the last day, at the resource graph's step for it. One machine's also
 // carries the usage that limits it and its lane changes in the range (issue #688, design.md "Lane tuning"). The history
-// retention is the usage history's, changed through POST /ui/api/usage-history/retention.
+// retention is the usage history's, changed through POST /ui/api/usage-history/retention. Both carry the memory alert
+// (issue #868), set through POST /ui/api/machines/memory-alert.
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock } from '../domain/ports.ts';
@@ -32,9 +33,15 @@ export function machineHistory(t: TenantParts, query: unknown, now: Date, machin
     view, from: from.toISOString(), to: to.toISOString(), stepMs,
     retentionDays: t.store.settings.getHistoryRetentionDays() ?? DEFAULT_HISTORY_RETENTION_DAYS,
     series: t.store.machineHistory.series({ ...h, ...(machineId !== undefined ? { machineId } : {}) }),
+    ...memoryAlertOf(t),
     ...(machineId !== undefined ? { usage: t.store.usageHistory.series({ ...h, limiting: machineId }), laneChanges: laneChangesOf(t, machineId, from, to) } : {}),
   };
 }
+
+const memoryAlertOf = (t: TenantParts): Pick<MachineHistory, 'memoryAlert'> => {
+  const a = t.store.settings.getMemoryAlert();
+  return a ? { memoryAlert: a } : {};
+};
 
 /** One machine's lane changes in [from, to), oldest first. */
 const laneChangesOf = (t: TenantParts, machineId: string, from: Date, to: Date) => t.store.events.between(LANE_CHANGE_EVENTS, from.toISOString())

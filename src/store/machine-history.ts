@@ -19,6 +19,8 @@ const iso = (v: unknown): string => new Date(Number(v)).toISOString();
 const SHARE: Readonly<Record<MachineResource, string>> = {
   cpu: 'cpu_busy',
   memory: '1 - mem_available / NULLIF(mem_total, 0)',
+  held: 'vm_held / NULLIF(mem_total, 0)',
+  host: '1 - host_mem_free / NULLIF(host_mem_total, 0)',
   swap: 'swap_used / NULLIF(swap_total, 0)',
   disk: '1 - disk_free / NULLIF(disk_total, 0)',
   lanes: 'lanes_busy::float8 / NULLIF(lanes_max, 0)',
@@ -74,10 +76,12 @@ export function createMachineHistoryRepository(c: StoreContext): MachineHistoryR
         let added = 0;
         for (const s of samples) {
           added += c.db.run(`
-            INSERT INTO machine_samples (at, machine_id, cores, cpu_busy, load1, mem_total, mem_available, swap_total, swap_used, disk_free, disk_total, lanes_busy, lanes_max)
-            VALUES (?::timestamptz, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+            INSERT INTO machine_samples (at, machine_id, cores, cpu_busy, load1, mem_total, mem_available, swap_total, swap_used, disk_free, disk_total,
+              vm_held, host_mem_free, host_mem_total, lanes_busy, lanes_max)
+            VALUES (?::timestamptz, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
           s.at, s.machineId, s.cores ?? null, s.cpuBusyFrac ?? null, s.load1 ?? null, s.memTotalBytes ?? null, s.memAvailableBytes ?? null,
-          s.swapTotalBytes ?? null, s.swapUsedBytes ?? null, s.diskFreeBytes ?? null, s.diskTotalBytes ?? null, s.lanesBusy, s.lanesMax).changes;
+          s.swapTotalBytes ?? null, s.swapUsedBytes ?? null, s.diskFreeBytes ?? null, s.diskTotalBytes ?? null,
+          s.vmHeldBytes ?? null, s.hostMemFreeBytes ?? null, s.hostMemTotalBytes ?? null, s.lanesBusy, s.lanesMax).changes;
         }
         return added;
       });

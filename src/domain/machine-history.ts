@@ -19,6 +19,13 @@ export interface ResourceReading {
   swapUsedBytes?: number;
   /** Read inside a container's cgroup limits, not the host's. */
   container?: true;
+  /** Read inside WSL (issue #868): a VM on a Windows host. */
+  wsl?: true;
+  /** WSL only: the memory the VM holds of the host, MemTotal less MemFree — page cache too, which Windows cannot use. */
+  vmHeldBytes?: number;
+  /** WSL only, with interop: the Windows host's physical memory, free and total. Absent: not read. */
+  hostMemFreeBytes?: number;
+  hostMemTotalBytes?: number;
 }
 
 /** One machine's resources and disk at one time, with its lanes in use: what the resource recorder keeps. */
@@ -34,12 +41,19 @@ export interface MachineSample {
   swapUsedBytes?: number;
   diskFreeBytes?: number;
   diskTotalBytes?: number;
+  /** A WSL machine (issue #868): the memory its VM holds, and Windows' own memory, free and total, when read. */
+  vmHeldBytes?: number;
+  hostMemFreeBytes?: number;
+  hostMemTotalBytes?: number;
   lanesBusy: number;
   lanesMax: number;
 }
 
-/** What the resource graph draws per machine: each a share, 0..1. */
-export const MACHINE_RESOURCES = ['cpu', 'memory', 'swap', 'disk', 'lanes'] as const;
+/**
+ * What the resource graph draws per machine: each a share, 0..1. A WSL machine (issue #868) adds memory held (the memory
+ * its VM holds, of its memory total) and host memory (Windows' memory used).
+ */
+export const MACHINE_RESOURCES = ['cpu', 'memory', 'held', 'host', 'swap', 'disk', 'lanes'] as const;
 export type MachineResource = typeof MACHINE_RESOURCES[number];
 
 /** One line of the resource graph: one machine's resource, per graph step its peak share; the gaps where the machine gave no sample. */
@@ -66,7 +80,22 @@ export interface MachineHistory {
   usage?: UsageSeries[];
   /** One machine's graph only: its lane changes in the range, oldest first. */
   laneChanges?: LaneChange[];
+  /** The memory alert (issue #868); absent: off. */
+  memoryAlert?: MemoryAlert;
 }
+
+/**
+ * The memory alert (issue #868): a person is told (`machine.memory_low`) when a machine's free memory stays under
+ * `freeBytes` for `minutes` (0: at the first reading under), and again (`machine.memory_recovered`) when it is back over.
+ * The free memory is Windows' own for a WSL machine that reads it, else memory available. The user's setting, an admin's to change.
+ */
+export interface MemoryAlert {
+  freeBytes: number;
+  minutes: number;
+}
+
+/** The longest a memory alert waits: a day. */
+export const MAX_MEMORY_ALERT_MINUTES = 1440;
 
 /** The resource graph's default range: a day. */
 export const DEFAULT_MACHINE_GRAPH_VIEW: UsageGraphView = { range: { preset: '24h' } };

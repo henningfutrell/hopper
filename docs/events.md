@@ -2323,6 +2323,52 @@ Version 1 (`docs/schemas/job.gate_passed.v1.json`). A person let a job held at t
 }
 ```
 
+## `machine.memory_low`
+
+Version 1 (`docs/schemas/machine.memory_low.v1.json`). A machine's free memory stayed under the memory alert's threshold (`thresholdBytes`) for the minutes set, `since` it went under (issue #868). `of`: `windows` for a WSL machine, whose free memory is Windows' own (`freeBytes` of `totalBytes`), read through WSL interop; `machine` for any other, its memory available. Once per stretch under.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `of` | `windows` \| `machine` | yes |
+| `freeBytes` | number | yes |
+| `totalBytes` | number | yes |
+| `thresholdBytes` | number | yes |
+| `since` | string | yes |
+
+```json
+{
+  "machineId": "win-desk",
+  "of": "windows",
+  "freeBytes": 3221225472,
+  "totalBytes": 34359738368,
+  "thresholdBytes": 5368709120,
+  "since": "2026-10-13T10:00:00.000Z"
+}
+```
+
+## `machine.memory_recovered`
+
+Version 1 (`docs/schemas/machine.memory_recovered.v1.json`). A machine told low by `machine.memory_low` has its free memory back over the threshold (issue #868): `freeBytes` of `totalBytes` now, `of` as in `machine.memory_low`.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `of` | `windows` \| `machine` | yes |
+| `freeBytes` | number | yes |
+| `totalBytes` | number | yes |
+| `thresholdBytes` | number | yes |
+
+```json
+{
+  "machineId": "win-desk",
+  "of": "windows",
+  "freeBytes": 9663676416,
+  "totalBytes": 34359738368,
+  "thresholdBytes": 5368709120
+}
+```
+
 ## `minor_decision.picked`
 
 Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
