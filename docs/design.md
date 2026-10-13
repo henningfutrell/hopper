@@ -15207,7 +15207,7 @@ cannot be read) leaves the page as it was: facts and timeline.
   queue (`heldBehind`, issue #939: a job fixes that one first, or the hopper merges it first) or from the merge gate
   (`seen.mergeHeldBehind`: the hopper merged a conflicting one first).
 
-**Left for later:** the test databases of a run. The hopper keeps no record of them: a job's tests start their own
+**Left for later** (issue #975): the test databases of a run. The hopper keeps no record of them: a job's tests start their own
 databases on its machine, and nothing tells the hopper. Showing them needs a new record, which is a decision of its own.
 
 Tests: `test/domain/job-bom.test.ts` (each group, the order, the header and summary, the timeline; part 2: usage, commits and
