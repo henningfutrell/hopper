@@ -32,7 +32,7 @@ export const SCOPE_SECTIONS: readonly { id: string; title: string; description: 
   { id: 'decider', title: 'Decider and rules', description: 'How the hopper decides: Jev\'s picks, the rules, the job rules and the routing.', areas: ['minor-decisions', 'typesafe-key', 'rules', 'job-rules', 'routing', 'decisions', 'router'] },
   { id: 'state', title: 'State and usage', description: 'What the hopper is doing: health, events, usage, accounts, users, the instance and the resources of its stack.', areas: ['health', 'events', 'usage', 'usage-history', 'accounts', 'instance', 'resources', 'scopes'] },
   { id: 'sign-in', title: 'Sign-in and users', description: 'Who signs in and how: the realms, the users, a login link for another device, and the end of a session.', areas: ['realms', 'users', 'device-link', 'logout'] },
-  { id: 'settings', title: 'Settings', description: 'The hopper\'s own settings: plugins, notifiers, webhooks, self-update, remote access, the allowed hosts, the host link base, API tokens, artifacts and bug reports.', areas: ['plugins', 'plugin-store', 'notifiers', 'webhooks', 'update', 'remote-access', 'allowed-hosts', 'host-link', 'api-tokens', 'artifacts', 'bug-reports'] },
+  { id: 'settings', title: 'Settings', description: 'The hopper\'s own settings: plugins, notifiers, webhooks and the send log of what they sent, self-update, remote access, the allowed hosts, the host link base, API tokens, artifacts and bug reports.', areas: ['plugins', 'plugin-store', 'notifiers', 'webhooks', 'outbound', 'update', 'remote-access', 'allowed-hosts', 'host-link', 'api-tokens', 'artifacts', 'bug-reports'] },
 ];
 
 /** Scopes shown in another section than their area's: a job's vault grant is a vault approval. */

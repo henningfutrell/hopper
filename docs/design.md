@@ -12577,7 +12577,7 @@ but the VM keeps it, so Windows cannot use it. Now:
   minute, so a read never waits for it; a reading older than 5 minutes is dropped. A client in a container has no
   interop: it reads the memory held only. An ssh target's probe prints `MemFree` and `wsl`, so it gives the memory held
   too, never Windows' memory. `resourcesOf` checks a client's figures (held at most its total; free at most total).
-- **Samples and the graph.** A machine sample keeps them (tenant migration 54: `vm_held`, `host_mem_free`,
+- **Samples and the graph.** A machine sample keeps them (tenant migration 53: `vm_held`, `host_mem_free`,
   `host_mem_total`, nullable columns, so the build before runs on them). The resource graph adds two resources, only
   where read: **memory held** (held / total) and **host memory** (Windows' memory used). A machine card says
   "VM holds 19 GB · Windows 3.0 GB free of 32 GB" after its memory. Memory used, which lane tuning and placement read,
