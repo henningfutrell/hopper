@@ -651,6 +651,11 @@ export interface SourceRegistry {
    * or GitHub refuses; source: GitHub could not be reached.
    */
   pullRequestAct(jobId: JobId, act: PullRequestAct, acting: ActingPerson): Promise<PullRequestActResult>;
+  /**
+   * A person's Tend again (issue #1010) on a pull request the hopper gave up on (its tend job ended failed, cancelled or
+   * rejected): the same step is tended at once, recorded with who pressed it. Refused (not_found, conflict) with why.
+   */
+  tendAgain(jobId: JobId, acting: ActingPerson): Promise<RerunResult>;
 }
 
 export type PullRequestActResult =

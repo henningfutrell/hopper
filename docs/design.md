@@ -2282,6 +2282,17 @@ the list, and nothing tended them). Two ways it fell out, each closed:
   card waits `tending`, `tendWaits` saying when. Run again by `tending` may pass the cancelled tend job, the newest of
   the item; the new tend job's `rerunOf` is that cancelled one. A fourth cancel in a row gives up, saying so. The card has no Merge now or Close PR meanwhile: no job follows it. Once
   the tend job finishes, its own card follows the pull request, or there is none.
+  **Tend again** (issue #1010): a card the hopper gave up on — `waits` `tend failed`: its tend job ended failed,
+  cancelled or rejected, and no retry is due — had no action, so the pull request sat. Now it has one, for an operator:
+  Tend again (`POST /ui/api/pull-requests/tend` with the card's `jobId`, a box action; `hopper pr tend <n>`). It marks
+  the tend (`tended.again`, the time; `tendRetryAt` answers it for any of those ends, so Run again by `tending` may pass
+  the ended tend job) and tends at once: the same step, its tend brief, a new row of retries (`retries` 0), and
+  `job.pull_request_tended` with `person` and `via`. Refused with why (`tendAgainRefusal`, 409) when the hopper did not
+  give up, a newer job of the item exists, its source is not running, the tend job's end is not reported yet, or the
+  source refuses the tend. A tend that cannot start now keeps the mark: the next sync starts it, and the card waits
+  `tending` ("a person asked to tend it again"). A failed tend job's hand-off closes when the new tend job is queued, as
+  for any run again. Why no Merge now or Close PR beside it: the card's job does not follow the pull request while it is
+  tended; Tend again is the one action that moves it, and a person who wants to merge or close it does so on GitHub.
 - *Its job follows none.* A done job that ended before the hopper followed pull requests, or whose follow ended, is
   **reconciled** with its source at each sync, before the follows (`src/sources/after-done.ts`, `JobSource.unfollowedPullRequests`,
   on GitHub `src/sources/github/reconcile.ts`). A candidate is `reconcilable`: finished, its end reported, the newest job
@@ -11082,7 +11093,7 @@ Now Failures lists it, and each has an action that moves it.
 Not done here, carried in issue #1010: Push it for a cancelled or finished job (Run again takes only a failed, finished
 or rejected job, and Continue only a failed one); a Stuck view with counts by cause and one bulk action per cause; a
 check of each hand-off card's recommended action against the causes that refuse it; Run again and tending for direct
-jobs.
+jobs. Done since: Tend again on a pull request the hopper gave up on ("PR waiting", "A pull request stays in sight").
 
 **Verification:** `test/domain/kept-work.test.ts`, `test/engine/sweep.test.ts` (discard, its refusals, the log once),
 `test/client/reap-discard.test.ts` and `test/client/reap.test.ts` (the script for real: dirty and unpushed work removed,

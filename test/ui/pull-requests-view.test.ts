@@ -222,6 +222,19 @@ describe('Pull requests view', () => {
     await vi.waitFor(() => expect(daemon.bodies[1]).toEqual({ path: '/ui/api/pull-requests/close', body: { jobId: 'j3' } }));
   });
 
+  it('a card the hopper gave up on has one action, Tend again, which posts the job at once (issue #1010); a viewer is not offered it', async () => {
+    const gaveUp = card({ jobId: 'j5', waits: 'tend failed', tendJobId: 't5', tendStep: 'rebase', gaveUp: 'the job that rebased it failed: Design-level conflict.' });
+    const view: PullRequestsView = { ...fixture, repos: [{ repo: 'owner/a', yolo: false, pullRequests: [gaveUp] }] };
+    const daemon = await boot(view);
+    expect([...cardOf('j5').querySelectorAll('button')].map((b) => b.textContent)).toEqual(['Tend again']);
+    expect(text('[data-slot="pr-tend-again"]', cardOf('j5'))).toContain('Tend again');
+    await act(async () => { (cardOf('j5').querySelector('[data-slot="pr-tend-again"] button') as HTMLButtonElement).click(); });
+    await vi.waitFor(() => expect(daemon.bodies).toEqual([{ path: '/ui/api/pull-requests/tend', body: { jobId: 'j5' } }]));
+    await act(async () => root?.unmount());
+    await boot(view, 'viewer');
+    expect([...cardOf('j5').querySelectorAll('button')]).toEqual([]);
+  });
+
   it('a viewer sees no Merge now or Close PR', async () => {
     await boot(fixture, 'viewer');
     expect([...cardOf('j1').querySelectorAll('button')].map((b) => b.textContent)).toEqual([]);

@@ -132,6 +132,17 @@ For failing checks, the hopper reads the log of each check that GitHub Actions r
 
 The new job works on the same pull request and opens no new one. If it cannot fix it, it fails and says which files or checks, and why. The card then waits for a person.
 
+When a restart or a clean-up stops the job, the hopper tries again after a short wait, at most three times.
+
+### Tend again
+
+When the hopper gave up on a pull request, its card says why in red, and has one button for an operator: **Tend again**.
+
+1. Read why the job failed. Fix the cause when it is outside the pull request.
+2. Select **Tend again**. A new job takes the same step at once.
+
+From a terminal: `hopper pr tend <n> [--repo <owner/repo>]`.
+
 The hopper tends one pull request at most three times in a row. A draft is never tended. The hopper does not act on review comments by itself: to ask for changes, use **Send back for rework**.
 
 ### Yolo mode merges when ready
@@ -161,6 +172,6 @@ When the hopper merges a pull request (yolo mode or **Merge now**) that did not 
 | A repository shows `no checks` | Select **Queue job** to add checks, or add a workflow yourself. |
 | A brief or a job says the hopper may not read Actions logs | The hopper's GitHub App needs the **Actions: read** permission. Add it on the app's settings page on GitHub, then accept the new permission on each installation. |
 
-**Merge now**, **Close PR** and **Send back for rework** need the operator role. Yolo mode needs an admin.
+**Merge now**, **Close PR**, **Send back for rework** and **Tend again** need the operator role. Yolo mode needs an admin.
 
 See also: [Intake](intake.md), [Questions](questions.md), [CLI and API](cli-and-api.md).

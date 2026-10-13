@@ -4,9 +4,11 @@
 // failing checks is not done. Real daemon, in-memory fake GitHub at the GitHubApi seam; issues carry a scripted-executor
 // op as their first body line.
 import { afterEach, describe, expect, it } from 'vitest';
-import { MAX_TENDS, TEND_RETRY_MS, tendBrief, type FailuresView, type Job } from '../../src/domain/types.ts';
+import { runCli, type CliIo } from '../../src/cli.ts';
+import { MAX_TENDS, TEND_RETRY_MS, tendBrief, type FailuresView, type Job, type PullRequestCard, type PullRequestsView } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { waitFor } from '../support/wait.ts';
@@ -223,6 +225,77 @@ describe('a tend job cancelled by no person (issue #1010)', () => {
     await app.sync();
     expect((await jobsFor(app, issue.url)).filter((j) => j.spec.tend)).toHaveLength(2);
     expect(await app.events('types=job.pull_request_tended')).toHaveLength(2);
+  });
+});
+
+describe('Tend again on a pull request the hopper gave up on (issue #1010)', () => {
+  const cardOf = async (app: TestApp, jobId: string): Promise<PullRequestCard | undefined> =>
+    (await app.api<PullRequestsView>('GET', '/api/pull-requests')).body.repos.flatMap((r) => r.pullRequests).find((c) => c.jobId === jobId);
+
+  it('a failed tend: one click runs the same step again, names who asked, and the card waits on it; refused when nothing gave up', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const token = await app.login();
+    let fixes = false;
+    const { issue, job, url } = await pullRequestWaiting(gh, app, (pr) => { if (fixes) gh.setConflicting(pr, false); });
+    // Nothing gave up yet: refused, and no job starts.
+    const early = await app.ui<{ error: string }>('/ui/api/pull-requests/tend', { jobId: job.id }, { token });
+    expect(early.status).toBe(409);
+    expect(early.body.error).toMatch(/no tend of its pull request ended/);
+
+    gh.setConflicting(url, true);
+    await app.sync();
+    const failedTend = await nextJob(app, issue.url, 2);
+    await app.waitForStatus(failedTend!.id, 'failed');
+    await waitFor(async () => (await cardOf(app, job.id))?.waits === 'tend failed', { what: 'the hopper gave up' });
+    expect((await cardOf(app, job.id))?.gaveUp).toMatch(/^the job that rebased it failed/);
+    await waitFor(async () => (await app.job(failedTend!.id)).sourceState?.sync?.finalReported === true, { what: 'its end reported' });
+
+    fixes = true;
+    const r = await app.ui<{ job: Job }>('/ui/api/pull-requests/tend', { jobId: job.id }, { token });
+    expect(r.status).toBe(200);
+    const again = await nextJob(app, issue.url, 3);
+    expect(r.body.job.id).toBe(again!.id);
+    expect(again).toMatchObject({ spec: expect.objectContaining({ tend: true }) });
+    expect(String(again!.spec.payload.prompt)).toContain(tendBrief(url, 'rebase'));
+    const tended = (await app.events('types=job.pull_request_tended')).filter((e) => e.jobId === job.id);
+    expect(tended.at(-1)!.data).toEqual({ pullRequest: url, step: 'rebase', nextJobId: again!.id, person: expect.any(String), via: 'ui' });
+    expect((await app.job(job.id)).sourceState?.source).toMatchObject({ follow: 'tended', tended: { nextJobId: again!.id } });
+    expect(((await app.job(job.id)).sourceState?.source as { tended?: { again?: string } }).tended?.again).toBeUndefined();
+
+    // A second click while that tend runs: refused, no third tend.
+    const twice = await app.ui<{ error: string }>('/ui/api/pull-requests/tend', { jobId: job.id }, { token });
+    expect(twice.status).toBe(409);
+    await app.waitForStatus(again!.id, 'finished');
+    expect((await jobsFor(app, issue.url)).filter((j) => j.spec.tend)).toHaveLength(2);
+  });
+  it('a tend a person cancelled: hopper pr tend <n> tends it again on the same route, named as the operator CLI', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo', ms: 1500 }), labels: ['hopper'] });
+    let url: string | undefined;
+    app.scripted.ships((j) => { url ??= gh.openPullRequest(REPO, j.source!.number!, { createdAt: new Date().toISOString() }).url; });
+    await app.sync();
+    const [job] = await jobsFor(app, issue.url);
+    await app.waitForStatus(job!.id, 'finished');
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:pr-ready'), { what: 'hopper:pr-ready' });
+    gh.setConflicting(url!, true);
+    await app.sync();
+    const tender = await nextJob(app, issue.url, 2);
+    await app.waitForStatus(tender!.id, 'running');
+    app.user().engine.cancel(tender!.id, 'cancelled in UI');
+    await app.waitForStatus(tender!.id, 'cancelled');
+    await waitFor(async () => (await app.job(tender!.id)).sourceState?.sync?.finalReported === true, { what: 'its cancel reported' });
+    await waitFor(async () => (await cardOf(app, job!.id))?.waits === 'tend failed', { what: 'the hopper gave up' });
+
+    const out: string[] = [];
+    const io: CliIo = { env: { HOPPER_DATABASE_URL: databaseUrlFor(app.dbPath) }, stdin: () => '', out: (x) => out.push(x), err: () => undefined };
+    const code = await runCli(['pr', 'tend', url!.split('/').at(-1)!, '--json', '--url', app.url], io);
+    expect(code).toBe(0);
+    const again = await nextJob(app, issue.url, 3);
+    expect(JSON.parse(out.join(''))).toMatchObject({ job: { id: again!.id } });
+    const tended = (await app.events('types=job.pull_request_tended')).filter((e) => e.jobId === job!.id);
+    expect(tended.at(-1)!.data).toMatchObject({ nextJobId: again!.id, via: 'cli', person: 'operator CLI' });
   });
 });
 

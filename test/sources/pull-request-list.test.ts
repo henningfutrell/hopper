@@ -131,6 +131,16 @@ describe('a pull request its item\'s tend job works on (issue #763)', () => {
     expect(list([job], tender)[0]).toMatchObject({ waits: 'tend failed', gaveUp: `the job that rebased it was cancelled ${MAX_TEND_RETRIES + 1} times in a row: a person must look at it` });
   });
 
+  it('a gave-up tend a person asked to tend again: it waits on the tend, not on a person (issue #1010)', () => {
+    const tender = jobForIssue(1, { id: 'job-2', status: 'failed', rerunOf: 'job-1', error: 'Design-level conflict.' });
+    const job = jobForIssue(1, { id: 'job-1', status: 'finished', sourceState: { source: {
+      follow: 'tended', pullRequest: PR, seen: seen({ conflicting: true }), tended: { pullRequest: PR, step: 'rebase', nextJobId: 'job-2', again: ago(1000) },
+    } } });
+    const card = list([job], tender)[0]!;
+    expect(card).toMatchObject({ waits: 'tending', tendWaits: 'a person asked to tend it again: it starts at the next sync' });
+    expect(card).not.toHaveProperty('gaveUp');
+  });
+
   it('a tend job that finished: only its own card, the one it follows', () => {
     const tender = jobForIssue(1, { id: 'job-2', status: 'finished', rerunOf: 'job-1', sourceState: { source: { follow: 'open', pullRequest: PR, seen: seen() } } });
     expect(list([tended('job-2'), tender], tender).map((c) => c.jobId)).toEqual(['job-2']);

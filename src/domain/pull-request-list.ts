@@ -9,8 +9,9 @@
 // A card a tend job works on says the step, and one whose tend job failed is given up on, in the words of that job's failure.
 // A tend job not at work yet says why it waits (issue #967): no free lane, or its hold; a tend the source refused says why.
 // A tend job cancelled by no person and no source is tended again (issue #1010): its card waits on the tend, and says when.
+// So does one a person pressed Tend again on, after the hopper gave up (issue #1010).
 import type { Job } from './types.ts';
-import { followsWhenEnded, MAX_TEND_RETRIES, MAX_TENDS, noChecksSettled, readyToMerge, tendRetryAt, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
+import { followsWhenEnded, MAX_TEND_RETRIES, MAX_TENDS, noChecksSettled, readyToMerge, TEND_ENDS, tendRetryAt, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Holds, QueueHead } from './tending-queue.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 
@@ -131,7 +132,7 @@ function cardOf(job: Job, yolo: boolean, now: number, tendJob: Job | undefined):
   const seen = f.seen;
   const state = f.follow === 'open' || tendJob ? 'open' : 'closed';
   const retryAt = tendRetryAt(f.tended, tendJob);
-  const tendEnded = tendJob !== undefined && ['failed', 'cancelled', 'rejected'].includes(tendJob.status) && retryAt === undefined;
+  const tendEnded = tendJob !== undefined && TEND_ENDS.includes(tendJob.status) && retryAt === undefined;
   const waits = tendJob ? (tendEnded ? 'tend failed' : 'tending') : waitOf(f.pullRequest !== undefined, seen, yolo, now);
   return {
     jobId: job.id, repo: job.source!.repo!, issue: { number: job.source!.number!, url: job.source!.url ?? job.source!.key },
@@ -141,7 +142,7 @@ function cardOf(job: Job, yolo: boolean, now: number, tendJob: Job | undefined):
     ...(job.finishedAt ? { since: job.finishedAt } : {}), yolo,
     ...(state === 'open' ? { waits } : {}), ...(tendJob ? { tendJobId: tendJob.id } : {}), ...(tendJob && f.tended ? { tendStep: f.tended.step } : {}),
     ...(tendJob && NOT_AT_WORK.includes(tendJob.status) ? { tendWaits: tendJob.waitReason ?? tendJob.holdReason ?? 'no free lane yet' } : {}),
-    ...(retryAt !== undefined ? { tendWaits: `its tend job was cancelled: tended again from ${new Date(retryAt).toISOString()}` } : {}),
+    ...(retryAt !== undefined ? { tendWaits: f.tended?.again ? 'a person asked to tend it again: it starts at the next sync' : `its tend job was cancelled: tended again from ${new Date(retryAt).toISOString()}` } : {}),
     ...(seen?.mergeError ? { mergeError: seen.mergeError } : {}),
   };
 }

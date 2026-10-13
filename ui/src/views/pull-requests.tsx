@@ -6,7 +6,8 @@
 // operator (issue #677), each confirmed once, and Send back for rework (issue #724): with notes, the pull request becomes
 // a draft and a new job reworks it. A repository with no checks (issue #677, `GET /api/repo-checks`) is named in the
 // header and warned of in its group, with the job that adds them: Queue job files it at once, Dismiss hides it.
-import { ExternalLink, GitMerge, GitPullRequest, TriangleAlert, Undo2, X } from 'lucide-react';
+// A card the hopper gave up on (its tend job ended failed, cancelled or rejected) has Tend again (issue #1010).
+import { ExternalLink, GitMerge, GitPullRequest, RotateCw, TriangleAlert, Undo2, X } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { GhLink } from '@/components/job';
 import { Confirm } from '@/components/confirm';
@@ -79,6 +80,28 @@ function CardActions({ c, onChanged }: { c: PullRequestCard; onChanged: () => vo
   );
 }
 
+/**
+ * Tend again (issue #1010): the hopper gave up on the card — its tend job ended failed, cancelled or rejected — so its one
+ * action, for an operator, tends the same step at once.
+ */
+function TendAgain({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
+  const operator = useCanOperate();
+  const [busy, setBusy] = useState(false);
+  if (!operator || c.state !== 'open' || c.waits !== 'tend failed' || !c.tendJobId) return null;
+  const run = async () => {
+    setBusy(true);
+    await act('/ui/api/pull-requests/tend', { jobId: c.jobId }, `${c.pullRequest ? `#${c.pullRequest.number}` : 'The pull request'} is tended again`);
+    setBusy(false);
+    onChanged();
+  };
+  return (
+    <div data-slot="pr-tend-again" className="flex flex-wrap items-center gap-2 pt-1">
+      <Button size="sm" disabled={busy} onClick={() => void run()}><RotateCw />Tend again</Button>
+      <span className="text-xs text-muted-foreground">A new job takes the same step. Read why it failed first.</span>
+    </div>
+  );
+}
+
 function Card({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
   const now = useNow();
   const age = c.openedAt ?? c.since;
@@ -102,6 +125,7 @@ function Card({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
       {doingText(c) && <div data-slot="pr-doing" className={c.gaveUp ? 'text-xs text-bad' : 'text-xs text-muted-foreground'}>{doingText(c)}</div>}
       {c.mergeError && <div data-slot="pr-merge-error" className="text-xs text-bad">merge refused: {c.mergeError}</div>}
       <CardActions c={c} onChanged={onChanged} />
+      <TendAgain c={c} onChanged={onChanged} />
     </li>
   );
 }

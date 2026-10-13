@@ -316,7 +316,11 @@ function checkLines({ failed = [], rerun = false }: TendChecks): string[] {
  * What a tend left on the job it tended (issue #736), in its source state (`tended`): it follows no more. When:
  * `job.pull_request_tended`. `retries`: how many tend jobs in a row before this one were cancelled and tended again (issue #1010).
  */
-export interface Tended { pullRequest: string; step: TendStep; nextJobId: string; retries?: number }
+/**
+ * A tend of the job's pull request: the step, the tend job, how many tends in a row ran again after a cancel by no person
+ * (issue #1010), and `again`, when a person pressed Tend again on it after the hopper gave up (issue #1010).
+ */
+export interface Tended { pullRequest: string; step: TendStep; nextJobId: string; retries?: number; again?: string }
 
 /**
  * The reasons a job is cancelled on purpose (issue #1010): a person's cancel, or its source's — the issue gone, closed,
@@ -335,12 +339,32 @@ export const TEND_RETRY_MS = 5 * 60_000;
  * purpose (`DELIBERATE_CANCELS`), or `MAX_TEND_RETRIES` cancelled in a row.
  */
 export function tendRetryAt(tended: Tended | undefined, tendJob: Job | undefined): number | undefined {
-  if (!tended || tendJob?.id !== tended.nextJobId || tendJob.status !== 'cancelled') return undefined;
+  if (!tended || tendJob?.id !== tended.nextJobId) return undefined;
+  // A person pressed Tend again: due from then, whatever ended the tend job.
+  if (tended.again && TEND_ENDS.includes(tendJob.status)) return Date.parse(tended.again);
+  if (tendJob.status !== 'cancelled') return undefined;
   const reason = tendJob.sourceState?.sync?.cancelReason;
   if (typeof reason === 'string' && DELIBERATE_CANCELS.includes(reason)) return undefined;
   const retries = tended.retries ?? 0;
   if (retries >= MAX_TEND_RETRIES) return undefined;
   return Date.parse(tendJob.finishedAt ?? tendJob.createdAt) + TEND_RETRY_MS * 2 ** retries;
+}
+
+/** The ends of a tend job that leave its pull request to a person, unless it is tended again. */
+export const TEND_ENDS: readonly Job['status'][] = ['failed', 'cancelled', 'rejected'];
+
+/**
+ * Why a person may not press Tend again on the job's pull request now (issue #1010), or undefined: only after the hopper
+ * gave up — the job follows it as tended, its tend job is the newest job of its item, that job ended failed, cancelled or
+ * rejected, and the hopper does not tend it again by itself. `tendJob`: the newest job of its item.
+ */
+export function tendAgainRefusal(job: Job, tendJob: Job | undefined): string | undefined {
+  const s = job.sourceState?.source as { follow?: string; tended?: Tended } | undefined;
+  if (s?.follow !== 'tended' || !s.tended) return 'no tend of its pull request ended: the hopper tends it when it needs it';
+  if (tendJob?.id !== s.tended.nextJobId) return 'a newer job of its item exists';
+  if (!TEND_ENDS.includes(tendJob.status)) return `its tend job is ${tendJob.status}: no tend of its pull request ended`;
+  if (tendRetryAt(s.tended, tendJob) !== undefined) return 'the hopper tends it again by itself';
+  return undefined;
 }
 
 /**

@@ -78,6 +78,7 @@ See [Questions](questions.md) for what each action does.
 |---|---|
 | `hopper prs` | The Pull requests list. |
 | `hopper pr merge\|close <n> [--repo <owner/repo>]` | **Merge now** or **Close PR** on a waiting pull request. |
+| `hopper pr tend <n> [--repo <owner/repo>]` | **Tend again** on a pull request the hopper gave up on. |
 | `hopper yolo <owner/repo> on\|off\|default` | Yolo mode for one repository. |
 | `hopper repo checks <owner/repo>` | A repository's checks and its setup on GitHub. |
 

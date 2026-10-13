@@ -3762,13 +3762,15 @@ Version 1 (`docs/schemas/job.finish_briefed.v1.json`). A job that ended done lef
 
 ## `job.pull_request_tended`
 
-Version 1 (`docs/schemas/job.pull_request_tended.v1.json`). A PR waiting job's pull request got merge conflicts with its base branch, or failing checks, while it waited (issue #736): the hopper ran its item again (`job.rerun`, by `tending`) with the tend brief, so a new job brings the same pull request back to ready, and this job follows it no more. `step`: `rebase` or `fix_checks`. `nextJobId`: the new job. A rebase is never capped (issue #786); at most three `fix_checks` tends in a row of one pull request, then it waits on a person.
+Version 1 (`docs/schemas/job.pull_request_tended.v1.json`). A PR waiting job's pull request got merge conflicts with its base branch, or failing checks, while it waited (issue #736): the hopper ran its item again (`job.rerun`, by `tending`) with the tend brief, so a new job brings the same pull request back to ready, and this job follows it no more. `step`: `rebase` or `fix_checks`. `nextJobId`: the new job. A rebase is never capped (issue #786); at most three `fix_checks` tends in a row of one pull request, then it waits on a person. `person`, `via`: a person pressed Tend again (issue #1010) after the hopper gave up on it, in the UI or over the API.
 
 | field | type | required |
 |---|---|---|
 | `pullRequest` | string | yes |
 | `step` | `rebase` \| `fix_checks` | yes |
 | `nextJobId` | string | yes |
+| `person` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 
 ```json
 {
