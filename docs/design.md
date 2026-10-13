@@ -15158,9 +15158,9 @@ line limit). Nothing new is recorded: the parts are read from what the job's rec
 | Group | Parts, and where each comes from |
 |---|---|
 | What was asked (`asked`) | its issue (`source`); each issue it filed (`job.child_issue_filed`); rework asked (`job.rework_requested`); a changed spec (`job.respecified`) |
-| Work (`work`) | each run (`job.started`); its task list (`tasks`); its lane; the time it took or runs so far; each job that ran it again, ran its next part, or forked from it |
-| Code (`code`) | its pull request, checks and branch (its source state); the commits its latest checkpoint names (`checkpoint.commits`, issue #921), oldest first; its merge or close (`job.pull_request_merged`, `job.pull_request_closed`) |
-| Outputs (`outputs`) | its artifacts and each revision (`artifact.revised`); its plan or research report (`proposalId`, `researchId`) |
+| Work (`work`) | each run (`job.started`); its task list (`tasks`); its lane; the time it took or runs so far; its usage (part 2, below); each job that ran it again, ran its next part, or forked from it |
+| Code (`code`) | its pull request, checks and branch (its source state); its commits, oldest first — the pull request's (`seen.commits`, part 2), else the ones its latest checkpoint names (`checkpoint.commits`, issue #921) —; how many files it changes (`seen.files`); its place in the merge order (part 2); each push (`github_proxy.done`, `op: git.push`); its merge or close (`job.pull_request_merged`, `job.pull_request_closed`) |
+| Outputs (`outputs`) | its artifacts and each revision (`artifact.revised`); its plan or research report (`proposalId`, `researchId`); the help pages and What's new lines among the files its pull request changes (part 2) |
 | Infra (`infra`) | each plan and its approval (`infra.plan_recorded`, `infra.plan_approved`); each minted credential with its operation, asset and end (`vault.minted`); drift its check found (`infra.out_of_band_recorded`); a vault grant it asked for (`vault.grant_asked`, `vault.granted`) |
 | Decisions (`decisions`) | each question, and who answered it — a person, or the level by name (rules, a model) —; each override of a Decider pick (`minor_decision.overridden`); its hand-off |
 | Machines and sandboxes (`machines`) | each machine it was claimed on, with its runs (`job.claimed`); each checkpoint, with its commits and whether it holds the session (`job.checkpointed`); each Windows sandbox step (`step.started`) |
@@ -15185,13 +15185,37 @@ parts table, filtered by group, status and text. The page reads the parts list a
 the job arrives on the stream, so a running part changes with no reload. A daemon with no such route (a parts list that
 cannot be read) leaves the page as it was: facts and timeline.
 
-**Left for later** (the pull request says so): cost and usage per job (the job cost profiles are made per finished job
-over machine samples, apart from this read), the commits pushed after the last checkpoint, merge order, help pages and
-What's new lines a job wrote, the test databases of a run — none has a record tied to a job yet.
+**Part 2** (2026-10-12) adds the parts part 1 left, each from a record that exists, plus one fact the follow now keeps:
 
-Tests: `test/domain/job-bom.test.ts` (each group, the order, the header and summary, the timeline),
+- **Usage.** The route reads the job's own job runs (`MachineHistoryRepository.jobRuns` takes a `jobId` now), from a day
+  before its first event so the machine's baseline has samples with no lane in use. `usage` adds them up as a job cost
+  profile does (issue #688): per usage window, each run's rise divided by its lanes in use; CPU weighted by samples; memory
+  at its peak. One part, `usage`, `recorded`, linked to the job costs on Machines. No run ended: no part.
+- **Commits and changed files.** The hopper's mirror says what a pull request changes (`GitMirrors.changes`): `git log
+  base..head` (at most 100, `<short sha> <subject>`) and `git diff --name-only base...head` (at most 300 paths). Both read
+  commits and trees, so no blob is fetched. `gitAnswers` adds them to a pull request read by its number in a pass — the
+  follow's read —, and the follow keeps them on what it saw (`PullRequestSeen.commits`, `.files`; the last ones kept when
+  git cannot say). A merged pull request keeps the last ones seen. So every commit shows, the ones after the latest
+  checkpoint too; before git first says, the checkpoint's commits show as before. A field added to the source state's JSON:
+  no migration, and an older build ignores it.
+- **Pushes.** Each push through the hopper (`github_proxy.done` with `op: git.push`), with its branches, and whether it
+  came after the latest checkpoint.
+- **Help pages and What's new lines.** The changed files under a `help/` directory (`*.md`), the fragments under
+  `whats-new/` (not its README), `WHATS-NEW.md` and `CHANGELOG.md`: `open` while the pull request is open, `done` once
+  merged, linked to the pull request's files.
+- **Merge order.** While the pull request waits: the pull request it goes in after, from what holds it in the tending
+  queue (`heldBehind`, issue #939: a job fixes that one first, or the hopper merges it first) or from the merge gate
+  (`seen.mergeHeldBehind`: the hopper merged a conflicting one first).
+
+**Left for later:** the test databases of a run. The hopper keeps no record of them: a job's tests start their own
+databases on its machine, and nothing tells the hopper. Showing them needs a new record, which is a decision of its own.
+
+Tests: `test/domain/job-bom.test.ts` (each group, the order, the header and summary, the timeline; part 2: usage, commits and
+files, help pages and What's new lines, pushes, merge order), `test/git-mirror/mirrors.test.ts` and
+`test/sources/github-git-answers.test.ts` (what a pull request changes, with no blob), `test/sources/github-follow.test.ts`
+(the follow keeps it),
 `test/domain/job-graph.test.ts` (titles, stage words, tree summaries), `test/integration/job-bom.test.ts` (a job that asked a
-question and opened a pull request, over the real database and HTTP server; 404), `test/ui/job-bom-model.test.ts` (filters,
+question and opened a pull request, over the real database and HTTP server; usage from its job runs; 404), `test/ui/job-bom-model.test.ts` (filters,
 pinned parts, the layout, edge sentences), `test/ui/job-bom-view.test.ts` (the whole app over a fake daemon: header, pinned,
 graph, table filters, timeline, a live read again), `test/ui/jobs-view.test.ts` (title, small reference and stage words on
 a node, the tree summary).

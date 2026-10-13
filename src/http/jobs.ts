@@ -31,7 +31,7 @@ const idParams = z.object({ id: z.string() });
 export const JOB_GRAPH_OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/jobs/graph', tag: 'Jobs', summary: 'The job graph', description: 'Where every job stands and how the jobs hang together (issue #900): nodes (jobs, issues, pull requests), each with its stage — `queued`, `running`, `waiting`, `pr_open`, `partly_done`, `done`, `failed`, `cancelled`, or `no_job` for an issue no job works —, a job\'s task count, lane, machine, time in stage (`stageSince`) and pull request with its checks; a partly done job names the pull request that blocks the rest and what runs after its merge. Typed edges: `parent`, `follow_up`, `works`, `next_part`, `rerun`, `spawned`, `plan_apply`, `opened`, `waits_on_merge`, `closes`, `blocked_by` (an issue to an issue that blocks it), `stacked_on` (a pull request to the open one whose head branch is its base), `asks` (a job to its open question) and `hands_off` (a job to its open hand-off): an open question or hand-off is a node too, at `waiting`. `trees`: each group of connected nodes with its root and the nodes that block it (`blocking`). `stages`: how many jobs are in each stage. In plain words (issue #935): a node\'s `label` is its title, its repository and number apart; `stageText` says where it stands (`Building it (attempt 2 of 3)`, `Ready for review`, `Waiting on you: approve the plan`); `waitsOnYou` marks what waits on the person; a job\'s `phase`, `attempt` and `attempts`; each tree\'s `summary` is one line. The jobs are those `/api/queue` holds, the jobs whose pull request is open, the jobs with an open question or hand-off, and the jobs these ran again, forked from or carried out. The Jobs view\'s graph and list.', returns: '`JobGraph` `{ nodes: JobGraphNode[], edges: JobGraphEdge[], trees: JobTree[], stages }`' },
   // A job's parts list (issue #935).
-  { method: 'get', path: '/api/jobs/:id/bom', tag: 'Jobs', summary: 'A job\'s parts list', description: 'Everything one job touched or made (issue #935), grouped: `asked` (its issue, follow-ups it filed, rework asked), `work` (each run, its task list, lane, time, the jobs that ran it again), `code` (its pull request, checks, branch, merge), `outputs` (artifacts and their revisions, its plan or research report), `infra` (plans and their approvals, minted credentials, drift, vault grants asked), `decisions` (questions and who answered them, overrides, its hand-off) and `machines` (the machines it ran on, Windows steps). Each part has its `status` — `waiting_on_you`, `running`, `open`, `done`, `failed`, `cancelled` or `recorded` — and its page (`href`, in the UI) or `url` (on GitHub); what waits on the person comes first. `header`: what was asked, where it stands and what is next, in plain words; `summary`: one line. `events`: the job\'s newest events, newest first. 404: no such job. The job page.', returns: '`JobBom` `{ jobId, header, summary, parts: BomPart[], events }`' },
+  { method: 'get', path: '/api/jobs/:id/bom', tag: 'Jobs', summary: 'A job\'s parts list', description: 'Everything one job touched or made (issue #935), grouped: `asked` (its issue, follow-ups it filed, rework asked), `work` (each run, its task list, lane, time, its usage — the share of each usage limit its runs burned and what they used of the machine —, the jobs that ran it again), `code` (its pull request, checks, branch, every commit, the files it changes, each push, its place in the merge order, merge), `outputs` (artifacts and their revisions, its plan or research report, the help pages and What\'s new lines its pull request changes), `infra` (plans and their approvals, minted credentials, drift, vault grants asked), `decisions` (questions and who answered them, overrides, its hand-off) and `machines` (the machines it ran on, Windows steps). Each part has its `status` — `waiting_on_you`, `running`, `open`, `done`, `failed`, `cancelled` or `recorded` — and its page (`href`, in the UI) or `url` (on GitHub); what waits on the person comes first. `header`: what was asked, where it stands and what is next, in plain words; `summary`: one line. `events`: the job\'s newest events, newest first. 404: no such job. The job page.', returns: '`JobBom` `{ jobId, header, summary, parts: BomPart[], events }`' },
 ];
 
 /** The job graph's bounds: followed jobs read, steps back along a job's origins, lineage links read. */
@@ -41,6 +41,8 @@ const GRAPH_LINKS = 5000;
 /** A parts list's bounds: the job's events read, and the jobs read for the ones that ran it again. */
 const BOM_EVENTS = 2000;
 const BOM_JOBS = 1000;
+/** How far before a job's first event its parts list reads the machine's baseline. */
+const BOM_BASELINE_MS = 86_400_000;
 
 // Read-only: jobs are pulled from sources, never posted (design.md "Phase 3"). The request's user's jobs, each with its phase (issue #548).
 export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
@@ -95,7 +97,8 @@ export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
   });
 
   // A job's parts list (issue #935): its events (an approval of its infra plan among them), questions, hand-off and
-  // artifacts, and the jobs that ran it again or forked from it.
+  // artifacts, the jobs that ran it again or forked from it, and its job runs (part 2: its cost and usage) — read from a
+  // day before its first event, so the machine's baseline has samples with no lane in use.
   app.get('/api/jobs/:id/bom', async (req) => {
     const { id } = parseWith(idParams, req.params);
     const { store } = o.tenant(req);
@@ -104,9 +107,12 @@ export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
     const events = store.events.recent(BOM_EVENTS, undefined, id);
     const related = store.jobs.list({ limit: BOM_JOBS }).filter((j) => j.rerunOf === id || j.forkOf?.jobId === id);
     const handoff = store.handoffs.forJob(id);
+    const now = new Date();
+    const first = Math.min(Date.parse(job.createdAt), ...events.map((e) => Date.parse(e.at)));
+    const runs = store.machineHistory.jobRuns({ from: new Date(first - BOM_BASELINE_MS), to: now, jobId: id });
     return jobBom({
       job, events, questions: store.questions.list({ jobId: id }), artifacts: store.artifacts.list({ jobId: id }),
-      related, now: new Date().toISOString(), ...(handoff ? { handoff } : {}),
+      related, runs, now: now.toISOString(), ...(handoff ? { handoff } : {}),
     });
   });
 

@@ -50,7 +50,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     const number = ++pullNumber;
     const pr = {
       url: `https://github.com/${repo}/pull/${number}`, createdAt: o.createdAt, isDraft: o.isDraft ?? false, conflicting: o.conflicting ?? false,
-      headCommittedAt: o.headCommittedAt ?? o.createdAt, ...(o.checks ? { checks: o.checks } : {}),
+      headCommittedAt: o.headCommittedAt ?? o.createdAt, ...(o.checks ? { checks: o.checks } : {}), ...(o.commits ? { commits: o.commits } : {}), ...(o.files ? { files: o.files } : {}),
     };
     pulls.push({ ...pr, state: 'open', body, repo, issue, closes, headRef: o.headRef ?? `branch-${number}`, base: o.base ?? 'dev' });
     return { ...pr };

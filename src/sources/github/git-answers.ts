@@ -4,6 +4,7 @@
 // where git cannot say (no mirror, outside a pass, a head that moved since the pass's fetch), and for a pull request
 // that is not open. Whether two open pull requests conflict with each other (`conflictBetween`, issue #939) is git's only,
 // and so is the base merge (`baseMerge`, issue #967): the base branch merged into a pull request's head and pushed.
+// One read by its number — the follow's — also carries what it changes (issue #935 part 2): its commits and files, git's only.
 // The port's other methods are the adapter's own.
 import type { GitMirrors } from '../../git-mirror/mirrors.ts';
 import type { BaseMerge, Job } from '../../domain/types.ts';
@@ -29,7 +30,13 @@ export function gitAnswers(api: GitHubApi, mirrors: GitMirrors | undefined): Git
   const out: Partial<GitHubApi> = {
     openClosingPullRequests: async (repo, number) => each(await api.openClosingPullRequests(repo, number)),
     referencingPullRequests: async (repo, number) => each(await api.referencingPullRequests(repo, number)),
-    pullRequest: async (repo, number) => { const pr = await api.pullRequest(repo, number); return pr && answered(pr); },
+    pullRequest: async (repo, number) => {
+      const pr = await api.pullRequest(repo, number);
+      if (!pr) return pr;
+      const [said, changes] = await Promise.all([answered(pr), pr.state === 'open' && pr.headOid && pr.base
+        ? mirrors.changes(repo, () => remote(repo), { number, base: pr.base, headOid: pr.headOid }) : undefined]);
+      return changes ? { ...said, ...changes } : said;
+    },
     openPullRequests: async (repo) => each(await api.openPullRequests(repo)),
     conflictBetween: (repo, base, a, b) => mirrors.conflictBetween(repo, () => remote(repo), base, a, b),
     baseMerge: (repo, pr) => mirrors.baseMerge(repo, () => remote(repo), pr),

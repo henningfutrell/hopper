@@ -156,7 +156,7 @@ describe('a job\'s parts list, part 2 (issue #935)', () => {
 
   it('lists its cost and usage: the share of each usage limit its runs burned for their lane, and what they used of the machine', () => {
     const bom = jobBom(input({ job: job('finished'), runs: [run(), run({ startedAt: '2026-10-01T01:00:00.000Z', lanesBusyAvg: 1, usage: { session: 0.03 }, cpu: { avg: 0.1, peak: 0.6 }, memoryBytes: { avg: GIB, peak: GIB } })] }));
-    expect(part(bom, 'usage')).toMatchObject({ group: 'work', kind: 'usage', label: 'Usage: 8% of session, 1% of week', status: 'recorded', href: '#lanes' });
+    expect(part(bom, 'usage')).toMatchObject({ group: 'work', kind: 'usage', label: 'Usage: 8% of session, 1% of week', status: 'recorded', href: '#machines' });
     expect(part(bom, 'usage')!.detail).toBe('2 runs, 60 samples: CPU 15% on average, 60% at peak; memory 3 GiB at peak');
   });
 

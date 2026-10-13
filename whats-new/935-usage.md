@@ -1,0 +1,1 @@
+- A job's page now shows how much of your usage limits the job used, every commit of its pull request, each push, the help pages and What's new lines it changed, and the pull request it waits behind before its merge.
