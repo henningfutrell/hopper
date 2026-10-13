@@ -79,6 +79,10 @@
         "specialty": {
           "type": "boolean",
           "const": true
+        },
+        "tend": {
+          "type": "boolean",
+          "const": true
         }
       },
       "required": [

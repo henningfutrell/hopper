@@ -41,6 +41,8 @@ export const jobSpec = strict({
   research: z.literal(true).optional(),
   // Designated specialty: it may elbow in past a machine's lane cap (issue #762; additive).
   specialty: z.literal(true).optional(),
+  // A tend job: it elbows in as a specialty job does (issue #967; additive).
+  tend: z.literal(true).optional(),
 });
 
 // What a job's source and routing rules give its spec (issue #375). `defaultCwd` only in events recorded before issue #361.

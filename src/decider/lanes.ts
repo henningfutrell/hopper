@@ -3,12 +3,13 @@ import { NO_NEW_JOB, homeless, unpinnedCap, type MachineState } from './assign.t
 
 /**
  * Step 8: per-machine lane plan. `unassignedIdle` = idle lanes no start took. `priorityOf`: the running jobs'
- * priorities — the lowest-priority busy lane drains first, high-priority work last (issue #535). `specialty`: the running
- * specialty jobs — their lanes drain before any other, so the lanes they elbowed in close when they end (issue #762).
+ * priorities — the lowest-priority busy lane drains first, high-priority work last (issue #535). `elbowing`: the running
+ * jobs that may elbow in, specialty and tend jobs — their lanes drain before any other, so the lanes they elbowed in close
+ * when they end (issues #762, #967).
  */
 export function planLanes(
   s: MachineState, unassignedIdle: Lane[], lanes: Lane[], starts: StartPlan[], at: string, graceMs: number,
-  priorityOf: ReadonlyMap<JobId, number> = new Map(), specialty: ReadonlySet<JobId> = new Set(),
+  priorityOf: ReadonlyMap<JobId, number> = new Map(), elbowing: ReadonlySet<JobId> = new Set(),
 ): LanePlan {
   const mine = lanes.filter((l) => l.machineId === s.machine.id);
   const opening = starts.filter((st) => st.machineId === s.machine.id && st.laneId === null).length;
@@ -30,7 +31,7 @@ export function planLanes(
   // drains its own lanes (issue #140); then the machine drains what is still past its cap.
   const draining = mine.filter((l) => l.state === 'draining');
   const priority = (l: Lane): number => (l.jobId === undefined ? -Infinity : priorityOf.get(l.jobId) ?? -Infinity);
-  const elbow = (l: Lane): number => (l.jobId !== undefined && specialty.has(l.jobId) ? 0 : 1);
+  const elbow = (l: Lane): number => (l.jobId !== undefined && elbowing.has(l.jobId) ? 0 : 1);
   const busy = mine.filter((l) => l.state === 'busy')
     .sort((a, b) => elbow(a) - elbow(b) || priority(a) - priority(b) || b.openedAt.localeCompare(a.openedAt) || b.id.localeCompare(a.id));
   const drained = new Set<string>();

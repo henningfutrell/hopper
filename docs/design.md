@@ -220,6 +220,11 @@ an ordinary job never does, whatever its priority (critical priority, above, is 
 - **Shown.** The lanes panel marks the lane `elbow-in · over the cap` and names each machine with more lanes in use
   than its lanes (`7/6 lanes in use · 1 over the cap`); the Lanes count reads the same way.
 - The designation is read at intake: a label added to an item whose job is already queued takes effect on its next job.
+- **A tend job elbows in too** (issue #967, `spec.tend`, `elbowsInAs` in `src/domain/elbow-in.ts`). Tending's job — its item
+  run again by `tending` to rebase its pull request or fix its checks — is the one job the hopper itself lets elbow in, on
+  the same terms: only when it fits nowhere, within the machine's `elbowIns`, which specialty and tend jobs share; its lane
+  drains first. The start reason says `tend: elbows in …`. A lane kept empty for tend jobs was not taken: under a usage cap
+  it is a lane no feature work may use while nothing needs tending.
 
 ## The engine
 
@@ -1941,7 +1946,8 @@ after-done half (`src/sources/after-done.ts`) asks `tendStep(seen)`: merge confl
 (`job.rerun`, `by: "tending"`), its prompt followed by the **tend brief** (`tendBrief`: work on that pull request's
 branch, the step's lines, open no new pull request, and fail saying which files or checks and why when it cannot). The
 tended job follows it no more (`follow: tended`, `tended` names the pull request, the step and the new job) and
-`job.pull_request_tended` records it. The new job is judged as any other: done once the same pull request is ready again
+`job.pull_request_tended` records it. The new job is a **tend job** (`spec.tend`, issue #967): when every lane is in use it
+elbows in past a lane cap ("Specialty jobs elbow in"), so it never waits behind feature work. It is judged as any other: done once the same pull request is ready again
 (an older pull request counts, rule 2 above; a part counts when the job pushed to it, `isUpdatedBy`), and it then waits
 and is followed in its turn; a job that cannot ends failed, and its hand-off in Needs a person says why — the problem card.
 At most `MAX_TENDS` (3) `fix_checks` tends in a row of one pull request (`tendsInRow`, along `rerunOf`): then it waits on a
@@ -16262,3 +16268,22 @@ by the base merge); and a pull request blocked by another named on its card.
 
 Verified: the base merge against real git (`test/git-mirror/base-merge.test.ts`: an origin over `file://` with blob filters,
 as GitHub serves one), and the tending queue with the in-memory GitHub (`test/integration/base-merge.test.ts`).
+
+## PR tending without lanes, part 2: tend jobs elbow in (issue #967, 2026-10-12)
+
+A real conflict still needs a tend job, and a tend job waited for a free lane behind feature work: the usage cap held the
+hopper to two lanes. Now tending's job (`spec.tend`, set when `SourceHost.rerun` is by `tending`) elbows in past a machine's
+lane cap as a specialty job does ("Specialty jobs elbow in"): only when it fits nowhere inside the caps, within the
+machine's `elbowIns` (shared with specialty jobs), never at a usage hard limit or under resource pressure. Its lane drains
+first, so the machine is back at its cap when it ends. The lanes panel marks it `elbow-in · over the cap`.
+
+Not taken: a lane kept empty for tend jobs. With the cap at two lanes, one kept lane halves the feature work, and it stands
+idle while nothing needs tending. An elbow-in costs a lane only while a tend job runs.
+
+Left for later parts of issue #967: tending started by GitHub's events, not only by each sync; merged and closed pull
+requests reconciled at once; migration numbers given out at merge time; a pull request blocked by another one named on its
+card.
+
+Tested: the decider (`test/decider/elbow-in.test.ts`), the tend job's flag over the real daemon
+(`test/integration/pull-request-tending.test.ts`, `test/integration/github-rerun.test.ts`) and the lanes panel
+(`test/ui/board.test.ts`).

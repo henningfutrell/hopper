@@ -1,0 +1,1 @@
+- When every lane is busy, the job that fixes a pull request's conflicts or checks now starts at once on one extra lane, so it never waits behind other work.

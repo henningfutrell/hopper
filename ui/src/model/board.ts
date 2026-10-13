@@ -121,13 +121,13 @@ export interface LaneRow {
   workTree?: string;
   /** `unopened`: capacity under maxLanes with no lane open. */
   state: Lane['state'] | 'unopened';
-  /** A specialty job's lane past the machine's lanes (issue #762): it elbowed in, and closes when its job ends. */
+  /** A specialty or tend job's lane past the machine's lanes (issues #762, #967): it elbowed in, and closes when its job ends. */
   elbowIn?: true;
 }
 
 const inUse = (m: Pick<MachineView, 'lanes'>): number => m.lanes.filter((l) => l.state !== 'idle').length;
 
-/** The machines with more lanes in use than their lanes (issue #762): specialty jobs elbowed in, e.g. 7 of 6. */
+/** The machines with more lanes in use than their lanes (issue #762): specialty or tend jobs elbowed in, e.g. 7 of 6. */
 export function overCap(machines: readonly MachineView[]): { machineId: string; inUse: number; lanes: number }[] {
   return machines.filter((m) => inUse(m) > m.maxLanes).map((m) => ({ machineId: m.id, inUse: inUse(m), lanes: m.maxLanes }));
 }
@@ -148,7 +148,7 @@ export function laneRows(machines: MachineView[], running: Job[], jobs: Readonly
     for (const lane of m.lanes) {
       const job = (lane.jobId && byId.get(lane.jobId)) || byLane.get(lane.id);
       if (job) placed.add(job.id);
-      const elbowIn = over && job?.spec.specialty === true && lane.state !== 'idle';
+      const elbowIn = over && (job?.spec.specialty === true || job?.spec.tend === true) && lane.state !== 'idle';
       rows.push({ key: lane.id, machine, lane, job, ...(job?.workTree ? { workTree: job.workTree } : {}), state: lane.state, ...(elbowIn ? { elbowIn: true as const } : {}) });
     }
     for (let i = m.lanes.length; i < m.maxLanes; i += 1) rows.push({ key: `${m.id}/unopened-${i}`, machine, state: 'unopened' });

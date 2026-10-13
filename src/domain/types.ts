@@ -88,6 +88,11 @@ export interface JobSpec {
    * start a lane past the machine's lane cap, within the machine's elbow-ins. No other job goes past the cap this way.
    */
   specialty?: true;
+  /**
+   * A tend job (issue #967): tending ran its item again (`job.rerun`, `by: "tending"`) to rebase its pull request or fix its
+   * checks. It elbows in as a specialty job does, so a pull request's conflict never waits behind feature work for a lane.
+   */
+  tend?: true;
 }
 
 /** What a job's source and routing rules give its spec (issue #375); `cwd`, `model`: the payload's. */

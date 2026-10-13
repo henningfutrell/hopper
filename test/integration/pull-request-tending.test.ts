@@ -62,6 +62,9 @@ describe('tending a waiting pull request (issue #736)', () => {
     await app.sync();
     const tender = await nextJob(app, issue.url, 2);
     expect(tender!.rerunOf).toBe(job.id);
+    // A tend job (issue #967): it may elbow in past a lane cap; the job it tends was none.
+    expect(tender!.spec.tend).toBe(true);
+    expect(job.spec.tend).toBeUndefined();
     const finished = await app.waitForStatus(tender!.id, 'finished');
     expect(String(app.scripted.payloads.at(-1)!.prompt)).toContain(tendBrief(url, 'rebase'));
     expect((await app.events('types=job.pull_request_tended')).map((e) => [e.jobId, e.data])).toEqual([[job.id, { pullRequest: url, step: 'rebase', nextJobId: tender!.id }]]);
