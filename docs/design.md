@@ -14748,7 +14748,30 @@ change goes to the process's limiter at once: the next call and the next poll ro
 kept from the old settings is dropped. A change is `github_rate_limiter.settings_changed`, an instance event.
 
 **What it shows.** `GET /api/github-rate-limiter`: the settings, each bucket (fewest left first), the cache (answers
-kept, hits, misses) and the waits (count, total time).
+kept, hits, misses), the waits (count, total time) and `hourly`, the calls of the last hour by kind.
+
+**Calls per hour by kind** (issue #985 part 4, 2026-10-13). `src/github-limiter/traffic.ts` keeps a rolling hour in memory:
+60 one-minute buckets, the oldest dropped as the minutes pass; a restart starts at zero. A **call** is one GitHub charged:
+an answer with data or a refusal (a 4xx or 5xx). A 304 is a cache hit, not a call; a call the limiter did not make (a
+deferred call) or one with no answer is none. The **kind** (`callKindOf`) comes from the port read the call was made
+under (`GitHubTraffic.read`, the pass reads' wrapper, now also outside a pass), so the adapters carry no flag:
+- `intake`: `listRepos`, `listAssignedIssues`, `listInstalledRepos`, `projectItems`.
+- `reconcile`: `openPullRequestsIn`. `pr_cycle`: `pullRequestStates`.
+- `per_job_read`: any other `GET` or GraphQL query. `write`: any other REST call or a GraphQL mutation.
+- `watch` and `job`: the GitHub watches' adapter (`src/github-watch/github.ts`) and the GitHub proxy's
+  (`src/github-proxy/api.ts`: a running job's own requests) name their kind on
+  `makeRequest` (`LimiterCall.kind`). A git fetch is no API call: it stays in the pass line only.
+
+A call made inside a read counts under it, the installation token minted for it included. **GraphQL points**: the drop in
+the `graphql` bucket's calls left since the last answer of the same window, for that credential; the whole window's use
+at a new window; 1 when nothing was known. Calls that overlap make it approximate; summed over the hour it is good enough
+for a dashboard. Settings → GitHub rate limit shows it as a table: one row a kind, then all. No repository, token or
+credential is in it.
+
+**The installed repositories** follow the intake sync interval too (issue #985 part 4). The app source's timed sync asked
+for them at every sync (`GET /app/installations` and `GET /installation/repositories`, two calls a minute); it now asks
+only when its last answer is older than `intakeSyncMinutes`, and at once on a sync a person asked for. An installation
+change on GitHub is seen at most one interval later; Sync now sees it at once.
 
 **Dependency.** This part does not wait for job 3 (#427). It assumes job 3's GitHub watches poll GitHub through `makeRequest`
 and register with `createPollSchedule`, with the GitHub watch interval as `intervalMs` and the limiter's `batchSize`.
@@ -14919,7 +14942,7 @@ reconcile; none answering throws.
 
 **Expected budget at 60 repositories** (one hour, the defaults): intake listings 3 requests × 4; reconciling 1–3 requests
 × 4; the in-motion cycle 1 request × 20 (the 4 `all` rounds among them) — at most 44 calls an hour while the jobs follow at
-most 50 pull requests. Calls per hour by kind and the test that holds this are issue #985 part 4.
+most 50 pull requests. The budget test below holds it; the calls per hour by kind are on Settings → GitHub rate limit.
 
 **Trade-off.** A change on GitHub to an idle pull request is seen late: one merged or closed by a person on GitHub, or a
 new merge conflict after a merge that was not the hopper's, at most one intake sync interval (15 minutes) later. Sync now
@@ -14931,9 +14954,17 @@ seconds" is declined: the proposal path accepted for the issue's job (pull-only 
 sign-off that webhooks are left out. The hopper takes no inbound webhooks and pulls by design ("Remote access"); the
 in-motion cycle and Sync now are what make a change seen.
 
-Not yet (issue #985 part 4): calls per hour by kind on Settings → GitHub rate limit, and the budget test against the fake
-GitHub. A targeted read of one pull request when a person opens its job's page is not made: no new route; Sync now reads
-every followed pull request at once.
+**The budget test** (issue #985 part 4, `test/integration/github-budget.test.ts`). The real app source and the real sync
+loop run one hour on fake timers, at the defaults, against the node:http fake GitHub: 60 job repositories, ten jobs that
+follow pull requests — two whose checks run and then pass, one ready while yolo mode merges it, one a person merges and
+one a person closes on GitHub, five idle. From the fake's own log: intake, reconciling and the in-motion cycle make fewer
+than 50 calls (34 when written); a merged or closed pull request has no read of its own after the round that saw it end;
+an idle one has none after the first round, only its part of the batched reads; the hopper's count by kind is what the
+fake saw. It found one cost the estimate above missed: the installed repositories, asked at every sync ("The shared rate
+limiter").
+
+**Declined** (decisions recorded 2026-10-13). Webhooks (above). A targeted read of one pull request when a person opens
+its job's page: no new route; Sync now reads every followed pull request at once.
 
 ## The hopper label means full automation (issue #435, 2026-10-11)
 
