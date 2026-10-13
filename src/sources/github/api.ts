@@ -137,8 +137,36 @@ export interface IssueEvent {
   assignee?: string;
 }
 
-/** One event of a repository's event feed (issue #967): its id (increasing), GitHub's type (`PullRequestEvent`, `PushEvent`, …), when. */
-export interface RepoEvent { id: string; type: string; createdAt: string }
+/** A followed pull request and its issue, as the in-motion cycle's batched read asks them (issue #985). */
+export interface PullRequestRef { repo: string; pullRequest: number; issue: number }
+
+/**
+ * A pull request and its issue as one batched read tells them (issue #985, the in-motion cycle): what a follow needs to
+ * tell whether anything changed. `mergeable`: GitHub's `MERGEABLE`, `CONFLICTING` or `UNKNOWN` (not computed yet).
+ * `checks` absent: none. `issue` absent: GitHub did not answer for the issue.
+ */
+export interface PullRequestState {
+  state: 'open' | 'closed' | 'merged';
+  isDraft: boolean;
+  mergeable: string;
+  createdAt: string;
+  headCommittedAt?: string;
+  headOid?: string;
+  headRef?: string;
+  base?: string;
+  checks?: ChecksState;
+  body: string;
+  issue?: { state: 'open' | 'closed'; stateReason?: string; updatedAt: string };
+}
+
+/** The answer of a batched pull request read, each by `pullKey`; one GitHub did not answer for is in `errors`, never a throw. */
+export interface PullRequestStates { pulls: Map<string, PullRequestState>; errors: Map<string, string> }
+
+/** The open pull requests of many repositories (issue #985: reconciling), each newest first; a repository GitHub did not answer for is in `repoErrors`. */
+export interface OpenPullRequestsIn { repos: Map<string, BranchPullRequest[]>; repoErrors: Map<string, string> }
+
+/** A pull request's key in a batched read: its repository, lowercased, and its number. */
+export const pullKey = (repo: string, pullRequest: number): string => `${repo.toLowerCase()}#${pullRequest}`;
 
 export interface GitHubProjectItem {
   /** The issue url. */
@@ -172,11 +200,6 @@ export interface GitHubApi {
   assignedAt(repo: string, number: number, login: string): Promise<string | undefined>;
   /** The issue's `labeled` and `assigned` events, oldest first (issue #652: who added the label and the assignment). */
   issueEvents(repo: string, number: number): Promise<IssueEvent[]>;
-  /**
-   * The newest events of `repo`'s event feed, newest first (issue #967: whether a pull request or a branch moved between
-   * syncs). One page, asked conditionally, so an unchanged feed costs no call. Absent: not read.
-   */
-  repoEvents?(repo: string): Promise<RepoEvent[]>;
   /** Add assignees to an issue (Assign to me in Sources, issue #440): the user's own act, never the hopper's. */
   addAssignees(repo: string, number: number, logins: string[]): Promise<void>;
   /** Reopen a closed issue (Run again, issue #354); an open one stays open. */
@@ -207,6 +230,16 @@ export interface GitHubApi {
   pullRequest(repo: string, number: number): Promise<NumberedPullRequest | undefined>;
   /** The open pull requests of `repo`, newest 100, each with its branch (issue #637: one named for an issue); none is []. */
   openPullRequests(repo: string): Promise<BranchPullRequest[]>;
+  /**
+   * The open pull requests of each of `repos`, newest 100 each (issue #985: reconciling): batched GraphQL, about one request
+   * for each 25 repositories with one credential, never one listing for each repository.
+   */
+  openPullRequestsIn(repos: string[]): Promise<OpenPullRequestsIn>;
+  /**
+   * The followed pull requests `refs` and their issues (issue #985, the in-motion cycle): batched GraphQL, about one request
+   * for each 50 pull requests with one credential. A pull request GitHub does not answer for is in `errors`, never a throw.
+   */
+  pullRequestStates(refs: PullRequestRef[]): Promise<PullRequestStates>;
   /**
    * Merge pull request `number` of `repo` with a merge commit (issue #637: yolo mode, the hopper's own merge of a ready
    * pull request it follows). GitHub's refusal — not mergeable, checks required, no access — throws.

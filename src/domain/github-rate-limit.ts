@@ -20,9 +20,14 @@ export interface RateLimiterSettings {
    * listing cache in between. A sync a person asked for lists at once.
    */
   intakeSyncMinutes: number;
+  /**
+   * How often the in-motion cycle reads the pull requests in motion, in minutes (issue #985): one batched read each time.
+   * Every followed pull request is read on the intake sync interval.
+   */
+  prCycleMinutes: number;
 }
 
-export const DEFAULT_RATE_LIMITER: RateLimiterSettings = { slowBelowPercent: 25, reserve: 50, batchSize: 10, intakeReserve: 1000, intakeSyncMinutes: 15 };
+export const DEFAULT_RATE_LIMITER: RateLimiterSettings = { slowBelowPercent: 25, reserve: 50, batchSize: 10, intakeReserve: 1000, intakeSyncMinutes: 15, prCycleMinutes: 3 };
 
 export const RATE_LIMITER_RANGES: Record<keyof RateLimiterSettings, { min: number; max: number }> = {
   slowBelowPercent: { min: 0, max: 100 },
@@ -30,6 +35,7 @@ export const RATE_LIMITER_RANGES: Record<keyof RateLimiterSettings, { min: numbe
   batchSize: { min: 1, max: 100 },
   intakeReserve: { min: 0, max: 5000 },
   intakeSyncMinutes: { min: 1, max: 1440 },
+  prCycleMinutes: { min: 1, max: 1440 },
 };
 
 /** A rate-limit bucket as GitHub last told it, per credential and resource; `holdUntil` after GitHub refused a call. */

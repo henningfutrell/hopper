@@ -39,12 +39,17 @@
 // Markdown conflict where both sides only added lines. Pushed, `job.pull_request_base_merged` records it, and what the job
 // saw of its pull request says it has no merge conflicts and its checks run again, so it heads its queue at once. A real
 // conflict, or a source that cannot, and the tend job runs as before. A throw is only logged: the tend job runs.
+// Rounds (issue #985, the in-motion cycle, `FollowRound`): the sync loop says which follows a sync makes. `all` follows every
+// job that follows a pull request, reconciles, judges again and asks the cross-references; `in_motion` follows only the
+// pull requests in motion (`inMotion`); `none` follows nothing. Before its follows, a round asks the source for every pull
+// request they follow in one batch (`readFollowed`); a throw is logged, and the round follows nothing. Tending runs at every
+// sync, from what was last seen.
 import type { JobSource, PullRequestActResult, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
 import { queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
 import { SourceError } from '../domain/ports.ts';
 import {
-  failedTend, following, followsWhenEnded, judge, MAX_TENDS, rechecksMerge, reconcilable, tendBrief, tendsInRow, tendStep,
+  failedTend, following, followsWhenEnded, inMotion, judge, MAX_TENDS, rechecksMerge, reconcilable, tendBrief, tendsInRow, tendStep,
   type ActingPerson, type BaseMerge, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestAct, type PullRequestSeen, type Tended, type TendChecks,
 } from '../domain/types.ts';
 
@@ -72,6 +77,9 @@ export interface AfterDoneContext {
 }
 
 const NOT_COMPLETE = /^not complete: /;
+
+/** Which follows a sync makes (issue #985): every one, only those in motion, or none. */
+export type FollowRound = 'all' | 'in_motion' | 'none';
 
 export function createAfterDone(c: AfterDoneContext) {
   const { store } = c;
@@ -102,10 +110,10 @@ export function createAfterDone(c: AfterDoneContext) {
     }
   }
 
-  async function follow(source: JobSource, jobId: string): Promise<void> {
+  async function follow(source: JobSource, jobId: string, all: boolean): Promise<void> {
     let job = store.jobs.get(jobId);
     if (!job || !(following(job) || rechecks(job))) return;
-    await crossReference(source, job);
+    if (all) await crossReference(source, job);
     job = store.jobs.get(jobId) ?? job;
     const r = await source.follow!(job);
     if (r) record(jobId, r);
@@ -303,19 +311,33 @@ export function createAfterDone(c: AfterDoneContext) {
 
   return {
     act,
-    /** One sync of the source: every job of its to follow, or to judge again. */
-    async catchUp(source: JobSource, listed: Job[]): Promise<void> {
-      await reconcile(source, listed);
+    /** One sync of the source: the jobs of its round to follow, or to judge again; then the tends. */
+    async catchUp(source: JobSource, listed: Job[], round: FollowRound = 'all'): Promise<void> {
+      const all = round === 'all';
+      if (all) await reconcile(source, listed);
       const jobs = listed.map((j) => store.jobs.get(j.id) ?? j);
       const run = (j: Job, fn: (s: JobSource, id: string) => Promise<void>) =>
         c.enqueue(j.id, () => fn(source, j.id).catch((e: unknown) => { c.failed(j.id, e); }));
+      const merges = (repo: string) => source.mergesOnReady?.(repo) ?? false;
+      const inRound = (j: Job) => all ? following(j) || rechecks(j) : round === 'in_motion' && inMotion(j, merges, c.now());
+      const due = jobs.filter((j) => c.finalReported(j) && followsWhenEnded(j) && inRound(j));
+      let read = due.length > 0 && source.follow !== undefined;
+      if (read) {
+        try {
+          await source.readFollowed?.(due.filter(following));
+        } catch (e) {
+          read = false;
+          console.warn(`hopper: ${source.name}: reading the followed pull requests failed, followed at the next round: ${(e as Error).message}`);
+        }
+      }
       const followOf = async (id: string): Promise<void> => {
         const j = store.jobs.get(id);
-        if (j && followsWhenEnded(j) && source.follow && (following(j) || rechecks(j))) await run(j, follow);
+        if (read && j && followsWhenEnded(j) && (following(j) || rechecks(j)) && due.some((d) => d.id === id)) await run(j, (s, x) => follow(s, x, all));
       };
-      // A failed job that waits on a person is judged again first (issue #786: it may follow its pull request too).
+      // A failed job that waits on a person is judged again first (issue #786: it may follow its pull request too); only in
+      // a round of every one.
       await Promise.all(jobs.filter((j) => c.finalReported(j)).map((j) =>
-        (waitsOnPerson(j) ? run(j, judgeAgain).then(() => followOf(j.id)) : followOf(j.id))));
+        (all && waitsOnPerson(j) ? run(j, judgeAgain).then(() => followOf(j.id)) : followOf(j.id))));
       // The tends run after every follow, off the report chain (Run again takes that chain itself): one per repository.
       await tendNext(source, listed);
     },

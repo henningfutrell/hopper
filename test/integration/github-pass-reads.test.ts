@@ -82,6 +82,8 @@ describe('one read per sync pass (issue #822)', () => {
     gh.calls.length = 0;
     await app.sync();
     await waitFor(() => gh.issue(REPO, first!.number).labels.includes('hopper:done'), { what: 'hopper:done' });
-    expect(gh.calls.filter((c) => c.method === 'getIssue').map((c) => c.args[1])).toEqual(expect.arrayContaining([1, 2, 3]));
+    // The changed one is read again; the others' pull requests are answered by the in-motion cycle's batch (issue #985).
+    expect(gh.calls.filter((c) => c.method === 'getIssue').map((c) => c.args[1])).toContain(first!.number);
+    expect(gh.calls.map((c) => c.method)).toContain('pullRequestStates');
   });
 });

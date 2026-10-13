@@ -123,7 +123,8 @@ describe('parking a running job', () => {
 describe('parking a job on a question', () => {
   it('keeps its question open and answerable past the human timeout; the answer waits for the re-queue', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
-    const a = await boot(herdr, { env: { HOPPER_HUMAN_TIMEOUT_MS: '300', HOPPER_HUMAN_RENOTIFY_MS: '100' } });
+    // The timeout leaves the park time to land first, under a loaded test run too: at 300 ms the question expired first.
+    const a = await boot(herdr, { env: { HOPPER_HUMAN_TIMEOUT_MS: '2000', HOPPER_HUMAN_RENOTIFY_MS: '100' } });
     const token = await a.login();
     const job = await a.pull({}, item);
     const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
@@ -135,7 +136,7 @@ describe('parking a job on a question', () => {
     await waitFor(() => herdr.closed.length === 1, { what: 'the pane closed' });
 
     // Past the human timeout: nothing expires, nothing fails.
-    await new Promise((r) => setTimeout(r, 800));
+    await new Promise((r) => setTimeout(r, Math.max(0, Date.parse(q.createdAt) + 2500 - Date.now())));
     expect((await a.job(job.id)).status).toBe('parked');
     const [open] = await a.questionsOf(job.id);
     expect(open!.status).toBe('open');

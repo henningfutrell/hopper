@@ -25,8 +25,11 @@ const body = (op: Record<string, unknown>) => `${JSON.stringify(op)}\n\nPlease d
 const jobFor = async (app: TestApp, url: string): Promise<Job> =>
   (await app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.source?.key === url)!;
 
-/** The GraphQL requests the fake saw, each as the issue numbers it read; a repository listing (issue #985) reads none by number. */
-const graphqlReads = (f: FakeGitHubServer): number[][] => f.state.requests.filter((r) => r.path === '/graphql' && !/r0: repository\(/.test(String((r.body as { query?: string }).query))).map((r) => {
+/**
+ * The GraphQL requests the fake saw, each as the issue numbers it read; a repository listing and the in-motion cycle's batch
+ * (issue #985, `[pu]0:` aliases) read none by a number variable.
+ */
+const graphqlReads = (f: FakeGitHubServer): number[][] => f.state.requests.filter((r) => r.path === '/graphql' && !/[rpu]0: repository\(/.test(String((r.body as { query?: string }).query))).map((r) => {
   const { variables } = r.body as { variables: Record<string, unknown> };
   return Object.entries(variables).filter(([k]) => k === 'number' || /^k\d+$/.test(k)).map(([, v]) => Number(v));
 });

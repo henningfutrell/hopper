@@ -11,13 +11,14 @@
 // A person's resolution of a hand-off (issue #551) is told to its job's item on the job's report chain, after the job's
 // own end, when it is recorded and again at each sync until the source took it. After done (issue #579, `after-done.ts`): a
 // finished job's pull request is followed to its merge or close, and a job that failed only for want of a merge is judged again.
-// On GitHub's events (issue #967): between syncs, the sync watch (`sync-watch.ts`) asks each source whether the repositories
-// its jobs follow moved, and syncs it at once when they did. A pull request merged or closed while a source syncs makes its
-// next sync run at once, so the others are tended on the new base; one merged or closed between syncs (a person's Merge now)
-// starts a sync at once.
+// The in-motion cycle (issue #985, `followRound`): a sync follows pull requests in rounds, not each time. Every cycle interval
+// it follows only the pull requests in motion; every reconcile interval it follows every one and reconciles; between rounds
+// it follows none. The first sync, a sync a person asked for, and the sync after a merge or close follow every one. A pull
+// request merged or closed while a source syncs makes its next sync run at once, so the others are seen and tended on the
+// new base; one merged or closed between syncs (a person's Merge now) starts a sync at once.
 // What a sync reads (issue #985): the first sync after start, a sync of a source new or changed in the plugins config, and a
 // sync a person asked for (Sync now, an intake action, a new connection) ask the source to read everything again; every
-// other sync — its timer, the watch, a rerun — only what is due (`discover({ due: true })`).
+// other sync — its timer, one after a merge, a rerun — only what is due (`discover({ due: true })`).
 
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
@@ -30,7 +31,7 @@ import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
 import { createAfterDone } from './after-done.ts';
 import { createThreadAsks } from './thread-asks.ts';
-import { createSyncWatch, WATCH_MS } from './sync-watch.ts';
+import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts';
 import { signalsApplier, type SyncFlags } from './sync-signals.ts';
 
 export { REMOVED } from './sync-slots.ts';
@@ -44,8 +45,8 @@ export interface SourceSyncOptions {
   stallAfterMs?: number;
   /** Jev first, for the order new items enter and the head of each tending queue (issue #796); absent: the rules decide. */
   jevFirst?: JevFirst;
-  /** How often each source is asked whether its repositories moved (issue #967). Default WATCH_MS. */
-  watchMs?: number;
+  /** How often a round follows the pull requests in motion, and every one (issue #985), read at each sync. Absent: every sync follows every one. */
+  followEvery?: () => FollowEvery;
 }
 
 /** A source in error this long has stopped intake: the owner is told. */
@@ -167,8 +168,17 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return enqueue(jobId, () => reportJob(slot, jobId, hint));
   }
 
+  /** A pull request ended: the base of the others moved, so its source syncs again at once and follows every one. */
+  function pullRequestEnded(slot: Slot | undefined): void {
+    if (!slot || slot.removed) return;
+    slot.followAll = true;
+    if (slot.status.syncing) { slot.again = true; return; }
+    // Listeners fire inside append; never start a sync from there.
+    setImmediate(() => { if (running && !slot.status.syncing) void runSync(slot); });
+  }
+
   function onEvent(e: DomainEvent) {
-    if (running) watch.onEvent(e, slots.get(store.jobs.get(e.jobId ?? '')?.source?.source ?? ''));
+    if (running && PR_ENDED.has(e.type)) pullRequestEnded(slots.get(store.jobs.get(e.jobId ?? '')?.source?.source ?? ''));
     if (running && (writeBacks.follows(e) || threadAsks.follows(e))) return;
     if (!running || !e.jobId || !TRIGGERS.has(e.type)) return;
     const jobId = e.jobId;
@@ -230,6 +240,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     clearTimeout(slot.timer);
     delete st.nextSyncAt;
     delete slot.again;
+    const round = followRound(slot, clock.now().getTime(), o.followEvery?.(), asked || slot.followAll === true);
+    delete slot.followAll;
     st.syncing = true;
     emit(slot);
     const previous = st.state === 'error' ? st.lastError : undefined;
@@ -250,7 +262,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         .filter((j) => !isTerminal(j) || !flagsOf(j).finalReported || !flagsOf(j).claimReported)
         .map((j) => queueReport(slot, j.id)));
       await writeBacks.catchUp(slot.source);
-      await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot)), threadAsks.catchUp(slot.source, jobsOf(slot))]);
+      await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot), round), threadAsks.catchUp(slot.source, jobsOf(slot))]);
     };
     try {
       await (slot.source.pass ? slot.source.pass(pass) : pass());
@@ -313,8 +325,6 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     failed: retry, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief), now: () => clock.now().getTime(),
   });
 
-  const watch = createSyncWatch({ slots: () => slots.values(), jobsOf, sync: (slot) => { void runSync(slot); }, watchMs: o.watchMs ?? WATCH_MS });
-
   const rerunning = createRerun({
     host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id),
     syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); },
@@ -339,11 +349,9 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       running = true;
       unsubscribe = store.events.subscribe(onEvent);
       for (const slot of slots.values()) void runSync(slot, true);
-      watch.start();
     },
     async stop() {
       running = false;
-      watch.stop();
       unsubscribe?.();
       for (const slot of slots.values()) clearTimeout(slot.timer);
       await drain();

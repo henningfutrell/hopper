@@ -19,7 +19,7 @@ import { createFakeCrossReferences } from './fake-cross-references.ts';
 import type { FakeActor, FakeAppIdentity, FakeGitHub, Method, PullRequestInput } from './fake-types.ts';
 import { fakeConflicts } from './fake-conflicts.ts';
 import { fakeIssuePlace } from './fake-issue-place.ts';
-import { fakeFeed } from './fake-feed.ts';
+import { fakePulls } from './fake-pulls.ts';
 import { fakeListing } from './fake-listing.ts';
 
 export type { FakeActor, FakeAppIdentity, FakeGitHub, PullRequestInput } from './fake-types.ts';
@@ -46,7 +46,6 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   /** The fake's own writes: as the app's bot, or as the connected account through the hopper's app. */
   const self: FakeActor = o.app ? { login: o.app.botLogin, type: 'Bot', viaApp: FAKE_HOPPER_APP } : { login: o.login ?? 'owner', viaApp: FAKE_HOPPER_APP };
   const labels = new Map<string, Set<string>>();
-  const feed = fakeFeed((m, a) => enter(m, a));
   const conflicts = fakeConflicts((m, a) => enter(m, a), (url) => { const p = pull(url); Object.assign(p, { headCommittedAt: new Date().toISOString(), conflicting: false }); if (p.checks) p.checks = 'pending'; });
   const closers = new Map<string, ClosingPullRequest>();
   const subIssues = new Map<string, string[]>();
@@ -59,7 +58,6 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       headCommittedAt: o.headCommittedAt ?? o.createdAt, ...(o.checks ? { checks: o.checks } : {}), ...(o.commits ? { commits: o.commits } : {}), ...(o.files ? { files: o.files } : {}),
     };
     pulls.push({ ...pr, state: 'open', body, repo, issue, closes, headRef: o.headRef ?? `branch-${number}`, base: o.base ?? 'dev' });
-    feed.record(repo, 'PullRequestEvent');
     return { ...pr };
   };
   const openPull = (repo: string, n: number, o: PullRequestInput, closes: boolean, says = closes ? 'Closes' : 'Part of'): OpenPullRequest => {
@@ -71,7 +69,6 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     ({ url, createdAt, isDraft, conflicting, ...(headCommittedAt ? { headCommittedAt } : {}), ...(checks ? { checks } : {}) });
   const merged = (p: (typeof pulls)[number], at: string, by = human) => {
     Object.assign(p, { state: 'merged', mergedAt: at });
-    feed.record(p.repo, 'PullRequestEvent');
     for (const q of pulls) if (q.state === 'open' && conflicts.conflictsWith(p.url).includes(q.url)) q.conflicting = true;
     if (!p.closes) return;
     Object.assign(issues.get(p.issue)!, { state: 'closed', closedBy: by, closedAt: at, stateReason: 'completed' }); touch(issues.get(p.issue)!);
@@ -107,9 +104,10 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   /** A change to the issue: its `updatedAt` moves. */
   const touch = (i: GitHubIssue) => { i.updatedAt = stamp(); };
   const listing = fakeListing(issues, (m, a) => enter(m, a));
+  const batched = fakePulls(pulls, issues, (m, a) => enter(m, a));
 
   const api: GitHubApi = {
-    listRepos: listing.listRepos,
+    listRepos: listing.listRepos, pullRequestStates: batched.pullRequestStates, openPullRequestsIn: batched.openPullRequestsIn,
     async getIssue(repo, n) { enter('getIssue', [repo, n]); return copy(find(repo, n)); },
     async subIssues(repo, n) {
       enter('subIssues', [repo, n]);
@@ -221,7 +219,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       enter('closeWithoutMerge', [repo, n]);
       const p = pulls.find((x) => x.url === `https://github.com/${repo}/pull/${n}`);
       if (!p) throw notFound(`${repo}/pull/${n}`);
-      if (p.state === 'open') { p.state = 'closed'; feed.record(p.repo, 'PullRequestEvent'); }
+      if (p.state === 'open') p.state = 'closed';
     },
     async toDraft(repo, n) {
       enter('toDraft', [repo, n]);
@@ -247,7 +245,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   }
 
   const fake: FakeGitHub = {
-    ...api, ...feed.methods,
+    ...api,
     setInstalledRepos(repos) { installed = [...repos]; },
     calls,
     createIssue({ repo, title, body, author, authorId, assignees, labels: ls, labelledBy, assignedBy, parent }) {
@@ -288,10 +286,10 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     mentionIssue: (repo, n, m) => { find(repo, n); return xrefs.mention(key(repo, n), repo, m); },
     setChecks(url, checks, failedChecks) { const p = pull(url); if (checks) p.checks = checks; else delete p.checks; if (failedChecks) p.failedChecks = failedChecks; else delete p.failedChecks; },
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
-    closePullRequest(url) { const p = pull(url); p.state = 'closed'; feed.record(p.repo, 'PullRequestEvent'); },
+    closePullRequest(url) { pull(url).state = 'closed'; },
     markReady(url) { pull(url).isDraft = false; },
     setConflicting(url, conflicting) { pull(url).conflicting = conflicting; }, ...conflicts.methods,
-    pushToPullRequest(url, at, o = {}) { const p = pull(url); Object.assign(p, { headCommittedAt: at, conflicting: o.conflicting ?? false }); feed.record(p.repo, 'PushEvent'); },
+    pushToPullRequest(url, at, o = {}) { Object.assign(pull(url), { headCommittedAt: at, conflicting: o.conflicting ?? false }); },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {
       const i = find(repo, n); Object.assign(i, { state: 'closed', closedBy: human, closedAt: mergedAt, stateReason: 'completed' }); touch(i);
       const pr = { url: `https://github.com/${repo}/pull/${++pullNumber}`, createdAt, mergedAt };

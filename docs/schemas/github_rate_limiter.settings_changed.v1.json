@@ -29,6 +29,11 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 9007199254740991
+        },
+        "prCycleMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -62,6 +67,11 @@
           "maximum": 9007199254740991
         },
         "intakeSyncMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "prCycleMinutes": {
           "type": "integer",
           "minimum": 1,
           "maximum": 9007199254740991

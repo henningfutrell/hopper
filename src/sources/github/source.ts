@@ -28,7 +28,7 @@ import { closedAsComplete, notComplete, ownPullRequestOpen, partlyDone, unfinish
 import { followPullRequest } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
-import { movedReader } from './moved.ts';
+import { followedBatch } from './followed-batch.ts';
 import { partsOf, tickedParts } from './parts.ts';
 import { sendBack } from './rework.ts';
 import { gitHubThread } from './thread.ts';
@@ -125,6 +125,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const opened = new Set<string>();
   /** Since when and by whom each issue is on the backburner (issue #808), read once while the label stays. */
   const backburner = backburnerReader(api);
+  /** The pull requests the round's follows read first (issue #985). */
+  const batch = followedBatch(api);
 
   /** App mode: the bot, once known (the app file, or the first sync). */
   let knownBot: string | undefined;
@@ -349,10 +351,10 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return unfinishedPullRequest(api, job);
     },
     follow(job, act) {
-      return followPullRequest({ api, labelledRepos, clock: o.clock, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}) }, job, act);
+      return followPullRequest({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}) }, job, act);
     },
     unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs),
-    moved: movedReader(api),
+    readFollowed: (jobs) => batch.read(jobs),
     crossReferences: (job) => crossReferencesOfJob(api, job),
     mergesOnReady: (repo) => o.yoloMode?.(repo) ?? false,
     closedAsComplete: (job) => closedAsComplete(api, job),

@@ -39,6 +39,8 @@ export function createClassifier(c: EngineContext): Classifier {
 
   return {
     classifyJob(jobId) {
+      // Scheduled with setImmediate on job.queued, so a stop and the store's close can come first.
+      if (c.stopping()) return;
       const job = c.store.jobs.get(jobId);
       if (job) launch(job);
     },

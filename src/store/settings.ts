@@ -278,7 +278,7 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
       write('pluginInstalls', JSON.stringify([...installs].sort((a, b) => a.id.localeCompare(b.id))));
     },
     getGitHubRateLimiter: () => JSON.parse(read('githubRateLimiter') ?? '{}') as Partial<RateLimiterSettings>,
-    setGitHubRateLimiter: (s) => write('githubRateLimiter', JSON.stringify({ slowBelowPercent: s.slowBelowPercent, reserve: s.reserve, batchSize: s.batchSize, intakeReserve: s.intakeReserve, intakeSyncMinutes: s.intakeSyncMinutes })),
+    setGitHubRateLimiter: (s) => write('githubRateLimiter', JSON.stringify({ slowBelowPercent: s.slowBelowPercent, reserve: s.reserve, batchSize: s.batchSize, intakeReserve: s.intakeReserve, intakeSyncMinutes: s.intakeSyncMinutes, prCycleMinutes: s.prCycleMinutes })),
     getPluginStoreSource() {
       const text = read('pluginStore');
       return text === undefined ? undefined : JSON.parse(text) as PluginStoreSource;

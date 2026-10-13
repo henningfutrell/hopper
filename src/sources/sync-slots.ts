@@ -27,10 +27,11 @@ export interface Slot {
   removed?: boolean;
   /** A pull request of its jobs merged or closed while it synced (issue #967): the next sync runs at once. */
   again?: boolean;
-  /** Its source is asked whether its repositories moved now (issue #967, `sync-watch.ts`). */
-  watching?: boolean;
-  /** The last error of that ask, logged once when it changes. */
-  watchError?: string;
+  /** A pull request of its jobs merged or closed (issue #985): its next sync follows every one. */
+  followAll?: boolean;
+  /** When its last round of follows started, and its last round of every one (issue #985), ms since the epoch. */
+  followedAt?: number;
+  followedAllAt?: number;
 }
 
 export function newSlot(source: JobSource): Slot {
