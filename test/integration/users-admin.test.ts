@@ -115,7 +115,9 @@ describe('an admin reads the totals, never a user\'s work', () => {
     await a.addUser('Bea');
     const r = await a.api('GET', '/api/health');
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({ ok: true, version: expect.any(String), uptimeS: expect.any(Number) });
+    // A stall of the event loop is the instance's too (issue #1002): a loaded test run may see one.
+    const { eventLoopStall: _stall, ...instance } = r.body as Record<string, unknown>;
+    expect(instance).toEqual({ ok: true, version: expect.any(String), uptimeS: expect.any(Number) });
     const full = await a.api('GET', '/api/health', undefined, session(await a.login()));
     expect(full.body).toMatchObject({ ok: true, router: expect.any(String), executors: expect.any(Array) });
   });
