@@ -30,6 +30,7 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/failures/:id/retry', kind: 'start a job' },
   { route: '/ui/api/failures/problems/:id/release', kind: 'start a job' },
   { route: '/ui/api/failures/kept-work/:id/push', kind: 'start a job' }, // issue #1010: the job goes on
+  { route: '/ui/api/pull-requests/tend', kind: 'start a job' }, // issue #1010: Tend again
   ...askFor, ...phaseShifts, ...reviewDecisions,
   { route: '/ui/api/blast-radius/discover', kind: 'run a command' },
   { route: '/ui/api/plugins', kind: 'run a command' },
