@@ -31,13 +31,18 @@
 // Cross-references (issue #430): before each follow, the cross-references of the job's item (`JobSource.crossReferences`) are
 // asked again and kept on the job (`crossReferences`), when they changed. A throw is only logged: the follow goes on, and
 // they are asked again next sync.
+// The base merge (issue #967): a `rebase` tend the queue starts is first asked of the source (`JobSource.baseMerge`, the
+// hopper's mirror): it merges the base branch into the pull request and pushes, with no job and no lane, resolving only a
+// Markdown conflict where both sides only added lines. Pushed, `job.pull_request_base_merged` records it, and what the job
+// saw of its pull request says it has no merge conflicts and its checks run again, so it heads its queue at once. A real
+// conflict, or a source that cannot, and the tend job runs as before. A throw is only logged: the tend job runs.
 import type { JobSource, PullRequestActResult, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
 import { queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
 import { SourceError } from '../domain/ports.ts';
 import {
   failedTend, following, followsWhenEnded, judge, MAX_TENDS, rechecksMerge, reconcilable, tendBrief, tendsInRow, tendStep,
-  type ActingPerson, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestAct, type PullRequestSeen, type Tended, type TendChecks,
+  type ActingPerson, type BaseMerge, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestAct, type PullRequestSeen, type Tended, type TendChecks,
 } from '../domain/types.ts';
 
 export interface AfterDoneContext {
@@ -167,6 +172,30 @@ export function createAfterDone(c: AfterDoneContext) {
     store.events.append({ type: 'job.pull_request_tended', jobId, data: { pullRequest: due.url, step: due.step, nextJobId: r.job.id } });
   }
 
+  /**
+   * The base merge of a due `rebase` (issue #967): whether the source merged the base branch into the pull request and
+   * pushed. Pushed: recorded, and the job's `seen` says no merge conflicts and its checks run again from now.
+   */
+  async function mergedBase(source: JobSource, d: TendDue): Promise<boolean> {
+    const job = store.jobs.get(d.jobId);
+    if (d.step !== 'rebase' || !source.baseMerge || !job) return false;
+    let r: BaseMerge | undefined;
+    try {
+      r = await source.baseMerge(job);
+    } catch (e) {
+      console.warn(`hopper: ${source.name}: the base merge of ${d.pullRequest} failed, a tend job rebases it: ${(e as Error).message}`);
+      return false;
+    }
+    if (r?.outcome !== 'pushed') return false;
+    const s = (store.jobs.get(d.jobId)?.sourceState?.source ?? {}) as { seen?: PullRequestSeen };
+    if (s.seen) {
+      const { failedChecks: _f, mergeHeldBehind: _m, ...seen } = s.seen;
+      c.setSource(d.jobId, { ...s, seen: { ...seen, conflicting: false, checks: 'pending', pushedAt: new Date(c.now()).toISOString() } satisfies PullRequestSeen });
+    }
+    store.events.append({ type: 'job.pull_request_base_merged', jobId: d.jobId, data: { pullRequest: d.pullRequest, commit: r.commit, resolved: r.resolved } });
+    return true;
+  }
+
   /** Keep what holds the job's pull request (issue #939), when it changed; undefined: nothing holds it. */
   function keepHold<K extends keyof Holds>(jobId: string, key: K, value: Holds[K]): void {
     const s = (store.jobs.get(jobId)?.sourceState?.source ?? {}) as Record<string, unknown>;
@@ -222,6 +251,11 @@ export function createAfterDone(c: AfterDoneContext) {
         const h = await heldBy(source, get(d.jobId)!, started);
         if (h) { held.set(d.jobId, h); continue; }
         keepHold(d.jobId, 'heldBehind', undefined);
+        // A base merge pushed: it holds the ones that conflict with it only on its way to the hopper's merge (issue #967).
+        if (await mergedBase(source, d)) {
+          if (merges(repo)) started.push({ pullRequest: d.pullRequest, why: 'merging' });
+          continue;
+        }
         started.push({ pullRequest: d.pullRequest, why: 'tending' });
         await tendIfDue(d.jobId).catch((e: unknown) => { c.failed(d.jobId, e); });
       }

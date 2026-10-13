@@ -52,6 +52,12 @@ export interface FollowsPullRequests {
    */
   conflictBetween?(repo: string, base: string, a: string, b: string): Promise<boolean | undefined>;
   /**
+   * Merge the base branch into the job's followed pull request, with merge conflicts, and push the merge commit to its
+   * branch (issue #967): no job, no lane. Asked before a `rebase` tend; undefined: the source cannot (no mirror, outside a
+   * pass, a fork's branch, the push refused), and the tend job runs as before. Absent: never.
+   */
+  baseMerge?(job: Job): Promise<BaseMerge | undefined>;
+  /**
    * Reconcile with the source (issue #763): of `jobs` — done, each the newest of its item, following no pull request —
    * the ones whose item is open and has an open pull request, each with the newest such pull request. A throw is asked
    * again on a later sync. Absent: nothing is reconciled.
@@ -64,6 +70,13 @@ export interface FollowsPullRequests {
    */
   crossReferences?(job: Job): Promise<CrossReference[]>;
 }
+
+/**
+ * What a base merge did (issue #967): the hopper merged the pull request's base branch into its head in its own mirror and
+ * `pushed` the merge commit to its branch, with the files it resolved by keeping both sides' added lines; or found
+ * `conflicts` it does not resolve, in `files`, and pushed nothing.
+ */
+export type BaseMerge = { outcome: 'pushed'; commit: string; resolved: string[] } | { outcome: 'conflicts'; files: string[] };
 
 /** An open pull request of a done job's item that the job does not follow (issue #763); `part`: it ships part of the item. */
 export interface FoundPullRequest { jobId: string; pullRequest: string; part: boolean }

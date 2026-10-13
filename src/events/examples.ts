@@ -133,6 +133,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.pull_request_abandoned': { pullRequest: 'https://github.com/owner/repo/pull/13', part: false },
   'job.finish_briefed': { pullRequest: 'https://github.com/owner/repo/pull/14', step: 'rebase' },
   'job.pull_request_tended': { pullRequest: 'https://github.com/owner/repo/pull/14', step: 'rebase', nextJobId: 'j2' },
+  'job.pull_request_base_merged': { pullRequest: 'https://github.com/owner/repo/pull/14', commit: '4b825dc642cb6eb9a060e54bf8d69288fbee4904', resolved: ['WHATS-NEW.md'] },
   'job.pull_request_followed': { pullRequest: 'https://github.com/owner/repo/pull/14', part: false },
   'contribution.changed': { from: { on: false }, to: { on: true }, by: 'owner' },
   'yolo_mode.changed': { from: { on: false, repos: {} }, to: { on: false, repos: { 'owner/repo': true } }, by: 'owner' },
