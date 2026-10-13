@@ -154,7 +154,6 @@ export const webOriginOf = (apiUrl: string): string =>
   apiUrl.replace(/\/+$/, '') === 'https://api.github.com' ? 'https://github.com' : apiUrl.replace(/\/+$/, '').replace(/\/api\/v3$/, '');
 
 export interface GitHubApi {
-  listOpenIssues(repo: string, label: string): Promise<GitHubIssue[]>;
   getIssue(repo: string, number: number): Promise<GitHubIssue>;
   /** The issue's GitHub sub-issues, all pages (issue #729: a sub-issue no checklist item "Parts" names is a part too). */
   subIssues(repo: string, number: number): Promise<SubIssue[]>;
@@ -227,9 +226,9 @@ export interface GitHubApi {
   /**
    * The open issues and pull requests of `repos` that carry one of `labels` (issue #985, a **repository listing**): batched
    * GraphQL, about one request for each 25 repositories with one credential. A repository GitHub does not answer for is in
-   * `repoErrors`, never a throw. Absent: not read.
+   * `repoErrors`, never a throw. What intake reads (issue #985 part 2): never one REST listing per repository.
    */
-  listRepos?(repos: string[], labels: string[]): Promise<RepoListing>;
+  listRepos(repos: string[], labels: string[]): Promise<RepoListing>;
 
   // ---- GitHub App mode only (absent on the connected account's adapter) ----------------------------
 

@@ -22,6 +22,8 @@ import { passReads } from './github/pass-reads.ts';
 import { baseMergeOf, conflictBetweenOf, gitAnswers } from './github/git-answers.ts';
 import type { GitMirrors } from '../git-mirror/mirrors.ts';
 import { sourceConfig, type GitHubAccountOptions, type GitHubAppOptions } from './config.ts';
+import type { GitHubListingRepository } from '../domain/github-listing.ts';
+import { githubLimiter } from '../github-limiter/limiter.ts';
 
 export const APP_MISSING = 'no GitHub App configured';
 /** The app source takes issues assigned to the user's connected account (issue #387): none, nothing to take. */
@@ -61,7 +63,14 @@ export interface GitHubSourceDeps {
   issueGraph?: IssueGraphRecorder;
   /** The user's mirrors of the job repositories (issue #858): git says whether a pull request has conflicts. Absent: GitHub says. */
   gitMirrors?: GitMirrors;
+  /** The user's listing cache (issue #985). Absent: kept in memory. */
+  listings?: GitHubListingRepository;
 }
+
+/** What both sources share of the listing (issue #985): the cache, and the intake sync interval the hopper's admin set. */
+const listingOf = (o: GitHubSourceDeps) => ({
+  ...(o.listings ? { listings: o.listings } : {}), listingEveryMs: () => githubLimiter.settings().intakeSyncMinutes * 60_000,
+});
 
 /**
  * The app source: as the bot, over the repos it is installed on, taking the issues assigned to the user's
@@ -81,7 +90,7 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
   const source = createGitHubSource({
     name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable, trust: o.trust,
     ...(o.rejections ? { rejections: o.rejections } : {}), ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}), api, assignee,
-    ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}),
+    ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}), ...listingOf(o),
     paused: () => appProblem(app()) ?? (assignee() ? undefined : NO_ASSIGNEE),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
   });
@@ -120,7 +129,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
           name: o.name, kind, mode: 'account', whoami: login, assignee: () => login, config, api, clock: o.clock, trust: o.trust,
           knownKeys: o.knownKeys, rerunnable: o.rerunnable, ...(o.rejections ? { rejections: o.rejections } : {}),
           ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}),
-          ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}),
+          ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}), ...listingOf(o),
         }),
       };
     }
@@ -143,7 +152,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     paused: () => (!current() ? why() : accounts.jobRepositories(provider).length === 0 ? NO_REPOSITORIES : undefined),
     describe: () => current()?.describe() ?? unconnected(),
     pass: reads.pass,
-    discover: () => current()?.discover() ?? Promise.resolve([]),
+    discover: (d) => current()?.discover(d) ?? Promise.resolve([]),
     check: (active) => current()?.check(active) ?? Promise.resolve([]),
     report(r) {
       const s = current();

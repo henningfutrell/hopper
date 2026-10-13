@@ -187,10 +187,11 @@ describe('the intake migration (issue #440)', () => {
   it('waits for a sync that lists every repo', async () => {
     const { gh, source, migration } = setup({ repos: [REPO, 'owner/other'] });
     gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
-    gh.failNext('listOpenIssues', new GitHubApiError('GitHub is down', false, 502));
+    gh.failRepo('owner/other', 'GitHub is down');
     await source.discover();
     expect(migration()).toBeUndefined();
     expect(gh.issue(REPO, 1).labels).toContain('hopper:claimed');
+    gh.failRepo('owner/other', undefined);
     await source.discover();
     expect(migration()?.changes.map((c) => c.key)).toEqual([url(1)]);
   });

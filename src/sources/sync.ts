@@ -15,6 +15,9 @@
 // its jobs follow moved, and syncs it at once when they did. A pull request merged or closed while a source syncs makes its
 // next sync run at once, so the others are tended on the new base; one merged or closed between syncs (a person's Merge now)
 // starts a sync at once.
+// What a sync reads (issue #985): the first sync after start, a sync of a source new or changed in the plugins config, and a
+// sync a person asked for (Sync now, an intake action, a new connection) ask the source to read everything again; every
+// other sync — its timer, the watch, a rerun — only what is due (`discover({ due: true })`).
 
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
@@ -202,8 +205,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
   }
 
-  async function pull(slot: Slot): Promise<{ seen: number; created: number }> {
-    const items = await intakeOrder(o.jevFirst, slot.source.name, await slot.source.discover(), (i) => { const e = store.jobs.getBySourceKey(i.key); return !e || isRerunnable(e); });
+  async function pull(slot: Slot, asked: boolean): Promise<{ seen: number; created: number }> {
+    const items = await intakeOrder(o.jevFirst, slot.source.name, await slot.source.discover(asked ? undefined : { due: true }), (i) => { const e = store.jobs.getBySourceKey(i.key); return !e || isRerunnable(e); });
     let created = 0;
     const notRerun: NotRerun[] = [];
     for (const item of items) {
@@ -220,7 +223,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return { seen: items.length, created };
   }
 
-  async function syncOnce(slot: Slot) {
+  async function syncOnce(slot: Slot, asked: boolean) {
     const st = slot.status;
     // Issue #812: a sync asked for off its timer (Sync now, an intake action) runs now: its timer goes, so one timer per
     // source fires, at the next sync time shown; and the old next time goes while it runs.
@@ -235,7 +238,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     // One pass (issue #822): the source asks GitHub once for what the steps read twice.
     const pass = async () => {
       if (paused === undefined) {
-        const { seen, created } = await pull(slot);
+        const { seen, created } = await pull(slot, asked);
         st.itemsSeen = seen;
         st.jobsCreated += created;
       } else {
@@ -284,9 +287,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     slot.timer = setTimeout(() => { void runSync(slot); }, ms);
   }
 
-  function runSync(slot: Slot): Promise<void> {
+  /** `asked`: a start, a changed source or a person asked for this sync, so the source reads everything again. */
+  function runSync(slot: Slot, asked = false): Promise<void> {
     clearTimeout(slot.timer);
-    slot.chain = slot.chain.then(() => syncOnce(slot));
+    slot.chain = slot.chain.then(() => syncOnce(slot, asked));
     syncs.add(slot.chain);
     void slot.chain.finally(() => syncs.delete(slot.chain)).catch(() => undefined);
     return slot.chain;
@@ -327,14 +331,14 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       if (!slot || slot.removed || !running) return { ok: false, reason: 'not_found', message: `no running job source ${name}` };
       if (!slot.source.intakeAction) return { ok: false, reason: 'conflict', message: `job source ${name} takes no intake action` };
       const result = await slot.source.intakeAction(action);
-      await runSync(slot);
+      await runSync(slot, true);
       return { ok: true, result };
     },
     start() {
       if (running) return;
       running = true;
       unsubscribe = store.events.subscribe(onEvent);
-      for (const slot of slots.values()) void runSync(slot);
+      for (const slot of slots.values()) void runSync(slot, true);
       watch.start();
     },
     async stop() {
@@ -348,10 +352,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     },
     async syncNow(name) {
       const targets = [...slots.values()].filter((s) => !name || s.source.name === name);
-      await Promise.all(targets.map((s) => runSync(s)));
+      await Promise.all(targets.map((s) => runSync(s, true)));
     },
     setSources(sources) {
-      for (const slot of followSources(slots, sources)) if (running) void runSync(slot);
+      for (const slot of followSources(slots, sources)) if (running) void runSync(slot, true);
     },
     source: (name) => slots.get(name)?.source,
   };

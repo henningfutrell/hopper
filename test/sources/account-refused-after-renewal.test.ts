@@ -23,7 +23,7 @@ describe('a 401 on the token just renewed (#647)', () => {
       token: async () => 'gho_first',
       renew: async (token) => { refused.push(token); return refused.length === 1 ? 'gho_renewed' : 'gho_other'; },
     });
-    await expect(api.listOpenIssues('octo-user/tools', 'hopper')).rejects.toThrow();
+    await expect(api.getIssue('octo-user/tools', 1)).rejects.toThrow();
     expect(refused).toEqual(['gho_first', 'gho_renewed']);
   });
 });

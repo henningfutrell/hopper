@@ -37,7 +37,7 @@ describe('the GitHub connection', () => {
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
     await a.sync();
     expect(await jobFor(a, issue.url)).toBeUndefined();
-    expect(gh.calls.filter((c) => c.method === 'listOpenIssues')).toEqual([]);
+    expect(gh.calls.filter((c) => c.method === 'listRepos')).toEqual([]);
     const status = (await a.api('GET', '/api/sources')).body.sources.find((s: { name: string }) => s.name === 'github');
     expect(status.detail.paused).toBe("GitHub's sign-in expired: Sources → Connect GitHub again");
     const accounts = (await a.api('GET', '/api/connected-accounts')).body.accounts;

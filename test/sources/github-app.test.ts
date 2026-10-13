@@ -24,14 +24,14 @@ describe('app mode discovery', () => {
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     gh.createIssue({ repo: OTHER, labels: ['hopper'] });
     expect((await source.discover()).map((i) => i.repo)).toEqual([OTHER]);
-    expect(gh.calls.filter((c) => c.method === 'listOpenIssues').map((c) => c.args[0])).toEqual([OTHER]);
+    expect(gh.calls.filter((c) => c.method === 'listRepos').map((c) => c.args[0])).toEqual([[OTHER]]);
   });
 
   it('nothing installed → no items, a setup hint with the install link, and never a search', async () => {
     const { gh, source } = setupApp({}, { installed: [] });
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     expect(await source.discover()).toEqual([]);
-    expect(methods(gh.calls)).not.toContain('listOpenIssues');
+    expect(methods(gh.calls)).not.toContain('listRepos');
     expect(source.describe()).toMatchObject({
       setup: `install the app: ${APP_INFO.htmlUrl}/installations/new`, installedRepos: [],
     });

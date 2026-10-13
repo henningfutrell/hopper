@@ -2562,7 +2562,7 @@ Version 1 (`docs/schemas/auto_park.settings_changed.v1.json`). An admin changed 
 
 ## `github_rate_limiter.settings_changed`
 
-Version 1 (`docs/schemas/github_rate_limiter.settings_changed.v1.json`). The hopper's admin changed the shared rate limiter's settings (issue #436): below which share of a GitHub rate limit, in percent, calls are spread to its reset (`slowBelowPercent`), how many calls are kept in reserve (`reserve`), how many polls run at once in a batch (`batchSize`), and how many calls intake leaves for job work (`intakeReserve`, issue #983; absent from a change made before it). `from` and `to`. An instance event: in every user's log.
+Version 1 (`docs/schemas/github_rate_limiter.settings_changed.v1.json`). The hopper's admin changed the shared rate limiter's settings (issue #436): below which share of a GitHub rate limit, in percent, calls are spread to its reset (`slowBelowPercent`), how many calls are kept in reserve (`reserve`), how many polls run at once in a batch (`batchSize`), and how many calls intake leaves for job work (`intakeReserve`, issue #983), and how often intake lists the job repositories, in minutes (`intakeSyncMinutes`, issue #985); each absent from a change made before it. `from` and `to`. An instance event: in every user's log.
 
 | field | type | required |
 |---|---|---|
@@ -2576,13 +2576,15 @@ Version 1 (`docs/schemas/github_rate_limiter.settings_changed.v1.json`). The hop
     "slowBelowPercent": 25,
     "reserve": 50,
     "batchSize": 10,
-    "intakeReserve": 1000
+    "intakeReserve": 1000,
+    "intakeSyncMinutes": 15
   },
   "to": {
     "slowBelowPercent": 40,
     "reserve": 50,
     "batchSize": 10,
-    "intakeReserve": 1000
+    "intakeReserve": 1000,
+    "intakeSyncMinutes": 15
   },
   "by": "admin"
 }

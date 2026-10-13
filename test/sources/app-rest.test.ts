@@ -27,24 +27,6 @@ describe('App adapter: installations are the allowlist', () => {
 });
 
 describe('App adapter: issues and comments', () => {
-  it('lists open labelled issues, all pages, skipping pull requests', async () => {
-    h = await startApp({
-      pageSize: 2,
-      installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [
-        issue(1), issue(2, { pullRequest: true }), issue(3, { labels: ['other'] }), issue(4), issue(5, { state: 'closed' }), issue(6),
-      ] }] }],
-    });
-    const issues = await h.api.listOpenIssues('owner/a', 'hopper');
-    expect(issues.map((i) => i.number)).toEqual([1, 4, 6]);
-    expect(issues[0]).toMatchObject({
-      repo: 'owner/a', url: 'https://github.com/owner/a/issues/1', title: 'T1', author: 'owner',
-      labels: ['hopper'], state: 'open',
-    });
-    const listed = h.fake.state.requests.filter((r) => r.path === '/repos/owner/a/issues');
-    expect(listed[0]!.query).toMatchObject({ labels: 'hopper', state: 'open' });
-    expect(listed.every((r) => r.auth === 'token')).toBe(true);
-  });
-
   it('getIssue reads one issue, closed ones included', async () => {
     h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', issues: [issue(7, { state: 'closed', closedBy: 'owner', closedAt: '2026-10-02T11:00:00Z', stateReason: 'completed', body: 'b' })] }] }] });
     expect(await h.api.getIssue('owner/a', 7)).toMatchObject({

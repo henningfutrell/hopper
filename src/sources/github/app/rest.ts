@@ -41,12 +41,6 @@ function commentFrom(c: RestComment): GitHubComment {
 
 const auth = (token: string) => ({ authorization: `token ${token}` });
 
-export async function listOpenIssues(req: Request, token: string, repo: string, label: string): Promise<GitHubIssue[]> {
-  const issues = await paginate(req, 'GET /repos/{owner}/{repo}/issues', { ...splitRepo(repo), labels: label, state: 'open', per_page: 100 },
-    `token ${token}`, (d) => d as RestIssue[]);
-  return issues.filter((i) => i.pull_request === undefined).map((i) => issueFrom(i, repo));
-}
-
 export async function getIssue(req: Request, token: string, repo: string, number: number): Promise<GitHubIssue> {
   const r = await req('GET /repos/{owner}/{repo}/issues/{issue_number}', { ...splitRepo(repo), issue_number: number, headers: auth(token) });
   return issueFrom(r.data as RestIssue, repo);

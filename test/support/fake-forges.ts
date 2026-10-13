@@ -25,6 +25,7 @@ import { issueIdOf, subIssuesRoute, type SubIssuesForge } from './fake-sub-issue
 import { watchRoute, type WatchForge } from './fake-github-watch.ts';
 import { contentsRoute, headsRoute, type ContentsForge, type HeadsForge } from './fake-heads.ts';
 import { peopleRoute, type PeopleForge } from './fake-people.ts';
+import { listingRoute, updatedAtOf } from './fake-listing.ts';
 
 export interface FakeIssue {
   repo: string;
@@ -175,7 +176,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
   return serve((base) => {
     const restIssue = (i: FakeIssue) => ({
       number: i.number, title: i.title, body: i.body, state: i.state ?? 'open', html_url: `${base}/${i.repo}/issues/${i.number}`,
-      updated_at: '2026-10-06T00:00:00Z', user: { login: i.author }, assignees: (i.assignees ?? [i.author]).map((login) => ({ login })), labels: i.labels.map((name) => ({ name })),
+      updated_at: updatedAtOf(i), user: { login: i.author }, assignees: (i.assignees ?? [i.author]).map((login) => ({ login })), labels: i.labels.map((name) => ({ name })),
       repository_url: `${base}/api/v3/repos/${i.repo}`, id: issueIdOf(i.repo, i.number),
     });
     const find = (repo: string, num: number) => issues.find((i) => issueKey(i.repo, i.number) === issueKey(repo, num));
@@ -243,11 +244,10 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       }
       if (!r.path.startsWith('/api/v3/')) return { status: 404, body: { message: 'Not Found' } };
       if (!login) return { status: 401, body: { message: 'Bad credentials' } };
-      const usedNow = grants.find((g) => r.auth.endsWith(` ${g.access}`));
-      if (usedNow) usedNow.used = ++tick;
+      const usedNow = grants.find((g) => r.auth.endsWith(` ${g.access}`)); if (usedNow) usedNow.used = ++tick;
       const path = r.path.slice('/api/v3'.length);
-      // A repository's checks (issue #677); the accounts GitHub knows (issue #930).
-      const checks = repoChecksRoute(forge?.repoChecks, r.method, path, r.body) ?? peopleRoute(forge, base, issues, r.method, path, r.query);
+      // A repository listing (issue #985: first, it asks check rollups too); a repository's checks (issue #677); the accounts GitHub knows (issue #930).
+      const checks = listingRoute(base, issues, r.method, path, r.body) ?? repoChecksRoute(forge?.repoChecks, r.method, path, r.body) ?? peopleRoute(forge, base, issues, r.method, path, r.query);
       if (checks) return checks;
       if (r.method === 'GET' && path === '/user') return { status: 200, body: { id: idOf(login), login, name: `${login} name` } };
       if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] };

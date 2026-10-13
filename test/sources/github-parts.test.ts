@@ -112,6 +112,7 @@ describe('required children: a part that names an issue', () => {
 
   it('a named issue that cannot be read counts by its tick, read again next sync', async () => {
     const { gh, source } = withChildren();
+    await discoverOne(source); // the issue itself is read, and kept while its listing shows no change
     gh.failNext('getIssue', new Error('gh: Not Found (HTTP 404)'));
     expect((await discoverOne(source)).parts).toEqual({ done: 2, total: 3 });
   });

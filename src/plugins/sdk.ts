@@ -13,6 +13,7 @@ import type { ClientTransport } from '../executors/client.ts';
 import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, RaisedBy, Role, UsageReading } from '../domain/types.ts';
 import type { Rejection } from '../domain/rejection.ts';
 import type { IssueGraphRepository } from '../domain/issue-graph.ts';
+import type { GitHubListingRepository } from '../domain/github-listing.ts';
 import type { GitMirrors } from '../git-mirror/mirrors.ts';
 
 export type {
@@ -174,6 +175,8 @@ export interface JobSourceContext {
   jobArtifacts(jobId: string): { id: string; issue?: string }[];
   /** The user's issue graph (issue #437): a source keeps the place of each issue it sees there. Store only. */
   issueGraph: Pick<IssueGraphRepository, 'record' | 'lastRead'>;
+  /** The user's listing cache (issue #985): each repository's latest repository listing. Absent: a source keeps it in memory. */
+  githubListings?: GitHubListingRepository;
   /** The user's mirrors of the job repositories (issue #858): whether a pull request has conflicts, as git says. Absent: none. */
   gitMirrors?: GitMirrors;
 }
