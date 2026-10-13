@@ -64,9 +64,10 @@ Select a node to read its details: its stage, status, task count, lane, time in 
 Select a job's name to open its page. The page shows, from the top:
 
 1. **Where it stands**: what was asked, where it stands, and what is next, in plain words, with a one-line summary. Under it, everything that waits on you is pinned, with a link to where you act on it.
-2. **Its parts**: the job's own graph. The job is at the left. Each group of parts comes next, and each part is a node in its group. Select a part to open its page.
-3. **Timeline**: everything that happened to the job, newest first.
-4. **Parts list**: every part as a table. Filter it by group, by status, or by words in the part.
+2. **Notes**: the notes people sent the job, and **Add note**. See [Send a note to a job](#send-a-note-to-a-job).
+3. **Its parts**: the job's own graph. The job is at the left. Each group of parts comes next, and each part is a node in its group. Select a part to open its page.
+4. **Timeline**: everything that happened to the job, newest first.
+5. **Parts list**: every part as a table. Filter it by group, by status, or by words in the part.
 
 The parts list is everything the job touched or made:
 
@@ -81,6 +82,23 @@ The parts list is everything the job touched or made:
 | Machines and sandboxes | Each machine it ran on, each checkpoint the hopper took of it, and each Windows sandbox step. |
 
 Each part shows its status: waiting on you, running, open, done, failed, cancelled, or recorded (a fact, such as a branch or a lane). The page reads the parts again each time the job has a new event, so running parts stay live.
+
+### Send a note to a job
+
+You can give a job more information while it works or waits. For example, give it the address of a server it cannot find.
+
+1. Open the job's page.
+2. In **Notes**, write the note.
+3. Select **Add note**.
+
+The hopper keeps the note on the job and gives it to the job's agent:
+
+- **A running job** gets the note when its agent ends its turn. The hopper never types into the agent while it works, and never over a dialog. When the turn ends on a question or a plan for you, the note goes in with your answer.
+- **A job that waits** (on a question, on its own wait, held, or parked) keeps the note. The job gets it when it goes on. A note does not end the wait.
+- **A job that has not started** gets the note in its task.
+- **A failed job** gives its notes to the new job when its issue runs again.
+
+Each note shows who sent it, and its state: **queued**, **delivered**, or **carried** to a new job. The timeline shows each step. You need the operator role. A job that ended (finished, cancelled or rejected) takes no note.
 
 ### The list
 
@@ -112,13 +130,14 @@ The view updates live. A job that changes stage moves with no reload.
 
 ## For agents: the API
 
-`GET /api/jobs/graph` gives the same data as the view: `nodes` (each with its `label`, its `stageText` in plain words, and `waitsOnYou`), typed `edges`, `trees` (each with its `root`, its `summary` line, and the nodes not settled yet, `blocking`) and `stages` (how many jobs are in each stage). `GET /api/jobs/<id>/bom` gives a job's page: its `header`, `summary`, `parts` (each with its `group`, `status`, and its page `href` or GitHub `url`) and `events`, newest first. An API token needs the scope `jobs:read`. See [The operator CLI and the API](cli-and-api.md) and [API tokens and grants](api-tokens.md).
+`GET /api/jobs/graph` gives the same data as the view: `nodes` (each with its `label`, its `stageText` in plain words, and `waitsOnYou`), typed `edges`, `trees` (each with its `root`, its `summary` line, and the nodes not settled yet, `blocking`) and `stages` (how many jobs are in each stage). `GET /api/jobs/<id>/notes` gives a job's notes, and `POST /ui/api/jobs/<id>/notes` with `{ "text": "..." }` sends one (the scope `jobs:notes`, and a box token). `GET /api/jobs/<id>/bom` gives a job's page: its `header`, `summary`, `parts` (each with its `group`, `status`, and its page `href` or GitHub `url`) and `events`, newest first. An API token needs the scope `jobs:read`. See [The operator CLI and the API](cli-and-api.md) and [API tokens and grants](api-tokens.md).
 
 ## Limits and troubleshooting
 
 | Symptom | Cause and fix |
 |---|---|
 | A job has no `x/y` | The job has not reported a task list yet. |
+| A note stays queued | The job waits, or its turn has not ended yet. The note goes in when the job goes on. A job that runs with another executor than herdr-claude or cursor-agent never gets notes. |
 | Time in stage starts at the wrong moment | The hopper uses the times the job keeps: created for queued, started for running, the wait or park time for waiting, finished for the rest. A held job counts from when it was created. |
 | Two issues are not linked | The graph shows only the links the hopper knows: issues a job filed, and sub-issues, "blocked by" links and closing pull requests from the issue graph. The hopper reads an issue's links when it syncs that issue, so a new link shows after the next sync. An older GitHub Enterprise has no "blocked by" links. |
 | Two pull requests are not stacked | The hopper learns a pull request's branches when it follows it. A pull request that no job here opened is not followed, so the graph cannot stack it. |

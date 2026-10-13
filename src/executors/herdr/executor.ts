@@ -14,15 +14,14 @@ import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText } from './
 import { readPaneAnswer } from './pane-answer.ts';
 import { checkpointOn, payloadOn, relocation, taskText } from './relocate.ts';
 import { answerDialog, readyFor } from './before-send.ts';
+import { paneEnds } from './pane-ends.ts';
 import { jobScratchOf, startInPane, type PaneState, type StartDeps, type TurnAnchor } from './start.ts';
-import { heldElsewhere, heldOf, lastLineOf, paneStateOf, realSleep, samePane, timeoutLiveness, whereOn, type HeldPane, type RemoteHerdr, type Scratch, type Where } from './panes.ts';
+import { heldElsewhere, heldOf, lastLineOf, paneStateOf, realSleep, samePane, timeoutLiveness, whereOn, type HeldPane, type RemoteHerdr, type Where } from './panes.ts';
 
 export type { ClientTarget, RemoteHerdr } from './panes.ts';
 
 /** Sends of one text that never reach Claude (lost sends, issue #278) before the job fails. */
 const MAX_SENDS = 3;
-/** How long Claude has to exit by itself before the reap stops it with the job's other processes. */
-const EXIT_WAIT_MS = 5000;
 
 export interface HerdrClaudeExecutorOptions {
   /** This machine's herdr. */
@@ -90,37 +89,8 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
   });
 
 
-  /**
-   * The reap (issues #401, #410): Claude gets a moment to exit by itself, then the job's machine — through
-   * its own connection, never the pane — stops the job's scope and its processes, Claude among them if it
-   * is still up, and removes its scratch dir unless it holds work not pushed — or keeps it (`scratch` false: a
-   * parked job's, issue #501). Undefined when the machine could not be reached: the sweep reaps it later.
-   */
-  async function reap(herdr: HerdrClient, pane: HeldPane, scratch: Scratch = 'remove'): Promise<Reaped | undefined> {
-    for (let waited = 0; waited < EXIT_WAIT_MS && await herdr.getAgent(pane.agentName).catch(() => null) !== null; waited += o.pollMs) {
-      await sleep(o.pollMs, new AbortController().signal);
-    }
-    return herdr.reap(pane.jobId, scratch !== 'none' ? jobScratchOf(pane.cwd, pane.jobId) : undefined, scratch === 'keep');
-  }
-
-  /**
-   * esc, ctrl+c twice, the reap, close. Never rejects: the pane may already be gone. Answers why the
-   * pane may still be open — its herdr not reached, or the close refused — or undefined once it is
-   * closed or gone (issue #371). `scratch` `none`: the reap does not look at the scratch dir (a parked job's, issue
-   * #501); `keep`: it says what is there and keeps it (a timed-out job's, issue #630).
-   */
-  async function exitAndClose(pane: HeldPane, scratch: Scratch = 'remove'): Promise<string | undefined> {
-    const close = async (herdr: HerdrClient): Promise<string | undefined> => {
-      await herdr.sendKeys(pane.paneId, ['esc']).catch(() => {});
-      await herdr.sendKeys(pane.paneId, ['ctrl+c', 'ctrl+c']).catch(() => {});
-      const said = await reap(herdr, pane, scratch).catch(() => undefined);
-      if (said && scratch !== 'none') reaped.set(pane.jobId, said);
-      return herdr.closePane(pane.paneId).then(() => undefined, (e: unknown) => (e instanceof HerdrError && e.code === 'pane_not_found' ? undefined : `herdr: ${(e as Error).message}`));
-    };
-    const open = await Promise.resolve().then(() => close(herdrOn(pane))).catch((e: unknown) => `herdr: ${(e as Error).message}`);
-    for (const [lane, held] of lanes) if (samePane(held, pane)) lanes.delete(lane);
-    return open;
-  }
+  // The reap and the close of a job's pane (pane-ends.ts), with the lanes and what the reap kept here.
+  const { reap, exitAndClose } = paneEnds({ pollMs: o.pollMs, sleep, herdrOn, reaped, lanes });
 
   async function settle(result: ExecutionOutcome | Interrupt, pane: HeldPane): Promise<ExecutionOutcome> {
     if (!('interrupt' in result)) return result;

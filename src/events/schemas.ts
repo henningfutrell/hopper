@@ -4,14 +4,14 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, EVENT_DECISION_POINTS, MINOR_DECISION_MODES, RISK_CATEGORIES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS, NOTE_DELIVERIES } from '../domain/types.ts';
+import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, EVENT_DECISION_POINTS, MINOR_DECISION_MODES, RISK_CATEGORIES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS } from '../domain/types.ts';
 import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
-import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts';
+import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts';
 import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, holdPlan, infraPlanEvents, apiGrantEvents, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents, windowsStepEvents, sandboxRequestEvents } from './parts.ts';
 
 const strict = z.strictObject;
@@ -141,10 +141,6 @@ export const EVENT_SCHEMAS = {
   // A job's own wait (issue #483).
   'job.waiting': strict({ for: z.string(), until: z.string().optional() }),
   'job.wait_ended': strict({ by: z.enum(['person', 'hopper']), note: z.string().optional() }),
-  // Notes to a job (issue #997): sent, typed into its session (how), carried to a new job of its item.
-  'job.note_added': strict({ noteId: z.string(), text: z.string(), ...acting }),
-  'job.note_delivered': strict({ noteIds: z.array(z.string()).min(1), delivery: z.enum(NOTE_DELIVERIES) }),
-  'job.note_carried': strict({ noteIds: z.array(z.string()).min(1), nextJobId: z.string() }),
   'job.reprioritized': strict({ from: z.number(), to: z.number(), reason: z.string() }),
   'job.respecified': strict({ from: specFromConfig, to: specFromConfig }),
   'lane.opened': strict({}),
@@ -375,7 +371,7 @@ export const EVENT_SCHEMAS = {
   ...ARTIFACT_EVENT_SCHEMAS, ...ITEM_EVENT_SCHEMAS,
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
-  ...THREAD_ASK_EVENT_SCHEMAS,
+  ...THREAD_ASK_EVENT_SCHEMAS, ...NOTE_EVENT_SCHEMAS, // issue #997: notes to a job
   ...bugReportEvents, ...repoChecksEvents, ...vaultGrantEvents, ...issueLineageEvents, ...rateLimiterEvents, ...contributionEvents, ...pointedJobEvents, ...githubWatchEvents, ...infraPlanEvents, ...apiGrantEvents, ...windowsStepEvents, ...sandboxRequestEvents,
 } satisfies Record<EventType, z.ZodType>;
 
