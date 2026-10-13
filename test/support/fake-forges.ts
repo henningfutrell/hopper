@@ -83,8 +83,9 @@ export interface FakeForge extends ContentsForge, RepoChecksForge, SubIssuesForg
   revokeDown?: number;
   /**
    * GitHub's git over HTTP (issue #652), when made with `gitRoot`: the bare repositories `<gitRoot>/<owner>/<name>.git`,
-   * served by git's own `git-http-backend`. A read without credentials is answered as for a public repository; a push
-   * needs a token the forge accepts, as the password of Basic auth. Each request is recorded with its auth.
+   * served by git's own `git-http-backend`. A read without credentials is answered as for a public repository (a private
+   * one, with a file `hopper-private` in it, needs a token, as a push does), the token as the password of Basic auth.
+   * Each request is recorded with its auth.
    */
   gitRequests: ForgeRequest[];
   /** Mint a pair as the device flow grants it (issue #441), for tests that start with an account already connected. */

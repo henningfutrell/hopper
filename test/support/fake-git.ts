@@ -1,7 +1,10 @@
 // GitHub's git over HTTP for the fake GitHub (issue #652): the bare repositories `<root>/<owner>/<name>.git`, served by
-// git's own `git-http-backend` (CGI). A read without credentials is answered as for a public repository; a push needs a
-// token the forge accepts, as the password of Basic auth. Each request is recorded with its auth.
+// git's own `git-http-backend` (CGI). A read without credentials is answered as for a public repository, unless the bare
+// repository holds a file `hopper-private`: then, as a push always does, it needs a token the forge accepts, as the
+// password of Basic auth. Each request is recorded with its auth.
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { ForgeRequest } from './fake-forges.ts';
 
@@ -51,7 +54,8 @@ export function serveGit(root: string, tokens: Map<string, string>, req: Incomin
   const password = basic ? Buffer.from(basic, 'base64').toString('utf8').split(':').slice(1).join(':') : undefined;
   const user = password !== undefined ? tokens.get(password) : undefined;
   const pushing = u.pathname.endsWith('/git-receive-pack') || u.searchParams.get('service') === 'git-receive-pack';
-  if ((password !== undefined && !user) || (pushing && !user)) {
+  const hidden = existsSync(join(root, `${git[1]!.replace(/\.git$/, '')}.git`, 'hopper-private'));
+  if ((password !== undefined && !user) || ((pushing || hidden) && !user)) {
     res.writeHead(401, { 'www-authenticate': 'Basic realm="GitHub"', 'content-type': 'text/plain' });
     res.end('Invalid username or token.');
     return true;

@@ -6,7 +6,8 @@
 // - a job of that same user (**its own job**) may file and read issues, comment, open a pull request from
 //   its pushed branch on its own repository, mark one ready for review there, close its own issue as completed
 //   (issue #652: it holds no GitHub token of its own), and read pull requests and a failed check's log (issue #993), on
-//   the hopper's job repositories;
+//   the hopper's job repositories; it reads (`READS`) on any repository the connection sees (issue #1015): the job
+//   repositories decide intake and where a job writes, not what it reads;
 // - a job of any other user (**another user's job**, treated as untrusted) may only file an issue there.
 // Nothing a job asks for carries labels or assignees: a filed issue never becomes a job by itself.
 // An issue a job files is a child of the job's own issue (issue #729, issue lineage): a follow-up, or — `required`, only
@@ -82,6 +83,9 @@ export const CONTRIBUTION_OFF = 'contributing through a fork is off: a person tu
 /** What a job may ask on its fork: issues, and reads. Its pull request goes on the repository the fork is of. */
 const ON_FORK: readonly ProxyOp[] = ['issue.create', 'issue.comment', 'issue.view', 'pr.view', 'repo.view'];
 
+/** What only reads (issue #1015): the hopper's own job asks them on any repository its connection sees. */
+const READS: readonly ProxyOp[] = ['issue.view', 'pr.view', 'repo.view', 'check.log'];
+
 /** What a job of another user may ask: filing an issue. Everything else reads or writes as the hopper's user. */
 const OTHERS_MAY: readonly ProxyOp[] = ['issue.create'];
 
@@ -93,7 +97,7 @@ export function checkRequest(req: ProxyRequest, asker: ProxyAsker, jobRepositori
     return { ok: false, reason: `a job of another user may only file an issue through the hopper (issue.create), not ${req.op}` };
   }
   const onFork = asker.fork !== undefined && same(asker.fork, req.repo);
-  if (!onFork && !jobRepositories.some((r) => same(r, req.repo))) {
+  if (!onFork && !READS.includes(req.op) && !jobRepositories.some((r) => same(r, req.repo))) {
     return { ok: false, reason: `${req.repo} is not one of the repositories the hopper works on, so it does nothing there for a job` };
   }
   if (onFork && req.op === 'pr.create') {
