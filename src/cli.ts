@@ -24,6 +24,7 @@
 //   hopper lanes plan|tune …                          lane recommendations and a machine's lane tuning (issue #688, cli-operator-lanes.ts)
 //   hopper vault|template|sandbox …                   vault secrets (value on stdin), templates and sandbox boxes (issue #716, cli-operator-vault.ts)
 //   hopper update <tool>|compose|skill                the update of a container install, no database (issue #697, cli-update.ts)
+//   hopper update drift [--url <hopper URL>]          the running stack's drift from its compose file (issue #1017, cli-update-drift.ts)
 //   hopper help                                       what each command does
 //
 // There is no login from here (issue #238: no bootstrap login): people sign in through a realm.
@@ -83,7 +84,7 @@ records: ${CONFIG_NAMES.join(', ')}. plugins, rules, job-rules and windows-hosts
 in the UI too.
 --user <id> on config, ssh-key and the commands on the running daemon names the user (default: the one user, while there is one).
 
-Every command but help and update needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
+Every command but help and update (but update drift) needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
 the database the daemon uses, postgres://user:password@host:port/database.
 
 First sign-in:  sign in with GitHub in the UI; the first person to sign in with GitHub is the admin (docs/sign-in.md)
@@ -233,7 +234,7 @@ function sshKey(instance: InstanceStore, args: string[], io: CliIo): void {
   }
 }
 
-const COMMANDS: readonly string[] = ['config', 'users', 'user', 'join-code', 'ssh-key', ...OPERATOR_COMMANDS];
+const COMMANDS: readonly string[] = ['config', 'users', 'user', 'join-code', 'ssh-key', 'update', ...OPERATOR_COMMANDS];
 
 /** Run one command; the exit code. */
 export async function runCli(argv: string[], io: CliIo): Promise<number> {
@@ -242,7 +243,8 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     io.out(`${USAGE}\n`);
     return 0;
   }
-  if (command === 'update') return runUpdate(rest, io);
+  // `update drift` reads the running daemon (issue #1017); every other `update` command needs no database.
+  if (command === 'update' && rest[0] !== 'drift') return runUpdate(rest, io);
   if (command === undefined || !COMMANDS.includes(command)) {
     io.err(`${USAGE}\n`);
     return 2;
@@ -271,7 +273,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     else if (command === 'config') config(store, rest, io);
     else {
       const instance = store;
-      await runOperatorAction(instance, command, rest, (id) => userOf(instance, id), io);
+      return await runOperatorAction(instance, command, rest, (id) => userOf(instance, id), io);
     }
     return 0;
   } catch (e) {

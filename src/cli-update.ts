@@ -8,13 +8,15 @@ import { carryCompose, carryOverride } from './update/compose-carry.ts';
 import { BUILD_DIR, readShippedCompose } from './update/shipped-compose.ts';
 import { IMAGE_REF } from './update/update-commands.ts';
 import { UPDATE_SKILL } from './update/update-skill.ts';
+import { DRIFT_USAGE } from './cli-update-drift.ts';
 
 export const UPDATE_USAGE = `  hopper update carry --image <ref>                  print the compose.yaml of this image's version, with the settings of
                                                      the old compose.yaml (on stdin) as its defaults and <ref> as
                                                      HOPPER_IMAGE; run as <tool> run --rm -i <ref> hopper update carry
                                                      --image <ref> < compose.yaml > compose.yaml.next
   hopper update compose                              print the compose.yaml this build ships with, stamped with its version
-  hopper update skill                                print the steps an agent follows to update a container hopper`;
+  hopper update skill                                print the steps an agent follows to update a container hopper
+${DRIFT_USAGE}`;
 
 /** `hopper update …`; the exit code. */
 export function runUpdate(args: string[], io: CliIo, appDir = BUILD_DIR): number {
