@@ -7,7 +7,7 @@ import { usage, type Call } from './cli-operator-call.ts';
 
 export const SEARCH_USAGE = `  hopper search [<words>...] [--type <type>]... [--status <status>]... [--label <label>]... [--repo <owner/repo>]...
                [--from <ISO time>] [--to <ISO time>] [--limit <n>] [--offset <n>]
-                                                     search the jobs, artifacts and infra plans: the hits with the matched words marked, the facet counts
+                                                     search the jobs, artifacts, infra plans, issues and pull requests: the hits with the matched words marked, the facet counts
   hopper search --suggest <words>                    titles whose words start with these, for type-ahead
   hopper search --index                              the index's state: ok, degraded or not set up, the updates waiting, the backfill
   hopper search --reindex                            build the index again from the database, in the background`;

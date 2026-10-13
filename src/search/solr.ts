@@ -25,13 +25,13 @@ export const SEARCH_FIELDS: readonly FieldDef[] = [
   exact('instance'), exact('user'), exact('type'), exact('ref'), { name: 'private', type: 'boolean', stored: true, indexed: true, docValues: true },
   text('title'), { name: 'title_prefix', type: PREFIX_TYPE.name, stored: false, indexed: true },
   text('brief'), exact('status'), exact('labels', true), exact('repo'), exact('source'), exact('requester'), exact('machine'), exact('lane'),
-  text('result'), text('questions', true), text('failure'), text('verdict'), text('content'), exact('job'),
+  text('result'), text('questions', true), text('failure'), text('verdict'), text('content'), exact('job'), text('links', true), text('intake'),
   date('created'), date('updated'), date('finished'),
 ];
 
 /** The text a search matches, each field's weight; and the fields a hit shows matched parts of. */
-const QUERY_FIELDS = 'title^6 brief^2 result questions failure verdict content labels^3 repo^2 requester status';
-const HIGHLIGHTED = ['title', 'brief', 'result', 'questions', 'failure', 'verdict', 'content'];
+const QUERY_FIELDS = 'title^6 brief^2 result questions failure verdict content links intake labels^3 repo^2 requester status';
+const HIGHLIGHTED = ['title', 'brief', 'result', 'questions', 'failure', 'verdict', 'content', 'links', 'intake'];
 const HIT_FIELDS = 'type,ref,private,title,status,labels,repo,job,created,updated,id';
 
 /** Lucene's own characters, escaped: a word typed is a word, never syntax. */
@@ -150,11 +150,12 @@ export function createSolrIndex(o: { url: string; fetch?: typeof fetch }): Searc
       if (words.length === 0) return [];
       const p = scoped(new URLSearchParams({
         q: words.map((w) => `title_prefix:${escapeTerm(w.slice(0, 20))}`).join(' AND '),
-        fl: 'type,ref,private,title', rows: String(limit), sort: 'score desc,updated desc', wt: 'json',
+        fl: 'type,ref,private,title,job', rows: String(limit), sort: 'score desc,updated desc', wt: 'json',
       }), scope);
       const r = await call('/select', { params: p, timeout: TIMEOUT_MS.read });
       return (((r.response as { docs?: Json[] } | undefined)?.docs) ?? []).map((d) => ({
         type: d.type as SearchType, ref: d.ref as string, private: d.private === true, title: (d.title as string | undefined) ?? '',
+        ...(typeof d.job === 'string' ? { job: d.job } : {}),
       }));
     },
   };

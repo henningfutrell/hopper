@@ -1,8 +1,11 @@
 // Search (issue #945, design.md "Search"): the search index's documents, a search and its answer. Postgres is the source of
 // truth; the index is a copy that is rebuilt from it at any time. Pure types and the parts that read them.
 
-/** What a search document is of: a job, an artifact (part 3), an infra plan (part 3). */
-export const SEARCH_TYPES = ['job', 'artifact', 'infra-plan'] as const;
+/**
+ * What a search document is of: a job, an artifact (part 3), an infra plan (part 3), an issue the issue graph keeps — an
+ * intake item among them — and a pull request linked to one (part 4).
+ */
+export const SEARCH_TYPES = ['job', 'artifact', 'infra-plan', 'issue', 'pull-request'] as const;
 export type SearchType = typeof SEARCH_TYPES[number];
 
 /** Whose documents a search reads: one hopper (its instance id), one user of it. */
@@ -18,14 +21,14 @@ export interface SearchDocument {
   instance: string;
   user: string;
   type: SearchType;
-  /** Its id: the job's, the artifact's, the plan's. */
+  /** Its id: the job's, the artifact's, the plan's; an issue's or a pull request's URL. */
   ref: string;
   /** Only its owner sees it: a direct job (issue #901), and an artifact or a plan of one. */
   private: boolean;
   title: string;
   /** What the job was asked to do (a direct job's brief, else its prompt); an artifact's summary and note; a plan's summary. */
   brief?: string;
-  /** A job's status; a plan's (`recorded`, `approved`, `failed`); an artifact has none. */
+  /** A job's status; a plan's (`recorded`, `approved`, `failed`); an issue's or a pull request's state on GitHub (`open`, `closed`, `merged`); an artifact has none. */
   status?: string;
   labels: string[];
   repo?: string;
@@ -43,8 +46,12 @@ export interface SearchDocument {
   verdict?: string;
   /** An artifact's text, where it is cheap to read (markdown, text, CSV, JSON; HTML and SVG without their tags). */
   content?: string;
-  /** The job an artifact or a plan is of. */
+  /** The job an artifact or a plan is of; an issue's job; a pull request's, the job of an issue it closes. */
   job?: string;
+  /** The issues, pull requests and Projects linked to an issue or a pull request, in words (`closed by o/r#9`). */
+  links?: string[];
+  /** What intake did with an issue a source lists now: `taken: job <status>`, or `not taken: <reason>`. */
+  intake?: string;
   created: string;
   updated: string;
   finished?: string;
@@ -76,7 +83,7 @@ export interface IndexHit {
   status?: string;
   labels: string[];
   repo?: string;
-  /** The job an artifact or a plan is of. */
+  /** The job an artifact, a plan, an issue or a pull request is of. */
   job?: string;
   created: string;
   updated: string;
@@ -92,7 +99,7 @@ export interface IndexAnswer {
 }
 
 /** One suggestion for type-ahead: a title that starts with what was typed. */
-export interface IndexSuggestion { type: SearchType; ref: string; private: boolean; title: string }
+export interface IndexSuggestion { type: SearchType; ref: string; private: boolean; title: string; job?: string }
 
 /**
  * Whether search can answer now: `ok`; `degraded` (Solr not reached, or Access not asked: `why` says which); or
@@ -131,14 +138,18 @@ export const emptyFacets = (): Record<SearchFacet, Record<string, number>> => ({
 /** A document's id in the core. */
 export const searchDocumentId = (scope: SearchScope, type: SearchType, ref: string): string => `${scope.instance}/${scope.user}/${type}/${ref}`;
 
-/** Where a hit is seen in the UI (after `#`): a job's view, an artifact's, the Infra page for a plan. */
-export function searchHitRoute(type: SearchType, ref: string): string {
+/**
+ * Where a hit is seen in the UI (after `#`): a job's view, an artifact's, the Infra page for a plan; an issue's or a pull
+ * request's job. Undefined: an issue or a pull request with no job, seen at its own URL on GitHub.
+ */
+export function searchHitRoute(type: SearchType, ref: string, job?: string): string | undefined {
   if (type === 'artifact') return `artifacts/${encodeURIComponent(ref)}`;
   if (type === 'infra-plan') return 'infra';
+  if (type === 'issue' || type === 'pull-request') return job === undefined ? undefined : `job/${encodeURIComponent(job)}`;
   return `job/${encodeURIComponent(ref)}`;
 }
 
-/** A pending index update's key: what to build again (`job:<id>`, `artifact:<id>`, `infra-plan:<id>`). */
+/** A pending index update's key: what to build again (`job:<id>`, `artifact:<id>`, `infra-plan:<id>`, `issue:<url>`, `pull-request:<url>`). */
 export const pendingKey = (type: SearchType, ref: string): string => `${type}:${ref}`;
 export function parsePendingKey(key: string): { type: SearchType; ref: string } | undefined {
   const i = key.indexOf(':');
@@ -171,7 +182,7 @@ export interface SearchIndex {
 export interface SearchPendingRepository {
   /** Mark these keys; one already marked is marked again (its version goes up). */
   mark(keys: readonly string[]): void;
-  /** Mark every job, artifact and infra plan of the user (the backfill); answers how many. */
+  /** Mark every job, artifact, infra plan, and issue and pull request of the issue graph of the user (the backfill); answers how many. */
   markAll(): number;
   /** The oldest marked keys, with the version each was marked at. */
   take(limit: number): { key: string; version: number }[];

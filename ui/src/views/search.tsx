@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { get } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { highlightParts, hitHref, PAGE, parseSearch, picked, searchHash, searchPath, snippets, toggleFilter, TYPE_LABEL, type SearchFilters } from '@/model/search';
+import { highlightParts, hitHref, linksOut, PAGE, parseSearch, picked, searchHash, searchPath, snippets, toggleFilter, TYPE_LABEL, type SearchFilters } from '@/model/search';
 import type { SearchAnswer, SearchFacet } from '@/model/wire';
 import { useSection } from '@/app/nav';
 
@@ -33,7 +33,7 @@ function HitRow({ h }: { h: Hit }) {
   return (
     <li data-slot="search-hit" className="grid gap-1 border-b py-2.5 text-sm last:border-b-0">
       <div className="flex min-w-0 items-center justify-between gap-2">
-        <a href={hitHref(h)} className="min-w-0 truncate font-medium hover:underline">{title ? <Highlight html={title} /> : h.title}</a>
+        <a href={hitHref(h)} {...(linksOut(h) ? { target: '_blank', rel: 'noopener noreferrer' } : {})} className="min-w-0 truncate font-medium hover:underline">{title ? <Highlight html={title} /> : h.title}</a>
         <span className="flex shrink-0 items-center gap-1.5">
           {TYPE_LABEL[h.type] && <Badge variant="secondary" className="h-5 px-1.5 text-[11px]">{TYPE_LABEL[h.type]}</Badge>}
           {h.status && <StatusBadge status={h.status} />}

@@ -59,15 +59,25 @@ export function toggleFilter(f: SearchFilters, facet: SearchFacet, value: string
 
 export const picked = (f: SearchFilters, facet: SearchFacet, value: string): boolean => f[FACET_FILTER[facet]].includes(value);
 
-/** The UI route of a hit: a job's view, an artifact's (part 3), the Infra page for an infra plan (it has no view of its own). */
-export function hitHref(h: { type: string; ref: string }): string {
+/** Whether a hit links out of the hopper: an issue or a pull request with no job, to itself on GitHub. */
+const isItem = (type: string): boolean => type === 'issue' || type === 'pull-request';
+
+/**
+ * Where a hit links: a job's view, an artifact's (part 3), the Infra page for an infra plan (it has no view of its own);
+ * an issue's or a pull request's job, else the item itself — only ever an https URL, else the Search view (part 4).
+ */
+export function hitHref(h: { type: string; ref: string; job?: string | undefined }): string {
   if (h.type === 'artifact') return `#artifacts/${encodeURIComponent(h.ref)}`;
   if (h.type === 'infra-plan') return '#infra';
+  if (isItem(h.type)) return h.job !== undefined ? `#job/${encodeURIComponent(h.job)}` : h.ref.startsWith('https://') ? h.ref : '#search/';
   return `#job/${encodeURIComponent(h.ref)}`;
 }
 
+/** Whether a hit's link leaves the hopper (it opens in a new tab). */
+export const linksOut = (h: { type: string; ref: string; job?: string | undefined }): boolean => hitHref(h).startsWith('https://');
+
 /** The words that name a hit's type, beside its title; a job's says nothing more. */
-export const TYPE_LABEL: Readonly<Record<string, string>> = { artifact: 'Artifact', 'infra-plan': 'Infra plan' };
+export const TYPE_LABEL: Readonly<Record<string, string>> = { artifact: 'Artifact', 'infra-plan': 'Infra plan', issue: 'Issue', 'pull-request': 'Pull request' };
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
 
@@ -100,6 +110,7 @@ export function highlightParts(html: string): HighlightPart[] {
 export const SNIPPET_FIELDS: readonly { field: string; label: string }[] = [
   { field: 'brief', label: 'Asked' }, { field: 'result', label: 'Result' }, { field: 'questions', label: 'Question' },
   { field: 'failure', label: 'Failure' }, { field: 'verdict', label: 'Verdict' }, { field: 'content', label: 'Text' },
+  { field: 'links', label: 'Linked' }, { field: 'intake', label: 'Intake' },
 ];
 
 /** At most `max` snippets of a hit, by field order. */

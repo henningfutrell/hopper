@@ -78,7 +78,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
-| `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
+| `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job, an artifact, an infra plan, an issue or a pull request as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events and issue graph reads, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
 | `src/remote-access/` | the tunnel providers (issue #968): what the hopper asks of Cloudflare's and ngrok's APIs with the admin's credential — mint a tunnel, its token and its host name, and release them again (`provider.ts`, `cloudflare.ts`, `ngrok.ts`) | `src/http/`, `src/store/`, `src/vault/`: it is given the credential, keeps nothing, and knows no route |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update commands and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-commands.ts`, `update-skill.ts`, issues #697, #970) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
@@ -14587,8 +14587,8 @@ cross-references are that pointed job's. A pointed job whose pointer is a pull r
 
 ## The issue graph (issue #437, 2026-10-11)
 
-Part of the pointed-job architecture (issue #424, job 13 of 13). **Store only: nothing reads it, and no feature depends on
-it.** Later jobs of #424 can act on it.
+Part of the pointed-job architecture (issue #424, job 13 of 13). Read by the job graph and by search (issue #945, "Search": an issue
+and a pull request as search documents); nothing else depends on it.
 
 **What it keeps** (`src/domain/issue-graph.ts`, glossary "Issue graph"). Nodes, each with the attributes the newest read
 gave (merged, so a read that does not know a value leaves it): an **owner** (`owner:<login>`, a GitHub organization or user,
@@ -16090,7 +16090,7 @@ reading against `postgres:17-alpine` with pg_stat_statements loaded; the OpenFGA
 remote box meter through the client's end against rootless Podman 5 (a labelled box at a 0.5-core quota read at 0.50 cores,
 its memory against its 256 MiB limit).
 
-## Search (issue #945, parts 1 to 3, 2026-10-12)
+## Search (issue #945, parts 1 to 4, 2026-10-12)
 
 Owner direction: Solr in the hopper stack now, and search built on it from the start, not keyword search first.
 
@@ -16133,13 +16133,32 @@ values a summary leaves out. An artifact or plan of a direct job is `private`, a
 `#job/<id>`, `#artifacts/<id>`, or `#infra` for a plan (it has no view of its own); the Search view links each the same way,
 with the type named beside the title and an artifact's matched text as a snippet.
 
+**Part 4: linked issues and pull requests, and intake items.** Their documents come from the **issue graph** ("The issue
+graph"): every open labelled issue a GitHub source lists is read into it, taken or not — the intake items —, with the issues
+and pull requests linked to it. `type` `issue` (`issueDocument`), one per issue node, `ref` its URL: `title` (its title, else
+`<repo>#<number>` for an issue read only as a link), `status` its state on GitHub (`open`, `closed`), `brief` its approved
+text (the item snapshot's title and body), `links` (each edge in words: `closed by o/r#9`, `references`, `sub-issue of`,
+`blocked by`, `in project <title>`, each from both ends), `job` (the job whose source key is the URL), with its labels and
+requester, and `intake`: what intake did with it when a job source lists it now (`taken: job <status>`, or `not taken:
+<reason>`), and that source as `source`. The intake outcome is the source's own list of the last sync, read when the
+document is built: Postgres keeps the graph and the snapshots, the source the outcome, so a lost index loses nothing a
+sync does not give again. `type` `pull-request` (`pullRequestDocument`), one per pull request node: `title` `<repo>#<number>`
+(the graph has no title of a pull request), `status` (`open`, `closed`, `merged`), `links` (the issues it closes or
+mentions, with their titles: a pull request is found by its issue's words), `job` the job of an issue it closes. Neither is
+private. A time GitHub did not give (a pull request, a linked issue never read itself) is the newest read of an issue it is
+linked to. A hit's `url` and link is its job's view, `#job/<id>`, else the item itself on GitHub (the UI opens only an
+`https://` URL, in a new tab); the Search view names the type, and shows the matched links (`Linked`) and intake
+(`Intake`) as snippets.
+
 **Never indexed:** every text is masked first
 (`maskSecrets`, `src/secrets/mask.ts`: GitHub tokens, 32-byte keys, private keys, cloud and API keys), and the vault, the
 system secrets, connected accounts, sign-in and webhook secrets are never read to build a document.
 
 **Index updates: pending index updates.** A user's search subscribes to its event log: each event that names a job puts
 the job in memory, an `artifact.*` event its artifact (and a merge's target, `into`), an `infra.plan_*` event its plan
-(`keysOf`, `src/search/index.ts`; keys `artifact:<id>`, `infra-plan:<id>`), and the pass (every 2 s) marks those jobs in `search_pending` (tenant migration 50: `key` `job:<id>`,
+(`keysOf`, `src/search/index.ts`; keys `artifact:<id>`, `infra-plan:<id>`), a `source.*` intake event or `item.snapshot_recorded`
+each issue it names (`issue:<url>`), and each read of the issue graph a source keeps every issue and pull request it gave
+(`graphKeys`; `issue:<url>`, `pull-request:<url>`; the source context names them to the user's search, `changed`), and the pass (every 2 s) marks those jobs in `search_pending` (tenant migration 50: `key` `job:<id>`,
 `version`, `marked_at`; a table only, the build before runs on it), then takes the oldest marks (100 per write, 10 writes
 per pass), builds each document again and writes it (`commitWithin` 1 s); a job no longer in the store is removed from the
 index (a removed artifact too). A mark is cleared only at the version taken, so a document marked again during the
@@ -16148,11 +16167,13 @@ reached or refusing: nothing is cleared, search is **degraded** with Solr's own 
 (2 s doubled, up to a minute). Stop marks what is still in memory, so the next start writes it.
 
 **Backfill.** At the first pass that reaches Solr, a user with no document in the core (a new core, a lost volume, an
-install from before) has every job, artifact and infra plan marked (`markAll`). **Reindex** (`POST /ui/api/search/reindex`, least role
+install from before) has every job, artifact, infra plan, and issue and pull request node of the issue graph marked (`markAll`). **Reindex** (`POST /ui/api/search/reindex`, least role
 operator) marks them again when a person asks; the pass then writes them in the background. `GET /api/search/status`
 says `backfill: { at, done }`: done once nothing it marked is pending.
 
-**The API** (`src/http/search.ts`; the UI, the operator CLI and an agent with an API token use the same routes).
+**The API** (`src/http/search.ts`; the UI, the operator CLI and an agent with an API token use the same routes: the CoS
+reads search as any agent does, with an API token of a grant whose scopes cover `/api/search` — the `read-only` preset's
+`*:read` does —, and no route of its own).
 `GET /api/search?q=&type=&status=&label=&repo=&from=&to=&limit=&offset=`: edismax over the text fields (title weighted
 highest), every word required, best match first, then the newest; `type`, `status` and `repo` any of the values given
 (comma-separated or repeated), each `label` given required, `from`/`to` on the time it was made. The answer: `state`,
@@ -16189,19 +16210,23 @@ same routes for a script: `hopper search <words>… [--type|--status|--label|--r
 [--limit|--offset <n>]`, `--suggest <words>`, `--index` (the index's state), `--reindex` (operator); it prints the answer as
 JSON, and a bad filter is the daemon's 400.
 
-**Not built yet** (the next parts of the issue): the other documents — linked issues and pull requests, intake items —
-and the `type` values for them; the CoS's use of the API. Solr's readings are on the Resources page ("Stack resources", Solr, issue #947).
+Solr's readings are on the Resources page ("Stack resources", Solr, issue #947).
 
 Tests: `test/search/document.test.ts` (the fields, masked secrets, a direct job private; part 3: an artifact's metadata and
 text, an HTML deck's words, no text of an image, an artifact of a direct job private, a plan's summary and status and
-never its text), `test/adapters/solr-index.test.ts`
+never its text; part 4: an issue's title, state, approved text, links, job and intake, a linked issue not read itself, a pull
+request's state, links and job), `test/search/keys.test.ts` (part 4: the keys an intake event and a read of the issue graph
+mark, and where an issue's or a pull request's hit links), `test/adapters/solr-index.test.ts`
 (a real Solr: the schema put in twice, an unknown field refused, words, highlights escaped, facets, every filter,
 suggest, two hoppers and two users apart, Solr not reached), `test/integration/search.test.ts` (a real Solr and the
 daemon: a job found by its words after its events, private direct jobs, no secret indexed, degraded while Solr is down
 and caught up after, the backfill and Reindex, Access not asked, and `hopper search`; part 3: an artifact found by its text and a plan by its
-summary with their links and the type facet, a removed artifact gone, Reindex marking artifacts too), `test/ui/search.test.ts` (part 2:
+summary with their links and the type facet, a removed artifact gone, Reindex marking artifacts too; part 4: an issue and a
+pull request found by their words with their job's link, an intake item by why it was not taken and written again after an
+intake event, and an agent's API token searching on the same routes), `test/ui/search.test.ts` (part 2:
 the highlight read as text, the search in the hash, the Search view's hits, facets and degraded state, the search box's
-type-ahead; part 3: each type's link and the text snippet), `test/authz/model.test.ts`, `test/update/drift.test.ts`
+type-ahead; part 3: each type's link and the text snippet; part 4: an issue's and a pull request's link, never other than
+`https://`, and the links and intake snippets), `test/authz/model.test.ts`, `test/update/drift.test.ts`
 and `test/scripts/compose.test.ts` (the `solr` service). The Solr tests use `HOPPER_TEST_SOLR_URL` when it names a core,
 else start Solr in a container (`test/support/solr.ts`).
 

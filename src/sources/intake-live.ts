@@ -10,3 +10,12 @@ export function liveIntake(st: SourceStatus, jobOf: (key: string) => Job | undef
   const withJob = (x: IntakeOutcome): IntakeOutcome => { const job = jobOf(x.key); return job ? { ...x, jobId: job.id, jobStatus: job.status } : x; };
   return { ...st, detail: { ...st.detail, intake: (intake as IntakeOutcome[]).map((x) => (x.reason === undefined ? withJob(x) : x)) } };
 }
+
+/** What intake did with one item, and the source that lists it (search, issue #945); none lists it: undefined. */
+export function intakeOutcomeOf(statuses: readonly SourceStatus[], key: string): { source: string; outcome: IntakeOutcome } | undefined {
+  for (const st of statuses) {
+    const outcome = (Array.isArray(st.detail?.intake) ? st.detail.intake as IntakeOutcome[] : []).find((x) => x.key === key);
+    if (outcome) return { source: st.name, outcome };
+  }
+  return undefined;
+}
