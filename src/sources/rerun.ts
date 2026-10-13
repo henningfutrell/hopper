@@ -7,7 +7,7 @@
 import type { JobSource, RerunBy, RerunResult, SourceHost, SourceItem } from '../domain/ports.ts';
 import { RerunRefused } from '../domain/rerun-refused.ts';
 import { sourceRef, withEdits } from './item-text.ts';
-import { following, type ActingPerson, type ContinuedBy, type Job } from '../domain/types.ts';
+import { following, tendRetryAt, type ActingPerson, type ContinuedBy, type Job, type Tended } from '../domain/types.ts';
 
 export interface RerunContext {
   host: SourceHost;
@@ -28,8 +28,12 @@ export function createRerun(c: RerunContext) {
   const store = c.host.store;
   const conflict = (jobId: string, why: string): RerunResult => ({ ok: false, reason: 'conflict', message: `job ${jobId} cannot run again: ${why}` });
 
-  /** Why an ended job's item cannot run again now — or, `rework`, be sent back for rework (issue #724) —, or its source. */
-  function check(jobId: string, rework = false): RerunResult | JobSource {
+  /**
+   * Why an ended job's item cannot run again now — or, `rework`, be sent back for rework (issue #724) —, or its source.
+   * `tending` (issue #1010): a newer job of its item may exist when it is the job's own tend job, cancelled by no person
+   * and no source: the tend runs again.
+   */
+  function check(jobId: string, rework = false, tending = false): RerunResult | JobSource {
     const job = store.jobs.get(jobId);
     if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
     if (rework) {
@@ -41,7 +45,9 @@ export function createRerun(c: RerunContext) {
     if (!source) return conflict(jobId, 'its source is not running');
     if (!source.rerun) return conflict(jobId, `its source ${source.name} cannot run an item again`);
     if (rework && !source.rework) return conflict(jobId, `its source ${source.name} cannot rework a pull request`);
-    if (store.jobs.getBySourceKey(job.source!.key)?.id !== jobId) return conflict(jobId, 'a newer job of its item exists');
+    const newest = store.jobs.getBySourceKey(job.source!.key);
+    const retried = tending && tendRetryAt((job.sourceState?.source as { tended?: Tended } | undefined)?.tended, newest) !== undefined;
+    if (newest?.id !== jobId && !retried) return conflict(jobId, 'a newer job of its item exists');
     if (!c.flagsOf(job).finalReported) return conflict(jobId, 'its end is not reported to its source yet');
     return source;
   }
@@ -52,13 +58,13 @@ export function createRerun(c: RerunContext) {
    */
   async function takeBack<G extends { item: SourceItem }>(
     jobId: string, then: (item: SourceItem, source: JobSource, given: G) => RerunResult,
-    give: (source: JobSource, job: Job) => Promise<G> = async (source, job) => ({ item: await source.rerun!(job) }) as G, rework = false,
+    give: (source: JobSource, job: Job) => Promise<G> = async (source, job) => ({ item: await source.rerun!(job) }) as G, rework = false, tending = false,
   ): Promise<RerunResult> {
-    const checked = check(jobId, rework);
+    const checked = check(jobId, rework, tending);
     if ('ok' in checked) return checked;
     let result: RerunResult = { ok: false, reason: 'source', message: 'not sent' };
     await c.enqueue(jobId, async () => {
-      const source = check(jobId, rework);
+      const source = check(jobId, rework, tending);
       if ('ok' in source) { result = source; return; }
       let given: G;
       try {
@@ -77,7 +83,7 @@ export function createRerun(c: RerunContext) {
 
   return {
     rerun(jobId: string, by: RerunBy = 'user', brief?: string, acting?: ActingPerson): Promise<RerunResult> {
-      return takeBack(jobId, (item, source) => ({ ok: true, job: c.host.rerun(jobId, item, sourceRef(source), by, brief, acting) }));
+      return takeBack(jobId, (item, source) => ({ ok: true, job: c.host.rerun(jobId, item, sourceRef(source), by, brief, acting) }), undefined, false, by === 'tending');
     },
     /** Continue (issue #551): the item given back as for Run again, and the same job queued again to resume its session. */
     continueJob(jobId: string, brief: string, by: ContinuedBy): Promise<RerunResult> {

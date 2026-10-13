@@ -1,7 +1,7 @@
 // The Pull requests list's card states (issue #677): why a pull request waits, in the order that holds first, and a
 // pull request with no checks in a yolo repository — waiting for checks to start in the grace window, then ready.
 import { describe, expect, it } from 'vitest';
-import { MAX_TENDS, NO_CHECKS_GRACE_MS, pullRequestList, type Job, type PullRequestSeen } from '../../src/domain/types.ts';
+import { MAX_TEND_RETRIES, MAX_TENDS, NO_CHECKS_GRACE_MS, pullRequestList, TEND_RETRY_MS, type Job, type PullRequestSeen } from '../../src/domain/types.ts';
 import type { Holds } from '../../src/domain/tending-queue.ts';
 import { jobForIssue, REPO } from './fixtures/github-support.ts';
 
@@ -107,9 +107,28 @@ describe('a pull request its item\'s tend job works on (issue #763)', () => {
       .toBe('the job that rebased it failed: Design-level conflict in src/a.ts: both sides reshape the store. Choose: keep the queue, or keep the stream.');
   });
 
-  it('a tend job that failed with no reason: the hopper gave up all the same', () => {
-    const tender = jobForIssue(1, { id: 'job-2', status: 'cancelled', rerunOf: 'job-1' });
-    expect(list([tended('job-2')], tender)[0]!.gaveUp).toBe('the job that rebased it ended cancelled: a person must look at it');
+  it('a tend job a person cancelled: the hopper gave up, and a person must look at it', () => {
+    const tender = jobForIssue(1, { id: 'job-2', status: 'cancelled', rerunOf: 'job-1', finishedAt: ago(60_000), sourceState: { sync: { finalReported: true, cancelReason: 'cancelled in UI' } } });
+    expect(list([tended('job-2')], tender)[0]).toMatchObject({ waits: 'tend failed', gaveUp: 'the job that rebased it ended cancelled: a person must look at it' });
+  });
+
+  it('a tend job cancelled by the sweep or a restart: not given up, tended again after a wait that doubles (issue #1010)', () => {
+    const tender = jobForIssue(1, { id: 'job-2', status: 'cancelled', rerunOf: 'job-1', finishedAt: ago(60_000), sourceState: { sync: { finalReported: true, cancelReason: 'the hopper restarted' } } });
+    const card = list([tended('job-2')], tender)[0]!;
+    expect(card).toMatchObject({ waits: 'tending', tendWaits: `its tend job was cancelled: tended again from ${new Date(NOW - 60_000 + TEND_RETRY_MS).toISOString()}` });
+    expect(card).not.toHaveProperty('gaveUp');
+    const again = jobForIssue(1, { id: 'job-1', status: 'finished', sourceState: { source: {
+      follow: 'tended', pullRequest: PR, seen: seen({ conflicting: true }), tended: { pullRequest: PR, step: 'rebase', nextJobId: 'job-2', retries: 2 },
+    } } });
+    expect(list([again], tender)[0]!.tendWaits).toBe(`its tend job was cancelled: tended again from ${new Date(NOW - 60_000 + TEND_RETRY_MS * 4).toISOString()}`);
+  });
+
+  it(`a tend job cancelled ${MAX_TEND_RETRIES + 1} times in a row: the hopper gave up, and says so (issue #1010)`, () => {
+    const tender = jobForIssue(1, { id: 'job-2', status: 'cancelled', rerunOf: 'job-1', finishedAt: ago(60_000) });
+    const job = jobForIssue(1, { id: 'job-1', status: 'finished', sourceState: { source: {
+      follow: 'tended', pullRequest: PR, seen: seen({ conflicting: true }), tended: { pullRequest: PR, step: 'rebase', nextJobId: 'job-2', retries: MAX_TEND_RETRIES },
+    } } });
+    expect(list([job], tender)[0]).toMatchObject({ waits: 'tend failed', gaveUp: `the job that rebased it was cancelled ${MAX_TEND_RETRIES + 1} times in a row: a person must look at it` });
   });
 
   it('a tend job that finished: only its own card, the one it follows', () => {

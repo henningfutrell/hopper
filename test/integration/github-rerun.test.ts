@@ -83,7 +83,7 @@ describe('Run again on a GitHub job', () => {
     await a.sync();
     expect((await jobsFor()).map((j) => j.status)).toEqual(['failed', 'failed']);
   });
-  it('Run again on a job whose issue is no longer assigned to the connected account is refused, the issue left as it is (issue #527)', async () => {
+  it('Run again on a job whose issue is no longer assigned to the connected account assigns it again and runs (issues #527, #1010)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
     const token = await a.login();
@@ -95,15 +95,13 @@ describe('Run again on a GitHub job', () => {
     gh.unassign(REPO, issue.number, 'owner');
     gh.closeIssue(REPO, issue.number, undefined, { reason: 'not_planned' });
 
-    const r = await a.ui<{ error: string }>(`/ui/api/jobs/${first!.id}/rerun`, {}, { token });
-    expect(r.status).toBe(409);
-    expect(r.body.error).toMatch(/not assigned to the connected account owner/);
-    // Nothing was made only to be cancelled, and the issue was not reopened or relabelled.
-    expect((await jobsFor()).map((j) => j.id)).toEqual([first!.id]);
-    expect(await a.events('types=job.rerun')).toEqual([]);
-    expect(gh.issue(REPO, issue.number)).toMatchObject({ state: 'closed', labels: expect.arrayContaining(['hopper:failed']) });
-
-    gh.assign(REPO, issue.number, 'owner');
-    expect((await a.ui(`/ui/api/jobs/${first!.id}/rerun`, {}, { token })).status).toBe(200);
+    const r = await a.ui<Job>(`/ui/api/jobs/${first!.id}/rerun`, {}, { token });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ rerunOf: first!.id });
+    // The hopper took the step a person had to take in Sources: the issue is the connected account's again, and open.
+    expect(gh.issue(REPO, issue.number)).toMatchObject({ state: 'open', assignees: expect.arrayContaining(['owner']) });
+    // So its new job runs to its own end, never cancelled as unassigned.
+    const second = await a.waitForStatus(r.body.id, 'failed');
+    expect(second.error).toBe('boom');
   });
 });
