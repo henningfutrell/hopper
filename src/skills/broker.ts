@@ -199,9 +199,12 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       if (r.state === 'failed') return no(503, `the box of template ${t.template} did not start: ${r.reason ?? 'no reason given'}. A person starts one: hopper sandbox launch --template ${t.template}.`);
       record('skill.loaded');
       const skills = t.text.slice(t.text.indexOf('\nOn the box'));
+      // Issue #1009: the job stays where it runs. Its commands do not reach the box, so the answer says so plainly
+      // (how a job's work reaches the box is issue #769).
+      const elsewhere = box.template === t.template ? '' : `\n\nThis job runs on ${machine === undefined ? 'no machine' : `machine ${machine}`}, not on box ${r.container!}: its commands do not reach the box, and the skills above load only in a job that runs on the box. The hopper does not move this job there. Tell a person that the work that needs these assets must run as a job on machine ${r.container!} (a routing rule that sets machine ${r.container!} puts a job there), or find another way.`;
       return {
         status: 200,
-        text: `${SANDBOX_SKILL}: box ${r.container!} of template ${t.template} runs, approved by ${r.approvedBy ?? 'a person'}. It joins the hopper as a machine of that template; it ends at the template's time limit.${skills}\n`,
+        text: `${SANDBOX_SKILL}: box ${r.container!} of template ${t.template} runs, approved by ${r.approvedBy ?? 'a person'}. It joins the hopper as a machine of that template; it ends at the template's time limit.${skills}${elsewhere}\n`,
       };
     }
 
