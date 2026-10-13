@@ -12,6 +12,7 @@ export type { PlanCheck, PlanLevel, PlanRisk, PlanSummary, RiskCallout } from '.
 export type { InfraWatchers } from './infra-watchers.ts';
 export type { Mark, OutOfBandChange, OutOfBandMark, OutOfBandView, SignalSource } from './out-of-band.ts';
 import type { BoxTool, TemplateLimits } from './sandboxes.ts';
+import type { SandboxApprovals, SandboxRequestView } from './sandbox-approvals.ts';
 
 /** A vault secret's name: a letter, then letters, digits, `_`, `.`, `-`; at most 64. */
 export const VAULT_SECRET_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
@@ -176,6 +177,10 @@ export interface VaultView {
   shared?: SharedSecretView[];
   /** The read policy (issue #716): the assets the hopper approves read on with no person, for a template a job asks for. */
   readPolicy?: string[];
+  /** The sandbox approval toggles (issue #991). */
+  sandboxApprovals?: SandboxApprovals;
+  /** The boxes the user's jobs at work asked for (issue #991): waiting for a person, starting, running, declined or failed. */
+  sandboxRequests?: SandboxRequestView[];
   /** Jobs on boxes that asked the vault with no vault grant (issue #652): a person grants them the vault, or not. */
   grantAsks?: VaultGrantAsk[];
   /** The vault grants (issue #652): the items whose jobs may use the vault's helper, who granted each, and when. */
@@ -296,7 +301,7 @@ export interface TemplateView extends Template {
  */
 export interface TemplatePreview {
   template: string; image: string; tools: string[]; needs: string[]; readOnly: boolean;
-  approvedBy: 'the read policy' | 'a person'; waits: string[]; exists?: 'same' | 'changed';
+  approvedBy: 'the read policy' | 'skip template approval' | 'a person'; waits: string[]; exists?: 'same' | 'changed';
 }
 
 const sameProfile = (a: OperationProfile, b: OperationProfile): boolean => a.operation === b.operation && a.asset.kind === b.asset.kind && a.asset.name === b.asset.name;

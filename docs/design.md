@@ -76,7 +76,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/job-stream/` | the job stream (issue #613, "The job stream"): the stream types each part registers with its phase (`types.ts`), the wire form — whole or a result pointer, one builder — and the SSE frame (`wire.ts`), one user's stream: emit, open a watch, the sweep that ends a watch at its deadline or its job's end (`stream.ts`). Its rows through the `JobStreamRepository` port; its route `src/http/job-stream.ts` | engine, http, store, plugins, executors, decider, skills |
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
-| `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
+| `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`), the sandbox requests jobs make (`requests.ts`, issue #991); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job, an artifact, an infra plan, an issue or a pull request as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events and issue graph reads, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
 | `src/remote-access/` | the tunnel providers (issue #968): what the hopper asks of Cloudflare's and ngrok's APIs with the admin's credential — mint a tunnel, its token and its host name, and release them again (`provider.ts`, `cloudflare.ts`, `ngrok.ts`) | `src/http/`, `src/store/`, `src/vault/`: it is given the credential, keeps nothing, and knows no route |
@@ -9469,7 +9469,9 @@ not get write access over the API; they still ask the hopper. So a job asks thro
   job stream ends it when a person approves (`vault.approved`, `template.profile_approved` ask it again). While the
   check waits: 202 `waiting: template <name> is approved; waiting for the read-only check …`; `template.checked` asks again.
 
-**Not built.** A job does not launch the box: a person or the CLI starts it (carried on issue #769). (Tools assembled per
+**Built since (issue #991).** A job gets the box too: `sandbox` in place of `sandbox-template` ("Sandboxes jobs start").
+With skip template approval on, the hopper approves a template it makes now that the read policy does not.
+**Not built.** (Tools assembled per
 run, item 2, and the read-only check, item 4, are built: "Tools assembled per run", "The read-only check".) A need's credential is asked of a person when a job on the box first loads the skill;
 the template does not name a vault secret the user already has. Templates made on request are not removed when no job
 uses them.
@@ -9484,6 +9486,59 @@ need waits, and the job's `--wait` ends when a person approves; no policy, a rea
 widened back and a revoke is not approved again; needs it cannot read refused; the policy set, shown, an event, and an
 entry it cannot read refused), `test/skills/template-request.test.ts`, `test/integration/operator-cli-vault.test.ts`
 (`template read-policy`), `test/ui/vault-read-policy.test.ts`.
+
+## Sandboxes jobs start (issue #991, 2026-10-13)
+
+Owner's model (issue #991): sandboxes are started by jobs, not created by hand. A user never creates a sandbox, and
+approves sandbox runs only if they choose to. Before it, a job could ask for a template ("Templates on request"), but a
+person or the CLI started the box (issue #769).
+
+- **The ask.** `sh "$HOPPER_SKILL" sandbox --needs "write/aws-account/123456789012" [--wait]`, the needs as for
+  `sandbox-template`. The broker (`src/skills/broker.ts`) first asks for the template, through the same `requestTemplate`:
+  the same needs reuse the same template, and a missing one is made. A template that waits for a person or for its
+  read-only check answers 202, as before.
+- **Skip template approval** (`SandboxApprovals.skipTemplateApproval`, `src/domain/sandbox-approvals.ts`). With it on, a
+  template the hopper makes now, and the read policy does not approve, is approved at once: `approveTemplate`, then
+  `approveProfile` for each write, sync or apply profile, each `by` **skip template approval** (`vault.approved`,
+  `template.profile_approved`). The read policy approves first when it holds every need. As with the read policy, a
+  template that is there already — one a person revoked among them — is never approved by it.
+- **The sandbox request** (`createSandboxRequests`, `src/sandbox/requests.ts`; per user, `src/users/sandbox-requests.ts`).
+  With the template ready, the job asks for a box of it: one request per job and template, kept in memory, as credential
+  requests are ("The dynamic vault"). `vault.sandbox_requested`. It waits for a person on Access requests, panel
+  **Sandbox runs**, unless **skip sandbox approval** is on: then it is approved at once, `by` that toggle, a template of a
+  high blast radius too. A person approves (`POST /ui/api/sandbox-requests` `approve`) or declines with a reason the job
+  is told (`decline`, `vault.sandbox_declined`). Approved (`vault.sandbox_approved`), the hopper starts the box through
+  the sandbox module, `launch` with the template and its defaults (`params: {}`), beside the hopper:
+  `vault.sandbox_started` with the box's name, or `vault.sandbox_failed` with the reason. Each event is on the job's
+  timeline. The job's `--wait` ends on them (`src/skills/waits.ts`).
+- **The answers.** 202 while the request waits for a person or the box starts; 200 when it runs: the box's name, who
+  approved it, and the skills it loads for each asset; 403 when declined; 503 when the start failed. Asked again, the
+  job gets the same request and the same box. A box that went makes the next ask a new request. A start that failed
+  stays failed: a new one on each event would start the box again and again. A person starts one by hand instead.
+- **YOLO** (`sandboxYolo`). Both toggles on. A job that needs AWS gets a running box with no human step. Off by
+  default. The toggles are the user's settings (key `sandboxApprovals`, no migration): `POST /ui/api/sandbox-approvals`
+  with `yolo`, `skipTemplateApproval`, `skipSandboxApproval` (absent keeps; a toggle named with `yolo` wins),
+  `vault.sandbox_approvals_set`; the vault's view answers them (`sandboxApprovals`) and the requests of jobs at work
+  (`sandboxRequests`). Settings → Vault, panel **Sandbox approvals**.
+- **Roles.** Both routes are `admin`, and both are box actions (`src/http/ui/box-actions.ts`): approving a request
+  starts a box; the toggles approve work with no person. An API token needs a box grant for either.
+- **Manual creation is no longer the main path.** Machines → Add machine → A sandbox box stays, for a test; its hint says
+  that jobs start their own boxes.
+
+**Decided here, from issue #769's open questions.** What the job does with the box: the hopper starts it, and it joins
+as a machine of its template, as a box from Add machine does; the job learns its name. How the rest of the job's work
+reaches the box stays on issue #769. Who pays: the template's defaults, within its limits; a request names none. When it
+ends: at the template's time limit, never with the job; a request of a job no longer at work is forgotten.
+
+**Residual risk, stated.** With skip template approval on, any job at work may get a template with write, sync or apply
+on any asset it names, approved with no person; with skip sandbox approval on too, a box of it starts. Every such
+approval is an event that names its toggle. Both are off by default, and only an admin turns them on.
+
+Tests: `test/sandbox/requests.test.ts`, `test/skills/template-skip-approval.test.ts`,
+`test/integration/job-sandboxes.test.ts` (the real daemon, the real `hopper-skill`, OpenFGA and the container runtime as
+doubles: YOLO, a running box with no human step, each approval an event naming its toggle, the same box asked again;
+both off, a person approves the template and the run and the job's wait ends; a decline; the toggles, a box action),
+`test/ui/sandbox-runs-view.test.ts`.
 
 ## Template requests over the API (issue #718, 2026-10-11)
 

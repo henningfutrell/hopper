@@ -29,6 +29,8 @@ A box needs a **rootless** container runtime: Podman (the default) or Docker. Th
 
 ## Start a box
 
+Jobs start their own boxes: see [Sandboxes jobs start](#sandboxes-jobs-start). Start a box by hand only to test a template or a machine.
+
 ### The hopper starts it
 
 When the hopper has a rootless Podman (or Docker) socket, it starts boxes itself:
@@ -131,6 +133,37 @@ A launch gives the token to the box as `CLAUDE_CODE_OAUTH_TOKEN`. Every job on t
 - Every process on the box can read the token, as every job could read a sign-in made by hand.
 - `--agent-credential none` takes it off the template.
 
+## Sandboxes jobs start
+
+A job that needs AWS, a cluster or another sandboxed target asks the hopper for a sandbox. You do not create the box.
+
+```sh
+sh "$HOPPER_SKILL" sandbox --needs "write/aws-account/123456789012" --wait
+```
+
+1. The hopper finds the template for these needs and uses it again. When there is none, the hopper makes it (see [Templates a job asks for](#templates-a-job-asks-for)).
+2. A new template waits for a person on **Access requests → Template approvals**, unless the read policy approves it or **Skip template approval** is on.
+3. The sandbox run waits for a person on **Access requests → Sandbox runs**, unless **Skip sandbox approval** is on. Select **Approve** to start the box, or write why not and select **Decline**. The job is told the reason.
+4. The hopper starts the box with the template's defaults. The box joins as a machine of that template. The job's `--wait` ends with the box's name and the skills the box loads.
+
+The same job that asks again gets the same box. A box ends at the template's time limit. A run that did not start says why; a person can start a box with `hopper sandbox launch --template <name>`.
+
+### Skip approvals and YOLO
+
+An admin sets these in **Settings → Vault**, panel **Sandbox approvals**. They are off by default.
+
+| Toggle | What it does |
+|---|---|
+| **Skip template approval** | A new template a job asks for is approved at once, with its write, sync and apply profiles. |
+| **Skip sandbox approval** | A sandbox run starts the moment a job asks, a high-blast-radius one too. |
+| **YOLO** | Both toggles. Nobody has to do anything. |
+
+Each approval a toggle gives is still an event, and it names the toggle: `by: skip template approval` on `vault.approved` and `template.profile_approved`, `by: skip sandbox approval` on `vault.sandbox_approved`. The job's timeline shows each one.
+
+Through the API: `POST /ui/api/sandbox-approvals` with `yolo`, `skipTemplateApproval` or `skipSandboxApproval`, and `POST /ui/api/sandbox-requests` with `approve` or `decline`. Both are box actions: an API token needs a box grant.
+
+A read template still takes the read-only check before its first box, with YOLO too.
+
 ## Templates a job asks for
 
 A running job can ask the hopper for the template its work needs:
@@ -141,7 +174,7 @@ sh "$HOPPER_SKILL" sandbox-template --needs "read/cluster/lab read/aws-account/1
 
 Each **need** is `<operation>/<kind>/<asset>`, at most 16. You can also write a line in plain words, for example `kubectl get pods in namespace web on cluster lab` (see **Needs in plain words** below). The hopper makes the template `asked-<hash>` from the needs: the box image, the tools the needs use, no vault secret, and one operation profile per need. The same needs always get the same template.
 
-The hopper approves it with no person only when it makes it now and every need is a `read` on an asset the **read policy** holds. Anything else waits for a person on **Access requests**. A job never widens, approves or re-approves a template. A job does not start the box: a person or the command line does.
+The hopper approves it with no person only when it makes it now and every need is a `read` on an asset the **read policy** holds, or when **Skip template approval** is on. Anything else waits for a person on **Access requests**. A job never widens, approves or re-approves a template. To get a box of it too, the job asks for `sandbox` in place of `sandbox-template`.
 
 An admin can ask for a template the same way on **Settings → Vault**, panel **Template request**. Write what the box must do, one line each, in plain words or as needs, and select **Show the template**. The hopper shows the template it makes from them before it makes it: its name, its image, its tools, its needs, and who approves it. When it waits for a person, the panel says why. Then select **Ask for it**. If you change the needs, show the template again before you ask for it.
 
@@ -155,7 +188,7 @@ A line in plain words names the assets and what the box does on them. The hopper
 - **What the box does:** a read word (`get`, `list`, `describe`, `logs`, `plan`, `show`) gives read. `apply` or `deploy` gives apply. `sync` gives sync. A change word (`delete`, `restart`, `install`, `upgrade`, `scale`) gives write. A command such as `get-caller-identity` counts too.
 - A change word after `not` or `never` gives no change: `get pods on cluster lab, never delete them` is read only.
 - The hopper refuses a line that names no asset or says nothing that the box does. Write that need as `<operation>/<kind>/<asset>`.
-- A change always waits for a person, as for a need you write out.
+- A change waits for a person, as for a need you write out, unless **Skip template approval** is on.
 
 ### The read policy
 
@@ -164,7 +197,7 @@ The read policy lists the assets on which the hopper may approve read with no pe
 - an asset, for example `cluster/lab`; or
 - a prefix with `*`, for example `aws-account/*` or `namespace/lab/*`.
 
-Or: `hopper template read-policy set cluster/lab 'namespace/lab/*'`. `set` with no entry clears it. Write, sync and apply always wait for a person.
+Or: `hopper template read-policy set cluster/lab 'namespace/lab/*'`. `set` with no entry clears it. The read policy never approves write, sync or apply: only **Skip template approval** does.
 
 ### The read-only check
 

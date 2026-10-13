@@ -57,7 +57,7 @@ import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 import { machineLanesEditor } from './machine-lanes.ts';
 import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts'; import { createUserSearch, type SearchWiring, type UserSearch } from '../search/index.ts'; import { searchHitRoute } from '../domain/search.ts'; import { intakeOutcomeOf } from '../sources/intake-live.ts';
-import { planNotice } from '../domain/infra-watchers.ts';
+import { planNotice } from '../domain/infra-watchers.ts'; import type { SandboxRequests } from '../sandbox/requests.ts'; import { userSandboxRequests, type SandboxLauncher } from './sandbox-requests.ts';
 
 export type { UserSeams } from './seams.ts';
 
@@ -119,8 +119,8 @@ export interface UserRuntimeOptions {
   access?: VaultAccess & IntakeAccess; minter?: CredentialMinter;
   /** The whole hopper's system secrets (issue #658): the sign-in realms', shown on the vault's page; its shared secrets (issue #718). */
   instanceSecrets?: SystemSecrets; sharedSecrets?: Parameters<typeof openUserVault>[0]['shared'];
-  /** What each box of this user was launched with, by machine name (issue #708): the vault gives it nothing else. Absent: no box is narrowed. */
-  launchScopes?(userId: string): Map<string, LaunchScope>;
+  /** What each box of this user was launched with, by machine name (issue #708): the vault gives it nothing else. Absent: no box is narrowed. `sandboxes`: a job's sandbox request starts its box there (issue #991); absent: none starts. */
+  launchScopes?(userId: string): Map<string, LaunchScope>; sandboxes?: SandboxLauncher;
 }
 
 
@@ -167,8 +167,8 @@ export interface UserRuntime {
   machineHistory: ResourceRecorder;
   /** The GitHub proxy's view of this user (issue #563). */
   githubProxy: UserGitHubProxy;
-  /** A job's step run on a Windows host the user set up (issue #731); search (issue #945): the index kept from job events, and the permission-checked search. */
-  windowsSteps: WindowsSteps; search: UserSearch;
+  /** A job's step run on a Windows host the user set up (issue #731); search (issue #945): the index kept from job events, and the permission-checked search; the boxes the user's jobs ask for (issue #991). */
+  windowsSteps: WindowsSteps; search: UserSearch; sandboxRequests: SandboxRequests;
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */
@@ -388,7 +388,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Search (issue #945): the user's documents in the index, kept from job events; each hit decided by Access.
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : o.uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
   return {
-    search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, directJobs,
+    search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, directJobs, sandboxRequests: userSandboxRequests({ userId: user.id, store, templates: () => vault.view().templates, sandboxes: o.sandboxes, clock }),
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,

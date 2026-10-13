@@ -35,6 +35,8 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/pull-requests/merge', kind: 'approve or merge work' },
   { route: '/ui/api/infra-plans', kind: 'approve or merge work' },
   { route: '/ui/api/infra-plans/settings', kind: 'approve or merge work' },
+  // Issue #991: the toggles approve templates and sandbox runs with no person.
+  { route: '/ui/api/sandbox-approvals', kind: 'approve or merge work' },
   { route: '/ui/api/update', kind: 'update the hopper or a client' },
   { route: '/ui/api/plugin-store', kind: 'update the hopper or a client' },
   { route: '/ui/api/questions/:id/answer', kind: 'change work on a machine' },
@@ -46,6 +48,7 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/machines', kind: 'change work on a machine' },
   { route: '/ui/api/machines/join', kind: 'change work on a machine' },
   { route: '/ui/api/machines/sandbox', kind: 'change work on a machine' },
+  { route: '/ui/api/sandbox-requests', kind: 'change work on a machine' }, // issue #991: approving one starts a box
   // Issue #731: where a job's Windows sandbox steps run, with the hopper's own ssh key.
   { route: '/ui/api/windows-hosts', kind: 'change work on a machine' },
   { route: '/ui/api/lanes/apply', kind: 'change work on a machine' },

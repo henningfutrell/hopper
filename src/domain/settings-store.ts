@@ -5,6 +5,7 @@ import type { RateLimiterSettings } from './github-rate-limit.ts';
 import type { IntakeActorSettings } from './intake-origin.ts';
 import type { IntakeMigration } from './intake.ts';
 import type { ReadPolicy } from './read-policy.ts';
+import type { SandboxApprovals } from './sandbox-approvals.ts';
 import type { RemoteAccessSettings } from './remote-access.ts';
 import type {
   AutoAnswerSettings, AutoParkSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
@@ -52,6 +53,9 @@ export interface UserSettingsRepository {
   /** The read policy (issue #716): the assets the hopper approves read on with no person, for a template a job asks for; absent: never set, none. */
   getReadPolicy(): ReadPolicy | undefined;
   setReadPolicy(policy: ReadPolicy): void;
+  /** The sandbox approval toggles (issue #991): skip template approval, skip sandbox approval; absent: never set, both off. */
+  getSandboxApprovals(): SandboxApprovals | undefined;
+  setSandboxApprovals(approvals: SandboxApprovals): void;
   /** A machine's last discovery (issue #542); absent: never discovered. */
   getDiscovery(machineId: string): DiscoveryRecord | undefined;
   setDiscovery(record: DiscoveryRecord): void;

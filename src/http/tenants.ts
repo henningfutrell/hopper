@@ -37,6 +37,7 @@ import type { SecretProblem } from './webhooks.ts';
 import type { UserMachineLink } from '../users/runtime.ts';
 import type { UserGitHubProxy } from '../users/github-proxy.ts';
 import type { WindowsSteps } from '../windows-steps/index.ts';
+import type { SandboxRequests } from '../sandbox/requests.ts';
 import type { UsageRecorder } from '../usage/history.ts';
 import type { ResourceRecorder } from '../machines/history.ts';
 
@@ -88,6 +89,8 @@ export interface TenantParts {
   directJobs: DirectJobs;
   /** Search (issue #945): the user's index and the permission-checked search. */
   search: UserSearch;
+  /** The boxes the user's jobs ask for (issue #991). */
+  sandboxRequests: SandboxRequests;
 }
 
 /** The users and their running parts. */

@@ -17,7 +17,11 @@ export const SKILL_STREAM_TYPES = {
 } as const;
 
 /** The vault's events after which a waiting request may be answered otherwise. Never `vault.credential_asked`: asking again makes one. */
-const VAULT_CHANGES: readonly EventType[] = ['vault.credential_given', 'vault.credential_declined', 'vault.approved', 'vault.secret_set', 'vault.secret_removed', 'template.profile_approved', 'template.checked'];
+const VAULT_CHANGES: readonly EventType[] = [
+  'vault.credential_given', 'vault.credential_declined', 'vault.approved', 'vault.secret_set', 'vault.secret_removed', 'template.profile_approved', 'template.checked',
+  // A sandbox request (issue #991): approved, declined, its box started or not.
+  'vault.sandbox_approved', 'vault.sandbox_declined', 'vault.sandbox_started', 'vault.sandbox_failed',
+];
 /** The fields of a request that are asked again; `wait` and `timeout` are the watch's. */
 const ASKED = ['name', 'asset', 'why', 'credential', 'needs'];
 
