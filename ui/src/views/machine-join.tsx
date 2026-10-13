@@ -101,7 +101,7 @@ export function JoinMachineForm({ config, onDone, onSsh }: { config: MachinesCon
         <Choice on={kind === 'computer'} disabled={busy} onPick={() => setKind('computer')} label="A computer"
           hint="this computer or another one: its jobs run as you there. It needs Node.js 24 or later and herdr." />
         <Choice on={kind === 'box'} disabled={busy} onPick={() => setKind('box')} label="A sandbox box"
-          hint="a locked-down container on the computer the hopper runs on: its jobs reach nothing of that computer." />
+          hint="a locked-down container on the computer the hopper runs on: its jobs reach nothing of that computer. Jobs start their own sandbox boxes; start one here only to test." />
       </div>
       {kind === 'box' && (
         <div className="flex flex-wrap items-center gap-2 text-xs">

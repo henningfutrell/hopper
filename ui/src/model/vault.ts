@@ -1,7 +1,7 @@
 // The Vault settings page's model (issue #558): what a secret's card says — its scope, who set it and when, who last
 // changed it — and whether a name is one the hopper takes. A secret here is only its metadata: there is no value to show.
 // A secret kept in a vault backend (issue #585) says where: the backend and the reference read there at each use.
-import type { Asset, CredentialRequest, OperationProfile, ProfileAsk, TemplateRadius, TemplateView, VaultSecret, VaultView } from './wire.ts';
+import type { Asset, CredentialRequest, OperationProfile, ProfileAsk, SandboxApprovals, SandboxRequestView, TemplateRadius, TemplateView, VaultSecret, VaultView } from './wire.ts';
 
 /** The hopper's rule for a vault secret's name (src/domain/vault.ts). */
 const NAME = /^[A-Za-z][A-Za-z0-9_.-]*$/;
@@ -94,9 +94,20 @@ export function profileAskOf(asks: readonly ProfileAsk[] | undefined, template: 
 export const templateWaits = (t: TemplateView): boolean =>
   !t.approval || t.pending.image || t.pending.secrets.length > 0 || t.pending.profiles.length > 0;
 
-/** What jobs on boxes wait on a person for (issue #897): credential requests, vault grant asks, and templates that wait. */
+/** The sandbox runs jobs asked for that wait for a person (issue #991). */
+export const sandboxRunsWaiting = (v: VaultView | null): SandboxRequestView[] => (v?.sandboxRequests ?? []).filter((r) => r.state === 'waiting');
+
+/** What jobs on boxes wait on a person for (issue #897): credential requests, vault grant asks, templates and sandbox runs that wait. */
 export const accessRequestsWaiting = (v: VaultView | null): number =>
-  v === null ? 0 : (v.requests?.length ?? 0) + (v.grantAsks?.length ?? 0) + v.templates.filter(templateWaits).length;
+  v === null ? 0 : (v.requests?.length ?? 0) + (v.grantAsks?.length ?? 0) + v.templates.filter(templateWaits).length + sandboxRunsWaiting(v).length;
+
+/** What the sandbox approval toggles mean now (issue #991), in words. */
+export function sandboxApprovalsText(a: SandboxApprovals | undefined): string {
+  if (a?.skipTemplateApproval && a.skipSandboxApproval) return 'YOLO is on: a job gets its sandbox with no person. New templates are approved at once, and every sandbox run starts the moment a job asks, high blast radius too.';
+  if (a?.skipTemplateApproval) return 'New templates are approved at once. A person approves each sandbox run.';
+  if (a?.skipSandboxApproval) return 'A person approves each new template. Sandbox runs start the moment a job asks, high blast radius too.';
+  return 'A person approves each new template and each sandbox run.';
+}
 
 /** What a template's card says of its approval: approved, or what waits for a person. */
 export function approvalText(t: TemplateView): string {

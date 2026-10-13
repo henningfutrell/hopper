@@ -1,6 +1,6 @@
 // Access requests (issue #897): the one home of what jobs on boxes wait on a person for — the credentials they asked for
-// (Asked for, issue #583), the vault grants they wait for (issue #652), and the templates that wait for approval (issues
-// #558, #584). Always rendered: each panel says what will show there when nothing waits. Settings → Vault keeps the
+// (Asked for, issue #583), the vault grants they wait for (issue #652), the templates that wait for approval (issues
+// #558, #584), and the sandbox runs jobs asked for (issue #991). Always rendered: each panel says what will show there when nothing waits. Settings → Vault keeps the
 // configuration. Its nav badge, and its row in Needs you, count what waits (accessRequestsWaiting).
 import { Ticket } from 'lucide-react';
 import { Panel } from '@/components/panel';
@@ -9,6 +9,7 @@ import { sendVault, useVault, useVaultStore } from '@/store/vault';
 import { AskedFor } from './vault-requests';
 import { VaultGrants } from './vault-grants';
 import { TemplateApprovals } from './template-approvals';
+import { SandboxRuns } from './sandbox-approvals';
 
 export function AccessRequests() {
   const can = useCanAdmin();
@@ -22,6 +23,7 @@ export function AccessRequests() {
       <AskedFor requests={view?.requests ?? []} can={can} busy={busy} send={sendVault} />
       <VaultGrants view={view} />
       <TemplateApprovals templates={view?.templates ?? []} {...(view?.asks ? { asks: view.asks } : {})} can={can} busy={busy} send={sendVault} />
+      <SandboxRuns view={view} can={can} busy={busy} />
       <Panel title="Box tokens" icon={Ticket}>
         <p className="text-sm text-muted-foreground">An agent that approves or merges work, or starts a job, through the API needs a box token: a token of a grant minted with Box grant on. Mint one, or end one, on <a href="#settings/api-tokens" className="underline">Settings → API tokens</a>.</p>
       </Panel>
