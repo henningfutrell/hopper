@@ -17190,11 +17190,11 @@ no lane, join code or reconcile record is made for it, and nothing outlives the 
 **Also in this change.** A job's FAILED reason is read whole: every line after the marker, at most 4000 characters
 (`failedReason`, `src/executors/herdr/screen.ts`); before, it was cut after its first line, often at a colon. A job picked
 up with a question 5 h old waits the full auto-park timeout again (`test/integration/auto-park.test.ts`): the pick up
-already restarted the timer (issue #692), and the path that re-parked jobs in #1006 was not found.
+already restarted the timer (issue #692); the path that re-parked jobs, a question on the issue thread, was fixed in
+issue #1006's own change.
 
 **Not built.** `terraform apply` in a need box: the apply wrapper fetches the plan file with the job's proxy token, which
-a need box does not hold. A step's output on the job stream (the response carries it). Inputs over 64 KiB. Approving a
-template and starting a box in the UI hanging the HTTP server (#1003) is its own change.
+a need box does not hold. A step's output on the job stream (the response carries it). Inputs over 64 KiB. The HTTP server that hung on an approval (#1003) was fixed in its own change.
 
 **Residual risk, stated.** A step's command runs with its credentials: it can print them, and the mask is a guard
 against an accident, not a boundary. The credential lives for its mint's time (an AWS session 15 minutes, a token 10)
