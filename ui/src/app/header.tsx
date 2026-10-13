@@ -5,6 +5,7 @@
 // with GitHub: then the session ended with it, and the page asks the daemon at once and goes to sign-in (issue #513). Pending logins are
 // counted here on every screen, warning when one expires soon, a link to the Logins view (issue #477). Yolo mode shows here
 // on every screen (issue #897): off, on, or on in some repositories, a link to its one switch in Settings → Yolo mode.
+// A stall of the hopper's event loop shows here for 10 minutes, a warning with how long it was and the routes in flight (issue #1002).
 // The search box (issue #945, search-box.tsx) finds jobs from every screen at tablet width and up; a phone uses the Search entry.
 // On a phone the wordmark, the help link and the API reference give way (Help stays in the user menu), so the version badge with its channel, the connection dot and
 // the user menu are all the bar holds (issues #497, #666).
@@ -15,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dot, StatusBadge } from '@/components/status';
 import { duration } from '@/model/format';
+import type { Health } from '@/model/wire';
 import { connectionEnded } from '@/model/sources';
 import { yoloIndicator } from '@/model/yolo-mode';
 import { recheckSession, useHopper } from '@/store';
@@ -24,6 +26,10 @@ import { useLoginsBadge, useSignedInWith } from '@/store/selectors';
 import { SearchBox } from './search-box';
 import { UpdateButton } from './update';
 import { UserMenu } from './user-menu';
+
+/** What a stall of the event loop was (issue #1002): how long, when, and the routes in flight. */
+const stallTitle = (s: NonNullable<Health['eventLoopStall']>): string =>
+  `The hopper stopped answering for ${(s.ms / 1000).toFixed(1)} s at ${new Date(s.at).toLocaleTimeString()}${s.during.length ? `, during ${s.during.join(', ')}` : ''}. Its log says more.`;
 
 export function Header({ nav }: { nav?: React.ReactNode }) {
   const health = useHopper((s) => s.health);
@@ -68,6 +74,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
             <span className="font-mono">{health?.router ?? '…'}</span>
             {health?.fallback && <StatusBadge status="fallback" tone="warn" />}
           </div>
+          {health?.eventLoopStall && <StatusBadge status="stalled" tone="warn" title={stallTitle(health.eventLoopStall)} />}
           <span className="num hidden text-muted-foreground sm:inline">up {health ? duration(health.uptimeS) : '…'}</span>
           <span data-slot="connection" className="flex items-center gap-1.5 text-muted-foreground">
             <Dot tone={conn === 'live' ? 'ok' : 'warn'} pulse={conn === 'live'} /><span className="hidden sm:inline">{conn}</span>

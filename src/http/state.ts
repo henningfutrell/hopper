@@ -1,4 +1,5 @@
 // Read routes over engine state. Nothing here changes anything.
+import type { EventLoopStall } from './event-loop.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock, PluginsView, UserStore } from '../domain/ports.ts';
@@ -51,17 +52,19 @@ export function routerView(plugins: PluginsView) {
 }
 
 /** The request's user's engine state (issue #158); `/api/health`'s version and uptime are the instance's. */
-export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts; clock: Clock; version: string; port: () => number; sandboxes: Pick<Sandboxes, 'view'> }): void {
+export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts; clock: Clock; version: string; port: () => number; sandboxes: Pick<Sandboxes, 'view'>; stall?: () => EventLoopStall | undefined }): void {
   const startedAt = o.clock.now().getTime();
 
   // A request with no user (loopback without a session, several users: issue #221) reads the instance's
   // health only — install.sh and self-update probe it — never a user's router or executors.
   app.get('/api/health', async (req) => {
     const uptimeS = Math.floor((o.clock.now().getTime() - startedAt) / 1000);
-    if (userIdOf(req) === undefined) return { ok: true, version: o.version, uptimeS };
+    // The last stall of the event loop (issue #1002), while it is shown: the instance's, like the uptime.
+    const stall = o.stall?.(), loop = stall ? { eventLoopStall: stall } : {};
+    if (userIdOf(req) === undefined) return { ok: true, version: o.version, uptimeS, ...loop };
     const { engine, plugins } = o.tenant(req);
     const r = plugins.routerStatus();
-    return { ok: true, version: o.version, router: r.name, fallback: r.fallback, executors: engine.executorNames, parkingExecutors: engine.parkingExecutors, reviewingExecutors: engine.reviewingExecutors, uptimeS };
+    return { ok: true, version: o.version, router: r.name, fallback: r.fallback, executors: engine.executorNames, parkingExecutors: engine.parkingExecutors, reviewingExecutors: engine.reviewingExecutors, uptimeS, ...loop };
   });
   app.get('/api/queue', async (req) => o.tenant(req).engine.getQueue());
   // Priority lanes (issue #535): the settings, the lanes chosen, every lane's reliability and why.
