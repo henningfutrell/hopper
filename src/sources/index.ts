@@ -8,7 +8,7 @@ export { createGitHubSource, createFakeGitHub } from './github/index.ts';
 export type { FakeGitHub, GitHubApi, GitHubSourceOptions } from './github/index.ts';
 export { githubAccountOptions, githubAppOptions, sourceConfig } from './config.ts';
 export type { GitHubAccountOptions, GitHubAppOptions, GitHubSourceConfig } from './config.ts';
-export { APP_MISSING, appProblem, createAccountSource, createAppSource } from './compose.ts';
+export { APP_MISSING, appProblem, createAccountSource, createAppSource, followEvery } from './compose.ts';
 export { createAccountGitHubApi } from './github/account/api.ts';
 export { loadGitHubApp } from './github/app/index.ts';
 export { createSourceSync } from './sync.ts';

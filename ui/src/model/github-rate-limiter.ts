@@ -1,5 +1,5 @@
 // The shared rate limiter in the UI (issue #436), pure: the summary of the settings, the change a save sends, one line
-// per rate-limit bucket, and the cache's hit rate. The intake reserve is issue #983's, the intake sync interval issue #985's.
+// per rate-limit bucket, and the cache's hit rate. The intake reserve is issue #983's, the intake sync interval and the in-motion cycle issue #985's.
 import type { RateBucket, RateLimiterSettings, RateLimiterView } from './wire.ts';
 
 /** Each setting's label and range, as the daemon allows it. */
@@ -9,6 +9,7 @@ const FIELDS: Record<keyof RateLimiterSettings, { label: string; min: number; ma
   batchSize: { label: 'Batch size', min: 1, max: 100 },
   intakeReserve: { label: 'Kept for job work', min: 0, max: 5000 },
   intakeSyncMinutes: { label: 'Intake sync every', min: 1, max: 1440 },
+  prCycleMinutes: { label: 'Pull requests in motion every', min: 1, max: 1440 },
 };
 
 export type RateLimiterDraft = Record<keyof RateLimiterSettings, string>;
@@ -19,8 +20,9 @@ export function rateLimiterSummary(s: RateLimiterSettings): string {
   const reserve = s.reserve === 0 ? 'no calls are kept in reserve' : `${s.reserve} calls are kept in reserve`;
   const intake = s.intakeReserve === 0 ? 'intake keeps no calls for job work' : `intake stops at ${s.intakeReserve} calls left, for job work`;
   const every = s.intakeSyncMinutes === 1 ? 'intake lists the repositories every minute' : `intake lists the repositories every ${s.intakeSyncMinutes} min`;
+  const cycle = s.prCycleMinutes === 1 ? 'pull requests in motion are read every minute' : `pull requests in motion are read every ${s.prCycleMinutes} min`;
   const batch = s.batchSize === 1 ? 'GitHub watches poll one at a time' : `GitHub watches poll ${s.batchSize} at a time`;
-  return `${slow}; ${reserve}; ${intake}; ${every}; ${batch}.`;
+  return `${slow}; ${reserve}; ${intake}; ${every}; ${cycle}; ${batch}.`;
 }
 
 /** The change a save sends: only what differs (undefined: nothing to save), or why the draft is refused. */

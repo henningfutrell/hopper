@@ -39,7 +39,7 @@ import { withSystemScope } from '../vault/system-view.ts';
 import type { SystemSecrets } from '../vault/system.ts';
 import { createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
-import { createSourceSync, withFixedStatuses, type SourceSync } from '../sources/index.ts';
+import { createSourceSync, followEvery, withFixedStatuses, type SourceSync } from '../sources/index.ts';
 import { accountEvents, createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
 import { createUserGitHubProxy, type UserGitHubProxy } from './github-proxy.ts';
 import { createUserLink, type UserLink } from './link.ts';
@@ -362,7 +362,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   });
   jobsOnMachine = (name) => engine.jobsOnMachine(name);
   const sync = createSourceSync({
-    sources: jobSources(), host: engine.sourceHost, clock, jevFirst: minorDecisions,
+    // The in-motion cycle (issue #985): the pull requests in motion every cycle, every followed one each intake sync interval.
+    sources: jobSources(), host: engine.sourceHost, clock, jevFirst: minorDecisions, followEvery,
     pollMs: (name) => running.find((r) => r.source.name === name)?.pollMs ?? (name === directJobs.source.name ? DIRECT_POLL_MS : SEAM_SOURCE_POLL_MS),
   });
   // The failure assessor (issue #509): its runs again go through the sync loop's Run again.

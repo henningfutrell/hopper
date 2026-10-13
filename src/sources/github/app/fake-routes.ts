@@ -90,10 +90,6 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
     const p = paginate(ctx, req, list.map((i) => restIssue(repo, i)));
     return { status: 200, body: p.items, headers: p.headers };
   }
-  if (req.method === 'GET' && rest === '/events') {
-    const p = paginate(ctx, req, repo.events.map((e) => ({ id: e.id, type: e.type, created_at: e.createdAt, actor: { login: 'someone' } })));
-    return { status: 200, body: p.items, headers: p.headers };
-  }
   if (req.method === 'POST' && rest === '/labels') {
     const name = String(body.name ?? '');
     if (repo.labels.has(name)) return { status: 422, body: { message: 'Validation Failed', errors: [{ resource: 'Label', code: 'already_exists', field: 'name' }] } };

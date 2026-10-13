@@ -24,6 +24,7 @@ import type { GitMirrors } from '../git-mirror/mirrors.ts';
 import { sourceConfig, type GitHubAccountOptions, type GitHubAppOptions } from './config.ts';
 import type { GitHubListingRepository } from '../domain/github-listing.ts';
 import { githubLimiter } from '../github-limiter/limiter.ts';
+import type { FollowEvery } from './follow-rounds.ts';
 
 export const APP_MISSING = 'no GitHub App configured';
 /** The app source takes issues assigned to the user's connected account (issue #387): none, nothing to take. */
@@ -66,6 +67,12 @@ export interface GitHubSourceDeps {
   /** The user's listing cache (issue #985). Absent: kept in memory. */
   listings?: GitHubListingRepository;
 }
+
+/** The in-motion cycle's intervals (issue #985), as the hopper's admin set them: the cycle, and every followed pull request each intake sync interval. */
+export const followEvery = (): FollowEvery => {
+  const s = githubLimiter.settings();
+  return { cycleMs: s.prCycleMinutes * 60_000, allMs: s.intakeSyncMinutes * 60_000 };
+};
 
 /** What both sources share of the listing (issue #985): the cache, and the intake sync interval the hopper's admin set. */
 const listingOf = (o: GitHubSourceDeps) => ({
@@ -181,6 +188,10 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     follow(job, act) {
       const s = current();
       return s?.follow ? s.follow(job, act) : Promise.reject(new SourceError(why(), false));
+    },
+    readFollowed(jobs) {
+      const s = current();
+      return s?.readFollowed ? s.readFollowed(jobs) : Promise.reject(new SourceError(why(), false));
     },
     unfollowedPullRequests(jobs) {
       const s = current();

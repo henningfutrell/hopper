@@ -69,7 +69,7 @@ describe('the in-motion cycle', () => {
     expect(seen.followed.at(-1)).toEqual(['motion']);
     expect(seen.reconciled).toBe(1);
     for (let t = 4; t < 15; t++) await pass(POLL);
-    expect(seen.read.map((r) => r.join())).toEqual(['motion,idle', 'motion', 'motion', 'motion']);
+    expect(seen.read.map((r) => r.join())).toEqual(['motion,idle', 'motion', 'motion', 'motion', 'motion']);
     await pass(POLL);
     expect(seen.read.at(-1)).toEqual(['motion', 'idle']); // the reconcile interval: every one
     expect(seen.reconciled).toBe(2);
@@ -89,6 +89,7 @@ describe('the in-motion cycle', () => {
     const source = createFakeSource();
     const { world, sync, seen } = setUp(source);
     followingJob(world, 'idle', idle);
+    followingJob(world, 'merged', idle, 'merged');
     sync.start();
     await settle(12);
     await sync.syncNow();
@@ -99,7 +100,7 @@ describe('the in-motion cycle', () => {
 
   it('a merge syncs again at once and follows every one: the others are seen on the new base', async () => {
     const source = createFakeSource();
-    let merged = false;
+    let merged = true;
     let round: string[] = [];
     const followed: string[][] = [];
     source.follow = async (job) => {
@@ -114,6 +115,7 @@ describe('the in-motion cycle', () => {
     followingJob(world, 'idle', idle);
     sync.start();
     await settle(12);
+    merged = false;
     await pass(POLL);
     await pass(POLL);
     await pass(POLL); // the cycle merges `motion`

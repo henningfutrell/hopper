@@ -8,6 +8,7 @@ import type { GitHubApi } from '../api.ts';
 import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../app/graphql.ts';
 import { batchGraphQL } from '../app/graphql-batch.ts';
 import { listRepos } from '../app/graphql-listing.ts';
+import { openPullRequestsIn, pullRequestStates } from '../app/graphql-pulls.ts';
 import { SOURCE_DEFER_AFTER_MS, makeRequest, rateLimitedError } from '../app/http.ts';
 import * as rest from '../app/rest.ts';
 
@@ -59,7 +60,6 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     removeLabels: (repo, number, labels) => call(`remove labels ${repo}#${number}`, (t) => rest.removeLabels(req, t, repo, number, labels)),
     assignedAt: (repo, number, login) => call(`events of ${repo}#${number}`, (t) => rest.assignedAt(req, t, repo, number, login)),
     issueEvents: (repo, number) => call(`events of ${repo}#${number}`, (t) => rest.issueEvents(req, t, repo, number)),
-    repoEvents: (repo) => call(`event feed of ${repo}`, (t) => rest.repoEvents(intake, t, repo)),
     addAssignees: (repo, number, logins) => call(`assign ${repo}#${number}`, (t) => rest.addAssignees(req, t, repo, number, logins)),
     listAssignedIssues: (label) => call('issues assigned to the account', (t) => rest.listAssignedIssues(intake, t, label)),
     listRepos: (repos, labels) => call(`list ${repos.length} repositories`, (t) => listRepos(intake, t, repos, labels)),
@@ -72,6 +72,8 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     crossReferences: (repo, number) => call(`cross-references of ${repo}#${number}`, (t) => crossReferences(ask, t, repo, number)),
     pullRequest: (repo, number) => call(`pull request ${repo}#${number}`, (t) => pullRequest(ask, t, repo, number)),
     openPullRequests: (repo) => call(`open pull requests of ${repo}`, (t) => openPullRequests(req, t, repo)),
+    openPullRequestsIn: (repos) => call(`open pull requests of ${repos.length} repositories`, (t) => openPullRequestsIn(req, t, repos)),
+    pullRequestStates: (refs) => call(`${refs.length} pull requests`, (t) => pullRequestStates(req, t, refs)),
     merge: (repo, number) => call(`merge ${repo}#${number}`, (t) => rest.mergePullRequest(req, t, repo, number)),
     closeWithoutMerge: (repo, number) => call(`close ${repo}#${number}`, (t) => rest.closePullRequest(req, t, repo, number)),
     toDraft: (repo, number) => call(`draft ${repo}#${number}`, (t) => rest.convertToDraft(req, t, repo, number)),

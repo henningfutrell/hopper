@@ -1,8 +1,9 @@
 // Reconciling done jobs with GitHub (issue #763, design.md "PR waiting"): a done job that follows no pull request — it
 // ended before the hopper followed pull requests, or its follow ended — whose issue is open and has an open pull request
 // in its repository is answered that pull request, so the sync loop follows it from now on: the Pull requests list shows it,
-// yolo mode merges it, and tending tends it. One listing of open pull requests per repository; the issue is read only for
-// a match. The pull request: the newest that closes the issue by a closing keyword, else the newest that ships part of it
+// yolo mode merges it, and tending tends it. The open pull requests of every such repository in one batched read (issue
+// #985, `openPullRequestsIn`), never one listing for each; the issue is read only for a match. A repository GitHub does not
+// answer for is logged and asked again at the next reconcile; when none answers, it throws. The pull request: the newest that closes the issue by a closing keyword, else the newest that ships part of it
 // ("Part of #N"), else the newest on a branch named for it.
 // A pull request is followed to its end, whatever its issue (issue #786): an issue closed as completed — closed from under
 // its open part, or by another pull request — still has its open pull request followed, if that one closes it by keyword
@@ -36,8 +37,14 @@ export async function unfollowedPullRequests(api: GitHubApi, jobs: Job[]): Promi
     if (repo && j.source?.number) byRepo.set(repo, [...(byRepo.get(repo) ?? []), j]);
   }
   const found: FoundPullRequest[] = [];
+  if (byRepo.size === 0) return found;
+  const open = await api.openPullRequestsIn([...byRepo.keys()]);
+  if (open.repos.size === 0 && open.repoErrors.size > 0) throw new Error([...open.repoErrors].map(([r, e]) => `${r}: ${e}`).join('; '));
+  for (const [repo, error] of open.repoErrors) console.warn(`hopper: reconciling the pull requests of ${repo} failed, asked again at the next reconcile: ${error}`);
   for (const [repo, js] of byRepo) {
-    const prs = [...await api.openPullRequests(repo)].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const answered = open.repos.get(repo);
+    if (!answered) continue;
+    const prs = [...answered].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     for (const j of js) {
       if (!pullRequestFor(prs, repo, j.source!.number!)) continue;
       const issue = await api.getIssue(repo, j.source!.number!);

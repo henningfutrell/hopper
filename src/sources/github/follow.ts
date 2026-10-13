@@ -25,11 +25,16 @@
 // A merge held (issue #939, merge-gate.ts): ready, it conflicts with a pull request of its repository the hopper merged
 // earlier in the same sync pass, so the hopper does not merge it (`seen.mergeHeldBehind`); the next sync sees it conflict
 // with the new base and tends it. A person's Merge now still merges it.
+// The batch first (issue #985, the in-motion cycle): after the source read the followed pull requests in one batch
+// (`readFollowed`), a follow of an open one takes its state from that read, once, and reads GitHub only when something
+// changed that a read must confirm — merged or closed, a new head or base, merge conflicts changed or not known yet, checks
+// that fail now (the tend is told which), its item closed as not planned, a part that names it no more — or before the
+// hopper's merge. A follow with no batch answer reads GitHub as before.
 
 import { rechecksMerge, readyToMerge, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen } from '../../domain/types.ts';
 import type { Clock } from '../../domain/ports.ts';
 import { SourceError } from '../../domain/ports.ts';
-import { GitHubApiError, type GitHubApi } from './api.ts';
+import { GitHubApiError, type GitHubApi, type PullRequestState } from './api.ts';
 import { closesByKeyword, isClosedAsCompleted, isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
 import { LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
 import { allPartsDone, partsOf } from './parts.ts';
@@ -42,11 +47,44 @@ interface Followed { pullRequest?: string; follow?: string; part?: boolean; seen
  * What following a pull request needs beyond the report's: whether the hopper may merge in a repository (yolo mode), and
  * the clock for the no-checks grace window (issue #677; absent: the system clock).
  */
-export interface FollowContext extends ReportContext { yoloMode?: (repo: string) => boolean; clock?: Clock }
+export interface FollowContext extends ReportContext {
+  yoloMode?: (repo: string) => boolean;
+  clock?: Clock;
+  /** The batch's answer for pull request `number` of `repo`, taken once (issue #985); absent or undefined: read GitHub. */
+  batched?: (repo: string, number: number) => PullRequestState | undefined;
+}
 
 type PullState = 'open' | 'merged' | 'closed';
 
 const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
+const repoOfPull = (url: string): string => /([^/]+\/[^/]+)\/pull\/\d+/.exec(url)?.[1] ?? '';
+const pushedAtOf = (pr: { createdAt: string; headCommittedAt?: string }): string =>
+  (pr.headCommittedAt && pr.headCommittedAt > pr.createdAt ? pr.headCommittedAt : pr.createdAt);
+
+/**
+ * What is seen of the open pull request as the batch tells it (issue #985), when nothing changed that a read must confirm;
+ * undefined: read it from GitHub. Checks a read saw fail on the same head stay failing while the batch says pending: the
+ * batch reads the rollup only, which stays pending while other checks run.
+ */
+function seenFromBatch(ctx: FollowContext, job: Job, s: Followed, url: string): PullRequestSeen | undefined {
+  const { repo, number } = job.source as { repo: string; number: number };
+  const before = s.seen;
+  const b = repoOfPull(url).toLowerCase() === repo.toLowerCase() ? ctx.batched?.(repo, numberOf(url)) : undefined;
+  if (!b || !before || b.state !== 'open' || b.mergeable === 'UNKNOWN') return undefined;
+  if (b.issue?.state === 'closed' && b.issue.stateReason === 'not_planned') return undefined;
+  if (s.part && !new RegExp(`\\bpart of #${number}\\b`, 'i').test(b.body)) return undefined;
+  const conflicting = b.mergeable === 'CONFLICTING';
+  const pushedAt = pushedAtOf(b);
+  if (pushedAt !== before.pushedAt || b.base !== before.base || conflicting !== before.conflicting) return undefined;
+  const failing = b.checks === 'failing' || (before.checks === 'failing' && b.checks === 'pending');
+  if (failing && before.checks !== 'failing') return undefined;
+  const seen: PullRequestSeen = {
+    draft: b.isDraft, conflicting, checks: failing ? 'failing' : b.checks ?? 'none', openedAt: b.createdAt, pushedAt, ...(b.base ? { base: b.base } : {}),
+    ...(b.headRef ? { headRef: b.headRef } : {}), ...(failing && before.failedChecks ? { failedChecks: before.failedChecks } : {}),
+    ...(before.commits ? { commits: before.commits } : {}), ...(before.files ? { files: before.files } : {}),
+  };
+  return ctx.yoloMode?.(repo) && readyToMerge(seen, (ctx.clock?.now() ?? new Date()).getTime()) ? undefined : seen;
+}
 
 /**
  * The newest open pull request of the issue, in any state of review (issue #677: the report names only a ready one): one
@@ -103,7 +141,7 @@ async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRe
   }
   const pr = await ctx.api.pullRequest(repo, numberOf(url));
   if (!pr) return { seen: before ?? { draft: false, conflicting: false, checks: 'none' } };
-  const pushedAt = pr.headCommittedAt && pr.headCommittedAt > pr.createdAt ? pr.headCommittedAt : pr.createdAt;
+  const pushedAt = pushedAtOf(pr);
   const seen: PullRequestSeen = {
     draft: pr.isDraft, conflicting: pr.conflicting, checks: pr.checks ?? 'none', openedAt: pr.createdAt, pushedAt, ...(pr.base ? { base: pr.base } : {}),
     ...(pr.headRef ? { headRef: pr.headRef } : {}), ...(pr.failedChecks?.length ? { failedChecks: pr.failedChecks } : {}),
@@ -188,6 +226,11 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     if (!s.pullRequest) {
       const found = await openPullRequestOf(ctx.api, repo, number);
       if (found) s = { ...s, pullRequest: found.url, ...(found.part ? { part: true } : {}) };
+    }
+    const batched = !act && s.pullRequest ? seenFromBatch(ctx, job, s, s.pullRequest) : undefined;
+    if (batched) {
+      if (JSON.stringify(batched) === JSON.stringify(s.seen)) return undefined;
+      return { outcome: 'open', pullRequest: s.pullRequest!, part: s.part === true, state: { ...s, seen: batched } };
     }
     let now = await stateOf(ctx.api, repo, number, s);
     if (!act && (!now || now.state === 'open') && await isClosedAsNotPlanned(ctx.api, repo, number)) return await abandon(ctx.api, repo, number, s, now?.url);

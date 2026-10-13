@@ -1525,7 +1525,7 @@ remains. The only mutations are the owner's actions in the local UI, behind a UI
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass), intake from the listing cache (`github/listing.ts`) and its listed reads (`github/listed-reads.ts`, issue #985) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its signals (`sync-signals.ts`), its watch (`sync-watch.ts`, issue #967: a sync at once when a followed repository moved, or after a merge), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
+| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass), intake from the listing cache (`github/listing.ts`) and its listed reads (`github/listed-reads.ts`, issue #985) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822; `github/app/graphql-pulls.ts` and `github/followed-batch.ts`, issue #985: the in-motion cycle's), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its signals (`sync-signals.ts`), its follow rounds (`follow-rounds.ts`, issue #985: the in-motion cycle, and a sync at once after a merge), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
 | `src/events/` | versioned payload schemas (zod) per event type, the envelope, JSON Schema export | everything but `domain/` and `zod` |
 | `src/http/ui/` | UI session: login codes, session cookie, CSRF, origin/host guard, the UI-only mutation routes | engine internals beyond the engine's public commands |
 
@@ -1940,8 +1940,8 @@ cannot resume, or any other state, the job fails `not complete:` and is handed t
 
 **Tending a waiting pull request** (issue #736: conflicts must not pile up for a person). A PR waiting job's pull request
 can go bad after its job ended: its base branch moves and it has merge conflicts with it, or a check fails. Each sync
-— on the timer, on the **sync watch** when its repository moved, and at once after a merge or close (issue #967, "PR
-tending without lanes, part 4") — follows it (`follow.ts`) and keeps what it saw (`seen`); after that follow, off the job's report chain, the sync loop's
+— on its round of the **in-motion cycle** (issue #985, "The in-motion cycle"), and at once after a merge or close (issue
+#967) — follows it (`follow.ts`) and keeps what it saw (`seen`); after that follow, off the job's report chain, the sync loop's
 after-done half (`src/sources/after-done.ts`) asks `tendStep(seen)`: merge conflicts → `rebase`, else failing checks →
 `fix_checks`; a draft is a person's and is never tended. A step due, the job's item **runs again** on Run again's own path
 (`job.rerun`, `by: "tending"`), its prompt followed by the **tend brief** (`tendBrief`: work on that pull request's
@@ -14728,18 +14728,20 @@ at each round. A GitHub watch still polling from an earlier round is skipped, ne
 **The intake reserve** (issue #983, 2026-10-12). Intake polls every selected repository; with many repositories it spent the
 whole limit, and a job's end report and a rerun's read of its issue were then refused ("GitHub rate-limited the hopper"). So
 the job sources' adapters (`src/sources/github/app/api.ts`, `account/api.ts`) make their **intake calls** — `listRepos`
-(was `listOpenIssues`, issue #985), `listAssignedIssues`, `projectItems`, `listInstalledRepos`, `repoEvents` — through a `makeRequest` with `intake: true`. Such
+(was `listOpenIssues`, issue #985), `listAssignedIssues`, `projectItems`, `listInstalledRepos` — through a `makeRequest` with `intake: true`. Such
 a call, at `intakeReserve` calls left or below, waits for the reset; with `deferAfterMs` it is a **deferred call**, so the
 sync pass ends and says when. Every other call — the job's own reads and writes, the report, the rerun — goes as before,
 down to `reserve`. The pacing is the same for both: an intake call takes no longer slot. A 304 still costs no call, but an
 intake call at the intake reserve is not asked at all: the limiter does not know beforehand that the answer is unchanged.
-The other asks of the issue are already in place: conditional requests (above), syncs started by a followed repository's
-event feed (issue #967), and the buckets, calls left and reset time on Settings → GitHub rate limit.
+The other asks of the issue are already in place: conditional requests (above), and the buckets, calls left and reset time
+on Settings → GitHub rate limit. (Syncs started by a followed repository's event feed, issue #967, are gone: issue #985's
+in-motion cycle replaced them.)
 
 **Settings.** `slowBelowPercent` (0–100, default 25), `reserve` (0–5000, default 50), `batchSize` (1–100, default 10),
 `intakeReserve` (0–5000, default 1000; a record saved before it reads as the default), `intakeSyncMinutes` (1–1440,
 default 15, issue #985: the **intake sync interval**, "Repository listings"; a record saved before it reads as the
-default), whole numbers. The instance's (`githubRateLimiter` in the instance settings): one limiter serves every user. Changed only
+default), `prCycleMinutes` (1–1440, default 3, issue #985: the **in-motion cycle**, "The in-motion cycle"; a record saved
+before it reads as the default), whole numbers. The instance's (`githubRateLimiter` in the instance settings): one limiter serves every user. Changed only
 by the hopper's admin, on Settings → GitHub rate limit (`POST /ui/api/github-rate-limiter`, the `instance` guard). The
 change goes to the process's limiter at once: the next call and the next poll round use it, no restart; a pacing slot
 kept from the old settings is dropped. A change is `github_rate_limiter.settings_changed`, an instance event.
@@ -14864,11 +14866,73 @@ kept: a sub-issue that closes need not change its parent's `updatedAt`. Kept in 
 read once again.
 
 So between two listings a change on GitHub is seen late: a new labelled issue, an issue closed or unassigned, at most
-one interval later; Sync now sees it at once. The pull requests the jobs follow are not on this schedule: `follow.ts`
-reads them at each sync (issue #985 part 3 moves them to the in-motion cycle).
+one interval later; Sync now sees it at once. The pull requests the jobs follow are on the in-motion cycle (below).
 
-Not yet (later parts of issue #985): the in-motion pull request cycle replaces the event feeds (`moved.ts`, `WATCH_MS`)
-and the reads for each job in `follow.ts`; calls per hour by kind; the budget test.
+## The in-motion cycle (issue #985 part 3, 2026-10-13)
+
+Before it, each sync (every `pollSeconds`, default 60) followed every followed pull request with its own reads — the pull
+request, its mentions, its closer, its issue, its cross-references — and the sync watch read each followed repository's
+event feed every 15 seconds (issue #967). Both grew with the number of pull requests and repositories.
+
+**Rounds** (`src/sources/follow-rounds.ts`, `followRound`; `src/sources/after-done.ts`, `FollowRound`). A sync follows pull
+requests in rounds:
+- `all`: every followed pull request, reconciling, the second judgement of a job that waits on a person, and the
+  cross-references. Each **intake sync interval** (`intakeSyncMinutes`, default 15), and at once when forced: the first
+  sync, a sync a person asked for (Sync now, an intake action, a new connection), and the sync after a merge or close.
+- `in_motion`: only the pull requests **in motion** (`inMotion`, `src/domain/pull-requests.ts`): not seen yet, checks
+  still running, no checks within the grace window after the last push, or ready while yolo mode merges it. Each
+  `prCycleMinutes` (default 3, a setting of the shared rate limiter: Settings → GitHub rate limit,
+  `POST /ui/api/github-rate-limiter`).
+- `none`: between rounds. Tending still runs at each sync, from what was last seen.
+- A round counts from when it starts, also when its read failed: a failing GitHub is asked again at the next round, not at
+  each sync. The intervals are read at each sync. Without them (`SourceSyncOptions.followEvery` absent, tests), every sync
+  is an `all` round.
+- A merge or close recorded while a source syncs makes its next sync run at once (`Slot.again`) as an `all` round, so the
+  hopper's own merges still cascade: the others are seen on the new base in seconds.
+
+**The batch first** (`JobSource.readFollowed`, `src/sources/github/followed-batch.ts`). A round asks the source for every
+pull request it follows in one batched read before its follows: `pullRequestStates` on the GitHub port
+(`src/sources/github/app/graphql-pulls.ts`, both adapters): `p0: repository(owner: $o0, name: $n0) { pr: pullRequest(number:
+7) { state isDraft mergeable createdAt body headRefName headRefOid baseRefName commits(last: 1) { … statusCheckRollup { state }
+} } issue: issue(number: 3) { state stateReason updatedAt } }`, `p1: …`, at most `PULLS_MAX` = 50 to a request, one request
+for each installation token. An error on one alias fails only that pull request; checks the credential may not read are
+`unknown`. A failed request is logged, and the round follows nothing.
+
+**Each follow reads the batch** (`seenFromBatch`, `src/sources/github/follow.ts`). The follow of an open pull request takes
+its state from the batch, once, and keeps what it saw (`seen`) with no other read. It reads GitHub as before only when:
+merged or closed; a new head commit, a new base, or merge conflicts that changed or are not computed yet (`UNKNOWN`);
+checks that fail now (the read names the failed checks for the tend); its issue closed as not planned (abandoned); a part
+whose body names the issue no more; or ready while yolo mode merges (a read before the write). Checks a read saw fail on
+the same head stay failing while the batch says pending: the batch reads only the rollup, which stays pending while other
+checks run. A pull request the batch has no answer for is read as before. A person's Merge now and Close PR read and write
+as before, at once.
+
+**Reconciling** (`src/sources/github/reconcile.ts`) runs only in an `all` round, and reads the open pull requests of every
+candidate repository in one batched read (`openPullRequestsIn`: `u0: repository(…) { pullRequests(states: OPEN, first: 100,
+orderBy: { field: CREATED_AT, direction: DESC }) { … } }`, at most `OPEN_PULLS_REPOS_MAX` = 25 repositories to a request),
+never one listing for each repository. A repository GitHub does not answer for is logged and asked again at the next
+reconcile; none answering throws.
+
+**Gone**: the sync watch (`src/sources/sync-watch.ts`, `WATCH_MS`), GitHub's event feed (`src/sources/github/moved.ts`,
+`GitHubApi.repoEvents`, `JobSource.moved`) and the fake GitHub's feeds.
+
+**Expected budget at 60 repositories** (one hour, the defaults): intake listings 3 requests × 4; reconciling 1–3 requests
+× 4; the in-motion cycle 1 request × 20 (the 4 `all` rounds among them) — at most 44 calls an hour while the jobs follow at
+most 50 pull requests. Calls per hour by kind and the test that holds this are issue #985 part 4.
+
+**Trade-off.** A change on GitHub to an idle pull request is seen late: one merged or closed by a person on GitHub, or a
+new merge conflict after a merge that was not the hopper's, at most one intake sync interval (15 minutes) later. Sync now
+sees it at once. A pull request in motion is seen at most one cycle (3 minutes) later; before, it took 15 seconds to a
+minute.
+
+**Webhooks: not part of issue #985** (decision recorded 2026-10-13). The issue's "webhook changes show up in hopper within
+seconds" is declined: the proposal path accepted for the issue's job (pull-only in-motion cycle) was selected with its
+sign-off that webhooks are left out. The hopper takes no inbound webhooks and pulls by design ("Remote access"); the
+in-motion cycle and Sync now are what make a change seen.
+
+Not yet (issue #985 part 4): calls per hour by kind on Settings → GitHub rate limit, and the budget test against the fake
+GitHub. A targeted read of one pull request when a person opens its job's page is not made: no new route; Sync now reads
+every followed pull request at once.
 
 ## The hopper label means full automation (issue #435, 2026-10-11)
 
@@ -16535,6 +16599,9 @@ additions kept, the base branch's first; a changed line is a real conflict; a fi
 resolved), and the repository's own marks (`test/store/migration-lists.test.ts`).
 
 ## PR tending without lanes, part 4: a sync on GitHub's events (issue #967, 2026-10-12)
+
+Replaced by issue #985's in-motion cycle ("The in-motion cycle", 2026-10-13): the sync watch and the event feeds below are
+gone; a sync at once after a merge or close stays. Kept here as the record of what was.
 
 A pull request's status changed only at a sync, and tending ran only then: a pull request merged on GitHub stayed on the
 list until the next sync, and each merge left the other pull requests to wait a full poll interval for their base merge.

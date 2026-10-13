@@ -1,0 +1,1 @@
+- The hopper also checks your open pull requests with far fewer calls to GitHub. It looks at the ones with checks still running, or about to merge, every 3 minutes, and at all of them every 15 minutes. A pull request someone merges on GitHub can take up to 15 minutes to show. Use Sync now to look at once, or set how often in Settings, under GitHub rate limit.

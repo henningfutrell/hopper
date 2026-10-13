@@ -30,18 +30,22 @@ export interface FakeIssueInput {
   comments?: FakeCommentInput[];
 }
 
-/** What a repository listing reads of a pull request (issue #985); `checks`: GitHub's rollup state, absent for no checks. */
-export interface FakePullFields { headRef?: string; headOid?: string; base?: string; isDraft?: boolean; mergeable?: string; checks?: string }
+/**
+ * What a repository listing and a batched pull request read tell of a pull request (issue #985): `checks`, GitHub's rollup
+ * state, absent for no checks; `state`, GitHub's (default `OPEN`); `committedAt`, when its head commit was made; its body is
+ * the issue entry's.
+ */
+export interface FakePullFields {
+  headRef?: string; headOid?: string; base?: string; isDraft?: boolean; mergeable?: string; checks?: string;
+  state?: 'OPEN' | 'CLOSED' | 'MERGED'; createdAt?: string; committedAt?: string;
+}
 
 /** A pull request as GraphQL tells it; `headCommittedAt`: when its head commit was made (issue #618). */
 export interface FakePullRequest { url: string; createdAt: string; isDraft: boolean; mergeable?: string; headCommittedAt?: string }
 
 export interface FakeMention extends FakePullRequest { state: 'OPEN' | 'CLOSED' | 'MERGED'; body: string; repo: string; mergedAt?: string }
 
-/** One event of a repository's feed (issue #967), as GitHub lists it: newest first. */
-export interface FakeRepoEvent { id: string; type: string; createdAt: string }
-
-export interface FakeRepoInput { owner: string; name: string; labels?: string[]; issues?: FakeIssueInput[]; events?: FakeRepoEvent[] }
+export interface FakeRepoInput { owner: string; name: string; labels?: string[]; issues?: FakeIssueInput[] }
 
 export interface FakeInstallationInput {
   id: number;
@@ -96,7 +100,6 @@ export interface FakeRepo {
   installationId: number;
   labels: Set<string>;
   issues: Map<number, FakeIssue>;
-  events: FakeRepoEvent[];
 }
 
 export interface FakeTokenRecord {
@@ -147,7 +150,7 @@ export function buildState(o: FakeGitHubOptions, now: string): FakeState {
         });
       }
       state.repos.set(`${r.owner}/${r.name}`, {
-        owner: r.owner, name: r.name, installationId: inst.id, labels: new Set(r.labels ?? []), issues, events: r.events ?? [],
+        owner: r.owner, name: r.name, installationId: inst.id, labels: new Set(r.labels ?? []), issues,
       });
     }
   }

@@ -11,7 +11,10 @@ import type { GitHubApp, GitHubAppLoad } from './config.ts';
 import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from './graphql.ts';
 import { batchGraphQL } from './graphql-batch.ts';
 import { listRepos } from './graphql-listing.ts';
+import { openPullRequestsIn, pullRequestStates } from './graphql-pulls.ts';
 import type { RepoListing } from '../../../domain/github-listing.ts';
+import type { OpenPullRequestsIn, PullRequestStates } from '../api.ts';
+import { pullKey } from '../api.ts';
 import { SOURCE_DEFER_AFTER_MS, makeRequest, paginate, splitRepo, statusOf, toApiError } from './http.ts';
 import * as rest from './rest.ts';
 
@@ -104,6 +107,25 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
 
   const tokenFor = async (l: Loaded, repo: string) => l.auth.installationToken(await installationFor(l, repo));
 
+  /**
+   * `repos` grouped by the installation token that reaches them (issue #985: one batched read for each); a repository the app
+   * is not installed on goes in `failed`, any other error throws.
+   */
+  const byInstallation = async (l: Loaded, repos: string[], failed: Map<string, string>): Promise<Map<string, string[]>> => {
+    const byId = new Map<number, string[]>();
+    const unique = [...new Set(repos)];
+    const found = await Promise.allSettled(unique.map((repo) => installationFor(l, repo)));
+    found.forEach((f, i) => {
+      const repo = unique[i]!;
+      if (f.status === 'fulfilled') byId.set(f.value, [...(byId.get(f.value) ?? []), repo]);
+      else if (f.reason instanceof GitHubApiError && f.reason.permanent) failed.set(repo, f.reason.message);
+      else throw f.reason;
+    });
+    const out = new Map<string, string[]>();
+    for (const [id, some] of byId) out.set(await l.auth.installationToken(id), some);
+    return out;
+  };
+
   const listInstallations = async (l: Loaded): Promise<Installation[]> => {
     const all = await paginate(req, 'GET /app/installations', { per_page: 100 }, await bearer(l), (d) => d as Installation[]);
     l.accounts = new Map(all.filter((i) => i.account?.login).map((i) => [i.account!.login!, i.id]));
@@ -136,20 +158,32 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
     // One listing for each installation's token (issue #985): a repository the app is not installed on fails only itself.
     listRepos: (repos, labels) => call(`list ${repos.length} repositories`, async (l) => {
       const out: RepoListing = { repos: new Map(), repoErrors: new Map() };
-      const byInstallation = new Map<number, string[]>();
-      const unique = [...new Set(repos)];
-      const found = await Promise.allSettled(unique.map((repo) => installationFor(l, repo)));
-      found.forEach((f, i) => {
-        const repo = unique[i]!;
-        if (f.status === 'fulfilled') byInstallation.set(f.value, [...(byInstallation.get(f.value) ?? []), repo]);
-        else if (f.reason instanceof GitHubApiError && f.reason.permanent) out.repoErrors.set(repo, f.reason.message);
-        else throw f.reason;
-      });
-      for (const [id, some] of byInstallation) {
-        const got = await listRepos(intake, await l.auth.installationToken(id), some, labels);
+      for (const [token, some] of await byInstallation(l, repos, out.repoErrors)) {
+        const got = await listRepos(intake, token, some, labels);
         for (const [repo, items] of got.repos) out.repos.set(repo, items);
         for (const [repo, error] of got.repoErrors) out.repoErrors.set(repo, error);
       }
+      return out;
+    }),
+    // The in-motion cycle's reads (issue #985), one batch for each installation's token, as a listing.
+    openPullRequestsIn: (repos) => call(`open pull requests of ${repos.length} repositories`, async (l) => {
+      const out: OpenPullRequestsIn = { repos: new Map(), repoErrors: new Map() };
+      for (const [token, some] of await byInstallation(l, repos, out.repoErrors)) {
+        const got = await openPullRequestsIn(req, token, some);
+        for (const [repo, prs] of got.repos) out.repos.set(repo, prs);
+        for (const [repo, error] of got.repoErrors) out.repoErrors.set(repo, error);
+      }
+      return out;
+    }),
+    pullRequestStates: (refs) => call(`${refs.length} pull requests`, async (l) => {
+      const out: PullRequestStates = { pulls: new Map(), errors: new Map() };
+      const failed = new Map<string, string>();
+      for (const [token, some] of await byInstallation(l, refs.map((r) => r.repo), failed)) {
+        const got = await pullRequestStates(req, token, refs.filter((r) => some.includes(r.repo)));
+        for (const [k, v] of got.pulls) out.pulls.set(k, v);
+        for (const [k, v] of got.errors) out.errors.set(k, v);
+      }
+      for (const r of refs) { const why = failed.get(r.repo); if (why !== undefined) out.errors.set(pullKey(r.repo, r.pullRequest), why); }
       return out;
     }),
     getIssue: (repo, number) => call(`get ${repo}#${number}`, async (l) => rest.getIssue(req, await tokenFor(l, repo), repo, number)),
@@ -163,7 +197,6 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
     removeLabels: (repo, number, labels) => call(`remove labels ${repo}#${number}`, async (l) =>
       rest.removeLabels(req, await tokenFor(l, repo), repo, number, labels)),
     issueEvents: (repo, number) => call(`events of ${repo}#${number}`, async (l) => rest.issueEvents(req, await tokenFor(l, repo), repo, number)),
-    repoEvents: (repo) => call(`event feed of ${repo}`, async (l) => rest.repoEvents(intake, await tokenFor(l, repo), repo)),
     assignedAt: (repo, number, login) => call(`events of ${repo}#${number}`, async (l) => rest.assignedAt(req, await tokenFor(l, repo), repo, number, login)),
     addAssignees: (repo, number, logins) => call(`assign ${repo}#${number}`, async (l) => rest.addAssignees(req, await tokenFor(l, repo), repo, number, logins)),
     reopenIssue: (repo, number) => call(`reopen ${repo}#${number}`, async (l) => rest.reopenIssue(req, await tokenFor(l, repo), repo, number)),

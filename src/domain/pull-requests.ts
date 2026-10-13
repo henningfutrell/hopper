@@ -45,11 +45,12 @@ export interface FollowsPullRequests {
    */
   follow?(job: Job, act?: PullRequestAct): Promise<FollowUp | undefined>;
   /**
-   * Whether a pull request or a branch of one of `repos` moved since the source was asked last (issue #967): a pull request
-   * opened, closed, merged or reopened, or a push. The first ask of a repository only learns where it stands: false. Asked
-   * between syncs; true starts a sync at once. A throw is a no. Absent: the sync timer alone.
+   * Read the pull requests that `jobs` follow, and their items, in one batch (issue #985, the in-motion cycle): asked at the
+   * start of each round of follows, with the jobs it follows. Each follow after it takes its pull request's state from that
+   * read, once, and asks the source's service only for what changed, or before a write. A throw: nothing is followed this
+   * round. Absent: each follow reads alone.
    */
-  moved?(repos: string[]): Promise<boolean>;
+  readFollowed?(jobs: Job[]): Promise<void>;
   /** Whether the hopper merges a ready pull request of `repo` (yolo mode): its tending queue waits for that merge (issue #796). Absent: never. */
   mergesOnReady?(repo: string): boolean;
   /**
@@ -152,6 +153,20 @@ export const noChecksSettled = (seen: PullRequestSeen, now: number): boolean =>
  */
 export const readyToMerge = (seen: PullRequestSeen, now: number): boolean =>
   !seen.draft && !seen.conflicting && (seen.checks === 'passing' || noChecksSettled(seen, now));
+
+/**
+ * In motion (issue #985): an open pull request the job follows that the in-motion cycle reads every few minutes — not seen
+ * yet, its checks still running, no checks within the grace window after its last push, or ready while the hopper merges
+ * on ready (`mergesOnReady`, yolo mode). Every other one it follows is idle, read only on the reconcile round: its checks
+ * finished and it is not ready, or a draft, or it has merge conflicts or failing checks (tended from what was seen).
+ */
+export function inMotion(job: Job, mergesOnReady: (repo: string) => boolean, now: number): boolean {
+  if (!following(job)) return false;
+  const seen = (job.sourceState?.source as { seen?: PullRequestSeen } | undefined)?.seen;
+  if (!seen || seen.checks === 'pending') return true;
+  if (seen.checks === 'none' && !seen.draft && !seen.conflicting && !noChecksSettled(seen, now)) return true;
+  return readyToMerge(seen, now) && job.source?.repo !== undefined && mergesOnReady(job.source.repo);
+}
 
 export interface FollowUp {
   /**
