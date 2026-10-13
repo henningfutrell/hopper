@@ -56,6 +56,14 @@ describe('the path of a git request', () => {
     expect(gitPath('octo/tools.git/objects/info/packs', undefined)).toBeUndefined();
     expect(gitPath('../etc/info/refs', 'git-upload-pack')).toBeUndefined();
   });
+
+  it('takes a repository whose name starts with a dot, never . or .. (issue #867)', () => {
+    expect(gitPath('octo/.github.git/info/refs', 'git-upload-pack')).toEqual({ repo: 'octo/.github', service: 'git-upload-pack', advertise: true });
+    expect(gitPath('octo/.github/git-upload-pack', undefined)).toEqual({ repo: 'octo/.github', service: 'git-upload-pack', advertise: false });
+    expect(gitPath('octo/.github.git/git-receive-pack', undefined)).toEqual({ repo: 'octo/.github', service: 'git-receive-pack', advertise: false });
+    for (const name of ['.', '..', '.git', '...git']) expect(gitPath(`octo/${name}/info/refs`, 'git-upload-pack')).toBeUndefined();
+    expect(gitPath('.octo/tools.git/info/refs', 'git-upload-pack')).toBeUndefined();
+  });
 });
 
 describe('the git config a job runs with', () => {
