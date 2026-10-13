@@ -22,7 +22,8 @@ const NAME = /^[A-Za-z0-9_.-]+$/;
 /** A git request's path after `GIT_PATH`: its repository and service; undefined for anything else (dumb HTTP included). */
 export function gitPath(path: string, service: string | undefined): { repo: string; service: GitService; advertise: boolean } | undefined {
   const m = /^([^/]+)\/([^/]+?)(?:\.git)?\/(info\/refs|git-upload-pack|git-receive-pack)$/.exec(path);
-  if (!m || !NAME.test(m[1]!) || !NAME.test(m[2]!) || m[1]!.startsWith('.') || m[2]!.startsWith('.')) return undefined;
+  // A repository name may start with a dot (`.github`, issue #867); `.`, `..` and `.git` are no repository. An owner never does.
+  if (!m || !NAME.test(m[1]!) || !NAME.test(m[2]!) || m[1]!.startsWith('.') || ['.', '..', '.git'].includes(m[2]!)) return undefined;
   const repo = `${m[1]}/${m[2]}`;
   if (m[3] !== 'info/refs') return { repo, service: m[3] as GitService, advertise: false };
   return service === 'git-upload-pack' || service === 'git-receive-pack' ? { repo, service, advertise: true } : undefined;
