@@ -89,7 +89,7 @@ afterEach(async () => {
 });
 
 describe('Settings', () => {
-  it('one navigation entry holds the configuration: version, version history, question gates, decider, auto-park, issue thread, TL;DR, job rules, Windows hosts, intake, yolo mode, GitHub rate limit, remote access, Contribution, artifacts, routing, plugins, webhooks, vault, users, sign-in, API tokens, access, permission matrix', async () => {
+  it('one navigation entry holds the configuration: version, version history, question gates, decider, auto-park, issue thread, TL;DR, job rules, Windows hosts, intake, yolo mode, GitHub rate limit, remote access, allowed hosts, Contribution, artifacts, routing, plugins, webhooks, vault, users, sign-in, API tokens, access, permission matrix', async () => {
     await boot();
     const main = document.querySelector('aside nav')!;
     const hrefs = [...main.querySelectorAll('a')].map((a) => a.getAttribute('href'));
@@ -97,7 +97,7 @@ describe('Settings', () => {
     for (const gone of ['#routing', '#plugins', '#webhooks']) expect(hrefs).not.toContain(gone);
     const sections = await vi.waitFor(() => { const n = document.querySelector('[data-slot="settings-nav"]'); expect(n).not.toBeNull(); return n!; });
     expect([...sections.querySelectorAll('a')].map((a) => a.getAttribute('href')))
-      .toEqual(['#settings/version', '#settings/version-history', '#settings/questions', '#settings/decider', '#settings/auto-park', '#settings/thread-ask', '#settings/tldr', '#settings/job-rules', '#settings/windows-hosts', '#settings/intake', '#settings/yolo-mode', '#settings/github-rate-limit', '#settings/remote-access', '#settings/host-link', '#settings/contribution', '#settings/github-watches', '#settings/artifacts', '#settings/routing', '#settings/plugins', '#settings/webhooks', '#settings/vault', '#settings/users', '#settings/sign-in', '#settings/api-tokens', '#settings/access', '#settings/permissions']);
+      .toEqual(['#settings/version', '#settings/version-history', '#settings/questions', '#settings/decider', '#settings/auto-park', '#settings/thread-ask', '#settings/tldr', '#settings/job-rules', '#settings/windows-hosts', '#settings/intake', '#settings/yolo-mode', '#settings/github-rate-limit', '#settings/remote-access', '#settings/allowed-hosts', '#settings/host-link', '#settings/contribution', '#settings/github-watches', '#settings/artifacts', '#settings/routing', '#settings/plugins', '#settings/webhooks', '#settings/vault', '#settings/users', '#settings/sign-in', '#settings/api-tokens', '#settings/access', '#settings/permissions']);
     expect(sections.querySelector('a[aria-current="page"]')!.getAttribute('href')).toBe('#settings/routing');
   });
 
