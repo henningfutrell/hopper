@@ -4,7 +4,7 @@
 // failing checks is not done. Real daemon, in-memory fake GitHub at the GitHubApi seam; issues carry a scripted-executor
 // op as their first body line.
 import { afterEach, describe, expect, it } from 'vitest';
-import { MAX_TENDS, tendBrief, type FailuresView, type Job } from '../../src/domain/types.ts';
+import { MAX_TENDS, TEND_RETRY_MS, tendBrief, type FailuresView, type Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { GitHubApiError } from '../../src/sources/github/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -175,6 +175,54 @@ describe('tending a waiting pull request (issue #736)', () => {
     await app.sync();
     expect(await jobsFor(app, issue.url)).toHaveLength(MAX_TENDS + 1);
     expect(await app.events('types=job.pull_request_tended')).toHaveLength(MAX_TENDS);
+  });
+});
+
+describe('a tend job cancelled by no person (issue #1010)', () => {
+  it('is no reason to give up: after a wait, the same step runs again, and a person\'s cancel is', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    // Each run takes a moment, so its tend job can be cancelled while it runs.
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo', ms: 1500 }), labels: ['hopper'] });
+    let url: string | undefined;
+    app.scripted.ships((j) => { url ??= gh.openPullRequest(REPO, j.source!.number!, { createdAt: new Date().toISOString() }).url; });
+    await app.sync();
+    const [job] = await jobsFor(app, issue.url);
+    await app.waitForStatus(job!.id, 'finished');
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:pr-ready'), { what: 'hopper:pr-ready' });
+    const { store, engine } = app.user();
+    const cancelled = async (id: string, reason: string) => {
+      await app.waitForStatus(id, 'running');
+      engine.cancel(id, reason);
+      await app.waitForStatus(id, 'cancelled');
+      await waitFor(async () => (await app.job(id)).sourceState?.sync?.finalReported === true, { what: 'its cancel reported' });
+    };
+
+    gh.setConflicting(url!, true);
+    await app.sync();
+    const first = await nextJob(app, issue.url, 2);
+    await cancelled(first!.id, 'reaped by the sweep');
+    // Not at once: it waits first.
+    await app.sync();
+    // Its pull request still waits: the issue says so, and is not taken again as a new job.
+    expect(gh.issue(REPO, issue.number).labels).toContain('hopper:pr-ready');
+    expect(await jobsFor(app, issue.url)).toHaveLength(2);
+
+    // The wait is over: the item runs again, a tend job, with the same step, and the card waits on it.
+    store.jobs.update(first!.id, { finishedAt: new Date(Date.now() - TEND_RETRY_MS - 1000).toISOString() });
+    await app.sync();
+    const second = await nextJob(app, issue.url, 3);
+    expect(second).toMatchObject({ rerunOf: first!.id, spec: expect.objectContaining({ tend: true }) });
+    expect(String(second!.spec.payload.prompt)).toContain(tendBrief(url!, 'rebase'));
+    expect((await app.job(job!.id)).sourceState?.source).toMatchObject({ follow: 'tended', tended: { pullRequest: url, step: 'rebase', nextJobId: second!.id, retries: 1 } });
+
+    // A person's cancel: the hopper tends it no more, and its issue is left as any cancelled job's.
+    await cancelled(second!.id, 'cancelled in UI');
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:pr-ready');
+    store.jobs.update(second!.id, { finishedAt: new Date(Date.now() - 24 * 3_600_000).toISOString() });
+    await app.sync();
+    expect((await jobsFor(app, issue.url)).filter((j) => j.spec.tend)).toHaveLength(2);
+    expect(await app.events('types=job.pull_request_tended')).toHaveLength(2);
   });
 });
 
