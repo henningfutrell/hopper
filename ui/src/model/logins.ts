@@ -38,12 +38,19 @@ export function phaseOf(l: LoginView, now: number, settings: LoginSettings): Log
 export const isOpen = (p: LoginPhase): boolean => p === 'pending' || p === 'expiring';
 
 /**
+ * An expired code its job still waits to renew (issue #1016): `onExpiry` renew (the job is asked for a new code by
+ * itself) or hold (a person asks), on a run that can ask its tool again. It still waits on the user, so it counts.
+ */
+export const awaitsNewCode = (l: LoginView, phase: LoginPhase, settings: LoginSettings): boolean =>
+  phase === 'expired' && l.renewable && l.jobId !== undefined && settings.onExpiry !== 'fail';
+
+/**
  * The nav badge and the header: how many logins wait on the user, whether one is about to expire, and how many of
  * them a high-priority job waits on (issue #535).
  */
 export function loginsBadge(logins: LoginView[], now: number, settings: LoginSettings): { n: number; warn: boolean; high: number } {
-  const open = logins.map((l) => ({ l, phase: phaseOf(l, now, settings) })).filter((x) => isOpen(x.phase));
-  return { n: open.length, warn: open.some((x) => x.phase === 'expiring'), high: open.filter((x) => x.l.high === true).length };
+  const open = logins.map((l) => ({ l, phase: phaseOf(l, now, settings) })).filter((x) => isOpen(x.phase) || awaitsNewCode(x.l, x.phase, settings));
+  return { n: open.length, warn: open.some((x) => x.phase !== 'pending'), high: open.filter((x) => x.l.high === true).length };
 }
 
 /** Open logins first — a high-priority job's first (issue #535), then the least time left —; then the rest, the latest end first. */
@@ -59,11 +66,11 @@ export function sortByTimeLeft(logins: LoginView[], now: number, settings: Login
 }
 
 /**
- * On a card: every login the server still has pending, an expired one held for a new code (`onExpiry: hold`, a
- * run that can ask), and any other for `ENDED_ON_CARD_MS` after it ended or expired. The rest are the history.
+ * On a card: every login the server still has pending, an expired one waiting for a new code (`onExpiry` renew or
+ * hold, a run that can ask), and any other for `ENDED_ON_CARD_MS` after it ended or expired. The rest are the history.
  */
 export function onCard(l: LoginView, now: number, settings: LoginSettings): boolean {
   if (l.status === 'pending') return true;
-  if (l.status === 'expired' && settings.onExpiry === 'hold' && l.renewable) return true;
+  if (l.status === 'expired' && settings.onExpiry !== 'fail' && l.renewable) return true;
   return now - Date.parse(l.endedAt ?? l.expiresAt) < ENDED_ON_CARD_MS;
 }

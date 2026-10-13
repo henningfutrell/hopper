@@ -50,12 +50,13 @@ function SettingsForm({ settings }: { settings: LoginSettings }) {
   return (
     <div data-section="login-settings" className="space-y-2 text-sm">
       <p className="text-muted-foreground">
-        A card warns {settings.warnSec} seconds before its code runs out, or at a fifth of the code's life when that is longer. When a code expires, the job {settings.onExpiry === 'fail' ? 'fails' : 'waits for a new code until its own timeout'}.
+        A card warns {settings.warnSec} seconds before its code runs out, or at a fifth of the code's life when that is longer. When a code expires, {settings.onExpiry === 'fail' ? 'the job fails' : settings.onExpiry === 'hold' ? 'the job waits for a new code until its own timeout' : 'the job is asked for a new code, each time, until the login is completed or cancelled'}.
       </p>
       <div className="flex flex-wrap items-end gap-2">
         <label className="grid gap-1"><span className="text-xs text-muted-foreground">When a code expires</span>
           <select className={`${FIELD} h-8 w-56 text-sm`} aria-label="When a code expires" value={onExpiry} disabled={busy} onChange={(e) => setOnExpiry(e.target.value as LoginSettings['onExpiry'])}>
             <option value="fail">the job fails</option>
+            <option value="renew">the job gets a new code</option>
             <option value="hold">the job waits for a new code</option>
           </select></label>
         <label className="grid gap-1"><span className="text-xs text-muted-foreground">Warn before (seconds)</span>

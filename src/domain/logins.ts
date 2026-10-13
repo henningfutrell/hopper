@@ -14,10 +14,12 @@ export const LOGIN_STATUSES = ['pending', 'completed', 'expired', 'cancelled', '
 export type LoginStatus = typeof LOGIN_STATUSES[number];
 
 /**
- * What a job does when its login expires (issue #476): hold for a new code (the default since issue #698: an expired
- * code is the user's to renew, never a failed job), or fail with the reason.
+ * What a job does when its login expires (issue #476): renew — ask the job for a new code by itself, at each expiry,
+ * until the login is completed or cancelled (the default since issue #1016: a code that expired unseen stalled the
+ * job) —; hold for a new code the user asks for (the default from issue #698 to #1016); or fail with the reason. A
+ * run that cannot ask its tool again (a print-mode run) holds under renew.
  */
-export const LOGIN_EXPIRY_ACTIONS = ['fail', 'hold'] as const;
+export const LOGIN_EXPIRY_ACTIONS = ['fail', 'hold', 'renew'] as const;
 export type LoginExpiryAction = typeof LOGIN_EXPIRY_ACTIONS[number];
 
 /** The bounds of `warnSec`, in seconds. */
@@ -29,7 +31,7 @@ export const LOGIN_WARN_SEC = { min: 10, max: 3600 } as const;
  * the code's life when that is longer.
  */
 export interface LoginSettings { onExpiry: LoginExpiryAction; warnSec: number }
-export const DEFAULT_LOGIN_SETTINGS: LoginSettings = { onExpiry: 'hold', warnSec: 60 };
+export const DEFAULT_LOGIN_SETTINGS: LoginSettings = { onExpiry: 'renew', warnSec: 60 };
 
 /** A login as its run reports it. The URL and the code are credentials in flight: the hopper keeps them in memory only. */
 export interface LoginReport {
@@ -99,8 +101,9 @@ export interface LoginView extends Login {
 /**
  * What a run waiting on a login does next: wait, ask its tool for a new code, stop waiting (cancelled), or fail.
  * `ended`: the login ended with nothing to tell the run (a login signal, the sweep): it waits on it no more.
+ * `new-code` with `expired`: the hopper asks, as its code expired (`onExpiry: renew`, issue #1016), not the user.
  */
-export type LoginCheck = { act: 'wait' } | { act: 'new-code' } | { act: 'cancelled' } | { act: 'fail'; reason: string } | { act: 'ended' };
+export type LoginCheck = { act: 'wait' } | { act: 'new-code'; expired?: true } | { act: 'cancelled' } | { act: 'fail'; reason: string } | { act: 'ended' };
 
 /**
  * Where a run reports a login it waits on (issue #476, design.md "Logins"), and reads what the user did with

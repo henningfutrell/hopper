@@ -39,7 +39,8 @@ function outcome(l: LoginView, phase: LoginPhase, settings: LoginSettings): stri
     case 'expired':
       if (!l.jobId) return 'The escalation run stops waiting on it; the question goes on as on any error.';
       if (settings.onExpiry === 'fail') return 'The job fails: its login expired before it was completed.';
-      return l.renewable ? 'The job waits for a new code until its own timeout.' : 'The job waits until its own timeout; its run cannot ask for a new code.';
+      if (!l.renewable) return 'The job waits until its own timeout; its run cannot ask for a new code.';
+      return settings.onExpiry === 'renew' ? 'The job was asked for a new code. It shows here when the job reports it.' : 'The job waits for a new code until its own timeout.';
     case 'completed': return `${waiter(l)} goes on.`;
     case 'cancelled': return l.jobId ? 'The job was told to go on without it, or to fail.' : 'The escalation run stops waiting on it.';
     case 'failed': return l.reason ? `Failed: ${l.reason}.` : 'Failed.';
@@ -62,8 +63,8 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
     setBusy(false);
     refreshLogins().catch(() => {});
   };
-  // A new code: while it is pending, or expired and held for one; only a run that can ask its tool.
-  const canRenew = l.renewable && (open || (phase === 'expired' && settings.onExpiry === 'hold'));
+  // A new code: while it is pending, or expired and waiting for one; only a run that can ask its tool.
+  const canRenew = l.renewable && (open || (phase === 'expired' && settings.onExpiry !== 'fail'));
   const actions = canAct && (open || canRenew) && (
     <div className="flex flex-wrap justify-center gap-2">
       {canRenew && <Button size="sm" variant="outline" disabled={busy} onClick={() => void act('new-code')}><RotateCw />Request a new code</Button>}
