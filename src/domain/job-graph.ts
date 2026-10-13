@@ -175,8 +175,13 @@ export function pullRequestOf(job: Job): JobGraphPullRequest | undefined {
   };
 }
 
-/** True while a partly done job's pull request is not merged: the rest of its issue waits on that merge. */
-const waitsOnMerge = (job: Job): boolean => job.partlyDone !== undefined && !['merged', 'closed', 'abandoned'].includes(followedOf(job).follow ?? '');
+/**
+ * True while a partly done job's pull request is not merged: the rest of its issue waits on that merge. A job that handed
+ * its pull request on to a tend or a rework (follow: tended, reworked) waits on nothing: it is followed no more, and the
+ * newer job carries the rest of its issue and its stage (issue #994).
+ */
+const waitsOnMerge = (job: Job): boolean =>
+  job.partlyDone !== undefined && !['merged', 'closed', 'abandoned', 'tended', 'reworked'].includes(followedOf(job).follow ?? '');
 
 /**
  * A job's stage. Queued: waiting for a lane (queued, held, claimed). Running. Waiting: on a person or the outside world
