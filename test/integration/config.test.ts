@@ -132,8 +132,9 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
   });
 
   it('HOPPER_TUNNEL_API is the tunnel agent\'s local API; the URL it forwards is set in the UI, so it needs no public URL (issue #880)', () => {
-    expect(loadConfig(DB).tunnelApi).toBeUndefined();
-    expect(loadConfig({ ...DB, HOPPER_TUNNEL_API: 'http://tunnel:4040' }).tunnelApi).toBe('http://tunnel:4040');
+    expect(loadConfig(DB).tunnelApis).toEqual({});
+    expect(loadConfig({ ...DB, HOPPER_TUNNEL_API: 'http://tunnel:4040' }).tunnelApis).toEqual({ ngrok: 'http://tunnel:4040' });
+    expect(loadConfig({ ...DB, HOPPER_CLOUDFLARED_API: 'http://cloudflared:2000' }).tunnelApis).toEqual({ cloudflare: 'http://cloudflared:2000' });
     expect(() => loadConfig({ ...DB, HOPPER_PUBLIC_URL: 'https://h.example', HOPPER_TUNNEL_API: 'tunnel:4040' })).toThrow(/HOPPER_TUNNEL_API/);
   });
 
