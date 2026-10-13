@@ -93,15 +93,21 @@ export function createLogins(o: LoginsOptions): Logins {
   const samePrompt = (a: { verificationUrl: string; userCode?: string } | undefined, b: { verificationUrl: string; userCode?: string }): boolean =>
     a !== undefined && (a.userCode !== undefined || b.userCode !== undefined ? a.userCode === b.userCode : a.verificationUrl === b.verificationUrl);
 
-  /** Expire a pending login: its code dropped, `auth.expired`; the job fails on it while `onExpiry` says so. */
+  /**
+   * Expire a pending login: its code dropped, `auth.expired`; the job fails on it while `onExpiry` says so, or, under
+   * `renew` (issue #1016), a run that can ask its tool again is asked for a new code, which the same login takes.
+   */
   const expire = (l: Login): void => {
     secrets.delete(l.id);
-    store.tx(() => {
-      const next = store.logins.update(l.id, { status: 'expired', newCodeAskedAt: undefined });
-      emit('auth.expired', next, { expiresAt: next.expiresAt });
-    });
     // Read at each expiry (issue #356): a changed setting applies to the next one.
-    if (settings().onExpiry === 'fail') asked.set(l.id, { act: 'fail', reason: `the ${l.tool} login expired at ${l.expiresAt} before it was completed` });
+    const onExpiry = settings().onExpiry;
+    const renewing = onExpiry === 'renew' && l.renewable;
+    store.tx(() => {
+      const next = store.logins.update(l.id, { status: 'expired', newCodeAskedAt: renewing ? now() : undefined });
+      emit('auth.expired', next, { expiresAt: next.expiresAt, ...(renewing ? { renewing: true } : {}) });
+    });
+    if (onExpiry === 'fail') asked.set(l.id, { act: 'fail', reason: `the ${l.tool} login expired at ${l.expiresAt} before it was completed` });
+    else if (renewing) asked.set(l.id, { act: 'new-code', expired: true });
   };
 
   const openOf = (id: string): Login | undefined => {

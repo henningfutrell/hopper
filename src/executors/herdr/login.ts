@@ -21,6 +21,9 @@ export const loginCancelledNote = (tool: string): string => `[hopper] The user c
 /** Typed in when the job's screen shows a device code it did not report (issue #698): the user was told; report it. */
 export const loginSeenNote = (tool: string): string => `[hopper] Your screen shows a ${tool} login code. The user was shown the link and the code (Logins). Keep the command that waits for it running in the background. Report it: end your message with ${HOW}.`;
 
+/** Typed in when the code expired and the hopper asks for a new one by itself (`onExpiry: renew`, issue #1016). */
+export const loginExpiredNewCodeNote = (tool: string): string => `[hopper] The ${tool} code expired before the user completed the login. Stop the command that waits for it, start the login again in the background, and end your message with ${HOW}.`;
+
 /** Typed in when the user asks for a new code. */
 export const loginNewCodeNote = (tool: string): string => `[hopper] The user asked for a new code for the ${tool} login. Stop the command that waits for it, start the login again in the background, and end your message with ${HOW}.`;
 
@@ -133,6 +136,7 @@ export function loginWait(ctx: ExecutionContext, login: LoginRef, cleared: () =>
 export function afterLoginAct(said: Exclude<LoginCheck, { act: 'wait' } | { act: 'ended' }>, tool: string): { failed: string } | { say: string; progress: string } {
   if (said.act === 'fail') return { failed: said.reason };
   if (said.act === 'cancelled') return { say: loginCancelledNote(tool), progress: `the user cancelled the ${tool} login: told claude` };
+  if (said.expired) return { say: loginExpiredNewCodeNote(tool), progress: `the ${tool} code expired: asked the job for a new ${tool} code` };
   return { say: loginNewCodeNote(tool), progress: `the user asked for a new ${tool} code: told claude` };
 }
 

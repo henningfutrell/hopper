@@ -1389,7 +1389,7 @@ Version 1 (`docs/schemas/auth.completed.v1.json`). The machine went on after the
 
 ## `auth.expired`
 
-Version 1 (`docs/schemas/auth.expired.v1.json`). The login's code ran out (`expiresAt`) before the machine went on. By the logins setting, the job then holds for a new code (the default since issue #698) or fails with the reason. The Grok Bot routine notifier posts it.
+Version 1 (`docs/schemas/auth.expired.v1.json`). The login's code ran out (`expiresAt`) before the machine went on. By the logins setting, the job is then asked for a new code by itself (`renewing: true`, the default since issue #1016), holds for a new code a person asks for, or fails with the reason. The Grok Bot routine notifier posts it.
 
 | field | type | required |
 |---|---|---|
@@ -1397,6 +1397,7 @@ Version 1 (`docs/schemas/auth.expired.v1.json`). The login's code ran out (`expi
 | `kind` | `device_code` | yes |
 | `tool` | string | yes |
 | `expiresAt` | string | yes |
+| `renewing` | boolean | no |
 
 ```json
 {

@@ -10580,11 +10580,16 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   whose question is no longer open (`the question ended`); a pending one past `expiresAt` expires, with or without
   word from the machine.
 - **Expiry.** The logins setting `onExpiry` (`POST /ui/api/logins/settings`, admin; the user's settings,
-  read at each expiry, so a change applies without a restart): `hold` (the default since issue #698: an expired code
-  is the user's to renew, and the job stays alive for it) — the job keeps waiting until its own timeout, the card
-  says Expired and offers Request a new code, and the notifier says it expired; `fail` (the default before) — the job
-  fails, its error `the <tool> login expired at <time> before it was completed`. A user who saved `fail` keeps it.
-  Nothing asks a machine for a new code by itself.
+  read at each expiry, so a change applies without a restart): `renew` (the default since issue #1016: two codes of a
+  job expired before a person saw them, and the job stalled) — at each expiry the hopper asks the job for a new code
+  by itself (`check` answers `new-code` with `expired`; the job is told its code expired, to start the login again and
+  report the new code, `loginExpiredNewCodeNote`), `auth.expired` carries `renewing: true`, and the new code is the
+  same login (`auth.pending`, `renewed: true`, so the notifiers post it again), until the login is completed or
+  cancelled, or the job's own timeout; a run that cannot ask its tool again (a print-mode run) holds; `hold` (the
+  default from issue #698 to #1016) — the job keeps waiting until its own timeout, the card says Expired and offers
+  Request a new code, and the notifier says it expired; `fail` (the default before) — the job fails, its error
+  `the <tool> login expired at <time> before it was completed`. A user who saved `hold` or `fail` keeps it; a build
+  before issue #1016 reads a saved `renew` as unset, its default.
 - **Acting** (`POST /ui/api/logins/:id/cancel`, `…/new-code`, operator). Cancel ends the login and types
   into a herdr job's pane that the user cancelled it: stop the command, go on without it or fail. A new
   code types in: stop the command, start the login again, report the new code. A print-mode run takes no
@@ -10624,7 +10629,9 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   server time less its own clock and counts down on the shared 1 s clock plus that offset, so a skewed
   browser clock does not move the countdown. **Live:** each `auth.*` event refreshes the logins, as each
   `question.*` refreshes the questions. **Badge:** the nav entry and a header link count the open logins
-  (pending, not past `expiresAt`) on every view until none is left, never cleared by being seen
+  (pending, not past `expiresAt`), and, since issue #1016, an expired code its job waits to renew (`onExpiry` renew
+  or hold, a run that can ask, `awaitsNewCode`: amber, as one about to expire), on every view until none is left —
+  so Needs you counts it too —, never cleared by being seen
   (issue #499's rule for Questions). An ended login stays on its card 5 minutes (`ENDED_ON_CARD_MS`), an
   expired one held for a new code until it changes; then it goes to Earlier logins, under the cards, a
   compact list that never had the code. A viewer's card shows the countdown and a notice instead of the
@@ -10635,7 +10642,7 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
 
 Open decisions taken conservatively, each one entry to change: the kinds after `device_code`
 (`LOGIN_KINDS`, `kinds.ts`); who completes a login (the user only); on expiry (`onExpiry`, default
-`hold` since issue #698); notifiers (the Grok Bot routine since issue #698, never with the URL or code).
+`renew` since issue #1016, no limit on renewals but the job's timeout); notifiers (the Grok Bot routine since issue #698, never with the URL or code).
 
 ## Failure assessment (issue #509, 2026-10-08)
 

@@ -229,7 +229,8 @@ export const EVENT_SCHEMAS = {
   // `host` (issue #698): the host of the URL to open, never its path or query.
   'auth.pending': strict({ ...login, host: z.string().optional(), expiresAt: z.iso.datetime(), intervalSec: z.number().int().positive().optional(), run: z.string(), questionId: z.string().optional(), renewed: z.boolean().optional(), ...priority }),
   'auth.completed': strict(login),
-  'auth.expired': strict({ ...login, expiresAt: z.iso.datetime() }),
+  // `renewing` (issue #1016): the job was asked for a new code by itself (`onExpiry: renew`).
+  'auth.expired': strict({ ...login, expiresAt: z.iso.datetime(), renewing: z.boolean().optional() }),
   'auth.cancelled': strict({ ...login, by: z.enum(['user']) }),
   'auth.failed': strict({ ...login, reason: z.string().min(1) }),
   // The failure assessor (issue #509): its judgement of a failed job, and the problems it groups shared causes into.
