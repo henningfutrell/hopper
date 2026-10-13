@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { jobBom, type JobBomInput } from '../../src/domain/job-bom.ts';
 import type { Artifact } from '../../src/domain/artifacts.ts';
 import type { Question } from '../../src/domain/questions.ts';
-import type { DomainEvent, Job, JobStatus } from '../../src/domain/types.ts';
+import type { DomainEvent, Job, JobRun, JobStatus } from '../../src/domain/types.ts';
 
 const ISSUE = 'https://github.com/acme/app/issues/7';
 const PR = 'https://github.com/acme/app/pull/12';
@@ -146,3 +146,69 @@ describe('a job\'s parts list (issue #935)', () => {
     expect(jobBom(input({ events: [a, b] })).events.map((e) => e.seq)).toEqual([b.seq, a.seq]);
   });
 });
+
+describe('a job\'s parts list, part 2 (issue #935)', () => {
+  const GIB = 1024 ** 3;
+  const run = (over: Partial<JobRun> = {}): JobRun => ({
+    jobId: 'j1', machineId: 'm1', startedAt: '2026-10-01T00:10:00.000Z', endedAt: '2026-10-01T00:40:00.000Z', end: 'finished', samples: 30, lanesBusyAvg: 2,
+    cpu: { avg: 0.2, peak: 0.4 }, memoryBytes: { avg: 2 * GIB, peak: 3 * GIB }, usage: { session: 0.1, week: 0.02 }, ...over,
+  });
+
+  it('lists its cost and usage: the share of each usage limit its runs burned for their lane, and what they used of the machine', () => {
+    const bom = jobBom(input({ job: job('finished'), runs: [run(), run({ startedAt: '2026-10-01T01:00:00.000Z', lanesBusyAvg: 1, usage: { session: 0.03 }, cpu: { avg: 0.1, peak: 0.6 }, memoryBytes: { avg: GIB, peak: GIB } })] }));
+    expect(part(bom, 'usage')).toMatchObject({ group: 'work', kind: 'usage', label: 'Usage: 8% of session, 1% of week', status: 'recorded', href: '#lanes' });
+    expect(part(bom, 'usage')!.detail).toBe('2 runs, 60 samples: CPU 15% on average, 60% at peak; memory 3 GiB at peak');
+  });
+
+  it('says when its usage is not measured yet: no run ended, or no samples', () => {
+    expect(part(jobBom(input({ job: job('running') })), 'usage')).toBeUndefined();
+    expect(part(jobBom(input({ job: job('finished'), runs: [run({ samples: 0, usage: {}, cpu: undefined, memoryBytes: undefined })] })), 'usage')).toMatchObject({ label: 'Usage: not measured', detail: '1 run, no samples' });
+  });
+
+  it('lists the commits of its pull request, as the mirror last read them, and the files it changes', () => {
+    const bom = jobBom(input({ job: job('finished', {
+      checkpoint: { at: '2026-10-01T00:50:00.000Z', machineId: 'm1', base: 'a', head: 'b', commits: ['abc1234 Add the cache'], bytes: 1, session: false },
+      sourceState: { source: { pullRequest: PR, follow: 'open', seen: { checks: 'passing', commits: ['def5678 Test the cache', 'abc1234 Add the cache'], files: ['src/cache.ts', 'help/cache.md', 'whats-new/7.md'] } } },
+    }) }));
+    const commits = bom.parts.filter((p) => p.kind === 'commit');
+    expect(commits.map((p) => [p.label, p.detail, p.url])).toEqual([
+      ['Add the cache', 'abc1234', `${PR}/commits/abc1234`],
+      ['Test the cache', 'def5678', `${PR}/commits/def5678`],
+    ]);
+    expect(part(bom, 'files')).toMatchObject({ group: 'code', label: '3 files changed', url: `${PR}/files`, status: 'recorded' });
+    expect(part(bom, 'file:help/cache.md')).toMatchObject({ group: 'outputs', kind: 'help_page', label: 'Help page: help/cache.md', status: 'open', url: `${PR}/files` });
+    expect(part(bom, 'file:whats-new/7.md')).toMatchObject({ group: 'outputs', kind: 'whats_new', label: 'What\'s new: whats-new/7.md', status: 'open' });
+    expect(part(bom, 'file:src/cache.ts')).toBeUndefined();
+  });
+
+  it('marks its help pages and What\'s new lines done once its pull request is merged; WHATS-NEW.md and a CHANGELOG count too', () => {
+    const bom = jobBom(input({ job: job('finished', { sourceState: { source: { pullRequest: PR, follow: 'merged', seen: { checks: 'passing', files: ['WHATS-NEW.md', 'CHANGELOG.md', 'docs/help/setup.md', 'whats-new/README.md'] } } } }) }));
+    expect(bom.parts.filter((p) => p.kind === 'whats_new').map((p) => [p.label, p.status])).toEqual([['What\'s new: WHATS-NEW.md', 'done'], ['What\'s new: CHANGELOG.md', 'done']]);
+    expect(bom.parts.filter((p) => p.kind === 'help_page').map((p) => p.label)).toEqual(['Help page: docs/help/setup.md']);
+  });
+
+  it('lists its pushes, and says which came after its latest checkpoint', () => {
+    const bom = jobBom(input({
+      job: job('running', { checkpoint: { at: '2026-10-01T00:03:30.000Z', machineId: 'm1', base: 'a', head: 'b', commits: [], bytes: 1, session: false } }),
+      events: [
+        event('github_proxy.done', { requestId: 'r1', own: true, op: 'git.push', repo: 'acme/app', refs: ['refs/heads/issue-7'] }, { at: '2026-10-01T00:03:00.000Z' }),
+        event('github_proxy.refused', { requestId: 'r2', own: true, op: 'git.push', repo: 'acme/app', refs: ['refs/heads/dev'], reason: 'no' }),
+        event('github_proxy.done', { requestId: 'r3', own: true, op: 'git.push', repo: 'acme/app', refs: ['refs/heads/issue-7'] }, { at: '2026-10-01T00:04:00.000Z' }),
+      ],
+    }));
+    const pushes = bom.parts.filter((p) => p.kind === 'push');
+    expect(pushes.map((p) => [p.label, p.detail, p.status])).toEqual([
+      ['Pushed issue-7', 'acme/app', 'done'],
+      ['Pushed issue-7', 'acme/app, after the latest checkpoint', 'done'],
+    ]);
+  });
+
+  it('says its place in the merge order: what it goes in after, and why', () => {
+    const held = jobBom(input({ job: job('finished', { sourceState: { source: { pullRequest: PR, follow: 'open', seen: { checks: 'failing' }, heldBehind: { pullRequest: 'https://github.com/acme/app/pull/11', why: 'tending' } } } }) }));
+    expect(part(held, 'merge_order')).toMatchObject({ group: 'code', kind: 'merge_order', label: 'Goes in after pull request #11', detail: 'a job fixes that pull request first', status: 'open', url: 'https://github.com/acme/app/pull/11', href: '#pull-requests' });
+    const merging = jobBom(input({ job: job('finished', { sourceState: { source: { pullRequest: PR, follow: 'open', seen: { checks: 'passing', mergeHeldBehind: 'https://github.com/acme/app/pull/10' } } } }) }));
+    expect(part(merging, 'merge_order')).toMatchObject({ label: 'Goes in after pull request #10', detail: 'the hopper merged that pull request first; they conflict' });
+    expect(part(jobBom(input({ job: job('finished', { sourceState: { source: { pullRequest: PR, follow: 'merged', heldBehind: { pullRequest: 'https://github.com/acme/app/pull/11', why: 'merging' } } } }) })), 'merge_order')).toBeUndefined();
+  });
+});
+
