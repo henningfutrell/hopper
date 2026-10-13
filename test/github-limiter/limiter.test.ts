@@ -77,7 +77,10 @@ async function setup(o: FakeOpts = {}) {
   // As the job sources ask (issue #822): a wait longer than a minute is not waited.
   const deferring = makeRequest(`http://127.0.0.1:${port}`, limiter, { deferAfterMs: 60_000 });
   const pollDeferring = (n: number) => deferring('GET /repos/{owner}/{repo}/issues/{n}', { owner: 'o', repo: 'r', n, headers: { authorization: 'token t1' } });
-  return { clock, waits, gh, limiter, req, poll, pollDeferring };
+  // As intake asks (issue #983): it keeps the intake reserve free for job work.
+  const intake = makeRequest(`http://127.0.0.1:${port}`, limiter, { deferAfterMs: 60_000, intake: true });
+  const pollIntake = (n: number) => intake('GET /repos/{owner}/{repo}/issues/{n}', { owner: 'o', repo: 'r', n, headers: { authorization: 'token t1' } });
+  return { clock, waits, gh, limiter, req, poll, pollDeferring, pollIntake };
 }
 
 const WATCHES = Array.from({ length: 120 }, (_, i) => i + 1);
@@ -196,5 +199,28 @@ describe('the shared rate limiter (issue #436)', () => {
     expect(refused).toMatchObject({ permanent: false, retryAt: RESET_MS, message: 'get o/r#1: GitHub rate-limited the hopper: next retry at 00:10 UTC' });
     const deferred = toApiError(await pollDeferring(1).catch((e: unknown) => e), 'get o/r#1', 'KEY');
     expect(deferred).toMatchObject({ permanent: false, retryAt: RESET_MS, message: 'get o/r#1: GitHub rate-limited the hopper: next retry at 00:10 UTC' });
+  });
+
+  it('an intake call at the intake reserve is deferred to the reset; a job source call still goes (issue #983)', async () => {
+    const { pollIntake, pollDeferring, limiter, gh } = await setup({ limit: 5000, remaining: 1002 });
+    expect(DEFAULT_RATE_LIMITER.intakeReserve).toBe(1000);
+    await pollIntake(1);
+    await pollIntake(2);
+    await expect(pollIntake(3)).rejects.toMatchObject({ retryAt: RESET_MS });
+    await pollDeferring(3);
+    expect(gh.seen.ok).toBe(3);
+    // An unchanged answer costs no call, but the call still waits: the reserve is for job work.
+    await expect(pollIntake(1)).rejects.toBeInstanceOf(GitHubRateLimited);
+    // A lower intake reserve applies to the next call; the reserve itself still holds for every call.
+    limiter.configure({ ...DEFAULT_RATE_LIMITER, intakeReserve: 0 });
+    await pollIntake(4);
+    expect(gh.seen.ok).toBe(4);
+  });
+
+  it('the intake reserve is never below the reserve', async () => {
+    const { pollIntake, limiter } = await setup({ limit: 100, remaining: 51 });
+    limiter.configure({ ...DEFAULT_RATE_LIMITER, intakeReserve: 0 });
+    await pollIntake(1);
+    await expect(pollIntake(2)).rejects.toMatchObject({ retryAt: RESET_MS });
   });
 });
