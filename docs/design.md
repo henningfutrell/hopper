@@ -41,6 +41,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — a system secret in the user's vault (issue #658), or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
+| `src/outbound/` | the outbound guard — one per process: each destination's rate limit, dedupe and circuit — and each user's `Outbound`, which writes the user's send log (issue #1014, "Outbound sends"); the arithmetic and the types are `src/domain/outbound.ts` | engine, http, store, plugins, decider, webhooks |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment | engine, http, store, plugins |
 | `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
@@ -394,6 +395,7 @@ Loopback (`127.0.0.1`), plus the LAN names when set — "Reaching the UI across 
 | GET | `/api/webhooks` | | `{ subscriptions }` (secret omitted) |
 | DELETE | `/api/webhooks/:id` | | 204 · 404 |
 | GET | `/api/webhooks/deliveries` | `?subscriptionId=&limit=100` | `{ deliveries }` newest first |
+| GET | `/api/outbound` | `?name=&limit=100` | `{ sends, circuits }`: the send log newest first, the open circuits (issue #1014, "Outbound sends") |
 | GET | `/` | | the UI |
 
 ## SSE
@@ -421,7 +423,9 @@ x-hopper-signature: sha256=<hex HMAC-SHA256(secret, "<timestamp>.<raw body>")>
 <DomainEvent JSON>
 ```
 
-Delivery is **at-least-once**; receivers dedupe on `x-hopper-delivery`. Before each POST
+Delivery is **at-least-once**; receivers dedupe on `x-hopper-delivery`. Every delivery passes its destination's
+**outbound guard** first and each POST goes into the send log ("Outbound sends", issue #1014): a delivery with no token
+waits, due; one asked while the destination's circuit is open fails. Before each POST
 the dispatcher moves `nextAttemptAt` past the timeout and keeps the id in an in-memory
 in-flight set, so the sweep never sends one delivery twice concurrently. Deleting a
 subscription marks its pending/retrying deliveries `failed`.
@@ -434,6 +438,40 @@ delivery, so a replaced or rotated one signs from the next ("Webhook signing sec
 subscription from before with none stored, the runtime variable its `secretEnv` names (or the mounted file
 `<secretEnv>_FILE` names). None, or one that cannot be opened: nothing is sent, and the delivery retries
 saying why.
+
+## Outbound sends
+
+Issue #1014: a messaging webhook took about 10,000 requests a second, and nothing in the hopper said which send made
+them. Every **outbound send** — a webhook subscription's delivery, the Grok Bot routine notifier's post, and the UI's
+Send test event of either — now passes the **outbound guard** of its destination and goes into the user's **send log**.
+
+- **One guard per process** (`createOutboundGuard`, `src/outbound/index.ts`, made in `src/main.ts`), keyed by the
+  destination's URL, so every user's sends to one destination share its limits. Each user's runtime wraps it in its own
+  `Outbound` (`createOutbound`), which writes that user's send log; it gives it to the webhook dispatcher and to every
+  `grokbot-routine` instance (`withSeams`). A custom notifier's own `fetch` is its own: it passes no guard.
+- **Rate limit**: a token bucket per destination, 60 at once, 5 more each second (`OUTBOUND_LIMITS`,
+  `src/domain/outbound.ts`). A delivery with no token stays due and spends no attempt: a later sweep sends it. A notifier
+  post with no token is not sent (`rate-limited`).
+- **Dedupe and loop guard**: a send names a key — a delivery `<subscription id>:<event id>`, a notifier post
+  `<event type>:<event id>` (a question it sends on its escalation, `question:<id>`) —, and the same key asked of the same
+  destination within 10 minutes is a `duplicate`: no delivery is made, nothing is posted. A heartbeat, an offered open
+  question and a test name none: they are sent each time. Delivery updates are never domain events, so a delivery never
+  makes a delivery; a receiver that answers with work that makes events is what the circuit stops.
+- **Circuit**: more than 600 new sends asked of one destination within a minute is a runaway: its circuit opens for
+  5 minutes. Meanwhile nothing is sent to it: a new delivery is made `failed`, one due fails at its attempt, a notifier
+  post is not sent, each saying why (`not sent: the destination's circuit is open (a runaway)`). Opening logs one warning
+  naming the host, the limit and the last sender, its name, kind and job — never the URL's path or query, which can carry
+  a secret (a routine's URL is one). The defaults stop a flood of thousands a second within its first second, after at
+  most the burst.
+- **Send log**: the tenant table `outbound_sends` (tenant migration 54, a table only: the build before runs on it), one
+  row per POST — `sent` (a 2xx) or `failed`, with the status or why —, and one per held send — `rate-limited`, `duplicate`,
+  `circuit-open` —, whose repeats within the minute are counted on one more row (`count`), written each minute and at
+  stop. A flood leaves a few rows, not one per request. Each row: `at`, `sender` (`webhook`, `notifier`), `name` (the
+  subscription's, the notifier instance's), `host`, `kind` (the event type, `hopper.reachable`, `test`), `outcome`,
+  `count`, `status?`, `error?`, `jobId?`. Rows older than 14 days are pruned, at most once an hour.
+  `GET /api/outbound?limit=100&name=` answers `{ sends, circuits }`, newest first; `circuits` are the user's destinations
+  whose circuit is open now, `{ host, until }`. Read-only, under `/api/`: a LAN or public request needs a UI session.
+- The limits are constants, not settings: no real use has needed another value. Tests pass their own to the guard.
 
 ## Construction contract
 
@@ -2832,7 +2870,8 @@ event; in-memory only.
   HTTP status. A notifier offers its actions in GET /api/plugins (`actions`); a custom notifier offers
   one by having the optional `test` or `sendOpen` member (`Notifier`, ports.ts).
 - Delivery: 10 s timeout; 3 attempts, backoff `base * 2^(n-1)` (base 1000 ms), retried only on
-  network error, 429, 5xx; other non-2xx is final. Success logs kind, jobId, status; final
+  network error, 429, 5xx; other non-2xx is final. Each post passes the routine's outbound guard ("Outbound sends", issue #1014): a
+  duplicate of its event, an open circuit or no token is not sent, and each attempt is in the send log. Success logs kind, jobId, status; final
   failure logs an error. The key is never logged. Work runs deferred, off the event listener;
   `stop()` unsubscribes and awaits in-flight posts.
 - `createGrokBotNotifier({ name, routine, logger, clock, baseMs?, timeoutMs?, watchMs? })` → `Notifier`;
@@ -12538,7 +12577,7 @@ but the VM keeps it, so Windows cannot use it. Now:
   minute, so a read never waits for it; a reading older than 5 minutes is dropped. A client in a container has no
   interop: it reads the memory held only. An ssh target's probe prints `MemFree` and `wsl`, so it gives the memory held
   too, never Windows' memory. `resourcesOf` checks a client's figures (held at most its total; free at most total).
-- **Samples and the graph.** A machine sample keeps them (tenant migration 53: `vm_held`, `host_mem_free`,
+- **Samples and the graph.** A machine sample keeps them (tenant migration 54: `vm_held`, `host_mem_free`,
   `host_mem_total`, nullable columns, so the build before runs on them). The resource graph adds two resources, only
   where read: **memory held** (held / total) and **host memory** (Windows' memory used). A machine card says
   "VM holds 19 GB · Windows 3.0 GB free of 32 GB" after its memory. Memory used, which lane tuning and placement read,

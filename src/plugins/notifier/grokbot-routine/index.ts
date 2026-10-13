@@ -5,6 +5,7 @@
 // looks at those only — never the Grok Bot app (an Electron GUI). Unset is needs-setup, and the
 // notifier still runs: it sends nothing until both are given, then offers the open questions.
 import type { PluginDefinition } from '../../sdk.ts';
+import type { Outbound } from '../../../outbound/index.ts';
 import { createGrokBotNotifier, type Routine } from './notifier.ts';
 
 export interface GrokBotRoutineOptions { urlEnv: string; keyEnv: string }
@@ -29,8 +30,11 @@ export function routineFrom(rt: { env(name: string): string | undefined; secretN
   return { url: values[0]!, key: values[1]! };
 }
 
-/** The plugin. `baseMs` and `watchMs` (tests, `AppSeams.grokbot`) shorten the retry backoff and the configured check. */
-export function grokbotRoutinePlugin(seam: { baseMs?: number; watchMs?: number } = {}): PluginDefinition<'notifier', GrokBotRoutineOptions> {
+/**
+ * The plugin. `baseMs` and `watchMs` (tests, `AppSeams.grokbot`) shorten the retry backoff and the configured check.
+ * `outbound`: the user's outbound sends (issue #1014), which the user runtime gives every instance.
+ */
+export function grokbotRoutinePlugin(seam: { baseMs?: number; watchMs?: number; outbound?: Outbound } = {}): PluginDefinition<'notifier', GrokBotRoutineOptions> {
   return {
     id: 'grokbot-routine',
     role: 'notifier',
@@ -54,6 +58,7 @@ export function grokbotRoutinePlugin(seam: { baseMs?: number; watchMs?: number }
       name: ctx.instanceName, logger: ctx.logger, clock: ctx.clock, routine: () => routineFrom(ctx, o),
       ...(seam.baseMs ? { baseMs: seam.baseMs } : {}),
       ...(seam.watchMs ? { watchMs: seam.watchMs } : {}),
+      ...(seam.outbound ? { outbound: seam.outbound } : {}),
     }),
   };
 }

@@ -6,6 +6,7 @@ import { githubAppPlugin } from '../plugins/job-source/github-app/index.ts';
 import { githubAccountPlugin } from '../plugins/job-source/github-account/index.ts';
 import { localPlugin } from '../plugins/machine-source/local/index.ts';
 import { grokbotRoutinePlugin } from '../plugins/notifier/grokbot-routine/index.ts';
+import type { Outbound } from '../outbound/index.ts';
 import type { AttachedMachine, HostKeyOffer, JevChooser, TldrWriter } from '../domain/types.ts';
 import type { HerdrClient } from '../executors/herdr/index.ts';
 import type { MachineProbe, ResolvedTarget } from '../machines/index.ts';
@@ -51,14 +52,17 @@ export interface UserSeams {
   windowsStepHost?: WindowsStepHost;
 }
 
-/** The built-in plugins with the seams (tests) in place of the herdr CLI and the GitHub adapters, and the user's herdr session as herdr-claude's default. */
-export function withSeams(seams: UserSeams) {
+/**
+ * The built-in plugins with the seams (tests) in place of the herdr CLI and the GitHub adapters, the user's herdr session
+ * as herdr-claude's default, and the user's outbound sends for the Grok Bot routine (issue #1014).
+ */
+export function withSeams(seams: UserSeams, outbound: Outbound) {
   return BUILTIN_PLUGINS.map((p) => {
     if (p.id === 'herdr-claude') return herdrClaudePlugin(seams.herdr);
     if (p.id === 'local' && seams.herdrSession) return localPlugin(seams.herdrSession);
     if (p.id === 'github-account' && seams.github) return githubAccountPlugin(seams.github);
     if (p.id === 'github-app' && seams.githubApp) return githubAppPlugin(seams.githubApp);
-    if (p.id === 'grokbot-routine' && seams.grokbot) return grokbotRoutinePlugin(seams.grokbot);
+    if (p.id === 'grokbot-routine') return grokbotRoutinePlugin({ ...seams.grokbot, outbound });
     return p;
   });
 }

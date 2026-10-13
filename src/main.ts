@@ -33,7 +33,7 @@ import { openInstanceStore } from './store/index.ts';
 import { createInstallScriptBuilder, createReleaseCheck, createRestarter, releaseAccount, createStackProbe, createUpdater, startStackDrift, renameBoot, RESTART_EXIT_CODE, restartBlockers } from './update/index.ts';
 import { userForIdentity } from './users/identities.ts';
 import type { UserRuntime, UserSeams } from './users/runtime.ts';
-import { createRuntimes } from './users/runtimes.ts';
+import { createRuntimes } from './users/runtimes.ts'; import { createOutboundGuard } from './outbound/index.ts';
 import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxBoxesFor, sandboxClientsOf } from './users/sandbox-boxes.ts'; import { mintJoinCode } from './machines/join-code.ts';
 import { selectRuntime } from './sandbox/runtime.ts'; import { createOpenFgaMeter, createRemoteBoxMeter, createSolrMeter, createStack, meterFor, openFgaMetricsUrl, type StackRecorder } from './stack-resources/index.ts';
@@ -207,12 +207,13 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // tunnel watch (issue #795, remoteAccess below): whether the remote access URL is up, so each user's Grok Bot routine is
   // told where the hopper is.
   // Search (issue #945): one Solr core for the hopper, each user's documents apart by the instance id and the user id.
-  const minter = createCredentialMinter(), sandboxRecords = cachedSandboxes(instance.sandboxes), search = { index: seams.searchIndex !== undefined ? seams.searchIndex ?? undefined : config.solrUrl ? createSolrIndex({ url: config.solrUrl }) : undefined, instanceId: instance.settings.instanceId(), access }, sandboxLauncher: SandboxLauncher = { launch: (userId, template) => sandboxes.launch(userId, { agent: BOX_AGENTS[0], template, params: {} }), alive: (userId, name) => sandboxRecords.list().some((r) => r.userId === userId && r.name === name), step: (userId, name, step, io) => sandboxes.step(userId, name, step, io), needStep: (userId, box, io) => sandboxes.needStep(userId, box, io), ...(seams.sandboxStartMs !== undefined ? { startMs: seams.sandboxStartMs } : {}) }; // a job's sandbox request's box (issue #991), through the sandbox module made below
+  // One outbound guard for the process (issue #1014): every user's sends to one destination share its limits.
+  const outboundGuard = createOutboundGuard({ clock, logger }), minter = createCredentialMinter(), sandboxRecords = cachedSandboxes(instance.sandboxes), search = { index: seams.searchIndex !== undefined ? seams.searchIndex ?? undefined : config.solrUrl ? createSolrIndex({ url: config.solrUrl }) : undefined, instanceId: instance.settings.instanceId(), access }, sandboxLauncher: SandboxLauncher = { launch: (userId, template) => sandboxes.launch(userId, { agent: BOX_AGENTS[0], template, params: {} }), alive: (userId, name) => sandboxRecords.list().some((r) => r.userId === userId && r.name === name), step: (userId, name, step, io) => sandboxes.step(userId, name, step, io), needStep: (userId, box, io) => sandboxes.needStep(userId, box, io), ...(seams.sandboxStartMs !== undefined ? { startMs: seams.sandboxStartMs } : {}) }; // a job's sandbox request's box (issue #991), through the sandbox module made below
   // The shared secrets (issue #718): the instance's, every user's vault lists them and delivers them after Access allows it.
   const runtimes = createRuntimes({
     instance, logger,
     options: (user) => ({
-      config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(sandboxRecords.list(), userId), sandboxes: sandboxLauncher,
+      config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(sandboxRecords.list(), userId), sandboxes: sandboxLauncher, outboundGuard,
       installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, linkBase, reach: () => remoteAccess.watch.url(),
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
