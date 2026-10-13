@@ -35,7 +35,7 @@ Do them in order. Do not do the update another way.
 5. Read \`${UPDATE_SCRIPT_FILE}\`. Then run it: \`sh ${UPDATE_SCRIPT_FILE}\`.
 6. When it stops, read its last line. Fix that cause, then run the script again. When the new stack did not start or
    did not answer, the script put the old stack back by itself: the line says so.
-7. Check the result: \`podman compose ps\` (or \`docker compose ps\`) shows postgres, openfga, tunnel, solr and hopper running;
+7. Check the result: \`podman compose ps\` (or \`docker compose ps\`) shows postgres, openfga, tunnel, cloudflared, solr and hopper running;
    the UI opens; Settings → Version names the new commit; and \`GET /api/update/drift\` answers no gaps (the UI shows
    no "stack differs" banner). A gap names what is still missing; the fix is this script again, never a hand edit.
 8. When the script says an old \`.env\` was removed, tell the person: its backup \`.env.bak-<commit>\` holds the master

@@ -63,10 +63,12 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   job's proxy token, serves that job its own checkpoint, scrubbed, only while it runs resuming elsewhere; it changes nothing. A machine's address check (issue #698,
   `docs/design.md` "GitHub through the hopper"): `GET /job/address` answers 204 to anyone the Host guard lets in, so an ssh
   target's probe learns which of the hopper's addresses its jobs reach; it changes and records nothing. The tunnel
-  service's ask (issue #880, `docs/design.md` "Remote access"): `GET /tunnel/agent`, with the preshared key the compose
-  stack makes in memory (`HOPPER_TUNNEL_KEY`), never as a public request, answers the remote access URL and the ngrok
-  authtoken while remote access is on; it changes no job, question, webhook or setting, only records in memory when the
-  service asked and what it said of ngrok. Remote access itself is set only through the UI session, by the hopper's admin. A running
+  services' ask (issues #880, #968, `docs/design.md` "Remote access"): `GET /tunnel/agent`, with the preshared key the
+  compose stack makes in memory (`HOPPER_TUNNEL_KEY`), never as a public request, answers the tunnel token the hopper
+  minted (and for ngrok the remote access URL) to the service of the tunnel provider that is on; it changes no job,
+  question, webhook or setting, only records in memory when each service asked and what it said of its agent. Remote
+  access itself — the provider, its one credential, on or off, which mints or releases the tunnel at the provider — is
+  set only through the UI session, by the hopper's admin. A running
   job's artifacts (issue #624, `docs/design.md` "Artifacts"): `/job/artifacts`, with the job's proxy token, puts, shares, revokes
   and removes that user's artifacts, each an event on the job's timeline; it changes no job, question, webhook or setting. Their
   content is served off `/api/`, at `/artifact-content/` (a URL a read signed for one viewer, for an hour) and `/artifact-link/`
@@ -127,13 +129,13 @@ hopper's note naming the job and the request by id only, and gets no label or as
   hashed. **Every secret the hopper owns for itself is a system secret** (issues #657, #658, `docs/design.md`
   "The vault's system scope"): the GitHub connection's access and refresh tokens, each webhook signing secret and each
   user's TypeSafe API key in that user's vault, each sign-in realm's `clientSecret` or `bindPassword` (set in the UI or
-  from the `HOPPER_SIGN_IN_*` environment) and the tunnel's ngrok authtoken (issue #880, set in Settings → Remote access,
-  never in `.env`) in the instance's vault — rows named `system/<name>`, sealed, written only
+  from the `HOPPER_SIGN_IN_*` environment) and remote access's — each tunnel provider's credential and the tunnel token the hopper
+  minted with it (issues #880, #968, set in Settings → Remote access, never in `.env`) — in the instance's vault — rows named `system/<name>`, sealed, written only
   through `SystemSecrets.keep` (src/vault/system.ts), each set, replace, rotation, removal, move and read an event with no
   value, shown with its audit trail on Settings → Vault, and never given to a job, a machine or a box: OpenFGA
-  (`system_secret#can_read`) denies them, and the vault refuses them whatever it answers. One is answered by a route: the
-  ngrok authtoken, to the tunnel service alone (`GET /tunnel/agent` above), which holds it in ngrok's environment only, never
-  in a file. None is kept in clear: without
+  (`system_secret#can_read`) denies them, and the vault refuses them whatever it answers. One kind is answered by a route: the
+  tunnel token, to its provider's tunnel service alone (`GET /tunnel/agent` above), which holds it in its agent's environment
+  only, never in a file. None is kept in clear: without
   the master key (limited, issue #659) none is kept or opened, and a realm's secret given meanwhile stays in the `sign-in`
   record until the next start with the key moves it. The master key itself stays outside every vault (given at launch). Kept in that user's schema, never answered by any route but its public half: the
   **hopper's ssh key** (issue #293: the hopper runs in ephemeral containers with no durable `~/.ssh`), minted

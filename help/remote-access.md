@@ -1,47 +1,74 @@
 # Remote access
 
-Remote access lets an agent reach the hopper's API from anywhere, through an ngrok tunnel, with no open port on your machine. The hopper's admin turns it on in the UI. No file on the host changes, so you can do it from a phone.
+Remote access lets an agent reach the hopper's API from anywhere, through a tunnel, with no open port on your machine. It is optional and off by default. The hopper works fully without it.
+
+You pick the provider: **Cloudflare Tunnel** or **ngrok**. They are equal choices. You give the hopper one credential of that provider. The hopper then makes the tunnel and its address itself. You edit no file on the host, so you can do it from a phone.
 
 ## What it is
 
-- The compose stack runs a `tunnel` service. It is required, but it runs no ngrok while remote access is off.
-- When remote access is on, the tunnel service starts ngrok at your domain, for example `https://hopper.example.ngrok.app`. That address is the **remote access URL**.
+- The compose stack runs two services: `cloudflared` and `tunnel` (ngrok). They are required, but they run no tunnel while remote access is off. When it is on, only the service of the provider you picked runs its tunnel.
+- The tunnel's address, for example `https://hopper.example.com`, is the **remote access URL**.
 - Only the API goes through the tunnel: `/api/` (not the event stream), `/ui/api/`, `/ui/auth/api-token` and `/ui/auth/token/refresh`. The UI, its sign-in pages and the installer are not reached from the internet.
-- ngrok limits each caller: 120 requests a minute, and 5 token exchanges or refreshes a minute.
+- Each caller has a limit: 120 requests a minute, and 5 token exchanges or refreshes a minute.
 - A request through the tunnel is a public request. It reads or changes something only with an API token. See [API tokens and grants](api-tokens.md).
 
 ## What you need
 
-1. An ngrok account.
-2. A domain reserved at ngrok: https://dashboard.ngrok.com/domains
-3. Your ngrok authtoken: https://dashboard.ngrok.com/get-started/your-authtoken
+One credential, for the provider you pick:
+
+| Provider | Credential | Where to make it | What it needs |
+|---|---|---|---|
+| Cloudflare Tunnel | API token | https://dash.cloudflare.com/profile/api-tokens | A custom token with **Account → Cloudflare Tunnel → Edit** and **Zone → DNS → Edit** on the zone of the host name. A domain on Cloudflare. |
+| ngrok | API key | https://dashboard.ngrok.com/api-keys | An ngrok account. The hopper uses the account's domain, or reserves one. |
 
 ## Turn it on
 
 Only the hopper's admin can do this.
 
 1. Open **Settings → Remote access**.
-2. In **Domain**, type the domain you reserved, for example `hopper.example.ngrok.app`.
-3. In **Authtoken**, paste your ngrok authtoken.
-4. Select **Save**.
+2. Under **Provider**, select **Cloudflare Tunnel** or **ngrok**.
+3. Paste the API token or the API key.
+4. Optional: in **Host name**, type the address you want, for example `hopper.example.com`. Leave it empty, and the hopper picks one: `hopper.<your zone>` at Cloudflare, or the ngrok account's domain.
 5. Turn on the **Remote access** switch.
-6. Wait up to 10 seconds. The status line says `Up: agents reach the hopper's API at https://…`.
 
-The hopper keeps the authtoken sealed in its vault, as a system secret. No page, log or API answer shows it again. The page shows only its last 4 characters, who set it and when.
+The hopper then makes the tunnel:
 
-An agent with an API token of the admin can do the same over the API: `POST /ui/api/remote-access` with `enabled`, `domain`, `authtoken` or `restart`.
+- **Cloudflare Tunnel**: a tunnel, its token, and a DNS record for the host name.
+- **ngrok**: an authtoken and a domain.
+
+Wait up to 10 seconds. The status line says `Up: agents reach the hopper's API at https://…`.
+
+If the provider refuses, the page shows why. The hopper removes what it made, and remote access stays off. For example: the token does not have the two permissions, or the host name is not in a zone of the token.
+
+The hopper keeps the credential and the tunnel's token sealed in its vault, as system secrets. No page, log or API answer shows them again. The page shows only the last 4 characters of the credential, who set it and when.
+
+## Copy the addresses
+
+While remote access is on, a panel shows the addresses an agent uses, each with a **Copy** button:
+
+| Address | What it is |
+|---|---|
+| Public URL | The remote access URL. |
+| API | The API's address: `<public URL>/api/`. |
+| API-token exchange | Where an agent exchanges its sign-in for an API token. |
+| Token refresh | Where an agent with a grant gets a new API token. |
+
+The panel also shows the status. The hopper takes no inbound webhooks: it pulls its jobs.
+
+An agent with an API token of the admin can do all of this over the API: `GET /api/remote-access`, and `POST /ui/api/remote-access` with `provider`, `credential`, `domain`, `enabled` or `restart`.
 
 ## Change or turn it off
 
 | You want | Do this |
 |---|---|
-| Turn it off | Turn off the **Remote access** switch. The tunnel service stops ngrok within 10 seconds. |
-| A new authtoken | Paste it in **Authtoken** and select **Save**. The old one is replaced. |
-| Another domain | Type it in **Domain** and select **Save**. |
+| Turn it off | Turn off the **Remote access** switch. The hopper removes the tunnel, its token and its DNS record (Cloudflare), or revokes the authtoken and removes a domain it reserved (ngrok). |
+| Switch the provider | Select the other provider, paste its credential, and select **Save**. The hopper removes the old tunnel first, then makes the new one. |
+| Another host name | Type it in **Host name** and select **Save**. The hopper makes the tunnel again at that name. |
+| A new credential | Paste it and select **Save**. While remote access is on, the hopper makes the tunnel again with it. |
 | Start the tunnel again | Select **Restart the tunnel**. |
-| Remove the authtoken | Turn remote access off first. Then select **Remove the authtoken**. |
+| Remove the credential | Turn remote access off first. Then select **Remove the API token** or **Remove the API key**. |
 
-You cannot turn it on without a domain and an authtoken. You cannot remove either one while it is on.
+If the hopper cannot remove something at the provider (the provider does not answer, or the credential was revoked), the page lists it. Remove it at the provider yourself.
 
 ## Status
 
@@ -51,14 +78,17 @@ The page reads the status every 10 seconds.
 |---|---|
 | `Off` | Remote access is off. The hopper is not reached from the internet. |
 | `Up` | Agents reach the API at the URL it shows. |
-| `Down` | ngrok stopped, with its last error, or the tunnel is starting. A refused authtoken or a domain that is not yours stops it until you save new settings. |
-| `No tunnel service` | No tunnel service asked for the settings in the last 30 seconds. Run the update script, or `podman compose up -d`, so that the `tunnel` service runs. |
+| `Down` | The tunnel stopped, with its last error, or it is starting. |
+| `No tunnel service` | The provider's service (`cloudflared` or `tunnel`) did not ask for its settings in the last 30 seconds. Run the update script, or `podman compose up -d`. |
 
 ## From an install before
 
-An older install gave the tunnel `NGROK_AUTHTOKEN`, `HOPPER_PUBLIC_URL` and `COMPOSE_PROFILES=tunnel` in a `.env` file. At its first start, the hopper moves the authtoken into its vault, takes the domain from `HOPPER_PUBLIC_URL`, and turns remote access on. The update script then removes the `.env` file. Keep `HOPPER_PUBLIC_URL` only when a reverse proxy also serves the UI at that address. See [Run and update the hopper](deploy-and-update.md).
+An install that pasted an ngrok authtoken and a domain by hand keeps them. Remote access goes on running. When you turn it off, the hopper keeps them, because it did not make them. To let the hopper make and remove them, select ngrok, paste an ngrok API key, and select **Save**.
+
+An older install gave the tunnel `NGROK_AUTHTOKEN`, `HOPPER_PUBLIC_URL` and `COMPOSE_PROFILES=tunnel` in a `.env` file. At its first start, the hopper moves the authtoken into its vault, takes the domain from `HOPPER_PUBLIC_URL`, and turns remote access on. See [Run and update the hopper](deploy-and-update.md).
 
 ## Risks
 
-- The tunnel service is third-party code on the internet's path. It holds the authtoken in memory while ngrok runs.
+- The tunnel's service is third-party code on the internet's path. It holds the tunnel's token in memory while the tunnel runs.
+- The Cloudflare API token can make tunnels and change DNS records in its zone. Give it the one zone only.
 - Callers behind one address (a NAT) share one rate limit.

@@ -11,6 +11,7 @@ import { ownerToAdmin } from './migration-admin.ts';
 import { noBootstrapUser } from './migration-no-bootstrap.ts';
 import { sessionsRenew, sessionsTheBuildBeforeReads } from './migration-session-lifetime.ts';
 import { attachedMachinesToInstances } from './migration-attached-machines.ts';
+import { remoteAccessProvider } from './migration-remote-access.ts';
 
 // Schema changes never drop a queue (persisted state is the user's). A migration is SQL, or a
 // function for a rewrite SQL cannot say plainly (JSON bodies); each runs in one transaction.
@@ -210,7 +211,12 @@ const MIGRATIONS: readonly Migration[] = [
   // 38: the stack's resources over time (issue #947): one stack sample per service, metric and time. A table only: the
   // build before never reads it.
   'CREATE TABLE IF NOT EXISTS stack_samples (at TIMESTAMPTZ NOT NULL, service TEXT NOT NULL, metric TEXT NOT NULL, grp TEXT NOT NULL, value DOUBLE PRECISION NOT NULL, PRIMARY KEY (service, metric, at)); CREATE INDEX IF NOT EXISTS stack_samples_at ON stack_samples (at);',
+  // 39: remote access names its provider (issue #968). A record from before is ngrok's, and its domain is the one its
+  // tunnel runs at, with the authtoken given by hand: `provisioned`, which the hopper keeps when remote access is turned
+  // off (it minted none of it). The build before reads `enabled` and `domain` only, as before.
+  remoteAccessProvider,
 ];
+
 
 /** Each recorded access decision's `job` becomes its `requester`, of kind job; the rest of the record is kept. */
 function decisionsNameTheirRequester(db: Db): void {

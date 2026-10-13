@@ -62,7 +62,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts` | engine, http, store, plugins, decider |
 | `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
-| `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939) | engine, http, store, plugins, decider, sources |
+| `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
@@ -79,8 +79,9 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
 | `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
+| `src/remote-access/` | the tunnel providers (issue #968): what the hopper asks of Cloudflare's and ngrok's APIs with the admin's credential — mint a tunnel, its token and its host name, and release them again (`provider.ts`, `cloudflare.ts`, `ngrok.ts`) | `src/http/`, `src/store/`, `src/vault/`: it is given the credential, keeps nothing, and knows no route |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); remote access — the tunnel's settings, its authtoken in the instance's vault, its status and the tunnel service's ask (`remote-access.ts`, `ui/remote-access.ts`, issue #880); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
@@ -1985,6 +1986,25 @@ same pass is not merged: GitHub would refuse that merge (`mergeError`) once it s
 `seen.mergeHeldBehind`, its card waits `merge held` and says behind which, and the next sync sees it conflict with the new
 base and tends it. Where the mirror cannot say, the merge is made, as before. A person's Merge now is not gated.
 
+**The base merge** (issue #967, `src/git-mirror/mirrors.ts` `baseMerge`, `JobSource.baseMerge`). A tend is a job, and a
+job waits for a lane: with every lane busy (the Claude usage cap held the hopper to two lanes), pull requests with only a
+simple conflict waited for hours. So a `rebase` tend the queue starts is first asked of the source. The **hopper's mirror**
+merges the base branch, as the sync pass fetched it, into the pull request's head (`git merge-tree --write-tree`), with no
+job and no lane. A conflict is resolved only in a Markdown file (`*.md`) where both sides only added lines at the same
+place — no line of the merge base is in the conflict (`git merge-file --diff3`, `keepBothAdditions`): both additions are
+kept, the base branch's first. That is a `WHATS-NEW.md` line, or two design sections added at the end of
+`docs/design.md`. Any other conflict — a code file, a line one side changed or removed, a file not on all three sides —
+is a real one: nothing is pushed, and the tend job runs as before. Clean, the hopper makes the merge commit (parents: the
+head, then the base; author `hopper`, no person) and pushes it to the pull request's branch with
+`--force-with-lease=refs/heads/<branch>:<head as fetched>`: a branch that moved since the fetch, or a fork's branch that
+is not in the repository, is never written, and the refusal is logged. Pushed, `job.pull_request_base_merged` records the
+commit and the files resolved, and what the job saw of its pull request says no merge conflicts and its checks pending from
+now, so with yolo mode on it heads its queue at once and the pull requests that conflict with it wait for its merge. The
+checks run on the merge commit as on any push, and yolo mode merges only once they pass. The push uses the source's own
+credential, as the mirror's fetch does (an App installation token, or the connected account's): a push the token may not
+make (one that changes a workflow file, without that permission) is refused and goes to a tend job. Where the source has no
+mirror, or outside a sync pass, there is no base merge.
+
 What issue #939 did not do, by the path a person selected: a batch of ready pull requests merged into one trial branch with
 one run of the checks, and a bisect of a batch that fails. The tree with every ready pull request merged is still not
 tested before the merges: two pull requests with green checks that break each other, without a merge conflict, can still
@@ -1992,11 +2012,14 @@ break the base branch, as before. Checks run on each pull request against the ba
 the tending queue only stop merge conflicts.
 
 What the hopper does about each pull request that needs tending shows on its card in Pull requests (issue #927,
-`PullRequestCard.queue`, `gaveUp`): "the hopper tends it next", "held behind #N" with why (a job works on it, or it waits
+`PullRequestCard.queue`, `gaveUp`): "the hopper tends it on its next sync", "the hopper cannot tend it" with the source's
+refusal (issue #967: `tendRefused`, kept on the job until a tend starts; before, a refused tend left the card at "the hopper
+tends it next" for hours), "held behind #N" with why (a job works on it, or it waits
 for its checks to merge), or "the hopper gave up" with why (its checks still fail after `MAX_TENDS` fixes, or its tend job
 failed: then why is that job's own reason, `Job.error`, on one line, at most 300 characters). A stall is never silent.
 Every other open card says what the hopper does now, too (`doingText`, `ui/src/model/pull-requests.ts`): its tend job's step
-("the hopper rebases it onto dev: job N works on it now", `PullRequestCard.tendStep`), the merge it waits to make ("merges
+("the hopper rebases it onto dev: job N works on it now", `PullRequestCard.tendStep`; a tend job queued or held: "job N
+waits to start:" and the lane cap that binds or its hold, `tendWaits`, issue #967), the merge it waits to make ("merges
 it when its checks pass", "on its next sync", "tries the merge again on each sync"), or nothing, and who acts then (yolo mode
 off, checks it may not read, a draft).
 
@@ -6730,7 +6753,7 @@ on the host. The hopper keeps its own secrets, entered in the UI and kept in the
 Settings → Remote access, from any browser or with an API token: no file on the host, so a phone can turn it on, restart
 it or rotate its token.
 
-- **Settings.** The instance's settings record `remoteAccess`: `{ enabled, domain?, restartedAt? }`. The domain is the
+- **Settings** (issue #968 replaced the token and domain pasted by hand: "Remote access providers" below). The instance's settings record `remoteAccess`: `{ enabled, domain?, restartedAt? }`. The domain is the
   one reserved at ngrok, kept lowercase with no scheme (`domainOf`); the remote access URL is `https://<domain>`, never a
   variable of its own. The **ngrok authtoken** is a system secret of the instance's vault, `remote-access.ngrok-authtoken`
   (kind `remote-access`), written through `SystemSecrets.keep`, never in a vault backend (the whole hopper's). It is on
@@ -6765,6 +6788,57 @@ it or rotate its token.
   while it runs: as it did before, now in memory only. Anyone with the tunnel service's key reads the authtoken: the key is
   in that container and the hopper's, and in memory on the host. A restart of the hopper reads the key file again; a full
   stop of the stack makes a new key.
+
+### Remote access providers: the hopper mints the tunnel (issue #968, 2026-10-12)
+
+The issue: #880 moved the ngrok token and domain into the vault, but a person still made and pasted them. The intent was
+that the hopper sets up remote access itself. Remote access stays optional and off by default.
+
+- **Two providers, equal.** The admin picks Cloudflare Tunnel or ngrok (`provider`); the picker offers Cloudflare first,
+  and neither is a fallback for the other. Each takes **one credential**, a system secret of the instance's vault:
+  `remote-access.cloudflare-api-token` (Account → Cloudflare Tunnel → Edit, Zone → DNS → Edit) or
+  `remote-access.ngrok-api-key`. Nothing in `.env`.
+- **Minted on turn-on** (`src/remote-access/`, one `TunnelProvider` each, plain fetch: a handful of REST calls, fewer than
+  an SDK's setup). Cloudflare: the zone the host name is in (or the first zone the token sees, at `hopper.<zone>`), a
+  named tunnel with `config_src: cloudflare`, its ingress, its token, and a proxied `CNAME` to `<id>.cfargotunnel.com`.
+  ngrok: a tunnel credential (the authtoken) and a domain — the one asked for, reserved if the account lacks it, else the
+  account's first, else one it reserves. The token is a system secret (`remote-access.<provider>-tunnel-token`, the
+  ngrok one keeping its #880 name). What was made is `provisioned` in the settings record: the host name and the ids
+  to remove it by, never a secret. A step that fails undoes the ones before it; the route answers 502 and remote access
+  stays off.
+- **Released on turn-off, switch, another host name or a new credential**, before the next mint: Cloudflare's DNS record,
+  the tunnel's connections and the tunnel; ngrok's credential and a domain it reserved (one the account had stays). What
+  cannot be removed is `leftover`, shown on the page for a person to remove; turning off never fails on it. An ngrok
+  authtoken and domain given by hand before this issue (migration 39 marks them `provisioned` with no ids) are kept on
+  turn-off: the hopper made neither.
+- **One change at a time.** `change` is serialized: each may call a provider, and the next reads what the last minted.
+- **Two services.** `tunnel` runs ngrok, as before; `cloudflared` runs Cloudflare's agent, from the hopper's own image (it
+  carries the `cloudflared` binary of Cloudflare's pinned image, which has no shell to ask with). Both are required, on
+  `hopper_tunnel` alone, mount `tunnel-key` alone, and ask `GET /tunnel/agent` (`?ngrok=` or `?cloudflared=` with their
+  report). Each is answered only while its provider is the one minted; else 204, and it runs no agent. `cloudflared` gets
+  `token=` and `restart=` lines, runs `cloudflared tunnel --no-autoupdate --metrics 0.0.0.0:2000 run` with
+  `TUNNEL_TOKEN` in its environment only.
+- **The tunnel watch** asks the minted provider's agent: ngrok's `GET /api/tunnels` as before, cloudflared's `GET /ready`
+  (`HOPPER_CLOUDFLARED_API`, `http://cloudflared:2000`). It looks up both agents' addresses (`agentOf`).
+- **The edge, in the hopper too** (`installTunnelEdge`): a request from a tunnel agent with the remote access domain as Host
+  reaches only the API paths (`throughTheTunnel`, else 404) and has the #795 limits per caller (120 requests and 5 token
+  exchanges or refreshes a minute, else 429). ngrok's traffic policy keeps both at its edge; Cloudflare's ingress, set by
+  the hopper, lets only the API paths through, and the limit is the hopper's alone (a Cloudflare rate-limit rule needs a
+  WAF permission the one credential does not carry). The caller is `cf-connecting-ip` from the cloudflared agent,
+  `x-hopper-caller` from ngrok's; neither header is read from any other peer. The agent's own ask names the hopper as its
+  Host, so the edge does not apply to it. A count of its own: @fastify/rate-limit limits one context's routes, and this
+  is one gate before every route.
+- **Copy-out panel.** `GET /api/remote-access` gives `links` while on: the public URL, `/api/`, the API-token exchange and
+  the refresh URL; the page shows each with a copy button, and the status. The hopper takes no inbound webhooks (it
+  pulls), so these are the URLs an agent calls.
+- **API parity** (#718): the same `POST /ui/api/remote-access` (`provider`, `credential`, `domain`, `enabled`, `restart`)
+  behind the `instance` guard, so an admin's API token does what the page does. `remote_access.changed` is version 2
+  (`credential` in place of `authtoken`, and `provider`, `provisioned`, `leftover` in the settings).
+- **Residual risk, stated.** The hopper holds a credential that can make tunnels and, at Cloudflare, change the zone's
+  DNS records: the guide says to give the token that zone alone. `cloudflared` runs the hopper's image, which carries
+  more than it needs; it mounts only `tunnel-key`. "Nothing tunnel-related runs while off": both services stay up, idle,
+  and run no agent; starting a container from the UI would need the container runtime's socket in the hopper, which is
+  more exposure than an idle loop.
 
 ### No .env; the update starts what is new and rolls back (issue #894, 2026-10-12)
 
@@ -16133,3 +16207,24 @@ Their outputs are **artifacts** of the job, kept private in the hopper and shown
 
 **Not built yet (the next parts).** Committing a small artifact to a branch of the repository, so it shows on GitHub
 without a hopper sign-in; promoting from the job view (#935) as well as from Direct jobs.
+
+## PR tending without lanes, part 1 (issue #967, 2026-10-12)
+
+Pull requests with merge conflicts and passing checks waited for hours: each tend is a job, the jobs compete for lanes, and
+the Claude usage cap held the hopper to two lanes. A card said "the hopper tends it next" while nothing happened.
+
+This part:
+
+- **The base merge** ("Tending a waiting pull request", "The base merge"): a simple conflict — the base merged with no
+  conflict, or only lines both sides added to a Markdown file — is merged and pushed by the hopper itself, in its mirror,
+  with no job and no lane. Only a real conflict becomes a tend job.
+- **The card says why.** A tend job queued or held says why it waits to start (its lane cap or hold). A tend the source
+  refused says why, in place of "tends it next".
+
+Left for later parts of issue #967, by the issue's ask: tending started by GitHub's events, not only by each sync; merged
+and closed pull requests reconciled at once; a lane kept for rework jobs, so a real conflict never waits behind feature
+work; migration numbers given out at merge time, so two pull requests cannot claim the same number (a migration renumbered
+by the base merge); and a pull request blocked by another named on its card.
+
+Verified: the base merge against real git (`test/git-mirror/base-merge.test.ts`: an origin over `file://` with blob filters,
+as GitHub serves one), and the tending queue with the in-memory GitHub (`test/integration/base-merge.test.ts`).

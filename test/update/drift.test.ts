@@ -32,10 +32,10 @@ const check = (o: { env?: Record<string, string | undefined>; probe: StackProbe;
 
 describe('the stack against the compose file of this version (issue #697)', () => {
   it('finds no gap in a stack on the shipped compose.yaml', async () => {
-    const p = probe(['postgres', 'openfga', 'solr', 'tunnel']);
+    const p = probe(['postgres', 'openfga', 'solr', 'tunnel', 'cloudflared']);
     expect(await check({ probe: p })).toEqual({ state: 'checked', gaps: [] });
     // The one-shot migration and the optional services whose profiles are off are not asked for.
-    expect(p.asked.sort()).toEqual(['openfga', 'postgres', 'solr', 'tunnel']);
+    expect(p.asked.sort()).toEqual(['cloudflared', 'openfga', 'postgres', 'solr', 'tunnel']);
   });
 
   it('names an old compose.yaml: the missing services, what each turns off, and the settings the hopper lacks', async () => {
@@ -49,23 +49,25 @@ describe('the stack against the compose file of this version (issue #697)', () =
       { kind: 'service', name: 'solr', what: 'the service solr is not running in this stack', off: expect.stringMatching(/^search: /) },
       // The tunnel service (issue #880): required from that version on; a stack from before lacks it.
       { kind: 'service', name: 'tunnel', what: 'the service tunnel is not running in this stack', off: expect.stringMatching(/Remote access/) },
+      // The cloudflared service (issue #968): the same.
+      { kind: 'service', name: 'cloudflared', what: 'the service cloudflared is not running in this stack', off: expect.stringMatching(/Cloudflare tunnel/) },
       { kind: 'setting', name: 'HOPPER_OPENFGA_URL, HOPPER_OPENFGA_KEY_FILE, HOPPER_VAULT_URL', what: expect.stringMatching(/older compose\.yaml/) },
     ]);
   });
 
   it('asks for an optional service only when its profile is on, and names the vault in its own container when it is missing', async () => {
     const env = { ...shippedEnv(), COMPOSE_PROFILES: 'hopper-vault,kms' };
-    const r = await check({ env, probe: probe(['postgres', 'openfga', 'solr', 'tunnel', 'kms']) });
+    const r = await check({ env, probe: probe(['postgres', 'openfga', 'solr', 'tunnel', 'cloudflared', 'kms']) });
     expect(r.gaps).toEqual([{ kind: 'service', name: 'hopper-vault', what: 'the service hopper-vault is not running in this stack', off: expect.stringMatching(/vault/) }]);
   });
 
   it('names a vault container that runs another version than the hopper', async () => {
     const env = { ...shippedEnv(), COMPOSE_PROFILES: 'hopper-vault' };
-    const other = await check({ env, probe: probe(['postgres', 'openfga', 'solr', 'tunnel', 'hopper-vault'], 'd'.repeat(40)) });
+    const other = await check({ env, probe: probe(['postgres', 'openfga', 'solr', 'tunnel', 'cloudflared', 'hopper-vault'], 'd'.repeat(40)) });
     expect(other.gaps).toEqual([{ kind: 'version', name: 'hopper-vault', what: `hopper-vault runs ${'d'.repeat(7)}, the hopper ${COMMIT.slice(0, 7)}` }]);
-    const older = await check({ env, probe: probe(['postgres', 'openfga', 'solr', 'tunnel', 'hopper-vault'], null) });
+    const older = await check({ env, probe: probe(['postgres', 'openfga', 'solr', 'tunnel', 'cloudflared', 'hopper-vault'], null) });
     expect(older.gaps).toEqual([{ kind: 'version', name: 'hopper-vault', what: expect.stringMatching(/does not say its version/) }]);
-    const same = await check({ env, probe: probe(['postgres', 'openfga', 'solr', 'tunnel', 'hopper-vault'], COMMIT) });
+    const same = await check({ env, probe: probe(['postgres', 'openfga', 'solr', 'tunnel', 'cloudflared', 'hopper-vault'], COMMIT) });
     expect(same.gaps).toEqual([]);
   });
 

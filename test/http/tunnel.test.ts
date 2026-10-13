@@ -4,7 +4,8 @@
 // a URL the agent reports. A loopback fake agent.
 import { createServer, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
-import { tunnelCaller, watchTunnel, type TunnelWatch } from '../../src/http/tunnel.ts';
+import Fastify from 'fastify';
+import { installTunnelEdge, tunnelCaller, watchTunnel, type TunnelWatch } from '../../src/http/tunnel.ts';
 import { waitFor } from '../support/wait.ts';
 
 let server: Server | undefined;
@@ -38,7 +39,7 @@ const logger = () => {
 
 describe('the tunnel watch', () => {
   it('has no URL and asks nothing when no tunnel API is set', async () => {
-    watch = watchTunnel({ api: undefined, url: () => 'https://h.example', logger: logger() });
+    watch = watchTunnel({ apis: {}, target: () => ({ provider: 'ngrok', url: 'https://h.example' }), logger: logger() });
     expect(watch.url()).toBeUndefined();
     expect(watch.reason()).toBeUndefined();
   });
@@ -46,7 +47,7 @@ describe('the tunnel watch', () => {
   it('is up when the agent has an endpoint at the remote access URL, and asks GET /api/tunnels', async () => {
     const a = await agent(() => tunnels('https://h.example'));
     const log = logger();
-    watch = watchTunnel({ api: a.api, url: () => 'https://h.example', logger: log, everyMs: 20 });
+    watch = watchTunnel({ apis: { ngrok: a.api }, target: () => ({ provider: 'ngrok', url: 'https://h.example' }), logger: log, everyMs: 20 });
     await waitFor(() => watch!.url() === 'https://h.example', { what: 'up' });
     expect(a.asked[0]).toBe('GET /api/tunnels');
     expect(log.lines).toContain('info hopper: the tunnel is up: https://h.example');
@@ -55,7 +56,7 @@ describe('the tunnel watch', () => {
   it('is down when the endpoint is at another URL: the Host guard would refuse it', async () => {
     const a = await agent(() => tunnels('https://random-1234.ngrok-free.app'));
     const log = logger();
-    watch = watchTunnel({ api: a.api, url: () => 'https://h.example', logger: log, everyMs: 20 });
+    watch = watchTunnel({ apis: { ngrok: a.api }, target: () => ({ provider: 'ngrok', url: 'https://h.example' }), logger: log, everyMs: 20 });
     await waitFor(() => log.lines.some((l) => l.startsWith('warn')), { what: 'a warning' });
     expect(watch.url()).toBeUndefined();
     expect(log.lines.find((l) => l.startsWith('warn'))).toMatch(/not the remote access URL \(https:\/\/h\.example\): https:\/\/random-1234\.ngrok-free\.app/);
@@ -65,7 +66,7 @@ describe('the tunnel watch', () => {
     let answer: { status: number; body: unknown } = tunnels('https://h.example');
     const a = await agent(() => answer);
     const log = logger();
-    watch = watchTunnel({ api: a.api, url: () => 'https://h.example', logger: log, everyMs: 20 });
+    watch = watchTunnel({ apis: { ngrok: a.api }, target: () => ({ provider: 'ngrok', url: 'https://h.example' }), logger: log, everyMs: 20 });
     await waitFor(() => watch!.url() !== undefined, { what: 'up' });
     answer = { status: 502, body: { error: 'no session' } };
     await waitFor(() => watch!.url() === undefined, { what: 'down' });
@@ -80,7 +81,7 @@ describe('the tunnel watch', () => {
   it('asks nothing while remote access is off, and follows its URL when it is turned on or changed', async () => {
     const a = await agent(() => tunnels('https://h.example'));
     let url: string | undefined;
-    watch = watchTunnel({ api: a.api, url: () => url, logger: logger(), everyMs: 20 });
+    watch = watchTunnel({ apis: { ngrok: a.api }, target: () => (url === undefined ? undefined : { provider: 'ngrok', url }), logger: logger(), everyMs: 20 });
     await new Promise((r) => setTimeout(r, 100));
     expect(a.asked).toEqual([]);
     expect(watch.url()).toBeUndefined();
@@ -98,7 +99,7 @@ describe('the tunnel watch', () => {
 
   it('is down when no agent answers', async () => {
     const log = logger();
-    watch = watchTunnel({ api: 'http://127.0.0.1:1', url: () => 'https://h.example', logger: log, everyMs: 20 });
+    watch = watchTunnel({ apis: { ngrok: 'http://127.0.0.1:1' }, target: () => ({ provider: 'ngrok', url: 'https://h.example' }), logger: log, everyMs: 20 });
     await waitFor(() => log.lines.some((l) => l.startsWith('warn')), { what: 'a warning' });
     expect(watch.url()).toBeUndefined();
     expect(watch.reason()).toMatch(/does not answer/);
@@ -106,7 +107,7 @@ describe('the tunnel watch', () => {
 });
 
 describe('tunnelCaller: who a request counts as for the sign-in limit', () => {
-  const caller = tunnelCaller({ isAgent: (peer) => peer === '10.89.1.2' });
+  const caller = tunnelCaller({ agentOf: (peer) => (peer === '10.89.1.2' ? 'ngrok' : peer === '10.89.1.3' ? 'cloudflare' : undefined) });
   const req = (ip: string, named?: string | string[]) => ({ ip, headers: named === undefined ? {} : { 'x-hopper-caller': named } });
 
   it('from the tunnel agent: the address its edge names', () => {
@@ -121,7 +122,75 @@ describe('tunnelCaller: who a request counts as for the sign-in limit', () => {
     }
   });
 
+  it('from the cloudflared agent: the address Cloudflare names in cf-connecting-ip, never x-hopper-caller (issue #968)', () => {
+    expect(caller({ ip: '10.89.1.3', headers: { 'cf-connecting-ip': '203.0.113.9' } })).toBe('203.0.113.9');
+    expect(caller({ ip: '10.89.1.3', headers: { 'x-hopper-caller': '203.0.113.9' } })).toBe('10.89.1.3');
+    expect(caller({ ip: '10.89.1.2', headers: { 'cf-connecting-ip': '203.0.113.9' } })).toBe('10.89.1.2');
+  });
+
   it('from any other peer: its own address, whatever it names', () => {
     expect(caller(req('192.168.1.9', '203.0.113.5'))).toBe('192.168.1.9');
+  });
+});
+
+describe('cloudflared (issue #968): up while its local API says it is ready', () => {
+  it('asks GET /ready of the cloudflared agent, never ngrok\'s, and names each agent\'s address', async () => {
+    let ready = 503;
+    const a = await agent(() => ({ status: ready, body: { status: ready, readyConnections: ready === 200 ? 4 : 0 } }));
+    const log = logger();
+    watch = watchTunnel({ apis: { ngrok: 'http://127.0.0.1:1', cloudflare: a.api }, target: () => ({ provider: 'cloudflare', url: 'https://h.example.com' }), logger: log, everyMs: 20 });
+    await waitFor(() => /no connection to Cloudflare yet \(HTTP 503\)/.test(watch!.reason() ?? ''), { what: 'down' });
+    ready = 200;
+    await waitFor(() => watch!.url() === 'https://h.example.com', { what: 'up' });
+    expect(new Set(a.asked)).toEqual(new Set(['GET /ready']));
+    // Both hosts are 127.0.0.1 here: an address is one agent's, the last one listed.
+    expect(watch.agentOf('127.0.0.1')).toBe('cloudflare');
+    expect(watch.agentOf('192.0.2.1')).toBeUndefined();
+  });
+
+  it('is down, with why, when the provider picked has no agent API set', async () => {
+    watch = watchTunnel({ apis: { ngrok: 'http://127.0.0.1:1' }, target: () => ({ provider: 'cloudflare', url: 'https://h.example.com' }), logger: logger(), everyMs: 20 });
+    await waitFor(() => /HOPPER_CLOUDFLARED_API is not set/.test(watch!.reason() ?? ''), { what: 'down' });
+  });
+});
+
+describe('the tunnel\'s edge in the hopper (issues #795, #968): only the API, and a limit per caller', () => {
+  async function app(agent: 'ngrok' | 'cloudflare' | undefined) {
+    let t = 0;
+    const a = Fastify();
+    installTunnelEdge(a, { tunnel: { agentOf: () => agent }, domain: () => 'h.example.com', now: () => t });
+    a.all('/*', async () => ({ ok: true }));
+    await a.ready();
+    const hit = async (url: string, caller = '203.0.113.5', host = 'h.example.com') => (await a.inject({ url, headers: { host, 'cf-connecting-ip': caller } })).statusCode;
+    return { a, hit, later: () => { t += 60_000; } };
+  }
+
+  it('through the tunnel: 404 off the API, the event stream included; the agent\'s own ask names the hopper as Host and passes', async () => {
+    const { a, hit } = await app('cloudflare');
+    for (const p of ['/api/state', '/ui/api/jobs', '/ui/auth/api-token', '/ui/auth/token/refresh']) expect(await hit(p), p).toBe(200);
+    expect(await hit('/tunnel/agent', '203.0.113.5', 'hopper:4790')).toBe(200);
+    expect(await hit('/tunnel/agent', '203.0.113.5', 'H.example.com:443')).toBe(404);
+    for (const p of ['/', '/index.html', '/api/events/stream?token=x', '/ui/auth/login', '/help/x', '/install.sh', '/artifact-link/x']) expect(await hit(p), p).toBe(404);
+    await a.close();
+  });
+
+  it('120 requests a minute per caller, 5 token exchanges; each caller its own count, new after a minute', async () => {
+    const { a, hit, later } = await app('cloudflare');
+    for (let i = 0; i < 5; i++) expect(await hit('/ui/auth/api-token')).toBe(200);
+    expect(await hit('/ui/auth/api-token')).toBe(429);
+    for (let i = 0; i < 114; i++) expect(await hit('/api/state')).toBe(200);
+    expect(await hit('/api/state')).toBe(429);
+    expect(await hit('/api/state', '198.51.100.7')).toBe(200);
+    later();
+    expect(await hit('/api/state')).toBe(200);
+    await a.close();
+  });
+
+  it('from any other peer: nothing changes', async () => {
+    const { a, hit } = await app(undefined);
+    expect(await hit('/')).toBe(200);
+    for (let i = 0; i < 130; i++) await hit('/api/state');
+    expect(await hit('/api/state')).toBe(200);
+    await a.close();
   });
 });

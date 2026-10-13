@@ -34,20 +34,21 @@ const DOING_TEXT: Partial<Record<MergeWait, string>> = {
 };
 
 /**
- * What the hopper does about a card (issue #927): gave up, and why; tends it next, or holds it behind another; its tend job's
- * step; or what it waits to do. '' for a card that is not open.
+ * What the hopper does about a card (issue #927): gave up, and why; tends it on its next sync, cannot tend it and why (issue
+ * #967), or holds it behind another; its tend job's step, and why that job waits to start (issue #967); or what it waits to do. '' for a card that is not open.
  */
-export function doingText(c: Pick<PullRequestCard, 'state' | 'waits' | 'base' | 'queue' | 'gaveUp' | 'tendJobId' | 'tendStep'>): string {
+export function doingText(c: Pick<PullRequestCard, 'state' | 'waits' | 'base' | 'queue' | 'gaveUp' | 'tendJobId' | 'tendStep' | 'tendWaits'>): string {
   if (c.gaveUp) return `the hopper gave up: ${c.gaveUp}`;
   if (c.queue) {
-    if ('next' in c.queue) return 'the hopper tends it next';
+    if ('next' in c.queue) return 'the hopper tends it on its next sync';
+    if ('refused' in c.queue) return `the hopper cannot tend it: ${c.queue.refused}`;
     const { pullRequest, why } = c.queue.held;
     return `held behind #${pullRequest}, ${why === 'tending' ? 'which a job works on now' : 'which the hopper merges first'}: they conflict`;
   }
   if (c.state !== 'open' || !c.waits) return '';
   if (c.waits === 'tending' && c.tendJobId) {
     const step = c.tendStep === 'fix_checks' ? 'fixes its failed checks' : `rebases it onto ${c.base ?? 'its base branch'}`;
-    return `the hopper ${step}: job ${c.tendJobId.slice(0, 8)} works on it now`;
+    return `the hopper ${step}: job ${c.tendJobId.slice(0, 8)} ${c.tendWaits ? `waits to start: ${c.tendWaits}` : 'works on it now'}`;
   }
   return DOING_TEXT[c.waits] ?? '';
 }

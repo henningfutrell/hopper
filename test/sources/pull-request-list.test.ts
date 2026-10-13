@@ -84,6 +84,17 @@ describe('a pull request its item\'s tend job works on (issue #763)', () => {
     expect(list([tended('job-2')], tender)).toEqual([expect.objectContaining({ jobId: 'job-1', waits: 'tend failed' })]);
   });
 
+  it('a tend job not at work yet says why it waits (issue #967): no free lane, or a hold', () => {
+    const queued = jobForIssue(1, { id: 'job-2', status: 'queued', rerunOf: 'job-1', waitReason: 'all 2 lanes of the machine are busy' });
+    expect(list([tended('job-2')], queued)[0]).toMatchObject({ waits: 'tending', tendWaits: 'all 2 lanes of the machine are busy' });
+    const held = jobForIssue(1, { id: 'job-2', status: 'held', rerunOf: 'job-1', holdReason: 'usage pacing' });
+    expect(list([tended('job-2')], held)[0]).toMatchObject({ tendWaits: 'usage pacing' });
+    const noReason = jobForIssue(1, { id: 'job-2', status: 'queued', rerunOf: 'job-1' });
+    expect(list([tended('job-2')], noReason)[0]).toMatchObject({ tendWaits: 'no free lane yet' });
+    const running = jobForIssue(1, { id: 'job-2', status: 'running', rerunOf: 'job-1' });
+    expect(list([tended('job-2')], running)[0]).not.toHaveProperty('tendWaits');
+  });
+
   it('the card names the step the tend job works on (issue #927)', () => {
     const tender = jobForIssue(1, { id: 'job-2', status: 'running', rerunOf: 'job-1' });
     expect(list([tended('job-2')], tender)[0]).toMatchObject({ tendJobId: 'job-2', tendStep: 'rebase' });
@@ -131,6 +142,11 @@ describe('what the hopper does about a pull request that needs tending (issue #9
     const behind = job(2, 'job-b', PR8, seen({ checks: 'failing' }), {}, { heldBehind: { pullRequest: PR, why: 'merging' } });
     expect(cards([head, behind]).find((c) => c.jobId === 'job-b')).toMatchObject({ waits: 'checks failing', queue: { held: { pullRequest: 7, why: 'merging' } } });
     expect(cards([head, behind]).find((c) => c.jobId === 'job-a')).not.toHaveProperty('queue');
+  });
+
+  it('a tend the source refused: the card says why, not that it is tended next (issue #967)', () => {
+    const refused = job(2, 'job-b', PR8, seen({ conflicting: true }), {}, { tendRefused: 'its issue is not assigned to the connected account' });
+    expect(cards([refused])[0]).toMatchObject({ waits: 'conflicts', queue: { refused: 'its issue is not assigned to the connected account' } });
   });
 
   it('a head that does not conflict with it holds nothing (issue #939): it is tended next', () => {

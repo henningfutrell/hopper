@@ -50,8 +50,11 @@ export interface Config {
   pluginStore?: string;
   /** The URL people reach the UI at through a reverse proxy (origin only), or undefined. The sign-in origin when set. */
   publicUrl: string | undefined;
-  /** HOPPER_TUNNEL_API (issue #795): the tunnel agent's local API, asked whether HOPPER_PUBLIC_URL is up. */
-  tunnelApi?: string;
+  /**
+   * Each tunnel agent's local API, asked whether the remote access URL is up: HOPPER_TUNNEL_API (issue #795), ngrok's;
+   * HOPPER_CLOUDFLARED_API (issue #968), cloudflared's metrics server. Neither set: no tunnel agent is asked.
+   */
+  tunnelApis: { ngrok?: string; cloudflare?: string };
   /** Host names the UI answers to on the LAN (lowercase, no port); empty: loopback only. */
   lanNames: string[];
   /** CIDR ranges a LAN request may come from. */
@@ -104,6 +107,7 @@ const publicUrl = z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' 
 const schema = z.object({
   HOPPER_PUBLIC_URL: publicUrl.optional(),
   HOPPER_TUNNEL_API: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL (http://tunnel:4040)' }).optional(),
+  HOPPER_CLOUDFLARED_API: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL (http://cloudflared:2000)' }).optional(),
   // Loopback, plus the LAN names when set (AGENTS.md, design.md "Reaching the UI across the LAN").
   HOPPER_LAN_NAMES: list(lanName),
   HOPPER_LAN_PEERS: list(lanPeer),
@@ -162,7 +166,8 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_DATABASE_URL: 'the Postgres database that holds everything: postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]. Or HOPPER_DATABASE_URL_FILE: a file holding it',
   HOPPER_PORT: 'the HTTP port of the UI, the API and the API reference',
   HOPPER_PUBLIC_URL: 'the origin people reach the UI at through a reverse proxy (https://hopper.example.com); a proxy on another host also needs HOPPER_LAN_PEERS',
-  HOPPER_TUNNEL_API: 'the local API of the tunnel agent (http://tunnel:4040, the compose service `tunnel`), asked whether the remote access URL is up while remote access is on (Settings → Remote access); a Grok Bot routine is told where the hopper is reached. Unset: the hopper asks no tunnel agent',
+  HOPPER_TUNNEL_API: 'the local API of the ngrok agent (http://tunnel:4040, the compose service `tunnel`), asked whether the remote access URL is up while remote access is on with ngrok (Settings → Remote access); a Grok Bot routine is told where the hopper is reached. Unset: the hopper asks no ngrok agent',
+  HOPPER_CLOUDFLARED_API: 'the metrics server of the cloudflared agent (http://cloudflared:2000, the compose service `cloudflared`), asked whether the tunnel is ready while remote access is on with Cloudflare Tunnel (Settings → Remote access). Unset: the hopper asks no cloudflared agent',
   HOPPER_LAN_NAMES: 'host names the UI answers to on the LAN, comma-separated; needs HOPPER_LAN_PEERS. Unset: loopback only',
   HOPPER_LAN_PEERS: 'CIDR ranges LAN or proxy requests may come from, comma-separated (192.0.2.0/24); binds every interface',
   HOPPER_WORK_DIR: 'scratch space: working files, ssh control sockets. Nothing kept',
@@ -328,7 +333,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     ...(e.HOPPER_PLUGIN_DIR ? { pluginDir: e.HOPPER_PLUGIN_DIR } : {}),
     ...(e.HOPPER_PLUGIN_STORE ? { pluginStore: e.HOPPER_PLUGIN_STORE } : {}),
     publicUrl: e.HOPPER_PUBLIC_URL,
-    ...(e.HOPPER_TUNNEL_API ? { tunnelApi: e.HOPPER_TUNNEL_API } : {}),
+    tunnelApis: { ...(e.HOPPER_TUNNEL_API ? { ngrok: e.HOPPER_TUNNEL_API } : {}), ...(e.HOPPER_CLOUDFLARED_API ? { cloudflare: e.HOPPER_CLOUDFLARED_API } : {}) },
     lanNames: e.HOPPER_LAN_NAMES,
     lanPeers: e.HOPPER_LAN_PEERS,
     updateCheckMs: e.HOPPER_UPDATE_CHECK_MS,

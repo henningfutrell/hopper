@@ -1,5 +1,6 @@
 // The in-memory GitHub's types (fake.ts): the helpers a test plays the other side with, apart for the fake's size.
 import type { ChecksState, FailedCheck } from '../../domain/pull-requests.ts';
+import type { FakeBaseMerge } from './fake-conflicts.ts';
 import type { FakeMentionInput } from './fake-cross-references.ts';
 import type { GitHubApi, GitHubComment, GitHubIssue, OpenPullRequest, ClosingPullRequest } from './api.ts';
 
@@ -42,6 +43,8 @@ export interface FakeGitHub extends GitHubApi {
   setConflicting(url: string, conflicting: boolean): void;
   /** Whether two pull requests conflict with each other, as git would say (issue #939); never set: git cannot say. */
   setConflictBetween(a: string, b: string, conflict: boolean): void;
+  /** What the hopper's base merge of a pull request does (issue #967): pushed, resolving `resolved`, or the conflicts it leaves; undefined: git cannot. */
+  setBaseMerge(url: string, answer: FakeBaseMerge | undefined): void;
   /** A push to a pull request's branch (issue #618): a new head commit at `at`, with or without merge conflicts after it. */
   pushToPullRequest(url: string, at: string, o?: { conflicting?: boolean }): void;
   /** Mark an open draft pull request ready for review (issue #626). */

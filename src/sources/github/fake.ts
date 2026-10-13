@@ -289,7 +289,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
     closePullRequest(url) { pull(url).state = 'closed'; },
     markReady(url) { pull(url).isDraft = false; },
-    setConflicting(url, conflicting) { pull(url).conflicting = conflicting; }, ...fakeConflicts(enter),
+    setConflicting(url, conflicting) { pull(url).conflicting = conflicting; }, ...fakeConflicts(enter, (url) => { const p = pull(url); Object.assign(p, { headCommittedAt: new Date().toISOString(), conflicting: false }); if (p.checks) p.checks = 'pending'; }),
     pushToPullRequest(url, at, o = {}) { Object.assign(pull(url), { headCommittedAt: at, conflicting: o.conflicting ?? false }); },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {
       const i = find(repo, n);

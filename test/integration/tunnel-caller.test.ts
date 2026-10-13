@@ -1,5 +1,5 @@
 // The sign-in limit counts each caller behind the tunnel (issue #795). The API-token exchange is a sign-in, so it has the
-// sign-in limit too. Every request through the tunnel comes from one peer, the ngrok agent; its edge names the caller in
+// sign-in limit too, and through the tunnel the edge's lower one (issue #968). Every request through the tunnel comes from one peer, the ngrok agent; its edge names the caller in
 // `x-hopper-caller`. The hopper reads that header only from the peer that HOPPER_TUNNEL_API's host is, so a stranger
 // cannot use up an agent's exchanges, and a LAN peer cannot step past the limit with a header. Real daemon, real HTTP
 // server; the tunnel agent's local API is a loopback fake, so the tunnel's peer is loopback here.
@@ -44,12 +44,9 @@ async function boot(tunnel: boolean): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
   const agent = tunnel ? await tunnelAgent() : undefined;
-  t = await startTestApp({ dbPath: db.dbPath, env: { HOPPER_PUBLIC_URL: PUBLIC, ...(agent ? { HOPPER_TUNNEL_API: agent.url } : {}) } });
-  if (agent) {
-    // Remote access on, at the public URL's domain (issue #880): the watch asks the agent.
-    await t.ui('/ui/api/remote-access', { authtoken: 'a'.repeat(30), domain: 'h.example', enabled: true }, { token: await t.login() });
-    await waitFor(() => (agent.asks() > 0 ? true : undefined), { what: 'the tunnel watch', timeoutMs: 10_000 });
-  }
+  // With a tunnel: remote access on at the public URL's domain, from an install's NGROK_AUTHTOKEN (issue #880).
+  t = await startTestApp({ dbPath: db.dbPath, env: { HOPPER_PUBLIC_URL: PUBLIC, ...(agent ? { HOPPER_TUNNEL_API: agent.url } : {}) }, ...(agent ? { secrets: { NGROK_AUTHTOKEN: 'a'.repeat(30) } } : {}) });
+  if (agent) await waitFor(() => (agent.asks() > 0 ? true : undefined), { what: 'the tunnel watch', timeoutMs: 10_000 });
   return t;
 }
 
@@ -75,14 +72,14 @@ describe('the sign-in limit behind the tunnel (issue #795)', () => {
     expect(statuses[20]).toBe(429);
   });
 
-  it('behind the tunnel, each caller has its own count', async () => {
+  it('behind the tunnel, each caller has its own count: the tunnel\'s edge, 5 exchanges a minute (issue #968)', async () => {
     const a = await boot(true);
-    const stranger = await exchanges(a, 21, '203.0.113.5');
-    expect(stranger.slice(0, 20).every((s) => s === 401)).toBe(true);
-    expect(stranger[20]).toBe(429);
+    const stranger = await exchanges(a, 6, '203.0.113.5');
+    expect(stranger.slice(0, 5).every((s) => s === 401)).toBe(true);
+    expect(stranger[5]).toBe(429);
     expect(await exchange(a, '198.51.100.7')).toBe(401);
     // A request from the tunnel with no caller named is counted as the tunnel's own address: one count for all of them.
-    expect((await exchanges(a, 21)).at(-1)).toBe(429);
+    expect((await exchanges(a, 6)).at(-1)).toBe(429);
   });
 
   it('with no tunnel, the header is not read', async () => {

@@ -9,7 +9,7 @@ An additive (optional) field keeps the version; a removed, renamed or retyped fi
 
 Events stored before phase 3 read as v1 and are not re-validated.
 
-Stored events are never rewritten. Superseded versions stay readable and documented: `job.prioritized.v1`, `decision.made.v1`, `jev.mode_changed.v1`, `job.prioritized.v2`, `decision.made.v2`, `router.mode_changed.v1`, `job.progressed.v1`, `question.escalated.v1`, `question.answered.v1`, `proposal.submitted.v1`, `proposal.escalated.v1`
+Stored events are never rewritten. Superseded versions stay readable and documented: `job.prioritized.v1`, `decision.made.v1`, `jev.mode_changed.v1`, `job.prioritized.v2`, `decision.made.v2`, `router.mode_changed.v1`, `job.progressed.v1`, `question.escalated.v1`, `question.answered.v1`, `proposal.submitted.v1`, `proposal.escalated.v1`, `remote_access.changed.v1`
 (phase 5 renamed Jev → router: `jev.mode_changed` became `router.mode_changed`; slice 2 made question
 stages instance names: `question.escalated.target` and `question.answered.by` were `opus | fable | human` in v1;
 issue #211 removed the router mode: `router.mode_changed` is retired, and v3 of `job.prioritized` and
@@ -2588,25 +2588,34 @@ Version 1 (`docs/schemas/github_rate_limiter.settings_changed.v1.json`). The hop
 
 ## `remote_access.changed`
 
-Version 1 (`docs/schemas/remote_access.changed.v1.json`). The hopper's admin changed remote access (issue #880): the tunnel on or off (`enabled`) the domain reserved at ngrok (`domain`) and when the admin last started the tunnel again (`restartedAt`), `from` and `to`; `authtoken`: the ngrok authtoken was `set` or `removed` (never its value: it is the system secret `remote-access.ngrok-authtoken`). `by` is `hopper` when a start moved NGROK_AUTHTOKEN from the environment. An instance event: in every user's log.
+Version 2 (`docs/schemas/remote_access.changed.v2.json`). The hopper's admin changed remote access (issues #880, #968), `from` and `to`: on or off (`enabled`); the provider picked (`provider`: `cloudflare` or `ngrok`); the host name asked for (`domain`); when the admin last started the tunnel again (`restartedAt`); what the hopper minted at the provider (`provisioned`: the host name, and the ids it removes again — at Cloudflare the account, zone, tunnel and DNS record, at ngrok the tunnel credential and a domain it reserved; none of them a secret); `leftover`: what a release could not remove at the provider. `credential`: the provider's credential was `set` or `removed` (never its value: it is the system secret `remote-access.cloudflare-api-token` or `remote-access.ngrok-api-key`). `by` is `hopper` when a start moved NGROK_AUTHTOKEN from the environment. An instance event: in every user's log.
 
 | field | type | required |
 |---|---|---|
 | `from` | object | yes |
 | `to` | object | yes |
-| `authtoken` | `set` \| `removed` | no |
+| `credential` | `set` \| `removed` | no |
 | `by` | string | yes |
 
 ```json
 {
   "from": {
-    "enabled": false
+    "enabled": false,
+    "provider": "cloudflare"
   },
   "to": {
     "enabled": true,
-    "domain": "hopper.example.ngrok.app"
+    "provider": "cloudflare",
+    "provisioned": {
+      "provider": "cloudflare",
+      "domain": "hopper.example.com",
+      "accountId": "a1b2",
+      "zoneId": "z3c4",
+      "tunnelId": "f1e2d3c4-0000-4000-8000-000000000000",
+      "dnsRecordId": "r5d6"
+    }
   },
-  "authtoken": "set",
+  "credential": "set",
   "by": "admin"
 }
 ```
@@ -3352,7 +3361,7 @@ Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the v
 
 ## `vault.granted`
 
-Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it.
+Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`) — on Settings → Vault, or as the submitter of a direct job that authorizes `vault` (issue #901): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it.
 
 | field | type | required |
 |---|---|---|
@@ -3496,6 +3505,26 @@ Version 1 (`docs/schemas/job.pull_request_tended.v1.json`). A PR waiting job's p
   "pullRequest": "https://github.com/owner/repo/pull/14",
   "step": "rebase",
   "nextJobId": "j2"
+}
+```
+
+## `job.pull_request_base_merged`
+
+Version 1 (`docs/schemas/job.pull_request_base_merged.v1.json`). A PR waiting job's pull request had merge conflicts with its base branch, and the hopper merged the base branch into it in its own mirror and pushed the merge commit to its branch (issue #967): no job, no lane. `commit`: the merge commit. `resolved`: the Markdown files whose conflict it resolved by keeping the lines both sides added, the base branch's first. The job still follows the pull request; its checks run again. A conflict it does not resolve goes to a tend job (`job.pull_request_tended`).
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `commit` | string | yes |
+| `resolved` | string[] | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/14",
+  "commit": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+  "resolved": [
+    "WHATS-NEW.md"
+  ]
 }
 ```
 

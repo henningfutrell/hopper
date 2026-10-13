@@ -177,6 +177,7 @@
         "job.pull_request_abandoned",
         "job.finish_briefed",
         "job.pull_request_tended",
+        "job.pull_request_base_merged",
         "job.pull_request_followed",
         "skill.listed",
         "skill.loaded",

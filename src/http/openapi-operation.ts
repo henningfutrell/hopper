@@ -47,6 +47,6 @@ export const TAGS: Record<Tag, string> = {
   'Sign-in': 'UI sessions: sign-in, the session, logout.',
   'API tokens': 'Short-lived tokens an agent acts through the API with, as its user (issue #718): mint, list, revoke, and exchange a sign-in for one.',
   Access: 'OpenFGA decides each credential a job is given: the approvals, the access model, and every decision.',
-  'Remote access': 'The tunnel that reaches the hopper\'s API from anywhere (issue #880): its ngrok authtoken and domain, set here and kept in the hopper\'s vault, and whether it is up.',
+  'Remote access': 'The tunnel that reaches the hopper\'s API from anywhere (issues #880, #968): off by default; the provider (Cloudflare Tunnel or ngrok) and its one credential, kept in the hopper\'s vault; the hopper mints and removes the tunnel itself; the URLs an agent calls, and whether it is up.',
   'Bug reports': 'Report a bug: a report on the hopper, with its redacted context, filed on the hopper\'s own repository as the person who sends it.',
 };
