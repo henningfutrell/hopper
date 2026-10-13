@@ -248,8 +248,6 @@ describe('Search (issue #945)', () => {
     const outcomes: IntakeOutcome[] = [{ key: OTHER, title: 'Rotate the backup keys', repo: 'o/r', reason: 'not assigned to you', group: 'not-assigned', action: 'assign' }];
     const gh = Object.assign(createManualSource('gh'), { intake: () => outcomes });
     const { app } = await start({ sources: [gh] });
-    const job = await app.pull({ op: 'echo', message: 'done' }, { key: ISSUE, title: 'Retry the flaky upload', repo: 'o/r' });
-    await app.waitForStatus(job.id, 'finished');
     await app.user(ADMIN_ID).sources.syncNow('gh');
     const rt = app.user(ADMIN_ID);
     const at = new Date().toISOString();
@@ -262,6 +260,11 @@ describe('Search (issue #945)', () => {
       closedBy: [], references: [], subIssues: [],
     }), at);
     rt.search.reindex();
+    await found(app, 'q=flaky&type=issue', [ISSUE], 'the issue before its job');
+    // Its job's events write the issue again, and the pull request that closes it: each now names the job.
+    const job = await app.pull({ op: 'echo', message: 'done' }, { key: ISSUE, title: 'Retry the flaky upload', repo: 'o/r' });
+    await app.waitForStatus(job.id, 'finished');
+    await waitFor(async () => (await search(app, 'q=flaky&type=issue')).hits[0]?.job === job.id || undefined, { timeoutMs: 15_000, what: 'the issue written again with its job' });
 
     const issue = await found(app, 'q=flaky&type=issue', [ISSUE], 'the issue by its title');
     expect(issue.hits[0]).toMatchObject({ type: 'issue', title: 'Retry the flaky upload', status: 'open', repo: 'o/r', job: job.id, url: expect.stringContaining(`#job/${job.id}`) });
