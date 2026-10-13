@@ -50,6 +50,8 @@ The nav badge counts the request cards. A second, dashed badge counts the issues
 | **Template approvals** | A template is new, or has a new image, secret or profile. Select **Approve**. When the card lists a write, sync or apply profile, select **Approve all listed** to approve the template and each profile. |
 | **Sandbox runs** | A job asked for a sandbox. Select **Approve** to start the box, or write why not and select **Decline**. Runs that start, run or end show below. A run of a template you approved for the same job, of a blast radius the auto-approve policy holds, or whose every change you approved before (a remembered write approval), does not wait here. Each card shows why the job asks, the job and its link, its plan, and each need in plain words. Skip this step with **Skip sandbox approval** on Settings → Vault. Each card's approval is its own: you can approve several cards in a row. |
 
+To approve several at once, select the box on each template or sandbox run card, or select **Select all waiting**. Then select **Approve selected**. Each approval goes on its own, at the same time. Each card shows **Approving…**, then **Approved**, or why it was not approved. One that fails does not stop the others.
+
 The page also links to **Settings → API tokens**, where you mint a box token for an agent that approves or merges through the API.
 
 **Settings → Vault** keeps the configuration: secrets, templates, the sandbox approvals, the read policy, shared secrets and the hopper's own secrets. A template that waits there links to Access requests. See [The vault](vault.md) and [Sandbox boxes](sandboxes.md).

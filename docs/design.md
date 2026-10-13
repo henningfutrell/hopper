@@ -9610,7 +9610,8 @@ pending, every other approval button on the page was disabled.
   approval given by the read policy, the auto-approve policy or skip template approval covers no run: those toggles
   keep their own meaning.
 - **Approve all listed.** A template card on Access requests with a write, sync or apply profile shows one action, in one
-  confirm, that approves the template (when it waits) and then each listed profile, in place of one button per profile.
+  confirm, that approves the template (when it waits) and each listed profile, in place of one button per profile. They
+  are sent side by side, not one after another (issue #1018, "Approve several at once").
 - **Approvals do not block each other.** A template card and a sandbox run card each keep their own pending state: while
   one approval is pending, only that card says `Approving…`, and every other card stays clickable. The route returns once
   the decision is recorded; the box starts in the background, and its card shows `starts now`, then `runs`.
@@ -17027,3 +17028,31 @@ archive calls of both APIs, against the API double; a remote runtime has neither
 `hopper-step` and the box's real client: under YOLO a seat job asks for a sandbox and runs a step in its box with inputs
 and outputs; another box or a `--secret` refused; in a step, the box's helper asks for the job and stops at its vault
 grant, and outside a step the same ask is refused).
+
+## Approve several at once (issue #1018, 2026-10-13)
+
+Seen: a person approved several waiting items, and the UI showed them all as in progress, but they went through one at
+a time. Approve all listed sent the template, waited for its answer, then sent each profile, and stopped at the first
+that failed. And there was no way to approve several cards in one action. The routes were not the cause: each answers
+once the decision is recorded, and a box starts in the background (issue #1002).
+
+- **One home for an approval on Access requests** (`ui/src/store/access-approvals.ts`). A template card's Approve (or
+  Approve all listed), a sandbox run card's Approve, and Approve selected all call `approveItems`. Each item is a card:
+  a template (`templateItem`: the edits `allListed` names, `ui/src/model/vault.ts`) or a run (`runItem`). Every item's
+  posts go out at once (`Promise.allSettled`), never one after another: an item waits only for its own answers, and a
+  failure on one stops no other. Each item keeps its own state — `pending`, `approved`, or `failed` with why — which its
+  card shows (`Approving…`, `Approved`, `Not approved: <why>`). An item still pending is not sent again.
+- **Approve selected.** An admin ticks the cards (a checkbox on each template and run card that waits), or **Select all
+  waiting**, then **Approve selected (N)** in one confirm. The bar counts the last batch: `3 approved`, or `2 approved,
+  1 failed`. Each answer is the vault's view, kept through `viewAnswer` (issue #1019), so answers that come back in any
+  order leave no stale view.
+  A template saved again is a new item (its key has `savedAt`), with no state of the last one; leaving Access requests
+  forgets the items that ended and the selection.
+- **No new route.** Each approval is the same `POST /ui/api/vault` or `POST /ui/api/sandbox-requests` as before, with
+  the same role, box action and events: an API client approves several by sending several, the same way. The browser
+  sends them over its own connections; each answers in milliseconds, so 20 go through in about a second.
+
+Tests: `test/ui/sandbox-runs-view.test.ts` (Approve all listed sends both while neither has answered; Approve selected
+sends every approval while none has answered, each card shows its progress then its result; a refusal on one leaves the
+others approved and says why), `test/sandbox/requests.test.ts` (20 runs approved at once each answer at once, and their
+boxes start side by side).

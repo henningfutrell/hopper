@@ -64,11 +64,11 @@ export function useVault(): VaultView | null {
 }
 
 /**
- * Sends one vault edit (POST /ui/api/vault) and keeps the view it answers. `quiet`: a card's own decision (issue #1001),
- * which marks nothing else busy, so the other cards stay clickable while it is pending.
+ * Sends one vault edit (POST /ui/api/vault) and keeps the view it answers. A card's approval on Access requests goes
+ * through store/access-approvals.ts instead, which marks nothing else busy (issues #1001, #1018).
  */
-export async function sendVault(edit: unknown, done: string, o: { quiet?: boolean } = {}): Promise<boolean> {
-  if (!o.quiet) useVaultStore.setState({ busy: true });
+export async function sendVault(edit: unknown, done: string): Promise<boolean> {
+  useVaultStore.setState({ busy: true });
   try {
     await viewAnswer(() => post<VaultView>('/ui/api/vault', edit));
     toast.success(done);
@@ -78,9 +78,6 @@ export async function sendVault(edit: unknown, done: string, o: { quiet?: boolea
     toast.error((e as Error).message);
     return false;
   } finally {
-    if (!o.quiet) useVaultStore.setState({ busy: false });
+    useVaultStore.setState({ busy: false });
   }
 }
-
-/** A card's decision on Access requests (issue #1001): sent quietly, so no other card waits for it. */
-export const sendDecision = (edit: unknown, done: string): Promise<boolean> => sendVault(edit, done, { quiet: true });
