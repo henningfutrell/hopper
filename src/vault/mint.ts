@@ -128,7 +128,7 @@ export function createMinting(o: MintingOptions): (ask: MintAsk, machineKey: str
 }
 
 /** Who a minted credential writes as, as an audit log names it (issue #871): an EKS token as its role's session. */
-function principalOf(target: MintTarget, made: Pick<MintedFrom, 'roleArn' | 'sessionName'>): string | undefined {
+export function principalOf(target: MintTarget, made: Pick<MintedFrom, 'roleArn' | 'sessionName'>): string | undefined {
   if (target.kind === 'kube' && !made.roleArn) return mintPrincipal({ kind: 'kube', namespace: target.namespace, serviceAccount: target.serviceAccount });
   const roleArn = target.kind === 'aws' ? target.roleArn : made.roleArn;
   return roleArn && made.sessionName ? mintPrincipal({ kind: 'aws', roleArn, sessionName: made.sessionName }) : undefined;

@@ -35,6 +35,15 @@
       "items": {
         "type": "string"
       }
+    },
+    "template": {
+      "type": "string"
+    },
+    "needs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "required": [

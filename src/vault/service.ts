@@ -27,13 +27,14 @@ import type { SealerState } from '../secrets/sealer.ts';
 import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 
 import { probeMarksFor, templateChecks, type TemplateChecks } from './checks.ts';
+import { stepMinting, type StepMinting } from './step-mint.ts';
 import { agentCredentialProblem, agentCredentials, type AgentCredentials } from './agent-credential.ts';
 import { resealRows, vaultContext } from './reseal.ts';
 export { vaultContext };
 
 export type VaultResult = { ok: true } | { ok: false; code: 'invalid' | 'not_found' | 'conflict' | 'unavailable'; error: string };
 
-export interface VaultService extends TemplateChecks, AgentCredentials, StepDelivery {
+export interface VaultService extends TemplateChecks, AgentCredentials, StepDelivery, StepMinting {
   view(): VaultView;
   /**
    * Sets a secret, or a new value or scope for one: sealed, never kept or answered in clear. Or (issue #585) points it at
@@ -379,7 +380,7 @@ export function createVaultService(o: {
     mint: (ask, machineKey, from) => mint(ask, machineKey, from ?? mintFrom),
     mintFrom, testMint: (asset, by, from) => testMint(asset, by, from ?? mintFrom),
 
-    ...templateChecks(o.store, { access: o.access, mintFrom }), ...agentCredentials(o.store, valueOf), ...stepDelivery(o.store, o.clock, valueOf),
+    ...templateChecks(o.store, { access: o.access, mintFrom }), ...stepMinting(o.store, { access: o.access, mintFrom, ...(o.plans ? { plans: o.plans } : {}) }), ...agentCredentials(o.store, valueOf), ...stepDelivery(o.store, o.clock, valueOf),
     resealAll: () => resealRows({ vault, sealer, mine: (name) => !isSystemSecret(name), what: 'vault secret', logger: o.logger }),
   };
 }

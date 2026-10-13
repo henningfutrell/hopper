@@ -20,6 +20,7 @@ import type { MachineJoin } from '../plugins/attached-edit.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
 import { createSshStepHost, createWindowsSteps, readWindowsHosts, type WindowsSteps } from '../windows-steps/index.ts';
+import { createSandboxSteps, type SandboxSteps } from '../sandbox/steps.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
 import { createClientReleaseKeeper, createOwnedHerdrKeeper, createTargetPool, probeOwnedHerdr, withClientWorkTree, probeContainer, probeSsh } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
@@ -170,6 +171,8 @@ export interface UserRuntime {
   githubProxy: UserGitHubProxy;
   /** A job's step run on a Windows host the user set up (issue #731); search (issue #945): the index kept from job events, and the permission-checked search; the boxes the user's jobs ask for (issue #991). */
   windowsSteps: WindowsSteps; search: UserSearch; sandboxRequests: SandboxRequests;
+  /** A job's Linux sandbox step (issue #1007): one command in a step box of a template that covers its needs, its credentials minted for it. */
+  sandboxSteps: SandboxSteps;
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */
@@ -389,10 +392,11 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Windows sandbox steps (issue #731): the user's Windows hosts read at each step; over ssh with the hopper's own key. Box
   // steps (issue #1004): in the boxes the job's own sandbox requests started, through the sandbox module.
   const sandboxRequests = userSandboxRequests({ userId: user.id, store, templates: () => vault.view().templates, sandboxes: o.sandboxes, clock }), windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }), ...(o.sandboxes ? { boxes: stepBoxes({ userId: user.id, requests: sandboxRequests, sandboxes: o.sandboxes, token: (jobId) => proxyToken(hopperLink.privateKey, user.id, jobId), helper: async (box) => (await host.machines().list()).find((m) => m.id === box)?.client?.vault }) } : {}) });
+  const sandboxStepsRun = o.sandboxes?.needStep, sandboxSteps = createSandboxSteps({ templates: () => vault.view().templates, mint: (ask) => vault.mintForStep(ask), dir: join(dataDir, 'sandbox-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), ...(sandboxStepsRun ? { run: (box, io) => sandboxStepsRun(user.id, box, io) } : {}) });
   // Search (issue #945): the user's documents in the index, kept from job events; each hit decided by Access.
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
   return {
-    search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, directJobs, sandboxRequests,
+    search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, sandboxSteps, directJobs, sandboxRequests,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors,
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,

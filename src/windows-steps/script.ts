@@ -94,23 +94,71 @@ OPERATION is the need's operation (read, write, sync, apply); every one but read
 Example: check who the box is on AWS, and bring back a plan.
   sh "$HOPPER_STEP" box hopper-sandbox-asked-0a1b2c3d4e5f --input infra --command 'cd infra && terraform plan -no-color > plan.txt' --output infra/plan.txt`;
 
+/** How often `hopper-step need` asks again while the template for its needs waits, in seconds. */
+export const STEP_READY_POLL_S = 10;
+/** How long `hopper-step need` waits for that template by default, in seconds. */
+export const STEP_READY_WAIT_S = 1800;
+
+/** What a job reads when it loads the `need-step` skill (issue #1007). */
+export const NEED_STEP_HELP = `need-step: run one command that needs AWS, Kubernetes, helm or terraform, from this machine.
+
+This machine holds no AWS, Kubernetes or terraform credential, and never gets one. When a command needs an account or a
+cluster, name what it needs: the hopper runs that one command in a one-shot need box of a template that covers the needs,
+with a short-lived credential it mints for that command only, in its environment. No box to ask for first. The output streams back here as it runs; then the exit code
+and the outputs. This job stays on this machine and goes on with its work.
+
+  sh "$HOPPER_STEP" need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] (--command TEXT | --script FILE)
+                         [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]
+    NEEDS              what the command needs, as <operation>/<kind>/<asset>, split by spaces:
+                       read/aws-role/123456789012/readonly, read/cluster/NAME, read/namespace/CLUSTER/NS,
+                       write/aws-role/123456789012/deploy. Name only what the command needs.
+    --why TEXT         why the job needs it, in one or two sentences, for the person who approves it
+    --plan TEXT        for a need that changes an asset: what the command does, and whether it can be undone
+    --plan-id ID       for a need that changes an asset: the id of the approved infra plan the change applies
+    --command TEXT     sh to run in the need box's work directory (at most 4 KiB). The tools are there: aws, kubectl,
+                       helm, terraform, as the needs ask.
+    --script FILE      a script of this machine's to run instead (with sh)
+    --input PATH       a file or directory, relative to the current directory: copied into the work directory first
+                       (all inputs at most 64 KiB). Repeat for more.
+    --output PATH      a file or directory, relative to the work directory: brought back into --into DIR (default:
+                       the current directory). Repeat for more.
+    --timeout SECONDS  how long the command may run (default 1800, at most 14400): then it is stopped
+    --wait SECONDS     how long to wait for the template to be ready (default ${STEP_READY_WAIT_S})
+Exit: the command's own exit code; ${STEP_NOT_RUN}: the hopper did not run it, stopped it, or could not bring it all back
+(the reason is on stderr); 2: a bad call.
+
+The first ask for a set of needs makes a template for them. Reads the user's policy holds are approved at once; a change
+waits for a person's approval. While it waits, hopper-step asks again by itself and runs the command when it is ready.
+When --wait runs out first, end your turn with HOPPER_WAITING (for: the sandbox template): the hopper ends your wait
+when it is ready. Then run the same command again. The same needs use the same template, never a second one.
+In the box: one AWS role is the AWS CLI's default; each AWS role is also a profile named <account>-<role>. Each cluster
+or namespace is a kubectl context named for it (a namespace: <cluster>-<ns>), the first one current.
+A step is on this job's timeline: its box, needs, command, exit code and time. Never print a credential.
+
+Example: who am I in an account, read only.
+  sh "$HOPPER_STEP" need "read/aws-role/123456789012/readonly" --why "Check which role the dig runs as" --command "aws sts get-caller-identity"
+Example: list the pods of a namespace, and bring a report back.
+  sh "$HOPPER_STEP" need "read/namespace/lab/web" --why "Find the pod that restarts" --command "kubectl get pods -o wide > pods.txt" --output pods.txt`;
+
 /** The script. The token goes to curl on stdin, never on a command line; every value in a URL is percent-encoded. */
 export const STEP_SCRIPT = `#!/bin/sh
-# hopper-step — run one step on a Windows host (issue #731), or in a sandbox box of this job's (issue #1004).
-# Written by the hopper at each job start.
+# hopper-step — run one step on a Windows host (issue #731), in a sandbox box of this job's (issue #1004), or in a
+# one-shot need box with credentials the hopper mints for it (issue #1007). Written by the hopper at each job start.
 #   sh "$HOPPER_STEP" hosts
 #   sh "$HOPPER_STEP" run HOST (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR]
 #   sh "$HOPPER_STEP" box BOX (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR]
-# Load the windows-step or box-step skill for the full help: sh "$HOPPER_SKILL" windows-step
+#   sh "$HOPPER_STEP" need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]
+# Load the windows-step, box-step or need-step skill for the full help: sh "$HOPPER_SKILL" windows-step
 # Exit: the step's own exit code; ${STEP_NOT_RUN}: the hopper did not run it, stopped it, or could not bring it all back; 2: a bad call.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-usage() { echo 'usage: sh "$HOPPER_STEP" hosts | run HOST|box BOX (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR]' >&2; exit 2; }
+usage() { echo 'usage: sh "$HOPPER_STEP" hosts | run HOST|box BOX (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--secret NAME]... [--timeout SECONDS] [--into DIR] | need NEEDS --why TEXT [--plan TEXT] [--plan-id ID] (--command TEXT | --script FILE) [--input PATH]... [--output PATH]... [--timeout SECONDS] [--into DIR] [--wait SECONDS]' >&2; exit 2; }
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; }
 # Every byte as %XX: safe in a URL whatever the text holds.
 enc() { printf '%s' "$1" | od -An -v -tx1 | tr -d ' \\n' | sed 's/../%&/g'; }
 # A response header's value, from a header dump.
 header() { awk -v h="$1:" 'tolower($1) == h { sub(/^[^:]*:[ ]*/, ""); sub(/\\r$/, ""); v = $0 } END { print v }' "$2"; }
+needonly() { [ "$at" = needs ] || { echo "no: $1 is for a need step: sh \\"\\$HOPPER_STEP\\" need ..." >&2; exit 2; }; }
 [ $# -ge 1 ] || usage
 tmp=$(mktemp -d "\${TMPDIR:-/tmp}/hopper-step.XXXXXX") || exit ${STEP_NOT_RUN}
 trap 'rm -rf "$tmp"' EXIT
@@ -121,22 +169,26 @@ if [ "$cmd" = hosts ]; then
   [ "$code" = 200 ] || exit ${STEP_NOT_RUN}
   exit 0
 fi
-case $cmd in run) at=host ;; box) at=box ;; *) usage ;; esac
+case $cmd in run) at=host ;; box) at=box ;; need) at=needs ;; *) usage ;; esac
 [ $# -ge 1 ] || usage
 place=$1; shift
-command=; script=; into=.; q=; : > "$tmp/inputs"
+command=; script=; into=.; q=; wait=${STEP_READY_WAIT_S}; : > "$tmp/inputs"
 while [ $# -gt 0 ]; do
   case $1 in
-    --command|--script|--input|--output|--secret|--timeout|--into)
+    --command|--script|--input|--output|--secret|--timeout|--into|--why|--plan|--plan-id|--wait)
       [ $# -ge 2 ] || usage
       case $1 in
         --command) command=$2 ;;
         --script) script=$2 ;;
         --input) [ -e "$2" ] || { echo "no: $2 is not here" >&2; exit 2; }; printf '%s\\n' "$2" >> "$tmp/inputs" ;;
         --output) q="$q&output=$(enc "$2")" ;;
-        --secret) q="$q&secret=$(enc "$2")" ;;
+        --secret) [ "$at" = host ] || [ "$at" = box ] || { echo 'no: a need step gets the credentials its needs name, never a vault secret by name' >&2; exit 2; }; q="$q&secret=$(enc "$2")" ;;
         --timeout) q="$q&timeout=$(enc "$2")" ;;
         --into) into=$2 ;;
+        --why) needonly --why; q="$q&why=$(enc "$2")" ;;
+        --plan) needonly --plan; q="$q&plan=$(enc "$2")" ;;
+        --plan-id) needonly --plan-id; q="$q&planId=$(enc "$2")" ;;
+        --wait) needonly --wait; wait=$2 ;;
       esac
       shift ;;
     *) usage ;;
@@ -147,7 +199,7 @@ if [ -n "$script" ]; then
   [ -z "$command" ] || { echo 'no: give --command or --script, not both' >&2; exit 2; }
   [ -f "$script" ] && [ -r "$script" ] || { echo "no: $script is not a file this job can read" >&2; exit 2; }
   mkdir -p "$tmp/s/.hopper-step" || exit ${STEP_NOT_RUN}
-  if [ "$at" = box ]; then
+  if [ "$at" != host ]; then
     sinput=${BOX_SCRIPT_INPUT}; command="sh ./${BOX_SCRIPT_INPUT}"
   else
     sinput=${STEP_SCRIPT_INPUT}; command="& '.\\\\.hopper-step\\\\script.ps1'"
@@ -155,6 +207,23 @@ if [ -n "$script" ]; then
   cp "$script" "$tmp/s/$sinput" || exit ${STEP_NOT_RUN}
 fi
 [ -n "$command" ] || usage
+if [ "$at" = needs ]; then
+  # The template for the needs first: made once, and while it waits for a person or its check, asked again by itself.
+  case $wait in ''|*[!0-9]*) echo 'no: --wait is whole seconds' >&2; exit 2 ;; esac
+  end=$(( $(date +%s) + wait )); told=
+  while :; do
+    code=$(token | curl -sS -H @- -X POST -o "$tmp/ready" -w '%{http_code}' "$HOPPER_URL${STEP_PATH}?needs=$(enc "$place")&ready=1$q") || { echo 'hopper-step: the hopper could not be reached' >&2; exit ${STEP_NOT_RUN}; }
+    [ "$code" = 200 ] && break
+    [ "$code" = 202 ] || { cat "$tmp/ready" >&2; exit ${STEP_NOT_RUN}; }
+    [ -n "$told" ] || { sed 's/^/hopper-step: /' "$tmp/ready" >&2; told=1; }
+    if [ "$(date +%s)" -ge "$end" ]; then
+      echo "hopper-step: still waiting after $wait s. End your turn with HOPPER_WAITING (for: the sandbox template for $place): the hopper ends your wait when it is ready. Then run this again." >&2
+      exit ${STEP_NOT_RUN}
+    fi
+    sleep "\${HOPPER_STEP_POLL_S:-${STEP_READY_POLL_S}}"
+  done
+  [ -z "$told" ] || echo 'hopper-step: the template is ready; the step runs now' >&2
+fi
 if [ -s "$tmp/inputs" ] || [ -n "$script" ]; then
   set --
   [ -s "$tmp/inputs" ] && set -- "$@" -T "$tmp/inputs"

@@ -7,7 +7,7 @@
 import type { AssetKind, Operation } from '../domain/access.ts';
 import { ARTIFACT_HELP } from '../artifacts/script.ts';
 import { PROXY_HELP } from '../github-proxy/script.ts';
-import { BOX_STEP_HELP, STEP_HELP } from '../windows-steps/script.ts';
+import { BOX_STEP_HELP, NEED_STEP_HELP, STEP_HELP } from '../windows-steps/script.ts';
 
 /** How the link's credential reaches the tool: the form of the vault's helper (`$HOPPER_SECRET <form> NAME`). */
 export type LinkForm = 'kube' | 'aws';
@@ -113,6 +113,13 @@ export const SKILLS: readonly Skill[] = [
     name: 'box-step',
     line: 'run a step in this job\'s sandbox box',
     text: BOX_STEP_HELP,
+  },
+  {
+    // Issue #1007: one command that needs an account or a cluster, run by the hopper in a one-shot need box with credentials
+    // it mints for it; the job stays on its machine. `hopper-step need` (src/windows-steps/script.ts).
+    name: 'need-step',
+    line: 'run one AWS or Kubernetes command from here, with minted credentials',
+    text: NEED_STEP_HELP,
   },
   {
     // Issue #782: the hopper's help pages, for this version (src/help/book.ts answers it, the page its asset).

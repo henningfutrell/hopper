@@ -5009,7 +5009,7 @@ Version 1 (`docs/schemas/api_tokens.settings_changed.v1.json`). The hopper's adm
 
 ## `step.started`
 
-Version 1 (`docs/schemas/step.started.v1.json`). A running job's sandbox step started on its Windows host (issue #731), or in a box its own sandbox request started (issue #1004): `step` its id, the `host` or the `box`, its `command` (at most 300 characters), its timeout, the size of the inputs it sent and the `outputs` it asked back. Never its output.
+Version 1 (`docs/schemas/step.started.v1.json`). A running job's sandbox step started on its Windows host (issue #731), or in a box its own sandbox request started (issue #1004), or in a one-shot need box of a `template`, with the `needs` the vault minted its credentials for (issue #1007): `step` its id, the `host` or the `box`, its `command` (at most 300 characters), its timeout, the size of the inputs it sent and the `outputs` it asked back. Never its output.
 
 | field | type | required |
 |---|---|---|
@@ -5021,6 +5021,8 @@ Version 1 (`docs/schemas/step.started.v1.json`). A running job's sandbox step st
 | `inputsBytes` | integer | yes |
 | `outputs` | string[] | yes |
 | `secrets` | string[] | no |
+| `template` | string | no |
+| `needs` | string[] | no |
 
 ```json
 {
@@ -5037,7 +5039,7 @@ Version 1 (`docs/schemas/step.started.v1.json`). A running job's sandbox step st
 
 ## `step.finished`
 
-Version 1 (`docs/schemas/step.finished.v1.json`). A sandbox step ended, on its Windows host (issue #731) or in its box (issue #1004): its `exit` code and how long it ran; `outputsBytes` when its outputs came back; `problem` when the hopper could not run it, stopped it (its timeout, or the job stopped waiting) or could not bring its outputs back.
+Version 1 (`docs/schemas/step.finished.v1.json`). A sandbox step ended, on its Windows host (issue #731) or in its box (issue #1004; a need box, issue #1007): its `exit` code and how long it ran; `outputsBytes` when its outputs came back; `problem` when the hopper could not run it, stopped it (its timeout, or the job stopped waiting) or could not bring its outputs back.
 
 | field | type | required |
 |---|---|---|
@@ -5061,7 +5063,7 @@ Version 1 (`docs/schemas/step.finished.v1.json`). A sandbox step ended, on its W
 
 ## `step.refused`
 
-Version 1 (`docs/schemas/step.refused.v1.json`). A running job asked for a sandbox step and was told no (issues #731, #1004), with `reason`: no such Windows host, no such box of the job's, a `--secret` for a box, a bad command, timeout or output, inputs too large, a secret the host does not give, or a vault secret the vault refused.
+Version 1 (`docs/schemas/step.refused.v1.json`). A running job asked for a sandbox step and was told no (issues #731, #1004, #1007), with `reason`: for a need step, a need the vault minted no credential for (`box`: the need box), or no container runtime; no such Windows host, no such box of the job's, a `--secret` for a box, a bad command, timeout or output, inputs too large, a secret the host does not give, or a vault secret the vault refused.
 
 | field | type | required |
 |---|---|---|

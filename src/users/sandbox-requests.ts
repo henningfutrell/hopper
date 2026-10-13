@@ -9,6 +9,7 @@ import type { StepResult } from '../domain/windows-steps.ts';
 import type { BoxStepCall } from '../sandbox/box-step.ts';
 import { createSandboxRequests, type SandboxRequests } from '../sandbox/requests.ts';
 import type { StepBoxes } from '../windows-steps/service.ts';
+import type { Sandboxes } from '../sandbox/service.ts';
 
 /**
  * Starts a box of a template for a job's sandbox request, says whether a box of the user's is still there, and runs a
@@ -18,6 +19,8 @@ export interface SandboxLauncher {
   launch(userId: string, template: TemplateView): Promise<{ container: string }>;
   alive(userId: string, container: string): boolean;
   step(userId: string, container: string, step: BoxStepCall, io: { log(chunk: string): void; signal: AbortSignal }): Promise<StepResult>;
+  /** Runs one need step of the user's (issue #1007) in a one-shot need box. Absent: no need step runs. */
+  needStep?: Sandboxes['needStep'];
   /** How long a start may take before its request fails (issue #1002); default START_MS. */
   startMs?: number;
 }

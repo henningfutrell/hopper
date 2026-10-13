@@ -104,6 +104,7 @@ export function remoteVault(o: {
     mint: (ask, machineKey) => o.local.mint(ask, machineKey, mintFrom),
     testMint: (asset, by) => o.local.testMint(asset, by, mintFrom),
     mintForCheck: (ask) => o.local.mintForCheck(ask, mintFrom),
+    mintForStep: (ask) => o.local.mintForStep(ask, mintFrom),
     saveTemplate: (t, by) => o.local.saveTemplate(t, by),
     removeTemplate: (name, by) => o.local.removeTemplate(name, by),
     approveTemplate: (name, by) => o.local.approveTemplate(name, by),
