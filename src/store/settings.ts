@@ -9,6 +9,7 @@ import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, Connect
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 import type { MasterKeyRotation } from '../domain/settings-store.ts';
+import type { SandboxApprovals } from '../domain/sandbox-approvals.ts';
 
 /** Each review section's settings row (issues #537, #543). */
 const REVIEW_SETTINGS_KEYS: Readonly<Record<ReviewKind, string>> = { proposal: 'proposalSettings', research: 'researchSettings' };
@@ -124,6 +125,15 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setReadPolicy(p) {
       write('readPolicy', JSON.stringify({ assets: [...p.assets] }));
+    },
+    getSandboxApprovals() {
+      const text = read('sandboxApprovals');
+      if (text === undefined) return undefined;
+      const a = JSON.parse(text) as Partial<SandboxApprovals>;
+      return { skipTemplateApproval: a.skipTemplateApproval === true, skipSandboxApproval: a.skipSandboxApproval === true };
+    },
+    setSandboxApprovals(a) {
+      write('sandboxApprovals', JSON.stringify({ skipTemplateApproval: a.skipTemplateApproval, skipSandboxApproval: a.skipSandboxApproval }));
     },
     getBlastRadius() {
       const text = read('blastRadius');

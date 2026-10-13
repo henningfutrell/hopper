@@ -336,6 +336,13 @@ export const EVENT_SCHEMAS = {
   'template.removed': strict({ template: z.string(), by: z.string() }),
   'vault.approved': strict({ template: z.string(), image: z.string(), tools: z.array(z.string()).optional(), secrets: z.array(z.string()), by: z.string() }),
   'vault.revoked': strict({ template: z.string(), by: z.string() }), 'vault.read_policy_set': strict({ assets: z.array(z.string()), by: z.string() }),
+  // Sandboxes jobs start (issue #991): the two toggles, and each sandbox request from its ask to its box or its end.
+  'vault.sandbox_approvals_set': strict({ skipTemplateApproval: z.boolean(), skipSandboxApproval: z.boolean(), by: z.string() }),
+  'vault.sandbox_requested': strict({ request: z.string(), template: z.string() }),
+  'vault.sandbox_approved': strict({ request: z.string(), template: z.string(), by: z.string() }),
+  'vault.sandbox_declined': strict({ request: z.string(), template: z.string(), reason: z.string(), by: z.string() }),
+  'vault.sandbox_started': strict({ request: z.string(), template: z.string(), container: z.string() }),
+  'vault.sandbox_failed': strict({ request: z.string(), template: z.string(), reason: z.string() }),
   'template.profile_approved': strict({ template: z.string(), ...operationProfile.shape, level: radiusLevel, by: z.string() }),
   'vault.delivered': strict({ name: z.string(), template: z.string(), machine: z.string(), job: z.string(), backend: z.string().optional() }),
   // A launch's agent credential (issue #708, part 10): given to a box at its launch, before it runs a job. Never the value.
