@@ -2,6 +2,7 @@
 // are the UI session's (src/http/ui/vault.ts).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { profileRef } from '../domain/confirmation-asks.ts';
+import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
 import { autoApproveOf, NO_SKIPS, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
 import type { ProfileAsk, VaultView } from '../domain/vault.ts';
 import { BOX_IMAGE } from '../sandbox/launch.ts';
@@ -17,20 +18,32 @@ import { vaultView } from '../vault/vault.ts';
  */
 export async function vaultAnswer(parts: Pick<TenantParts, 'vault' | 'store'> & Partial<Pick<TenantParts, 'sandboxRequests'>>): Promise<VaultView> {
   const view = await vaultView(parts.vault);
+  // Issue #1001: the job that asked for each template, by its title and its issue or pull request.
+  const templates = view.templates.map((t) => {
+    const job = t.askedBy ? parts.store.jobs.get(t.askedBy) : undefined;
+    if (!t.askedBy || !job) return t;
+    const title = job.source?.title ?? job.spec.goal, url = job.source?.url;
+    return { ...t, askedByJob: { id: t.askedBy, ...(title ? { title } : {}), ...(url ? { url } : {}) } };
+  });
   const asked = shownAsks(parts.store, 'vault-profile');
   const asks = view.templates.flatMap((t) => t.pending.profiles.flatMap((p): ProfileAsk[] => {
     const a = asked.get(profileRef(t.name, p));
     return a ? [{ template: t.name, ...p, ...a }] : [];
   }));
   return {
-    ...view, readPolicy: parts.store.settings.getReadPolicy()?.assets ?? [], ...(asks.length ? { asks } : {}),
+    ...view, templates, readPolicy: parts.store.settings.getReadPolicy()?.assets ?? [], ...(asks.length ? { asks } : {}),
     // Sandboxes jobs start (issue #991): the toggles, and the requests of jobs at work.
     // The auto-approve policy (issue #1001) answered in full, the default where none was set.
     sandboxApprovals: approvalsInFull(parts.store.settings.getSandboxApprovals() ?? NO_SKIPS), sandboxRequests: parts.sandboxRequests?.list() ?? [],
+    rememberedWrites: rememberedNow(parts.store),
   };
 }
 
-const approvalsInFull = (a: SandboxApprovals): SandboxApprovals => ({ ...a, autoApprove: autoApproveOf(a) });
+/** The time limit for remembered write approvals (issue #1001) answered too, the default where none was set. */
+const approvalsInFull = (a: SandboxApprovals): SandboxApprovals => ({ ...a, autoApprove: autoApproveOf(a), rememberWritesHours: rememberHoursOf(a) });
+
+/** A person's write approvals the hopper remembers now (issue #1001), each with its end. */
+const rememberedNow = (store: TenantParts['store']) => liveWrites(store.settings.getRememberedWrites(), rememberHoursOf(store.settings.getSandboxApprovals()), new Date());
 
 /**
  * The user's side of a template request (issue #716): their templates, through the vault's own save and approve, their
@@ -45,6 +58,7 @@ export function templateRequestUser(parts: Pick<TenantParts, 'vault' | 'store'>)
     approveProfile: (name, profile, by) => parts.vault.approveProfile(name, profile, by),
     policy: () => parts.store.settings.getReadPolicy(),
     approvals: () => parts.store.settings.getSandboxApprovals(),
+    remembered: () => rememberedNow(parts.store),
     image: `${BOX_IMAGE}:box-${BOX_AGENTS[0]}`,
   };
 }

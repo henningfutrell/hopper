@@ -13,7 +13,8 @@ import type { Job, JobStatus, NewEvent } from '../domain/types.ts';
 import { parseProxyToken, type ProxyTokenParts } from '../github-proxy/token.ts';
 import { askedSkill, catalogText, credentialText, kindsInWords, linkText, mintedLinkText, skillOf, SKILLS, type LinkForm, type Skill, type SkillCredential } from './catalog.ts';
 import type { SandboxRequestView } from '../domain/sandbox-approvals.ts';
-import { SANDBOX_SKILL, TEMPLATE_SKILL, type TemplateAnswer } from './template-request.ts';
+import { needsOf, SANDBOX_SKILL, TEMPLATE_SKILL, type AskAbout, type TemplateAnswer } from './template-request.ts';
+import { PLAN_MAX, PURPOSE_MAX } from '../domain/vault.ts';
 import { helpForAgent } from '../help/book.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
@@ -32,9 +33,9 @@ export interface SkillUser {
   /** The vault asks a person for a credential the box's template does not give (issue #583): waiting, or declined. */
   need(ask: CredentialNeed, asker: { job: Job; machine: string; template: string }): { waiting: string } | { declined: string };
   /** A template request (issue #716): the hopper makes the template the job's needs say, or says why not. */
-  requestTemplate(needs: string | undefined, job: Job): Promise<TemplateAnswer>;
-  /** A sandbox request (issue #991): the job's ask for a box of the template, and where it is now. */
-  sandbox(template: string, job: Job): SandboxRequestView;
+  requestTemplate(needs: string | undefined, job: Job, about?: AskAbout): Promise<TemplateAnswer>;
+  /** A sandbox request (issue #991): the job's ask for a box of the template, and where it is now; `about`: why, and its plan (issue #1001). */
+  sandbox(template: string, job: Job, about?: AskAbout): SandboxRequestView;
   /** The job's sandbox ask waits on the template for a person (issue #1001): their approval then covers the job's run. */
   sandboxWaits?(template: string, job: Job): void;
 }
@@ -131,8 +132,13 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       record('skill.listed');
       return { status: 200, text: catalogText() };
     }
+    // Issue #1001: a sandbox ask says why the job needs it, and for a change what the box will do: the person who
+    // approves it reads both on its card.
+    const told = name === TEMPLATE_SKILL || name === SANDBOX_SKILL ? aboutOf(name, why, field(body, 'plan'), field(body, 'needs')) : undefined;
+    if (typeof told === 'string') return no(400, told);
+    const about: AskAbout | undefined = told;
     if (name === TEMPLATE_SKILL) {
-      const t = await user.requestTemplate(field(body, 'needs'), job);
+      const t = await user.requestTemplate(field(body, 'needs'), job, about);
       if ('reason' in t) return no(t.status, t.reason);
       if (t.status === 202) return { status: 202, text: `${t.text} Add --wait to have the hopper tell you when it is ready.\n` };
       record('skill.loaded');
@@ -179,14 +185,14 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
      * runs is a 200 with its name and the skills it loads.
      */
     async function sandbox(): Promise<SkillAnswer> {
-      const t = await user.requestTemplate(field(body, 'needs'), job);
+      const t = await user.requestTemplate(field(body, 'needs'), job, about);
       if ('reason' in t) return no(t.status, t.reason);
       const later = ' Add --wait to have the hopper tell you when the box runs.\n';
       if (t.status === 202) {
         user.sandboxWaits?.(t.template, job);
         return { status: 202, text: `${t.text} Then the hopper starts the box.${later}` };
       }
-      const r = user.sandbox(t.template, job);
+      const r = user.sandbox(t.template, job, about);
       if (r.state === 'waiting') return { status: 202, text: `waiting: the box of template ${t.template} waits for a person to approve the sandbox run on Access requests.${later}` };
       if (r.state === 'starting') return { status: 202, text: `waiting: the box of template ${t.template} starts now, approved by ${r.approvedBy ?? 'a person'}.${later}` };
       if (r.state === 'declined') return no(403, `a person declined the sandbox run of template ${t.template}: ${r.reason ?? 'no reason given'}. Find another way.`);
@@ -221,4 +227,20 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
       return loaded(`${s.text}\n\nAccess allowed it: ${decision.reason}.\n${linkText(l.form, secrets)}${notes ? `\n${notes}` : ''}`, decision);
     }
   }
+}
+
+/**
+ * Why a sandbox ask says, and its plan (issue #1001); or why it cannot be taken. `why` is required; `plan` too when a
+ * need changes an asset. Needs that cannot be read are left to the template request, which says why.
+ */
+function aboutOf(skill: string, why: string | undefined, plan: string | undefined, needs: string | undefined): AskAbout | string {
+  const purpose = why?.trim() ?? '', steps = plan?.trim() ?? '';
+  if (!purpose) return `say why the job needs this sandbox, in one or two sentences, for the person who approves it: sh "$HOPPER_SKILL" ${skill} --why "Create the cluster role for X in namespace identity" --needs "…"`;
+  if (purpose.length > PURPOSE_MAX) return `--why is at most ${PURPOSE_MAX} characters: one or two sentences`;
+  if (steps.length > PLAN_MAX) return `--plan is at most ${PLAN_MAX} characters`;
+  const read = needsOf(needs);
+  if (!steps && typeof read !== 'string' && read.some((p) => p.operation !== 'read')) {
+    return `a need changes an asset: say what the box will do with --plan "<the commands or the plan; for each change, what it changes (resource names) and whether it can be undone>"`;
+  }
+  return { purpose, ...(steps ? { plan: steps } : {}) };
 }

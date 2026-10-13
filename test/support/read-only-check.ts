@@ -96,4 +96,4 @@ export const asked = async (a: TestApp, token: string): Promise<TemplateView> =>
   (await a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': token })).body.templates.find((t) => t.name.startsWith('asked-'))!;
 export const launch = (a: TestApp, token: string, template: string) => a.ui<{ container: string; error: string }>('/ui/api/machines/sandbox', { template }, { token });
 export const vault = (a: TestApp, token: string, body: unknown) => a.ui<{ error: string }>('/ui/api/vault', body, { token });
-export const NEEDS = ['sandbox-template', '--needs', `read/cluster/lab read/aws-role/${ACCOUNT}/readonly`];
+export const NEEDS = ['sandbox-template', '--why', 'Read the lab for the report', '--needs', `read/cluster/lab read/aws-role/${ACCOUNT}/readonly`];

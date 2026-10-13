@@ -52,7 +52,7 @@ async function boot(): Promise<{ a: TestApp; token: string; runtime: FakeContain
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   const runtime = createFakeContainerRuntime();
-  const a = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, plugins: { machines: lanes(2) }, seams: { authorizationServer: createFakeAuthorizationServer(), containerRuntime: runtime } });
+  const a = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, plugins: { machines: lanes(3) }, seams: { authorizationServer: createFakeAuthorizationServer(), containerRuntime: runtime } });
   apps.push(a);
   return { a, token: await a.login(), runtime };
 }

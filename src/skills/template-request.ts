@@ -15,11 +15,15 @@
 // or changed an asked-for template to these needs. A template that gives a box more than the needs is never used for them.
 // Issue #1001: after the read policy, the user's **auto-approve policy** approves a template it makes now whose blast
 // radius is a level the policy holds — by default low: read needs only, as a requested template holds no vault secret.
+// Then a person's remembered write approvals: each write, sync or apply need one a person approved before for that asset
+// and access, and each read approved with no person (src/domain/remembered-writes.ts). A template keeps the purpose and
+// the plan of the job that asked for it first, for the card a person decides on.
 import { createHash } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
 import { checkWait } from '../domain/read-only-check.ts';
 import { inReadPolicy, type ReadPolicy } from '../domain/read-policy.ts';
 import { AUTO_APPROVER, autoApproves, NO_SKIPS, SKIP_TEMPLATE_APPROVER, type SandboxApprovals } from '../domain/sandbox-approvals.ts';
+import { readApprovedWithoutPerson, REMEMBERED_APPROVER, rememberedCovers, type RememberedWrite } from '../domain/remembered-writes.ts';
 import { DEFAULT_BLAST_RADIUS_SETTINGS } from '../domain/types.ts';
 import { rateTemplate } from '../blast-radius/template.ts';
 import type { TemplatePreview, TemplateView } from '../domain/vault.ts';
@@ -88,12 +92,14 @@ export interface TemplateRequestUser {
   template(name: string): TemplateView | undefined;
   /** Every template of the user's (issue #998): one approved for the same needs is used for them. */
   templates(): TemplateView[];
-  save(t: { name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; readOnly: boolean; askedBy?: string }, by: string): Promise<Result>;
+  save(t: { name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; readOnly: boolean; askedBy?: string; purpose?: string; plan?: string }, by: string): Promise<Result>;
   approve(name: string, by: string): Promise<Result>;
   approveProfile(name: string, profile: OperationProfile, by: string): Promise<Result>;
   policy(): ReadPolicy | undefined;
   /** The sandbox approval toggles (issue #991); absent: both off. */
   approvals?(): SandboxApprovals | undefined;
+  /** A person's write approvals the hopper remembers now (issue #1001), ended ones left out; absent: none. */
+  remembered?(): RememberedWrite[];
   image: string;
 }
 
@@ -137,25 +143,27 @@ function approvedFor(u: Pick<TemplateRequestUser, 'templates'>, needs: readonly 
 
 const approverOf = (t: TemplateView): TemplatePreview['approvedBy'] => {
   const by = t.approval?.by;
-  return by === READ_POLICY_APPROVER || by === SKIP_TEMPLATE_APPROVER || by === AUTO_APPROVER ? by : 'a person';
+  return by === READ_POLICY_APPROVER || by === SKIP_TEMPLATE_APPROVER || by === AUTO_APPROVER || by === REMEMBERED_APPROVER ? by : 'a person';
 };
 
 const skipsTemplate = (u: Pick<TemplateRequestUser, 'approvals'>): boolean => (u.approvals?.() ?? NO_SKIPS).skipTemplateApproval;
 
 /**
  * Who approves a template made now for these needs with no person, in order: the read policy (every need a read it
- * holds), the auto-approve policy (issue #1001: the template's blast radius is a level it holds), skip template approval.
- * Undefined: a person. A requested template holds no vault secret, so its radius comes from the needs alone.
+ * holds), the auto-approve policy (issue #1001: the template's blast radius is a level it holds), a person's remembered
+ * write approvals (issue #1001: they cover every change, and each read is approved with no person), skip template
+ * approval. Undefined: a person. A requested template holds no vault secret, so its radius comes from the needs alone.
  */
-function automaticApprover(u: Pick<TemplateRequestUser, 'policy' | 'approvals'>, needs: readonly OperationProfile[]): TemplatePreview['approvedBy'] | undefined {
+function automaticApprover(u: Pick<TemplateRequestUser, 'policy' | 'approvals' | 'remembered'>, needs: readonly OperationProfile[]): TemplatePreview['approvedBy'] | undefined {
   if (outsidePolicy(needs, u.policy()).length === 0) return READ_POLICY_APPROVER;
   const level = rateTemplate({ secrets: [], profiles: [...needs] }, [], DEFAULT_BLAST_RADIUS_SETTINGS.rules).level;
   if (autoApproves(u.approvals?.(), level)) return AUTO_APPROVER;
+  if (rememberedCovers({ secrets: [], profiles: needs }, u.remembered?.() ?? [], readApprovedWithoutPerson(u.policy(), u.approvals?.()))) return REMEMBERED_APPROVER;
   return skipsTemplate(u) ? SKIP_TEMPLATE_APPROVER : undefined;
 }
 
 /** The template these needs make, and who approves it; or why the needs cannot be read. It saves nothing. */
-export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'templates' | 'policy' | 'image' | 'approvals'>, said: string | undefined): TemplatePreview | string {
+export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'templates' | 'policy' | 'image' | 'approvals' | 'remembered'>, said: string | undefined): TemplatePreview | string {
   const needs = needsOf(said);
   if (typeof needs === 'string') return needs;
   const name = requestedName(needs);
@@ -176,8 +184,14 @@ export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'templ
   };
 }
 
-/** A request, `by` the job (`job <id>`) or a person; `job`: the id of the job that asks (issue #715: its check's report goes there). */
-export async function requestTemplate(u: TemplateRequestUser, said: string | undefined, by: string, job?: string): Promise<TemplateAnswer> {
+/** Why a job asks, and what its box will do (issue #1001): kept on a template made now, for the person who approves it. */
+export interface AskAbout { purpose: string; plan?: string }
+
+/**
+ * A request, `by` the job (`job <id>`) or a person; `job`: the id of the job that asks (issue #715: its check's report
+ * goes there); `about`: why it asks and its plan (issue #1001).
+ */
+export async function requestTemplate(u: TemplateRequestUser, said: string | undefined, by: string, job?: string, about?: AskAbout): Promise<TemplateAnswer> {
   const needs = needsOf(said);
   if (typeof needs === 'string') return { status: 400, reason: needs };
   const asked = requestedName(needs);
@@ -191,7 +205,8 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
   }
   if (!reused && !was) {
     const readOnly = needs.every((p) => p.operation === 'read');
-    const saved = await u.save({ name, image: u.image, secrets: [], profiles: needs, tools: toolsForNeeds(needs), readOnly, ...(job ? { askedBy: job } : {}) }, by);
+    const saved = await u.save({ name, image: u.image, secrets: [], profiles: needs, tools: toolsForNeeds(needs), readOnly, ...(job ? { askedBy: job } : {}),
+      ...(about ? { purpose: about.purpose, ...(about.plan ? { plan: about.plan } : {}) } : {}) }, by);
     if (!saved.ok) return { status: STATUS[saved.code] ?? 503, reason: saved.error };
     // Only a template made now is approved with no person (automaticApprover): as it is, then each write, sync or apply
     // profile, unless the read policy approved it, which holds reads only.

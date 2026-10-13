@@ -180,3 +180,23 @@ export function markableProbes(t: { check?: { probes: { id: string; expect: stri
   const read = (t.check?.probes ?? []).filter((p) => p.expect === 'allowed' || p.mark).map((p) => p.id);
   return [...new Set([...read, ...Object.keys(marks)])].sort();
 }
+
+/**
+ * An asset in plain words (issue #1001): the minting credential the vault holds for it — for a namespace, its cluster's;
+ * for an AWS role, its account's — by name and scope, as a person set them. Undefined when the vault holds none.
+ */
+export function assetWords(secrets: readonly VaultSecret[], asset: Asset): string | undefined {
+  const [head] = asset.name.split('/');
+  const owner: Asset = asset.kind === 'namespace' ? { kind: 'cluster', name: head! } : asset.kind === 'aws-role' ? { kind: 'aws-account', name: head! } : asset;
+  const s = secrets.find((x) => x.mints?.kind === owner.kind && x.mints.name === owner.name);
+  return s ? `${s.name}${s.scope ? `: ${s.scope}` : ''}` : undefined;
+}
+
+/** One need in plain words (issue #1001): the operation on the asset, the asset's own words, and whether it changes the asset. */
+export function needText(p: OperationProfile, secrets: readonly VaultSecret[]): string {
+  const words = assetWords(secrets, p.asset);
+  return `${profileText(p)}${words ? ` (${words})` : ''}: ${p.operation === 'read' ? 'reads it' : 'changes it'}`;
+}
+
+/** The key a remembered write approval is shown under (issue #1001). */
+export const rememberedKey = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;

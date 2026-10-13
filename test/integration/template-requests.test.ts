@@ -226,7 +226,7 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
     const { a, token } = await boot(['cluster/*']);
     const creds = await runningJob(a);
     for (const needs of [[], ['--needs', 'look at the pods'], ['--needs', 'delete/cluster/lab'], ['--needs', 'read/planet/mars']]) {
-      const r = await skill(a, creds, ['sandbox-template', ...needs]);
+      const r = await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', ...needs]);
       expect(r.code, `${needs.join(' ')}: ${r.stdout}`).toBe(1);
       expect(r.stdout).toContain('--needs "read/cluster/NAME');
     }

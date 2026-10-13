@@ -23,7 +23,7 @@ export function AccessRequests() {
       <AskedFor requests={view?.requests ?? []} can={can} busy={busy} send={sendVault} />
       <VaultGrants view={view} />
       {/* Issue #1001: each template and run card decides on its own; one pending blocks no other. */}
-      <TemplateApprovals templates={view?.templates ?? []} {...(view?.asks ? { asks: view.asks } : {})} can={can} send={sendDecision} />
+      <TemplateApprovals templates={view?.templates ?? []} {...(view?.asks ? { asks: view.asks } : {})} secrets={view?.secrets ?? []} can={can} send={sendDecision} />
       <SandboxRuns view={view} can={can} />
       <Panel title="Box tokens" icon={Ticket}>
         <p className="text-sm text-muted-foreground">An agent that approves or merges work, or starts a job, through the API needs a box token: a token of a grant minted with Box grant on. Mint one, or end one, on <a href="#settings/api-tokens" className="underline">Settings → API tokens</a>.</p>

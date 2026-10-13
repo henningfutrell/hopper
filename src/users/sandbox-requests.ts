@@ -1,5 +1,7 @@
 // One user's sandbox requests (issue #991, design.md "Sandboxes jobs start"), built from their store and vault: each
-// request approved by a person, or by the user's skip sandbox approval; the box started through the sandbox module.
+// request approved by a person, or by the user's skip sandbox approval, the auto-approve policy or a remembered write
+// approval (issue #1001); the box started through the sandbox module.
+import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
 import { NO_SKIPS } from '../domain/sandbox-approvals.ts';
 import type { UserStore } from '../domain/ports.ts';
 import type { TemplateView } from '../domain/vault.ts';
@@ -27,6 +29,10 @@ export function userSandboxRequests(o: {
     alive: (c) => o.sandboxes?.alive(o.userId, c) ?? false,
     atWork: (id) => AT_WORK.includes(store.jobs.get(id)?.status ?? ''),
     jobTitle: (id) => { const j = store.jobs.get(id); return j?.source?.title ?? j?.spec.goal; },
+    jobUrl: (id) => store.jobs.get(id)?.source?.url,
+    // Issue #1001: a person's remembered write approvals, and the read policy for the reads beside them.
+    remembered: () => liveWrites(store.settings.getRememberedWrites(), rememberHoursOf(store.settings.getSandboxApprovals()), o.clock.now()),
+    policy: () => store.settings.getReadPolicy(),
     clock: o.clock,
     ...(o.sandboxes?.startMs !== undefined ? { startMs: o.sandboxes.startMs } : {}),
   });

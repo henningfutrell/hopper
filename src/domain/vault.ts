@@ -13,6 +13,7 @@ export type { InfraWatchers } from './infra-watchers.ts';
 export type { Mark, OutOfBandChange, OutOfBandMark, OutOfBandView, SignalSource } from './out-of-band.ts';
 import type { BoxTool, TemplateLimits } from './sandboxes.ts';
 import type { SandboxApprovals, SandboxRequestView } from './sandbox-approvals.ts';
+import type { RememberedWriteView } from './remembered-writes.ts';
 
 /** A vault secret's name: a letter, then letters, digits, `_`, `.`, `-`; at most 64. */
 export const VAULT_SECRET_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
@@ -181,6 +182,8 @@ export interface VaultView {
   sandboxApprovals?: SandboxApprovals;
   /** The boxes the user's jobs at work asked for (issue #991): waiting for a person, starting, running, declined or failed. */
   sandboxRequests?: SandboxRequestView[];
+  /** A person's write, sync and apply approvals the hopper remembers now (issue #1001), each with its end. */
+  rememberedWrites?: RememberedWriteView[];
   /** Jobs on boxes that asked the vault with no vault grant (issue #652): a person grants them the vault, or not. */
   grantAsks?: VaultGrantAsk[];
   /** The vault grants (issue #652): the items whose jobs may use the vault's helper, who granted each, and when. */
@@ -258,6 +261,12 @@ export interface Template {
    */
   askedBy?: string;
   /**
+   * Why the job that asked for it needs it, and what its box will do (issue #1001): the job's own words, for the person
+   * who approves it. Kept through every save, as `askedBy`. Absent: a person or an API caller asked for it, or it was saved before.
+   */
+  purpose?: string;
+  plan?: string;
+  /**
    * The agent credential (issue #708, part 10; src/domain/agent-credential.ts): one of its secrets, a Claude token, that
    * a box of it starts with, signed in, when its launch's scope holds it. Given only as far as its secrets are approved.
    */
@@ -292,6 +301,26 @@ export interface TemplateView extends Template {
   gives: string[];
   /** Rated from its profiles and its secrets (issue #584). */
   radius: TemplateRadius;
+  /** A readable name from its purpose (issue #1001), shown before its name; absent when it has no purpose. */
+  label?: string;
+  /** The job that asked for it (issue #1001): its title and its issue or pull request, while the hopper knows the job. */
+  askedByJob?: { id: string; title?: string; url?: string };
+}
+
+/** The longest purpose a job gives, and the longest plan (issue #1001). */
+export const PURPOSE_MAX = 300;
+export const PLAN_MAX = 2000;
+
+/** A readable name from a purpose (issue #1001): its first words, lowercase, joined by `-`; at most 48 characters. */
+export function purposeLabel(purpose: string): string | undefined {
+  const words = purpose.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w !== '');
+  let label = '';
+  for (const w of words) {
+    const next = label ? `${label}-${w}` : w;
+    if (next.length > 48) break;
+    label = next;
+  }
+  return label || undefined;
 }
 
 /**
@@ -301,7 +330,7 @@ export interface TemplateView extends Template {
  */
 export interface TemplatePreview {
   template: string; image: string; tools: string[]; needs: string[]; readOnly: boolean;
-  approvedBy: 'the read policy' | 'the auto-approve policy' | 'skip template approval' | 'a person'; waits: string[]; exists?: 'same' | 'changed';
+  approvedBy: 'the read policy' | 'the auto-approve policy' | 'a remembered write approval' | 'skip template approval' | 'a person'; waits: string[]; exists?: 'same' | 'changed';
 }
 
 const sameProfile = (a: OperationProfile, b: OperationProfile): boolean => a.operation === b.operation && a.asset.kind === b.asset.kind && a.asset.name === b.asset.name;
@@ -330,8 +359,9 @@ export function templateView(t: Template, approvedProfiles: readonly OperationPr
   const approved = t.approval?.secrets ?? [];
   const image = !imageApproved(t);
   const profiles = t.profiles ?? [];
+  const label = t.purpose ? purposeLabel(t.purpose) : undefined;
   return {
-    ...t, profiles,
+    ...t, profiles, ...(label ? { label } : {}),
     pending: { secrets: t.secrets.filter((s) => !approved.includes(s)), image, profiles: profiles.filter((p) => !approvedProfiles.some((a) => sameProfile(a, p))) },
     gives: givesOf(t),
     radius,
