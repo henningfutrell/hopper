@@ -30,7 +30,7 @@ export const updateBody = z.discriminatedUnion('action', [
  */
 export const masterKeyBody = z.strictObject({ action: z.enum(['reveal', 'saved', 'rotate']) });
 
-export function registerInstanceRoutes(app: FastifyInstance, o: { instance: Guard; instanceAdmin: InstanceAdmin; updater: Updater; masterKey: MasterKeyStatus; rateLimiter: RateLimiterControl; remoteAccess: RemoteAccess; allowedHosts: AllowedHosts; hostLink: Parameters<typeof registerHostLinkRoutes>[1]['hostLink']; port: () => number; origins: () => string[]; by: (req: FastifyRequest) => string }): void {
+export function registerInstanceRoutes(app: FastifyInstance, o: { instance: Guard; instanceAdmin: InstanceAdmin; updater: Updater; masterKey: MasterKeyStatus; rateLimiter: RateLimiterControl; remoteAccess: RemoteAccess; allowedHosts: AllowedHosts; hostLink: Parameters<typeof registerHostLinkRoutes>[1]['hostLink']; wsl: boolean; port: () => number; origins: () => string[]; by: (req: FastifyRequest) => string }): void {
   registerRateLimiterRoutes(app, o);
   registerHostLinkRoutes(app, o);
   registerRemoteAccessRoutes(app, o);

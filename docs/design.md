@@ -5584,6 +5584,12 @@ On a hopper in a container (compose, rootless Podman in WSL among them), the fir
 - **Settings → Host link**, the instance admin's: `GET /api/host-link` answers `HostLinkView` (`hostLinkBase`, `default`);
   `POST /ui/api/host-link` sets it to an origin the hopper answers to (the same check as a link base: else 400 with the
   list), or empty for the default. It applies to the next link, without a restart.
+- **The WSL hint.** A container shares its host's kernel, so the daemon reads `/proc/version` once at start; when it names
+  Microsoft, the hopper runs in WSL and `HostLinkView.wsl` is true. Settings → Host link then shows how to test the link
+  from Windows (`Invoke-WebRequest <host link base>/api/health` in PowerShell) and the `.wslconfig` fixes
+  (`localhostForwarding=true` or `networkingMode=mirrored` under `[wsl2]`, then `wsl --shutdown`). The daemon cannot run a
+  Windows command itself, so a person runs the test; a client in this distro (Add machine → A computer) can make it
+  automatic. It reads `/proc/version` only (`AppSeams.procVersion` in tests).
 - **Why `localhost`, not `127.0.0.1`.** WSL forwards a Windows `localhost` to a port the WSL side binds on loopback, in
   NAT mode with `localhostForwarding` and in mirrored mode; the Host guard lets `localhost:<port>` in. Why it is a setting
   and not `.env`: every setting is edited in the UI; and `HOPPER_PUBLIC_URL` refuses loopback, so it cannot be reused.

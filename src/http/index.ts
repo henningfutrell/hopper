@@ -76,6 +76,7 @@ export type { TenantParts, Tenants } from './tenants.ts';
 export { installTunnelEdge, tunnelCaller, watchTunnel, type TunnelWatch } from './tunnel.ts';
 export { createRemoteAccess, type RemoteAccess } from './remote-access.ts';
 export { createAllowedHosts } from './allowed-hosts.ts';
+export { kernelVersion, runsInWsl } from './ui/host-link.ts';
 export type { TailnetSource } from './tailnet.ts';
 
 export interface ServerOptions {
@@ -105,6 +106,8 @@ export interface ServerOptions {
   remoteAccess: RemoteAccess;
   /** The hosts the admin allowed and this host's tailnet (issue #1024): GET /api/allowed-hosts, POST /ui/api/allowed-hosts. `lan` reads them. */
   allowedHosts: AllowedHosts;
+  /** The hopper runs in WSL (issue #712): GET /api/host-link says so, for Settings' Windows hint. */
+  wsl: boolean;
   clock: Clock;
   version: string;
   /** The bound port, for the Host guard and the UI Origin check (known only after listen). */
@@ -225,7 +228,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
-    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, allowedHosts: o.allowedHosts, hostLink: o.instance.settings,
+    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, allowedHosts: o.allowedHosts, hostLink: o.instance.settings, wsl: o.wsl,
   });
   return app;
 }
