@@ -221,10 +221,10 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   };
 
   /** The intake migration (issue #440): once, listing the claims it released and the issues not assigned to the user. */
-  const migrate = (intake: IntakeContext, released: string[]) => {
+  const migrate = (intake: IntakeContext, released: string[], listed: IntakeOutcome[]) => {
     const changes: IntakeChange[] = [
       ...released.map((key) => ({ key, change: MIGRATION_RELEASED })),
-      ...outcomes.filter((x) => x.reason === NOT_ASSIGNED).map((x) => ({ key: x.key, change: MIGRATION_UNASSIGNED })),
+      ...listed.filter((x) => x.reason === NOT_ASSIGNED).map((x) => ({ key: x.key, change: MIGRATION_UNASSIGNED })),
     ];
     intake.migrated({ at: o.clock.now().toISOString(), changes });
     intake.record('source.intake_migrated', { source: o.name, changes });
@@ -285,11 +285,11 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         listed, assignee, ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}), ...(o.rejections ? { rejections: o.rejections } : {}),
         ...(intake ? { holder: intake.holder, othersKnown: intake.othersKnown, migrating } : {}),
       });
-      repoErrors = found.repoErrors;
-      outcomes = found.outcomes;
-      listedLabels = found.listed;
+      // The new listing is built apart and kept at the end, in one step (issue #1019): until then the intake is the last
+      // sync's, so an Approve sent while this sync reads GitHub finds its request card, never a half-built list.
+      let next = found.outcomes;
       for (const r of found.released) intake?.record('source.claim_released', { source: o.name, key: r.key, by: r.by, reason: r.reason });
-      if (intake && migrating && found.migrated) migrate(intake, found.released.filter((r) => r.by === 'migration').map((r) => r.key));
+      if (intake && migrating && found.migrated) migrate(intake, found.released.filter((r) => r.by === 'migration').map((r) => r.key), next);
       if (listed.listed) await outside.read(repos, assignee);
       // A listing has no body: each issue taken is read, from GitHub only when its listing changed since.
       const taken: GitHubIssue[] = [];
@@ -311,10 +311,13 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         const item = await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), bot, assignee);
         items.push(v ? { ...item, origin: v.origin } : item);
       }
-      outcomes = outcomes.map((x) => { const r = requests.get(x.key); return r ? { ...x, reason: REQUEST_REASON, action: 'approve' as const, group: 'request' as const, request: r } : x; });
+      next = next.map((x) => { const r = requests.get(x.key); return r ? { ...x, reason: REQUEST_REASON, action: 'approve' as const, group: 'request' as const, request: r } : x; });
       if (intake) openRequests(o.name, intake, requests, opened);
-      outcomes = await backburner(outcomes);
+      next = await backburner(next);
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
+      repoErrors = found.repoErrors;
+      outcomes = next;
+      listedLabels = found.listed;
       lastDiscoverAt = o.clock.now().toISOString();
       return items;
     }),

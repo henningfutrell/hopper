@@ -14,6 +14,8 @@ export interface Slot {
   source: JobSource;
   status: SourceStatus;
   chain: Promise<void>;
+  /** The sync queued on the chain that has not started yet (issue #1019): a sync asked for meanwhile joins it. */
+  queued?: { asked: boolean; done: Promise<void> };
   timer?: NodeJS.Timeout;
   /** Last transient report error per job, shown as detail.reportRetries. */
   retrying: Map<string, string>;
