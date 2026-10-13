@@ -2,7 +2,7 @@
 // sign-in config → plugin store → one user runtime per user (src/users/: the plugins config, plugin host, engine,
 // sources, questions, webhooks, notifiers) → updater → server. Adapters are built by their plugins,
 // through each user's host (integration tests call startApp, with doubles at the seams).
-import { artifactBase } from './artifacts/links.ts';
+import { personBase } from './artifacts/links.ts';
 import { jobHopperUrl } from './github-proxy/reach.ts';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -48,7 +48,7 @@ export interface App {
   config: Config;
   /** The sign-in config as it applies now (loaded at start, changed from Settings → Sign-in). */
   auth: () => AuthConfig;
-  /** The UI link to one question, as notifications carry it: the first LAN name, else loopback. */
+  /** The UI link to one question, as notifications carry it, on the hopper's link base (no user's): `personBase`. */
   answerUrl(questionId: string): string;
   /** The instance store: users, identity links, sessions, login codes, the sign-in config, instance settings. */
   instance: InstanceStore;
@@ -163,9 +163,10 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const workDir = config.workDir;
   mkdirSync(workDir, { recursive: true, mode: 0o700 });
   let port = config.port;
-  const uiUrl = (hash: string): string => `http://${config.lanNames[0] ?? '127.0.0.1'}:${port}/#${hash}`;
-  // Where a notification's artifact link points (issue #673): the user's link base, else the hopper's own default.
-  const artifactLinkBase = (linkBase: string): string => artifactBase({ linkBase, publicUrl: config.publicUrl, lanNames: config.lanNames, port });
+  // The base of a person's link (issues #673, #712): the user's link base, else the public URL, else the host link base
+  // (Settings → Host link), else an IP or `.local` LAN name, else localhost. Never a container's bare name.
+  const linkBase = (userLinkBase: string): string => personBase({ linkBase: userLinkBase, publicUrl: config.publicUrl, hostLinkBase: instance.settings.getHostLinkBase(), lanNames: config.lanNames, port });
+  const uiUrl = (hash: string): string => `${linkBase('')}/#${hash}`;
   const intervalMs = seams.pluginsConfigIntervalMs ?? PLUGINS_CONFIG_CHECK_MS;
   // The client release this hopper loads onto its client targets: the client files of the install it runs from (issue #70).
   const clientRelease = readRelease(join(APP_DIR, 'src', 'client'));
@@ -212,7 +213,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     instance, logger,
     options: (user) => ({
       config, seams: seamsOf(seams, user.id), search, env: keyed, clock, logger, clientRelease, links, proxyUrl, hopperUrls: () => hopperAddresses({ publicUrl: config.publicUrl, lanNames: config.lanNames, port }), network: hopperNetwork(config), access, minter, instanceSecrets: secrets.system, sharedSecrets: secrets.shared(access), launchScopes: (userId) => launchScopes(sandboxRecords.list(), userId), sandboxes: sandboxLauncher,
-      installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, uiUrl, artifactLinkBase, reach: () => remoteAccess.watch.url(),
+      installedDir: installedDirOf(workDir), pluginsConfigIntervalMs: intervalMs, linkBase, reach: () => remoteAccess.watch.url(),
       // A GitHub account connected from Sources is linked to its user under each realm of that
       // type (issue #214): signing in with it later lands in the same user. A link to another user stays.
       linkIdentity: (provider, subject) => {

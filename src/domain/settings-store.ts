@@ -159,6 +159,9 @@ export interface InstanceSettingsRepository {
   /** Remote access (issue #880): the tunnel on or off and its domain; undefined: never set. */
   getRemoteAccess(): RemoteAccessSettings | undefined;
   setRemoteAccess(settings: RemoteAccessSettings): void;
+  /** The host link base (issue #712): the address people open, an origin; empty: never set, the default applies. */
+  getHostLinkBase(): string;
+  setHostLinkBase(base: string): void;
 }
 
 /** A master key rotation (issue #659): the replaced key's fingerprint (never the key), and when. */

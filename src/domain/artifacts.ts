@@ -207,6 +207,16 @@ export interface ArtifactSettings {
   linkBase: string;
 }
 
+/**
+ * As GET /api/host-link answers it (issue #712): the host link base, the address people open — an origin the hopper
+ * answers to, or empty for `default`, `http://localhost:<port>` on the computer that runs the hopper. A person's link is
+ * built on the user's link base, else the public URL, else this (src/artifacts/links.ts `personBase`).
+ */
+export interface HostLinkView {
+  hostLinkBase: string;
+  default: string;
+}
+
 const MB = 1024 * 1024;
 export const DEFAULT_ARTIFACT_SETTINGS: ArtifactSettings = {
   maxBytes: 10 * MB, userBytes: 500 * MB, retentionDays: 30, publicLinks: true, linkHours: 24, linkHoursMax: 24 * 7, linkBase: '',

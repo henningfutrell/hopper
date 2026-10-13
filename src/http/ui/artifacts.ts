@@ -55,7 +55,7 @@ const REVISE_BODY_LIMIT = Math.ceil(ARTIFACT_MAX_BYTES / 3) * 4 + 64 * 1024;
 const refused = (r: Refusal): never => { throw new HttpError(r.status, r.no); };
 
 /** A link base as kept: empty, or one of the origins the hopper answers to (else a link would be refused, 421). */
-function linkBaseOf(raw: string, origins: string[]): string {
+export function linkBaseOf(raw: string, origins: string[]): string {
   if (raw === '') return '';
   let u: URL | undefined;
   try { u = new URL(raw); } catch { u = undefined; }

@@ -1,6 +1,6 @@
 // The UI session's routes that are the hopper's admin's alone (issue #240), behind the `instance` guard: self-update
 // (issue #44), the master key (issue #659), the shared GitHub rate limiter's settings (issue #436, ./github-rate-limiter.ts)
-// and remote access (issue #880, ./remote-access.ts).
+// remote access (issue #880, ./remote-access.ts) and the host link base (issue #712, ./host-link.ts).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Updater } from '../../domain/ports.ts';
@@ -8,6 +8,7 @@ import { UPDATE_CHANNELS, type MasterKeyRotated, type MasterKeyView } from '../.
 import type { MasterKeyStatus } from '../master-key.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { registerRateLimiterRoutes } from './github-rate-limiter.ts';
+import { registerHostLinkRoutes } from './host-link.ts';
 import { registerRemoteAccessRoutes } from './remote-access.ts';
 import type { RateLimiterControl } from '../../github-limiter/settings.ts';
 import type { InstanceAdmin } from '../instance-admin.ts';
@@ -27,8 +28,9 @@ export const updateBody = z.discriminatedUnion('action', [
  */
 export const masterKeyBody = z.strictObject({ action: z.enum(['reveal', 'saved', 'rotate']) });
 
-export function registerInstanceRoutes(app: FastifyInstance, o: { instance: Guard; instanceAdmin: InstanceAdmin; updater: Updater; masterKey: MasterKeyStatus; rateLimiter: RateLimiterControl; remoteAccess: RemoteAccess; by: (req: FastifyRequest) => string }): void {
+export function registerInstanceRoutes(app: FastifyInstance, o: { instance: Guard; instanceAdmin: InstanceAdmin; updater: Updater; masterKey: MasterKeyStatus; rateLimiter: RateLimiterControl; remoteAccess: RemoteAccess; hostLink: Parameters<typeof registerHostLinkRoutes>[1]['hostLink']; port: () => number; origins: () => string[]; by: (req: FastifyRequest) => string }): void {
   registerRateLimiterRoutes(app, o);
+  registerHostLinkRoutes(app, o);
   registerRemoteAccessRoutes(app, o);
   // design.md "Self-update": answers the new GET /api/update status. `apply` answers at once (the
   // build runs in the background; the daemon then restarts), or 409 when nothing can be applied.

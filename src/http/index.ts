@@ -211,7 +211,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   jobStreamRoutes(app, { tenants: o.tenants, subscribed: (userId, jobId) => { void skillWaits.redrive(userId, jobId); } });
   // Artifacts (issue #624): a running job puts them with the same token; a person reads them, and their content is
   // served off /api/ under the policy of its kind, by a signed URL or a public link.
-  const artifactEdge = createArtifactEdge({ clock: o.clock, lan: o.lan, port: o.port, tenants: o.tenants });
+  const artifactEdge = createArtifactEdge({ clock: o.clock, lan: o.lan, port: o.port, tenants: o.tenants, hostLinkBase: () => o.instance.settings.getHostLinkBase() });
   jobArtifactRoutes(app, { tenants: o.tenants, edge: artifactEdge, github });
   jobInfraPlanRoutes(app, { tenants: o.tenants }); // Infra plans (issue #870), with the same token
   jobStepRoutes(app, { tenants: o.tenants }); // Windows sandbox steps (issue #731), with the same token
@@ -220,7 +220,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
-    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess,
+    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, hostLink: o.instance.settings,
   });
   return app;
 }
