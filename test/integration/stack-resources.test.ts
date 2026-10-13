@@ -7,8 +7,9 @@
 //   Scenario: with no runtime socket, the containers say why, and Postgres is still read
 //   Scenario: statement latency says why there is none when pg_stat_statements is not installed
 //   Scenario: OpenFGA's checks as its meter reads them; with no OpenFGA, or a meter that fails, it says why
+//   Scenario: the sandbox boxes on each client target as their meter reads them; none with no box there
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ContainerMeter, ContainerReading, OpenFgaMeter, PostgresReading, StackResources } from '../../src/domain/types.ts';
+import type { ContainerMeter, ContainerReading, OpenFgaMeter, PostgresReading, RemoteBoxMeter, StackResources } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
 const apps: TestApp[] = [];
@@ -23,10 +24,10 @@ const POSTGRES: ContainerReading = {
   startedAt: '2026-10-12T09:00:00.000Z', restarts: 1, cpuCores: 0.25, memUsedBytes: 300 * 1024 ** 2, netRxBytes: 10, netTxBytes: 20,
 };
 
-async function boot(meter?: ContainerMeter, openFgaMeter?: OpenFgaMeter): Promise<TestApp> {
+async function boot(meter?: ContainerMeter, openFgaMeter?: OpenFgaMeter, remoteBoxMeter?: RemoteBoxMeter): Promise<TestApp> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  const a = await startTestApp({ dbPath: db.dbPath, seams: { ...(meter ? { containerMeter: meter } : {}), ...(openFgaMeter ? { openFgaMeter } : {}) } });
+  const a = await startTestApp({ dbPath: db.dbPath, seams: { ...(meter ? { containerMeter: meter } : {}), ...(openFgaMeter ? { openFgaMeter } : {}), ...(remoteBoxMeter ? { remoteBoxMeter } : {}) } });
   apps.push(a);
   return a;
 }
@@ -39,6 +40,8 @@ describe('stack resources', () => {
     const r = await a.api<StackResources>('GET', '/api/resources');
     expect(r.status).toBe(200);
     expect(r.body.containers).toEqual({ containers: [POSTGRES] });
+    // No sandbox record names a client target: no machine is read.
+    expect(r.body.remoteBoxes).toEqual([]);
     expect(Date.parse(r.body.at)).not.toBeNaN();
     const pg = r.body.postgres;
     if (!isReading(pg)) throw new Error(pg.problem);
@@ -89,5 +92,15 @@ describe('stack resources', () => {
     expect(isReading(r.body.postgres)).toBe(true);
     const failing = await boot(undefined, { read: async () => { throw new Error('OpenFGA\'s metrics answered 503'); } });
     expect((await failing.api<StackResources>('GET', '/api/resources')).body.openfga).toEqual({ problem: 'OpenFGA\'s metrics answered 503' });
+  });
+
+  it('answers the sandbox boxes on each client target as their meter reads them', async () => {
+    const box: ContainerReading = { service: 'laptop/hopper-sandbox-kube', group: 'sandbox', machine: 'laptop', name: 'hopper-sandbox-kube', image: 'box:1', state: 'running', cpuCores: 0.5, cores: 4 };
+    const remote = [{ machine: 'gone', problem: 'no client target gone' }, { machine: 'laptop', containers: [box] }];
+    const a = await boot({ read: async () => ({ containers: [POSTGRES] }) }, undefined, { read: async () => remote });
+    const r = await a.api<StackResources>('GET', '/api/resources');
+    expect(r.status).toBe(200);
+    expect(r.body.remoteBoxes).toEqual(remote);
+    expect(r.body.containers).toEqual({ containers: [POSTGRES] });
   });
 });

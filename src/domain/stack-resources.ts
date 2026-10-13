@@ -10,9 +10,11 @@ export type ContainerGroup = (typeof CONTAINER_GROUPS)[number];
 
 /** One container now, as the container runtime says. A value the runtime did not give is absent. */
 export interface ContainerReading {
-  /** The label: the compose service's name, or the box's container name. */
+  /** The label: the compose service's name, or the box's container name; for a box on a client target, `<machine>/<name>`. */
   service: string;
   group: ContainerGroup;
+  /** The client target a sandbox box runs on, through its remote runtime; absent: the computer the hopper runs on. */
+  machine?: string;
   /** The container's own name and image. */
   name: string;
   image: string;
@@ -56,6 +58,17 @@ export interface ContainerMeter {
   read(): Promise<ContainerReadings>;
 }
 
+/**
+ * The sandbox boxes on one client target (issue #947), read through its remote runtime — the machine's own Podman (else
+ * Docker), through its client —, or why they cannot be read (no such client target now, no runtime there).
+ */
+export type MachineBoxes = { machine: string; containers: ContainerReading[] } | { machine: string; problem: string };
+
+/** What reads the sandbox boxes on each client target that holds one of the hopper's sandbox records. Never throws. */
+export interface RemoteBoxMeter {
+  read(): Promise<MachineBoxes[]>;
+}
+
 /** The hopper's Postgres now (issue #947). */
 export interface PostgresReading {
   /** Connections: active (running a statement), all, and the most it allows. */
@@ -95,10 +108,15 @@ export interface OpenFgaMeter {
   read(): Promise<OpenFgaReading>;
 }
 
-/** `GET /api/resources` (issue #947): every container of the stack and each sandbox box, Postgres and OpenFGA, now. */
+/**
+ * `GET /api/resources` (issue #947): every container of the stack and each sandbox box beside the hopper, the sandbox
+ * boxes on each client target, Postgres and OpenFGA, now.
+ */
 export interface StackResources {
   at: string;
   containers: ContainerReadings;
+  /** Per client target that holds a sandbox box, by its name. */
+  remoteBoxes: MachineBoxes[];
   postgres: PostgresReading | { problem: string };
   openfga: OpenFgaReading | { problem: string };
 }

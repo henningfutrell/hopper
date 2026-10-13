@@ -8,6 +8,7 @@
 //   Scenario: a create without the sandbox flags, or with a mount of the machine, is refused
 //   Scenario: a call on a container the hopper did not make is refused; a gone one answers 404
 //   Scenario: a call outside the runtime calls the hopper makes is refused
+//   Scenario: a box's one-shot stats are carried; another container's, or a stream, are refused (issue #947)
 //   Scenario: a box's start check is carried: the create with its health check, and the check run on the hopper's box only
 //   Scenario: a tools image's build is carried as a tar of its one Containerfile
 //   Scenario: a build of anything but a tools image, with other build options, or of another context, is refused
@@ -136,6 +137,27 @@ describe('the remote runtime, on the machine', () => {
       expect(r.status).toBe(403);
     }
     expect(a.seen).toEqual([]);
+  });
+
+  it('a box\'s one-shot stats are carried; another container\'s, or a stream, are refused (issue #947)', async () => {
+    const libpod = createFakeLibpod();
+    const box = libpod.put({ name: 'hopper-sandbox-kube', image: 'box', labels: { 'io.hopper.box': 'i-1' } });
+    const theirs = libpod.put({ name: 'postgres', image: 'postgres', labels: {} });
+    const a = await api([on('GET', /\/stats$/, { status: 200, body: { cpu_stats: { online_cpus: 4 } } }), ...libpod.handlers]);
+    const t = (await client({ podman: a.socket })).transport(TOKEN);
+    expect(await clientRuntimeCall(t, { method: 'GET', path: `${API}/containers/${box}/stats?stream=false` })).toEqual({ status: 200, text: JSON.stringify({ cpu_stats: { online_cpus: 4 } }) });
+    for (const [path, why] of [
+      [`${API}/containers/${theirs}/stats?stream=false`, 'not a sandbox box the hopper made'],
+      [`${API}/containers/${box}/stats`, 'stream=false'],
+      [`${API}/containers/${box}/stats?stream=true`, 'stream=false'],
+      [`${API}/containers/${box}/stats?stream=false&one-shot=true`, 'stream=false'],
+    ] as const) {
+      const r = await clientRuntimeCall(t, { method: 'GET', path });
+      expect(r.status).toBe(403);
+      expect(JSON.parse(r.text).message).toContain(why);
+    }
+    expect((await clientRuntimeCall(t, { method: 'POST', path: `${API}/containers/${box}/stats?stream=false` })).status).toBe(403);
+    expect(a.seen.filter((s) => s.path.endsWith('/stats'))).toHaveLength(1);
   });
 
   it('a box\'s start check is carried: the create with its health check, and the check run on the hopper\'s box only', async () => {

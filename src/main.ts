@@ -36,7 +36,7 @@ import type { UserRuntime, UserSeams } from './users/runtime.ts';
 import { createRuntimes } from './users/runtimes.ts';
 import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { sandboxBoxesFor, sandboxClientsOf } from './users/sandbox-boxes.ts'; import { mintJoinCode } from './machines/join-code.ts';
-import { selectRuntime } from './sandbox/runtime.ts'; import { createOpenFgaMeter, createStack, meterFor, openFgaMetricsUrl, type StackRecorder } from './stack-resources/index.ts';
+import { selectRuntime } from './sandbox/runtime.ts'; import { createOpenFgaMeter, createRemoteBoxMeter, createStack, meterFor, openFgaMetricsUrl, type StackRecorder } from './stack-resources/index.ts';
 import { cachedSandboxes, createSandboxes, hopperAddress, hopperNetwork, launchScopes, ownContainer, usersAgentCredentials, usersTemplates, type Sandboxes } from './sandbox/service.ts';
 import { foldLeftoverAdmin } from './users/leftover-admin.ts';
 
@@ -87,7 +87,7 @@ export interface AppSeams extends UserSeams {
   /** The container runtime (issue #708); default the one src/sandbox/runtime.ts selects from the config, else none. What reads
    * the stack's containers (issue #947); default the meter on the sandbox runtime's socket, else none. And what reads
    * OpenFGA's checks; default its metrics endpoint beside HOPPER_OPENFGA_URL, else none. */
-  containerRuntime?: ContainerRuntime; containerMeter?: import('./domain/stack-resources.ts').ContainerMeter; openFgaMeter?: import('./domain/stack-resources.ts').OpenFgaMeter;
+  containerRuntime?: ContainerRuntime; containerMeter?: import('./domain/stack-resources.ts').ContainerMeter; remoteBoxMeter?: import('./domain/stack-resources.ts').RemoteBoxMeter; openFgaMeter?: import('./domain/stack-resources.ts').OpenFgaMeter;
   /** How long a sandbox launch waits for the box's start check (issue #708); default START_CHECK_MS. */
   startCheckMs?: number;
   /** Self-update: the install dir (default APP_DIR), the build (default install.sh build-only mode), the restart (default exit or respawn). */
@@ -111,7 +111,7 @@ function warnLeftoverEnv(config: Config): void {
 
 /** The user seams of one user: the shared ones, `perUser`'s over them. */
 function seamsOf(seams: AppSeams, userId: string): UserSeams {
-  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, openFgaMeter: _fgaMeter, startCheckMs: _check, ...shared } = seams;
+  const { env: _env, pluginsConfigIntervalMs: _ms, perUser, uiDir: _ui, update: _up, pluginStoreDefault: _store, authorizationServer: _fga, containerRuntime: _box, containerMeter: _meter, remoteBoxMeter: _remoteMeter, openFgaMeter: _fgaMeter, startCheckMs: _check, ...shared } = seams;
   return { ...shared, ...perUser?.(userId) };
 }
 
@@ -294,9 +294,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     const user = instance.users.add(name);
     return runtimes.ensure(user).then(() => user);
   };
-  // Stack resources (issue #947): the containers through the runtime's socket, Postgres through the store, OpenFGA its
-  // metrics; the stack recorder keeps them over time.
-  const stack = createStack({ meter: seams.containerMeter ?? meterFor({ config, instanceId: instance.settings.instanceId(), self: ownContainer(config.localMachine) }), openfga: seams.openFgaMeter ?? (config.openFgaUrl ? createOpenFgaMeter({ url: openFgaMetricsUrl(config.openFgaUrl) }) : undefined), database: store.databaseStats, history: store.stackHistory, clock, logger });
+  // Stack resources (issue #947): the containers through the runtime's socket, the sandbox boxes on client targets through
+  // their clients, Postgres through the store, OpenFGA its metrics; the stack recorder keeps them over time.
+  const stack = createStack({ meter: seams.containerMeter ?? meterFor({ config, instanceId: instance.settings.instanceId(), self: ownContainer(config.localMachine) }), remote: seams.remoteBoxMeter ?? createRemoteBoxMeter({ instanceId: instance.settings.instanceId(), records: () => sandboxRecords.list(), clients: sandboxClientsOf(runtimes) }), openfga: seams.openFgaMeter ?? (config.openFgaUrl ? createOpenFgaMeter({ url: openFgaMetricsUrl(config.openFgaUrl) }) : undefined), database: store.databaseStats, history: store.stackHistory, clock, logger });
   const server = createServer({
     // The stack against the compose file of this version (issue #697): checked at start, and at each GET /api/update/drift.
     // The shared GitHub rate limiter (issue #436): every GitHub call of this process goes through it, with the saved settings.

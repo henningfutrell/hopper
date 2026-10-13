@@ -76,7 +76,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
-| `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
+| `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); remote access — the tunnel's settings, its authtoken in the instance's vault, its status and the tunnel service's ask (`remote-access.ts`, `ui/remote-access.ts`, issue #880); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
@@ -5099,7 +5099,8 @@ hand, and the hopper never saw that container. This is the path #704's machines 
   new privileges, a read-only root, only a tmpfs at `/tmp`, only a `hopper-sandbox-*` home volume at `/home/agent`, a
   non-root user, the `io.hopper.box` label, a `hopper-sandbox-*` name) and no other field (so no `privileged`, no bind
   mount, no device, no added capability); start, stop, inspect and remove act only on a container that carries the
-  `io.hopper.box` label (checked by an inspect first), and a volume is removed only by a box's home volume name. A
+  `io.hopper.box` label (checked by an inspect first), and so do its one-shot stats for the stack resources (issue #947:
+  `stream=false` and no other query), and a volume is removed only by a box's home volume name. A
   refusal answers 403 in the runtime's own shape, so the adapter reports it as the runtime's refusal. These checks
   restate the builder on purpose: the client imports nothing of the hopper's.
 - **Idempotent create.** Every box carries `io.hopper.sandbox` = its record's id. A create whose answer is lost (a link
@@ -15819,9 +15820,37 @@ service and metric adds up — about 15 lines for a full stack, 650 000 rows in 
 time* (`ui/src/model/stack-history.ts`): a line per service and metric, a colour per service, a dash per metric; a sandbox
 box's lines are hidden until shown, since boxes come and go. It reads again once a minute; no SSE event, as nothing else waits on it.
 
-**Not built yet** (the rest of the issue, its next parts): Solr's query latency, index size and documents waiting (issue
-#945, not in the stack yet); a container target's or a client target's boxes (their runtime is the machine's, through its
-client).
+### Sandbox boxes on client targets (part 4 of the issue)
+
+A sandbox box the hopper started on a client target (issue #708) runs in that machine's own Podman (else Docker), which the
+hopper reaches only through the machine's client: the remote runtime. The **remote box meter**
+(`src/stack-resources/remote.ts`) reads them for the stack resources.
+
+**Which machines.** Each machine a sandbox record names that is not `local`, once per user and machine; no record on a
+client target, no machine is read. The machine's relay is the sandbox module's own (`sandboxClientsOf`).
+
+**How.** The container meter itself (`containers.ts`), with the machine's name and its runtime's API prefix (the Podman or
+Docker adapter's), its calls carried down the machine's link (`relayCall`, `src/sandbox/remote.ts`). Libpod's list, inspect
+and per-container stats answer in the Docker-compatible shapes the meter reads (checked live against rootless Podman 5).
+Only this hopper's boxes there (`io.hopper.box` its instance id); no compose project, since none on that machine is the
+hopper's. No disk use: the client carries no `/system/df`, which counts every image and volume on the machine. A meter
+is kept per user, machine and runtime kind, so CPU is the use since the read before; a machine that holds no box any more
+forgets it.
+
+**The client's check** (`src/client/runtime.ts`). One more call: `GET <prefix>/containers/<id>/stats`, only on a container the
+hopper labelled as its box, and only with the query `stream=false` and nothing else. A stream would hold the link's call
+open until its time out. A client of a release before this one refuses it (403): the boxes then show their state, uptime
+and limits, and no CPU or memory, until the hopper loads its client release there (never while a job runs).
+
+**The read.** `GET /api/resources` has `remoteBoxes`: per machine, by name, its box readings (`machine` set, `service`
+`<machine>/<container name>`, as two machines may each have a box of one name), or `problem` (no such client target now, no
+runtime there, no answer). The stack recorder keeps their CPU and memory as for a box beside the hopper. On the Resources
+page they show under *Sandbox boxes*, after the boxes beside the hopper, each with *on <machine>*; a machine that cannot be
+read says why there.
+
+**Not built yet** (the rest of the issue, its next part): Solr's query latency, index size and documents waiting (issue
+#945, not in the stack yet). A container target is not a box and has none: it is a container a person runs, reached only
+through the docker socket proxy, which lets through ping, inspect and exec, never stats.
 
 Tests: `test/adapters/container-meter.test.ts` (the project and the boxes chosen, CPU between reads and the runtime's own,
 memory less the cache against its limit, network and disk summed, the disk use's sizes and its failure, a stopped
@@ -15833,7 +15862,12 @@ OpenFGA, an OpenFGA meter that fails),
 `test/integration/instance-admin.test.ts` (an instance read), `test/scripts/compose.test.ts` (pg_stat_statements loaded),
 `test/ui/resources-view.test.ts` (the rows, Postgres, what cannot be read, the graph's lines),
 `test/integration/stack-history.test.ts` (a record's shares, OpenFGA's failed checks between records and after a restart,
-the peak per step and the gaps, the retention), `test/ui/stack-history.test.ts` (the lines). Live: the meter against this computer's
+a box on a client target, the peak per step and the gaps, the retention), `test/ui/stack-history.test.ts` (the lines),
+`test/adapters/remote-box-meter.test.ts` (through the real client: only this hopper's boxes there, by machine, CPU between
+reads, a machine read once, no client target or no runtime, a client that refuses the stats), `test/client/runtime.test.ts`
+(a box's one-shot stats carried; another container's, or a stream, refused). Live: the meter against this computer's
 rootless Podman and its hopper stack (every service, a CPU-bound container read at one core, its limits); the Postgres
 reading against `postgres:17-alpine` with pg_stat_statements loaded; the OpenFGA metric names against `openfga/openfga:v1.22.0`
-(checks allowed, denied and refused) and its endpoint read from inside the hopper's container on the compose network.
+(checks allowed, denied and refused) and its endpoint read from inside the hopper's container on the compose network; the
+remote box meter through the client's end against rootless Podman 5 (a labelled box at a 0.5-core quota read at 0.50 cores,
+its memory against its 256 MiB limit).
