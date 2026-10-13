@@ -18,15 +18,40 @@ export function announceCredentialAsked(e: DomainEvent): void {
 
 export const useVaultStore = create<{ view: VaultView | null; error: string | null; busy: boolean }>(() => ({ view: null, error: null, busy: false }));
 
-export const setVaultView = (view: VaultView): void => useVaultStore.setState({ view, error: null });
+// Issue #1019: each request whose answer is the view gets a number when it is sent, and the view keeps an answer only when
+// no request sent after it was answered first. Ten approvals at once, or a read that started before a change, so never
+// roll back what a later answer showed.
+let sent = 0;
+let shown = 0;
+const keep = (n: number, view: VaultView): void => {
+  if (n <= shown) return;
+  shown = n;
+  useVaultStore.setState({ view, error: null });
+};
+
+/** Keeps a view a request answered just now, as the newest. */
+export const setVaultView = (view: VaultView): void => keep(++sent, view);
+
+/** Sends one request whose answer is the vault's view, and keeps that answer unless a later request's came first. */
+export async function viewAnswer(send: () => Promise<VaultView>): Promise<VaultView> {
+  const n = ++sent;
+  const view = await send();
+  keep(n, view);
+  return view;
+}
 
 let reading: Promise<void> | null = null;
-/** Reads the view again; a read that runs already is the one every caller waits on. */
+let again = false;
+/** Reads the view again. Asked while a read runs, it reads once more after that one, so the last change is read. */
 export function loadVault(): Promise<void> {
-  reading ??= get<VaultView>('/api/vault')
-    .then((v) => { if (!Array.isArray(v.templates)) throw new Error('the answer is no vault view'); setVaultView(v); })
-    .catch((e: unknown) => useVaultStore.setState({ error: (e as Error).message }))
-    .finally(() => { reading = null; });
+  if (reading) { again = true; return reading; }
+  const read = (): Promise<void> => viewAnswer(() => get<VaultView>('/api/vault').then((v) => {
+    if (!Array.isArray(v.templates)) throw new Error('the answer is no vault view');
+    return v;
+  }))
+    .then(() => undefined, (e: unknown) => useVaultStore.setState({ error: (e as Error).message }))
+    .then(() => { if (!again) return; again = false; return read(); });
+  reading = read().finally(() => { reading = null; });
   return reading;
 }
 
@@ -45,7 +70,7 @@ export function useVault(): VaultView | null {
 export async function sendVault(edit: unknown, done: string, o: { quiet?: boolean } = {}): Promise<boolean> {
   if (!o.quiet) useVaultStore.setState({ busy: true });
   try {
-    setVaultView(await post<VaultView>('/ui/api/vault', edit));
+    await viewAnswer(() => post<VaultView>('/ui/api/vault', edit));
     toast.success(done);
     return true;
   } catch (e) {

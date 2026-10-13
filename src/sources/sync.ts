@@ -299,10 +299,21 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     slot.timer = setTimeout(() => { void runSync(slot); }, ms);
   }
 
-  /** `asked`: a start, a changed source or a person asked for this sync, so the source reads everything again. */
+  /**
+   * `asked`: a start, a changed source or a person asked for this sync, so the source reads everything again. A sync asked
+   * for while one waits to start joins it (issue #1019): it starts after the ask, so it sees what the ask did, and ten
+   * approvals in a row wait for one sync behind the running one, not for ten in a row.
+   */
   function runSync(slot: Slot, asked = false): Promise<void> {
     clearTimeout(slot.timer);
-    slot.chain = slot.chain.then(() => syncOnce(slot, asked));
+    if (slot.queued) {
+      slot.queued.asked ||= asked;
+      return slot.queued.done;
+    }
+    const queued: NonNullable<Slot['queued']> = { asked, done: Promise.resolve() };
+    slot.queued = queued;
+    slot.chain = slot.chain.then(() => { slot.queued = undefined; return syncOnce(slot, queued.asked); });
+    queued.done = slot.chain;
     syncs.add(slot.chain);
     void slot.chain.finally(() => syncs.delete(slot.chain)).catch(() => undefined);
     return slot.chain;

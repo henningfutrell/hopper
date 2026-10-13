@@ -12,7 +12,7 @@ import { Empty, Panel } from '@/components/panel';
 import { post, SessionRejected } from '@/lib/api';
 import type { VaultView } from '@/model/wire';
 import { useHopper } from '@/store';
-import { setVaultView } from '@/store/vault';
+import { viewAnswer } from '@/store/vault';
 import { useCanOperate } from '@/store/selectors';
 
 export function VaultGrants({ view }: { view: VaultView | null }) {
@@ -23,7 +23,7 @@ export function VaultGrants({ view }: { view: VaultView | null }) {
   const act = async (job: string, what: 'grant-vault' | 'revoke-vault', done: string): Promise<void> => {
     setBusy(true);
     try {
-      setVaultView(await post<VaultView>(`/ui/api/jobs/${encodeURIComponent(job)}/${what}`, {}));
+      await viewAnswer(() => post<VaultView>(`/ui/api/jobs/${encodeURIComponent(job)}/${what}`, {}));
       toast.success(done);
     } catch (e) {
       if (e instanceof SessionRejected) useHopper.setState({ authed: false });

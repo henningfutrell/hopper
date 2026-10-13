@@ -18,13 +18,13 @@ import { autoApproveOf, profileText, rememberedKey, sandboxApprovalsText, sandbo
 import type { SandboxApprovals as Approvals, RememberedWriteView, SandboxRequestView, TemplateView, VaultSecret, VaultView } from '@/model/wire';
 import { SandboxAsk } from './sandbox-ask';
 import { useHopper } from '@/store';
-import { setVaultView, useVaultStore } from '@/store/vault';
+import { useVaultStore, viewAnswer } from '@/store/vault';
 
 /** Posts one sandbox change and keeps the vault's view it answers. `quiet`: a card's own decision, which marks nothing else busy. */
 async function sendSandbox(path: string, body: unknown, done: string, quiet = false): Promise<boolean> {
   if (!quiet) useVaultStore.setState({ busy: true });
   try {
-    setVaultView(await post<VaultView>(path, body));
+    await viewAnswer(() => post<VaultView>(path, body));
     toast.success(done);
     return true;
   } catch (e) {
