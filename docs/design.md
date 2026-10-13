@@ -2780,7 +2780,9 @@ event; in-memory only.
   `NotifierEvents.loginsUrl` —; never the URL to open or the code); `infra.out_of_band_recorded` (issue #871);
   `infra.plan_recorded`, `infra.plan_approved` and `infra.plan_applied` (issue #870 part 4, "Infra plans: environment
   watchers": the plan's notice from `NotifierEvents.infraPlan`, with the watchers of its environments; `infra.plan_applied`
-  is a `vault.minted` that names a plan and is no renewal).
+  is a `vault.minted` that names a plan and is no renewal); `machine.memory_low` and `machine.memory_recovered` (issue
+  #868, "Machine resources over time" → "WSL and the memory alert": body adds `machineId`, `of`, `freeBytes`,
+  `totalBytes`, `thresholdBytes`, and `since` for a low).
 - `hopper.reachable` (issue #795): where the hopper is reached from outside, while the **tunnel** is up
   (`NotifierEvents.reach`, the tunnel watch: "The tunnel"). Body `{ source: 'hopper', kind: 'hopper.reachable', at,
   reason, url, apiTokenUrl, tokenRefreshUrl, heartbeatSeconds }`: `url` is the remote access URL ("Remote access"),
@@ -12418,6 +12420,38 @@ draws a CPU sparkline of the last day, and *Resources, lanes and usage* opens it
 use, one colour each (lanes dashed), with the usage that limits it and its lane changes (issue #688, "Lane tuning"). On the Usage page, *Machine resources over time* sits under the usage limits, at
 the same day range as their usage line: every machine one colour, CPU solid, memory dashed, disk dotted; swap and lanes
 hidden until shown from the legend.
+
+**WSL and the memory alert** (issue #868). On a Windows machine whose clients run in WSL 2, the VM held about 15 GB at
+rest and Windows ran out of memory, while the samples showed no pressure: Linux counts the VM's page cache as available,
+but the VM keeps it, so Windows cannot use it. Now:
+- **Reading.** A meter in WSL (`/proc/version` says `microsoft`) adds `wsl: true` and the **memory held**
+  (`vmHeldBytes`: MemTotal less MemFree, page cache included — what the host loses). Through WSL interop it also reads
+  Windows' own memory (`hostMemFreeBytes`, `hostMemTotalBytes`): `powershell.exe` (on PATH, else at its usual place
+  under `/mnt/c`) asked for `Win32_OperatingSystem`'s free and total physical memory, in the background at most once a
+  minute, so a read never waits for it; a reading older than 5 minutes is dropped. A client in a container has no
+  interop: it reads the memory held only. An ssh target's probe prints `MemFree` and `wsl`, so it gives the memory held
+  too, never Windows' memory. `resourcesOf` checks a client's figures (held at most its total; free at most total).
+- **Samples and the graph.** A machine sample keeps them (tenant migration 53: `vm_held`, `host_mem_free`,
+  `host_mem_total`, nullable columns, so the build before runs on them). The resource graph adds two resources, only
+  where read: **memory held** (held / total) and **host memory** (Windows' memory used). A machine card says
+  "VM holds 19 GB · Windows 3.0 GB free of 32 GB" after its memory. Memory used, which lane tuning and placement read,
+  is unchanged: memory available is still what Linux can give a job.
+- **The memory alert.** The user's setting (`MemoryAlert`: `freeBytes`, `minutes`, 0 to 1440; off by default), an
+  admin's to change: `POST /ui/api/machines/memory-alert` (`{ alert: null }` turns it off), on the Usage page's
+  *Memory alert* card; `GET /api/machines/history` carries it. At each record the resource recorder shows every
+  machine to the **memory watch** (`src/machines/memory-alert.ts`). It watches each machine's **free memory**: Windows'
+  own for a WSL machine that reads it, else memory available; a container and a WSL machine with no Windows reading are
+  not watched, as their memory available is not what the host has free. Free memory under the threshold for the minutes
+  set is `machine.memory_low` (with `since`), once per stretch under; back over it, `machine.memory_recovered`. A
+  machine offline or with no reading ends a stretch not yet told; one told waits until it is back over. Webhooks take
+  both; so does the Grok Bot routine. The watch is in memory: after a restart a machine still low is told again.
+- **Per container.** Each container's memory, the hopper's stack and each sandbox box, is read and kept over time by
+  the stack resources (issue #947, "Stack resources"); none of it is per job.
+
+Tests: `test/client/resources.test.ts` (WSL), `test/adapters/machine-resources.test.ts` (the probe's and a client's
+WSL figures), `test/machines/memory-alert.test.ts` (the free memory watched, the minutes, recovered, offline, off),
+`test/integration/machine-history.test.ts` (samples, the two lines, the setting, both events),
+`test/plugins/grokbot-intake.test.ts`, `test/ui/machine-history.test.ts`.
 
 **Not built yet** (the issue's second step): soft and hard CPU and memory thresholds per machine, a machine taking
 fewer new lanes above soft and no new job above hard (like the disk hold), off by default until the graphs have shown

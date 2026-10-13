@@ -2,7 +2,7 @@
 // each machine's lanes now (design.md "Usage and accounts (issue #18)"); the usage limits on their graph
 // (issue #522) and how long the usage history is kept (issue #385), the settings here, an admin's.
 import { useEffect, useState } from 'react';
-import { Gauge as GaugeIcon, History, Layers, SlidersHorizontal, UserRound } from 'lucide-react';
+import { Gauge as GaugeIcon, History, Layers, MemoryStick, SlidersHorizontal, UserRound } from 'lucide-react';
 import { UsageLimitsGraph } from '@/charts/usage-limits';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +15,7 @@ import { useNow } from '@/hooks/use-now';
 import { usePoll } from '@/hooks/use-poll';
 import { accountFacts, executorEffectLines, laneEffectText, orderReadings, serviceLabel, sourceLine } from '@/model/usage';
 import { bandAt, capAt, limitsProblem, throttleLine, type LimitBand } from '@/model/usage-limits';
-import type { MachineLaneEffect, PartAccount, UsageHistory, UsageLimitPair, UsageReport } from '@/model/wire';
+import type { MachineHistory, MachineLaneEffect, MemoryAlert, PartAccount, UsageHistory, UsageLimitPair, UsageReport } from '@/model/wire';
 import { act, refreshUsage, useHopper } from '@/store';
 import { MachinesResourcesPanel } from './machine-resources';
 
@@ -229,6 +229,52 @@ function HistoryRetention() {
   );
 }
 
+const GB = 1e9;
+
+/**
+ * The memory alert (issue #868): a person is told when a machine's free memory stays under a threshold — Windows' own for
+ * a WSL machine, else memory available. Off until an admin sets it.
+ */
+function MemoryAlertPanel() {
+  const canSet = useHopper((s) => allows(s.user, 'admin'));
+  const [alert, setAlert] = useState<MemoryAlert | null | undefined>(undefined);
+  const [gbDraft, setGbDraft] = useState('');
+  const [minDraft, setMinDraft] = useState('');
+  const show = (a: MemoryAlert | null) => { setAlert(a); setGbDraft(a ? String(a.freeBytes / GB) : '5'); setMinDraft(a ? String(a.minutes) : '5'); };
+  useEffect(() => {
+    get<MachineHistory>('/api/machines/history?range=24h').then((h) => show(h.memoryAlert ?? null), () => {});
+  }, []);
+  const gb = Number(gbDraft);
+  const minutes = Number(minDraft);
+  const valid = gb > 0 && Number.isInteger(minutes) && minutes >= 0 && minutes <= 1440;
+  const save = async (next: MemoryAlert | null) => {
+    const done = next ? `Memory alert under ${next.freeBytes / GB} GB free for ${next.minutes} min` : 'Memory alert off';
+    if (await act('/ui/api/machines/memory-alert', { alert: next }, done)) show(next);
+  };
+  return (
+    <Panel title="Memory alert" icon={MemoryStick} bodyClassName="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        Tells you (webhooks and notifiers) when a machine's free memory stays low. On a machine in WSL, this is the free memory of Windows,
+        not of the Linux VM: the VM keeps its page cache, which Windows cannot use.
+      </p>
+      {alert === undefined ? <Empty>loading</Empty> : (
+        <form className="flex flex-wrap items-center gap-2 text-sm" onSubmit={(e) => { e.preventDefault(); if (valid) void save({ freeBytes: Math.round(gb * GB), minutes }); }}>
+          <label htmlFor="memory-alert-gb">Under</label>
+          <Input id="memory-alert-gb" type="number" min={0.1} step={0.1} inputMode="decimal" className="h-8 w-20" value={gbDraft} disabled={!canSet}
+            onChange={(e) => setGbDraft(e.target.value)} />
+          <label htmlFor="memory-alert-min">GB free for</label>
+          <Input id="memory-alert-min" type="number" min={0} max={1440} step={1} inputMode="numeric" className="h-8 w-20" value={minDraft} disabled={!canSet}
+            onChange={(e) => setMinDraft(e.target.value)} />
+          <span>min</span>
+          {canSet && <Button type="submit" size="sm" variant="secondary" disabled={!valid}>{alert ? 'Save' : 'Turn on'}</Button>}
+          {canSet && alert && <Button type="button" size="sm" variant="ghost" onClick={() => void save(null)}>Turn off</Button>}
+          {!alert && <span className="text-xs text-muted-foreground">off</span>}
+        </form>
+      )}
+    </Panel>
+  );
+}
+
 export function Usage() {
   const usage = useHopper((s) => s.usage);
   const accounts = useHopper((s) => s.accounts);
@@ -241,6 +287,7 @@ export function Usage() {
         <Accounts accounts={accounts} />
         {usage && <LaneEffect usage={usage} />}
         <HistoryRetention />
+        <MemoryAlertPanel />
       </div>
       <div className="space-y-3">{usage ? <Sources usage={usage} /> : <Panel title="Usage" icon={GaugeIcon}><Empty>loading</Empty></Panel>}</div>
     </div>

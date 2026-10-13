@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machineId": {
+      "type": "string"
+    },
+    "of": {
+      "type": "string",
+      "enum": [
+        "windows",
+        "machine"
+      ]
+    },
+    "freeBytes": {
+      "type": "number"
+    },
+    "totalBytes": {
+      "type": "number"
+    },
+    "thresholdBytes": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "machineId",
+    "of",
+    "freeBytes",
+    "totalBytes",
+    "thresholdBytes"
+  ],
+  "additionalProperties": false
+}

@@ -1,5 +1,5 @@
 // The resource graph's model (issue #560, design.md "Machine resources over time"): a machine's lines — CPU, memory,
-// swap, disk and its lanes in use, one colour each — drawn by the usage graph (charts/usage-history.tsx) on the
+// a WSL machine's memory held and host memory (issue #868), swap, disk and its lanes in use, one colour each — drawn by the usage graph (charts/usage-history.tsx) on the
 // Machines view; every machine's lines at once on the Usage page, one colour per machine and a dash per resource,
 // swap and lanes hidden until shown; a machine row's CPU sparkline; and the resource facts a machine card says now.
 // One machine's graph overlays the usage that limits it and marks its lane changes on its lanes in use (issue #688).
@@ -8,11 +8,17 @@ import type { LaneChange, MachineResource, ResourceReading, ResourceSeries, Usag
 import { gb } from './machines.ts';
 import { ACCOUNT_COLORS, graphLines, type GraphLine, type GraphMark, type LineDash } from './usage-history.ts';
 
-export const RESOURCE_NAMES: Readonly<Record<MachineResource, string>> = { cpu: 'CPU', memory: 'memory', swap: 'swap', disk: 'disk', lanes: 'lanes in use' };
-const RESOURCE_COLORS: Readonly<Record<MachineResource, string>> = { cpu: 'var(--busy)', memory: 'var(--ok)', swap: 'var(--question)', disk: 'var(--warn)', lanes: 'var(--operator)' };
-/** On the Usage page, where colour is the machine's: CPU solid, memory dashed, disk dotted (swap and lanes, hidden at first, likewise). */
-const RESOURCE_DASH: Readonly<Record<MachineResource, LineDash>> = { cpu: 'solid', memory: 'dashed', swap: 'dotted', disk: 'dotted', lanes: 'dashed' };
-const HIDDEN_ON_USAGE: ReadonlySet<MachineResource> = new Set(['swap', 'lanes']);
+export const RESOURCE_NAMES: Readonly<Record<MachineResource, string>> = {
+  cpu: 'CPU', memory: 'memory', held: 'memory held', host: 'host memory', swap: 'swap', disk: 'disk', lanes: 'lanes in use',
+};
+/** Memory held (a WSL VM's, issue #868) is memory's colour, dashed; host memory (Windows') the brand's. */
+const RESOURCE_COLORS: Readonly<Record<MachineResource, string>> = {
+  cpu: 'var(--busy)', memory: 'var(--ok)', held: 'var(--ok)', host: 'var(--brand)', swap: 'var(--question)', disk: 'var(--warn)', lanes: 'var(--operator)',
+};
+const DASHED_ON_MACHINE: ReadonlySet<MachineResource> = new Set(['held', 'lanes']);
+/** On the Usage page, where colour is the machine's: CPU solid, memory and host memory dashed, disk dotted (swap, memory held and lanes, hidden at first, likewise). */
+const RESOURCE_DASH: Readonly<Record<MachineResource, LineDash>> = { cpu: 'solid', memory: 'dashed', held: 'dotted', host: 'dashed', swap: 'dotted', disk: 'dotted', lanes: 'dashed' };
+const HIDDEN_ON_USAGE: ReadonlySet<MachineResource> = new Set(['swap', 'held', 'lanes']);
 
 /** A resource line as the usage graph draws one: its points are shares, 0..1, as a usage window's are. */
 const asUsage = (s: ResourceSeries, account: string, window?: string): UsageSeries =>
@@ -35,7 +41,7 @@ const markOf = (c: LaneChange): GraphMark => {
  */
 export function machineLines(series: readonly ResourceSeries[], usage: readonly UsageSeries[] = [], changes: readonly LaneChange[] = []): GraphLine[] {
   const resources: GraphLine[] = series.map((s) => ({
-    key: s.resource, label: RESOURCE_NAMES[s.resource], color: RESOURCE_COLORS[s.resource], dash: s.resource === 'lanes' ? 'dashed' : 'solid',
+    key: s.resource, label: RESOURCE_NAMES[s.resource], color: RESOURCE_COLORS[s.resource], dash: DASHED_ON_MACHINE.has(s.resource) ? 'dashed' : 'solid',
     shownByDefault: true, series: asUsage(s, RESOURCE_NAMES[s.resource]),
     ...(s.resource === 'lanes' && changes.length ? { marks: changes.map(markOf) } : {}),
   }));
@@ -75,5 +81,8 @@ export function resourcesText(r: ResourceReading | undefined): { cpu: string; me
   const used = r.memTotalBytes - r.memAvailableBytes;
   const share = r.memTotalBytes > 0 ? pct(used / r.memTotalBytes) : '—';
   const swap = r.swapTotalBytes ? ` · swap ${gb(r.swapUsedBytes ?? 0)} of ${gb(r.swapTotalBytes)}` : '';
-  return { cpu, memory: `${gb(used)} used of ${gb(r.memTotalBytes)} (${share}${r.container ? ', container limit' : ''})${swap}` };
+  // A WSL machine (issue #868): its VM keeps the page cache, so it holds more than it uses; Windows' free memory is what runs out.
+  const held = r.vmHeldBytes !== undefined ? ` · VM holds ${gb(r.vmHeldBytes)}` : '';
+  const host = r.hostMemFreeBytes !== undefined && r.hostMemTotalBytes !== undefined ? ` · Windows ${gb(r.hostMemFreeBytes)} free of ${gb(r.hostMemTotalBytes)}` : '';
+  return { cpu, memory: `${gb(used)} used of ${gb(r.memTotalBytes)} (${share}${r.container ? ', container limit' : ''})${swap}${held}${host}` };
 }

@@ -2,7 +2,8 @@
 // machines and keeps, for each one online with a reading, a machine sample — its CPU, memory and swap as its probe
 // last read them, its disk, and its lanes in use. A machine offline adds nothing, which the resource graph shows as
 // a gap. New samples are told to listeners (SSE `machine.recorded`). Every hour, and when the history retention
-// changes, samples past it are pruned: the same retention as the usage samples.
+// changes, samples past it are pruned: the same retention as the usage samples. Each record also shows the machines
+// to the memory alert (issue #868).
 import type { Clock, MachineHistoryRepository } from '../domain/ports.ts';
 import type { Lane, MachineSample, MachineSnapshot } from '../domain/types.ts';
 import { createRecordLoop } from '../usage/history.ts';
@@ -31,6 +32,8 @@ export function sampleOf(m: MachineSnapshot, lanes: readonly Lane[], at: string)
     ...(r?.load ? { load1: r.load[0] } : {}),
     ...(r?.swapTotalBytes !== undefined && r.swapUsedBytes !== undefined ? { swapTotalBytes: r.swapTotalBytes, swapUsedBytes: r.swapUsedBytes } : {}),
     ...(m.disk ? { diskFreeBytes: m.disk.freeBytes, diskTotalBytes: m.disk.totalBytes } : {}),
+    ...(r?.vmHeldBytes !== undefined ? { vmHeldBytes: r.vmHeldBytes } : {}),
+    ...(r?.hostMemFreeBytes !== undefined && r.hostMemTotalBytes !== undefined ? { hostMemFreeBytes: r.hostMemFreeBytes, hostMemTotalBytes: r.hostMemTotalBytes } : {}),
     lanesBusy: lanes.filter((l) => l.machineId === m.id && l.state !== 'idle').length,
     lanesMax: m.maxLanes,
   };
@@ -43,6 +46,8 @@ export function createResourceRecorder(o: {
   retentionDays: () => number;
   clock: Clock;
   logger?: { warn(line: string): void };
+  /** Shown every machine at each record, after its samples are kept: the memory alert (issue #868). */
+  observe?: (machines: readonly MachineSnapshot[], at: string) => void;
 }): ResourceRecorder {
   const listeners = new Set<(added: number) => void>();
   const record = async (): Promise<number> => {
@@ -51,6 +56,7 @@ export function createResourceRecorder(o: {
     const at = o.clock.now().toISOString();
     const samples = machines.flatMap((m) => sampleOf(m, lanes, at) ?? []);
     const added = samples.length ? o.history.record(samples) : 0;
+    o.observe?.(machines, at);
     if (added > 0) for (const l of listeners) l(added);
     return added;
   };

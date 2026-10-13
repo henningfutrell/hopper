@@ -127,6 +127,8 @@
         "machine.actor_mismatch",
         "blast_radius.settings_changed",
         "job.gate_passed",
+        "machine.memory_low",
+        "machine.memory_recovered",
         "minor_decision.picked",
         "minor_decision.compared",
         "minor_decision.overridden",
