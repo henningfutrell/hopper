@@ -144,7 +144,7 @@ sh "$HOPPER_SKILL" sandbox --needs "write/aws-account/123456789012" --wait
 1. The hopper finds the template for these needs and uses it again. When there is none, the hopper makes it (see [Templates a job asks for](#templates-a-job-asks-for)).
 2. A new template waits for a person on **Access requests → Template approvals**, unless the read policy approves it, the auto-approve policy holds its blast radius, or **Skip template approval** is on. By default, a template that only reads is approved with no person.
 3. The sandbox run waits for a person on **Access requests → Sandbox runs**, unless the auto-approve policy holds the template's blast radius, **Skip sandbox approval** is on, or a person approved the template this job asked for. Select **Approve** to start the box, or write why not and select **Decline**. The job is told the reason.
-4. The hopper starts the box with the template's defaults. The box joins as a machine of that template. The job's `--wait` ends with the box's name and the skills the box loads.
+4. The hopper starts the box with the template's defaults. The box joins as a machine of that template. The job's `--wait` ends with the box's name and the skills the box loads. **Approve** answers at once; the box starts in the background. A box that has not started in 20 minutes fails the run with that reason, and the job is told.
 
 The same job that asks again gets the same box. A box ends at the template's time limit. A run that did not start says why; a person can start a box with `hopper sandbox launch --template <name>`.
 
