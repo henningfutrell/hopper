@@ -60,22 +60,21 @@ describe('sandbox requests (issue #991)', () => {
     expect(s.requests.decline('nope', 'x', 'Ada')).toMatchObject({ ok: false, code: 'not_found' });
   });
 
-  it('a start that failed, or a box that went, makes the next ask a new request', async () => {
-    let fail = true;
-    const up = new Set<string>();
-    const s = setup({ approvals: { skipTemplateApproval: false, skipSandboxApproval: true }, launch: async () => { if (fail) throw new Error('no runtime'); up.add('box-x'); return { container: 'box-x' }; } });
+  it('a start that failed stays failed with its reason, so no event starts it again and again', async () => {
+    const s = setup({ approvals: { skipTemplateApproval: false, skipSandboxApproval: true }, launch: async () => { throw new Error('no runtime'); } });
     const first = s.requests.ask('job-1', T.name);
     await s.requests.idle();
-    expect(s.requests.list()[0]).toMatchObject({ state: 'failed', reason: 'no runtime' });
-    fail = false;
-    const second = s.requests.ask('job-1', T.name);
-    expect(second.id).not.toBe(first.id);
+    expect(s.requests.ask('job-1', T.name)).toMatchObject({ id: first.id, state: 'failed', reason: 'no runtime' });
+    expect(s.types().filter((t) => t === 'vault.sandbox_approved')).toHaveLength(1);
+  });
+
+  it('a box that went makes the next ask a new request', async () => {
+    const s = setup({ approvals: { skipTemplateApproval: false, skipSandboxApproval: true } });
+    const first = s.requests.ask('job-1', T.name);
     await s.requests.idle();
-    for (const b of up) s.alive.add(b);
-    expect(s.requests.ask('job-1', T.name)).toMatchObject({ id: second.id, state: 'running', container: 'box-x' });
-    // box-x went: the next ask is a new request.
-    s.alive.delete('box-x');
-    expect(s.requests.ask('job-1', T.name).id).not.toBe(second.id);
+    expect(s.requests.ask('job-1', T.name)).toMatchObject({ id: first.id, state: 'running', container: 'box-1' });
+    s.alive.delete('box-1');
+    expect(s.requests.ask('job-1', T.name).id).not.toBe(first.id);
   });
 
   it('a request of a job no longer at work is forgotten', () => {
