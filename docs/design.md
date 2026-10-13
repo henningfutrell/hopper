@@ -632,7 +632,7 @@ user added later never gets admin's (`userProcessEnv`). Checked live (Claude Cod
 `test/herdr/real-fresh-home.test.ts`, opt-in `HOPPER_REAL_CLAUDE`): in an empty home, a job worktree whose work tree's
 `CLAUDE.md` imports a file outside it reaches Claude's prompt with no key pressed.
 
-*Up is Claude's input box* (`promptShown`: a rule, the `❯` line, a rule below), on screen for 2 s (`PROMPT_STEADY_MS`,
+*Up is Claude's input box* (`promptShown`: a rule, the `❯` line, a rule below), on screen for 2 s (the option `promptSteadyMs`, default `PROMPT_STEADY_MS`,
 counted in polls: Claude draws it before it says it is not signed in). Never herdr's word alone: herdr calls Claude
 `idle` and `interactive_ready` at its first-run theme picker (seen live), where the start before sent the job's prompt.
 
@@ -3284,7 +3284,9 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 - **herdr-claude options:** `bin` (`herdr`), `claudeBin` (`claude`), `session` (`hopper`;
   `default` refused), `args` (`[--dangerously-skip-permissions]`), `cwd`
   (`~/workbench/app-workflows`, `~` expanded), `trustWorkdir` (true), `pollMs` (1000),
-  `idleNudgeMs` (20000; `idleQuestionMs` before issue #163, renamed by tenant migration 2). Detection: `which bin`, then `which claudeBin` — never `--version`,
+  `idleNudgeMs` (20000; `idleQuestionMs` before issue #163, renamed by tenant migration 2), `promptSteadyMs` (2000: how
+  long Claude's input box stays on screen at startup before Claude is taken as ready, issue #533; the tests set it short,
+  issue #949). Detection: `which bin`, then `which claudeBin` — never `--version`,
   never a model call, nothing launched. `claudeBin` exists for detection only: herdr starts
   `claude` itself (`--kind claude`, resolved on herdr's PATH). `test`: no options, always available.
 - **6d, as built:** no `kind` option. `screen.ts` parses only Claude Code's TUI, so a `kind`

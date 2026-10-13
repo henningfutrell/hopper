@@ -8,7 +8,7 @@ import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
 
-const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }];
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000, promptSteadyMs: 100 } }];
 const NOTICE = ['─'.repeat(40), ' Claude Code has switched to a new default model', '', ' ❯ 1. Keep the new default', '   2. Choose another model', '', ' Enter to confirm · Esc to cancel'];
 const DONE = { output: ['● Painted the shed.', '  HOPPER_DONE'] };
 

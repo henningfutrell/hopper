@@ -89,8 +89,12 @@ async function start() {
     name: 'holder', idempotent: false, validate: () => null, machineShell: () => shell,
     async run(ctx) {
       const env = { ...(await ctx.credentials?.(`/work/.hopper-scratch/${ctx.job.id}`)) };
-      await new Promise<void>((end) => held.set(ctx.job.id, { env, end }));
-      return { kind: 'finished', result: 'ended' };
+      // An abort (cancel, park, shutdown) returns at once, as the port asks: the daemon's stop does not wait it out.
+      const aborted = await new Promise<boolean>((end) => {
+        held.set(ctx.job.id, { env, end: () => end(false) });
+        ctx.signal.addEventListener('abort', () => end(true), { once: true });
+      });
+      return aborted ? { kind: 'failed', error: 'aborted' } : { kind: 'finished', result: 'ended' };
     },
     resume: async () => ({ kind: 'failed', error: 'not resumed' }),
   };

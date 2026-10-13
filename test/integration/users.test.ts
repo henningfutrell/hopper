@@ -224,7 +224,7 @@ describe('a user\'s runtime', () => {
 
   it('the processes of a user added later find the CLIs\' config in its own work dir; admin\'s environment is unchanged', async () => {
     const herdr = createFakeHerdrClient({ session: 'fake', turns: [{ output: ['● Done.', '  HOPPER_DONE'] }, { output: ['● Done.', '  HOPPER_DONE'] }] });
-    const executors = [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }];
+    const executors = [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000, promptSteadyMs: 100 } }];
     const a = await start({ plugins: { executors }, seams: { herdr } });
     const bea = await a.addUser('Bea');
     const doc = a.user(bea.id).store.config;

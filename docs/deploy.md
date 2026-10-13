@@ -1203,7 +1203,9 @@ existing database instead.
 
 **The PR check** (issue #672): `.github/workflows/pr.yml` runs on every pull request to `dev`, `beta` or
 `stable`. Its job `pr / gates` runs `npm ci`, `npm run typecheck`, `npm run lint` and `npm run build:ui`;
-its jobs `pr / shard (1)` to `(3)` run `npm test` in three shards, so the check stays well under 10 minutes.
+its jobs `pr / shard (1)` to `(10)` run `npm test` in ten shards, one test worker per core, so the whole check
+takes about 4 minutes (issue #949). Every job takes `node_modules` from the cache of its `package-lock.json` and runs
+`npm ci` only when there is none.
 The check to require is **`pr / test`**: it passes only when the gates and every shard passed. The tests run
 with `HOPPER_TEST_HOST_SERVICES=0`, which leaves out the tests that need
 their own containers, a real sshd, LDAP or a vault (the list: `test/support/host-services.ts`; a new test

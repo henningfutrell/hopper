@@ -14,8 +14,7 @@ import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText } from './
 import { readPaneAnswer } from './pane-answer.ts';
 import { checkpointOn, payloadOn, relocation, taskText } from './relocate.ts';
 import { answerDialog, readyFor } from './before-send.ts';
-import { jobScratchOf, startInPane } from './start.ts';
-import type { PaneState, StartDeps, TurnAnchor } from './start.ts';
+import { jobScratchOf, startInPane, type PaneState, type StartDeps, type TurnAnchor } from './start.ts';
 import { heldElsewhere, heldOf, lastLineOf, paneStateOf, realSleep, samePane, timeoutLiveness, whereOn, type HeldPane, type RemoteHerdr, type Scratch, type Where } from './panes.ts';
 
 export type { ClientTarget, RemoteHerdr } from './panes.ts';
@@ -47,6 +46,8 @@ export interface HerdrClaudeExecutorOptions {
   pollMs: number;
   /** Idle without a marker this long, a turn is a status note and the agent is nudged; further ones in a row wait NUDGE_GAPS_MS. */
   idleNudgeMs: number;
+  /** How long Claude's input box stays on screen at startup before Claude is taken as ready (issue #533). Default 2000. */
+  promptSteadyMs?: number;
   /** Set on the tab of a job in this machine's herdr: the user's CLI config dirs (issue #158). Default none. */
   paneEnv?: Readonly<Record<string, string>>;
   /** Injectable for tests; default an abortable setTimeout. */
@@ -85,7 +86,7 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
 
   const depsOn = (where: Where): StartDeps => ({
     herdr: herdrOn(where), clock, sleep, pollMs: o.pollMs, claudeArgs: o.claudeArgs, trustWorkdir: o.trustWorkdir, yolo: o.yolo ?? false, unattended: o.unattended ?? false,
-    jobWorktrees: o.jobWorktrees ?? false, sharedDependencies: o.sharedDependencies ?? false,
+    jobWorktrees: o.jobWorktrees ?? false, sharedDependencies: o.sharedDependencies ?? false, promptSteadyMs: o.promptSteadyMs,
   });
 
 

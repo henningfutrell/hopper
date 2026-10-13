@@ -10,7 +10,7 @@ import { waitFor } from '../support/wait.ts';
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
 
-const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 100 } }];
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 100, promptSteadyMs: 100 } }];
 const CODE = 'WDJB-MJHT';
 const AUTH: FakeTurn = {
   output: ['● codex waits for a login.', '  HOPPER_AUTH_PENDING', '  tool: codex', '  url: https://auth.openai.com/codex/device', `  code: ${CODE}`, '  expires_in: 900'],
