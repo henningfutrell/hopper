@@ -7,7 +7,7 @@ import { createSweep, planSweep } from '../../src/engine/sweep.ts';
 
 const HOUR = 3600_000;
 const job = (id: string, status: Job['status'], cwd = '/w'): Job => ({
-  id, spec: { executor: 'x', payload: {} }, priority: 50, status, approved: false, createdAt: '', updatedAt: '', attempts: 1, executorState: { cwd },
+  id, spec: { executor: 'x', payload: {}, machineId: 'm' }, priority: 50, status, approved: false, createdAt: '', updatedAt: '', attempts: 1, executorState: { cwd },
 });
 const none: Survey = { scopes: [], processes: [], scratch: [] };
 
@@ -52,15 +52,19 @@ describe('what the sweep reaps (issue #410)', () => {
 });
 
 describe('the sweep runner (issue #410)', () => {
-  function rig(o: { found?: Survey; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[] } = {}) {
+  function rig(o: { found?: Survey; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean } = {}) {
     let now = Date.parse('2026-10-08T00:00:00Z');
     const jobs = [job('done', 'finished', '/w'), job('run', 'running', '/v'), job('old', 'failed', '/w')];
     const events: { type: string; jobId?: string; data: unknown }[] = (o.kept ?? []).map((id) => ({ type: 'job.work_kept', jobId: id, data: { paths: ['x'] } }));
     const surveyed: string[][] = [];
-    const reaps: { jobId: string; scratch?: string }[] = [];
+    const reaps: { jobId: string; scratch?: string; discard?: boolean }[] = [];
+    const logs: string[] = [];
     const shell: MachineShell = {
       async survey(roots) { surveyed.push(roots); return o.found ?? none; },
-      async reap(jobId, scratch) { reaps.push({ jobId, ...(scratch ? { scratch } : {}) }); return { kept: scratch && o.keeps?.includes(jobId) ? [`${scratch}/repo`] : [] }; },
+      async reap(jobId, scratch, _keep, discard) {
+        reaps.push({ jobId, ...(scratch ? { scratch } : {}), ...(discard ? { discard } : {}) });
+        return { kept: scratch && (!discard || o.oldClient) && o.keeps?.includes(jobId) ? [`${scratch}/repo`] : [] };
+      },
       async keepCredential() { throw new Error('not asked'); },
       async reach() { throw new Error('not asked'); },
       async discover() { throw new Error('not asked'); },
@@ -75,12 +79,12 @@ describe('the sweep runner (issue #410)', () => {
       store: {
         jobs: { list: () => jobs, get: (id: string) => jobs.find((j) => j.id === id) },
         events: {
-          recent: (_limit: number, types: string[]) => events.filter((e) => types.includes(e.type)).reverse() as unknown as DomainEvent[],
+          recent: (_limit: number, types: string[], jobId?: string) => events.filter((e) => types.includes(e.type) && (!jobId || e.jobId === jobId)).reverse() as unknown as DomainEvent[],
           append: (e: { type: string; jobId?: string; data: unknown }) => { events.push(e); return e as unknown as DomainEvent; },
         },
       } as never,
-    }, () => {});
-    return { sweep, surveyed, reaps, events, advance: (ms: number) => { now += ms; } };
+    }, (l) => logs.push(l));
+    return { sweep, surveyed, reaps, events, logs, advance: (ms: number) => { now += ms; } };
   }
 
   it('asks each online machine about the work trees of the jobs it knows, then reaps what the plan says', async () => {
@@ -140,5 +144,44 @@ describe('the sweep runner (issue #410)', () => {
     const first = rig({ found: { scopes: [], processes: [], scratch: [{ jobId: 'done', path: '/w/.hopper-scratch/done', ageMs: 30 * HOUR }] }, keeps: ['done'] });
     await first.sweep.run(true);
     expect(first.events).toEqual([{ type: 'job.work_kept', jobId: 'done', data: { paths: ['/w/.hopper-scratch/done/repo'] } }]);
+  });
+
+  it('logs work it keeps only the first time (issue #1010): kept again on each pass is no news', async () => {
+    const again = rig({ found: { scopes: [], processes: [], scratch: [{ jobId: 'old', path: '/w/.hopper-scratch/old', ageMs: HOUR }] }, kept: ['old'], keeps: ['old'] });
+    await again.sweep.run(true);
+    expect(again.logs).toEqual([]);
+    const first = rig({ found: { scopes: [], processes: [], scratch: [{ jobId: 'done', path: '/w/.hopper-scratch/done', ageMs: 30 * HOUR }] }, keeps: ['done'] });
+    await first.sweep.run(true);
+    expect(first.logs).toEqual([expect.stringContaining('kept: it holds work not pushed')]);
+  });
+});
+
+describe('discarding kept work (issue #1010)', () => {
+  const by = { person: 'Pat', via: 'ui' as const };
+
+  it('reaps the job\'s scratch dir on its machine whatever it holds, and records job.work_removed, discarded, with who', async () => {
+    const r = rig({ kept: ['old'] });
+    r.events[0]!.data = { paths: ['/w/.hopper-scratch/old/repo'] };
+    expect(await r.sweep.discard('old', by)).toEqual({ jobId: 'old', paths: ['/w/.hopper-scratch/old'] });
+    expect(r.reaps).toEqual([{ jobId: 'old', scratch: '/w/.hopper-scratch/old', discard: true }]);
+    expect(r.events.at(-1)).toEqual({ type: 'job.work_removed', jobId: 'old', data: { paths: ['/w/.hopper-scratch/old'], discarded: true, person: 'Pat', via: 'ui' } });
+  });
+
+  it('refuses a job with no work kept, one that runs, and one whose machine is offline; reaps nothing', async () => {
+    const none = rig();
+    await expect(none.sweep.discard('old', by)).rejects.toThrow('job old has no work kept');
+    await expect(none.sweep.discard('nope', by)).rejects.toThrow('job nope not found');
+    const running = rig({ kept: ['run'] });
+    await expect(running.sweep.discard('run', by)).rejects.toThrow('job run is running: only an ended job\'s work is discarded');
+    const off = rig({ kept: ['old'], machines: [{ id: 'm', label: 'm', maxLanes: 1, online: false, executors: ['x'] }] });
+    await expect(off.sweep.discard('old', by)).rejects.toThrow('its machine m is offline');
+    expect([...none.reaps, ...running.reaps, ...off.reaps]).toEqual([]);
+  });
+
+  it('a machine that still kept it (a client older than the discard) is said, and nothing is recorded', async () => {
+    const r = rig({ kept: ['old'], keeps: ['old'], oldClient: true });
+    r.events[0]!.data = { paths: ['/w/.hopper-scratch/old/repo'] };
+    await expect(r.sweep.discard('old', by)).rejects.toThrow('the machine m kept it: update its client, then discard it again');
+    expect(r.events).toHaveLength(1);
   });
 });
