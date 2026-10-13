@@ -2,6 +2,7 @@
 // image has none). Rootless Docker only, as Podman: a rootful daemon is root on the computer. The create body is
 // src/sandbox/flags.ts's.
 import type { ContainerInfo, ContainerRuntime } from '../domain/sandboxes.ts';
+import { execCalls } from './exec.ts';
 import { infoOf, startCheckOf, type Inspected } from './inspected.ts';
 import { dockerCreateBody, STOP_S } from './flags.ts';
 import { CALL_MS, containerfileTar, labelFilter, logText, ok, refusal as refused, socketCall, streamError, type Answer, type SocketCall } from './socket-http.ts';
@@ -31,6 +32,8 @@ export function createDockerRuntime(socket: string, via: SocketCall = socketCall
 
   return {
     kind: 'docker',
+    // A command in a box and a copy into it (issue #1004): only over the socket here, never through a machine's relay.
+    ...(via === socketCall ? execCalls(socket, API, 'docker') : {}),
 
     async problem() {
       let a: Answer;

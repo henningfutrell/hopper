@@ -115,9 +115,13 @@ export const STEP_MAX_OUTPUTS = 20;
  */
 export const STEP_OUTPUT = /^(?![\\/])(?!.*(?:^|[\\/])\.\.(?:[\\/]|$))[A-Za-z0-9 ._()/\\-]{1,200}$/;
 
-/** What a job asks: run `command` (PowerShell) on `host`, its inputs extracted in the host's working directory first. */
+/**
+ * What a job asks: run `command` (PowerShell) on the Windows `host`, or (issue #1004) `command` (POSIX sh) in the sandbox
+ * `box` the hopper started for the job — exactly one of the two —, its inputs extracted in the working directory first.
+ */
 export interface StepRequest {
-  host: string;
+  host?: string;
+  box?: string;
   command: string;
   timeoutSeconds: number;
   /** Paths relative to the working directory the hopper brings back as a tar. */
@@ -127,9 +131,10 @@ export interface StepRequest {
 }
 
 /** The request the job's fields make, or why not. */
-export function stepRequestOf(f: { host?: string; command?: string; timeout?: string; outputs: string[]; secrets?: string[] }): StepRequest | { problem: string } {
-  if (!f.host) return { problem: 'name the Windows host: sh "$HOPPER_STEP" hosts lists them' };
-  if (!f.command || f.command.trim() === '') return { problem: 'give the command to run (PowerShell): --command TEXT or --script FILE' };
+export function stepRequestOf(f: { host?: string; box?: string; command?: string; timeout?: string; outputs: string[]; secrets?: string[] }): StepRequest | { problem: string } {
+  if (f.host && f.box) return { problem: 'name a Windows host or a box, not both' };
+  if (!f.host && !f.box) return { problem: 'name the Windows host, or the box: sh "$HOPPER_STEP" hosts lists them' };
+  if (!f.command || f.command.trim() === '') return { problem: `give the command to run (${f.box ? 'sh' : 'PowerShell'}): --command TEXT or --script FILE` };
   if (Buffer.byteLength(f.command, 'utf8') > STEP_COMMAND_MAX_BYTES) return { problem: `the command may hold at most ${STEP_COMMAND_MAX_BYTES / 1024} KiB: send a longer one as a script (--script FILE)` };
   let timeoutSeconds = STEP_DEFAULT_TIMEOUT_S;
   if (f.timeout !== undefined) {
@@ -140,10 +145,12 @@ export function stepRequestOf(f: { host?: string; command?: string; timeout?: st
   const bad = f.outputs.find((o) => !STEP_OUTPUT.test(o));
   if (bad !== undefined) return { problem: `output ${JSON.stringify(bad)} is not a path relative to the working directory (letters, digits, space, . _ ( ) - / \\; no ..)` };
   const secrets = [...new Set(f.secrets ?? [])];
+  // A box's step asks the vault itself, through the box's helper ($HOPPER_SECRET), after the job's grant (issue #1004).
+  if (f.box && secrets.length > 0) return { problem: 'a box step takes no --secret: in the box, $HOPPER_SECRET is the vault\'s helper; point each tool at it' };
   if (secrets.length > MAX_STEP_SECRETS) return { problem: `at most ${MAX_STEP_SECRETS} secrets` };
   const name = secrets.find((n) => !VAULT_SECRET_NAME.test(n));
   if (name !== undefined) return { problem: `${JSON.stringify(name)} is not a vault secret name: sh "$HOPPER_STEP" hosts lists the secrets each host may give` };
-  return { host: f.host, command: f.command, timeoutSeconds, outputs: f.outputs, secrets };
+  return { ...(f.box ? { box: f.box } : { host: f.host! }), command: f.command, timeoutSeconds, outputs: f.outputs, secrets };
 }
 
 /** What a step came to. `problem`: the hopper could not run it, or bring its outputs back, and why. */

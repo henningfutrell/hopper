@@ -59,8 +59,8 @@ export function detailOf(e: DomainEvent): string {
   if (e.type === 'skill.loaded') return `loaded ${String(d.skill)}${typeof d.asset === 'string' ? ` for ${d.asset}` : ''}`;
   if (e.type === 'skill.refused') return `${String(d.skill)}: no: ${String(d.reason)}`;
   // Windows sandbox steps (issue #731): on which host, what ran, how it ended.
-  if (e.type === 'step.started') return `on ${String(d.host)}: ${String(d.command)}`;
-  if (e.type === 'step.finished') return `on ${String(d.host)}: exit ${String(d.exit)} after ${String(d.seconds)} s${typeof d.problem === 'string' ? `; ${d.problem}` : ''}`;
+  if (e.type === 'step.started') return `${d.box === undefined ? `on ${String(d.host)}` : `in box ${String(d.box)}`}: ${String(d.command)}`;
+  if (e.type === 'step.finished') return `${d.box === undefined ? `on ${String(d.host)}` : `in box ${String(d.box)}`}: exit ${String(d.exit)} after ${String(d.seconds)} s${typeof d.problem === 'string' ? `; ${d.problem}` : ''}`;
   if (e.type === 'step.refused') return `no: ${String(d.reason)}`;
   if (e.type === 'vault.step_delivered') return `${String(d.name)} given to a step on ${String(d.host)}`;
   if (e.type === 'vault.step_refused') return `${String(d.name)} for a step on ${String(d.host)}: no: ${String(d.reason)}`;

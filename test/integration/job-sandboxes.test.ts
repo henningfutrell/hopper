@@ -10,7 +10,7 @@
 //     Then the template is made and approved by skip template approval, its write profile with it
 //     And the sandbox run is approved by skip sandbox approval, and the box starts
 //     And the job's wait ends with the box's name; each auto-approval is an event that names its toggle
-//     And the answer says the job is not on the box, so its commands do not reach it (issue #1009)
+//     And the answer says the job is not on the box (issue #1009), and how it runs its commands there: box steps (issue #1004)
 //     And the same job asking again gets the same box, and no second template
 //   Scenario: with both toggles off, a person approves the template the job asked for; its run starts with that approval
 //   Scenario: a repeat write ask on an approved account runs with zero clicks, until the approval is forgotten (issue #1001)
@@ -109,9 +109,9 @@ describe('sandboxes start from jobs (issue #991)', () => {
     expect(req).toMatchObject({ template: t!.name, state: 'running', approvedBy: 'skip sandbox approval' });
     expect(runtime.boxes.has(req!.container!)).toBe(true);
     expect(r.stdout).toContain(`sandbox: box ${req!.container!} of template ${t!.name} runs, approved by skip sandbox approval`);
-    // Issue #1009: the job is not on the box, and the answer says so: its commands do not reach the box.
-    expect(r.stdout).toContain(`This job runs on machine local, not on box ${req!.container!}: its commands do not reach the box`);
-    expect(r.stdout).toContain(`must run as a job on machine ${req!.container!}`);
+    // Issue #1009: the job is not on the box, and the answer says so; issue #1004: it runs its commands there as box steps.
+    expect(r.stdout).toContain(`This job runs on machine local, not on box ${req!.container!}.`);
+    expect(r.stdout).toContain(`sh "$HOPPER_STEP" box ${req!.container!} --command`);
 
     const events = await sandboxEvents(a);
     expect(events.find((e) => e.type === 'vault.approved')?.data).toMatchObject({ template: t!.name, by: 'skip template approval' });

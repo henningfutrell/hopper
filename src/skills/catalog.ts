@@ -7,7 +7,7 @@
 import type { AssetKind, Operation } from '../domain/access.ts';
 import { ARTIFACT_HELP } from '../artifacts/script.ts';
 import { PROXY_HELP } from '../github-proxy/script.ts';
-import { STEP_HELP } from '../windows-steps/script.ts';
+import { BOX_STEP_HELP, STEP_HELP } from '../windows-steps/script.ts';
 
 /** How the link's credential reaches the tool: the form of the vault's helper (`$HOPPER_SECRET <form> NAME`). */
 export type LinkForm = 'kube' | 'aws';
@@ -85,7 +85,7 @@ export const SKILLS: readonly Skill[] = [
   {
     // Issue #991: a box for what the job's work needs: the template, made or reused, then a box of it the hopper starts.
     name: 'sandbox',
-    line: 'a sandbox box for what the work needs (--needs "read/cluster/NAME" or plain words)',
+    line: 'a box for what the work needs (--needs "read/cluster/NAME" or plain words)',
     // Issue #1001: --why is required; --plan too when a need changes an asset. The person who approves reads both.
     text: 'sandbox: sh "$HOPPER_SKILL" sandbox --why "<why the job needs it, one or two sentences>" [--plan "<the commands; for each change, what it changes and whether it can be undone>"] --needs "<operation>/<kind>/<asset> ..." [--wait]',
   },
@@ -98,19 +98,26 @@ export const SKILLS: readonly Skill[] = [
   {
     // Issue #624: what a job makes for a person to see. Needs no access: the job's own token is enough.
     name: 'artifacts',
-    line: 'put a visual (a diagram, a chart) on the hopper for a person to see',
+    line: 'show a person a visual (a diagram, a chart)',
     text: ARTIFACT_HELP,
   },
   {
     // Issue #731: one step on a Windows host, run by the hopper over ssh; `hopper-step` (src/windows-steps/script.ts).
     name: 'windows-step',
-    line: 'run one step on a Windows host (a build, tests)',
+    line: 'run a step on a Windows host (a build, tests)',
     text: STEP_HELP,
+  },
+  {
+    // Issue #1004: one step in a sandbox box this job's own sandbox request started, run by the hopper through the box's
+    // container runtime; `hopper-step box` (src/windows-steps/script.ts).
+    name: 'box-step',
+    line: 'run a step in this job\'s sandbox box',
+    text: BOX_STEP_HELP,
   },
   {
     // Issue #782: the hopper's help pages, for this version (src/help/book.ts answers it, the page its asset).
     name: 'help',
-    line: 'how the hopper works, page by page (PAGE: one; none lists them)',
+    line: 'how the hopper works (PAGE: one; none lists them)',
     text: 'help: sh "$HOPPER_SKILL" help [PAGE]',
   },
 ];

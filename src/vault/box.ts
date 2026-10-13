@@ -41,6 +41,11 @@ export interface BoxAskOptions {
   job(id: string): Job | undefined;
   /** Whether the vault holds this template (issue #604): a box of one that is not there is refused. Absent: not checked. */
   holdsTemplate?: (name: string) => boolean;
+  /**
+   * Whether a box step of the job runs on the machine now (issue #1004): the box asks for that job while it does, as
+   * for a job on the box. Absent: none does.
+   */
+  stepsOn?: (jobId: string, machine: string) => boolean;
 }
 
 /** What is known of an ask, as far as the checks got: the machine, the job. With `refused`, why not; else all of it. */
@@ -60,7 +65,7 @@ export function boxAsk(o: BoxAskOptions, token: string, machineKey: string): Box
   if (!m) return { ...known, refused: 'no joined machine holds that key' };
   if (!parts || !o.holds?.(parts)) return { ...known, refused: 'not a token the hopper gave a job of this user' };
   if (!job || !AT_WORK.includes(job.status)) return { ...known, refused: `the job is not at work (${job?.status ?? 'no such job'}): the vault gives only while it runs` };
-  if ((machineOfLane(job.laneId) ?? job.resumeOn) !== m.name) return { ...known, refused: `the job does not run on ${m.name}` };
+  if ((machineOfLane(job.laneId) ?? job.resumeOn) !== m.name && !o.stepsOn?.(job.id, m.name)) return { ...known, refused: `the job does not run on ${m.name}` };
   if (m.template === undefined) return { ...known, refused: `${m.name} is no box of a template: only a box joined with a template's line gets vault secrets or minted credentials` };
   if (o.holdsTemplate && !o.holdsTemplate(m.template)) return { ...known, refused: `${m.name} is a box of ${m.template}, a template that is not there: a person removes the box` };
   return { machine: { name: m.name, template: m.template, ...(m.launch ? { launch: m.launch } : {}) }, job };

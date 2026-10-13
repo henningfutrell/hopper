@@ -83,7 +83,11 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   run one step on a Windows host the user set up, over ssh with the hopper's own key and the host's pinned key, and answer
   its output, exit code and outputs; it changes no job, question, webhook or setting, only records the step. A step's vault
   secret goes only to the step, on its ssh connection's stdin, never to the job: one its host's `secrets` names, after the job's
-  vault grant. A Windows host is a config record (`windows-hosts`), set through the UI session or the operator CLI. Every other mutation is the UI's
+  vault grant. A Windows host is a config record (`windows-hosts`), set through the UI session or the operator CLI. A running job's
+  box step (issue #1004, `docs/design.md` "Box steps"): the same routes with `box=`, run one command in a sandbox box the job's own
+  sandbox request started, through that box's container runtime beside the hopper, and answer its output, exit code and outputs; it
+  changes no job, question, webhook or setting, only records the step. While it runs, the box's vault helper asks for that job, as for
+  a job on the box, after the same checks and the job's vault grant; a box step takes no `--secret`. Every other mutation is the UI's
   `POST /ui/api/*`, behind a UI session (`x-hopper-session`,
   exact Origin, same-origin, JSON — else 403) or an **API token** (issue #718, `docs/design.md` "API tokens":
   `Authorization: Bearer hopper_at_…`, JSON; a session of kind `api`, kept hashed, the admin's API-token lifetime at most

@@ -51,6 +51,11 @@ describe('a step request', () => {
     expect(stepRequestOf({ host: 'h', command: 'dir', timeout: '60', outputs: [] })).toMatchObject({ timeoutSeconds: 60 });
   });
 
+  it('takes a box in place of a host (issue #1004): its command is POSIX sh, run in the box', () => {
+    expect(stepRequestOf({ box: 'hopper-sandbox-asked-302ecc9661e2', command: 'aws sts get-caller-identity', outputs: ['out/plan.txt'] }))
+      .toEqual({ box: 'hopper-sandbox-asked-302ecc9661e2', command: 'aws sts get-caller-identity', timeoutSeconds: STEP_DEFAULT_TIMEOUT_S, outputs: ['out/plan.txt'], secrets: [] });
+  });
+
   it.each([
     [{ command: 'dir', outputs: [] }, 'name the Windows host'],
     [{ host: 'h', outputs: [] }, 'give the command'],
@@ -66,6 +71,8 @@ describe('a step request', () => {
     [{ host: 'h', command: 'dir', outputs: [], secrets: ['system/github'] }, 'is not a vault secret name'],
     [{ host: 'h', command: 'dir', outputs: [], secrets: ['A=B'] }, 'is not a vault secret name'],
     [{ host: 'h', command: 'dir', outputs: [], secrets: Array.from({ length: 17 }, (_, i) => `S${i}`) }, 'at most 16 secrets'],
+    [{ host: 'h', box: 'b', command: 'dir', outputs: [] }, 'a Windows host or a box, not both'],
+    [{ box: 'b', command: 'true', outputs: [], secrets: ['AWS_KEY'] }, 'a box step takes no --secret'],
   ])('%j is refused: %s', (fields, why) => {
     const r = stepRequestOf(fields);
     expect('problem' in r && r.problem).toContain(why);
