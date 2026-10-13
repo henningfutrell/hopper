@@ -9,6 +9,7 @@
 //   Scenario: an apply with no plan named is refused, and the real binary is not run
 //   Scenario: an apply runs the plan's saved file, fetched from the hopper with the job's token
 //   Scenario: a plan file the caller names that is not the plan's saved file is refused
+//   Scenario: in a need box, an apply runs the saved file the hopper put there, with no fetch (issue #1007)
 //   Scenario: a plan the hopper does not give is refused, saying why
 //   Scenario: an apply flag that would change what the saved plan does is refused
 //   Scenario: every other command that writes infrastructure or state is refused
@@ -140,6 +141,32 @@ describe('the apply wrapper (issue #870)', () => {
     expect((await w.run(['apply', 'missing.plan'], { HOPPER_PLAN: PLAN })).stderr).toMatch(/missing\.plan cannot be read/);
     expect((await w.run(['apply', 'a.plan', 'b.plan'], { HOPPER_PLAN: PLAN })).stderr).toMatch(/one plan file/);
     expect((await w.run(['version'])).real).toEqual(['version|unset']);
+  });
+
+  it('in a need box, an apply runs the saved file the hopper put there, with no fetch (issue #1007)', async () => {
+    // A need box holds no proxy token: the hopper puts the approved plan's saved file in the box, HOPPER_PLAN_FILE.
+    const h = await hopper();
+    const w = setup(h.url);
+    writeFileSync(join(w.dir, 'saved.plan'), FILE);
+    const box = { HOPPER_PLAN: PLAN, HOPPER_PLAN_FILE: join(w.dir, 'saved.plan'), HOPPER_URL: '', HOPPER_TOKEN_FILE: '' };
+    const r = await w.run(['apply', '-auto-approve'], box);
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.real).toEqual([`apply|-auto-approve|${join(w.dir, 'saved.plan')}|unset`]);
+    expect(r.applied).toEqual([FILE]);
+    expect(h.asked).toEqual([]);
+    // The file the hopper put there is kept for the next apply of the step.
+    expect(readFileSync(join(w.dir, 'saved.plan'))).toEqual(FILE);
+
+    // A plan file the caller names must be that file.
+    writeFileSync(join(w.dir, 'tf.plan'), FILE);
+    expect((await w.run(['apply', 'tf.plan'], box)).code).toBe(0);
+    writeFileSync(join(w.dir, 'other.plan'), Buffer.from('another plan'));
+    expect((await w.run(['apply', 'other.plan'], box)).stderr).toMatch(/other\.plan is not the saved plan file of plan 3f2b8a7c/);
+    // A file that is not there is a refusal, never a fetch.
+    const gone = await w.run(['apply'], { ...box, HOPPER_PLAN_FILE: join(w.dir, 'gone.plan') });
+    expect(gone.code).not.toBe(0);
+    expect(gone.stderr).toMatch(/the saved file of plan 3f2b8a7c.* cannot be read/);
+    expect(h.asked).toEqual([]);
   });
 
   it('a plan the hopper does not give is refused, saying why', async () => {

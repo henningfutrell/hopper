@@ -98,13 +98,14 @@ export const labelFilter = (labels: Record<string, string> | undefined): string 
 
 /**
  * A tar of a few small files, each a plain name with its mode: a build's context (issue #716), a box step's own files
- * (issue #1004). Written here, not taken from a library: one ustar header per file and the file, padded to 512-byte
- * blocks, is all these need.
+ * (issue #1004), a need box's files (issue #1007). Written here, not taken from a library: one ustar header per file and
+ * the file, padded to 512-byte blocks, is all these need. A name that ends in `/` with no data is a directory.
  */
-export function filesTar(files: readonly { name: string; data: string; mode: number }[]): Buffer {
+export function filesTar(files: readonly { name: string; data?: string | Buffer; mode: number }[]): Buffer {
   const parts: Buffer[] = [];
   for (const f of files) {
-    const data = Buffer.from(f.data, 'utf8');
+    const dir = f.name.endsWith('/') && f.data === undefined;
+    const data = typeof f.data === 'string' ? Buffer.from(f.data, 'utf8') : f.data ?? Buffer.alloc(0);
     const header = Buffer.alloc(512);
     const field = (at: number, len: number, value: string): void => { header.write(value, at, len, 'ascii'); };
     const octal = (n: number, len: number): string => `${n.toString(8).padStart(len - 1, '0')}\0`;
@@ -114,7 +115,7 @@ export function filesTar(files: readonly { name: string; data: string; mode: num
     field(116, 8, octal(0, 8));
     field(124, 12, octal(data.length, 12));
     field(136, 12, octal(0, 12));
-    field(156, 1, '0');
+    field(156, 1, dir ? '5' : '0');
     field(257, 6, 'ustar\0');
     field(263, 2, '00');
     // The checksum is of the header with its own field as spaces.

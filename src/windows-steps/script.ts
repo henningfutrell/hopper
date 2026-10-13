@@ -114,12 +114,13 @@ and the outputs. This job stays on this machine and goes on with its work.
                        write/aws-role/123456789012/deploy. Name only what the command needs.
     --why TEXT         why the job needs it, in one or two sentences, for the person who approves it
     --plan TEXT        for a need that changes an asset: what the command does, and whether it can be undone
-    --plan-id ID       for a need that changes an asset: the id of the approved infra plan the change applies
+    --plan-id ID       for a need that changes an asset: the id of the approved infra plan the change applies. Its
+                       saved plan file is in the box: terraform apply there applies it (no file to name)
     --command TEXT     sh to run in the need box's work directory (at most 4 KiB). The tools are there: aws, kubectl,
                        helm, terraform, as the needs ask.
     --script FILE      a script of this machine's to run instead (with sh)
-    --input PATH       a file or directory, relative to the current directory: copied into the work directory first
-                       (all inputs at most 64 KiB). Repeat for more.
+    --input PATH       a file or directory, relative to the current directory: copied into the work directory first.
+                       Repeat for more.
     --output PATH      a file or directory, relative to the work directory: brought back into --into DIR (default:
                        the current directory). Repeat for more.
     --timeout SECONDS  how long the command may run (default 1800, at most 14400): then it is stopped
@@ -138,7 +139,9 @@ A step is on this job's timeline: its box, needs, command, exit code and time. N
 Example: who am I in an account, read only.
   sh "$HOPPER_STEP" need "read/aws-role/123456789012/readonly" --why "Check which role the dig runs as" --command "aws sts get-caller-identity"
 Example: list the pods of a namespace, and bring a report back.
-  sh "$HOPPER_STEP" need "read/namespace/lab/web" --why "Find the pod that restarts" --command "kubectl get pods -o wide > pods.txt" --output pods.txt`;
+  sh "$HOPPER_STEP" need "read/namespace/lab/web" --why "Find the pod that restarts" --command "kubectl get pods -o wide > pods.txt" --output pods.txt
+Example: apply an approved terraform plan (record it first: POST /job/infra-plans, with the saved plan file).
+  sh "$HOPPER_STEP" need "apply/aws-role/123456789012/deploy" --why "Add the rule the plan holds" --plan-id PLAN_ID --input infra --command "cd infra && terraform init -input=false && terraform apply -auto-approve"`;
 
 /** The script. The token goes to curl on stdin, never on a command line; every value in a URL is percent-encoded. */
 export const STEP_SCRIPT = `#!/bin/sh
