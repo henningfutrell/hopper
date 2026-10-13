@@ -1,16 +1,16 @@
 // Search (issue #945, design.md "Search"): the search index's documents, a search and its answer. Postgres is the source of
 // truth; the index is a copy that is rebuilt from it at any time. Pure types and the parts that read them.
 
-/** What a search document is of. Part 1 indexes jobs only; the other kinds come in the next parts. */
-export const SEARCH_TYPES = ['job'] as const;
+/** What a search document is of: a job, an artifact (part 3), an infra plan (part 3). */
+export const SEARCH_TYPES = ['job', 'artifact', 'infra-plan'] as const;
 export type SearchType = typeof SEARCH_TYPES[number];
 
 /** Whose documents a search reads: one hopper (its instance id), one user of it. */
 export interface SearchScope { instance: string; user: string }
 
 /**
- * One document of the search index: a job and what it holds. Its text is masked (src/secrets/mask.ts) before it is
- * built: a secret, a vault value or a credential is never indexed.
+ * One document of the search index: a job, an artifact or an infra plan, and what it holds. Its text is masked
+ * (src/secrets/mask.ts) before it is built: a secret, a vault value or a credential is never indexed.
  */
 export interface SearchDocument {
   /** `<instance>/<user>/<type>/<ref>`: unique in the core, whatever hopper shares it. */
@@ -18,14 +18,15 @@ export interface SearchDocument {
   instance: string;
   user: string;
   type: SearchType;
-  /** The job's id. */
+  /** Its id: the job's, the artifact's, the plan's. */
   ref: string;
-  /** Only its owner sees it (a direct job, issue #901). */
+  /** Only its owner sees it: a direct job (issue #901), and an artifact or a plan of one. */
   private: boolean;
   title: string;
-  /** What the job was asked to do: a direct job's brief, else its prompt. */
+  /** What the job was asked to do (a direct job's brief, else its prompt); an artifact's summary and note; a plan's summary. */
   brief?: string;
-  status: string;
+  /** A job's status; a plan's (`recorded`, `approved`, `failed`); an artifact has none. */
+  status?: string;
   labels: string[];
   repo?: string;
   /** The job source it came from (`github`, `direct`). */
@@ -40,6 +41,10 @@ export interface SearchDocument {
   /** Why it failed, and the failure assessor's verdict. */
   failure?: string;
   verdict?: string;
+  /** An artifact's text, where it is cheap to read (markdown, text, CSV, JSON; HTML and SVG without their tags). */
+  content?: string;
+  /** The job an artifact or a plan is of. */
+  job?: string;
   created: string;
   updated: string;
   finished?: string;
@@ -68,9 +73,11 @@ export interface IndexHit {
   ref: string;
   private: boolean;
   title: string;
-  status: string;
+  status?: string;
   labels: string[];
   repo?: string;
+  /** The job an artifact or a plan is of. */
+  job?: string;
   created: string;
   updated: string;
   /** The parts of its fields that matched, `<mark>`…`</mark>` around each match, the rest escaped HTML; by field. */
@@ -124,7 +131,14 @@ export const emptyFacets = (): Record<SearchFacet, Record<string, number>> => ({
 /** A document's id in the core. */
 export const searchDocumentId = (scope: SearchScope, type: SearchType, ref: string): string => `${scope.instance}/${scope.user}/${type}/${ref}`;
 
-/** A pending index update's key: what to build again (`job:<id>`). */
+/** Where a hit is seen in the UI (after `#`): a job's view, an artifact's, the Infra page for a plan. */
+export function searchHitRoute(type: SearchType, ref: string): string {
+  if (type === 'artifact') return `artifacts/${encodeURIComponent(ref)}`;
+  if (type === 'infra-plan') return 'infra';
+  return `job/${encodeURIComponent(ref)}`;
+}
+
+/** A pending index update's key: what to build again (`job:<id>`, `artifact:<id>`, `infra-plan:<id>`). */
 export const pendingKey = (type: SearchType, ref: string): string => `${type}:${ref}`;
 export function parsePendingKey(key: string): { type: SearchType; ref: string } | undefined {
   const i = key.indexOf(':');
@@ -151,14 +165,14 @@ export interface SearchIndex {
 }
 
 /**
- * Pending index updates (issue #945, tenant migration 50): the documents to build and write again. A job event marks its
- * job; a write that Solr took clears the mark, unless the job was marked again meanwhile. Solr down: they wait.
+ * Pending index updates (issue #945, tenant migration 50): the documents to build and write again. An event marks the job,
+ * artifact or plan it names; a write that Solr took clears the mark, unless it was marked again meanwhile. Solr down: they wait.
  */
 export interface SearchPendingRepository {
   /** Mark these keys; one already marked is marked again (its version goes up). */
   mark(keys: readonly string[]): void;
-  /** Mark every job of the user (the backfill); answers how many. */
-  markAllJobs(): number;
+  /** Mark every job, artifact and infra plan of the user (the backfill); answers how many. */
+  markAll(): number;
   /** The oldest marked keys, with the version each was marked at. */
   take(limit: number): { key: string; version: number }[];
   /** Clear these marks, each only at the version taken: a key marked again since stays. */

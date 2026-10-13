@@ -56,7 +56,7 @@ import { liveExecutors } from './executors.ts';
 import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 import { machineLanesEditor } from './machine-lanes.ts';
-import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts'; import { createUserSearch, type SearchWiring, type UserSearch } from '../search/index.ts';
+import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts'; import { createUserSearch, type SearchWiring, type UserSearch } from '../search/index.ts'; import { searchHitRoute } from '../domain/search.ts';
 import { planNotice } from '../domain/infra-watchers.ts';
 
 export type { UserSeams } from './seams.ts';
@@ -386,7 +386,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Windows sandbox steps (issue #731): the user's Windows hosts read at each step; over ssh with the hopper's own key.
   const windowsSteps = createWindowsSteps({ hosts: () => readWindowsHosts(store.config), dir: join(dataDir, 'windows-steps'), record: (e) => { store.events.append(e); }, log: (l) => logger.warn(l), secret: (ask) => vault.forStep(ask), host: seams.windowsStepHost ?? createSshStepHost({ auth: sshAuth, sshDir: join(dataDir, 'ssh') }) });
   // Search (issue #945): the user's documents in the index, kept from job events; each hit decided by Access.
-  const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, url: (_type, ref) => o.uiUrl(`job/${ref}`), clock, logger }); let started = false, stopped: Promise<void> | undefined;
+  const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, url: (type, ref) => o.uiUrl(searchHitRoute(type, ref)), clock, logger }); let started = false, stopped: Promise<void> | undefined;
   return {
     search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, directJobs,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors,

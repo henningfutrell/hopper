@@ -2,7 +2,9 @@
 // questions with their answers, why it failed and the assessor's verdict; a direct job's is private; and no secret is
 // ever in it.
 import { describe, expect, it } from 'vitest';
-import { jobDocument } from '../../src/search/document.ts';
+import { artifactDocument, jobDocument, planDocument } from '../../src/search/document.ts';
+import type { Artifact } from '../../src/domain/artifacts.ts';
+import type { InfraPlan } from '../../src/domain/infra-plans.ts';
 import type { Job } from '../../src/domain/types.ts';
 import type { Question } from '../../src/domain/questions.ts';
 import type { DirectJob } from '../../src/domain/direct-jobs.ts';
@@ -51,5 +53,75 @@ describe('a job as a search document (issue #945)', () => {
   it('takes its title from the goal, else the prompt\'s first line, when its item has none', () => {
     expect(jobDocument({ scope, job: job({ source: undefined, spec: { executor: 'x', payload: {}, goal: 'Tidy up' } }), questions: [] }).title).toBe('Tidy up');
     expect(jobDocument({ scope, job: job({ source: undefined }), questions: [] }).title).toBe('Fix the login page.');
+  });
+});
+
+// Part 3: an artifact and an infra plan as search documents. An artifact's metadata, and its text where that is cheap
+// (markdown, text, CSV, JSON; an HTML deck or an SVG with its tags taken out); an infra plan's summary, never its text.
+describe('an artifact as a search document (issue #945, part 3)', () => {
+  const artifact = (o: Partial<Artifact> = {}): Artifact => ({
+    id: 'a1', userId: 'u1', jobId: 'j1', issue: { url: 'https://github.com/o/r/issues/1', ref: 'o/r#1' }, title: 'Login timeline', name: 'timeline.md',
+    type: 'text/markdown', kind: 'markdown', size: 10, sha256: 'x', createdAt: '2026-10-01T10:00:00.000Z', summary: 'When each sign-in failed',
+    revision: 2, updatedAt: '2026-10-01T12:00:00.000Z', revisedBy: 'job j1', note: 'added the retries', pinned: false, ...o,
+  });
+
+  it('holds its title, summary, note, repository, job and times, and a markdown artifact\'s text', () => {
+    const d = artifactDocument({ scope, artifact: artifact(), content: Buffer.from('# Timeline\n\nThe second sign-in failed at noon.'), job: job() });
+    expect(d).toMatchObject({
+      id: 'inst/u1/artifact/a1', type: 'artifact', ref: 'a1', private: false, title: 'Login timeline', repo: 'o/r', job: 'j1',
+      labels: [], created: '2026-10-01T10:00:00.000Z', updated: '2026-10-01T12:00:00.000Z',
+    });
+    expect(d.brief).toBe('When each sign-in failed\nadded the retries');
+    expect(d.content).toContain('The second sign-in failed at noon.');
+    expect(d.status).toBeUndefined();
+  });
+
+  it('reads an HTML deck\'s slide text without its tags, scripts and styles', () => {
+    const html = '<html><head><style>h1{color:red}</style><script>alert("x")</script></head><body><section><h1>Q3 &amp; Q4 plan</h1><p>Ship the search</p></section></body></html>';
+    const d = artifactDocument({ scope, artifact: artifact({ kind: 'html', type: 'text/html', name: 'deck.html' }), content: Buffer.from(html) });
+    expect(d.content).toContain('Q3 & Q4 plan');
+    expect(d.content).toContain('Ship the search');
+    expect(d.content).not.toContain('alert');
+    expect(d.content).not.toContain('color:red');
+    expect(d.content).not.toContain('<');
+  });
+
+  it('indexes no text of an image or a PDF, and masks every secret in a text', () => {
+    expect(artifactDocument({ scope, artifact: artifact({ kind: 'image', type: 'image/png' }), content: Buffer.from('not text') }).content).toBeUndefined();
+    const d = artifactDocument({ scope, artifact: artifact({ summary: `key ${TOKEN}` }), content: Buffer.from(`token: ${TOKEN}`) });
+    expect(JSON.stringify(d)).not.toContain(TOKEN);
+  });
+
+  it('is private when its job is a direct job', () => {
+    const d = artifactDocument({ scope, artifact: artifact({ issue: undefined }), job: job({ source: { source: 'direct', kind: 'direct', key: 'direct:d1' } }) });
+    expect(d.private).toBe(true);
+    expect(d.repo).toBeUndefined();
+  });
+});
+
+describe('an infra plan as a search document (issue #945, part 3)', () => {
+  const plan = (o: Partial<InfraPlan> = {}): InfraPlan => ({
+    id: 'p1', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network', repo: 'o/infra', ref: 'issue-1',
+    commit: 'a'.repeat(40), text: `resource "aws_security_group_rule" "a" { secret = "${TOKEN}" }`, job: 'j1', createdAt: '2026-10-01T10:00:00.000Z', expiresAt: 'x',
+    summary: {
+      words: 'Adds 1 security group rule in uat; changes nothing in prod; destroys nothing', level: 'low', counts: { create: 1, update: 0, replace: 0, delete: 0 },
+      environments: ['uat'], risks: [{ risk: 'network', words: 'Changes network access', resources: ['aws_security_group_rule.a'] }], blastRadius: 'one rule in uat', checks: [], failed: false,
+    },
+    ...o,
+  } as InfraPlan);
+
+  it('holds its target, tool, summary, risks, repository and job, never the plan\'s text', () => {
+    const d = planDocument({ scope, plan: plan(), job: job() });
+    expect(d).toMatchObject({ id: 'inst/u1/infra-plan/p1', type: 'infra-plan', ref: 'p1', private: false, title: 'uat-network (terraform plan)', status: 'recorded', repo: 'o/infra', job: 'j1', updated: '2026-10-01T10:00:00.000Z' });
+    expect(d.brief).toContain('Adds 1 security group rule in uat');
+    expect(d.brief).toContain('Changes network access');
+    expect(d.brief).toContain('one rule in uat');
+    expect(JSON.stringify(d)).not.toContain('aws_security_group_rule" "a"');
+    expect(JSON.stringify(d)).not.toContain(TOKEN);
+  });
+
+  it('says approved once approved, and failed when a check failed', () => {
+    expect(planDocument({ scope, plan: plan(), approval: { plan: 'p1', by: 'octo', at: '2026-10-01T10:30:00.000Z' } })).toMatchObject({ status: 'approved', updated: '2026-10-01T10:30:00.000Z' });
+    expect(planDocument({ scope, plan: plan({ summary: { ...plan().summary!, failed: true } }) }).status).toBe('failed');
   });
 });

@@ -59,8 +59,15 @@ export function toggleFilter(f: SearchFilters, facet: SearchFacet, value: string
 
 export const picked = (f: SearchFilters, facet: SearchFacet, value: string): boolean => f[FACET_FILTER[facet]].includes(value);
 
-/** The UI route of a hit: its job's view. */
-export const hitHref = (h: { type: string; ref: string }): string => `#job/${encodeURIComponent(h.ref)}`;
+/** The UI route of a hit: a job's view, an artifact's (part 3), the Infra page for an infra plan (it has no view of its own). */
+export function hitHref(h: { type: string; ref: string }): string {
+  if (h.type === 'artifact') return `#artifacts/${encodeURIComponent(h.ref)}`;
+  if (h.type === 'infra-plan') return '#infra';
+  return `#job/${encodeURIComponent(h.ref)}`;
+}
+
+/** The words that name a hit's type, beside its title; a job's says nothing more. */
+export const TYPE_LABEL: Readonly<Record<string, string>> = { artifact: 'Artifact', 'infra-plan': 'Infra plan' };
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
 
@@ -92,7 +99,7 @@ export function highlightParts(html: string): HighlightPart[] {
 /** The fields a hit's snippets come from, in the order shown, with the words that name each. */
 export const SNIPPET_FIELDS: readonly { field: string; label: string }[] = [
   { field: 'brief', label: 'Asked' }, { field: 'result', label: 'Result' }, { field: 'questions', label: 'Question' },
-  { field: 'failure', label: 'Failure' }, { field: 'verdict', label: 'Verdict' },
+  { field: 'failure', label: 'Failure' }, { field: 'verdict', label: 'Verdict' }, { field: 'content', label: 'Text' },
 ];
 
 /** At most `max` snippets of a hit, by field order. */

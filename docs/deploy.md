@@ -586,10 +586,10 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   check box, and the check fails with that reason; run it again once the machine has the new client.
 ## Search
 
-Search (issue #945, docs/design.md "Search") finds your jobs by their words, filters and facets: `GET /api/search`,
+Search (issue #945, docs/design.md "Search") finds your jobs, artifacts and infra plans by their words, filters and facets: `GET /api/search`,
 type-ahead at `GET /api/search/suggest`, the index's state at `GET /api/search/status`. In the UI, the search box in
 the header and the Search view use them; from a shell, `hopper search`. It reads a Solr core the hopper keeps from its
-job events.
+events.
 
 - **In containers** it is set up: `compose.yaml` runs `docker.io/library/solr` as the service `solr`, one core (`hopper`)
   in standalone mode on the volume `solr`, on no host port and on the network `hopper_search` that it shares with the
@@ -600,7 +600,7 @@ job events.
   words. The hopper puts its schema into the core itself at each start.
 - **Unset** `HOPPER_SOLR_URL`: search answers `not-configured`; nothing else changes.
 - **What the hopper keeps**: Postgres is the source of truth. A lost `solr` volume loses nothing: at the next start the
-  hopper finds the core empty and writes every job again. **Reindex** (`POST /ui/api/search/reindex`) does that when you
+  hopper finds the core empty and writes every job, artifact and plan again. **Reindex** (`POST /ui/api/search/reindex`) does that when you
   ask. No secret, vault value or credential is ever written to the index.
 - **Solr down**: search answers `degraded` and why, and the rest of the hopper goes on. Changes wait in the database and
   are written when Solr is back. The stack check names a missing `solr` service.

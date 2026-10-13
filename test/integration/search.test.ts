@@ -10,10 +10,13 @@
 //   Scenario: Access that cannot be asked hides every hit, and says why
 //   Scenario: with no Solr set up, search says it is not set up
 //   Scenario: the operator CLI searches, suggests, reads the index's state and rebuilds it, on the same routes (part 2)
+//   Scenario: an artifact is found by its title and its text, an infra plan by its summary; each links to its view (part 3)
+//   Scenario: a removed artifact leaves the index; Reindex writes the artifacts and plans again too (part 3)
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
 import type { SearchAnswer, SearchIndex, SearchStatus, SuggestAnswer } from '../../src/domain/search.ts';
+import type { InfraPlan } from '../../src/domain/infra-plans.ts';
 import { createSolrIndex } from '../../src/search/solr.ts';
 import { createFakeAuthorizationServer, type FakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -178,4 +181,58 @@ describe('Search (issue #945)', () => {
     expect(both.code).toBe(2);
     expect(both.err).toMatch(/usage: hopper search/);
   });
+
+  it('finds an artifact by its title and its text, and an infra plan by its summary, each with a link to its view (part 3)', async () => {
+    const { app } = await start();
+    const job = await app.pull({ op: 'echo', message: 'done' }, { title: 'Write the outage report' });
+    await app.waitForStatus(job.id, 'finished');
+    const rt = app.user(ADMIN_ID);
+    const put = rt.artifacts.put(rt.store.jobs.get(job.id)!, { name: 'report.md', title: 'Outage report', summary: 'What broke on Monday', content: Buffer.from('# Outage\n\nThe resolver timed out under load.') });
+    if ('no' in put) throw new Error(put.no);
+    const plan: InfraPlan = {
+      id: '00000000-0000-4000-8000-000000000001', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network', repo: 'o/infra', ref: 'issue-1',
+      commit: 'a'.repeat(40), text: 'resource "aws_security_group_rule" "hidden_rule" {}', job: job.id, createdAt: new Date().toISOString(), expiresAt: new Date().toISOString(),
+      summary: { words: 'Adds 1 security group rule in uat', level: 'low', counts: { create: 1, update: 0, replace: 0, delete: 0 }, environments: ['uat'], risks: [], blastRadius: 'one rule in uat', checks: [], failed: false },
+    };
+    rt.store.tx(() => {
+      rt.store.infraPlans.add(plan);
+      rt.store.events.append({ type: 'infra.plan_recorded', jobId: job.id, data: {
+        plan: plan.id, tool: plan.tool, asset: plan.asset, target: plan.target, repo: plan.repo, ref: plan.ref, commit: plan.commit, file: false, expiresAt: plan.expiresAt,
+        summary: { words: plan.summary!.words, level: 'low', risks: [], failed: false },
+      } });
+    });
+
+    const byText = await found(app, 'q=resolver', [put.id], 'the artifact by its text');
+    expect(byText.hits[0]).toMatchObject({ type: 'artifact', ref: put.id, title: 'Outage report', job: job.id, url: expect.stringContaining(`#artifacts/${put.id}`) });
+    expect(byText.hits[0]!.highlights.content?.[0]).toContain('<mark>resolver</mark>');
+    await found(app, 'q=outage&type=artifact', [put.id]);
+    const r = await found(app, 'q=outage', [job.id, put.id]);
+    expect(r.facets.type).toEqual({ job: 1, artifact: 1 });
+
+    const p = await found(app, 'q=security%20group', [plan.id], 'the plan by its summary');
+    expect(p.hits[0]).toMatchObject({ type: 'infra-plan', status: 'recorded', repo: 'o/infra', job: job.id, url: expect.stringContaining('#infra') });
+    expect((await search(app, 'q=hidden_rule')).hits).toEqual([]);
+    rt.store.tx(() => {
+      rt.store.infraPlans.approve({ plan: plan.id, by: 'octo', at: new Date().toISOString() });
+      rt.store.events.append({ type: 'infra.plan_approved', jobId: job.id, data: { plan: plan.id, tool: plan.tool, asset: plan.asset, target: plan.target, by: 'octo' } });
+    });
+    await found(app, 'q=security&status=approved', [plan.id], 'the plan approved');
+    expect((await app.api<SuggestAnswer>('GET', '/api/search/suggest?q=outa')).body.suggestions.map((x) => x.type).sort()).toEqual(['artifact', 'job']);
+  });
+
+  it('takes a removed artifact out of the index, and writes the artifacts and plans again on Reindex (part 3)', async () => {
+    const { app } = await start();
+    const job = await app.pull({ op: 'echo', message: 'ok' }, { title: 'Draw the graph' });
+    await app.waitForStatus(job.id, 'finished');
+    const rt = app.user(ADMIN_ID);
+    const put = rt.artifacts.put(rt.store.jobs.get(job.id)!, { name: 'notes.txt', title: 'Graph notes', content: Buffer.from('the axis is logarithmic') });
+    if ('no' in put) throw new Error(put.no);
+    await found(app, 'q=logarithmic', [put.id]);
+    const token = await app.login();
+    const re = await app.ui<{ marked: number }>('/ui/api/search/reindex', {}, { token });
+    expect(re.body.marked).toBe(2);
+    rt.artifacts.remove(put.id, 'octo');
+    await found(app, 'q=logarithmic', [], 'the removed artifact gone');
+  });
 });
+
