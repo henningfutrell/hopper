@@ -16,6 +16,7 @@ function user(o: { policy?: string[]; skips?: SandboxApprovals } = {}) {
   const calls: string[] = [];
   const u: TemplateRequestUser = {
     template: (name) => templates.get(name),
+    templates: () => [...templates.values()],
     async save(t) {
       templates.set(t.name, { ...t, profiles: t.profiles, pending: { secrets: [], image: true, profiles: [...t.profiles] }, gives: [], radius: { level: 'low', reasons: [] } } as unknown as TemplateView);
       return { ok: true };
