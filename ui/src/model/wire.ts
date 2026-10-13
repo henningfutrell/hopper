@@ -27,7 +27,7 @@ import type {
   ItemComment, ItemEdit, TextChange,
   MasterKeyRotated, MasterKeyView,
   ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView,
-  JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
+  BomGroup, BomPart, BomStatus, JobBom, JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
 } from '../../../src/domain/types.ts';
 
 export type {
@@ -54,7 +54,7 @@ export type {
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
   MasterKeyRotated, MasterKeyView,
   ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView,
-  JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
+  BomGroup, BomPart, BomStatus, JobBom, JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
   Artifact, ArtifactKind, ArtifactRevision, ArtifactRevisionView, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView,
   Tldr, TldrSettings,
   ItemComment, ItemEdit, TextChange,

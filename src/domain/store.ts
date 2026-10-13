@@ -64,8 +64,8 @@ export interface EventLog {
   append(event: NewEvent): DomainEvent;
   /** Events with seq > afterSeq, oldest first. */
   since(afterSeq: number, limit?: number): DomainEvent[];
-  /** Newest first. */
-  recent(limit?: number, types?: EventType[]): DomainEvent[];
+  /** Newest first; one job's alone when `jobId` names it (issue #935: the job page's timeline and parts list). */
+  recent(limit?: number, types?: EventType[], jobId?: string): DomainEvent[];
   /** Events of these types at or after `since` (ISO), oldest first (issue #535: lane reliability). */
   between(types: readonly EventType[], since: string): DomainEvent[];
   /** The newest event of each of these jobs that has one, one per job (issue #434: the Jobs view's last event). */
