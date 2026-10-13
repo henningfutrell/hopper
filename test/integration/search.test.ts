@@ -9,13 +9,16 @@
 //   Scenario: the first start with an index that lacks the user's jobs writes them all (the backfill); Reindex does it again
 //   Scenario: Access that cannot be asked hides every hit, and says why
 //   Scenario: with no Solr set up, search says it is not set up
+//   Scenario: the operator CLI searches, suggests, reads the index's state and rebuilds it, on the same routes (part 2)
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { runCli, type CliIo } from '../../src/cli.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
 import type { SearchAnswer, SearchIndex, SearchStatus, SuggestAnswer } from '../../src/domain/search.ts';
 import { createSolrIndex } from '../../src/search/solr.ts';
 import { createFakeAuthorizationServer, type FakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { startTestSolr, type TestSolr } from '../support/solr.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { KEY } from '../support/webhooks.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -138,5 +141,41 @@ describe('Search (issue #945)', () => {
     const r = await waitFor(async () => { const a = await search(app, 'q=guarded'); return a.state === 'degraded' ? a : undefined; }, { what: 'degraded by Access' });
     expect(r.hits).toEqual([]);
     expect(r.why).toMatch(/OpenFGA cannot be asked/);
+  });
+
+  it('searches, suggests, reads the index\'s state and rebuilds it from the operator CLI, on the same routes', async () => {
+    const { app } = await start();
+    const hopper = async (argv: string[]) => {
+      const out: string[] = [], err: string[] = [];
+      const io: CliIo = { env: { HOPPER_DATABASE_URL: databaseUrlFor(app.dbPath) }, stdin: () => '', out: (x) => out.push(x), err: (x) => err.push(x) };
+      const code = await runCli([...argv, '--url', app.url], io);
+      return { code, out: out.join(''), err: err.join('') };
+    };
+    const job = await app.pull({ op: 'echo', message: 'the cache was cleared' }, { title: 'Clear the build cache', labels: ['infra'] });
+    const other = await app.pull({ op: 'echo', message: 'warm' }, { title: 'Warm the cache', labels: ['ops'] });
+    await found(app, 'q=cache', [job.id, other.id]);
+
+    const r = await hopper(['search', 'build', 'cache', '--label', 'infra', '--status', 'finished']);
+    expect(r).toMatchObject({ code: 0, err: '' });
+    const a = JSON.parse(r.out) as SearchAnswer;
+    expect(a.state).toBe('ok');
+    expect(a.hits.map((h) => h.ref)).toEqual([job.id]);
+    expect(JSON.parse((await hopper(['search', 'cache', '--label', 'ops'])).out).hits.map((h: { ref: string }) => h.ref)).toEqual([other.id]);
+    expect(JSON.parse((await hopper(['search', 'cache', '--limit', '1'])).out).hits).toHaveLength(1);
+
+    const s = JSON.parse((await hopper(['search', '--suggest', 'clea'])).out) as SuggestAnswer;
+    expect(s.suggestions.map((x) => x.ref)).toEqual([job.id]);
+
+    expect(JSON.parse((await hopper(['search', '--index'])).out)).toMatchObject({ state: 'ok' });
+    const re = await hopper(['search', '--reindex']);
+    expect(re.code).toBe(0);
+    expect(JSON.parse(re.out)).toMatchObject({ marked: 2 });
+
+    const bad = await hopper(['search', 'cache', '--status', 'Not a status']);
+    expect(bad.code).toBe(2);
+    expect(bad.err).toMatch(/refused \(400\)/);
+    const both = await hopper(['search', '--suggest', 'x', '--reindex']);
+    expect(both.code).toBe(2);
+    expect(both.err).toMatch(/usage: hopper search/);
   });
 });
