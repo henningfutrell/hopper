@@ -29,6 +29,8 @@
 // conflict with it (`JobSource.conflictBetween`, the hopper's mirror), and two due ones that do not conflict are tended at
 // the same time. Where the source cannot say, they conflict, as before. What holds one is kept on its job (`heldBehind`).
 // A tend the source refused (issue #967) keeps why on its job (`tendRefused`), until a tend starts: its card says it.
+// Rework goes back at once (issue #938): a `fix_checks` tend is held by no head. Every pull request with failed checks goes
+// back to its job in the same sync, limited only by free lanes; only a `rebase` waits for the head it conflicts with.
 // Cross-references (issue #430): before each follow, the cross-references of the job's item (`JobSource.crossReferences`) are
 // asked again and kept on the job (`crossReferences`), when they changed. A throw is only logged: the follow goes on, and
 // they are asked again next sync.
@@ -223,8 +225,13 @@ export function createAfterDone(c: AfterDoneContext) {
     }
   }
 
-  /** The first of `heads` the job's pull request conflicts with (issue #939); where the source cannot say, it conflicts. */
-  async function heldBy(source: JobSource, job: Job, heads: readonly QueueHead[]): Promise<QueueHead | undefined> {
+  /**
+   * The first of `heads` a due rebase conflicts with (issue #939); where the source cannot say, it conflicts. A `fix_checks`
+   * is held by none (issue #938): rework goes back at once.
+   */
+  async function heldBy(source: JobSource, d: TendDue, heads: readonly QueueHead[]): Promise<QueueHead | undefined> {
+    if (d.step !== 'rebase') return undefined;
+    const job = store.jobs.get(d.jobId)!;
     for (const h of heads) if (await conflict(source, job, h.pullRequest) !== false) return h;
     return undefined;
   }
@@ -232,7 +239,8 @@ export function createAfterDone(c: AfterDoneContext) {
   /**
    * The tends of each job repository (issue #796), one queue per set of pull requests that conflict (issue #939): of the
    * source's jobs whose followed pull request needs tending, each one no head and no tend started before it conflicts with,
-   * Jev's pick first, then the rules' order. Each other is held behind the first that conflicts with it.
+   * Jev's pick first, then the rules' order. Each other rebase is held behind the first that conflicts with it; a
+   * `fix_checks` never is (issue #938).
    */
   async function tendNext(source: JobSource, listed: Job[]): Promise<void> {
     const get = (id: string) => store.jobs.get(id);
@@ -245,14 +253,14 @@ export function createAfterDone(c: AfterDoneContext) {
       const heads = queueHeads(repo, jobs, get, merges, c.now());
       const free: TendDue[] = [];
       for (const d of tendOrder(due.filter((x) => repoOf(get(x.jobId)!) === repo), get)) {
-        const h = await heldBy(source, get(d.jobId)!, heads);
+        const h = await heldBy(source, d, heads);
         if (h) held.set(d.jobId, h); else free.push(d);
       }
       if (free.length === 0) continue;
       const first = await pickHead(c.jevFirst, repo, free, get);
       const started: QueueHead[] = [];
       for (const d of [first, ...free.filter((x) => x !== first)]) {
-        const h = await heldBy(source, get(d.jobId)!, started);
+        const h = await heldBy(source, d, started);
         if (h) { held.set(d.jobId, h); continue; }
         keepHold(d.jobId, 'heldBehind', undefined);
         // A base merge pushed: it holds the ones that conflict with it only on its way to the hopper's merge (issue #967).

@@ -1987,6 +1987,14 @@ sync, after the follows: the due pull requests no head conflicts with, Jev's pic
 or more are free), then the rules' order, each tended unless it conflicts with one tended before it in the same sync. What
 holds each other one is kept on its job (`heldBehind`, `Holds`) and shown on its card.
 
+**Rework goes back at once** (issue #938). The queue holds only a `rebase`: a rebase onto a base that a head is about to
+move is made again after that merge. A `fix_checks` is rework, and no head holds it: every pull request with failed checks
+goes back to its job in the same sync, all at the same time, limited only by free lanes (a tend job elbows in, above). A
+pull request that waits for its checks holds no rework. A started `fix_checks` tend job is still a head for the rebases
+that conflict with it, as any tend job at work: its push moves the pull request. A merge conflict comes before failing
+checks (`tendStep`), and `pr / test` runs on `pull_request` only, which GitHub does not run on a head with merge conflicts:
+no check runs on a conflicted head, only on the head the rebase or the base merge pushes.
+
 **The merge gate** (issue #939, `src/sources/github/merge-gate.ts`). The hopper's own merges (yolo mode) of one repository
 in one sync pass are made one at a time. A ready pull request that conflicts with one the hopper merged before it in the
 same pass is not merged: GitHub would refuse that merge (`mergeError`) once it saw the new base. Its follow keeps
@@ -2020,7 +2028,8 @@ break the base branch, as before. Checks run on each pull request against the ba
 the tending queue only stop merge conflicts.
 
 What the hopper does about each pull request that needs tending shows on its card in Pull requests (issue #927,
-`PullRequestCard.queue`, `gaveUp`): "the hopper tends it on its next sync", "the hopper cannot tend it" with the source's
+`PullRequestCard.queue`, `gaveUp`): "the hopper rebases it onto dev on its next sync" or "the hopper fixes its failed
+checks on its next sync" (issue #938: the step, not only "tends it"), "the hopper cannot tend it" with the source's
 refusal (issue #967: `tendRefused`, kept on the job until a tend starts; before, a refused tend left the card at "the hopper
 tends it next" for hours), "held behind #N" with why (a job works on it, or it waits
 for its checks to merge), or "the hopper gave up" with why (its checks still fail after `MAX_TENDS` fixes, or its tend job
@@ -2029,7 +2038,8 @@ Every other open card says what the hopper does now, too (`doingText`, `ui/src/m
 ("the hopper rebases it onto dev: job N works on it now", `PullRequestCard.tendStep`; a tend job queued or held: "job N
 waits to start:" and the lane cap that binds or its hold, `tendWaits`, issue #967), the merge it waits to make ("merges
 it when its checks pass", "on its next sync", "tries the merge again on each sync"), or nothing, and who acts then (yolo mode
-off, checks it may not read, a draft).
+off, checks it may not read, a draft). A card with merge conflicts and pending checks says "checks run after the rebase"
+(`checksText`, issue #938), never "checks pending": no check runs on its head until it is rebased.
 
 **Conflicts a rebase sends to a person** (issue #927, `tendBrief`). A rebase tend resolves the small conflicts itself:
 imports, call sites, type updates, and lines both sides added to a list (a `WHATS-NEW.md` line). Only when both sides change

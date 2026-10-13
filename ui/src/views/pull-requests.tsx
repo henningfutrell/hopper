@@ -18,7 +18,7 @@ import { usePoll } from '@/hooks/use-poll';
 import { useNow } from '@/hooks/use-now';
 import { get } from '@/lib/api';
 import { ago } from '@/model/format';
-import { CHECKS_TEXT, MERGEABLE_TEXT, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, mergeQuestion, hasCards, noChecksLine, noChecksNote, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
+import { MERGEABLE_TEXT, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, mergeQuestion, hasCards, noChecksLine, noChecksNote, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
 import type { PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '@/model/wire';
 import { act } from '@/store';
 import { setPolled } from '@/store/polled';
@@ -94,7 +94,7 @@ function Card({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
         {c.draft && <StatusBadge status="draft" tone="warn" />}
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-        <span data-slot="pr-checks" className={CHECKS_TONE[c.checks]}>{CHECKS_TEXT[c.checks]}</span>
+        <span data-slot="pr-checks" className={CHECKS_TONE[c.checks]}>{checksText(c)}</span>
         <span data-slot="pr-mergeable" className={c.mergeable === 'conflicts' ? 'text-bad' : ''}>{MERGEABLE_TEXT[c.mergeable]}</span>
         {age && <span title={age}>{c.openedAt ? 'opened' : 'done'} {ago(age, now)}</span>}
         {c.waits && <span data-slot="pr-waits" className={c.waits === 'ready' ? 'text-ok' : ''}>{waitsText(c)}</span>}

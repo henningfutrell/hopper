@@ -40,7 +40,7 @@ const DOING_TEXT: Partial<Record<MergeWait, string>> = {
 export function doingText(c: Pick<PullRequestCard, 'state' | 'waits' | 'base' | 'queue' | 'gaveUp' | 'tendJobId' | 'tendStep' | 'tendWaits'>): string {
   if (c.gaveUp) return `the hopper gave up: ${c.gaveUp}`;
   if (c.queue) {
-    if ('next' in c.queue) return 'the hopper tends it on its next sync';
+    if ('next' in c.queue) return `the hopper ${c.waits === 'checks failing' ? 'fixes its failed checks' : `rebases it onto ${c.base ?? 'its base branch'}`} on its next sync`;
     if ('refused' in c.queue) return `the hopper cannot tend it: ${c.queue.refused}`;
     const { pullRequest, why } = c.queue.held;
     return `held behind #${pullRequest}, ${why === 'tending' ? 'which a job works on now' : 'which the hopper merges first'}: they conflict`;
@@ -58,9 +58,16 @@ export function waitingLine(v: PullRequestsView): string {
   return `merging waits: ${v.waiting.map((w) => `${prs(w.count)} in ${w.repo} (${WAITS_TEXT[w.reason]})`).join(', ')}`;
 }
 
-export const CHECKS_TEXT: Record<PullRequestCard['checks'], string> = {
+const CHECKS_TEXT: Record<PullRequestCard['checks'], string> = {
   passing: 'checks pass', pending: 'checks pending', failing: 'checks fail', none: 'no checks', unknown: 'checks not known',
 };
+
+/**
+ * A card's checks in plain words (issue #938): with merge conflicts, no check runs on its head until the hopper rebases
+ * it, so pending checks say that, never "pending".
+ */
+export const checksText = (c: Pick<PullRequestCard, 'checks' | 'mergeable'>): string =>
+  c.mergeable === 'conflicts' && c.checks === 'pending' ? 'checks run after the rebase' : CHECKS_TEXT[c.checks];
 
 export const MERGEABLE_TEXT: Record<PullRequestCard['mergeable'], string> = {
   mergeable: 'mergeable', conflicts: 'merge conflicts', unknown: 'merge state not seen yet',
