@@ -85,20 +85,20 @@ describe('an answer the hopper gives ends the job\'s own wait (issue #998)', () 
 
     const first = await skill(a, creds, ['sandbox', '--needs', NEEDS]);
     expect(first.code, first.stdout).toBe(3);
-    expect(first.stdout).toContain('the hopper ends this job\'s own wait with it');
+    expect(first.stdout).toContain('the hopper ends this job\'s own wait (HOPPER_WAITING) with it');
     const [t] = await asked(a, token);
 
     expect((await a.ui('/ui/api/vault', { action: 'approve-template', name: t!.name }, { token })).status).toBe(200);
     expect((await a.ui('/ui/api/vault', { action: 'approve-profile', name: t!.name, ...AWS_WRITE }, { token })).status).toBe(200);
 
     await a.waitForStatus(job.id, 'finished', 8000);
-    const [req] = (await view(a, token)).sandboxRequests ?? [];
-    expect(req).toMatchObject({ template: t!.name, state: 'running' });
-    expect(runtime.boxes.has(req!.container!)).toBe(true);
+    const events = await ofJob(a, job.id);
+    const { container } = events.find((e) => e.type === 'vault.sandbox_started')!.data as { container: string };
+    expect(runtime.boxes.has(container)).toBe(true);
     expect(herdr.prompts).toHaveLength(2);
-    expect(herdr.prompts[1]!.text).toContain('The hopper ended your wait');
-    expect(herdr.prompts[1]!.text).toContain(`sandbox: box ${req!.container!} of template ${t!.name} runs`);
-    const ended = (await ofJob(a, job.id)).filter((e) => e.type === 'job.wait_ended');
+    expect(herdr.prompts[1]!.text).toContain('The hopper ended your wait (approval of the sandbox template)');
+    expect(herdr.prompts[1]!.text).toContain(`sandbox: box ${container} of template ${t!.name} runs`);
+    const ended = events.filter((e) => e.type === 'job.wait_ended');
     expect(ended.map((e) => (e.data as { by: string }).by)).toEqual(['hopper']);
   });
 

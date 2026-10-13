@@ -36,6 +36,7 @@ export async function vaultAnswer(parts: Pick<TenantParts, 'vault' | 'store'> & 
 export function templateRequestUser(parts: Pick<TenantParts, 'vault' | 'store'>): TemplateRequestUser {
   return {
     template: (name) => parts.vault.view().templates.find((t) => t.name === name),
+    templates: () => parts.vault.view().templates,
     save: (t, by) => parts.vault.saveTemplate(t, by),
     approve: (name, by) => parts.vault.approveTemplate(name, by),
     approveProfile: (name, profile, by) => parts.vault.approveProfile(name, profile, by),

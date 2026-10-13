@@ -9,6 +9,7 @@ import { needsOf, previewTemplate, requestedName } from '../../src/skills/templa
 const IMAGE = 'ghcr.io/henningfutrell/hopper:box-claude';
 const user = (o: { policy?: string[]; templates?: TemplateView[] } = {}) => ({
   template: (name: string) => o.templates?.find((t) => t.name === name),
+  templates: () => o.templates ?? [],
   policy: () => (o.policy ? { assets: o.policy } : undefined),
   image: IMAGE,
 });
@@ -42,8 +43,9 @@ describe('the template a request makes, shown before it is made (issue #708)', (
 
   it('says when the template is there already, and when a person changed it since', () => {
     const name = requestedName(needsOf('read/cluster/lab') as never);
-    const same = { name, profiles: [{ operation: 'read', asset: { kind: 'cluster', name: 'lab' } }] } as unknown as TemplateView;
-    const changed = { name, profiles: [{ operation: 'write', asset: { kind: 'cluster', name: 'lab' } }] } as unknown as TemplateView;
+    const waiting = { secrets: [], pending: { secrets: [], image: true, profiles: [] } };
+    const same = { name, ...waiting, profiles: [{ operation: 'read', asset: { kind: 'cluster', name: 'lab' } }] } as unknown as TemplateView;
+    const changed = { name, ...waiting, profiles: [{ operation: 'write', asset: { kind: 'cluster', name: 'lab' } }] } as unknown as TemplateView;
     expect(previewTemplate(user({ templates: [same] }), 'read/cluster/lab')).toMatchObject({ exists: 'same' });
     expect(previewTemplate(user({ templates: [changed] }), 'read/cluster/lab')).toMatchObject({ exists: 'changed' });
     expect(previewTemplate(user(), 'read/cluster/lab')).not.toHaveProperty('exists');

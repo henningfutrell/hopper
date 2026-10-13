@@ -10,6 +10,9 @@
 // Issue #991: with the user's **skip template approval** on, a template it makes now that the read policy does not
 // approve is approved at once by that toggle, its write, sync and apply profiles with it. A job then asks for a box of
 // it (`sandbox`, src/sandbox/requests.ts).
+// Issue #998: a template already approved for exactly these needs — the same operation profiles, no vault secret, nothing
+// waiting for a person — is used for them, whatever its name, and no second template is made. A person may have saved it,
+// or changed an asked-for template to these needs. A template that gives a box more than the needs is never used for them.
 import { createHash } from 'node:crypto';
 import { ASSET_KINDS, ASSET_NAME, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from '../domain/access.ts';
 import { checkWait } from '../domain/read-only-check.ts';
@@ -79,6 +82,8 @@ type Result = { ok: true } | { ok: false; code: string; error: string };
 /** One user's side: their templates, the vault's own save and approve, their read policy, the image a box runs. */
 export interface TemplateRequestUser {
   template(name: string): TemplateView | undefined;
+  /** Every template of the user's (issue #998): one approved for the same needs is used for them. */
+  templates(): TemplateView[];
   save(t: { name: string; image: string; secrets: string[]; profiles: OperationProfile[]; tools: string[]; readOnly: boolean; askedBy?: string }, by: string): Promise<Result>;
   approve(name: string, by: string): Promise<Result>;
   approveProfile(name: string, profile: OperationProfile, by: string): Promise<Result>;
@@ -117,14 +122,35 @@ function outsidePolicy(needs: readonly OperationProfile[], policy: ReadPolicy | 
   ];
 }
 
+/**
+ * A template approved for exactly these needs (issue #998): the same profiles, no vault secret, nothing waiting for a
+ * person; one whose read-only check passed first. Undefined when there is none.
+ */
+function approvedFor(u: Pick<TemplateRequestUser, 'templates'>, needs: readonly OperationProfile[]): TemplateView | undefined {
+  const same = u.templates().filter((t) => t.secrets.length === 0 && sameNeeds(t.profiles, needs) && waitsOf(t).length === 0);
+  return same.find((t) => !checkWait(t)) ?? same[0];
+}
+
+const approverOf = (t: TemplateView): TemplatePreview['approvedBy'] => {
+  const by = t.approval?.by;
+  return by === READ_POLICY_APPROVER || by === SKIP_TEMPLATE_APPROVER ? by : 'a person';
+};
+
 const skipsTemplate = (u: Pick<TemplateRequestUser, 'approvals'>): boolean => (u.approvals?.() ?? NO_SKIPS).skipTemplateApproval;
 
 /** The template these needs make, and who approves it; or why the needs cannot be read. It saves nothing. */
-export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'policy' | 'image' | 'approvals'>, said: string | undefined): TemplatePreview | string {
+export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'templates' | 'policy' | 'image' | 'approvals'>, said: string | undefined): TemplatePreview | string {
   const needs = needsOf(said);
   if (typeof needs === 'string') return needs;
   const name = requestedName(needs);
   const was = u.template(name);
+  const reused = was && waitsOf(was).length === 0 && sameNeeds(was.profiles, needs) ? undefined : approvedFor(u, needs);
+  if (reused) {
+    return {
+      template: reused.name, image: reused.image, tools: [...(reused.tools ?? [])], needs: needs.map(inWords),
+      readOnly: reused.readOnly === true, approvedBy: approverOf(reused), waits: [], exists: 'same',
+    };
+  }
   const outside = outsidePolicy(needs, u.policy());
   const skip = outside.length > 0 && skipsTemplate(u);
   const waits = skip ? [] : outside;
@@ -140,12 +166,16 @@ export function previewTemplate(u: Pick<TemplateRequestUser, 'template' | 'polic
 export async function requestTemplate(u: TemplateRequestUser, said: string | undefined, by: string, job?: string): Promise<TemplateAnswer> {
   const needs = needsOf(said);
   if (typeof needs === 'string') return { status: 400, reason: needs };
-  const name = requestedName(needs);
-  const was = u.template(name);
-  if (was && !sameNeeds(was.profiles, needs)) {
+  const asked = requestedName(needs);
+  const was = u.template(asked);
+  // Issue #998: the template the needs name, when it is approved for them; else another approved for them; else the one
+  // the needs name, made now when it is not there.
+  const reused = was && waitsOf(was).length === 0 && sameNeeds(was.profiles, needs) ? undefined : approvedFor(u, needs);
+  const name = reused?.name ?? asked;
+  if (!reused && was && !sameNeeds(was.profiles, needs)) {
     return { status: 409, reason: `a person changed template ${name} since it was asked for: a request does not change it back. Ask a person in Settings → Vault, or find another way.` };
   }
-  if (!was) {
+  if (!reused && !was) {
     const readOnly = needs.every((p) => p.operation === 'read');
     const saved = await u.save({ name, image: u.image, secrets: [], profiles: needs, tools: toolsForNeeds(needs), readOnly, ...(job ? { askedBy: job } : {}) }, by);
     if (!saved.ok) return { status: STATUS[saved.code] ?? 503, reason: saved.error };
@@ -171,8 +201,7 @@ export async function requestTemplate(u: TemplateRequestUser, said: string | und
   }
   const checking = checkWait(t);
   if (checking) return { status: 202, template: name, text: `waiting: template ${name} is approved; ${checking}. Each write it may make must be refused, each read must work.` };
-  const approver = t.approval?.by;
-  const who = approver === READ_POLICY_APPROVER || approver === SKIP_TEMPLATE_APPROVER ? `approved by ${approver}` : 'approved by a person';
+  const who = `approved by ${approverOf(t)}`;
   return {
     status: 200,
     template: name,

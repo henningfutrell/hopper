@@ -4,7 +4,10 @@
   "properties": {
     "by": {
       "type": "string",
-      "const": "person"
+      "enum": [
+        "person",
+        "hopper"
+      ]
     },
     "note": {
       "type": "string"

@@ -964,7 +964,7 @@ Version 1 (`docs/schemas/job.continued.v1.json`). A failed job goes on in its ow
 
 ## `job.waiting`
 
-Version 1 (`docs/schemas/job.waiting.v1.json`). The job waits on something it named (issue #483): it ended its turn with HOPPER_WAITING. `for`: what it waits for; `until`: how it will know, as it wrote it. Its status is `waiting_on`: no question opens, its lane is free, its pane and agent stay on its machine, and nothing is typed into it. It goes on when its agent goes on by itself (`job.reattached`, reason `the wait ended in the pane`) or a person ends the wait (`job.wait_ended`).
+Version 1 (`docs/schemas/job.waiting.v1.json`). The job waits on something it named (issue #483): it ended its turn with HOPPER_WAITING. `for`: what it waits for; `until`: how it will know, as it wrote it. Its status is `waiting_on`: no question opens, its lane is free, its pane and agent stay on its machine, and nothing is typed into it. It goes on when its agent goes on by itself (`job.reattached`, reason `the wait ended in the pane`) or a person ends the wait (`job.wait_ended`), or the hopper ends it with an answer the job asked it for (issue #998).
 
 | field | type | required |
 |---|---|---|
@@ -980,11 +980,11 @@ Version 1 (`docs/schemas/job.waiting.v1.json`). The job waits on something it na
 
 ## `job.wait_ended`
 
-Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wait (issue #483): the job is queued again, pinned to its machine, and its claim tells it in its pane that the thing it waits for has happened, with the person's `note`, if any.
+Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wait (issue #483), or the hopper did (`by: hopper`, issue #998) when an answer the job asked it for is ready (a skill request: a sandbox, a template, a credential): the job is queued again, pinned to its machine, and its claim tells it in its pane that the thing it waits for has happened, with the person's `note`, or the hopper's answer, if any.
 
 | field | type | required |
 |---|---|---|
-| `by` | string | yes |
+| `by` | `person` \| `hopper` | yes |
 | `note` | string | no |
 
 ```json
