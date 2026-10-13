@@ -10,9 +10,12 @@
 //   Scenario: a secret is refused; personal data needs a private repository and the person's word
 //   Scenario: an artifact changed after the promotion is stale
 //   Scenario: a finished job is offered for promotion: asked at submit, or because it made an artifact
+//   Scenario: a small text artifact may be committed to the promotion's branch; a big or binary one is linked
 import { describe, expect, it } from 'vitest';
 import type { DirectJobView } from '../../src/domain/direct-jobs.ts';
-import { carriedLabels, promotionOffer, promotionText, staleArtifacts, type Promotion } from '../../src/domain/promotions.ts';
+import {
+  carriedLabels, COMMIT_MAX_BYTES, commitRefusal, promotionBranch, promotionOffer, promotionPath, promotionText, staleArtifacts, type Promotion,
+} from '../../src/domain/promotions.ts';
 import { cleanText, postRefusal, scanText } from '../../src/promotions/scan.ts';
 
 const ARTIFACT = { id: 'a1', title: 'Lockout timeline', summary: 'When each sign-in failed', revision: 2 };
@@ -91,5 +94,32 @@ describe('after the promotion (issue #946)', () => {
     expect(promotionOffer(view({}))).toBeUndefined();
     expect(promotionOffer(view({ promoteWhenDone: true, job: { id: 'j1', status: 'running', questions: [] } }))).toBeUndefined();
     expect(promotionOffer(view({ promoteWhenDone: true, promotion: { ...promotion, stale: [] } }))).toBeUndefined();
+  });
+});
+
+describe('a committed artifact (issue #946, part 2)', () => {
+  it('commits only a small text artifact: a big one or one that cannot be scanned is linked', () => {
+    expect(commitRefusal({ kind: 'svg', size: 100 })).toBeUndefined();
+    expect(commitRefusal({ kind: 'markdown', size: COMMIT_MAX_BYTES })).toBeUndefined();
+    expect(commitRefusal({ kind: 'markdown', size: COMMIT_MAX_BYTES + 1 })).toMatch(/too big/);
+    expect(commitRefusal({ kind: 'image', size: 100 })).toMatch(/text/);
+    expect(commitRefusal({ kind: 'pdf', size: 100 })).toMatch(/text/);
+  });
+
+  it('puts it on the promotion\'s own branch, never the default, under a path of the direct job', () => {
+    expect(promotionBranch('d1')).toBe('hopper-promotion/d1');
+    expect(promotionPath('d1', { id: 'a1', name: 'timeline.svg' })).toBe('hopper-promotions/d1/a1-timeline.svg');
+  });
+
+  it('links a committed artifact on GitHub, and names the branch before it is committed', () => {
+    const committed = promotionText({
+      body: 'x', directJobId: 'd1', publicUrl: 'https://hopper.example.com', promotedBy: 'octocat',
+      artifacts: [{ ...ARTIFACT, committed: { branch: 'hopper-promotion/d1', path: 'hopper-promotions/d1/a1-t.svg', url: 'https://github.invalid/o/r/blob/hopper-promotion/d1/hopper-promotions/d1/a1-t.svg' } }],
+    });
+    expect(committed).toContain('[Lockout timeline](https://github.invalid/o/r/blob/hopper-promotion/d1/hopper-promotions/d1/a1-t.svg) — When each sign-in failed (revision 2, committed to branch `hopper-promotion/d1`)');
+    const planned = promotionText({
+      body: 'x', directJobId: 'd1', promotedBy: 'octocat', artifacts: [{ ...ARTIFACT, committed: { branch: 'hopper-promotion/d1', path: 'hopper-promotions/d1/a1-t.svg' } }],
+    });
+    expect(planned).toContain('Lockout timeline — When each sign-in failed (revision 2, to be committed to branch `hopper-promotion/d1` as `hopper-promotions/d1/a1-t.svg`)');
   });
 });

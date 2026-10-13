@@ -1,0 +1,1 @@
+- When you share a finished direct job on GitHub, you can now put a small text report or picture into the repository itself, so people can open it without a sign-in to the hopper. You can also share a direct job from its job page.

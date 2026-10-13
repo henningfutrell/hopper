@@ -17,6 +17,8 @@
 //   Scenario: a comment on an issue the person picks; a revoke leaves GitHub as it is
 //   Scenario: no promotion of a job not ended, or with no GitHub connection
 //   Scenario: promote when done, asked at submit
+//   Scenario: a small text artifact is committed to the promotion's branch, so it opens on GitHub with no hopper sign-in
+//   Scenario: a binary artifact is not committed; nor is one with personal data, on a public repository
 import { afterEach, describe, expect, it } from 'vitest';
 import { ADMIN_ID, type DomainEvent } from '../../src/domain/types.ts';
 import type { DirectJobView } from '../../src/domain/direct-jobs.ts';
@@ -201,5 +203,67 @@ describe('Promote to GitHub (issue #946)', () => {
     const { directJob } = await finished(app, token, { promoteWhenDone: true });
     expect(directJob.promoteWhenDone).toBe(true);
     expect((await readBack(app, directJob.id, (d) => d.job?.status === 'finished')).offer).toBe('asked');
+  });
+
+  it('commits a small text artifact to the promotion\'s own branch, and links it there; promoted again, the file is updated', async () => {
+    const { app, github, token } = await start();
+    const { directJob, job, artifact } = await finished(app, token);
+    const branch = `hopper-promotion/${directJob.id}`;
+    const path = `hopper-promotions/${directJob.id}/${artifact.id}-timeline.svg`;
+    const p = await preview(app, token, directJob.id, { repo: PRIVATE_REPO });
+    expect(p.body.artifacts[0].commit).toEqual({ branch, path });
+    expect(p.body.notes.join(' ')).toMatch(/committed/);
+
+    const draft = { repo: PRIVATE_REPO, target: { kind: 'issue' }, title: 'Lockouts', body: 'What we found.', labels: [], artifacts: [artifact.id], commit: [artifact.id] };
+    const done = await promote(app, token, directJob.id, draft);
+    expect(done.status).toBe(200);
+    expect(github.branches![`${PRIVATE_REPO}@${branch}`]).toBe('f'.repeat(40));
+    const file = github.files![`${PRIVATE_REPO}@${branch}:${path}`]!;
+    expect(file.content).toBe('<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    expect(file.message).toBe('Promote timeline.svg, revision 1, from the hopper');
+    const put = github.requests.find((q) => q.method === 'PUT')!;
+    expect(put.auth).toContain('test-account-token');
+    const blob = `${github.url}/${PRIVATE_REPO}/blob/${branch}/${path}`;
+    const issue = github.issues.find((i) => i.repo === PRIVATE_REPO && i.number === done.body.number)!;
+    expect(issue.body).toContain(`[Lockout timeline](${blob})`);
+    expect(issue.body).toContain(`committed to branch \`${branch}\``);
+    expect(done.body.artifacts[0]).toEqual({ id: artifact.id, title: 'Lockout timeline', revision: 1, committed: { branch, path, url: blob } });
+
+    const rt = app.user(ADMIN_ID);
+    rt.artifacts.put(rt.store.jobs.get(job.id)!, { name: 'timeline.svg', title: 'Lockout timeline', to: artifact.id, content: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><g/></svg>') });
+    const again = await promote(app, token, directJob.id, draft);
+    expect(again.status).toBe(200);
+    expect(github.files![`${PRIVATE_REPO}@${branch}:${path}`]!.content).toContain('<g/>');
+    expect(github.issues.filter((i) => i.repo === PRIVATE_REPO)).toHaveLength(2);
+    expect(github.requests.filter((q) => q.method === 'POST' && q.path.endsWith('/git/refs'))).toHaveLength(1);
+  });
+
+  it('commits no binary artifact, none not linked, and none with personal data on a public repository', async () => {
+    const { app, github, token } = await start();
+    const { directJob, job, artifact } = await finished(app, token);
+    const rt = app.user(ADMIN_ID);
+    const png = rt.artifacts.put(rt.store.jobs.get(job.id)!, { name: 'chart.png', title: 'A chart', summary: 'A chart', separate: true, content: Buffer.from([0x89, 0x50, 0x4e, 0x47]) });
+    if ('no' in png) throw new Error(png.no);
+    const mail = rt.artifacts.put(rt.store.jobs.get(job.id)!, { name: 'who.md', title: 'Who', summary: 'Who asked', separate: true, content: Buffer.from('Asked by ada@example.com') });
+    if ('no' in mail) throw new Error(mail.no);
+    const p = await preview(app, token, directJob.id, {});
+    expect(p.body.artifacts.find((a: { id: string }) => a.id === png.id).commit.no).toMatch(/text/);
+
+    const base = { repo: REPO, target: { kind: 'issue' }, title: 'Lockouts', body: 'What we found.', labels: [], confirmPublic: true };
+    const binary = await promote(app, token, directJob.id, { ...base, artifacts: [png.id], commit: [png.id] });
+    expect(binary.status).toBe(400);
+    expect(binary.body.error).toMatch(/text/);
+    const unlinked = await promote(app, token, directJob.id, { ...base, artifacts: [], commit: [artifact.id] });
+    expect(unlinked.status).toBe(400);
+    const personal = await promote(app, token, directJob.id, { ...base, artifacts: [mail.id], commit: [mail.id] });
+    expect(personal.status).toBe(422);
+    expect(personal.body.error).toMatch(/who\.md.*personal data/);
+    const key = rt.artifacts.put(rt.store.jobs.get(job.id)!, { name: 'keys.txt', title: 'Keys', summary: 'Keys', separate: true, content: Buffer.from(`AKIA${'A'.repeat(16)}`) });
+    if ('no' in key) throw new Error(key.no);
+    const secret = await promote(app, token, directJob.id, { ...base, repo: PRIVATE_REPO, artifacts: [key.id], commit: [key.id], allowPersonalData: true });
+    expect(secret.status).toBe(422);
+    expect(secret.body.error).toMatch(/keys\.txt.*secret/);
+    expect(github.files ?? {}).toEqual({});
+    expect(github.issues.filter((i) => i.repo === REPO)).toEqual([]);
   });
 });
