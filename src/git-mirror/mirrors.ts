@@ -15,6 +15,9 @@
 // the conflict): both additions are kept, the base branch's first (`WHATS-NEW.md` lines, design sections). Any other
 // conflict is a real one: nothing is pushed, and the files are named. The push leases the branch at the head as fetched
 // (`--force-with-lease`), so a branch that moved, or a fork's branch that is not in the repository, is never written.
+// What a pull request changes (issue #935 part 2, design.md "A job's parts list"): its commits after the merge base with
+// its base branch, and the files it changes there, as `git log` and `git diff --name-only` of the pass's fetch say. Both
+// read commits and trees only, which a blobless mirror has: no blob comes.
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -32,6 +35,13 @@ export type Mergeability = 'clean' | 'conflicting';
 /** A pull request whose base branch the hopper merges into its head (issue #967): its number, base and head branch. */
 export interface BaseMergeTarget { number: number; base: string; headRef: string }
 
+/** What a pull request changes: its commits, newest first, `<short sha> <subject>`; the paths of the files it changes. */
+export interface PullRequestChanges { commits: string[]; files: string[] }
+
+/** At most this many commits and files are named of one pull request. */
+export const CHANGES_COMMITS = 100;
+export const CHANGES_FILES = 300;
+
 export interface GitMirrors {
   /**
    * Whether pull request `pr` of `repo` (`owner/name`) merges into its base, as git says after this pass's fetch;
@@ -48,6 +58,8 @@ export interface GitMirrors {
    * pass fetched both; undefined: git cannot say (outside a pass, not fetched, a name git must not take, the push refused).
    */
   baseMerge(repo: string, remote: () => Promise<GitRemote>, pr: BaseMergeTarget): Promise<BaseMerge | undefined>;
+  /** What pull request `pr` of `repo` changes, as git says after this pass's fetch (issue #935 part 2); undefined: git cannot say. */
+  changes(repo: string, remote: () => Promise<GitRemote>, pr: PullRequestHead): Promise<PullRequestChanges | undefined>;
 }
 
 /** One git command in a mirror: its exit code and what it printed. Tests may give their own. */
@@ -231,6 +243,19 @@ export function createGitMirrors(o: { dir: string; log(line: string): void; traf
       if (pushed.code !== 0) return problem(`push refused: ${said(pushed)}`);
       at.f.heads.set(pr.number, oid);
       return { outcome: 'pushed', commit: oid, resolved: resolved.blobs.map((b) => b.path) };
+    },
+    async changes(repo, remote, pr) {
+      const at = await fetchedIn(repo, remote, pr.base);
+      if (!at || at.f.heads.get(pr.number) !== pr.headOid) return undefined;
+      const base = `refs/remotes/origin/${pr.base}`;
+      const log = await git(['--git-dir', at.path, 'log', `--max-count=${CHANGES_COMMITS}`, '--format=%h %s', `${base}..${pr.headOid}`], at.f.env);
+      const diff = await git(['--git-dir', at.path, 'diff', '--name-only', '--no-renames', `${base}...${pr.headOid}`], at.f.env);
+      if (log.code !== 0 || diff.code !== 0) {
+        o.log(`hopper: git mirror of ${repo}: changes of #${pr.number}: ${said(log.code !== 0 ? log : diff)}`);
+        return undefined;
+      }
+      const lines = (out: string) => out.split('\n').filter((l) => l.length > 0);
+      return { commits: lines(log.stdout), files: lines(diff.stdout).slice(0, CHANGES_FILES) };
     },
   };
 

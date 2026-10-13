@@ -73,9 +73,9 @@ The parts list is everything the job touched or made:
 | Group | Parts |
 |---|---|
 | What was asked | The issue, the follow-up issues the job filed, and rework a person asked for. |
-| Work | Each run, the task list, the lane, the time it took, and the jobs that ran it again or ran its next part. |
-| Code | The pull request, its checks, its branch, the commits its latest checkpoint names, and its merge. |
-| Outputs | Its artifacts and each revision, and its plan or research report. |
+| Work | Each run, the task list, the lane, the time it took, its usage, and the jobs that ran it again or ran its next part. The usage part shows the share of each usage limit its runs used, and how much CPU and memory they used on the machine. It shows after a run ends. |
+| Code | The pull request, its checks, its branch, its commits, the number of files it changes, each push of the job, and its merge. While the pull request waits, its place in the merge order: the pull request it goes in after, and why. Before the hopper reads the pull request's commits, the commits of the latest checkpoint show. |
+| Outputs | Its artifacts and each revision, its plan or research report, and the help pages and What's new lines its pull request changes. |
 | Infra | Its infra plans and their approvals, each credential minted for it with what it may do, drift it found, and a vault grant it asked for. |
 | Decisions | Each question and who answered it (a person, or a level such as rules or a model), overrides, and its hand-off. |
 | Machines and sandboxes | Each machine it ran on, each checkpoint the hopper took of it, and each Windows sandbox step. |

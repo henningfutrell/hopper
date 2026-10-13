@@ -103,6 +103,11 @@ describe('laneRows', () => {
     const inside = laneRows([machine([lane('lane-1', 'busy', 's')], 2)], [s]);
     expect(inside.map((r) => r.elbowIn ?? false)).toEqual([false, false]);
   });
+  it('a tend job\'s lane past the machine\'s lanes is an elbow-in too (issue #967)', () => {
+    const t = job('t', { spec: { executor: 'test', payload: {}, tend: true } });
+    const over = laneRows([machine([lane('lane-1', 'busy', 'a'), lane('lane-2', 'busy', 't')], 1)], [job('a'), t]);
+    expect(over.map((r) => [r.job?.id, r.elbowIn ?? false])).toEqual([['a', false], ['t', true]]);
+  });
 });
 
 describe('lane job (issue #432)', () => {

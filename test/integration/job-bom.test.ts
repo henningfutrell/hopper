@@ -51,6 +51,32 @@ describe('GET /api/jobs/:id/bom (issue #935)', () => {
     expect(bom.events.every((e) => e.jobId === asks.id)).toBe(true);
   });
 
+  it('answers the usage its runs burned and what they used of the machine (part 2)', async () => {
+    const a = await start();
+    const { store } = a.user();
+    const MIN = 60_000;
+    const GIB = 1024 ** 3;
+    const at = Date.now() - 24 * 60 * MIN;
+    const iso = (min: number) => new Date(at + min * MIN).toISOString();
+    store.machineHistory.record(Array.from({ length: 50 }, (_, i) => ({
+      machineId: 'm1', at: iso(i), cores: 8, cpuBusyFrac: i >= 20 ? 0.3 : 0.1, memTotalBytes: 16 * GIB, memAvailableBytes: (i >= 20 ? 10 : 12) * GIB,
+      diskFreeBytes: 50 * GIB, diskTotalBytes: 100 * GIB, lanesBusy: i >= 20 ? 1 : 0, lanesMax: 2,
+    })));
+    store.usageHistory.record(Array.from({ length: 30 }, (_, i) => ({ source: 'plan', machineId: 'm1', window: 'session', used: 10 + i * 0.2, limit: 100, unit: '%', at: iso(20 + i) })));
+    const job = store.tx(() => {
+      const j = store.jobs.create({ executor: 'test', payload: {}, machineId: 'nowhere' }, 50, { source: 'github', kind: 'github', key: ISSUE, repo: 'acme/app', number: 7 });
+      store.jobs.update(j.id, { status: 'finished' });
+      store.events.append({ type: 'job.claimed', jobId: j.id, machineId: 'm1', laneId: 'm1:1', at: iso(20), data: { attempts: 1, effectivePriority: 50, reason: 'test' } });
+      store.events.append({ type: 'job.finished', jobId: j.id, laneId: 'm1:1', at: iso(50), data: { result: 'ok' } });
+      return j;
+    });
+
+    const bom = (await a.api<JobBom>('GET', `/api/jobs/${job.id}/bom`)).body;
+    const usage = bom.parts.find((p) => p.id === 'usage');
+    expect(usage).toMatchObject({ group: 'work', label: 'Usage: 5.8% of session', status: 'recorded' });
+    expect(usage!.detail).toMatch(/^1 run, 30 samples: CPU 20% on average/);
+  });
+
   it('answers 404 for a job it does not know', async () => {
     const a = await start();
     expect((await a.api('GET', '/api/jobs/nope/bom')).status).toBe(404);

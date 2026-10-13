@@ -28,10 +28,11 @@ const SHARE: Readonly<Record<MachineResource, string>> = {
  * Job runs (issue #688): each claim of a job on a machine and the event after it that ended it, by event order, that ended
  * in [from, to). `?`: from (events' ISO text), to.
  */
-const RUNS = `
+/** The job runs' CTE; its parameters: from, the job id when `oneJob` (issue #935 part 2: one job's parts list), to. */
+const runsCte = (oneJob: boolean): string => `
   ev AS (
     SELECT job_id, type, machine_id, at::timestamptz AS at, lead(type) OVER w AS end_type, lead(at::timestamptz) OVER w AS end_at
-    FROM events WHERE job_id IS NOT NULL AND at >= ?
+    FROM events WHERE job_id IS NOT NULL AND at >= ?${oneJob ? ' AND job_id = ?' : ''}
       AND type IN ('job.claimed', 'job.finished', 'job.failed', 'job.cancelled', 'job.requeued', 'job.parked')
     WINDOW w AS (PARTITION BY job_id ORDER BY seq)),
   runs AS (
@@ -129,6 +130,8 @@ export function createMachineHistoryRepository(c: StoreContext): MachineHistoryR
     // the machine's samples with no lane in use over [from, to) —, averaged and peaked over the samples in the run; and
     // per usage window the rise of the machine's usage samples in it, as a share of the limit.
     jobRuns(q) {
+      const RUNS = runsCte(q.jobId !== undefined);
+      const one: Param[] = q.jobId !== undefined ? [q.jobId] : [];
       const num = (v: unknown): number | undefined => (v === null || v === undefined ? undefined : Number(v));
       const cost = (avg: unknown, peak: unknown): ResourceCost | undefined => (num(avg) === undefined ? undefined : { avg: Number(avg), peak: Number(peak) });
       const from = q.from.toISOString(), to = q.to.toISOString();
@@ -145,13 +148,13 @@ export function createMachineHistoryRepository(c: StoreContext): MachineHistoryR
           count(p.job_id) AS samples, avg(p.lanes_busy) AS lanes, avg(p.cpu) AS cpu_avg, max(p.cpu) AS cpu_peak,
           avg(p.mem) AS mem_avg, max(p.mem) AS mem_peak, avg(p.disk) AS disk_avg, max(p.disk) AS disk_peak
         FROM runs r LEFT JOIN p ON p.job_id = r.job_id AND p.start_at = r.start_at
-        GROUP BY r.job_id, r.machine_id, r.start_at, r.end_at, r.end_type ORDER BY r.start_at`, from, to, from, to);
+        GROUP BY r.job_id, r.machine_id, r.start_at, r.end_at, r.end_type ORDER BY r.start_at`, from, ...one, to, from, to);
       const burns = c.db.all(`
         WITH ${RUNS}
         SELECT r.job_id, ${ms('r.start_at')} AS start_ms, coalesce(NULLIF(u.usage_window, ''), u.source) AS w,
           (array_agg(u.used / NULLIF(u.limit_value, 0) ORDER BY u.at DESC))[1] - (array_agg(u.used / NULLIF(u.limit_value, 0) ORDER BY u.at))[1] AS rise
         FROM runs r JOIN usage_samples u ON u.machine_id = r.machine_id AND u.at >= r.start_at AND u.at < r.end_at AND NOT u.informational
-        GROUP BY r.job_id, r.start_at, u.source, u.usage_window`, from, to);
+        GROUP BY r.job_id, r.start_at, u.source, u.usage_window`, from, ...one, to);
       const usage = new Map<string, Record<string, number>>();
       for (const u of burns) {
         const key = `${String(u.job_id)} ${Number(u.start_ms)}`;

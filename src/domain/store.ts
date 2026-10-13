@@ -247,8 +247,8 @@ export interface MachineHistoryRepository {
   series(q: MachineHistoryQuery): ResourceSeries[];
   /** Lane load over [from, to): per machine and lanes in use, ordered by machine and lanes in use (issue #688). */
   laneLoad(q: { from: Date; to: Date; pressure: ResourcePressure }): LaneLoad[];
-  /** The job runs that ended in [from, to), with what the machine and usage samples in each show (issue #688). */
-  jobRuns(q: { from: Date; to: Date }): JobRun[];
+  /** The job runs that ended in [from, to), with what the machine and usage samples in each show (issue #688); `jobId`: one job's only (issue #935 part 2). */
+  jobRuns(q: { from: Date; to: Date; jobId?: string }): JobRun[];
   /** Delete the samples older than `before`; how many. */
   prune(before: Date): number;
 }

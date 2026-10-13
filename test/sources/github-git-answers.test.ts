@@ -10,6 +10,8 @@
 //     Then GitHub's answer stays
 //   Scenario: whether two pull requests conflict with each other (issue #939)
 //     Then git says, in a pass; with an adapter with no git, the port has no such answer
+//   Scenario: one pull request read by its number (issue #935 part 2)
+//     Then it carries its commits and the files it changes, as the mirror says; the list reads do not
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createGitHubTraffic } from '../../src/github-limiter/traffic.ts';
@@ -77,5 +79,17 @@ describe('git answers (issue #858 part 2)', () => {
     ]);
     expect(said).toEqual([true, false]);
     expect(passReads(gitAnswers(stub(o.heads, o.url, { git: false }), mirrors), 'github', traffic).api.conflictBetween).toBeUndefined();
+  });
+
+  it('gives a pull request read by its number its commits and files, from the mirror; the lists carry none (issue #935 part 2)', async () => {
+    const o = origin();
+    const traffic = createGitHubTraffic({ log: () => undefined });
+    const mirrors = createGitMirrors({ dir: join(o.root, 'mirrors'), traffic, log: () => undefined });
+    const reads = passReads(gitAnswers(stub(o.heads, o.url), mirrors), 'github', traffic);
+    const [numbered, listed] = await reads.pass(async () => [await reads.api.pullRequest('acme/app', 1), await reads.api.openPullRequests('acme/app')] as const);
+    expect(numbered).toMatchObject({ commits: [`${o.heads[1]!.slice(0, 7)} pr one`], files: ['b.txt'] });
+    expect(listed[0]).not.toHaveProperty('files');
+    const outside = passReads(gitAnswers(stub(o.heads, o.url), mirrors), 'github', traffic);
+    expect(await outside.api.pullRequest('acme/app', 1)).not.toHaveProperty('files');
   });
 });

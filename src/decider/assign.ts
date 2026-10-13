@@ -1,7 +1,7 @@
 import type { BlastRadiusInput, CleanupDue, DeciderPolicy, ExecutorUnavailable, ExpectedCost, Job, JobId, Lane, MachineSnapshot, PlacementPick, PriorityLanesInput, ProblemBlock, StartPlan, WaitPlan } from '../domain/types.ts';
 import { freePriority, holdingBestFree, isHigh, keptFor, pickLane, priorityLaneNames, type LaneSlots } from './priority-lanes.ts';
 import { gateHold, gateKeeps } from './gate.ts';
-import { isSpecialty } from '../domain/elbow-in.ts';
+import { elbowsInAs } from '../domain/elbow-in.ts';
 import { roomToElbowIn } from './elbow-in.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
@@ -30,7 +30,7 @@ export interface MachineState {
   /** Idle lanes, not yet given to a job, in id order. */
   freeIdle: Lane[];
   assigned: number;
-  /** Lanes over the cap this Decision gave critical jobs (at most 1, issue #373) or specialty jobs (issue #762). */
+  /** Lanes over the cap this Decision gave critical jobs (at most 1, issue #373) or jobs that elbow in (issues #762, #967). */
   overCap: number;
   /** Lanes busy or draining, and starts, of jobs not pinned to it (issue #372). */
   unpinned: number;
@@ -275,7 +275,7 @@ function squeezes(s: MachineState, job: Job): boolean {
     && s.occupied + s.assigned <= s.cap;
 }
 
-/** Where a specialty job that fits nowhere may elbow in past the caps (issue #762): an eligible machine with room to. */
+/** Where a specialty or tend job that fits nowhere may elbow in past the caps (issues #762, #967): an eligible machine with room to. */
 function elbowsIn(s: MachineState, job: Job): boolean {
   const e = s.executors.get(job.spec.executor);
   return eligible(s, job) && e !== undefined && roomToElbowIn(s, e.band);
@@ -337,9 +337,10 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
     const ex = job.spec.executor;
     holdFor(states, ahead, job);
     const fits = states.filter((s) => fitsLane(s, job, pl));
-    // A specialty job that fits nowhere elbows in past the cap (issue #762); else a critical one takes one lane over it
-    // (issue #373). The extra lane drains when its job ends.
-    const elbowing = fits.length === 0 && isSpecialty(job) ? states.filter((s) => elbowsIn(s, job)) : [];
+    // A specialty or tend job that fits nowhere elbows in past the cap (issues #762, #967); else a critical one takes one
+    // lane over it (issue #373). The extra lane drains when its job ends.
+    const as = elbowsInAs(job);
+    const elbowing = fits.length === 0 && as ? states.filter((s) => elbowsIn(s, job)) : [];
     const elbowed = elbowing.length > 0;
     const squeezed = fits.length === 0 && !elbowed && critical > 0 && job.priority >= critical;
     const able = elbowed ? elbowing : squeezed ? states.filter((s) => squeezes(s, job)) : fits;
@@ -360,7 +361,7 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
     pick.executors.get(ex)!.assigned += 1;
     place(pick.placed, costs?.[job.id]);
     const why = [
-      ...(elbowed ? [overCap ? `specialty: elbows in over the lane cap ${pick.cap}` : `specialty: elbows in past the executor's lane cap or the reserved lanes (cap ${pick.cap})`]
+      ...(elbowed ? [overCap ? `${as}: elbows in over the lane cap ${pick.cap}` : `${as}: elbows in past the executor's lane cap or the reserved lanes (cap ${pick.cap})`]
         : overCap ? [`critical priority: one lane over the cap ${pick.cap}`]
         : squeezed ? [`critical priority: past the executor's lane cap or the reserved lanes (cap ${pick.cap})`]
           : [`${room(pick)} room left (cap ${pick.cap})`]),

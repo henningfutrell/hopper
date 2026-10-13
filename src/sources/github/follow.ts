@@ -107,6 +107,8 @@ async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRe
   const seen: PullRequestSeen = {
     draft: pr.isDraft, conflicting: pr.conflicting, checks: pr.checks ?? 'none', openedAt: pr.createdAt, pushedAt, ...(pr.base ? { base: pr.base } : {}),
     ...(pr.headRef ? { headRef: pr.headRef } : {}), ...(pr.failedChecks?.length ? { failedChecks: pr.failedChecks } : {}),
+    ...(pr.commits ? { commits: pr.commits } : before?.commits ? { commits: before.commits } : {}),
+    ...(pr.files ? { files: pr.files } : before?.files ? { files: before.files } : {}),
   };
   const now = (ctx.clock?.now() ?? new Date()).getTime();
   // Whatever its job's origin (issue #805): the trust decision was made when the job ran, before its pull request.

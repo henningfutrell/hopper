@@ -69,6 +69,12 @@ export interface OpenPullRequest {
   base?: string;
   /** Its head branch (issue #900: a pull request based on it is stacked on it); absent: GitHub did not say. */
   headRef?: string;
+  /**
+   * Its commits after its base, newest first, `<short sha> <subject>`, and the files it changes (issue #935 part 2): as the
+   * hopper's mirror says, for one read by its number in a pass (`gitAnswers`). Absent: git cannot say.
+   */
+  commits?: string[];
+  files?: string[];
 }
 
 /** A pull request by its number (issue #618): one an issue names to update, in any state. */

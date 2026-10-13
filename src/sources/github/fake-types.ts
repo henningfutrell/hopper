@@ -73,6 +73,8 @@ export interface FakeGitHub extends GitHubApi {
 /** A pull request to open: when, a draft or not, merge conflicts or not, and its head commit's time (default createdAt). */
 export interface PullRequestInput {
   createdAt: string; isDraft?: boolean; conflicting?: boolean; headCommittedAt?: string; checks?: ChecksState; failedChecks?: FailedCheck[]; headRef?: string; base?: string;
+  /** What it changes, as the mirror would say (issue #935 part 2): answered when it is read by its number. */
+  commits?: string[]; files?: string[];
   /** Its body in place of the fixed text (issue #786); it still mentions the issue. */
   body?: string;
 }

@@ -150,7 +150,7 @@ describe('yolo mode and a pull request with no checks (issue #677)', () => {
   const LONG_AGO = '2026-10-02T09:50:00.000Z';
   const JUST_NOW = '2026-10-02T09:59:30.000Z';
 
-  async function ended(pr: { createdAt: string; headCommittedAt?: string; checks?: 'passing' | 'pending' | 'failing'; part?: boolean }, yolo = true) {
+  async function ended(pr: { createdAt: string; headCommittedAt?: string; checks?: 'passing' | 'pending' | 'failing'; part?: boolean; commits?: string[]; files?: string[] }, yolo = true) {
     const s = setup({}, { yoloMode: () => yolo });
     s.gh.createIssue({ repo: REPO, labels: ['hopper'] });
     const opened = pr.part ? s.gh.openPartPullRequest(REPO, 1, pr) : s.gh.openPullRequest(REPO, 1, pr);
@@ -206,6 +206,11 @@ describe('yolo mode and a pull request with no checks (issue #677)', () => {
   it('the seen pull request carries its base branch, for "conflicts with <base>", and its head branch, for a stack (issue #900)', async () => {
     const { source, job } = await ended({ createdAt: LONG_AGO, checks: 'pending' });
     expect(await source.follow!(job)).toMatchObject({ state: { seen: { base: 'dev', headRef: expect.any(String) } } });
+  });
+
+  it('the seen pull request carries its commits and the files it changes, as the mirror read them (issue #935 part 2)', async () => {
+    const { source, job } = await ended({ createdAt: LONG_AGO, checks: 'pending', commits: ['abc1234 Add the cache'], files: ['src/cache.ts', 'help/cache.md'] });
+    expect(await source.follow!(job)).toMatchObject({ state: { seen: { commits: ['abc1234 Add the cache'], files: ['src/cache.ts', 'help/cache.md'] } } });
   });
 });
 

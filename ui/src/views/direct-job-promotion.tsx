@@ -2,21 +2,23 @@
 // the promotion with what changed since and a revoke, and the promote form — the repository and the target first, then a
 // preview the person edits (the title, the text, the labels, which artifacts to link) and confirms. Nothing is posted
 // before the confirm; a public repository and personal data each need their own tick. Posted with the person's own
-// GitHub connection. Only for an operator or admin: the daemon refuses the rest.
+// GitHub connection. Only for an operator or admin: the daemon refuses the rest. Part 2: a small text artifact is committed
+// to the promotion's branch when the person ticks it; the job view (job.tsx) shows this part for a direct job's job too.
 import { CloudUpload, Undo2 } from 'lucide-react';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { post, SessionRejected } from '@/lib/api';
+import { get, post, SessionRejected } from '@/lib/api';
 import {
   fromPreview, offerLine, previewProblem, previewRequest, promotable, promoteProblem, promoteRequest, promotionLine, startEdits, type PromoteEdits,
 } from '@/model/promotions';
 import type { DirectJobView, PromotionDraft } from '@/model/wire';
 import { useHopper } from '@/store';
+import { useCanOperate } from '@/store/selectors';
 
 const failed = (e: unknown) => {
   if (e instanceof SessionRejected) useHopper.setState({ authed: false, user: null });
@@ -79,8 +81,16 @@ function PromoteForm({ d, onDone }: { d: DirectJobView; onDone: () => void }) {
           <Textarea aria-label="Text to post" value={e.body} onChange={text('body')} rows={8} />
           {e.target === 'issue' && <Input aria-label="Labels to carry" value={e.labels} onChange={text('labels')} placeholder="sme:identity" />}
           {draft.artifacts.map((a) => (
-            <Tick key={a.id} label={`Link ${a.title} (revision ${a.revision})`} checked={e.artifacts.includes(a.id)}
-              onChange={(v) => set('artifacts', v ? [...e.artifacts, a.id] : e.artifacts.filter((x) => x !== a.id))} />
+            <div key={a.id} className="grid gap-1">
+              <Tick label={`Link ${a.title} (revision ${a.revision})`} checked={e.artifacts.includes(a.id)}
+                onChange={(v) => set('artifacts', v ? [...e.artifacts, a.id] : e.artifacts.filter((x) => x !== a.id))} />
+              <div className="pl-5">
+                {'branch' in a.commit
+                  ? e.artifacts.includes(a.id) && <Tick label={`Commit ${a.title} to ${a.commit.branch}`} checked={e.commit.includes(a.id)}
+                    onChange={(v) => set('commit', v ? [...e.commit, a.id] : e.commit.filter((x) => x !== a.id))} />
+                  : <p className="text-muted-foreground">Linked only: {a.commit.no}.</p>}
+              </div>
+            </div>
           ))}
           <pre className="max-h-32 overflow-auto rounded-md bg-muted/50 p-2 whitespace-pre-wrap" title="added below the text">{draft.footer}</pre>
           {draft.findings.map((f) => <p key={f.kind} className="text-bad">The text holds {f.what}.</p>)}
@@ -131,6 +141,21 @@ export function Promotion({ d, canOperate, onChanged }: { d: DirectJobView; canO
       {canOperate && promotable(d) && (open
         ? <PromoteForm d={d} onDone={() => { setOpen(false); onChanged(); }} />
         : <Button size="xs" variant="outline" className="justify-self-start" onClick={() => setOpen(true)}><CloudUpload />{d.promotion ? 'Promote again' : 'Promote to GitHub'}</Button>)}
+    </div>
+  );
+}
+
+/** The promotion part on a direct job's job view (issue #935): its direct job read, then the same part as in Direct jobs. */
+export function JobPromotion({ directJobId }: { directJobId: string }) {
+  const canOperate = useCanOperate();
+  const [d, setD] = useState<DirectJobView | null>(null);
+  const load = useCallback(() => get<DirectJobView>(`/api/direct-jobs/${encodeURIComponent(directJobId)}`).then(setD, () => setD(null)), [directJobId]);
+  useEffect(() => { void load(); }, [load]);
+  if (!d) return null;
+  return (
+    <div data-slot="job-promotion" className="grid gap-1.5 border-t pt-2">
+      <p className="text-xs text-muted-foreground">Direct job: <a className="underline" href="#direct-jobs">{d.title}</a></p>
+      <Promotion d={d} canOperate={canOperate} onChanged={() => { void load(); }} />
     </div>
   );
 }

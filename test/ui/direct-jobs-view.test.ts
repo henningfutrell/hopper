@@ -22,7 +22,7 @@ const D0 = {
   job: { id: 'j0', status: 'finished', result: 'Two failed logins, no lockout.', questions: [] },
 };
 const D2 = { ...D1, id: 'd2', title: 'Reset a one-time password', job: undefined };
-const ART = { id: 'a1', title: 'Lockout timeline', summary: 'When each sign-in failed', kind: 'svg', revision: 1, url: 'http://hopper.invalid/#artifacts/a1' };
+const ART = { id: 'a1', title: 'Lockout timeline', summary: 'When each sign-in failed', kind: 'svg', revision: 1, url: 'http://hopper.invalid/#artifacts/a1', commit: { branch: 'hopper-promotion/d3', path: 'hopper-promotions/d3/a1-timeline.svg' } };
 const D3 = { ...D0, id: 'd3', title: 'Why was a sign-in locked?', repo: 'octo-org/hello', artifacts: [ART], offer: 'suggested' };
 const DRAFT = {
   repo: 'octo-org/hello', visibility: 'public', target: { kind: 'issue' }, title: 'Why was a sign-in locked?', body: 'Find out why.\n\n### Results\n\nTwo failed logins.',
@@ -143,12 +143,14 @@ describe('Direct jobs', () => {
     expect(button(/Confirm and post/)?.disabled).toBe(true);
     expect(document.body.textContent).toContain('Confirm that the repository is public');
     await type(field('Text to post'), 'What we found.');
+    expect((field('Commit Lockout timeline to hopper-promotion/d3') as HTMLInputElement).checked).toBe(false);
+    await act(async () => { field('Commit Lockout timeline to hopper-promotion/d3')!.click(); });
     await act(async () => { field('Post to this public repository')!.click(); });
     expect(button(/Confirm and post/)?.disabled).toBe(false);
     await act(async () => { button(/Confirm and post/)!.click(); });
     await settle();
     expect(calls.find((c) => c.path === '/ui/api/direct-jobs/d3/promotion')?.body).toEqual({
-      repo: 'octo-org/hello', target: { kind: 'issue' }, title: 'Why was a sign-in locked?', body: 'What we found.', labels: ['sme:identity'], artifacts: ['a1'], confirmPublic: true,
+      repo: 'octo-org/hello', target: { kind: 'issue' }, title: 'Why was a sign-in locked?', body: 'What we found.', labels: ['sme:identity'], artifacts: ['a1'], commit: ['a1'], confirmPublic: true,
     });
     const promoted = rows().find((r) => r.textContent?.includes('Why was a sign-in locked?'))!;
     expect(promoted.textContent).toContain('Promoted as issue octo-org/hello#3 · 1 artifact changed since');

@@ -138,7 +138,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
   const { store } = c;
 
   /** The new job for an item, or null when its key's newest job is not re-runnable. A key's earlier job is its `rerunOf`. */
-  function ingest(offered: SourceItem, source: SourceRef, brief?: string): Job | null {
+  function ingest(offered: SourceItem, source: SourceRef, brief?: string, tend = false): Job | null {
     // The item's snapshot (issue #662): a later job of the item runs the snapshot's text, held when the live text differs.
     const gate = gateItem(store, offered, source, nowIso(c));
     const item = brief ? { ...gate.item, prompt: `${gate.item.prompt}\n\n${brief}` } : gate.item;
@@ -147,7 +147,8 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
     const priority = clamp(routedBy?.set.priority ?? item.priority);
     const ref = refFor(item, source);
     const fromConfig = fromConfigFor(item, routedBy);
-    const spec = specFor(item, source, priority, routedBy, fromConfig);
+    // Tending's job (issue #967): it may elbow in past a lane cap, so a pull request's conflict never waits for a lane.
+    const spec = { ...specFor(item, source, priority, routedBy, fromConfig), ...(tend ? { tend: true as const } : {}) };
     const invalid = problemWith(c, item, spec);
     return store.tx((): Job | null => {
       const known = store.jobs.getBySourceKey(item.key);
@@ -279,7 +280,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         const ended = store.jobs.get(jobId);
         if (!ended) throw new EngineError('not_found', `job ${jobId} not found`);
         // A sync that offered the item between the source giving it back and now made the new job already.
-        const job = ingest(originFrom(item, ended), source, brief) ?? store.jobs.getBySourceKey(item.key)!;
+        const job = ingest(originFrom(item, ended), source, brief, by === 'tending') ?? store.jobs.getBySourceKey(item.key)!;
         store.events.append({ type: 'job.rerun', jobId, data: { by, ...acting } });
         return job;
       });

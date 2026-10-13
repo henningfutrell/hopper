@@ -1,5 +1,8 @@
 // The fake GitHub's branch heads (issue #870), for test/support/fake-forges.ts: what the vault's apply gate reads to
 // know a plan was made at the commit its branch is at now. `GET /repos/{owner}/{repo}/commits/{ref}` answers `{ sha }`.
+// Branches made and files put on them (issue #946) are fake-contents.ts, exported from here beside the heads.
+
+export { contentsRoute, type ContentsForge } from './fake-contents.ts';
 
 /** The fake GitHub's option for it (a field of `FakeForge`). */
 export interface HeadsForge {
