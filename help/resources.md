@@ -1,6 +1,6 @@
 # Resources
 
-**Resources** is a page in the main menu, in the group Sources & machines. It shows what each part of the hopper's own stack uses now, and how its database and OpenFGA do. Only the hopper's admin can read it.
+**Resources** is a page in the main menu, in the group Sources & machines. It shows what each part of the hopper's own stack uses now, and how its database, OpenFGA and Solr do. Only the hopper's admin can read it.
 
 The page reads again every 10 seconds while it is open.
 
@@ -42,6 +42,17 @@ The hopper reads OpenFGA's own metrics, on port 2112 of the OpenFGA host:
 
 Both count since OpenFGA started. Without OpenFGA, or when its metrics do not answer, the page says why.
 
+## Solr
+
+Solr keeps the search index. The hopper reads Solr's own metrics:
+
+- **Query latency**: the mean time of a search, and the time that 95 of 100 searches stay below. Solr gives the most weight to the last minutes.
+- **Errors**: how many searches failed, and their share of all searches. This counts since Solr loaded the index.
+- **Index**: how many documents the index holds, and its size on disk.
+- **To index**: how many documents wait to go into the index. When Solr is down, this number grows. The hopper writes them when Solr is back.
+
+Without Solr, or when its metrics do not answer, the page says why. It still shows the documents that wait.
+
 ## Stack resources over time
 
 The graph at the bottom of the page shows each part's use over the last day, 3 days, week or 30 days. The hopper keeps a sample every minute, and keeps samples for 30 days. Each line is a share:
@@ -57,4 +68,4 @@ Each part has its own colour. Each line shows the highest value in its step. A g
 
 ## Through the API
 
-`GET /api/resources` gives the same readings as JSON. Each container has its service as its label. The boxes on other machines are in `remoteBoxes`, one entry for each machine. `GET /api/resources/history` gives the graph. See the API reference at `/docs/`.
+`GET /api/resources` gives the same readings as JSON. Each container has its service as its label. The boxes on other machines are in `remoteBoxes`, one entry for each machine. Solr is in `solr`. `GET /api/resources/history` gives the graph. See the API reference at `/docs/`.

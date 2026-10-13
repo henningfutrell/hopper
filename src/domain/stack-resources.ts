@@ -108,9 +108,33 @@ export interface OpenFgaMeter {
   read(): Promise<OpenFgaReading>;
 }
 
+/** The search index's Solr now (issue #947), from its own metrics API: requests to the core's `/select`, its documents. */
+export interface SolrReading {
+  /** Queries, and of those the ones that failed, since the core was loaded. */
+  queries: number;
+  errors: number;
+  /** The mean and the 95th percentile time of a query, in ms, as Solr's timer has them (the last minutes weigh most); absent before any query. */
+  meanMs?: number;
+  p95Ms?: number;
+  /** The documents in the index, and the index's size on disk. */
+  docs: number;
+  indexBytes: number;
+}
+
+/** What reads Solr's metrics API (issue #947). A read that fails throws, with why. */
+export interface SolrMeter {
+  read(): Promise<SolrReading>;
+}
+
+/**
+ * Solr in `GET /api/resources`: its reading, or why it cannot be read; with `pending`, the documents waiting to be
+ * indexed — every user's pending index updates (issue #945), which grow while Solr is down. No search set up: none.
+ */
+export type SolrPart = (SolrReading & { pending: number }) | { problem: string; pending?: number };
+
 /**
  * `GET /api/resources` (issue #947): every container of the stack and each sandbox box beside the hopper, the sandbox
- * boxes on each client target, Postgres and OpenFGA, now.
+ * boxes on each client target, Postgres, OpenFGA and Solr, now.
  */
 export interface StackResources {
   at: string;
@@ -119,6 +143,7 @@ export interface StackResources {
   remoteBoxes: MachineBoxes[];
   postgres: PostgresReading | { problem: string };
   openfga: OpenFgaReading | { problem: string };
+  solr: SolrPart;
 }
 
 /**

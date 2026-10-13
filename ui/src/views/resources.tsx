@@ -3,7 +3,7 @@
 // Postgres and OpenFGA do. Read from GET /api/resources when the page opens and every READ_EVERY_MS while it is shown; a part
 // that cannot be read says why. Below, the stack's resources over time, from GET /api/resources/history: the shares the
 // stack recorder keeps each minute. The machines' own resources over time are on Usage and Machines (issue #560).
-import { AlertTriangle, Boxes, Container, Database, RefreshCw, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, Boxes, Container, Database, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Empty, Panel } from '@/components/panel';
 import { UsageGraphCard } from '@/components/usage-graph-card';
@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { get } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import {
-  containerTone, cpuText, diskText, memoryFrac, memoryText, networkText, openFgaLines, postgresLines, restartsText, uptimeText, volumesText,
+  containerTone, cpuText, diskText, memoryFrac, memoryText, networkText, openFgaLines, postgresLines, solrLines, restartsText, uptimeText, volumesText,
 } from '@/model/stack-resources';
 import { stackLines } from '@/model/stack-history';
 import type { ContainerReading, StackHistory, StackResources } from '@/model/wire';
@@ -114,7 +114,7 @@ export function Resources() {
       </div>
     );
   }
-  const { containers, remoteBoxes, postgres, openfga } = state.data;
+  const { containers, remoteBoxes, postgres, openfga, solr } = state.data;
   const list = 'containers' in containers ? containers.containers : [];
   const stack = list.filter((c) => c.group === 'stack');
   // The boxes beside the hopper, then those on each client target; a client target that cannot be read says why.
@@ -122,7 +122,7 @@ export function Resources() {
   const unread = remoteBoxes.flatMap((m) => ('problem' in m ? [m] : []));
   return (
     <div className="max-w-4xl space-y-3">
-      <p className="text-sm text-muted-foreground">What each part of the hopper&apos;s stack uses now, by its service. CPU is the use since the read before; the page reads again every 10 seconds while it is open. Network and disk count since the container started; OpenFGA&apos;s checks count since it started.</p>
+      <p className="text-sm text-muted-foreground">What each part of the hopper&apos;s stack uses now, by its service. CPU is the use since the read before; the page reads again every 10 seconds while it is open. Network and disk count since the container started; OpenFGA&apos;s checks count since it started, Solr&apos;s queries since its core was loaded.</p>
       <Panel title="Containers" icon={Container} count={stack.length || ''}>
         {'problem' in containers ? <Problem>{containers.problem}</Problem>
           : stack.length === 0 ? <Empty>No container of the hopper&apos;s compose project. A hopper on the computer itself has none.</Empty>
@@ -141,6 +141,12 @@ export function Resources() {
       </Panel>
       <Panel title="OpenFGA" icon={ShieldCheck}>
         {'problem' in openfga ? <Problem>{openfga.problem}</Problem> : <Lines slot="openfga-reading" lines={openFgaLines(openfga)} />}
+      </Panel>
+      <Panel title="Solr" icon={Search}>
+        <div className="space-y-3">
+          {'problem' in solr && <Problem>{solr.problem}</Problem>}
+          {solrLines(solr).length > 0 && <Lines slot="solr-reading" lines={solrLines(solr)} />}
+        </div>
       </Panel>
       <UsageGraphCard<StackHistory> path="/api/resources/history" linesOf={linesOfStack} title="Stack resources over time" what="stack history"
         recordedBy={null} empty={NO_SAMPLES} />

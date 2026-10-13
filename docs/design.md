@@ -76,7 +76,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/secrets/` | the runtime's secrets (`runtime.ts`): a secret by name, from the variable or the mounted file `<name>_FILE` names ("Secrets"); the token box (`token-box.ts`, issue #441) that sealed a connected account's tokens under `HOPPER_MASTER_KEY` before issue #658, now read only to move them into the vault; the sealer (`sealer.ts`, issue #451) that seals every other secret the hopper owns under it ("Sealed in the database"); the master key from the launch, its fingerprint check, and the old token key moved (`master-key.ts`, issue #659, "The master key"); the secret mask (`mask.ts`) and the log mask every log line goes through (`log-mask.ts`, issue #685) | everything |
 | `src/vault/` | the vault (issue #558, "The vault"): its secrets and templates (`service.ts`), its key provider chosen — the master key or a KMS (`keys.ts`, `kms.ts`, issue #586) —, where it runs: in the hopper or in a container of its own (`index.ts`, `vault.ts`, `remote.ts`, `server.ts`, `main.ts`, `wire.ts`); whose ask a box's ask is (`box.ts`); minting through Access and the minting adapters, STS and the Kubernetes API (`mint.ts`, `minter.ts`, issue #580), EKS sign-in (`eks.ts`, issue #854), the mint test (`mint-test.ts`); the system scope, the hopper's own secrets: its one way in (`system.ts`, issues #657, #658), a job's ask for one refused (`system-read.ts`) and its view and audit trail (`system-view.ts`). Its rows through the `VaultRepository` port; the attached machines and the job's token through the composition root | engine, http, plugins, decider, executors |
 | `src/sandbox/` | the sandbox module (issues #603, #708, "Sandbox boxes the hopper launches"): the one owner of the life of the sandbox boxes the hopper starts — the launch (`launch.ts`), the launch parameters a template allows (`params.ts`, pure), the reconcile pass from the sandbox records (`reconcile.ts`), the view and the loop (`service.ts`), the hopper's address for a box beside it (`address.ts`); the sandbox flags, built once for every way a box is made (`flags.ts`); the `ContainerRuntime` port's adapters — rootless Podman's libpod API (`podman.ts`) and the Docker Engine API (`docker.ts`), each over its socket (`socket-http.ts`), and a client target's own runtime through its client (`remote.ts`) — and the one place a box is placed and its runtime selected (`runtime.ts`). The records through the `SandboxRepository` port; the machines, the join codes and the users through the composition root | engine, http, store, plugins, decider, executors, vault |
-| `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
+| `src/stack-resources/` | stack resources (issue #947, "Stack resources"): the container meter (`containers.ts`: every container of the hopper's compose project and each of its sandbox boxes, read through the runtime socket's Docker-compatible API), the remote box meter (`remote.ts`: the boxes on each client target, the container meter through that machine's remote runtime), the OpenFGA meter (`openfga.ts`: OpenFGA's checks from its own metrics endpoint), the Solr meter (`solr.ts`: the search index's queries and index from Solr's own metrics API), the one read that joins it with the store's Postgres reading (`index.ts`, `meterFor`), and the stack recorder (`history.ts`, "Stack resources over time", over the `StackHistoryRepository` port) | engine, http, store, plugins |
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update script and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-script.ts`, `update-skill.ts`, issue #697) and the stack against it (`drift.ts`, `stack-probe.ts`), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
 | `src/http/` | Fastify routes, SSE, static UI; whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); remote access — the tunnel's settings, its authtoken in the instance's vault, its status and the tunnel service's ask (`remote-access.ts`, `ui/remote-access.ts`, issue #880); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
@@ -15785,7 +15785,8 @@ counts since its reset. A line reader of its own, not a library: it reads two co
 has had no release since 2019. It waits 2 seconds; no OpenFGA, an error status or no answer is the part's `problem`.
 
 **The read** (`GET /api/resources`, `StackResources`): `containers` (the readings, or `problem`: no socket, not reached),
-`postgres` (the reading, or `problem`), `openfga` (the reading, or `problem`), `at`. Read when asked, nothing kept, `no-store`. An instance read
+`postgres` (the reading, or `problem`), `openfga` (the reading, or `problem`), `solr` (the reading, or `problem`, each with
+`pending` while search is set up; part 5 below), `at`. Read when asked, nothing kept, `no-store`. An instance read
 (`assertInstanceRead`): the hopper's admin, or loopback without a session. A part that fails says why and the rest is
 read.
 
@@ -15849,9 +15850,33 @@ runtime there, no answer). The stack recorder keeps their CPU and memory as for 
 page they show under *Sandbox boxes*, after the boxes beside the hopper, each with *on <machine>*; a machine that cannot be
 read says why there.
 
-**Not built yet** (the rest of the issue, its next part): Solr's query latency, index size and documents waiting (issue
-#945, not in the stack yet). A container target is not a box and has none: it is a container a person runs, reached only
-through the docker socket proxy, which lets through ping, inspect and exec, never stats.
+A container target is not a box and has none: it is a container a person runs, reached only through the docker socket
+proxy, which lets through ping, inspect and exec, never stats. So the stack resources do not read it.
+
+### Solr (part 5 of the issue)
+
+Solr is the search index's (issue #945, "Search"). The **Solr meter** (`src/stack-resources/solr.ts`) reads it for the stack
+resources, from Solr's own metrics API: `GET /solr/admin/metrics` on the Solr of the core `HOPPER_SOLR_URL` names (compose:
+`http://solr:8983/solr/hopper`, so `http://solr:8983/solr/admin/metrics`), JSON, four `key`s of the core's registry
+(`solr.core.<core>:…`). No setting of its own, and no credential: the hopper reaches Solr on the `search` network it shares
+with it alone.
+
+- **Query latency**: `QUERY./select.requestTimes`, the core's `/select` handler: every search, type-ahead and count the
+  hopper sends. `count` is the queries since the core was loaded; `mean_ms` and `p95_ms` are Solr's own timer, whose
+  reservoir weighs the last minutes most, so they say how Solr answers now, not since it started. No time before the first
+  query.
+- **Failed queries**: `QUERY./select.errors` `count`, since the core was loaded.
+- **The index**: `SEARCHER.searcher.numDocs` (documents a search sees now) and `INDEX.sizeInBytes` (the index on disk).
+- **Documents waiting to be indexed** (`pending`): not Solr's. They are every user's pending index updates (`search_pending`,
+  and the jobs an event named since the last pass), the sum of each user's `search.status().pending`. They grow while Solr is
+  down, so they are given with Solr's `problem` too. With no search set up (no `HOPPER_SOLR_URL`), Solr's part is only the
+  `problem`, and nothing waits.
+
+A JSON API, so no parser: the metrics API has given these names since Solr 7, and compose runs 9.11 (checked live). It waits
+2 seconds; an error status, no answer, or a core Solr does not hold is the part's `problem`. Latency, sizes and counts are not
+shares, so the stack recorder keeps none of them: the page reads them now. On the Resources page, the *Solr* panel: the mean
+and 95th percentile query time over the queries, the failed queries and their share, the documents and the index size, and
+the documents waiting; Solr not read says why, above what waits.
 
 Tests: `test/adapters/container-meter.test.ts` (the project and the boxes chosen, CPU between reads and the runtime's own,
 memory less the cache against its limit, network and disk summed, the disk use's sizes and its failure, a stopped
@@ -15859,9 +15884,11 @@ container, a hopper not in a container, a runtime that does not answer), `test/a
 mean time from OpenFGA v1.22.0's text, other methods and the health check left out, no check yet, the metrics URL, an error
 status, no answer), `test/integration/stack-resources.test.ts` (the
 meter's readings and the real Postgres's, no socket, a meter that throws, no pg_stat_statements, OpenFGA's reading, no
-OpenFGA, an OpenFGA meter that fails),
+OpenFGA, an OpenFGA meter that fails, Solr's reading with the documents waiting, no Solr, Solr down with a document waiting),
+`test/adapters/solr-meter.test.ts` (a real Solr after documents are written and searched; the numbers from Solr 9.11's
+answer, no query yet, the metrics URL, a core Solr does not hold, an error status, no answer),
 `test/integration/instance-admin.test.ts` (an instance read), `test/scripts/compose.test.ts` (pg_stat_statements loaded),
-`test/ui/resources-view.test.ts` (the rows, Postgres, what cannot be read, the graph's lines),
+`test/ui/resources-view.test.ts` (the rows, Postgres, Solr, what cannot be read, the graph's lines),
 `test/integration/stack-history.test.ts` (a record's shares, OpenFGA's failed checks between records and after a restart,
 a box on a client target, the peak per step and the gaps, the retention), `test/ui/stack-history.test.ts` (the lines),
 `test/adapters/remote-box-meter.test.ts` (through the real client: only this hopper's boxes there, by machine, CPU between
@@ -15941,8 +15968,8 @@ updates wait in `search_pending` until Solr takes them.
 
 **Not built yet** (the next parts of the issue): the other documents — artifacts (metadata, and text where it is cheap:
 markdown, slide text), linked issues and pull requests, intake items, infra plan summaries — and the `type` values for
-them; the UI's search box and results view; `hopper search` in the operator CLI; the CoS's use of the API; Solr's
-readings on the Resources page (issue #947).
+them; the UI's search box and results view; `hopper search` in the operator CLI; the CoS's use of the API. Solr's readings
+are on the Resources page ("Stack resources", Solr, issue #947).
 
 Tests: `test/search/document.test.ts` (the fields, masked secrets, a direct job private), `test/adapters/solr-index.test.ts`
 (a real Solr: the schema put in twice, an unknown field refused, words, highlights escaped, facets, every filter,
