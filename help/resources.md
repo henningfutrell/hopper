@@ -42,6 +42,19 @@ The hopper reads OpenFGA's own metrics, on port 2112 of the OpenFGA host:
 
 Both count since OpenFGA started. Without OpenFGA, or when its metrics do not answer, the page says why.
 
+## Stack resources over time
+
+The graph at the bottom of the page shows each part's use over the last day, 3 days, week or 30 days. The hopper keeps a sample every minute, and keeps samples for 30 days. Each line is a share:
+
+| Line | What it is |
+|---|---|
+| CPU | A container's CPU, of its CPU limit. With no limit, of the CPU cores it sees. |
+| memory | A container's memory, of its memory limit. With no limit, of the computer's memory. |
+| connections | Postgres's connections, of the most it allows. |
+| failed checks | The share of OpenFGA's checks that failed in that minute. |
+
+Each part has its own colour. Each line shows the highest value in its step. A gap means that the hopper could not read that part then, or the container did not run. The lines of sandbox boxes are hidden at first: click one in the legend to show it. Zoom as in the usage graph.
+
 ## Through the API
 
-`GET /api/resources` gives the same readings as JSON. Each container has its service as its label. See the API reference at `/docs/`.
+`GET /api/resources` gives the same readings as JSON. Each container has its service as its label. `GET /api/resources/history` gives the graph. See the API reference at `/docs/`.

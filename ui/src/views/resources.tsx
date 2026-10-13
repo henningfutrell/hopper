@@ -1,17 +1,20 @@
 // Resources (issue #947, design.md "Stack resources"): what every container of the hopper's stack and each of its sandbox
 // boxes uses now — by its service: CPU, memory against its limit, network, disk, restarts and uptime —, and what its
 // Postgres and OpenFGA do. Read from GET /api/resources when the page opens and every READ_EVERY_MS while it is shown; a part
-// that cannot be read says why. The machines' own resources over time are on Usage and Machines (issue #560).
+// that cannot be read says why. Below, the stack's resources over time, from GET /api/resources/history: the shares the
+// stack recorder keeps each minute. The machines' own resources over time are on Usage and Machines (issue #560).
 import { AlertTriangle, Boxes, Container, Database, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Empty, Panel } from '@/components/panel';
+import { UsageGraphCard } from '@/components/usage-graph-card';
 import { Button } from '@/components/ui/button';
 import { get } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import {
   containerTone, cpuText, diskText, memoryFrac, memoryText, networkText, openFgaLines, postgresLines, restartsText, uptimeText, volumesText,
 } from '@/model/stack-resources';
-import type { ContainerReading, StackResources } from '@/model/wire';
+import { stackLines } from '@/model/stack-history';
+import type { ContainerReading, StackHistory, StackResources } from '@/model/wire';
 import { useServerNow } from '@/store/selectors';
 
 /** CPU is the use since the read before: a read this often keeps it current. */
@@ -34,6 +37,9 @@ function useResources(): [Load, () => void] {
   }, [round]);
   return [state, () => { setState({ kind: 'loading' }); setRound((n) => n + 1); }];
 }
+
+const linesOfStack = (h: StackHistory) => stackLines(h.series);
+const NO_SAMPLES = 'No stack samples in this range yet. The hopper keeps one of each part every minute from now on; a part it cannot read leaves a gap.';
 
 const TONE = { ok: 'text-ok', warn: 'text-warn', bad: 'text-bad' } as const;
 
@@ -130,6 +136,9 @@ export function Resources() {
       <Panel title="OpenFGA" icon={ShieldCheck}>
         {'problem' in openfga ? <Problem>{openfga.problem}</Problem> : <Lines slot="openfga-reading" lines={openFgaLines(openfga)} />}
       </Panel>
+      <UsageGraphCard<StackHistory> path="/api/resources/history" linesOf={linesOfStack} title="Stack resources over time" what="stack history"
+        recordedBy={null} empty={NO_SAMPLES} />
+      <p className="text-xs text-muted-foreground">Each line is a share: a container&apos;s CPU of its CPU limit, else of the cores it sees; its memory of its limit, else of the computer&apos;s; Postgres&apos;s connections of the most it allows; OpenFGA&apos;s failed checks of its checks since the minute before. Sandbox boxes&apos; lines are hidden until you show them.</p>
     </div>
   );
 }

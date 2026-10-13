@@ -21,6 +21,7 @@ import { openUserStore, schemaUrl } from './user-store.ts';
 import { createIdentityLinks, createUserRepository } from './users.ts';
 import { createVaultRepository } from './vault.ts';
 import { createDatabaseStats } from './database-stats.ts';
+import { createStackHistoryRepository } from './stack-history.ts';
 
 export type { UserStore, InstanceStore } from '../domain/ports.ts';
 
@@ -59,6 +60,7 @@ export function openInstanceStore(o: { url: string; clock: Clock; idGen?: IdGen;
     access: createAccessRepository(ctx),
     vault: createVaultRepository(ctx),
     databaseStats: createDatabaseStats(db),
+    stackHistory: createStackHistoryRepository(ctx),
     userStore,
     keptSecrets: () => keptSecrets(db, schemas()),
     // One transaction over every schema (issue #659): the user stores' own connections take no part in it.

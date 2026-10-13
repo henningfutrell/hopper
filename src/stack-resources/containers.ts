@@ -153,6 +153,10 @@ export function createContainerMeter(o: {
         if (cpu !== undefined) reading.cpuCores = cpu;
         const mem = memUsed(stats.memory_stats);
         if (mem !== undefined) reading.memUsedBytes = mem;
+        const max = stats.memory_stats?.limit;
+        if (count(max) && max > 0) reading.memMaxBytes = max;
+        const cores = stats.cpu_stats?.online_cpus;
+        if (count(cores) && cores > 0) reading.cores = cores;
         const nets = Object.values(stats.networks ?? {});
         const rx = sum(nets.map((n) => n.rx_bytes));
         const tx = sum(nets.map((n) => n.tx_bytes));

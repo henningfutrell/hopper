@@ -4,10 +4,13 @@
 import type { Clock } from '../domain/ports.ts';
 import type { RuntimeKind } from '../domain/sandboxes.ts';
 import type { ContainerMeter, DatabaseStats, OpenFgaMeter, StackResources } from '../domain/stack-resources.ts';
+import type { StackHistoryRepository } from '../domain/stack-resources.ts';
 import { createContainerMeter } from './containers.ts';
+import { createStackRecorder, type StackRecorder } from './history.ts';
 
 export { createContainerMeter } from './containers.ts';
 export { createOpenFgaMeter, openFgaMetricsUrl } from './openfga.ts';
+export { createStackRecorder, samplesOf, type StackRecorder } from './history.ts';
 
 export const NO_METER = 'the hopper is given no container runtime socket (HOPPER_PODMAN_SOCKET, or HOPPER_DOCKER_SOCKET): it cannot read its containers. docs/deploy.md "Sandbox boxes the hopper starts" gives it one';
 
@@ -45,4 +48,10 @@ export function createStackResources(o: { meter: ContainerMeter | undefined; ope
       return { at, containers: await containers, postgres, openfga: await openfga };
     },
   };
+}
+
+/** The stack resources and the stack recorder that keeps them over time (issue #947), as the daemon makes them. */
+export function createStack(o: Parameters<typeof createStackResources>[0] & { history: StackHistoryRepository; logger: { warn(line: string): void } }): { resources: StackResourcesReader; recorder: StackRecorder } {
+  const resources = createStackResources(o);
+  return { resources, recorder: createStackRecorder({ read: () => resources.read(), history: o.history, clock: o.clock, logger: o.logger }) };
 }

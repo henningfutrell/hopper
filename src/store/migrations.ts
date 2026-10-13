@@ -207,6 +207,9 @@ const MIGRATIONS: readonly Migration[] = [
   // kept for reuse detection), and the grant each API token was refreshed from. Tables and a column only: the build
   // before never reads them, and reads such an API token as one of its own until it ends (15 minutes at most).
   'CREATE TABLE IF NOT EXISTS api_grants (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, body TEXT NOT NULL); CREATE TABLE IF NOT EXISTS api_grant_tokens (token_hash TEXT PRIMARY KEY, grant_id TEXT NOT NULL, issued_at TEXT NOT NULL, rotated_at TEXT); CREATE INDEX IF NOT EXISTS api_grant_tokens_grant ON api_grant_tokens (grant_id); ALTER TABLE ui_sessions ADD COLUMN grant_id TEXT;',
+  // 38: the stack's resources over time (issue #947): one stack sample per service, metric and time. A table only: the
+  // build before never reads it.
+  'CREATE TABLE IF NOT EXISTS stack_samples (at TIMESTAMPTZ NOT NULL, service TEXT NOT NULL, metric TEXT NOT NULL, grp TEXT NOT NULL, value DOUBLE PRECISION NOT NULL, PRIMARY KEY (service, metric, at)); CREATE INDEX IF NOT EXISTS stack_samples_at ON stack_samples (at);',
 ];
 
 /** Each recorded access decision's `job` becomes its `requester`, of kind job; the rest of the record is kept. */
@@ -417,10 +420,7 @@ function step(db: Db, m: Migration, from: number, record: () => void): void {
 export function migrateInstance(db: Db, to = INSTANCE_SCHEMA_VERSION): void {
   db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
   const version = (): number => Number(db.get('SELECT version FROM schema_version')?.version ?? 0);
-  const record = (v: number) => () => {
-    db.run('DELETE FROM schema_version');
-    db.run('INSERT INTO schema_version (version) VALUES (?)', v);
-  };
+  const record = (v: number) => () => { db.run('DELETE FROM schema_version'); db.run('INSERT INTO schema_version (version) VALUES (?)', v); };
   const from = version();
   if (from > INSTANCE_SCHEMA_VERSION) throw new Error(newerStore(`the database's instance schema is at version ${from}`, INSTANCE_SCHEMA_VERSION));
   if (from === 0) step(db, BASE, from, record(BASE_VERSION));

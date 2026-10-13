@@ -16,13 +16,18 @@ import { MONDAY, usageHistoryQuery } from './usage-history.ts';
 
 const machineParams = z.object({ id: z.string().min(1).max(200) });
 
-export function machineHistory(t: TenantParts, query: unknown, now: Date, machineId?: string): MachineHistory {
+/** A resource graph's range (the machines' and the stack's, issue #947): the query's, else the last day, at the resource step for it. */
+export function resourceGraphRange(query: unknown, now: Date): { view: UsageGraphView; from: Date; to: Date; stepMs: number; originMs: number } {
   const q = parseWith(usageHistoryQuery, query);
   const view: UsageGraphView = q.range ? { range: { preset: q.range } } : q.from && q.to ? { range: { from: q.from, to: q.to } } : DEFAULT_MACHINE_GRAPH_VIEW;
   const to = 'preset' in view.range ? now : new Date(view.range.to);
   const from = 'preset' in view.range ? new Date(now.getTime() - PRESET_MS[view.range.preset]) : new Date(view.range.from);
-  const stepMs = resourceStepMs(to.getTime() - from.getTime());
-  const h = { from, to, stepMs, originMs: MONDAY - q.tz * 60_000 };
+  return { view, from, to, stepMs: resourceStepMs(to.getTime() - from.getTime()), originMs: MONDAY - q.tz * 60_000 };
+}
+
+export function machineHistory(t: TenantParts, query: unknown, now: Date, machineId?: string): MachineHistory {
+  const { view, ...h } = resourceGraphRange(query, now);
+  const { from, to, stepMs } = h;
   return {
     view, from: from.toISOString(), to: to.toISOString(), stepMs,
     retentionDays: t.store.settings.getHistoryRetentionDays() ?? DEFAULT_HISTORY_RETENTION_DAYS,
