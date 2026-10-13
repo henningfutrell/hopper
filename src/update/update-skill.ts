@@ -25,6 +25,10 @@ Do them in order. Do not do the update another way.
 - **The master key is required.** Give \`HOPPER_MASTER_KEY\` at launch, in the environment of the compose command:
   \`${podman.give}\`. The last command stops before compose runs when it is not given: a hopper recreated without it
   starts limited. When the person does not have the key, stop and ask them: the UI shows it until it is saved.
+- **An update with no person** (issue #1013): when \`HOPPER_MASTER_KEY\` is already in the environment of the compose
+  command (a secret manager gave it, for example \`export HOPPER_MASTER_KEY="$(pass show hopper/master-key)"\`),
+  skip the step that gives it. No other step waits for a person. The update reads the key from nowhere else:
+  never from the running container, and never from a file (issue #970).
 - **Never show the master key.** Do not print it or write it to a file.
 
 ## Steps
