@@ -1,6 +1,6 @@
 // The issue graph (issue #437, design.md "The issue graph"): every issue a GitHub source sees, kept with its repository,
 // that repository's owner, the Projects it is in and the issues and pull requests linked to it, as nodes and edges in the
-// user's store. Store only: nothing reads it yet. Pure: what one read of an issue says becomes nodes and edges here.
+// user's store. Read by the job graph and by search (issue #945). Pure: what one read of an issue says becomes nodes and edges here.
 
 /** An owner (a GitHub organization or user), a repository, an issue, a pull request, or a Project (v2). */
 export type GraphNodeKind = 'owner' | 'repo' | 'issue' | 'pull_request' | 'project';
@@ -56,6 +56,8 @@ export interface IssueGraphRepository {
   nodes(kind?: GraphNodeKind): GraphNode[];
   /** Every edge some read gives now, once each. */
   edges(): GraphEdge[];
+  /** The edges from or to one node, once each (search, issue #945). */
+  edgesOf(id: string): GraphEdge[];
 }
 
 export const ownerId = (login: string): string => `owner:${login.toLowerCase()}`;

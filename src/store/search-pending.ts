@@ -1,5 +1,5 @@
 // Pending index updates (issue #945, tenant migration 50): what search writes to Solr again — a key per document
-// (`job:<id>`, `artifact:<id>`, `infra-plan:<id>`), the version it was marked at, and when. Postgres is the truth: the
+// (`job:<id>`, `artifact:<id>`, `infra-plan:<id>`, `issue:<url>`, `pull-request:<url>`), the version it was marked at, and when. Postgres is the truth: the
 // index is rebuilt from it, so a mark is all that waits, never the document itself.
 import type { SearchPendingRepository, SearchType } from '../domain/search.ts';
 import type { StoreContext } from './context.ts';
@@ -11,8 +11,11 @@ export const SEARCH_PENDING_TABLE = `
     marked_at TEXT NOT NULL
   )`;
 
-/** Each search type and the table its documents are built from: what the backfill marks. */
-const TABLES: readonly [SearchType, string][] = [['job', 'jobs'], ['artifact', 'artifacts'], ['infra-plan', 'infra_plans']];
+/** Each search type and the rows its documents are built from: what the backfill marks. */
+const TABLES: readonly [SearchType, string][] = [
+  ['job', 'jobs'], ['artifact', 'artifacts'], ['infra-plan', 'infra_plans'],
+  ['issue', "graph_nodes WHERE kind = 'issue'"], ['pull-request', "graph_nodes WHERE kind = 'pull_request'"],
+];
 
 export function createSearchPendingRepository(c: StoreContext): SearchPendingRepository {
   const mark = (key: string, at: string): void => {

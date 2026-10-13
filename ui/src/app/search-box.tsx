@@ -5,7 +5,7 @@
 import { Search } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { get } from '@/lib/api';
-import { emptySearch, hitHref, searchHash, suggestPath } from '@/model/search';
+import { emptySearch, hitHref, linksOut, searchHash, suggestPath } from '@/model/search';
 import type { SuggestAnswer } from '@/model/wire';
 
 const PAUSE_MS = 150;
@@ -40,7 +40,7 @@ export function SearchBox() {
         <ul className="absolute top-full right-0 left-0 z-40 mt-1 overflow-hidden rounded-lg border bg-popover py-1 text-sm shadow-md">
           {suggestions.map((s) => (
             <li key={`${s.type}/${s.ref}`}>
-              <a data-slot="search-suggestion" href={hitHref(s)} onClick={close} className="block truncate px-3 py-1.5 hover:bg-muted/60">{s.title}</a>
+              <a data-slot="search-suggestion" href={hitHref(s)} {...(linksOut(s) ? { target: '_blank', rel: 'noopener noreferrer' } : {})} onClick={close} className="block truncate px-3 py-1.5 hover:bg-muted/60">{s.title}</a>
             </li>
           ))}
         </ul>

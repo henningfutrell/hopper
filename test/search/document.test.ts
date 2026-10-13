@@ -1,8 +1,10 @@
 // Issue #945: a job as a search document. Its words, status, labels, requester, machine and lane, its result, its
 // questions with their answers, why it failed and the assessor's verdict; a direct job's is private; and no secret is
-// ever in it.
+// ever in it. Part 3: an artifact, an infra plan. Part 4: an issue the issue graph keeps, with its intake outcome, and a
+// pull request linked to one.
 import { describe, expect, it } from 'vitest';
-import { artifactDocument, jobDocument, planDocument } from '../../src/search/document.ts';
+import { artifactDocument, issueDocument, jobDocument, planDocument, pullRequestDocument } from '../../src/search/document.ts';
+import { placeGraph, type GraphNode } from '../../src/domain/issue-graph.ts';
 import type { Artifact } from '../../src/domain/artifacts.ts';
 import type { InfraPlan } from '../../src/domain/infra-plans.ts';
 import type { Job } from '../../src/domain/types.ts';
@@ -123,5 +125,49 @@ describe('an infra plan as a search document (issue #945, part 3)', () => {
   it('says approved once approved, and failed when a check failed', () => {
     expect(planDocument({ scope, plan: plan(), approval: { plan: 'p1', by: 'octo', at: '2026-10-01T10:30:00.000Z' } })).toMatchObject({ status: 'approved', updated: '2026-10-01T10:30:00.000Z' });
     expect(planDocument({ scope, plan: plan({ summary: { ...plan().summary!, failed: true } }) }).status).toBe('failed');
+  });
+});
+
+describe('an issue and a pull request as search documents (issue #945, part 4)', () => {
+  const ISSUE = 'https://github.com/o/r/issues/7', PR = 'https://github.com/o/r/pull/9', PARENT = 'https://github.com/o/r/issues/2';
+  const graph = placeGraph({
+    issue: { repo: 'o/r', number: 7, url: ISSUE, title: 'Retry the flaky upload', state: 'OPEN', updatedAt: '2026-10-02T09:00:00.000Z' },
+    owner: { login: 'o', type: 'User' },
+    projects: [{ owner: 'o', number: 1, url: 'https://github.com/users/o/projects/1', title: 'Roadmap' }],
+    closedBy: [{ kind: 'pull_request', repo: 'o/r', number: 9, url: PR, state: 'MERGED' }],
+    references: [], parent: { kind: 'issue', repo: 'o/r', number: 2, url: PARENT, state: 'OPEN' }, subIssues: [],
+  });
+  const nodes = new Map(graph.nodes.map((n) => [n.id, n]));
+  const node = (id: string): GraphNode => nodes.get(id)!;
+  const from = { lookup: (id: string) => nodes.get(id), edges: graph.edges, at: '2026-10-03T00:00:00.000Z' };
+  const snapshot = { key: ISSUE, hash: 'h', recordedAt: 'x', reason: 'intake' as const, title: 'Retry the flaky upload', body: `The upload fails at night.\ntoken ${TOKEN}`, comments: [] };
+
+  it('holds an issue\'s title, state, repository, approved text, links, job and time', () => {
+    const d = issueDocument({ scope, node: node(ISSUE), ...from, snapshot, job: job({ id: 'j7', source: { ...job().source!, key: ISSUE } }) });
+    expect(d).toMatchObject({
+      id: `inst/u1/issue/${ISSUE}`, type: 'issue', ref: ISSUE, private: false, title: 'Retry the flaky upload', status: 'open', repo: 'o/r',
+      job: 'j7', labels: ['hopper', 'bug'], requester: 'octo', created: '2026-10-02T09:00:00.000Z', updated: '2026-10-02T09:00:00.000Z',
+    });
+    expect(d.brief).toContain('The upload fails at night.');
+    expect(d.links).toEqual(expect.arrayContaining(['closed by o/r#9', 'sub-issue of o/r#2', 'in project Roadmap']));
+    expect(JSON.stringify(d)).not.toContain(TOKEN);
+  });
+
+  it('says what intake did with an issue a source lists: taken, or the reason it was not', () => {
+    const notTaken = issueDocument({ scope, node: node(ISSUE), ...from, intake: { source: 'gh', outcome: { key: ISSUE, title: 't', reason: 'not assigned to you', group: 'not-assigned' } } });
+    expect(notTaken).toMatchObject({ source: 'gh', intake: 'not taken: not assigned to you' });
+    expect(notTaken.job).toBeUndefined();
+    expect(issueDocument({ scope, node: node(ISSUE), ...from, intake: { source: 'gh', outcome: { key: ISSUE, title: 't', jobId: 'j7', jobStatus: 'running' } } }).intake).toBe('taken: job running');
+  });
+
+  it('names a linked issue it has not read by its repository and number, at the time the caller gives', () => {
+    const d = issueDocument({ scope, node: node(PARENT), ...from });
+    expect(d).toMatchObject({ title: 'o/r#2', status: 'open', updated: '2026-10-03T00:00:00.000Z', links: ['sub-issue o/r#7: Retry the flaky upload'] });
+  });
+
+  it('holds a pull request\'s repository and number, its state, the issues it closes, and their job', () => {
+    const d = pullRequestDocument({ scope, node: node(PR), ...from, job: job({ id: 'j7' }) });
+    expect(d).toMatchObject({ id: `inst/u1/pull-request/${PR}`, type: 'pull-request', ref: PR, private: false, title: 'o/r#9', status: 'merged', repo: 'o/r', job: 'j7', updated: '2026-10-03T00:00:00.000Z' });
+    expect(d.links).toEqual(['closes o/r#7: Retry the flaky upload']);
   });
 });

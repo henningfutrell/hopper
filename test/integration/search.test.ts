@@ -12,12 +12,20 @@
 //   Scenario: the operator CLI searches, suggests, reads the index's state and rebuilds it, on the same routes (part 2)
 //   Scenario: an artifact is found by its title and its text, an infra plan by its summary; each links to its view (part 3)
 //   Scenario: a removed artifact leaves the index; Reindex writes the artifacts and plans again too (part 3)
+//   Scenario: an issue the issue graph keeps and a pull request linked to it are found by their words, an issue with what
+//     intake did with it; each links to its job's view, else to itself (part 4)
+//   Scenario: an agent with an API token searches on the same routes, as the CoS does (part 4)
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
 import type { SearchAnswer, SearchIndex, SearchStatus, SuggestAnswer } from '../../src/domain/search.ts';
 import type { InfraPlan } from '../../src/domain/infra-plans.ts';
 import { createSolrIndex } from '../../src/search/solr.ts';
+import type { IntakeOutcome } from '../../src/domain/intake.ts';
+import type { JobSource } from '../../src/domain/ports.ts';
+import { placeGraph } from '../../src/domain/issue-graph.ts';
+import { createManualSource } from '../support/manual-source.ts';
+import { rawRequest } from '../support/http.ts';
 import { createFakeAuthorizationServer, type FakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { startTestSolr, type TestSolr } from '../support/solr.ts';
@@ -48,11 +56,11 @@ function switchable(inner: SearchIndex): SearchIndex & { down: boolean } {
   });
 }
 
-async function start(o: { index?: SearchIndex | null; server?: FakeAuthorizationServer; db?: ReturnType<typeof tempDbPath> } = {}) {
+async function start(o: { index?: SearchIndex | null; server?: FakeAuthorizationServer; db?: ReturnType<typeof tempDbPath>; sources?: JobSource[] } = {}) {
   const db = o.db ?? tempDbPath();
   if (!o.db) cleanups.push(db.cleanup);
   const index = o.index === undefined ? switchable(createSolrIndex({ url: solr.url })) : o.index;
-  const app = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, seams: { authorizationServer: o.server ?? createFakeAuthorizationServer(), searchIndex: index } });
+  const app = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, seams: { authorizationServer: o.server ?? createFakeAuthorizationServer(), searchIndex: index, ...(o.sources ? { sources: o.sources } : {}) } });
   apps.push(app);
   return { app, db, index };
 }
@@ -234,5 +242,57 @@ describe('Search (issue #945)', () => {
     rt.artifacts.remove(put.id, 'octo');
     await found(app, 'q=logarithmic', [], 'the removed artifact gone');
   });
-});
 
+  it('finds an issue the issue graph keeps and a pull request linked to it, with what intake did, each linked to its job or itself (part 4)', async () => {
+    const ISSUE = 'https://github.com/o/r/issues/7', OTHER = 'https://github.com/o/r/issues/8', PR = 'https://github.com/o/r/pull/9';
+    const outcomes: IntakeOutcome[] = [{ key: OTHER, title: 'Rotate the backup keys', repo: 'o/r', reason: 'not assigned to you', group: 'not-assigned', action: 'assign' }];
+    const gh = Object.assign(createManualSource('gh'), { intake: () => outcomes });
+    const { app } = await start({ sources: [gh] });
+    await app.user(ADMIN_ID).sources.syncNow('gh');
+    const rt = app.user(ADMIN_ID);
+    const at = new Date().toISOString();
+    rt.store.issueGraph.record(ISSUE, placeGraph({
+      issue: { repo: 'o/r', number: 7, url: ISSUE, title: 'Retry the flaky upload', state: 'OPEN', updatedAt: at }, owner: { login: 'o' }, projects: [],
+      closedBy: [{ kind: 'pull_request', repo: 'o/r', number: 9, url: PR, state: 'MERGED' }], references: [], subIssues: [],
+    }), at);
+    rt.store.issueGraph.record(OTHER, placeGraph({
+      issue: { repo: 'o/r', number: 8, url: OTHER, title: 'Rotate the backup keys', state: 'OPEN', updatedAt: at }, owner: { login: 'o' }, projects: [],
+      closedBy: [], references: [], subIssues: [],
+    }), at);
+    rt.search.reindex();
+    await found(app, 'q=flaky&type=issue', [ISSUE], 'the issue before its job');
+    // Its job's events write the issue again, and the pull request that closes it: each now names the job.
+    const job = await app.pull({ op: 'echo', message: 'done' }, { key: ISSUE, title: 'Retry the flaky upload', repo: 'o/r' });
+    await app.waitForStatus(job.id, 'finished');
+    await waitFor(async () => (await search(app, 'q=flaky&type=issue')).hits[0]?.job === job.id || undefined, { timeoutMs: 15_000, what: 'the issue written again with its job' });
+
+    const issue = await found(app, 'q=flaky&type=issue', [ISSUE], 'the issue by its title');
+    expect(issue.hits[0]).toMatchObject({ type: 'issue', title: 'Retry the flaky upload', status: 'open', repo: 'o/r', job: job.id, url: expect.stringContaining(`#job/${job.id}`) });
+    const pr = await found(app, 'q=flaky&type=pull-request', [PR], 'the pull request by the issue it closes');
+    expect(pr.hits[0]).toMatchObject({ title: 'o/r#9', status: 'merged', job: job.id, url: expect.stringContaining(`#job/${job.id}`) });
+    expect(pr.hits[0]!.highlights.links?.[0]).toContain('<mark>flaky</mark>');
+    expect((await found(app, 'q=flaky', [job.id, ISSUE, PR])).facets.type).toEqual({ job: 1, issue: 1, 'pull-request': 1 });
+
+    const other = await found(app, 'q=assigned', [OTHER], 'the intake item by why it was not taken');
+    expect(other.hits[0]).toMatchObject({ type: 'issue', title: 'Rotate the backup keys', url: OTHER });
+    expect(other.hits[0]!.highlights.intake?.[0]).toContain('<mark>assigned</mark>');
+    outcomes[0] = { key: OTHER, title: 'Rotate the backup keys', repo: 'o/r', reason: 'on the backburner', group: 'backburner', action: 'unbackburner' };
+    rt.store.events.append({ type: 'source.request_opened', data: { source: 'gh', key: OTHER, hash: 'a'.repeat(64), author: 'someone', why: ['not a trusted actor'] } });
+    await found(app, 'q=backburner', [OTHER], 'the intake item written again after an intake event');
+    expect((await app.api<SuggestAnswer>('GET', '/api/search/suggest?q=rota')).body.suggestions).toEqual([{ type: 'issue', ref: OTHER, title: 'Rotate the backup keys', url: OTHER }]);
+  });
+
+  it('answers an agent with an API token on the same routes, as it answers the UI and the CLI (part 4: the CoS)', async () => {
+    const { app } = await start();
+    const job = await app.pull({ op: 'echo', message: 'the certificate was renewed' }, { title: 'Renew the certificate' });
+    await app.waitForStatus(job.id, 'finished');
+    await found(app, 'q=certificate', [job.id]);
+    const minted = await app.ui<{ token: string }>('/ui/api/api-tokens', { action: 'mint', label: 'cos', scopes: ['*:read'] }, { token: await app.login() });
+    expect(minted.status).toBe(200);
+    const r = await rawRequest(app.url, { path: '/api/search?q=certificate', headers: { authorization: `Bearer ${minted.body.token}` } });
+    expect(r.status).toBe(200);
+    expect((JSON.parse(r.text) as SearchAnswer).hits.map((h) => h.ref)).toEqual([job.id]);
+    const s = await rawRequest(app.url, { path: '/api/search/suggest?q=renew', headers: { authorization: `Bearer ${minted.body.token}` } });
+    expect((JSON.parse(s.text) as SuggestAnswer).suggestions.map((x) => x.ref)).toEqual([job.id]);
+  });
+});

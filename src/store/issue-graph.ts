@@ -16,6 +16,7 @@ export const ISSUE_GRAPH_TABLES = `
   CREATE INDEX graph_edges_from ON graph_edges (from_id);
   CREATE INDEX graph_edges_to ON graph_edges (to_id)`;
 
+const edgeOf = (r: Record<string, unknown>): GraphEdge => ({ from: String(r.from_id), kind: String(r.kind) as GraphEdgeKind, to: String(r.to_id) });
 const nodeOf = (r: Record<string, unknown>): GraphNode => ({ id: String(r.id), kind: String(r.kind) as GraphNodeKind, attrs: parse<GraphNode['attrs']>(r.attrs) });
 
 export function createIssueGraphRepository(c: StoreContext): IssueGraphRepository {
@@ -47,8 +48,10 @@ export function createIssueGraphRepository(c: StoreContext): IssueGraphRepositor
       return rows.map(nodeOf);
     },
     edges() {
-      return c.db.all('SELECT DISTINCT from_id, kind, to_id FROM graph_edges ORDER BY from_id, kind, to_id')
-        .map((r): GraphEdge => ({ from: String(r.from_id), kind: String(r.kind) as GraphEdgeKind, to: String(r.to_id) }));
+      return c.db.all('SELECT DISTINCT from_id, kind, to_id FROM graph_edges ORDER BY from_id, kind, to_id').map(edgeOf);
+    },
+    edgesOf(id) {
+      return c.db.all('SELECT DISTINCT from_id, kind, to_id FROM graph_edges WHERE from_id = ? OR to_id = ? ORDER BY from_id, kind, to_id', id, id).map(edgeOf);
     },
   };
 }
