@@ -1,5 +1,5 @@
 // The shared rate limiter in the UI (issue #436), pure: the summary of the settings, the change a save sends, one line
-// per rate-limit bucket, and the cache's hit rate.
+// per rate-limit bucket, and the cache's hit rate. The intake reserve is issue #983's.
 import type { RateBucket, RateLimiterSettings, RateLimiterView } from './wire.ts';
 
 /** Each setting's label and range, as the daemon allows it. */
@@ -7,6 +7,7 @@ const FIELDS: Record<keyof RateLimiterSettings, { label: string; min: number; ma
   slowBelowPercent: { label: 'Slow down below', min: 0, max: 100 },
   reserve: { label: 'Reserve', min: 0, max: 5000 },
   batchSize: { label: 'Batch size', min: 1, max: 100 },
+  intakeReserve: { label: 'Kept for job work', min: 0, max: 5000 },
 };
 
 export type RateLimiterDraft = Record<keyof RateLimiterSettings, string>;
@@ -15,8 +16,9 @@ export type RateLimiterDraft = Record<keyof RateLimiterSettings, string>;
 export function rateLimiterSummary(s: RateLimiterSettings): string {
   const slow = s.slowBelowPercent === 0 ? 'Calls slow only when none is left' : `Calls slow below ${s.slowBelowPercent} % of a rate limit`;
   const reserve = s.reserve === 0 ? 'no calls are kept in reserve' : `${s.reserve} calls are kept in reserve`;
+  const intake = s.intakeReserve === 0 ? 'intake keeps no calls for job work' : `intake stops at ${s.intakeReserve} calls left, for job work`;
   const batch = s.batchSize === 1 ? 'GitHub watches poll one at a time' : `GitHub watches poll ${s.batchSize} at a time`;
-  return `${slow}; ${reserve}; ${batch}.`;
+  return `${slow}; ${reserve}; ${intake}; ${batch}.`;
 }
 
 /** The change a save sends: only what differs (undefined: nothing to save), or why the draft is refused. */

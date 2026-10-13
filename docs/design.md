@@ -14660,8 +14660,19 @@ answer is returned as a 200. `@octokit/request` throws on a 304; the hook catche
 batches of `batchSize`, the batches spread evenly across the round (`pollPlan`). The interval and the batch size are read
 at each round. A GitHub watch still polling from an earlier round is skipped, never doubled. `stop` waits for the polls running.
 
+**The intake reserve** (issue #983, 2026-10-12). Intake polls every selected repository; with many repositories it spent the
+whole limit, and a job's end report and a rerun's read of its issue were then refused ("GitHub rate-limited the hopper"). So
+the job sources' adapters (`src/sources/github/app/api.ts`, `account/api.ts`) make their **intake calls** — `listOpenIssues`,
+`listAssignedIssues`, `projectItems`, `listInstalledRepos`, `repoEvents` — through a `makeRequest` with `intake: true`. Such
+a call, at `intakeReserve` calls left or below, waits for the reset; with `deferAfterMs` it is a **deferred call**, so the
+sync pass ends and says when. Every other call — the job's own reads and writes, the report, the rerun — goes as before,
+down to `reserve`. The pacing is the same for both: an intake call takes no longer slot. A 304 still costs no call, but an
+intake call at the intake reserve is not asked at all: the limiter does not know beforehand that the answer is unchanged.
+The other asks of the issue are already in place: conditional requests (above), syncs started by a followed repository's
+event feed (issue #967), and the buckets, calls left and reset time on Settings → GitHub rate limit.
+
 **Settings.** `slowBelowPercent` (0–100, default 25), `reserve` (0–5000, default 50), `batchSize` (1–100, default 10),
-whole numbers. The instance's (`githubRateLimiter` in the instance settings): one limiter serves every user. Changed only
+`intakeReserve` (0–5000, default 1000; a record saved before it reads as the default), whole numbers. The instance's (`githubRateLimiter` in the instance settings): one limiter serves every user. Changed only
 by the hopper's admin, on Settings → GitHub rate limit (`POST /ui/api/github-rate-limiter`, the `instance` guard). The
 change goes to the process's limiter at once: the next call and the next poll round use it, no restart; a pacing slot
 kept from the old settings is dropped. A change is `github_rate_limiter.settings_changed`, an instance event.

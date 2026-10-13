@@ -15,6 +15,7 @@ import { useHopper } from '@/store';
 
 const draftOf = (v: RateLimiterView): RateLimiterDraft => ({
   slowBelowPercent: String(v.settings.slowBelowPercent), reserve: String(v.settings.reserve), batchSize: String(v.settings.batchSize),
+  intakeReserve: String(v.settings.intakeReserve),
 });
 
 function Form({ view, now, onSaved }: { view: RateLimiterView; now: number; onSaved: (v: RateLimiterView) => void }) {
@@ -46,11 +47,13 @@ function Form({ view, now, onSaved }: { view: RateLimiterView; now: number; onSa
       <p className="text-xs text-muted-foreground">
         One limiter for every GitHub call and every GitHub watch. It reads GitHub&apos;s rate-limit headers. Below the share you set, it spreads the calls
         that are left evenly until the limit resets. At the reserve, calls wait for the reset. GitHub watches ask with the last answer&apos;s ETag: an answer
-        that did not change costs no call. GitHub watches poll in batches, spread across their interval.
+        that did not change costs no call. GitHub watches poll in batches, spread across their interval. Intake — the reads that look for new
+        jobs — stops when only the calls kept for job work are left, so a job can still report its end and a rerun can still start.
       </p>
       {field('slowBelowPercent', 'Slow down below', '% of a rate limit')}
       {field('reserve', 'Reserve', 'calls')}
       {field('batchSize', 'Batch size', 'GitHub watches at a time')}
+      {field('intakeReserve', 'Kept for job work', 'calls: intake stops at this many left')}
       {!checked.ok && <p role="alert" className="text-xs text-destructive">{checked.error}</p>}
       <Button size="sm" disabled={busy || !checked.ok || !checked.patch} onClick={() => void save()}>Save</Button>
       <div className="space-y-1 border-t pt-3">

@@ -8,6 +8,7 @@
 // A call made with `deferAfterMs` (the job sources', issue #822) that would wait longer is not made: it throws
 // GitHubRateLimited with the time it may go, so a sync pass ends and says when, instead of holding to the reset.
 // Each call let go is counted for the sync pass it is made in (issue #858, `traffic.ts`).
+// An intake call (`intake`, issue #983) also waits at the intake reserve, so intake never spends the calls job work needs.
 import { createHash } from 'node:crypto';
 import { setTimeout as sleepMs } from 'node:timers/promises';
 import type { request as octokitRequest } from '@octokit/request';
@@ -31,8 +32,11 @@ export class GitHubRateLimited extends Error {
   }
 }
 
-/** How a caller waits: `deferAfterMs`, a longer wait is not waited (GitHubRateLimited). Absent: every wait is waited. */
-export interface LimiterCall { deferAfterMs?: number }
+/**
+ * How a caller waits: `deferAfterMs`, a longer wait is not waited (GitHubRateLimited). Absent: every wait is waited.
+ * `intake`: a read that looks for new jobs; at the intake reserve or below it waits for the reset (issue #983).
+ */
+export interface LimiterCall { deferAfterMs?: number; intake?: boolean }
 
 export interface GitHubLimiter {
   /** The `request.hook` of `@octokit/request`. */
@@ -84,8 +88,14 @@ export function createGitHubLimiter(o: {
         await wait(known.resetAt - t);
         continue;
       }
-      const gap = waitBefore({ ...known, remaining: known.remaining - known.pending }, at, settings);
-      if (gap > 0 && ((known.holdUntil ?? 0) > at || known.remaining - known.pending <= settings.reserve)) {
+      const left = known.remaining - known.pending;
+      if (call.intake && left <= settings.intakeReserve && known.resetAt > t) {
+        defer(t, known.resetAt - t);
+        await wait(known.resetAt - t);
+        continue;
+      }
+      const gap = waitBefore({ ...known, remaining: left }, at, settings);
+      if (gap > 0 && ((known.holdUntil ?? 0) > at || left <= settings.reserve)) {
         defer(t, at + gap - t);
         await wait(at + gap - t);
         continue;

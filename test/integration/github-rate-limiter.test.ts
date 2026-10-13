@@ -59,10 +59,28 @@ describe('the shared rate limiter settings (issue #436)', () => {
     expect(githubLimiter.settings().batchSize).toBe(20);
   });
 
+  it('the calls kept for job work (issue #983): the admin changes them, they apply at once, and a restart keeps them', async () => {
+    const { a, dbPath } = await boot();
+    const token = await a.login();
+    expect((await view(a)).settings.intakeReserve).toBe(1000);
+    const r = await a.ui<RateLimiterView>('/ui/api/github-rate-limiter', { intakeReserve: 2500 }, { token });
+    expect(r.status).toBe(200);
+    expect(githubLimiter.settings().intakeReserve).toBe(2500);
+    expect((await a.events('types=github_rate_limiter.settings_changed'))[0]!.data).toMatchObject({
+      from: { intakeReserve: 1000 }, to: { intakeReserve: 2500 },
+    });
+    await a.stop();
+    apps.splice(0);
+    githubLimiter.configure(DEFAULT_RATE_LIMITER);
+    const { a: again } = await boot(dbPath);
+    expect((await view(again)).settings).toEqual({ ...DEFAULT_RATE_LIMITER, intakeReserve: 2500 });
+    githubLimiter.configure(DEFAULT_RATE_LIMITER);
+  });
+
   it('refuses a value out of range, a fraction, an unknown setting and an empty change', async () => {
     const { a } = await boot();
     const token = await a.login();
-    for (const body of [{ slowBelowPercent: 101 }, { reserve: -1 }, { batchSize: 0 }, { reserve: 1.5 }, { other: 1 }, {}]) {
+    for (const body of [{ slowBelowPercent: 101 }, { reserve: -1 }, { batchSize: 0 }, { reserve: 1.5 }, { intakeReserve: 5001 }, { other: 1 }, {}]) {
       expect((await a.ui('/ui/api/github-rate-limiter', body, { token })).status).toBe(400);
     }
     expect((await view(a)).settings).toEqual(DEFAULT_RATE_LIMITER);

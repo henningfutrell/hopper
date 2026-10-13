@@ -123,7 +123,8 @@ const remoteAccessSettings = strict({
   ]).optional(),
   leftover: z.array(z.string()).optional(),
 });
-const rateLimiterSettings = strict({ slowBelowPercent: z.number().int().min(0).max(100), reserve: z.number().int().min(0), batchSize: z.number().int().min(1) });
+// `intakeReserve` (issue #983) is absent from a change made before it.
+const rateLimiterSettings = strict({ slowBelowPercent: z.number().int().min(0).max(100), reserve: z.number().int().min(0), batchSize: z.number().int().min(1), intakeReserve: z.number().int().min(0).optional() });
 export const rateLimiterEvents = {
   'github_rate_limiter.settings_changed': strict({ from: rateLimiterSettings, to: rateLimiterSettings, by: z.string() }),
   'remote_access.changed': strict({ from: remoteAccessSettings, to: remoteAccessSettings, credential: z.enum(['set', 'removed']).optional(), by: z.string() }),
