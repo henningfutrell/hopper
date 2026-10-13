@@ -143,6 +143,33 @@ describe('hopper update (issue #970)', () => {
     }
   });
 
+  // Issue #1013: `hopper update podman > hopper-update.sh` was the documented update before issue #970. Run now, it says the
+  // command is gone and gives the commands that replace it, on stderr: the script file it writes stays empty.
+  it('says a removed update command is gone and gives the commands that replace it (issue #1013)', async () => {
+    for (const tool of COMPOSE_TOOLS) {
+      const r = await cli(['update', tool, '--image', IMAGE]);
+      expect(r.err).toMatch(new RegExp(`hopper update: 'hopper update ${tool}' was removed`));
+      for (const line of updateLines(updateCommands(tool, IMAGE))) expect(r.err).toContain(line);
+      expect(r.err).toContain('hopper update skill');
+    }
+    const bare = await cli(['update', 'podman']);
+    expect(bare.code).toBe(2);
+    expect(bare.out).toBe('');
+    expect(bare.err).toContain(updateCommands('podman', 'ghcr.io/henningfutrell/hopper:<channel>').up);
+    const override = await cli(['update', 'override']);
+    expect(override.code).toBe(2);
+    expect(override.err).toMatch(/'hopper update override' was removed/);
+    expect(override.err).toContain('hopper update carry');
+  });
+
+  // Issue #1013: an update with no person (an agent, a scheduler) gives the master key in the environment of the compose
+  // command, from a secret manager; the prompt is only for a person. The update reads it from nowhere else (issue #970).
+  it('the agent skill says how an update runs with no person: the key already in the launch environment (issue #1013)', () => {
+    expect(UPDATE_SKILL).toMatch(/already in the environment/);
+    expect(UPDATE_SKILL).toMatch(/skip the step that gives it/i);
+    expect(UPDATE_SKILL).toMatch(/never from the running container/i);
+  });
+
   it('no update path names .env: the commands, the CLI, the agent skill, the notice and the help', async () => {
     const carried = await cli(['update', 'carry', '--image', IMAGE], OLD_LAN);
     const usage = await cli(['update']);
