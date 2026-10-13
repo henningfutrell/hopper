@@ -142,6 +142,10 @@ You update a container install. The hopper never updates its own container, and 
    ```
 
    The update needs the key. Without it, a recreated hopper starts limited. If you do not have the key, open the UI and save the key it shows first.
+
+   To update with no person at the keyboard (an agent or a scheduled task), put the key in the environment of the commands from your secret manager, for example `export HOPPER_MASTER_KEY="$(pass show hopper/master-key)"`, and skip this step. No other step waits for a person. The update does not read the key from the running container or from a file.
+
+   `hopper update podman`, `hopper update docker` and `hopper update podman-compose` made an update script before. They are removed. Run them now and they print these commands.
 4. Back up the database:
 
    ```sh

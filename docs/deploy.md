@@ -274,10 +274,15 @@ is only in the hopper's environment, given at launch.
   - **The master key at an update** (issue #970). The new container gets the key only from the environment of the
     compose command. The update reads it from nowhere else: not from a file, and not from the running container. Give
     it at launch first (`read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY`). The last command of the update stops
-    before compose runs when it is not given, so the stack never comes back limited. The KMS (`kms` profile) wraps only
+    before compose runs when it is not given, so the stack never comes back limited. An update with no person (an
+    agent, a scheduled task; issue #1013) gives the key from a secret manager into that environment
+    (`export HOPPER_MASTER_KEY="$(pass show hopper/master-key)"`) and skips the prompt; no other step waits for a person. The KMS (`kms` profile) wraps only
     the vault's data key: the master key is required with it too. An install from before keeps its key in the old
     `secrets` volume's `token_key`, which the new compose file does not read: save the key the UI shows, and give it at
     launch first ("The master key" above).
+  - **The removed update script** (issue #1013). `hopper update podman`, `hopper update podman-compose`,
+    `hopper update docker` and `hopper update override` are removed (issue #970). Run, each says so on stderr, gives the
+    commands below (with `--image <ref>`, for that image) and exits 2, so `… > hopper-update.sh` writes an empty script.
   - **Update with the compose file the new image ships with, the whole stack** (issues #697, #970). Every image carries
     the `compose.yaml` of its commit. The update is plain compose commands, no script and no settings file. In the folder
     that holds `compose.yaml`, run them one at a time (the update notice gives them with the channel's image):
