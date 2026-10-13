@@ -126,6 +126,32 @@ describe('GitHub source: request cards (issue #652)', () => {
     expect(source.intake!()[0]).toMatchObject({ action: 'approve', request: { body: 'Change the CI.', approved: { title: 'Do it', body: 'Change the README.' } } });
   });
 
+  it('approvals sent while a sync runs each take, and that sync never shows a card as taken (issue #1019)', async () => {
+    const trust = testTrust();
+    let hold: Promise<void> | undefined;
+    let held: () => void = () => undefined;
+    let reached: () => void = () => undefined;
+    const atHold = new Promise<void>((r) => { reached = r; });
+    const gated: typeof trust = { ...trust, async trusted(acts, connected) { if (hold) { reached(); await hold; } return trust.trusted(acts, connected); } };
+    const { gh, source } = setup({}, { trust: gated });
+    for (const n of [1, 2, 3]) gh.createIssue({ repo: REPO, author: 'stranger', title: `Do ${n}`, body: `Change ${n}.`, labels: ['hopper'] });
+    await source.discover();
+    const hashOf = (n: number) => source.intake!().find((x) => x.key === url(n))!.request!.hash;
+    const [h1, h2, h3] = [hashOf(1), hashOf(2), hashOf(3)];
+    expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash: h1 })).toEqual({ done: [url(1)], failed: {} });
+    hold = new Promise((r) => { held = r; });
+    const sync = source.discover();
+    await atHold;
+    // The sync is half way: the cards it lists are still the cards of the last sync, and Approve on them takes.
+    expect(source.intake!().filter((x) => x.action === 'approve').map((x) => x.key)).toEqual([url(1), url(2), url(3)]);
+    expect(await source.intakeAction!({ kind: 'approve', keys: [url(2)], hash: h2 })).toEqual({ done: [url(2)], failed: {} });
+    expect(await source.intakeAction!({ kind: 'approve', keys: [url(3)], hash: h3 })).toEqual({ done: [url(3)], failed: {} });
+    held();
+    await sync;
+    hold = undefined;
+    expect((await source.discover()).map((i) => [i.number, i.origin])).toEqual([[1, 'approved'], [2, 'approved'], [3, 'approved']]);
+  });
+
   it('only a request card is offered Approve', async () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper'] });

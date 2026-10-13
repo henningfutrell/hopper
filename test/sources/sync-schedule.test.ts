@@ -34,6 +34,7 @@ describe('next sync time', () => {
   it('fires at the shown next sync time when a sync was asked for while one ran', async () => {
     const { world, sync, pass, release } = gated();
     sync.start(); // sync A
+    await settle(); // A runs
     const asked = sync.syncNow(); // sync B, queued behind A
     await release(); // A ends and schedules
     pass(500);
@@ -47,6 +48,22 @@ describe('next sync time', () => {
     pass(1);
     await settle();
     expect(gates).toHaveLength(1); // one sync starts at it
+  });
+
+  it('syncs asked for while one runs share the one sync queued behind it (issue #1019)', async () => {
+    const { sync, release } = gated();
+    sync.start(); // sync A
+    await settle();
+    let ended = 0;
+    const asked = [sync.syncNow(), sync.syncNow(), sync.syncNow()].map((p) => p.then(() => { ended += 1; }));
+    await release(); // A ends: one sync, B, starts for the three
+    await settle();
+    expect(gates).toHaveLength(1);
+    expect(ended).toBe(0); // each waits for a sync that started after it asked
+    await release(); // B ends
+    expect(gates).toHaveLength(0); // no third sync
+    await Promise.all(asked);
+    expect(ended).toBe(3);
   });
 
   it('shows a running sync and no next time while it runs, and the true next time after', async () => {
