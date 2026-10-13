@@ -14,7 +14,7 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { highlightParts, hitHref, parseSearch, searchHash, searchPath, snippets, toggleFilter, type SearchFilters } from '../../ui/src/model/search.ts';
+import { highlightParts, hitHref, parseSearch, searchHash, searchPath, snippets, toggleFilter, TYPE_LABEL, type SearchFilters } from '../../ui/src/model/search.ts';
 
 type El = ReturnType<typeof createElement>;
 let root: Root | undefined;
@@ -170,5 +170,21 @@ describe('hits of other documents (issue #945, part 3)', () => {
 
   it('shows an artifact\'s matched text as a snippet', () => {
     expect(snippets({ content: ['the <mark>resolver</mark> timed out'] })).toEqual([{ label: 'Text', html: 'the <mark>resolver</mark> timed out' }]);
+  });
+});
+
+describe('hits of issues and pull requests (issue #945, part 4)', () => {
+  it('links an issue or a pull request to its job, else to the item on GitHub, and never to anything but an https URL', () => {
+    expect(hitHref({ type: 'issue', ref: 'https://github.com/o/r/issues/7', job: 'j7' })).toBe('#job/j7');
+    expect(hitHref({ type: 'pull-request', ref: 'https://github.com/o/r/pull/9' })).toBe('https://github.com/o/r/pull/9');
+    expect(hitHref({ type: 'issue', ref: 'javascript:alert(1)' })).toBe('#search/');
+    expect(TYPE_LABEL).toMatchObject({ issue: 'Issue', 'pull-request': 'Pull request' });
+  });
+
+  it('shows what is linked to it and what intake did with it as snippets', () => {
+    expect(snippets({ links: ['closes o/r#7: Retry the <mark>flaky</mark> upload'], intake: ['not taken: not <mark>assigned</mark> to you'] })).toEqual([
+      { label: 'Linked', html: 'closes o/r#7: Retry the <mark>flaky</mark> upload' },
+      { label: 'Intake', html: 'not taken: not <mark>assigned</mark> to you' },
+    ]);
   });
 });
