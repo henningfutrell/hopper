@@ -2,7 +2,8 @@
 // The Resources page (issue #947), rendered against a fake of the daemon's HTTP: one row per container of the stack and
 // per sandbox box, labelled by its service — CPU, memory against its limit, network, disk, restarts and uptime —, and
 // the hopper's Postgres: connections against the most it allows, size, cache hits, locks, long transactions and
-// statement latency. What cannot be read says why.
+// statement latency; OpenFGA's checks; and Solr's queries, index and the documents waiting to be indexed. What cannot
+// be read says why.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -32,6 +33,7 @@ const READ: StackResources = {
     oldestTransactionS: 4, statements: { calls: 1200, meanMs: 0.42 },
   },
   openfga: { checks: 400, errors: 6, meanMs: 1.25 },
+  solr: { queries: 900, errors: 0, meanMs: 4.5, p95Ms: 12.25, docs: 1500, indexBytes: 3 * MiB, pending: 7 },
   remoteBoxes: [],
 };
 
@@ -68,6 +70,7 @@ async function render(read: StackResources | { status: number; error: string } =
 const rows = () => [...document.querySelectorAll('[data-slot="container-row"]')].map((r) => r.textContent ?? '');
 const postgres = () => document.querySelector('[data-slot="postgres-reading"]')?.textContent ?? '';
 const openfga = () => document.querySelector('[data-slot="openfga-reading"]')?.textContent ?? '';
+const solr = () => document.querySelector('[data-slot="solr-reading"]')?.textContent ?? '';
 const legend = () => [...document.querySelectorAll('[data-slot="usage-graph-legend"] button')].map((b) => [b.textContent ?? '', b.getAttribute('aria-pressed')]);
 
 afterEach(async () => {
@@ -141,6 +144,27 @@ describe('the Resources page', () => {
     expect(document.body.textContent).toContain('the hopper is given no container runtime socket');
     expect(postgres()).toContain('pg_stat_statements is not installed');
     expect(document.body.textContent).toContain('the hopper is given no OpenFGA');
+  });
+
+  it('shows Solr: the query time, the failed queries, the index and the documents waiting to be indexed', async () => {
+    await render();
+    const text = solr();
+    expect(text).toContain('4.5 ms mean, 12.25 ms at the 95th percentile, over 900 queries');
+    expect(text).toContain('no failed queries of 900');
+    expect(text).toContain('1500 documents, 3 MiB');
+    expect(text).toContain('7 documents waiting');
+  });
+
+  it('Solr before any query says so', async () => {
+    await render({ ...READ, solr: { queries: 0, errors: 0, docs: 0, indexBytes: 69, pending: 0 } });
+    expect(solr()).toContain('no queries yet');
+    expect(solr()).toContain('nothing waiting');
+  });
+
+  it('Solr down still shows the documents waiting, with why it cannot be read', async () => {
+    await render({ ...READ, solr: { problem: 'Solr\'s metrics did not answer: ECONNREFUSED', pending: 12 } });
+    expect(document.body.textContent).toContain('Solr\'s metrics did not answer: ECONNREFUSED');
+    expect(solr()).toContain('12 documents waiting');
   });
 
   it('shows the stack over time: a line per service and metric; a sandbox box\'s hidden at first', async () => {
