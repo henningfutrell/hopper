@@ -147,8 +147,8 @@ hopper's note naming the job and the request by id only, and gets no label or as
   (`job`, `queue`, `question`, issue #374) change no job, question or setting themselves: each mints a UI session in the database for one
   `POST /ui/api/*` on the running daemon, and drops it after.
 - **Never write into the Jev repo.** The shim reads it; logs go to hopper's work dir.
-- **Persisted state is the user's.** A schema change ships a migration in
-  `src/store/migrations.ts` (`SHARED`, in SQL both databases mean the same way); it never drops a
+- **Persisted state is the user's.** A schema change ships a migration, appended to
+  `src/store/migrations-recent.ts` or `src/store/tenant-migrations-recent.ts` (additions files, issue #967; `SHARED`, in SQL both databases mean the same way); it never drops a
   queue. A change to persisted state inside a config record (its value's shape) migrates the
   records too. A migration leaves a store the build before it still runs on: a hopper moved to a
   steadier update channel runs that channel's older build on the migrated store (`docs/deploy.md`

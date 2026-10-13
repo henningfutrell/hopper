@@ -1996,7 +1996,8 @@ base and tends it. Where the mirror cannot say, the merge is made, as before. A 
 job waits for a lane: with every lane busy (the Claude usage cap held the hopper to two lanes), pull requests with only a
 simple conflict waited for hours. So a `rebase` tend the queue starts is first asked of the source. The **hopper's mirror**
 merges the base branch, as the sync pass fetched it, into the pull request's head (`git merge-tree --write-tree`), with no
-job and no lane. A conflict is resolved only in a Markdown file (`*.md`) where both sides only added lines at the same
+job and no lane. A conflict is resolved only in a Markdown file (`*.md`), or an **additions file** ("PR tending without lanes, part 3"),
+where both sides only added lines at the same
 place — no line of the merge base is in the conflict (`git merge-file --diff3`, `keepBothAdditions`): both additions are
 kept, the base branch's first. That is a `WHATS-NEW.md` line, or two design sections added at the end of
 `docs/design.md`. Any other conflict — a code file, a line one side changed or removed, a file not on all three sides —
@@ -16336,3 +16337,32 @@ card.
 Tested: the decider (`test/decider/elbow-in.test.ts`), the tend job's flag over the real daemon
 (`test/integration/pull-request-tending.test.ts`, `test/integration/github-rerun.test.ts`) and the lanes panel
 (`test/ui/board.test.ts`).
+
+## PR tending without lanes, part 3: migration numbers at merge time (issue #967, 2026-10-12)
+
+Two pull requests that each added a migration both claimed the next number (#957 and #963 both took tenant migration 50).
+The migration lists are positional: a migration's version is its place in the list. Both pull requests appended at the
+same place, so the second to merge had a real conflict, and a tend job had to wait for a lane to resolve it.
+
+Now:
+
+- **Additions files** (`src/git-mirror/mirrors.ts`, `additionsFiles`). A repository marks a file `hopper-merge=additions` in
+  its `.gitattributes`. The base merge reads the attribute from the base branch as fetched (`git check-attr --source`), never
+  from the pull request, so a pull request cannot mark its own files. In a marked file, a conflict where both sides only
+  added lines is resolved as in a Markdown file: both additions kept, the base branch's first. A changed or removed line is
+  still a real conflict. git's own merge ignores the attribute: it is not `merge=union`, which also keeps both sides of a
+  changed line.
+- **The hopper's migration lists are additions files.** The newest migrations of each track moved to a file of their own,
+  each entry on its own line: `src/store/migrations-recent.ts` (instance, 37 on) and
+  `src/store/tenant-migrations-recent.ts` (tenant, 48 on). `.gitattributes` marks both. When two pull requests each append
+  a migration, the base merge keeps both, the base branch's first: the pull request merged second takes the next number,
+  with no job and no lane. The number in a migration's comment is the one its author saw; the place in the list is its
+  version. A test that names a migration's version by number fails its checks after such a renumber, and a `fix_checks`
+  tend job corrects it.
+
+Left for later parts of issue #967: tending started by GitHub's events, not only by each sync; merged and closed pull
+requests reconciled at once; a pull request blocked by another one named on its card.
+
+Tested: the base merge of an additions file against real git (`test/git-mirror/base-merge-additions.test.ts`: both
+additions kept, the base branch's first; a changed line is a real conflict; a file only the pull request marks is not
+resolved), and the repository's own marks (`test/store/migration-lists.test.ts`).
