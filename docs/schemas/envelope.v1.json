@@ -177,6 +177,7 @@
         "vault.sandbox_declined",
         "vault.sandbox_started",
         "vault.sandbox_failed",
+        "vault.write_forgotten",
         "vault.grant_asked",
         "vault.granted",
         "vault.grant_revoked",

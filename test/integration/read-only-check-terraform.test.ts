@@ -22,7 +22,7 @@ describe('a terraform workspace in the read-only check (issue #715)', () => {
   it('a terraform workspace\'s probes run with the AWS read session of the template\'s aws-role read need', async () => {
     const { a, token, runtime, cloud, sts } = await boot(['terraform-workspace/*', `aws-role/${ACCOUNT}/*`]);
     const creds = await runningJob(a);
-    await skill(a, creds, ['sandbox-template', '--needs', `read/terraform-workspace/shop-prod read/aws-role/${ACCOUNT}/readonly`]);
+    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', `read/terraform-workspace/shop-prod read/aws-role/${ACCOUNT}/readonly`]);
     await a.app.sandboxes.check();
     const unset = await asked(a, token);
     // Issue #715, part 6: with no state backend on the workspace need, the state push past the wrapper is unproven, not passed.
@@ -62,7 +62,7 @@ describe('a terraform workspace in the read-only check (issue #715)', () => {
   it('a state backend the hopper cannot use is refused when the template is saved', async () => {
     const { a, token } = await boot(['terraform-workspace/*', `aws-role/${ACCOUNT}/*`]);
     const creds = await runningJob(a);
-    await skill(a, creds, ['sandbox-template', '--needs', `read/terraform-workspace/shop-prod read/aws-role/${ACCOUNT}/readonly`]);
+    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', `read/terraform-workspace/shop-prod read/aws-role/${ACCOUNT}/readonly`]);
     const t = await asked(a, token);
     const withBackend = (kind: string, backend: unknown) => t.profiles.map((p) => (p.asset.kind === kind ? { ...p, backend } : p));
     const refused = async (profiles: unknown[]) => { const r = await vault(a, token, save(t, profiles)); expect(r.status).toBe(400); return r.body.error; };
@@ -76,14 +76,14 @@ describe('a terraform workspace in the read-only check (issue #715)', () => {
   it('a terraform workspace with no one aws-role read need beside it fails the check, saying so, and runs no check box', async () => {
     const { a, token, runtime, sts } = await boot(['terraform-workspace/*', `aws-role/${ACCOUNT}/*`]);
     const creds = await runningJob(a);
-    await skill(a, creds, ['sandbox-template', '--needs', 'read/terraform-workspace/shop-prod']);
+    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/terraform-workspace/shop-prod']);
     await a.app.sandboxes.check();
     const alone = await asked(a, token);
     expect(alone.check).toMatchObject({ state: 'failed', probes: [] });
     expect(alone.check!.problem).toBe('the check box gets no credential for read on terraform-workspace shop-prod: '
       + 'a terraform workspace is read with the AWS read session of the template\'s aws-role read need, and the template has none: ask for read on the aws-role its provider and state are read with');
 
-    await skill(a, creds, ['sandbox-template', '--needs', `read/terraform-workspace/shop-prod read/aws-role/${ACCOUNT}/one read/aws-role/${ACCOUNT}/two`]);
+    await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', `read/terraform-workspace/shop-prod read/aws-role/${ACCOUNT}/one read/aws-role/${ACCOUNT}/two`]);
     await a.app.sandboxes.check();
     const two = (await a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': token })).body.templates.find((x) => x.name !== alone.name && x.name.startsWith('asked-'))!;
     expect(two.check).toMatchObject({ state: 'failed', probes: [] });

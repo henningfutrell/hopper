@@ -7,15 +7,22 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const WAITING = { id: 'q1', jobId: 'f3b1c2d4-0000-4000-8000-000000000001', jobTitle: 'Check the AWS bill', template: 'asked-3f2a9c1d0e4b', state: 'waiting', askedAt: '2026-10-13T10:00:00.000Z' };
+const WAITING = {
+  id: 'q1', jobId: 'f3b1c2d4-0000-4000-8000-000000000001', jobTitle: 'Check the AWS bill', jobUrl: 'https://github.com/acme/infra/issues/7', template: 'asked-3f2a9c1d0e4b', state: 'waiting', askedAt: '2026-10-13T10:00:00.000Z',
+  purpose: 'Read the bill of the UAT account', plan: 'aws ce get-cost-and-usage',
+};
 const RUNNING = { id: 'q2', jobId: 'a1b2c3d4-0000-4000-8000-000000000002', template: 'asked-3f2a9c1d0e4b', state: 'running', askedAt: '2026-10-13T09:00:00.000Z', approvedBy: 'skip sandbox approval', container: 'hopper-sandbox-asked-1' };
 const WAITING_2 = { ...WAITING, id: 'q3', jobId: 'c1b2c3d4-0000-4000-8000-000000000003', jobTitle: 'Read the cluster', template: 'asked-9a8b7c6d5e4f' };
 const WRITE = { operation: 'write', asset: { kind: 'aws-account', name: '123456789012' } };
 const HIGH = {
   name: 'asked-0a1b2c3d4e5f', image: 'ghcr.io/henningfutrell/hopper:box-claude', secrets: [], profiles: [WRITE], gives: [], savedBy: 'job j', savedAt: '2026-10-13T09:00:00.000Z',
   pending: { secrets: [], image: true, profiles: [WRITE] }, radius: { level: 'high', reasons: ['write on aws-account 123456789012: it changes the asset'], profiles: [] },
+  askedBy: 'f3b1c2d4-0000-4000-8000-000000000001', purpose: 'Create the cluster role for X in identity namespace', plan: 'kubectl apply -f role.yaml: ClusterRole x-reader. Undo: kubectl delete clusterrole x-reader.',
+  label: 'create-the-cluster-role-for-x', askedByJob: { id: 'f3b1c2d4-0000-4000-8000-000000000001', title: 'Give X a role', url: 'https://github.com/acme/infra/issues/7' },
 };
-const VIEW = { secrets: [], templates: [HIGH], sandboxRequests: [WAITING, WAITING_2, RUNNING], sandboxApprovals: { skipTemplateApproval: false, skipSandboxApproval: false } };
+const MINTS = { id: 's1', name: 'AWS_UAT2', scope: 'gss-uat2 account', mints: { kind: 'aws-account', name: '123456789012' }, setBy: 'Ada', createdAt: '2026-10-01T00:00:00.000Z', changedBy: 'Ada', changedAt: '2026-10-01T00:00:00.000Z' };
+const REMEMBERED = { ...WRITE, by: 'Ada', at: '2026-10-13T08:00:00.000Z', expiresAt: '2026-10-20T08:00:00.000Z' };
+const VIEW = { secrets: [MINTS], templates: [HIGH], sandboxRequests: [WAITING, WAITING_2, RUNNING], sandboxApprovals: { skipTemplateApproval: false, skipSandboxApproval: false }, rememberedWrites: [REMEMBERED] };
 
 interface Call { path: string; method: string; body?: Record<string, unknown> }
 
@@ -175,5 +182,46 @@ describe('Settings → Vault: the auto-approve policy (issue #1001)', () => {
     await act(async () => { sw('medium').click(); });
     await vi.waitFor(() => expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-approvals')).toBeDefined());
     expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-approvals')!.body).toEqual({ autoApprove: { medium: true } });
+  });
+});
+
+describe('cards that say what the sandbox is for (issue #1001)', () => {
+  it('a template card shows why, the job with its link, the plan, each asset in plain words and a readable name first', async () => {
+    await boot('#access-requests', () => document.querySelector(`[data-template-approval="${HIGH.name}"]`));
+    const t = document.querySelector<HTMLElement>(`[data-template-approval="${HIGH.name}"]`)!;
+    expect(t.querySelector('[data-slot="template-label"]')!.textContent).toBe('create-the-cluster-role-for-x');
+    expect(t.textContent).toContain(HIGH.name);
+    expect(t.querySelector('[data-slot="why"]')!.textContent).toContain('Create the cluster role for X in identity namespace');
+    const job = t.querySelector<HTMLAnchorElement>('[data-slot="job"] a[href^="https://"]')!;
+    expect(job.href).toBe('https://github.com/acme/infra/issues/7');
+    expect(t.querySelector('[data-slot="job"]')!.textContent).toContain('Give X a role');
+    expect(t.querySelector('[data-slot="plan"]')!.textContent).toContain('Undo: kubectl delete clusterrole x-reader.');
+    expect(t.querySelector('[data-slot="needs"]')!.textContent).toContain('write on aws-account 123456789012 (AWS_UAT2: gss-uat2 account): changes it');
+  });
+
+  it('a run card shows why, the job with its link, and the plan', async () => {
+    await boot('#access-requests', runs);
+    const c = card('q1');
+    expect(c.querySelector('[data-slot="why"]')!.textContent).toContain('Read the bill of the UAT account');
+    expect(c.querySelector<HTMLAnchorElement>('[data-slot="job"] a[href^="https://"]')!.href).toBe('https://github.com/acme/infra/issues/7');
+    expect(c.querySelector('[data-slot="plan"]')!.textContent).toContain('aws ce get-cost-and-usage');
+  });
+});
+
+describe('Settings → Vault: remembered write approvals (issue #1001)', () => {
+  it('lists each remembered write with its end; Forget posts it; the time limit posts itself', async () => {
+    const daemon = await boot('#settings/vault', approvals);
+    const row = approvals()!.querySelector<HTMLElement>('[data-remembered-write="write/aws-account/123456789012"]')!;
+    expect(row.textContent).toContain('write on aws-account 123456789012');
+    expect(row.textContent).toContain('Ada');
+    await act(async () => { buttonIn(row, 'Forget').click(); });
+    await vi.waitFor(() => expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-approvals')).toBeDefined());
+    expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-approvals')!.body).toEqual({ forgetWrite: WRITE });
+    const hours = approvals()!.querySelector<HTMLInputElement>('input[aria-label="Remember write approvals for (hours)"]')!;
+    expect(hours.value).toBe('168');
+    await type(hours, '24');
+    await act(async () => { buttonIn(approvals()!, 'Save time limit').click(); });
+    await vi.waitFor(() => expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-approvals')).toHaveLength(2));
+    expect(daemon.calls.filter((x) => x.path === '/ui/api/sandbox-approvals')[1]!.body).toEqual({ rememberWritesHours: 24 });
   });
 });

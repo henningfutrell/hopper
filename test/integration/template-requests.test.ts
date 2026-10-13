@@ -128,11 +128,11 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
   it('read needs inside the read policy are approved with no person; the same needs again get the same template', async () => {
     const { a, token } = await boot(['cluster/lab', 'aws-role/123456789012/*']);
     const creds = await runningJob(a);
-    const first = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab read/aws-role/123456789012/readonly']);
+    const first = await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab read/aws-role/123456789012/readonly']);
     expect(first.code, first.stdout).toBe(3);
     expect(first.stdout).toMatch(/^waiting: template asked-[0-9a-f]+ is approved; waiting for the read-only check of asked-[0-9a-f]+: it has not run on this version yet/);
     await a.app.sandboxes.check();
-    const r = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab read/aws-role/123456789012/readonly']);
+    const r = await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab read/aws-role/123456789012/readonly']);
     expect(r.code, r.stdout).toBe(0);
     const [t] = await asked(a, token);
     expect(t).toMatchObject({ image: BOX, tools: ['aws', 'helm', 'kubectl'], secrets: [], profiles: [LAB_READ, AWS_READ], approval: { image: BOX, tools: ['aws', 'helm', 'kubectl'], by: 'the read policy' }, pending: { secrets: [], image: false, profiles: [] } });
@@ -146,12 +146,12 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
 
     // The same needs, in another order and another job: the same template.
     const other = await runningJob(a);
-    const again = await skill(a, other, ['sandbox-template', '--needs', 'read/aws-role/123456789012/readonly, read/cluster/lab']);
+    const again = await skill(a, other, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/aws-role/123456789012/readonly, read/cluster/lab']);
     expect(again.code, again.stdout).toBe(0);
     expect(again.stdout).toContain(`template ${t!.name} is ready`);
     expect((await asked(a, token)).length).toBe(1);
     // The same needs in plain words (issue #708): the same template.
-    const words = await skill(a, other, ['sandbox-template', '--needs', 'kubectl get pods on cluster lab\naws sts get-caller-identity with role readonly in account 123456789012']);
+    const words = await skill(a, other, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'kubectl get pods on cluster lab\naws sts get-caller-identity with role readonly in account 123456789012']);
     expect(words.code, words.stdout).toBe(0);
     expect(words.stdout).toContain(`template ${t!.name} is ready`);
     expect((await asked(a, token)).length).toBe(1);
@@ -162,7 +162,7 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
   it('a write need waits for a person, and the job\'s wait ends when the person approves it', async () => {
     const { a, token } = await boot(['cluster/*']);
     const creds = await runningJob(a);
-    const first = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab write/cluster/lab']);
+    const first = await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab write/cluster/lab', '--plan', 'kubectl scale deploy/web --replicas=2 (undo: scale back)']);
     expect(first.code, first.stdout).toBe(3);
     expect(first.stdout).toMatch(/^waiting: template asked-[0-9a-f]+ waits for a person on Access requests/);
     expect(first.stdout).toContain('write on cluster lab');
@@ -171,7 +171,7 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
     expect(t).toMatchObject({ profiles: [LAB_READ, LAB_WRITE], pending: { image: true, profiles: [LAB_READ, LAB_WRITE] } });
     expect(t!.approval).toBeUndefined();
 
-    const done = waiting(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab write/cluster/lab']);
+    const done = waiting(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab write/cluster/lab', '--plan', 'kubectl scale deploy/web --replicas=2 (undo: scale back)']);
     await done.opened;
     expect((await a.ui('/ui/api/vault', { action: 'approve-template', name: t!.name }, { token })).status).toBe(200);
     expect((await a.ui('/ui/api/vault', { action: 'approve-profile', name: t!.name, ...LAB_WRITE }, { token })).status).toBe(200);
@@ -185,14 +185,14 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
   it('with no read policy, a read need is approved by the auto-approve policy; with low off, it waits for a person', async () => {
     const { a, token } = await boot();
     const creds = await runningJob(a);
-    const auto = await skill(a, creds, ['sandbox-template', '--needs', 'read/aws-account/123456789012']);
+    const auto = await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/aws-account/123456789012']);
     expect(auto.code, auto.stdout).toBe(3);
     expect(auto.stdout).toContain('is approved; waiting for the read-only check');
     expect((await asked(a, token)).find((t) => t.profiles[0]?.asset.kind === 'aws-account')?.approval?.by).toBe('the auto-approve policy');
     expect((await a.events()).find((e) => e.type === 'vault.approved')?.data).toMatchObject({ by: 'the auto-approve policy' });
 
     expect((await a.ui('/ui/api/sandbox-approvals', { autoApprove: { low: false } }, { token })).status).toBe(200);
-    const r = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab']);
+    const r = await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab']);
     expect(r.code, r.stdout).toBe(3);
     expect(r.stdout).toContain('the read policy does not hold read on cluster lab');
     const t = (await asked(a, token)).find((x) => x.profiles[0]?.asset.kind === 'cluster');
@@ -204,19 +204,19 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
     const { a, token } = await boot(['cluster/*']);
     const creds = await runningJob(a);
     // Approved by the policy; it waits for its read-only check (issue #716, item 4).
-    expect((await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab'])).code).toBe(3);
+    expect((await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab'])).code).toBe(3);
     const [t] = await asked(a, token);
     expect(t!.approval?.by).toBe('the read policy');
 
     // A person revokes it: the policy does not approve it again.
     expect((await a.ui('/ui/api/vault', { action: 'revoke-template', name: t!.name }, { token })).status).toBe(200);
-    const revoked = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab']);
+    const revoked = await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab']);
     expect(revoked.code, revoked.stdout).toBe(3);
     expect((await asked(a, token))[0]!.approval).toBeUndefined();
 
     // A person narrows it to nothing: a job never puts the profile back.
     expect((await a.ui('/ui/api/vault', { action: 'save-template', name: t!.name, image: BOX, secrets: [], profiles: [] }, { token })).status).toBe(200);
-    const changed = await skill(a, creds, ['sandbox-template', '--needs', 'read/cluster/lab']);
+    const changed = await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', '--needs', 'read/cluster/lab']);
     expect(changed.code, changed.stdout).toBe(1);
     expect(changed.stdout).toContain(`no: a person changed template ${t!.name}`);
     expect((await asked(a, token))[0]!.profiles).toEqual([]);
@@ -226,7 +226,7 @@ describe('a job asks the hopper for the template its work needs (issue #716)', (
     const { a, token } = await boot(['cluster/*']);
     const creds = await runningJob(a);
     for (const needs of [[], ['--needs', 'look at the pods'], ['--needs', 'delete/cluster/lab'], ['--needs', 'read/planet/mars']]) {
-      const r = await skill(a, creds, ['sandbox-template', ...needs]);
+      const r = await skill(a, creds, ['sandbox-template', '--why', 'Read the lab for the report', ...needs]);
       expect(r.code, `${needs.join(' ')}: ${r.stdout}`).toBe(1);
       expect(r.stdout).toContain('--needs "read/cluster/NAME');
     }

@@ -180,6 +180,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'vault.sandbox_approved': { request: 'b2c1', template: 'asked-3f2a9c1d0e4b', by: 'skip sandbox approval' },
   'vault.sandbox_declined': { request: 'b2c1', template: 'asked-3f2a9c1d0e4b', reason: 'not this week', by: 'Ada' },
   'vault.sandbox_started': { request: 'b2c1', template: 'asked-3f2a9c1d0e4b', container: 'hopper-sandbox-asked-3f2a9c1d0e4b-1' },
+  'vault.write_forgotten': { operation: 'write', asset: { kind: 'aws-account', name: '123456789012' }, by: 'Ada' },
   'vault.sandbox_failed': { request: 'b2c1', template: 'asked-3f2a9c1d0e4b', reason: 'the start check did not pass in 30 s' },
   'template.profile_approved': { template: 'kube', operation: 'write', asset: { kind: 'cluster', name: 'lab' }, level: 'high', by: 'Ada' },
   'vault.agent_credential_given': { name: 'CLAUDE', template: 'kube', box: 'hopper-sandbox-kube' },

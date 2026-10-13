@@ -57,7 +57,10 @@ export const SKILL_SCRIPT = `#!/bin/sh
 # hopper-skill — what the hopper can set up for this box (issue #582). Written by the hopper at each job start.
 #   sh "$HOPPER_SKILL"               the catalog: one line per skill
 #   sh "$HOPPER_SKILL" NAME [ASSET]  load one skill (ASSET as the catalog says, e.g. cluster/prod)
-#     --why TEXT         what the job needs it for: the user reads it when the hopper asks them for a credential
+#     --why TEXT         what the job needs it for: the user reads it when the hopper asks them for a credential;
+#                        required for sandbox and sandbox-template (issue #1001)
+#     --plan TEXT        for sandbox and sandbox-template, required when a need changes an asset: what the box will
+#                        do, and for each change what it changes and whether it can be undone (issue #1001)
 #     --credential TEXT  for a service the hopper has no skill for: the credential it takes (issue #583)
 #     --needs TEXT       for sandbox and sandbox-template: what the work needs, as <operation>/<kind>/<asset> ...
 #                        (issues #716, #991)
@@ -68,7 +71,7 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #      4: --wait reached its deadline with no answer.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--credential TEXT] [--needs TEXT] [--wait [--timeout SECONDS]]]' >&2; exit 2; }
+usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--wait [--timeout SECONDS]]]' >&2; exit 2; }
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; }
 ${HCURL_SH}
 wait=; opt=; pos=0
@@ -78,6 +81,7 @@ for a in "$@"; do
   case $a in
     --wait) wait=1; set -- "$@" --data-urlencode wait=1 ;;
     --why) opt=why ;;
+    --plan) opt=plan ;;
     --credential) opt=credential ;;
     --needs) opt=needs ;;
     --timeout) opt=timeout ;;

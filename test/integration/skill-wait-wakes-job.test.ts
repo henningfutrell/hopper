@@ -22,6 +22,8 @@ import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts
 import { KEY } from '../support/webhooks.ts';
 
 const NEEDS = 'write/aws-account/123456789012';
+/** Why the job asks, and what the box will change (issue #1001): a need that changes an asset takes a plan. */
+const ASK = ['--why', 'Create the bucket for the report', '--plan', 'aws s3 mb s3://report (undo: aws s3 rb s3://report)'];
 const AWS_WRITE = { operation: 'write', asset: { kind: 'aws-account', name: '123456789012' } } as const;
 const WAIT = {
   output: ['● The template waits for a person.', '  HOPPER_WAITING', '  for: approval of the sandbox template'],
@@ -83,7 +85,7 @@ describe('an answer the hopper gives ends the job\'s own wait (issue #998)', () 
     const job = await waitingJob(a);
     const creds = credentials(a, job.id);
 
-    const first = await skill(a, creds, ['sandbox', '--needs', NEEDS]);
+    const first = await skill(a, creds, ['sandbox', '--needs', NEEDS, ...ASK]);
     expect(first.code, first.stdout).toBe(3);
     expect(first.stdout).toContain('the hopper ends this job\'s own wait (HOPPER_WAITING) with it');
     const [t] = await asked(a, token);
@@ -107,8 +109,8 @@ describe('an answer the hopper gives ends the job\'s own wait (issue #998)', () 
     const { a } = await boot(herdr);
     const job = await waitingJob(a);
     const creds = credentials(a, job.id);
-    expect((await skill(a, creds, ['sandbox', '--needs', NEEDS])).code).toBe(3);
-    expect((await skill(a, creds, ['sandbox', '--needs', NEEDS])).code).toBe(3);
+    expect((await skill(a, creds, ['sandbox', '--needs', NEEDS, ...ASK])).code).toBe(3);
+    expect((await skill(a, creds, ['sandbox', '--needs', NEEDS, ...ASK])).code).toBe(3);
     expect(a.user().jobStream.repo.openWatches(job.id)).toHaveLength(1);
   });
 });

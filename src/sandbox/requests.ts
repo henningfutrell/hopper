@@ -9,11 +9,15 @@
 // recorded and answered, and the box starts after, in the background, with a time limit of its own. A start that has
 // not ended in that time fails with that reason; whatever it does after is not the request's any more.
 // Issue #1001: a run needs no separate approval when the user's auto-approve policy holds its template's blast radius,
-// or when a person approved the template this job asked for, or waited on: that approval was given for this job's run.
+// or when a person approved the template this job asked for, or waited on: that approval was given for this job's run;
+// or when a person's remembered write approvals cover every change the template makes (src/domain/remembered-writes.ts).
+// A request keeps the job's purpose, its plan and its link, for the person who decides.
 import { randomUUID } from 'node:crypto';
 import {
   AUTO_APPROVER, autoApproves, NO_PERSON, SKIP_SANDBOX_APPROVER, templateApprovalBy, type SandboxApprovals, type SandboxRequestView,
 } from '../domain/sandbox-approvals.ts';
+import { readApprovedWithoutPerson, REMEMBERED_APPROVER, rememberedCovers, type RememberedWrite } from '../domain/remembered-writes.ts';
+import type { ReadPolicy } from '../domain/read-policy.ts';
 import type { NewEvent } from '../domain/types.ts';
 import type { TemplateView } from '../domain/vault.ts';
 
@@ -28,6 +32,12 @@ export interface SandboxRequestsOptions {
   /** Whether the job is at work: a request of a job that is not is forgotten. */
   atWork(jobId: string): boolean;
   jobTitle?(jobId: string): string | undefined;
+  /** The job's issue or pull request (issue #1001). */
+  jobUrl?(jobId: string): string | undefined;
+  /** A person's write approvals the hopper remembers now (issue #1001), ended ones left out; absent: none. */
+  remembered?(): RememberedWrite[];
+  /** The read policy: with the auto-approve policy, whether a read in a template remembered approvals cover needs a person. */
+  policy?(): ReadPolicy | undefined;
   clock: { now(): Date };
   newId?: () => string;
   /** How long a start may take before its request fails (issue #1002); default START_MS. */
@@ -40,8 +50,11 @@ export const START_MS = 20 * 60_000;
 export type SandboxRequestResult = { ok: true } | { ok: false; code: 'not_found' | 'conflict'; error: string };
 
 export interface SandboxRequests {
-  /** The job's request for a box of the template: the one it has, else a new one (approved at once when the toggle says so). */
-  ask(jobId: string, template: string): SandboxRequestView;
+  /**
+   * The job's request for a box of the template: the one it has, else a new one (approved at once when the toggle says
+   * so). `about` (issue #1001): why the job asks and its plan, kept on a new request.
+   */
+  ask(jobId: string, template: string, about?: { purpose: string; plan?: string }): SandboxRequestView;
   /** The job waited on the template for a person's approval (issue #1001): that approval covers the job's run. */
   waited(jobId: string, template: string): void;
   /** A person approves a waiting request: the box starts. */
@@ -71,13 +84,15 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
 
   /**
    * Who approves the job's run with no second person, or undefined: skip sandbox approval; the auto-approve policy, for
-   * the template's radius; a person's approval of the template the job asked for or waited on.
+   * the template's radius; a person's remembered write approvals that cover the template (issue #1001); a person's
+   * approval of the template the job asked for or waited on.
    */
   const approverOf = (jobId: string, template: string): { by: string; radius?: string } | undefined => {
     if (o.approvals().skipSandboxApproval) return { by: SKIP_SANDBOX_APPROVER };
     const t = o.template(template);
     if (!t) return undefined;
     if (autoApproves(o.approvals(), t.radius?.level)) return { by: AUTO_APPROVER, radius: t.radius.level };
+    if (o.remembered && rememberedCovers({ secrets: t.secrets ?? [], profiles: t.profiles ?? [] }, o.remembered(), readApprovedWithoutPerson(o.policy?.(), o.approvals()))) return { by: REMEMBERED_APPROVER };
     const person = t.approval?.by;
     const forJob = t.askedBy === jobId || waitedOn.has(`${jobId} ${template}`);
     return person && !NO_PERSON.includes(person) && forJob ? { by: templateApprovalBy(person) } : undefined;
@@ -125,7 +140,7 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
   };
 
   return {
-    ask(jobId, template) {
+    ask(jobId, template, about) {
       forget();
       const had = [...requests.values()].find((r) => r.jobId === jobId && r.template === template);
       // A box that went: the job's next ask is a new request. A start that failed stays failed: asked again on each
@@ -133,8 +148,11 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
       const ended = had && had.state === 'running' && !o.alive(had.container!);
       if (had && !ended) return { ...had };
       if (had) requests.delete(had.id);
-      const title = o.jobTitle?.(jobId);
-      const r: SandboxRequestView = { id: newId(), jobId, ...(title ? { jobTitle: title } : {}), template, state: 'waiting', askedAt: o.clock.now().toISOString() };
+      const title = o.jobTitle?.(jobId), url = o.jobUrl?.(jobId);
+      const r: SandboxRequestView = {
+        id: newId(), jobId, ...(title ? { jobTitle: title } : {}), ...(url ? { jobUrl: url } : {}), template, state: 'waiting', askedAt: o.clock.now().toISOString(),
+        ...(about ? { purpose: about.purpose, ...(about.plan ? { plan: about.plan } : {}) } : {}),
+      };
       requests.set(r.id, r);
       event(r, 'vault.sandbox_requested');
       const approver = approverOf(jobId, template);

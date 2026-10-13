@@ -6,6 +6,7 @@
 // template some needs name, as a running job does (issue #718, "Templates on request"). Each answers the vault's view,
 // never a value, and is not cached. An API token's approval of a write, sync or apply profile is a person's to confirm
 // (issue #909): asked, not done.
+import { rememberApproval } from '../../domain/remembered-writes.ts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { ASSET_KINDS, OPERATIONS } from '../../domain/access.ts';
@@ -138,6 +139,8 @@ export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; 
                   : edit.action === 'give-credential' ? await vault.give(edit.request, giveOf(edit), by)
                     : vault.decline(edit.request, edit.reason, by);
     if (!r.ok) throw new HttpError(STATUS[r.code], r.error);
+    // Issue #1001: a person's approval of a write, sync or apply is remembered for its asset and access.
+    if (edit.action === 'approve-profile') rememberApproval(parts.store.settings, { operation: edit.operation, asset: edit.asset }, by, new Date());
     return await vaultAnswer(parts);
   });
 }

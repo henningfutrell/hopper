@@ -42,14 +42,13 @@ export interface VaultService extends TemplateChecks, AgentCredentials, StepDeli
   set(s: SetSecret, by: string): VaultResult;
   remove(name: string, by: string): VaultResult;
   /**
-   * Saves a template: its image, scope and operation profiles (absent: the ones it has). A widened scope, a new image or
-   * a new profile waits for a person's approval; a profile dropped has its approval revoked. `readOnly` (issue #716): it
-   * takes the read-only check; a template keeps that through every save. A save makes its last check stale. `askedBy`
-   * (issue #715): the job that asked for it, which the check's report goes to; the first one is kept through every save.
-   * `agentCredential` (issue #708, part 10): one of its secrets its boxes' agent signs in with; absent keeps it, null drops it.
-   * `probeMarks` (issue #916): a person's marks on its read probes, which replace the ones it has; absent keeps them.
+   * Saves a template: its image, scope and operation profiles (absent: the ones it has). A widened scope, a new image or a new profile waits
+   * for a person's approval; a profile dropped has its approval revoked. `readOnly` (issue #716): it takes the read-only check, kept through every
+   * save; a save makes its last check stale. `askedBy` (issue #715): the job that asked, which the check's report goes to; the first one is kept
+   * through every save, as are `purpose` and `plan` (issue #1001). `agentCredential` (issue #708, part 10): one of its secrets its boxes' agent
+   * signs in with; absent keeps it, null drops it. `probeMarks` (issue #916): a person's marks on its read probes, replacing them; absent keeps them.
    */
-  saveTemplate(t: { name: string; image: string; secrets: readonly string[]; profiles?: readonly OperationProfile[]; limits?: TemplateLimits; tools?: readonly string[]; readOnly?: boolean; askedBy?: string; agentCredential?: string | null; probeMarks?: Readonly<Record<string, string>> }, by: string): Promise<VaultResult>;
+  saveTemplate(t: { name: string; image: string; secrets: readonly string[]; profiles?: readonly OperationProfile[]; limits?: TemplateLimits; tools?: readonly string[]; readOnly?: boolean; askedBy?: string; purpose?: string; plan?: string; agentCredential?: string | null; probeMarks?: Readonly<Record<string, string>> }, by: string): Promise<VaultResult>;
   /** Removes a template and revokes every approval access holds for it; refused, naming them, while boxes of it are attached (issue #604). */
   removeTemplate(name: string, by: string): Promise<VaultResult>;
   /** A person approves a template as it is now: its image, its whole scope, and every read profile; never a write, sync or apply profile. */
@@ -253,7 +252,7 @@ export function createVaultService(o: {
       });
     },
 
-    async saveTemplate({ name, image, secrets, profiles, limits, tools, readOnly, askedBy, agentCredential, probeMarks }, by) {
+    async saveTemplate({ name, image, secrets, profiles, limits, tools, readOnly, askedBy, purpose, plan, agentCredential, probeMarks }, by) {
       if (!TEMPLATE_NAME.test(name)) return fail('invalid', 'a template name is lowercase letters, digits, `.`, `_` or `-`, at most 64, starting with a letter or digit');
       if (!image.trim() || /\s/.test(image.trim()) || image.length > 300) return fail('invalid', 'image must be an image reference, as `podman run` takes it');
       const scope = [...new Set(secrets)];
@@ -274,7 +273,7 @@ export function createVaultService(o: {
       o.store.tx(() => {
         vault.saveTemplate({
           name, image: image.trim(), secrets: scope, ...(declared.length ? { profiles: declared } : {}), ...((limits ?? was?.limits) ? { limits: limits ?? was?.limits } : {}),
-          ...(adds.length ? { tools: adds } : {}), ...(readOnly || was?.readOnly ? { readOnly: true } : {}), ...((was?.askedBy ?? askedBy) ? { askedBy: was?.askedBy ?? askedBy } : {}), ...(credential !== undefined ? { agentCredential: credential } : {}), ...marks.keep, savedBy: by, savedAt: o.clock.now().toISOString(),
+          ...(adds.length ? { tools: adds } : {}), ...(readOnly || was?.readOnly ? { readOnly: true } : {}), ...((was?.askedBy ?? askedBy) ? { askedBy: was?.askedBy ?? askedBy } : {}), ...((was?.purpose ?? purpose) ? { purpose: was?.purpose ?? purpose } : {}), ...((was?.plan ?? plan) ? { plan: was?.plan ?? plan } : {}), ...(credential !== undefined ? { agentCredential: credential } : {}), ...marks.keep, savedBy: by, savedAt: o.clock.now().toISOString(),
           ...(was?.approval ? { approval: was.approval } : {}),
         });
         events.append({ type: 'template.saved', data: { template: name, image: image.trim(), ...(adds.length ? { tools: adds } : {}), secrets: scope, profiles: declared, ...marks.keep, by } });

@@ -14,8 +14,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { post, RoleRefused, SessionRejected } from '@/lib/api';
-import { autoApproveOf, sandboxApprovalsText, sandboxRunsWaiting } from '@/model/vault';
-import type { SandboxApprovals as Approvals, SandboxRequestView, TemplateView, VaultView } from '@/model/wire';
+import { autoApproveOf, profileText, rememberedKey, sandboxApprovalsText, sandboxRunsWaiting } from '@/model/vault';
+import type { SandboxApprovals as Approvals, RememberedWriteView, SandboxRequestView, TemplateView, VaultSecret, VaultView } from '@/model/wire';
+import { SandboxAsk } from './sandbox-ask';
 import { useHopper } from '@/store';
 import { setVaultView, useVaultStore } from '@/store/vault';
 
@@ -39,7 +40,7 @@ const STATE_TEXT: Record<SandboxRequestView['state'], string> = {
   waiting: 'waits for a person', starting: 'starts now', running: 'runs', declined: 'declined', failed: 'did not start',
 };
 
-function Waiting({ r, template, can }: { r: SandboxRequestView; template?: TemplateView; can: boolean }) {
+function Waiting({ r, template, secrets, can }: { r: SandboxRequestView; template?: TemplateView | undefined; secrets: readonly VaultSecret[]; can: boolean }) {
   const [reason, setReason] = useState('');
   const [pending, setPending] = useState<'approve' | 'decline' | null>(null);
   const decide = (what: 'approve' | 'decline', body: unknown, done: string): void => {
@@ -50,11 +51,13 @@ function Waiting({ r, template, can }: { r: SandboxRequestView; template?: Templ
     <li data-sandbox-request={r.id} className="space-y-2 rounded-md border border-warn/50 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Boxes className="size-4 text-warn" />
-        <span className="font-mono text-sm font-medium break-all">{r.template}</span>
+        {template?.label && <span className="text-sm font-medium break-all">{template.label}</span>}
+        <span className={template?.label ? 'font-mono text-xs text-muted-foreground break-all' : 'font-mono text-sm font-medium break-all'}>{r.template}</span>
         {template && <TemplateRadiusBadge radius={template.radius} />}
         <span className="text-xs text-warn">{STATE_TEXT[r.state]}</span>
       </div>
-      <p className="text-xs text-muted-foreground break-words">Job <a href={`#jobs/${r.jobId}`} className="font-mono underline">{r.jobId.slice(0, 8)}</a>{r.jobTitle ? <>: {r.jobTitle}</> : null}, asked at {r.askedAt}.</p>
+      <SandboxAsk purpose={r.purpose} plan={r.plan} job={{ id: r.jobId, title: r.jobTitle, url: r.jobUrl }} needs={template?.profiles} secrets={secrets} />
+      <p className="text-xs text-muted-foreground">Asked at {r.askedAt}.</p>
       {can ? (
         <div className="flex flex-wrap items-center gap-2">
           <Confirm title={`Start a box of ${r.template}?`} action="Approve" onConfirm={() => decide('approve', { action: 'approve', id: r.id }, `${r.template}: the box starts`)}
@@ -81,7 +84,7 @@ export function SandboxRuns({ view, can }: { view: VaultView | null; can: boolea
       <Panel title="Sandbox runs" icon={Rocket} count={waiting.length || ''} bodyClassName="space-y-3">
         <p className="text-sm text-muted-foreground">A job asks the hopper for a sandbox, and the hopper starts the box. A run waits here for a person unless <a href="#settings/vault" className="underline">the auto-approve policy</a> holds its blast radius, skip sandbox approval is on, or a person approved the template the job asked for.</p>
         {waiting.length === 0 ? <Empty>No sandbox run waits. A run a job asks for waits here.</Empty>
-          : <ul className="space-y-2">{waiting.map((r) => <Waiting key={r.id} r={r} template={templates.find((t) => t.name === r.template)} can={can} />)}</ul>}
+          : <ul className="space-y-2">{waiting.map((r) => <Waiting key={r.id} r={r} template={templates.find((t) => t.name === r.template)} secrets={view?.secrets ?? []} can={can} />)}</ul>}
         {rest.length > 0 && (
           <ul className="space-y-1 text-xs">
             {rest.map((r) => (
@@ -104,12 +107,44 @@ const LEVEL_HINT: Record<typeof LEVELS[number], string> = {
   high: 'Write, sync or apply on an asset.',
 };
 
-/** Settings → Vault, Sandbox approvals (issue #991): skip template approval, skip sandbox approval, and YOLO, both; the auto-approve policy (issue #1001). */
-export function SandboxApprovals({ approvals, can, busy }: { approvals: Approvals | undefined; can: boolean; busy: boolean }) {
+/**
+ * Remembered write approvals (issue #1001): each write, sync or apply a person approved, remembered for its asset and
+ * access until it ends or an admin forgets it; and the time limit, in hours (0: until forgotten).
+ */
+function Remembered({ remembered, hours, can, busy }: { remembered: readonly RememberedWriteView[]; hours: number; can: boolean; busy: boolean }) {
+  const [said, setSaid] = useState(String(hours));
+  const n = Number(said);
+  const valid = said.trim() !== '' && Number.isInteger(n) && n >= 0 && n <= 8760;
+  return (
+    <>
+      <p className="pt-1 font-medium">Remembered write approvals</p>
+      <p className="text-xs text-muted-foreground">A write, sync or apply a person approves is remembered for that asset. A later template or sandbox run whose every change is remembered, and whose reads need no person, is approved with no person. Each approval is an event that names a remembered write approval.</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input className="h-8 w-24 text-sm" inputMode="numeric" aria-label="Remember write approvals for (hours)" value={said} disabled={!can || busy} onChange={(e) => setSaid(e.target.value)} />
+        <span className="text-xs text-muted-foreground">hours (0: until forgotten)</span>
+        <Button size="sm" variant="outline" disabled={!can || busy || !valid || n === hours} onClick={() => void sendSandbox('/ui/api/sandbox-approvals', { rememberWritesHours: n }, 'Saved')}>Save time limit</Button>
+      </div>
+      {remembered.length === 0 ? <p className="text-xs text-muted-foreground">None is remembered. A write a person approves shows here.</p> : (
+        <ul className="space-y-1 text-xs">
+          {remembered.map((w) => (
+            <li key={rememberedKey(w)} data-remembered-write={rememberedKey(w)} className="flex flex-wrap items-center gap-2">
+              <span className="font-mono break-all">{profileText(w)}</span>
+              <span className="text-muted-foreground">approved by {w.by}, {w.expiresAt ? `until ${w.expiresAt}` : 'until forgotten'}</span>
+              {can && <Button size="sm" variant="outline" className="h-7" disabled={busy} onClick={() => void sendSandbox('/ui/api/sandbox-approvals', { forgetWrite: { operation: w.operation, asset: w.asset } }, `${profileText(w)}: forgotten`)}>Forget</Button>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+/** Settings → Vault, Sandbox approvals (issue #991): skip template approval, skip sandbox approval, and YOLO, both; the auto-approve policy and the remembered write approvals (issue #1001). */
+export function SandboxApprovals({ approvals, remembered, can, busy }: { approvals: Approvals | undefined; remembered: readonly RememberedWriteView[]; can: boolean; busy: boolean }) {
   const a = approvals ?? { skipTemplateApproval: false, skipSandboxApproval: false };
   const auto = autoApproveOf(approvals);
   const yolo = a.skipTemplateApproval && a.skipSandboxApproval;
-  type Edit = Omit<Partial<Approvals>, 'autoApprove'> & { yolo?: boolean; autoApprove?: Partial<NonNullable<Approvals['autoApprove']>> };
+  type Edit = Omit<Partial<Approvals>, 'autoApprove' | 'rememberWritesHours'> & { yolo?: boolean; autoApprove?: Partial<NonNullable<Approvals['autoApprove']>> };
   const set = (edit: Edit, done: string) => void sendSandbox('/ui/api/sandbox-approvals', edit, done);
   const row = (label: string, hint: string, checked: boolean, onChange: (on: boolean) => void) => (
     <label className="flex items-start gap-2">
@@ -132,6 +167,7 @@ export function SandboxApprovals({ approvals, can, busy }: { approvals: Approval
         <p className="pt-1 font-medium">Auto-approve by blast radius</p>
         <p className="text-xs text-muted-foreground">A new template a job asks for, and a sandbox run, of a level on here is approved with no person. Each approval is an event that names the auto-approve policy.</p>
         {LEVELS.map((l) => row(`Auto-approve ${l} radius`, LEVEL_HINT[l], auto[l], (on) => set({ autoApprove: { [l]: on } }, 'Saved')))}
+        <Remembered remembered={remembered} hours={a.rememberWritesHours ?? 168} can={can} busy={busy} />
         {!can && <p className="text-xs text-muted-foreground">An admin changes these.</p>}
       </Panel>
     </div>

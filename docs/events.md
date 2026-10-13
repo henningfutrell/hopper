@@ -2977,7 +2977,7 @@ Version 1 (`docs/schemas/template.removed.v1.json`). A template was removed (iss
 
 ## `vault.approved`
 
-Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001) or `skip template approval`.
+Version 1 (`docs/schemas/vault.approved.v1.json`). A person approved a template as it is (issue #558): its image (with its tools, issue #716) and its whole scope. From then on its boxes take jobs (issue #602) and may be given those vault secrets, and only those. Its read profiles are approved with it (`template.profile_approved`); a write, sync or apply profile is not. `by`: a person, or for a template made for a job `the read policy`, `the auto-approve policy` (issue #1001), `a remembered write approval` (issue #1001) or `skip template approval`.
 
 | field | type | required |
 |---|---|---|
@@ -3400,13 +3400,14 @@ Version 1 (`docs/schemas/vault.read_policy_set.v1.json`). An admin set the read 
 
 ## `vault.sandbox_approvals_set`
 
-Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the sandbox approval toggles (issue #991): `skipTemplateApproval`, a template the hopper makes for a job is approved at once, its write, sync and apply profiles with it; `skipSandboxApproval`, a box a job asks for starts at once, a high-blast-radius one too. Both on is sandbox YOLO. `autoApprove` (issue #1001): the blast radius levels whose templates and runs are approved with no person.
+Version 1 (`docs/schemas/vault.sandbox_approvals_set.v1.json`). An admin set the sandbox approval toggles (issue #991): `skipTemplateApproval`, a template the hopper makes for a job is approved at once, its write, sync and apply profiles with it; `skipSandboxApproval`, a box a job asks for starts at once, a high-blast-radius one too. Both on is sandbox YOLO. `autoApprove` (issue #1001): the blast radius levels whose templates and runs are approved with no person. `rememberWritesHours` (issue #1001): how long a person's write, sync or apply approval is remembered; 0, until an admin forgets it.
 
 | field | type | required |
 |---|---|---|
 | `skipTemplateApproval` | boolean | yes |
 | `skipSandboxApproval` | boolean | yes |
 | `autoApprove` | object | no |
+| `rememberWritesHours` | integer | no |
 | `by` | string | yes |
 
 ```json
@@ -3440,7 +3441,7 @@ Version 1 (`docs/schemas/vault.sandbox_requested.v1.json`). A running job asked 
 
 ## `vault.sandbox_approved`
 
-Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was approved (issue #991): `by` a person, `skip sandbox approval` when the toggle approved it, `the auto-approve policy` with the template's `radius` (issue #1001), or `the template's approval by <person>` when a person approved the template this job asked for. The hopper starts the box now. On the job's timeline.
+Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was approved (issue #991): `by` a person, `skip sandbox approval` when the toggle approved it, `the auto-approve policy` with the template's `radius` (issue #1001), `the template's approval by <person>` when a person approved the template this job asked for, or `a remembered write approval` (issue #1001) when a person approved each change the template makes before. The hopper starts the box now. On the job's timeline.
 
 | field | type | required |
 |---|---|---|
@@ -3510,6 +3511,27 @@ Version 1 (`docs/schemas/vault.sandbox_failed.v1.json`). The box of an approved 
   "request": "b2c1",
   "template": "asked-3f2a9c1d0e4b",
   "reason": "the start check did not pass in 30 s"
+}
+```
+
+## `vault.write_forgotten`
+
+Version 1 (`docs/schemas/vault.write_forgotten.v1.json`). An admin forgot a remembered write approval (issue #1001): the `operation` on the `asset` a person approved before. A later template or sandbox run that changes it waits for a person again.
+
+| field | type | required |
+|---|---|---|
+| `operation` | `write` \| `sync` \| `apply` | yes |
+| `asset` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "operation": "write",
+  "asset": {
+    "kind": "aws-account",
+    "name": "123456789012"
+  },
+  "by": "Ada"
 }
 ```
 

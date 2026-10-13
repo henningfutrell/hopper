@@ -138,12 +138,16 @@ A launch gives the token to the box as `CLAUDE_CODE_OAUTH_TOKEN`. Every job on t
 A job that needs AWS, a cluster or another sandboxed target asks the hopper for a sandbox. You do not create the box.
 
 ```sh
-sh "$HOPPER_SKILL" sandbox --needs "write/aws-account/123456789012" --wait
+sh "$HOPPER_SKILL" sandbox --why "Create the report bucket in the UAT account" \
+  --plan "aws s3 mb s3://report. To undo: aws s3 rb s3://report." \
+  --needs "write/aws-account/123456789012" --wait
 ```
+
+The job must say why it needs the sandbox (`--why`). When a need changes an asset (write, sync or apply), the job must also say what the box will do (`--plan`): the commands, and for each change what it changes and whether it can be undone. The hopper refuses an ask without them. The approval cards show this text.
 
 1. The hopper finds the template for these needs and uses it again. When there is none, the hopper makes it (see [Templates a job asks for](#templates-a-job-asks-for)).
 2. A new template waits for a person on **Access requests → Template approvals**, unless the read policy approves it, the auto-approve policy holds its blast radius, or **Skip template approval** is on. By default, a template that only reads is approved with no person.
-3. The sandbox run waits for a person on **Access requests → Sandbox runs**, unless the auto-approve policy holds the template's blast radius, **Skip sandbox approval** is on, or a person approved the template this job asked for. Select **Approve** to start the box, or write why not and select **Decline**. The job is told the reason.
+3. The sandbox run waits for a person on **Access requests → Sandbox runs**, unless the auto-approve policy holds the template's blast radius, a remembered write approval covers each change, **Skip sandbox approval** is on, or a person approved the template this job asked for. Select **Approve** to start the box, or write why not and select **Decline**. The job is told the reason.
 4. The hopper starts the box with the template's defaults. The box joins as a machine of that template. The job's `--wait` ends with the box's name and the skills the box loads. **Approve** answers at once; the box starts in the background. A box that has not started in 20 minutes fails the run with that reason, and the job is told.
 
 The same job that asks again gets the same box. A box ends at the template's time limit. A run that did not start says why; a person can start a box with `hopper sandbox launch --template <name>`.
@@ -160,11 +164,15 @@ An admin sets these in **Settings → Vault**, panel **Sandbox approvals**. They
 
 **Auto-approve by blast radius.** In the same panel, one switch for each level: **Auto-approve low radius**, **medium** and **high**. A new template a job asks for, and a sandbox run, of a level that is on is approved with no person, `by: the auto-approve policy`. By default, low is on: a box that only reads, with no vault secret. Medium and high ask a person. The read policy approves first; YOLO stays the override.
 
-When you approve a template that a job asked for, the run of that job starts with your approval: `by: the template's approval by <you>`. Another job that asks for the same template still waits for a run approval.
+When you approve a template that a job asked for, the run of that job starts with your approval: `by: the template's approval by <you>`.
+
+**Remembered write approvals.** When you approve a write, sync or apply on an asset, the hopper remembers that approval for that asset and access. A later template or sandbox run whose every change you approved before, with no vault secret and with reads that need no person, is approved with no person: `by: a remembered write approval`. So a repeat write ask on the same account or namespace runs with zero clicks. The same panel lists each remembered approval, with who gave it and when it ends. Select **Forget** to remove one: the next ask waits for a person again. Set how long an approval is remembered in **hours** (default 168, one week; 0 keeps it until you forget it).
+
+**The approval cards.** Each template and sandbox run card shows what the sandbox is for: a readable name made from the job's purpose (the `asked-<hash>` name stays beside it), **Why** in the job's words, the **Job** with its title and a link to its issue or pull request, the **Plan**, and each need in plain words. For an asset with a minting credential in the vault, the card shows that credential's name and scope next to the raw ID, for example `AWS_UAT2: gss-uat2 account`.
 
 Each approval a toggle gives is still an event, and it names the toggle: `by: skip template approval` on `vault.approved` and `template.profile_approved`, `by: skip sandbox approval` on `vault.sandbox_approved`. The job's timeline shows each one.
 
-Through the API: `POST /ui/api/sandbox-approvals` with `yolo`, `skipTemplateApproval`, `skipSandboxApproval` or `autoApprove` (`{ "low": true, "medium": false, "high": false }`, each level named sets itself), and `POST /ui/api/sandbox-requests` with `approve` or `decline`. Both are box actions: an API token needs a box grant.
+Through the API: `POST /ui/api/sandbox-approvals` with `yolo`, `skipTemplateApproval`, `skipSandboxApproval`, `autoApprove` (`{ "low": true, "medium": false, "high": false }`, each level named sets itself), `rememberWritesHours`, or `forgetWrite` (`{ "operation": "write", "asset": { "kind": "aws-account", "name": "123456789012" } }`), and `POST /ui/api/sandbox-requests` with `approve` or `decline`. Both are box actions: an API token needs a box grant.
 
 A read template still takes the read-only check before its first box, with YOLO too.
 

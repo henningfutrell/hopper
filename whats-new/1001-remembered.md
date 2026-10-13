@@ -1,0 +1,1 @@
+- When you approve a change on an account or namespace, the hopper remembers it, so the next job that asks for the same change gets its sandbox with no approval from you. You can see and forget each one in Settings, and set how long it is remembered. Each approval card now says why the job wants the sandbox, which job asked, what it will do, and which account it means.

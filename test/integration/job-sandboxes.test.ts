@@ -12,7 +12,8 @@
 //     And the job's wait ends with the box's name; each auto-approval is an event that names its toggle
 //     And the same job asking again gets the same box, and no second template
 //   Scenario: with both toggles off, a person approves the template the job asked for; its run starts with that approval
-//   Scenario: a job that did not ask for the template waits for a person to approve its run (issue #1001)
+//   Scenario: a repeat write ask on an approved account runs with zero clicks, until the approval is forgotten (issue #1001)
+//   Scenario: a job says why it asks, and its plan for a change; the cards show it with the job (issue #1001)
 //   Scenario: a person declines the sandbox run, and the job is told why
 //   Scenario: the toggles are the admin's, a box action: shown in the vault's view, an event; an API token with no box grant refused
 import { execFile, spawn } from 'node:child_process';
@@ -30,6 +31,8 @@ import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts
 import { KEY } from '../support/webhooks.ts';
 
 const NEEDS = 'write/aws-account/123456789012';
+/** Why the job asks, and what the box will change (issue #1001): a need that changes an asset takes a plan. */
+const ASK = ['--why', 'Create the bucket for the report', '--plan', 'aws s3 mb s3://report (undo: aws s3 rb s3://report)'];
 const AWS_WRITE = { operation: 'write', asset: { kind: 'aws-account', name: '123456789012' } } as const;
 
 const apps: TestApp[] = [];
@@ -49,7 +52,7 @@ async function boot(): Promise<{ a: TestApp; token: string; runtime: FakeContain
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   const runtime = createFakeContainerRuntime();
-  const a = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, plugins: { machines: lanes(2) }, seams: { authorizationServer: createFakeAuthorizationServer(), containerRuntime: runtime } });
+  const a = await startTestApp({ dbPath: db.dbPath, secrets: { HOPPER_MASTER_KEY: KEY }, plugins: { machines: lanes(3) }, seams: { authorizationServer: createFakeAuthorizationServer(), containerRuntime: runtime } });
   apps.push(a);
   return { a, token: await a.login(), runtime };
 }
@@ -96,7 +99,7 @@ describe('sandboxes start from jobs (issue #991)', () => {
     const { a, token, runtime } = await boot();
     expect((await a.ui('/ui/api/sandbox-approvals', { yolo: true }, { token })).status).toBe(200);
     const creds = await runningJob(a);
-    const r = await waiting(a, creds, ['sandbox', '--needs', NEEDS]).end;
+    const r = await waiting(a, creds, ['sandbox', '--needs', NEEDS, ...ASK]).end;
     expect(r.code, r.stdout + r.stderr).toBe(0);
     const [t] = await asked(a, token);
     expect(t).toMatchObject({ profiles: [AWS_WRITE], approval: { by: 'skip template approval' }, pending: { image: false, profiles: [] } });
@@ -113,7 +116,7 @@ describe('sandboxes start from jobs (issue #991)', () => {
     expect(events.find((e) => e.type === 'vault.sandbox_started')?.data).toMatchObject({ template: t!.name, container: req!.container });
 
     // Asked again: the same box, the same template.
-    const again = await skill(a, creds, ['sandbox', '--needs', NEEDS]);
+    const again = await skill(a, creds, ['sandbox', '--needs', NEEDS, ...ASK]);
     expect(again.code, again.stdout).toBe(0);
     expect(again.stdout).toContain(`box ${req!.container!}`);
     expect((await asked(a, token)).length).toBe(1);
@@ -123,13 +126,13 @@ describe('sandboxes start from jobs (issue #991)', () => {
   it('with both toggles off, a person approves the template the job asked for, its run starts with that approval, and the job\'s wait ends', async () => {
     const { a, token, runtime } = await boot();
     const creds = await runningJob(a);
-    const first = await skill(a, creds, ['sandbox', '--needs', NEEDS]);
+    const first = await skill(a, creds, ['sandbox', '--needs', NEEDS, ...ASK]);
     expect(first.code, first.stdout).toBe(3);
     expect(first.stdout).toMatch(/^waiting: template asked-[0-9a-f]+ waits for a person on Access requests/);
     const [t] = await asked(a, token);
     expect(t!.approval).toBeUndefined();
 
-    const done = waiting(a, creds, ['sandbox', '--needs', NEEDS]);
+    const done = waiting(a, creds, ['sandbox', '--needs', NEEDS, ...ASK]);
     await done.opened;
     expect((await a.ui('/ui/api/vault', { action: 'approve-template', name: t!.name }, { token })).status).toBe(200);
     expect((await a.ui('/ui/api/vault', { action: 'approve-profile', name: t!.name, ...AWS_WRITE }, { token })).status).toBe(200);
@@ -143,36 +146,73 @@ describe('sandboxes start from jobs (issue #991)', () => {
     expect((await a.ui('/ui/api/sandbox-requests', { action: 'approve', id: req!.id }, { token })).status).toBe(409);
   });
 
-  it('a job that did not ask for the template waits for a person to approve its run', async () => {
+  it('a repeat write ask on an approved account runs with zero clicks: a person\'s write approval is remembered until it is forgotten', async () => {
     const { a, token, runtime } = await boot();
     const asker = await runningJob(a);
-    const first = await skill(a, asker, ['sandbox', '--needs', NEEDS]);
+    const first = await skill(a, asker, ['sandbox', '--needs', NEEDS, ...ASK]);
     expect(first.code, first.stdout).toBe(3);
     const [t] = await asked(a, token);
     expect((await a.ui('/ui/api/vault', { action: 'approve-template', name: t!.name }, { token })).status).toBe(200);
     expect((await a.ui('/ui/api/vault', { action: 'approve-profile', name: t!.name, ...AWS_WRITE }, { token })).status).toBe(200);
+    const remembered = (await view(a, token)).rememberedWrites;
+    expect(remembered).toEqual([{ ...AWS_WRITE, by: expect.any(String), at: expect.any(String), expiresAt: expect.any(String) }]);
+
+    // Another job asks the same: the approved template is used, and its run starts by the remembered approval.
     const other = await runningJob(a);
-    const r = await skill(a, other, ['sandbox', '--needs', NEEDS]);
-    expect(r.code, r.stdout).toBe(3);
-    expect(r.stdout).toContain('waits for a person to approve the sandbox run on Access requests');
+    const r = await waiting(a, other, ['sandbox', '--needs', NEEDS, ...ASK]).end;
+    expect(r.code, r.stdout + r.stderr).toBe(0);
+    expect(r.stdout).toContain('approved by a remembered write approval');
+    expect((await asked(a, token)).length).toBe(1);
+    expect((await sandboxEvents(a)).filter((e) => e.type === 'vault.sandbox_approved').map((e) => e.data.by)).toContain('a remembered write approval');
+
+    // Forgotten, the next job's run waits for a person again.
+    const forgot = await a.ui<VaultView>('/ui/api/sandbox-approvals', { forgetWrite: AWS_WRITE }, { token });
+    expect(forgot.status).toBe(200);
+    expect(forgot.body.rememberedWrites).toEqual([]);
+    expect((await a.events()).find((e) => e.type === 'vault.write_forgotten')?.data).toMatchObject({ ...AWS_WRITE, by: expect.any(String) });
+    const third = await runningJob(a);
+    const waits = await skill(a, third, ['sandbox', '--needs', NEEDS, ...ASK]);
+    expect(waits.code, waits.stdout).toBe(3);
+    expect(waits.stdout).toContain('waits for a person to approve the sandbox run on Access requests');
     const req = (await view(a, token)).sandboxRequests!.find((x) => x.state === 'waiting');
-    expect(req).toMatchObject({ template: t!.name, state: 'waiting' });
-    const approved = await a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve', id: req!.id }, { token });
-    expect(approved.status).toBe(200);
+    expect((await a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve', id: req!.id }, { token })).status).toBe(200);
     await vi.waitFor(async () => expect((await view(a, token)).sandboxRequests!.find((x) => x.id === req!.id)?.state).toBe('running'));
-    expect(runtime.boxes.size).toBeGreaterThanOrEqual(1);
+    expect(runtime.boxes.size).toBeGreaterThanOrEqual(2);
+  });
+
+  it('a job says why it asks, and for a change what the box will do; the cards a person decides on show it with the job', async () => {
+    const { a, token } = await boot();
+    const creds = await runningJob(a);
+    const noWhy = await skill(a, creds, ['sandbox', '--needs', NEEDS]);
+    expect(noWhy.code, noWhy.stdout).toBe(1);
+    expect(noWhy.stdout + noWhy.stderr).toContain('--why');
+    const noPlan = await skill(a, creds, ['sandbox', '--needs', NEEDS, '--why', 'Create the bucket for the report']);
+    expect(noPlan.code, noPlan.stdout).toBe(1);
+    expect(noPlan.stdout + noPlan.stderr).toContain('--plan');
+    expect((await asked(a, token)).length).toBe(0);
+
+    expect((await skill(a, creds, ['sandbox', '--needs', NEEDS, ...ASK])).code).toBe(3);
+    const [t] = await asked(a, token);
+    expect(t).toMatchObject({ purpose: 'Create the bucket for the report', plan: 'aws s3 mb s3://report (undo: aws s3 rb s3://report)', label: 'create-the-bucket-for-the-report' });
+    expect(t!.askedByJob).toMatchObject({ id: expect.any(String) });
+
+    expect((await a.ui('/ui/api/sandbox-approvals', { skipTemplateApproval: true }, { token })).status).toBe(200);
+    const again = await runningJob(a);
+    expect((await skill(a, again, ['sandbox', '--needs', 'write/aws-account/210987654321', '--why', 'Tag the bucket', '--plan', 'aws s3api put-bucket-tagging (undo: delete the tag)'])).code).toBe(3);
+    const req = (await view(a, token)).sandboxRequests!.find((x) => x.state === 'waiting');
+    expect(req).toMatchObject({ purpose: 'Tag the bucket', plan: 'aws s3api put-bucket-tagging (undo: delete the tag)' });
   });
 
   it('a person declines the sandbox run, and the job is told why', async () => {
     const { a, token, runtime } = await boot();
     expect((await a.ui('/ui/api/sandbox-approvals', { skipTemplateApproval: true }, { token })).status).toBe(200);
     const creds = await runningJob(a);
-    const first = await skill(a, creds, ['sandbox', '--needs', NEEDS]);
+    const first = await skill(a, creds, ['sandbox', '--needs', NEEDS, ...ASK]);
     expect(first.code, first.stdout).toBe(3);
     expect(first.stdout).toContain('waits for a person to approve the sandbox run on Access requests');
     const [req] = (await view(a, token)).sandboxRequests!;
     expect((await a.ui('/ui/api/sandbox-requests', { action: 'decline', id: req!.id, reason: 'use the lab account' }, { token })).status).toBe(200);
-    const r = await skill(a, creds, ['sandbox', '--needs', NEEDS]);
+    const r = await skill(a, creds, ['sandbox', '--needs', NEEDS, ...ASK]);
     expect(r.code, r.stdout).toBe(1);
     expect(r.stdout + r.stderr).toContain('use the lab account');
     expect(runtime.boxes.size).toBe(0);
@@ -181,13 +221,17 @@ describe('sandboxes start from jobs (issue #991)', () => {
 
   it('the toggles are the admin\'s, a box action: shown in the vault\'s view and an event; an API token with no box grant is refused', async () => {
     const { a, token } = await boot();
-    expect((await view(a, token)).sandboxApprovals).toEqual({ skipTemplateApproval: false, skipSandboxApproval: false, autoApprove: { low: true, medium: false, high: false } });
+    expect((await view(a, token)).sandboxApprovals).toEqual({ skipTemplateApproval: false, skipSandboxApproval: false, autoApprove: { low: true, medium: false, high: false }, rememberWritesHours: 168 });
     const set = await a.ui<VaultView>('/ui/api/sandbox-approvals', { yolo: true, skipSandboxApproval: false }, { token });
     expect(set.status).toBe(200);
-    expect(set.body.sandboxApprovals).toEqual({ skipTemplateApproval: true, skipSandboxApproval: false, autoApprove: { low: true, medium: false, high: false } });
+    expect(set.body.sandboxApprovals).toEqual({ skipTemplateApproval: true, skipSandboxApproval: false, autoApprove: { low: true, medium: false, high: false }, rememberWritesHours: 168 });
     const policy = await a.ui<VaultView>('/ui/api/sandbox-approvals', { autoApprove: { low: false, high: true } }, { token });
     expect(policy.body.sandboxApprovals?.autoApprove).toEqual({ low: false, medium: false, high: true });
     expect((await a.ui('/ui/api/sandbox-approvals', { autoApprove: { extreme: true } }, { token })).status).toBe(400);
+    // Issue #1001: how long a person's write approval is remembered; 0 keeps it until it is forgotten.
+    const hours = await a.ui<VaultView>('/ui/api/sandbox-approvals', { rememberWritesHours: 24 }, { token });
+    expect(hours.body.sandboxApprovals?.rememberWritesHours).toBe(24);
+    expect((await a.ui('/ui/api/sandbox-approvals', { rememberWritesHours: -1 }, { token })).status).toBe(400);
     expect((await a.events()).find((e) => e.type === 'vault.sandbox_approvals_set')?.data).toMatchObject({ skipTemplateApproval: true, skipSandboxApproval: false });
     expect((await a.ui('/ui/api/sandbox-approvals', { yolo: 'yes' }, { token })).status).toBe(400);
 

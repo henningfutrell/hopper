@@ -19,6 +19,11 @@ export interface SandboxApprovals {
   skipSandboxApproval: boolean;
   /** The auto-approve policy (issue #1001). Absent: saved before it, or never set; the default holds. */
   autoApprove?: AutoApprove;
+  /**
+   * How long a person's write, sync or apply approval is remembered, in hours (issue #1001, src/domain/remembered-writes.ts);
+   * 0: until an admin forgets it. Absent: the default, a week.
+   */
+  rememberWritesHours?: number;
 }
 
 /** The auto-approve policy in force. */
@@ -39,8 +44,13 @@ export const SKIP_TEMPLATE_APPROVER = 'skip template approval';
 export const SKIP_SANDBOX_APPROVER = 'skip sandbox approval';
 /** Who approves a template or a run the auto-approve policy holds (issue #1001). */
 export const AUTO_APPROVER = 'the auto-approve policy';
-/** The approvers that are no person: a template one of them approved does not approve a run for its job. */
-export const NO_PERSON: readonly string[] = ['the read policy', SKIP_TEMPLATE_APPROVER, SKIP_SANDBOX_APPROVER, AUTO_APPROVER];
+/** Who approves a template or a run that a person's remembered write approvals cover (issue #1001). */
+export const REMEMBERED_APPROVER = 'a remembered write approval';
+/**
+ * The approvers that are no person: a template one of them approved does not approve a run for its job, and a profile one
+ * of them approved is not remembered.
+ */
+export const NO_PERSON: readonly string[] = ['the read policy', SKIP_TEMPLATE_APPROVER, SKIP_SANDBOX_APPROVER, AUTO_APPROVER, REMEMBERED_APPROVER];
 
 /**
  * Who approves a run that a person's approval of its template covers (issue #1001): the job asked for that template, and
@@ -54,13 +64,15 @@ export const sandboxYolo = (a: SandboxApprovals): boolean => a.skipTemplateAppro
 /**
  * The toggles after an edit: `yolo` sets both, then each toggle named sets itself. Absent fields keep what was there.
  */
-export function editedApprovals(was: SandboxApprovals, e: { yolo?: boolean; skipTemplateApproval?: boolean; skipSandboxApproval?: boolean; autoApprove?: Partial<AutoApprove> }): SandboxApprovals {
+export function editedApprovals(was: SandboxApprovals, e: { yolo?: boolean; skipTemplateApproval?: boolean; skipSandboxApproval?: boolean; autoApprove?: Partial<AutoApprove>; rememberWritesHours?: number }): SandboxApprovals {
   const base = e.yolo === undefined ? was : { skipTemplateApproval: e.yolo, skipSandboxApproval: e.yolo };
   const auto = e.autoApprove ? { autoApprove: { ...autoApproveOf(was), ...e.autoApprove } } : was.autoApprove ? { autoApprove: { ...was.autoApprove } } : {};
+  const hours = e.rememberWritesHours ?? was.rememberWritesHours;
   return {
     skipTemplateApproval: e.skipTemplateApproval ?? base.skipTemplateApproval,
     skipSandboxApproval: e.skipSandboxApproval ?? base.skipSandboxApproval,
     ...auto,
+    ...(hours !== undefined ? { rememberWritesHours: hours } : {}),
   };
 }
 
@@ -73,6 +85,12 @@ export interface SandboxRequestView {
   jobId: string;
   /** The job's title when it has one, for the person who decides. */
   jobTitle?: string;
+  /** The job's issue or pull request (issue #1001). */
+  jobUrl?: string;
+  /** Why the job asks, in its own words (issue #1001: required in its ask). */
+  purpose?: string;
+  /** What the box will do, in the job's words: the commands or the plan, and for each change what it changes and whether it can be undone. */
+  plan?: string;
   template: string;
   state: SandboxRequestState;
   askedAt: string;

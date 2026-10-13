@@ -215,7 +215,7 @@ export function Vault() {
         {templates.length > 0 && <ul className="space-y-2">{templates.map((t) => <TemplateItem key={t.name} t={t} secrets={secrets} shared={shared} can={can} busy={busy} send={send} />)}</ul>}
       </Panel>
       {view && <TemplateRequest onView={setView} />}
-      {view && <SandboxApprovals approvals={view.sandboxApprovals} can={can} busy={busy} />}
+      {view && <SandboxApprovals approvals={view.sandboxApprovals} remembered={view.rememberedWrites ?? []} can={can} busy={busy} />}
       {view && <ReadPolicy entries={view.readPolicy ?? []} onView={setView} />}
       {view && <SharedSecrets shared={shared} onView={setView} />}
       {view && <SystemSecrets system={view.system} backends={backends} can={can} busy={busy} send={send} />}
