@@ -60,13 +60,13 @@ describe('artifacts (issue #624)', () => {
     expect(out.artifact).toMatchObject({
       jobId: job, userId: a.user().user.id, title: 'Queue wait — by hour', name: 'chart.html', type: 'text/html', kind: 'html',
       size: Buffer.byteLength(CHART), issue: { url: 'https://github.com/octo-org/hello/issues/7', ref: 'octo-org/hello#7' },
-      url: `${a.url}/#artifacts/${out.artifact.id}`,
+      url: `http://localhost:${new URL(a.url).port}/#artifacts/${out.artifact.id}`,
     });
     expect(out.artifact.sha256).toMatch(/^[0-9a-f]{64}$/);
 
     const text = await artifact(a, job, ['put', 'chart.html', '--summary', 'Queue wait by hour', '--new'], { cwd: dir });
     expect(text.code).toBe(0);
-    expect(text.stdout).toMatch(/^put: [0-9a-f-]{36} {2}chart\.html {2}text\/html {2}\d+ bytes\nurl: http:\/\/127\.0\.0\.1:\d+\/#artifacts\/[0-9a-f-]{36}\n$/);
+    expect(text.stdout).toMatch(/^put: [0-9a-f-]{36} {2}chart\.html {2}text\/html {2}\d+ bytes\nurl: http:\/\/localhost:\d+\/#artifacts\/[0-9a-f-]{36}\n$/);
 
     // On the job's timeline, and on its job stream.
     expect(eventsOf(a, 'artifact.created')).toEqual(expect.arrayContaining([expect.objectContaining({ jobId: job, data: expect.objectContaining({ artifact: out.artifact.id, type: 'text/html', issue: 'https://github.com/octo-org/hello/issues/7' }) })]));

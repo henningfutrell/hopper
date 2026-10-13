@@ -59,7 +59,7 @@ describe('artifacts: notify and CLI (issue #673)', () => {
     const hit = await waitFor(() => r.hits.find((x) => x.kind === 'artifact.created'), { what: 'the artifact notification' });
     expect(hit).toMatchObject({
       source: 'hopper', kind: 'artifact.created', jobId: job, artifactId: art.id, title: 'Queue wait', type: 'text/html',
-      size: art.size, issueUrl: ISSUE.url, url: `${a.url}/#artifacts/${art.id}`,
+      size: art.size, issueUrl: ISSUE.url, url: `http://localhost:${new URL(a.url).port}/#artifacts/${art.id}`,
     });
   });
 
