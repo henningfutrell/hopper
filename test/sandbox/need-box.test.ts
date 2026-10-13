@@ -1,7 +1,8 @@
 // A need step's box (issue #1007, src/sandbox/need-box.ts): the box's environment from the minted credentials, and
 // one need box run to its end at the container runtime double, whose one-shot container runs the step's real script
 // under `sh` with a home of its own: the credentials into files and out of the environment, the inputs extracted, the
-// command's output streamed, its exit code, the outputs back as a tar, and the box and its volume gone after it.
+// command's output streamed, its exit code, the outputs back as a tar, and the box and its volume gone after it. The
+// inputs and the saved plan file come by a copy into the box, or, from a runtime with no copy, in its environment.
 import { execFileSync } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -9,7 +10,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ContainerSpec } from '../../src/domain/ports.ts';
-import { runNeedBox, shownSoFar, splitOutput, needEnv, needSecrets, NEED_LABEL, type NeedCredential } from '../../src/sandbox/need-box.ts';
+import { HOME } from '../../src/sandbox/flags.ts';
+import { runNeedBox, shownSoFar, splitOutput, needEnv, needSecrets, NEED_LABEL, type NeedCredential, type NeedFiles } from '../../src/sandbox/need-box.ts';
 import { coveringTemplate } from '../../src/sandbox/need-steps.ts';
 import type { TemplateView } from '../../src/domain/vault.ts';
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
@@ -29,11 +31,22 @@ const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 const temp = (prefix: string): string => { const d = mkdtempSync(join(tmpdir(), prefix)); dirs.push(d); return d; };
 
-/** The runtime double, its one-shot containers run under `sh` with the box's environment and a home of their own. */
+/**
+ * The runtime double, its one-shot containers run under `sh` with the box's environment and a home of their own; a copy
+ * into the box's HOME goes into that home.
+ */
 function runtime(): FakeContainerRuntime {
   const r = createFakeContainerRuntime();
+  const homes = new Map<string, string>();
+  const homeOf = (name: string): string => { let h = homes.get(name); if (!h) { h = temp('step-box-'); homes.set(name, h); } return h; };
+  r.copyIn = async (id, dir, tar) => {
+    const c = [...r.boxes.values()].find((b) => b.id === id);
+    if (!c || c.state !== 'running') throw new Error(`the box ${id} is not running`);
+    r.copies.push({ box: c.spec.name, dir });
+    execFileSync('tar', ['-xf', tar, '-C', dir.replace(HOME, homeOf(c.spec.name))]);
+  };
   r.runScript = (spec: ContainerSpec) => new Promise((resolve) => {
-    const home = temp('step-box-');
+    const home = homeOf(spec.name);
     execFile('sh', ['-c', spec.script ?? ''], { env: { ...spec.env, HOME: home, PATH: process.env.PATH }, encoding: 'utf8' }, (err, stdout, stderr) => {
       resolve({ exit: err ? Number((err as { code?: number }).code ?? 1) : 0, output: stdout + stderr });
     });
@@ -41,7 +54,7 @@ function runtime(): FakeContainerRuntime {
   return r;
 }
 
-const box = (env: Record<string, string>) => ({ name: 'hopper-need-asked-1-abcd', userId: 'u1', instanceId: 'i1', network: 'hopper_default', template: { image: 'ghcr.io/henningfutrell/hopper:box-claude' }, env, timeoutMs: 30_000 });
+const box = (env: Record<string, string>, files?: NeedFiles) => ({ name: 'hopper-need-asked-1-abcd', userId: 'u1', instanceId: 'i1', network: 'hopper_default', template: { image: 'ghcr.io/henningfutrell/hopper:box-claude' }, env, timeoutMs: 30_000, dir: temp('step-dir-'), ...(files ? { files } : {}) });
 
 describe('a need step\'s box (issue #1007)', () => {
   it('one AWS role is the AWS CLI\'s own variables and a profile; each cluster or namespace a kubeconfig context', () => {
@@ -70,7 +83,8 @@ describe('a need step\'s box (issue #1007)', () => {
     const src = temp('step-inputs-');
     mkdirSync(join(src, 'in'));
     writeFileSync(join(src, 'in', 'query.txt'), 'pods\n');
-    const inputs = execFileSync('tar', ['-cf', '-', '-C', src, 'in']);
+    const inputs = join(src, 'inputs.tar');
+    execFileSync('tar', ['-cf', inputs, '-C', src, 'in']);
     const command = [
       'echo "asked for $(cat in/query.txt)"',
       'env | grep -c HOPPER_STEP_ || true',
@@ -80,7 +94,7 @@ describe('a need step\'s box (issue #1007)', () => {
       'exit 3',
     ].join('\n');
     const log: string[] = [];
-    const result = await runNeedBox(r, box(needEnv({ command, outputs: ['out', 'missing'], inputs, credentials: [AWS, KUBE] })), { log: (c) => log.push(c), signal: new AbortController().signal, pollMs: 10 });
+    const result = await runNeedBox(r, box(needEnv({ command, outputs: ['out', 'missing'], credentials: [AWS, KUBE] }), { inputs }), { log: (c) => log.push(c), signal: new AbortController().signal, pollMs: 10 });
     expect(result.exit).toBe(3);
     expect(result.problem).toBeUndefined();
     const text = log.join('');
@@ -99,6 +113,54 @@ describe('a need step\'s box (issue #1007)', () => {
     expect(spec!.script).not.toContain('step-session-token');
     expect(r.boxes.size).toBe(0);
     expect(r.volumes.size).toBe(0);
+  });
+
+  it('inputs over 64 KiB and the saved plan file come by a copy into the box, never in its environment', async () => {
+    const r = runtime();
+    const src = temp('step-inputs-');
+    mkdirSync(join(src, 'in'));
+    const big = Buffer.alloc(300 * 1024, 'x');
+    writeFileSync(join(src, 'in', 'big.bin'), big);
+    const inputs = join(src, 'inputs.tar');
+    execFileSync('tar', ['-cf', inputs, '-C', src, 'in']);
+    const plan = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 1, 2, 255]);
+    const command = [
+      'wc -c < in/big.bin',
+      'echo "plan $HOPPER_PLAN"',
+      'od -An -tx1 "$HOPPER_PLAN_FILE" | tr -d " \\n"; echo',
+      'env | grep -c HOPPER_STEP_ || true',
+    ].join('\n');
+    const log: string[] = [];
+    const result = await runNeedBox(r, box(needEnv({ command, outputs: [], plan: '3f2b8a7c-1d4e-4f6a-9b0c-2d3e4f5a6b7c', credentials: [AWS] }), { inputs, plan }), { log: (c) => log.push(c), signal: new AbortController().signal, pollMs: 10 });
+    const text = log.join('');
+    expect(result, text).toEqual({ exit: 0 });
+    expect(text).toContain(`${big.length}`);
+    expect(text).toContain('plan 3f2b8a7c-1d4e-4f6a-9b0c-2d3e4f5a6b7c');
+    expect(text).toContain('504b0304000102ff');
+    expect(text).toMatch(/^0$/m);
+    const [spec] = [...r.ran.values()];
+    expect(spec!.env.HOPPER_STEP_FILES).toBe('copy');
+    expect(JSON.stringify(spec!.env).length).toBeLessThan(16 * 1024);
+    // Into the box, as the box's user: the plan file, the inputs into the work directory, then the mark that all are there.
+    expect(r.copies).toEqual([{ box: spec!.name, dir: HOME }, { box: spec!.name, dir: `${HOME}/work` }, { box: spec!.name, dir: HOME }]);
+  });
+
+  it('a runtime with no copy (a machine\'s): the files in the environment up to 64 KiB; more is a problem, and no box runs', async () => {
+    const r = runtime();
+    r.copyIn = undefined;
+    const src = temp('step-inputs-');
+    writeFileSync(join(src, 'small.txt'), 'small\n');
+    const small = join(src, 'inputs.tar');
+    execFileSync('tar', ['-cf', small, '-C', src, 'small.txt']);
+    const log: string[] = [];
+    const ok = await runNeedBox(r, box(needEnv({ command: 'cat small.txt', outputs: [], credentials: [] }), { inputs: small }), { log: (c) => log.push(c), signal: new AbortController().signal, pollMs: 10 });
+    expect(ok, log.join('')).toEqual({ exit: 0 });
+    expect(log.join('')).toContain('small');
+
+    const big = await runNeedBox(r, box(needEnv({ command: 'true', outputs: [], credentials: [] }), { plan: Buffer.alloc(100 * 1024) }), { log: () => {}, signal: new AbortController().signal, pollMs: 10 });
+    expect(big.exit).toBe(125);
+    expect(big.problem).toMatch(/the inputs and the plan file hold 100 KiB: a need box on a machine of the user's takes at most 64 KiB/);
+    expect(r.ran.size).toBe(1);
   });
 
   it('a step the job stops waiting for is stopped and removed', async () => {
