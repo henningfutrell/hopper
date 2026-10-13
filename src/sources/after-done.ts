@@ -28,6 +28,7 @@
 // One queue per set of pull requests that conflict (issue #939): a head holds only the due pull requests the source says
 // conflict with it (`JobSource.conflictBetween`, the hopper's mirror), and two due ones that do not conflict are tended at
 // the same time. Where the source cannot say, they conflict, as before. What holds one is kept on its job (`heldBehind`).
+// A tend the source refused (issue #967) keeps why on its job (`tendRefused`), until a tend starts: its card says it.
 // Cross-references (issue #430): before each follow, the cross-references of the job's item (`JobSource.crossReferences`) are
 // asked again and kept on the job (`crossReferences`), when they changed. A throw is only logged: the follow goes on, and
 // they are asked again next sync.
@@ -162,13 +163,16 @@ export function createAfterDone(c: AfterDoneContext) {
     if (!due) return;
     const r = await c.tend(jobId, tendBrief(due.url, due.step, due.checks));
     if (!r.ok) {
+      // Kept, so the card says why (issue #967): a refusal is never shown as a tend to come.
+      keepHold(jobId, 'tendRefused', r.message);
       if (r.reason !== 'conflict') c.failed(jobId, new Error(r.message));
       return;
     }
     const job = store.jobs.get(jobId);
     if (!job) return;
     const tended: Tended = { pullRequest: due.url, step: due.step, nextJobId: r.job.id };
-    c.setSource(jobId, { ...(job.sourceState?.source ?? {}), follow: 'tended', tended });
+    const { tendRefused: _r, ...was } = (job.sourceState?.source ?? {}) as Record<string, unknown>;
+    c.setSource(jobId, { ...was, follow: 'tended', tended });
     store.events.append({ type: 'job.pull_request_tended', jobId, data: { pullRequest: due.url, step: due.step, nextJobId: r.job.id } });
   }
 

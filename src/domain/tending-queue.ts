@@ -23,7 +23,11 @@ export interface QueueHead { pullRequest: string; why: 'tending' | 'merging' }
  * What a waiting pull request that needs tending waits behind (issue #939), kept in its job's source state by the sync: a
  * head of its tending queue that conflicts with it, so it is not tended yet. Absent: nothing holds it.
  */
-export interface Holds { heldBehind?: QueueHead }
+export interface Holds {
+  heldBehind?: QueueHead;
+  /** Why the source refused the last tend it was due (issue #967), kept until a tend starts: the card says it, never "next". */
+  tendRefused?: string;
+}
 
 /** How long a pull request whose checks run holds its repository's tending queue after its last push (issue #927). */
 export const PENDING_HOLD_MS = 30 * 60_000;
