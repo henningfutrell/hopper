@@ -89,4 +89,19 @@ describe('Grok Bot routine: intake stopped', () => {
     await n.stop();
     expect(r.hits[0]).toEqual(expect.objectContaining({ kind: 'infra.out_of_band_recorded', change: 'c1', infraUrl: 'http://hopper.lan:4790/#infra' }));
   });
+
+  it('posts machine.memory_low and machine.memory_recovered (issue #868): a machine runs low on free memory, and is back', async () => {
+    const r = await receiver();
+    const listeners: ((e: DomainEvent) => void)[] = [];
+    const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url: r.url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date() }, baseMs: 10 });
+    n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined, question: () => undefined, waitingOnHuman: () => [], answerUrl: () => '' });
+    const free = { machineId: 'win-desk', of: 'windows', freeBytes: 3e9, totalBytes: 32e9, thresholdBytes: 5e9 };
+    for (const l of listeners) l(event('machine.memory_low', { ...free, since: '2026-10-07T20:30:00.000Z' }));
+    await waitFor(() => r.hits.length === 1, { what: 'one post' });
+    for (const l of listeners) l(event('machine.memory_recovered', { ...free, freeBytes: 9e9 }));
+    await waitFor(() => r.hits.length === 2, { what: 'two posts' });
+    await n.stop();
+    expect(r.hits[0]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.memory_low', ...free, since: '2026-10-07T20:30:00.000Z' }));
+    expect(r.hits[1]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.memory_recovered', ...free, freeBytes: 9e9 }));
+  });
 });

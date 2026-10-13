@@ -29,7 +29,7 @@ const DAY = 24 * HOUR;
 const RES: ResourceReading = { cores: 8, cpuBusyFrac: 0.25, load: [2, 1.5, 1], memTotalBytes: 16 * GIB, memAvailableBytes: 4 * GIB, swapTotalBytes: 8 * GIB, swapUsedBytes: 2 * GIB };
 
 /** One attached machine `laptop`, no other; its probe answers what `probe.now` says. */
-async function boot(online = true): Promise<TestApp & { probe: { now: MachineProbe } }> {
+async function boot(online = true, resources: ResourceReading = RES): Promise<TestApp & { probe: { now: MachineProbe } }> {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
   writePlugins(db.dbPath, {
@@ -37,7 +37,7 @@ async function boot(online = true): Promise<TestApp & { probe: { now: MachinePro
     executors: [{ name: 'test', plugin: 'test' }],
     machines: [{ name: 'laptop', plugin: 'ssh', options: { label: 'arch-laptop', ssh: 'laptop', lanes: 4, executors: ['test'] } }],
   });
-  const probe = { now: (online ? { online: true, home: '/home/far', disk: { freeBytes: 25 * GIB, totalBytes: 100 * GIB, low: false }, resources: RES } : { online: false }) as MachineProbe };
+  const probe = { now: (online ? { online: true, home: '/home/far', disk: { freeBytes: 25 * GIB, totalBytes: 100 * GIB, low: false }, resources } : { online: false }) as MachineProbe };
   const a = await startTestApp({ dbPath: db.dbPath, seams: { machineProbe: () => Promise.resolve(probe.now) } });
   apps.push(a);
   return Object.assign(a, { probe });
@@ -180,8 +180,7 @@ describe('a WSL machine\'s memory and the memory alert (issue #868)', () => {
   };
 
   it('a sample keeps the memory the VM holds and Windows\' memory; the graph draws them as memory held and host memory', async () => {
-    const a = await boot();
-    a.probe.now = { ...a.probe.now, resources: WSL } as MachineProbe;
+    const a = await boot(true, WSL);
     await onlineWith(a, (x) => x.resources?.wsl === true);
     expect(await a.user().machineHistory.record()).toBeGreaterThanOrEqual(1);
     const r = await history(a, '/api/machines/laptop/history?range=24h');
@@ -199,7 +198,7 @@ describe('a WSL machine\'s memory and the memory alert (issue #868)', () => {
   });
 
   it('an admin sets the memory alert; Windows\' free memory under it tells machine.memory_low, back over machine.memory_recovered', async () => {
-    const a = await boot();
+    const a = await boot(true, WSL);
     const admin = await a.login();
     expect((await history(a, '/api/machines/history?range=24h')).body).not.toHaveProperty('memoryAlert');
     expect((await a.ui('/ui/api/machines/memory-alert', { alert: { freeBytes: 0, minutes: 5 } }, { token: admin })).status).toBe(400);
@@ -208,17 +207,16 @@ describe('a WSL machine\'s memory and the memory alert (issue #868)', () => {
     expect(set.body.memoryAlert).toEqual({ freeBytes: 5 * GIB, minutes: 0 });
     expect((await history(a, '/api/machines/history?range=24h')).body.memoryAlert).toEqual({ freeBytes: 5 * GIB, minutes: 0 });
 
-    a.probe.now = { ...a.probe.now, resources: WSL } as MachineProbe;
     await onlineWith(a, (x) => x.resources?.wsl === true);
     await a.user().machineHistory.record();
     const low = await waitFor(async () => (await a.events('types=machine.memory_low'))[0]);
     expect(low.data).toMatchObject({ machineId: 'laptop', of: 'windows', freeBytes: 3 * GIB, totalBytes: 32 * GIB, thresholdBytes: 5 * GIB });
 
-    a.probe.now = { ...a.probe.now, resources: { ...WSL, hostMemFreeBytes: 9 * GIB } } as MachineProbe;
-    await onlineWith(a, (x) => x.resources?.hostMemFreeBytes === 9 * GIB);
+    // A lower threshold: the same 3 GiB free is back over it.
+    expect((await a.ui('/ui/api/machines/memory-alert', { alert: { freeBytes: 2 * GIB, minutes: 0 } }, { token: admin })).status).toBe(200);
     await a.user().machineHistory.record();
     const back = await waitFor(async () => (await a.events('types=machine.memory_recovered'))[0]);
-    expect(back.data).toMatchObject({ machineId: 'laptop', freeBytes: 9 * GIB, thresholdBytes: 5 * GIB });
+    expect(back.data).toMatchObject({ machineId: 'laptop', freeBytes: 3 * GIB, thresholdBytes: 2 * GIB });
 
     const off = await a.ui<{ memoryAlert: unknown }>('/ui/api/machines/memory-alert', { alert: null }, { token: admin });
     expect(off.body.memoryAlert).toBeNull();
