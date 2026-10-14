@@ -211,7 +211,7 @@ export const EVENT_SCHEMAS = {
   'job.dismissed': strict({ by: z.enum(['user']) }),
   'job.work_kept': strict({ paths: z.array(z.string()).min(1) }),
   // `discarded` (issue #1010): a person discarded the kept work, unpushed; who, and the way.
-  'job.work_removed': strict({ paths: z.array(z.string()).min(1), discarded: z.literal(true).optional(), ...actingIfPerson }),
+  'job.work_removed': strict({ paths: z.array(z.string()).min(1), discarded: z.literal(true).optional(), gone: z.literal(true).optional(), ...actingIfPerson }),
   // Issue #371: the job's cleanup could not reach its machine; it is tried again until it goes through.
   'job.cleanup_deferred': strict({ error: z.string() }),
   'job.cleaned_up': strict({ deferredAt: z.string(), by: z.enum(['user']).optional() }),
