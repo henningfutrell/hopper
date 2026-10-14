@@ -18,6 +18,7 @@ import {
   jobPriorityTag, type ActingPerson, type DomainEvent, type FailureOutcome, type FailureRecord, type FailureSettings, type Handoff, type HandoffEnd, type HandoffReason,
   type ContinuedBy, type HandoffResolution, type HandoffResolutionAction, type HandoffView, type Job, type WorkState, workShipped,
 } from '../domain/types.ts';
+import type { DismissedBy } from '../domain/locked.ts';
 import { handoffCard } from './card.ts';
 import { handoffBrief } from './brief.ts';
 import { handoffReason, RAN_AGAIN, SETTLED } from './handoff.ts';
@@ -42,8 +43,8 @@ export interface HandoffsOptions {
   takesBack: TakesBack;
   /** Finish a failed job whose work shipped (issue #621), its end told to its source again. false: it is no longer failed. */
   finishShipped(jobId: string, result: { summary: string; link?: string; backfill?: string }): boolean;
-  /** Dismiss a failed job's locked entry (issue #355): Won't do leaves the queue too. Throws when it is not one. */
-  dismiss(jobId: string): void;
+  /** Dismiss a failed job's locked entry (issue #355): Won't do leaves the queue too; `by` as `job.dismissed` says. Throws when it is not one. */
+  dismiss(jobId: string, by?: DismissedBy): void;
   logger: { warn(line: string): void };
   /** False once the assessor stopped: a deferred follow-up does nothing. */
   live(): boolean;
@@ -70,7 +71,13 @@ export interface Handoffs {
    * #529): it closes (`item_closed`), its record `item_closed`.
    */
   checked(id: string, work: WorkState): void;
-  /** Follow the job events that open or close a hand-off. */
+  /**
+   * The failed jobs nothing waits on any more (issue #1123), dismissed by themselves: a newer job of its item took its
+   * place (`superseded`), or its item is closed at its source, done or dropped (`item_closed`). An open hand-off of one
+   * closes the same way, its record settled. Not one a person is resolving now. The ids dismissed.
+   */
+  dismissStale(): string[];
+  /** Follow the job events that open or close a hand-off; a new job, or an item closed, dismisses what it left stale. */
   onEvent(e: DomainEvent): void;
   /** A person resolves an open hand-off (issue #551), `by` the person the UI session signed in, and the way (issue #623). */
   resolve(id: string, input: HandoffResolve, by: ActingPerson): Promise<HandoffAction<{ handoff: HandoffView; job?: Job }>>;
@@ -211,6 +218,41 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
     return newer ? { end: 'superseded', nextJobId: newer } : undefined;
   }
 
+  /** Why a failed job's locked entry waits on nobody any more (issue #1123), if it does not. */
+  function staleEnd(job: Job): { end: 'superseded' | 'item_closed'; nextJobId?: string } | undefined {
+    if (job.status !== 'failed' || job.dismissedAt !== undefined || !job.source) return undefined;
+    const newer = newerOf(store, job);
+    if (newer) return { end: 'superseded', nextJobId: newer };
+    const item = store.workItems.get(job.source.key);
+    return item && (item.issueState === 'closed' || item.state === 'done' || item.state === 'dropped') ? { end: 'item_closed' } : undefined;
+  }
+
+  const STALE_NOTE = { superseded: 'a newer job of its item exists', item_closed: 'its item is closed at its source' } as const;
+
+  function dismissStale(): string[] {
+    const dismissed: string[] = [];
+    for (const job of store.jobs.list({ status: ['failed'], undismissed: true })) {
+      try {
+        const done = store.tx(() => {
+          const cur = store.jobs.get(job.id);
+          const stale = cur ? staleEnd(cur) : undefined;
+          const h = openOf(job.id);
+          if (!stale || (h && resolving.has(h.id))) return false;
+          if (h) {
+            close(h, stale.end, stale.nextJobId);
+            settleRecord(h, stale.end, STALE_NOTE[stale.end], stale.nextJobId);
+          }
+          o.dismiss(job.id, stale.end);
+          return true;
+        });
+        if (done) dismissed.push(job.id);
+      } catch (e) {
+        o.logger.warn(`hopper: could not dismiss the stale failure of job ${job.id}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    return dismissed;
+  }
+
   /** Its record, still waiting, says what ended it: nothing waits on it any more. */
   function settleRecord(h: Handoff, outcome: FailureOutcome, note: string, nextJobId?: string): void {
     const r = h.recordId ? store.failures.get(h.recordId) : store.failures.forJob(h.jobId);
@@ -276,13 +318,18 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
       // Its job ends finished, and its source is told so in place of the failure.
       if (shipped) o.finishShipped(shipped.jobId, shipped.result);
     },
+    dismissStale,
     onEvent(e) {
       const id = e.jobId;
-      if (!id) return;
-      const later = (fn: (jobId: string) => void) => setImmediate(() => { if (o.live()) fn(id); });
-      if (e.type === 'job.queued') later(onQueued);
-      else if (e.type === 'job.dismissed') later(onDismissed);
-      else if (e.type === 'job.finished') later(onFinished);
+      if (id) {
+        const later = (fn: (jobId: string) => void) => setImmediate(() => { if (o.live()) fn(id); });
+        if (e.type === 'job.queued') later(onQueued);
+        // Only a person's dismissal is forgotten unless a hand-off keeps it: one by itself waits on nobody (issue #1123).
+        else if (e.type === 'job.dismissed' && e.data.by === 'user') later(onDismissed);
+        else if (e.type === 'job.finished') later(onFinished);
+      }
+      // After the hand-off a run again closes (onQueued, scheduled first): what the new job, or the item's close, left stale.
+      if (e.type === 'job.queued' || e.type === 'work_item.issue_closed') setImmediate(() => { if (o.live()) dismissStale(); });
     },
     async resolve(id, input, by) {
       const h = store.handoffs.get(id);

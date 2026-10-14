@@ -810,11 +810,11 @@ Version 1 (`docs/schemas/job.rework_requested.v1.json`). A person sent a finishe
 
 ## `job.dismissed`
 
-Version 1 (`docs/schemas/job.dismissed.v1.json`). The user dismissed a locked entry (issue #355): the failed job stays failed and leaves the queue. It can still be run again. Its issue keeps `hopper:failed`.
+Version 1 (`docs/schemas/job.dismissed.v1.json`). A locked entry was dismissed (issue #355): the failed job stays failed and leaves the queue. It can still be run again. Its issue keeps `hopper:failed`. `by`: `user` (a person), or, by itself, nothing waits on it any more (issue #1123): `superseded` (a newer job of its item took its place) or `item_closed` (its item is closed at its source, done or dropped). Only a person's dismissal opens a hand-off.
 
 | field | type | required |
 |---|---|---|
-| `by` | `user` | yes |
+| `by` | `user` \| `superseded` \| `item_closed` | yes |
 
 ```json
 {

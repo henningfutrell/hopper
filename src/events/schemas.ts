@@ -5,7 +5,7 @@
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
 import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, EVENT_DECISION_POINTS, MINOR_DECISION_MODES, RISK_CATEGORIES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, FORK_PARENT, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS } from '../domain/types.ts';
-import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
+import { DISMISSED_BY } from '../domain/locked.ts'; import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts'; import { MACHINE_MEMORY_EVENT_SCHEMAS } from './machine-memory-schemas.ts'; import { MACHINE_DISK_EVENT_SCHEMAS } from './machine-disk-schemas.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
@@ -208,7 +208,7 @@ export const EVENT_SCHEMAS = {
   // A person sent the job's open pull request back for rework (issue #724): the new job reworks it, told the notes.
   'job.rework_requested': strict({ pullRequest: z.string(), notes: z.string(), nextJobId: z.string(), ...actingIfPerson }),
   // A locked entry dismissed (issue #355): the failed job stays failed, out of the queue.
-  'job.dismissed': strict({ by: z.enum(['user']) }),
+  'job.dismissed': strict({ by: z.enum(DISMISSED_BY) }),
   'job.work_kept': strict({ paths: z.array(z.string()).min(1) }),
   // `discarded` (issue #1010): a person discarded the kept work, unpushed; who, and the way.
   'job.work_removed': strict({ paths: z.array(z.string()).min(1), discarded: z.literal(true).optional(), gone: z.literal(true).optional(), ...actingIfPerson }),
