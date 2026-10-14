@@ -254,6 +254,21 @@ describe('Approve on a request card: it shows at once, says how it ended, and ke
     expect(document.activeElement).toBe(done);
   });
 
+  it.each([
+    'already approved: its job is queued',
+    'already taken, no approval needed: its job is running',
+  ])('an approval answered "%s" (approved elsewhere since the page loaded) shows the issue approved, not an error (issue #1045)', async (why) => {
+    await boot('#intake');
+    answer = (body) => ({ done: [], failed: { [body.keys[0]!]: why } });
+    await vi.waitFor(() => expect(view()).not.toBeNull());
+    await click(button(row(view()!, url(9)), 'Approve'));
+    await vi.waitFor(() => expect(posts).toHaveLength(1));
+    expect(row(view()!, url(9)).querySelector('[data-slot="request-error"]')).toBeNull();
+    // The sync lists the issue taken, as the approval elsewhere made its job.
+    await act(async () => { streamed.get('source.updated')!({ data: JSON.stringify(approved()[0]) }); });
+    await vi.waitFor(() => expect(row(view()!, url(9)).querySelector('[data-approved]')).not.toBeNull());
+  });
+
   it('a refused approval says why on the card, and the card stays with Approve', async () => {
     await boot('#intake');
     answer = (body) => ({ done: [], failed: { [body.keys[0]!]: 'its title or body changed since it was shown: read it again' } });

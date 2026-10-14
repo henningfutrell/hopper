@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { requestHash } from '../../src/domain/intake-origin.ts';
 import { DECLINED_REASON, REQUEST_REASON } from '../../src/sources/github/origin.ts';
-import { TEXT_CHANGED_SINCE_SHOWN } from '../../src/sources/github/intake-actions.ts';
+import { ALREADY_APPROVED, ALREADY_TAKEN, TEXT_CHANGED_SINCE_SHOWN } from '../../src/sources/github/intake-actions.ts';
 import { filedNote } from '../../src/github-proxy/index.ts';
 import { REPO, setup, testTrust } from './fixtures/github-support.ts';
 
@@ -156,7 +156,29 @@ describe('GitHub source: request cards (issue #652)', () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     await source.discover();
-    expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash: 'a'.repeat(64) })).toEqual({ done: [], failed: { [url(1)]: 'not offered: taken' } });
+    expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash: 'a'.repeat(64) })).toEqual({ done: [], failed: { [url(1)]: ALREADY_TAKEN } });
+  });
+
+  it('Approve again of a text already approved is done, after the sync took it too (issue #1045)', async () => {
+    const trust = testTrust();
+    const { gh, source } = setup({}, { trust });
+    gh.createIssue({ repo: REPO, author: 'stranger', title: 'Do it', body: 'Change the README.', labels: ['hopper'] });
+    await source.discover();
+    const hash = source.intake!()[0]!.request!.hash;
+    expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash })).toEqual({ done: [url(1)], failed: {} });
+    expect((await source.discover()).map((i) => i.origin)).toEqual(['approved']);
+    expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash })).toEqual({ done: [url(1)], failed: {} });
+  });
+
+  it('Approve of an older text, on an issue taken with a newer approved text, says it is already approved (issue #1045)', async () => {
+    const trust = testTrust();
+    const { gh, source } = setup({}, { trust });
+    gh.createIssue({ repo: REPO, author: 'stranger', title: 'Do it', body: 'Change the README.', labels: ['hopper'] });
+    await source.discover();
+    const hash = source.intake!()[0]!.request!.hash;
+    await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash });
+    await source.discover();
+    expect(await source.intakeAction!({ kind: 'approve', keys: [url(1)], hash: 'a'.repeat(64) })).toEqual({ done: [], failed: { [url(1)]: ALREADY_APPROVED } });
   });
 
   it('Decline keeps the text as read declined: the next sync lists it declined, with no action, and writes nothing to GitHub (issue #1035)', async () => {

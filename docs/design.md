@@ -14911,6 +14911,13 @@ when its title and body still hash as the person read them is its text — with 
 recorded as the item's snapshot, reason `approved` (`IntakeTrust.approve`), with `source.request_approved` (the hash,
 the actors, who; never the text). The source syncs at once.
 
+**Approve again** (issue #1045). The source checks Approve against its last sync, so a page that still shows a card the
+sync since took (another tab, an API client, an earlier click) sends Approve on an item no longer offered it. When the
+text a person approved for the item hashes as `hash`, the answer is `done`, and nothing more is recorded: one approval,
+one job. Else, on a taken item, `failed` says `already approved` (a person approved another text) or `already taken, no
+approval needed` (a trusted origin), and the sync loop adds `: its job is <status>` when it has one. The UI reads either
+as taken, not as a refusal: the card shows approved once the sync lists the issue taken.
+
 **Approved.** At a later sync, an issue not of a trusted origin whose title and body hash as the text a person approved
 — a snapshot of reason `approved`, or `accepted` (Accept the new text) — is taken, origin `approved`. Its first job runs
 the snapshot (issue #662 `gateItem`), and a change since holds it as a text change. An edit after the approval and before

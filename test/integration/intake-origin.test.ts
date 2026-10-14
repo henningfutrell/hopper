@@ -55,6 +55,31 @@ describe('trusted origin and request cards (issue #652)', () => {
     })]);
   });
 
+  it('a second Approve of a request already approved (another tab, or the API) is done too: one job, no error (issue #1045)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const token = await a.login();
+    const issue = gh.createIssue({ repo: REPO, author: 'stranger', body: body('Fix the typo.'), labels: ['hopper'] });
+    await a.sync();
+    const hash = (await cardOf(a, issue.url))!.request!.hash;
+    const approve = () => a.ui('/ui/api/sources/github/intake', { kind: 'approve', keys: [issue.url], hash }, { token });
+    expect(await approve()).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
+    expect(await approve()).toMatchObject({ status: 200, body: { done: [issue.url], failed: {} } });
+    expect(await jobsFor(a, issue.url)).toHaveLength(1);
+    expect(await a.events('types=source.request_approved')).toHaveLength(1);
+  });
+
+  it('Approve on an issue taken with no approval says so, with its job\'s status (issue #1045)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const token = await a.login();
+    const issue = gh.createIssue({ repo: REPO, body: body('Fix the typo.'), labels: ['hopper'] });
+    await a.sync();
+    const [job] = await jobsFor(a, issue.url);
+    const r = await a.ui('/ui/api/sources/github/intake', { kind: 'approve', keys: [issue.url], hash: 'a'.repeat(64) }, { token });
+    expect(r.body).toEqual({ done: [], failed: { [issue.url]: `already taken, no approval needed: its job is ${job!.status}` } });
+  });
+
   it('an issue edited by its author after the approval makes no job until it is approved again', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
