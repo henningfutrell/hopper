@@ -37,4 +37,15 @@ describe('the Windows link in the UI', () => {
     expect(brokenWindowsLinks([m('a', true, broken('nat')), m('b', true, ok), m('c', false, broken('nat')), m('d', true)]))
       .toEqual([{ id: 'a', name: 'A', link: broken('nat') }]);
   });
+
+  it('the banner names a broken link the keep-alive loop on Windows reported, after the machines', () => {
+    const ok: WindowsLink = { url: URL_, ok: true, status: 401, at: '2026-10-13T10:00:00.000Z' };
+    const m = { id: 'a', label: 'A', online: true, resources: { cores: 1, memTotalBytes: 1, memAvailableBytes: 1, windowsLink: broken('nat') } };
+    expect(brokenWindowsLinks([m], broken('mirrored'))).toEqual([
+      { id: 'a', name: 'A', link: broken('nat') },
+      { id: 'windows', name: 'Windows (the keep-alive loop)', link: broken('mirrored') },
+    ]);
+    expect(brokenWindowsLinks([], ok)).toEqual([]);
+    expect(brokenWindowsLinks([], undefined)).toEqual([]);
+  });
 });

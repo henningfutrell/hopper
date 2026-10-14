@@ -34,13 +34,14 @@ describe.each([['hopper.ps1', ps1], ['hopper.cmd', cmd]])('%s', (_name, script) 
   it('runs in the distro HOPPER_WSL_DISTRO names, else WSL\'s default one, with no shell between', () => {
     expect(code).toContain('HOPPER_WSL_DISTRO');
     expect(code).toContain('-d');
-    const calls = code.match(/wsl\.exe [^\n]*/g) ?? [];
+    const calls = (code.match(/wsl\.exe [^\n]*/g) ?? []).filter((c) => !c.startsWith('wsl.exe -ArgumentList'));
     expect(calls.length).toBeGreaterThanOrEqual(2);
     for (const call of calls) {
       expect(call).toMatch(/^wsl\.exe (@wsl|%HOPPER_WSL%) -e /);
       expect(call).not.toMatch(/ -e (sh|bash)\b/);
     }
-    expect(code.match(/wsl\.exe [^\n]* -e podman /g)?.length).toBe(2);
+    // hopper.ps1's keep-alive loop finds the container and runs the CLI too, to report the Windows link.
+    expect(code.match(/wsl\.exe [^\n]* -e podman /g)?.length).toBe(script === ps1 ? 4 : 2);
   });
 
   it('runs the CLI in the container with every argument, and ends with its exit code', () => {
@@ -70,6 +71,7 @@ describe('hopper.ps1', () => {
 });
 
 describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () => {
+  const loop = ps1.slice(ps1.indexOf("$body = @'"), ps1.indexOf("'@", ps1.indexOf("$body = @'")));
   it('in hopper.cmd, runs hopper.ps1 from its own folder, and says how to get it when it is missing', () => {
     expect(cmd).toMatch(/if \/i "%~1"=="autostart" goto ps1/);
     expect(cmd).toContain('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0hopper.ps1" %*');
@@ -96,8 +98,20 @@ describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () =>
 
   it('on: writes a keep-alive loop under %LOCALAPPDATA%\\hopper that starts the distro again 5 s after it ends', () => {
     expect(ps1).toContain("Join-Path $env:LOCALAPPDATA 'hopper'");
-    expect(ps1).toContain("'  & wsl.exe @wsl -e sleep infinity'");
-    expect(ps1).toContain("'  Start-Sleep -Seconds 5'");
+    expect(loop).toContain("Start-Process wsl.exe -ArgumentList (@($wsl) + @('-e', 'sleep', 'infinity')) -WindowStyle Hidden -PassThru");
+    expect(loop).toContain('$keep.HasExited');
+    expect(loop).toContain('Start-Sleep -Seconds 5');
+  });
+
+  it('on: the loop reports the Windows link through the CLI, at most every 5 minutes, with no token', () => {
+    expect(loop).toContain('AddMinutes(5)');
+    expect(loop).toContain("$url = 'http://localhost:__PORT__/api/health'");
+    expect(ps1).toContain("if ($env:HOPPER_PORT) { $env:HOPPER_PORT } else { '4790' }");
+    expect(loop).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Uri $url');
+    expect(loop).toContain("@('--status', [string][int]$_.Exception.Response.StatusCode)");
+    expect(loop).toContain("& wsl.exe @wsl -e wslinfo --networking-mode");
+    expect(loop).toContain('-e podman exec $container.Trim() hopper windows-link report --url $url @result');
+    expect(loop).not.toMatch(/TOKEN|Authorization|password/i);
   });
 
   it('on: adds a hidden Startup-folder shortcut for this user only, and starts the loop now', () => {
