@@ -1,5 +1,5 @@
 // Drift (issue #1077, design.md "Component watchers"): where a part of the hopper's state disagrees with its source of
-// truth. The ledger-vs-GitHub watcher's comparison is here: which work items it reads on GitHub (`ledgerGitHubSample`),
+// truth. The comparisons of the hopper's own records are in `drift-jobs.ts`. The ledger-vs-GitHub watcher's comparison is here: which work items it reads on GitHub (`ledgerGitHubSample`),
 // and the drift it finds (`ledgerGitHubDrift`) — grouped by kind, so one kind is one drift issue. And the drift issue's
 // text (`driftIssue`), which names no item: each is a short hash of its key, since an item's repository may be private.
 // Pure: no I/O, no clock.
@@ -9,8 +9,8 @@ import { isActive, type WorkItem, type WorkItemState } from './work-items.ts';
 /** What a read of GitHub says of one issue or pull request, by its URL. `changedAt`: when it closed or merged. */
 export interface GitHubItemState { url: string; state: 'open' | 'closed' | 'merged'; stateReason?: string; changedAt?: string }
 
-/** One item in a drift: its key (kept on this hopper only), what the ledger says and what the truth says. */
-export interface DriftItem { key: string; ledger: string; github: string; since?: string }
+/** One item in a drift: its key (kept on this hopper only), what the component says, and what its source of truth says. */
+export interface DriftItem { key: string; says: string; truth: string; since?: string }
 
 /** One kind of drift a watcher found, with every item in it now. */
 export interface Drift { watcher: string; kind: string; items: DriftItem[] }
@@ -35,13 +35,23 @@ export const driftItemRef = (key: string): string => createHash('sha256').update
 
 export const LEDGER_GITHUB = 'ledger-github';
 
-/** Each watcher's name in plain words, and each kind of drift it finds. */
-const WATCHER_WORDS: Record<string, string> = { [LEDGER_GITHUB]: 'ledger vs GitHub' };
+/** Each watcher in plain words, with the names of its two columns: the component and its source of truth. */
+const WATCHER_WORDS: Record<string, { words: string; says: string; truth: string }> = {
+  [LEDGER_GITHUB]: { words: 'ledger vs GitHub', says: 'ledger', truth: 'GitHub' },
+  'ledger-jobs': { words: 'ledger vs jobs', says: 'ledger', truth: 'job record' },
+  'lanes-jobs': { words: 'lanes vs jobs', says: 'lane', truth: 'job record' },
+};
+/** Each kind of drift in plain words. */
 const KIND_WORDS: Record<string, string> = {
   failed_but_finished: 'failed in the ledger, finished on GitHub',
   pr_open_but_ended: 'pull request open in the ledger, ended on GitHub',
   pull_request_state: 'pull request state differs',
   issue_state: 'issue state differs',
+  active_but_job_ended: 'active in the ledger, its job ended',
+  ended_but_job_active: 'ended in the ledger, its job active',
+  state_differs: 'the ledger state differs from its job',
+  lane_busy_job_not_running: 'a lane is busy with a job that does not run',
+  job_running_no_lane: 'a job runs with no lane',
 };
 
 /** The states in which an item can be stuck: read first. */
@@ -85,12 +95,12 @@ export function ledgerGitHubDrift(items: readonly WorkItem[], reads: ReadonlyMap
     const pr = i.pullRequest ? reads.get(i.pullRequest) : undefined;
     const at = (r: GitHubItemState) => (r.changedAt ? { since: r.changedAt } : {});
     const completed = old(issue) && issue.state === 'closed' && !['not_planned', 'duplicate'].includes(issue.stateReason ?? '');
-    if (i.state === 'failed' && old(pr) && pr.state === 'merged') add('failed_but_finished', { key: i.key, ledger: i.state, github: githubWords(pr, 'pull request'), ...at(pr) });
-    else if (i.state === 'failed' && completed) add('failed_but_finished', { key: i.key, ledger: i.state, github: githubWords(issue, 'issue'), ...at(issue) });
-    else if (i.state === 'pr_open' && old(pr) && pr.state !== 'open') add('pr_open_but_ended', { key: i.key, ledger: i.state, github: githubWords(pr, 'pull request'), ...at(pr) });
-    else if (i.state === 'pr_open' && old(issue) && issue.state === 'closed') add('pr_open_but_ended', { key: i.key, ledger: i.state, github: githubWords(issue, 'issue'), ...at(issue) });
-    else if (i.pullRequestState && old(pr) && asGitHub(i.pullRequestState) !== pr.state) add('pull_request_state', { key: i.key, ledger: `${i.state}, pull request ${i.pullRequestState}`, github: githubWords(pr, 'pull request'), ...at(pr) });
-    else if (i.issueState && old(issue) && i.issueState !== issue.state) add('issue_state', { key: i.key, ledger: `${i.state}, issue ${i.issueState}`, github: githubWords(issue, 'issue'), ...at(issue) });
+    if (i.state === 'failed' && old(pr) && pr.state === 'merged') add('failed_but_finished', { key: i.key, says: i.state, truth: githubWords(pr, 'pull request'), ...at(pr) });
+    else if (i.state === 'failed' && completed) add('failed_but_finished', { key: i.key, says: i.state, truth: githubWords(issue, 'issue'), ...at(issue) });
+    else if (i.state === 'pr_open' && old(pr) && pr.state !== 'open') add('pr_open_but_ended', { key: i.key, says: i.state, truth: githubWords(pr, 'pull request'), ...at(pr) });
+    else if (i.state === 'pr_open' && old(issue) && issue.state === 'closed') add('pr_open_but_ended', { key: i.key, says: i.state, truth: githubWords(issue, 'issue'), ...at(issue) });
+    else if (i.pullRequestState && old(pr) && asGitHub(i.pullRequestState) !== pr.state) add('pull_request_state', { key: i.key, says: `${i.state}, pull request ${i.pullRequestState}`, truth: githubWords(pr, 'pull request'), ...at(pr) });
+    else if (i.issueState && old(issue) && i.issueState !== issue.state) add('issue_state', { key: i.key, says: `${i.state}, issue ${i.issueState}`, truth: githubWords(issue, 'issue'), ...at(issue) });
   }
   return [...byKind].map(([kind, found]) => ({ watcher: LEDGER_GITHUB, kind, items: found }));
 }
@@ -100,13 +110,14 @@ export const ISSUE_ITEMS = 50;
 
 /** A drift issue's title and body: what drifted, each item by its hash, and its drift key last. No item, repository or person. */
 export function driftIssue(d: Drift, o: { firstSeen: string; clearedAt?: string }): { title: string; body: string } {
-  const watcher = WATCHER_WORDS[d.watcher] ?? d.watcher;
+  const w = WATCHER_WORDS[d.watcher] ?? { words: d.watcher, says: 'hopper', truth: 'source of truth' };
+  const watcher = w.words;
   const kind = KIND_WORDS[d.kind] ?? d.kind.replaceAll('_', ' ');
-  const rows = d.items.slice(0, ISSUE_ITEMS).map((i) => `| \`${driftItemRef(i.key)}\` | ${i.ledger} | ${i.github} | ${i.since ?? ''} |`);
+  const rows = d.items.slice(0, ISSUE_ITEMS).map((i) => `| \`${driftItemRef(i.key)}\` | ${i.says} | ${i.truth} | ${i.since ?? ''} |`);
   const more = d.items.length > ISSUE_ITEMS ? ['', `And ${d.items.length - ISSUE_ITEMS} more.`] : [];
   const items = d.items.length === 0
     ? [`No item is in this drift now${o.clearedAt ? ` (since ${o.clearedAt})` : ''}. Close this issue when the cause is fixed.`]
-    : [`${d.items.length} item(s) disagree with the source of truth:`, '', '| item | ledger | GitHub | since |', '|---|---|---|---|', ...rows, ...more];
+    : [`${d.items.length} item(s) disagree with the source of truth:`, '', `| item | ${w.says} | ${w.truth} | since |`, '|---|---|---|---|', ...rows, ...more];
   return {
     title: `Drift: ${watcher}: ${kind}`,
     body: [

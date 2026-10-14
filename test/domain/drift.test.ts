@@ -55,15 +55,15 @@ describe('ledger-vs-GitHub drift', () => {
     expect(drift).toEqual([{
       watcher: 'ledger-github', kind: 'failed_but_finished',
       items: [
-        { key: 'https://github.com/o/r/issues/1', ledger: 'failed', github: 'pull request merged', since: HOUR_AGO },
-        { key: 'https://github.com/o/r/issues/2', ledger: 'failed', github: 'issue closed (completed)', since: HOUR_AGO },
+        { key: 'https://github.com/o/r/issues/1', says: 'failed', truth: 'pull request merged', since: HOUR_AGO },
+        { key: 'https://github.com/o/r/issues/2', says: 'failed', truth: 'issue closed (completed)', since: HOUR_AGO },
       ],
     }]);
   });
 
   it('finds an item waiting on its pull request when GitHub says it merged or closed', () => {
     const drift = ledgerGitHubDrift([item(4, 'pr_open', { pullRequest: pr(14), pullRequestState: 'open' })], reads({ url: pr(14), state: 'closed', changedAt: HOUR_AGO }), NOW, GRACE);
-    expect(drift).toEqual([{ watcher: 'ledger-github', kind: 'pr_open_but_ended', items: [{ key: 'https://github.com/o/r/issues/4', ledger: 'pr_open', github: 'pull request closed', since: HOUR_AGO }] }]);
+    expect(drift).toEqual([{ watcher: 'ledger-github', kind: 'pr_open_but_ended', items: [{ key: 'https://github.com/o/r/issues/4', says: 'pr_open', truth: 'pull request closed', since: HOUR_AGO }] }]);
   });
 
   it('finds a pull request or issue state the ledger holds that GitHub does not', () => {
@@ -71,7 +71,7 @@ describe('ledger-vs-GitHub drift', () => {
       item(5, 'done', { pullRequest: pr(15), pullRequestState: 'merged' }),
       item(6, 'done', { issueState: 'closed', issueReason: 'completed' }),
     ], reads({ url: pr(15), state: 'open' }, { url: 'https://github.com/o/r/issues/6', state: 'open' }), NOW, GRACE);
-    expect(drift.map((d) => [d.kind, d.items.map((i) => [i.ledger, i.github])])).toEqual([
+    expect(drift.map((d) => [d.kind, d.items.map((i) => [i.says, i.truth])])).toEqual([
       ['pull_request_state', [['done, pull request merged', 'pull request open']]],
       ['issue_state', [['done, issue closed', 'issue open']]],
     ]);
@@ -92,7 +92,7 @@ describe('ledger-vs-GitHub drift', () => {
 });
 
 describe('the drift issue', () => {
-  const drift = { watcher: 'ledger-github', kind: 'failed_but_finished', items: [{ key: 'https://github.com/o/r/issues/1', ledger: 'failed', github: 'pull request merged', since: HOUR_AGO }] };
+  const drift = { watcher: 'ledger-github', kind: 'failed_but_finished', items: [{ key: 'https://github.com/o/r/issues/1', says: 'failed', truth: 'pull request merged', since: HOUR_AGO }] };
 
   it('carries its drift key, so the next check finds it and updates it instead of filing again', () => {
     const issue = driftIssue(drift, { firstSeen: NOW });
@@ -108,6 +108,13 @@ describe('the drift issue', () => {
     expect(issue.body).toContain(driftItemRef(drift.items[0]!.key));
     expect(issue.body).toContain('failed');
     expect(issue.body).toContain('pull request merged');
+  });
+
+  it('names the columns after its watcher: what the component says and its source of truth', () => {
+    expect(driftIssue(drift, { firstSeen: NOW }).body).toContain('| item | ledger | GitHub | since |');
+    const lanes = driftIssue({ watcher: 'lanes-jobs', kind: 'job_running_no_lane', items: [{ key: 'j1', says: 'no lane runs it', truth: 'job running' }] }, { firstSeen: NOW });
+    expect(lanes.title).toBe('Drift: lanes vs jobs: a job runs with no lane');
+    expect(lanes.body).toContain('| item | lane | job record | since |');
   });
 
   it('says so when no item is in the drift any more', () => {
