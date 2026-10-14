@@ -18054,7 +18054,7 @@ conflicts, "PR tending without lanes").
 **The branch model.** `main` (the **landing branch**) → `dev` (the **tested branch**) → `beta` → `stable`. A
 job's pull request merges into `main` after the fast checks only: the gates (typecheck, lint, the UI build,
 What's new) and the test files its change affects (`.github/workflows/pr.yml` job `affected`, `vitest run --changed
-HEAD^1`; issue #1038). The full suite runs on `main`'s tip as a **batch run**, and a green batch run moves
+HEAD^1`, in the full suite's ten shards, issue #1104; issue #1038). The full suite runs on `main`'s tip as a **batch run**, and a green batch run moves
 `dev` by the whole batch in one merge. `dev` → `beta` → `stable` stays as it is (`scripts/promote.sh`). `main` is
 no update channel: no hopper follows it.
 
