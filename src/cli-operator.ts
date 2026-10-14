@@ -254,7 +254,7 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'update') return driftCall(args);
   if (command === 'master-key') return masterKeyCall(args);
   if (command === 'lanes') return lanesCall(args);
-  if (command === 'accounts') return accountsCall(args);
+  if (command === 'accounts') return accountsCall(args, stdin);
   if (command === 'token') return tokenCall(args);
   if (command === 'vault') return vaultCall(args, stdin);
   if (command === 'template') return templateCall(args);

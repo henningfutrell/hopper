@@ -64,6 +64,8 @@ export interface UsageSourceState {
   accountReadAt?: string;
   /** The executor instances whose jobs its budgets limit; absent: every job. */
   executors?: string[];
+  /** It can start its tool's sign-in on its machine (issue #1128, design.md "Tool sign-in"). */
+  signIn?: true;
 }
 
 /** A usage source in `GET /api/usage`: its instance name and state. */
@@ -140,6 +142,8 @@ export interface ToolAccountMachine {
   readAt?: string;
   /** When a job of the source's executors last started there. */
   lastUsedAt?: string;
+  /** Its source can start the tool's sign-in there (issue #1128): `POST /ui/api/tool-accounts/sign-in`. */
+  signIn?: true;
 }
 
 /** One tool account: a service and the identity its machines are signed in as. No identity: the machines signed in as nobody. */
@@ -159,3 +163,25 @@ export interface ToolAccount {
 
 /** `GET /api/tool-accounts`. */
 export interface ToolAccountsReport { accounts: ToolAccount[] }
+
+/**
+ * A tool's sign-in a usage source started on its machine (issue #1128, design.md "Tool sign-in"): the sign-in URL a person opens,
+ * and where the code the sign-in page then shows goes. The tool keeps its own token; this carries none.
+ */
+export interface ToolSignIn {
+  /** The machine it runs on. */
+  machineId: string;
+  /** The tool: `claude`. */
+  tool: string;
+  url: string;
+  /** Give the tool the code; resolves when it ended: signed in, or why not. Once only. */
+  paste(code: string): Promise<{ ok: true } | { ok: false; reason: string }>;
+  /** Stop it. */
+  cancel(): void;
+}
+
+/** What can start a tool's sign-in (issue #1128): a usage source, on the machine it reads. */
+export interface ToolSignInStart {
+  /** Start its tool's sign-in on its machine; `email`: the account to pre-fill. Rejects with why it cannot start. Absent: it cannot. */
+  signIn?(o: { email?: string }): Promise<ToolSignIn>;
+}

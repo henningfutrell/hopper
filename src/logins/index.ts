@@ -1,3 +1,4 @@
 export { createLogins, type LoginAction, type Logins } from './service.ts';
 export { LOGIN_KIND_HANDLERS } from './kinds.ts';
 export { hideCodes, recogniseDeviceCode, type DeviceCodePrompt } from './recognise.ts';
+export { createSignIns, SIGN_IN_RUN, type SignIns, type SignInPaste, type SignInStart } from './sign-ins.ts';

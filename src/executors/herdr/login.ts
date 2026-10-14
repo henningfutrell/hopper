@@ -1,11 +1,14 @@
 // A herdr-claude job that waits on a login (issue #476, design.md "Logins"): the fields it reported after
 // HOPPER_AUTH_PENDING as a login report, and what the hopper types into its pane when the user acts on it.
 import type { ExecutionContext } from '../../domain/ports.ts';
-import { LOGIN_KINDS, type LoginCheck, type LoginKind, type LoginReport } from '../../domain/types.ts';
+import { type LoginCheck, type LoginKind, type LoginReport } from '../../domain/types.ts';
 import { DEFAULT_EXPIRES_IN_SEC } from '../../logins/recognise.ts';
 import type { LoginSignal } from '../../logins/signals.ts';
 import type { LoginWait } from './monitor.ts';
 import { readTurn, type AuthFields } from './screen.ts';
+
+/** The login kinds a job reports. */
+const JOB_LOGIN_KINDS: readonly LoginKind[] = ['device_code'];
 
 /** The login a job waits on, as its executor state keeps it. */
 export interface LoginRef { id: string; tool: string }
@@ -55,7 +58,8 @@ const positiveInt = (v: string | undefined): number | undefined => (v !== undefi
 /** The login the job reported, or why it cannot be one. Its kind checks the rest when it is reported. */
 export function loginReportOf(f: AuthFields, now: Date): LoginReport | { problem: string } {
   const kind = (f.kind ?? 'device_code').trim().toLowerCase().replace(/[\s-]+/g, '_');
-  if (!(LOGIN_KINDS as readonly string[]).includes(kind)) return { problem: `kind ${f.kind} is not one the hopper takes (${LOGIN_KINDS.join(', ')})` };
+  // A job reports a device login; a sign-in (`paste_code`, issue #1128) is the hopper's own, started from Accounts.
+  if (!(JOB_LOGIN_KINDS as readonly string[]).includes(kind)) return { problem: `kind ${f.kind} is not one the hopper takes (${JOB_LOGIN_KINDS.join(', ')})` };
   const tool = f.tool?.trim();
   if (!tool) return { problem: 'it names no tool' };
   if (!f.url?.trim()) return { problem: 'it names no URL' };

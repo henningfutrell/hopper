@@ -1,0 +1,1 @@
+- When Claude on a machine is signed out, you can sign it in again from the Accounts page, from anywhere: open the sign-in page, then paste the code it shows. No terminal on the machine is needed.

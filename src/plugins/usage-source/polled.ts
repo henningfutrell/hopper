@@ -3,7 +3,7 @@
 // `intervalSeconds`; `poll` answers from the last good read and never waits; a budget past its
 // reset is left out; readings older than 3 intervals are stale. Each reading names the instance,
 // the machine it is of (if any, issue #139) and the executors whose jobs it limits.
-import type { Account, UsageReading, UsageSourceState } from '../../domain/types.ts';
+import type { Account, ToolSignIn, UsageReading, UsageSourceState } from '../../domain/types.ts';
 import type { UsageSource } from '../../domain/ports.ts';
 
 /** One budget as a read finds it; the source, executors and time are added here. */
@@ -28,7 +28,11 @@ const NOT_READY_RETRY_MS = 30_000;
 
 export function createPolledUsageSource(
   ctx: PolledContext,
-  o: { intervalSeconds: number; machineId?: string; executors?: string[]; read(signal: AbortSignal): Promise<Read> },
+  o: {
+    intervalSeconds: number; machineId?: string; executors?: string[]; read(signal: AbortSignal): Promise<Read>;
+    /** Its tool's sign-in on its machine (issue #1128): once one goes through, the account is read again at once. */
+    signIn?(o: { email?: string }): Promise<ToolSignIn>;
+  },
 ): UsageSource {
   const staleMs = STALE_INTERVALS * o.intervalSeconds * 1000;
   let budgets: Budget[] = [];
@@ -104,8 +108,15 @@ export function createPolledUsageSource(
         ...(account ? { account } : {}),
         ...(accountReadAt ? { accountReadAt: accountReadAt.toISOString() } : {}),
         ...(o.executors ? { executors: [...o.executors] } : {}),
+        ...(o.signIn ? { signIn: true as const } : {}),
       };
     },
+    ...(o.signIn ? {
+      async signIn(x: { email?: string }): Promise<ToolSignIn> {
+        const s = await o.signIn!(x);
+        return { ...s, paste: async (code) => { const r = await s.paste(code); if (r.ok) void (running ? running.then(kick) : kick()); return r; } };
+      },
+    } : {}),
     stop() {
       stopped = true;
       clearInterval(timer);

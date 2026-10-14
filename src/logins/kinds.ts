@@ -29,4 +29,13 @@ const deviceCode: LoginKindHandler = {
   },
 };
 
-export const LOGIN_KIND_HANDLERS: Readonly<Record<LoginKind, LoginKindHandler>> = { device_code: deviceCode };
+/** A tool sign-in (issue #1128): open the URL, sign in, paste the code the page shows into the hopper, which gives it to the tool. */
+const pasteCode: LoginKindHandler = {
+  title: 'Sign-in',
+  problem(r) {
+    if (!httpUrl(r.verificationUrl)) return 'a sign-in needs the URL to open (http or https)';
+    return r.userCode ? 'a sign-in has no code to enter: the person pastes the code the page shows' : undefined;
+  },
+};
+
+export const LOGIN_KIND_HANDLERS: Readonly<Record<LoginKind, LoginKindHandler>> = { device_code: deviceCode, paste_code: pasteCode };
