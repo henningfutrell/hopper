@@ -12,6 +12,7 @@ import { PROMOTION_TABLE } from './promotions.ts';
 import { GITHUB_LISTING_TABLES } from './github-listings.ts';
 import { OUTBOUND_SEND_TABLE } from './outbound-sends.ts';
 import { workItemLedger } from './work-items.ts';
+import { rebuildWorkItems } from './work-items.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -34,4 +35,8 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 55: The work-item ledger (issue #1067): one row per work item, rebuilt from every event and the issue graph. A table
   // only: the build before runs on it, and a later start of this build rebuilds nothing it missed — `hopper ledger rebuild` does.
   workItemLedger,
+  // 56: Each work item's landing stage (issue #1073 part 3): the ledger rebuilt, so the landing batch events kept already
+  // put each job pull request merged into the landing branch at its stage. Rows only, a new field in each body: the build
+  // before runs on them and reads no such field.
+  (db) => { rebuildWorkItems(db); },
 ];

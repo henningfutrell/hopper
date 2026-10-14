@@ -5,6 +5,7 @@
 // event (src/store/work-items.ts), and a rebuild replays every event through it.
 import type { GraphNode } from './issue-graph.ts';
 import type { DomainEvent, EventType } from './types.ts';
+import { LANDING_LEDGER_EVENTS, type ItemLanding } from './work-item-landing.ts';
 
 /**
  * Where a work item stands, in the words every view uses. `waiting_for_approval`: a request card in Intake. `queued`: a job
@@ -78,6 +79,8 @@ export interface WorkItem {
   failedJobId?: string;
   /** The jobs of it whose work was kept, not pushed (`job.work_kept`), until removed. */
   keptWork: string[];
+  /** Its merged pull request on its way from the landing branch to the tested branch (issue #1073): `work-item-landing.ts`. */
+  landing?: ItemLanding;
   /** One more at each change. */
   version: number;
 }
@@ -99,6 +102,7 @@ export const LEDGER_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
   'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned',
   'job.work_kept', 'job.work_removed',
   'job.pull_request_seen', 'work_item.issue_closed', 'work_item.issue_reopened',
+  ...LANDING_LEDGER_EVENTS,
 ]);
 
 /** The source key an event without a job names (a request card's, or an issue GitHub closed or reopened), else undefined. */
@@ -169,7 +173,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
 
   // A new job of the item takes it over: what an earlier job and GitHub said of it is history.
   if (event.type === 'job.queued') {
-    return move('queued', { jobId: job.id, pullRequest: undefined, pullRequestState: undefined, pullRequestWait: undefined, issueState: undefined, issueReason: undefined, waitingOn: undefined, failedJobId: undefined });
+    return move('queued', { jobId: job.id, pullRequest: undefined, pullRequestState: undefined, pullRequestWait: undefined, issueState: undefined, issueReason: undefined, waitingOn: undefined, failedJobId: undefined, landing: undefined });
   }
   // Any job's kept work and pull request: a tend hands a pull request to a newer job, and an older job's merge still counts.
   if (event.type === 'job.work_kept') return item?.keptWork.includes(job.id) ? undefined : mark({ keptWork: [...base.keptWork, job.id] });
@@ -320,8 +324,8 @@ export interface WorkItemLedger {
   get(key: string): WorkItem | undefined;
   /** The item whose pull request is `url` (issue #1074: a job's repo query of it); undefined: none. */
   byPullRequest(url: string): WorkItem | undefined;
-  /** The items, the newest state change first; `keptWork`: only those that hold kept work. */
-  list(filter?: { state?: WorkItemState[]; keptWork?: true; limit?: number }): WorkItem[];
+  /** The items, the newest state change first; `keptWork`: only those that hold kept work; `landing`: only those with a landing stage. */
+  list(filter?: { state?: WorkItemState[]; keptWork?: true; landing?: true; limit?: number }): WorkItem[];
   /** How many items are in each state: `SELECT state, count(*)`. */
   counts(): Record<WorkItemState, number>;
   /** Replay every event and the issue graph through the reducer, in place of the rows there are. How many items. */

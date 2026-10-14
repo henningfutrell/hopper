@@ -274,6 +274,7 @@
         "landing_batch.reverted",
         "landing_batch.revert_failed",
         "landing_batch.fix_filed",
+        "landing_batch.pending",
         "jev.mode_changed",
         "router.mode_changed"
       ]

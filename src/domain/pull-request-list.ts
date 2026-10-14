@@ -14,9 +14,12 @@ import type { Job } from './types.ts';
 import { followsWhenEnded, MAX_TEND_RETRIES, MAX_TENDS, noChecksSettled, readyToMerge, TEND_ENDS, tendRetryAt, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Holds, QueueHead } from './tending-queue.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
+import type { LandingCard } from './work-item-landing.ts';
 
 // The list's repositories with no checks (issue #677) are their own module; re-exported here, as the list is in types.ts.
 export * from './repo-checks.ts';
+// The Landing list's cards (issue #1073), in the list's view.
+export type { LandingCard, LandingStage } from './work-item-landing.ts';
 
 /**
  * Why a waiting pull request is not merged yet: the first that holds, in this order. `no pull request`: none named nor
@@ -83,6 +86,8 @@ export interface PullRequestsView {
   waiting: { repo: string; count: number; reason: MergeWait }[];
   /** Every job repository, and any other a card is in, with its yolo mode and its cards, oldest first. */
   repos: { repo: string; yolo: boolean; pullRequests: PullRequestCard[] }[];
+  /** Job pull requests merged into the landing branch, on their way to the tested branch (issue #1073); absent: none. */
+  landing?: LandingCard[];
 }
 
 interface Followed extends Holds { pullRequest?: string; follow?: string; part?: boolean; seen?: PullRequestSeen; tended?: Tended }

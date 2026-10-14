@@ -71,12 +71,15 @@ export interface LandingBatchState {
   culprit?: Culprit;
   /** A culprit's revert merged since the newest batch run started: the next one starts at once. */
   revertedSinceRun?: boolean;
+  /** The pull requests merged into the landing branch that wait for a batch run, as last recorded (part 3); none once one starts. */
+  pending?: { tip: string; merges: number[] };
 }
 
 export const LANDING_BATCH_EVENT_TYPES = [
   'landing_batch.started', 'landing_batch.promoted', 'landing_batch.failed', 'landing_batch.retargeted', 'landing_batches.changed',
   'landing_batch.bisect_started', 'landing_batch.bisect_run', 'landing_batch.bisect_tested', 'landing_batch.culprit',
   'landing_batch.revert_opened', 'landing_batch.reverted', 'landing_batch.revert_failed', 'landing_batch.fix_filed',
+  'landing_batch.pending',
 ] as const;
 
 /** A red batch's events onto the state: the bisect, its runs and results, the culprit, its revert and its fix issue. */
@@ -132,6 +135,9 @@ export function landingBatchStates(events: readonly DomainEvent[]): Record<strin
       s.lastStartedAt = e.at;
       s.running = { tip, branch: String(d.branch), pullRequest: Number(d.pullRequest), url: String(d.url), startedAt: e.at, merges: (d.merges as number[] | undefined) ?? [] };
       delete s.revertedSinceRun;
+      delete s.pending;
+    } else if (e.type === 'landing_batch.pending') {
+      s.pending = { tip, merges: (d.merges as number[] | undefined) ?? [] };
     } else if (e.type === 'landing_batch.promoted' || e.type === 'landing_batch.failed') {
       const outcome = e.type === 'landing_batch.promoted' ? 'promoted' : 'failed';
       s.lastTestedTip = tip;
@@ -141,6 +147,11 @@ export function landingBatchStates(events: readonly DomainEvent[]): Record<strin
     } else reduceRed(s, e.type, d, e.at);
   }
   return out;
+}
+
+/** Whether the merges that wait for a batch run are news: some wait, and they differ from the last ones recorded. */
+export function pendingChanged(s: LandingBatchState | undefined, merges: readonly number[]): boolean {
+  return merges.length > 0 && JSON.stringify(s?.pending?.merges ?? []) !== JSON.stringify(merges);
 }
 
 /** What the landing branch has that the tested branch lacks: its tip, its commits ahead, and the merges among them. */

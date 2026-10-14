@@ -18089,8 +18089,36 @@ the next merge as before. When checks failed:
 **Cost.** One full run per batch. A red batch costs a run, plus at most ⌈log₂ N⌉ bisect runs and one run again after
 the revert.
 
-**Not yet (the next parts).** Merge conflicts on `main` fixed by the hopper. Then `beta` →
-`stable` through a canary: a subset of installs runs the candidate first, and it reaches every install only when its
-health stays good for the canary window, with the subset and the window as settings. The batch state in the
-work-item ledger's rows (a job's pull request merged to `main`, waiting for its batch), and the batch state on
-the Pull requests view.
+**The landing stage of a work item** (part 3, `src/domain/work-item-landing.ts`, pure). The ledger ("The work-item
+ledger") reads the `landing_batch.*` events too. So the row of each work item whose job's pull request merged into the
+landing branch says where that pull request stands on its way to the tested branch: its `landing` stage, beside its
+state (which stays `done`, as the merge made it). A landing event names a repository and pull requests by number — a
+batch's `merges`, a bisect's `points`, a culprit, a revert's `culpritPullRequest` — or the tip of their batch. The store
+folds it into each item of that repository with a merged pull request (`applyLanding`), in the transaction that appends
+it, and a rebuild replays it the same way. The stages:
+
+| Stage | Set by | Means |
+|---|---|---|
+| `waiting` | `landing_batch.pending`; a red batch run, a bisect with no verdict, or a culprit that is another | merged into the landing branch; waits for a batch run |
+| `batch_run` | `landing_batch.started` naming it (`tip`, `batch`) | in the batch run at work |
+| `bisecting` | `landing_batch.bisect_started` naming it | in a red batch that a bisect tests |
+| `culprit` | `landing_batch.culprit`, or the `landing_batch.revert_opened` of its pull request (`revert`) | the first change of its batch that fails |
+| `reverted` | `landing_batch.reverted` of its batch | reverted from the landing branch; `landing_batch.fix_filed` adds `fixIssue` |
+| `promoted` | `landing_batch.promoted` of its batch run | on the tested branch |
+
+A culprit or a reverted one stays so: later batches name its merge again (its revert is a commit of its own), and move
+it no more. A new job of the item (`job.queued`) clears the stage, as it clears what GitHub said.
+
+**`landing_batch.pending`.** The runner records the merges beyond the tested branch that wait for a batch run. It does so
+at a pass that starts none (`batchDue` says no), and only when they differ from the last ones recorded
+(`pendingChanged`; a batch run started clears them). So the ledger knows that a merge waits before a batch run carries
+it, and an idle repository records nothing new. Tenant migration 56 rebuilds the ledger once, so the landing events
+recorded before it set each item's stage.
+
+**On the Pull requests view.** `GET /api/pull-requests` answers `landing` (`landingCards`): each item with a landing
+stage that is not `promoted`, a `reverted` one for a week, the newest stage first. The view lists them under
+**Landing**, each with its pull request, its stage in plain words, its fix issue and how long ago.
+
+**Not yet (the next parts).** Merge conflicts on `main` fixed by the hopper. Then `beta` → `stable` through a canary: a
+subset of installs runs the candidate first, and it reaches every install only when its health stays good for the
+canary window, with the subset and the window as settings.

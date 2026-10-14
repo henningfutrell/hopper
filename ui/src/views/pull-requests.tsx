@@ -7,7 +7,9 @@
 // a draft and a new job reworks it. A repository with no checks (issue #677, `GET /api/repo-checks`) is named in the
 // header and warned of in its group, with the job that adds them: Queue job files it at once, Dismiss hides it.
 // A card the hopper gave up on (its tend job ended failed, cancelled or rejected) has Tend again (issue #1010).
-import { ExternalLink, GitMerge, GitPullRequest, RotateCw, TriangleAlert, Undo2, X } from 'lucide-react';
+// Landing (issue #1073): the job pull requests merged into the landing branch, each with its batch stage, until a batch run
+// moves it to the tested branch.
+import { ExternalLink, GitBranch, GitMerge, GitPullRequest, RotateCw, TriangleAlert, Undo2, X } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { GhLink } from '@/components/job';
 import { Confirm } from '@/components/confirm';
@@ -19,8 +21,8 @@ import { usePoll } from '@/hooks/use-poll';
 import { useNow } from '@/hooks/use-now';
 import { get } from '@/lib/api';
 import { ago } from '@/model/format';
-import { MERGEABLE_TEXT, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, mergeQuestion, hasCards, noChecksLine, noChecksNote, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
-import type { PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '@/model/wire';
+import { MERGEABLE_TEXT, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, landingText, mergeQuestion, hasCards, noChecksLine, noChecksNote, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
+import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '@/model/wire';
 import { act } from '@/store';
 import { setPolled } from '@/store/polled';
 import { useCanOperate } from '@/store/selectors';
@@ -182,6 +184,34 @@ function RepoGroup({ group, checks, onChanged }: { group: PullRequestsView['repo
   );
 }
 
+const LANDING_TONE: Record<LandingCard['stage'], string> = {
+  waiting: 'text-muted-foreground', batch_run: 'text-warn', bisecting: 'text-warn', culprit: 'text-bad', reverted: 'text-bad', promoted: 'text-ok',
+};
+
+/** Landing (issue #1073): each job pull request merged into the landing branch, and where it stands on its way to the tested branch. */
+function Landing({ cards }: { cards: LandingCard[] }) {
+  const now = useNow();
+  return (
+    <section data-slot="landing">
+      <Panel title="Landing" icon={GitBranch} count={cards.length} bodyClassName="p-0">
+        <p className="border-b px-4 py-2 text-xs text-muted-foreground">
+          Merged into the landing branch. A batch run of the full test suite moves them to the tested branch. <a href="#settings/landing-batches" className="underline">Settings → Landing batches</a>
+        </p>
+        <ul className="divide-y">
+          {cards.map((c) => (
+            <li key={`${c.repo}#${c.pullRequest.number}`} data-landing={c.jobId ?? c.issue} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm">
+              <GhLink url={c.pullRequest.url} className="font-medium text-foreground">{c.repo}#{c.pullRequest.number}<ExternalLink className="size-3 opacity-60" /></GhLink>
+              <span data-slot="landing-stage" className={`text-xs ${LANDING_TONE[c.stage]}`}>{landingText(c)}</span>
+              {c.fixIssue && <GhLink url={c.fixIssue} className="text-xs">fix issue</GhLink>}
+              <span className="text-xs text-muted-foreground" title={c.since}>{ago(c.since, now)}</span>
+            </li>
+          ))}
+        </ul>
+      </Panel>
+    </section>
+  );
+}
+
 export function PullRequests() {
   const [view, setView] = useState<PullRequestsView | undefined>();
   const [checks, setChecks] = useState<RepoChecksView>({ repos: [] });
@@ -207,6 +237,7 @@ export function PullRequests() {
           {!hasCards(view) && <p data-slot="pr-empty" className="text-muted-foreground">No pull request waits.</p>}
         </div>
       </Panel>
+      {view.landing && view.landing.length > 0 && <Landing cards={view.landing} />}
       {view.repos.map((g) => <RepoGroup key={g.repo} group={g} checks={checks.repos.find((c) => c.repo.toLowerCase() === g.repo.toLowerCase())} onChanged={reload} />)}
     </div>
   );

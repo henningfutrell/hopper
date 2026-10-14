@@ -5790,3 +5790,28 @@ Version 1 (`docs/schemas/landing_batch.fix_filed.v1.json`). The hopper filed the
   "url": "https://github.com/owner/repo/issues/1105"
 }
 ```
+
+## `landing_batch.pending`
+
+Version 1 (`docs/schemas/landing_batch.pending.v1.json`). The pull requests merged into a repository's landing branch that wait for a batch run (issue #1073 part 3): `merges`, beyond the `tested` branch, at the landing branch's `tip`. Recorded at a pass that starts no batch run, when they differ from the last ones recorded. The work-item ledger puts each of their items at the landing stage `waiting`.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `landing` | string | yes |
+| `tested` | string | yes |
+| `tip` | string | yes |
+| `merges` | integer[] | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "landing": "main",
+  "tested": "dev",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "merges": [
+    1088,
+    1090
+  ]
+}
+```

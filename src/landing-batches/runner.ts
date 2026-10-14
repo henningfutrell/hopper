@@ -6,7 +6,7 @@
 // a batch run starts when due (`batchDue`). Each step is an event, with the user's own GitHub connection. What the last
 // pass found is kept in memory for the view: why no batch run started, or the problem.
 import {
-  batchBody, batchBranch, batchChecks, batchDue, batchTitle, landingBatchStates, mergedPullRequests,
+  batchBody, batchBranch, batchChecks, batchDue, batchTitle, landingBatchStates, mergedPullRequests, pendingChanged,
   type BatchCheckRun, type LandingBatchRepoView, type LandingBatchSettings,
 } from '../domain/landing-batches.ts';
 import type { FailedCheck } from '../domain/landing-bisect.ts';
@@ -116,7 +116,12 @@ export function createLandingBatches(o: {
     const merges = mergedPullRequests(cmp.commits.map((c) => c.message));
     const fresh = landingBatchStates(o.events())[repo];
     const due = batchDue(fresh, { tip: cmp.tip, aheadBy: cmp.aheadBy, merges: merges.length }, cfg, o.now());
-    if (!due.due) { note(repo, { why: due.why }); return; }
+    if (!due.due) {
+      // The merges that wait for it, for the work-item ledger: once per change.
+      if (cmp.aheadBy > 0 && pendingChanged(fresh, merges)) o.record({ type: 'landing_batch.pending', data: { repo, landing, tested: cfg.tested, tip: cmp.tip, merges } });
+      note(repo, { why: due.why });
+      return;
+    }
     const branch = batchBranch(cmp.tip);
     await gh.createBranch(repo, branch, cmp.tip);
     const b = { landing, tested: cfg.tested, tip: cmp.tip, merges };

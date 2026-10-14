@@ -155,7 +155,9 @@ describe('the batch runner (issue #1073)', () => {
     await r.pass();
     expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed']);
     await r.pass();
-    expect(events).toHaveLength(2);
+    await r.pass();
+    // Its pull requests wait for the next batch run again: recorded once (part 3).
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.pending']);
     expect(r.view().repos[0]!.why).toBe(`the landing branch tip ${TIP.slice(0, 12)} was tested already`);
   });
 

@@ -8,6 +8,7 @@ import {
   applyEvent, applyRead, countStates, jobIdOfEvent, keyOfEvent, LEDGER_EVENT_TYPES,
   type LedgerJob, type WorkItem, type WorkItemLedger, type WorkItemState,
 } from '../domain/work-items.ts';
+import { applyLanding, LANDING_LEDGER_EVENTS, landingTargets } from '../domain/work-item-landing.ts';
 import type { Db } from './db.ts';
 import { parse } from './context.ts';
 
@@ -78,6 +79,13 @@ export function rebuildWorkItems(db: Db): number {
     const rows = db.all(`SELECT seq, type, at, job_id, data FROM events WHERE seq > ? AND type IN (${marks}) ORDER BY seq LIMIT ?`, after, ...types, REBUILD_PAGE);
     for (const r of rows) {
       const event = { type: r.type as EventType, at: String(r.at), data: parse<Record<string, unknown>>(r.data), ...(r.job_id !== null ? { jobId: String(r.job_id) } : {}) };
+      if (LANDING_LEDGER_EVENTS.has(event.type)) {
+        for (const i of items.values()) {
+          const next = applyLanding(i, event);
+          if (next) items.set(i.key, next);
+        }
+        continue;
+      }
       const jobId = jobIdOfEvent(event);
       const job = jobId !== undefined ? jobs.get(jobId) : undefined;
       const key = job?.key ?? keyOfEvent(event);
@@ -120,6 +128,17 @@ export function createWorkItemLedger(db: Db, tx: <T>(fn: () => T) => T): WorkIte
   return {
     applyEvent(event) {
       if (!LEDGER_EVENT_TYPES.has(event.type)) return;
+      if (LANDING_LEDGER_EVENTS.has(event.type)) {
+        db.run('UPDATE work_items_applied SET seq = ?', event.seq);
+        const t = landingTargets(event);
+        if (!t) return;
+        // The items of the event's repository with a merged pull request; the reducer picks the ones it moves.
+        for (const r of db.all("SELECT body FROM work_items WHERE lower(pull_request) LIKE ? AND body::jsonb->>'pullRequestState' = 'merged'", `%/${t.repo.replace(/[\\%_]/g, '\\$&')}/pull/%`)) {
+          const next = applyLanding(parse<WorkItem>(r.body), event);
+          if (next) put(db, next);
+        }
+        return;
+      }
       const jobId = jobIdOfEvent(event);
       const job = jobId !== undefined ? jobOfRow(db.get(`SELECT ${JOB_COLUMNS} FROM jobs WHERE id = ?`, jobId) ?? {}) : undefined;
       const key = job?.key ?? keyOfEvent(event);
@@ -150,6 +169,7 @@ export function createWorkItemLedger(db: Db, tx: <T>(fn: () => T) => T): WorkIte
       const conds = [
         ...(states.length ? [`state IN (${states.map(() => '?').join(',')})`] : []),
         ...(filter?.keptWork ? ["body::jsonb->'keptWork' <> '[]'::jsonb"] : []),
+        ...(filter?.landing ? ["body::jsonb->'landing' IS NOT NULL"] : []),
       ];
       const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
       const limit = filter?.limit !== undefined ? 'LIMIT ?' : '';

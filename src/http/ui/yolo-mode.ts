@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { DEFAULT_YOLO_MODE, patchYoloMode, pullRequestList, type PullRequestsView, type YoloModeSettings, type YoloModeView } from '../../domain/types.ts';
 import type { UserStore } from '../../domain/store.ts';
+import { landingCards } from '../../domain/work-item-landing.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
 import { identityName } from './sessions.ts';
@@ -26,10 +27,16 @@ export function yoloModeView(t: Pick<TenantParts, 'store'>): YoloModeView {
   return { ...settingsOf(t.store), choices: { repos: t.store.settings.getJobRepositories('github') } };
 }
 
-/** The Pull requests list (issue #637): every waiting pull request of the user's jobs, per job repository, with its yolo mode. */
+/**
+ * The Pull requests list (issue #637): every waiting pull request of the user's jobs, per job repository, with its yolo mode;
+ * and the Landing list (issue #1073): the merged ones on their way from the landing branch to the tested branch, from the ledger.
+ */
 export function pullRequestsView(t: Pick<TenantParts, 'store'>): PullRequestsView {
   const { store } = t;
-  return pullRequestList(store.jobs.list({ status: ['finished', 'failed'], followed: true }), (key) => store.jobs.getBySourceKey(key), settingsOf(store), store.settings.getJobRepositories('github'), Date.now(), (id) => store.jobs.get(id));
+  const now = Date.now();
+  const view = pullRequestList(store.jobs.list({ status: ['finished', 'failed'], followed: true }), (key) => store.jobs.getBySourceKey(key), settingsOf(store), store.settings.getJobRepositories('github'), now, (id) => store.jobs.get(id));
+  const landing = landingCards(store.workItems.list({ landing: true }), now);
+  return landing.length > 0 ? { ...view, landing } : view;
 }
 
 export function registerYoloModeRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {

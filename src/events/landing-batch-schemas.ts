@@ -17,6 +17,7 @@ export const LANDING_BATCH_EVENT_SCHEMAS = {
     repo: z.string(), landing: z.string(), tested: z.string(), tip: z.string(), branch: z.string(),
     pullRequest: z.number().int(), url: z.string(), merges: z.array(z.number().int()), why: z.string().optional(),
   }),
+  'landing_batch.pending': strict({ repo: z.string(), landing: z.string(), tested: z.string(), tip: z.string(), merges: z.array(z.number().int()) }),
   'landing_batch.promoted': strict({ ...ended, merge: z.string().optional() }),
   'landing_batch.failed': strict({ ...ended, reason: z.string(), checks: z.array(z.string()), checkRuns: z.array(check).optional() }),
   'landing_batch.retargeted': strict({ repo: z.string(), pullRequest: z.number().int(), url: z.string(), from: z.string(), to: z.string() }),
