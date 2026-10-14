@@ -110,6 +110,18 @@ describe('the Windows install (WSL)', () => {
     expect(windows).not.toContain('login-code');
     expect(windows).toContain('sign in with GitHub');
   });
+
+  it('keeps the hopper running in WSL with steps a person does once, not an open Ubuntu window (issue #712)', () => {
+    const steps = windows.slice(0, windows.indexOf('<details>'));
+    expect(steps).toContain('systemd=true');
+    expect(steps).toContain('systemctl --user enable podman-restart.service');
+    expect(steps).toContain('sudo loginctl enable-linger');
+    expect(steps).toContain('id="windows-keep-running"');
+    expect(steps).toContain('Startup\\hopper-wsl.lnk');
+    expect(steps).toContain('-WindowStyle Hidden');
+    expect(steps).toContain('wsl.exe -d Ubuntu-24.04 -e sleep infinity; Start-Sleep -Seconds 5');
+    expect(page).not.toContain('Keep one Ubuntu window open');
+  });
 });
 
 describe('a Windows computer as a machine (issue #704)', () => {
@@ -122,7 +134,8 @@ describe('a Windows computer as a machine (issue #704)', () => {
   });
 
   it('turns systemd on in WSL, starts podman.socket, and joins the WSL distro with the Add machine line', () => {
-    expect(machines).toContain('systemd=true');
+    expect(machines).toContain('<a href="#windows">On Windows</a>, steps 1 to 3');
+    expect(page.slice(page.indexOf('id="windows"'), page.indexOf('id="windows-machine"'))).toContain('systemd=true');
     expect(machines).toContain('systemctl --user enable --now podman.socket');
     expect(machines).toContain('Add machine');
   });
