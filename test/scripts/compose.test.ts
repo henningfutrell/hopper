@@ -294,8 +294,8 @@ describe('the published image (issue #125)', () => {
     expect(workflow).toMatch(/push: true/);
   });
 
-  it('is built on every change to dev, beta and stable, the update channels, for Intel/AMD and ARM machines (issue #423)', () => {
-    expect(workflow).toMatch(/branches: \[dev, beta, stable\]/);
+  it('is built on every change to dev, beta, canary and stable, the update channels and the stable candidate (issue #1073), for Intel/AMD and ARM machines (issue #423)', () => {
+    expect(workflow).toMatch(/branches: \[dev, beta, canary, stable\]/);
     expect(workflow).toContain('linux/amd64,linux/arm64');
   });
 
