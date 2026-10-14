@@ -41,6 +41,7 @@ const ALL: Record<EventType, true> = {
   'yolo_mode.changed': true, 'job.pull_request_merged': true, 'job.pull_request_closed': true, 'job.pull_request_abandoned': true, 'job.finish_briefed': true, 'job.pull_request_tended': true, 'job.pull_request_base_merged': true, 'job.pull_request_followed': true,
   'skill.listed': true, 'skill.loaded': true, 'skill.refused': true,
   'step.started': true, 'step.finished': true, 'step.refused': true, 'vault.step_delivered': true, 'vault.step_refused': true,
+  'landing_batch.started': true, 'landing_batch.promoted': true, 'landing_batch.failed': true, 'landing_batch.retargeted': true, 'landing_batches.changed': true,
   'artifact.created': true, 'artifact.shared': true, 'artifact.share_revoked': true, 'artifact.removed': true, 'artifact.settings_changed': true, 'artifact.posted': true,
   'tldr.written': true, 'tldr.settings_changed': true,
   'artifact.revised': true, 'artifact.revision_pinned': true, 'artifact.revision_removed': true,

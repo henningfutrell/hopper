@@ -21,9 +21,9 @@ type Workflow = {
 const workflow = parse(readFileSync(join(ROOT, '.github', 'workflows', 'pr.yml'), 'utf8')) as Workflow;
 
 describe('.github/workflows/pr.yml, the pull request check', () => {
-  it('runs on pull requests to dev, beta and stable, never as pull_request_target', () => {
+  it('runs on pull requests to main, dev, beta and stable, never as pull_request_target', () => {
     expect(Object.keys(workflow.on)).toEqual(['pull_request']);
-    expect(workflow.on.pull_request?.branches).toEqual(['dev', 'beta', 'stable']);
+    expect(workflow.on.pull_request?.branches).toEqual(['main', 'dev', 'beta', 'stable']);
   });
 
   it('reads the repository only, and names no secret', () => {
@@ -31,19 +31,35 @@ describe('.github/workflows/pr.yml, the pull request check', () => {
     expect(readFileSync(join(ROOT, '.github', 'workflows', 'pr.yml'), 'utf8')).not.toMatch(/secrets\./);
   });
 
-  it('is the check `pr / test`: it waits on every gate and shard, and passes only when each passed', () => {
+  it('is the check `pr / test`: it waits on the gates and the tests of its base, and passes only when each passed', () => {
     expect(workflow.name).toBe('pr');
     const test = workflow.jobs.test!;
-    expect(test.needs).toEqual(['gates', 'shard']);
+    expect(test.needs).toEqual(['gates', 'affected', 'shard']);
     // Run even when a needed job failed: a skipped check would count as passing.
     expect(test.if).toBe('always()');
-    expect(test.steps.map((s) => s.run)).toEqual(['test "$GATES" = success && test "$SHARDS" = success']);
-    expect(test.steps[0]!.env).toEqual({ GATES: '${{ needs.gates.result }}', SHARDS: '${{ needs.shard.result }}' });
+    expect(test.steps.map((s) => s.run)).toEqual(['test "$GATES" = success\nif [ "$BASE" = main ]; then test "$AFFECTED" = success; else test "$SHARDS" = success; fi\n']);
+    expect(test.steps[0]!.env).toEqual({
+      BASE: '${{ github.base_ref }}', GATES: '${{ needs.gates.result }}', AFFECTED: '${{ needs.affected.result }}', SHARDS: '${{ needs.shard.result }}',
+    });
     for (const job of Object.values(workflow.jobs)) expect(job['timeout-minutes']).toBeLessThanOrEqual(10);
   });
 
+  // Issue #1073: a pull request into main, the landing branch, runs only the tests its change affects; every
+  // other base (a batch run into dev, a promotion) the full suite in shards.
+  it('into main, only the affected tests; into any other base, the full suite', () => {
+    const affected = workflow.jobs.affected!;
+    expect(affected.if).toBe("github.base_ref == 'main'");
+    expect(workflow.jobs.shard!.if).toBe("github.base_ref != 'main'");
+    expect(affected.steps.find((s) => s.uses?.startsWith('actions/checkout@'))?.with).toEqual({ 'fetch-depth': 2 });
+    const test = affected.steps.find((s) => s.run?.startsWith('npx vitest'));
+    expect(test?.run).toBe('npx vitest run --changed HEAD^1 --passWithNoTests --maxWorkers=100%');
+    expect(test?.env).toEqual({ HOPPER_TEST_HOST_SERVICES: '0' });
+    // What's new is checked where a change lands: on main.
+    expect(workflow.jobs.gates!.steps.find((s) => s.run?.startsWith('node scripts/whats-new.ts'))?.if).toBe("github.base_ref == 'main'");
+  });
+
   it('runs every gate with the npm cache, and the tests in shards without host services', () => {
-    for (const name of ['gates', 'shard']) {
+    for (const name of ['gates', 'affected', 'shard']) {
       const node = workflow.jobs[name]!.steps.find((s) => s.uses?.startsWith('actions/setup-node@'));
       expect(node?.with, name).toMatchObject({ 'node-version': 24, cache: 'npm' });
     }
@@ -62,7 +78,7 @@ describe('.github/workflows/pr.yml, the pull request check', () => {
 
   // Issue #949: node_modules comes from the cache of its package-lock.json; `npm ci` runs only when there is none.
   it('takes node_modules from the cache of package-lock.json, and installs only on a miss', () => {
-    for (const name of ['gates', 'shard']) {
+    for (const name of ['gates', 'affected', 'shard']) {
       const steps = workflow.jobs[name]!.steps;
       const cache = steps.find((s) => s.uses?.startsWith('actions/cache@'));
       expect(cache, name).toMatchObject({ id: 'deps', with: { path: 'node_modules' } });

@@ -25,6 +25,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad', 'job.child_issue_filed': 'ok',
   'skill.loaded': 'ok', 'skill.refused': 'warn',
   'step.refused': 'warn', 'vault.step_delivered': 'ok', 'vault.step_refused': 'warn',
+  'landing_batch.promoted': 'ok', 'landing_batch.failed': 'bad', 'landing_batches.changed': 'warn',
   'artifact.posted': 'ok', 'artifact.revised': 'ok',
   'lanes.recommended': 'warn', 'lanes.tuning_changed': 'warn', 'lanes.applied': 'warn', 'lanes.undone': 'warn', 'lanes.dismissed': 'warn',
   'bug_report.filed': 'ok', 'bug_report.failed': 'bad',
@@ -65,6 +66,11 @@ export function detailOf(e: DomainEvent): string {
   if (e.type === 'step.refused') return `no: ${String(d.reason)}`;
   if (e.type === 'vault.step_delivered') return `${String(d.name)} given to a step on ${String(d.host)}`;
   if (e.type === 'vault.step_refused') return `${String(d.name)} for a step on ${String(d.host)}: no: ${String(d.reason)}`;
+  // Landing batches (issue #1073): a batch run of the landing branch, how it ended, a job's pull request moved to it.
+  if (e.type === 'landing_batch.started') return `${String(d.repo)}: batch run #${String(d.pullRequest)} of ${String(d.landing)} into ${String(d.tested)}`;
+  if (e.type === 'landing_batch.promoted') return `${String(d.repo)}: batch run #${String(d.pullRequest)} moved ${String(d.tested)}`;
+  if (e.type === 'landing_batch.failed') return `${String(d.repo)}: batch run #${String(d.pullRequest)} failed: ${String(d.reason)}`;
+  if (e.type === 'landing_batch.retargeted') return `${String(d.repo)}#${String(d.pullRequest)} moved from ${String(d.from)} to ${String(d.to)}`;
   // An artifact shown to its owner (issue #673): where its link was posted, or why not.
   if (e.type === 'artifact.posted') return `${String(d.title)}: ${typeof d.comment === 'string' ? `posted on the issue, ${d.comment}` : typeof d.error === 'string' ? `not posted: ${d.error}` : 'no issue to post on'}`;
   if (e.type === 'artifact.created') return artifactCreatedDetail(d);

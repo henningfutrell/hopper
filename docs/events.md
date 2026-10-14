@@ -5353,3 +5353,139 @@ Version 1 (`docs/schemas/vault.step_refused.v1.json`). A running job's Windows s
   "reason": "job f3b1c2d4 has no vault grant: a person grants it the vault on the Vault page (Settings → Vault), then ask again"
 }
 ```
+
+## `landing_batch.started`
+
+Version 1 (`docs/schemas/landing_batch.started.v1.json`). The hopper started a batch run of a repository's landing branch (issue #1073, design.md "Landing batches"): `branch` made at the landing branch's `tip`, and a pull request of it (`pullRequest`, `url`) into the `tested` branch, so the full test suite runs on it. `merges`: the pull requests the batch carries, from their merge commits. `why`: the trigger (N merges, the timer, or no batch run before).
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `landing` | string | yes |
+| `tested` | string | yes |
+| `tip` | string | yes |
+| `branch` | string | yes |
+| `pullRequest` | integer | yes |
+| `url` | string | yes |
+| `merges` | integer[] | yes |
+| `why` | string | no |
+
+```json
+{
+  "repo": "owner/repo",
+  "landing": "main",
+  "tested": "dev",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "branch": "hopper-batch/0123456789ab",
+  "pullRequest": 1101,
+  "url": "https://github.com/owner/repo/pull/1101",
+  "merges": [
+    1088,
+    1090,
+    1093
+  ],
+  "why": "3 merges since the last batch run"
+}
+```
+
+## `landing_batch.promoted`
+
+Version 1 (`docs/schemas/landing_batch.promoted.v1.json`). A batch run passed every check and the hopper merged it into the `tested` branch (issue #1073): the tested branch moved by the whole batch, to the landing branch's `tip`, in one merge commit (`merge`; absent when a person merged it first). Its branch is removed.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tested` | string | yes |
+| `tip` | string | yes |
+| `pullRequest` | integer | yes |
+| `url` | string | yes |
+| `merge` | string | no |
+
+```json
+{
+  "repo": "owner/repo",
+  "tested": "dev",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "pullRequest": 1101,
+  "url": "https://github.com/owner/repo/pull/1101",
+  "merge": "89abcdef0123456789abcdef0123456789abcdef"
+}
+```
+
+## `landing_batch.failed`
+
+Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pass (issue #1073): `reason` why — `checks` that failed, no check in time, merge conflicts with the tested branch, its branch moved, or its pull request closed without a merge. The hopper closed it and removed its branch; the tested branch did not move. The same `tip` does not run again: the next batch run waits for a new merge.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tested` | string | yes |
+| `tip` | string | yes |
+| `pullRequest` | integer | yes |
+| `url` | string | yes |
+| `reason` | string | yes |
+| `checks` | string[] | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "tested": "dev",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "pullRequest": 1101,
+  "url": "https://github.com/owner/repo/pull/1101",
+  "reason": "checks failed: shard (4)",
+  "checks": [
+    "shard (4)"
+  ]
+}
+```
+
+## `landing_batch.retargeted`
+
+Version 1 (`docs/schemas/landing_batch.retargeted.v1.json`). The hopper moved a job's open pull request from the tested branch (`from`) to the landing branch (`to`) (issue #1073): a job's pull request lands on the landing branch, never on the tested branch.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `pullRequest` | integer | yes |
+| `url` | string | yes |
+| `from` | string | yes |
+| `to` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "pullRequest": 1090,
+  "url": "https://github.com/owner/repo/pull/1090",
+  "from": "dev",
+  "to": "main"
+}
+```
+
+## `landing_batches.changed`
+
+Version 1 (`docs/schemas/landing_batches.changed.v1.json`). An admin changed the landing batches (issue #1073): per repository (`owner/repo`, lowercased), the `tested` branch a green batch run moves, and when a batch run starts (`everyMerges`, `everyMinutes`). `from` and `to` the settings, `by` who changed them.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "repos": {}
+  },
+  "to": {
+    "repos": {
+      "owner/repo": {
+        "tested": "dev",
+        "everyMerges": 5,
+        "everyMinutes": 60
+      }
+    }
+  },
+  "by": "owner"
+}
+```

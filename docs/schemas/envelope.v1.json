@@ -258,6 +258,11 @@
         "step.refused",
         "vault.step_delivered",
         "vault.step_refused",
+        "landing_batch.started",
+        "landing_batch.promoted",
+        "landing_batch.failed",
+        "landing_batch.retargeted",
+        "landing_batches.changed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

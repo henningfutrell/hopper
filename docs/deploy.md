@@ -1235,12 +1235,13 @@ GitHub* before it is removed (docs/design.md "One grant per connection").
 
 ## Update channels and promotion
 
-The repository has three long-lived branches, and they are the update channels (issue #423), least stable
-first:
+The repository has three long-lived branches that are the update channels (issue #423), and below them the landing
+branch `main` (issue #1073, docs/design.md "Landing batches"), least stable first:
 
 | Branch | What is on it | Who moves it, and when |
 |---|---|---|
-| `dev` | the default branch: every pull request, a job's included, merges here | each merge |
+| `main` | the default branch, the landing branch: every pull request, a job's included, merges here after the fast checks (the gates and the affected tests). No update channel: no hopper follows it | each merge |
+| `dev` | what passed the full test suite on `main` as one batch run | the hopper merges a green batch run (Settings → Landing batches) |
 | `beta` | changes that ran on `dev` | a maintainer promotes, once a `dev` hopper has run the change without trouble |
 | `stable` | changes that ran on `beta` | a maintainer promotes, once a `beta` hopper has run the change without trouble |
 
@@ -1256,17 +1257,29 @@ It refuses unless the commit is on the branch one step below (`stable` never tak
 `dev`), the move is a fast-forward of the steadier branch, and the commit's image built on the branch below
 (the `image` run, asked of `gh`), and the commit has no What's new fragments left in `whats-new/`. Then it pushes, as the maintainer, so the steadier branch's image build
 starts. `beta` and `stable` therefore only ever hold what ran one step below; nothing is merged or committed
-on them. A fix for something found on `beta` or `stable` lands on `dev` like any change and is promoted from
-there. There is no schedule and nothing promotes on its own: the maintainer decides.
+on them. A fix for something found on `beta` or `stable` lands on `main` like any change, reaches `dev` with its batch
+run, and is promoted from there. There is no schedule and nothing promotes on its own: the maintainer decides. Only the step below `dev` is the
+hopper's: after N merges into `main`, or on a timer, and only when `main` has something new, it opens a
+batch run (a pull request of `main`'s tip into `dev`), and merges it once the full suite passed on it.
+
+
+**Setting up the landing branch** (once, by a maintainer):
+
+1. Move `main` to `dev`'s head. `main` is not an ancestor of `dev`, so the push replaces it: `git push --force origin origin/dev:refs/heads/main`.
+2. Make `main` the default branch: the repository's Settings → General → Default branch.
+3. Require `pr / test` on `main` as on `dev` (a branch protection rule or ruleset), so yolo mode merges only on
+   it.
+4. In the hopper, Settings → Landing batches: add the repository, tested branch `dev`. Open job pull requests on `dev`
+   move to `main` at the next pass.
 
 **Assemble What's new first (issue #824).** Pull requests add their What's new lines as fragments in
-`whats-new/`, never in `WHATS-NEW.md`. Before `promote.sh beta`, move them into `WHATS-NEW.md` on `dev`:
+`whats-new/`, never in `WHATS-NEW.md`. Before `promote.sh beta`, move them into `WHATS-NEW.md` on `main`:
 
 ```sh
-node scripts/whats-new.ts assemble        # in a branch of dev; then open a pull request to dev and merge it
+node scripts/whats-new.ts assemble        # in a branch of main; then open a pull request to main and merge it
 ```
 
-Then promote the merge of that pull request. The move keeps each line's text, so it brings no update news.
+Then wait for the batch run that carries it to `dev`, and promote that merge. The move keeps each line's text, so it brings no update news.
 
 **What a hopper updates to (issue #652).** A hopper offers its channel's head only when that commit is the merge of a
 pull request whose checks passed (asked of GitHub's API). Promote a merge commit of `dev` (`scripts/promote.sh` takes
@@ -1301,9 +1314,8 @@ An install from `scripts/install.sh` or the curl install starts on the branch it
 decides what the update check compares against.
 
 **From before.** The channels were `dev`, `beta`, `main` and `release`. A hopper set to `main` or `release`
-is set to `stable` when it starts on a version with these channels (store migration 26). Once that version
-reached `stable`, `main` was moved to it one last time, so a hopper still on an older version, which follows
-`main`, updates once to it and from then on follows `stable`. Nothing is promoted to `main` after that. No release tag was ever published, so a hopper on `release` had nothing to update to: choose
+is set to `stable` when it starts on a version with these channels (store migration 26). `main` is now the landing
+branch, no channel. No release tag was ever published, so a hopper on `release` had nothing to update to: choose
 a channel in its Settings, or install again.
 
 ## Repository setup

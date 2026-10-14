@@ -72,6 +72,7 @@ import { directJobReadRoutes } from './ui/direct-jobs.ts';
 import { searchReadRoutes } from './search.ts';
 import { githubWatchReadRoutes } from './ui/github-watches.ts';
 import { componentWatcherReadRoutes } from './ui/component-watchers.ts';
+import { landingBatchReadRoutes } from './ui/landing-batches.ts';
 import { infraPlanReadRoutes } from './ui/infra-plans.ts';
 import { webhookRoutes } from './webhooks.ts';
 
@@ -190,6 +191,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   searchReadRoutes(app, tenant); // Search (issue #945)
   githubWatchReadRoutes(app, tenant); // GitHub watches (issue #427)
   componentWatcherReadRoutes(app, tenant); // Component watchers (issue #1077)
+  landingBatchReadRoutes(app, tenant); // Landing batches (issue #1073)
   infraPlanReadRoutes(app, tenant); // Infra (issue #870)
   sourceRoutes(app, tenant);
   accountRoutes(app, tenant);

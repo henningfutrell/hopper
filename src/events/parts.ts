@@ -10,6 +10,7 @@ export { INFRA_PLAN_EVENT_SCHEMAS as infraPlanEvents } from './infra-plan-schema
 export { API_GRANT_EVENT_SCHEMAS as apiGrantEvents } from './api-grant-schemas.ts';
 export { WINDOWS_STEP_EVENT_SCHEMAS as windowsStepEvents } from './windows-step-schemas.ts';
 export { SANDBOX_REQUEST_EVENT_SCHEMAS as sandboxRequestEvents } from './sandbox-request-schemas.ts';
+export { LANDING_BATCH_EVENT_SCHEMAS as landingBatchEvents } from './landing-batch-schemas.ts';
 
 const strict = z.strictObject;
 

@@ -45,6 +45,11 @@ describe('what a job may push', () => {
     expect(checkPush([{ old: A, new: ZERO, ref: 'refs/heads/issue-7-fast' }], at)).toEqual({ ok: false, reason: 'a job deletes no branch (refs/heads/issue-7-fast)' });
     expect(checkPush([{ old: A, new: B, ref: 'refs/heads/ok' }, { old: A, new: B, ref: 'refs/heads/main' }], at)).toMatchObject({ ok: false });
   });
+
+  it('never a batch run\'s branch (issue #1073): what its checks test is what the hopper merges', () => {
+    expect(checkPush([{ old: A, new: B, ref: 'refs/heads/hopper-batch/0123456789ab' }], at))
+      .toEqual({ ok: false, reason: 'a job pushes only to a branch of its own work, never to a batch run\'s branch (hopper-batch/0123456789ab)' });
+  });
 });
 
 describe('the path of a git request', () => {

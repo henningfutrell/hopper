@@ -5,7 +5,7 @@ import type { IntakeActorSettings } from '../domain/intake-origin.ts';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
 import type { InfraPlanSettings } from '../domain/infra-plans.ts';
-import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ComponentWatcherSettings, ConnectedAccountProvider, ContributionSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings } from '../domain/types.ts';
+import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ComponentWatcherSettings, ConnectedAccountProvider, ContributionSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, LandingBatchSettings } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts'; import { memoryAlertSettings } from './memory-alert-settings.ts';
@@ -211,8 +211,8 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     setYoloMode(settings) {
       write('yoloMode', JSON.stringify({ on: settings.on, repos: settings.repos }));
     },
-    getContribution() { const text = read('contribution'); return text === undefined ? undefined : JSON.parse(text) as ContributionSettings; },
-    setContribution(settings) { write('contribution', JSON.stringify({ on: settings.on })); },
+    getLandingBatches() { const text = read('landingBatches'); return text === undefined ? undefined : JSON.parse(text) as LandingBatchSettings; }, setLandingBatches(settings) { write('landingBatches', JSON.stringify({ repos: settings.repos })); },
+    getContribution() { const text = read('contribution'); return text === undefined ? undefined : JSON.parse(text) as ContributionSettings; }, setContribution(settings) { write('contribution', JSON.stringify({ on: settings.on })); },
     getInfraPlans() { const text = read('infraPlans'); return text === undefined ? undefined : JSON.parse(text) as InfraPlanSettings; },
     setInfraPlans(settings) { write('infraPlans', JSON.stringify({ autoApprove: settings.autoApprove })); }, getInfraWatchers() { const text = read('infraWatchers'); return text === undefined ? undefined : JSON.parse(text) as Record<string, string[]>; }, setInfraWatchers(watchers) { write('infraWatchers', JSON.stringify(watchers)); },
     getIntakeActors() { const text = read('intakeActors'); return text === undefined ? undefined : JSON.parse(text) as IntakeActorSettings; },

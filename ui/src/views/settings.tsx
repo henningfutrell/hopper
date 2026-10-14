@@ -1,10 +1,10 @@
 // Settings (issue #151): the configuration plane, one view with a section per part — the version (issue #165)
 // and the version history (issue #246) first (issue #363), then the question gates (escalation levels, standing rules,
-// risk rules), the decider (issue #550; named Decider in issue #661), auto-park (issue #650), the issue thread (issue #435), the TL;DR (issue #569), the job rules (issue #172), the intake's trusted actors (issue #652), yolo mode (issue #579), the host link base (issue #712), the GitHub rate limit (issue #436), the GitHub webhook (issue #1079), remote access (issue #880), the allowed hosts (issue #1024), Contribution (issue #429), GitHub watches (issue #427), artifacts (issue #624), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
+// risk rules), the decider (issue #550; named Decider in issue #661), auto-park (issue #650), the issue thread (issue #435), the TL;DR (issue #569), the job rules (issue #172), the intake's trusted actors (issue #652), yolo mode (issue #579), landing batches (issue #1073), the host link base (issue #712), the GitHub rate limit (issue #436), the GitHub webhook (issue #1079), remote access (issue #880), the allowed hosts (issue #1024), Contribution (issue #429), GitHub watches (issue #427), artifacts (issue #624), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
 // sign-in (issue #185), API tokens (issue #718), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the version. A moved section's old hash (#settings/minor-decisions) is replaced by its new one. Settings holds configuration only
 // (issue #897): the question history moved to Questions (#questions/history) and Your reports to its own view (#reports); their old hashes open them.
-import { CirclePause, Eye, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Grid3x3, Info, KeyRound, KeySquare, Link, ListChecks, LockKeyhole, MessagesSquare, MonitorCog, Network, Puzzle, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, Ticket, type LucideIcon, UserCheck, Users as UsersIcon, Webhook, Zap } from 'lucide-react';
+import { CirclePause, Eye, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Grid3x3, Info, KeyRound, Layers, KeySquare, Link, ListChecks, LockKeyhole, MessagesSquare, MonitorCog, Network, Puzzle, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, Ticket, type LucideIcon, UserCheck, Users as UsersIcon, Webhook, Zap } from 'lucide-react';
 import { useEffect } from 'react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
@@ -36,9 +36,10 @@ import { VersionHistory } from '@/views/version-history';
 import { Webhooks } from '@/views/webhooks';
 import { WindowsHosts } from '@/views/windows-hosts';
 import { YoloMode } from '@/views/yolo-mode';
+import { LandingBatches } from '@/views/landing-batches';
 import { IntakeActors } from '@/views/intake-actors';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'auto-park', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'intake', 'yolo-mode', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'host-link', 'contribution', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'api-tokens', 'access', 'permissions'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'auto-park', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'intake', 'yolo-mode', 'landing-batches', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'host-link', 'contribution', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'api-tokens', 'access', 'permissions'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -52,6 +53,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   'windows-hosts': { label: 'Windows hosts', icon: MonitorCog, view: WindowsHosts },
   intake: { label: 'Intake', icon: UserCheck, view: IntakeActors },
   'yolo-mode': { label: 'Yolo mode', icon: Zap, view: YoloMode },
+  'landing-batches': { label: 'Landing batches', icon: Layers, view: LandingBatches },
   'github-rate-limit': { label: 'GitHub rate limit', icon: Gauge, view: GitHubRateLimiter },
   'github-webhook': { label: 'GitHub webhook', icon: GitPullRequestArrow, view: GitHubDeliveries },
   'remote-access': { label: 'Remote access', icon: Globe, view: RemoteAccess },
