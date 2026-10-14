@@ -36,7 +36,8 @@ export const reviewSettingsBody = z.strictObject({
   reviewers: z.array(z.string().min(1)).max(16).optional(),
   signOff: z.enum(REVIEW_SIGN_OFF).optional(),
   levelRevisions: z.number().int().min(0).max(MAX_LEVEL_REVISIONS).optional(),
-}).refine((b) => b.reviewers !== undefined || b.signOff !== undefined || b.levelRevisions !== undefined, { message: 'name reviewers, signOff or levelRevisions' });
+  autoContinue: z.boolean().optional(),
+}).refine((b) => b.reviewers !== undefined || b.signOff !== undefined || b.levelRevisions !== undefined || b.autoContinue !== undefined, { message: 'name reviewers, signOff, levelRevisions or autoContinue' });
 
 /** The body a decision takes: a proposal's that sends it back also keeps a selection (issue #651). */
 export function decisionBody(kind: ReviewKind, d: ReviewDecision): z.ZodType {

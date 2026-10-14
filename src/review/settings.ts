@@ -4,8 +4,11 @@
 import type { UserStore } from '../domain/ports.ts';
 import { DEFAULT_REVIEW_SETTINGS, type ReviewKind, type ReviewSettings, type ReviewSettingsView } from '../domain/types.ts';
 
-/** The settings in force: the saved ones, else the defaults. */
-export const reviewSettings = (store: Pick<UserStore, 'settings'>, kind: ReviewKind): ReviewSettings => store.settings.getReviewSettings(kind) ?? DEFAULT_REVIEW_SETTINGS;
+/** The settings in force: the saved ones, else the defaults. A proposal's continue on their own unless saved off (issue #1059). */
+export const reviewSettings = (store: Pick<UserStore, 'settings'>, kind: ReviewKind): ReviewSettings => {
+  const s = store.settings.getReviewSettings(kind) ?? DEFAULT_REVIEW_SETTINGS;
+  return kind === 'proposal' ? { ...s, autoContinue: s.autoContinue ?? true } : s;
+};
 
 /** The settings, with the escalation levels there are now to choose from. */
 export const reviewSettingsView = (store: Pick<UserStore, 'settings'>, kind: ReviewKind, levels: readonly string[]): ReviewSettingsView =>
@@ -15,6 +18,7 @@ export type ReviewSettingsEdit = { ok: true; view: ReviewSettingsView } | { ok: 
 
 /** Save the parts `patch` names over the settings in force; a reviewer that is not an escalation level now, or named twice, is refused. */
 export function editReviewSettings(store: Pick<UserStore, 'settings'>, kind: ReviewKind, levels: readonly string[], patch: Partial<ReviewSettings>): ReviewSettingsEdit {
+  if (patch.autoContinue !== undefined && kind !== 'proposal') return { ok: false, error: 'only proposals continue on their own' };
   const next = { ...reviewSettings(store, kind), ...patch };
   const unknown = next.reviewers.filter((r) => !levels.includes(r));
   if (unknown.length > 0) return { ok: false, error: `not an escalation level: ${unknown.join(', ')} (the escalation levels are ${levels.join(', ') || 'none'})` };

@@ -135,6 +135,8 @@ describe('ask for more paths (test 3)', () => {
     const two = THREE_PATHS.replace(/Path 3: Leave it bare[\s\S]*?(?=Recommended:)/, '').replace('1 and 3', '1');
     const a = await start();
     const token = await a.login();
+    // One path recommended: a person decides here only with the hopper's own continue off (issue #1059).
+    await a.ui('/ui/api/proposals/settings', { autoContinue: false }, { token });
     const job = await a.pull(propose(two, THREE_PATHS));
     const p = await forPerson(a, job.id);
     expect(p.versions[0]!.paths!.paths.map((x) => x.id)).toEqual(['1', '2']);

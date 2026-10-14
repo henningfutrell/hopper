@@ -173,7 +173,7 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
       return text === undefined ? undefined : JSON.parse(text) as ReviewSettings;
     },
     setReviewSettings(kind, settings) {
-      write(REVIEW_SETTINGS_KEYS[kind], JSON.stringify({ reviewers: [...settings.reviewers], signOff: settings.signOff, levelRevisions: settings.levelRevisions }));
+      write(REVIEW_SETTINGS_KEYS[kind], JSON.stringify({ reviewers: [...settings.reviewers], signOff: settings.signOff, levelRevisions: settings.levelRevisions, ...(settings.autoContinue !== undefined ? { autoContinue: settings.autoContinue } : {}) }));
     },
     getPhaseShifts() {
       const text = read('phaseShifts');

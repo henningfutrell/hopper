@@ -75,3 +75,28 @@ export const BULLET_PATH = [
   'Recommended: 1 — the key stays in one place.',
   'Context: the vault design.',
 ].join('\n');
+
+// Issue #1059: one path recommended, inside the rules — the hopper continues with it, with no person.
+export const ONE_PATH = [
+  'TL;DR: Add the host link base. One path is clear.',
+  'Problem: Tools on the host cannot reach the hopper.',
+  '',
+  '## Path 1: Loopback port',
+  'Summary: Bind the UI to the loopback port only.',
+  'Security: no new listener on the LAN.',
+  'Effort: one day.',
+  'Risk: low.',
+  'Friction: none.',
+  'Creates: one job.',
+  '',
+  '## Path 2: A named pipe',
+  'Summary: Bridge a named pipe.',
+  'Security: no TCP port.',
+  'Effort: three days.',
+  'Risk: fragile.',
+  'Friction: the person installs a bridge.',
+  'Creates: one job.',
+  '',
+  'Recommended: 1 — the standing rules keep the hopper on loopback.',
+  'Context: the repository rules.',
+].join('\n');

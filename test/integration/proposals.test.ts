@@ -240,13 +240,16 @@ describe('the proposal settings', () => {
     const a = await start();
     const token = await a.login();
     const read = (await a.api('GET', '/api/proposals')).body;
-    expect(read.settings).toEqual({ reviewers: [], signOff: 'owner', levelRevisions: 1, levels: ['opus', 'fable'] });
+    expect(read.settings).toEqual({ reviewers: [], signOff: 'owner', levelRevisions: 1, autoContinue: true, levels: ['opus', 'fable'] });
     expect((await settings(a, token, { reviewers: ['nobody'] })).status).toBe(400);
     expect((await settings(a, token, { signOff: 'anyone' })).status).toBe(400);
     expect((await settings(a, token, { levelRevisions: 99 })).status).toBe(400);
     const ok = await settings(a, token, { reviewers: ['fable', 'opus'], signOff: 'top-level' });
-    expect(ok.body).toEqual({ reviewers: ['fable', 'opus'], signOff: 'top-level', levelRevisions: 1, levels: ['opus', 'fable'] });
+    expect(ok.body).toEqual({ reviewers: ['fable', 'opus'], signOff: 'top-level', levelRevisions: 1, autoContinue: true, levels: ['opus', 'fable'] });
     expect((await a.api('GET', '/api/proposals')).body.settings).toEqual(ok.body);
+    expect((await settings(a, token, { autoContinue: 'yes' })).status).toBe(400);
+    expect((await settings(a, token, { autoContinue: false })).body).toMatchObject({ autoContinue: false });
+    expect((await a.ui('/ui/api/research/settings', { autoContinue: true }, { token })).status).toBe(400);
   });
 });
 
