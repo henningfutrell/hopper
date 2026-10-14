@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ARTIFACT_SCRIPT } from '../../src/artifacts/index.ts';
 import { PROXY_SCRIPT, RETRY_AFTER_TRIES } from '../../src/github-proxy/index.ts';
 import { OUT_OF_REACH_LINE, PROTOCOL_LINES } from '../../src/job-rules/index.ts';
+import { LOGIN_SCRIPT } from '../../src/logins/script.ts';
 import { SKILL_SCRIPT } from '../../src/skills/index.ts';
 
 const servers: Server[] = [];
@@ -73,6 +74,7 @@ function run(script: string, args: string[], url: string): Promise<Run> {
 const SCRIPTS = [
   { name: 'hopper-gh', script: PROXY_SCRIPT, args: ['issue', 'view', '1', '--repo', 'o/r'], path: '/job/github', stopped: 1 },
   { name: 'hopper-skill', script: SKILL_SCRIPT, args: [], path: '/job/skill', stopped: 1 },
+  { name: 'hopper-login', script: LOGIN_SCRIPT, args: ['completed', 'codex'], path: '/job/login', stopped: 1 },
   { name: 'hopper-artifact', script: ARTIFACT_SCRIPT, args: ['put', 'page.html', '--title', 'T', '--summary', 'S'], path: '/job/artifacts', stopped: 3 },
 ] as const;
 
