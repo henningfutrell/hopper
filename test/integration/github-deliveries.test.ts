@@ -6,7 +6,6 @@
 import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { JobSource } from '../../src/domain/ports.ts';
-import { spec } from '../store/helpers.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { rawRequest } from '../support/http.ts';
 import { waitFor } from '../support/wait.ts';
@@ -111,11 +110,12 @@ describe('GitHub deliveries (issue #1079)', () => {
     const { a, token } = await boot();
     const secret = (await a.ui<{ generatedSecret: string }>('/ui/api/github-deliveries', { action: 'make' }, { token })).body.generatedSecret;
     const key = `https://github.com/${REPO}/issues/7`;
+    // A request card a person declined: no job, so only the deliveries move it.
     const { store } = a.user();
-    const job = store.jobs.create(spec, 50, { source: 'gh', kind: 'github-account', key, repo: REPO, number: 7 });
-    store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority: 50 } });
-    store.events.append({ type: 'job.failed', jobId: job.id, data: { error: 'boom' } });
-    expect(store.workItems.get(key)?.state).toBe('failed');
+    const card = { source: 'gh', key, hash: 'a'.repeat(64), author: 'someone' };
+    store.events.append({ type: 'source.request_opened', data: { ...card, why: ['not a trusted actor'] } });
+    store.events.append({ type: 'source.request_declined', data: card });
+    expect(store.workItems.get(key)?.state).toBe('dropped');
 
     const closed = (action: string, reason?: string) => ({
       action, issue: { number: 7, html_url: key, state: action === 'closed' ? 'closed' : 'open', ...(reason ? { state_reason: reason } : {}) }, repository: { full_name: REPO },
@@ -125,7 +125,7 @@ describe('GitHub deliveries (issue #1079)', () => {
     expect((await a.events('types=work_item.issue_closed')).map((e) => e.data)).toEqual([{ key, reason: 'completed', via: 'delivery' }]);
 
     expect((await deliver(a, { body: closed('reopened'), secret, id: 'c-2' })).status).toBe(202);
-    expect(store.workItems.get(key)).toMatchObject({ state: 'failed', issueState: 'open' });
+    expect(store.workItems.get(key)).toMatchObject({ state: 'dropped', issueState: 'open' });
     // The same state again, or an issue that is no work item: nothing recorded.
     expect((await deliver(a, { body: closed('reopened'), secret, id: 'c-3' })).status).toBe(202);
     const other = { ...closed('closed', 'completed'), issue: { number: 8, html_url: `https://github.com/${REPO}/issues/8`, state: 'closed', state_reason: 'completed' } };

@@ -9,7 +9,7 @@ import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts'; import { MACHINE_MEMORY_EVENT_SCHEMAS } from './machine-memory-schemas.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
-import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts';
+import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts'; import { WORK_ITEM_EVENT_SCHEMAS } from './work-item-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
 import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts';
 import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, driftEvents, holdPlan, infraPlanEvents, apiGrantEvents, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents, windowsStepEvents, sandboxRequestEvents, landingBatchEvents } from './parts.ts';
@@ -325,7 +325,7 @@ export const EVENT_SCHEMAS = {
   // The job's own pull request was left with merge conflicts or as a draft (issue #626): the job goes on with the fixed brief.
   'job.finish_briefed': strict({ pullRequest: z.string(), step: z.enum(FINISH_STEPS) }),
   'job.pull_request_tended': strict({ pullRequest: z.string(), step: z.enum(TEND_STEPS), nextJobId: z.string(), ...actingIfPerson }), 'job.pull_request_base_merged': strict({ pullRequest: z.string(), commit: z.string(), resolved: z.array(z.string()) }),
-  'job.pull_request_followed': strict({ pullRequest: z.string(), part: z.boolean() }),
+  'job.pull_request_followed': strict({ pullRequest: z.string(), part: z.boolean() }), ...WORK_ITEM_EVENT_SCHEMAS,
   // Yolo mode (issue #579): the settings before and after, and who changed them.
   'yolo_mode.changed': strict({ from: yoloMode, to: yoloMode, by: z.string() }),
   'vault.secret_set': strict({ name: z.string(), by: z.string(), replaced: z.boolean(), rotated: z.boolean().optional(), backend: z.string().optional(), mints: asset.optional() }),

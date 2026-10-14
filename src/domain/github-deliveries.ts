@@ -10,18 +10,26 @@ export const DELIVERY_EVENTS = ['issues'] as const;
 /** The `issues` actions that can change what intake takes. */
 export const ISSUE_ACTIONS = ['opened', 'edited', 'labeled', 'unlabeled', 'assigned', 'unassigned', 'closed', 'reopened'] as const;
 
-/** What a delivery names: the repository (`owner/name`), its issue, and the action. */
-export interface DeliveryTarget { repo: string; number?: number; action: string }
+/**
+ * What a delivery names: the repository (`owner/name`), its issue, and the action. A close or a reopen also names the
+ * issue's URL — a work item's source key — and, closed, why (issue #1067, part 3).
+ */
+export interface DeliveryTarget { repo: string; number?: number; action: string; issue?: { url: string; reason?: string } }
 
 /** The repository and issue an `issues` delivery names; undefined for any other event, an action intake does not read, or a payload with no repository. */
 export function deliveryTarget(event: string, payload: unknown): DeliveryTarget | undefined {
   if (!(DELIVERY_EVENTS as readonly string[]).includes(event) || typeof payload !== 'object' || payload === null) return undefined;
-  const p = payload as { action?: unknown; issue?: { number?: unknown }; repository?: { full_name?: unknown } };
+  const p = payload as { action?: unknown; issue?: { number?: unknown; html_url?: unknown; state_reason?: unknown }; repository?: { full_name?: unknown } };
   const repo = p.repository?.full_name;
   if (typeof repo !== 'string' || !/^[^/\s]+\/[^/\s]+$/.test(repo)) return undefined;
   if (typeof p.action !== 'string' || !(ISSUE_ACTIONS as readonly string[]).includes(p.action)) return undefined;
   const number = p.issue?.number;
-  return { repo, action: p.action, ...(typeof number === 'number' && Number.isInteger(number) && number > 0 ? { number } : {}) };
+  const url = p.issue?.html_url;
+  const reason = p.issue?.state_reason;
+  const issue = (p.action === 'closed' || p.action === 'reopened') && typeof url === 'string' && /^https?:\/\/\S+$/.test(url)
+    ? { url, ...(p.action === 'closed' && typeof reason === 'string' && reason ? { reason: reason.toLowerCase() } : {}) }
+    : undefined;
+  return { repo, action: p.action, ...(typeof number === 'number' && Number.isInteger(number) && number > 0 ? { number } : {}), ...(issue ? { issue } : {}) };
 }
 
 /** The GitHub webhook secret's metadata: never its value. */

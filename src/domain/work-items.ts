@@ -29,6 +29,29 @@ export const isActive = (state: WorkItemState): boolean => ACTIVE.has(state);
 
 export type PullRequestState = 'open' | 'merged' | 'closed' | 'abandoned';
 
+/**
+ * What an open pull request waits on first (issue #1067, part 3): to be marked ready, a fix of its merge conflicts, a fix
+ * of its failed checks, its checks to pass, or the merge. Never "ready for review": a job's pull request is on its way to
+ * the merge.
+ */
+export const PULL_REQUEST_WAITS = ['draft', 'conflicts', 'fixing_checks', 'checks_running', 'merge'] as const;
+export type PullRequestWait = typeof PULL_REQUEST_WAITS[number];
+
+/** An item's `waitingOn` while its pull request waits on that. */
+export const PULL_REQUEST_WAIT_WORDS: Readonly<Record<PullRequestWait, string>> = {
+  draft: 'its draft to be marked ready', conflicts: 'a fix of its merge conflicts', fixing_checks: 'a fix of its failed checks',
+  checks_running: 'its checks to pass', merge: 'the merge',
+};
+
+/** What a pull request waits on, from what was seen of it: a draft first, then merge conflicts, then its checks. */
+export function pullRequestWaitOf(seen: { draft?: boolean; conflicting?: boolean; checks?: string }): PullRequestWait {
+  if (seen.draft) return 'draft';
+  if (seen.conflicting) return 'conflicts';
+  if (seen.checks === 'failing') return 'fixing_checks';
+  if (seen.checks === 'pending') return 'checks_running';
+  return 'merge';
+}
+
 export interface WorkItem {
   /** Its source key: the issue's URL. */
   key: string;
@@ -44,6 +67,8 @@ export interface WorkItem {
   jobId?: string;
   pullRequest?: string;
   pullRequestState?: PullRequestState;
+  /** What its open pull request waits on, as the follow last saw it (`job.pull_request_seen`). */
+  pullRequestWait?: PullRequestWait;
   /** `open` or `closed`, and why it closed (`completed`, `not_planned`, `duplicate`), as GitHub said. */
   issueState?: string;
   issueReason?: string;
@@ -73,11 +98,12 @@ export const LEDGER_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
   'job.finished', 'job.failed', 'job.cancelled', 'job.rejected', 'job.dismissed',
   'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned',
   'job.work_kept', 'job.work_removed',
+  'job.pull_request_seen', 'work_item.issue_closed', 'work_item.issue_reopened',
 ]);
 
-/** The source key an event without a job names (a request card's), else undefined. */
+/** The source key an event without a job names (a request card's, or an issue GitHub closed or reopened), else undefined. */
 export function keyOfEvent(event: Pick<DomainEvent, 'type' | 'data'>): string | undefined {
-  return event.type.startsWith('source.request_') && typeof event.data.key === 'string' ? event.data.key : undefined;
+  return (event.type.startsWith('source.request_') || event.type.startsWith('work_item.')) && typeof event.data.key === 'string' ? event.data.key : undefined;
 }
 
 /** The job an event is about: its own, or a question's. */
@@ -133,28 +159,47 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
   if (event.type === 'source.request_opened') return item && isActive(item.eventState) ? undefined : move('waiting_for_approval', { waitingOn: 'an owner\'s approval of the request' });
   if (event.type === 'source.request_declined') return item?.eventState === 'waiting_for_approval' ? move('dropped', { waitingOn: undefined }) : undefined;
   if (event.type === 'source.request_approved') return item?.eventState === 'waiting_for_approval' ? move('queued', { waitingOn: undefined }) : undefined;
+  // GitHub closed or reopened the item's issue (a delivery, or the fallback read): as a read of the issue says it.
+  if (event.type === 'work_item.issue_closed' || event.type === 'work_item.issue_reopened') {
+    if (!item) return undefined;
+    const reason = typeof d.reason === 'string' ? d.reason : undefined;
+    return applyRead(item, { kind: 'issue', at: event.at, state: event.type === 'work_item.issue_closed' ? 'closed' : 'open', ...(reason ? { reason } : {}) });
+  }
   if (!job) return undefined;
 
   // A new job of the item takes it over: what an earlier job and GitHub said of it is history.
   if (event.type === 'job.queued') {
-    return move('queued', { jobId: job.id, pullRequest: undefined, pullRequestState: undefined, issueState: undefined, issueReason: undefined, waitingOn: undefined, failedJobId: undefined });
+    return move('queued', { jobId: job.id, pullRequest: undefined, pullRequestState: undefined, pullRequestWait: undefined, issueState: undefined, issueReason: undefined, waitingOn: undefined, failedJobId: undefined });
   }
   // Any job's kept work and pull request: a tend hands a pull request to a newer job, and an older job's merge still counts.
   if (event.type === 'job.work_kept') return item?.keptWork.includes(job.id) ? undefined : mark({ keptWork: [...base.keptWork, job.id] });
   if (event.type === 'job.work_removed') return item?.keptWork.includes(job.id) ? mark({ keptWork: base.keptWork.filter((j) => j !== job.id) }) : undefined;
   const current = base.jobId === undefined || base.jobId === job.id;
   const pr = typeof d.pullRequest === 'string' ? d.pullRequest : undefined;
+  // What the follow saw its open pull request wait on: the item's own pull request only.
+  if (event.type === 'job.pull_request_seen') {
+    const wait = d.wait as PullRequestWait;
+    // A job's end records its pull request only once its report kept it: the first look names it.
+    const named = base.pullRequest === undefined && base.eventState === 'pr_open' && base.jobId === job.id;
+    if (pr === undefined || !(named || (pr === base.pullRequest && base.pullRequestState === 'open')) || (!named && base.pullRequestWait === wait)) return undefined;
+    return mark({
+      pullRequestWait: wait, ...(named ? { pullRequest: pr, pullRequestState: 'open' as const } : {}),
+      ...(base.eventState === 'pr_open' ? { waitingOn: PULL_REQUEST_WAIT_WORDS[wait] } : {}),
+    });
+  }
   if (event.type === 'job.pull_request_merged') {
-    const change = { pullRequest: pr, pullRequestState: 'merged' as const, waitingOn: undefined };
+    const change = { pullRequest: pr, pullRequestState: 'merged' as const, pullRequestWait: undefined, waitingOn: undefined };
     if (isActive(base.eventState)) return mark(change);
     return d.part === true ? move('partly_done', { ...change, waitingOn: 'the next part' }) : move('done', change);
   }
   if (event.type === 'job.pull_request_closed' || event.type === 'job.pull_request_abandoned') {
-    const change = { pullRequest: pr, pullRequestState: event.type === 'job.pull_request_closed' ? 'closed' as const : 'abandoned' as const, waitingOn: undefined };
+    const change = { pullRequest: pr, pullRequestState: event.type === 'job.pull_request_closed' ? 'closed' as const : 'abandoned' as const, pullRequestWait: undefined, waitingOn: undefined };
     return isActive(base.eventState) || base.eventState === 'done' ? mark(change) : move('dropped', change);
   }
   // Everything else is the current job's: an older job's end moves nothing.
   if (!current) return undefined;
+  /** What an open pull request waits on: what the follow saw of it, until it says. */
+  const prWait = (url: string | undefined): string => (url !== undefined && url === base.pullRequest && base.pullRequestWait ? PULL_REQUEST_WAIT_WORDS[base.pullRequestWait] : 'its pull request: checks and the merge');
   switch (event.type) {
     case 'job.claimed': case 'job.started': case 'job.continued': case 'job.wait_ended': case 'job.reattached':
       return move('working', { waitingOn: undefined, failedJobId: undefined });
@@ -179,10 +224,10 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
       if (typeof d.partlyDone === 'string') return move('pr_open', { pullRequest: d.partlyDone, pullRequestState: 'open', waitingOn: 'the merge of its part', failedJobId: undefined });
       const shipped = DONE_RESULTS.some((r) => resultText(d).startsWith(r)) || job.kind === 'direct';
       if (shipped) return move('done', { waitingOn: undefined, failedJobId: undefined });
-      return move('pr_open', { ...(job.pullRequest ? { pullRequest: job.pullRequest, pullRequestState: 'open' as const } : {}), waitingOn: 'its pull request: checks and the merge', failedJobId: undefined });
+      return move('pr_open', { ...(job.pullRequest ? { pullRequest: job.pullRequest, pullRequestState: 'open' as const } : {}), waitingOn: prWait(job.pullRequest), failedJobId: undefined });
     }
     case 'job.pull_request_followed':
-      return isActive(base.eventState) ? mark({ pullRequest: pr, pullRequestState: 'open' }) : move('pr_open', { pullRequest: pr, pullRequestState: 'open', waitingOn: 'its pull request: checks and the merge', failedJobId: undefined });
+      return isActive(base.eventState) ? mark({ pullRequest: pr, pullRequestState: 'open' }) : move('pr_open', { pullRequest: pr, pullRequestState: 'open', waitingOn: prWait(pr), failedJobId: undefined });
     case 'job.failed':
       return move('failed', { failedJobId: job.id, waitingOn: undefined });
     case 'job.cancelled': case 'job.rejected':
@@ -228,6 +273,35 @@ export function keptWorkShown(item: Pick<WorkItem, 'state' | 'jobId' | 'issueSta
   if (item.state === 'done' || item.issueState === 'closed') return [];
   const settledOn = item.state === 'failed' || item.state === 'needs_you' || item.state === 'dropped';
   return item.keptWork.filter((j) => settledOn || j === item.jobId);
+}
+
+/** A GitHub issue's URL: what the fallback read can read. */
+const GITHUB_ISSUE = /^https?:\/\/[^/]+\/[^/]+\/[^/]+\/issues\/\d+$/;
+
+/**
+ * The issues the ledger's fallback read reads now (issue #1067, part 3): of the items in `pr_open` or `failed` whose key is
+ * a GitHub issue, those with no news for `quietMs` — no event moved them and the read did not read them — , the one read
+ * longest ago (never first, then the oldest news), at most `limit`.
+ */
+export function fallbackReadPick(items: readonly WorkItem[], lastRead: ReadonlyMap<string, string>, now: string, o: { quietMs: number; limit: number }): string[] {
+  const before = new Date(Date.parse(now) - o.quietMs).toISOString();
+  const quiet = items.filter((i) => (i.state === 'pr_open' || i.state === 'failed') && GITHUB_ISSUE.test(i.key)
+    && i.eventAt <= before && (lastRead.get(i.key) ?? '') <= before);
+  const since = (i: WorkItem) => lastRead.get(i.key) ?? '';
+  return quiet.sort((a, b) => since(a).localeCompare(since(b)) || a.eventAt.localeCompare(b.eventAt)).slice(0, o.limit).map((i) => i.key);
+}
+
+/**
+ * The event that records GitHub's close or reopen of an item's issue, as a GitHub delivery (`delivery`) or the fallback
+ * read (`read`) found it; undefined when the ledger holds that already, or it is no close or reopen.
+ */
+export function issueChangeEvent(item: Pick<WorkItem, 'key' | 'issueState' | 'issueReason'>, issue: { state: string; reason?: string }, via: 'delivery' | 'read'):
+  { type: 'work_item.issue_closed' | 'work_item.issue_reopened'; data: Record<string, unknown> } | undefined {
+  if (issue.state === 'closed') {
+    if (item.issueState === 'closed' && item.issueReason === issue.reason) return undefined;
+    return { type: 'work_item.issue_closed', data: { key: item.key, ...(issue.reason ? { reason: issue.reason } : {}), via } };
+  }
+  return issue.state === 'open' && item.issueState === 'closed' ? { type: 'work_item.issue_reopened', data: { key: item.key, via } } : undefined;
 }
 
 /** How many items are in each state: every view's count. */

@@ -5,6 +5,7 @@
 import type { JobGraphEdge, JobGraphNode, JobGraphPullRequest, JobStage, JobTree } from './job-graph.ts';
 import type { OwnWait } from './own-command.ts';
 import type { Job, JobStatus } from './types.ts';
+import { pullRequestWaitOf, type PullRequestWait } from './work-items.ts';
 
 /** What the words of a node are made from: its kind and stage, and for a job, its status, phase, attempt and pull request. */
 export interface Worded {
@@ -43,6 +44,10 @@ export const waitsOnYou = (n: Worded): boolean => waitingOnYou(n) !== undefined;
 
 /** What an open pull request waits on (issue #1067): named, never "ready for review" — a job's pull request is on its way to the merge. */
 const PR_OPEN_WAIT = 'PR open: waiting for the merge';
+const PR_WAIT_WORDS: Readonly<Record<PullRequestWait, string>> = {
+  draft: 'PR open: draft', conflicts: 'PR open: has merge conflicts', fixing_checks: 'PR open: fixing checks',
+  checks_running: 'PR open: checks running', merge: PR_OPEN_WAIT,
+};
 
 /** A pull request's stage, in words: what it waits on first. */
 function pullRequestWords(pr: JobGraphPullRequest): string {
@@ -50,11 +55,7 @@ function pullRequestWords(pr: JobGraphPullRequest): string {
   if (pr.state === 'closed') return 'Closed without a merge';
   if (pr.state === 'abandoned') return 'Dropped';
   if (pr.state === 'unknown') return 'Not followed yet';
-  if (pr.draft) return 'PR open: draft';
-  if (pr.conflicting) return 'PR open: has merge conflicts';
-  if (pr.checks === 'failing') return 'PR open: fixing checks';
-  if (pr.checks === 'pending') return 'PR open: checks running';
-  return PR_OPEN_WAIT;
+  return PR_WAIT_WORDS[pullRequestWaitOf(pr)];
 }
 
 /** Where a node stands, in human terms. */

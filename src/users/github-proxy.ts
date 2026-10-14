@@ -19,6 +19,7 @@ import type { StackResources } from '../domain/stack-resources.ts';
 import { createLandingBatchGitHub } from '../landing-batches/github.ts';
 import { createLandingBatches, type LandingBatches } from '../landing-batches/runner.ts';
 import { DEFAULT_LANDING_BATCHES, LANDING_BATCH_EVENT_TYPES } from '../domain/landing-batches.ts';
+import { createLedgerFallbackRead, type LedgerFallbackRead } from '../work-items/fallback-read.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts';
 import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
@@ -53,6 +54,8 @@ export interface UserGitHubProxy {
   componentWatchers: ComponentWatchers;
   /** Landing batches (issue #1073): batch runs of each landing branch, promoted to its tested branch, with this user's own connection; they run with the user's runtime. */
   landingBatches: LandingBatches;
+  /** The work-item ledger's fallback read (issue #1067): quiet items' issues read with this user's own connection; it reads with the user's runtime. */
+  ledgerFallbackRead: LedgerFallbackRead;
   /**
    * The infra plans (issue #870): what this user's jobs plan to change, a person's approvals, the vault's apply gate. Here
    * because the gate reads each plan's branch head on GitHub with this user's connection.
@@ -181,6 +184,10 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         }),
         now: () => o.clock.now(),
         log: (l) => o.logger.warn(l),
+      }),
+      ledgerFallbackRead: createLedgerFallbackRead({
+        ledger: o.store.workItems, events: o.store.events, now: () => o.clock.now().toISOString(), log: (l) => o.logger.warn(l),
+        github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatcherGitHub(mine())),
       }),
       bugReports: createReportSender({ github: reports, reports: o.store.bugReports, now: () => o.clock.now().toISOString(), record: (e) => { o.store.events.append(e); }, log: (l) => o.logger.warn(l) }),
       repoChecks: () => {

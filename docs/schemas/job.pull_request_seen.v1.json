@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pullRequest": {
+      "type": "string"
+    },
+    "wait": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "conflicts",
+        "fixing_checks",
+        "checks_running",
+        "merge"
+      ]
+    }
+  },
+  "required": [
+    "pullRequest",
+    "wait"
+  ],
+  "additionalProperties": false
+}

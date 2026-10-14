@@ -54,6 +54,8 @@ export function createWorld(): World {
       list: () => [...jobs.values()],
       getBySourceKey: (key: string) => [...jobs.values()].filter((j) => j.source?.key === key).at(-1),
     },
+    // No work-item ledger here (issue #1067): nothing to record of a pull request's wait.
+    workItems: { get: () => undefined },
     // No hand-off is resolved here: nothing to tell a source (issue #551).
     handoffs: { get: () => undefined, list: () => [] },
     questions: {

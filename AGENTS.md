@@ -72,7 +72,8 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   `docs/design.md` "GitHub deliveries"): `POST /github/webhook`, signed with the GitHub webhook secret (HMAC-SHA256, a system
   secret the hopper's admin makes through the UI session), only GitHub's `issues` events, makes the repository it names due
   at the sources whose job repository it is, so they list it again at a sync soon after; it changes no job, question,
-  webhook or setting, only records the delivery. The hopper still pulls: a delivery never carries a job. The tunnel
+  webhook or setting, only records the delivery and, for an issue closed or reopened that is a work item, that close or
+  reopen (issue #1067), which moves the item in the work-item ledger. The hopper still pulls: a delivery never carries a job. The tunnel
   services' ask (issues #880, #968, `docs/design.md` "Remote access"): `GET /tunnel/agent`, with the preshared key the
   compose stack makes in memory (`HOPPER_TUNNEL_KEY`), never as a public request, answers the tunnel token the hopper
   minted (and for ngrok the remote access URL) to the service of the tunnel provider that is on; it changes no job,

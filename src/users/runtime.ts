@@ -406,12 +406,12 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       sync.start();
       history.start(); minorDecisions.start(); tldrs.start(); failures.start();
       connectedAccounts.start(); // the renewer (issue #441): a token that expired while the hopper was down renews at once
-      jobStream.start(); proxy.githubProxy.bugReports.start(); proxy.githubProxy.watches.start(); proxy.githubProxy.componentWatchers.start(); proxy.githubProxy.landingBatches.start(); // Report a bug's kept reports (issue #694), the GitHub watches (issue #427), the component watchers (issue #1077), the landing batches (issue #1073)
+      jobStream.start(); proxy.githubProxy.bugReports.start(); proxy.githubProxy.watches.start(); proxy.githubProxy.componentWatchers.start(); proxy.githubProxy.landingBatches.start(); proxy.githubProxy.ledgerFallbackRead.start(); // Report a bug's kept reports (issue #694), the GitHub watches (issue #427), the component watchers (issue #1077), the landing batches (issue #1073), the ledger's fallback read (issue #1067)
 
     },
     stop() {
       stopped ??= (async () => {
-        await search.stop(); jobStream.stop(); await proxy.githubProxy.bugReports.stop(); await proxy.githubProxy.watches.stop(); await proxy.githubProxy.componentWatchers.stop(); await proxy.githubProxy.landingBatches.stop();
+        await search.stop(); jobStream.stop(); await proxy.githubProxy.bugReports.stop(); await proxy.githubProxy.watches.stop(); await proxy.githubProxy.componentWatchers.stop(); await proxy.githubProxy.landingBatches.stop(); await proxy.githubProxy.ledgerFallbackRead.stop();
         await failures.stop();
         minorDecisions.stop(); await tldrs.stop();
         await sync.stop();
