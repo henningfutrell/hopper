@@ -2,9 +2,13 @@
 // asks the hopper with — its proxy token under this user's link key, `hopper-gh`, the hopper's URL as its machine
 // reaches it, and git's way to the hopper (issue #652) —, the check of a token a job shows, and this user's GitHub
 // connection, which the hopper acts with for every job when this is its oldest user, and for this user's own jobs' git.
+// The shrink guard (issue #1096) of their jobs' pushes: the push's lines from the user's mirror, with their own connection,
+// judged at the percent of their settings, read at each push.
 import { createInfraPlans, type InfraPlans } from '../infra-plans/service.ts';
 import { createOutOfBandChanges, type OutOfBandChanges } from '../infra-plans/out-of-band.ts';
 import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
+import { DEFAULT_SHRINK_GUARD, shrinkReason, shrunkFiles } from '../domain/shrink-guard.ts';
+import type { CountPushLines } from '../git-mirror/push-lines.ts';
 import { DEFAULT_CONTRIBUTION, type Job, type MachineSnapshot, type SourceStatus, type User } from '../domain/types.ts';
 import { createReportGitHub, createReportSender, type ReportGitHub, type ReportSender } from '../bug-reports/index.ts';
 import { createRepoChecksGitHub, type RepoChecksGitHub } from '../repo-checks/index.ts';
@@ -82,6 +86,8 @@ export interface UserGitHubProxyOptions {
   sources(): readonly SourceStatus[];
   /** The stack resources (issue #1077: the stack-health watcher reads them), given to the oldest user only; absent: none. */
   stack?: () => Promise<StackResources>;
+  /** A push's lines, counted in the user's mirrors of the job repositories (issue #1096); absent: no shrink guard. */
+  pushLines?: CountPushLines;
 }
 
 export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy: UserGitHubProxy; jobProxy(job: Job, machine: MachineSnapshot): JobProxyCredentials | undefined } {
@@ -99,6 +105,17 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
     : createReportGitHub(mine()));
   /** This user's Contribution (issue #429), read at each request: a change applies without a restart. */
   const contribution = () => (o.store.settings.getContribution() ?? DEFAULT_CONTRIBUTION).on;
+  /**
+   * The shrink guard (issue #1096): a push's lines from the mirror, fetched with this user's own connection, judged at the
+   * percent of the user's settings. Git cannot say: the push goes on, as it did before the guard.
+   */
+  const shrinkGuard = (pushLines: CountPushLines): NonNullable<GitUser['shrinkGuard']> => async (push) => {
+    const remote = async () => ({ url: `${o.accounts.endpoints('github').url.replace(/\/+$/, '')}/${push.repo}.git`, token: await o.accounts.token('github') });
+    const lines = await pushLines(push.repo, remote, push);
+    if (!lines?.brings) return { ok: true };
+    const shrunk = shrunkFiles(lines.files, (o.store.settings.getShrinkGuard() ?? DEFAULT_SHRINK_GUARD).percent);
+    return shrunk.length === 0 ? { ok: true } : { ok: false, shrunk, reason: shrinkReason(shrunk, push.base) };
+  };
   const user: ProxyUser = {
     id: o.user.id,
     holds: (parts) => parts.userId === o.user.id && holdsProxyToken(o.linkPrivateKey, parts),
@@ -219,6 +236,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
               repo: (repo) => api().repo(repo),
             };
         },
+        ...(o.pushLines ? { shrinkGuard: shrinkGuard(o.pushLines) } : {}),
       },
     },
   };

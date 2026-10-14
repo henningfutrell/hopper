@@ -2979,7 +2979,7 @@ Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub op
 
 ## `github_proxy.refused`
 
-Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a GitHub operation a running job asked for (issue #563), and told the job `reason`: a request it does not take, a repository it does not work on, an operation another user's job may not ask, a rate limit, or no GitHub connection; for a git push (issue #652), a push to another repository than the job's own (or, with Contribution on, its user's fork of it, issue #429), to one its user cannot push to, or to its default or a release branch, a tag or a delete. Fields as `github_proxy.done`; `op` and `repo` when the request named them, and a push's `refs` when it was read.
+Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a GitHub operation a running job asked for (issue #563), and told the job `reason`: a request it does not take, a repository it does not work on, an operation another user's job may not ask, a rate limit, or no GitHub connection; for a git push (issue #652), a push to another repository than the job's own (or, with Contribution on, its user's fork of it, issue #429), to one its user cannot push to, or to its default or a release branch, a tag or a delete; or a push the **shrink guard** refused (issue #1096): it brings in the default branch and empties or shrinks files the branch's own change does not, named in `shrunk` (`path`, its lines `from` — on the base branch, or `against: head` before the push — and `to`). Fields as `github_proxy.done`; `op` and `repo` when the request named them, and a push's `refs` when it was read.
 
 | field | type | required |
 |---|---|---|
@@ -2992,6 +2992,7 @@ Version 1 (`docs/schemas/github_proxy.refused.v1.json`). The hopper refused a Gi
 | `repo` | string | no |
 | `refs` | string[] | no |
 | `reason` | string | yes |
+| `shrunk` | object[] | no |
 
 ```json
 {
@@ -4692,6 +4693,28 @@ Version 1 (`docs/schemas/contribution.changed.v1.json`). An admin turned Contrib
   },
   "to": {
     "on": true
+  },
+  "by": "owner"
+}
+```
+
+## `shrink_guard.changed`
+
+Version 1 (`docs/schemas/shrink_guard.changed.v1.json`). An admin changed the shrink guard's percent (issue #1096): a job's push that brings in its base branch is refused when it takes more than this percent of a file's lines, or empties or removes it, and the branch's own change did not. `from` and `to` (`percent`), and `by`, who. It applies to the next push.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "percent": 50
+  },
+  "to": {
+    "percent": 30
   },
   "by": "owner"
 }

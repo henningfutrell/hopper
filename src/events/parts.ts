@@ -98,6 +98,8 @@ const issueRef = strict({ repo: z.string(), number: z.number().int() });
 /** Contribution (issue #429): an admin turned it on or off, and who. */
 export const contributionEvents = {
   'contribution.changed': strict({ from: strict({ on: z.boolean() }), to: strict({ on: z.boolean() }), by: z.string() }),
+  // The shrink guard's percent (issue #1096).
+  'shrink_guard.changed': strict({ from: strict({ percent: z.number().int() }), to: strict({ percent: z.number().int() }), by: z.string() }),
 };
 
 export const issueLineageEvents = {

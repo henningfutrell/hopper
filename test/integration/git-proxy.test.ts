@@ -19,6 +19,14 @@
 //     Given a private repository outside the job repositories that the user's connection sees
 //     Then the hopper reads it with the user's connection, and pushes nothing there
 //   Scenario: the job's variables carry no GitHub token and no ssh agent
+//   Scenario: a rebase onto dev that empties a file the pull request only edited (issue #1096, the shrink guard)
+//     Then the push is refused with the file named, nothing changes on GitHub, and the refusal is on its timeline
+//     And a resolution that keeps the lines of both sides goes through
+//     And a job that ends with its last push refused ends failed, not done
+//   Scenario: the pull request's own change empties the file
+//     Then the rebase that keeps it empty goes through
+//   Scenario: an admin sets the guard's percent (Settings → Shrink guard)
+//     Then a push that takes more than that percent of a file's lines is refused, and the change is recorded
 import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -258,3 +266,100 @@ describe('git through the hopper (issue #652)', () => {
   });
 });
 
+/** Straight to the fake GitHub's bare repository, as a person's merge would: `files` committed on `branch`. */
+async function seedCommit(t: Started, repo: string, branch: string, files: Record<string, string>): Promise<void> {
+  const seed = mkdtempSync(join(tmpdir(), 'hopper-git-seed-'));
+  cleanups.push(() => rmSync(seed, { recursive: true, force: true }));
+  const env = { PATH: process.env.PATH, HOME: seed, GIT_CONFIG_NOSYSTEM: '1' };
+  const bare = join(t.gitRoot, `${repo}.git`);
+  for (const [k, v] of [['uploadpack.allowFilter', 'true'], ['uploadpack.allowAnySHA1InWant', 'true']]) await run('git', ['--git-dir', bare, 'config', k!, v!], { env });
+  await run('git', ['clone', '--quiet', '--branch', branch, bare, join(seed, 'w')], { env });
+  for (const [f, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(seed, 'w', f)), { recursive: true });
+    writeFileSync(join(seed, 'w', f), text);
+  }
+  await run('git', ['-C', join(seed, 'w'), 'add', '.'], { env });
+  await run('git', ['-C', join(seed, 'w'), '-c', 'user.name=seed', '-c', 'user.email=seed@example.invalid', 'commit', '--quiet', '-m', 'seed'], { env });
+  await run('git', ['-C', join(seed, 'w'), 'push', '--quiet', 'origin', branch], { env });
+}
+
+const linesOf = (n: number) => Array.from({ length: n }, (_, i) => `line ${i}`).join('\n') + '\n';
+
+describe('the shrink guard (issue #1096)', () => {
+  /** dev with a 200-line design; the job's branch issue-7 edits it (or `own` instead); then dev moves on to 220 lines. */
+  async function branchThenDevMoves(t: Started, own: string = linesOf(201)) {
+    await seedCommit(t, 'octo/tools', 'dev', { 'docs/design.md': linesOf(200) });
+    const r = await running(t);
+    expect((await r.git(['clone', '--quiet', `${t.github.url}/octo/tools.git`, 'tools'])).code).toBe(0);
+    const work = join(r.home, 'tools');
+    writeFileSync(join(work, 'docs/design.md'), own);
+    await r.git(['commit', '--quiet', '-am', 'Edit the design'], work);
+    expect((await r.git(['push', '--quiet', 'origin', 'HEAD:refs/heads/issue-7'], work)).code).toBe(0);
+    await seedCommit(t, 'octo/tools', 'dev', { 'docs/design.md': linesOf(220) });
+    expect((await r.git(['fetch', '--quiet', 'origin'], work)).code).toBe(0);
+    return { ...r, work };
+  }
+
+  /** The job's resolution on dev's tip, `design` as docs/design.md, pushed over issue-7 with a lease. */
+  async function resolve(r: Awaited<ReturnType<typeof branchThenDevMoves>>, design: string) {
+    await r.git(['checkout', '--quiet', '-B', 'tended', 'origin/dev'], r.work);
+    writeFileSync(join(r.work, 'docs/design.md'), design);
+    await r.git(['commit', '--quiet', '--allow-empty', '-am', 'Resolve'], r.work);
+    return r.git(['push', '--force-with-lease=issue-7:origin/issue-7', 'origin', 'HEAD:refs/heads/issue-7'], r.work);
+  }
+
+  it('refuses a rebase that empties a file the pull request only edited, then takes one that keeps both sides', async () => {
+    const t = await start();
+    const r = await branchThenDevMoves(t);
+    const before = (await branchesOf(t, 'octo/tools')).stdout;
+
+    const blanked = await resolve(r, '');
+    expect(blanked.code).not.toBe(0);
+    expect(blanked.stderr).toContain('the shrink guard refused this push');
+    expect(blanked.stderr).toContain('docs/design.md (220 lines on dev, 0 after)');
+    expect((await branchesOf(t, 'octo/tools')).stdout).toBe(before);
+    expect(eventsOf(t.app, 'github_proxy.refused')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ jobId: r.job.id, data: expect.objectContaining({ op: 'git.push', refs: ['refs/heads/issue-7'], shrunk: [{ path: 'docs/design.md', from: 220, to: 0, against: 'base' }] }) }),
+    ]));
+
+    expect(await resolve(r, linesOf(221))).toMatchObject({ code: 0 });
+    t.held.get(r.job.id)!.end();
+    await t.app.waitForStatus(r.job.id, 'finished');
+  });
+
+  it('a job that ends with its last push refused by the guard ends failed, saying so', async () => {
+    const t = await start();
+    const r = await branchThenDevMoves(t);
+    expect((await resolve(r, '')).code).not.toBe(0);
+    t.held.get(r.job.id)!.end();
+    const ended = await t.app.waitForStatus(r.job.id, 'failed');
+    expect(JSON.stringify(ended)).toContain('the shrink guard refused its last push, which emptied or shrank docs/design.md');
+  });
+
+  it('the percent is an admin\'s setting: 50 by default, recorded when it changes, read at the next push', async () => {
+    const t = await start();
+    expect((await t.app.api('GET', '/api/shrink-guard')).body).toEqual({ percent: 50 });
+    expect((await t.app.ui('/ui/api/shrink-guard', { percent: 20 })).status).toBe(403);
+    const token = await t.app.login();
+    for (const percent of [0, 101, 2.5]) expect((await t.app.ui('/ui/api/shrink-guard', { percent }, { token })).status).toBe(400);
+    expect((await t.app.ui('/ui/api/shrink-guard', { percent: 50 }, { token })).status).toBe(200);
+    expect(eventsOf(t.app, 'shrink_guard.changed')).toEqual([]);
+
+    const r = await branchThenDevMoves(t);
+    expect(await t.app.ui('/ui/api/shrink-guard', { percent: 20 }, { token })).toMatchObject({ status: 200, body: { percent: 20 } });
+    expect(eventsOf(t.app, 'shrink_guard.changed')).toEqual([expect.objectContaining({ data: expect.objectContaining({ from: { percent: 50 }, to: { percent: 20 } }) })]);
+    // 220 lines on dev to 150: 32% lost, over 20%.
+    const refused = await resolve(r, linesOf(150));
+    expect(refused.code).not.toBe(0);
+    expect(refused.stderr).toContain('docs/design.md (220 lines on dev, 150 after)');
+    // Under the default, it goes through.
+    await t.app.ui('/ui/api/shrink-guard', { percent: 50 }, { token });
+    expect(await resolve(r, linesOf(150))).toMatchObject({ code: 0 });
+  });
+
+  it('takes a rebase that keeps the file the pull request itself emptied', async () => {
+    const t = await start();
+    const r = await branchThenDevMoves(t, '');
+    expect(await resolve(r, '')).toMatchObject({ code: 0 });
+  });
+});

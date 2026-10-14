@@ -31,6 +31,41 @@
     },
     "reason": {
       "type": "string"
+    },
+    "shrunk": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "from": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "to": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "against": {
+            "type": "string",
+            "enum": [
+              "base",
+              "head"
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "from",
+          "to",
+          "against"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

@@ -11,7 +11,7 @@ import type { RemoteAccessSettings } from './remote-access.ts';
 import type { MemoryAlert } from './machine-history.ts';
 import type {
   AutoAnswerSettings, AutoParkSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
-  PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings, LandingBatchSettings,
+  PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings, ShrinkGuardSettings, LandingBatchSettings,
 } from './types.ts';
 
 /** A user's settings (in the user schema). */
@@ -111,6 +111,9 @@ export interface UserSettingsRepository {
   /** Contribution (issue #429): whether jobs may work through a fork of a repository their user cannot push to; absent: off. */
   getContribution(): ContributionSettings | undefined;
   setContribution(settings: ContributionSettings): void;
+  /** The shrink guard (issue #1096): the percent of a file's lines a job's push that brings in its base branch may take; absent: 50. */
+  getShrinkGuard(): ShrinkGuardSettings | undefined;
+  setShrinkGuard(settings: ShrinkGuardSettings): void;
   /** The infra plans' settings (issue #870 part 3): whether the hopper approves a low-risk uat plan itself; absent: off. */
   getInfraPlans(): import('./infra-plans.ts').InfraPlanSettings | undefined;
   setInfraPlans(settings: import('./infra-plans.ts').InfraPlanSettings): void;

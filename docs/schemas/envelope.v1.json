@@ -232,6 +232,7 @@
         "repo_checks.dismissed",
         "job.child_issue_filed",
         "contribution.changed",
+        "shrink_guard.changed",
         "pointed_job.created",
         "pointed_job.status_changed",
         "github_watch.changed",

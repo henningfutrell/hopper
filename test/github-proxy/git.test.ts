@@ -14,9 +14,9 @@ const pkt = (s: string): string => `${(s.length + 4).toString(16).padStart(4, '0
 const request = (...lines: string[]): Buffer => Buffer.concat([Buffer.from(lines.map(pkt).join('') + '0000'), Buffer.from('PACK…')]);
 
 describe('the ref updates of a push', () => {
-  it('are read from the pkt-lines before the pack, the capabilities left off', () => {
+  it('are read from the pkt-lines before the pack, the capabilities left off; the pack after them (issue #1096)', () => {
     expect(receivePackCommands(request(`${A} ${B} refs/heads/issue-7-fast\0report-status side-band-64k`, `${ZERO} ${B} refs/heads/two\n`))).toEqual({
-      ok: true, commands: [{ old: A, new: B, ref: 'refs/heads/issue-7-fast' }, { old: ZERO, new: B, ref: 'refs/heads/two' }],
+      ok: true, commands: [{ old: A, new: B, ref: 'refs/heads/issue-7-fast' }, { old: ZERO, new: B, ref: 'refs/heads/two' }], pack: Buffer.from('PACK…'),
     });
   });
 

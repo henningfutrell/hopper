@@ -4,7 +4,7 @@
 // sign-in (issue #185), API tokens (issue #718), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the version. A moved section's old hash (#settings/minor-decisions) is replaced by its new one. Settings holds configuration only
 // (issue #897): the question history moved to Questions (#questions/history) and Your reports to its own view (#reports); their old hashes open them.
-import { CirclePause, Eye, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Grid3x3, Info, KeyRound, Layers, KeySquare, Link, ListChecks, LockKeyhole, MessagesSquare, MonitorCog, Network, Puzzle, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, Ticket, type LucideIcon, UserCheck, Users as UsersIcon, Webhook, Zap } from 'lucide-react';
+import { CirclePause, Eye, FileWarning, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Grid3x3, Info, KeyRound, Layers, KeySquare, Link, ListChecks, LockKeyhole, MessagesSquare, MonitorCog, Network, Puzzle, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, Ticket, type LucideIcon, UserCheck, Users as UsersIcon, Webhook, Zap } from 'lucide-react';
 import { useEffect } from 'react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
@@ -17,6 +17,7 @@ import { AutoPark } from '@/views/auto-park';
 import { GitHubRateLimiter } from '@/views/github-rate-limiter';
 import { GitHubDeliveries } from '@/views/github-deliveries';
 import { Contribution } from '@/views/contribution';
+import { ShrinkGuard } from '@/views/shrink-guard';
 import { GitHubWatches } from '@/views/github-watches';
 import { ComponentWatchers } from '@/views/component-watchers';
 import { JobRules } from '@/views/job-rules';
@@ -39,7 +40,7 @@ import { YoloMode } from '@/views/yolo-mode';
 import { LandingBatches } from '@/views/landing-batches';
 import { IntakeActors } from '@/views/intake-actors';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'auto-park', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'intake', 'yolo-mode', 'landing-batches', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'host-link', 'contribution', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'api-tokens', 'access', 'permissions'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'auto-park', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'intake', 'yolo-mode', 'landing-batches', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'host-link', 'contribution', 'shrink-guard', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'plugins', 'webhooks', 'vault', 'users', 'sign-in', 'api-tokens', 'access', 'permissions'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -60,6 +61,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   'allowed-hosts': { label: 'Allowed hosts', icon: Network, view: AllowedHosts },
   'host-link': { label: 'Host link', icon: Link, view: HostLink },
   contribution: { label: 'Contribution', icon: GitFork, view: Contribution },
+  'shrink-guard': { label: 'Shrink guard', icon: FileWarning, view: ShrinkGuard },
   'github-watches': { label: 'GitHub watches', icon: Eye, view: GitHubWatches },
   'component-watchers': { label: 'Component watchers', icon: Radar, view: ComponentWatchers },
   artifacts: { label: 'Artifacts', icon: FolderOpen, view: ArtifactSettings },
