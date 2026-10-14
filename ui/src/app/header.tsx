@@ -6,16 +6,19 @@
 // counted here on every screen, warning when one expires soon, a link to the Logins view (issue #477). Yolo mode shows here
 // on every screen (issue #897): off, on, or on in some repositories, a link to its one switch in Settings → Yolo mode.
 // A stall of the hopper's event loop shows here for 10 minutes, a warning with how long it was and the routes in flight (issue #1002).
+// How many work items are in flight shows here on every screen (issue #1113): the work-item ledger's count, read with the
+// queue after each event, a link to the Jobs view filtered to them.
 // The search box (issue #945, search-box.tsx) finds jobs from every screen at tablet width and up; a phone uses the Search entry.
 // On a phone the wordmark, the help link and the API reference give way (Help stays in the user menu), so the version badge with its channel, the connection dot and
 // the user menu are all the bar holds (issues #497, #666).
-import { BookOpen, CircleHelp, KeyRound, Zap } from 'lucide-react';
+import { Activity, BookOpen, CircleHelp, KeyRound, Zap } from 'lucide-react';
 import { useEffect } from 'react';
 import logo from '../../../site/hopper-logo.svg';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dot, StatusBadge } from '@/components/status';
 import { duration } from '@/model/format';
+import { IN_FLIGHT_SECTION } from '@/model/jobs-view';
 import type { Health } from '@/model/wire';
 import { connectionEnded } from '@/model/sources';
 import { yoloIndicator } from '@/model/yolo-mode';
@@ -39,6 +42,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
   // Signed in with GitHub, the session ended with the connection (issue #513): no reconnect here, straight to sign-in.
   useEffect(() => { if (ended && signedInWithGitHub) void recheckSession(); }, [ended, signedInWithGitHub]);
   const logins = useLoginsBadge();
+  const inFlight = useHopper((s) => s.inFlight);
   const yolo = yoloIndicator(useYoloMode());
   return (
     <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md">
@@ -54,6 +58,13 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           {ended && !signedInWithGitHub && (
             <a data-connection-ended href="#sources" title={ended}
               className="rounded-md border border-bad/30 bg-bad/5 px-2 py-1 font-medium text-bad hover:bg-bad/10">GitHub: reconnect needed</a>
+          )}
+          {inFlight !== null && (
+            <a data-slot="in-flight" href={`#jobs/${IN_FLIGHT_SECTION}`}
+              title={`${inFlight} ${inFlight === 1 ? 'job' : 'jobs'} in flight: working, or a pull request with its checks running, its checks being fixed, or waiting on the merge`}
+              className={cn('flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium hover:bg-muted/60', inFlight > 0 ? 'border-busy/40 text-busy' : 'border-border text-muted-foreground')}>
+              <Activity className="size-3.5" aria-hidden /><span className="num">{inFlight}</span> <span className="max-sm:sr-only">in flight</span>
+            </a>
           )}
           {logins.n > 0 && (
             <a data-logins-pending href="#logins" title={logins.warn ? 'A login expires soon' : 'Logins wait on you'}

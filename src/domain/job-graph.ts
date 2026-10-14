@@ -20,7 +20,7 @@ import type { ChecksState, Tended, TendStep } from './pull-requests.ts';
 import type { TaskCount } from './task-count.ts';
 import { countStages, treesOf } from './job-trees.ts';
 import { ITEM_STAGE, rollUp, stageInItem } from './job-rollup.ts';
-import type { WorkItem } from './work-items.ts';
+import { isInFlight, type WorkItem } from './work-items.ts';
 import type { Job, JobStatus } from './types.ts';
 
 /** Where a job stands in its life, in the words the Jobs view uses. */
@@ -101,6 +101,8 @@ export interface JobGraphNode {
   dismissed?: true;
   /** A failed job whose item is handed to a person on its failure (issue #1067): it waits on you, no failure counted. */
   handedOff?: true;
+  /** A job whose work item is in flight (issue #1113, `isInFlight`), and it is that item's own job: the Jobs view's in-flight filter. */
+  inFlight?: true;
 }
 
 /** One tend of a pull request (issue #927): the job the hopper ran to take the step, its status, and when it started and ended. */
@@ -270,6 +272,7 @@ export function jobGraph(input: JobGraphInput): JobGraph {
   const { viewOf, stages } = rollUp(jobs, input.issueGraph?.nodes ?? []);
   const itemOf = (job: Job): WorkItem | undefined => (job.source?.key ? input.items?.get(job.source.key) : undefined);
   for (const job of jobs) stages.set(job.id, stageInItem(job, stages.get(job.id)!, itemOf(job)));
+  const inFlightOn = (job: Job): boolean => { const item = itemOf(job); return item?.jobId === job.id && isInFlight(item); };
   // The job each issue reads its words from: its item's own job, else its newest.
   const newestOf = new Map<string, Job>();
   for (const job of jobs) {
@@ -294,6 +297,7 @@ export function jobGraph(input: JobGraphInput): JobGraph {
       ...(job.tasks ? { tasks: job.tasks } : {}), ...(job.laneId ? { laneId: job.laneId } : {}),
       ...(pr ? { pullRequest: pr } : {}), ...(job.dismissedAt !== undefined && stage === 'superseded' ? { dismissed: true as const } : {}),
       ...(stage === 'waiting' && (job.status === 'failed' || job.status === 'cancelled') ? { handedOff: true as const } : {}),
+      ...(inFlightOn(job) ? { inFlight: true as const } : {}),
       ...(job.partlyDone && stage === 'partly_done' ? {
         partlyDone: { pullRequest: job.partlyDone, afterMerge: s?.repo && s.number !== undefined ? `the next part of ${ref(s.repo, s.number)} runs` : 'the next part of its issue runs' },
       } : {}),

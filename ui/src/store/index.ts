@@ -40,6 +40,7 @@ export interface HopperState {
   /** The locked entries, as /api/queue gave them (issue #355): failed jobs of any age, so kept apart from `jobs`. */
   locked: Job[];
   items: Record<WorkItemState, number> | null; // the work-item ledger's counts per state, as /api/queue gave them (issue #1067); null until read
+  inFlight: number | null; // how many work items are in flight, as /api/queue gave it (issue #1113): the header's badge; null until read
   /** The queue gate and the pre-sort of the jobs not yet accepted, as /api/queue gave them (issue #159). */
   gate: QueueGate | null;
   presort: PreSort | null;
@@ -97,23 +98,22 @@ export interface HopperState {
 }
 
 export const useHopper = create<HopperState>(() => ({
-  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], items: null, gate: null, presort: null, highPriority: null, priorityLanes: null, blastRadius: null, machines: [],
+  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], items: null, inFlight: null, gate: null, presort: null, highPriority: null, priorityLanes: null, blastRadius: null, machines: [],
   decisions: [], questions: [], handled: [], reviews: EMPTY_REVIEWS, logins: [], loginSettings: null, failures: null, serverOffsetMs: 0, events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
   recorded: { usage: 0, machine: 0 },
 }));
-const set = useHopper.setState;
-const state = useHopper.getState;
+const { setState: set, getState: state } = useHopper;
 
 const capped = <T,>(list: T[], cap: number) => (list.length > cap ? list.slice(0, cap) : list);
 const upsert = <T,>(list: T[], item: T, same: (x: T) => boolean, cap: number) =>
   list.some(same) ? list.map((x) => (same(x) ? item : x)) : capped([item, ...list], cap);
 
 /** The one way jobs enter the store: an /api/queue answer replaces them all, with the queue gate and its pre-sort. */
-const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'locked' | 'items' | 'gate' | 'presort' | 'highPriority'> => ({
+const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'locked' | 'items' | 'inFlight' | 'gate' | 'presort' | 'highPriority'> => ({
   jobs: Object.fromEntries([...q.waiting, ...q.waitingAnswer, ...q.operatorLed, ...q.parked, ...(q.waitingOn ?? []), ...q.running, ...q.ended].map((j) => [j.id, j])),
   waitingOrder: q.waiting.map((j) => j.id),
-  locked: q.locked, items: q.items ?? null,
+  locked: q.locked, items: q.items ?? null, inFlight: typeof q.inFlight === 'number' ? q.inFlight : null,
   gate: q.gate, presort: q.presort,
   highPriority: typeof q.highPriority === 'number' ? q.highPriority : null,
 });

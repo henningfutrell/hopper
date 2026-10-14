@@ -24,6 +24,8 @@ export interface QueueView {
   locked: Job[];
   /** How many work items are in each state (issue #1067): the work-item ledger's counts, the ones every view shows. */
   items: Record<WorkItemState, number>;
+  /** How many work items are in flight (issue #1113): the ledger's, by `isInFlight`. The header's badge. */
+  inFlight: number;
   /** Jobs that ended (finished, failed, cancelled, rejected) in the last `ENDED_WINDOW_MS`, newest end first. */
   ended: Job[];
   /** The user's queue gate (issue #159). */
@@ -82,7 +84,7 @@ export function createQueries(c: EngineContext): Queries {
       const ended = all.filter((j) => TERMINAL_STATUSES.includes(j.status) && end(j) >= since)
         .sort((a, b) => end(b).localeCompare(end(a)));
       const presort = preSort(c, [...queued].reverse().filter(isUnaccepted));
-      return { waiting, running, waitingAnswer, operatorLed, parked, waitingOn, locked: lockedOf(all, c.store.workItems), items: c.store.workItems.counts(), ended, gate: gateOf(c), presort, highPriority };
+      return { waiting, running, waitingAnswer, operatorLed, parked, waitingOn, locked: lockedOf(all, c.store.workItems), items: c.store.workItems.counts(), inFlight: c.store.workItems.inFlight(), ended, gate: gateOf(c), presort, highPriority };
     },
     async getMachines() {
       const [machines, usage] = await Promise.all([c.machines.list(), getUsage()]);
