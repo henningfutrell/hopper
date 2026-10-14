@@ -1393,6 +1393,22 @@ Version 1 (`docs/schemas/source.request_declined.v1.json`). A person declined a 
 }
 ```
 
+## `source.request_withdrawn`
+
+Version 1 (`docs/schemas/source.request_withdrawn.v1.json`). A request card left Intake with no person's approval or decline (issue #1067, part 4): a sync of `source` that listed every repository of the item no longer offers it — its issue closed, its label or assignee gone, or it is of a trusted origin now. Its work item, waiting for approval, is dropped; offered again, it records `source.request_opened` again. Never the text.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/issues/8"
+}
+```
+
 ## `source.delivery_received`
 
 Version 1 (`docs/schemas/source.delivery_received.v1.json`). GitHub sent the hopper a **GitHub delivery** (issue #1079): `event` (`issues`) and `action` (`opened`, `labeled`, `assigned`, …) on `repo`, issue `number`; `delivery` is GitHub's id of it (`X-GitHub-Delivery`). Recorded in the log of each user whose job sources `sources` take `repo` as a job repository: each lists it again at a sync a few seconds later, not after the intake sync interval. Not recorded for a repository no job source of the user takes.

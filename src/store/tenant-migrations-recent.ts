@@ -39,4 +39,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // put each job pull request merged into the landing branch at its stage. Rows only, a new field in each body: the build
   // before runs on them and reads no such field.
   (db) => { rebuildWorkItems(db); },
+  // 57: The work-item ledger, rebuilt (issue #1067, part 4): a request card names its source (`requestSource`), so a sync
+  // withdraws only its own. Rows only: the build before reads them as they were, with one more field it does not read.
+  (db) => { rebuildWorkItems(db); },
 ];

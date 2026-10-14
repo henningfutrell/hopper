@@ -35,6 +35,7 @@ import { createAfterDone } from './after-done.ts';
 import { createThreadAsks } from './thread-asks.ts';
 import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts';
 import { signalsApplier, type SyncFlags } from './sync-signals.ts';
+import { finishIfClosedAsComplete } from './closed-as-complete.ts';
 
 export { REMOVED } from './sync-slots.ts';
 
@@ -138,14 +139,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
   }
 
-  /**
-   * A failed job whose item its source finds closed as complete is finished instead (issue #350), before
-   * its end is reported. false: asking failed; the job's pass stops and the next sync asks again.
-   */
+  /** A failed job whose work landed is finished instead (`finishIfClosedAsComplete`). false: asking failed; the next sync asks again. */
   async function finishedIfClosedAsComplete(slot: Slot, job: Job): Promise<boolean> {
-    if (!slot.source.closedAsComplete) return true;
     try {
-      if (await slot.source.closedAsComplete(job)) host.finishShipped(job.id);
+      await finishIfClosedAsComplete(host, slot.source, job);
       return true;
     } catch (e) {
       slot.retrying.set(job.id, message(e));

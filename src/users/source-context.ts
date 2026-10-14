@@ -6,6 +6,7 @@ import type { JobSourceContext } from '../plugins/sdk.ts';
 import type { UserStore } from '../domain/store.ts';
 import { DEFAULT_YOLO_MODE, isRerunnable, yoloModeFor } from '../domain/types.ts';
 import { rejectionOf } from '../domain/rejection.ts';
+import { requestsWaitingOf } from '../domain/work-items.ts';
 import { storeIntakeTrust, type DecideIntakeActor } from './intake-trust.ts';
 import { join } from 'node:path';
 import { createGitMirrors } from '../git-mirror/mirrors.ts';
@@ -26,7 +27,12 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       migration: () => store.settings.getIntakeMigration(name),
       migrated: (m) => store.settings.setIntakeMigration(name, m),
       record: (type, data) => { store.events.append({ type, data }); },
-      requestOpened: (key, hash) => store.events.between(['source.request_opened'], EPOCH).some((e) => e.data.source === name && e.data.key === key && e.data.hash === hash),
+      // Opened with this text since its last withdraw (issue #1067, part 4): a card back in Intake opens again.
+      requestOpened: (key, hash) => {
+        const mine = store.events.between(['source.request_opened', 'source.request_withdrawn'], EPOCH).filter((e) => e.data.source === name && e.data.key === key);
+        return mine.slice(mine.findLastIndex((e) => e.type === 'source.request_withdrawn') + 1).some((e) => e.data.hash === hash);
+      },
+      requestsWaiting: () => requestsWaitingOf(store.workItems.list({ state: ['waiting_for_approval'] }), name),
     }),
     intakeTrust: storeIntakeTrust(store, decideActor),
     yoloMode: (repo) => yoloModeFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),

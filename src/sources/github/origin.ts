@@ -2,7 +2,8 @@
 // assignment the hopper takes it by — the newest of each, from its events. Each act counts only when a trusted actor did
 // it, not through an app or as a bot; this hopper's own Assign to me is the user's act. An issue a job filed is never of
 // a trusted origin. Not trusted: the text a person approved, when its title and body hash the same, makes it approved;
-// else it is a request card. A new request card's text records `source.request_opened` once (issue #798), so it notifies.
+// else it is a request card. A new request card's text records `source.request_opened` once (issue #798), so it notifies;
+// a card that leaves Intake with no approval or decline records `source.request_withdrawn` (issue #1067, part 4).
 import {
   FILED_BY_JOB, FILED_BY_JOB_REASON, isBotLogin, requestHash, untrustedReason, type ActorRef, type IntakeRequest, type JobOrigin, type OriginActor, type OriginRole,
 } from '../../domain/intake-origin.ts';
@@ -94,5 +95,25 @@ export function openRequests(source: string, intake: IntakeContext, requests: Ma
     if (seen.has(id)) continue;
     seen.add(id);
     if (!intake.requestOpened(key, r.hash)) intake.record('source.request_opened', { source, key, hash: r.hash, author: r.author, why: r.why });
+  }
+}
+
+/** A GitHub issue URL's `owner/name`, lowercased; undefined for any other key. */
+const repoOfKey = (key: string): string | undefined => /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/issues\/\d+$/.exec(key)?.[1]?.toLowerCase();
+
+/**
+ * Record `source.request_withdrawn` for each request card of this source the work-item ledger has waiting for approval that
+ * this sync no longer offers (issue #1067, part 4): its issue closed, its label or assignee went, or it is of a trusted
+ * origin now. Only for an issue of a repository the sync listed (`repos`, none in `repoErrors`): an issue not listed is not
+ * known to be gone. `seen` forgets the withdrawn texts, so a card back in Intake opens again.
+ */
+export function withdrawRequests(source: string, intake: IntakeContext, offered: ReadonlyMap<string, IntakeRequest>, listed: { repos: readonly string[]; repoErrors: Record<string, string> }, seen: Set<string>): void {
+  const errored = new Set(Object.keys(listed.repoErrors).map((r) => r.toLowerCase()));
+  const read = new Set(listed.repos.map((r) => r.toLowerCase()).filter((r) => !errored.has(r)));
+  for (const key of intake.requestsWaiting()) {
+    const repo = repoOfKey(key);
+    if (offered.has(key) || repo === undefined || !read.has(repo)) continue;
+    intake.record('source.request_withdrawn', { source, key });
+    for (const id of [...seen]) if (id.startsWith(`${key} `)) seen.delete(id);
   }
 }

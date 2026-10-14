@@ -6,7 +6,8 @@
 // #736; checks still running do not count against it), and closes the issue when merged. A merge is never needed (issue #579: a pull request is done; a merge is only allowed, by yolo mode).
 // Anything else — a local commit, a branch, a draft, an issue closed as not planned or before the job, an older pull
 // request — is not complete; an error asking GitHub throws. A failed job whose issue is closed as complete is
-// finished too (`closedAsComplete`, asked by the sync loop before it reports the failure): its work landed, and its
+// finished too: the sync loop asks the work-item ledger before it reports the failure, and reads the issue
+// (`issueState`) as ledger input only when the ledger does not hold it closed (issue #1067): its work landed, and its
 // pane ended after. A job whose own pull request ships part of the issue ("Part of #N") is partly done (`partlyDone`):
 // not complete, and not failed either. A job whose own open pull request has merge conflicts, failing checks, or is a
 // draft, is not complete either, but one fixed step finishes it (`unfinishedPullRequest`, issues #626, #736): rebase it,
@@ -289,17 +290,21 @@ export async function ownPullRequestOpen(api: GitHubApi, job: Job): Promise<bool
 }
 
 /**
- * Whether the job's issue is closed as complete. A permanent error (the issue gone, no access) is not:
- * the failure is reported, and meets the same error there; a transient one throws, to be asked again.
+ * The job's issue as the work-item ledger reads it (issue #1067): open, or closed and why — `completed` when it is closed
+ * as complete (`isClosedAsCompleted`: by a merged pull request too), else GitHub's reason. A permanent error (the issue
+ * gone, no access) is no answer: the failure is reported, and meets the same error there; a transient one throws, to be
+ * asked again.
  */
-export async function closedAsComplete(api: GitHubApi, job: Job): Promise<boolean> {
+export async function issueState(api: GitHubApi, job: Job): Promise<{ state: 'open' | 'closed'; reason?: string } | undefined> {
   const { repo, number } = job.source ?? {};
-  if (!repo || !number) return false;
+  if (!repo || !number) return undefined;
   try {
     const issue = await api.getIssue(repo, number);
-    return isClosedAsCompleted(issue, await api.closingPullRequest(repo, number));
+    if (issue.state !== 'closed') return { state: 'open' };
+    const reason = isClosedAsCompleted(issue, await api.closingPullRequest(repo, number)) ? 'completed' : issue.stateReason ?? undefined;
+    return { state: 'closed', ...(reason ? { reason } : {}) };
   } catch (err) {
-    if (err instanceof GitHubApiError && err.permanent) return false;
+    if (err instanceof GitHubApiError && err.permanent) return undefined;
     throw err;
   }
 }

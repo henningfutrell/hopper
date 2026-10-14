@@ -125,7 +125,7 @@ describe('issues not taken, grouped and acted on (issue #798)', () => {
     await a.sync();
     expect(await waiting()).toBe(0);
     expect(await queued()).toBe(0);
-    expect((await a.events('types=source.request_withdrawn')).map((e) => e.data)).toEqual([{ source: 'github', key: issue.url, hash: (await a.events('types=source.request_opened'))[0]!.data.hash }]);
+    expect((await a.events('types=source.request_withdrawn')).map((e) => e.data)).toEqual([{ source: 'github', key: issue.url }]);
     await a.sync();
     expect(await a.events('types=source.request_withdrawn')).toHaveLength(1);
 

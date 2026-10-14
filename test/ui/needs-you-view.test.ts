@@ -5,6 +5,7 @@
 // Approve stays in Settings → Vault). Every one of these pages renders when nothing waits, and says what would show there.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { countStates } from '../../src/domain/work-items.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const url = (n: number) => `https://github.com/octo-user/hopper/issues/${n}`;
@@ -54,11 +55,14 @@ let vault: unknown = VAULT;
 let pullRequests: unknown = PULL_REQUESTS;
 let plans: unknown = { plans: [PLAN], applies: [] };
 let minor: unknown = MINOR;
+/** The ledger's items waiting for approval. */
+let waitingForApproval = 1;
 
 function fakeDaemon() {
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
-    '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked: [] },
+    // The work-item ledger's counts (issue #1067): Intake's badge and row read them.
+    '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked: [], items: { ...countStates([]), waiting_for_approval: waitingForApproval } },
     '/api/machines': { machines: [] }, '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] }, '/api/questions': { questions: [] },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }, '/api/accounts': { accounts: [] },
@@ -104,6 +108,7 @@ async function boot(hash: string, o: { sources?: unknown[]; vault?: unknown; pul
   localStorage.setItem('jh_session', 'a'.repeat(64));
   posts.length = 0;
   sources = o.sources ?? SOURCES;
+  waitingForApproval = o.sources?.length === 0 ? 0 : 1;
   vault = 'vault' in o ? o.vault : VAULT;
   pullRequests = o.pullRequests ?? PULL_REQUESTS;
   plans = o.plans ?? { plans: [PLAN], applies: [] };
