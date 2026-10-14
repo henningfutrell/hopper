@@ -37,7 +37,7 @@ import { openTldrs, type Tldrs } from '../tldr/haiku.ts';
 import { openUserSystemSecrets } from './system-secrets.ts';
 import { withSystemScope } from '../vault/system-view.ts';
 import type { SystemSecrets } from '../vault/system.ts';
-import { createQuestionService } from '../questions/index.ts';
+import { answerSignedOut, createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { createSourceSync, followEvery, withFixedStatuses, type SourceSync } from '../sources/index.ts';
 import { accountEvents, createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
@@ -308,8 +308,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // reached through closures that run only after `engine` exists (design.md "Construction
   // contract added").
   // The logins (issue #476): a login a job or an escalation level's run waits on, never a question.
-  // And the tool sign-ins (issue #1128): started by the usage sources that read each machine's tool.
-  const logins = createLogins({ store, clock }), signIns = createSignIns({ logins, sources: () => host.usageSources(), clock });
+  // And the tool sign-ins (issue #1128): started by the usage sources that read each machine's tool. One that completes answers
+  // the not-signed-in questions on its machine (`onSignedIn`, reached only after `questions` exists).
+  const logins = createLogins({ store, clock }), signIns = createSignIns({ logins, sources: () => host.usageSources(), clock, onSignedIn: (s) => { answerSignedOut({ store, questions }, s); } });
   // Decider calls (issue #550) go through Jev first, through TypeSafe with the user's TypeSafe API key (issue #657).
   const minorDecisions: MinorDecisions = createMinorDecisions({ store, clock, logger, timeoutMs: JEV_TIMEOUT_MS, jev, typesafeKey: () => typesafeKey.view() });
   // The TL;DR of every long card (issue #569): Claude Haiku through the `claude` CLI, in the user's work dir.

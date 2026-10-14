@@ -27,7 +27,11 @@ export interface SignIns {
 
 const OPEN = new Set(['pending', 'expired']);
 
-export function createSignIns(o: { logins: Logins; sources: () => readonly UsageSource[]; clock: Clock; sweepMs?: number }): SignIns {
+export function createSignIns(o: {
+  logins: Logins; sources: () => readonly UsageSource[]; clock: Clock; sweepMs?: number;
+  /** A sign-in completed: the tool on `machineId` is signed in now (the not-signed-in questions there are answered). */
+  onSignedIn?: (s: { machineId: string; tool: string; loginId: string }) => void;
+}): SignIns {
   const { logins } = o;
   /** The sign-ins running now, by login id. */
   const runs = new Map<string, ToolSignIn>();
@@ -76,8 +80,10 @@ export function createSignIns(o: { logins: Logins; sources: () => readonly Usage
       pasting.add(id);
       try {
         const end = await run.paste(code.trim());
-        if (end.ok) logins.completed(id);
-        else logins.failed(id, end.reason);
+        if (end.ok) {
+          logins.completed(id);
+          o.onSignedIn?.({ machineId: run.machineId, tool: run.tool, loginId: id });
+        } else logins.failed(id, end.reason);
       } finally {
         pasting.delete(id);
       }

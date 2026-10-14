@@ -1,0 +1,1 @@
+- A job that waits because Claude is signed out on its machine now goes on by itself when you sign Claude in again from the Accounts page.
