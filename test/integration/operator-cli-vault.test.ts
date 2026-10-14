@@ -261,6 +261,6 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(json<Grants>(await hopper(a, ['vault', 'revoke', job.id])).grants).toEqual([]);
     expect(await hopper(a, ['vault', 'revoke', job.id])).toMatchObject({ code: 2, err: expect.stringContaining('has no vault grant to revoke') });
     expect(await hopper(a, ['vault', 'grant', 'no-such-job'])).toMatchObject({ code: 2, err: expect.stringContaining('job no-such-job not found') });
-    expect(await hopper(a, ['vault', 'grant'])).toMatchObject({ code: 2, err: expect.stringContaining('usage: hopper vault grant <job>') });
+    expect(await hopper(a, ['vault', 'grant'])).toMatchObject({ code: 2, err: expect.stringContaining('usage: hopper vault grant|revoke <job>') });
   });
 });
