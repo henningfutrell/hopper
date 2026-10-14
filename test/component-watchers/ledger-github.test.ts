@@ -24,7 +24,7 @@ describe('the ledger-vs-GitHub watcher', () => {
       }),
       now: () => NOW,
     });
-    expect(await w.check()).toEqual([{ watcher: 'ledger-github', kind: 'pr_open_but_ended', items: [{ key: row.key, ledger: 'pr_open', github: 'pull request merged', since: '2026-10-13T10:00:00.000Z' }] }]);
+    expect(await w.check()).toEqual([{ watcher: 'ledger-github', kind: 'pr_open_but_ended', items: [{ key: row.key, says: 'pr_open', truth: 'pull request merged', since: '2026-10-13T10:00:00.000Z' }] }]);
     expect(asked).toEqual([[row.key, row.pullRequest]]);
   });
 

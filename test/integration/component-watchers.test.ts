@@ -1,10 +1,10 @@
-// Issue #1077: component watchers. The daemon, store and HTTP edge are real. Each user has the ledger-vs-GitHub watcher,
-// which checks at start; whether a drift files a drift issue is the user's setting, an admin's, in the database.
+// Issue #1077: component watchers. The daemon, store and HTTP edge are real. Each user has the ledger-vs-GitHub watcher and
+// the watchers of its own records (ledger vs jobs, lanes vs jobs), which check at start; whether a drift files a drift issue is the user's setting, an admin's, in the database.
 //
 // Feature: component watchers
 //   Scenario: the watchers and the setting
 //     Given a fresh hopper with no GitHub connection
-//     Then GET /api/component-watchers lists the ledger-vs-GitHub watcher, its check failed with why, and filing is off
+//     Then GET /api/component-watchers lists the three watchers: the ledger-vs-GitHub check failed with why, the other two checked with no drift, and filing is off
 //     When an admin turns filing on
 //     Then it is saved, component_watchers.settings_changed is in the log once, and a restart keeps it
 import { afterEach, describe, expect, it } from 'vitest';
@@ -23,7 +23,7 @@ const eventsOf = (a: TestApp, type: string): DomainEvent[] => a.user(ADMIN_ID).s
 const view = async (a: TestApp) => (await a.api<ComponentWatchersView>('GET', '/api/component-watchers')).body;
 
 describe('component watchers', () => {
-  it('lists the ledger-vs-GitHub watcher and keeps the admin\'s setting to file drift issues', { timeout: 40_000 }, async () => {
+  it('lists the ledger-vs-GitHub, ledger-vs-jobs and lanes-vs-jobs watchers and keeps the admin\'s setting to file drift issues', { timeout: 40_000 }, async () => {
     const db = tempDbPath();
     cleanups.push(db.cleanup);
     const app = await startTestApp({ dbPath: db.dbPath });
@@ -33,7 +33,13 @@ describe('component watchers', () => {
     await expect.poll(async () => (await view(app)).watchers[0]?.error, { timeout: 10_000 }).toMatch(/not connected/);
     const v = await view(app);
     expect(v.settings).toEqual({ fileIssues: false });
-    expect(v.watchers).toMatchObject([{ name: 'ledger-github', component: 'the work-item ledger', truth: 'GitHub', intervalSeconds: 900, drifts: [] }]);
+    expect(v.watchers).toMatchObject([
+      { name: 'ledger-github', component: 'the work-item ledger', truth: 'GitHub', intervalSeconds: 900, drifts: [] },
+      { name: 'ledger-jobs', component: 'the work-item ledger', truth: 'the job records', intervalSeconds: 300, drifts: [] },
+      { name: 'lanes-jobs', component: 'the lanes', truth: 'the job records', intervalSeconds: 300, drifts: [] },
+    ]);
+    // The store's own watchers need no GitHub connection: they checked, and a fresh hopper has no drift.
+    await expect.poll(async () => (await view(app)).watchers.slice(1).map((w) => [w.checkedAt !== undefined, w.error]), { timeout: 10_000 }).toEqual([[true, undefined], [true, undefined]]);
 
     const r = await app.ui<ComponentWatchersView>('/ui/api/component-watchers', { fileIssues: true }, { token });
     expect(r.status).toBe(200);

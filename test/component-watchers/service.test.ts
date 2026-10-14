@@ -17,7 +17,7 @@ import { DRIFT_MARKER, type Drift } from '../../src/domain/drift.ts';
 import type { ComponentWatcherSettings, NewEvent } from '../../src/domain/types.ts';
 
 const NOW = '2026-10-13T12:00:00.000Z';
-const DRIFT: Drift = { watcher: 'ledger-github', kind: 'failed_but_finished', items: [{ key: 'https://github.com/o/r/issues/1', ledger: 'failed', github: 'pull request merged', since: NOW }] };
+const DRIFT: Drift = { watcher: 'ledger-github', kind: 'failed_but_finished', items: [{ key: 'https://github.com/o/r/issues/1', says: 'failed', truth: 'pull request merged', since: NOW }] };
 
 function fakeGitHub(open: { number: number; url: string; body: string }[] = []) {
   const filed: { title: string; body: string; labels: string[] }[] = [];
@@ -67,7 +67,7 @@ describe('component watchers', () => {
     expect(updated).toEqual([]);
 
     // One more item in the same drift: the same issue, its body updated.
-    drifts = [{ ...DRIFT, items: [...DRIFT.items, { key: 'https://github.com/o/r/issues/2', ledger: 'failed', github: 'issue closed (completed)' }] }];
+    drifts = [{ ...DRIFT, items: [...DRIFT.items, { key: 'https://github.com/o/r/issues/2', says: 'failed', truth: 'issue closed (completed)' }] }];
     await w.check('ledger-github');
     expect(filed).toHaveLength(1);
     expect(updated.map((u) => u.number)).toEqual([101]);
