@@ -37,8 +37,8 @@ export interface FakeIssue {
   /** Default: the author (issue #387: intake is by label and assignee). */
   assignees?: string[];
   state?: 'open' | 'closed';
-  /** Why it was closed (issue #652: a job closes its own issue as completed). */
-  stateReason?: string;
+  /** Why it was closed (issue #652: a job closes its own issue as completed), and when (issue #1147). */
+  stateReason?: string; closedAt?: string;
   /** The comments posted on it, as GitHub's REST answers them (issue #673). */
   comments?: Record<string, unknown>[];
   /** Its sub-issues, each `owner/name#N` (issue #729). */
@@ -178,7 +178,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
     const restIssue = (i: FakeIssue) => ({
       number: i.number, title: i.title, body: i.body, state: i.state ?? 'open', html_url: `${base}/${i.repo}/issues/${i.number}`,
       updated_at: updatedAtOf(i), user: { login: i.author }, assignees: (i.assignees ?? [i.author]).map((login) => ({ login })), labels: i.labels.map((name) => ({ name })),
-      repository_url: `${base}/api/v3/repos/${i.repo}`, id: issueIdOf(i.repo, i.number),
+      repository_url: `${base}/api/v3/repos/${i.repo}`, id: issueIdOf(i.repo, i.number), ...(i.state === 'closed' ? { state_reason: i.stateReason ?? 'completed', closed_at: i.closedAt ?? null } : {}),
     });
     const find = (repo: string, num: number) => issues.find((i) => issueKey(i.repo, i.number) === issueKey(repo, num));
     const restPull = (p: FakePull) => ({

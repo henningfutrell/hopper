@@ -55,8 +55,9 @@ export function createReportSender(o: {
       for (const r of [...o.reports.inState('open'), ...o.reports.inState('closed')]) {
         if (r.number === undefined) continue;
         try {
-          const state = await github.state(REPORT_REPO, r.number);
-          o.reports.update(r.id, { state, checkedAt: o.now() });
+          const read = await github.state(REPORT_REPO, r.number);
+          // Opened again: no longer closed, so not fixed either (issue #1147).
+          o.reports.update(r.id, { state: read.state, closedAt: read.state === 'closed' ? read.closedAt : undefined, closedAs: read.state === 'closed' ? read.closedAs : undefined, checkedAt: o.now() });
         } catch (e) {
           o.log(`hopper: Report a bug: the state of #${r.number} could not be read: ${(e as Error).message}`);
         }

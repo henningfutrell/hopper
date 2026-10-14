@@ -1,0 +1,1 @@
+- A job that fails because of a bug in the hopper, and reports that bug, now waits for the fix and then runs again by itself, instead of waiting for you.

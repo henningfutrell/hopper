@@ -34,7 +34,7 @@ describe('the send pass of Report a bug stops', () => {
       search: async () => [],
       create: async () => { await answered; return { number: 7, url: 'https://github.test/7' }; },
       comment: async () => ({ number: 7, url: 'https://github.test/7' }),
-      state: async () => 'open',
+      state: async () => ({ state: 'open' as const }),
     };
     const sender = createReportSender({ github: () => github, reports, now: () => '2026-10-11T00:00:01.000Z', record() {}, log() {} });
     sender.start();

@@ -1695,7 +1695,7 @@ Version 1 (`docs/schemas/failure.grouped.v1.json`). A failed job was grouped int
 
 ## `failure.resolved`
 
-Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (issue #509): by a person (`by: "user"`), or by its check (`by: "check"`: the machine is reachable again, or its disk has room again). Its jobs held for it run again through the normal queue (`released` of them), and new jobs are no longer held for it. A person's resolution (issue #623) says who (`person`, and the way, `via` `ui` or `cli`) and keeps their `note`, if any.
+Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (issue #509): by a person (`by: "user"`), or by its check (`by: "check"`: the machine is reachable again, or its disk has room again; for a hopper bug a job reported, issue #1147, the fix landed: the issue of its report closed as completed, and the build of this hopper newer than that close). Its jobs held for it run again through the normal queue (`released` of them), and new jobs are no longer held for it. A person's resolution (issue #623) says who (`person`, and the way, `via` `ui` or `cli`) and keeps their `note`, if any.
 
 | field | type | required |
 |---|---|---|

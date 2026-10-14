@@ -5,7 +5,7 @@
 import type { RerunResult } from '../domain/ports.ts';
 import type { ActingPerson, FailuresView, HandoffView, Job, StuckActResult, StuckBulkCause } from '../domain/types.ts';
 import type { HandoffResolve } from './handoffs.ts';
-import type { FailureAction } from './service.ts';
+import type { FailureAction } from './failures.ts';
 
 /** What a bulk action acts through. */
 export interface StuckActs {

@@ -88,8 +88,8 @@ export interface UserRuntimeOptions {
   clientRelease: ClientRelease;
   /** The links of the machines dialled in to this hopper (the instance's; issue #308). */
   links: MachineLinks;
-  /** Where the store installs are unpacked (the instance's). */
-  installedDir: string;
+  /** Where the store installs are unpacked (the instance's); when this hopper's build was made, from its install record (issue #1147, the assessor's). */
+  installedDir: string; installedAt?: () => string | undefined;
   /** How often the plugins config's version is checked. */
   pluginsConfigIntervalMs: number;
   /**
@@ -378,7 +378,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     rerun: sync.rerun, continueJob: sync.continueJob, takesBack: sync.takesBack, finishShipped: (jobId, result) => engine.sourceHost.finishShipped(jobId, result),
     resumable: (job) => engine.resumable(job), dismiss: (jobId, by) => { engine.dismiss(jobId, by); }, machines: () => host.machines().list(),
     workState: async (job) => sourceOf(job)?.workState?.(job), pullRequestOpen: async (job) => sourceOf(job)?.pullRequestOpen?.(job), doneAtSource: (job) => doneAtSource(sourceOf(job), job),
-    trigger: (reason) => engine.trigger(reason), minorDecisions: { first: minorDecisions, gated },
+    trigger: (reason) => engine.trigger(reason), minorDecisions: { first: minorDecisions, gated }, ...(o.installedAt ? { installedAt: o.installedAt } : {}),
   });
   applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); };
   // Deliveries and notifiers from now on, so an instance event (update.applied at boot) reaches them.

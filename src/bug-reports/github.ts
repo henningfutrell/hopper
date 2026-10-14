@@ -12,9 +12,11 @@ export interface ReportGitHub {
   search(repo: string, label: string, terms: string[], where?: 'title' | 'body'): Promise<SimilarReport[]>;
   create(repo: string, issue: { title: string; body: string; labels: string[] }): Promise<{ number: number; url: string }>;
   comment(repo: string, number: number, body: string): Promise<{ number: number; url: string }>;
-  /** The issue's state now (Your reports). */
-  state(repo: string, number: number): Promise<'open' | 'closed'>;
+  /** The issue's state now (Your reports); closed: when, and why (issue #1147: `completed`, its fix landed). */
+  state(repo: string, number: number): Promise<ReportState>;
 }
+
+export type ReportState = { state: 'open' } | { state: 'closed'; closedAt?: string; closedAs?: string };
 
 /** GitHub's refusal or failure, with its status when it gave one. */
 export class ReportGitHubError extends Error {
@@ -55,8 +57,9 @@ export function createReportGitHub(o: { apiUrl: string } & TokenSource): ReportG
       return { number, url: d.html_url };
     }, failed(`a comment on ${repo}#${number}`)),
     state: (repo, number) => withToken(async (token) => {
-      const d = (await req('GET /repos/{owner}/{repo}/issues/{issue_number}', { ...splitRepo(repo), issue_number: number, headers: headers(token) })).data as { state: string };
-      return d.state === 'closed' ? 'closed' : 'open';
+      const d = (await req('GET /repos/{owner}/{repo}/issues/{issue_number}', { ...splitRepo(repo), issue_number: number, headers: headers(token) })).data as { state: string; closed_at?: string | null; state_reason?: string | null };
+      if (d.state !== 'closed') return { state: 'open' };
+      return { state: 'closed', ...(d.closed_at ? { closedAt: d.closed_at } : {}), ...(d.state_reason ? { closedAs: d.state_reason } : {}) };
     }, failed(`the state of ${repo}#${number}`)),
   };
 }

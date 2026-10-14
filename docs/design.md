@@ -11004,6 +11004,38 @@ Open decisions taken conservatively, each one entry to change: no model judges a
 one goes to a person); every automatic action on by default, each switchable; retries move to another machine
 only through a problem's redirect; the profile is its own view; the assessor never opens or drafts a GitHub issue.
 
+## A failure the job reported as a hopper bug (issue #1147, 2026-10-14)
+
+**The problem.** A tend job's push was refused by a bug in the shrink guard. The job reported the bug on the hopper with
+`hopper-gh report bug`, then failed (`not complete: tending failed: the shrink guard refused its last push, …`). The
+assessor found no cause for it but the job's own, so it went to Needs a person. Nothing a person could do there helped:
+the job's work was right, and the hopper was wrong. Owner request: such a failure does not land in Needs a person; the
+assessor runs it again once the fix landed.
+
+**The rule** (`src/failures/hopper-bug.ts`, `assess.ts`, pure). A failure the rules hand to a person (step 5, a done-check
+miss, a retry limit) of a job that filed a **bug report** about itself while it ran — its row in Your reports, `fromJob`,
+`jobId` the job — is held on that report instead, while automatic hold is on: decision `hold`, class `shared`, first
+reason `it reported a hopper bug (#N): it waits for the fix, then runs again`. It joins the open **hopper bug problem** of
+the report's issue, or opens one: `Hopper bug #N` (a report kept to send later: its own, by its id), cause `hopper-bug`,
+scope every machine, planned `hold`. A held record opens no hand-off, so the job is not in Needs a person, and Jev is not
+asked. A superseded, stale or done-at-source failure is as before.
+
+**It holds only its own jobs.** Like a Recurring problem (issue #637), it is not in `blocks()`: only the jobs that
+reported the bug are known to meet it, and a bug in one route must not hold every job of every machine.
+
+**The fix landed.** Each sweep, the problem's check reads its reports as Report a bug last read them (every 10 minutes,
+`later.ts`, which now keeps `closedAt` and `closedAs`, GitHub's `closed_at` and `state_reason`). The check resolves it
+(`failure.resolved`, `by: check`) once a report of its issue is closed as completed and this hopper's build was made
+after that close (`installedAt` of its install record, from the updater). Only then does the build have the fix: a merge
+into the landing branch closes the issue, and the build moves to it later, through its update channel. With no install
+record (a run from a checkout) the close alone is enough. Resolved, its held jobs run again through the normal release
+(`pending: release`, `by: assessor`), after the done-at-source check. An issue closed any other way (`not_planned`,
+`duplicate`) does not resolve it: it stays open in the Failures view, where a person resolves or releases it.
+
+**Not taken.** The closing pull request's merge commit against the installed commit: exact, but it needs the issue's
+timeline and a git history of the hopper, for a decision the build's time makes well enough. A retry that still meets the
+bug fails again and is assessed again; it waits on a fix again only if it reports again.
+
 ## A timed-out job (issue #630, 2026-10-10)
 
 A job that ran out of its time (`timeoutMs`, error `timed out`) got no known cause and went to a person, though the
