@@ -1,0 +1,1 @@
+- On a hopper in WSL, Settings → Host link shows how to test the link from Windows in PowerShell, and how to fix it when it fails.

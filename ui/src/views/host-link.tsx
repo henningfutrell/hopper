@@ -1,7 +1,8 @@
 // Settings → Host link (issue #712), the hopper's admin's: the address people open, apart from the LAN names containers
 // and boxes use. A notification's question link, a UI link and an artifact's link are built on it when the user set no
 // link base (Settings → Artifacts) and the hopper has no public URL. Empty: the default, localhost on the computer that
-// runs the hopper. Saved to the daemon; applies to the next link, without a restart.
+// runs the hopper. Saved to the daemon; applies to the next link, without a restart. In WSL it also shows how to test the
+// link from Windows, and the .wslconfig fixes: the daemon cannot reach the Windows side to check it itself.
 import { Link } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -11,6 +12,22 @@ import { Input } from '@/components/ui/input';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
 import type { HostLinkView } from '@/model/wire';
 import { useHopper } from '@/store';
+
+/** In WSL: how a person tests the link from Windows, and what to change when it fails. */
+function WslHint({ base }: { base: string }) {
+  return (
+    <div data-slot="host-link-wsl" className="space-y-1 rounded-md border p-2 text-xs">
+      <p className="font-medium">This hopper runs in WSL. Test the link from Windows.</p>
+      <p>In PowerShell on this computer, run <code className="font-mono">Invoke-WebRequest {base}/api/health</code>. It must answer 200.</p>
+      <p>
+        If it fails, edit <code className="font-mono">.wslconfig</code> in your Windows user folder. Under <code className="font-mono">[wsl2]</code>, set{' '}
+        <code className="font-mono">localhostForwarding=true</code>, or set <code className="font-mono">networkingMode=mirrored</code>.
+        Then run <code className="font-mono">wsl --shutdown</code> and start the hopper again.
+      </p>
+      <p className="text-muted-foreground">A client in this distro makes the check automatic: Add machine → A computer.</p>
+    </div>
+  );
+}
 
 function Form({ view, onSaved }: { view: HostLinkView; onSaved: (v: HostLinkView) => void }) {
   const [draft, setDraft] = useState(view.hostLinkBase);
@@ -39,6 +56,7 @@ function Form({ view, onSaved }: { view: HostLinkView; onSaved: (v: HostLinkView
         The address people open: links in notifications and to artifacts use it when a user set no link base and the hopper has no public URL.
         Give an address this hopper answers to. Empty: localhost on the computer that runs the hopper. Containers keep the LAN names.
       </p>
+      {view.wsl && <WslHint base={view.hostLinkBase || view.default} />}
     </div>
   );
 }
