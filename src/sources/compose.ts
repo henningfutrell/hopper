@@ -19,7 +19,7 @@ import type { GitHubApi } from './github/index.ts';
 import { createGitHubSource } from './github/index.ts';
 import { gitHubThread } from './github/thread.ts';
 import { passReads } from './github/pass-reads.ts';
-import { baseMergeOf, conflictBetweenOf, gitAnswers } from './github/git-answers.ts';
+import { baseMergeOf, baseTipOf, conflictBetweenOf, gitAnswers } from './github/git-answers.ts';
 import { createCheckLogs } from './github/check-logs.ts';
 import type { GitMirrors } from '../git-mirror/mirrors.ts';
 import { sourceConfig, type GitHubAccountOptions, type GitHubAppOptions } from './config.ts';
@@ -104,7 +104,7 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
     paused: () => appProblem(app()) ?? (assignee() ? undefined : NO_ASSIGNEE),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
   });
-  return { ...source, pass: reads.pass, conflictBetween: conflictBetweenOf(api), baseMerge: baseMergeOf(api), checkLogs: createCheckLogs(api).read };
+  return { ...source, pass: reads.pass, conflictBetween: conflictBetweenOf(api), baseMerge: baseMergeOf(api), baseTip: baseTipOf(api), checkLogs: createCheckLogs(api).read };
 }
 
 /**
@@ -211,6 +211,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     mergesOnReady: (repo) => current()?.mergesOnReady?.(repo) ?? false,
     conflictBetween: conflictBetweenOf(api),
     baseMerge: baseMergeOf(api),
+    baseTip: baseTipOf(api),
     // Failed checks' logs (issue #993): through the account's own api, kept across a rebuild of the source.
     checkLogs: createCheckLogs(api).read,
     rerun(job) {
