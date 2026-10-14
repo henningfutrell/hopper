@@ -1,5 +1,6 @@
 // The Pull requests view (issue #637), pure: the header lines, and the words for each card's checks, merge state and
 // closing issue, and the repositories with no checks (issue #677). The daemon builds the list; the UI only says it.
+import { ago } from './format.ts';
 import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from './wire.ts';
 
 type MergeWait = NonNullable<PullRequestCard['waits']>;
@@ -35,15 +36,18 @@ const DOING_TEXT: Partial<Record<MergeWait, string>> = {
 
 /**
  * What the hopper does about a card (issue #927): gave up, and why; tends it on its next sync, cannot tend it and why (issue
- * #967), or holds it behind another; its tend job's step, and why that job waits to start (issue #967); or what it waits to do. '' for a card that is not open.
+ * #967), or holds it behind another — since when at `now` (ms), and the tend job that holds it with its status (issue #1162);
+ * its tend job's step, and why that job waits to start (issue #967); or what it waits to do. '' for a card that is not open.
  */
-export function doingText(c: Pick<PullRequestCard, 'state' | 'waits' | 'base' | 'queue' | 'gaveUp' | 'tendJobId' | 'tendStep' | 'tendWaits'>): string {
+export function doingText(c: Pick<PullRequestCard, 'state' | 'waits' | 'base' | 'queue' | 'gaveUp' | 'tendJobId' | 'tendStep' | 'tendWaits'>, now?: number): string {
   if (c.gaveUp) return `the hopper gave up: ${c.gaveUp}`;
   if (c.queue) {
     if ('next' in c.queue) return `the hopper ${c.waits === 'checks failing' ? 'fixes its failed checks' : `rebases it onto ${c.base ?? 'its base branch'}`} on its next sync`;
     if ('refused' in c.queue) return `the hopper cannot tend it: ${c.queue.refused}`;
-    const { pullRequest, why } = c.queue.held;
-    return `held behind #${pullRequest}, ${why === 'tending' ? 'which a job works on now' : 'which the hopper merges first'}: they conflict`;
+    const { pullRequest, why, since, holder } = c.queue.held;
+    const age = since && now !== undefined ? ` since ${ago(since, now)}` : '';
+    const by = holder ? `which job ${holder.jobId.slice(0, 8)} works on now (${holder.status.replace(/_/g, ' ')})` : 'which a job works on now';
+    return `held behind #${pullRequest}${age}, ${why === 'tending' ? by : 'which the hopper merges first'}: they conflict`;
   }
   if (c.state !== 'open' || !c.waits) return '';
   if (c.waits === 'tending' && c.tendJobId) {

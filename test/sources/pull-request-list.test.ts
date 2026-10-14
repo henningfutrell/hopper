@@ -175,8 +175,9 @@ describe('what the hopper does about a pull request that needs tending (issue #9
 
   it('a hold says since when, and the tend job that holds it with its status (issue #1162)', () => {
     const since = ago(25 * 60_000);
-    const behind = job(2, 'job-b', PR8, seen({ conflicting: true }), {}, { heldBehind: { pullRequest: PR, why: 'tending', job: { id: 'job-t', status: 'running' } }, heldSince: since });
-    expect(cards([behind])[0]).toMatchObject({ queue: { held: { pullRequest: 7, why: 'tending', since, holder: { jobId: 'job-t', status: 'running' } } } });
+    const behind = job(2, 'job-b', PR8, seen({ conflicting: true }), {}, { heldBehind: { pullRequest: PR, why: 'tending', jobId: 'job-t' }, heldSince: since });
+    const holder = jobForIssue(1, { id: 'job-t', status: 'running' });
+    expect(cards([behind, holder]).find((c) => c.jobId === 'job-b')).toMatchObject({ queue: { held: { pullRequest: 7, why: 'tending', since, holder: { jobId: 'job-t', status: 'running' } } } });
   });
 
   it('a tend the source refused: the card says why, not that it is tended next (issue #967)', () => {

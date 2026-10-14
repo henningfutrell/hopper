@@ -66,8 +66,8 @@ describe('a merged pull request holds nothing (issue #1162)', () => {
   }
   const heads = ({ jobs, get }: ReturnType<typeof tend>, reported: boolean) => queueHeads(REPO.toLowerCase(), jobs, get, () => false, NOW, () => reported);
 
-  it('a tend job at work holds the queue, and the head names it and its status', () => {
-    expect(heads(tend('running'), false)).toEqual([{ pullRequest: PR, why: 'tending', job: { id: 'job-2', status: 'running' } }]);
+  it('a tend job at work holds the queue, and the head names it', () => {
+    expect(heads(tend('running'), false)).toEqual([{ pullRequest: PR, why: 'tending', jobId: 'job-2' }]);
   });
 
   it('a finished tend job holds it only while its end is still to report', () => {

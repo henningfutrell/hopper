@@ -32,7 +32,7 @@ describe('the tend of a job, up its chain of runs again (issue #1143 part 3)', (
 
   it('a retry at work heads its tending queue', () => {
     const { jobs, get } = chain('running');
-    expect(queueHeads(REPO.toLowerCase(), jobs, get, () => true, NOW, () => false)).toEqual([{ pullRequest: PR, why: 'tending', job: { id: 'job-3', status: 'running' } }]);
+    expect(queueHeads(REPO.toLowerCase(), jobs, get, () => true, NOW, () => false)).toEqual([{ pullRequest: PR, why: 'tending', jobId: 'job-3' }]);
   });
 });
 

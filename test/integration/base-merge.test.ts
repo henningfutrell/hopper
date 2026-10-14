@@ -120,6 +120,6 @@ describe('the base merge (issue #967)', () => {
     expect((await baseMerges(app)).map(([id]) => id)).toEqual([first!.job.id]);
     expect(await tends(app)).toEqual([]);
     const cards = (await app.api<PullRequestsView>('GET', '/api/pull-requests')).body.repos.find((r) => r.repo === REPO)!.pullRequests;
-    expect(cards.find((c) => c.jobId === second!.job.id)!.queue).toEqual({ held: { pullRequest: Number(first!.url.split('/').pop()), why: 'merging' } });
+    expect(cards.find((c) => c.jobId === second!.job.id)!.queue).toMatchObject({ held: { pullRequest: Number(first!.url.split('/').pop()), why: 'merging' } });
   });
 });
