@@ -1,0 +1,1 @@
+- You can now decline a request in Intake. A declined request makes no job, and it leaves the list until someone edits it.

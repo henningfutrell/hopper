@@ -162,6 +162,29 @@ describe('Intake leaves job progress to Jobs (issue #1035)', () => {
   });
 });
 
+describe('Decline on a request card (issue #1035)', () => {
+  it('Decline sends the text as read, and the card says it was declined', async () => {
+    await boot('#intake');
+    await vi.waitFor(() => expect(view()).not.toBeNull());
+    await click(button(row(view()!, url(9)), 'Decline'));
+    await vi.waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts).toEqual([{ path: '/ui/api/sources/github-account/intake', body: { kind: 'decline', keys: [url(9)], hash: request(9).hash } }]);
+    await vi.waitFor(() => expect(row(view()!, url(9)).querySelector('[data-slot="request-declined"]')).not.toBeNull());
+    expect(button(row(view()!, url(9)), 'Approve')).toBeUndefined();
+  });
+
+  it('a declined request is no row: Intake counts it in one line', async () => {
+    const declined = { key: url(11), title: 'No thanks', repo: 'octo-user/hopper', reason: 'a request you declined: an edit to its title or body shows it again', group: 'declined' };
+    await boot('#intake');
+    await act(async () => { streamed.get('source.updated')!({ data: JSON.stringify({ ...SOURCES[0], detail: { ...DETAIL, intake: [...DETAIL.intake, declined] } }) }); });
+    await vi.waitFor(() => expect(view()!.querySelector('[data-intake-declined]')).not.toBeNull());
+    expect(row(view()!, url(11))).toBeNull();
+    expect(view()!.querySelector('[data-intake-group="declined"]')).toBeNull();
+    expect(view()!.querySelector('[data-intake-declined]')!.textContent).toBe('1 request declined');
+    expect(view()!.querySelector('[data-intake-summary]')!.textContent).toContain('6 waiting for intake');
+  });
+});
+
 describe('the backburner is always visible (issue #808)', () => {
   it('the nav entry also counts the issues on the backburner, apart from the requests', async () => {
     await boot('#dashboard');

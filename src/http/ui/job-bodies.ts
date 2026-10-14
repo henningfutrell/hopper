@@ -25,11 +25,13 @@ export const noteBody = z.object({
  * Assign to me, or release a claim, on items a job source listed (issue #440); approve a request card (issue #652): one
  * item, with the hash of its title and body as the person read them; take items off the backburner (issue #798).
  */
+/** The intake actions on a request card's text (issues #652, #1035): one item, with the hash of the text as read. */
+const hashed = (kind: string): boolean => kind === 'approve' || kind === 'decline';
 export const intakeActionBody = z.object({
-  kind: z.enum(['assign', 'release', 'approve', 'unbackburner']),
+  kind: z.enum(['assign', 'release', 'approve', 'unbackburner', 'decline']),
   keys: z.array(z.string().min(1)).min(1, 'name at least one item').max(100, 'at most 100 items at once'),
   hash: z.string().regex(/^[0-9a-f]{64}$/, 'a SHA-256, hex').optional(),
 }).strict()
-  .refine((b) => b.kind !== 'approve' || (b.keys.length === 1 && b.hash !== undefined), { message: 'approve names one item and its hash' })
-  .refine((b) => b.kind === 'approve' || b.hash === undefined, { message: 'only approve takes a hash' });
+  .refine((b) => !hashed(b.kind) || (b.keys.length === 1 && b.hash !== undefined), { message: 'approve and decline name one item and its hash' })
+  .refine((b) => hashed(b.kind) || b.hash === undefined, { message: 'only approve and decline take a hash' });
 export const sourceParams = z.object({ name: z.string().min(1) });

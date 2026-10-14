@@ -1,7 +1,7 @@
-// The intake actions a person takes from Sources (issues #440, #652, #798): Assign to me, Release claim, Approve on a request
-// card, and Take off the backburner — each only on an item the source's last discover offered it for. Apart from source.ts
-// for its size.
-import type { IntakeAction, IntakeActionResult, IntakeContext, IntakeOutcome } from '../../domain/intake.ts';
+// The intake actions a person takes from Sources (issues #440, #652, #798): Assign to me, Release claim, Approve and Decline
+// (issue #1035) on a request card, and Take off the backburner — each only on an item the source's last discover offered
+// it for. Decline writes nothing to GitHub. Apart from source.ts for its size.
+import type { IntakeAction, IntakeActionResult, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import type { IntakeRequest } from '../../domain/intake-origin.ts';
 import type { GitHubApi } from './api.ts';
 import { HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED } from './labels.ts';
@@ -20,7 +20,12 @@ export interface IntakeActionContext {
   intake: IntakeContext | undefined;
   /** Approve a request card (issue #652): false when its text changed since the person read it. */
   approve(repo: string, key: string, request: IntakeRequest | undefined, a: IntakeAction): Promise<boolean>;
+  /** Keeps a person's decline of a request card (issue #1035). */
+  trust: Pick<IntakeTrust, 'decline'>;
 }
+
+/** Decline is offered where Approve is: on a request card. */
+const offeredAs = (kind: IntakeAction['kind']): IntakeAction['kind'] => (kind === 'decline' ? 'approve' : kind);
 
 const numberOf = (url: string): number => Number(url.slice(url.lastIndexOf('/') + 1));
 
@@ -31,10 +36,14 @@ export async function intakeAct(c: IntakeActionContext, a: IntakeAction): Promis
   for (const key of [...new Set(a.keys)]) {
     const x = offered.get(key);
     if (!x?.repo) { failed[key] = NOT_IN_SCOPE; continue; }
-    if (x.action !== a.kind) { failed[key] = `not offered: ${x.reason ?? 'taken'}`; continue; }
+    if (x.action !== offeredAs(a.kind)) { failed[key] = `not offered: ${x.reason ?? 'taken'}`; continue; }
     try {
       if (a.kind === 'approve') {
         if (!await c.approve(x.repo, key, x.request, a)) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }
+      } else if (a.kind === 'decline') {
+        // Only the text the person read, as the last sync showed it. Nothing on GitHub.
+        if (!x.request || x.request.hash !== a.hash) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }
+        c.trust.decline(c.source, key, x.request, a.acting);
       } else if (a.kind === 'assign') {
         if (!c.assignee) throw new Error('no GitHub account connected');
         await c.api.addAssignees(x.repo, numberOf(key), [c.assignee]);

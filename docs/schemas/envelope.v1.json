@@ -88,6 +88,7 @@
         "job.origin_judged",
         "source.request_opened",
         "source.backburner_lifted",
+        "source.request_declined",
         "auth.pending",
         "auth.completed",
         "auth.expired",
