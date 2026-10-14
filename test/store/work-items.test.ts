@@ -81,6 +81,29 @@ describe('the work-item ledger in the database', () => {
     store.close();
   });
 
+  it('a landing batch event moves each item whose pull request it names, and a rebuild replays it (issue #1073)', () => {
+    const store = t.open(t.url());
+    const a = store.jobs.create(spec, 50, ref(KEY, 1));
+    store.events.append({ type: 'job.queued', jobId: a.id, data: { spec, priority: 50 } });
+    store.events.append({ type: 'job.finished', jobId: a.id, data: { result: 'pull request ready for review' } });
+    store.events.append({ type: 'job.pull_request_merged', jobId: a.id, data: { pullRequest: PR, part: false } });
+    const b = store.jobs.create(spec, 50, ref(KEY2, 2));
+    store.events.append({ type: 'job.queued', jobId: b.id, data: { spec, priority: 50 } });
+    const tip = '0123456789abcdef0123456789abcdef01234567';
+    store.events.append({ type: 'landing_batch.pending', data: { repo: 'o/r', landing: 'main', tested: 'dev', tip, merges: [3, 4] } });
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'done', landing: { repo: 'o/r', stage: 'waiting' } });
+    store.events.append({ type: 'landing_batch.started', data: { repo: 'o/r', landing: 'main', tested: 'dev', tip, branch: 'hopper-batch/012345678901', pullRequest: 100, url: 'https://github.com/o/r/pull/100', merges: [3, 4], why: 'no batch run before' } });
+    expect(store.workItems.get(KEY)?.landing).toMatchObject({ stage: 'batch_run', tip, batch: 100 });
+    store.events.append({ type: 'landing_batch.promoted', data: { repo: 'o/r', tested: 'dev', tip, pullRequest: 100, url: 'https://github.com/o/r/pull/100' } });
+    expect(store.workItems.get(KEY)?.landing?.stage).toBe('promoted');
+    // An item with no merged pull request is in no batch.
+    expect(store.workItems.get(KEY2)?.landing).toBeUndefined();
+    const live = store.workItems.list();
+    store.workItems.rebuild();
+    expect(store.workItems.list()).toEqual(live);
+    store.close();
+  });
+
   it('a store opened with an event the ledger missed — the build before appended it — is rebuilt at open', () => {
     const url = t.url();
     const first = t.open(url);
