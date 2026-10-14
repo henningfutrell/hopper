@@ -16,6 +16,132 @@
           "additionalProperties": {
             "type": "boolean"
           }
+        },
+        "changeKinds": {
+          "type": "object",
+          "properties": {
+            "default": {
+              "type": "object",
+              "properties": {
+                "docs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "tests": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "lowRisk": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "sensitive": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "sensitiveContent": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "merge": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "enum": [
+                      "docs",
+                      "tests",
+                      "low_risk",
+                      "code",
+                      "sensitive"
+                    ]
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "enum": [
+                      "ready",
+                      "yolo",
+                      "person"
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "repos": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "docs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "tests": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "lowRisk": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "sensitive": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "sensitiveContent": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "merge": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "enum": [
+                        "docs",
+                        "tests",
+                        "low_risk",
+                        "code",
+                        "sensitive"
+                      ]
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "enum": [
+                        "ready",
+                        "yolo",
+                        "person"
+                      ]
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
         }
       },
       "required": [
@@ -38,6 +164,132 @@
           "additionalProperties": {
             "type": "boolean"
           }
+        },
+        "changeKinds": {
+          "type": "object",
+          "properties": {
+            "default": {
+              "type": "object",
+              "properties": {
+                "docs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "tests": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "lowRisk": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "sensitive": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "sensitiveContent": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "merge": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "enum": [
+                      "docs",
+                      "tests",
+                      "low_risk",
+                      "code",
+                      "sensitive"
+                    ]
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "enum": [
+                      "ready",
+                      "yolo",
+                      "person"
+                    ]
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            "repos": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "docs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "tests": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "lowRisk": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "sensitive": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "sensitiveContent": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "merge": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "enum": [
+                        "docs",
+                        "tests",
+                        "low_risk",
+                        "code",
+                        "sensitive"
+                      ]
+                    },
+                    "additionalProperties": {
+                      "type": "string",
+                      "enum": [
+                        "ready",
+                        "yolo",
+                        "person"
+                      ]
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
         }
       },
       "required": [

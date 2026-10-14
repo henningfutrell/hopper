@@ -10,11 +10,14 @@
 // A tend job not at work yet says why it waits (issue #967): no free lane, or its hold; a tend the source refused says why.
 // A tend job cancelled by no person and no source is tended again (issue #1010): its card waits on the tend, and says when.
 // So does one a person pressed Tend again on, after the hopper gave up (issue #1010).
+// Each card says its change kind and why (issue #1076), and its merge waits on the kind's gate: `yolo off` for a kind
+// merged only with yolo mode on, `person merges` for a kind only a person merges; a kind merged with no person is not held.
 import type { Job } from './types.ts';
 import { followsWhenEnded, MAX_TEND_RETRIES, MAX_TENDS, noChecksSettled, readyToMerge, rebasesWhenBaseMoves, TEND_ENDS, tendRetryAt, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Holds, QueueHead } from './tending-queue.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 import type { LandingCard } from './work-item-landing.ts';
+import { changeRuleFor, mergesOnReady, type ChangeClass, type ChangeRule } from './change-kinds.ts';
 
 // The list's repositories with no checks (issue #677) are their own module; re-exported here, as the list is in types.ts.
 export * from './repo-checks.ts';
@@ -27,10 +30,11 @@ export type { LandingCard, LandingStage } from './work-item-landing.ts';
  * #763). Its job's origin does not hold it (issue #805): the job already ran, so a pull request of a job with no origin
  * merges as any other. `checks unknown`: the hopper may not read its checks (issue #855). `checks not started`: it has no checks, inside the grace window after its last
  * push. `merge held`: ready, it conflicts with a pull request the hopper merged first (issue #939). `ready`: yolo mode
- * on and it is ready, so the next sync merges it (issue #677).
+ * on, or its change kind merged with no person (issue #1076), and it is ready, so the next sync merges it (issue #677).
+ * `yolo off`: its kind merges only with yolo mode on, and it is off. `person merges`: its kind is merged only by a person.
  */
 export const MERGE_WAITS = [
-  'no pull request', 'tending', 'tend failed', 'not checked yet', 'draft', 'conflicts', 'checks failing', 'yolo off', 'checks pending', 'checks unknown', 'checks not started', 'merge refused', 'merge held', 'ready',
+  'no pull request', 'tending', 'tend failed', 'not checked yet', 'draft', 'conflicts', 'checks failing', 'person merges', 'yolo off', 'checks pending', 'checks unknown', 'checks not started', 'merge refused', 'merge held', 'ready',
 ] as const;
 export type MergeWait = (typeof MERGE_WAITS)[number];
 
@@ -62,6 +66,8 @@ export interface PullRequestCard {
   since?: string;
   /** Its repository's yolo mode. */
   yolo: boolean;
+  /** Its change kind and why (issue #1076), as the follow last classified it; absent: not classified, yolo mode decides. */
+  change?: Pick<ChangeClass, 'kind' | 'why'>;
   /** An open one: why it is not merged yet. */
   waits?: MergeWait;
   /** The hopper's own merge was refused: what GitHub said. */
@@ -121,13 +127,15 @@ export function waitsOnPullRequest(job: Job, newest: (key: string) => Job | unde
   return ((f === 'open' || f === 'closed') && newest(job.source.key)?.id === job.id) || tendJobOf(job, newest) !== undefined;
 }
 
-function waitOf(named: boolean, seen: PullRequestSeen | undefined, yolo: boolean, now: number): MergeWait {
+function waitOf(named: boolean, seen: PullRequestSeen | undefined, yolo: boolean, rule: ChangeRule, now: number): MergeWait {
+  const kind = seen?.change?.kind;
+  const held: MergeWait | undefined = mergesOnReady(rule, yolo, kind) ? undefined : kind && rule.merge[kind] === 'person' ? 'person merges' : 'yolo off';
   if (!named) return 'no pull request';
-  if (!seen) return yolo ? 'not checked yet' : 'yolo off';
+  if (!seen) return held ?? 'not checked yet';
   if (seen.draft) return 'draft';
   if (seen.conflicting) return 'conflicts';
   if (seen.checks === 'failing') return 'checks failing';
-  if (!yolo) return 'yolo off';
+  if (held) return held;
   if (seen.checks === 'pending') return 'checks pending';
   if (seen.checks === 'unknown') return 'checks unknown';
   if (seen.checks === 'none' && !noChecksSettled(seen, now)) return 'checks not started';
@@ -138,19 +146,19 @@ function waitOf(named: boolean, seen: PullRequestSeen | undefined, yolo: boolean
 /** A tend job's statuses before it is at work (issue #967): its card says why it waits. */
 const NOT_AT_WORK: readonly string[] = ['queued', 'held'];
 
-function cardOf(job: Job, yolo: boolean, now: number, tendJob: Job | undefined): PullRequestCard {
+function cardOf(job: Job, yolo: boolean, rule: ChangeRule, now: number, tendJob: Job | undefined): PullRequestCard {
   const f = followedOf(job);
   const seen = f.seen;
   const state = f.follow === 'open' || tendJob ? 'open' : 'closed';
   const retryAt = tendRetryAt(f.tended, tendJob);
   const tendEnded = tendJob !== undefined && TEND_ENDS.includes(tendJob.status) && retryAt === undefined;
-  const waits = tendJob ? (tendEnded ? 'tend failed' : 'tending') : waitOf(f.pullRequest !== undefined, seen, yolo, now);
+  const waits = tendJob ? (tendEnded ? 'tend failed' : 'tending') : waitOf(f.pullRequest !== undefined, seen, yolo, rule, now);
   return {
     jobId: job.id, repo: job.source!.repo!, issue: { number: job.source!.number!, url: job.source!.url ?? job.source!.key },
     ...(f.pullRequest ? { pullRequest: { number: numberOf(f.pullRequest), url: f.pullRequest } } : {}),
     part: f.part === true, state, checks: seen?.checks ?? 'unknown', mergeable: seen ? (seen.conflicting ? 'conflicts' : 'mergeable') : 'unknown',
     draft: seen?.draft ?? false, ...(seen?.base ? { base: seen.base } : {}), ...(seen?.openedAt ? { openedAt: seen.openedAt } : {}),
-    ...(job.finishedAt ? { since: job.finishedAt } : {}), yolo,
+    ...(job.finishedAt ? { since: job.finishedAt } : {}), yolo, ...(seen?.change ? { change: { kind: seen.change.kind, why: seen.change.why } } : {}),
     ...(state === 'open' ? { waits } : {}), ...(tendJob ? { tendJobId: tendJob.id } : {}), ...(tendJob && f.tended ? { tendStep: f.tended.step } : {}),
     ...(tendJob && NOT_AT_WORK.includes(tendJob.status) ? { tendWaits: tendJob.waitReason ?? tendJob.holdReason ?? 'no free lane yet' } : {}),
     ...(retryAt !== undefined ? { tendWaits: retryWaits(f.tended!, tendJob!, retryAt) } : {}),
@@ -233,7 +241,8 @@ export function pullRequestList(jobs: Job[], newest: (key: string) => Job | unde
     const on = yoloModeFor(yolo, repo);
     const here = waiting.filter((j) => j.source!.repo!.toLowerCase() === repo.toLowerCase());
     const tendJobs = here.flatMap((j) => tendJobOf(j, newest) ?? []);
-    const cards = here.map((j) => cardOf(j, on, now, tendJobOf(j, newest)))
+    const rule = changeRuleFor(yolo.changeKinds, repo);
+    const cards = here.map((j) => cardOf(j, on, rule, now, tendJobOf(j, newest)))
       .sort((a, b) => (a.openedAt ?? a.since ?? '').localeCompare(b.openedAt ?? b.since ?? '') || a.jobId.localeCompare(b.jobId));
     return { repo, yolo: on, pullRequests: withQueue(cards, here, tendJobs, get) };
   });

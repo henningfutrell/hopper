@@ -22,7 +22,7 @@ import type { GitHubListingRepository } from '../../domain/github-listing.ts';
 import { DEFAULT_RATE_LIMITER } from '../../domain/github-rate-limit.ts';
 import { createIntakeListing, memoryListings } from './listing.ts';
 import { listedReads } from './listed-reads.ts';
-import { CONNECTED_VIA, TERMINAL_STATUSES, type Account } from '../../domain/types.ts';
+import { CONNECTED_VIA, DEFAULT_CHANGE_RULE, mergesOnReady, TERMINAL_STATUSES, type Account, type ChangeRule } from '../../domain/types.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
@@ -87,6 +87,8 @@ export interface GitHubSourceOptions {
    * And a repository's landing branch, from its landing batch settings (issue #1143); absent or undefined: no pull request is moved.
    */
   yoloMode?: (repo: string) => boolean; landingBranch?: (repo: string) => string | undefined;
+  /** The change rule of a repository (issue #1076): a followed pull request's kind and its merge gate. Absent: the built-in rule. */
+  changeRule?: (repo: string) => ChangeRule;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. Absent: none. */
   jobArtifacts?: JobArtifacts;
   /** The user's issue graph (issue #437): each listed issue's place is kept there. Absent: none is kept. */
@@ -139,7 +141,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   /** The pull requests the round's follows read first (issue #985). */
   const batch = followedBatch(api);
   /** What a follow, and the housekeeping of strays (issue #1143 part 4), need. */
-  const followContext = (): FollowContext => ({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}) });
+  const followContext = (): FollowContext => ({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}) });
 
   /** App mode: the bot, once known (the app file, or the first sync). */
   let knownBot: string | undefined;
@@ -379,7 +381,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api),
     readFollowed: (jobs) => batch.read(jobs),
     crossReferences: (job) => crossReferencesOfJob(api, job),
-    mergesOnReady: (repo) => o.yoloMode?.(repo) ?? false,
+    mergesOnReady: (repo, kind) => mergesOnReady(o.changeRule?.(repo) ?? DEFAULT_CHANGE_RULE, o.yoloMode?.(repo) ?? false, kind),
     issueState: (job) => issueState(api, job),
     workState: (job) => workState(api, job),
     pullRequestOpen(job) {

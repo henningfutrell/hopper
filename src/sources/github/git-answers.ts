@@ -6,6 +6,7 @@
 // and so is the base merge (`baseMerge`, issue #967): the base branch merged into a pull request's head and pushed; and
 // the tip of a base branch (`baseTip`, issue #1143 part 3), which tells a failed rebase tend its base moved.
 // One read by its number — the follow's — also carries what it changes (issue #935 part 2): its commits and files, git's only.
+// So are the lines it changes (issue #1076, `changedLines`), which its change kind reads.
 // The port's other methods are the adapter's own.
 import type { GitMirrors } from '../../git-mirror/mirrors.ts';
 import type { BaseMerge, Job } from '../../domain/types.ts';
@@ -42,6 +43,8 @@ export function gitAnswers(api: GitHubApi, mirrors: GitMirrors | undefined): Git
     conflictBetween: (repo, base, a, b) => mirrors.conflictBetween(repo, () => remote(repo), base, a, b),
     baseMerge: (repo, pr) => mirrors.baseMerge(repo, () => remote(repo), pr),
     baseTip: (repo, base) => mirrors.baseTip(repo, () => remote(repo), base),
+    changedLines: async (repo, pr, paths) => (pr.base && pr.headOid
+      ? mirrors.changedLines(repo, () => remote(repo), { number: pr.number, base: pr.base, headOid: pr.headOid }, paths) : undefined),
   };
   return Object.assign(Object.create(api) as GitHubApi, out);
 }

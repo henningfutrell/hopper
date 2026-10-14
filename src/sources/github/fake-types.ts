@@ -83,6 +83,8 @@ export interface PullRequestInput {
   createdAt: string; isDraft?: boolean; conflicting?: boolean; headCommittedAt?: string; checks?: ChecksState; failedChecks?: FailedCheck[]; headRef?: string; base?: string;
   /** What it changes, as the mirror would say (issue #935 part 2): answered when it is read by its number. */
   commits?: string[]; files?: string[];
+  /** The lines it changes per file, as the mirror would say (issue #1076); absent: git cannot say. */
+  diff?: Record<string, string[] | 'binary'>;
   /** Its body in place of the fixed text (issue #786); it still mentions the issue. */
   body?: string;
 }

@@ -32,11 +32,19 @@
 // hopper's merge. A follow with no batch answer reads GitHub as before.
 // Strays (issue #1143 part 4): a pull request a job named that no job follows, of an item no job works on, gets the same
 // housekeeping, with no follow (`housekeepStrays`): moved to the landing branch, or closed as superseded, and said on it.
+// Change kinds (issue #1076, change-kinds.ts): each read of an open pull request classifies it by the files and lines it
+// changes, under its repository's change rule, and keeps the kind on what is seen of it (`seen.change`); the lines come
+// from the hopper's mirror, only for the files whose content can change the kind. The kind's merge gate says whether the
+// hopper merges it once ready: with no person (docs, low-risk), only with yolo mode on, or never (a person merges). The
+// same files under the same rule and head are not read again; a batch answer under another rule reads it again.
 
-import { rechecksMerge, readyToMerge, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen, type Stray, type StrayHousekept, type TendStep } from '../../domain/types.ts';
+import {
+  classifyChange, contentNeeded, DEFAULT_CHANGE_RULE, mergesOnReady, rechecksMerge, readyToMerge, ruleKey,
+  type ChangeClass, type ChangeKind, type ChangeRule, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen, type Stray, type StrayHousekept, type TendStep,
+} from '../../domain/types.ts';
 import type { Clock } from '../../domain/ports.ts';
 import { SourceError } from '../../domain/ports.ts';
-import { GitHubApiError, type GitHubApi, type GitHubIssue, type NumberedPullRequest, type PullRequestState } from './api.ts';
+import { GitHubApiError, type GitHubApi, type GitHubIssue, type NumberedPullRequest, type OpenPullRequest, type PullRequestState } from './api.ts';
 import { retargetNote, supersededNote, tendNote } from './pr-notes.ts';
 import { closesByKeyword, isClosedAsCompleted, isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
 import { LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
@@ -54,12 +62,19 @@ export interface FollowContext extends ReportContext {
   yoloMode?: (repo: string) => boolean;
   /** A repository's landing branch (issue #1143, its landing batch setting); absent or undefined: no pull request is moved. */
   landingBranch?: (repo: string) => string | undefined;
+  /** The change rule of a repository (issue #1076); absent: the built-in rule. */
+  changeRule?: (repo: string) => ChangeRule;
   clock?: Clock;
   /** The batch's answer for pull request `number` of `repo`, taken once (issue #985); absent or undefined: read GitHub. */
   batched?: (repo: string, number: number) => PullRequestState | undefined;
 }
 
 type PullState = 'open' | 'merged' | 'closed';
+
+const ruleOf = (ctx: FollowContext, repo: string): ChangeRule => ctx.changeRule?.(repo) ?? DEFAULT_CHANGE_RULE;
+/** Whether the hopper merges a ready pull request of `repo` of this kind (issue #1076): its gate, yolo mode for `yolo`. */
+const merges = (ctx: FollowContext, repo: string, kind: ChangeKind | undefined): boolean =>
+  mergesOnReady(ruleOf(ctx, repo), ctx.yoloMode?.(repo) ?? false, kind);
 
 const numberOf = (url: string): number => Number(/\/pull\/(\d+)/.exec(url)?.[1] ?? 0);
 const repoOfPull = (url: string): string => /([^/]+\/[^/]+)\/pull\/\d+/.exec(url)?.[1] ?? '';
@@ -85,12 +100,14 @@ function seenFromBatch(ctx: FollowContext, job: Job, s: Followed, url: string): 
   if (pushedAt !== before.pushedAt || b.base !== before.base || conflicting !== before.conflicting) return undefined;
   const failing = b.checks === 'failing' || (before.checks === 'failing' && b.checks === 'pending');
   if (failing && before.checks !== 'failing') return undefined;
+  // Classified under another rule, or never though its files are known: read, so it is classified again.
+  if (before.files && before.change?.rule !== ruleKey(ruleOf(ctx, repo))) return undefined;
   const seen: PullRequestSeen = {
     draft: b.isDraft, conflicting, checks: failing ? 'failing' : b.checks ?? 'none', openedAt: b.createdAt, pushedAt, ...(b.base ? { base: b.base } : {}),
     ...(b.headRef ? { headRef: b.headRef } : {}), ...(failing && before.failedChecks ? { failedChecks: before.failedChecks } : {}),
-    ...(before.commits ? { commits: before.commits } : {}), ...(before.files ? { files: before.files } : {}),
+    ...(before.commits ? { commits: before.commits } : {}), ...(before.files ? { files: before.files } : {}), ...(before.change ? { change: before.change } : {}),
   };
-  return ctx.yoloMode?.(repo) && readyToMerge(seen, (ctx.clock?.now() ?? new Date()).getTime()) ? undefined : seen;
+  return merges(ctx, repo, seen.change?.kind) && readyToMerge(seen, (ctx.clock?.now() ?? new Date()).getTime()) ? undefined : seen;
 }
 
 /**
@@ -133,8 +150,24 @@ async function stateOf(api: GitHubApi, repo: string, number: number, s: Followed
 }
 
 /**
- * An open pull request: what is seen of it, and, yolo mode on and it ready, the hopper's merge, through the merge gate
- * (issue #939). A person's act (issue #677): merged or closed now, GitHub's refusal thrown.
+ * The change kind of open pull request `pr` (issue #1076), from the files it changes and, read from the mirror, the lines
+ * of the files whose content can change it. The same files, head and rule as `before`: `before`'s kind, nothing read.
+ * Its files not known, or not all of them: `before`'s kind while its head is the same, else none.
+ */
+async function classified(ctx: FollowContext, repo: string, pr: OpenPullRequest, number: number, pushedAt: string, before: PullRequestSeen | undefined): Promise<ChangeClass | undefined> {
+  const rule = ruleOf(ctx, repo);
+  const same = before?.change && before.pushedAt === pushedAt && before.change.rule === ruleKey(rule);
+  if (!pr.files || pr.filesCut) return same ? before.change : undefined;
+  if (same && JSON.stringify(before.files) === JSON.stringify(pr.files)) return before.change;
+  const needed = contentNeeded(rule, pr.files);
+  const lines = needed.length > 0 ? await ctx.api.changedLines?.(repo, { number, ...(pr.base ? { base: pr.base } : {}), ...(pr.headOid ? { headOid: pr.headOid } : {}) }, needed) : {};
+  return classifyChange(rule, pr.files, lines ?? {});
+}
+
+/**
+ * An open pull request: what is seen of it, its change kind (issue #1076), and, its kind's gate open — yolo mode on, or a
+ * kind merged with no person — and it ready, the hopper's merge, through the merge gate (issue #939). A person's act
+ * (issue #677): merged or closed now, GitHub's refusal thrown.
  */
 /** Say `body` on pull request `url` (issue #1143): only what the hopper did with it; a refusal loses only the comment. */
 async function note(api: GitHubApi, repo: string, url: string, body: string): Promise<void> {
@@ -160,7 +193,7 @@ async function retargetTo(ctx: FollowContext, repo: string, pr: NumberedPullRequ
 }
 
 async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct):
-  Promise<{ ended: 'merged' | 'closed'; superseded?: string } | { seen: PullRequestSeen; retargeted?: { from: string; to: string } }> {
+  Promise<{ ended: 'merged' | 'closed'; superseded?: string; seen?: PullRequestSeen } | { seen: PullRequestSeen; retargeted?: { from: string; to: string } }> {
   const repo = job.source!.repo!;
   if (act === 'close') {
     await ctx.api.closeWithoutMerge(repo, numberOf(url));
@@ -184,13 +217,15 @@ async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRe
   const kept = !act ? await housekeep(ctx, repo, url, pr) : undefined;
   if (kept && 'retargeted' in kept) return { seen: { ...seen, base: kept.retargeted.to }, retargeted: kept.retargeted };
   if (kept) return { ended: 'closed', superseded: kept.superseded };
+  const change = pr.state === 'open' ? await classified(ctx, repo, pr, numberOf(url), pushedAt, before) : undefined;
+  if (change) seen.change = change;
   const now = (ctx.clock?.now() ?? new Date()).getTime();
   // Whatever its job's origin (issue #805): the trust decision was made when the job ran, before its pull request.
-  if (pr.state !== 'open' || !ctx.yoloMode?.(repo) || !readyToMerge(seen, now)) return { seen };
+  if (pr.state !== 'open' || !merges(ctx, repo, change?.kind) || !readyToMerge(seen, now)) return { seen };
   try {
     const heldBehind = await mergeGateOf(ctx.api).merge(repo, pr.base, url, () => ctx.api.merge(repo, numberOf(url)));
     if (heldBehind) return { seen: { ...seen, mergeHeldBehind: heldBehind } };
-    return { ended: 'merged' };
+    return { ended: 'merged', seen };
   } catch (err) {
     if (err instanceof GitHubApiError && !err.permanent) throw err;
     return { seen: { ...seen, mergeError: (err as Error).message } };
@@ -348,11 +383,13 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
       now = { state: 'closed', url: now.url };
     } else if (now.state === 'open') {
       const w = await waiting(ctx, job, now.url, s.seen, act);
-      if ('seen' in w) {
+      if (!('ended' in w)) {
         if (JSON.stringify(w.seen) === JSON.stringify(s.seen) && !w.retargeted) return undefined;
         return { outcome: 'open', pullRequest: now.url, part, state: { ...s, seen: w.seen }, ...(w.retargeted ? { retargeted: w.retargeted } : {}) };
       }
       now = { state: w.ended, url: now.url };
+      // The hopper's merge keeps what it saw: the change kind it merged by (issue #1076).
+      if (w.seen?.change) s = { ...s, seen: w.seen };
       byHopper = !act;
       mergedHere = w.ended === 'merged';
       superseded = w.superseded;

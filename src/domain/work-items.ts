@@ -6,6 +6,7 @@
 import type { GraphNode } from './issue-graph.ts';
 import type { DomainEvent, EventType } from './types.ts';
 import { LANDING_LEDGER_EVENTS, type ItemLanding } from './work-item-landing.ts';
+import type { ChangeKind } from './change-kinds.ts';
 
 /**
  * Where a work item stands, in the words every view uses. `waiting_for_approval`: a request card in Intake. `queued`: a job
@@ -71,6 +72,8 @@ export interface WorkItem {
   pullRequestState?: PullRequestState;
   /** What its open pull request waits on, as the follow last saw it (`job.pull_request_seen`). */
   pullRequestWait?: PullRequestWait;
+  /** Its pull request's change kind (issue #1076), as `job.pull_request_classified` last said. */
+  changeKind?: ChangeKind;
   /** `open` or `closed`, and why it closed (`completed`, `not_planned`, `duplicate`), as GitHub said. */
   issueState?: string;
   issueReason?: string;
@@ -103,7 +106,7 @@ export const LEDGER_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
   'job.parked', 'job.unparked', 'job.waiting', 'question.escalated_to_human', 'proposal.escalated_to_human', 'research.escalated_to_human',
   'handoff.opened', 'handoff.closed',
   'job.finished', 'job.failed', 'job.cancelled', 'job.rejected', 'job.dismissed',
-  'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned',
+  'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed', 'job.pull_request_abandoned', 'job.pull_request_classified',
   'job.work_kept', 'job.work_removed',
   'job.pull_request_seen', 'work_item.issue_closed', 'work_item.issue_reopened',
   ...LANDING_LEDGER_EVENTS,
@@ -183,7 +186,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
 
   // A new job of the item takes it over: what an earlier job and GitHub said of it is history.
   if (event.type === 'job.queued') {
-    return move('queued', { jobId: job.id, pullRequest: undefined, pullRequestState: undefined, pullRequestWait: undefined, issueState: undefined, issueReason: undefined, waitingOn: undefined, failedJobId: undefined, landing: undefined, requestSource: undefined });
+    return move('queued', { jobId: job.id, pullRequest: undefined, pullRequestState: undefined, pullRequestWait: undefined, changeKind: undefined, issueState: undefined, issueReason: undefined, waitingOn: undefined, failedJobId: undefined, landing: undefined, requestSource: undefined });
   }
   // Any job's kept work and pull request: a tend hands a pull request to a newer job, and an older job's merge still counts.
   if (event.type === 'job.work_kept') return item?.keptWork.includes(job.id) ? undefined : mark({ keptWork: [...base.keptWork, job.id] });
@@ -200,6 +203,11 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
       pullRequestWait: wait, ...(named ? { pullRequest: pr, pullRequestState: 'open' as const } : {}),
       ...(base.eventState === 'pr_open' ? { waitingOn: PULL_REQUEST_WAIT_WORDS[wait] } : {}),
     });
+  }
+  // A pull request's change kind (issue #1076): its state stays; any job's, as a tend hands a pull request on.
+  if (event.type === 'job.pull_request_classified') {
+    const kind = d.kind as ChangeKind;
+    return (current || pr === base.pullRequest) && base.changeKind !== kind ? mark({ changeKind: kind }) : undefined;
   }
   if (event.type === 'job.pull_request_merged') {
     const change = { pullRequest: pr, pullRequestState: 'merged' as const, pullRequestWait: undefined, waitingOn: undefined };

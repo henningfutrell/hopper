@@ -17,6 +17,7 @@
 // job saw merged or closed.
 import { following, tendOf, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Job } from './types.ts';
+import type { ChangeKind } from './change-kinds.ts';
 
 /** A waiting pull request a tend is due for: its job, the pull request, and the step. */
 export interface TendDue { jobId: string; pullRequest: string; step: TendStep }
@@ -88,12 +89,12 @@ function soonMerged(s: PullRequestSeen, now: number): boolean {
 }
 
 /**
- * On its way to the hopper's merge: followed, yolo mode on for its repository (`merges`), whatever its job's origin (issue
+ * On its way to the hopper's merge: followed, yolo mode on for its repository or its change kind's gate (`merges`), whatever its job's origin (issue
  * #805), and seen soon merged (issue #927).
  */
-function merging(job: Job, merges: (repo: string) => boolean, now: number): string | undefined {
+function merging(job: Job, merges: (repo: string, kind?: ChangeKind) => boolean, now: number): string | undefined {
   const f = followedOf(job);
-  if (!following(job) || !f.pullRequest || !merges(job.source!.repo!)) return undefined;
+  if (!following(job) || !f.pullRequest || !merges(job.source!.repo!, f.seen?.change?.kind)) return undefined;
   return f.seen && soonMerged(f.seen, now) ? f.pullRequest : undefined;
 }
 
@@ -102,7 +103,7 @@ function merging(job: Job, merges: (repo: string) => boolean, now: number): stri
  * the merge. `reported`: whether a job's end is reported to its source. A pull request any job saw merged or closed is no
  * head (issue #1162).
  */
-export function queueHeads(repo: string, jobs: readonly Job[], get: (id: string) => Job | undefined, merges: (repo: string) => boolean, now: number, reported: (job: Job) => boolean): QueueHead[] {
+export function queueHeads(repo: string, jobs: readonly Job[], get: (id: string) => Job | undefined, merges: (repo: string, kind?: ChangeKind) => boolean, now: number, reported: (job: Job) => boolean): QueueHead[] {
   const here = jobs.filter((j) => repoOf(j) === repo);
   const ended = new Set(here.flatMap((j) => { const f = followedOf(j); return f.pullRequest && FOLLOW_ENDS.includes(f.follow ?? '') ? [f.pullRequest] : []; }));
   return [
