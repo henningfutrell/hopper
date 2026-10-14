@@ -14,6 +14,7 @@ import type { QueueHead } from './tending-queue.ts';
 import type { Handoff } from './failures.ts';
 import { issueNodeId, jobNodeId, pullRequestNodeId, pullRequestOf, stageOf } from './job-graph.ts';
 import { nextWords, stageWords, waitsOnYou, type Worded } from './job-words.ts';
+import { ownWaitOf } from './own-command.ts';
 import { phaseOf } from './phase.ts';
 import type { Question } from './questions.ts';
 import type { DomainEvent, Job } from './types.ts';
@@ -314,7 +315,8 @@ export function jobBom(input: JobBomInput): JobBom {
   const stage = stageOf(job);
   const phase = phaseOf(job);
   const pr = pullRequestOf(job);
-  const worded: Worded = { kind: 'job', stage, status: job.status, ...(phase !== 'work' ? { phase } : {}), ...(pr ? { pullRequest: pr } : {}) };
+  const ownWait = ownWaitOf(job);
+  const worded: Worded = { kind: 'job', stage, status: job.status, ...(phase !== 'work' ? { phase } : {}), ...(ownWait ? { ownWait } : {}), ...(pr ? { pullRequest: pr } : {}) };
   const s = job.source;
   const title = s?.title || job.spec.goal || job.id;
   return {

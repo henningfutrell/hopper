@@ -4,6 +4,7 @@
 // design.md "Questions" lifecycle and "Question budget (B6)".
 import type { ExecutionOutcome, ExecutionQuestion } from '../domain/ports.ts';
 import { raisedBy } from '../domain/raised-by.ts';
+import { namesOwnCommand } from '../domain/own-command.ts';
 import { suggestionIn } from '../domain/phase.ts';
 import type { Job, JobLiveness, JobWait, Lane, LaneId, MachineSnapshot, ReviewKind } from '../domain/types.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
@@ -51,10 +52,11 @@ function ask(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId,
 
 /**
  * The job's own wait (issue #483): `waiting_on` what it named, no question, its lane freed, its pane kept on its machine. It
- * goes on when its agent goes on by itself (pane-answers.ts) or a person ends the wait (commands.ts `endWait`).
+ * goes on when its agent goes on by itself (pane-answers.ts) or a person ends the wait (commands.ts `endWait`). A wait whose
+ * `until:` names its own background command is marked `ownCommand` (issue #1037): it shows as running.
  */
 function wait(c: EngineContext, job: Job, lane: Lane | undefined, laneId: LaneId, w: Omit<JobWait, 'since'>, at: string): Recorded {
-  const masked = { for: maskGitHubTokens(w.for), ...(w.until ? { until: maskGitHubTokens(w.until) } : {}) };
+  const masked = { for: maskGitHubTokens(w.for), ...(w.until ? { until: maskGitHubTokens(w.until) } : {}), ...(namesOwnCommand(w) ? { ownCommand: true as const } : {}) };
   c.store.jobs.update(job.id, {
     status: 'waiting_on', wait: { ...masked, since: at }, laneId: undefined, pendingAnswer: undefined,
     resumeOn: lane?.machineId ?? job.resumeOn ?? job.spec.machineId,

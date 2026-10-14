@@ -3,6 +3,7 @@
 // pull request number in it; whether it waits on the person; what comes next; and a job tree summed up in one line.
 // Pure: the graph and the parts list call it with what they already read.
 import type { JobGraphEdge, JobGraphNode, JobGraphPullRequest, JobStage, JobTree } from './job-graph.ts';
+import type { OwnWait } from './own-command.ts';
 import type { Job, JobStatus } from './types.ts';
 
 /** What the words of a node are made from: its kind and stage, and for a job, its status, phase, attempt and pull request. */
@@ -12,6 +13,8 @@ export interface Worded {
   status?: JobStatus;
   /** `proposal` or `research`: a review section's job; absent, the work itself. */
   phase?: string;
+  /** A job on a wait for its own command (issue #1037): `command` while it runs, `stuck` once flagged stuck. */
+  ownWait?: OwnWait;
   /** Its run in the chain of runs again of its issue (1 the first), and how many the failure settings allow. */
   attempt?: number;
   attempts?: number;
@@ -24,6 +27,7 @@ const WAITING: Partial<Record<JobStatus, string>> = { operator_led: 'A person wo
 function waitingOnYou(n: Worded): string | undefined {
   if (n.kind === 'question') return 'answer it';
   if (n.kind === 'handoff') return 'take it over';
+  if (n.ownWait === 'stuck') return 'its own command is gone, so it is stuck';
   if (n.status !== 'waiting_answer') return undefined;
   if (n.phase === 'proposal') return 'approve the plan';
   if (n.phase === 'research') return 'accept the research';
@@ -53,6 +57,7 @@ export function stageWords(n: Worded): string {
   switch (n.stage) {
     case 'queued': return 'Queued';
     case 'running': {
+      if (n.ownWait === 'command') return 'Running: waiting on its own command';
       if (n.phase === 'proposal') return 'Plan';
       if (n.phase === 'research') return 'Research';
       return n.attempt && n.attempt > 1 ? `Building it (attempt ${n.attempt}${n.attempts ? ` of ${n.attempts}` : ''})` : 'Building it';
@@ -71,6 +76,8 @@ export function stageWords(n: Worded): string {
 export function nextWords(n: Worded, tasks?: { done: number; total: number }): string {
   const you = waitingOnYou(n);
   if (you === 'answer a question') return 'You: answer the question.';
+  if (n.ownWait === 'stuck') return 'You: end the wait, or cancel the job.';
+  if (n.ownWait === 'command') return 'It goes on when its own command ends.';
   if (you) return `You: ${you}.`;
   switch (n.stage) {
     case 'queued': return 'It starts when a lane is free.';

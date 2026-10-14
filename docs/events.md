@@ -968,12 +968,13 @@ Version 1 (`docs/schemas/job.continued.v1.json`). An ended job goes on in its ow
 
 ## `job.waiting`
 
-Version 1 (`docs/schemas/job.waiting.v1.json`). The job waits on something it named (issue #483): it ended its turn with HOPPER_WAITING. `for`: what it waits for; `until`: how it will know, as it wrote it. Its status is `waiting_on`: no question opens, its lane is free, its pane and agent stay on its machine, and nothing is typed into it. It goes on when its agent goes on by itself (`job.reattached`, reason `the wait ended in the pane`) or a person ends the wait (`job.wait_ended`), or the hopper ends it with an answer the job asked it for (issue #998).
+Version 1 (`docs/schemas/job.waiting.v1.json`). The job waits on something it named (issue #483): it ended its turn with HOPPER_WAITING. `for`: what it waits for; `until`: how it will know, as it wrote it; `ownCommand` (issue #1037): `until` names its own background command, so it shows as running. Its status is `waiting_on`: no question opens, its lane is free, its pane and agent stay on its machine, and nothing is typed into it. It goes on when its agent goes on by itself (`job.reattached`, reason `the wait ended in the pane`) or a person ends the wait (`job.wait_ended`), or the hopper ends it with an answer the job asked it for (issue #998).
 
 | field | type | required |
 |---|---|---|
 | `for` | string | yes |
 | `until` | string | no |
+| `ownCommand` | boolean | no |
 
 ```json
 {
@@ -996,6 +997,30 @@ Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wa
   "by": "person",
   "note": "Write access is granted."
 }
+```
+
+## `job.own_command_nudged`
+
+Version 1 (`docs/schemas/job.own_command_nudged.v1.json`). A job waiting on its own background command (issue #1037, `ownCommand` on its wait): its pane showed no background work for the grace (`HOPPER_OWN_COMMAND_GRACE_MS`) and its agent did not go on, so the hopper typed one nudge into its pane: check the command, then go on. `delivered`: false when its pane or agent was gone. Once per wait.
+
+| field | type | required |
+|---|---|---|
+| `delivered` | boolean | yes |
+
+```json
+{
+  "delivered": true
+}
+```
+
+## `job.own_command_stuck`
+
+Version 1 (`docs/schemas/job.own_command_stuck.v1.json`). A job waiting on its own background command (issue #1037) did not go on within the grace after its nudge: its wait is flagged stuck (`stuckAt`). It now waits on a person: end the wait or cancel the job.
+
+`data` is `{}`.
+
+```json
+{}
 ```
 
 ## `job.checkpointed`

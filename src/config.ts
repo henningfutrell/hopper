@@ -34,6 +34,8 @@ export interface Config {
   linkGraceMs: number;
   /** How long a done job its source finds not done waits before it is asked again (issue #637). */
   doneRecheckMs: number;
+  /** How long a job waiting on its own command shows no background work before its nudge, then before it is stuck (issue #1037). */
+  ownCommandGraceMs: number;
   /** The question service's ceiling per stage (answer, assess), whatever a plugin's own timeout says. */
   answerTimeoutMs: number;
   humanRenotifyMs: number;
@@ -127,6 +129,7 @@ const schema = z.object({
   HOPPER_RECONNECT_GRACE_MS: int(0).default(120000),
   HOPPER_LINK_GRACE_MS: int(0).default(600000),
   HOPPER_DONE_RECHECK_MS: int(0).default(60000),
+  HOPPER_OWN_COMMAND_GRACE_MS: int(0).default(300000),
   HOPPER_ANSWER_TIMEOUT_MS: int(1).default(180000),
   HOPPER_HUMAN_RENOTIFY_MS: int(1).default(900000),
   HOPPER_HUMAN_TIMEOUT_MS: int(1).default(86400000),
@@ -185,6 +188,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_RECONNECT_GRACE_MS: 'after a restart, how long a running job waits for its machine to answer (a client to dial in, an ssh target to reply) before it fails',
   HOPPER_LINK_GRACE_MS: 'once a running job\'s machine link drops, how long the job is held on its lane for the link to come back before it fails',
   HOPPER_DONE_RECHECK_MS: 'a job that ended done whose source finds it not done is asked again after this long (GitHub may not show a new pull request at once) before it fails; 0: at once',
+  HOPPER_OWN_COMMAND_GRACE_MS: 'a job waiting on its own background command whose pane shows no background work for this long, its agent not gone on, is nudged once; this long after the nudge it is flagged stuck',
   HOPPER_ANSWER_TIMEOUT_MS: 'ceiling per escalation level\'s call on a question',
   HOPPER_HUMAN_RENOTIFY_MS: 'how often an unanswered question is notified again',
   HOPPER_HUMAN_TIMEOUT_MS: 'when an unanswered question expires',
@@ -323,6 +327,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     reconnectGraceMs: e.HOPPER_RECONNECT_GRACE_MS,
     linkGraceMs: e.HOPPER_LINK_GRACE_MS,
     doneRecheckMs: e.HOPPER_DONE_RECHECK_MS,
+    ownCommandGraceMs: e.HOPPER_OWN_COMMAND_GRACE_MS,
     answerTimeoutMs: e.HOPPER_ANSWER_TIMEOUT_MS,
     humanRenotifyMs: e.HOPPER_HUMAN_RENOTIFY_MS,
     humanTimeoutMs: e.HOPPER_HUMAN_TIMEOUT_MS,

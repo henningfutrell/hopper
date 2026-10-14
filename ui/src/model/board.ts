@@ -22,6 +22,15 @@ export type JobBoard = Record<JobGroup, Job[]>;
 
 const endOf = (j: Job) => j.finishedAt ?? j.updatedAt;
 
+/**
+ * A job on a wait for its own background command (issue #1037): `command` while it runs — running work, not a wait on the
+ * outside world —, `stuck` once the hopper flagged it stuck. Undefined for any other job. As the daemon's `ownWaitOf`.
+ */
+export function ownWaitOf(job: Job): 'command' | 'stuck' | undefined {
+  if (job.status !== 'waiting_on' || !job.wait?.ownCommand) return undefined;
+  return job.wait.stuckAt ? 'stuck' : 'command';
+}
+
 /** `waitingOrder`: the queue order of the waiting jobs as /api/queue gave it; a job it lacks follows, oldest first. */
 export function jobBoard(jobs: Iterable<Job>, waitingOrder: readonly string[]): JobBoard {
   const board: JobBoard = { waiting: [], waitingAnswer: [], operatorLed: [], parked: [], waitingOn: [], running: [], ended: [] };
@@ -179,8 +188,10 @@ export interface Kpis {
   held: number;
   waitingAnswer: number;
   parked: number;
-  /** On their own wait (issue #483). */
+  /** On their own wait (issue #483) for a person or the outside world: not on their own command. */
   waitingOn: number;
+  /** On a wait for their own background command (issue #1037): running work. */
+  onOwnCommand: number;
   finished: number;
   failed: number;
   cancelled: number;
@@ -198,7 +209,8 @@ export function kpis(board: JobBoard, machines: MachineView[]): Kpis {
     held: board.waiting.filter((j) => j.status === 'held').length,
     waitingAnswer: board.waitingAnswer.length,
     parked: board.parked.length,
-    waitingOn: board.waitingOn.length,
+    waitingOn: board.waitingOn.filter((j) => ownWaitOf(j) !== 'command').length,
+    onOwnCommand: board.waitingOn.filter((j) => ownWaitOf(j) === 'command').length,
     finished: ended('finished'),
     failed: ended('failed'),
     cancelled: ended('cancelled'),

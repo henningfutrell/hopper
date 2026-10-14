@@ -11,7 +11,7 @@ import { RejectButton } from '@/components/reject';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
-import { canRerun, machineName, waitingRows } from '@/model/board';
+import { canRerun, machineName, ownWaitOf, waitingRows } from '@/model/board';
 import { ago, between } from '@/model/format';
 import { REVIEW_KINDS, REVIEW_UI } from '@/model/reviews';
 import { act, rerun, useHopper } from '@/store';
@@ -150,8 +150,21 @@ function EndWaitButton({ job }: { job: Job }) {
 /**
  * The jobs on their own wait (issue #483): each said what it waits for, which only a person or the outside world can do. No
  * question, no lane; its pane stays on its machine. It goes on by itself when its own check sees it happen, or a person ends
- * the wait. Under the Dashboard's Waiting jobs, and in the Queue view's own panel (`heading` false).
+ * the wait. Under the Dashboard's Waiting jobs, and in the Queue view's own panel (`heading` false). A wait on its own
+ * background command (issue #1037) shows as running, with its runtime; stuck once the hopper flagged it so.
  */
+/** A job's own wait, in a badge: on the outside world, on its own command (running), or stuck (issue #1037). */
+function WaitBadge({ job }: { job: Job }) {
+  const own = ownWaitOf(job);
+  if (own === 'command') {
+    return <span data-slot="own-wait"><StatusBadge status="running" label="running: waiting on its own command" title="It waits only on a command of its own that runs in the background (a build, a test run). Nothing outside the job is involved: it goes on by itself when the command ends." /></span>;
+  }
+  if (own === 'stuck') {
+    return <span data-slot="own-wait"><StatusBadge status="failed" label="stuck: its own command is gone" title="Its background command is gone and it did not go on, not even after a nudge. End the wait, or cancel it." /></span>;
+  }
+  return <StatusBadge status="waiting_on" label="waiting" title="Waiting on something it named: no question, its lane is free, its pane stays on its machine. It goes on by itself when it happens, or when you end the wait." />;
+}
+
 export function WaitingOnRows({ heading = true }: { heading?: boolean }) {
   const { waitingOn } = useJobBoard();
   const machines = useHopper((s) => s.machines);
@@ -164,9 +177,9 @@ export function WaitingOnRows({ heading = true }: { heading?: boolean }) {
       <div key={job.id} data-job-group="waitingOn" data-job-id={job.id} data-status={job.status} className="space-y-1.5 px-4 py-3">
         <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><EndWaitButton job={job} /><CancelButton job={job} /></div>
         <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-          <StatusBadge status="waiting_on" label="waiting" title="Waiting on something it named: no question, its lane is free, its pane stays on its machine. It goes on by itself when it happens, or when you end the wait." />
+          <WaitBadge job={job} />
           {job.resumeOn && <span>on {machineName(job.resumeOn, machines)}</span>}
-          <span className="ml-auto">for <Since iso={job.wait?.since ?? job.updatedAt} /></span>
+          <span className="ml-auto">{ownWaitOf(job) === 'command' ? 'running for' : 'for'} <Since iso={job.wait?.since ?? job.updatedAt} /></span>
         </div>
         {job.wait && <div className="text-xs">waits for <span data-slot="waits-for" className="font-medium text-foreground/90">{job.wait.for}</span></div>}
         {job.wait?.until && <div className="text-xs text-muted-foreground">knows by <span data-slot="wait-until">{job.wait.until}</span></div>}

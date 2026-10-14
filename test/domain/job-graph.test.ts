@@ -26,6 +26,12 @@ describe('the stage of a job (issue #900)', () => {
     ['failed', 'failed'], ['cancelled', 'cancelled'], ['rejected', 'cancelled'], ['finished', 'done'],
   ])('%s is %s', (status, stage) => { expect(stageOf(job('j', status))).toBe(stage); });
 
+  it('a job waiting on its own command runs (issue #1037); flagged stuck, it waits', () => {
+    const wait = { for: 'the test run', until: 'background command 1 ends', since: '2026-10-02T01:00:00.000Z', ownCommand: true as const };
+    expect(stageOf(job('j', 'waiting_on', { wait }))).toBe('running');
+    expect(stageOf(job('j', 'waiting_on', { wait: { ...wait, stuckAt: '2026-10-02T02:00:00.000Z' } }))).toBe('waiting');
+  });
+
   it('a finished job with its pull request open is PR open; merged, done', () => {
     expect(stageOf(job('j', 'finished', followed(PR(5), 'open')))).toBe('pr_open');
     expect(stageOf(job('j', 'finished', followed(PR(5), 'merged')))).toBe('done');
@@ -220,6 +226,21 @@ describe('the job graph in plain words (issue #935)', () => {
     expect(node(g, jobNodeId('q')).waitsOnYou).toBe(true);
     expect(node(g, questionNodeId('q1')).waitsOnYou).toBe(true);
     expect(node(g, jobNodeId('run')).waitsOnYou).toBeUndefined();
+  });
+
+  it('says a wait on its own command as running, with its runtime; the outside world only for the other waits (issue #1037)', () => {
+    const wait = { for: 'the test run', until: 'background command 1 ends', since: '2026-10-02T01:00:00.000Z', ownCommand: true as const };
+    const g = jobGraph({
+      jobs: [
+        job('own', 'waiting_on', { wait }, 1),
+        job('stuck', 'waiting_on', { wait: { ...wait, stuckAt: '2026-10-02T02:00:00.000Z' } }, 2),
+        job('out', 'waiting_on', { wait: { for: 'a review', until: 'a background poll of the review', since: '2026-10-02T01:00:00.000Z' } }, 3),
+      ],
+    });
+    expect(node(g, jobNodeId('own'))).toMatchObject({ stage: 'running', stageText: 'Running: waiting on its own command', stageSince: '2026-10-02T01:00:00.000Z' });
+    expect(node(g, jobNodeId('own')).waitsOnYou).toBeUndefined();
+    expect(node(g, jobNodeId('stuck'))).toMatchObject({ stage: 'waiting', stageText: 'Waiting on you: its own command is gone, so it is stuck', waitsOnYou: true });
+    expect(node(g, jobNodeId('out'))).toMatchObject({ stage: 'waiting', stageText: 'Waiting on the outside world' });
   });
 
   it('sums up each tree in one line: pieces shipped, being redone, waiting on you', () => {

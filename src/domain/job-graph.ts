@@ -8,6 +8,7 @@
 // job works yet, no job. A pull request the hopper tended lists each tend attempt, oldest first (issue #927). Each group of
 // connected nodes is one **job tree**, named by its root, with what blocks the root marked. Pure: no I/O, no clock — the
 // route reads the jobs, the lineage links, the issue graph and the open questions and hand-offs, and passes them in.
+import { ownWaitOf, type OwnWait } from './own-command.ts';
 import type { GraphEdge, GraphNode } from './issue-graph.ts';
 import { attemptIn, treeSummary, wordNodes } from './job-words.ts';
 import { phaseOf } from './phase.ts';
@@ -68,6 +69,8 @@ export interface JobGraphNode {
   waitsOnYou?: true;
   /** A job's phase when it is not the work itself: `proposal` or `research`. */
   phase?: string;
+  /** A job on a wait for its own command (issue #1037): `command` while it runs, `stuck` once flagged stuck. */
+  ownWait?: OwnWait;
   /** A job's run in the chain of runs again of its issue (1 the first), and how many the failure settings allow. */
   attempt?: number; attempts?: number;
   /** owner/name, when the node has one. */
@@ -184,15 +187,17 @@ const waitsOnMerge = (job: Job): boolean =>
   job.partlyDone !== undefined && !['merged', 'closed', 'abandoned', 'tended', 'reworked'].includes(followedOf(job).follow ?? '');
 
 /**
- * A job's stage. Queued: waiting for a lane (queued, held, claimed). Running. Waiting: on a person or the outside world
- * (a question, an operator, parked, its own wait). Then, once finished: partly done while the part's pull request is not
+ * A job's stage. Queued: waiting for a lane (queued, held, claimed). Running, and on a wait for its own command (issue
+ * #1037) until it is flagged stuck. Waiting: on a person or the outside world (a question, an operator, parked, its own
+ * wait). Then, once finished: partly done while the part's pull request is not
  * merged; PR open while its own pull request is open; else done. Failed; cancelled (and rejected at the queue gate).
  */
 export function stageOf(job: Job): JobStage {
   switch (job.status) {
     case 'queued': case 'held': case 'claimed': return 'queued';
     case 'running': return 'running';
-    case 'waiting_answer': case 'operator_led': case 'parked': case 'waiting_on': return 'waiting';
+    case 'waiting_on': return ownWaitOf(job) === 'command' ? 'running' : 'waiting';
+    case 'waiting_answer': case 'operator_led': case 'parked': return 'waiting';
     case 'failed': return 'failed';
     case 'cancelled': case 'rejected': return 'cancelled';
     case 'finished':
@@ -205,7 +210,7 @@ export function stageOf(job: Job): JobStage {
 export function stageSinceOf(job: Job): string {
   switch (stageOf(job)) {
     case 'queued': return job.createdAt;
-    case 'running': return job.startedAt ?? job.updatedAt;
+    case 'running': return job.status === 'waiting_on' ? job.wait?.since ?? job.updatedAt : job.startedAt ?? job.updatedAt;
     case 'waiting': return job.wait?.since ?? job.parked?.at ?? job.updatedAt;
     default: return job.finishedAt ?? job.updatedAt;
   }
@@ -252,10 +257,10 @@ export function jobGraph(input: JobGraphInput): JobGraph {
     const stage = stageOf(job);
     const pr = pullRequestOf(job);
     const id = jobNodeId(job.id);
-    const phase = phaseOf(job), attempt = attemptIn(job, byId);
+    const phase = phaseOf(job), attempt = attemptIn(job, byId), ownWait = ownWaitOf(job);
     nodes.set(id, {
       id, kind: 'job', label: job.spec.goal || s?.title || job.spec.executor, stage, stageText: '', jobId: job.id, status: job.status,
-      stageSince: stageSinceOf(job), ...(phase !== 'work' ? { phase } : {}),
+      stageSince: stageSinceOf(job), ...(phase !== 'work' ? { phase } : {}), ...(ownWait ? { ownWait } : {}),
       ...(attempt > 1 ? { attempt, ...(input.maxAttempts !== undefined ? { attempts: input.maxAttempts + 1 } : {}) } : {}),
       ...(s?.repo ? { repo: s.repo } : {}), ...(s?.number !== undefined ? { number: s.number } : {}), ...(s?.url ? { url: s.url } : {}),
       ...(job.tasks ? { tasks: job.tasks } : {}), ...(job.laneId ? { laneId: job.laneId } : {}),

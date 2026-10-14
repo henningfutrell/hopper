@@ -1,10 +1,11 @@
 // The owner answered a job on a question in its pane, not the UI (design.md "Questions" → "Answered in the pane"):
 // what the pane shows of it, read for the herdr-claude executor's `answeredInPane`.
-import type { Clock, PaneAnswer } from '../../domain/ports.ts';
+// A job waiting on its own background command (issue #1037): whether its pane still shows that command run.
+import type { Clock, Executor, PaneAnswer } from '../../domain/ports.ts';
 import type { HerdrClient } from './client.ts';
 import { RECENT_LINES } from './monitor.ts';
-import { lastLineOf } from './panes.ts';
-import { readTurn, typedAfterQuestion } from './screen.ts';
+import { lastLineOf, paneStateOf } from './panes.ts';
+import { backgroundWork, readTurn, typedAfterQuestion } from './screen.ts';
 import type { PaneState, TurnAnchor } from './start.ts';
 
 /**
@@ -41,4 +42,33 @@ export async function readPaneAnswer(herdr: HerdrClient, s: PaneState & { turn: 
   const lapsed = typed === undefined && lapsesAt !== undefined && clock.now().getTime() >= Date.parse(lapsesAt) - LAPSE_SLACK_MS;
   if (lapsed) return { lapsed: true, executorState: { ...rest, turn } };
   return { ...(typed ? { answer: typed } : {}), executorState: { ...rest, turn } };
+}
+
+/**
+ * A job waiting on its own background command (issue #1037): true while its agent and pane live and the footer names
+ * background work; false when it names none, or the agent or pane is gone; null when herdr does not answer.
+ */
+async function ownCommandRunsIn(herdr: HerdrClient, s: Pick<PaneState, 'agentName' | 'paneId'>): Promise<boolean | null> {
+  try {
+    const agent = await herdr.getAgent(s.agentName);
+    if (!agent || agent.paneId !== s.paneId) return false;
+    return backgroundWork(await herdr.read(s.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES })) !== undefined;
+  } catch {
+    return null;
+  }
+}
+
+/** The executor's probes of a job waiting on its own command (issue #1037): whether it still runs, and its one nudge. */
+export function ownCommandProbes(herdrOn: (s: PaneState) => HerdrClient): Required<Pick<Executor, 'ownCommandRuns' | 'nudgeInPane'>> {
+  return {
+    ownCommandRuns: (job) => {
+      const s = paneStateOf(job);
+      // herdrOn throws for a client target out of reach: that cannot be told now.
+      return s ? Promise.resolve().then(() => ownCommandRunsIn(herdrOn(s), s)).catch(() => null) : Promise.resolve(false);
+    },
+    nudgeInPane: (job, text) => {
+      const s = paneStateOf(job);
+      return s ? Promise.resolve().then(() => herdrOn(s).prompt(s.agentName, text)).then(() => true, () => false) : Promise.resolve(false);
+    },
+  };
 }

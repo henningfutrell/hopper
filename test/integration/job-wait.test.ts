@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { waitFor } from '../support/wait.ts';
 
 let t: TestApp | undefined;
 let cleanup: (() => void) | undefined;
@@ -18,10 +19,10 @@ const DONE = { output: ['● Access granted. Pushed.', '  HOPPER_DONE'] };
 const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 300, promptSteadyMs: 100 } }];
 const item = { executor: 'herdr-claude', prompt: 'Fix the bug', cwd: '/tmp', env: {} };
 
-async function start(herdr: FakeHerdrClient): Promise<TestApp> {
+async function start(herdr: FakeHerdrClient, env?: Record<string, string>): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  t = await startTestApp({ dbPath: db.dbPath, plugins: { executors: EXECUTORS, machines: lanes(1) }, seams: { herdr, levels: [] } });
+  t = await startTestApp({ dbPath: db.dbPath, plugins: { executors: EXECUTORS, machines: lanes(1) }, seams: { herdr, levels: [] }, ...(env ? { env } : {}) });
   return t;
 }
 
@@ -114,5 +115,65 @@ describe('a job that waits on what it named', () => {
 
     await a.waitForStatus(job.id, 'cancelled', 8000);
     expect(herdr.prompts).toHaveLength(1);
+  });
+});
+
+// Issue #1037: a wait whose until names the job's own background command waits on nothing outside the job. It runs: not
+// the outside world. When the command is gone and the agent did not go on within the grace, it is nudged once, then stuck.
+const OWN = (background: { work: string; polls: number; wakes?: boolean }) => ({
+  output: ['● The tests run in the background.', '  HOPPER_WAITING', '  for: the test run to end', '  until: background command b7x2 ends'],
+  background,
+});
+const GRACE = { HOPPER_OWN_COMMAND_GRACE_MS: '300' };
+
+describe('a job that waits on its own background command (issue #1037)', () => {
+  it('is marked as its own command, and is not nudged while the command runs', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [OWN({ work: '1 shell', polls: 1_000_000 }), DONE] });
+    const a = await start(herdr, GRACE);
+    const job = await waiting(a, herdr);
+    expect(job.wait).toMatchObject({ for: 'the test run to end', until: 'background command b7x2 ends', ownCommand: true });
+    expect((await ofJob(a, job.id)).find((e) => e.type === 'job.waiting')!.data).toEqual({ for: 'the test run to end', until: 'background command b7x2 ends', ownCommand: true });
+    await new Promise((r) => setTimeout(r, 1200));
+    const still = await a.job(job.id);
+    expect(still.status).toBe('waiting_on');
+    expect(still.wait?.nudgedAt).toBeUndefined();
+    expect(herdr.prompts).toHaveLength(1);
+  });
+
+  it('a command gone without the agent going on: nudged once, and the job goes on', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [OWN({ work: '1 shell', polls: 2, wakes: false }), DONE] });
+    const a = await start(herdr, GRACE);
+    const job = await waiting(a, herdr);
+
+    const done = await a.waitForStatus(job.id, 'finished', 8000);
+
+    expect(herdr.prompts).toHaveLength(2);
+    expect(herdr.prompts[1]!.text).toContain('background command b7x2 ends');
+    const events = await ofJob(a, job.id);
+    expect(events.filter((e) => e.type === 'job.own_command_nudged')).toHaveLength(1);
+    expect(events.find((e) => e.type === 'job.own_command_nudged')!.data).toEqual({ delivered: true });
+    expect(events.find((e) => e.type === 'job.reattached')!.data).toEqual({ reason: 'the wait ended in the pane' });
+    expect(done.wait).toBeUndefined();
+  });
+
+  it('its pane gone: nudged once, then flagged stuck; a person can still end the wait', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [OWN({ work: '1 shell', polls: 1_000_000 }), DONE] });
+    const a = await start(herdr, GRACE);
+    const token = await a.login();
+    const job = await waiting(a, herdr);
+    herdr.killAgent((job.executorState as { agentName: string }).agentName);
+
+    const stuck = await waitFor(async () => {
+      const j = await a.job(job.id);
+      return j.wait?.stuckAt ? j : undefined;
+    }, { timeoutMs: 8000, what: 'the job to be flagged stuck' });
+
+    expect(stuck.status).toBe('waiting_on');
+    expect(stuck.wait).toMatchObject({ ownCommand: true, goneSince: expect.any(String), nudgedAt: expect.any(String), stuckAt: expect.any(String) });
+    const events = await ofJob(a, job.id);
+    expect(events.find((e) => e.type === 'job.own_command_nudged')!.data).toEqual({ delivered: false });
+    expect(events.filter((e) => e.type === 'job.own_command_stuck')).toHaveLength(1);
+    expect((await a.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token })).status).toBe(200);
+    await a.waitForStatus(job.id, 'cancelled', 8000);
   });
 });
