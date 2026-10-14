@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { FailuresView, Handoff, HandoffView, Job } from '../../src/domain/types.ts';
 import { createFakeHerdrClient, type FakeHerdrClient } from '../../src/executors/herdr/index.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
 
 const apps: TestApp[] = [];
@@ -22,11 +23,11 @@ const DONE = { output: ['● Painted the shed blue.', '  HOPPER_DONE'] };
 const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000, promptSteadyMs: 100 } }];
 const herdrItem = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: {} };
 
-async function boot(herdr?: FakeHerdrClient): Promise<TestApp> {
+async function boot(herdr?: FakeHerdrClient, source = createManualSource()): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
   const a = await startTestApp({
-    dbPath: db.dbPath,
+    dbPath: db.dbPath, source,
     plugins: herdr ? { executors: EXECUTORS, machines: lanes(1) } : { machines: lanes(2) },
     ...(herdr ? { seams: { herdr, levels: [] } } : {}),
   });
@@ -173,5 +174,24 @@ describe('Done by hand and Won\'t do', () => {
     expect(closed.actions.continue.ok).toBe(false);
     expect(closed.actions.fixed).toEqual({ ok: false, why: expect.stringMatching(/already closed/) });
     expect(closed.nextJobId).toBeDefined();
+  });
+});
+
+describe('the card recommends only an action the hopper takes (issue #1010)', () => {
+  it('a source that cannot run an item again: Continue and Run again say why, the card recommends Done, and Done works', async () => {
+    const source = createManualSource();
+    delete (source as { rerun?: unknown }).rerun;
+    const a = await boot(undefined, source);
+    const token = await a.login();
+    const job = await a.pull({ op: 'fail', message: 'HOPPER_FAILED the tests do not pass', ms: 0 });
+    const h = await handoffOf(a, job.id);
+    const why = 'its source manual cannot run an item again';
+    expect(h.actions.continue).toEqual({ ok: false, why });
+    expect(h.actions.fixed).toEqual({ ok: false, why });
+    expect(h.card).toMatchObject({ recommended: 'done_by_hand', why: expect.stringContaining(`is not taken: ${why}. Do the work by hand, then press Done.`) });
+    // The route refuses with the same reason, so no button the view offers fails.
+    expect((await resolve(a, token, h, { action: 'fixed' })).body.error).toContain(why);
+    expect((await resolve(a, token, h, { action: 'done_by_hand', note: 'Done by hand.' })).status).toBe(200);
+    expect((await a.job(job.id)).status).toBe('finished');
   });
 });
