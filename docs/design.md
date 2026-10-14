@@ -7140,7 +7140,10 @@ stack it runs in with the compose file its own image ships with, through the `St
 — it sees only from inside its container, never the container runtime: (1) each service that must run — every service
 but `hopper`, with no profile or a profile `COMPOSE_PROFILES` turns on (the hopper service's environment names it, so the
 hopper reads the value compose ran with), and not
-restarted only on failure (`openfga-migrate` runs once) — by its name on the compose network (`dns.lookup`, 3 s); (2) the
+restarted only on failure (`openfga-migrate` runs once) — by its name on the compose network (`dns.lookup`, 3 s), but the
+service `HOPPER_DATABASE_URL` names as its host runs while the hopper's own database answers a read (issue #1108: a
+rootless Podman stack failed that name lookup for a healthy `postgres` the hopper worked against); a service whose profile is
+off (`kms`, `vault`) is not asked for and is no gap; (2) the
 settings the file's `hopper` service gives its container, by name, against the hopper's environment (compose sets a
 `${X:-}` default as an empty value, so a name the environment lacks means an older compose file); (3) the commit
 `hopper-vault` answers at `/health` (its build's, from install.json) against the hopper's, when it runs. Each gap is a

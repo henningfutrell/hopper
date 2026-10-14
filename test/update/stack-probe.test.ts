@@ -2,7 +2,7 @@
 // whatever the compose network's name lookup says: a rootless Podman stack (podman-compose) can fail that lookup for a
 // service the hopper is connected to, and the drift check then named postgres as not running while it was healthy.
 import { describe, expect, it } from 'vitest';
-import { createStackProbe } from '../../src/update/stack-probe.ts';
+import { createStackProbe, databaseHostOf } from '../../src/update/stack-probe.ts';
 
 // A name no resolver answers (RFC 6761), so the lookup alone says "not running".
 const HOST = 'postgres.invalid';
@@ -23,5 +23,13 @@ describe('the stack probe (issues #697, #1108)', () => {
     const probe = createStackProbe({ database: { host: 'postgres', answers: () => { asked++; return true; } } });
     expect(await probe.resolves('openfga.invalid')).toBe(false);
     expect(asked).toBe(0);
+  });
+});
+
+describe('the database host of HOPPER_DATABASE_URL (issue #1108)', () => {
+  it('is the URL\'s host, and none when the URL names none', () => {
+    const answers = () => true;
+    expect(databaseHostOf('postgres://hopper:pw@postgres:5432/hopper', answers)).toEqual({ host: 'postgres', answers });
+    expect(databaseHostOf('not a url', answers)).toBeUndefined();
   });
 });
