@@ -1,6 +1,6 @@
 // The vault (issue #558, design.md "The vault"): a user's secrets, set once in the UI and never read back, kept sealed
 // in the user's store under the master key. The types every part shares: a secret is only ever its metadata.
-import type { VaultGrant, VaultGrantAsk } from './vault-grants.ts';
+import type { VaultGrantAsk, VaultGrantView } from './vault-grants.ts';
 import type { Asset, OperationProfile } from './access.ts';
 import type { TemplateRadius } from './blast-radius.ts';
 import { checkWait, type ProbeMarks, type ReadOnlyCheck } from './read-only-check.ts';
@@ -188,8 +188,8 @@ export interface VaultView {
   rememberedWrites?: RememberedWriteView[];
   /** Jobs on boxes that asked the vault with no vault grant (issue #652): a person grants them the vault, or not. */
   grantAsks?: VaultGrantAsk[];
-  /** The vault grants (issue #652): the items whose jobs may use the vault's helper, who granted each, and when. */
-  grants?: VaultGrant[];
+  /** The vault grants (issue #652): the items whose jobs may use the vault's helper, who granted each, and when; what each covers and how it was made (issue #1124). */
+  grants?: VaultGrantView[];
   /** Issue #909: the waiting profiles an API token asked to approve, which a person is to confirm. Absent: none. */
   asks?: ProfileAsk[];
 }

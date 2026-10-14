@@ -16,6 +16,7 @@
 import { parseArgs } from 'node:util';
 import { ESCALATION_REASONS, HANDOFF_RESOLUTIONS, QUEUE_GATE_MODES, type FailuresView, type QueueGate, type ReviewItemView, type User } from './domain/types.ts';
 import type { InstanceStore } from './domain/ports.ts';
+import { OPERATOR_CLI_NAME } from './domain/failures.ts';
 import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 import { questionCall } from './cli-operator-questions.ts';
 import { SESSION_HEADER } from './http/ui/guard.ts';
@@ -102,7 +103,7 @@ export interface OperatorIo {
 /** A session lives this long at most, whatever the sign-in config's session lengths: one call, then it is dropped. */
 const SESSION_MS = 5 * 60_000;
 /** Who a CLI session is: no realm the sign-in config names, so a reconcile drops it. */
-const CLI_IDENTITY = { realm: CLI_REALM, subject: 'operator-cli', name: 'operator CLI', groups: [] };
+const CLI_IDENTITY = { realm: CLI_REALM, subject: 'operator-cli', name: OPERATOR_CLI_NAME, groups: [] };
 
 
 function jobCall(args: string[]): Call {

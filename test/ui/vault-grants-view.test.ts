@@ -39,7 +39,7 @@ function fakeDaemon() {
     const body = init.body ? JSON.parse(String(init.body)) as Record<string, unknown> : undefined;
     calls.push({ path, method: init.method ?? 'GET', ...(body ? { body } : {}) });
     if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'github', name: 'alice', instanceAdmin: true }, signIn: { local: true, origin: location.origin, realms: [] } });
-    if (path === `/ui/api/jobs/${JOB}/grant-vault`) return json(200, { ...VIEW, grantAsks: [], grants: [GRANT, { key: ASK.key, job: JOB, by: 'alice', at: '2026-10-11T12:01:00.000Z' }] });
+    if (path === `/ui/api/jobs/${JOB}/grant-vault`) return json(200, { ...VIEW, grantAsks: [], grants: [GRANT, { key: ASK.key, job: JOB, by: 'alice', at: '2026-10-11T12:01:00.000Z', made: 'grant', item: { title: 'Add the cluster check', url: ASK.key, job: JOB, status: 'running', stale: false } }] });
     if (path === `/ui/api/jobs/${GRANT.job}/revoke-vault`) return json(200, { ...VIEW, grants: [STALE] });
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
