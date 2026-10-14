@@ -29,7 +29,7 @@ Every row shows, also when its count is 0. The page says *Nothing waits on you* 
 
 **Intake** lists the open labelled issues your job sources list that wait on an intake decision, per source. The issues are in groups, each with a count:
 
-1. **Needs approval**: request cards. Select **Approve** to let the hopper take the issue.
+1. **Needs approval**: request cards. Select **Approve** to let the hopper take the issue. Select **Decline** when you do not want it done: the hopper makes no job and writes nothing on GitHub. The source shows one line with how many requests you declined. When someone edits the title or body of a declined issue, it shows here again.
 2. **Not assigned to you**: select **Assign to me**, or **Assign all to me**.
 3. **On the backburner**: select **Take off the backburner**.
 4. **Other reasons**.

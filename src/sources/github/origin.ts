@@ -6,13 +6,15 @@
 import {
   FILED_BY_JOB, FILED_BY_JOB_REASON, isBotLogin, requestHash, untrustedReason, type ActorRef, type IntakeRequest, type JobOrigin, type OriginActor, type OriginRole,
 } from '../../domain/intake-origin.ts';
-import type { IntakeContext, IntakeTrust } from '../../domain/intake.ts';
+import type { IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import type { GitHubApi, GitHubIssue, IssueEvent } from './api.ts';
 
 /** An issue's origin: trusted or approved (it may be taken), else the request card a person approves. */
 export type OriginVerdict = { origin: JobOrigin } | { request: IntakeRequest };
 
 export const REQUEST_REASON = 'a request: approve it to take it';
+/** A request card a person declined (issue #1035). */
+export const DECLINED_REASON = 'a request you declined: an edit to its title or body shows it again';
 
 type Act = Omit<OriginActor, 'trusted'>;
 
@@ -72,6 +74,14 @@ export async function originsOf(api: GitHubApi, trust: IntakeTrust, issues: GitH
     else verdicts.set(i.url, { request: { hash, title: i.title, body: i.body, author: i.author, actors, why, ...(approved ? { approved } : {}) } });
   }
   return verdicts;
+}
+
+/** An outcome with its request, if it has one: a request card, or a text a person declined (issue #1035), which waits for
+ *  nobody and is offered nothing until an edit makes it a new request. */
+export function requestOutcome(x: IntakeOutcome, r: IntakeRequest | undefined, trust: Pick<IntakeTrust, 'declined'>): IntakeOutcome {
+  if (!r) return x;
+  if (trust.declined(x.key, r.hash)) return { ...x, reason: DECLINED_REASON, group: 'declined' };
+  return { ...x, reason: REQUEST_REASON, action: 'approve', group: 'request', request: r };
 }
 
 /**

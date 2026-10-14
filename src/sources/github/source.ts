@@ -38,7 +38,7 @@ import { intakeAct } from './intake-actions.ts';
 import { outsideReader } from './outside.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
-import { openRequests, originsOf, REQUEST_REASON } from './origin.ts';
+import { openRequests, originsOf, requestOutcome } from './origin.ts';
 import { backburnerReader } from './backburner.ts';
 import { recordIssueGraph, type IssueGraphRecorder } from './graph.ts';
 import { reportToGitHub, takeBack, writeResolution } from './report.ts';
@@ -247,7 +247,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     kind: o.kind ?? o.name,
     thread: gitHubThread(api),
     intake: () => outcomes.map((x) => ({ ...x })),
-    intakeAction: (a) => intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, approve }, a),
+    intakeAction: (a) => intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
@@ -311,7 +311,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         const item = await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), bot, assignee);
         items.push(v ? { ...item, origin: v.origin } : item);
       }
-      next = next.map((x) => { const r = requests.get(x.key); return r ? { ...x, reason: REQUEST_REASON, action: 'approve' as const, group: 'request' as const, request: r } : x; });
+      next = next.map((x) => requestOutcome(x, requests.get(x.key), o.trust));
       if (intake) openRequests(o.name, intake, requests, opened);
       next = await backburner(next);
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);

@@ -10498,6 +10498,8 @@ backburner issues had no action; and "taken" showed for an issue whose job had a
 - **Not taken, a view.** `#not-taken`, after Queue: per source, the issues not taken, grouped, with every action Sources
   has. Its nav badge counts the request cards (`requestsWaiting`). Sources keeps the full intake, grouped the same way,
   taken last. A request card has no job, so the Queue (which lists jobs) does not show it.
+- **Declined requests** (issue #1035): group `declined`, after `partly-done`. Intake lists none of them, and counts them in
+  one line (*1 request declined*); "Trusted origin and request cards" says what Decline does.
 - **Take off the backburner.** `unbackburner` on `POST /ui/api/sources/:name/intake` (operator; only on an outcome the last
   sync offered it for): the `hopper:backburner` label goes, `source.backburner_lifted { source, key }`, and the source
   syncs at once. A label write, like Release claim.
@@ -14867,6 +14869,16 @@ the actors, who; never the text). The source syncs at once.
 the snapshot (issue #662 `gateItem`), and a change since holds it as a text change. An edit after the approval and before
 its job is made shows the card again, with the approved text and the change line by line.
 
+**Declined (issue #1035).** A card also has **Decline** —
+`POST /ui/api/sources/:name/intake` `{ kind: 'decline', keys: [key], hash }`, offered where Approve is and checked the same
+way (a person signed in, operator, Access's `item#can_accept_text`). Only when `hash` is the hash the last sync showed is
+the text declined: `source.request_declined` (the hash, the author, who; never the text), kept by `IntakeTrust.decline`.
+Nothing is written to GitHub: no label, no comment, no close; an issue a person declines stays open, like a rejected job's
+(issue #387). At each sync a request whose hash a person declined (`IntakeTrust.declined`) is the outcome
+`a request you declined: …`, group `declined`, with no action: no job, and not waiting in Intake, which counts it in one
+line. An edit to its title or body makes a new hash, so it is a request card again. A declined text cannot be approved
+later; the request's author edits it, or a trusted actor files the work again.
+
 **The job's origin.** `SourceItem.origin` → `JobSourceRef.origin`: `trusted` or `approved`. Run again and Rework keep the
 origin of the job they follow. A job of a source that does not judge origins has none; one taken before this change has
 none until the backfill below judges it.
@@ -16361,7 +16373,8 @@ rendered nothing when empty, so a person could not tell the feature was there.
 - **Intake.** `#intake` (it was Not taken, `#not-taken`, which still opens it): per source, every open labelled issue
   that waits on an intake decision, grouped by why, with Assign all; the request cards' one home. Since issue #1035 an
   issue that passed intake (taken, partly done, its pull request waits for review) is job progress, on Jobs: Intake lists
-  none of them, only counts them in one line that links to Jobs, and says *Nothing waiting for intake* when none waits. Sources keeps each source's sync, the intake
+  none of them, only counts them in one line that links to Jobs, and says *Nothing waiting for intake* when none waits. A
+  request declined there is no row either: one line counts them. Sources keeps each source's sync, the intake
   migration and the repos outside the job repositories, and links to Intake with its counts; it lists no issue and offers
   no Approve.
 - **Access requests.** `#access-requests` (`ui/src/views/access-requests.tsx`): Asked for (credential requests), Vault

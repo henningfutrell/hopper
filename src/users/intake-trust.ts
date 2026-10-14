@@ -1,7 +1,8 @@
 // A user's intake trust (issue #652, design.md "Trusted origin and request cards"): whether a GitHub login is one of the
 // user's trusted actors — Access decides, the actors named in Settings → Intake by GitHub user id (issue #930; else the
 // connected login) told at each check by the login each account has now —, the text a person approved for an item, and
-// a person's approval of a request card, kept as the item's snapshot.
+// a person's approval of a request card, kept as the item's snapshot, and a person's decline of one (issue #1035), kept
+// as its event.
 // No Access (OpenFGA not set up) trusts nobody: every issue is then a request card.
 import type { AccessAnswer } from '../domain/access.ts';
 import { NO_INTAKE_ACCESS, type IntakeTrust } from '../domain/intake.ts';
@@ -46,6 +47,10 @@ export function storeIntakeTrust(store: UserStore, decide: DecideIntakeActor | u
           },
         });
       });
+    },
+    declined: (key, hash) => store.events.between(['source.request_declined'], '1970-01-01T00:00:00.000Z').some((e) => e.data.key === key && e.data.hash === hash),
+    decline(source, key, request, acting) {
+      store.events.append({ type: 'source.request_declined', data: { source, key, hash: request.hash, author: request.author, ...acting } });
     },
     assignedHere: (key) => assignedKeys(store).has(key),
     originPending: (key) => store.jobs.getBySourceKey(key)?.originPending === true,

@@ -1,10 +1,10 @@
 // A source's intake outcomes grouped by why (issue #798), for Intake (issue #897): one heading per group with its count,
 // then each issue waiting on an intake decision (issue #1035) — its reason — with the action the source
 // offers: Assign to me, Release claim, Take off the backburner (GitHub writes the user makes), and a request card with
-// Approve. No inner scroll box: the page scrolls, so no row hides. Each row says its issue number; an issue on the
+// Approve and Decline (issue #1035). No inner scroll box: the page scrolls, so no row hides. Each row says its issue number; an issue on the
 // backburner says since when and by whom (issue #808), and has a dashed edge, so it never looks taken or dropped. An issue a
 // person approved here stays in its place in Needs approval, says approved and what the sync made of it, and takes the
-// focus (issue #811): the list does not move under the person who acted. Taken and partly done issues are on Jobs.
+// focus (issue #811): the list does not move under the person who acted. So does an issue declined here (issue #1035). Taken and partly done issues are on Jobs.
 import { Flame, Hand, Loader2, Unlock } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
@@ -38,13 +38,13 @@ function Reason({ x }: { x: IntakeOutcome }) {
   return <span data-backburner-since title={b.since} className="text-muted-foreground">on the backburner {ago(b.since, now)}{b.by ? `, by ${b.by}` : ''}</span>;
 }
 
-/** Moves the focus to the row once its approval goes through: its Approve button is gone, and the focus must not be lost. */
+/** Moves the focus to the row once its approval or decline goes through: its buttons are gone, and the focus must not be lost. */
 function useFocusOnApproved(key: string) {
   const row = useRef<HTMLLIElement>(null);
   const state = useApprovals((s) => s[key]?.state);
   const was = useRef(state);
   useEffect(() => {
-    if (was.current === 'pending' && state === 'approved') row.current?.focus({ preventScroll: true });
+    if ((was.current === 'pending' && state === 'approved') || (was.current === 'declining' && state === 'declined')) row.current?.focus({ preventScroll: true });
     was.current = state;
   }, [state]);
   return { row, state };
@@ -55,14 +55,16 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
   const backburner = x.group === 'backburner';
   const n = issueNumber(x.key);
   const { row, state } = useFocusOnApproved(x.key);
-  const asked = x.action !== 'approve'; // the sync took the approved issue: its request card is gone, its approval shows here
+  const asked = x.action !== 'approve'; // the sync took the approved or declined issue: its request card is gone, the decision shows here
   return (
-    <li ref={row} tabIndex={state === 'approved' ? -1 : undefined} data-intake-item={x.key} data-backburner={backburner || undefined}
+    <li ref={row} tabIndex={state === 'approved' || state === 'declined' ? -1 : undefined} data-intake-item={x.key} data-backburner={backburner || undefined}
       className={cn('flex flex-wrap items-center gap-x-2 gap-y-1 outline-none', backburner && 'border-l-2 border-dashed pl-2')}>
       {n !== undefined && <span className="num text-muted-foreground">#{n}</span>}
       <GhLink url={x.key}>{x.title || x.key}</GhLink>
       {asked && state === 'pending' && <span data-approving className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" />approving ·</span>}
       {asked && state === 'approved' && <span data-approved className="text-ok">approved ·</span>}
+      {asked && state === 'declining' && <span data-declining className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" />declining ·</span>}
+      {asked && state === 'declined' && <span data-declined className="text-muted-foreground">declined ·</span>}
       {x.reason === undefined ? <Taken x={x} /> : <Reason x={x} />}
       {canOperate && x.action === 'assign' && (
         <Button size="xs" variant="outline" title="Assigns the issue to your GitHub account: the next sync takes it" onClick={() => void send('assign', 'Assigned to you')}><Hand />Assign to me</Button>

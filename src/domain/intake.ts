@@ -4,7 +4,8 @@
 // respected. The intake migration moves a source's existing items to these rules once, and lists what it changed.
 // An item not of a trusted origin (issue #652, intake-origin.ts) is not taken: it is a request card, which a person approves.
 // Each item not taken is in one not-taken group (issue #798), so the UI groups and counts them by why. An item on the
-// backburner says since when and by whom (issue #808), so it never looks dropped.
+// backburner says since when and by whom (issue #808), so it never looks dropped. A person may decline a request card
+// (issue #1035): its text is kept out until an edit makes it a new request; nothing is written to GitHub.
 import type { ItemText } from './item-snapshots.ts';
 import type { AccessAnswer } from './access.ts';
 import type { ActorRef, IntakeRequest } from './intake-origin.ts';
@@ -28,7 +29,7 @@ export interface IntakeOutcome {
   jobStatus?: JobStatus;
   /** With `reason`: the not-taken group it is in (issue #798). */
   group?: NotTakenGroup;
-  /** A request card (issue #652): what Approve approves. With `action: 'approve'`. */
+  /** A request card (issue #652): what Approve approves and Decline declines. With `action: 'approve'`. */
   request?: IntakeRequest;
   /** On the backburner (issue #808): since when and by whom, from its newest `labeled` event. Absent: not read. */
   backburner?: BackburnerSince;
@@ -42,24 +43,26 @@ export interface BackburnerSince {
 
 /**
  * Why an item was not taken, as a group (issue #798): a request card waiting for approval, not assigned to the user, on
- * the backburner, its pull request waits for review, partly done, or any other reason. In this order the UI lists them.
+ * the backburner, its pull request waits for review, partly done, a request a person declined (issue #1035), or any other
+ * reason. In this order the UI lists them.
  */
-export const NOT_TAKEN_GROUPS = ['request', 'not-assigned', 'backburner', 'pr-waiting', 'partly-done', 'other'] as const;
+export const NOT_TAKEN_GROUPS = ['request', 'not-assigned', 'backburner', 'pr-waiting', 'partly-done', 'declined', 'other'] as const;
 export type NotTakenGroup = typeof NOT_TAKEN_GROUPS[number];
 
 /**
  * `assign`: assign the item to the user's connected account. `release`: release a claim no job here holds. `approve`:
  * approve a request card's text (issue #652), the one key named, only while its text hashes as `hash`. `unbackburner`:
- * take the item off the backburner (issue #798): remove its `hopper:backburner` label.
+ * take the item off the backburner (issue #798): remove its `hopper:backburner` label. `decline` (issue #1035): decline a
+ * request card's text, offered with `approve`, the one key named, only while its text hashes as `hash`; nothing on GitHub.
  */
-export type IntakeActionKind = 'assign' | 'release' | 'approve' | 'unbackburner';
+export type IntakeActionKind = 'assign' | 'release' | 'approve' | 'unbackburner' | 'decline';
 
 export interface IntakeAction {
   kind: IntakeActionKind;
   keys: string[];
-  /** `approve`: the request's hash as the person read it. */
+  /** `approve`, `decline`: the request's hash as the person read it. */
   hash?: string;
-  /** `approve`: the person who approved it, as the event names them. */
+  /** `approve`, `decline`: the person who did it, as the event names them. */
   acting?: ActingPerson;
 }
 
@@ -90,7 +93,7 @@ export interface OutsideRepo {
 
 /** The events intake records (issue #440). */
 export type IntakeEventType = 'source.claim_released' | 'source.intake_migrated' | 'source.issues_assigned' | 'source.request_approved'
-  | 'source.request_opened' | 'source.backburner_lifted';
+  | 'source.request_opened' | 'source.backburner_lifted' | 'source.request_declined';
 
 /** What a job source learns for its intake (issue #440), for its own instance name. */
 export interface IntakeContext {
@@ -118,6 +121,10 @@ export interface IntakeTrust {
   approvedText(key: string): { title: string; body: string } | undefined;
   /** Record a person's approval of a source's request card: the item's snapshot is its text, and `source.request_approved`. */
   approve(source: string, key: string, text: ItemText, request: IntakeRequest, acting: ActingPerson | undefined): void;
+  /** Whether a person declined the item's request card with this text's hash (issue #1035). */
+  declined(key: string, hash: string): boolean;
+  /** Record a person's decline of a source's request card (issue #1035): `source.request_declined`, with its hash. */
+  decline(source: string, key: string, request: IntakeRequest, acting: ActingPerson | undefined): void;
   /** Whether this hopper assigned the item to the user (Sources, Assign to me): that assignment is the user's own act. */
   assignedHere(key: string): boolean;
   /** Whether the item's job waits for its origin (`Job.originPending`, the backfill): its issue is judged though it has a job. */
@@ -132,6 +139,8 @@ export const NO_INTAKE_TRUST: IntakeTrust = {
   trusted: async (acts) => new Map(acts.map((a) => [a.login.toLowerCase(), NO_INTAKE_ACCESS])),
   approvedText: () => undefined,
   approve: () => { throw new Error('no user store keeps approvals here'); },
+  declined: () => false,
+  decline: () => { throw new Error('no user store keeps declines here'); },
   assignedHere: () => false,
   originPending: () => false,
 };
