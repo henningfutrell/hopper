@@ -54,6 +54,16 @@ export const mirrorWorktreeOf = (workTree: string, jobId: string, repo: string):
 /** A GitHub repository's clone URL. */
 export const githubUrlOf = (repo: string): string => `https://github.com/${repo}.git`;
 
+/**
+ * The start lock (issue #1075): a directory in the git common dir of the repository a job worktree is made of — the
+ * repository mirror, or the work tree's own repository. Concurrent starts on one machine share that repository, so each
+ * takes it around its fetch and its worktree add, and git's gc runs inside it.
+ */
+export const JOB_WORKTREE_LOCK = 'hopper-start.lock';
+
+/** How long, in seconds, a start waits on a start lock that a live process holds before it takes the lock over (issue #1075). */
+const LOCK_WAIT_S = 300;
+
 /** What the job worktree command prints first, so the hopper knows the shell runs it (issue #518). */
 export const JOB_WORKTREE_RUNNING = 'hopper-worktree-running';
 
@@ -63,7 +73,9 @@ export const JOB_WORKTREE_RUNNING = 'hopper-worktree-running';
  * are on, `$6` 1 to fetch before a new worktree (0: this sync pass fetched already, or the mirror was just cloned).
  * Prints its outcome last. The worktree is made after one fetch (never prompting, issue #858) of the remote's
  * default branch only, pruned — blobless in a mirror —, detached at it, else the current branch's upstream, else
- * HEAD; one an earlier run of the job left is used as it is, nothing fetched. The mirror is `mirrorOf` when the work
+ * HEAD; one an earlier run of the job left is used as it is, nothing fetched. The fetch and the worktree add run under the
+ * repository's start lock (`JOB_WORKTREE_LOCK`, issue #1075), git's automatic gc in the foreground, so concurrent starts
+ * share one repository one at a time. The mirror is `mirrorOf` when the work
  * tree is no repository's top, or the top of one whose origin is not the job's (matched in any case); its origin must
  * be the repository. A missing one is cloned bare and blobless beside it, its branches moved to
  * `refs/remotes/origin/*` (so the reap reads what a job pushed as pushed), and moved in, so two jobs cloning at once
@@ -73,12 +85,20 @@ export const JOB_WORKTREE_RUNNING = 'hopper-worktree-running';
  * were busy lost or mangled a command of many lines typed into it, so every statement ends in `;` or a keyword.
  */
 const SCRIPT = [
-  'a=$1 b=$2 r=$3 url=$4 on=$5 f=$6;',
+  'a=$1 b=$2 r=$3 url=$4 on=$5 f=$6 l=;',
   'export GIT_TERMINAL_PROMPT=0;',
   "base() { git rev-parse --verify --quiet refs/remotes/origin/HEAD || git rev-parse --verify --quiet '@{upstream}' || git rev-parse --verify HEAD; };",
   // One fetch, of the default branch only (issue #858); a repository that knows no default branch fetches as it is set up.
-  'refresh() { d=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null); if [ -n "$d" ]; then git fetch --quiet --prune "$@" origin "${d#origin/}"; else git fetch --quiet --prune "$@"; fi; };',
-  'worktree() { p=$1; shift; [ -e "$p/.git" ] || { if [ "$f" = 1 ]; then refresh "$@" 2>/dev/null; fi; git worktree prune && git worktree add --quiet --detach "$p" "$(base)"; }; };',
+  'refresh() { d=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null); if [ -n "$d" ]; then g fetch --quiet --prune "$@" origin "${d#origin/}"; else g fetch --quiet --prune "$@"; fi; };',
+  // Git's automatic gc and maintenance run in the foreground, so under the start lock (issue #1075); `-c` reaches the
+  // fetches a blobless checkout makes too.
+  'g() { git -c gc.autoDetach=false -c maintenance.autoDetach=false "$@"; };',
+  // The repository's start lock (issue #1075): a directory, made or not at once on any machine. Its holder's pid is in
+  // it; a lock whose holder ended, or held past the wait, is moved aside and taken over.
+  `lock() { k=$(cd "$(git rev-parse --git-common-dir)" && pwd -P)/${JOB_WORKTREE_LOCK} i=0; until mkdir "$k" 2>/dev/null; do q=$(cat "$k/pid" 2>/dev/null); if [ -n "$q" ] && ! kill -0 "$q" 2>/dev/null || [ "$i" -ge ${LOCK_WAIT_S} ]; then echo "hopper: took over the start lock $k" >&2; mv "$k" "$k.stale-$$" 2>/dev/null && rm -rf "$k.stale-$$"; i=0; continue; fi; i=$((i+1)); sleep 1; done; l=$k; echo $$ > "$l/pid"; };`,
+  'unlock() { [ -z "$l" ] || rm -rf "$l"; l=; };',
+  "trap unlock EXIT; trap 'unlock; exit 1' HUP INT TERM;",
+  'worktree() { p=$1; shift; [ -e "$p/.git" ] || { lock; if [ "$f" = 1 ]; then refresh "$@" 2>/dev/null; fi; g worktree prune && g worktree add --quiet --detach "$p" "$(base)"; s=$?; unlock; return $s; }; };',
   'lc() { printf %s "$1" | tr "[:upper:]" "[:lower:]"; };',
   'of() { o=$(lc "$(git -C "$1" remote get-url origin 2>/dev/null)"); l=$(lc "$r"); case "$o" in *[:/]"$l"|*[:/]"$l".git|*[:/]"$l"/) return 0;; esac; return 1; };',
   // A bare clone's branches are `refs/heads/*`: moved to `refs/remotes/origin/*`, and fetched there from now on.
