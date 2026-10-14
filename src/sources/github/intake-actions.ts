@@ -1,10 +1,10 @@
 // The intake actions a person takes from Sources (issues #440, #652, #798): Assign to me, Release claim, Approve and Decline
-// (issue #1035) on a request card, and Take off the backburner — each only on an item the source's last discover offered
+// (issue #1035) on a request card — on a reopened card (issue #1126) Approve also takes `hopper:done` off —, and Take off the backburner — each only on an item the source's last discover offered
 // it for. Decline writes nothing to GitHub. Apart from source.ts for its size.
 import type { IntakeAction, IntakeActionResult, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import { requestHash, type IntakeRequest } from '../../domain/intake-origin.ts';
 import type { GitHubApi } from './api.ts';
-import { HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED } from './labels.ts';
+import { HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE } from './labels.ts';
 
 export const NOT_IN_SCOPE = 'not in this source\'s scope';
 export const TEXT_CHANGED_SINCE_SHOWN = 'its title or body changed since it was shown: read it again';
@@ -51,6 +51,8 @@ export async function intakeAct(c: IntakeActionContext, a: IntakeAction): Promis
     try {
       if (a.kind === 'approve') {
         if (!await c.approve(x.repo, key, x.request, a)) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }
+        // A reopened card (issue #1126): `hopper:done` goes, so the next sync takes the issue again.
+        if (x.request?.reopened) await c.api.removeLabels(x.repo, numberOf(key), [LABEL_DONE]);
       } else if (a.kind === 'decline') {
         // Only the text the person read, as the last sync showed it. Nothing on GitHub.
         if (!x.request || x.request.hash !== a.hash) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }

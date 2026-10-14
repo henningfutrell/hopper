@@ -1,5 +1,5 @@
 // The operator's actions from the command line (issue #374, design.md "Operator actions from the CLI"):
-// accept, reject, run a job again or send its pull request back for rework (issue #724), order the queue, set the queue gate, list the open questions with why each came to a
+// accept, reject, run a job again or send its pull request back for rework (issue #724), dismiss failed jobs (issue #1123), order the queue, set the queue gate, list the open questions with why each came to a
 // person (issue #679), answer, close or dismiss a question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
 // list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637); Merge now and Close PR (issue #677, cli-operator-pr.ts), and Tend again (issue #1010);
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
@@ -16,6 +16,7 @@
 import { parseArgs } from 'node:util';
 import { ESCALATION_REASONS, HANDOFF_RESOLUTIONS, QUEUE_GATE_MODES, type FailuresView, type QueueGate, type ReviewItemView, type User } from './domain/types.ts';
 import type { InstanceStore } from './domain/ports.ts';
+import { OPERATOR_CLI_NAME } from './domain/failures.ts';
 import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
 import { questionCall } from './cli-operator-questions.ts';
 import { SESSION_HEADER } from './http/ui/guard.ts';
@@ -24,16 +25,17 @@ import { loadSignInConfig } from './auth/index.ts';
 import { ARTIFACT_USAGE, artifactCall } from './cli-operator-artifact.ts';
 import { autoParkCall } from './cli-operator-auto-park.ts';
 import { MASTER_KEY_USAGE, TOKEN_USAGE, masterKeyCall, tokenCall, typesafeKeyCall } from './cli-operator-keys.ts';
+import { ACCOUNTS_USAGE, accountsCall } from './cli-operator-accounts.ts';
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
 import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts';
 import { REPO_USAGE, repoCall } from './cli-operator-repo.ts';
-import { DIRECT_USAGE, directCall } from './cli-operator-direct.ts';
+import { DIRECT_USAGE, directCall } from './cli-operator-direct.ts'; import { DISMISS_USAGE, dismissCall } from './cli-operator-dismiss.ts';
 import { REPORT_USAGE, reportCall } from './cli-operator-report.ts';
 import { SEARCH_USAGE, searchCall } from './cli-operator-search.ts';
 import { VAULT_USAGE, sandboxCall, templateCall, vaultCall } from './cli-operator-vault.ts';
 import { driftCall } from './cli-update-drift.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'vault', 'template', 'sandbox', 'token', 'report', 'search'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'accounts', 'vault', 'template', 'sandbox', 'token', 'report', 'search'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
@@ -41,6 +43,7 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
   hopper job rework <id> --notes <text>              send a done job's open pull request back: it becomes a draft, a new job reworks it, told the notes
   hopper job keep-original <id>                      a job held because its item changed: it runs the original text
   hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)
+${DISMISS_USAGE}
 ${DIRECT_USAGE}
   hopper queue order <id>...                         the user order: these waiting jobs, first to last, before every other
   hopper queue gate <mode> [--per-hour <n>|none]     the queue gate: ${QUEUE_GATE_MODES.join(' or ')}; auto-accept at most <n> an hour
@@ -84,6 +87,7 @@ ${ARTIFACT_USAGE}
 ${REPORT_USAGE}
 ${SEARCH_USAGE}
 ${LANES_USAGE}
+${ACCOUNTS_USAGE}
 ${VAULT_USAGE}
 ${TOKEN_USAGE}
   Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
@@ -100,12 +104,13 @@ export interface OperatorIo {
 /** A session lives this long at most, whatever the sign-in config's session lengths: one call, then it is dropped. */
 const SESSION_MS = 5 * 60_000;
 /** Who a CLI session is: no realm the sign-in config names, so a reconcile drops it. */
-const CLI_IDENTITY = { realm: CLI_REALM, subject: 'operator-cli', name: 'operator CLI', groups: [] };
+const CLI_IDENTITY = { realm: CLI_REALM, subject: 'operator-cli', name: OPERATOR_CLI_NAME, groups: [] };
 
 
 function jobCall(args: string[]): Call {
   const direct = directCall(args[0], args.slice(1));
   if (direct) return direct;
+  if (args[0] === 'dismiss') return dismissCall(args.slice(1));
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
   if (!id || extra.length > 0) throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');
@@ -249,6 +254,7 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'update') return driftCall(args);
   if (command === 'master-key') return masterKeyCall(args);
   if (command === 'lanes') return lanesCall(args);
+  if (command === 'accounts') return accountsCall(args, stdin);
   if (command === 'token') return tokenCall(args);
   if (command === 'vault') return vaultCall(args, stdin);
   if (command === 'template') return templateCall(args);

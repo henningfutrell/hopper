@@ -87,6 +87,7 @@ function broker(o: { cache?: RepoQueryCache; mergedAt?: number }) {
     },
     repo: async () => { throw new Error('not read'); },
     head: async () => { throw new Error('not read'); },
+    pullRequestBase: async () => { throw new Error('not read'); },
   };
   const proxy = createGitHubProxy({
     user: () => user, limiter: { take: () => undefined }, log: () => {}, now: () => now, ...(o.cache ? { cache: o.cache } : {}),

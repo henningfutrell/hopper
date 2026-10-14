@@ -23,5 +23,5 @@ export const LANDING_BATCH_EXAMPLES: Record<Extract<EventType, `landing_batch${s
   'landing_batch.back_merged': { repo: 'owner/repo', tip: '0123456789abcdef0123456789abcdef01234567', pullRequest: 1106, url: 'https://github.com/owner/repo/pull/1106', merge: 'bcdefabcdefabcdefabcdefabcdefabcdefabcde' },
   'landing_batch.back_merge_failed': { repo: 'owner/repo', tip: '0123456789abcdef0123456789abcdef01234567', batch: 1101, conflict: true, reason: 'dev has changes that conflict with main at 0123456789ab: GitHub cannot merge them' },
   'landing_batch.back_merge_issue_filed': { repo: 'owner/repo', tip: '0123456789abcdef0123456789abcdef01234567', issue: 1107, url: 'https://github.com/owner/repo/issues/1107' },
-  'landing_batches.changed': { from: { repos: {} }, to: { repos: { 'owner/repo': { tested: 'dev', everyMerges: 5, everyMinutes: 60 } } }, by: 'owner' },
+  'landing_batches.changed': { from: { repos: {} }, to: { repos: { 'owner/repo': { tested: 'dev', landing: 'main', everyMerges: 5, everyMinutes: 60 } } }, by: 'owner' },
 };

@@ -5,8 +5,10 @@
 // again with backoff within the retry limit; anything else goes to a person. Two cases act on nothing (issue #517):
 // a failure whose item already ran again is superseded, and one that failed more than a day before it was
 // assessed keeps its decision but waits on a person — its work may be stale, and it is too old to hold others. A
-// timed-out job (issue #630) is decided by its liveness first (`timed-out.ts`): its own, never grouped with others'.
+// timed-out job (issue #630) is decided by its liveness first (`timed-out.ts`): its own, never grouped with others'. A
+// failure it would hand to a person, of a job that reported a hopper bug about itself, is held on that report (issue #1147).
 import type { FailureClass, FailureDecision, FailureSettings, KnownCause, ProblemScope } from '../domain/types.ts';
+import { HOPPER_BUG_CAUSE } from './hopper-bug.ts';
 import { judgeTimeout, type LivenessFacts, type TimeoutKind } from './timed-out.ts';
 
 /** Another item's failure with the same signature, within the grouping window. */
@@ -34,6 +36,11 @@ export interface AssessInput {
   liveness?: LivenessFacts;
   /** The timed-out runs of its chain just before this one, newest first (issue #630). */
   earlierTimeouts?: TimeoutKind[];
+  /**
+   * The hopper bug the job reported about itself while it ran (issue #1147, `hopper-bug.ts`): its problem's title, why,
+   * and the open problem of its report, if any.
+   */
+  hopperBug?: { title: string; reason: string; open?: string };
 }
 
 /** A failure assessed longer than this after it failed takes no automatic action (issue #517). */
@@ -112,7 +119,19 @@ function summaryOf(i: AssessInput, decision: FailureDecision, auto: boolean, tit
 export function assess(i: AssessInput): Assessment {
   if (i.newer !== undefined) return superseded(i, i.newer);
   if (i.failedAgoMs !== undefined && i.failedAgoMs > STALE_AFTER_MS) return stale(i, i.failedAgoMs);
-  return judge(i);
+  const a = judge(i);
+  return i.hopperBug && a.decision === 'person' && i.settings.auto.hold ? heldOnReport(i, i.hopperBug, a) : a;
+}
+
+/**
+ * A failure the rules hand to a person, of a job that reported a hopper bug about itself (issue #1147): the hopper failed
+ * it, so it waits on its report's problem — held, never a person's while it waits — and runs again once the fix landed.
+ */
+function heldOnReport(i: AssessInput, bug: NonNullable<AssessInput['hopperBug']>, a: Assessment): Assessment {
+  return {
+    cls: 'shared', decision: 'hold', reasons: [bug.reason, ...a.reasons], auto: true, summary: summaryOf(i, 'hold', true, bug.title, undefined),
+    problem: bug.open ? { kind: 'join', id: bug.open } : { kind: 'open', title: bug.title, scope: {}, general: false, decision: 'hold', causeId: HOPPER_BUG_CAUSE },
+  };
 }
 
 /** What it would be without its age or a newer job: its class and decision. */

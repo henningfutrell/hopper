@@ -15,7 +15,7 @@ import type { DiskReading } from '../domain/machines.ts';
 import type { ResourceReading } from '../domain/machine-history.ts';
 import { DF_COMMAND, judged, readDf } from './disk.ts';
 import { RESOURCES_COMMAND, readResources } from './resources.ts';
-import { dockerArgv, dockerEnv } from '../executors/docker.ts';
+import { INFRA_CREDENTIALS_COMMAND, isInfraCredentialsLine, readInfraCredentials } from '../client/infra-credentials.ts';
 import { scrubbedEnv } from '../executors/env.ts';
 import type { ClientTransport } from '../executors/client.ts';
 import { HerdrError, createHerdrCliClient } from '../executors/herdr/index.ts';
@@ -39,6 +39,8 @@ export interface MachineProbe {
   disk?: DiskReading;
   /** Its CPU, memory and swap (issue #560). Absent: not read. */
   resources?: ResourceReading;
+  /** The infra credential folders its home holds (issue #1128 part 7). Absent: not read. */
+  infraCredentials?: string[];
   /** Why its work tree cannot be made usable (issue #361). Absent: it was made, or the probe could not say. */
   workTreeProblem?: string;
   /** An ssh target: the hopper's address it reaches (issue #698). Absent: not asked, or none reached. */
@@ -87,6 +89,8 @@ export function createAttachedMachineSource(o: AttachedOptions & {
   let disk: DiskReading | undefined;
   // Only the last probe's, as the disk: a machine offline has none.
   let resources: ResourceReading | undefined;
+  // Only the last probe's (issue #1128 part 7): a folder may be removed between probes.
+  let infraCredentials: string[] | undefined;
   // What the last probe found wrong with its work tree (issue #361); each probe says afresh.
   let workTreeProblem: string | undefined;
   // Where its jobs reach the hopper, or why they cannot (issue #698); each probe says afresh.
@@ -112,14 +116,14 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     lastProbe = now();
     o.probe().then(
       (p) => {
-        online = p.online; clientRelease = p.online ? p.client : undefined; home = p.home ?? home; disk = p.disk; resources = p.online ? p.resources : undefined; workTreeProblem = p.online ? p.workTreeProblem : undefined;
+        online = p.online; clientRelease = p.online ? p.client : undefined; home = p.home ?? home; disk = p.disk; resources = p.online ? p.resources : undefined; infraCredentials = p.online ? p.infraCredentials : undefined; workTreeProblem = p.online ? p.workTreeProblem : undefined;
         hopperUrl = p.online ? p.hopperUrl : undefined; addressProblem = p.online ? p.addressProblem : undefined;
         herdr = p.online ? p.herdr : undefined; herdrProblem = p.online ? p.herdrProblem : undefined;
         const noJob = [workTreeProblem, addressProblem, herdrProblem].filter((x) => x !== undefined).join('; ');
         say(!p.online ? `hopper: attached machine ${name} offline: ${down()}`
           : noJob ? `hopper: attached machine ${name} online (${reached()}), takes no new job: ${noJob}` : `hopper: attached machine ${name} online (${reached()})`);
       },
-      (e: unknown) => { online = false; clientRelease = undefined; disk = undefined; resources = undefined; workTreeProblem = undefined; hopperUrl = undefined; addressProblem = undefined; herdr = undefined; herdrProblem = undefined; say(`hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
+      (e: unknown) => { online = false; clientRelease = undefined; disk = undefined; resources = undefined; infraCredentials = undefined; workTreeProblem = undefined; hopperUrl = undefined; addressProblem = undefined; herdr = undefined; herdrProblem = undefined; say(`hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
     ).finally(() => { inFlight = false; });
   }
 
@@ -127,7 +131,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     async list() {
       probe();
       const m = o.machine();
-      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, ...(m.reservedLanes !== undefined ? { reservedLanes: m.reservedLanes } : {}), ...(m.elbowIns !== undefined ? { elbowIns: m.elbowIns } : {}), online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(m.workTrees !== undefined ? { workTrees: { ...m.workTrees } } : {}), ...(home ? { home } : {}), ...(disk ? { disk: judged(disk, 'docker' in m ? undefined : m.diskLow) } : {}), ...(resources ? { resources } : {}), ...('docker' in m || !m.sweep ? {} : { sweep: { ...m.sweep } }), ...(workTreeProblem ? { workTreeProblem } : {}) };
+      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, ...(m.reservedLanes !== undefined ? { reservedLanes: m.reservedLanes } : {}), ...(m.elbowIns !== undefined ? { elbowIns: m.elbowIns } : {}), online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(m.workTrees !== undefined ? { workTrees: { ...m.workTrees } } : {}), ...(home ? { home } : {}), ...(disk ? { disk: judged(disk, 'docker' in m ? undefined : m.diskLow) } : {}), ...(resources ? { resources } : {}), ...(infraCredentials ? { infraCredentials: [...infraCredentials] } : {}), ...('docker' in m || !m.sweep ? {} : { sweep: { ...m.sweep } }), ...(workTreeProblem ? { workTreeProblem } : {}) };
       if ('docker' in m) return [{ ...base, docker: m.docker }];
       if ('client' in m) {
         const name = m.client.template;
@@ -177,18 +181,18 @@ export type HerdrProbe = Pick<MachineProbe, 'online' | 'herdr' | 'herdrProblem'>
  * and `~` in a job's work tree resolves there, never in the hopper's own home (issue #323). In the same
  * call its work tree (the jobs directory when it names none) is made there, and what is wrong with it said
  * (issue #361): the home or above it, or a directory that cannot be made or written. Rejects when ssh
- * fails or the answer is not an absolute home. With it, the disk the home is on (issue #401), when its df says, and
- * its CPU, memory and swap (issue #560), when it has /proc.
+ * fails or the answer is not an absolute home. With it, the disk the home is on (issue #401), when its df says,
+ * its CPU, memory and swap (issue #560), when it has /proc, and the infra credential folders its home holds (issue #1128 part 7).
  */
 export function probeSsh(o: {
   target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number; workTree?: string;
   /** The hopper's addresses (issue #698): which one the machine reaches is asked in the same call. Absent: not asked. */
   hopperUrls?: readonly string[];
-}): Promise<{ home: string; disk?: DiskReading; resources?: ResourceReading; workTreeProblem?: string; hopperUrl?: string; addressProblem?: string }> {
+}): Promise<{ home: string; disk?: DiskReading; resources?: ResourceReading; infraCredentials?: string[]; workTreeProblem?: string; hopperUrl?: string; addressProblem?: string }> {
   const workTree = o.workTree ?? DEFAULT_WORK_TREE;
   // `~` as "$HOME" there; the path itself never reaches the shell unquoted.
   const there = workTree === '~' || workTree.startsWith('~/') ? `"$HOME"${shellQuote(workTree.slice(1))}` : shellQuote(workTree);
-  const command = `printf '%s\\n' "$HOME"; ${DF_COMMAND}; ${RESOURCES_COMMAND}; ${o.hopperUrls ? `${addressCommand(o.hopperUrls)}; ` : ''}w=${there}; if out=$(mkdir -p -- "$w" 2>&1); then if [ -w "$w" ]; then echo ${WORK_TREE_OK}; else echo "$w is not writable"; echo ${WORK_TREE_UNUSABLE}; fi;`
+  const command = `printf '%s\\n' "$HOME"; ${DF_COMMAND}; ${RESOURCES_COMMAND}; ${INFRA_CREDENTIALS_COMMAND}; ${o.hopperUrls ? `${addressCommand(o.hopperUrls)}; ` : ''}w=${there}; if out=$(mkdir -p -- "$w" 2>&1); then if [ -w "$w" ]; then echo ${WORK_TREE_OK}; else echo "$w is not writable"; echo ${WORK_TREE_UNUSABLE}; fi;`
     + ` else printf '%s\\n' "$out"; echo ${WORK_TREE_UNUSABLE}; fi`;
   // Each address asked takes at most 3 s more.
   const timeoutMs = o.timeoutMs ?? 15000 + 3500 * (o.hopperUrls?.length ?? 0);
@@ -208,11 +212,12 @@ export function probeSsh(o: {
         if (!home.startsWith('/')) return reject(new Error(`${o.target}: its home is not an absolute path: ${JSON.stringify(home)}`));
         const disk = readDf(stdout);
         const resources = readResources(stdout);
-        const found = { home, ...(disk ? { disk } : {}), ...(resources ? { resources } : {}), ...(o.hopperUrls ? readAddress(stdout, o.hopperUrls) : {}) };
+        const infraCredentials = readInfraCredentials(stdout);
+        const found = { home, ...(disk ? { disk } : {}), ...(resources ? { resources } : {}), ...(infraCredentials ? { infraCredentials } : {}), ...(o.hopperUrls ? readAddress(stdout, o.hopperUrls) : {}) };
         const refused = resolveWorkTree(workTree, home);
         if ('problem' in refused) return resolve({ ...found, workTreeProblem: refused.problem });
         if (lines.at(-1) === WORK_TREE_OK) return resolve(found);
-        const said = lines.slice(1, -1).filter((l) => !l.startsWith('hopper-disk ') && !l.startsWith('hopper-res ') && !isAddressLine(l)).join(' ').trim() || 'no answer';
+        const said = lines.slice(1, -1).filter((l) => !l.startsWith('hopper-disk ') && !l.startsWith('hopper-res ') && !isInfraCredentialsLine(l) && !isAddressLine(l)).join(' ').trim() || 'no answer';
         return resolve({ ...found, workTreeProblem: `its work tree ${workTree} cannot be made: ${said}` });
       }
       if (e.killed) return reject(new Error(`ssh ${o.target}: no answer within ${timeoutMs} ms`));
@@ -228,30 +233,6 @@ const WORK_TREE_UNUSABLE = 'hopper-work-tree-unusable';
 /** Whether a client target's herdr session runs: `status server` through its tunnel, signed. Rejects when the client cannot be reached or does not prove itself. */
 export async function probeClient(t: ClientTransport): Promise<boolean> {
   return /^status: running$/m.test(await createHerdrCliClient({ client: t, timeoutMs: 15000 }).exec(['status', 'server']));
-}
-
-/**
- * Whether a container target runs: `docker container inspect` says it is running. A missing container
- * is not. Only through the docker socket the hopper may open (design.md "Target authentication").
- */
-export function probeContainer(o: { container: string; dockerHost: () => string; dockerBin?: string; timeoutMs?: number }): Promise<boolean> {
-  return new Promise((resolve, reject) => {
-    let args: string[];
-    try {
-      args = dockerArgv(o.dockerHost(), ['container', 'inspect', '--format', '{{.State.Running}}', '--', o.container]);
-    } catch (e) {
-      return reject(e instanceof Error ? e : new Error(String(e)));
-    }
-    execFile(o.dockerBin ?? 'docker', args, {
-      env: dockerEnv(), timeout: o.timeoutMs ?? 15000, killSignal: 'SIGKILL', encoding: 'utf8',
-    }, (err, stdout, stderr) => {
-      const e = err as (Error & { killed?: boolean; code?: number | string }) | null;
-      if (e?.killed) return reject(new Error(`docker: no answer within ${o.timeoutMs ?? 15000} ms`));
-      if (e && typeof e.code !== 'number') return reject(new Error(`docker: ${e.message}`));
-      if (e) return /No such container/i.test(stderr) ? resolve(false) : reject(new Error(`docker: ${stderr.trim() || e.message}`));
-      resolve(stdout.trim() === 'true');
-    });
-  });
 }
 
 /**

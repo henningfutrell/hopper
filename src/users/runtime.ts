@@ -13,7 +13,7 @@ import { doneAtSource, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, ove
 import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
-import { logFailures } from '../engine/failure-log.ts';
+import { logFailures } from '../engine/failure-log.ts'; import { createJobTerminal, type JobTerminal } from '../engine/terminal.ts';
 import { linkToken } from '../client/link.ts';
 import type { MachineLinks } from '../machines/links.ts';
 import type { MachineJoin } from '../plugins/attached-edit.ts';
@@ -29,7 +29,7 @@ import { startHerdrSession } from '../plugins/machine-source/local/index.ts';
 import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugins/index.ts';
 import { splitSources } from './job-sources.ts';
 import { createFailures, type Failures } from '../failures/index.ts';
-import { createLogins, type Logins } from '../logins/index.ts';
+import { createLogins, createSignIns, type Logins, type SignIns } from '../logins/index.ts';
 import { createReviewServices } from '../review/index.ts';
 import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../minor-decisions/index.ts';
 import { userTypesafeKey } from './typesafe-key.ts';
@@ -37,7 +37,7 @@ import { openTldrs, type Tldrs } from '../tldr/haiku.ts';
 import { openUserSystemSecrets } from './system-secrets.ts';
 import { withSystemScope } from '../vault/system-view.ts';
 import type { SystemSecrets } from '../vault/system.ts';
-import { createQuestionService } from '../questions/index.ts';
+import { answerSignedOut, createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
 import { createSourceSync, followEvery, withFixedStatuses, type SourceSync } from '../sources/index.ts';
 import { accountEvents, createConnectedAccounts, fromRuntime, type ConnectedAccountsService } from '../connected-accounts/service.ts';
@@ -88,8 +88,8 @@ export interface UserRuntimeOptions {
   clientRelease: ClientRelease;
   /** The links of the machines dialled in to this hopper (the instance's; issue #308). */
   links: MachineLinks;
-  /** Where the store installs are unpacked (the instance's). */
-  installedDir: string;
+  /** Where the store installs are unpacked (the instance's); when this hopper's build was made, from its install record (issue #1147, the assessor's). */
+  installedDir: string; installedAt?: () => string | undefined;
   /** How often the plugins config's version is checked. */
   pluginsConfigIntervalMs: number;
   /**
@@ -138,8 +138,8 @@ export interface UserRuntime {
   reviews: ReviewServices;
   /** The escalation levels' names now: what may review a review section's items (issues #537, #543). */
   levelNames(): string[];
-  /** The logins a job or run waits on (issue #476). */
-  logins: Logins;
+  /** The logins a job or run waits on (issue #476), the tool sign-ins a person starts from Accounts, and the job's terminal (issue #1128). */
+  logins: Logins; signIns: SignIns; terminal: JobTerminal;
   /** The failure assessor (issue #509): every failed job judged, shared causes grouped into problems. */
   failures: Failures;
   /** Decider calls, Jev first (issue #550). */
@@ -308,7 +308,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // reached through closures that run only after `engine` exists (design.md "Construction
   // contract added").
   // The logins (issue #476): a login a job or an escalation level's run waits on, never a question.
-  const logins = createLogins({ store, clock });
+  // And the tool sign-ins (issue #1128): started by the usage sources that read each machine's tool. One that completes answers
+  // the not-signed-in questions on its machine (`onSignedIn`, reached only after `questions` exists).
+  const logins = createLogins({ store, clock }), signIns = createSignIns({ logins, sources: () => host.usageSources(), clock, onSignedIn: (s) => { answerSignedOut({ store, questions }, s); } });
   // Decider calls (issue #550) go through Jev first, through TypeSafe with the user's TypeSafe API key (issue #657).
   const minorDecisions: MinorDecisions = createMinorDecisions({ store, clock, logger, timeoutMs: JEV_TIMEOUT_MS, jev, typesafeKey: () => typesafeKey.view() });
   // The TL;DR of every long card (issue #569): Claude Haiku through the `claude` CLI, in the user's work dir.
@@ -374,9 +376,9 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     store, clock, logger, sweepMs: config.tickMs,
     // Continue (issue #551): the job's own agent session resumes where the engine says it can.
     rerun: sync.rerun, continueJob: sync.continueJob, takesBack: sync.takesBack, finishShipped: (jobId, result) => engine.sourceHost.finishShipped(jobId, result),
-    resumable: (job) => engine.resumable(job), dismiss: (jobId) => { engine.dismiss(jobId); }, machines: () => host.machines().list(),
+    resumable: (job) => engine.resumable(job), dismiss: (jobId, by) => { engine.dismiss(jobId, by); }, machines: () => host.machines().list(),
     workState: async (job) => sourceOf(job)?.workState?.(job), pullRequestOpen: async (job) => sourceOf(job)?.pullRequestOpen?.(job), doneAtSource: (job) => doneAtSource(sourceOf(job), job),
-    trigger: (reason) => engine.trigger(reason), minorDecisions: { first: minorDecisions, gated },
+    trigger: (reason) => engine.trigger(reason), minorDecisions: { first: minorDecisions, gated }, ...(o.installedAt ? { installedAt: o.installedAt } : {}),
   });
   applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); };
   // Deliveries and notifiers from now on, so an instance event (update.applied at boot) reaches them.
@@ -393,7 +395,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
   return {
     search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, needSteps, directJobs, sandboxRequests,
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound,
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }),
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
@@ -413,7 +415,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     stop() {
       stopped ??= (async () => {
         await search.stop(); jobStream.stop(); await proxy.githubProxy.bugReports.stop(); await proxy.githubProxy.watches.stop(); await proxy.githubProxy.componentWatchers.stop(); await proxy.githubProxy.landingBatches.stop(); await proxy.githubProxy.ledgerFallbackRead.stop();
-        await failures.stop();
+        await failures.stop(); signIns.stop();
         minorDecisions.stop(); await tldrs.stop();
         await sync.stop();
         history.stop(); connectedAccounts.stop();

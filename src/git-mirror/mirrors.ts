@@ -61,6 +61,11 @@ export interface GitMirrors {
   baseMerge(repo: string, remote: () => Promise<GitRemote>, pr: BaseMergeTarget): Promise<BaseMerge | undefined>;
   /** What pull request `pr` of `repo` changes, as git says after this pass's fetch (issue #935 part 2); undefined: git cannot say. */
   changes(repo: string, remote: () => Promise<GitRemote>, pr: PullRequestHead): Promise<PullRequestChanges | undefined>;
+  /**
+   * The commit branch `base` of `repo` is at, as this pass fetched it (issue #1143 part 3): a failed rebase tend is tended
+   * again once it moves. Undefined: git cannot say (outside a pass, another base, not fetched).
+   */
+  baseTip(repo: string, remote: () => Promise<GitRemote>, base: string): Promise<string | undefined>;
 }
 
 /** One git command in a mirror: its exit code and what it printed. Tests may give their own. */
@@ -252,6 +257,14 @@ export function createGitMirrors(o: { dir: string; log(line: string): void; traf
       if (pushed.code !== 0) return problem(`push refused: ${said(pushed)}`);
       at.f.heads.set(pr.number, oid);
       return { outcome: 'pushed', commit: oid, resolved: resolved.blobs.map((b) => b.path) };
+    },
+    async baseTip(repo, remote, base) {
+      const at = await fetchedIn(repo, remote, base);
+      if (!at) return undefined;
+      const r = await git(['--git-dir', at.path, 'rev-parse', '--verify', '--quiet', `refs/remotes/origin/${base}`], at.f.env);
+      if (r.code === 0) return r.stdout.trim();
+      o.log(`hopper: git mirror of ${repo}: the tip of ${base}: ${said(r)}`);
+      return undefined;
     },
     async changes(repo, remote, pr) {
       const at = await fetchedIn(repo, remote, pr.base);

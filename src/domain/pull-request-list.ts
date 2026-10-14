@@ -11,7 +11,7 @@
 // A tend job cancelled by no person and no source is tended again (issue #1010): its card waits on the tend, and says when.
 // So does one a person pressed Tend again on, after the hopper gave up (issue #1010).
 import type { Job } from './types.ts';
-import { followsWhenEnded, MAX_TEND_RETRIES, MAX_TENDS, noChecksSettled, readyToMerge, TEND_ENDS, tendRetryAt, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
+import { followsWhenEnded, MAX_TEND_RETRIES, MAX_TENDS, noChecksSettled, readyToMerge, rebasesWhenBaseMoves, TEND_ENDS, tendRetryAt, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Holds, QueueHead } from './tending-queue.ts';
 import { yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 import type { LandingCard } from './work-item-landing.ts';
@@ -147,10 +147,20 @@ function cardOf(job: Job, yolo: boolean, now: number, tendJob: Job | undefined):
     ...(job.finishedAt ? { since: job.finishedAt } : {}), yolo,
     ...(state === 'open' ? { waits } : {}), ...(tendJob ? { tendJobId: tendJob.id } : {}), ...(tendJob && f.tended ? { tendStep: f.tended.step } : {}),
     ...(tendJob && NOT_AT_WORK.includes(tendJob.status) ? { tendWaits: tendJob.waitReason ?? tendJob.holdReason ?? 'no free lane yet' } : {}),
-    ...(retryAt !== undefined ? { tendWaits: f.tended?.again ? 'a person asked to tend it again: it starts at the next sync' : `its tend job was cancelled: tended again from ${new Date(retryAt).toISOString()}` } : {}),
+    ...(retryAt !== undefined ? { tendWaits: retryWaits(f.tended!, tendJob!, retryAt) } : {}),
     ...(seen?.mergeError ? { mergeError: seen.mergeError } : {}),
   };
 }
+
+/** Why a tend job that ended is tended again (issues #1010, #1143 part 3): a person asked, its base branch moved, or a cancel. */
+function retryWaits(tended: Tended, tendJob: Job, retryAt: number): string {
+  if (tended.again) return 'a person asked to tend it again: it starts at the next sync';
+  if (tendJob.status === 'failed') return 'its base branch moved since its rebase failed: it is rebased again at the next sync';
+  return `its tend job was cancelled: tended again from ${new Date(retryAt).toISOString()}`;
+}
+
+/** What a failed rebase's card adds while the hopper watches its base branch (issue #1143 part 3). */
+const REBASES_WHEN_BASE_MOVES = 'the hopper rebases it again when its base branch moves';
 
 /** The most characters of a failed tend job's reason a card says (issue #927). */
 const MAX_TEND_FAILURE = 300;
@@ -165,8 +175,10 @@ function tendFailure(tendJob: Job, step: TendStep | undefined, tended: Tended | 
   if (tendJob.status === 'cancelled' && (tended?.retries ?? 0) >= MAX_TEND_RETRIES) {
     return `the job that ${did} was cancelled ${MAX_TEND_RETRIES + 1} times in a row: a person must look at it`;
   }
-  if (why === '') return `the job that ${did} ended ${tendJob.status}: a person must look at it`;
-  return `the job that ${did} failed: ${why.length > MAX_TEND_FAILURE ? `${why.slice(0, MAX_TEND_FAILURE - 1)}…` : why}`;
+  // The hopper read its base branch, so it rebases it again when that moves (issue #1143 part 3).
+  const then = tended?.baseAt !== undefined && rebasesWhenBaseMoves(tended, tendJob) ? `; ${REBASES_WHEN_BASE_MOVES}` : '';
+  if (why === '') return `the job that ${did} ended ${tendJob.status}: a person must look at it${then}`;
+  return `the job that ${did} failed: ${why.length > MAX_TEND_FAILURE ? `${why.slice(0, MAX_TEND_FAILURE - 1)}…` : why}${then}`;
 }
 
 /**

@@ -10,7 +10,7 @@ export type { StackProbe };
 import type { InstallKind, StackDrift, StackGap } from '../domain/types.ts';
 import { readInstallInfo } from './install.ts';
 import { readShippedCompose } from './shipped-compose.ts';
-import { PUBLISHED_IMAGE, updateCommands, updateLines } from './update-commands.ts';
+import { PUBLISHED_IMAGE, updateCommand } from './update-commands.ts';
 
 interface ComposeService {
   profiles?: unknown;
@@ -104,4 +104,4 @@ export function startStackDrift(o: Parameters<typeof createStackDrift>[0] & { lo
 
 /** The log line of a drifted stack; undefined when nothing differs. */
 export const driftLine = (d: StackDrift): string | undefined => (d.gaps.length === 0 ? undefined
-  : `hopper: the stack differs from the compose file of this version: ${d.gaps.map((g) => g.what).join('; ')}. Fix: update the whole stack (docs/deploy.md "Update")${d.image ? `: ${updateLines(updateCommands('podman', d.image)).join(' ; ')}` : ''}`);
+  : `hopper: the stack differs from the compose file of this version: ${d.gaps.map((g) => g.what).join('; ')}. Fix: update the whole stack (docs/deploy.md "Update")${d.image ? `: in the folder that holds compose.yaml, run ${updateCommand('podman', d.image)}` : ''}`);

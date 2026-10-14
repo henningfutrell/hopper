@@ -15,7 +15,7 @@
 //   Scenario: the pull requests a landing branch merged are read from its merge commits
 import { describe, expect, it } from 'vitest';
 import {
-  batchBody, batchBranch, batchChecks, batchDue, BATCH_NO_CHECKS_MINUTES, DEFAULT_LANDING_BATCHES, landingBatchStates, mergedPullRequests, patchLandingBatches,
+  batchBody, batchBranch, batchChecks, batchDue, BATCH_NO_CHECKS_MINUTES, DEFAULT_LANDING_BATCHES, landingBatchStates, landingBranch, mergedPullRequests, patchLandingBatches,
   type LandingBatchRepo,
 } from '../../src/domain/landing-batches.ts';
 import type { DomainEvent } from '../../src/domain/types.ts';
@@ -31,10 +31,18 @@ const ev = (type: string, data: Record<string, unknown>, at = ago(0)): DomainEve
 describe('the landing batch settings (issue #1073)', () => {
   it('adds a repository with the defaults, changes one part, and removes it with null', () => {
     const added = patchLandingBatches(DEFAULT_LANDING_BATCHES, { repos: { 'Owner/App': { tested: 'dev' } } });
-    expect(added).toEqual({ repos: { [REPO]: { tested: 'dev', everyMerges: 5, everyMinutes: 60 } } });
+    expect(added).toEqual({ repos: { [REPO]: { tested: 'dev', landing: 'main', everyMerges: 5, everyMinutes: 60 } } });
     const changed = patchLandingBatches(added, { repos: { [REPO]: { everyMerges: 2 } } });
-    expect(changed.repos[REPO]).toEqual({ tested: 'dev', everyMerges: 2, everyMinutes: 60 });
+    expect(changed.repos[REPO]).toEqual({ tested: 'dev', landing: 'main', everyMerges: 2, everyMinutes: 60 });
     expect(patchLandingBatches(changed, { repos: { [REPO]: null } })).toEqual({ repos: {} });
+  });
+
+  it('names the landing branch, `main` when left out, and keeps it for a repository saved before it (issue #1142)', () => {
+    const trunk = patchLandingBatches(DEFAULT_LANDING_BATCHES, { repos: { [REPO]: { tested: 'dev', landing: 'trunk' } } });
+    expect(trunk.repos[REPO]!.landing).toBe('trunk');
+    expect(patchLandingBatches(trunk, { repos: { [REPO]: { everyMerges: 2 } } }).repos[REPO]!.landing).toBe('trunk');
+    expect(landingBranch({ tested: 'dev', everyMerges: 5, everyMinutes: 60 })).toBe('main');
+    expect(landingBranch(trunk.repos[REPO]!)).toBe('trunk');
   });
 });
 

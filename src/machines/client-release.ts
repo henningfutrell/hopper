@@ -68,7 +68,7 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
     for (const s of answer.isolationStops ?? []) o.logger.warn(`hopper: client ${t.machine}: stopped job ${s.jobId} at ${s.at}, cut off from the hopper for ${Math.round(s.cutOffMs / 1000)} s`);
     const running = answer.release;
     const vault = { ...(answer.vault ? { vault: answer.vault } : {}), ...(answer.door ? { door: answer.door } : {}) };
-    const home = { ...(answer.home ? { home: answer.home } : {}), ...(answer.disk ? { disk: answer.disk } : {}), ...(answer.resources ? { resources: answer.resources } : {}) };
+    const home = { ...(answer.home ? { home: answer.home } : {}), ...(answer.disk ? { disk: answer.disk } : {}), ...(answer.resources ? { resources: answer.resources } : {}), ...(answer.infraCredentials ? { infraCredentials: answer.infraCredentials } : {}) };
     if (running === ours) {
       tries.delete(t.machine);
       say(t.machine, `hopper: client ${t.machine}: runs the hopper's release ${ours}`);

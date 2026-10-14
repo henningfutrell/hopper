@@ -11,8 +11,8 @@
 // as its own repository is, under the same ref check. Each fetch that goes to GitHub is counted for the job and the
 // repository (issue #858, `traffic.ts`): git asks for the refs once per fetch or clone, so that ask is the fetch.
 // The shrink guard (issue #1096): each ref update of a push to a branch that is there already is judged, with the
-// push's pack, by the user's side before anything reaches GitHub; a push that brings in the repository's default branch
-// and empties or shrinks a file the branch's own change did not is refused with the files named, as git's own refusal,
+// push's pack, by the user's side before anything reaches GitHub; a push that brings in the branch's base — its open pull
+// request's base, else the repository's landing branch, else its default branch (issue #1147) — and empties or shrinks a file the branch's own change did not is refused with the files named, as git's own refusal,
 // and the refusal (`github_proxy.refused`) carries them (`shrunk`).
 import { Readable } from 'node:stream';
 import { gunzipSync } from 'node:zlib';
@@ -35,6 +35,8 @@ export interface GitConnection {
   token(): Promise<string>;
   renew(refused: string): Promise<string>;
   repo(repo: string): Promise<RepoFacts>;
+  /** The base branch of the open pull request from `branch` of `repo`; undefined: none (issue #1147). */
+  pullRequestBase(repo: string, branch: string): Promise<string | undefined>;
 }
 
 /** One user's side: their jobs, their Contribution (issue #429), and their GitHub connection for git, or why there is none. */
@@ -42,6 +44,8 @@ export interface GitUser {
   user: ProxyUser;
   jobRepositories(): string[];
   contribution(): boolean;
+  /** The repository's landing branch while it has landing batches (issue #1073); undefined: it has none. */
+  landingBranch?(repo: string): string | undefined;
   git(): GitConnection | { problem: string };
   /**
    * The shrink guard (issue #1096): one ref update of a push, from `old` to `new`, with the push's pack, judged against
@@ -204,8 +208,16 @@ export function createGitProxy(o: GitProxyOptions) {
           return refusedReport(plain, refs, allowed.reason);
         }
         if (side.shrinkGuard && facts?.defaultBranch) {
+          const defaultBranch = facts.defaultBranch;
+          // The base a branch merges into (issue #1147): its open pull request's, else the landing branch, else the default
+          // branch. A pull request GitHub cannot say of is none: the push is not held up by the read.
+          const baseOf = async (ref: string): Promise<string> => {
+            const branch = ref.replace(/^refs\/heads\//, '');
+            const pull = await git.pullRequestBase(at.repo, branch).catch(() => undefined);
+            return pull ?? side.landingBranch?.(at.repo) ?? defaultBranch;
+          };
           for (const c of refs.filter((x) => !ZERO.test(x.old))) {
-            const judged = await side.shrinkGuard({ repo: at.repo, base: facts.defaultBranch, old: c.old, new: c.new, pack: read.pack });
+            const judged = await side.shrinkGuard({ repo: at.repo, base: await baseOf(c.ref), old: c.old, new: c.new, pack: read.pack });
             if (judged.ok) continue;
             record('github_proxy.refused', { refs: refs.map((x) => x.ref), reason: judged.reason, shrunk: judged.shrunk });
             return refusedReport(plain, refs, judged.reason);

@@ -30,11 +30,14 @@
 // changed that a read must confirm — merged or closed, a new head or base, merge conflicts changed or not known yet, checks
 // that fail now (the tend is told which), its item closed as not planned, a part that names it no more — or before the
 // hopper's merge. A follow with no batch answer reads GitHub as before.
+// Strays (issue #1143 part 4): a pull request a job named that no job follows, of an item no job works on, gets the same
+// housekeeping, with no follow (`housekeepStrays`): moved to the landing branch, or closed as superseded, and said on it.
 
-import { rechecksMerge, readyToMerge, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen } from '../../domain/types.ts';
+import { rechecksMerge, readyToMerge, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen, type Stray, type StrayHousekept, type TendStep } from '../../domain/types.ts';
 import type { Clock } from '../../domain/ports.ts';
 import { SourceError } from '../../domain/ports.ts';
-import { GitHubApiError, type GitHubApi, type PullRequestState } from './api.ts';
+import { GitHubApiError, type GitHubApi, type GitHubIssue, type NumberedPullRequest, type PullRequestState } from './api.ts';
+import { retargetNote, supersededNote, tendNote } from './pr-notes.ts';
 import { closesByKeyword, isClosedAsCompleted, isPartOf, namesIssue, worksOnAnotherIssue } from './completion.ts';
 import { LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY } from './labels.ts';
 import { allPartsDone, partsOf } from './parts.ts';
@@ -49,6 +52,8 @@ interface Followed { pullRequest?: string; follow?: string; part?: boolean; seen
  */
 export interface FollowContext extends ReportContext {
   yoloMode?: (repo: string) => boolean;
+  /** A repository's landing branch (issue #1143, its landing batch setting); absent or undefined: no pull request is moved. */
+  landingBranch?: (repo: string) => string | undefined;
   clock?: Clock;
   /** The batch's answer for pull request `number` of `repo`, taken once (issue #985); absent or undefined: read GitHub. */
   batched?: (repo: string, number: number) => PullRequestState | undefined;
@@ -71,7 +76,9 @@ function seenFromBatch(ctx: FollowContext, job: Job, s: Followed, url: string): 
   const before = s.seen;
   const b = repoOfPull(url).toLowerCase() === repo.toLowerCase() ? ctx.batched?.(repo, numberOf(url)) : undefined;
   if (!b || !before || b.state !== 'open' || b.mergeable === 'UNKNOWN') return undefined;
-  if (b.issue?.state === 'closed' && b.issue.stateReason === 'not_planned') return undefined;
+  // Its issue closed (abandoned, or superseded), or a base off the landing branch (issue #1143): a read decides.
+  const landing = ctx.landingBranch?.(repo);
+  if (b.issue?.state === 'closed' || (landing && b.base && b.base !== landing)) return undefined;
   if (s.part && !new RegExp(`\\bpart of #${number}\\b`, 'i').test(b.body)) return undefined;
   const conflicting = b.mergeable === 'CONFLICTING';
   const pushedAt = pushedAtOf(b);
@@ -129,7 +136,31 @@ async function stateOf(api: GitHubApi, repo: string, number: number, s: Followed
  * An open pull request: what is seen of it, and, yolo mode on and it ready, the hopper's merge, through the merge gate
  * (issue #939). A person's act (issue #677): merged or closed now, GitHub's refusal thrown.
  */
-async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct): Promise<{ ended: 'merged' | 'closed' } | { seen: PullRequestSeen }> {
+/** Say `body` on pull request `url` (issue #1143): only what the hopper did with it; a refusal loses only the comment. */
+async function note(api: GitHubApi, repo: string, url: string, body: string): Promise<void> {
+  await api.postComment(repo, numberOf(url), body).catch(() => undefined);
+}
+
+/** `JobSource.tendStarted` over `api` (issue #1143): the tend note on the job's own pull request. */
+export const tendStartedOn = (api: GitHubApi) => async (job: Job, pullRequest: string, step: TendStep): Promise<void> => {
+  if (repoOfPull(pullRequest).toLowerCase() !== job.source?.repo?.toLowerCase()) return;
+  await note(api, repoOfPull(pullRequest), pullRequest, tendNote(step));
+};
+
+/**
+ * The landing branch to move the open pull request to (issue #1143): its repository's, as its landing batch setting names
+ * it (never GitHub's default branch, issue #1142), when its base is another branch that is no open pull request's head (a
+ * stack, issue #900). Undefined: it stays, and so does every pull request of a repository with no landing batches.
+ */
+async function retargetTo(ctx: FollowContext, repo: string, pr: NumberedPullRequest): Promise<string | undefined> {
+  const to = ctx.landingBranch?.(repo);
+  if (!to || !pr.base || pr.base === to) return undefined;
+  const stacked = (await ctx.api.openPullRequests(repo)).some((p) => p.headRef === pr.base);
+  return stacked ? undefined : to;
+}
+
+async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRequestSeen | undefined, act?: PullRequestAct):
+  Promise<{ ended: 'merged' | 'closed'; superseded?: string } | { seen: PullRequestSeen; retargeted?: { from: string; to: string } }> {
   const repo = job.source!.repo!;
   if (act === 'close') {
     await ctx.api.closeWithoutMerge(repo, numberOf(url));
@@ -148,6 +179,11 @@ async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRe
     ...(pr.commits ? { commits: pr.commits } : before?.commits ? { commits: before.commits } : {}),
     ...(pr.files ? { files: pr.files } : before?.files ? { files: before.files } : {}),
   };
+  // Housekeeping (issue #1143), never on a person's act: off the landing branch, it moves there, and waits for the next
+  // read; with no commit its base lacks, nothing is left to land, and it is closed.
+  const kept = !act ? await housekeep(ctx, repo, url, pr) : undefined;
+  if (kept && 'retargeted' in kept) return { seen: { ...seen, base: kept.retargeted.to }, retargeted: kept.retargeted };
+  if (kept) return { ended: 'closed', superseded: kept.superseded };
   const now = (ctx.clock?.now() ?? new Date()).getTime();
   // Whatever its job's origin (issue #805): the trust decision was made when the job ran, before its pull request.
   if (pr.state !== 'open' || !ctx.yoloMode?.(repo) || !readyToMerge(seen, now)) return { seen };
@@ -159,6 +195,75 @@ async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRe
     if (err instanceof GitHubApiError && !err.permanent) throw err;
     return { seen: { ...seen, mergeError: (err as Error).message } };
   }
+}
+
+/**
+ * Housekeeping of the open pull request `url` (issue #1143): off the landing branch, it is moved there; with no commit its
+ * base lacks, nothing is left to land, and it is closed. Each said on it. Undefined: it stays as it is.
+ */
+async function housekeep(ctx: FollowContext, repo: string, url: string, pr: NumberedPullRequest):
+  Promise<{ retargeted: { from: string; to: string } } | { superseded: string } | undefined> {
+  if (pr.state !== 'open') return undefined;
+  const to = await retargetTo(ctx, repo, pr);
+  if (to) {
+    await ctx.api.retarget(repo, numberOf(url), to);
+    await note(ctx.api, repo, url, retargetNote(pr.base!, to));
+    return { retargeted: { from: pr.base!, to } };
+  }
+  if (pr.commits?.length === 0 && pr.base) return closeSuperseded(ctx.api, repo, url, `its changes are already on ${pr.base}`);
+  return undefined;
+}
+
+/**
+ * Housekeeping of stray pull requests (issue #1143 part 4, `JobSource.housekeepStrays`): which are open, from one batched read
+ * of their repositories' open pull requests; each open one of its job's own repository is read, then closed as superseded by
+ * the pull request that closed its issue, or as `housekeep` says. Its item closed as not planned, it is left as it is, as an
+ * abandoned follow leaves it. A repository GitHub does not answer for, or a stray whose housekeeping throws, is logged and
+ * asked again at the next round.
+ */
+export async function housekeepStrays(ctx: FollowContext, strays: Stray[]): Promise<StrayHousekept[]> {
+  const own = strays.filter((s) => s.job.source?.repo && s.job.source.number && repoOfPull(s.pullRequest).toLowerCase() === s.job.source.repo.toLowerCase());
+  if (own.length === 0) return [];
+  const open = await ctx.api.openPullRequestsIn([...new Set(own.map((s) => s.job.source!.repo!))]);
+  for (const [repo, error] of open.repoErrors) console.warn(`hopper: the stray pull requests of ${repo} were not read, asked again at the next round: ${error}`);
+  const done: StrayHousekept[] = [];
+  for (const s of own) {
+    if (!open.repos.get(s.job.source!.repo!)?.some((p) => p.url === s.pullRequest)) continue;
+    try {
+      const kept = await housekeepStray(ctx, s);
+      if (kept) done.push({ jobId: s.job.id, pullRequest: s.pullRequest, part: s.part, ...kept });
+    } catch (e) {
+      console.warn(`hopper: housekeeping of the stray pull request ${s.pullRequest} failed, asked again at the next round: ${(e as Error).message}`);
+    }
+  }
+  return done;
+}
+
+async function housekeepStray(ctx: FollowContext, s: Stray): Promise<{ retargeted: { from: string; to: string } } | { superseded: string } | undefined> {
+  const { repo, number } = s.job.source as { repo: string; number: number };
+  const issue = await ctx.api.getIssue(repo, number);
+  if (issue.state === 'closed' && issue.stateReason === 'not_planned') return undefined;
+  const elsewhere = s.part ? undefined : await supersededBy(ctx.api, repo, number, issue, s.pullRequest);
+  if (elsewhere) return { superseded: (await closeSuperseded(ctx.api, repo, s.pullRequest, elsewhere)).superseded };
+  const pr = await ctx.api.pullRequest(repo, numberOf(s.pullRequest));
+  return pr && housekeep(ctx, repo, s.pullRequest, pr);
+}
+
+/** Close pull request `url` without a merge, as nothing is left to land (issue #1143), and say why on it. */
+async function closeSuperseded(api: GitHubApi, repo: string, url: string, why: string): Promise<{ ended: 'closed'; superseded: string }> {
+  await api.closeWithoutMerge(repo, numberOf(url));
+  await note(api, repo, url, supersededNote(why));
+  return { ended: 'closed', superseded: why };
+}
+
+/**
+ * Why the open pull request `url` is superseded by its issue (issue #1143): the issue closed as completed by the merge of
+ * another pull request. Undefined: it is not. A part never is: its issue's close is for the whole.
+ */
+async function supersededBy(api: GitHubApi, repo: string, number: number, issue: GitHubIssue | undefined, url: string): Promise<string | undefined> {
+  if (issue?.state !== 'closed' || issue.stateReason === 'not_planned') return undefined;
+  const closer = await api.closingPullRequest(repo, number);
+  return closer && closer.url !== url && isClosedAsCompleted(issue, closer) ? `its issue was closed by ${closer.url}` : undefined;
 }
 
 /**
@@ -202,11 +307,6 @@ async function recheckMerge(api: GitHubApi, repo: string, number: number, s: Fol
   return { outcome: 'merged', pullRequest: url, part: true, state: { ...s, part: true } };
 }
 
-const isClosedAsNotPlanned = async (api: GitHubApi, repo: string, number: number): Promise<boolean> => {
-  const issue = await api.getIssue(repo, number);
-  return issue.state === 'closed' && issue.stateReason === 'not_planned';
-};
-
 /** The item closed as not planned upstream (issue #428): the follow ends abandoned; the waiting labels come off. */
 async function abandon(api: GitHubApi, repo: string, number: number, s: Followed & Record<string, unknown>, url: string | undefined): Promise<FollowUp> {
   await api.removeLabels(repo, number, [LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_FAILED]);
@@ -233,21 +333,29 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
       return { outcome: 'open', pullRequest: s.pullRequest!, part: s.part === true, state: { ...s, seen: batched } };
     }
     let now = await stateOf(ctx.api, repo, number, s);
-    if (!act && (!now || now.state === 'open') && await isClosedAsNotPlanned(ctx.api, repo, number)) return await abandon(ctx.api, repo, number, s, now?.url);
+    const issue = !act && (!now || now.state === 'open') ? await ctx.api.getIssue(repo, number) : undefined;
+    if (issue?.state === 'closed' && issue.stateReason === 'not_planned') return await abandon(ctx.api, repo, number, s, now?.url);
     if (!now && act) throw new SourceError('no pull request is found for it yet', true);
     if (!now) return undefined;
     const part = s.part === true;
     let byHopper = false;
     let mergedHere = false;
-    if (now.state === 'open') {
+    let superseded: string | undefined;
+    // Done by another pull request (issue #1143): nothing is left to land, and the item is done.
+    const doneElsewhere = now.state === 'open' && !part ? await supersededBy(ctx.api, repo, number, issue, now.url) : undefined;
+    if (doneElsewhere) {
+      superseded = (await closeSuperseded(ctx.api, repo, now.url, doneElsewhere)).superseded;
+      now = { state: 'closed', url: now.url };
+    } else if (now.state === 'open') {
       const w = await waiting(ctx, job, now.url, s.seen, act);
       if ('seen' in w) {
-        if (JSON.stringify(w.seen) === JSON.stringify(s.seen)) return undefined;
-        return { outcome: 'open', pullRequest: now.url, part, state: { ...s, seen: w.seen } };
+        if (JSON.stringify(w.seen) === JSON.stringify(s.seen) && !w.retargeted) return undefined;
+        return { outcome: 'open', pullRequest: now.url, part, state: { ...s, seen: w.seen }, ...(w.retargeted ? { retargeted: w.retargeted } : {}) };
       }
       now = { state: w.ended, url: now.url };
       byHopper = !act;
       mergedHere = w.ended === 'merged';
+      superseded = w.superseded;
     }
     // A merge that did not close the issue is a part (issue #721), whatever the report took it for — unless the hopper
     // merged it and it ships no part: then the hopper closes the issue (issue #677).
@@ -258,13 +366,13 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     const parts = now.state === 'merged' && shipsPart ? await partsOf(ctx.api, await ctx.api.getIssue(repo, number), now.url) : undefined;
     // A failed job's followed pull request (issue #786) ends its `hopper:failed` too.
     await ctx.api.removeLabels(repo, number, [LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_FAILED]);
-    const add = now.state === 'closed' ? LABEL_PR_CLOSED : shipsPart && !allPartsDone(parts) ? undefined : LABEL_DONE;
+    const add = doneElsewhere ? LABEL_DONE : now.state === 'closed' ? LABEL_PR_CLOSED : shipsPart && !allPartsDone(parts) ? undefined : LABEL_DONE;
     if (add) {
       await ensureLabels(ctx, repo);
       await ctx.api.addLabels(repo, number, [add]);
     }
     const after = { ...s, pullRequest: now.url, follow: now.state, ...(shipsPart ? { part: true } : {}), ...(whole ? { mergeChecked: true } : {}), ...(parts ? { parts } : {}) };
-    return { outcome: now.state, pullRequest: now.url, part: shipsPart, ...(byHopper ? { byHopper } : {}), state: after };
+    return { outcome: now.state, pullRequest: now.url, part: shipsPart, ...(byHopper && !superseded ? { byHopper } : {}), ...(superseded ? { superseded } : {}), state: after };
   } catch (err) {
     if (err instanceof SourceError) throw err;
     // A person's act is answered GitHub's refusal as it is (issue #677); a sync asks again later.

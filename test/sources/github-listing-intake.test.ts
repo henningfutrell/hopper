@@ -40,10 +40,11 @@ describe('intake from the listing cache (issue #985)', () => {
     const { gh, source, count, pass } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     await source.discover({ due: true });
-    gh.createIssue({ repo: REPO, labels: ['hopper'] });
     pass(5 * MIN);
     expect((await source.discover({ due: true })).map((i) => i.number)).toEqual([1]);
     expect(count('listRepos')).toBe(1);
+    // A change GitHub shows before the interval ends lists at once (issue #1125, the change read).
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
     pass(10 * MIN);
     expect((await source.discover({ due: true })).map((i) => i.number)).toEqual([1, 2]);
     expect(count('listRepos')).toBe(2);

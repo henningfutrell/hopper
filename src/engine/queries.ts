@@ -3,7 +3,7 @@ import { isLocked } from '../domain/locked.ts';
 import type { WorkItemLedger, WorkItemState } from '../domain/work-items.ts';
 import { effectivePriority, order } from '../decider/assign.ts';
 import { laneEffect, readingsOf } from '../decider/usage.ts';
-import { TERMINAL_STATUSES, highFirst, withPhase, isHighPriority, prioritySettingsOf, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
+import { TERMINAL_STATUSES, highFirst, withPhase, isHighPriority, prioritySettingsOf, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type HopperDisk, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
 import { policyOf, type EngineContext } from './context.ts';
 import { usageLimitsOf } from './usage-limits.ts';
 import { gateOf, isUnaccepted, preSort } from './queue-gate.ts';
@@ -39,7 +39,8 @@ export interface QueueView {
 /** How far back `ended` reaches: the UI's cards count ended jobs over this window, and list the same jobs. */
 export const ENDED_WINDOW_MS = 24 * 3_600_000;
 
-export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[] };
+/** `hopperDisk`: the hopper's own disk use there, as the sweep last measured it (issue #1120); absent, never measured. */
+export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk };
 
 export interface Queries {
   getQueue(): QueueView;
@@ -59,7 +60,7 @@ function lockedOf(all: Job[], ledger: Pick<WorkItemLedger, 'get'>): Job[] {
     .sort((a, b) => b.priority - a.priority || a.createdAt.localeCompare(b.createdAt));
 }
 
-export function createQueries(c: EngineContext): Queries {
+export function createQueries(c: EngineContext, diskOf: (machineId: string) => HopperDisk | undefined = () => undefined): Queries {
   const getUsage = async (): Promise<UsageReading[]> => (await Promise.all(c.usage().map((u) => u.poll()))).flat();
   const getUsageSources = (): UsageSourceReport[] => c.usage().map((u) => ({ name: u.name, ...u.state?.() }));
   return {
@@ -89,11 +90,10 @@ export function createQueries(c: EngineContext): Queries {
     async getMachines() {
       const [machines, usage] = await Promise.all([c.machines.list(), getUsage()]);
       const lanes = c.store.lanes.list();
-      return machines.map((m) => ({
-        ...m,
-        lanes: lanes.filter((l) => l.machineId === m.id),
-        usage: readingsOf(m.id, usage),
-      }));
+      return machines.map((m) => {
+        const hopperDisk = diskOf(m.id);
+        return { ...m, lanes: lanes.filter((l) => l.machineId === m.id), usage: readingsOf(m.id, usage), ...(hopperDisk ? { hopperDisk } : {}) };
+      });
     },
     getUsage,
     getUsageSources,

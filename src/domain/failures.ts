@@ -235,6 +235,8 @@ export type HandoffResolutionAction = typeof HANDOFF_RESOLUTIONS[number];
 /** The ways a person acts on failures (issue #623): the UI, the operator CLI (`hopper problem|handoff|failure`), or an API token (issue #718). */
 export const ACTION_VIAS = ['ui', 'cli', 'api'] as const;
 export type ActionVia = typeof ACTION_VIAS[number];
+/** The name a person acting through the operator CLI is kept under: the CLI's session signs in no person (issue #374). */
+export const OPERATOR_CLI_NAME = 'operator CLI';
 /** Who acted on a problem, a hand-off or a failure (issue #623): the person the session signed in, and the way. Kept in the events. */
 export interface ActingPerson { person: string; via: ActionVia }
 

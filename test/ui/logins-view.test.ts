@@ -29,6 +29,7 @@ interface Daemon { logins: Record<string, unknown>[]; now?: () => string; role?:
 
 function fakeDaemon(d: Daemon) {
   const posts: string[] = [];
+  const bodies: unknown[] = [];
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
@@ -53,12 +54,13 @@ function fakeDaemon(d: Daemon) {
     }
     if (path.startsWith('/ui/api/')) {
       posts.push(`${init.method ?? 'GET'} ${path}`);
+      bodies.push(init.body ? JSON.parse(String(init.body)) : undefined);
       if (d.mutationStatus) return json(d.mutationStatus, { error: 'missing or invalid x-hopper-session', session: 'ended' });
       return json(200, {});
     }
     return json(200, routes[path] ?? {});
   });
-  return { fetch, posts };
+  return { fetch, posts, bodies };
 }
 
 /** The stream: the test sends an event through it as the daemon would. */
@@ -247,5 +249,43 @@ describe('the Logins view', () => {
     expect(c.querySelector('[data-slot="login-notice"]')?.textContent).toContain('viewer');
     expect([...c.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Cancel');
     expect(c.querySelector('[data-countdown]')?.textContent).toBe('14:59');
+  });
+});
+
+describe('a tool sign-in (issue #1128)', () => {
+  const SIGN_IN_URL = 'https://claude.com/cai/oauth/authorize?code=true&state=s1';
+  const signIn = (over: Record<string, unknown> = {}) => pending({
+    kind: 'paste_code', tool: 'claude', jobId: undefined, laneId: undefined, run: 'sign-in', renewable: false, userCode: undefined,
+    verificationUrl: SIGN_IN_URL, host: 'claude.com', ...over,
+  });
+
+  it('no job: names the sign-in on its machine, opens the sign-in page, and sends the code pasted from it', async () => {
+    await boot('#logins', { logins: [signIn()] });
+    const c = card()!;
+    expect(c.textContent).toContain('the claude sign-in on Desk tower');
+    expect(c.textContent).toContain('The sign-in stops in');
+    expect(c.querySelector('[data-device-code]')).toBeNull();
+    expect(c.querySelector('a[data-open-sign-in]')?.getAttribute('href')).toBe(SIGN_IN_URL);
+    expect(c.textContent).not.toContain('Request a new code');
+    const input = c.querySelector<HTMLInputElement>('[data-slot="sign-in-code"] input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, ' abc#def ');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => { c.querySelector<HTMLButtonElement>('[data-slot="sign-in-code"] button[type="submit"]')!.click(); });
+    await settle();
+    expect(daemon.posts).toContain('POST /ui/api/logins/l1/code');
+    expect(daemon.bodies.at(daemon.posts.indexOf('POST /ui/api/logins/l1/code'))).toEqual({ code: 'abc#def' });
+  });
+
+  it('a viewer sees neither the page nor the field', async () => {
+    await boot('#logins', { logins: [signIn()], role: 'viewer' });
+    expect(card()!.querySelector('[data-slot="sign-in-code"]')).toBeNull();
+    expect(card()!.querySelector('[data-slot="login-notice"]')).not.toBeNull();
+  });
+
+  it('a failed sign-in says why, and to start it again from Accounts', async () => {
+    await boot('#logins', { logins: [signIn({ status: 'failed', reason: 'Login failed: Request failed with status code 400', endedAt: at(1), codeKept: false, verificationUrl: undefined })] });
+    expect(card()!.textContent).toContain('Failed: Login failed: Request failed with status code 400. Start it again from Accounts.');
   });
 });

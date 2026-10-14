@@ -6,9 +6,10 @@
 // Each item not taken is in one not-taken group (issue #798), so the UI groups and counts them by why. An item on the
 // backburner says since when and by whom (issue #808), so it never looks dropped. A person may decline a request card
 // (issue #1035): its text is kept out until an edit makes it a new request; nothing is written to GitHub.
+// An issue reopened after its job was done (issue #1126) is a request card again, with the item's history.
 import type { ItemText } from './item-snapshots.ts';
 import type { AccessAnswer } from './access.ts';
-import type { ActorRef, IntakeRequest } from './intake-origin.ts';
+import type { ActorRef, IntakeRequest, ItemHistory } from './intake-origin.ts';
 import type { ActingPerson } from './failures.ts';
 import type { JobStatus } from './types.ts';
 
@@ -112,6 +113,36 @@ export interface IntakeContext {
   requestOpened(key: string, hash: string): boolean;
   /** The keys of this source's request cards the work-item ledger has waiting for approval (issue #1067, part 4). */
   requestsWaiting(): string[];
+  /** The item's jobs here and its pull request (issue #1126): a reopened card's history. Undefined: no job here. */
+  history?(key: string): ItemHistory | undefined;
+}
+
+/**
+ * Whether one item's `source.request_opened` with this hash is in `events` (oldest first) after its last
+ * `source.request_withdrawn` or `source.request_approved` (issues #1067 part 4, #1126): a card back in Intake opens again,
+ * and so does a reopened item's card of a text approved before.
+ */
+export function requestOpenedSince(events: readonly { type: string; data: Record<string, unknown> }[], hash: string): boolean {
+  const from = events.findLastIndex((e) => e.type === 'source.request_withdrawn' || e.type === 'source.request_approved') + 1;
+  return events.slice(from).some((e) => e.type === 'source.request_opened' && e.data.hash === hash);
+}
+
+/** How many of an item's jobs a reopened card names. */
+const HISTORY_JOBS = 10;
+
+/** An item's history (issue #1126): `newest` and the jobs it ran again (`rerunOf`), at most ten, and its pull request. */
+export function itemHistory(newest: { id: string; status: string; rerunOf?: string } | undefined,
+  get: (id: string) => { id: string; status: string; rerunOf?: string } | undefined, pullRequest?: string): ItemHistory | undefined {
+  if (!newest) return undefined;
+  const jobs: ItemHistory['jobs'] = [];
+  const seen = new Set<string>();
+  let j: typeof newest | undefined = newest;
+  while (j && jobs.length < HISTORY_JOBS && !seen.has(j.id)) {
+    seen.add(j.id);
+    jobs.push({ id: j.id, status: j.status });
+    j = j.rerunOf ? get(j.rerunOf) : undefined;
+  }
+  return { jobs, ...(pullRequest ? { pullRequest } : {}) };
 }
 
 /** What a job source asks of the user's intake to judge an item's origin (issue #652): kept by the user's store, decided by Access. */

@@ -5,7 +5,9 @@
     "by": {
       "type": "string",
       "enum": [
-        "user"
+        "user",
+        "superseded",
+        "item_closed"
       ]
     }
   },

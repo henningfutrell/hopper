@@ -8,6 +8,8 @@
 // its machine scripts (issue #410); `POST /runtime` a container runtime call on the machine's own runtime (issue #708). One session per link: a client that dials in again is a new link.
 import { DISCOVER_TIMEOUT_MS } from '../client/discover.ts';
 import { CHECKPOINT_TIMEOUT_MS } from '../client/checkpoint.ts';
+import { infraCredentialsOf } from '../client/infra-credentials.ts';
+import { SIGN_IN_PASTE_MS, SIGN_IN_URL_MS, type SignInRun } from '../client/sign-in.ts';
 import { connect, type ClientHttp2Session } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import type { IsolationStop } from '../client/isolation.ts';
@@ -70,6 +72,29 @@ export function clientClaude(t: ClientTransport, args: string[], timeoutMs: numb
   return clientCall<ClientAnswer>(t, '/claude', { args, timeoutMs }, timeoutMs);
 }
 
+/**
+ * The claude sign-in on the client target (issue #1128, src/client/sign-in.ts): the client starts it and answers its URL; the code
+ * a person pasted goes down the same link, and the client answers how it ended. Throws when it cannot start.
+ */
+export async function clientSignIn(t: ClientTransport, email?: string): Promise<SignInRun> {
+  const started = await clientCall<{ id?: unknown; url?: unknown; error?: unknown }>(t, '/sign-in', { act: 'start', ...(email ? { email } : {}) }, SIGN_IN_URL_MS);
+  if (typeof started.error === 'string') throw new ClientError(`client ${t.machine}: ${started.error}`);
+  if (typeof started.id !== 'string' || typeof started.url !== 'string') throw new ClientError(`client ${t.machine}: no sign-in in its answer`);
+  const id = started.id;
+  return {
+    url: started.url,
+    async paste(code) {
+      try {
+        const r = await clientCall<{ ok?: unknown; reason?: unknown }>(t, '/sign-in', { act: 'paste', id, code }, SIGN_IN_PASTE_MS);
+        return r.ok === true ? { ok: true } : { ok: false, reason: typeof r.reason === 'string' ? r.reason : 'the client gave no reason' };
+      } catch (e) {
+        return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+      }
+    },
+    cancel() { clientCall(t, '/sign-in', { act: 'cancel', id }, 15000).catch(() => undefined); },
+  };
+}
+
 /** An escalation level's run on the client target (issue #482): the client runs its own claude, locked down, the prompt on stdin. */
 export function clientLevel(t: ClientTransport, call: { model: string; effort?: string; jsonSchema: Record<string, unknown>; prompt: string }, timeoutMs: number): Promise<ClientAnswer> {
   return clientCall<ClientAnswer>(t, '/level', { ...call, timeoutMs }, timeoutMs);
@@ -81,8 +106,8 @@ export function clientLevel(t: ClientTransport, call: { model: string; effort?: 
  * client before issue #323 does not). `jobs`: the jobs running there, which the client stops when cut off from the
  * hopper too long; its answer says the jobs it stopped so (issue #752).
  */
-export async function clientRunningRelease(t: ClientTransport, jobs: readonly string[]): Promise<{ release: string; manifest: boolean; home?: string; disk?: DiskReading; resources?: ResourceReading; vault?: string; door?: string; isolationStops?: IsolationStop[] }> {
-  const { release, loads, home, disk, resources, vault, door, isolationStops } = await clientCall<{ release?: unknown; loads?: unknown; home?: unknown; disk?: unknown; resources?: unknown; vault?: unknown; door?: unknown; isolationStops?: unknown }>(t, '/release', { jobs }, 15000);
+export async function clientRunningRelease(t: ClientTransport, jobs: readonly string[]): Promise<{ release: string; manifest: boolean; home?: string; disk?: DiskReading; resources?: ResourceReading; infraCredentials?: string[]; vault?: string; door?: string; isolationStops?: IsolationStop[] }> {
+  const { release, loads, home, disk, resources, infraCredentials, vault, door, isolationStops } = await clientCall<{ release?: unknown; loads?: unknown; home?: unknown; disk?: unknown; resources?: unknown; infraCredentials?: unknown; vault?: unknown; door?: unknown; isolationStops?: unknown }>(t, '/release', { jobs }, 15000);
   if (typeof release !== 'string') throw new ClientError(`client ${t.machine}: no release in its answer`);
   // The disk its home is on (issue #401): a client older than this says none.
   const d = disk as { freeBytes?: unknown; totalBytes?: unknown } | undefined;
@@ -90,12 +115,14 @@ export async function clientRunningRelease(t: ClientTransport, jobs: readonly st
   const at = clientHome(home);
   // Its CPU, memory and swap (issue #560): a client older than this says none.
   const res = resourcesOf(resources);
+  // The infra credential folders its home holds (issue #1128 part 7): only names on the list; a client older than this says none.
+  const creds = infraCredentialsOf(infraCredentials);
   // Its vault's helper (issue #558): an absolute path, one line; a client older than this says none.
   const helper = typeof vault === 'string' && vault.startsWith('/') && !/[\n\0]/.test(vault) && vault.length <= 4096 ? { vault } : {};
   // Its client door (issue #695): a loopback URL there; a client older than this says none.
   const open = typeof door === 'string' && /^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(door) ? { door } : {};
   const stops = isolationStopsOf(isolationStops);
-  return { release, manifest: loads === 'manifest', ...(at ? { home: at } : {}), ...read, ...(res ? { resources: res } : {}), ...helper, ...open, ...(stops.length ? { isolationStops: stops } : {}) };
+  return { release, manifest: loads === 'manifest', ...(at ? { home: at } : {}), ...read, ...(res ? { resources: res } : {}), ...(creds ? { infraCredentials: creds } : {}), ...helper, ...open, ...(stops.length ? { isolationStops: stops } : {}) };
 }
 
 /** The isolation stops a client said (issue #752): each a job id, a time and a duration; anything else is dropped. */

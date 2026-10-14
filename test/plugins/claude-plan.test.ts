@@ -74,7 +74,7 @@ describe('claude-plan parser', () => {
   it('auth status: the email, plan, organisation and sign-in method — nothing else (no ids, no tokens)', () => {
     const json = JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', apiProvider: 'firstParty', email: 'h@example.com', orgId: 'o1', orgName: 'Org', subscriptionType: 'max', accessToken: 'sk-SECRET' });
     expect(parseAuthStatus(json)).toEqual({ service: 'claude', identity: 'h@example.com', detail: { plan: 'max', organization: 'Org', authMethod: 'claude.ai' } });
-    expect(parseAuthStatus(JSON.stringify({ loggedIn: false }))).toEqual({ service: 'claude', detail: {}, problem: 'not logged in' });
+    expect(parseAuthStatus(JSON.stringify({ loggedIn: false }))).toEqual({ service: 'claude', detail: {}, problem: 'not logged in', signedOut: true });
     expect(parseAuthStatus('nope')).toEqual({ service: 'claude', detail: {}, problem: 'claude auth status: output is not JSON' });
   });
 });
@@ -149,7 +149,7 @@ describe('claude-plan plugin', () => {
     ]);
     await waitFor(() => s.state!().account, { what: 'account' });
     expect(s.state!()).toEqual({
-      refreshedAt: at,
+      refreshedAt: at, accountReadAt: at, executors: ['herdr-claude', 'claude'], signIn: true,
       account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'local' } },
     });
     expect(JSON.stringify(s.state!())).not.toContain('SECRET');
@@ -191,7 +191,7 @@ describe('claude-plan plugin', () => {
     writeFileSync(join(control, 'mode'), 'logged-out');
     const u = await create();
     await waitFor(() => u.state!().account, { what: 'the account' });
-    expect(u.state!().account).toEqual({ service: 'claude', detail: { machine: 'local' }, problem: 'not logged in' });
+    expect(u.state!().account).toEqual({ service: 'claude', detail: { machine: 'local' }, problem: 'not logged in', signedOut: true });
   });
 
   it('a window past its reset is left out; readings older than 3 intervals are stale: none, and the reason', async () => {
@@ -263,6 +263,23 @@ describe('claude-plan on an attached machine (issue #139)', () => {
       expect(existsSync(c.cwd)).toBe(false);
       expect(existsSync(join(homedir(), '.claude', 'projects', c.cwd.replace(/[^A-Za-z0-9]/g, '-')))).toBe(false);
     }
+  });
+
+  it('signs the machine\'s claude in over its connection (issue #1128): the URL it printed, the code on its stdin, the account read again', async () => {
+    writeFileSync(join(control, 'mode'), 'logged-out');
+    const s = await create([LAPTOP]);
+    await waitFor(() => (s.state!().account?.signedOut ? true : undefined), { what: 'the signed-out read' });
+    expect(s.state!().signIn).toBe(true);
+    const run = await s.signIn!({ email: 'ops@example.com' });
+    expect(run).toMatchObject({ machineId: 'laptop', tool: 'claude', url: 'https://claude.com/cai/oauth/authorize?code=true&state=fake' });
+    expect(sshCalls().at(-1)!.argv.at(-1)).toContain("'auth' 'login' '--claudeai' '--email' 'ops@example.com'");
+    expect(await run.paste('good-code')).toEqual({ ok: true });
+    await waitFor(() => (s.state!().account?.identity === 'user@example.com' ? true : undefined), { what: 'the account read again' });
+  });
+
+  it('a sign-in on a machine that is offline does not start, and says why', async () => {
+    const s = await create([{ ...LAPTOP, online: false }]);
+    await expect(s.signIn!({})).rejects.toThrow('machine laptop is offline');
   });
 
   it('a machine not ready yet (offline at the first read, before its probe) is read again 30 s later, not an interval later', async () => {

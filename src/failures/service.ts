@@ -13,11 +13,12 @@
 // is active and it is sure. A timed-out job (issue #630) is assessed from its liveness: its source is asked first whether
 // a pull request of its own is open — at most `PR_LOOKUP_MS`, never holding the assessment —, and Continue, when due,
 // resumes its own agent session in its kept work tree, else runs its item again, told to go on. A done-check miss (issue
-// #637) is looked at once more first: done by now, its record is `resolved` and its job finished; else Jev picks, too.
+// #637) is looked at once more first: done by now, its record is `resolved` and its job finished; else Jev picks, too. A
+// failure of a job that reported a hopper bug about itself waits on that report's problem, never a person (issue #1147).
 import type { Clock, RerunBy, UserStore } from '../domain/ports.ts';
 import {
-  failureSettingsOf, jobPriorityTag, type ActingPerson, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type FailuresView, type Job, type KnownCause, type MachineSnapshot,
-  type HandoffView, type NamedCause, type PendingRun, type Problem, type ProblemBlock, type WorkState,
+  failureSettingsOf, jobPriorityTag, type ActingPerson, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type Job, type MachineSnapshot,
+  type PendingRun, type Problem, type WorkState,
 } from '../domain/types.ts';
 import { assess, STALE_AFTER_MS } from './assess.ts';
 import { BUILTIN_CAUSES, causePresent, matchCause, namedCause } from './causes.ts';
@@ -26,11 +27,13 @@ import { askJev, type JevCase } from './jev.ts';
 import { attemptOf, recentOf, timeoutInputOf } from './chain.ts';
 import { createTimeouts } from './timeouts.ts';
 import { rerunRecordOf } from './rerun.ts';
-import { createHandoffs, type HandoffResolve, type HandoffsOptions } from './handoffs.ts';
+import { createHandoffs, type HandoffsOptions } from './handoffs.ts';
 import { createWorkCheck } from './work-check.ts';
 import { createDoneAtSource, DONE_NOTE, lookedAgain } from './done-at-source.ts';
-import { createBackfill, type BackfillResult } from './backfill.ts';
+import { createBackfill } from './backfill.ts';
+import type { FailureAction, Failures } from './failures.ts';
 import { signatureOf } from './signature.ts';
+import { fixLanded, HOPPER_BUG_CAUSE, ownReport, reportReason, reportSignature, reportsOf, reportTitle } from './hopper-bug.ts';
 import { highestFirst, newerOf, releasable, viewOf } from './view.ts';
 
 /** `rerun` (the sync loop's Run again, which the assessor's runs again use too), `continueJob`, `finishShipped`, `resumable`, `takesBack`, `dismiss`: as the hand-offs take them. */
@@ -52,33 +55,8 @@ export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'contin
   pullRequestOpen?(job: Job): Promise<boolean | undefined>;
   /** Whether the job's work is done at its source, asked before any run again of it (`done-at-source.ts`, issue #637). */
   doneAtSource?(job: Job): Promise<boolean>;
-}
-
-export type FailureAction<T> = { ok: true; value: T } | { ok: false; reason: 'not_found' | 'conflict'; message: string };
-
-export interface Failures {
-  /** Assess what a restart left unassessed, follow `job.failed`, start the sweep. Once. */
-  start(): void;
-  stop(): Promise<void>;
-  /** The due runs again, the checks, the prune — now (tests, and after an action). */
-  sweep(): Promise<void>;
-  /** The done-check backfill (issue #637): asked, one pass; `once`, at start, unless it completed before on this store. */
-  backfill: { run(): Promise<BackfillResult>; once(): Promise<void> };
-  view(): FailuresView;
-  /** The open problems the decider reads; none while automatic hold is off. */
-  blocks(): ProblemBlock[];
-  settings(): FailureSettings;
-  setSettings(patch: Partial<FailureSettings>): FailureSettings;
-  /** A person resolves a problem, with a note if any: its held jobs run again, new jobs are no longer held for it. */
-  resolve(problemId: string, by: ActingPerson, note?: string): FailureAction<Problem>;
-  /** A person releases a problem's held jobs now: they run again through the normal queue, unless done at their source (issue #637). */
-  release(problemId: string, by: ActingPerson): FailureAction<Problem>;
-  /** A person runs a surfaced failure's job again; one done at its source is finished instead, and refused (issue #637). */
-  retry(recordId: string, by: ActingPerson): Promise<FailureAction<Job>>;
-  /** A person resolves a hand-off (issue #551), `by` the person signed in and the way: the hand-off and the job that follows, if any. */
-  resolveHandoff(handoffId: string, input: HandoffResolve, by: ActingPerson): Promise<FailureAction<{ handoff: HandoffView; job?: Job }>>;
-  nameCause(cause: NamedCause): KnownCause;
-  forgetCause(signature: string): boolean;
+  /** When this hopper's build was made (its install record): a hopper bug's fix is in it only when it closed before (issue #1147). */
+  installedAt?(): string | undefined;
 }
 
 const DAY_MS = 86_400_000;
@@ -137,6 +115,9 @@ export function createFailures(o: FailuresOptions): Failures {
       const ranMs = job.startedAt && job.finishedAt ? Math.max(0, Date.parse(job.finishedAt) - Date.parse(job.startedAt)) : undefined;
       const recent = recentOf(store, job, signature, new Date(now().getTime() - s.groupWindowMin * 60_000).toISOString());
       const open = openFor(signature, machineId);
+      // A job that reported a hopper bug about itself (issue #1147): its report's problem, open or to open.
+      const report = ownReport(store.bugReports.list(), job.id);
+      const reportOpen = report ? openFor(reportSignature(report), machineId) : undefined;
       const a = assess({
         error, signature, cause, attempt, recent, settings: s,
         newer: newerOf(store, job), failedAgoMs: Math.max(0, at.getTime() - Date.parse(job.finishedAt ?? job.updatedAt)),
@@ -144,14 +125,18 @@ export function createFailures(o: FailuresOptions): Failures {
         ...(ranMs !== undefined ? { ranMs } : {}), ...(job.errorTail ? { tail: job.errorTail } : {}),
         ...(open ? { open: { id: open.id, title: open.title, decision: open.decision } } : {}),
         ...(cause?.id === 'timed-out' ? timeoutInputOf(store, job) : {}),
+        ...(report ? { hopperBug: { title: reportTitle(report), reason: reportReason(report), ...(reportOpen ? { open: reportOpen.id } : {}) } } : {}),
       });
       let problem: Problem | undefined;
       let opened = false;
-      if (a.problem?.kind === 'join' && open) {
-        problem = store.problems.update(open.id, { jobIds: [...open.jobIds, job.id], updatedAt: at.toISOString() });
+      const joinId = a.problem?.kind === 'join' ? a.problem.id : undefined;
+      const joining = [open, reportOpen].find((p) => p !== undefined && p.id === joinId);
+      if (joining) {
+        problem = store.problems.update(joining.id, { jobIds: [...joining.jobIds, job.id], updatedAt: at.toISOString() });
       } else if (a.problem?.kind === 'open') {
         const { kind: _k, ...plan } = a.problem;
-        problem = store.problems.create({ ...plan, signature, status: 'open', openedAt: at.toISOString(), updatedAt: at.toISOString(), jobIds: [job.id] });
+        const of = plan.causeId === HOPPER_BUG_CAUSE && report ? reportSignature(report) : signature;
+        problem = store.problems.create({ ...plan, signature: of, status: 'open', openedAt: at.toISOString(), updatedAt: at.toISOString(), jobIds: [job.id] });
         opened = true;
       }
       const acts = a.auto && (a.decision === 'retry' || a.decision === 'redirect' || a.decision === 'continue');
@@ -232,8 +217,17 @@ export function createFailures(o: FailuresOptions): Failures {
     });
   }
 
-  /** A problem whose check saw its cause, then sees it gone, resolves by itself. */
+  /**
+   * A problem whose check saw its cause, then sees it gone, resolves by itself. A hopper bug's (issue #1147) once its
+   * report's fix landed, from the report's state as Report a bug last read it.
+   */
   async function runChecks(): Promise<void> {
+    const bugs = store.problems.list({ status: 'open' }).filter((p) => p.causeId === HOPPER_BUG_CAUSE);
+    if (bugs.length > 0) {
+      const reports = store.bugReports.list();
+      const installedAt = o.installedAt?.();
+      for (const p of bugs) if (reportsOf(p.signature, reports).some((r) => fixLanded(r, installedAt))) resolveAs(p.id, 'check');
+    }
     const open = store.problems.list({ status: 'open' }).filter((p) => p.causeId && CHECK_OF.has(p.causeId) && p.scope.machineId);
     if (open.length === 0) return;
     const machines = await o.machines();
@@ -260,7 +254,7 @@ export function createFailures(o: FailuresOptions): Failures {
     sweeping ??= (async () => {
       try {
         assessBacklog(JUST_FAILED_MS);
-        if (!stopped) { handoffs.supersede(); handoffs.settle(); }
+        if (!stopped) { handoffs.supersede(); handoffs.settle(); handoffs.dismissStale(); }
         // High-priority jobs run again first (issue #535): by their live priority, then as due.
         for (const r of highestFirst(store, store.failures.due(now().toISOString()))) {
           if (stopped) return;
@@ -307,9 +301,7 @@ export function createFailures(o: FailuresOptions): Failures {
       // Failed jobs left unassessed: a restart between the failure and the assessment, or an older build's backlog.
       assessBacklog();
       // A store from the build before (issue #529): what nothing waits on any more clears before anything is handed off.
-      handoffs.supersede();
-      handoffs.settle();
-      handoffs.catchUp();
+      handoffs.supersede(); handoffs.settle(); handoffs.dismissStale(); handoffs.catchUp();
       unsubscribe = store.events.subscribe((e) => {
         if (stopped) return;
         // A timeout's facts first (issue #630), then the assessment.
@@ -326,12 +318,14 @@ export function createFailures(o: FailuresOptions): Failures {
       await sweeping;
     },
     sweep,
+    dismissStale: () => handoffs.dismissStale(),
     backfill,
     view: () => viewOf(store, settings(), now(), o.resumable, o.takesBack),
     blocks() {
       if (!settings().auto.hold) return [];
       // A Recurring problem (`general`) holds only its own jobs, never its whole scope (issue #637): no known cause says others meet it.
-      return store.problems.list({ status: 'open' }).filter((p) => !p.general).map((p) => ({ id: p.id, title: p.title, ...p.scope }));
+      // Nor a hopper bug's (issue #1147): only the jobs that reported it are known to meet it.
+      return store.problems.list({ status: 'open' }).filter((p) => !p.general && p.causeId !== HOPPER_BUG_CAUSE).map((p) => ({ id: p.id, title: p.title, ...p.scope }));
     },
     settings,
     setSettings(patch) {

@@ -41,6 +41,8 @@ export interface Account {
   detail: Record<string, string | string[]>;
   /** Why the identity is not known or not in use (not logged in, paused, disabled). */
   problem?: string;
+  /** The tool read that it is signed in as nobody (issue #1128): a sign-in is needed, not a fix. */
+  signedOut?: true;
 }
 
 /** An account and the part that uses it: one entry of `GET /api/accounts`. */
@@ -58,6 +60,12 @@ export interface UsageSourceState {
   problem?: string;
   /** Who it reads the budgets for. */
   account?: Account;
+  /** When it last read the account (issue #1128): each read, with or without readings. */
+  accountReadAt?: string;
+  /** The executor instances whose jobs its budgets limit; absent: every job. */
+  executors?: string[];
+  /** It can start its tool's sign-in on its machine (issue #1128, design.md "Tool sign-in"). */
+  signIn?: true;
 }
 
 /** A usage source in `GET /api/usage`: its instance name and state. */
@@ -112,4 +120,70 @@ export interface UsageReport {
   sources: UsageSourceReport[];
   limits: UsageLimits;
   machines: MachineLaneEffect[];
+}
+
+// Tool accounts (issue #1128, design.md "Tool accounts"): the account each machine's agent tool is signed in as, one entry per
+// service and identity, gathered from the usage sources' accounts.
+
+/** What a machine's tool says of its sign-in: signed in as the account, signed in as nobody, or not known (no read, a read failed). */
+export type ToolLogin = 'signed-in' | 'signed-out' | 'unknown';
+
+/** One machine that uses a tool account: what its usage source last read there. */
+export interface ToolAccountMachine {
+  machineId: string;
+  /** The machine's label; its id when it is not configured now. */
+  label: string;
+  /** The usage source that reads the tool there. */
+  source: string;
+  login: ToolLogin;
+  /** Why the login is not known, or why the source has no readings now. */
+  problem?: string;
+  /** When the source last read the account there. */
+  readAt?: string;
+  /** When a job of the source's executors last started there. */
+  lastUsedAt?: string;
+  /** Its source can start the tool's sign-in there (issue #1128): `POST /ui/api/tool-accounts/sign-in`. */
+  signIn?: true;
+  /** The infra credential folders the machine's home holds (issue #1128 part 7): a machine must hold none. Absent: none, or not read. */
+  infraCredentials?: string[];
+}
+
+/** One tool account: a service and the identity its machines are signed in as. No identity: the machines signed in as nobody. */
+export interface ToolAccount {
+  service: string;
+  identity?: string;
+  /** Plain facts the tool gave: plan, organization, sign-in method. */
+  detail: Record<string, string | string[]>;
+  /** signed-in when any machine is; signed-out when every machine read is; else unknown. */
+  login: ToolLogin;
+  machines: ToolAccountMachine[];
+  /** The latest `lastUsedAt` of its machines. */
+  lastUsedAt?: string;
+  /** Its week windows (spend): the newest reading of each window over its machines, throttling ones first. */
+  spend: UsageReading[];
+}
+
+/** `GET /api/tool-accounts`. */
+export interface ToolAccountsReport { accounts: ToolAccount[] }
+
+/**
+ * A tool's sign-in a usage source started on its machine (issue #1128, design.md "Tool sign-in"): the sign-in URL a person opens,
+ * and where the code the sign-in page then shows goes. The tool keeps its own token; this carries none.
+ */
+export interface ToolSignIn {
+  /** The machine it runs on. */
+  machineId: string;
+  /** The tool: `claude`. */
+  tool: string;
+  url: string;
+  /** Give the tool the code; resolves when it ended: signed in, or why not. Once only. */
+  paste(code: string): Promise<{ ok: true } | { ok: false; reason: string }>;
+  /** Stop it. */
+  cancel(): void;
+}
+
+/** What can start a tool's sign-in (issue #1128): a usage source, on the machine it reads. */
+export interface ToolSignInStart {
+  /** Start its tool's sign-in on its machine; `email`: the account to pre-fill. Rejects with why it cannot start. Absent: it cannot. */
+  signIn?(o: { email?: string }): Promise<ToolSignIn>;
 }

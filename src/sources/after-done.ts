@@ -21,7 +21,8 @@
 // hopper followed pull requests is shown, merged and tended as a job's own. A throw is asked again next sync.
 // A pull request is followed to its end (issue #786): a failed job's is reconciled, followed and tended as a done job's —
 // but a failed tend's (`failedTend`), which waits on a person —, and a rebase tend is never capped, only `fix_checks`.
-// The tending queue (issue #796): after every follow of the sync, a tend starts only when no head holds it (`queueHeads`):
+// The tending queue (issue #796): after every follow of the sync, a tend starts only when no head holds it (`queueHeads`),
+// or a head held it an hour (`MAX_HELD_MS`, issue #1143: `heldSince`), as new heads keep coming:
 // a tend job at work, or a pull request on its way to the hopper's merge. Jev's pick first (`merge-order`, `tend-order.ts`),
 // then the rules' order (`tendOrder`). A pull request whose checks stay pending
 // holds it no more than `PENDING_HOLD_MS` after its last push; one not seen yet holds nothing (issue #927). A `fix_checks`
@@ -48,15 +49,24 @@
 // pull requests in motion (`inMotion`); `none` follows nothing. Before its follows, a round asks the source for every pull
 // request they follow in one batch (`readFollowed`); a throw is logged, and the round follows nothing. Tending runs at every
 // sync, from what was last seen.
+// Housekeeping (issue #1143): a follow that moved its pull request to the landing branch is recorded
+// (`job.pull_request_retargeted`); one that closed it as superseded records the close with why (`superseded`); and a tend
+// job started is said on the pull request (`JobSource.tendStarted`). A rebase tend that failed is tended again once its
+// base branch moves (issue #1143 part 3): each sync, before the tends, the source says the commit that base is at
+// (`JobSource.baseTip`, the hopper's mirror); the first is kept (`tended.baseAt`), and another one marks it moved
+// (`tended.baseMoved`), which makes the same step due (`tendRetryAt`), at most `MAX_TEND_RETRIES` in a row. A source that
+// cannot say leaves it to a person, as before. A throw is only logged. Strays (issue #1143 part 4, `strays.ts`): in a round
+// of every one, after reconciling, the pull requests no job follows, of items no job works on, get the same housekeeping.
 // The work-item ledger (issue #1067, part 3): what an open pull request waits on (its **pull request wait**: a draft, merge
 // conflicts, failed checks, checks running, the merge) is recorded as `job.pull_request_seen` when it differs from what the
 // ledger holds for it, so the item says what it waits on. What was seen of it stays kept with no event otherwise.
 import type { JobSource, PullRequestActResult, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
-import { queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
+import { heldTooLong, queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
+import { strayHousekeeping } from './strays.ts';
 import { SourceError } from '../domain/ports.ts';
 import {
-  failedTend, following, followsWhenEnded, inMotion, judge, MAX_TENDS, rechecksMerge, reconcilable, tendAgainRefusal, tendBrief, tendRetryAt, tendsInRow, tendStep,
+  failedTend, following, followsWhenEnded, inMotion, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendAgainRefusal, tendBrief, tendRetryAt, tendsInRow, tendStep,
   type ActingPerson, type BaseMerge, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestAct, type PullRequestSeen, type Tended, type TendChecks,
 } from '../domain/types.ts';
 import { pullRequestWaitOf } from '../domain/work-items.ts';
@@ -91,6 +101,7 @@ export type FollowRound = 'all' | 'in_motion' | 'none';
 
 export function createAfterDone(c: AfterDoneContext) {
   const { store } = c;
+  const strays = strayHousekeeping(c);
 
   /** Only the newest job of its item is checked again: an older one's merge never takes off a later job's `hopper:done`. */
   const newestOfItem = (j: Job) => !j.source || store.jobs.getBySourceKey(j.source.key)?.id === j.id;
@@ -99,11 +110,15 @@ export function createAfterDone(c: AfterDoneContext) {
   /** Keep what following found, and record a merge or a close: by the hopper, by `acting`, or as seen on GitHub. */
   function record(jobId: string, r: FollowUp, acting?: ActingPerson): void {
     c.setSource(jobId, r.state);
+    if (r.retargeted) store.events.append({ type: 'job.pull_request_retargeted', jobId, data: { pullRequest: r.pullRequest, ...r.retargeted } });
     if (r.outcome === 'open') seen(jobId, r.pullRequest, r.state.seen as PullRequestSeen | undefined);
     if (r.outcome === 'open' || r.outcome === 'checked') return;
     store.events.append({
       type: r.outcome === 'merged' ? 'job.pull_request_merged' : r.outcome === 'abandoned' ? 'job.pull_request_abandoned' : 'job.pull_request_closed', jobId,
-      data: { pullRequest: r.pullRequest, part: r.part, ...(r.byHopper ? { byHopper: true } : {}), ...(acting ? { person: acting.person, via: acting.via } : {}) },
+      data: {
+        pullRequest: r.pullRequest, part: r.part, ...(r.byHopper ? { byHopper: true } : {}), ...(r.superseded ? { superseded: r.superseded } : {}),
+        ...(acting ? { person: acting.person, via: acting.via } : {}),
+      },
     });
   }
 
@@ -230,6 +245,8 @@ export function createAfterDone(c: AfterDoneContext) {
     const { tendRefused: _r, ...was } = (job.sourceState?.source ?? {}) as Record<string, unknown>;
     c.setSource(jobId, { ...was, follow: 'tended', tended });
     store.events.append({ type: 'job.pull_request_tended', jobId, data: { pullRequest: due.url, step: due.step, nextJobId: r.job.id, ...acting } });
+    // The pull request says the hopper works on it (issue #1143).
+    await source.tendStarted?.(job, due.url, due.step);
     return r;
   }
 
@@ -277,6 +294,29 @@ export function createAfterDone(c: AfterDoneContext) {
     return true;
   }
 
+  /**
+   * Watch the base branch of the job's pull request while its failed rebase tend waits on a person (issue #1143 part 3):
+   * the commit the source says it is at is kept first (`baseAt`); another one later marks it moved (`baseMoved`), and the
+   * rebase is due again. Only once the tend job's end is reported to its source.
+   */
+  async function watchBase(source: JobSource, jobId: string): Promise<void> {
+    const job = store.jobs.get(jobId);
+    const s = job?.sourceState?.source as { follow?: string; tended?: Tended } | undefined;
+    if (!source.baseTip || !job?.source || s?.follow !== 'tended' || !s.tended || s.tended.baseMoved) return;
+    const tendJob = store.jobs.getBySourceKey(job.source.key);
+    if (!tendJob || !rebasesWhenBaseMoves(s.tended, tendJob) || !c.finalReported(tendJob)) return;
+    let tip: string | undefined;
+    try {
+      tip = await source.baseTip(job);
+    } catch (e) {
+      console.warn(`hopper: ${source.name}: the base branch of ${s.tended.pullRequest} failed, asked again next sync: ${(e as Error).message}`);
+      return;
+    }
+    if (tip === undefined || tip === s.tended.baseAt) return;
+    const tended: Tended = s.tended.baseAt === undefined ? { ...s.tended, baseAt: tip } : { ...s.tended, baseMoved: new Date(c.now()).toISOString() };
+    c.setSource(jobId, { ...(store.jobs.get(jobId)?.sourceState?.source ?? {}), tended });
+  }
+
   /** Keep what holds the job's pull request (issue #939), when it changed; undefined: nothing holds it. */
   function keepHold<K extends keyof Holds>(jobId: string, key: K, value: Holds[K]): void {
     const s = (store.jobs.get(jobId)?.sourceState?.source ?? {}) as Record<string, unknown>;
@@ -307,6 +347,8 @@ export function createAfterDone(c: AfterDoneContext) {
   async function heldBy(source: JobSource, d: TendDue, heads: readonly QueueHead[]): Promise<QueueHead | undefined> {
     if (d.step !== 'rebase') return undefined;
     const job = store.jobs.get(d.jobId)!;
+    // Held an hour (issue #1143): new heads keep coming, so it is tended now.
+    if (heldTooLong((job.sourceState?.source as Holds | undefined)?.heldSince, c.now())) return undefined;
     for (const h of heads) if (await conflict(source, job, h.pullRequest) !== false) return h;
     return undefined;
   }
@@ -315,10 +357,11 @@ export function createAfterDone(c: AfterDoneContext) {
    * The tends of each job repository (issue #796), one queue per set of pull requests that conflict (issue #939): of the
    * source's jobs whose followed pull request needs tending, each one no head and no tend started before it conflicts with,
    * Jev's pick first, then the rules' order. Each other rebase is held behind the first that conflicts with it; a
-   * `fix_checks` never is (issue #938).
+   * `fix_checks` never is (issue #938). Since when it is held is kept; held `MAX_HELD_MS`, it is held no more (issue #1143).
    */
   async function tendNext(source: JobSource, listed: Job[]): Promise<void> {
     const get = (id: string) => store.jobs.get(id);
+    for (const j of listed) await watchBase(source, j.id);
     const jobs = listed.map((j) => get(j.id) ?? j);
     const due = jobs.filter((j) => c.finalReported(j)).flatMap((j): TendDue[] => { const d = tendDue(j); return d ? [{ jobId: j.id, pullRequest: d.url, step: d.step }] : []; });
     const merges = (repo: string) => source.mergesOnReady?.(repo) ?? false;
@@ -347,7 +390,12 @@ export function createAfterDone(c: AfterDoneContext) {
         await tendIfDue(source, d.jobId).catch((e: unknown) => { c.failed(d.jobId, e); });
       }
     }
-    for (const j of jobs) keepHold(j.id, 'heldBehind', held.get(j.id));
+    for (const j of jobs) {
+      const h = held.get(j.id);
+      keepHold(j.id, 'heldBehind', h);
+      const since = (store.jobs.get(j.id)?.sourceState?.source as Holds | undefined)?.heldSince;
+      keepHold(j.id, 'heldSince', h ? since ?? new Date(c.now()).toISOString() : undefined);
+    }
   }
 
   /** May follow its item's open pull request (issues #763, #786): no failed tend, and the newest job of its item. */
@@ -382,7 +430,7 @@ export function createAfterDone(c: AfterDoneContext) {
     /** One sync of the source: the jobs of its round to follow, or to judge again; then the tends. */
     async catchUp(source: JobSource, listed: Job[], round: FollowRound = 'all'): Promise<void> {
       const all = round === 'all';
-      if (all) await reconcile(source, listed);
+      if (all) await reconcile(source, listed).then(() => strays(source, listed));
       const jobs = listed.map((j) => store.jobs.get(j.id) ?? j);
       const run = (j: Job, fn: (s: JobSource, id: string) => Promise<void>) =>
         c.enqueue(j.id, () => fn(source, j.id).catch((e: unknown) => { c.failed(j.id, e); }));

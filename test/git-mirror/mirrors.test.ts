@@ -14,6 +14,8 @@
 //   Scenario: what a pull request changes (issue #935 part 2)
 //     Then its commits after the merge base and the files it changes, from the pass's fetch, with no blob; outside a
 //     pass or a head that moved, git cannot say
+//   Scenario: the tip of a base branch (issue #1143 part 3)
+//     Then the commit the pass fetched, with no second fetch; outside a pass or another base, git cannot say
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createGitHubTraffic } from '../../src/github-limiter/traffic.ts';
@@ -115,5 +117,20 @@ describe("the hopper's mirror (issue #858 part 2)", () => {
     const blobs = git(o.root, '--git-dir', mirrorPathOf(dir, 'acme/app'), 'cat-file', '--batch-all-objects', '--batch-check=%(objecttype)').split('\n').filter((t) => t === 'blob');
     expect(blobs).toEqual([]);
     expect(await m.changes('acme/app', remote, { number: 1, base: 'dev', headOid: o.heads[1]! })).toBeUndefined();
+  });
+
+  it('says the tip of the base branch the pass fetched; outside a pass or for another base, it cannot say (issue #1143 part 3)', async () => {
+    const o = origin();
+    const { m, traffic, fetches } = mirrors(join(o.root, 'mirrors'));
+    const remote = async () => ({ url: o.url });
+    const tip = git(o.tree, 'rev-parse', 'HEAD');
+    const [dev, again, other] = await traffic.pass('github', async () => [
+      await m.baseTip('acme/app', remote, 'dev'),
+      await m.baseTip('acme/app', remote, 'dev'),
+      await m.baseTip('acme/app', remote, 'main'),
+    ]);
+    expect([dev, again, other]).toEqual([tip, tip, undefined]);
+    expect(fetches).toHaveLength(1);
+    expect(await m.baseTip('acme/app', remote, 'dev')).toBeUndefined();
   });
 });

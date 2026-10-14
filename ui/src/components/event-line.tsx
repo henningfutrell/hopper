@@ -35,6 +35,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'bug_report.filed': 'ok', 'bug_report.failed': 'bad',
   'drift.found': 'warn', 'drift.cleared': 'ok', 'drift.issue_filed': 'warn', 'drift.issue_updated': 'muted', 'component_watchers.settings_changed': 'warn',
   'job.note_added': 'question', 'job.note_delivered': 'ok',
+  'terminal.opened': 'warn', 'terminal.typed': 'warn',
 };
 export const eventTone = (type: string): Tone => TYPE_TONE[type] ?? 'muted';
 
@@ -48,6 +49,9 @@ export function detailOf(e: DomainEvent): string {
   if (e.type === 'job.note_added') return `note from ${String(d.person)} (${String(d.via)}): ${String(d.text)}`;
   if (e.type === 'job.note_delivered') return `${noteCount(d.noteIds)} typed into its session ${NOTE_DELIVERY[String(d.delivery)] ?? ''}`.trim();
   if (e.type === 'job.note_carried') return `${noteCount(d.noteIds)} carried to job ${String(d.nextJobId).slice(0, 8)}`;
+  // The job's terminal (issue #1128): who opened it, and how much they typed — never what.
+  if (e.type === 'terminal.opened') return `terminal opened by ${String(d.person)} (${String(d.via)})`;
+  if (e.type === 'terminal.typed') return `${String(d.person)} (${String(d.via)}) typed ${Array.isArray(d.keys) ? `keys ${d.keys.join(' ')}` : `${String(d.chars)} characters`}`;
   // Phase shifts (issue #548): from which phase to which, and why; a fork, what it is for.
   if (e.type === 'job.phase_changed') return `${String(d.from)} → ${String(d.to)}: ${String(d.reason)}`;
   if (e.type === 'job.forked') return `${String(d.to)} forked as ${String(d.forkId).slice(0, 8)}${typeof d.note === 'string' ? `: ${d.note}` : ''}`;

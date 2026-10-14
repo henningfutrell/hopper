@@ -29,6 +29,9 @@ export interface BugReport {
   tries: number;
   /** When the hopper last tried to send it, or last read its state on GitHub. */
   checkedAt?: string;
+  /** While `closed`: when, and why, as GitHub said — `completed` (its fix landed, issue #1147), `not_planned`, `duplicate`. */
+  closedAt?: string;
+  closedAs?: string;
 }
 
 /** A person's bug reports (issue #694): filed, or kept to send later. */

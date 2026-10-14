@@ -22,7 +22,7 @@ import {
 import type { StackResources } from '../domain/stack-resources.ts';
 import { createLandingBatchGitHub } from '../landing-batches/github.ts';
 import { createLandingBatches, type LandingBatches } from '../landing-batches/runner.ts';
-import { DEFAULT_LANDING_BATCHES, LANDING_BATCH_EVENT_TYPES } from '../domain/landing-batches.ts';
+import { DEFAULT_LANDING_BATCHES, LANDING_BATCH_EVENT_TYPES, landingBranch } from '../domain/landing-batches.ts';
 import { createLedgerFallbackRead, type LedgerFallbackRead } from '../work-items/fallback-read.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { LOGIN_SCRIPT, LOGIN_SCRIPT_FILE, LOGIN_SCRIPT_VARIABLE } from '../logins/script.ts';
@@ -198,7 +198,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         settings: () => o.store.settings.getLandingBatches() ?? DEFAULT_LANDING_BATCHES,
         events: () => o.store.events.recent(500, [...LANDING_BATCH_EVENT_TYPES]),
         record: (e) => { o.store.events.append(e); },
-        jobPullRequests: () => o.store.jobs.list({ followed: true }).flatMap((j) => {
+        // Every pull request a job named, followed or not (issue #1143): a job's pull request never stays on the tested branch.
+        jobPullRequests: () => o.store.jobs.list({ namesPullRequest: true }).flatMap((j) => {
           const url = (j.sourceState?.source as { pullRequest?: unknown } | undefined)?.pullRequest;
           return typeof url === 'string' ? [url] : [];
         }),
@@ -236,8 +237,11 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
               token: () => o.accounts.token('github'),
               renew: (refused) => o.accounts.renew('github', refused),
               repo: (repo) => api().repo(repo),
+              pullRequestBase: (repo, branch) => api().pullRequestBase(repo, branch),
             };
         },
+        // The landing batch setting's, never GitHub's default branch (issues #1142, #1147).
+        landingBranch: (repo) => { const cfg = o.store.settings.getLandingBatches()?.repos[repo.toLowerCase()]; return cfg && landingBranch(cfg); },
         ...(o.pushLines ? { shrinkGuard: shrinkGuard(o.pushLines) } : {}),
       },
     },

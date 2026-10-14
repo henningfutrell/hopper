@@ -49,6 +49,18 @@ export interface QuestionAttempt extends AttemptPhaseFields {
 }
 
 /** Why a question came to a person (issue #679). */
+/**
+ * Why a screen of Claude's with no credential goes to the job's answerers (issue #533): the start of its question's text. A
+ * tool sign-in from the hopper that completes on the question's machine answers it (issue #1128, `src/questions/signed-out.ts`).
+ */
+export const NOT_SIGNED_IN = 'Claude is not signed in on this machine: sign it in from Accounts in the hopper or on the machine, or give it CLAUDE_CODE_OAUTH_TOKEN, then answer';
+/** What Claude's login screen shows (issue #533): a question of it is the person's, since an answer is typed into its options. */
+export const LOGIN_SCREEN_MARK = 'Select login method';
+/** Who answers a not-signed-in question when the tool sign-in on its machine completed (issue #1128): its trail's tier and `answeredBy`. */
+export const SIGNED_IN_BY = 'sign-in';
+/** The answer it gets: at Claude's prompt nothing is typed, and the job's text goes once Claude shows it is signed in. */
+export const SIGNED_IN_ANSWER = 'Claude is signed in on this machine now.';
+
 export const ESCALATION_REASONS = ['guard', 'low_confidence', 'no_answer', 'frontier_escalated', 'high_priority', 'auto_answer_off', 'fork'] as const;
 /**
  * `guard`: a risk rule or the consequential guard held an answer back on purpose; `low_confidence`: the top level was not

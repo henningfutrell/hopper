@@ -25,7 +25,7 @@ import { issueIdOf, subIssuesRoute, type SubIssuesForge } from './fake-sub-issue
 import { watchRoute, type WatchForge } from './fake-github-watch.ts';
 import { contentsRoute, headsRoute, type ContentsForge, type HeadsForge } from './fake-heads.ts';
 import { peopleRoute, type PeopleForge } from './fake-people.ts';
-import { listingRoute, updatedAtOf } from './fake-listing.ts'; import { pullReadsRoute, type PullReadsForge } from './fake-pull-reads.ts';
+import { listingRoute, updatedAtOf } from './fake-listing.ts'; import { pullListRoute, pullReadsRoute, type PullReadsForge } from './fake-pull-reads.ts';
 
 export interface FakeIssue {
   repo: string;
@@ -37,8 +37,8 @@ export interface FakeIssue {
   /** Default: the author (issue #387: intake is by label and assignee). */
   assignees?: string[];
   state?: 'open' | 'closed';
-  /** Why it was closed (issue #652: a job closes its own issue as completed). */
-  stateReason?: string;
+  /** Why it was closed (issue #652: a job closes its own issue as completed), and when (issue #1147). */
+  stateReason?: string; closedAt?: string;
   /** The comments posted on it, as GitHub's REST answers them (issue #673). */
   comments?: Record<string, unknown>[];
   /** Its sub-issues, each `owner/name#N` (issue #729). */
@@ -178,7 +178,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
     const restIssue = (i: FakeIssue) => ({
       number: i.number, title: i.title, body: i.body, state: i.state ?? 'open', html_url: `${base}/${i.repo}/issues/${i.number}`,
       updated_at: updatedAtOf(i), user: { login: i.author }, assignees: (i.assignees ?? [i.author]).map((login) => ({ login })), labels: i.labels.map((name) => ({ name })),
-      repository_url: `${base}/api/v3/repos/${i.repo}`, id: issueIdOf(i.repo, i.number),
+      repository_url: `${base}/api/v3/repos/${i.repo}`, id: issueIdOf(i.repo, i.number), ...(i.state === 'closed' ? { state_reason: i.stateReason ?? 'completed', closed_at: i.closedAt ?? null } : {}),
     });
     const find = (repo: string, num: number) => issues.find((i) => issueKey(i.repo, i.number) === issueKey(repo, num));
     const restPull = (p: FakePull) => ({
@@ -296,7 +296,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       if (!m) return { status: 404, body: { message: 'Not Found' } };
       const repo = m[1]!;
       const rest = m[2] ?? '';
-      const sub = pullReadsRoute(forge, r.method, repo, rest) ?? subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest) ?? commentEditRoute(issues, r.method, repo, rest, r.body) ?? contentsRoute(forge ?? {}, base, r.method, repo, rest, r.query, r.body) ?? jobLogsRoute(forge, base, r.method, rest); if (sub) return sub;
+      const sub = pullReadsRoute(forge, r.method, repo, rest) ?? pullListRoute(pulls, restPull, r.method, repo, rest, r.query) ?? subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest) ?? commentEditRoute(issues, r.method, repo, rest, r.body) ?? contentsRoute(forge ?? {}, base, r.method, repo, rest, r.query, r.body) ?? jobLogsRoute(forge, base, r.method, rest); if (sub) return sub;
       if (r.method === 'POST' && rest === 'labels') return { status: 201, body: { name: r.body.name } };
       if (r.method === 'GET' && rest === 'issues') {
         return { status: 200, body: issues.filter((i) => i.repo === repo && (i.state ?? 'open') === 'open' && i.labels.includes(r.query.labels ?? '')).map(restIssue) };

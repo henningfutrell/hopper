@@ -810,11 +810,11 @@ Version 1 (`docs/schemas/job.rework_requested.v1.json`). A person sent a finishe
 
 ## `job.dismissed`
 
-Version 1 (`docs/schemas/job.dismissed.v1.json`). The user dismissed a locked entry (issue #355): the failed job stays failed and leaves the queue. It can still be run again. Its issue keeps `hopper:failed`.
+Version 1 (`docs/schemas/job.dismissed.v1.json`). A locked entry was dismissed (issue #355): the failed job stays failed and leaves the queue. It can still be run again. Its issue keeps `hopper:failed`. `by`: `user` (a person), or, by itself, nothing waits on it any more (issue #1123): `superseded` (a newer job of its item took its place) or `item_closed` (its item is closed at its source, done or dropped). Only a person's dismissal opens a hand-off.
 
 | field | type | required |
 |---|---|---|
-| `by` | `user` | yes |
+| `by` | `user` \| `superseded` \| `item_closed` | yes |
 
 ```json
 {
@@ -868,12 +868,13 @@ Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (iss
 
 ## `job.work_removed`
 
-Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or the job's next reap, removed the scratch dir a reap had kept (`job.work_kept`): its work is now committed and pushed. `paths` is the scratch dir removed. With `discarded` (issue #1010), a person discarded the kept work in Failures, Work not pushed: the scratch dir was removed whatever it held; `person` and `via` say who and the way.
+Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or the job's next reap, removed the scratch dir a reap had kept (`job.work_kept`): its work is now committed and pushed. `paths` is the scratch dir removed. With `discarded` (issue #1010), a person discarded the kept work in Failures, Work not pushed: the scratch dir was removed whatever it held; `person` and `via` say who and the way. With `gone` (issue #1120), the sweep found the scratch dir and its job worktree no longer on the job's machine (removed by hand, or by a cleanup outside the hopper): the record is resolved, and nothing was removed.
 
 | field | type | required |
 |---|---|---|
 | `paths` | string[] | yes |
 | `discarded` | boolean | no |
+| `gone` | boolean | no |
 | `person` | string | no |
 | `via` | `ui` \| `cli` \| `api` | no |
 
@@ -1096,6 +1097,45 @@ Version 1 (`docs/schemas/job.note_carried.v1.json`). A new job of the job's item
     "note-1"
   ],
   "nextJobId": "job-2"
+}
+```
+
+## `terminal.opened`
+
+Version 1 (`docs/schemas/terminal.opened.v1.json`). A person opened the job's terminal (issue #1128, `POST /ui/api/jobs/:id/terminal/screen`): the first read of its herdr pane by that person, or the first after two minutes with no read or input. `sessionId` names the session; `person` and `via` (`ui`, `api`, `cli`) say who and how.
+
+| field | type | required |
+|---|---|---|
+| `sessionId` | string | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+
+```json
+{
+  "sessionId": "term-1",
+  "person": "ada",
+  "via": "ui"
+}
+```
+
+## `terminal.typed`
+
+Version 1 (`docs/schemas/terminal.typed.v1.json`). A person typed into the job's terminal (issue #1128, `POST /ui/api/jobs/:id/terminal/input`), in the session `sessionId`: `chars`, how many characters of text were written to its pane, or `keys`, the key names pressed. The text itself is never in the event: it may hold a secret.
+
+| field | type | required |
+|---|---|---|
+| `sessionId` | string | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+| `chars` | integer | no |
+| `keys` | string[] | no |
+
+```json
+{
+  "sessionId": "term-1",
+  "person": "ada",
+  "via": "ui",
+  "chars": 12
 }
 ```
 
@@ -1437,12 +1477,12 @@ Version 1 (`docs/schemas/source.delivery_received.v1.json`). GitHub sent the hop
 
 ## `auth.pending`
 
-Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`). A risk hold the Decider made (issue #679) carries `decider` in place of `guards`: its `risk`, `categories`, `confidence` and `threshold`, or the `error` it failed with. `host` (issue #698): the host of the URL to open — what asks —, never its path or query. The Grok Bot routine notifier posts it (issue #698).
+Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. Kind `paste_code` (issue #1128): a tool sign-in a person started on the machine (`machineId`), with no job, `run` `sign-in`; the person pastes the code its page shows. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`). A risk hold the Decider made (issue #679) carries `decider` in place of `guards`: its `risk`, `categories`, `confidence` and `threshold`, or the `error` it failed with. `host` (issue #698): the host of the URL to open — what asks —, never its path or query. The Grok Bot routine notifier posts it (issue #698).
 
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
-| `kind` | `device_code` | yes |
+| `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
 | `host` | string | no |
 | `expiresAt` | string | yes |
@@ -1471,7 +1511,7 @@ Version 1 (`docs/schemas/auth.completed.v1.json`). The machine went on after the
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
-| `kind` | `device_code` | yes |
+| `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
 | `by` | `requester` | no |
 
@@ -1490,7 +1530,7 @@ Version 1 (`docs/schemas/auth.expired.v1.json`). The login's code ran out (`expi
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
-| `kind` | `device_code` | yes |
+| `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
 | `expiresAt` | string | yes |
 | `renewing` | boolean | no |
@@ -1511,7 +1551,7 @@ Version 1 (`docs/schemas/auth.cancelled.v1.json`). The user cancelled the login.
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
-| `kind` | `device_code` | yes |
+| `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
 | `by` | `user` | yes |
 
@@ -1531,7 +1571,7 @@ Version 1 (`docs/schemas/auth.failed.v1.json`). What waited on the login ended f
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
-| `kind` | `device_code` | yes |
+| `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
 | `reason` | string | yes |
 | `by` | `requester` | no |
@@ -1552,7 +1592,7 @@ Version 1 (`docs/schemas/auth.reopened.v1.json`). The job that asked for a login
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
-| `kind` | `device_code` | yes |
+| `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
 | `reason` | string | yes |
 
@@ -1572,7 +1612,7 @@ Version 1 (`docs/schemas/auth.dismissed.v1.json`). A person put an open login aw
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
-| `kind` | `device_code` | yes |
+| `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
 | `by` | `user` | yes |
 
@@ -1655,7 +1695,7 @@ Version 1 (`docs/schemas/failure.grouped.v1.json`). A failed job was grouped int
 
 ## `failure.resolved`
 
-Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (issue #509): by a person (`by: "user"`), or by its check (`by: "check"`: the machine is reachable again, or its disk has room again). Its jobs held for it run again through the normal queue (`released` of them), and new jobs are no longer held for it. A person's resolution (issue #623) says who (`person`, and the way, `via` `ui` or `cli`) and keeps their `note`, if any.
+Version 1 (`docs/schemas/failure.resolved.v1.json`). A problem was resolved (issue #509): by a person (`by: "user"`), or by its check (`by: "check"`: the machine is reachable again, or its disk has room again; for a hopper bug a job reported, issue #1147, the fix landed: the issue of its report closed as completed, and the build of this hopper newer than that close). Its jobs held for it run again through the normal queue (`released` of them), and new jobs are no longer held for it. A person's resolution (issue #623) says who (`person`, and the way, `via` `ui` or `cli`) and keeps their `note`, if any.
 
 | field | type | required |
 |---|---|---|
@@ -2542,6 +2582,53 @@ Version 1 (`docs/schemas/machine.windows_link_restored.v1.json`). A machine told
   "machineId": "win-desk",
   "url": "http://localhost:4790/api/health",
   "mode": "nat"
+}
+```
+
+## `machine.disk_over_budget`
+
+Version 1 (`docs/schemas/machine.disk_over_budget.v1.json`). The hopper's own disk use on a machine (`usedBytes`: its scratch areas and job worktrees, `paths` each) is over the disk budget (`budgetBytes`), after the sweep reaped every ended job's scratch dir it could, whatever its age (issue #1120). What is left is work not pushed, live jobs' work, or more than the budget allows. Once while it stays over.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `usedBytes` | number | yes |
+| `budgetBytes` | number | yes |
+| `paths` | object[] | yes |
+
+```json
+{
+  "machineId": "desk",
+  "usedBytes": 62000000000,
+  "budgetBytes": 50000000000,
+  "paths": [
+    {
+      "path": "/home/me/work/.hopper-scratch",
+      "bytes": 12000000000
+    },
+    {
+      "path": "/home/me/work/workspace/worktrees",
+      "bytes": 50000000000
+    }
+  ]
+}
+```
+
+## `machine.disk_within_budget`
+
+Version 1 (`docs/schemas/machine.disk_within_budget.v1.json`). A machine told over by `machine.disk_over_budget` has the hopper's own disk use back within the disk budget (issue #1120): `usedBytes` of `budgetBytes` now.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `usedBytes` | number | yes |
+| `budgetBytes` | number | yes |
+
+```json
+{
+  "machineId": "desk",
+  "usedBytes": 41000000000,
+  "budgetBytes": 50000000000
 }
 ```
 
@@ -3885,12 +3972,14 @@ Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pul
 
 ## `job.pull_request_closed`
 
-Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pull request, followed after its end (issue #579), was closed without a merge: its item is flagged (`hopper:pr-closed` on GitHub) until a person acts. `part`: it shipped part of the item. `person`, `via`: a person pressed Close PR (issue #677), in the UI or the operator CLI.
+Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pull request, followed after its end (issue #579), was closed without a merge: its item is flagged (`hopper:pr-closed` on GitHub) until a person acts. `part`: it shipped part of the item. `person`, `via`: a person pressed Close PR (issue #677), in the UI or the operator CLI. `superseded` (issue #1143): the hopper closed it itself, as nothing was left to land, and why: its issue was closed as completed by another pull request (the item is done, `hopper:done`), or its base branch already has every commit of it. `stray` (issue #1143 part 4): no job followed it — a job named it, and no job of its item worked on it —; the close ends no wait of its item.
 
 | field | type | required |
 |---|---|---|
 | `pullRequest` | string | yes |
 | `part` | boolean | yes |
+| `superseded` | string | no |
+| `stray` | boolean | no |
 | `person` | string | no |
 | `via` | `ui` \| `cli` \| `api` | no |
 
@@ -3970,6 +4059,25 @@ Version 1 (`docs/schemas/job.pull_request_base_merged.v1.json`). A PR waiting jo
   "resolved": [
     "WHATS-NEW.md"
   ]
+}
+```
+
+## `job.pull_request_retargeted`
+
+Version 1 (`docs/schemas/job.pull_request_retargeted.v1.json`). A followed job's open pull request had a base branch that is not its repository's landing branch (its landing batch setting, never GitHub's default branch) and is no open pull request's head: the hopper changed its base to the landing branch (issue #1143), with no job, and said so in one comment on it. `from`: the base before; `to`: the landing branch. `stray` (issue #1143 part 4): no job followed it — a job named it, and no job of its item worked on it.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `from` | string | yes |
+| `to` | string | yes |
+| `stray` | boolean | no |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/15",
+  "from": "dev",
+  "to": "main"
 }
 ```
 
@@ -5596,7 +5704,7 @@ Version 1 (`docs/schemas/landing_batch.retargeted.v1.json`). The hopper moved a 
 
 ## `landing_batches.changed`
 
-Version 1 (`docs/schemas/landing_batches.changed.v1.json`). An admin changed the landing batches (issue #1073): per repository (`owner/repo`, lowercased), the `tested` branch a green batch run moves, when a batch run starts (`everyMerges`, `everyMinutes`), and the canary window (`canaryHours`, part 5; absent: no canary step). `from` and `to` the settings, `by` who changed them.
+Version 1 (`docs/schemas/landing_batches.changed.v1.json`). An admin changed the landing batches (issue #1073): per repository (`owner/repo`, lowercased), the `landing` branch a batch run tests (issue #1142; absent in a change saved before it: `main`), the `tested` branch a green batch run moves, when a batch run starts (`everyMerges`, `everyMinutes`), and the canary window (`canaryHours`, part 5; absent: no canary step). `from` and `to` the settings, `by` who changed them.
 
 | field | type | required |
 |---|---|---|
@@ -5613,6 +5721,7 @@ Version 1 (`docs/schemas/landing_batches.changed.v1.json`). An admin changed the
     "repos": {
       "owner/repo": {
         "tested": "dev",
+        "landing": "main",
         "everyMerges": 5,
         "everyMinutes": 60
       }

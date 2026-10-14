@@ -1,18 +1,19 @@
 // The batch runner (issue #1073, design.md "Landing batches"): one user's landing batches, one pass at start and every
 // `LANDING_BATCH_PASS_MS`. For each repository the settings name: a job's open pull request on the tested branch moves
-// to the landing branch (the default branch); a batch run at work is read — green, merged into the tested branch at its
+// to the landing branch (its settings name it, issue #1142); a batch run at work is read — green, merged into the tested branch at its
 // tip; red, closed and recorded failed; either way its branch is removed —; failing checks start a bisect within the
 // batch, and a pass takes its next step, then the culprit's revert and fix issue (`red.ts`); merge conflicts with the
 // tested branch start a back-merge of it into the landing branch (`back-merge.ts`); with none of these at work,
 // a batch run starts when due (`batchDue`). With a canary window set, the canary step after it (`canary.ts`). Each step is an event, with the user's own GitHub connection. What the last
 // pass found is kept in memory for the view: why no batch run started, or the problem.
 import {
-  batchBody, batchBranch, batchChecks, batchDue, batchTitle, landingBatchStates, mergedPullRequests, pendingChanged,
+  batchBody, batchBranch, batchChecks, batchDue, batchTitle, landingBatchStates, landingBranch, mergedPullRequests, pendingChanged,
   type BatchCheckRun, type LandingBatchRepoView, type LandingBatchSettings,
 } from '../domain/landing-batches.ts';
 import type { FailedCheck } from '../domain/landing-bisect.ts';
 import type { DomainEvent, NewEvent } from '../domain/types.ts';
 import { backMergePass, startBackMerge } from './back-merge.ts';
+import { retargetNote } from '../sources/github/pr-notes.ts';
 import { canaryPass } from './canary.ts';
 import { bisectPass, culpritPass, startBisect } from './red.ts';
 
@@ -21,7 +22,6 @@ export const LANDING_BATCH_PASS_MS = 2 * 60_000;
 
 /** The GitHub calls of the batch runner. */
 export interface LandingBatchGitHub {
-  defaultBranch(repo: string): Promise<string>;
   /** What `head` (a branch, or a commit's full sha) has that `base` lacks: commits ahead, `head`'s tip, and those commits. */
   compare(repo: string, base: string, head: string): Promise<{ aheadBy: number; tip: string; commits: { sha: string; parents: string[]; message: string }[] }>;
   createBranch(repo: string, name: string, sha: string): Promise<void>;
@@ -36,6 +36,8 @@ export interface LandingBatchGitHub {
   mergeInto(repo: string, base: string, head: string, message: string): Promise<{ kind: 'merged'; sha: string } | { kind: 'nothing' } | { kind: 'conflict' }>;
   openPullRequests(repo: string, base: string): Promise<{ number: number; url: string }[]>;
   retarget(repo: string, number: number, base: string): Promise<void>;
+  /** One comment on pull request `number`: what the hopper did with it (issue #1143). */
+  comment(repo: string, number: number, body: string): Promise<void>;
   /** The merged pull request whose merge (or squash) commit is `sha`, when there is one. */
   pullRequestOf(repo: string, sha: string): Promise<number | undefined>;
   /** GitHub's revert of a merged pull request: a new pull request into its base, with this text. */
@@ -65,7 +67,7 @@ export function createLandingBatches(o: {
   /** The user's `landing_batch.*` events. */
   events(): readonly DomainEvent[];
   record(event: NewEvent): void;
-  /** The URLs of the open pull requests of the user's jobs: only those move to the landing branch. */
+  /** The URLs of the pull requests the user's jobs named, followed or not (issue #1143): only those move to the landing branch. */
   jobPullRequests(): readonly string[];
   now(): Date;
   log(line: string): void;
@@ -78,9 +80,11 @@ export function createLandingBatches(o: {
   async function passRepo(gh: LandingBatchGitHub, repo: string): Promise<void> {
     const cfg = o.settings().repos[repo];
     if (!cfg) return;
-    const landing = await gh.defaultBranch(repo);
+    // The landing branch is a setting, never GitHub's default branch: a repository whose default branch is its tested
+    // branch still takes landing batches (issue #1142).
+    const landing = landingBranch(cfg);
     if (landing.toLowerCase() === cfg.tested.toLowerCase()) {
-      note(repo, { problem: `the default branch of ${repo} is ${landing}, its tested branch: make the landing branch its default branch` });
+      note(repo, { problem: `the landing branch of ${repo} is ${landing}, its tested branch: name another landing branch in Settings → Landing batches` });
       return;
     }
     // A job's pull request lands on the landing branch, never on the tested branch.
@@ -89,6 +93,9 @@ export function createLandingBatches(o: {
       if (!jobs.has(p.url)) continue;
       await gh.retarget(repo, p.number, landing);
       o.record({ type: 'landing_batch.retargeted', data: { repo, pullRequest: p.number, url: p.url, from: cfg.tested, to: landing } });
+      // The pull request shows it (issue #1143); a refusal loses only the comment.
+      await gh.comment(repo, p.number, retargetNote(cfg.tested, landing))
+        .catch((e: unknown) => o.log(`hopper: landing batches: the note on ${p.url} was not posted: ${(e as Error).message}`));
     }
     const state = landingBatchStates(o.events())[repo];
     const red = { gh, repo, landing, tested: cfg.tested, record: o.record, state: () => landingBatchStates(o.events())[repo], note: (f: { why?: string; problem?: string }) => note(repo, f), login: o.login, now: o.now, log: o.log };

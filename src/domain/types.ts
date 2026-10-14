@@ -7,7 +7,7 @@ import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
-import type { JobMachineLink, MachineHerdr } from './machines.ts';
+import type { JobMachineLink, MachineHerdr, MachineInfraCredentials } from './machines.ts';
 import type { ParkedElsewhere } from './checkpoints.ts';
 import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
@@ -288,8 +288,8 @@ export interface Lane {
   idleSince?: string;
 }
 
-/** Point-in-time view of one machine, as polled by the engine. Its herdr: `MachineHerdr` (src/domain/machines.ts). */
-export interface MachineSnapshot extends MachineHerdr {
+/** Point-in-time view of one machine, as polled by the engine. Its herdr and infra credentials: `MachineHerdr`, `MachineInfraCredentials` (src/domain/machines.ts). */
+export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials {
   id: MachineId;
   label: string;
   /** Hard ceiling on lanes this machine may run: in the engine, the lanes lane tuning applied in active mode (issue #688). */
@@ -482,7 +482,7 @@ export type { DeliveryStatus, WebhookDelivery, WebhooksEdit } from './webhooks.t
 // ---- Questions: src/domain/questions.ts (re-exported here) ----------------------------
 
 export type * from './questions.ts';
-export { ESCALATION_REASONS } from './questions.ts';
+export { ESCALATION_REASONS, LOGIN_SCREEN_MARK, NOT_SIGNED_IN, SIGNED_IN_ANSWER, SIGNED_IN_BY } from './questions.ts';
 
 // ---- Sources: src/domain/sources.ts (re-exported here) ------------------------------------
 
@@ -495,9 +495,9 @@ export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, typ
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
 export type * from './routing.ts';
-export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState } from './usage.ts';
+export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, ToolSignIn, ToolSignInStart } from './usage.ts';
 export * from './usage-history.ts';
-export * from './machine-history.ts';
+export * from './machine-history.ts'; export * from './hopper-disk.ts';
 export * from './stack-resources.ts';
 export * from './lane-tuning.ts';
 export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView };

@@ -21,6 +21,7 @@ import { useJobName } from '@/store/selectors';
 import { useSection } from '@/app/nav';
 import { JobPromotion } from './direct-job-promotion';
 import { JobNotes } from './job-notes';
+import { JobTerminal } from './job-terminal';
 import { BomGraph, BomTable, JobHeader, useJobBom, WaitingPinned } from './job-bom';
 
 type Read = { state: 'reading' } | { state: 'found'; job: Job } | { state: 'none' };
@@ -98,6 +99,7 @@ export function JobView() {
           </>
         )}
       </Panel>
+      {read.state === 'found' && <JobTerminal job={read.job} />}
       {read.state === 'found' && <JobNotes job={read.job} />}
       {bom && <Panel title="Its parts" count={bom.parts.length} bodyClassName="p-3"><BomGraph bom={bom} title={read.state === 'found' ? read.job.spec.goal || id : id} /></Panel>}
       <Panel title="Timeline" count={events.length} bodyClassName="space-y-1 font-mono">

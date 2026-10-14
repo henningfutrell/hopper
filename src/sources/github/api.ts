@@ -212,7 +212,8 @@ export interface GitHubApi {
   /**
    * Post a comment on an issue: only a person's resolution of a hand-off (issue #551), the user's own act, and the one
    * that links the merged pull request when the hopper closes the issue after its merge (issue #677), and a question asked on
-   * the issue thread (issue #435). Answers the comment made.
+   * the issue thread (issue #435). Or on a job's pull request, by its number (issue #1143, `pr-notes.ts`): what the hopper
+   * does with it — a tend job started, moved to the landing branch, closed as superseded. Answers the comment made.
    */
   postComment(repo: string, number: number, body: string): Promise<PostedComment>;
   /** The merged pull request that closed the issue last; undefined when a person or a commit closed it. */
@@ -245,8 +246,13 @@ export interface GitHubApi {
    * pull request it follows). GitHub's refusal — not mergeable, checks required, no access — throws.
    */
   merge(repo: string, number: number): Promise<void>;
-  /** Close pull request `number` of `repo` without a merge (issue #677: a person's Close PR). */
+  /**
+   * Close pull request `number` of `repo` without a merge (issue #677: a person's Close PR; issue #1143: a job's pull
+   * request with nothing left to land).
+   */
   closeWithoutMerge(repo: string, number: number): Promise<void>;
+  /** Change the base branch of open pull request `number` of `repo` to `base` (issue #1143: to the landing branch). GitHub's refusal throws. */
+  retarget(repo: string, number: number, base: string): Promise<void>;
   /**
    * The log of GitHub Actions job `jobId` of `repo` (issue #993): what a failed check printed, the whole text. Through the
    * shared rate limiter as every call. GitHub refuses it (403) without the Actions read permission. Absent: not read.
@@ -267,6 +273,14 @@ export interface GitHubApi {
    * `repoErrors`, never a throw. What intake reads (issue #985 part 2): never one REST listing per repository.
    */
   listRepos(repos: string[], labels: string[]): Promise<RepoListing>;
+  /**
+   * The issues and pull requests of `repo` changed since `since` (GitHub's `updatedAt`; undefined: any), newest change
+   * first, one page of at most CHANGE_READ_PAGE (issue #1125, a **change read**): `GET /repos/{owner}/{repo}/issues` with
+   * `state=all` and `since`, a conditional request, so an answer GitHub has not changed costs no call (304). Through the
+   * intake reserve, and never waits for the rate limit: a call that would wait is not made (GitHubRateLimited). Absent: not
+   * read, and intake waits for the timed listing.
+   */
+  issuesChangedSince?(repo: string, since: string | undefined): Promise<IssueChange[]>;
 
   // ---- GitHub App mode only (absent on the connected account's adapter) ----------------------------
 
@@ -287,8 +301,27 @@ export interface GitHubApi {
    * (issue #967, `gitAnswers`); undefined: git cannot. A write: it drops what the pass read of `repo`. Absent: no mirror.
    */
   baseMerge?(repo: string, pr: BaseMergeTarget): Promise<BaseMerge | undefined>;
+  /**
+   * The commit branch `base` of `repo` is at, as the hopper's mirror fetched it this pass (issue #1143 part 3,
+   * `gitAnswers`); undefined: git cannot say. Absent: no mirror.
+   */
+  baseTip?(repo: string, base: string): Promise<string | undefined>;
   /** Every repo (owner/repo) the app is installed on, across installations: the allowlist. */
   listInstalledRepos?(): Promise<{ repo: string; installationId: number }[]>;
+}
+
+/** The most changes one change read answers (issue #1125): a full page may hold more, so it counts as a change. */
+export const CHANGE_READ_PAGE = 100;
+
+/** One issue or pull request a change read answered (issue #1125): what tells whether the listing cache still holds it, and its row if so. */
+export interface IssueChange {
+  number: number;
+  kind: 'issue' | 'pull';
+  state: 'open' | 'closed';
+  title: string;
+  labels: string[];
+  assignees: string[];
+  updatedAt: string;
 }
 
 export class GitHubApiError extends Error {

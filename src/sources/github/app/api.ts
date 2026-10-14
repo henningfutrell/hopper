@@ -42,6 +42,8 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
   const req = makeRequest(o.baseUrl ?? 'https://api.github.com', undefined, { deferAfterMs: SOURCE_DEFER_AFTER_MS });
   // The reads that look for new jobs stop at the intake reserve, so a job's own calls still go (issue #983).
   const intake = makeRequest(o.baseUrl ?? 'https://api.github.com', undefined, { deferAfterMs: SOURCE_DEFER_AFTER_MS, intake: true });
+  // A change read never waits (issue #1125): the timed listing stays for a sync it could not make.
+  const changes = makeRequest(o.baseUrl ?? 'https://api.github.com', undefined, { deferAfterMs: 0, intake: true });
   const ask = batchGraphQL(req);
   let loaded: Loaded | undefined;
   let authError: string | undefined;
@@ -165,6 +167,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
       }
       return out;
     }),
+    issuesChangedSince: (repo, since) => call(`changes of ${repo}`, async (l) => rest.issuesChangedSince(changes, await tokenFor(l, repo), repo, since)),
     // The in-motion cycle's reads (issue #985), one batch for each installation's token, as a listing.
     openPullRequestsIn: (repos) => call(`open pull requests of ${repos.length} repositories`, async (l) => {
       const out: OpenPullRequestsIn = { repos: new Map(), repoErrors: new Map() };
@@ -215,6 +218,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
     openPullRequests: (repo) => call(`open pull requests of ${repo}`, async (l) => openPullRequests(req, await tokenFor(l, repo), repo)),
     merge: (repo, number) => call(`merge ${repo}#${number}`, async (l) => rest.mergePullRequest(req, await tokenFor(l, repo), repo, number)),
     closeWithoutMerge: (repo, number) => call(`close ${repo}#${number}`, async (l) => rest.closePullRequest(req, await tokenFor(l, repo), repo, number)),
+    retarget: (repo, number, base) => call(`base of ${repo}#${number}`, async (l) => rest.retargetPullRequest(req, await tokenFor(l, repo), repo, number, base)),
     toDraft: (repo, number) => call(`draft ${repo}#${number}`, async (l) => rest.convertToDraft(req, await tokenFor(l, repo), repo, number)),
     jobLog: (repo, jobId) => call(`log of Actions job ${jobId} of ${repo}`, async (l) => rest.jobLog(req, await tokenFor(l, repo), repo, jobId)),
     gitRemote: (repo) => call(`git of ${repo}`, async (l) => ({ url: `${webOriginOf(o.baseUrl ?? 'https://api.github.com')}/${repo}.git`, token: await tokenFor(l, repo) })),

@@ -185,24 +185,18 @@ describe('a container install is updated by its user (issue #494)', () => {
     expect(document.querySelector('[data-slot="image-update"]')).toBeNull();
   });
 
-  it('Version gives the copyable commands for the selected channel\'s tag, the tag mismatch and the restart-blocker count', async () => {
+  it('Version gives the copyable command for the selected channel\'s tag, the tag mismatch and the restart-blocker count', async () => {
     window.location.hash = '#settings/version';
     await render('../../ui/src/views/settings.tsx', 'Settings', { update: image });
     const block = document.querySelector('[data-slot="image-update"]')!;
     const text = block.textContent ?? '';
-    expect(text).toContain('podman compose exec -T postgres pg_dump -U hopper -d hopper -Fc > hopper-backup.dump');
-    // The check that podman compose sees the stack that runs (issue #1063).
-    expect(text).toContain('podman compose does not see the hopper stack that runs');
-    expect(text).toContain('podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:dev hopper update carry --image ghcr.io/henningfutrell/hopper:dev < compose.yaml > compose.yaml.next');
-    expect(text).toContain('diff -u compose.yaml compose.yaml.next');
-    expect(text).toContain('cp compose.yaml compose.yaml.bak && mv compose.yaml.next compose.yaml');
-    expect(text).toContain('HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev podman compose up -d');
-    expect(text).toContain('PODMAN_COMPOSE_PROVIDER=podman-compose');
+    expect(text).toContain('podman run --rm --pull=always ghcr.io/henningfutrell/hopper:dev hopper update script | bash -s -- ghcr.io/henningfutrell/hopper:dev');
+    expect(text).toContain('uses the compose tool that started the stack');
     expect(text).not.toContain('--no-deps');
     expect(text).toContain('podman image prune -f --filter label=org.opencontainers.image.title=hopper');
     expect(text).toContain('this container runs the stable image; the selected channel is dev: switch the image tag');
     expect(text).toContain('2 running jobs would be lost');
-    expect([...block.querySelectorAll('button')].filter((b) => b.textContent === 'Copy').length).toBe(8);
+    expect([...block.querySelectorAll('button')].filter((b) => b.textContent === 'Copy').length).toBe(2);
   });
 
 });

@@ -5,8 +5,10 @@
 import type { JobSourceContext } from '../plugins/sdk.ts';
 import type { UserStore } from '../domain/store.ts';
 import { DEFAULT_YOLO_MODE, isRerunnable, yoloModeFor } from '../domain/types.ts';
+import { landingBranch } from '../domain/landing-batches.ts';
 import { rejectionOf } from '../domain/rejection.ts';
 import { requestsWaitingOf } from '../domain/work-items.ts';
+import { itemHistory, requestOpenedSince } from '../domain/intake.ts';
 import { storeIntakeTrust, type DecideIntakeActor } from './intake-trust.ts';
 import { join } from 'node:path';
 import { createGitMirrors } from '../git-mirror/mirrors.ts';
@@ -27,15 +29,16 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       migration: () => store.settings.getIntakeMigration(name),
       migrated: (m) => store.settings.setIntakeMigration(name, m),
       record: (type, data) => { store.events.append({ type, data }); },
-      // Opened with this text since its last withdraw (issue #1067, part 4): a card back in Intake opens again.
-      requestOpened: (key, hash) => {
-        const mine = store.events.between(['source.request_opened', 'source.request_withdrawn'], EPOCH).filter((e) => e.data.source === name && e.data.key === key);
-        return mine.slice(mine.findLastIndex((e) => e.type === 'source.request_withdrawn') + 1).some((e) => e.data.hash === hash);
-      },
+      // Opened with this text since its last withdraw or approval (issues #1067 part 4, #1126): a card back in Intake opens again.
+      requestOpened: (key, hash) => requestOpenedSince(
+        store.events.between(['source.request_opened', 'source.request_withdrawn', 'source.request_approved'], EPOCH).filter((e) => e.data.source === name && e.data.key === key), hash),
       requestsWaiting: () => requestsWaitingOf(store.workItems.list({ state: ['waiting_for_approval'] }), name),
+      history: (key) => itemHistory(store.jobs.getBySourceKey(key), (id) => store.jobs.get(id), store.workItems.get(key)?.pullRequest),
     }),
     intakeTrust: storeIntakeTrust(store, decideActor),
     yoloMode: (repo) => yoloModeFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),
+    // The landing batch setting's, never GitHub's default branch (issues #1142, #1143).
+    landingBranch: (repo) => { const cfg = store.settings.getLandingBatches()?.repos[repo.toLowerCase()]; return cfg && landingBranch(cfg); },
     // Each read kept names its issues and pull requests to search (issue #945), once the store has it.
     issueGraph: {
       record: (issue, graph, readAt) => { store.issueGraph.record(issue, graph, readAt); graphRead?.(graphKeys(graph)); },

@@ -23,13 +23,12 @@ interface World { aheadBy: number; reports: number[]; calls: string[]; issues: {
 function fake(w: World): LandingBatchGitHub {
   const no = async (): Promise<never> => { throw new Error('not in this test'); };
   return {
-    defaultBranch: async () => 'main',
     compare: async (_repo, base, head) => {
       w.calls.push(`compare ${base}...${head}`);
       return base === 'stable' ? { aheadBy: w.aheadBy, tip: TIP, commits: [] } : { aheadBy: 0, tip: 'landing', commits: [] };
     },
     createBranch: no, deleteBranch: no, openPullRequest: no, pullRequest: no, checkRuns: no, merge: no, close: no, mergeInto: no,
-    openPullRequests: async () => [], retarget: no, pullRequestOf: no, revert: no, checkLog: no,
+    openPullRequests: async () => [], retarget: no, comment: no, pullRequestOf: no, revert: no, checkLog: no,
     fileIssue: async (_repo, issue) => { w.issues.push(issue); return { number: 90, url: `https://github.test/${REPO}/issues/90` }; },
     bugReports: async (_repo, sha, since) => { w.calls.push(`reports ${sha} ${since}`); return w.reports; },
     fastForward: async (_repo, branch, sha) => { w.calls.push(`fast-forward ${branch} ${sha}`); },

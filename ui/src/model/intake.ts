@@ -50,6 +50,23 @@ export function intakeGroups(items: IntakeOutcome[], kept?: ReadonlySet<string>)
 /** A source's intake outcomes, or none when it lists none. */
 export const intakeOf = (s: SourceStatus): IntakeOutcome[] => (Array.isArray(s.detail?.intake) ? s.detail.intake as IntakeOutcome[] : []);
 
+/**
+ * Why a source lists fewer issues than it should (issue #1125): it is paused (it lists none), its last sync failed, or
+ * GitHub did not answer for some of its job repositories (their issues are not listed). Empty: nothing to say.
+ */
+export interface IntakeTrouble { paused?: string; error?: string; repoErrors: [repo: string, error: string][] }
+export function intakeTrouble(s: SourceStatus): IntakeTrouble {
+  const d = s.detail ?? {};
+  const repoErrors = d.repoErrors && typeof d.repoErrors === 'object' ? Object.entries(d.repoErrors as Record<string, unknown>).map(([r, e]): [string, string] => [r, String(e)]) : [];
+  return {
+    ...(typeof d.paused === 'string' ? { paused: d.paused } : {}),
+    ...(s.state === 'error' && s.lastError ? { error: s.lastError } : {}),
+    repoErrors,
+  };
+}
+/** A source Intake shows: one that lists issues, or one that is paused, so Intake says why it lists none. */
+export const inIntake = (s: SourceStatus): boolean => Array.isArray(s.detail?.intake) || typeof s.detail?.paused === 'string';
+
 /** The issues on the backburner across the sources (issue #808): Intake's second badge, and the Queue's link. */
 export const onTheBackburner = (sources: SourceStatus[]): number => sources.reduce((n, s) => n + intakeOf(s).filter((x) => groupOf(x) === 'backburner').length, 0);
 

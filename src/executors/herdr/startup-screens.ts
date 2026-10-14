@@ -5,6 +5,7 @@
 // a wait nobody ends.
 
 import { isBypassDialog, isImportsDialog, isTrustDialog, showsDialog } from './screen.ts';
+import { LOGIN_SCREEN_MARK, NOT_SIGNED_IN } from '../../domain/types.ts';
 
 /** What decides the answer to a startup screen: the instance's options and the directory Claude starts in. */
 export interface StartupPolicy {
@@ -39,13 +40,11 @@ export const isThemeScreen = (text: string): boolean => text.includes('Choose th
 export const isApiKeyScreen = (text: string): boolean => text.includes('Detected a custom API key') && text.includes('Do you want to use this API key?');
 
 /** Claude asking how to sign in: it has no credential on this machine. */
-export const isLoginScreen = (text: string): boolean => text.includes('Select login method');
+export const isLoginScreen = (text: string): boolean => text.includes(LOGIN_SCREEN_MARK);
 
 /** Claude at its prompt with no credential (its config seeded, so no login screen): "Not logged in · Run /login" under the input box. */
 export const notSignedIn = (text: string): boolean => /Not logged in · Run \/login/.test(text);
 
-/** Why a screen of Claude's with no credential goes to the job's answerers. */
-export const NOT_SIGNED_IN = 'Claude is not signed in on this machine: sign it in there, or give it CLAUDE_CODE_OAUTH_TOKEN, then answer';
 
 /** A cursor on an option outside Claude's input box: a select of Claude's, numbered or not. */
 function cursorOutsideBox(text: string): boolean {

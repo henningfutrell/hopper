@@ -31,7 +31,10 @@ export function createJobRepository(c: StoreContext): JobRepository {
       const conds = [
         ...(filter?.status?.length ? [`status IN (${filter.status.map(() => '?').join(',')})`] : []),
         ...(filter?.unassessed ? ["body::jsonb->'assessment' IS NULL"] : []),
+        ...(filter?.undismissed ? ["body::jsonb->'dismissedAt' IS NULL"] : []),
         ...(filter?.followed ? ["body::jsonb->'sourceState'->'source'->>'follow' IN ('open', 'closed', 'tended')"] : []),
+        ...(filter?.namesPullRequest ? ["body::jsonb->'sourceState'->'source'->>'pullRequest' IS NOT NULL",
+          "COALESCE(body::jsonb->'sourceState'->'source'->>'follow', '') NOT IN ('merged', 'abandoned')"] : []),
       ];
       const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
       const limit = filter?.limit !== undefined ? 'LIMIT ?' : '';

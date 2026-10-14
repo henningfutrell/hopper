@@ -1,6 +1,6 @@
 // The GitHub JobSource: open issues labelled `hopper` and assigned to the user's connected account become
 // jobs (issue #387) when their origin is trusted — written, labelled and assigned by the user's trusted actors — or a
-// person approved their text; any other is a request card (issue #652, origin.ts);
+// person approved their text; any other is a request card (issue #652, origin.ts; a reopened issue too, issue #1126);
 // what happens to them goes back as labels only (no comment); closes and unlabels come
 // back as cancel signals; unassigning the account cancels a waiting job and flags a started one. `knownKeys` (wired by the sync loop) tells discover which claimed issues already have
 // a local job; without it every claimed issue is skipped, so nothing is ever re-run blind.
@@ -26,7 +26,7 @@ import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
 import { issueState, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
-import { followPullRequest } from './follow.ts';
+import { followPullRequest, housekeepStrays, tendStartedOn, type FollowContext } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
 import { followedBatch } from './followed-batch.ts';
@@ -39,7 +39,7 @@ import { intakeAct } from './intake-actions.ts';
 import { outsideReader } from './outside.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
-import { openRequests, originsOf, requestOutcome, withdrawRequests } from './origin.ts';
+import { openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
 import { backburnerReader } from './backburner.ts';
 import { recordIssueGraph, type IssueGraphRecorder } from './graph.ts';
 import { reportToGitHub, takeBack, writeResolution } from './report.ts';
@@ -81,8 +81,11 @@ export interface GitHubSourceOptions {
   intake?: IntakeContext;
   /** The user's trusted actors and approvals (issue #652): an issue not of a trusted origin is a request card. */
   trust: IntakeTrust;
-  /** Whether a job on the repo may merge its own pull request (yolo mode, issue #579), read at each prompt; absent: never. */
-  yoloMode?: (repo: string) => boolean;
+  /**
+   * Whether a job on the repo may merge its own pull request (yolo mode, issue #579), read at each prompt; absent: never.
+   * And a repository's landing branch, from its landing batch settings (issue #1143); absent or undefined: no pull request is moved.
+   */
+  yoloMode?: (repo: string) => boolean; landingBranch?: (repo: string) => string | undefined;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. Absent: none. */
   jobArtifacts?: JobArtifacts;
   /** The user's issue graph (issue #437): each listed issue's place is kept there. Absent: none is kept. */
@@ -133,6 +136,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const backburner = backburnerReader(api);
   /** The pull requests the round's follows read first (issue #985). */
   const batch = followedBatch(api);
+  /** What a follow, and the housekeeping of strays (issue #1143 part 4), need. */
+  const followContext = (): FollowContext => ({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}) });
 
   /** App mode: the bot, once known (the app file, or the first sync). */
   let knownBot: string | undefined;
@@ -306,7 +311,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       // by its origin (issue #652).
       const judged = taken.filter((i) => !known.has(i.url) || rerun.has(i.url) || o.trust.originPending(i.url));
       const verdicts = await originsOf(api, o.trust, judged, config.label, assignee);
-      const requests = new Map<string, IntakeRequest>();
+      const requests = await reopenedRequests(api, found.seen, next, o.rerunnable, intake);
       const items: SourceItem[] = [];
       for (const issue of taken) {
         const v = verdicts.get(issue.url);
@@ -367,10 +372,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     unfinishedPullRequest(job) {
       return unfinishedPullRequest(api, job);
     },
-    follow(job, act) {
-      return followPullRequest({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}) }, job, act);
-    },
-    unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs),
+    follow: (job, act) => followPullRequest(followContext(), job, act),
+    housekeepStrays: (strays) => housekeepStrays(followContext(), strays),
+    unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api),
     readFollowed: (jobs) => batch.read(jobs),
     crossReferences: (job) => crossReferencesOfJob(api, job),
     mergesOnReady: (repo) => o.yoloMode?.(repo) ?? false,

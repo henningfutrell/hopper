@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pullRequest": {
+      "type": "string"
+    },
+    "from": {
+      "type": "string"
+    },
+    "to": {
+      "type": "string"
+    },
+    "stray": {
+      "type": "boolean",
+      "const": true
+    }
+  },
+  "required": [
+    "pullRequest",
+    "from",
+    "to"
+  ],
+  "additionalProperties": false
+}

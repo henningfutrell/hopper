@@ -66,16 +66,19 @@ describe('what the sweep reaps (issue #410)', () => {
 });
 
 /** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-function rig(o: { found?: Survey; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[] } = {}) {
+function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number } = {}) {
   let now = Date.parse('2026-10-08T00:00:00Z');
+  // The disk budget (issue #1120), in bytes; absent: none. `surveys`: what each survey finds in turn, then `found`.
+  let budget = o.budget;
+  const surveys = [...(o.surveys ?? [])];
   // Each job works the item `item:<id>`; the ledger holds the items of `itemDone` done.
   const jobs = [job('done', 'finished', '/w'), job('run', 'running', '/v'), job('old', 'failed', '/w')].map((j) => ({ ...j, source: { source: 's', kind: 'github', key: `item:${j.id}` } }) as Job);
-  const events: { type: string; jobId?: string; data: unknown }[] = (o.kept ?? []).map((id) => ({ type: 'job.work_kept', jobId: id, data: { paths: ['x'] } }));
+  const events: { type: string; jobId?: string; machineId?: string; data: unknown }[] = (o.kept ?? []).map((id) => ({ type: 'job.work_kept', jobId: id, data: { paths: ['x'] } }));
   const surveyed: string[][] = [];
   const reaps: { jobId: string; scratch?: string; discard?: boolean }[] = [];
   const logs: string[] = [];
   const shell: MachineShell = {
-    async survey(roots) { surveyed.push(roots); return o.found ?? none; },
+    async survey(roots) { surveyed.push(roots); return surveys.shift() ?? o.found ?? none; },
     async reap(jobId, scratch, _keep, discard) {
       reaps.push({ jobId, ...(scratch ? { scratch } : {}), ...(discard ? { discard } : {}) });
       return { kept: scratch && (!discard || o.oldClient) && o.keeps?.includes(jobId) ? [`${scratch}/repo`] : [] };
@@ -95,12 +98,13 @@ function rig(o: { found?: Survey; kept?: string[]; machines?: MachineSnapshot[];
       jobs: { list: () => jobs, get: (id: string) => jobs.find((j) => j.id === id) },
       events: {
         recent: (_limit: number, types: string[], jobId?: string) => events.filter((e) => types.includes(e.type) && (!jobId || e.jobId === jobId)).reverse() as unknown as DomainEvent[],
-        append: (e: { type: string; jobId?: string; data: unknown }) => { events.push(e); return e as unknown as DomainEvent; },
+        append: (e: { type: string; jobId?: string; machineId?: string; data: unknown }) => { events.push(e); return e as unknown as DomainEvent; },
       },
       workItems: { get: (key: string) => (o.itemDone?.some((id) => key === `item:${id}`) ? { key, state: 'done' } : undefined) },
+      settings: { getDiskBudget: () => (budget === undefined ? undefined : { bytes: budget }) },
     } as never,
   }, (l) => logs.push(l));
-  return { sweep, surveyed, reaps, events, logs, advance: (ms: number) => { now += ms; } };
+  return { sweep, surveyed, reaps, events, logs, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
 }
 
 describe('the sweep runner (issue #410)', () => {
@@ -192,6 +196,98 @@ describe('kept work of a done item (issue #1105)', () => {
     const old = rig({ found, kept: ['old'], keeps: ['old'], itemDone: ['old'], oldClient: true });
     await old.sweep.run(true);
     expect(old.events).toHaveLength(1);
+  });
+});
+
+describe('kept work whose folder is gone (issue #1120)', () => {
+  const at = (roots: string[], scratch: Survey['scratch'] = [], trees: Survey['trees'] = []): Survey => ({ ...none, scratch, trees, roots });
+
+  it('is resolved: its scratch dir and its job worktree are missing from a work tree the survey found, so job.work_removed with gone', async () => {
+    const r = rig({ found: at(['/w']), kept: ['old'] });
+    await r.sweep.run(true);
+    expect(r.reaps).toEqual([]);
+    expect(r.events.at(-1)).toEqual({ type: 'job.work_removed', jobId: 'old', data: { paths: ['/w/.hopper-scratch/old'], gone: true } });
+    expect(r.logs).toEqual([expect.stringContaining('job old\'s kept work is gone from m')]);
+  });
+
+  it('stays while its scratch dir or its job worktree is there', async () => {
+    const dir = rig({ found: at(['/w'], [{ jobId: 'old', path: '/w/.hopper-scratch/old', ageMs: HOUR }]), kept: ['old'], keeps: ['old'] });
+    await dir.sweep.run(true);
+    expect(dir.events).toHaveLength(1);
+    const tree = rig({ found: at(['/w'], [], [{ path: '/w/workspace/worktrees/app-old', ageMs: HOUR }]), kept: ['old'], keeps: ['old'] });
+    await tree.sweep.run(true);
+    expect(tree.events.filter((e) => (e.data as { gone?: boolean }).gone)).toEqual([]);
+  });
+
+  it('stays when the survey did not find its work tree (not there now, or a client older than this), or the job ran on another machine, or has not ended', async () => {
+    const elsewhere = rig({ found: at(['/v']), kept: ['old'] });
+    await elsewhere.sweep.run(true);
+    const older = rig({ found: none, kept: ['old'] });
+    await older.sweep.run(true);
+    const other = rig({ found: at(['/w']), kept: ['old'], machines: [{ id: 'n', label: 'n', maxLanes: 1, online: true, executors: ['x'] }] });
+    await other.sweep.run(true);
+    const running = rig({ found: at(['/v']), kept: ['run'] });
+    await running.sweep.run(true);
+    expect([elsewhere, older, other, running].map((x) => x.events.length)).toEqual([1, 1, 1, 1]);
+  });
+});
+
+describe('the hopper\'s own disk use (issue #1120)', () => {
+  const GIB = 1024 ** 3;
+  const places = (scratch: number, trees: number) => [{ path: '/w/.hopper-scratch', bytes: scratch * GIB }, { path: '/w/workspace/worktrees', bytes: trees * GIB }];
+  // `done` ended an hour ago: not yet old enough for its scratch dir to go by age.
+  const young: Survey = { ...none, scratch: [{ jobId: 'done', path: '/w/.hopper-scratch/done', ageMs: 1 * HOUR }], roots: ['/w'] };
+  const disk = (r: ReturnType<typeof rig>) => r.events.filter((e) => e.type.startsWith('machine.disk_'));
+
+  it('keeps each machine\'s last measure: each place, their sum and when; no budget, no alert and nothing reaped before its age', async () => {
+    const r = rig({ found: { ...young, usage: places(3, 2) } });
+    await r.sweep.run(true);
+    expect(r.sweep.disk('m')).toEqual({ bytes: 5 * GIB, at: '2026-10-08T00:00:00.000Z', paths: places(3, 2), over: false });
+    expect(r.reaps).toEqual([]);
+    expect(disk(r)).toEqual([]);
+  });
+
+  it('a survey that measured nothing (a client older than this) leaves no measure', async () => {
+    const r = rig({ found: young });
+    await r.sweep.run(true);
+    expect(r.sweep.disk('m')).toBeUndefined();
+  });
+
+  it('over its budget, the sweep reaps every ended job\'s scratch dir now, whatever its age, and measures again: back under, nobody is told', async () => {
+    const r = rig({ budget: 4 * GIB, surveys: [{ ...young, usage: places(3, 2) }, { ...none, roots: ['/w'], usage: places(1, 2) }] });
+    await r.sweep.run(true);
+    expect(r.reaps).toEqual([{ jobId: 'done', scratch: '/w/.hopper-scratch/done' }]);
+    expect(r.surveyed).toHaveLength(2);
+    expect(r.sweep.disk('m')).toMatchObject({ bytes: 3 * GIB, budgetBytes: 4 * GIB, over: false });
+    expect(disk(r)).toEqual([]);
+    expect(r.logs.some((l) => /over its disk budget/.test(l))).toBe(true);
+  });
+
+  it('still over once reaped: machine.disk_over_budget, once while it stays over; machine.disk_within_budget once it is back under', async () => {
+    const r = rig({ budget: 4 * GIB, found: { ...young, usage: places(3, 2) } });
+    await r.sweep.run(true);
+    expect(disk(r)).toEqual([{ type: 'machine.disk_over_budget', machineId: 'm', data: { machineId: 'm', usedBytes: 5 * GIB, budgetBytes: 4 * GIB, paths: places(3, 2) } }]);
+    expect(r.sweep.disk('m')).toMatchObject({ over: true });
+    r.advance(10 * 60_000);
+    await r.sweep.run();
+    expect(disk(r)).toHaveLength(1);
+    r.setBudget(10 * GIB);
+    expect(r.sweep.disk('m')).toMatchObject({ budgetBytes: 10 * GIB, over: false });
+    r.advance(10 * 60_000);
+    await r.sweep.run();
+    expect(disk(r).slice(1)).toEqual([{ type: 'machine.disk_within_budget', machineId: 'm', data: { machineId: 'm', usedBytes: 5 * GIB, budgetBytes: 10 * GIB } }]);
+  });
+
+  it('the budget turned off while over: nobody is told, and nothing is reaped before its age', async () => {
+    const r = rig({ budget: 4 * GIB, found: { ...young, usage: places(3, 2) } });
+    await r.sweep.run(true);
+    r.setBudget(undefined);
+    r.advance(10 * 60_000);
+    const reaps = r.reaps.length;
+    await r.sweep.run();
+    expect(disk(r)).toHaveLength(1);
+    expect(r.reaps).toHaveLength(reaps);
+    expect(r.sweep.disk('m')).toEqual({ bytes: 5 * GIB, at: '2026-10-08T00:10:00.000Z', paths: places(3, 2), over: false });
   });
 });
 

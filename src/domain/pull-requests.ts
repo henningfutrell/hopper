@@ -66,10 +66,20 @@ export interface FollowsPullRequests {
    */
   baseMerge?(job: Job): Promise<BaseMerge | undefined>;
   /**
+   * The commit the base branch of the job's pull request is at now (issue #1143 part 3, the hopper's mirror): a rebase tend
+   * that failed is tended again once it moves. Undefined: the source cannot say (no mirror, outside a pass). Absent: never.
+   */
+  baseTip?(job: Job): Promise<string | undefined>;
+  /**
    * The failed checks `failed` of a followed pull request, each that is a GitHub Actions job with its log's excerpt, or why
    * the source could not read it (issue #993): what a `fix_checks` tend brief quotes. Never throws. Absent: no log is read.
    */
   checkLogs?(failed: readonly FailedCheck[]): Promise<FailedCheck[]>;
+  /**
+   * Say on the job's followed pull request `pullRequest` that a tend job started, with its step (issue #1143). Never
+   * throws. Absent: nothing is said.
+   */
+  tendStarted?(job: Job, pullRequest: string, step: TendStep): Promise<void>;
   /**
    * Reconcile with the source (issue #763): of `jobs` — done, each the newest of its item, following no pull request —
    * the ones whose item is open and has an open pull request, each with the newest such pull request. A throw is asked
@@ -82,6 +92,13 @@ export interface FollowsPullRequests {
    * job (`crossReferences` in its source state). None for a job of no item there. A throw is asked again on a later sync. Absent: none.
    */
   crossReferences?(job: Job): Promise<CrossReference[]>;
+  /**
+   * Housekeeping of stray pull requests (issue #1143 part 4, `strayPullRequests`): of `strays`, each one still open is moved
+   * to its repository's landing branch, or closed as superseded, and the source says so on it, as the follow does for a
+   * followed one. What it did with each; one it left as it is is not in the answer. A throw is asked again at the next
+   * round. Absent: strays are left as they are.
+   */
+  housekeepStrays?(strays: Stray[]): Promise<StrayHousekept[]>;
 }
 
 /**
@@ -93,6 +110,41 @@ export type BaseMerge = { outcome: 'pushed'; commit: string; resolved: string[] 
 
 /** An open pull request of a done job's item that the job does not follow (issue #763); `part`: it ships part of the item. */
 export interface FoundPullRequest { jobId: string; pullRequest: string; part: boolean }
+
+/** A stray pull request (issue #1143 part 4) and the job that holds it: the newest job that names it. */
+export interface Stray { job: Job; pullRequest: string; part: boolean }
+
+/** What housekeeping did with a stray pull request (issue #1143 part 4): moved it to the landing branch, or closed it as superseded, and why. */
+export type StrayHousekept = FoundPullRequest & ({ retargeted: { from: string; to: string } } | { superseded: string });
+
+/** The follows after which a job's pull request is no longer open: nothing is left to do with it. */
+const ENDED_FOLLOWS: ReadonlySet<unknown> = new Set(['merged', 'closed', 'abandoned']);
+const ended = (j: Job): boolean => j.status === 'finished' || j.status === 'failed' || j.status === 'cancelled' || j.status === 'rejected';
+
+/**
+ * The stray pull requests of `jobs` (issue #1143 part 4): a pull request a job named in its source state, that no job
+ * follows, of an item no job works on — every job of the item ended. A tend whose tend job failed or was cancelled, a
+ * cancelled or rejected newer job, a rework that ended with none leave one. The newest job that names it holds it. Not one
+ * merged, closed or abandoned by any job's follow, nor one a proposal's follow-ons took (issue #859). Pure: the source says
+ * whether each is still open.
+ */
+export function strayPullRequests(jobs: readonly Job[]): FoundPullRequest[] {
+  const items = new Map<string, Job[]>();
+  for (const j of jobs) if (j.source?.key) items.set(j.source.key, [...(items.get(j.source.key) ?? []), j]);
+  const found: FoundPullRequest[] = [];
+  for (const js of items.values()) {
+    if (!js.every(ended)) continue;
+    const sourceOf = (j: Job) => j.sourceState?.source as { pullRequest?: unknown; follow?: unknown; part?: unknown } | undefined;
+    const taken = new Set(js.filter((j) => (following(j) && followsWhenEnded(j)) || ENDED_FOLLOWS.has(sourceOf(j)?.follow)).map((j) => sourceOf(j)?.pullRequest));
+    const holders = new Map<string, Job>();
+    for (const j of [...js].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))) {
+      const pr = sourceOf(j)?.pullRequest;
+      if (typeof pr === 'string' && !taken.has(pr) && !handedToFollowOns(j)) holders.set(pr, j);
+    }
+    for (const [pullRequest, j] of holders) found.push({ jobId: j.id, pullRequest, part: sourceOf(j)?.part === true });
+  }
+  return found;
+}
 
 /**
  * What following a waiting pull request last saw of it (issue #637), kept in the job's source state (`seen`): what the
@@ -199,6 +251,10 @@ export interface FollowUp {
   part: boolean;
   /** The job's source state from now on. */
   state: Record<string, unknown>;
+  /** Open: the hopper moved it from base `from` to the landing branch `to` (issue #1143). */
+  retargeted?: { from: string; to: string };
+  /** Closed: the hopper closed it, as nothing is left to land, and why (issue #1143). */
+  superseded?: string;
 }
 
 /**
@@ -318,9 +374,11 @@ function checkLines({ failed = [], rerun = false }: TendChecks): string[] {
  */
 /**
  * A tend of the job's pull request: the step, the tend job, how many tends in a row ran again after a cancel by no person
- * (issue #1010), and `again`, when a person pressed Tend again on it after the hopper gave up (issue #1010).
+ * (issue #1010) or a move of the base branch (issue #1143 part 3), and `again`, when a person pressed Tend again on it after
+ * the hopper gave up (issue #1010). A `rebase` whose tend job failed: `baseAt`, the commit its base branch was at when the
+ * hopper first saw the failure, and `baseMoved`, when the hopper then saw that branch at another commit.
  */
-export interface Tended { pullRequest: string; step: TendStep; nextJobId: string; retries?: number; again?: string }
+export interface Tended { pullRequest: string; step: TendStep; nextJobId: string; retries?: number; again?: string; baseAt?: string; baseMoved?: string }
 
 /**
  * The reasons a job is cancelled on purpose (issue #1010): a person's cancel, or its source's — the issue gone, closed,
@@ -328,20 +386,26 @@ export interface Tended { pullRequest: string; step: TendStep; nextJobId: string
  */
 export const DELIBERATE_CANCELS: readonly string[] = ['cancelled in UI', 'question dismissed', 'issue gone', 'issue closed', 'label removed', 'backburner', 'unassigned'];
 
-/** How many tend jobs in a row the hopper tends again after a cancel (issue #1010), and the wait before the first. */
+/**
+ * How many tend jobs in a row the hopper tends again after a cancel (issue #1010) or a failed rebase whose base branch moved
+ * (issue #1143 part 3), and the wait before the first after a cancel.
+ */
 export const MAX_TEND_RETRIES = 3;
 export const TEND_RETRY_MS = 5 * 60_000;
 
 /**
  * When the hopper tends a pull request again whose tend job was cancelled (issue #1010), in ms: a cancel by the sweep, a
  * restart or anything but a person or its source is no reason to give up. The wait doubles with each retry in a row:
- * 5, 10, then 20 minutes after the cancel. Undefined: it is not tended again — not a cancelled tend job, cancelled on
- * purpose (`DELIBERATE_CANCELS`), or `MAX_TEND_RETRIES` cancelled in a row.
+ * 5, 10, then 20 minutes after the cancel. A failed `rebase` is tended again once its base branch moved (issue #1143
+ * part 3, `baseMoved`): the new base can take the rebase the old one could not. Undefined: it is not tended again — not a
+ * cancelled tend job nor a failed rebase whose base moved, cancelled on purpose (`DELIBERATE_CANCELS`), or
+ * `MAX_TEND_RETRIES` in a row.
  */
 export function tendRetryAt(tended: Tended | undefined, tendJob: Job | undefined): number | undefined {
   if (!tended || tendJob?.id !== tended.nextJobId) return undefined;
   // A person pressed Tend again: due from then, whatever ended the tend job.
   if (tended.again && TEND_ENDS.includes(tendJob.status)) return Date.parse(tended.again);
+  if (rebasesWhenBaseMoves(tended, tendJob) && tended.baseMoved) return Date.parse(tended.baseMoved);
   if (tendJob.status !== 'cancelled') return undefined;
   const reason = tendJob.sourceState?.sync?.cancelReason;
   if (typeof reason === 'string' && DELIBERATE_CANCELS.includes(reason)) return undefined;
@@ -349,6 +413,14 @@ export function tendRetryAt(tended: Tended | undefined, tendJob: Job | undefined
   if (retries >= MAX_TEND_RETRIES) return undefined;
   return Date.parse(tendJob.finishedAt ?? tendJob.createdAt) + TEND_RETRY_MS * 2 ** retries;
 }
+
+/**
+ * Whether the hopper rebases the pull request again when its base branch moves (issue #1143 part 3): the tend job of
+ * `tended` is `tendJob`, a `rebase` that failed, fewer than `MAX_TEND_RETRIES` in a row ran again, and a person did not
+ * press Tend again.
+ */
+export const rebasesWhenBaseMoves = (tended: Tended, tendJob: Job): boolean =>
+  tended.step === 'rebase' && tendJob.id === tended.nextJobId && tendJob.status === 'failed' && !tended.again && (tended.retries ?? 0) < MAX_TEND_RETRIES;
 
 /** The ends of a tend job that leave its pull request to a person, unless it is tended again. */
 export const TEND_ENDS: readonly Job['status'][] = ['failed', 'cancelled', 'rejected'];
@@ -445,12 +517,26 @@ export function tendsInRow(job: Job, url: string, get: (id: string) => Job | und
 }
 
 /**
- * A tend job that failed (issue #786): the job it runs again handed its pull request to it (`tended`). It waits on a person
+ * The tend that handed its pull request to `job` (issue #736), or undefined: the `tended` of a job it runs again, at any
+ * distance — a tend run again after a cancel or a move of its base (issues #1010, #1143 part 3) keeps `tended` on the job
+ * it tended, not on the tend job before it.
+ */
+export function tendOf(job: Job, get: (id: string) => Job | undefined): Tended | undefined {
+  const seen = new Set([job.id]);
+  for (let j = job.rerunOf ? get(job.rerunOf) : undefined; j && !seen.has(j.id); j = j.rerunOf ? get(j.rerunOf) : undefined) {
+    seen.add(j.id);
+    const t = (j.sourceState?.source as { tended?: Tended } | undefined)?.tended;
+    if (t?.nextJobId === job.id) return t;
+  }
+  return undefined;
+}
+
+/**
+ * A tend job that failed (issue #786): a job it runs again handed its pull request to it (`tendOf`). It waits on a person
  * ("tend failed"); reconciling never follows its pull request again.
  */
 export const failedTend = (job: Job, get: (id: string) => Job | undefined): boolean =>
-  job.status === 'failed' && job.rerunOf !== undefined
-  && (get(job.rerunOf)?.sourceState?.source as { tended?: Tended } | undefined)?.tended?.nextJobId === job.id;
+  job.status === 'failed' && tendOf(job, get) !== undefined;
 
 /** An end after which a job's pull request is followed (issues #579, #786): finished, or failed. */
 export const followsWhenEnded = (job: Job): boolean => job.status === 'finished' || job.status === 'failed';

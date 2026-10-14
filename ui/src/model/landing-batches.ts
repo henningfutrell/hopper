@@ -76,6 +76,7 @@ export function landingBatchPatch(from: LandingBatchSettings, to: LandingBatchSe
     if (!was) { repos[repo] = c; continue; }
     const diff: RepoPatch = {};
     if (c.tested !== was.tested) diff.tested = c.tested;
+    if ((c.landing ?? 'main') !== (was.landing ?? 'main')) diff.landing = c.landing ?? 'main';
     if (c.everyMerges !== was.everyMerges) diff.everyMerges = c.everyMerges;
     if (c.everyMinutes !== was.everyMinutes) diff.everyMinutes = c.everyMinutes;
     if (c.canaryHours !== was.canaryHours) diff.canaryHours = c.canaryHours ?? null;

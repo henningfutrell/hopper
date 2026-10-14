@@ -5,10 +5,10 @@ import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.t
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, Allowed, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread,
+  Question, SourceStatus, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, Allowed, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread,
 } from './types.ts';
 import type { UserStore } from './store.ts';
-import type { NoteDelivery } from './job-notes.ts';
+import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
 export type { NoteDelivery } from './job-notes.ts';
 import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
@@ -126,7 +126,7 @@ export interface PaneAnswer { answer?: string; lapsed?: true; executorState: Rec
  * Must resolve (never reject) — a thrown error is converted to { kind: 'failed' } by the
  * engine, but adapters should report their own failures.
  */
-export interface Executor {
+export interface Executor extends ExecutorTerminal {
   readonly name: string;
   /**
    * Safe to run again from scratch after a daemon restart? Default true. A non-idempotent job
@@ -216,7 +216,8 @@ export interface MachineSource {
  * A pluggable usage-budget source. Returns zero or more readings per poll. Every Decision polls
  * every usage source: `poll` must answer from what it already has, never wait on a slow read.
  */
-export interface UsageSource {
+/** A usage source; `signIn` (issue #1128, `ToolSignInStart`): it can start its tool's sign-in on its machine. */
+export interface UsageSource extends ToolSignInStart {
   readonly name: string;
   poll(): Promise<UsageReading[]>;
   /** When it last read, why it has no readings, and the account it reads them for. */

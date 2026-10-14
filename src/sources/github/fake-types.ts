@@ -49,6 +49,8 @@ export interface FakeGitHub extends GitHubApi {
   setConflictBetween(a: string, b: string, conflict: boolean): void;
   /** What the hopper's base merge of a pull request does (issue #967): pushed, resolving `resolved`, or the conflicts it leaves; undefined: git cannot. */
   setBaseMerge(url: string, answer: FakeBaseMerge | undefined): void;
+  /** The commit base branch `base` of `repo` is at, as the hopper's mirror would say (issue #1143 part 3); undefined: git cannot say. */
+  setBaseTip(repo: string, base: string, tip: string | undefined): void;
   /** A push to a pull request's branch (issue #618): a new head commit at `at`, with or without merge conflicts after it. */
   pushToPullRequest(url: string, at: string, o?: { conflicting?: boolean }): void;
   /** Mark an open draft pull request ready for review (issue #626). */
@@ -68,6 +70,8 @@ export interface FakeGitHub extends GitHubApi {
   failNext(method: Method, error: Error): void;
   issue(repo: string, number: number): GitHubIssue;
   commentsOn(repo: string, number: number): GitHubComment[];
+  /** The bodies of the comments on a pull request, by its URL, oldest first (issue #1143). */
+  pullRequestComments(url: string): string[];
   labelsIn(repo: string): string[];
   /** App identity only: replace the repos the app is installed on. */
   setInstalledRepos(repos: string[]): void;

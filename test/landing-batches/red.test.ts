@@ -46,7 +46,6 @@ function world(commits: Commit[], pulls: [number, Pull][] = []): World {
 function fake(w: World): LandingBatchGitHub {
   const url = (n: number): string => `https://github.test/${REPO}/pull/${n}`;
   return {
-    defaultBranch: async () => 'main',
     compare: async () => ({ aheadBy: w.commits.length, tip: w.tip, commits: w.commits }),
     createBranch: async (_repo, name, sha) => { w.calls.push(`branch ${name} ${sha}`); },
     deleteBranch: async (_repo, name) => { w.calls.push(`delete ${name}`); },
@@ -83,6 +82,7 @@ function fake(w: World): LandingBatchGitHub {
     },
     openPullRequests: async () => [],
     retarget: async () => {},
+    comment: async () => {},
     pullRequestOf: async (_repo, sha) => [...w.pulls.entries()].find(([, p]) => p.merged && p.mergeSha === sha)?.[0],
     revert: async (_repo, n, t) => {
       const r = w.next++;

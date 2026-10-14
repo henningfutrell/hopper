@@ -19,7 +19,7 @@ import type { GitHubApi } from './github/index.ts';
 import { createGitHubSource } from './github/index.ts';
 import { gitHubThread } from './github/thread.ts';
 import { passReads } from './github/pass-reads.ts';
-import { baseMergeOf, conflictBetweenOf, gitAnswers } from './github/git-answers.ts';
+import { baseMergeOf, baseTipOf, conflictBetweenOf, gitAnswers } from './github/git-answers.ts';
 import { createCheckLogs } from './github/check-logs.ts';
 import type { GitMirrors } from '../git-mirror/mirrors.ts';
 import { sourceConfig, type GitHubAccountOptions, type GitHubAppOptions } from './config.ts';
@@ -59,6 +59,8 @@ export interface GitHubSourceDeps {
   trust: IntakeTrust;
   /** The user's yolo mode for a repository (issue #579); absent: off. */
   yoloMode?: (repo: string) => boolean;
+  /** A repository's landing branch (issue #1143); absent or undefined: no pull request is moved. */
+  landingBranch?: (repo: string) => string | undefined;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. */
   jobArtifacts?: JobArtifacts;
   /** The user's issue graph (issue #437). */
@@ -97,12 +99,12 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
   const api = reads.api;
   const source = createGitHubSource({
     name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable, trust: o.trust,
-    ...(o.rejections ? { rejections: o.rejections } : {}), ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}), api, assignee,
+    ...(o.rejections ? { rejections: o.rejections } : {}), ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}), api, assignee,
     ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}), ...listingOf(o),
     paused: () => appProblem(app()) ?? (assignee() ? undefined : NO_ASSIGNEE),
     ...(real ? { appInfo: () => real.appStatus() } : {}),
   });
-  return { ...source, pass: reads.pass, conflictBetween: conflictBetweenOf(api), baseMerge: baseMergeOf(api), checkLogs: createCheckLogs(api).read };
+  return { ...source, pass: reads.pass, conflictBetween: conflictBetweenOf(api), baseMerge: baseMergeOf(api), baseTip: baseTipOf(api), checkLogs: createCheckLogs(api).read };
 }
 
 /**
@@ -136,7 +138,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
         source: createGitHubSource({
           name: o.name, kind, mode: 'account', whoami: login, assignee: () => login, config, api, clock: o.clock, trust: o.trust,
           knownKeys: o.knownKeys, rerunnable: o.rerunnable, ...(o.rejections ? { rejections: o.rejections } : {}),
-          ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}),
+          ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}),
           ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}), ...listingOf(o),
         }),
       };
@@ -203,10 +205,17 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       const s = current();
       return s?.crossReferences ? s.crossReferences(job) : Promise.reject(new SourceError(why(), false));
     },
+    housekeepStrays(strays) {
+      const s = current();
+      return s?.housekeepStrays ? s.housekeepStrays(strays) : Promise.reject(new SourceError(why(), false));
+    },
+    // Unconnected, nothing is said on the pull request (issue #1143): a note never throws.
+    tendStarted: async (job, pullRequest, step) => { await current()?.tendStarted?.(job, pullRequest, step); },
     // Unconnected, nothing is merged (issue #796), and nothing is said of conflicts (issue #939).
     mergesOnReady: (repo) => current()?.mergesOnReady?.(repo) ?? false,
     conflictBetween: conflictBetweenOf(api),
     baseMerge: baseMergeOf(api),
+    baseTip: baseTipOf(api),
     // Failed checks' logs (issue #993): through the account's own api, kept across a rebuild of the source.
     checkLogs: createCheckLogs(api).read,
     rerun(job) {
