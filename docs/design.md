@@ -13075,8 +13075,8 @@ The broker (`createGitProxy`, `src/github-proxy/git-broker.ts`), in order:
    asks its helper once more and stops);
 2. the path: `owner/name` (`.git` optional) and a smart-HTTP service; dumb HTTP is not served — else **404**;
 3. a push (`git-receive-pack`): only to the job's **own repository** (its source's, or for a fork its parent's), and only
-   when that is one of its user's **job repositories** and the user can push to it, or to the **job's fork** ("The
-   contribution flow") — else **403** with the reason, which git shows as `remote: …`;
+   when the user can push to it — whether or not it is one of its user's **job repositories** (issue #1131, below) —, or
+   to the **job's fork** ("The contribution flow") — else **403** with the reason, which git shows as `remote: …`;
 4. the job's user's GitHub connection: none — **403** for a push or a job repository, **503** otherwise;
 5. a push's ref updates, read from the pkt-lines before the pack (`receivePackCommands`; gzip is opened; a signed push or
    a shallow one is not taken) and checked (`checkPush`): only `refs/heads/*`, never the repository's default branch
@@ -18864,3 +18864,23 @@ requests are strays, and which job holds each), `test/domain/work-items.test.ts`
 in `test/integration/pull-request-housekeeping.test.ts`, `test/integration/pull-request-retend.test.ts` (part 3: a failed
 rebase tended again once its base moves, at most three in a row; no mirror, no retry), `test/domain/tend-retries.test.ts`
 (`tendOf`, `tendRetryAt` with a moved base), `test/git-mirror/mirrors.test.ts` (`baseTip`).
+
+## A job pushes to its own repository outside the job repositories (issue #1131, 2026-10-14)
+
+**The problem.** A tend job's `git push --force-with-lease` to its own pull request's branch was refused: "<repo> is not
+one of the repositories your jobs use, so the hopper pushes nothing there". The git broker let a job push to its own
+repository only when that repository was one of its user's **job repositories**. But a job's own repository comes from its
+source item, and a job can hold one that is not on that list: a job of the app source (its repositories are the app's
+installation's), a direct job, or a job of a repository the user chose no more after intake (a tend job runs its item
+again later). Its fetch worked (issue #1015) and GitHub said its user could push, so the refusal named no real reason.
+
+**The change.** The job repositories decide intake, not where a job's own work goes. A push goes to the job's own
+repository (or its fork) when its user can push to it (GitHub's `canPush`), with the same ref check (`checkPush`) and the
+shrink guard as before. No job repository check is left on a push. A push with no GitHub connection is refused with the
+connection's problem (403), as before.
+
+**Not changed.** The GitHub proxy's writes (`hopper-gh`: an issue, a pull request, a comment) stay on the job repositories
+(`checkRequest`, issue #1015). A job of a repository outside them still cannot open its pull request there through the
+hopper; that is a separate change.
+
+Tests: `test/integration/git-proxy.test.ts` ("pushes to the job's own repository when it is no job repository, forced too").
