@@ -24,7 +24,7 @@ describe.each([['hopper.ps1', ps1], ['hopper.cmd', cmd]])('%s', (_name, script) 
   it('takes the project from HOPPER_COMPOSE_PROJECT, else compose.yaml\'s name', () => {
     expect(project).toBe('hopper');
     expect(code).toContain('HOPPER_COMPOSE_PROJECT');
-    expect(code).toMatch(/['"=]hopper['"]?\s*$/m);
+    expect(code).toMatch(/else \{ 'hopper' \}|set "HOPPER_PROJECT=hopper"/);
   });
 
   it('runs in the distro HOPPER_WSL_DISTRO names, else WSL\'s default one, with no shell between', () => {

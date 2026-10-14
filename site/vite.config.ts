@@ -2,7 +2,8 @@
 // publishes. Three pages, index.html, install.html and guide.html (the user guide, issue #556), styled by site.css (the UI's own stylesheet). The
 // pages mark where the shared parts go with comments — <!--story:headline-->, <!--story:steps-->,
 // <!--tour--> and the like — and the build renders them from ui/src/app/story.ts and site/tour.ts. The build also
-// publishes what the site served before it had one: scripts/get.sh as install.sh, compose.yaml (and compose.sandboxes.yaml, issue #603), the logo.
+// publishes what the site served before it had one: scripts/get.sh as install.sh, compose.yaml (and compose.sandboxes.yaml, issue #603), the logo,
+// and the hopper CLI for Windows, hopper.cmd and hopper.ps1 (issue #712).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
@@ -19,6 +20,8 @@ const SERVED: Record<string, string> = {
   'install.sh': at('../scripts/get.sh'),
   'compose.yaml': at('../compose.yaml'),
   'compose.sandboxes.yaml': at('../compose.sandboxes.yaml'),
+  'hopper.cmd': at('../scripts/hopper.cmd'),
+  'hopper.ps1': at('../scripts/hopper.ps1'),
   'hopper-logo.svg': at('./hopper-logo.svg'),
 };
 

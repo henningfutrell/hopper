@@ -374,6 +374,23 @@ Podman keep separate volumes: moving such a stack from Docker to Podman moves th
 is the `job-hopper_postgres` volume, which `deploy/compose.yaml` still serves. Move it into the new stack
 once, before the hopper's first start, with `pg_dump` from one and `psql` into the other.
 
+### The hopper CLI from Windows
+
+For a hopper in WSL with Podman (issue #712), `scripts/hopper.cmd` and `scripts/hopper.ps1` run the operator CLI from
+Windows: `hopper <command>` in PowerShell or the Command Prompt runs `hopper <command>` in the hopper's container,
+through `wsl.exe -e podman exec`. The CLI uses the credentials it already has in the container; Windows keeps no token,
+and nothing new listens. Anyone who can run `wsl.exe` as that Windows user could already do this.
+
+- **Install:** copy one file to a folder on PATH. The site serves both, at
+  `https://henningfutrell.github.io/hopper/hopper.cmd` and `.../hopper.ps1` (`site/install.html` "The hopper CLI
+  from Windows" has the PowerShell lines). `hopper.cmd` works in both shells with no execution policy; `hopper.ps1`
+  gives the CLI a terminal when PowerShell has one.
+- **The container:** found by its compose labels (`com.docker.compose.project`, `com.docker.compose.service=hopper`),
+  never by its name, which changes with the compose project.
+- **`HOPPER_WSL_DISTRO`:** the WSL distro the hopper runs in; unset, WSL's default distro.
+- **`HOPPER_COMPOSE_PROJECT`:** the compose project; unset, `hopper`, the `name:` in `compose.yaml`.
+- **No hopper running:** the wrapper says so, and exits 1.
+
 ### The hopper's network
 
 `compose.yaml` makes its own network, `hopper_default`, on every `up` (issue #711). The name is fixed in the file, so it
