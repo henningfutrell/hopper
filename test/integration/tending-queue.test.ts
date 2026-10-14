@@ -148,6 +148,31 @@ describe('the tending queue (issue #796)', () => {
   });
 });
 
+describe('a merged pull request holds nothing (issue #1162)', () => {
+  it('the head merges while its tend job works on it: on the next pass the hold goes, and the next one is tended', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    let merged: Waiting | undefined;
+    // The tend of the head: a person merges the pull request meanwhile, which closes its issue.
+    const [first, second] = await waitingPullRequests(gh, app, REPO, 2, {
+      tend: (url) => { if (url === merged?.url) { gh.mergePullRequest(url); gh.closeIssue(REPO, merged.issue); } },
+    });
+    merged = first;
+    gh.setConflicting(first!.url, true);
+    gh.setConflicting(second!.url, true);
+    await app.sync();
+    expect(await tends(app)).toEqual([[first!.job.id, 'rebase']]);
+    const next = await nextJobOf(app, first!.job.id);
+    await app.waitForStatus(next, 'finished');
+    const held = (await app.api<PullRequestsView>('GET', '/api/pull-requests')).body.repos.flatMap((r) => r.pullRequests).find((c) => c.jobId === second!.job.id);
+    expect(held?.queue).toMatchObject({ held: { pullRequest: Number(first!.url.split('/').at(-1)), why: 'tending' } });
+    await app.sync();
+    await waitFor(async () => (await tends(app)).length === 2, { what: 'the next one tended' });
+    expect(await tends(app)).toEqual([[first!.job.id, 'rebase'], [second!.job.id, 'rebase']]);
+    expect(sourceOf(await app.job(second!.job.id))?.heldBehind).toBeUndefined();
+  });
+});
+
 describe('one queue per set of pull requests that conflict (issue #939)', () => {
   it('pull requests that do not conflict are tended at the same time; one that conflicts with a tend waits for it', async () => {
     const gh = createFakeGitHub();
