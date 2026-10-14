@@ -30,7 +30,7 @@ interface World {
 
 function world(): World {
   return {
-    defaultBranch: 'integration', aheadBy: 3, tip: TIP,
+    defaultBranch: 'main', aheadBy: 3, tip: TIP,
     messages: ['Merge pull request #12 from owner/issue-1-a', 'Merge pull request #14 from owner/issue-2-b'],
     pulls: new Map(), checks: [], calls: [],
   };
@@ -81,9 +81,9 @@ describe('the batch runner (issue #1073)', () => {
     const w = world();
     const { r, events } = runner(w);
     await r.pass();
-    expect(w.calls).toEqual(['compare dev...integration', `branch hopper-batch/abcdef012345 ${TIP}`, 'open hopper-batch/abcdef012345 -> dev']);
+    expect(w.calls).toEqual(['compare dev...main', `branch hopper-batch/abcdef012345 ${TIP}`, 'open hopper-batch/abcdef012345 -> dev']);
     expect(events.map((e) => e.type)).toEqual(['landing_batch.started']);
-    expect(events[0]!.data).toMatchObject({ repo: REPO, landing: 'integration', tested: 'dev', tip: TIP, branch: 'hopper-batch/abcdef012345', pullRequest: 100, merges: [12, 14] });
+    expect(events[0]!.data).toMatchObject({ repo: REPO, landing: 'main', tested: 'dev', tip: TIP, branch: 'hopper-batch/abcdef012345', pullRequest: 100, merges: [12, 14] });
     expect(r.view().repos[0]).toMatchObject({ repo: REPO, state: { running: { pullRequest: 100 } } });
   });
 
@@ -92,7 +92,7 @@ describe('the batch runner (issue #1073)', () => {
     w.aheadBy = 0;
     const { r, events } = runner(w);
     await r.pass();
-    expect(w.calls).toEqual(['compare dev...integration']);
+    expect(w.calls).toEqual(['compare dev...main']);
     expect(events).toEqual([]);
     expect(r.view().repos[0]!.why).toBe('nothing new on the landing branch beyond dev');
   });
@@ -132,9 +132,9 @@ describe('the batch runner (issue #1073)', () => {
     w.pulls.set(8, { head: 'someone', base: 'dev', state: 'open', merged: false, mergeable: true, url: `https://github.test/${REPO}/pull/8`, headSha: 'y' });
     const { r, events } = runner(w, { jobPullRequests: [`https://github.test/${REPO}/pull/7`] });
     await r.pass();
-    expect(w.pulls.get(7)!.base).toBe('integration');
+    expect(w.pulls.get(7)!.base).toBe('main');
     expect(w.pulls.get(8)!.base).toBe('dev');
-    expect(events.map((e) => [e.type, e.data])).toEqual([['landing_batch.retargeted', { repo: REPO, pullRequest: 7, url: `https://github.test/${REPO}/pull/7`, from: 'dev', to: 'integration' }]]);
+    expect(events.map((e) => [e.type, e.data])).toEqual([['landing_batch.retargeted', { repo: REPO, pullRequest: 7, url: `https://github.test/${REPO}/pull/7`, from: 'dev', to: 'main' }]]);
   });
 
   it('runs nothing while the default branch is the tested branch, and says why', async () => {

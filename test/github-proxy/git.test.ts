@@ -37,7 +37,7 @@ describe('what a job may push', () => {
   });
 
   it('never the default branch, a release branch, a tag, or a delete', () => {
-    for (const branch of ['dev', 'main', 'master', 'integration', 'beta', 'stable', 'DEV']) {
+    for (const branch of ['dev', 'main', 'master', 'beta', 'stable', 'DEV']) {
       expect(checkPush([{ old: A, new: B, ref: `refs/heads/${branch}` }], at)).toEqual({ ok: false, reason: `a job pushes only to a branch of its own work, never to ${branch}: push a new branch and open a pull request` });
     }
     expect(checkPush([{ old: A, new: B, ref: 'refs/heads/trunk' }], { defaultBranch: 'trunk' })).toMatchObject({ ok: false });

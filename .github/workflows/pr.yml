@@ -2,10 +2,10 @@
 # passed on it (issue #652: no checks is not passing), and this is the check. Every gate of AGENTS.md: typecheck,
 # lint, the UI build (`gates`) and the tests; `test` passes only when all of them passed, so it is the one check to
 # require. Which tests depend on the base (issue #1073, docs/deploy.md "Update channels and promotion"): a pull request
-# into `integration`, the landing branch where every job's pull request merges, runs only the test files its change
+# into `main`, the landing branch where every job's pull request merges, runs only the test files its change
 # affects (`affected`, `vitest --changed`); a pull request into `dev`, `beta` or `stable` — a batch run of
-# `integration` into `dev`, or a promotion — runs the full suite in ten shards (`shard`), about 4 minutes (issue #949).
-# `integration` is not `main`: `main` is the update channel from before issue #423, frozen, and no check runs for it. The tests that need a host service a
+# `main` into `dev`, or a promotion — runs the full suite in ten shards (`shard`), about 4 minutes (issue #949).
+# The tests that need a host service a
 # clean runner does not give (containers they start themselves, a real sshd, LDAP, a vault) are left out
 # (test/support/host-services.ts); the suite's own Postgres still starts through testcontainers. Read-only and
 # with no secrets, so a fork's pull request is safe: `pull_request`, never `pull_request_target`. `gates` also checks
@@ -15,7 +15,7 @@ name: pr
 
 on:
   pull_request:
-    branches: [integration, dev, beta, stable]
+    branches: [main, dev, beta, stable]
 
 permissions:
   contents: read
@@ -44,19 +44,19 @@ jobs:
           key: node-modules-${{ runner.os }}-node24-${{ hashFiles('package-lock.json') }}
       - run: npm ci
         if: steps.deps.outputs.cache-hit != 'true'
-      # Only on a pull request into integration, where every change lands: a batch run (integration to dev) and a
+      # Only on a pull request into main, where every change lands: a batch run (main to dev) and a
       # promotion (dev to beta, beta to stable) carry lines already folded into WHATS-NEW.md, which the check would read
       # as direct edits.
       - run: node scripts/whats-new.ts check HEAD^1
-        if: github.base_ref == 'integration'
+        if: github.base_ref == 'main'
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build:ui
 
-  # The tests the change affects, on a pull request into integration only (issue #1073): the files the merge changed
+  # The tests the change affects, on a pull request into main only (issue #1073): the files the merge changed
   # against its base (`HEAD^1`), and every test file that imports them. None is a pass.
   affected:
-    if: github.base_ref == 'integration'
+    if: github.base_ref == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -79,9 +79,9 @@ jobs:
         env:
           HOPPER_TEST_HOST_SERVICES: '0'
 
-  # The full suite, on every pull request that is not into integration.
+  # The full suite, on every pull request that is not into main.
   shard:
-    if: github.base_ref != 'integration'
+    if: github.base_ref != 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -119,7 +119,7 @@ jobs:
     steps:
       - run: |
           test "$GATES" = success
-          if [ "$BASE" = integration ]; then test "$AFFECTED" = success; else test "$SHARDS" = success; fi
+          if [ "$BASE" = main ]; then test "$AFFECTED" = success; else test "$SHARDS" = success; fi
         env:
           BASE: ${{ github.base_ref }}
           GATES: ${{ needs.gates.result }}

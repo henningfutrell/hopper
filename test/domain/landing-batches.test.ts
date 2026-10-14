@@ -1,5 +1,5 @@
 // Issue #1073 part 1: landing batches. A job's pull request merges into the landing branch (the repository's default
-// branch, `integration` for the hopper's own) after the fast checks only. The full suite runs on the landing branch's
+// branch, `main` for the hopper's own) after the fast checks only. The full suite runs on the landing branch's
 // tip, as a batch run, after N merges or on a timer, and a green batch moves the tested branch (`dev`) in one merge.
 // Nothing new, no run. Pure.
 //
@@ -85,13 +85,13 @@ describe('what a batch run\'s checks say (issue #1073)', () => {
 describe('the state of a repository, from its events (issue #1073)', () => {
   it('a run started, then promoted; a later run failed; each tip tested is kept', () => {
     const states = landingBatchStates([
-      ev('landing_batch.started', { repo: 'Owner/App', landing: 'integration', tested: 'dev', tip: 'a1', branch: 'hopper-batch/a1', pullRequest: 9, url: 'u9', merges: [3, 4] }, ago(50)),
+      ev('landing_batch.started', { repo: 'Owner/App', landing: 'main', tested: 'dev', tip: 'a1', branch: 'hopper-batch/a1', pullRequest: 9, url: 'u9', merges: [3, 4] }, ago(50)),
       ev('landing_batch.promoted', { repo: REPO, tested: 'dev', tip: 'a1', pullRequest: 9, url: 'u9', merge: 'm1' }, ago(40)),
-      ev('landing_batch.started', { repo: REPO, landing: 'integration', tested: 'dev', tip: 'a2', branch: 'hopper-batch/a2', pullRequest: 10, url: 'u10', merges: [5] }, ago(30)),
+      ev('landing_batch.started', { repo: REPO, landing: 'main', tested: 'dev', tip: 'a2', branch: 'hopper-batch/a2', pullRequest: 10, url: 'u10', merges: [5] }, ago(30)),
     ]);
     expect(states[REPO]).toMatchObject({ lastTestedTip: 'a1', lastPromotedTip: 'a1', lastStartedAt: ago(30), running: { tip: 'a2', pullRequest: 10, merges: [5] } });
     const after = landingBatchStates([
-      ev('landing_batch.started', { repo: REPO, landing: 'integration', tested: 'dev', tip: 'a2', branch: 'hopper-batch/a2', pullRequest: 10, url: 'u10', merges: [5] }, ago(30)),
+      ev('landing_batch.started', { repo: REPO, landing: 'main', tested: 'dev', tip: 'a2', branch: 'hopper-batch/a2', pullRequest: 10, url: 'u10', merges: [5] }, ago(30)),
       ev('landing_batch.failed', { repo: REPO, tested: 'dev', tip: 'a2', pullRequest: 10, url: 'u10', reason: 'checks failed: test', checks: ['test'] }, ago(20)),
     ]);
     expect(after[REPO]!.running).toBeUndefined();
@@ -112,10 +112,10 @@ describe('the batch run\'s branch, pull requests and text (issue #1073)', () => 
 
   it('names the branch by the tip, and writes a neutral body that lists the pull requests', () => {
     expect(batchBranch('0123456789abcdef0123')).toBe('hopper-batch/0123456789ab');
-    const body = batchBody({ landing: 'integration', tested: 'dev', tip: '0123456789abcdef', merges: [12, 14] });
+    const body = batchBody({ landing: 'main', tested: 'dev', tip: '0123456789abcdef', merges: [12, 14] });
     expect(body).toContain('#12');
     expect(body).toContain('#14');
-    expect(body).toContain('integration');
+    expect(body).toContain('main');
     expect(body).toContain('Do not merge it by hand');
   });
 });

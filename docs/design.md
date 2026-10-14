@@ -7166,10 +7166,9 @@ channel's branch and the target is not the installed commit: moving from `dev` t
 to `stable`'s head, though the `dev` install contains it (its What's new is then empty; the notice says
 "move to the stable channel").
 
-**Channels and promotion (issues #282, #423, #1073).** `integration` is the repository's default branch, the
+**Channels and promotion (issues #282, #423, #1073).** `main` is the repository's default branch, the
 landing branch: every pull request, a job's included, merges there after the fast checks, and `dev` moves only when a
-green batch run of `integration` merges into it ("Landing batches"). `integration` is no update channel, and not
-`main`, the frozen channel from before #423. `beta` is promoted from `dev`, and `stable` from `beta`, each by
+green batch run of `main` merges into it ("Landing batches"). `main` is no update channel. `beta` is promoted from `dev`, and `stable` from `beta`, each by
 a maintainer with `scripts/promote.sh beta|stable [commit]`: a fast-forward to a commit the less steady
 branch already has, whose image built there (`docs/deploy.md` "Update channels and promotion" says when). A
 hopper moved to a steadier channel can run an older build on a store a newer one migrated, so a store
@@ -7177,8 +7176,7 @@ migration leaves a store the build before it still runs on (AGENTS.md "Persisted
 `beta`, so a change that breaks is caught before it reaches every hopper. Each of the three branches has
 the image tag of its name; the Pages site is published from `stable`. Until issue #423 the channels were
 `dev`, `beta`, `main` and `release` (the newest `v<semver>` tag, of which none was published): store
-migration 26 sets a hopper on `main` or `release` to `stable`, and `main` was moved once to the commit that
-brought it to `stable`, so a hopper on an older version reaches it by following `main` once. **What's new** (issue #104): the bullets of What's new
+migration 26 sets a hopper on `main` or `release` to `stable`. **What's new** (issue #104): the bullets of What's new
 at the target that What's new at the installed commit lacks, newest first (`whatsNew`; all of
 them when the installed commit has none) — plain words for people who use the hopper,
 written by hand in the change that makes them true (AGENTS.md "What's new"); `src/update/whats-new.ts`.
@@ -17940,22 +17938,20 @@ pull request waited for about 4 minutes of shards, jobs stalled behind the same 
 tested as a whole — two pull requests with green checks could break each other (the merge gate only stops merge
 conflicts, "PR tending without lanes").
 
-**The branch model.** `integration` (the **landing branch**) → `dev` (the **tested branch**) → `beta` → `stable`. A
-job's pull request merges into `integration` after the fast checks only: the gates (typecheck, lint, the UI build,
+**The branch model.** `main` (the **landing branch**) → `dev` (the **tested branch**) → `beta` → `stable`. A
+job's pull request merges into `main` after the fast checks only: the gates (typecheck, lint, the UI build,
 What's new) and the test files its change affects (`.github/workflows/pr.yml` job `affected`, `vitest run --changed
-HEAD^1`; issue #1038). The full suite runs on `integration`'s tip as a **batch run**, and a green batch run moves
-`dev` by the whole batch in one merge. `dev` → `beta` → `stable` stays as it is (`scripts/promote.sh`). `integration`
-is not `main`: `main` is the update channel from before issue #423, frozen where `docs/deploy.md` "Update channels and
-promotion" says, and nothing lands on it or moves it. Old hoppers that still follow `main` must never see an untested
-batch, which is why the landing branch has a name of its own.
+HEAD^1`; issue #1038). The full suite runs on `main`'s tip as a **batch run**, and a green batch run moves
+`dev` by the whole batch in one merge. `dev` → `beta` → `stable` stays as it is (`scripts/promote.sh`). `main` is
+no update channel: no hopper follows it.
 
 **The landing branch is the default branch.** Every part of the hopper that names a pull request's base — a job's
 work tree, detached at the default branch; `hopper-gh pr create` with no `--base`; the tending queue's rebase; the
 merge gate; yolo mode — reads the repository's default branch on GitHub. So the landing branch is not a setting: it is
 the default branch, and a repository takes landing batches by making its landing branch the default branch on GitHub
 and naming its tested branch in the settings. A repository whose default branch is still its tested branch runs no
-batch and says so (`problem`). Since `integration` is a branch no job pushes to (`RELEASE_BRANCHES`), a job pushes
-its own branch and opens its pull request into `integration`, as it did into `dev`.
+batch and says so (`problem`). Since `main` is a branch no job pushes to (`RELEASE_BRANCHES`), a job pushes
+its own branch and opens its pull request into `main`, as it did into `dev`.
 
 **The settings** (`landingBatches`, the user's, `POST /ui/api/landing-batches`, an admin's, Settings → Landing
 batches): per repository (`owner/repo`, lowercased), `tested` (the tested branch), `everyMerges` (N, default 5) and
@@ -18001,9 +17997,9 @@ Landing batches shows it.
 **Cost.** One full run per batch. A red batch costs a run and holds the batch off `dev` until the next merge.
 
 **Not yet (the next parts).** On a red batch: a bisect within the batch (#939's bisect, not built then), a revert of
-the culprit from `integration`, a run again and the rest of the batch promoted, and a new hopper issue for the fix,
+the culprit from `main`, a run again and the rest of the batch promoted, and a new hopper issue for the fix,
 linked to the culprit's job and issue, with the failing output and the bisect's result, through Intake. Then `beta` →
 `stable` through a canary: a subset of installs runs the candidate first, and it reaches every install only when its
 health stays good for the canary window, with the subset and the window as settings. The batch state in the
-work-item ledger's rows (a job's pull request merged to `integration`, waiting for its batch), and the batch state on
+work-item ledger's rows (a job's pull request merged to `main`, waiting for its batch), and the batch state on
 the Pull requests view.

@@ -21,9 +21,9 @@ type Workflow = {
 const workflow = parse(readFileSync(join(ROOT, '.github', 'workflows', 'pr.yml'), 'utf8')) as Workflow;
 
 describe('.github/workflows/pr.yml, the pull request check', () => {
-  it('runs on pull requests to integration, dev, beta and stable, never as pull_request_target; never for main', () => {
+  it('runs on pull requests to main, dev, beta and stable, never as pull_request_target', () => {
     expect(Object.keys(workflow.on)).toEqual(['pull_request']);
-    expect(workflow.on.pull_request?.branches).toEqual(['integration', 'dev', 'beta', 'stable']);
+    expect(workflow.on.pull_request?.branches).toEqual(['main', 'dev', 'beta', 'stable']);
   });
 
   it('reads the repository only, and names no secret', () => {
@@ -37,25 +37,25 @@ describe('.github/workflows/pr.yml, the pull request check', () => {
     expect(test.needs).toEqual(['gates', 'affected', 'shard']);
     // Run even when a needed job failed: a skipped check would count as passing.
     expect(test.if).toBe('always()');
-    expect(test.steps.map((s) => s.run)).toEqual(['test "$GATES" = success\nif [ "$BASE" = integration ]; then test "$AFFECTED" = success; else test "$SHARDS" = success; fi\n']);
+    expect(test.steps.map((s) => s.run)).toEqual(['test "$GATES" = success\nif [ "$BASE" = main ]; then test "$AFFECTED" = success; else test "$SHARDS" = success; fi\n']);
     expect(test.steps[0]!.env).toEqual({
       BASE: '${{ github.base_ref }}', GATES: '${{ needs.gates.result }}', AFFECTED: '${{ needs.affected.result }}', SHARDS: '${{ needs.shard.result }}',
     });
     for (const job of Object.values(workflow.jobs)) expect(job['timeout-minutes']).toBeLessThanOrEqual(10);
   });
 
-  // Issue #1073: a pull request into integration, the landing branch, runs only the tests its change affects; every
+  // Issue #1073: a pull request into main, the landing branch, runs only the tests its change affects; every
   // other base (a batch run into dev, a promotion) the full suite in shards.
-  it('into integration, only the affected tests; into any other base, the full suite', () => {
+  it('into main, only the affected tests; into any other base, the full suite', () => {
     const affected = workflow.jobs.affected!;
-    expect(affected.if).toBe("github.base_ref == 'integration'");
-    expect(workflow.jobs.shard!.if).toBe("github.base_ref != 'integration'");
+    expect(affected.if).toBe("github.base_ref == 'main'");
+    expect(workflow.jobs.shard!.if).toBe("github.base_ref != 'main'");
     expect(affected.steps.find((s) => s.uses?.startsWith('actions/checkout@'))?.with).toEqual({ 'fetch-depth': 2 });
     const test = affected.steps.find((s) => s.run?.startsWith('npx vitest'));
     expect(test?.run).toBe('npx vitest run --changed HEAD^1 --passWithNoTests --maxWorkers=100%');
     expect(test?.env).toEqual({ HOPPER_TEST_HOST_SERVICES: '0' });
-    // What's new is checked where a change lands: on integration.
-    expect(workflow.jobs.gates!.steps.find((s) => s.run?.startsWith('node scripts/whats-new.ts'))?.if).toBe("github.base_ref == 'integration'");
+    // What's new is checked where a change lands: on main.
+    expect(workflow.jobs.gates!.steps.find((s) => s.run?.startsWith('node scripts/whats-new.ts'))?.if).toBe("github.base_ref == 'main'");
   });
 
   it('runs every gate with the npm cache, and the tests in shards without host services', () => {

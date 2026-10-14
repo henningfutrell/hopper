@@ -1,6 +1,6 @@
 // Landing batches (issue #1073), in Settings, an admin's: per repository, the tested branch a green batch run moves, and
 // when a batch run starts (after N merges into the landing branch, or a timer; none while nothing is new). A job's pull
-// request lands on the repository's default branch, the landing branch (`integration` for the hopper's own); the full
+// request lands on the repository's default branch, the landing branch (`main` for the hopper's own); the full
 // test suite runs on its tip as a batch run. Each configured repository says where its batch runs stand.
 import { Layers } from 'lucide-react';
 import { useEffect, useState } from 'react';

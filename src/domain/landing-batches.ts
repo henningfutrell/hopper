@@ -1,5 +1,5 @@
 // Landing batches (issue #1073, design.md "Landing batches"): a job's pull request merges into the **landing branch** —
-// the repository's default branch, `integration` for the hopper's own — after the fast checks only. The full suite runs
+// the repository's default branch, `main` for the hopper's own — after the fast checks only. The full suite runs
 // on the landing branch's tip as a **batch run**: a pull request of the tip into the **tested branch** (`dev`), opened
 // by the hopper after `everyMerges` merges or `everyMinutes` minutes since the last batch run, and only when the landing
 // branch has something the tested branch lacks and the tip was not tested before. Green, the hopper merges it: the

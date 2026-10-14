@@ -15,7 +15,7 @@ export type GitService = 'git-upload-pack' | 'git-receive-pack';
 export interface RefUpdate { old: string; new: string; ref: string }
 
 /** Branches no job pushes to, whatever the repository's default branch is: the release branches. */
-export const RELEASE_BRANCHES: readonly string[] = ['main', 'master', 'integration', 'dev', 'beta', 'stable'];
+export const RELEASE_BRANCHES: readonly string[] = ['main', 'master', 'dev', 'beta', 'stable'];
 
 const ZERO = /^0+$/;
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;

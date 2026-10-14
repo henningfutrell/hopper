@@ -5373,7 +5373,7 @@ Version 1 (`docs/schemas/landing_batch.started.v1.json`). The hopper started a b
 ```json
 {
   "repo": "owner/repo",
-  "landing": "integration",
+  "landing": "main",
   "tested": "dev",
   "tip": "0123456789abcdef0123456789abcdef01234567",
   "branch": "hopper-batch/0123456789ab",
@@ -5458,7 +5458,7 @@ Version 1 (`docs/schemas/landing_batch.retargeted.v1.json`). The hopper moved a 
   "pullRequest": 1090,
   "url": "https://github.com/owner/repo/pull/1090",
   "from": "dev",
-  "to": "integration"
+  "to": "main"
 }
 ```
 
