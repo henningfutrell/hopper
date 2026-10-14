@@ -116,7 +116,7 @@ export function parseAuthStatus(stdout: string): Account {
     return { service: 'claude', detail: {}, problem: 'claude auth status: output is not JSON' };
   }
   const a = (typeof json === 'object' && json !== null ? json : {}) as Record<string, unknown>;
-  if (a.loggedIn !== true) return { service: 'claude', detail: {}, problem: 'not logged in' };
+  if (a.loggedIn !== true) return { service: 'claude', detail: {}, problem: 'not logged in', signedOut: true };
   const str = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
   const detail: Record<string, string> = {};
   for (const [key, from] of [['plan', 'subscriptionType'], ['organization', 'orgName'], ['authMethod', 'authMethod']] as const) {
