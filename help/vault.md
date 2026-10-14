@@ -71,6 +71,13 @@ A job on a box gets nothing from the vault until a person grants it. This is the
 
 The grant is kept for the job's item, so **Run again** and **Rework** keep it. Each grant shows who granted it. Click **Revoke** to take it back.
 
+With no browser, use the command line. `hopper vault` lists the grant asks (`grantAsks`) with each job's id. Then:
+
+- `hopper vault grant <job>` grants the job the vault.
+- `hopper vault revoke <job>` takes the grant back.
+
+An agent with an API token uses the same routes: `POST /ui/api/jobs/<job>/grant-vault` and `POST /ui/api/jobs/<job>/revoke-vault`. Its grant needs the scope `jobs:grant-vault`. See [API tokens and grants](api-tokens.md).
+
 A grant widens nothing: the template's approved scope still limits what the job gets. A grant covers the whole approved scope of the template, not one secret. A job never grants itself. Access (OpenFGA) decides each grant; when OpenFGA cannot be reached, nothing is granted.
 
 ## Use a secret in a job

@@ -28,6 +28,13 @@
 //   Scenario: a template's agent credential is saved with --agent-credential, kept by a later save, and dropped with none;
 //     a launch then starts the box signed in (issue #708, part 10)
 //   Scenario: a read probe is marked with --mark, a later save keeps the marks, none drops one; a write probe takes no mark (issue #916)
+//   Scenario: a job is granted the vault and the grant is taken back, with no browser (issue #1089)
+//     Given a job of the hopper's user
+//     When the operator runs `hopper vault grant <job>`
+//     Then the vault's view lists the job's grant, by the operator CLI
+//     When the operator runs `hopper vault revoke <job>`
+//     Then the job has no grant, and a second revoke is refused
+//     And a job the hopper does not know is refused
 import { afterEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import type { TemplateView } from '../../src/domain/types.ts';
@@ -238,5 +245,22 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(json<string[]>(await hopper(a, ['template', 'read-policy']))).toEqual(['cluster/lab', 'aws-account/*']);
     expect(await hopper(a, ['template', 'read-policy', 'set', 'planet/mars'])).toMatchObject({ code: 2, err: expect.stringContaining('the asset kind is one of') });
     expect(json<string[]>(await hopper(a, ['template', 'read-policy', 'set']))).toEqual([]);
+  });
+
+  it('grants a job the vault and takes the grant back, with no browser (issue #1089)', async () => {
+    const { a } = await boot();
+    const job = await a.pull({ op: 'sleep', ms: 60000 });
+    type Grants = { grants: { key: string; job: string; by: string }[] };
+
+    const granted = await hopper(a, ['vault', 'grant', job.id]);
+    expect(granted).toMatchObject({ code: 0 });
+    expect(json<Grants>(granted).grants).toEqual([expect.objectContaining({ job: job.id, key: job.source!.key, by: 'operator CLI' })]);
+    expect(json<Grants>(await hopper(a, ['vault'])).grants.map((g) => g.job)).toEqual([job.id]);
+    expect((await a.events()).find((e) => e.type === 'vault.granted')).toMatchObject({ jobId: job.id });
+
+    expect(json<Grants>(await hopper(a, ['vault', 'revoke', job.id])).grants).toEqual([]);
+    expect(await hopper(a, ['vault', 'revoke', job.id])).toMatchObject({ code: 2, err: expect.stringContaining('has no vault grant to revoke') });
+    expect(await hopper(a, ['vault', 'grant', 'no-such-job'])).toMatchObject({ code: 2, err: expect.stringContaining('job no-such-job not found') });
+    expect(await hopper(a, ['vault', 'grant'])).toMatchObject({ code: 2, err: expect.stringContaining('usage: hopper vault grant|revoke <job>') });
   });
 });

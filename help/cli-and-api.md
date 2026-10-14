@@ -102,6 +102,7 @@ See [Lanes and lane tuning](lanes.md) and [Artifacts](artifacts.md).
 | `hopper vault` | The vault: its secrets and templates, never a value. |
 | `hopper vault set <name> [--scope <text>] [--shared [--reader <user id>]...]` | Set a secret from standard input. |
 | `hopper vault remove <name> [--shared]` | Remove a secret. |
+| `hopper vault grant\|revoke <job>` | Grant a job the vault, or take the grant back. |
 | `hopper vault mint-test aws-role/<account>/<role>` | Test an AWS minting credential. |
 | `hopper template list\|save\|approve\|approve-profile\|revoke\|remove\|check\|read-policy …` | Sandbox templates. |
 | `hopper sandbox list\|launch …` | Sandbox boxes. |

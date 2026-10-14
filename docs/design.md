@@ -15136,6 +15136,13 @@ granted. A model edited before this has `vault_grant` gaps apart (`vaultGrantGap
 not; the hopper's own unedited model is upgraded. `vault.granted { job, key, by }`; `vault.grant_revoked { job, key, by }`
 (409 when there is none). Both answer the vault's view: `GET /api/vault` carries `grantAsks` and `grants`.
 
+**Granting with no browser** (issue #1089). `hopper vault grant <job>` and `hopper vault revoke <job>`
+(`src/cli-operator-vault.ts`) are the same two routes, under the session the operator CLI mints for the one call (issue
+#374), role operator. Access decides as for a click, for the hopper's user the CLI acts as; the answer is the vault's view.
+An agent with an API token uses the routes themselves, with the scope `jobs:grant-vault` (in the preset "Agent: read
+everything and approve what waits"). A job still never grants: its proxy token is no API token, and it runs no operator CLI
+with the database's credentials. Tests: `test/integration/operator-cli-vault.test.ts`.
+
 **Residual risk.** The grant is per item, not per secret: a granted item's jobs get the whole of their template's approved
 scope, as every box job did before. A person who grants a job of a request card's approved text grants that text's work.
 A job on a person's own account (no box) can still read that home's files (`~/.ssh`, a gh login): only a box keeps them
