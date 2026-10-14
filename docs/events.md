@@ -1475,6 +1475,24 @@ Version 1 (`docs/schemas/source.delivery_received.v1.json`). GitHub sent the hop
 }
 ```
 
+## `source.review_requested`
+
+Version 1 (`docs/schemas/source.review_requested.v1.json`). A pull request in a job repository newly asks for the user's review (issue #1141): a **tagged item** for the reason `review`. `key` is its URL, `author` who wrote it. Recorded once while the request stands: after the user reviews it, a new request records it again. Never the text. It shows on Tagged; webhook subscribers get it like any event.
+
+| field | type | required |
+|---|---|---|
+| `source` | string | yes |
+| `key` | string | yes |
+| `author` | string | yes |
+
+```json
+{
+  "source": "github-account",
+  "key": "https://github.com/octocat/hello/pull/12",
+  "author": "hubot"
+}
+```
+
 ## `auth.pending`
 
 Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. Kind `paste_code` (issue #1128): a tool sign-in a person started on the machine (`machineId`), with no job, `run` `sign-in`; the person pastes the code its page shows. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`). A risk hold the Decider made (issue #679) carries `decider` in place of `guards`: its `risk`, `categories`, `confidence` and `threshold`, or the `error` it failed with. `host` (issue #698): the host of the URL to open — what asks —, never its path or query. The Grok Bot routine notifier posts it (issue #698).

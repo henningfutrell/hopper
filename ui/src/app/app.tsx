@@ -9,6 +9,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { load, mustSignIn, recheckSession, SESSION_CHECK_MS, setLoadError, useHopper } from '@/store';
 import { connect } from '@/store/stream';
 import { AccessRequests } from '@/views/access-requests';
+import { Tagged } from '@/views/tagged';
 import { Artifacts } from '@/views/artifacts';
 import { BugReports } from '@/views/bug-reports';
 import { Decisions } from '@/views/decisions';
@@ -43,7 +44,7 @@ import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  'needs-you': NeedsYou, dashboard: Dashboard, search: Search, jobs: Jobs, queue: Queue, 'direct-jobs': DirectJobs, intake: Intake, 'access-requests': AccessRequests, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, accounts: Accounts, sources: Sources, machines: Machines, infra: Infra, usage: Usage, resources: Resources, settings: Settings, job: JobView,
+  'needs-you': NeedsYou, dashboard: Dashboard, search: Search, jobs: Jobs, queue: Queue, 'direct-jobs': DirectJobs, intake: Intake, tagged: Tagged, 'access-requests': AccessRequests, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, accounts: Accounts, sources: Sources, machines: Machines, infra: Infra, usage: Usage, resources: Resources, settings: Settings, job: JobView,
 };
 
 function Loading() {
