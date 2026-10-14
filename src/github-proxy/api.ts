@@ -3,10 +3,12 @@
 // `token()` is asked at every call; a token GitHub refuses (401) is renewed once and the call made again. A repository's
 // read (`repo`) is what the contribution flow (issue #429) decides on: whether the user can push to it, whether it takes
 // issues, and what it is a fork of. A fork made for a repository that takes no issues gets its own issues turned on.
+// The repo queries (issue #1074): a pull request's diff (from its files' patches), its commits and the check runs and
+// statuses of its head commit, and an issue's comments — every page, each answer with the item's own URL.
 import { MAX_JOB_LOG_CHARS, whyNoLog } from '../domain/check-logs.ts';
 import { webOriginOf } from '../sources/github/api.ts';
 import { jobLog } from '../sources/github/app/rest.ts';
-import { makeRequest, splitRepo, statusOf, type Request } from '../sources/github/app/http.ts';
+import { makeRequest, paginate, splitRepo, statusOf, type Request } from '../sources/github/app/http.ts';
 import { contributionSteps, type ProxyRequest } from './policy.ts';
 
 /** What a done request answers the job: always where it is on GitHub; its number when it is an issue or pull request. */
@@ -53,7 +55,15 @@ export interface ProxyApi {
 
 interface RestIssue { id?: number; number: number; title: string; state: string; body?: string | null; html_url: string; user?: { login?: string } | null; labels?: ({ name?: string } | string)[]; pull_request?: unknown }
 interface RestRepo { full_name: string; html_url: string; default_branch: string; has_issues?: boolean; fork?: boolean; owner?: { login?: string }; permissions?: { push?: boolean }; parent?: { full_name?: string }; source?: { full_name?: string } }
-interface RestPull { number: number; node_id?: string; title: string; state: string; body?: string | null; html_url: string; draft?: boolean; merged?: boolean; head: { ref: string }; base: { ref: string } }
+interface RestPull { number: number; node_id?: string; title: string; state: string; body?: string | null; html_url: string; draft?: boolean; merged?: boolean; head: { ref: string; sha?: string }; base: { ref: string } }
+interface RestFile { filename: string; status: string; additions: number; deletions: number; patch?: string; previous_filename?: string }
+interface RestCommit { sha: string; html_url?: string; commit: { message: string; author?: { name?: string; date?: string } | null }; author?: { login?: string } | null }
+interface RestCheckRun { id: number; name: string; status: string; conclusion: string | null; html_url?: string | null; started_at?: string | null; completed_at?: string | null }
+interface RestStatus { context: string; state: string; target_url?: string | null; description?: string | null }
+interface RestComment { id: number; body?: string | null; html_url: string; created_at: string; user?: { login?: string } | null }
+
+/** A pull request's diff a job is answered at most (issue #1074): its start, then `truncated`. Its files are listed whole. */
+export const MAX_DIFF_CHARS = 200_000;
 
 const labelsOf = (i: RestIssue) => (i.labels ?? []).map((l) => (typeof l === 'string' ? l : l.name ?? ''));
 
@@ -112,10 +122,57 @@ async function checkLog(req: Request, token: string, webOrigin: string, repo: st
   return { number: job, url: `${webOrigin}/${repo}/runs/${job}`, log: truncated ? log.slice(-MAX_JOB_LOG_CHARS) : log, ...(truncated ? { truncated: true } : {}) };
 }
 
+/** A pull request's diff (issue #1074): each file's patch as `git diff` writes it; a binary or too large file has none. */
+async function pullDiff(req: Request, token: string, r: { repo: string; number: number }, url: string): Promise<ProxyResult> {
+  const files = await paginate<RestFile>(req, 'GET /repos/{owner}/{repo}/pulls/{pull_number}/files', { ...splitRepo(r.repo), pull_number: r.number, per_page: 100 }, `token ${token}`, (d) => d as RestFile[]);
+  const diff = files.map((f) => {
+    const from = f.previous_filename ?? f.filename;
+    const head = `diff --git a/${from} b/${f.filename}\n--- ${f.status === 'added' ? '/dev/null' : `a/${from}`}\n+++ ${f.status === 'removed' ? '/dev/null' : `b/${f.filename}`}\n`;
+    return f.patch === undefined ? `${head}(no patch: binary, or too large for GitHub to show)\n` : `${head}${f.patch}\n`;
+  }).join('');
+  const truncated = diff.length > MAX_DIFF_CHARS;
+  return {
+    number: r.number, url,
+    files: files.map((f) => ({ file: f.filename, status: f.status, additions: f.additions, deletions: f.deletions, ...(f.previous_filename ? { from: f.previous_filename } : {}) })),
+    diff: truncated ? diff.slice(0, MAX_DIFF_CHARS) : diff, ...(truncated ? { truncated: true } : {}),
+  };
+}
+
+/** The check runs and the statuses of a pull request's head commit (issue #1074): each run's id is its `check log` job. */
+async function pullChecks(req: Request, token: string, r: { repo: string; number: number }): Promise<ProxyResult> {
+  const headers = { authorization: `token ${token}` };
+  const at = splitRepo(r.repo);
+  const pull = (await req('GET /repos/{owner}/{repo}/pulls/{pull_number}', { ...at, pull_number: r.number, headers })).data as RestPull;
+  const sha = pull.head.sha ?? '';
+  const runs = await paginate<RestCheckRun>(req, 'GET /repos/{owner}/{repo}/commits/{ref}/check-runs', { ...at, ref: sha, per_page: 100 }, `token ${token}`, (d) => (d as { check_runs: RestCheckRun[] }).check_runs);
+  const statuses = ((await req('GET /repos/{owner}/{repo}/commits/{ref}/status', { ...at, ref: sha, headers })).data as { statuses?: RestStatus[] }).statuses ?? [];
+  return {
+    number: pull.number, url: pull.html_url, state: pull.state, merged: pull.merged === true, head: pull.head.ref, headSha: sha,
+    checks: runs.map((c) => ({ id: c.id, name: c.name, status: c.status, conclusion: c.conclusion, ...(c.html_url ? { url: c.html_url } : {}), ...(c.started_at ? { startedAt: c.started_at } : {}), ...(c.completed_at ? { completedAt: c.completed_at } : {}) })),
+    statuses: statuses.map((x) => ({ context: x.context, state: x.state, ...(x.target_url ? { url: x.target_url } : {}), ...(x.description ? { description: x.description } : {}) })),
+  };
+}
+
 async function call(req: Request, token: string, r: ProxyRequest, webOrigin: string, subIssueOf?: SubIssueOf): Promise<ProxyResult> {
   const headers = { authorization: `token ${token}` };
   const at = splitRepo(r.repo);
   switch (r.op) {
+    case 'pr.diff': return pullDiff(req, token, r, `${webOrigin}/${r.repo}/pull/${r.number}`);
+    case 'pr.checks': return pullChecks(req, token, r);
+    case 'pr.commits': {
+      const commits = await paginate<RestCommit>(req, 'GET /repos/{owner}/{repo}/pulls/{pull_number}/commits', { ...at, pull_number: r.number, per_page: 100 }, `token ${token}`, (d) => d as RestCommit[]);
+      return {
+        number: r.number, url: `${webOrigin}/${r.repo}/pull/${r.number}`,
+        commits: commits.map((c) => ({ sha: c.sha, message: c.commit.message, author: c.author?.login ?? c.commit.author?.name ?? '', ...(c.commit.author?.date ? { date: c.commit.author.date } : {}) })),
+      };
+    }
+    case 'issue.comments': {
+      const comments = await paginate<RestComment>(req, 'GET /repos/{owner}/{repo}/issues/{issue_number}/comments', { ...at, issue_number: r.number, per_page: 100 }, `token ${token}`, (d) => d as RestComment[]);
+      return {
+        number: r.number, url: `${webOrigin}/${r.repo}/issues/${r.number}`,
+        comments: comments.map((c) => ({ id: c.id, author: c.user?.login ?? '', createdAt: c.created_at, body: c.body ?? '', url: c.html_url })),
+      };
+    }
     case 'repo.view': return { ...(await readRepo(req, headers, r.repo)) };
     case 'repo.fork': return fork(req, headers, r.repo);
     case 'check.log': return checkLog(req, token, webOrigin, r.repo, r.number);

@@ -25,9 +25,13 @@
             "issue.create",
             "issue.comment",
             "issue.view",
+            "issue.comments",
             "issue.close",
             "pr.create",
             "pr.view",
+            "pr.diff",
+            "pr.commits",
+            "pr.checks",
             "pr.ready",
             "repo.view",
             "repo.fork",
@@ -44,6 +48,13 @@
         },
         "url": {
           "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "github",
+            "cache"
+          ]
         }
       },
       "required": [
@@ -130,6 +141,13 @@
         },
         "fork": {
           "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "github",
+            "cache"
+          ]
         }
       },
       "required": [

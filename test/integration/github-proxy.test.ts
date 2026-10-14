@@ -15,6 +15,10 @@
 //     Then it is refused with the reason, nothing reaches GitHub, and the refusal is on its timeline
 //   Scenario: the hopper's own job comments, reads, and opens a pull request from its branch on its own repository
 //   Scenario: a pull request on another repository than the job's own is refused
+//   Scenario: a job asks the hopper, not GitHub (issue #1074: repo queries)
+//     When the job reads its pull request's diff, commits and checks, and its issue's comments, twice
+//     Then GitHub is read once for each: the second answer comes from the hopper's repo-query cache (`source: cache`)
+//     And a comment the job posts drops what was kept of that issue: the next read of its comments is GitHub's
 //   Scenario: a job of another user files an issue, and may do nothing else
 //     Then the issue is filed with the hopper's connection, marked; a comment is refused
 //     And both are in that job's timeline and in the hopper's own user's log, naming the user and the job
@@ -143,6 +147,54 @@ describe('GitHub through the hopper (issue #563)', () => {
     expect(failed.code).toBe(1);
     expect(json(failed)).toMatchObject({ error: 'GitHub answered 422 to pr.create on octo/tools: Validation Failed (No commits between dev and dev)', githubStatus: 422 });
     expect(eventsOf(t.app, ADMIN_ID, 'github_proxy.failed')).toHaveLength(1);
+  });
+
+  it('answers a job\'s repo queries, and asks GitHub once for each while the answer is fresh; a write drops it (issue #1074)', async () => {
+    const t = await start();
+    const comment = { id: 1, body: 'Looks good.', user: { login: 'someone' }, created_at: '2026-10-13T00:00:00Z', html_url: `${t.github.url}/octo/tools/issues/7#issuecomment-1` };
+    t.github.issues.push({ repo: 'octo/tools', number: 7, title: 'Make it faster', body: 'Please.', author: 'someone', labels: ['hopper'], comments: [comment] });
+    const issueUrl = `${t.github.url}/octo/tools/issues/7`;
+    const job = await t.app.pull({}, { executor: 'holder', repo: 'octo/tools', number: 7, key: issueUrl, url: issueUrl });
+    const env = await waitFor(async () => t.held.get(job.id)?.env, { what: 'the job to run' });
+    expect(json(await hopperGh(t.root, env, ['pr', 'create', '--repo', 'octo/tools', '--head', 'issue-7-faster', '--title', 'Faster', '--body', 'Closes #7']))).toMatchObject({ number: 8 });
+    t.github.pullFiles = { 'octo/tools#8': [
+      { filename: 'src/queue.ts', status: 'modified', additions: 1, deletions: 1, patch: '@@ -1 +1 @@\n-slow()\n+fast()' },
+      { filename: 'logo.png', status: 'added', additions: 0, deletions: 0 },
+    ] };
+    t.github.pullCommits = { 'octo/tools#8': [{ sha: 'c1', commit: { message: 'Make the queue faster', author: { name: 'n', date: '2026-10-13T01:00:00Z' } }, author: { login: 'hopper-bot' } }] };
+    t.github.commitChecks = { 'octo/tools@sha-8': {
+      runs: [{ id: 115, name: 'pr / test', status: 'completed', conclusion: 'failure', html_url: `${t.github.url}/octo/tools/actions/runs/1/job/115` }],
+      statuses: [{ context: 'deploy/preview', state: 'pending', target_url: null, description: 'Waiting' }],
+    } };
+    const ask = async (args: string[]) => {
+      const r = await hopperGh(t.root, env, [...args, '--repo', 'octo/tools']);
+      expect(r.code).toBe(0);
+      return json(r);
+    };
+    const gets = (path: string) => t.github.requests.filter((r) => r.method === 'GET' && r.path === `/api/v3/repos/octo/tools/${path}`).length;
+
+    const diff = await ask(['pr', 'diff', '8']);
+    expect(diff).toMatchObject({ ok: true, op: 'pr.diff', number: 8, url: `${t.github.url}/octo/tools/pull/8`, source: 'github', files: [
+      { file: 'src/queue.ts', status: 'modified', additions: 1, deletions: 1 }, { file: 'logo.png', status: 'added', additions: 0, deletions: 0 },
+    ] });
+    expect(diff.diff).toBe('diff --git a/src/queue.ts b/src/queue.ts\n--- a/src/queue.ts\n+++ b/src/queue.ts\n@@ -1 +1 @@\n-slow()\n+fast()\n'
+      + 'diff --git a/logo.png b/logo.png\n--- /dev/null\n+++ b/logo.png\n(no patch: binary, or too large for GitHub to show)\n');
+    expect(await ask(['pr', 'commits', '8'])).toMatchObject({ source: 'github', commits: [{ sha: 'c1', message: 'Make the queue faster', author: 'hopper-bot', date: '2026-10-13T01:00:00Z' }] });
+    expect(await ask(['pr', 'checks', '8'])).toMatchObject({ source: 'github', state: 'open', merged: false, head: 'issue-7-faster', headSha: 'sha-8',
+      checks: [{ id: 115, name: 'pr / test', status: 'completed', conclusion: 'failure' }], statuses: [{ context: 'deploy/preview', state: 'pending', description: 'Waiting' }] });
+    // The work-item ledger's word on the job's issue, beside GitHub's.
+    expect(await ask(['issue', 'comments', '7'])).toMatchObject({ source: 'github', url: `${t.github.url}/octo/tools/issues/7`, ledger: { key: `${t.github.url}/octo/tools/issues/7`, state: 'working' }, comments: [{ id: 1, author: 'someone', body: 'Looks good.', createdAt: '2026-10-13T00:00:00Z' }] });
+
+    for (const args of [['pr', 'diff', '8'], ['pr', 'commits', '8'], ['pr', 'checks', '8'], ['issue', 'comments', '7']]) {
+      expect(await ask(args)).toMatchObject({ ok: true, source: 'cache' });
+    }
+    expect([gets('pulls/8/files'), gets('pulls/8/commits'), gets('commits/sha-8/check-runs'), gets('issues/7/comments')]).toEqual([1, 1, 1, 1]);
+    const done = eventsOf(t.app, ADMIN_ID, 'github_proxy.done').filter((e) => e.jobId === job.id && e.data.source !== undefined);
+    expect(done.map((e) => e.data.source).reverse()).toEqual(['github', 'github', 'github', 'github', 'cache', 'cache', 'cache', 'cache']);
+
+    await ask(['issue', 'comment', '7', '--body', 'Pushed a fix.']);
+    expect(await ask(['issue', 'comments', '7'])).toMatchObject({ source: 'github', comments: [{ body: 'Looks good.' }, { body: 'Pushed a fix.' }] });
+    expect(gets('issues/7/comments')).toBe(2);
   });
 
   it('reads the full log of a failed check for the job; one GitHub refuses says why (issue #993)', async () => {

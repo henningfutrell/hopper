@@ -30,6 +30,9 @@ describe('the work-item ledger in the database', () => {
     expect(store.workItems.get(KEY2)).toMatchObject({ state: 'pr_open', pullRequest: PR });
     expect(store.workItems.counts()).toMatchObject({ failed: 1, pr_open: 1, done: 0 });
     expect(store.workItems.list({ state: ['failed'] }).map((i) => i.key)).toEqual([KEY]);
+    // A job's repo query of a pull request finds its item by the pull request (issue #1074).
+    expect(store.workItems.byPullRequest(PR)?.key).toBe(KEY2);
+    expect(store.workItems.byPullRequest('https://github.com/o/r/pull/99')).toBeUndefined();
 
     const live = store.workItems.list();
     expect(store.workItems.rebuild()).toBe(2);

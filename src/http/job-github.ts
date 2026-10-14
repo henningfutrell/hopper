@@ -47,6 +47,7 @@ export function jobGitHubRoutes(app: FastifyInstance, o: { tenants: Tenants; clo
     limiter: createProxyLimiter(o.clock),
     report: (user, job, req) => reportForJob(o, user.id, job.id, req),
     log: (line) => console.warn(line),
+    now: () => o.clock.now().getTime(),
   });
   void app.register(async (scope) => {
     // What curl's --data-urlencode sends; only on this route.
