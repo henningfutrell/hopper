@@ -59,6 +59,14 @@ describe('what the sweep reaps (issue #410)', () => {
     ]);
   });
 
+  it('a job with a container or a volume left (issue #1120): reaped once it ended, whatever its age; never a parked or live job\'s, never a job it does not know', () => {
+    const parked = new Map([...jobs, ['park', job('park', 'parked')]]);
+    expect(planSweep({ ...none, containers: ['done', 'gone', 'run', 'queued', 'park', 'stranger'] }, (id) => parked.get(id), new Set(), 24 * HOUR))
+      .toEqual([{ jobId: 'done' }, { jobId: 'gone' }]);
+    expect(plan({ containers: ['done'], scratch: [{ jobId: 'done', path: '/w/.hopper-scratch/done', ageMs: 30 * HOUR }] }))
+      .toEqual([{ jobId: 'done', scratch: '/w/.hopper-scratch/done' }]);
+  });
+
   it('one reap per job: its processes and its scratch dir together', () => {
     expect(plan({ processes: ['done'], scratch: [{ jobId: 'done', path: '/w/.hopper-scratch/done', ageMs: 30 * HOUR }] }))
       .toEqual([{ jobId: 'done', scratch: '/w/.hopper-scratch/done' }]);
@@ -66,7 +74,7 @@ describe('what the sweep reaps (issue #410)', () => {
 });
 
 /** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number } = {}) {
+function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[] } = {}) {
   let now = Date.parse('2026-10-08T00:00:00Z');
   // The disk budget (issue #1120), in bytes; absent: none. `surveys`: what each survey finds in turn, then `found`.
   let budget = o.budget;
@@ -81,7 +89,9 @@ function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?
     async survey(roots) { surveyed.push(roots); return surveys.shift() ?? o.found ?? none; },
     async reap(jobId, scratch, _keep, discard) {
       reaps.push({ jobId, ...(scratch ? { scratch } : {}), ...(discard ? { discard } : {}) });
-      return { kept: scratch && (!discard || o.oldClient) && o.keeps?.includes(jobId) ? [`${scratch}/repo`] : [] };
+      // `containers`: the jobs whose reap removed a container and a volume (issue #1120).
+      const removed = o.containers?.includes(jobId) ? { removed: { containers: [`c-${jobId}`], volumes: [`v-${jobId}`] } } : {};
+      return { kept: scratch && (!discard || o.oldClient) && o.keeps?.includes(jobId) ? [`${scratch}/repo`] : [], ...removed };
     },
     async keepCredential() { throw new Error('not asked'); },
     async reach() { throw new Error('not asked'); },
@@ -288,6 +298,29 @@ describe('the hopper\'s own disk use (issue #1120)', () => {
     expect(disk(r)).toHaveLength(1);
     expect(r.reaps).toHaveLength(reaps);
     expect(r.sweep.disk('m')).toEqual({ bytes: 5 * GIB, at: '2026-10-08T00:10:00.000Z', paths: places(3, 2), over: false });
+  });
+});
+
+describe('a job\'s containers and volumes (issue #1120)', () => {
+  it('the sweep reaps an ended job that still has one, and records what its reap removed: job.containers_removed', async () => {
+    const r = rig({ found: { ...none, containers: ['done', 'run'] }, containers: ['done'] });
+    await r.sweep.run(true);
+    expect(r.reaps).toEqual([{ jobId: 'done' }]);
+    expect(r.events).toEqual([{ type: 'job.containers_removed', jobId: 'done', machineId: 'm', data: { containers: ['c-done'], volumes: ['v-done'] } }]);
+    expect(r.logs).toEqual([expect.stringContaining('removed 1 container and 1 volume of job done on m')]);
+  });
+
+  it('a reap that removed none records nothing', async () => {
+    const r = rig({ found: { ...none, containers: ['done'] } });
+    await r.sweep.run(true);
+    expect(r.events).toEqual([]);
+  });
+
+  it('a discard records what its reap removed too', async () => {
+    const r = rig({ kept: ['old'], containers: ['old'] });
+    r.events[0]!.data = { paths: ['/w/.hopper-scratch/old/repo'] };
+    await r.sweep.discard('old', { person: 'Pat', via: 'ui' });
+    expect(r.events.filter((e) => e.type === 'job.containers_removed')).toEqual([{ type: 'job.containers_removed', jobId: 'old', machineId: 'm', data: { containers: ['c-old'], volumes: ['v-old'] } }]);
   });
 });
 
