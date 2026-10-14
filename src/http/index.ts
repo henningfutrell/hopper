@@ -190,7 +190,6 @@ export function createServer(o: ServerOptions): FastifyInstance {
   directJobReadRoutes(app, tenant); // Direct jobs (issue #901)
   searchReadRoutes(app, tenant); // Search (issue #945)
   githubWatchReadRoutes(app, tenant); // GitHub watches (issue #427)
-  componentWatcherReadRoutes(app, tenant); // Component watchers (issue #1077)
   landingBatchReadRoutes(app, tenant); // Landing batches (issue #1073)
   infraPlanReadRoutes(app, tenant); // Infra (issue #870)
   sourceRoutes(app, tenant);
@@ -207,6 +206,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   usageHistoryRoutes(app, { ...tenant, tenants: o.tenants, clock: o.clock, instanceAdmin });
   machineHistoryRoutes(app, { ...tenant, clock: o.clock });
   stackResourceRoutes(app, { stackResources: o.stackResources, history: o.instance.stackHistory, instanceAdmin, clock: o.clock });
+  componentWatcherReadRoutes(app, { ...tenant, instanceAdmin }); // Component watchers (issue #1077): the stack's only for the instance admin
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions, grants });
   realmRoutes(app, { realms, instanceAdmin });
   accessRoutes(app, { access: o.access, instanceAdmin });

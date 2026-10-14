@@ -4,7 +4,7 @@
 // hopper's own follow may not have seen it. The drift issue names no item: each is a short hash of its key.
 import { describe, expect, it } from 'vitest';
 import {
-  DRIFT_MARKER, driftIssue, driftItemRef, driftKey, ledgerGitHubDrift, ledgerGitHubSample, type GitHubItemState,
+  DRIFT_MARKER, driftIssue, driftItemRef, driftKey, ledgerGitHubDrift, ledgerGitHubSample, viewFor, type GitHubItemState,
 } from '../../src/domain/drift.ts';
 import type { WorkItem, WorkItemState } from '../../src/domain/work-items.ts';
 
@@ -122,9 +122,31 @@ describe('the drift issue', () => {
       .toBe('Drift: intake vs jobs: a source\'s next sync is overdue');
     expect(driftIssue({ watcher: 'intake-jobs', kind: 'sync_stuck', items: [{ key: 'github', says: 'a sync runs', truth: 'no sync ended' }] }, { firstSeen: NOW }).title)
       .toBe('Drift: intake vs jobs: a source\'s sync runs too long');
+    const branch = driftIssue({ watcher: 'branch-checks', kind: 'checks_failing', items: [{ key: 'o/a', says: 'default branch head', truth: 'checks failed' }] }, { firstSeen: NOW });
+    expect(branch.title).toBe('Drift: default branches vs checks: a default branch\'s checks fail');
+    expect(branch.body).toContain('| item | branch | checks | since |');
+    expect(branch.body).not.toContain('o/a');
+    expect(driftIssue({ watcher: 'branch-checks', kind: 'checks_stuck', items: [{ key: 'o/a', says: 'h', truth: 't' }] }, { firstSeen: NOW }).title)
+      .toBe('Drift: default branches vs checks: a default branch\'s checks wait too long');
+    const stack = driftIssue({ watcher: 'stack-health', kind: 'service_down', items: [{ key: 'solr', says: 'exited', truth: 'running' }] }, { firstSeen: NOW });
+    expect(stack.title).toBe('Drift: stack health: a service of the stack is down or unhealthy');
+    expect(stack.body).toContain('| item | stack | healthy stack | since |');
+    expect(driftIssue({ watcher: 'stack-health', kind: 'part_unreadable', items: [{ key: 'solr', says: 'h', truth: 't' }] }, { firstSeen: NOW }).title)
+      .toBe('Drift: stack health: a part of the stack does not answer');
+    expect(driftIssue({ watcher: 'stack-health', kind: 'database_strain', items: [{ key: 'postgres/connections', says: 'h', truth: 't' }] }, { firstSeen: NOW }).title)
+      .toBe('Drift: stack health: the database is under strain');
   });
 
   it('says so when no item is in the drift any more', () => {
     expect(driftIssue({ ...drift, items: [] }, { firstSeen: NOW, clearedAt: NOW }).body).toContain('No item is in this drift now');
+  });
+});
+
+describe('the view a viewer reads', () => {
+  it('shows an instance watcher only to the hopper\'s admin', () => {
+    const w = (name: string, instance?: true) => ({ name, component: 'c', truth: 't', intervalSeconds: 300, drifts: [], ...(instance ? { instance } : {}) });
+    const v = { settings: { fileIssues: false }, watchers: [w('ledger-jobs'), w('stack-health', true)] };
+    expect(viewFor(v, true)).toEqual(v);
+    expect(viewFor(v, false).watchers.map((x) => x.name)).toEqual(['ledger-jobs']);
   });
 });

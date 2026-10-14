@@ -35,5 +35,7 @@ describe('the Component watchers panel', () => {
     expect(COMPONENT_WATCHERS_NOTE).toContain('the work-item ledger against the job records');
     expect(COMPONENT_WATCHERS_NOTE).toContain('the lanes against the jobs they run');
     expect(COMPONENT_WATCHERS_NOTE).toContain('intake against the jobs and the sync timers');
+    expect(COMPONENT_WATCHERS_NOTE).toContain('the job repositories\' default branches against their checks on GitHub');
+    expect(COMPONENT_WATCHERS_NOTE).toContain('the hopper\'s stack against a healthy stack');
   });
 });

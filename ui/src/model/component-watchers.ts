@@ -2,7 +2,7 @@
 // watcher, each drift it found and each item in it.
 import type { ComponentWatcherSettings, ComponentWatcherView, DriftItem, DriftView } from './wire.ts';
 
-export const COMPONENT_WATCHERS_NOTE = 'A component watcher checks one part of the hopper against its source of truth on an interval: the work-item ledger against GitHub, the work-item ledger against the job records, the lanes against the jobs they run, and intake against the jobs and the sync timers. '
+export const COMPONENT_WATCHERS_NOTE = 'A component watcher checks one part of the hopper against its source of truth on an interval: the work-item ledger against GitHub, the work-item ledger against the job records, the lanes against the jobs they run, intake against the jobs and the sync timers, the job repositories\' default branches against their checks on GitHub, and, for the hopper\'s admin, the hopper\'s stack against a healthy stack. '
   + 'With drift issues on, each kind of drift it finds is one issue on the hopper\'s own repository, filed and updated with your GitHub account. '
   + 'The issue names no item, repository or person: each item is a short hash of its key, and this panel lists the items.';
 

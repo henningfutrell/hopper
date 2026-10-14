@@ -65,7 +65,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
-| `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
+| `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
 | `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event (`runner.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
@@ -17850,9 +17850,41 @@ need no GitHub connection; only their drift issues do.
   the cause is mostly outside the hopper. An item of these kinds is an issue's URL or a source's name, hashed in the issue
   as every item is.
 
+**The integration branch: default branches vs checks** (`branch-checks`; `src/component-watchers/branch-stack.ts`, every
+15 minutes; the comparison `src/domain/drift-branches.ts`, pure). The hopper merges jobs into each job repository's
+default branch, so a red one fails every job after it. The watcher reads the head commit of each job repository's
+default branch (the user's job repositories, Sources) and its checks' rollup (`statusCheckRollup`), one GraphQL call per
+50 repositories (`repository(owner:, name:)`, each owner and name a variable), with the user's own connection through
+`makeRequest`, a `reconcile` call. A repository GitHub does not answer for, or a head with no checks, is no drift: a
+repository with no checks is "Repositories with no checks". The kinds:
+
+- `checks_failing`: the head's checks failed or errored, and it was committed more than the grace (15 minutes) ago: a
+  re-run in the grace may still turn it green.
+- `checks_stuck`: the head's checks are pending or expected, and it was committed more than 2 hours ago
+  (`BRANCH_STUCK_MS`).
+
+Each item is the repository, hashed in the issue as every item is; it says `default branch head` and the checks' state.
+
+**The database and the stack: stack health** (`stack-health`; `src/component-watchers/branch-stack.ts`, every 5
+minutes; the comparison `src/domain/drift-stack.ts`, pure). It reads the stack resources ("Stack resources") against what
+a healthy stack is. The kinds:
+
+- `service_down`: a container of the hopper's compose stack does not run, or runs `unhealthy`. A sandbox box is a job's,
+  not the stack's: not read.
+- `part_unreadable`: the containers, Postgres, OpenFGA or Solr do not answer. A part the hopper is not given (no runtime
+  socket, no `HOPPER_OPENFGA_URL`, no `HOPPER_SOLR_URL`) is no drift. The item never says why a part does not answer: the
+  why can name a host or a path.
+- `database_strain`: Postgres holds 90% or more of its connection limit (`CONNECTIONS_HIGH`), or a transaction is open
+  longer than 5 minutes (`LONG_TRANSACTION_S`).
+
+The stack starts and restarts with the hopper, and the runner checks at start: so the watcher answers an item only once
+two checks in a row found it. The stack is the instance's, not a user's: only the oldest user's runtime has this
+watcher, so one drift issue tells it, and `GET /api/component-watchers` lists it (`instance: true`) only for the hopper's
+admin, as `GET /api/resources`. Not **stack drift** ("Stack drift"), which compares the stack with its compose file.
+
 Each drift item says what the component says (`says`) and what its source of truth says (`truth`); the drift issue's
 table names the two columns after its watcher (`ledger` and `GitHub`, `ledger` and `job record`, `lane` and `job
-record`, `intake` and `job record or sync timer`). An item of `lanes-jobs` is a lane id or a job id, hashed in the issue as every item is.
+record`, `intake` and `job record or sync timer`, `branch` and `checks`, `stack` and `healthy stack`). An item of `lanes-jobs` is a lane id or a job id, hashed in the issue as every item is.
 
 **The drift issue.** With the user's setting on (`fileIssues`), each kind of drift is one issue on the hopper's own
 repository (`REPORT_REPO`), through the user's own GitHub connection, as a bug report is ("Report a bug"): labelled
@@ -17872,10 +17904,7 @@ is an event and a line in the panel only: a hopper filing on another repository 
 person's choice. It applies at the next check.
 
 **API.** `GET /api/component-watchers`: the setting, and each watcher with its last check and the drift it found now,
-each item by key.
-
-**Not yet (the next parts).** More watchers on the same runner: the integration branch's health, and the database and
-stack's health.
+each item by key; an instance watcher only for the hopper's admin.
 
 ## GitHub deliveries (issue #1079, 2026-10-14)
 

@@ -22,6 +22,8 @@ export interface ComponentWatcher {
   component: string;
   truth: string;
   intervalMs: number;
+  /** The instance's, not the user's (the stack): only the hopper's admin reads it. */
+  instance?: true;
   check(): Promise<Drift[]>;
 }
 
@@ -136,7 +138,7 @@ export function createComponentWatchers(o: ComponentWatchersOptions): ComponentW
     watchers: o.watchers.map((w) => {
       const s = states.get(w.name)!;
       return {
-        name: w.name, component: w.component, truth: w.truth, intervalSeconds: Math.round(w.intervalMs / 1000),
+        name: w.name, component: w.component, truth: w.truth, intervalSeconds: Math.round(w.intervalMs / 1000), ...(w.instance ? { instance: w.instance } : {}),
         ...(s.checkedAt ? { checkedAt: s.checkedAt } : {}), ...(s.error ? { error: s.error } : {}), ...(s.issueError ? { issueError: s.issueError } : {}),
         drifts: [...s.found.values()].filter((f) => !f.clearedAt).map((f) => ({
           kind: f.drift.kind, items: f.drift.items.length, list: f.drift.items, since: f.since, ...(f.issue ? { issue: f.issue } : {}),

@@ -1,7 +1,7 @@
 // What the ledger-vs-GitHub watcher reads (issue #1077): the state of many issues and pull requests in one GraphQL call,
 // each by its URL (`resource(url:)`), and the drift issue found by its drift key in its body.
 import { describe, expect, it } from 'vitest';
-import { STATES_BATCH, statesFrom, statesQuery } from '../../src/component-watchers/github.ts';
+import { BRANCHES_BATCH, branchesFrom, branchesQuery, STATES_BATCH, statesFrom, statesQuery } from '../../src/component-watchers/github.ts';
 
 describe('the batched state read', () => {
   it('asks for every URL in one query, each as a variable, never in the query text', () => {
@@ -25,6 +25,30 @@ describe('the batched state read', () => {
       { url: urls[0], state: 'closed', stateReason: 'completed', changedAt: '2026-10-13T10:00:00Z' },
       { url: urls[1], state: 'merged', changedAt: '2026-10-13T09:00:00Z' },
       { url: urls[2], state: 'open' },
+    ]);
+  });
+});
+
+describe('the batched default branch read', () => {
+  it('asks for every repository in one query, each owner and name a variable', () => {
+    const q = branchesQuery(['o/a', 'p/b']);
+    expect(q.variables).toEqual({ o0: 'o', n0: 'a', o1: 'p', n1: 'b' });
+    expect(q.query).toContain('r0: repository(owner: $o0, name: $n0)');
+    expect(q.query).toContain('statusCheckRollup');
+    expect(q.query).not.toContain('"o"');
+    expect(BRANCHES_BATCH).toBeGreaterThan(1);
+  });
+
+  it('reads each default branch head\'s commit time and its checks; a repository GitHub does not answer for is absent', () => {
+    const heads = branchesFrom(['o/a', 'o/b', 'o/c', 'o/d'], {
+      r0: { defaultBranchRef: { target: { committedDate: '2026-10-13T10:00:00Z', statusCheckRollup: { state: 'FAILURE' } } } },
+      r1: { defaultBranchRef: { target: { committedDate: '2026-10-13T09:00:00Z', statusCheckRollup: null } } },
+      r2: null,
+      r3: { defaultBranchRef: null },
+    });
+    expect(heads).toEqual([
+      { repo: 'o/a', committedAt: '2026-10-13T10:00:00Z', checks: 'failure' },
+      { repo: 'o/b', committedAt: '2026-10-13T09:00:00Z' },
     ]);
   });
 });
