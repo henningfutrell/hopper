@@ -2,12 +2,11 @@
 // with its count and a link to the page that is its one home; the nav badge is the total, marked when a high-priority job
 // waits (#535). Parked jobs wait to be picked up, not on a decision: Parked keeps its own quiet badge, and has no row here.
 // Pull requests counts the ones the hopper gave up on (issue #927), each with why: one with merge conflicts or failing checks
-// the hopper tends itself, and is no decision. Tagged (issue #1141) counts the GitHub items that wait on the person's own review
-// or reply.
+// the hopper tends itself, and is no decision.
 // A machine's join takes no approval (a join code joins it at once); a machine whose box template waits counts in Access requests.
 import type { SectionKind } from './wire.ts';
 
-export const NEEDS_YOU_KINDS = ['intake', 'access', 'plans', 'questions', 'proposals', 'research', 'logins', 'failures', 'pull-requests', 'tagged', 'sorting'] as const;
+export const NEEDS_YOU_KINDS = ['intake', 'access', 'plans', 'questions', 'proposals', 'research', 'logins', 'failures', 'pull-requests', 'sorting'] as const;
 export type NeedsYouKind = (typeof NEEDS_YOU_KINDS)[number];
 
 export interface NeedsYouCounts {
@@ -19,8 +18,6 @@ export interface NeedsYouCounts {
   plans: number;
   /** The open pull requests the hopper gave up on (issue #927), one line each, with why. */
   gaveUp: readonly string[];
-  /** Tagged items (issue #1141): open issues and pull requests that ask for the user's review, mention or are assigned to the user. */
-  tagged: number;
   /** Jobs that wait on the pre-sort. */
   sorting: number;
   sections: Readonly<Record<SectionKind, { n: number; high: number }>>;
@@ -43,7 +40,6 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
   logins: { label: 'Logins', href: '#logins', what: 'logins a job waits on, and connections that ended' },
   failures: { label: 'Failures', href: '#failures', what: 'open problems, jobs handed off to a person, and work not pushed' },
   'pull-requests': { label: 'Pull requests', href: '#pull-requests', what: 'pull requests the hopper gave up on: tend them again, fix them, or close them' },
-  tagged: { label: 'Tagged', href: '#tagged', what: 'issues and pull requests that ask for your review, mention you, or are assigned to you' },
   sorting: { label: 'Pre-sort', href: '#queue', what: 'jobs that wait on the pre-sort before a lane takes them' },
 };
 
@@ -53,7 +49,6 @@ export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {
     if (k === 'access') return { n: c.access, high: 0 };
     if (k === 'plans') return { n: c.plans, high: 0 };
     if (k === 'pull-requests') return { n: c.gaveUp.length, high: 0, ...(c.gaveUp.length ? { details: c.gaveUp } : {}) };
-    if (k === 'tagged') return { n: c.tagged, high: 0 };
     if (k === 'sorting') return { n: c.sorting, high: 0 };
     return c.sections[k];
   };
