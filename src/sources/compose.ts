@@ -161,6 +161,7 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
     describe: () => current()?.describe() ?? unconnected(),
     pass: reads.pass,
     discover: (d) => current()?.discover(d) ?? Promise.resolve([]),
+    repoChanged: (repo) => current()?.repoChanged?.(repo) ?? false,
     check: (active) => current()?.check(active) ?? Promise.resolve([]),
     report(r) {
       const s = current();

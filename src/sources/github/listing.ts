@@ -1,7 +1,8 @@
 // Intake from the listing cache (issue #985 part 2, design.md "Repository listings"): the open labelled issues of the job
 // repositories come from each repository's latest repository listing. A repository is listed again when its listing is
 // older than the intake sync interval (`intakeSyncMinutes`, a setting of the shared rate limiter), or at once when a
-// person asked for the sync; every repository due goes in one listing. A repository GitHub did not answer for is said
+// person asked for the sync; every repository due goes in one listing. A GitHub delivery (issue #1079) makes one
+// repository due at once (`markDue`), so the next timed sync lists it inside the interval. A repository GitHub did not answer for is said
 // until its next listing, and asked again only then. With no store (tests), the cache is kept in memory.
 import type { GitHubListingRepository, ListedItem } from '../../domain/github-listing.ts';
 import type { Clock } from '../../domain/ports.ts';
@@ -33,6 +34,8 @@ export interface ListedIssues {
 export interface IntakeListing {
   /** The open issues of `repos` with `label`: the due repositories listed again first; `due` false lists every one. */
   issues(repos: string[], label: string, due: boolean): Promise<ListedIssues>;
+  /** GitHub said the repository changed (issue #1079): the next listing lists it, whatever the interval. */
+  markDue(repo: string): void;
 }
 
 export function createIntakeListing(o: { api: Pick<GitHubApi, 'listRepos'>; listings: GitHubListingRepository; clock: Clock; everyMs: () => number }): IntakeListing {
@@ -43,11 +46,15 @@ export function createIntakeListing(o: { api: Pick<GitHubApi, 'listRepos'>; list
     const times = [failed.get(repo)?.at, fetched === undefined ? undefined : Date.parse(fetched)].filter((t): t is number => t !== undefined);
     return times.length ? Math.max(...times) : undefined;
   };
+  /** The repositories a GitHub delivery made due: cleared when a listing asks for them. */
+  const marked = new Set<string>();
   return {
     async issues(repos, label, due) {
       const now = o.clock.now();
       const every = o.everyMs();
-      const asked = repos.filter((r) => { const at = lastAt(r); return !due || at === undefined || now.getTime() - at >= every; });
+      const asked = repos.filter((r) => { const at = lastAt(r); return !due || at === undefined || marked.has(r) || now.getTime() - at >= every; });
+      // Cleared before the listing: a delivery while it reads GitHub marks the repository due again, for the next one.
+      for (const r of asked) marked.delete(r);
       if (asked.length > 0) {
         const got = await o.api.listRepos(asked, [label]);
         for (const [repo, items] of got.repos) { o.listings.record(repo, items, now.toISOString()); failed.delete(repo); }
@@ -63,5 +70,6 @@ export function createIntakeListing(o: { api: Pick<GitHubApi, 'listRepos'>; list
       if (repos.length > 0 && Object.keys(repoErrors).length === repos.length) throw new GitHubApiError(repoErrors[repos[0]!]!, true);
       return { issues, repoErrors, listed: asked.length > 0 };
     },
+    markDue: (repo) => { marked.add(repo); },
   };
 }
