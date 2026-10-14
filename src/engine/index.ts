@@ -151,7 +151,7 @@ export function createEngine(o: EngineOptions): Engine {
     ...commands,
     ...createQueueGateCommands(c, (jobId) => { void cleanup(jobId); }),
     ...createUsageLimitCommands(c),
-    ...createQueries(c),
+    ...createQueries(c, (id) => sweep.disk(id)),
     ...createAnswerHandlers(c, cleanup),
     ...createReviewHandlers(c, cleanup),
     askFor: (kind, id) => askFor(c, kind, id),

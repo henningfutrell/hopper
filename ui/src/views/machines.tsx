@@ -13,7 +13,8 @@
 // recommendation and its lane tuning settings sit under the machines (issue #688, lane-tuning.tsx). A sandbox box the
 // hopper could not stop or remove after its machine went is shown with the reason (issue #603, GET /api/sandboxes); a box
 // whose start check fails, with what it wrote (issue #708, sandbox-reach.tsx). A machine whose link dropped under a running
-// job says since when it is out of reach and that the job is held (issue #752, machine-away.tsx).
+// job says since when it is out of reach and that the job is held (issue #752, machine-away.tsx). Each card
+// says the hopper's own disk use there, against the disk budget set under the machines (issue #1120, disk-budget.tsx).
 import { Activity, Box, Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -28,6 +29,7 @@ import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
 import { clientReleaseText, clientUpdateLine, diskText, herdrText, kindOf, ownedHerdrText, mayAddThisMachine, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
 import { resourcesText } from '@/model/machine-history';
+import { hopperDiskText } from '@/model/hopper-disk';
 import { windowsLinkText } from '@/model/windows-link';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { CleanupProblem, MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit, ResourceSeries, SandboxesView } from '@/model/wire';
@@ -41,6 +43,7 @@ import { JobCostsPanel } from './job-costs';
 import { LaneTuningPanel } from './lane-tuning';
 import { CpuSparkline, MachineResourcesGraph, useCpuSparks } from './machine-resources';
 import { UnreachableBoxes } from './sandbox-reach';
+import { DiskBudgetPanel } from './disk-budget';
 
 const REFRESH_MS = 15000;
 const fetchConfig = () => get<MachinesConfig>('/api/machines/config');
@@ -107,7 +110,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   );
   return (
     <Panel title={m.label || m.id} icon={Server} bodyClassName="space-y-4"
-      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}{m.resources?.windowsLink?.ok === false && <StatusBadge status="Windows link broken" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
+      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}{m.hopperDisk?.over && <StatusBadge status="over disk budget" tone="warn" />}{m.resources?.windowsLink?.ok === false && <StatusBadge status="Windows link broken" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
       <MachineAway machine={m.id} />
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div><div className="text-[11px] text-muted-foreground">max lanes</div><div className="num text-lg font-semibold">{m.maxLanes}</div></div>
@@ -130,6 +133,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {res && <Fact label="memory">{res.memory}</Fact>}
         {m.resources?.windowsLink && <Fact label="Windows link"><span className={m.resources.windowsLink.ok ? undefined : `font-semibold ${TEXT.warn}`}>{windowsLinkText(m.resources.windowsLink)}</span></Fact>}
         {m.disk && <Fact label="disk (home)"><span className={m.disk.low ? `font-semibold ${TEXT.warn}` : undefined}>{diskText(m.disk)}</span></Fact>}
+        {m.hopperDisk && <Fact label="hopper's disk use"><span className={m.hopperDisk.over ? `font-semibold ${TEXT.warn}` : undefined}>{hopperDiskText(m.hopperDisk)}</span></Fact>}
         {workTreeText(m) && <Fact label="work tree">{workTreeText(m)}</Fact>}
         {workTreesText(m) && <Fact label="work trees per repository">{workTreesText(m)}</Fact>}
       </dl>
@@ -265,6 +269,7 @@ export function Machines() {
       {machines.length
         ? <div className="grid gap-3 lg:grid-cols-2">{machines.map((m) => <MachineCard key={m.id} m={m} ctx={ctx} />)}</div>
         : <Panel title="Machines" icon={Server}><Empty>no machines: every job is held. Add machine shows one line that joins a computer or a sandbox box.</Empty></Panel>}
+      {machines.length > 0 && <DiskBudgetPanel />}
       {machines.length > 0 && <LaneTuningPanel />}
       {machines.length > 0 && <JobCostsPanel />}
       {machines.length > 0 && <PriorityLanesPanel />}

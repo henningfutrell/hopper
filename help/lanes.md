@@ -129,6 +129,16 @@ Each change shows who made it and why. Per machine, an admin also sets **Auto-tu
 
 The hopper uses these costs to place a job. When similar jobs used much memory or CPU, a new one goes to a machine with room for it. When it fits nowhere, it is placed as before.
 
+### The hopper's disk use and the disk budget
+
+Each machine card shows **hopper's disk use**: the disk that the hopper's own files take on that machine. These are the jobs' scratch dirs and job worktrees. The hopper measures them each time it sweeps the machine, every 10 minutes by default. A machine that the hopper cannot measure shows no line. Examples: a machine without the `timeout` tool, or a machine whose client is older.
+
+An admin sets the **Disk budget** on Machines: the most disk, in GB, that the hopper's own files may use on each machine. Leave it empty for no budget. When a machine is over the budget:
+
+1. The hopper removes the files of every finished job on that machine at once. It does not wait the usual day. It keeps work that is not pushed, and it never touches a job that runs or is parked.
+2. It measures again.
+3. If the machine is still over, its card shows **over disk budget**, and you are told once (webhooks: `machine.disk_over_budget`). When it is back within the budget, you are told again (`machine.disk_within_budget`).
+
 ### Jev picks lanes and machines
 
 In **Settings → Decider**, two decision points concern lanes:

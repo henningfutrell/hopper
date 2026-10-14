@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machineId": {
+      "type": "string"
+    },
+    "usedBytes": {
+      "type": "number"
+    },
+    "budgetBytes": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "machineId",
+    "usedBytes",
+    "budgetBytes"
+  ],
+  "additionalProperties": false
+}

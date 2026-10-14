@@ -1,0 +1,1 @@
+- Machines now shows how much disk the hopper's own files use on each machine. An admin can set a disk budget: over it, the hopper removes finished jobs' files at once, keeps work that is not pushed, and tells you if it is still over.

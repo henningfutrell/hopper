@@ -2504,6 +2504,53 @@ Version 1 (`docs/schemas/machine.windows_link_restored.v1.json`). A machine told
 }
 ```
 
+## `machine.disk_over_budget`
+
+Version 1 (`docs/schemas/machine.disk_over_budget.v1.json`). The hopper's own disk use on a machine (`usedBytes`: its scratch areas and job worktrees, `paths` each) is over the disk budget (`budgetBytes`), after the sweep reaped every ended job's scratch dir it could, whatever its age (issue #1120). What is left is work not pushed, live jobs' work, or more than the budget allows. Once while it stays over.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `usedBytes` | number | yes |
+| `budgetBytes` | number | yes |
+| `paths` | object[] | yes |
+
+```json
+{
+  "machineId": "desk",
+  "usedBytes": 62000000000,
+  "budgetBytes": 50000000000,
+  "paths": [
+    {
+      "path": "/home/me/work/.hopper-scratch",
+      "bytes": 12000000000
+    },
+    {
+      "path": "/home/me/work/workspace/worktrees",
+      "bytes": 50000000000
+    }
+  ]
+}
+```
+
+## `machine.disk_within_budget`
+
+Version 1 (`docs/schemas/machine.disk_within_budget.v1.json`). A machine told over by `machine.disk_over_budget` has the hopper's own disk use back within the disk budget (issue #1120): `usedBytes` of `budgetBytes` now.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `usedBytes` | number | yes |
+| `budgetBytes` | number | yes |
+
+```json
+{
+  "machineId": "desk",
+  "usedBytes": 41000000000,
+  "budgetBytes": 50000000000
+}
+```
+
 ## `minor_decision.picked`
 
 Version 1 (`docs/schemas/minor_decision.picked.v1.json`). Jev was asked for a decider call (issue #550) at a decision point (`point`: `question-risk`, `failure-assessment`, `lane-count`, `job-machine`, `intake-order`, `merge-order`; `question-answer` only in events from before issue #679) and picked one of its `options` with a `confidence` — or could not (`error`). A `question-risk` pick (issue #679) is the risk call on a level's answer: `pick` is the risk (`none`, `low`, `real`) and `categories` its kinds (`credentials`, `destructive`, `publish`, `pay`, `permissions`, `ci`, `data`, `other`). `applied`: the pick was acted on (the point is active, the pick met its `threshold`, and nothing made it consequential); otherwise `notApplied` says why (`shadow`, `below_threshold`, `consequential` with what made it so, `no_pick`, `too_late`: decided before Jev answered, and compared at once) and the decision went on as before. A question's pick names it (`questionId`); a `lane-count` pick its machine (`machineId`).
