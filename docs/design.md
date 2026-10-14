@@ -17702,6 +17702,14 @@ Failures, the dashboard and the queue agree with `SELECT state, count(*) FROM wo
   it waits on: "PR open: checks running", "fixing checks", "has merge conflicts", "draft", "waiting for the merge".
   "Ready for review" is gone from the graph, the list and the stage filter ("PR open").
 
+**In flight (issue #1113, 2026-10-14).** An item is **in flight** (`isInFlight`, `src/domain/work-items.ts`) while it
+is `working`, or `pr_open` with its pull request wait `checks_running`, `fixing_checks` or `merge` — or not yet seen by
+the follow, with its checks and the merge ahead. A draft or merge conflicts wait on a fix, not on the run. The ledger
+counts them (`inFlight()`: the rows in `working` and `pr_open`, through the same rule), and `GET /api/queue` answers
+`inFlight`. The header shows that count on every screen, a link to `#jobs/in-flight`: the Jobs view with its in-flight
+filter on, the job nodes the graph marks `inFlight` — each the item's own job, its item in flight. The badge has no
+poll of its own: the store reads the queue after each event on the stream, as it does for every other count.
+
 **Part 3: what GitHub says is ledger input (2026-10-14).** Before it, the ledger heard of GitHub only through the
 issue graph's reads and the follow's merge or close, so an item whose issue closed while its pull request waited, or
 after its job failed, stayed `pr_open` or `failed` until the next read happened to see it.
