@@ -28,6 +28,11 @@
 //     Then the issue's text names octo/tools#7 as its parent, and the lineage is on the job's timeline (`job.child_issue_filed`)
 //     And with --required the hopper links it as a GitHub sub-issue of octo/tools#7: a required part of it
 //     And a link GitHub refuses leaves the issue filed: the job and the timeline say why
+//   Scenario: a job asks the hopper where a pull request stands, not GitHub (issue #1072)
+//     Given a pull request the hopper follows, as the Pull requests list shows it
+//     When a job runs `sh "$HOPPER_GH" pr status N --repo octo/tools`
+//     Then the hopper answers from its records (`from: hopper`), as the Pull requests list says, and GitHub is not asked
+//     And a pull request it does not know is read on GitHub once (`from: github`), then kept for a minute (`from: cache`)
 //   Scenario: a token that is no job's, or a job no longer at work, is refused
 //   Scenario: the script's help says how, and the job's files carry no GitHub token
 //   Scenario: a job whose machine cannot reach the hopper fails at its start, saying why and what to do (issue #695)
@@ -229,6 +234,43 @@ describe('GitHub through the hopper (issue #563)', () => {
     const pr = json(await hopperGh(t.root, env, ['pr', 'create', '--repo', 'octo/tools', '--head', 'issue-7-x', '--title', 'X', '--body', 'Closes #7']));
     const ready = await hopperGh(t.root, env, ['pr', 'ready', String(pr.number), '--repo', 'octo/tools']);
     expect(json(ready)).toMatchObject({ ok: true, op: 'pr.ready', number: pr.number, draft: false });
+  });
+
+  it('answers pr status from what the hopper knows; one it does not know is read on GitHub once, then kept (issue #1072)', async () => {
+    const t = await start();
+    // A done job of octo/tools#9 whose pull request #10 the hopper follows: its checks failed.
+    const followed = await running(t, 'octo/tools', ADMIN_ID, 9);
+    t.held.get(followed.job.id)!.end();
+    await t.app.waitForStatus(followed.job.id, 'finished');
+    const pr10 = `${t.github.url}/octo/tools/pull/10`;
+    t.app.user().store.jobs.update(followed.job.id, { sourceState: { source: { pullRequest: pr10, follow: 'open', seen: {
+      draft: false, conflicting: false, checks: 'failing', base: 'dev', headRef: 'issue-9', failedChecks: [{ name: 'pr / test', url: `${t.github.url}/octo/tools/runs/5` }],
+    } } } });
+    const { env } = await running(t);
+    const before = t.github.requests.length;
+
+    const known = await hopperGh(t.root, env, ['pr', 'status', '10', '--repo', 'octo/tools']);
+    expect(known.code).toBe(0);
+    expect(json(known)).toMatchObject({
+      ok: true, op: 'pr.status', from: 'hopper', number: 10, url: pr10, state: 'open', checks: 'failing', mergeable: 'mergeable', draft: false,
+      base: 'dev', head: 'issue-9', waits: 'checks failing', failedChecks: [{ name: 'pr / test', url: `${t.github.url}/octo/tools/runs/5` }],
+    });
+    expect(t.github.requests.length).toBe(before);
+    // The same answer the Pull requests list gives a person.
+    const list = await t.app.api<{ repos: { pullRequests: { pullRequest?: { number: number }; checks: string; waits?: string }[] }[] }>('GET', '/api/pull-requests');
+    const card = list.body.repos.flatMap((r) => r.pullRequests).find((c) => c.pullRequest?.number === 10);
+    expect(card).toMatchObject({ checks: json(known).checks, waits: json(known).waits });
+
+    const opened = String(json(await hopperGh(t.root, env, ['pr', 'create', '--repo', 'octo/tools', '--head', 'issue-7-faster', '--title', 'Faster', '--body', 'Closes #7'])).number);
+    const reads = () => t.github.requests.filter((r) => r.method === 'GET' && r.path.includes('/octo/tools/')).length;
+    const readsBefore = reads();
+    const read = await hopperGh(t.root, env, ['pr', 'status', opened, '--repo', 'octo/tools']);
+    expect(json(read)).toMatchObject({ ok: true, from: 'github', number: Number(opened), state: 'open', draft: false, checks: 'none', head: 'issue-7-faster', base: 'dev' });
+    const readsAfter = reads();
+    expect(readsAfter).toBeGreaterThan(readsBefore);
+    expect(json(await hopperGh(t.root, env, ['pr', 'status', opened, '--repo', 'octo/tools']))).toMatchObject({ from: 'cache', number: Number(opened) });
+    expect(reads()).toBe(readsAfter);
+    expect(eventsOf(t.app, ADMIN_ID, 'github_proxy.done').filter((e) => e.data.op === 'pr.status').map((e) => e.data.from)).toEqual(['hopper', 'github', 'cache']);
   });
 
   it('opens a pull request only on the job\'s own repository', async () => {
