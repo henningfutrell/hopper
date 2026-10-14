@@ -6,14 +6,14 @@
 // Run again and Rework keep it. The template's approved scope still bounds what a granted job gets: the vault decides that.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
-import { grantKeyOf, noGrant, type VaultGrantAsk } from '../domain/vault-grants.ts';
+import { directIdOf, grantItemOf, grantKeyOf, grantView, noGrant, type VaultGrantAsk } from '../domain/vault-grants.ts';
 import type { ProxyTokenParts } from '../github-proxy/token.ts';
 import { AT_WORK, boxAsk, type ClientTarget } from './box.ts';
 import type { VaultResult } from './service.ts';
 import type { Vault } from './vault.ts';
 
 export function withVaultGrants(v: Vault, o: {
-  store: Pick<UserStore, 'events' | 'jobs' | 'vaultGrants' | 'tx'>;
+  store: Pick<UserStore, 'events' | 'jobs' | 'vaultGrants' | 'tx' | 'directJobs'>;
   clock: Clock;
   targets: () => ClientTarget[];
   holds: (parts: ProxyTokenParts) => boolean;
@@ -52,11 +52,22 @@ export function withVaultGrants(v: Vault, o: {
     return at;
   }).map((a) => ({ ...a, names: [...a.names] }));
 
+  /** The item a key names (issue #1124): its newest job — a job of no source is its own key — and a direct job's submission. */
+  const itemOf = (key: string) => {
+    const id = directIdOf(key);
+    return { newest: jobs.getBySourceKey(key) ?? jobs.get(key), direct: id ? o.store.directJobs.get(id) : undefined };
+  };
+
   const missing = (jobId: string): VaultResult => ({ ok: false, code: 'not_found', error: `job ${jobId} not found` });
 
   return {
     ...v,
-    view: () => ({ ...v.view(), grantAsks: open(), grants: vaultGrants.list() }),
+    // Each ask and grant names what it covers (issue #1124): the item's title, repository, link and newest job.
+    view: () => ({
+      ...v.view(),
+      grantAsks: open().map((a) => ({ ...a, item: grantItemOf(a.key, itemOf(a.key)) })),
+      grants: vaultGrants.list().map((g) => grantView(g, itemOf(g.key))),
+    }),
     async deliver(ask, machineKey) {
       const refused = gate(ask.token, machineKey, ask.name);
       if (!refused) return v.deliver(ask, machineKey);

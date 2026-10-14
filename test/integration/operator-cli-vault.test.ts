@@ -256,6 +256,11 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(granted).toMatchObject({ code: 0 });
     expect(json<Grants>(granted).grants).toEqual([expect.objectContaining({ job: job.id, key: job.source!.key, by: 'operator CLI' })]);
     expect(json<Grants>(await hopper(a, ['vault'])).grants.map((g) => g.job)).toEqual([job.id]);
+    // Issue #1124: what the grant covers — the item's newest job and its status — and that the operator CLI made it, by which command.
+    expect(json<Grants>(await hopper(a, ['vault'])).grants[0]).toMatchObject({
+      made: 'grant', via: 'cli', command: `hopper vault grant ${job.id}`,
+      item: { title: expect.any(String), job: job.id, status: expect.any(String), stale: false },
+    });
     expect((await a.events()).find((e) => e.type === 'vault.granted')).toMatchObject({ jobId: job.id });
 
     expect(json<Grants>(await hopper(a, ['vault', 'revoke', job.id])).grants).toEqual([]);

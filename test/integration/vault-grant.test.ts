@@ -46,8 +46,8 @@ afterEach(async () => {
   process.env = { ...saved };
 });
 
-interface GrantAsk { job: string; key: string; machine: string; template: string; names: string[]; askedAt: string }
-interface GrantView { key: string; job: string; by: string; at: string }
+interface GrantAsk { job: string; key: string; machine: string; template: string; names: string[]; askedAt: string; item?: unknown }
+interface GrantView { key: string; job: string; by: string; at: string; made?: string; item?: unknown }
 
 async function boot(server: FakeAuthorizationServer = createFakeAuthorizationServer()): Promise<{ a: TestApp; session: string; dir: string }> {
   const db = tempDbPath();
@@ -86,7 +86,8 @@ describe('the vault only by a per-job grant', () => {
     expect(refused.stderr).toMatch(/has no vault grant/);
     expect(refused.stdout).toBe('');
     expect((await vault(a)).grantAsks).toEqual([
-      { job: job.id, key: job.source!.key, machine: 'hopper-sandbox-kube', template: 'kube', names: ['KUBE_TOKEN'], askedAt: expect.any(String) },
+      { job: job.id, key: job.source!.key, machine: 'hopper-sandbox-kube', template: 'kube', names: ['KUBE_TOKEN'], askedAt: expect.any(String),
+        item: expect.objectContaining({ job: job.id, status: 'running', stale: false }) },
     ]);
     expect((await a.events()).filter((e) => e.type === 'vault.grant_asked')).toEqual([
       expect.objectContaining({ jobId: job.id, data: { job: job.id, key: job.source!.key, machine: 'hopper-sandbox-kube', template: 'kube', name: 'KUBE_TOKEN' } }),
@@ -98,7 +99,10 @@ describe('the vault only by a per-job grant', () => {
     const granted = await a.ui<{ grants: GrantView[]; grantAsks: GrantAsk[] }>(`/ui/api/jobs/${job.id}/grant-vault`, {}, { token: session });
     expect(granted.status).toBe(200);
     expect(granted.body.grantAsks).toEqual([]);
-    expect(granted.body.grants).toEqual([{ key: job.source!.key, job: job.id, by: expect.any(String), at: expect.any(String) }]);
+    expect(granted.body.grants).toEqual([{
+      key: job.source!.key, job: job.id, by: expect.any(String), at: expect.any(String), made: 'grant',
+      item: expect.objectContaining({ title: expect.any(String), job: job.id, status: 'running', stale: false }),
+    }]);
     expect((await a.events()).find((e) => e.type === 'vault.granted')).toMatchObject({ jobId: job.id, data: { job: job.id, key: job.source!.key } });
 
     expect(await helper(dir, ['get', 'KUBE_TOKEN'], token)).toMatchObject({ code: 0, stdout: VALUE });

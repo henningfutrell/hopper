@@ -3,14 +3,17 @@
 // its box and template, or the Windows host, and what it asked for — with
 // "Grant this job the vault"; the grant is kept for the job's item, so Run again and Rework keep it. A granted item says
 // who granted it, and Revoke takes it back. A job asks; only a person grants, and Access decides. Least role: operator.
-// With none, the panel says what will show here.
+// With none, the panel says what will show here. Each grant names what it covers (issue #1124): the item's title, repository
+// and link, its newest job's status, the date granted, and how it was made — the operator CLI's command when it was made
+// there. A grant whose item has no job waiting or at work is flagged stale: it gives nothing now, and Revoke takes it back.
 import { KeyRound, ShieldCheck, Undo2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Empty, Panel } from '@/components/panel';
 import { post, SessionRejected } from '@/lib/api';
-import type { VaultView } from '@/model/wire';
+import { StatusBadge } from '@/components/status';
+import type { VaultGrantItem, VaultGrantView, VaultView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { viewAnswer } from '@/store/vault';
 import { useCanOperate } from '@/store/selectors';
@@ -46,21 +49,45 @@ export function VaultGrants({ view }: { view: VaultView | null }) {
                 <span className="text-xs text-muted-foreground">job {a.job.slice(0, 8)} {a.windowsHost ? `for a step on the Windows host ${a.windowsHost}` : `on ${a.machine ?? 'a box'}, a box of ${a.template ?? 'a template'}`}</span>
               </div>
               <p className="text-xs break-words">Asked for: <span className="font-mono">{a.names.join(', ')}</span></p>
-              <p className="text-xs text-muted-foreground break-all">Item: {a.key}</p>
+              <p className="text-xs text-muted-foreground break-all">Item: {a.item ? <ItemName item={a.item} /> : a.key}</p>
               {can && <Button size="sm" disabled={busy} onClick={() => void act(a.job, 'grant-vault', `job ${a.job.slice(0, 8)}: granted the vault`)}><ShieldCheck />Grant</Button>}
             </li>
           ))}</ul>
         )}
         {grants.length > 0 && (
-          <ul className="space-y-1">{grants.map((g) => (
-            <li key={g.key} className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="break-all">{g.key}</span>
-              <span className="text-muted-foreground">granted by {g.by}</span>
-              {can && <Button size="sm" variant="outline" disabled={busy} onClick={() => void act(g.job, 'revoke-vault', 'vault grant revoked')}><Undo2 />Revoke</Button>}
+          <ul className="space-y-2">{grants.map((g) => (
+            <li key={g.key} className="space-y-1 rounded-md border p-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <ItemName item={g.item} />
+                {g.item.status && <StatusBadge status={g.item.status} />}
+                {g.item.stale && <StatusBadge status="stale" label="Stale" tone="warn" title="No job of this item waits or is at work: the grant gives nothing now. Revoke it." />}
+                {can && <Button size="sm" variant="outline" disabled={busy} onClick={() => void act(g.job, 'revoke-vault', 'vault grant revoked')}><Undo2 />Revoke</Button>}
+              </div>
+              <p className="text-muted-foreground">{grantedHow(g)}</p>
             </li>
           ))}</ul>
         )}
       </Panel>
     </div>
   );
+}
+
+/** An item by its title, linked to its issue or pull request; its repository, and its newest job by its short id. */
+function ItemName({ item }: { item: VaultGrantItem }) {
+  return (
+    <span className="break-words">
+      {item.url ? <a href={item.url} target="_blank" rel="noreferrer" className="font-medium underline-offset-2 hover:underline">{item.title}</a> : <span className="font-medium">{item.title}</span>}
+      {item.repo && <span className="text-muted-foreground"> · {item.repo}</span>}
+      {item.job && <span className="text-muted-foreground"> · job {item.job.slice(0, 8)}</span>}
+    </span>
+  );
+}
+
+/** Who granted it, on which day, and the way: a direct job's submission, or the operator CLI's command. */
+function grantedHow(g: VaultGrantView): string {
+  const when = `on ${g.at.slice(0, 10)}`;
+  const how = g.made === 'submit' ? 'when the direct job was submitted with the vault authorization' : '';
+  const cli = g.via === 'cli' && g.command ? `through the operator CLI (\`${g.command}\`, run on the hopper's host with the database's credentials)` : '';
+  const by = g.via === 'cli' ? '' : `by ${g.by}`;
+  return ['granted', by, how, cli, when].filter(Boolean).join(' ');
 }

@@ -15220,6 +15220,19 @@ granted. A model edited before this has `vault_grant` gaps apart (`vaultGrantGap
 not; the hopper's own unedited model is upgraded. `vault.granted { job, key, by }`; `vault.grant_revoked { job, key, by }`
 (409 when there is none). Both answer the vault's view: `GET /api/vault` carries `grantAsks` and `grants`.
 
+**What a grant covers** (issue #1124). A grant's key alone names no job a person can find: a direct job's is
+`direct:<direct job id>`, not a job's id. So the view answers each grant and each grant ask with its **item**
+(`grantView`, `grantItemOf`, `src/domain/vault-grants.ts`; read in `withVaultGrants`): its title (a direct job's own, else
+the source's, else the job's goal), its repository, its issue or pull request link, the item's newest job
+(`getBySourceKey`; a job of no source is its own key) and that job's status, and **stale** — no job of the item waits or is
+at work, or none is kept. A stale grant gives nothing now; the panel flags it beside **Revoke**. Nothing revokes it by
+itself: Run again makes a new job of the same item, and the grant is kept for it. Each grant also says how it was made:
+`made: grant` (Grant, an API token, or `hopper vault grant`) or `made: submit` (a direct job's submission that authorized
+`vault`, by its submitter); `via: cli` and `command` when the operator CLI made it — its session signs in no person, so
+its grants are kept `by: operator CLI` (`OPERATOR_CLI_NAME`), whoever ran it on the hopper's host with the database's
+credentials. `hopper vault` prints the same view. Tests: `test/domain/vault-grants.test.ts`,
+`test/ui/vault-grants-view.test.ts`, `test/integration/operator-cli-vault.test.ts`.
+
 **Granting with no browser** (issue #1089). `hopper vault grant <job>` and `hopper vault revoke <job>`
 (`src/cli-operator-vault.ts`) are the same two routes, under the session the operator CLI mints for the one call (issue
 #374), role operator. Access decides as for a click, for the hopper's user the CLI acts as; the answer is the vault's view.
