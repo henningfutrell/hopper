@@ -57,7 +57,7 @@ import { userCliEnv, userSecrets, userWorkDir } from './env.ts';
 import { seamPlugins, withSeams, type UserSeams } from './seams.ts';
 import { machineLanesEditor } from './machine-lanes.ts';
 import { createDirectJobs, type DirectJobs } from '../direct-jobs/index.ts'; import { createUserSearch, type SearchWiring, type UserSearch } from '../search/index.ts'; import { searchHitRoute } from '../domain/search.ts'; import { intakeOutcomeOf } from '../sources/intake-live.ts';
-import { planNotice } from '../domain/infra-watchers.ts'; import type { SandboxRequests } from '../sandbox/requests.ts'; import { stepBoxes, userSandboxRequests, type SandboxLauncher } from './sandbox-requests.ts'; import { proxyToken } from '../github-proxy/token.ts';
+import { planNotice } from '../domain/infra-watchers.ts'; import type { SandboxRequests } from '../sandbox/requests.ts'; import { stepBoxes, userSandboxRequests, type SandboxLauncher } from './sandbox-requests.ts'; import { proxyToken } from '../github-proxy/token.ts'; import { createPushLines } from '../git-mirror/push-lines.ts'; import { guardedVerdict } from '../domain/shrink-guard.ts';
 
 export type { UserSeams } from './seams.ts';
 
@@ -260,7 +260,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     },
   });
   // The GitHub proxy (issue #563): a client target's jobs reach the hopper where it dialled in.
-  const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase), artifactUrl: (id) => artifactUrl(linkBase(), id), publicUrl: () => config.publicUrl ?? o.reach?.(), sources: () => sync.statuses(), ...(o.stack ? { stack: o.stack } : {}) });
+  const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase), artifactUrl: (id) => artifactUrl(linkBase(), id), publicUrl: () => config.publicUrl ?? o.reach?.(), sources: () => sync.statuses(), ...(o.stack ? { stack: o.stack } : {}), pushLines: createPushLines({ dir: join(dataDir, 'git-mirrors'), log: (line) => logger.warn(line) }) }); // the shrink guard's (issue #1096), in the user's mirrors
   const notEnded = () => store.jobs.list({ status: [...IN_FLIGHT_STATUSES] });
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine);
   let searchChanged = (_keys: readonly string[]): void => undefined; const host = createPluginHost({ // searchChanged: set once search exists (issue #945)
@@ -350,7 +350,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     tickMs: config.tickMs,
     maxQuestions: config.maxQuestions, keepPanes: config.keepPanes, reconnectGraceMs: config.reconnectGraceMs, linkGraceMs: config.linkGraceMs, doneRecheckMs: config.doneRecheckMs, ownCommandGraceMs: config.ownCommandGraceMs,
     // Completion is the job's source's to judge (issues #171, #187, #579); a job of no source, or of one that does not judge, is complete.
-    verdict: (job) => judge(sourceOf(job), job),
+    // A job whose last push the shrink guard refused (issue #1096) does not end done: tending failed, whatever its source says.
+    verdict: (job) => guardedVerdict(store.events.recent(200, ['github_proxy.refused', 'github_proxy.done'], job.id), job, () => judge(sourceOf(job), job)),
     // Before a nudge (issue #627): the job's work over at its source, or a credential a person is asked for.
     overAtSource: (job) => overAtSource(sourceOf(job), job), credentialRequests: () => vault.view().requests ?? [],
     // Every job on a machine that reaches the hopper asks it for GitHub (issue #563): its token, the script, the URL, and

@@ -10,6 +10,10 @@
 // fork of its own repository in the user's account, as GitHub says — is pushed to and fetched with the user's connection
 // as its own repository is, under the same ref check. Each fetch that goes to GitHub is counted for the job and the
 // repository (issue #858, `traffic.ts`): git asks for the refs once per fetch or clone, so that ask is the fetch.
+// The shrink guard (issue #1096): each ref update of a push to a branch that is there already is judged, with the
+// push's pack, by the user's side before anything reaches GitHub; a push that brings in the repository's default branch
+// and empties or shrinks a file the branch's own change did not is refused with the files named, as git's own refusal,
+// and the refusal (`github_proxy.refused`) carries them (`shrunk`).
 import { Readable } from 'node:stream';
 import { gunzipSync } from 'node:zlib';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
@@ -18,6 +22,7 @@ import { checkPush, gitPath, receivePackCommands, type GitService, type RefUpdat
 import { CONTRIBUTION_OFF } from './policy.ts';
 import { parseProxyToken } from './token.ts';
 import type { ProxyUser } from './broker.ts';
+import type { ShrunkFile } from '../domain/shrink-guard.ts';
 import { githubTraffic, type GitHubTraffic } from '../github-limiter/traffic.ts';
 
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
@@ -38,6 +43,11 @@ export interface GitUser {
   jobRepositories(): string[];
   contribution(): boolean;
   git(): GitConnection | { problem: string };
+  /**
+   * The shrink guard (issue #1096): one ref update of a push, from `old` to `new`, with the push's pack, judged against
+   * the base branch `base`. Refused: the files and why. Absent: no guard.
+   */
+  shrinkGuard?(push: { repo: string; base: string; old: string; new: string; pack: Buffer }): Promise<{ ok: true } | { ok: false; shrunk: ShrunkFile[]; reason: string }>;
 }
 
 /** A git request as the route gets it: the path after `/job/git/`, the query's `service`, the headers git sent, the body. */
@@ -69,6 +79,7 @@ export interface GitProxyOptions {
 }
 
 const BASIC = /^Basic\s+(\S+)$/i;
+const ZERO = /^0+$/;
 
 const text = (status: number, message: string, extra: Record<string, string> = {}): GitAnswer =>
   ({ status, headers: { 'content-type': 'text/plain; charset=utf-8', ...extra }, body: Buffer.from(`${message}\n`) });
@@ -191,6 +202,14 @@ export function createGitProxy(o: GitProxyOptions) {
         if (!allowed.ok) {
           record('github_proxy.refused', { refs: refs.map((c) => c.ref), reason: allowed.reason });
           return refusedReport(plain, refs, allowed.reason);
+        }
+        if (side.shrinkGuard && facts?.defaultBranch) {
+          for (const c of refs.filter((x) => !ZERO.test(x.old))) {
+            const judged = await side.shrinkGuard({ repo: at.repo, base: facts.defaultBranch, old: c.old, new: c.new, pack: read.pack });
+            if (judged.ok) continue;
+            record('github_proxy.refused', { refs: refs.map((x) => x.ref), reason: judged.reason, shrunk: judged.shrunk });
+            return refusedReport(plain, refs, judged.reason);
+          }
         }
       }
       if (!push && at.advertise) traffic.gitFetch(at.repo, job.id);

@@ -25,6 +25,8 @@
 //     And a job that ends with its last push refused ends failed, not done
 //   Scenario: the pull request's own change empties the file
 //     Then the rebase that keeps it empty goes through
+//   Scenario: an admin sets the guard's percent (Settings → Shrink guard)
+//     Then a push that takes more than that percent of a file's lines is refused, and the change is recorded
 import { execFile } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -332,6 +334,27 @@ describe('the shrink guard (issue #1096)', () => {
     t.held.get(r.job.id)!.end();
     const ended = await t.app.waitForStatus(r.job.id, 'failed');
     expect(JSON.stringify(ended)).toContain('the shrink guard refused its last push, which emptied or shrank docs/design.md');
+  });
+
+  it('the percent is an admin\'s setting: 50 by default, recorded when it changes, read at the next push', async () => {
+    const t = await start();
+    expect((await t.app.api('GET', '/api/shrink-guard')).body).toEqual({ percent: 50 });
+    expect((await t.app.ui('/ui/api/shrink-guard', { percent: 20 })).status).toBe(403);
+    const token = await t.app.login();
+    for (const percent of [0, 101, 2.5]) expect((await t.app.ui('/ui/api/shrink-guard', { percent }, { token })).status).toBe(400);
+    expect((await t.app.ui('/ui/api/shrink-guard', { percent: 50 }, { token })).status).toBe(200);
+    expect(eventsOf(t.app, 'shrink_guard.changed')).toEqual([]);
+
+    const r = await branchThenDevMoves(t);
+    expect(await t.app.ui('/ui/api/shrink-guard', { percent: 20 }, { token })).toMatchObject({ status: 200, body: { percent: 20 } });
+    expect(eventsOf(t.app, 'shrink_guard.changed')).toEqual([expect.objectContaining({ data: expect.objectContaining({ from: { percent: 50 }, to: { percent: 20 } }) })]);
+    // 220 lines on dev to 150: 32% lost, over 20%.
+    const refused = await resolve(r, linesOf(150));
+    expect(refused.code).not.toBe(0);
+    expect(refused.stderr).toContain('docs/design.md (220 lines on dev, 150 after)');
+    // Under the default, it goes through.
+    await t.app.ui('/ui/api/shrink-guard', { percent: 50 }, { token });
+    expect(await resolve(r, linesOf(150))).toMatchObject({ code: 0 });
   });
 
   it('takes a rebase that keeps the file the pull request itself emptied', async () => {

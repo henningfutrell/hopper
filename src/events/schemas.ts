@@ -363,7 +363,8 @@ export const EVENT_SCHEMAS = {
     strict({ ...proxyAsked, op: z.literal('git.push'), repo: z.string(), refs: z.array(z.string()) }),
     strict({ ...proxyAsked, op: z.enum(['repo.view', 'repo.fork']), repo: z.string(), url: z.string(), fork: z.string().optional(), source: answerSource.optional() }),
   ]),
-  'github_proxy.refused': strict({ ...proxyAsked, op: z.string().optional(), repo: z.string().optional(), refs: z.array(z.string()).optional(), reason: z.string() }),
+  // A push the shrink guard refused (issue #1096): the files it would empty or shrink.
+  'github_proxy.refused': strict({ ...proxyAsked, op: z.string().optional(), repo: z.string().optional(), refs: z.array(z.string()).optional(), reason: z.string(), shrunk: z.array(strict({ path: z.string(), from: z.number().int(), to: z.number().int(), against: z.enum(['base', 'head']) })).optional() }),
   'github_proxy.failed': strict({ ...proxyAsked, op: z.union([proxyOp, z.literal('git.push')]), repo: z.string(), refs: z.array(z.string()).optional(), error: z.string() }),
   // Skills (issue #582): what a running job asked the hopper to set up, and the answer. On the job's timeline;
   // `decision` names Access's decision (issue #559) when a link was checked.

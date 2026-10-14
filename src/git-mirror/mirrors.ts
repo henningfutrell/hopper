@@ -66,10 +66,10 @@ export interface GitMirrors {
 /** One git command in a mirror: its exit code and what it printed. Tests may give their own. */
 export type GitRun = (args: string[], env: Record<string, string>) => Promise<{ code: number; stdout: string; stderr: string }>;
 
-const TIMEOUT_MS = 120_000;
-const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+export const TIMEOUT_MS = 120_000;
+export const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 /** A branch name as a refspec may hold it: no option, no `..`, no glob, no `:`. */
-const BRANCH = /^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]+$/;
+export const BRANCH = /^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]+$/;
 const PULL = 'refs/remotes/origin/pull/';
 /** A conflict marker of `git merge-file --diff3` at `MARKER` characters: longer than any line a file is likely to hold. */
 const MARKER = 40;
@@ -116,7 +116,7 @@ export const runGit: GitRun = (args, env) => new Promise((resolve) => {
 });
 
 /** git's environment for one mirror: no prompt, and the token as an HTTP header in git's config from the environment. */
-function gitEnv(remote: GitRemote): Record<string, string> {
+export function gitEnv(remote: GitRemote): Record<string, string> {
   const env: Record<string, string> = { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' };
   if (!remote.token) return env;
   const basic = Buffer.from(`x-access-token:${remote.token}`).toString('base64');
@@ -133,6 +133,35 @@ interface Fetched {
 
 interface RepoState { pass: number; fetched: Promise<Fetched | undefined> }
 
+/** What git said, on one line. */
+export const said = (r: { stderr: string; code: number }): string => r.stderr.trim().replace(/\s*\n\s*/g, ' ') || `git exited ${r.code}`;
+
+/** The mirror, made bare and blobless the first time (in a temporary path, then moved in), its origin `url`. */
+export async function readyMirror(git: GitRun, path: string, url: string, env: Record<string, string>): Promise<string | undefined> {
+  if (!existsSync(join(path, 'HEAD'))) {
+    const made = `${path}.hopper-init-${process.pid}`;
+    rmSync(made, { recursive: true, force: true });
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    for (const args of [
+      ['init', '--quiet', '--bare', made],
+      ['--git-dir', made, 'remote', 'add', 'origin', url],
+      ['--git-dir', made, 'config', 'remote.origin.promisor', 'true'],
+      ['--git-dir', made, 'config', 'remote.origin.partialclonefilter', 'blob:none'],
+      ['--git-dir', made, 'config', 'core.repositoryformatversion', '1'],
+      ['--git-dir', made, 'config', 'extensions.partialClone', 'origin'],
+    ]) {
+      const r = await git(args, env);
+      if (r.code !== 0) { rmSync(made, { recursive: true, force: true }); return said(r); }
+    }
+    if (existsSync(join(path, 'HEAD'))) rmSync(made, { recursive: true, force: true });
+    else renameSync(made, path);
+  }
+  const now = await git(['--git-dir', path, 'remote', 'get-url', 'origin'], env);
+  if (now.code === 0 && now.stdout.trim() === url) return undefined;
+  const set = await git(['--git-dir', path, 'remote', 'set-url', 'origin', url], env);
+  return set.code === 0 ? undefined : said(set);
+}
+
 /** A mirror's path for `repo`: `<dir>/<owner>/<name>.git`. */
 export const mirrorPathOf = (dir: string, repo: string): string => join(dir, `${repo}.git`);
 
@@ -141,33 +170,6 @@ export function createGitMirrors(o: { dir: string; log(line: string): void; traf
   const git = o.git ?? runGit;
   const repos = new Map<string, RepoState>();
 
-  const said = (r: { stderr: string; code: number }): string => r.stderr.trim().replace(/\s*\n\s*/g, ' ') || `git exited ${r.code}`;
-
-  /** The mirror, made bare and blobless the first time (in a temporary path, then moved in), its origin `url`. */
-  async function ready(path: string, url: string, env: Record<string, string>): Promise<string | undefined> {
-    if (!existsSync(join(path, 'HEAD'))) {
-      const made = `${path}.hopper-init-${process.pid}`;
-      rmSync(made, { recursive: true, force: true });
-      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-      for (const args of [
-        ['init', '--quiet', '--bare', made],
-        ['--git-dir', made, 'remote', 'add', 'origin', url],
-        ['--git-dir', made, 'config', 'remote.origin.promisor', 'true'],
-        ['--git-dir', made, 'config', 'remote.origin.partialclonefilter', 'blob:none'],
-        ['--git-dir', made, 'config', 'core.repositoryformatversion', '1'],
-        ['--git-dir', made, 'config', 'extensions.partialClone', 'origin'],
-      ]) {
-        const r = await git(args, env);
-        if (r.code !== 0) { rmSync(made, { recursive: true, force: true }); return said(r); }
-      }
-      if (existsSync(join(path, 'HEAD'))) rmSync(made, { recursive: true, force: true });
-      else renameSync(made, path);
-    }
-    const now = await git(['--git-dir', path, 'remote', 'get-url', 'origin'], env);
-    if (now.code === 0 && now.stdout.trim() === url) return undefined;
-    const set = await git(['--git-dir', path, 'remote', 'set-url', 'origin', url], env);
-    return set.code === 0 ? undefined : said(set);
-  }
 
   /** This pass's one fetch of `repo`: `base` and every pull request head, pruned and blobless. */
   async function fetch(repo: string, path: string, remote: () => Promise<GitRemote>, base: string): Promise<Fetched | undefined> {
@@ -175,7 +177,7 @@ export function createGitMirrors(o: { dir: string; log(line: string): void; traf
     let r: GitRemote;
     try { r = await remote(); } catch (e) { return problem(`no credential to fetch with: ${(e as Error).message}`); }
     const env = gitEnv(r);
-    const notReady = await ready(path, r.url, env);
+    const notReady = await readyMirror(git, path, r.url, env);
     if (notReady) return problem(notReady);
     traffic.gitFetch(repo);
     const fetched = await git(['--git-dir', path, 'fetch', '--quiet', '--prune', '--no-tags', '--filter=blob:none', 'origin',
