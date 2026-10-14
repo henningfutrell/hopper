@@ -2,12 +2,16 @@
 // (issue #1035) on a request card, and Take off the backburner — each only on an item the source's last discover offered
 // it for. Decline writes nothing to GitHub. Apart from source.ts for its size.
 import type { IntakeAction, IntakeActionResult, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
-import type { IntakeRequest } from '../../domain/intake-origin.ts';
+import { requestHash, type IntakeRequest } from '../../domain/intake-origin.ts';
 import type { GitHubApi } from './api.ts';
 import { HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED } from './labels.ts';
 
 export const NOT_IN_SCOPE = 'not in this source\'s scope';
 export const TEXT_CHANGED_SINCE_SHOWN = 'its title or body changed since it was shown: read it again';
+/** Approve on an item taken with a text a person approved, but not this text (issue #1045). */
+export const ALREADY_APPROVED = 'already approved';
+/** Approve on an item taken with no approval: its origin is trusted (issue #1045). */
+export const ALREADY_TAKEN = 'already taken, no approval needed';
 
 export interface IntakeActionContext {
   source: string;
@@ -20,8 +24,8 @@ export interface IntakeActionContext {
   intake: IntakeContext | undefined;
   /** Approve a request card (issue #652): false when its text changed since the person read it. */
   approve(repo: string, key: string, request: IntakeRequest | undefined, a: IntakeAction): Promise<boolean>;
-  /** Keeps a person's decline of a request card (issue #1035). */
-  trust: Pick<IntakeTrust, 'decline'>;
+  /** Keeps a person's decline of a request card (issue #1035); the text a person approved (issue #1045). */
+  trust: Pick<IntakeTrust, 'decline' | 'approvedText'>;
 }
 
 /** Decline is offered where Approve is: on a request card. */
@@ -36,7 +40,14 @@ export async function intakeAct(c: IntakeActionContext, a: IntakeAction): Promis
   for (const key of [...new Set(a.keys)]) {
     const x = offered.get(key);
     if (!x?.repo) { failed[key] = NOT_IN_SCOPE; continue; }
-    if (x.action !== offeredAs(a.kind)) { failed[key] = `not offered: ${x.reason ?? 'taken'}`; continue; }
+    if (x.action !== offeredAs(a.kind)) {
+      // Approve again of a text already approved, from a page that still shows the card or another client, is done:
+      // nothing more to do (issue #1045).
+      const text = a.kind === 'approve' ? c.trust.approvedText(key) : undefined;
+      if (text && requestHash(text) === a.hash) { done.push(key); continue; }
+      failed[key] = a.kind === 'approve' && x.reason === undefined ? (text ? ALREADY_APPROVED : ALREADY_TAKEN) : `not offered: ${x.reason ?? 'taken'}`;
+      continue;
+    }
     try {
       if (a.kind === 'approve') {
         if (!await c.approve(x.repo, key, x.request, a)) { failed[key] = TEXT_CHANGED_SINCE_SHOWN; continue; }

@@ -21,11 +21,20 @@ export const intakeRefusal = (keys: string[]) => (answer: unknown): string | und
 /** A decision on the card that waits for the daemon. */
 export const waitsForDaemon = (a: Approval | undefined): boolean => a?.state === 'pending' || a?.state === 'declining';
 
+/**
+ * An approve the daemon did not do because the issue is already taken — approved elsewhere since the page loaded, or of a
+ * trusted origin (issue #1045): the daemon says `already approved` or `already taken`. The issue is taken, so it is no refusal.
+ */
+const alreadyTaken = (why: string): boolean => why.startsWith('already ');
+
 async function decide(source: string, key: string, hash: string, kind: 'approve' | 'decline'): Promise<void> {
   if (waitsForDaemon(useApprovals.getState()[key])) return;
   const put = (a: Approval) => useApprovals.setState({ [key]: a });
   put({ state: kind === 'approve' ? 'pending' : 'declining' });
-  const r = await actFor(`/ui/api/sources/${encodeURIComponent(source)}/intake`, { kind, keys: [key], hash }, kind === 'approve' ? 'Approved' : 'Declined', intakeRefusal([key]));
+  const r = await actFor(`/ui/api/sources/${encodeURIComponent(source)}/intake`, { kind, keys: [key], hash }, kind === 'approve' ? 'Approved' : 'Declined', (answer) => {
+    const why = intakeRefusal([key])(answer);
+    return why !== undefined && kind === 'approve' && alreadyTaken(why) ? undefined : why;
+  });
   put(r.ok ? { state: kind === 'approve' ? 'approved' : 'declined' } : { state: 'refused', error: r.error });
 }
 

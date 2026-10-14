@@ -353,6 +353,11 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       if (!slot || slot.removed || !running) return { ok: false, reason: 'not_found', message: `no running job source ${name}` };
       if (!slot.source.intakeAction) return { ok: false, reason: 'conflict', message: `job source ${name} takes no intake action` };
       const result = await slot.source.intakeAction(action);
+      // A refusal because the item is taken names its job's status (issue #1045).
+      for (const [key, why] of Object.entries(result.failed)) {
+        const job = why.startsWith('already ') ? store.jobs.getBySourceKey(key) : undefined;
+        if (job) result.failed[key] = `${why}: its job is ${job.status}`;
+      }
       await runSync(slot, true);
       return { ok: true, result };
     },
