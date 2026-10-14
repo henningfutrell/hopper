@@ -11,7 +11,7 @@ import { CONTAINER_TESTS, containerRuntime, HOST_SERVICE_TESTS, testExclude } fr
 const ROOT = join(import.meta.dirname, '..', '..');
 
 type Step = { id?: string; uses?: string; run?: string; if?: string; with?: Record<string, unknown>; env?: Record<string, string> };
-type Job = { needs?: string[]; if?: string; 'timeout-minutes'?: number; strategy?: { matrix: { shard: number[] } }; steps: Step[] };
+type Job = { needs?: string[]; if?: string; 'timeout-minutes'?: number; strategy?: { 'fail-fast'?: boolean; matrix: { shard: number[] } }; steps: Step[] };
 type Workflow = {
   name: string;
   on: Record<string, { branches?: string[] } | null>;
@@ -51,8 +51,12 @@ describe('.github/workflows/pr.yml, the pull request check', () => {
     expect(affected.if).toBe("github.base_ref == 'main'");
     expect(workflow.jobs.shard!.if).toBe("github.base_ref != 'main'");
     expect(affected.steps.find((s) => s.uses?.startsWith('actions/checkout@'))?.with).toEqual({ 'fetch-depth': 2 });
+    // Issue #1104: a change to a module most of the daemon imports affects most of the suite, which on one runner
+    // passed the 10-minute limit. The affected tests run in the same shards as the full suite; a shard with none passes.
+    expect(affected.strategy).toEqual({ 'fail-fast': false, matrix: { shard: workflow.jobs.shard!.strategy!.matrix.shard } });
     const test = affected.steps.find((s) => s.run?.startsWith('npx vitest'));
-    expect(test?.run).toBe('npx vitest run --changed HEAD^1 --passWithNoTests --maxWorkers=100%');
+    const shards = affected.strategy!.matrix.shard.length;
+    expect(test?.run).toBe(`npx vitest run --changed HEAD^1 --shard=\${{ matrix.shard }}/${shards} --passWithNoTests --maxWorkers=100%`);
     expect(test?.env).toEqual({ HOPPER_TEST_HOST_SERVICES: '0' });
     // What's new is checked where a change lands: on main.
     expect(workflow.jobs.gates!.steps.find((s) => s.run?.startsWith('node scripts/whats-new.ts'))?.if).toBe("github.base_ref == 'main'");

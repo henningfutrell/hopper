@@ -131,6 +131,16 @@ describe('the Windows install (WSL)', () => {
     expect(cli).toContain('https://henningfutrell.github.io/hopper/hopper.ps1 -OutFile');
   });
 
+  it('adds this Ubuntu as a machine from the page at localhost, so the Windows link is tested by default (issue #712)', () => {
+    const steps = windows.slice(0, windows.indexOf('<details>'));
+    const step = steps.slice(steps.indexOf('id="windows-link"'), steps.indexOf('id="windows-doctor"'));
+    expect(step).toContain('<strong>Add machine</strong> → <strong>A computer</strong>');
+    expect(step).toContain('<code>http://localhost:4790/</code>');
+    expect(step).toContain('href="#windows-machine"');
+    expect(step).toContain('banner');
+    expect(steps.indexOf('id="windows-link"')).toBeGreaterThan(steps.indexOf('id="windows-keep-running"'));
+  });
+
   it('ends with hopper doctor in PowerShell, which needs hopper.ps1 beside hopper.cmd (issue #712)', () => {
     const steps = windows.slice(0, windows.indexOf('<details>'));
     const last = steps.slice(steps.lastIndexOf('<li'));

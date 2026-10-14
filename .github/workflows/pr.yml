@@ -3,7 +3,7 @@
 # lint, the UI build (`gates`) and the tests; `test` passes only when all of them passed, so it is the one check to
 # require. Which tests depend on the base (issue #1073, docs/deploy.md "Update channels and promotion"): a pull request
 # into `main`, the landing branch where every job's pull request merges, runs only the test files its change
-# affects (`affected`, `vitest --changed`); a pull request into `dev`, `beta` or `stable` — a batch run of
+# affects (`affected`, `vitest --changed`, in ten shards); a pull request into `dev`, `beta` or `stable` — a batch run of
 # `main` into `dev`, or a promotion — runs the full suite in ten shards (`shard`), about 4 minutes (issue #949).
 # The tests that need a host service a
 # clean runner does not give (containers they start themselves, a real sshd, LDAP, a vault) are left out
@@ -54,11 +54,17 @@ jobs:
       - run: npm run build:ui
 
   # The tests the change affects, on a pull request into main only (issue #1073): the files the merge changed
-  # against its base (`HEAD^1`), and every test file that imports them. None is a pass.
+  # against its base (`HEAD^1`), and every test file that imports them. None is a pass. In the same ten shards as the
+  # full suite (issue #1104): a change to a module most of the daemon imports affects most of the suite, which on one
+  # runner passed the 10-minute limit. A shard with no affected test passes.
   affected:
     if: github.base_ref == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -75,7 +81,7 @@ jobs:
           key: node-modules-${{ runner.os }}-node24-${{ hashFiles('package-lock.json') }}
       - run: npm ci
         if: steps.deps.outputs.cache-hit != 'true'
-      - run: npx vitest run --changed HEAD^1 --passWithNoTests --maxWorkers=100%
+      - run: npx vitest run --changed HEAD^1 --shard=${{ matrix.shard }}/10 --passWithNoTests --maxWorkers=100%
         env:
           HOPPER_TEST_HOST_SERVICES: '0'
 

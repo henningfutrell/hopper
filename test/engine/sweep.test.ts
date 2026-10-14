@@ -195,6 +195,39 @@ describe('kept work of a done item (issue #1105)', () => {
   });
 });
 
+describe('kept work whose folder is gone (issue #1120)', () => {
+  const at = (roots: string[], scratch: Survey['scratch'] = [], trees: Survey['trees'] = []): Survey => ({ ...none, scratch, trees, roots });
+
+  it('is resolved: its scratch dir and its job worktree are missing from a work tree the survey found, so job.work_removed with gone', async () => {
+    const r = rig({ found: at(['/w']), kept: ['old'] });
+    await r.sweep.run(true);
+    expect(r.reaps).toEqual([]);
+    expect(r.events.at(-1)).toEqual({ type: 'job.work_removed', jobId: 'old', data: { paths: ['/w/.hopper-scratch/old'], gone: true } });
+    expect(r.logs).toEqual([expect.stringContaining('job old\'s kept work is gone from m')]);
+  });
+
+  it('stays while its scratch dir or its job worktree is there', async () => {
+    const dir = rig({ found: at(['/w'], [{ jobId: 'old', path: '/w/.hopper-scratch/old', ageMs: HOUR }]), kept: ['old'], keeps: ['old'] });
+    await dir.sweep.run(true);
+    expect(dir.events).toHaveLength(1);
+    const tree = rig({ found: at(['/w'], [], [{ path: '/w/workspace/worktrees/app-old', ageMs: HOUR }]), kept: ['old'], keeps: ['old'] });
+    await tree.sweep.run(true);
+    expect(tree.events.filter((e) => (e.data as { gone?: boolean }).gone)).toEqual([]);
+  });
+
+  it('stays when the survey did not find its work tree (not there now, or a client older than this), or the job ran on another machine, or has not ended', async () => {
+    const elsewhere = rig({ found: at(['/v']), kept: ['old'] });
+    await elsewhere.sweep.run(true);
+    const older = rig({ found: none, kept: ['old'] });
+    await older.sweep.run(true);
+    const other = rig({ found: at(['/w']), kept: ['old'], machines: [{ id: 'n', label: 'n', maxLanes: 1, online: true, executors: ['x'] }] });
+    await other.sweep.run(true);
+    const running = rig({ found: at(['/v']), kept: ['run'] });
+    await running.sweep.run(true);
+    expect([elsewhere, older, other, running].map((x) => x.events.length)).toEqual([1, 1, 1, 1]);
+  });
+});
+
 describe('discarding kept work (issue #1010)', () => {
   const by = { person: 'Pat', via: 'ui' as const };
 

@@ -12,8 +12,10 @@
 // Work kept is logged once, when first kept; the next passes keep it quietly (issue #1010). A person may discard it
 // (issue #1010, design.md "Work not pushed"): its scratch dir is reaped on its machine whatever it holds. Kept work of a
 // job whose work item is done, as the work-item ledger has it, waits on nobody: the sweep discards it so (issue #1105),
-// recorded as job.work_removed, discarded, with no person.
-import type { ActingPerson, Job, MachineSnapshot } from '../domain/types.ts';
+// recorded as job.work_removed, discarded, with no person. Kept work whose scratch dir and job worktree are gone from a
+// work tree the survey found on the job's machine (removed by hand, or by a cleanup outside the hopper) is resolved so
+// (issue #1120): job.work_removed with gone, nothing removed. Should it come back, the sweep finds it and keeps it again.
+import type { ActingPerson, Job, KeptWork, MachineSnapshot } from '../domain/types.ts';
 import type { MachineShell, Survey } from '../domain/ports.ts';
 import { keptScratchOf, keptWorkOf, machineRanOn, TERMINAL_STATUSES, WORK_EVENTS } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
@@ -67,6 +69,29 @@ export function planSweep(found: Survey, jobOf: (id: string) => Job | undefined,
   return [...plan.values()].sort((a, b) => a.jobId.localeCompare(b.jobId));
 }
 
+/**
+ * Pure: the kept work on machine `machineId` that is gone (issue #1120), each with its scratch dir: an ended job's that ran
+ * there, whose scratch dir is in a work tree the survey found (`found.roots`), and which the survey found neither as a
+ * scratch dir nor as a job worktree. None when the survey names no work tree (a client older than this).
+ */
+export function goneKept(found: Survey, kept: readonly KeptWork[], jobOf: (id: string) => Job | undefined, machineId: string): { jobId: string; scratch: string }[] {
+  const roots = new Set(found.roots ?? []);
+  if (roots.size === 0) return [];
+  const there = new Set(found.scratch.map((d) => d.jobId));
+  for (const tree of found.trees ?? []) {
+    const job = treeJob(tree.path, jobOf);
+    if (job) there.add(job.id);
+  }
+  const out: { jobId: string; scratch: string }[] = [];
+  for (const k of kept) {
+    const job = jobOf(k.jobId);
+    if (!job || there.has(job.id) || !TERMINAL_STATUSES.includes(job.status) || machineRanOn(job) !== machineId) continue;
+    const scratch = keptScratchOf(k, job);
+    if (scratch && roots.has(scratch.slice(0, scratch.lastIndexOf('/.hopper-scratch/')))) out.push({ jobId: job.id, scratch });
+  }
+  return out.sort((a, b) => a.jobId.localeCompare(b.jobId));
+}
+
 const minutes = (m: MachineSnapshot): number => m.sweep?.everyMinutes ?? SWEEP_EVERY_MINUTES;
 const maxAgeMs = (m: MachineSnapshot): number => (m.sweep?.scratchMaxAgeHours ?? SCRATCH_MAX_AGE_HOURS) * 3600_000;
 
@@ -94,8 +119,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     return undefined;
   };
 
-  /** Jobs whose work was kept and not removed since: the newest work event of each. */
-  const keptJobs = (): Set<string> => new Set(keptWorkOf(c.store.events.recent(KEPT_EVENTS, [...WORK_EVENTS])).map((k) => k.jobId));
+  /** Work kept and not removed since: the newest work event of each job. */
+  const keptNow = (): KeptWork[] => keptWorkOf(c.store.events.recent(KEPT_EVENTS, [...WORK_EVENTS]));
 
   /** Whether the job's work item is done, as the ledger has it: its kept work waits on nobody. */
   const itemDone = (job: Job | undefined): boolean => {
@@ -103,8 +128,14 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     return key !== undefined && c.store.workItems.get(key)?.state === 'done';
   };
 
-  async function sweepOne(m: MachineSnapshot, shell: MachineShell, roots: string[], jobOf: (id: string) => Job | undefined, kept: Set<string>): Promise<void> {
+  async function sweepOne(m: MachineSnapshot, shell: MachineShell, roots: string[], jobOf: (id: string) => Job | undefined, keptWork: KeptWork[]): Promise<void> {
+    const kept = new Set(keptWork.map((k) => k.jobId));
     const found = await shell.survey(roots);
+    for (const g of goneKept(found, keptWork, jobOf, m.id)) {
+      if (c.stopping()) return;
+      log(`hopper: job ${g.jobId}'s kept work is gone from ${m.id}: its scratch dir ${g.scratch} is no longer there`);
+      c.store.events.append({ type: 'job.work_removed', jobId: g.jobId, data: { paths: [g.scratch], gone: true } });
+    }
     for (const r of planSweep(found, jobOf, kept, maxAgeMs(m))) {
       if (c.stopping()) return;
       const discard = r.scratch !== undefined && kept.has(r.jobId) && itemDone(jobOf(r.jobId));
@@ -168,7 +199,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
         const byId = new Map(recent.map((j) => [j.id, j]));
         const jobOf = (id: string): Job | undefined => byId.get(id) ?? c.store.jobs.get(id);
         const roots = [...new Set(recent.map((j) => (j.executorState as { cwd?: unknown } | undefined)?.cwd).filter((p): p is string => typeof p === 'string' && p.startsWith('/')))].sort();
-        const kept = keptJobs();
+        const kept = keptNow();
         for (const m of due) {
           if (c.stopping()) return;
           last.set(m.id, now);

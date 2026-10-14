@@ -868,12 +868,13 @@ Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (iss
 
 ## `job.work_removed`
 
-Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or the job's next reap, removed the scratch dir a reap had kept (`job.work_kept`): its work is now committed and pushed. `paths` is the scratch dir removed. With `discarded` (issue #1010), a person discarded the kept work in Failures, Work not pushed: the scratch dir was removed whatever it held; `person` and `via` say who and the way.
+Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or the job's next reap, removed the scratch dir a reap had kept (`job.work_kept`): its work is now committed and pushed. `paths` is the scratch dir removed. With `discarded` (issue #1010), a person discarded the kept work in Failures, Work not pushed: the scratch dir was removed whatever it held; `person` and `via` say who and the way. With `gone` (issue #1120), the sweep found the scratch dir and its job worktree no longer on the job's machine (removed by hand, or by a cleanup outside the hopper): the record is resolved, and nothing was removed.
 
 | field | type | required |
 |---|---|---|
 | `paths` | string[] | yes |
 | `discarded` | boolean | no |
+| `gone` | boolean | no |
 | `person` | string | no |
 | `via` | `ui` \| `cli` \| `api` | no |
 

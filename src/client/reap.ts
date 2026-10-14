@@ -78,8 +78,8 @@ const REAP_SCRIPT = [
 ].map((l) => l.trim()).join(' ');
 
 // $@ the work trees whose scratch dirs to list. What it prints, one per line: the jobs with a scope, the
-// jobs with a process carrying their id, each scratch dir with its age in seconds, and each job worktree in the work
-// tree's workspace with its age (issue #1103).
+// jobs with a process carrying their id, each work tree whose scratch area is there (issue #1120), each scratch dir with
+// its age in seconds, and each job worktree in the work tree's workspace with its age (issue #1103).
 const SURVEY_SCRIPT = [
   'if command -v systemctl >/dev/null 2>&1; then',
   '  systemctl --user list-units --type=scope --plain --no-legend "hopper-job-*" 2>/dev/null | sed -n "s/^hopper-job-\\([^ ]*\\)\\.scope .*/hopper-scope \\1/p";',
@@ -88,7 +88,7 @@ const SURVEY_SCRIPT = [
   '  for f in /proc/[0-9]*/environ; do tr "\\0" "\\n" 2>/dev/null < "$f" | sed -n "s/^HOPPER_JOB_ID=//p"; done | sort -u | sed "s/^/hopper-proc /";',
   'fi;',
   'now=$(date +%s);',
-  'for r in "$@"; do for d in "$r"/.hopper-scratch/*; do',
+  'for r in "$@"; do [ -d "$r/.hopper-scratch" ] && printf "hopper-root %s\\n" "$r"; for d in "$r"/.hopper-scratch/*; do',
   '  [ -d "$d" ] && [ ! -L "$d" ] || continue;',
   '  m=$(stat -c %Y "$d" 2>/dev/null || stat -f %m "$d" 2>/dev/null) || continue;',
   '  printf "hopper-dir %s %s\\n" "$((now - m))" "$d";',
@@ -125,7 +125,7 @@ export interface SurveyedDir { jobId: string; path: string; ageMs: number }
 /** One job worktree the survey found in a work tree's workspace (issue #1103): its path and age; its job is known by its name. */
 export interface SurveyedTree { path: string; ageMs: number }
 /** What a finished survey found. Undefined when it did not finish. */
-export interface Survey { scopes: string[]; processes: string[]; scratch: SurveyedDir[]; trees?: SurveyedTree[] }
+export interface Survey { scopes: string[]; processes: string[]; scratch: SurveyedDir[]; trees?: SurveyedTree[]; roots?: string[] }
 
 export function readSurvey(stdout: string): Survey | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
@@ -133,13 +133,16 @@ export function readSurvey(stdout: string): Survey | undefined {
   const ids = (prefix: string): string[] => [...new Set(lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length)).filter(isJobId))];
   const scratch: SurveyedDir[] = [];
   const trees: SurveyedTree[] = [];
+  const roots: string[] = [];
   for (const l of lines) {
+    const r = /^hopper-root (\/.*)$/.exec(l);
+    if (r) roots.push(r[1]!);
     const m = /^hopper-dir (\d+) (\/.*\/\.hopper-scratch\/([^/]+))$/.exec(l);
     if (m && isJobId(m[3])) scratch.push({ jobId: m[3]!, path: m[2]!, ageMs: Number(m[1]) * 1000 });
     const t = /^hopper-tree (\d+) (\/.*\/workspace\/worktrees\/[^/]+)$/.exec(l);
     if (t) trees.push({ path: t[2]!, ageMs: Number(t[1]) * 1000 });
   }
-  return { scopes: ids('hopper-scope '), processes: ids('hopper-proc '), scratch, trees };
+  return { scopes: ids('hopper-scope '), processes: ids('hopper-proc '), scratch, trees, roots };
 }
 
 /** A scratch dir a reap may name: absolute, one line, and the job's own. */

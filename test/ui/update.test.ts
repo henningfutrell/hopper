@@ -30,20 +30,17 @@ describe('update model', () => {
       status({ state: 'available', channel, installed: { ...installed, kind: 'image', branch }, target: { commit: B, ref: channel }, ...o });
 
     for (const channel of ['dev', 'beta', 'stable'] as const) {
-      it(`${channel}: plain compose commands with the channel's image, the whole stack, the master key required, and the prune (issues #697, #970)`, () => {
+      it(`${channel}: one command with the channel's image, and the prune (issues #697, #970, #1104)`, () => {
         const u = imageUpdate(image(channel, channel))!;
         expect(headline(image(channel, channel))).toBe(`Update available: pull the ${channel} image and recreate the container`);
         expect(u.image).toBe(`ghcr.io/henningfutrell/hopper:${channel}`);
         const img = `ghcr.io/henningfutrell/hopper:${channel}`;
         const [podman, docker] = u.commands;
         expect(podman!.tool).toBe('Podman');
-        expect(podman!.carry).toBe(`podman run --rm -i --pull=always ${img} hopper update carry --image ${img} < compose.yaml > compose.yaml.next`);
-        expect(podman!.up).toMatch(/^: "\$\{HOPPER_MASTER_KEY:\?/);
-        // Then the check that podman compose sees the stack that runs (issue #1063), then pull and up.
-        expect(podman!.up.endsWith(` && ${podman!.check} && HOPPER_IMAGE=${img} podman compose pull && HOPPER_IMAGE=${img} podman compose up -d`)).toBe(true);
+        expect(podman!.command).toBe(`podman run --rm --pull=always ${img} hopper update script | bash -s -- ${img}`);
         expect(podman!.prune).toBe('podman image prune -f --filter label=org.opencontainers.image.title=hopper');
         expect(docker!.tool).toBe('Docker');
-        expect(docker!.up).toContain(`HOPPER_IMAGE=${img} docker compose pull && HOPPER_IMAGE=${img} docker compose up -d`);
+        expect(docker!.command).toBe(`docker run --rm --pull=always ${img} hopper update script | bash -s -- ${img}`);
         expect(JSON.stringify(u)).not.toMatch(/--no-deps|volume|down|\.env|hopper-update\.sh/);
         expect(u.mismatch).toBeUndefined();
       });

@@ -46,8 +46,8 @@ export function DriftBanner({ drift }: { drift: StackDrift | null }) {
       </ul>
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <p className="min-w-0 flex-1 text-muted-foreground">
-          The fix: in the folder that holds <code>compose.yaml</code>, run these commands, one at a time. They put in the <code>compose.yaml</code> of
-          the image this hopper runs, then pull and start the whole stack, with the master key given. Never recreate the hopper's container alone.
+          The fix: in the folder that holds <code>compose.yaml</code>, run the update with the image this hopper runs. It puts in that
+          image's <code>compose.yaml</code>, then pulls and recreates the whole stack, with the master key given. Never recreate the hopper's container alone.
         </p>
         <div className="flex gap-1">
           {CONTAINER_TOOLS.map((t) => (
@@ -56,7 +56,7 @@ export function DriftBanner({ drift }: { drift: StackDrift | null }) {
         </div>
       </div>
       {fix
-        ? fix.map((line) => <pre key={line} className="overflow-x-auto rounded bg-muted px-2 py-1 font-mono text-[11px]">{line}</pre>)
+        ? <pre className="overflow-x-auto rounded bg-muted px-2 py-1 font-mono text-[11px]">{fix}</pre>
         : <p className="text-xs text-muted-foreground">This hopper does not know its image: give <code>HOPPER_IMAGE</code> at launch, then see How to update.</p>}
     </div>
   );

@@ -1,0 +1,1 @@
+- The Windows install page now has you add the hopper's Ubuntu as a machine, so the hopper checks by itself that Windows can open it, and says how to fix it when it cannot.

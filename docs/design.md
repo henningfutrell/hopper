@@ -896,7 +896,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
     removed. Work kept that the sweep then removes is recorded as `job.work_removed { paths }`; work it
     keeps the first time, as `job.work_kept`. A job worktree `<name>-<job id>` of an ended job is reaped
     the same way, by the job's scratch dir in that work tree, also once that dir is gone: no worktree
-    outlives its job.
+    outlives its job;
+  - kept work that is gone (issue #1120, "Hopper's own disk use"): no record of kept work outlives its folder.
   A job id the hopper does not know is never touched: it may be another hopper's, or a test's. A machine
   offline at startup is swept once it is online. Each reap is one log line.
 - **Each job its own git worktree** (issue #379). One work tree serves every job given it, so jobs
@@ -7003,6 +7004,38 @@ that the hopper sets up remote access itself. Remote access stays optional and o
   and run no agent; starting a container from the UI would need the container runtime's socket in the hopper, which is
   more exposure than an idle loop.
 
+### One update command, which checks its result (issue #1104, 2026-10-14)
+
+Supersedes in part issue #970 (below): the commands to run one at a time are gone; the update is one command.
+
+The issue: the update was seven commands typed by hand. `podman compose` ran docker-compose and started a second stack beside
+one podman-compose started (#1063); the person had to give the master key and check the result by hand; and a plain
+`up -d` of podman-compose kept a container whose image changed under the same tag, so the hopper ran the old image.
+
+- **One command** (`src/update/update-commands.ts` `updateCommand`; the UI's twin in `ui/src/model/update.ts`):
+  `<runtime> run --rm --pull=always <image> hopper update script | bash -s -- <image>`, in the folder of `compose.yaml`.
+  `hopper update script` prints `scripts/update.sh`, a static file every image carries, so the update is the target's
+  own and no script is kept on the host or generated. Not served from the Pages site: the site is the stable version's,
+  and a dev install would run stable's update. The update notice, the drift banner and its log line, the agent update
+  skill, the help, `docs/deploy.md` "Update", the README, `compose.yaml` and the install page give the same command.
+- **The compose tool and project that started the stack.** The script always passes `-p hopper`. podman-compose labels
+  its containers `io.podman.compose.project`; when the stack's containers carry it, the update uses podman-compose, else
+  `podman compose` (docker-compose, or `PODMAN_COMPOSE_PROVIDER`), and `docker compose` on Docker. Before it changes
+  anything it checks that the tool's `ps -q` lists the stack that runs (#1063), and stops when not.
+- **The master key, before anything changes.** From `HOPPER_MASTER_KEY` in its environment, else read from the terminal
+  (`/dev/tty`: stdin is the script). No key, or a value that is no 32-byte key, stops the update first. Never from a file
+  or the running container (issue #970).
+- **Down, then up.** `compose pull`, `compose down` (volumes stay), `compose up -d`: every container is made again on the
+  new image. Not `up -d --force-recreate`: podman-compose cannot force-recreate a service with no container yet (issue
+  #894). When `up` fails, the script puts `compose.yaml.bak` back and starts the old stack.
+- **The result is checked.** The hopper container's image id equals the pulled image's; `/api/health` answers inside the
+  container (`HOPPER_UPDATE_WAIT`, 180 s); `hopper master-key status` is not `missing` (limited); `hopper update drift`
+  exits 0. Each failure is said and exits 1; a stopped container shows its last log lines (a wrong key stops it).
+- **Residual risk, stated.** The update does not check the key against the database before it stops the stack: a wrong
+  key is found when the new hopper refuses to start, and the stack is down until the update runs again with the right
+  key. A `compose up` run by hand without the key still recreates the hopper limited. Running jobs are not counted by
+  the script: the notice shows the count, and the person waits until none.
+
 ### The update is plain compose commands; the master key is required (issue #970, 2026-10-12)
 
 The issue: the update notice ran a one-off container that printed a 180-line generated script, and the person ran that. The
@@ -7113,8 +7146,8 @@ setting never reached it, installs drifted apart, and features failed in confusi
 `compose.yaml` of its commit (`Dockerfile`, `/app/compose.yaml`); `src/update/shipped-compose.ts` reads it, stamped on
 its first line `# hopper version: <branch> <commit>` from install.json (`unknown` when the build does not know them),
 and `GET /api/update/compose` answers it (`ShippedCompose`; 404 with the reason for a build that ships none). The one
-update is **the update commands** (issue #970, "The update is plain compose commands" above): plain compose commands
-in the folder of `compose.yaml`, the new file made from the image to update to — `hopper update carry --image <ref>`
+update is **the update command** (issue #1104, "One update command" above; issue #970 before it): in the folder of
+`compose.yaml`, the new file made from the image to update to — `hopper update carry --image <ref>`
 (`src/cli-update.ts`, no database; `src/update/compose-carry.ts` `carryCompose`), the old `compose.yaml` on stdin — so the
 compose file put in is always the target's. It answers the new `compose.yaml`: the image's own, with what the install set
 as the defaults of the file's own variables — the first published port's address as `HOPPER_BIND` (none: every interface,
@@ -7140,7 +7173,10 @@ stack it runs in with the compose file its own image ships with, through the `St
 — it sees only from inside its container, never the container runtime: (1) each service that must run — every service
 but `hopper`, with no profile or a profile `COMPOSE_PROFILES` turns on (the hopper service's environment names it, so the
 hopper reads the value compose ran with), and not
-restarted only on failure (`openfga-migrate` runs once) — by its name on the compose network (`dns.lookup`, 3 s); (2) the
+restarted only on failure (`openfga-migrate` runs once) — by its name on the compose network (`dns.lookup`, 3 s), but the
+service `HOPPER_DATABASE_URL` names as its host runs while the hopper's own database answers a read (issue #1108: a
+rootless Podman stack failed that name lookup for a healthy `postgres` the hopper worked against); a service whose profile is
+off (`kms`, `vault`) is not asked for and is no gap; (2) the
 settings the file's `hopper` service gives its container, by name, against the hopper's environment (compose sets a
 `${X:-}` default as an empty value, so a name the environment lacks means an older compose file); (3) the commit
 `hopper-vault` answers at `/health` (its build's, from install.json) against the hopper's, when it runs. Each gap is a
@@ -11176,6 +11212,8 @@ Now Failures lists it, and each has an action that moves it.
 - **Discarded once done** (issue #1105). Kept work of a job whose work item is `done`, as the ledger has it, waits on
   nobody: the sweep reaps its scratch dir with `discard`, as Discard does, and records `job.work_removed` with
   `discarded` and no person. A client older than the discard keeps it, and the sweep records nothing new.
+- **Gone from disk** (issue #1120, "Hopper's own disk use"). Kept work whose scratch dir and job worktree a person or a
+  cleanup outside the hopper removed leaves the list at the next sweep: `job.work_removed` with `gone`.
 
 Done since, in issue #1010: the Stuck list ("Stuck
 work"), with counts by cause and one bulk action per cause; a hand-off card recommends only an action the hopper takes ("Only an action the
@@ -18097,7 +18135,7 @@ conflicts, "PR tending without lanes").
 **The branch model.** `main` (the **landing branch**) → `dev` (the **tested branch**) → `beta` → `stable`. A
 job's pull request merges into `main` after the fast checks only: the gates (typecheck, lint, the UI build,
 What's new) and the test files its change affects (`.github/workflows/pr.yml` job `affected`, `vitest run --changed
-HEAD^1`; issue #1038). The full suite runs on `main`'s tip as a **batch run**, and a green batch run moves
+HEAD^1`, in the full suite's ten shards, issue #1104; issue #1038). The full suite runs on `main`'s tip as a **batch run**, and a green batch run moves
 `dev` by the whole batch in one merge. `dev` → `beta` → `stable` stays as it is (`scripts/promote.sh`). `main` is
 no update channel: no hopper follows it.
 
@@ -18390,3 +18428,38 @@ tree. Two repositories with one name in one work tree share `workspace/<name>`: 
 Tests: `test/herdr/job-worktree.test.ts`, `job-worktree-reap.test.ts`, `job-worktree-other-repository.test.ts`,
 `job-worktree-lock.test.ts` (real git and sh), `test/client/reap.test.ts` (the survey's trees), `test/engine/sweep.test.ts`
 (trees planned), `test/client/checkpoint.test.ts`, `test/domain/kept-work.test.ts`, `test/herdr/shared-deps.test.ts`.
+
+### Hopper's own disk use (issue #1120, 2026-10-14)
+
+One host held about 880 GB of hopper leftovers: job checkouts, unused images, orphaned volumes, exited job containers,
+old database backups, update logs, and kept work whose records named folders a person had removed. Nothing removed them.
+The issue asks that every resource the hopper makes is recorded with its owner and removed when the owner ends; that a
+periodic reconcile removes orphans and old images, with a backup retention; that Machines shows the hopper's disk use per
+host against a budget; and that kept-work records are reconciled against disk. It ships in parts.
+
+**Part 1: kept work reconciled against disk** (`src/engine/sweep.ts` `goneKept`, pure; `src/client/reap.ts`).
+- **The survey names its work trees.** For each work tree asked about whose scratch area (`.hopper-scratch`) is there, it
+  prints `hopper-root <path>` (`Survey.roots`). A work tree that is not there, or has no scratch area (an unmounted disk, a
+  path not made yet), is not named, so nothing in it counts as gone.
+- **Gone is resolved.** On each pass, kept work (`job.work_kept`, newest work event) of an ended job that ran on the
+  machine swept, whose scratch dir is in a named work tree, and which the survey found neither as a scratch dir nor as a job
+  worktree (`workspace/worktrees/<name>-<job id>`), is recorded as `job.work_removed` with `gone` and the scratch dir. Nothing
+  is removed: the folder is already gone. One log line each. The work-item ledger drops the job from its item's kept work,
+  so Failures and its badge stop listing it.
+- **Not resolved:** a parked or live job's (its work tree is its own while it may go on), another machine's, and any while
+  the machine's client is older than this (it names no work tree).
+- **Should it come back** (a disk mounted again), the sweep finds the scratch dir; once it is `scratchMaxAgeHours` old it
+  reaps it with the reap's rule, and work not pushed is kept again as `job.work_kept`.
+
+**Part 1: older images go with the update** (`scripts/update.sh` `prune`, docs/deploy.md "Update" step 7). Once every
+check of the update passed, it removes each image labelled `org.opencontainers.image.title=hopper` but the one the hopper
+runs and the one it ran before (read from the hopper's container before the stack stops), so a person can still go back.
+`rmi` without force: an image a container uses, or with more than one name, stays. The update keeps one database backup
+(`hopper-backup.dump`, replaced each time), so it adds no backups. The manual `image prune` command stays valid.
+
+**Left for later parts:** a record of each resource the hopper makes (job containers, volumes, logs, bundles) with its
+owner, removed as an event when the owner ends; a periodic reconcile of orphans and of images the hopper's boxes left, with a
+retention for backups and update logs; and the hopper's disk use per host on Machines, with a budget and an alert.
+
+**Verification:** `test/engine/sweep.test.ts` ("kept work whose folder is gone"), `test/client/survey-roots.test.ts` (the
+survey for real), `test/scripts/update.test.ts` (the older images removed, none on a failed update).
