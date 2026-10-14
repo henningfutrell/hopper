@@ -283,3 +283,35 @@ describe('Approve on a request card: it shows at once, says how it ended, and ke
     expect(button(card, 'Approve')!.disabled).toBe(false);
   });
 });
+
+describe('Intake says why a source lists no issue (issue #1125)', () => {
+  const panel = (name: string) => document.querySelector<HTMLElement>(`[data-intake="${name}"]`);
+  const update = async (s: unknown) => { await act(async () => { streamed.get('source.updated')!({ data: JSON.stringify(s) }); }); };
+
+  it('a paused source has its panel, with why it lists nothing', async () => {
+    await boot('#intake');
+    await vi.waitFor(() => expect(view()).not.toBeNull());
+    await update({ name: 'github-app', kind: 'github-app', state: 'disabled', itemsSeen: 0, jobsCreated: 0, activeJobs: 0,
+      detail: { mode: 'app', paused: 'no GitHub account connected: the app takes the issues assigned to it — Sources → Connect GitHub' } });
+    await vi.waitFor(() => expect(panel('github-app')).not.toBeNull());
+    expect(panel('github-app')!.querySelector('[data-intake-paused]')!.textContent).toContain('Not listing issues: no GitHub account connected');
+  });
+
+  it('a repository the last sync could not list is named, with what GitHub said', async () => {
+    await boot('#intake');
+    await vi.waitFor(() => expect(view()).not.toBeNull());
+    await update({ ...SOURCES[0], detail: { ...DETAIL, repoErrors: { 'octo-user/gone': 'Could not resolve to a Repository' } } });
+    await vi.waitFor(() => expect(view()!.querySelector('[data-intake-repo-error]')).not.toBeNull());
+    const line = view()!.querySelector<HTMLElement>('[data-intake-repo-error="octo-user/gone"]')!;
+    expect(line.textContent).toContain('octo-user/gone');
+    expect(line.textContent).toContain('Could not resolve to a Repository');
+  });
+
+  it('a source whose last sync failed says so, with its error', async () => {
+    await boot('#intake');
+    await vi.waitFor(() => expect(view()).not.toBeNull());
+    await update({ ...SOURCES[0], state: 'error', lastError: 'list 1 repositories: GitHub refused the call', detail: DETAIL });
+    await vi.waitFor(() => expect(view()!.querySelector('[data-intake-error]')).not.toBeNull());
+    expect(view()!.querySelector('[data-intake-error]')!.textContent).toContain('The last sync failed: list 1 repositories: GitHub refused the call');
+  });
+});

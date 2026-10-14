@@ -117,6 +117,8 @@ export interface FakeRequestRecord {
   /** Which credential the request carried and the fake accepted ('none' when absent or refused). */
   auth: 'jwt' | 'token' | 'none';
   body?: unknown;
+  /** Answered 304 (issue #1125): its ETag still held, so GitHub would not charge it. */
+  notModified?: true;
 }
 
 export interface FakeState {

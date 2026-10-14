@@ -10,6 +10,7 @@
 //     And a merged or closed pull request is read no more after the round that saw it end
 //     And an idle pull request is read only inside the batched reads
 //     And the hopper's own count by kind is what the fake GitHub saw
+//     And each repository's change read (issue #1125) is charged only when its answer changed: once for each token, else a 304
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import type { ConnectedAccountTokens } from '../../src/domain/ports.ts';
@@ -74,6 +75,7 @@ function followingJob(id: string, repo: string): Job {
  * intake.
  */
 function kindOf(r: FakeRequestRecord): 'intake' | 'reconcile' | 'pr_cycle' | 'other' {
+  if (isChangeRead(r)) return 'intake';
   const query = String((r.body as { query?: string } | undefined)?.query ?? '');
   if (r.path === '/graphql' && /r0: repository\(owner/.test(query)) return 'intake';
   if (r.path === '/graphql' && /u0: repository\(owner/.test(query)) return 'reconcile';
@@ -81,6 +83,9 @@ function kindOf(r: FakeRequestRecord): 'intake' | 'reconcile' | 'pr_cycle' | 'ot
   if (r.path === '/installation/repositories' || r.path === '/app/installations' || r.path === '/issues' || /^\/app\/installations\/\d+\/access_tokens$/.test(r.path)) return 'intake';
   return 'other';
 }
+
+/** A repository's change read (issue #1125): its issue list since a time, a conditional request. */
+const isChangeRead = (r: FakeRequestRecord): boolean => /^\/repos\/[^/]+\/[^/]+\/issues$/.test(r.path) && r.query.state === 'all';
 
 /** The repository a request reads one item of; undefined for a batched read, a listing or none. */
 function itemRepoOf(r: FakeRequestRecord): string | undefined {
@@ -148,8 +153,9 @@ describe('the GitHub budget at 60 repositories (issue #985)', () => {
       }
     }
 
-    const requests = fake.state.requests;
-    const sync_ = requests.filter((r) => kindOf(r) !== 'other');
+    // What GitHub charges: every request but a 304 (issue #1125).
+    const requests = fake.state.requests.filter((r) => !r.notModified);
+    const sync_ = requests.filter((r) => kindOf(r) !== 'other' && !isChangeRead(r));
     // Each pull request ended, and was seen to end.
     expect(Object.keys(ended).sort()).toEqual(['closed', 'merged', 'yolo']);
     expect(repoOf('yolo').issues.get(2)!.pull!.state).toBe('MERGED');
@@ -172,6 +178,16 @@ describe('the GitHub budget at 60 repositories (issue #985)', () => {
     const hour = githubTraffic.hourly();
     const counted = (k: keyof typeof hour) => hour[k].calls - hourBefore[k].calls;
     expect(Object.keys(hour).reduce((n, k) => n + counted(k as keyof typeof hour), 0)).toBe(requests.length);
-    expect(counted('intake') + counted('reconcile') + counted('pr_cycle')).toBe(sync_.length);
+    const changeReads = requests.filter(isChangeRead);
+    expect(counted('intake') + counted('reconcile') + counted('pr_cycle')).toBe(sync_.length + changeReads.length);
+    // Each repository's change read: one a minute, all a 304 but the first, as nothing on GitHub changed an issue.
+    const made = fake.state.requests.filter(isChangeRead);
+    expect(made.length).toBeGreaterThan(50 * REPOS.length);
+    // Charged once for each installation token (the ETag cache is per credential, a token lasts an hour), and again only
+    // where an issue changed: the merged and the closed pull requests' repositories.
+    const tokens = fake.state.requests.filter((r) => /^\/app\/installations\/\d+\/access_tokens$/.test(r.path)).length;
+    const changedRepos = new Set(['merged', 'closed'].map((role) => `/repos/${OWNER}/${REPOS[ROLES.indexOf(role as Role)]}/issues`));
+    expect(changeReads.filter((r) => !changedRepos.has(r.path))).toHaveLength((REPOS.length - changedRepos.size) * tokens);
+    expect(changeReads.length).toBeLessThan(REPOS.length * tokens + 10);
   });
 });

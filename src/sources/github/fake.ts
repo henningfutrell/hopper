@@ -109,7 +109,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const batched = fakePulls(pulls, issues, (m, a) => enter(m, a));
 
   const api: GitHubApi = {
-    listRepos: listing.listRepos, pullRequestStates: batched.pullRequestStates, openPullRequestsIn: batched.openPullRequestsIn,
+    listRepos: listing.listRepos, issuesChangedSince: listing.issuesChangedSince, pullRequestStates: batched.pullRequestStates, openPullRequestsIn: batched.openPullRequestsIn,
     async getIssue(repo, n) { enter('getIssue', [repo, n]); return copy(find(repo, n)); },
     async subIssues(repo, n) {
       enter('subIssues', [repo, n]);

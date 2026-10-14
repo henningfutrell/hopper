@@ -90,8 +90,9 @@ const SCRIPT = [
   // Git's automatic gc and maintenance run in the foreground, so under the start lock (issue #1075).
   'g() { git -c gc.autoDetach=false -c maintenance.autoDetach=false "$@"; };',
   // The repository's start lock (issue #1075): a directory, made or not at once on any machine. Its holder's pid is in
-  // it; a lock whose holder ended, or held past the wait, is moved aside and taken over.
-  `lock() { k=$(cd "$(git rev-parse --git-common-dir)" && pwd -P)/${JOB_WORKTREE_LOCK} i=0; until mkdir "$k" 2>/dev/null; do q=$(cat "$k/pid" 2>/dev/null); if [ -n "$q" ] && ! kill -0 "$q" 2>/dev/null || [ "$i" -ge ${LOCK_WAIT_S} ]; then echo "hopper: took over the start lock $k" >&2; mv "$k" "$k.stale-$$" 2>/dev/null && rm -rf "$k.stale-$$"; i=0; continue; fi; i=$((i+1)); sleep 1; done; l=$k; echo $$ > "$l/pid"; };`,
+  // it; a lock whose holder ended, or held past the wait, is moved aside and taken over. A holder ends just after it lets
+  // its lock go, so the lock is the dead holder's only while its pid file still names it: else it is gone or a new start's.
+  `lock() { k=$(cd "$(git rev-parse --git-common-dir)" && pwd -P)/${JOB_WORKTREE_LOCK} i=0; until mkdir "$k" 2>/dev/null; do q=$(cat "$k/pid" 2>/dev/null); if [ -n "$q" ] && ! kill -0 "$q" 2>/dev/null && [ "$(cat "$k/pid" 2>/dev/null)" = "$q" ] || [ "$i" -ge ${LOCK_WAIT_S} ]; then mv "$k" "$k.stale-$$" 2>/dev/null && { echo "hopper: took over the start lock $k" >&2; rm -rf "$k.stale-$$"; }; i=0; continue; fi; i=$((i+1)); sleep 1; done; l=$k; echo $$ > "$l/pid"; };`,
   'unlock() { [ -z "$l" ] || rm -rf "$l"; l=; };',
   "trap unlock EXIT; trap 'unlock; exit 1' HUP INT TERM;",
   // The workspace (issue #1103), in the work tree: one the hopper makes ignores itself; its worktrees dir always does.
