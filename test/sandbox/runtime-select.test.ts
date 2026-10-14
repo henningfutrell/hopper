@@ -7,8 +7,10 @@
 //   Scenario: Docker when Podman is given but not reached
 //   Scenario: no socket given: no runtime
 //   Scenario: a runtime configured with no socket for it is a config error
+//   Scenario: a path with no socket at it (compose.yaml's /dev/null, issue #1157) is no socket given
 import { afterEach, describe, expect, it } from 'vitest';
-import { selectRuntime } from '../../src/sandbox/runtime.ts';
+import { givenSocket, selectRuntime } from '../../src/sandbox/runtime.ts';
+import { meterFor } from '../../src/stack-resources/index.ts';
 import { on, startFakeRuntimeApi, type FakeRuntimeApi } from '../support/fake-runtime-api.ts';
 
 const apis: FakeRuntimeApi[] = [];
@@ -46,6 +48,17 @@ describe('runtime selection', () => {
 
   it('no socket given: no runtime', async () => {
     expect(await selectRuntime({})).toBeUndefined();
+  });
+
+  it('a path with no socket at it (compose.yaml\'s /dev/null, issue #1157) is no socket given', async () => {
+    expect(givenSocket('/dev/null')).toBeUndefined();
+    expect(await selectRuntime({ podmanSocket: '/dev/null' })).toBeUndefined();
+    expect((await selectRuntime({ podmanSocket: '/dev/null', dockerSocket: await docker() }))?.kind).toBe('docker');
+    expect(meterFor({ config: { podmanSocket: '/dev/null' }, instanceId: 'i', self: undefined })).toBeUndefined();
+    // A socket, or nothing there yet: given, and its runtime says when it cannot reach it.
+    const socket = await podman();
+    expect(givenSocket(socket)).toBe(socket);
+    expect(givenSocket('/nonexistent/podman.sock')).toBe('/nonexistent/podman.sock');
   });
 
   it('a runtime configured with no socket for it is a config error', async () => {
