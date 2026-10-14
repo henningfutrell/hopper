@@ -1,6 +1,6 @@
 // Issue #1072: a job asks the hopper, not GitHub, where its pull request stands. `pr status` is answered from what the
 // hopper already knows — the Pull requests list (what following the pull request last saw) and the work-item ledger —, and
-// only a pull request it does not know is read on GitHub, then kept for a minute, so a job that waits asks GitHub once.
+// only a pull request it does not know is read on GitHub, then kept in the repo-query cache, so a job that waits asks GitHub once while it is fresh.
 import { describe, expect, it } from 'vitest';
 import { mintLinkKey } from '../../src/client/link.ts';
 import type { PullRequestCard } from '../../src/domain/pull-request-list.ts';
@@ -8,7 +8,7 @@ import type { PullRequestSeen } from '../../src/domain/pull-requests.ts';
 import type { Job, NewEvent } from '../../src/domain/types.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
 import {
-  checkRequest, createGitHubProxy, holdsProxyToken, knownPullRequest, PR_STATUS_CACHE_MS, proxyRequest, proxyToken, type ProxyApi, type ProxyRequest, type ProxyUser,
+  checkRequest, createGitHubProxy, holdsProxyToken, knownPullRequest, REPO_QUERY_FRESH_MS, proxyRequest, proxyToken, type ProxyApi, type ProxyRequest, type ProxyUser,
 } from '../../src/github-proxy/index.ts';
 
 const URL = 'https://github.com/octo/tools/pull/8';
@@ -69,6 +69,7 @@ describe('the broker answers pr status from the hopper first (issue #1072)', () 
     const api: ProxyApi = {
       perform: async (r) => { asked.push(r); return { number: 8, url: URL, state: 'open', draft: false, mergeable: 'mergeable', checks: 'pending', failedChecks: [], base: 'dev', head: 'issue-7' }; },
       repo: async () => { throw new Error('not read'); }, head: async () => { throw new Error('not read'); },
+      pullRequestBase: async () => { throw new Error('not read'); },
     };
     const proxy = createGitHubProxy({
       user: () => user, limiter: { take: () => undefined }, log: () => {}, now: () => now,
@@ -77,24 +78,24 @@ describe('the broker answers pr status from the hopper first (issue #1072)', () 
     return { proxy, events, asked, later: (ms: number) => { now += ms; } };
   }
 
-  it('a pull request the hopper follows: answered from its records, GitHub not asked, `from: hopper` on the job\'s timeline', async () => {
+  it('a pull request the hopper follows: answered from its records, GitHub not asked, `source: hopper` on the job\'s timeline', async () => {
     const known = knownPullRequest(8, URL, { card: card(), seen, item: item() })!;
     const t = setup({ known, item: known.item });
     const r = await t.proxy.handle(bearer, ask);
-    expect(r).toMatchObject({ status: 200, body: { ok: true, op: 'pr.status', repo: 'octo/tools', from: 'hopper', state: 'open', checks: 'failing', waits: 'checks failing' } });
+    expect(r).toMatchObject({ status: 200, body: { ok: true, op: 'pr.status', repo: 'octo/tools', source: 'hopper', state: 'open', checks: 'failing', waits: 'checks failing' } });
     expect(t.asked).toEqual([]);
-    expect(t.events.at(-1)).toMatchObject({ type: 'github_proxy.done', jobId: 'job-1', data: { op: 'pr.status', number: 8, url: URL, from: 'hopper' } });
+    expect(t.events.at(-1)).toMatchObject({ type: 'github_proxy.done', jobId: 'job-1', data: { op: 'pr.status', number: 8, url: URL, source: 'hopper' } });
   });
 
-  it('one it does not know: read on GitHub once, with its work item; asked again within a minute, the read kept answers', async () => {
+  it('one it does not know: read on GitHub once, with its work item; asked again while fresh, the repo-query cache answers', async () => {
     const t = setup({ item: { key: 'https://github.com/octo/tools/issues/7', state: 'working' } });
-    expect(await t.proxy.handle(bearer, ask)).toMatchObject({ status: 200, body: { from: 'github', checks: 'pending', item: { state: 'working' } } });
-    t.later(PR_STATUS_CACHE_MS - 1);
-    expect(await t.proxy.handle(bearer, { ...ask, repo: 'Octo/Tools' })).toMatchObject({ status: 200, body: { from: 'cache', checks: 'pending' } });
+    expect(await t.proxy.handle(bearer, ask)).toMatchObject({ status: 200, body: { source: 'github', checks: 'pending', item: { state: 'working' } } });
+    t.later(REPO_QUERY_FRESH_MS - 1);
+    expect(await t.proxy.handle(bearer, { ...ask, repo: 'Octo/Tools' })).toMatchObject({ status: 200, body: { source: 'cache', checks: 'pending' } });
     expect(t.asked).toHaveLength(1);
-    expect(t.events.map((e) => (e.data as { from?: string }).from)).toEqual(['github', 'cache']);
+    expect(t.events.map((e) => (e.data as { source?: string }).source)).toEqual(['github', 'cache']);
     t.later(2);
-    expect(await t.proxy.handle(bearer, ask)).toMatchObject({ body: { from: 'github' } });
+    expect(await t.proxy.handle(bearer, ask)).toMatchObject({ body: { source: 'github' } });
     expect(t.asked).toHaveLength(2);
   });
 });

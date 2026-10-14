@@ -32,6 +32,7 @@
             "pr.diff",
             "pr.commits",
             "pr.checks",
+            "pr.status",
             "pr.ready",
             "repo.view",
             "repo.fork",
@@ -53,7 +54,8 @@
           "type": "string",
           "enum": [
             "github",
-            "cache"
+            "cache",
+            "hopper"
           ]
         }
       },
@@ -146,7 +148,8 @@
           "type": "string",
           "enum": [
             "github",
-            "cache"
+            "cache",
+            "hopper"
           ]
         }
       },

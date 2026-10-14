@@ -1,0 +1,58 @@
+// Where a pull request stands, as the hopper answers a job (issue #1072, design.md "Jobs ask the hopper, not GitHub"):
+// from what the hopper already knows — the Pull requests list (what following the pull request last saw) and the
+// work-item ledger —, so a job and the UI read one answer. Only a pull request it does not know is read on GitHub, as a
+// repo query the repo-query cache keeps (repo-query.ts). Pure: no I/O, no clock.
+import type { MergeWait, PullRequestCard } from '../domain/pull-request-list.ts';
+import type { ChecksState, FailedCheck, PullRequestSeen } from '../domain/pull-requests.ts';
+import type { WorkItem, WorkItemState } from '../domain/work-items.ts';
+
+/** Where the pull request's work item stands in the ledger (issue #1067). */
+export interface PullRequestItem { key: string; state: WorkItemState; waitingOn?: string }
+
+/** A pull request's status, as `pr status` answers it. */
+export interface PullRequestStatus {
+  number: number;
+  url: string;
+  state: 'open' | 'merged' | 'closed';
+  draft: boolean;
+  mergeable: 'mergeable' | 'conflicts' | 'unknown';
+  /** Its head commit's checks: `none`, it has none; `unknown`, the hopper may not read them or has not. */
+  checks: ChecksState | 'none';
+  failedChecks: FailedCheck[];
+  base?: string;
+  head?: string;
+  /** Why the hopper has not merged it yet, in the Pull requests list's words; absent when the hopper does not follow it open. */
+  waits?: MergeWait;
+  item?: PullRequestItem;
+}
+
+/** What the hopper knows of a pull request: its status, when it knows enough to answer; its work item, when one names it. */
+export interface KnownPullRequest { known?: PullRequestStatus; item?: PullRequestItem }
+
+export const itemOf = (i: WorkItem): PullRequestItem => ({ key: i.key, state: i.state, ...(i.waitingOn ? { waitingOn: i.waitingOn } : {}) });
+
+/**
+ * The status the hopper can answer from its records; undefined: it does not know enough, and GitHub is read. A card the
+ * follow has seen answers as the Pull requests list shows it; a pull request the ledger says merged or closed answers its
+ * end. A card not checked yet, or an open pull request only the ledger names, says nothing of its checks: GitHub is read.
+ */
+export function knownPullRequest(number: number, url: string, o: { card?: PullRequestCard; seen?: PullRequestSeen; item?: WorkItem }): PullRequestStatus | undefined {
+  const item = o.item ? { item: itemOf(o.item) } : {};
+  const { card, seen } = o;
+  if (card && seen) {
+    return {
+      number, url, state: card.state === 'closed' ? 'closed' : 'open', draft: card.draft, mergeable: card.mergeable, checks: card.checks,
+      failedChecks: seen.failedChecks ?? [], ...(card.base ? { base: card.base } : {}), ...(seen.headRef ? { head: seen.headRef } : {}),
+      ...(card.waits ? { waits: card.waits } : {}), ...item,
+    };
+  }
+  const ended = o.item?.pullRequestState;
+  if (ended === 'merged' || ended === 'closed' || ended === 'abandoned') {
+    return { number, url, state: ended === 'merged' ? 'merged' : 'closed', draft: false, mergeable: 'unknown', checks: 'unknown', failedChecks: [], ...item };
+  }
+  return undefined;
+}
+
+/** Whether `url` is pull request `number` of `repo`, whatever the web origin and the case. */
+export const isPullRequest = (url: string, repo: string, number: number): boolean =>
+  url.toLowerCase().endsWith(`/${repo.toLowerCase()}/pull/${number}`);
