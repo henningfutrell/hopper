@@ -8,7 +8,7 @@ import { createFakeLevel } from '../../src/questions/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { writeWebhooks } from '../support/files.ts';
 import { startReceiver, type Receiver } from '../support/receiver.ts';
-import { THREE_PATHS } from '../support/proposal-paths.ts';
+import { ONE_PATH, THREE_PATHS } from '../support/proposal-paths.ts';
 import { waitFor } from '../support/wait.ts';
 
 let t: TestApp | undefined;
@@ -240,12 +240,14 @@ describe('the proposal settings', () => {
     const a = await start();
     const token = await a.login();
     const read = (await a.api('GET', '/api/proposals')).body;
-    expect(read.settings).toEqual({ reviewers: [], signOff: 'owner', levelRevisions: 1, levels: ['opus', 'fable'] });
+    expect(read.settings).toEqual({ reviewers: [], signOff: 'owner', levelRevisions: 1, autoContinue: true, levels: ['opus', 'fable'] });
     expect((await settings(a, token, { reviewers: ['nobody'] })).status).toBe(400);
     expect((await settings(a, token, { signOff: 'anyone' })).status).toBe(400);
     expect((await settings(a, token, { levelRevisions: 99 })).status).toBe(400);
     const ok = await settings(a, token, { reviewers: ['fable', 'opus'], signOff: 'top-level' });
-    expect(ok.body).toEqual({ reviewers: ['fable', 'opus'], signOff: 'top-level', levelRevisions: 1, levels: ['opus', 'fable'] });
+    expect(ok.body).toEqual({ reviewers: ['fable', 'opus'], signOff: 'top-level', levelRevisions: 1, autoContinue: true, levels: ['opus', 'fable'] });
+    expect((await settings(a, token, { autoContinue: 'yes' })).status).toBe(400);
+    expect((await settings(a, token, { autoContinue: false })).body).toMatchObject({ autoContinue: false });
     expect((await a.api('GET', '/api/proposals')).body.settings).toEqual(ok.body);
   });
 });
@@ -290,5 +292,65 @@ describe('the job and its proposal', () => {
     await waitForProposal(a, job.id, (x) => x.stage === 'human');
     await a.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token });
     await waitForProposal(a, job.id, (x) => x.status === 'cancelled');
+  });
+});
+
+describe('a proposal with one recommended path inside the rules (issue #1059)', () => {
+  const reasonOf = async (a: TestApp, jobId: string) => ofJob(await a.events(), jobId).find((e) => e.type === 'proposal.escalated_to_human')?.data.reason;
+
+  it('continues with that path with no person: the hopper signs it off, and the path runs as a follow-on', async () => {
+    const a = await start();
+    const job = await a.pull(propose(ONE_PATH));
+    const done = await a.waitForStatus(job.id, 'finished');
+    const [p] = await proposalsOf(a, job.id);
+    expect(p).toMatchObject({ status: 'accepted', stage: 'hopper', signOff: { decision: 'accept', stage: 'hopper', version: 1, selected: [{ id: '1', title: 'Loopback port' }] } });
+    expect(p!.signOff!.notes).toMatch(/recommended path/);
+    expect(done.result).toEqual({ proposal: { id: p!.id, version: 1, decision: 'accept', followOns: [{ path: '1', jobId: expect.any(String) }] } });
+    const events = ofJob(await a.events(), job.id);
+    expect(events.find((e) => e.type === 'proposal.accepted')!.data).toMatchObject({ stage: 'hopper', selected: [{ id: '1' }] });
+    expect(events.some((e) => e.type === 'proposal.escalated_to_human')).toBe(false);
+  });
+
+  it('goes to a person when the job says a person must decide, and says why', async () => {
+    const a = await start();
+    const job = await a.pull(propose(`${ONE_PATH}\nNeeds a person: the paths differ in cost, and no rule settles it.`));
+    await waitForProposal(a, job.id, (x) => x.stage === 'human');
+    expect(await reasonOf(a, job.id)).toBe('the job says a person must decide: the paths differ in cost, and no rule settles it.');
+  });
+
+  it('goes to a person when a risk rule matches the recommended path, and names the rule', async () => {
+    const a = await start();
+    const job = await a.pull(propose(ONE_PATH.replace('Publish the UI on the loopback port only.', 'Drop table jobs and start again.')));
+    await waitForProposal(a, job.id, (x) => x.stage === 'human');
+    expect(await reasonOf(a, job.id)).toBe('a risk rule matches the recommended path: delete');
+  });
+
+  it('goes to a person when the proposal recommends a combination of paths', async () => {
+    const a = await start();
+    const job = await a.pull(propose(THREE_PATHS));
+    await waitForProposal(a, job.id, (x) => x.stage === 'human');
+    expect(await reasonOf(a, job.id)).toBe('the proposal recommends a combination of paths (1, 3): a person selects');
+  });
+
+  it('goes to a person when the setting is off', async () => {
+    const a = await start();
+    const token = await a.login();
+    await settings(a, token, { autoContinue: false });
+    const job = await a.pull(propose(ONE_PATH));
+    await waitForProposal(a, job.id, (x) => x.stage === 'human');
+    expect(await reasonOf(a, job.id)).toBe('no reviewer levels configured');
+  });
+
+  it('after the reviewer levels approve, continues with that path too; a level that escalates sends it to a person', async () => {
+    const a = await start({ seams: { levels: [reviewer('low', ['approve']), reviewer('high', ['escalate'])] } });
+    const token = await a.login();
+    await settings(a, token, { reviewers: ['low'] });
+    const job = await a.pull(propose(ONE_PATH));
+    await a.waitForStatus(job.id, 'finished');
+    expect((await proposalsOf(a, job.id))[0]).toMatchObject({ status: 'accepted', signOff: { stage: 'hopper' } });
+    await settings(a, token, { reviewers: ['low', 'high'] });
+    const next = await a.pull(propose(ONE_PATH));
+    await waitForProposal(a, next.id, (x) => x.stage === 'human');
+    expect(await reasonOf(a, next.id)).toMatch(/^a reviewer level escalated it: high: /);
   });
 });
