@@ -13,6 +13,7 @@
 // interval, at once when a person asked for the sync, or at the next sync after a GitHub delivery said the repository
 // changed (issue #1079, `repoChanged`). A discover and a check read a job's issue from what was kept
 // while its listing shows no change (`listed-reads.ts`); every other read — before a write — goes to GitHub.
+// Beside intake, a connected account's source reads the user's **tagged items** (issue #1141, `tagged.ts`).
 
 import type { IntakeAction, IntakeChange, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import { requestHash, type IntakeRequest } from '../../domain/intake-origin.ts';
@@ -40,7 +41,7 @@ import { outsideReader } from './outside.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
 import { openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
-import { backburnerReader } from './backburner.ts';
+import { backburnerReader } from './backburner.ts'; import { taggedReader } from './tagged.ts';
 import { recordIssueGraph, type IssueGraphRecorder } from './graph.ts';
 import { reportToGitHub, takeBack, writeResolution } from './report.ts';
 
@@ -121,7 +122,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   let outcomes: IntakeOutcome[] = [];
   /** The labels of each issue the last discover listed, by URL: what a release removes. */
   let listedLabels = new Map<string, string[]>();
-  const outside = outsideReader(api, config);
+  // The repos outside the scope (issue #440); the user's tagged items (issue #1141), read on their own timer, the intake sync interval.
+  const outside = outsideReader(api, config); const tagged = taggedReader({ source: o.name, api, label: config.label, clock: o.clock, everyMs: listingEveryMs, ...(o.intake ? { intake: o.intake } : {}) });
   let lastDiscoverAt: string | undefined;
   let installedRepos: string[] = [];
   /** When the installed repositories were last asked (issue #985): a timed sync asks again only each intake sync interval. */
@@ -255,7 +257,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     kind: o.kind ?? o.name,
     thread: gitHubThread(api),
     intake: () => outcomes.map((x) => ({ ...x })),
-    intakeAction: (a) => intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve }, a),
+    intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : intakeAct({ source: o.name, api, offered: outcomes, listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve }, a),
     ...(o.paused ? { paused: o.paused } : {}),
     describe() {
       const paused = o.paused?.();
@@ -266,7 +268,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...(paused ? { paused } : {}),
         repos: config.repos, ...(o.assignee() ? { assignee: o.assignee() } : {}), label: config.label, hopperName: config.hopperName, projectErrors,
         ...(o.intake?.migration() ? { intakeMigration: o.intake.migration() } : {}),
-        ...outside.detail(),
+        ...outside.detail(), ...tagged.detail(),
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),
         ...(Object.keys(graphErrors).length ? { graphErrors } : {}),
@@ -298,7 +300,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       let next = found.outcomes;
       for (const r of found.released) intake?.record('source.claim_released', { source: o.name, key: r.key, by: r.by, reason: r.reason });
       if (intake && migrating && found.migrated) migrate(intake, found.released.filter((r) => r.by === 'migration').map((r) => r.key), next);
-      if (listed.listed) await outside.read(repos, assignee);
+      if (listed.listed) await outside.read(repos, assignee); await tagged.read(repos, assignee, d?.due !== true);
       // A listing has no body: each issue taken is read, from GitHub only when its listing changed since.
       const taken: GitHubIssue[] = [];
       for (const i of found.issues) { const issue = await api.getIssue(i.repo, i.number); if (issue.state === 'open') taken.push(issue); }

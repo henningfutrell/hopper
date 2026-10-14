@@ -11,7 +11,7 @@ import type { PlanView, PullRequestCard, PullRequestsView, TemplateView, VaultVi
 
 const none = { n: 0, high: 0 };
 const counts = (o: Partial<NeedsYouCounts> = {}): NeedsYouCounts => ({
-  intake: 0, access: 0, plans: 0, gaveUp: [], sorting: 0,
+  intake: 0, access: 0, plans: 0, gaveUp: [], tagged: 0, sorting: 0,
   sections: { questions: none, proposals: none, research: none, logins: none, failures: none, parked: none },
   ...o,
 });
@@ -20,15 +20,15 @@ describe('Needs you rows (issue #897)', () => {
   it('one row per kind, in order, each linked to its one home, with what it counts', () => {
     const rows = needsYouRows(counts());
     expect(rows.map((r) => r.kind)).toEqual(NEEDS_YOU_KINDS);
-    expect(rows.map((r) => r.href)).toEqual(['#intake', '#access-requests', '#infra', '#questions', '#proposals', '#research', '#logins', '#failures', '#pull-requests', '#queue']);
+    expect(rows.map((r) => r.href)).toEqual(['#intake', '#access-requests', '#infra', '#questions', '#proposals', '#research', '#logins', '#failures', '#pull-requests', '#tagged', '#queue']);
     expect(rows.every((r) => r.n === 0 && r.what.length > 0)).toBe(true);
   });
 
   it('counts each kind, and the total adds them with the high-priority ones', () => {
-    const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, gaveUp: ['o/a#7: why'], sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
+    const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, gaveUp: ['o/a#7: why'], tagged: 2, sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
     const n = Object.fromEntries(rows.map((r) => [r.kind, r.n]));
-    expect(n).toEqual({ intake: 2, access: 1, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, failures: 4, 'pull-requests': 1, sorting: 3 });
-    expect(needsYouTotal(rows)).toEqual({ n: 14, high: 3 });
+    expect(n).toEqual({ intake: 2, access: 1, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, failures: 4, 'pull-requests': 1, tagged: 2, sorting: 3 });
+    expect(needsYouTotal(rows)).toEqual({ n: 16, high: 3 });
   });
 
   it('a parked job waits to be picked up, not on a decision: it has no row', () => {

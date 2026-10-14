@@ -12,11 +12,11 @@ import type { GitHubApi } from './api.ts';
 const READS = [
   'getIssue', 'subIssues', 'listComments', 'issueEdits', 'issuePlace', 'projectItems', 'assignedAt', 'issueEvents',
   'closingPullRequest', 'openClosingPullRequests', 'referencingPullRequests', 'crossReferences', 'pullRequest', 'openPullRequests',
-  'listAssignedIssues', 'listInstalledRepos', 'listRepos', 'issuesChangedSince', 'openPullRequestsIn', 'pullRequestStates', 'jobLog',
+  'listAssignedIssues', 'listInstalledRepos', 'listRepos', 'issuesChangedSince', 'openPullRequestsIn', 'pullRequestStates', 'jobLog', 'taggedItems',
 ] as const;
 export const WRITES = ['ensureLabel', 'addLabels', 'removeLabels', 'addAssignees', 'reopenIssue', 'closeAsCompleted', 'postComment', 'merge', 'closeWithoutMerge', 'retarget', 'toDraft', 'baseMerge'] as const;
 /** Reads whose first argument is not a repository: any write drops them. */
-const UNSCOPED = new Set<string>(['projectItems', 'listAssignedIssues', 'listInstalledRepos', 'listRepos', 'openPullRequestsIn', 'pullRequestStates']);
+const UNSCOPED = new Set<string>(['projectItems', 'taggedItems', 'listAssignedIssues', 'listInstalledRepos', 'listRepos', 'openPullRequestsIn', 'pullRequestStates']);
 
 // Every method of the port is a read, a write, the bot's login (no GitHub call after the first), where git fetches
 // (issue #858: a token, asked once per pass by the mirror), or git's own answer (issue #939: no GitHub call): a new one

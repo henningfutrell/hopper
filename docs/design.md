@@ -18985,3 +18985,41 @@ connection's problem (403), as before.
 hopper; that is a separate change.
 
 Tests: `test/integration/git-proxy.test.ts` ("pushes to the job's own repository when it is no job repository, forced too").
+
+## Tagged items (issue #1141, 2026-10-14)
+
+Owner request: the hopper should show the pull requests and issues the user is tagged in — a review requested from the
+user, an @mention, an assignment — across the job repositories, each with why, age and checks, cleared once handled, and
+notify on new review requests.
+
+**As built:**
+- **Read with the sync.** A connected account's GitHub source reads its **tagged items** at its discover: each intake sync
+  interval, and at once on a sync a person asked for (`tagged.ts`, apart from the listing's timer). One read is GitHub's
+  issue search over GraphQL (`taggedItems`, `app/graphql-tagged.ts`): per why one search — `is:open archived:false` and
+  `is:pr review-requested:<login>`, `mentions:<login>` or `assignee:<login>` —, scoped by `repo:` qualifiers to the job
+  repositories, grouped so each query stays within GitHub's 256 characters, at most ten searches to a request, the first 50
+  hits each. Through the intake reserve, as the listing. A request that fails keeps the last list and says why
+  (`taggedError`). The App adapter reads none: an installation token has no user.
+- **Not intake's, not the user's own.** An item with the source's label is intake's (Intake, Jobs), and a pull request the
+  user wrote is the user's own work (Pull requests): neither is tagged. A hit outside the job repositories is dropped.
+- **Cleared by GitHub.** Each read replaces the list. A review given drops the request (GitHub's own `review-requested`), a
+  merged or closed item is no longer open: the row leaves at the next read, with no state of the hopper's own.
+- **Dismiss.** `dismiss`, an intake action on `POST /ui/api/sources/:name/intake` (operator), takes items the last read
+  listed off the list for the whys they have now (`dismissTagged`, `src/domain/tagged.ts`). A new why shows the item again;
+  a why the item lost ends that part of the dismissal (`taggedRead`), so a review requested again after a review shows.
+  Nothing is written to GitHub. The source then syncs at once, as after every intake action.
+- **Notify.** A pull request that newly asks for the user's review records `source.review_requested { source, key, author }`,
+  once while the request stands; webhook subscribers get it like any event. Never the title.
+- **Kept across restarts.** The review requests last seen and the dismissals are the user's setting `tagged:<source>`
+  (`TaggedRecord`, `src/store/tagged-settings.ts`): a key-value row, no schema change. A restart records no request twice.
+- **UI.** Tagged (`#tagged`, nav group *Waiting on you*, `ui/src/views/tagged.tsx`) lists each source's items: repository and
+  number (a link), title, author, why, opened when, checks, and Dismiss. Needs you has a Tagged row, and the nav entry a
+  badge, both the count across the sources (`taggedWaiting`, `ui/src/model/tagged.ts`). `/api/sources` carries them
+  (`detail.tagged`, `taggedDismissed`, `taggedAt`, `taggedError`).
+
+**Not done, by decision:** pagination past the first 50 hits of a search, and team review requests apart from the user's own
+(GitHub's `review-requested` includes the user's teams). Age is since the item was opened: when the review was requested
+needs a timeline read per item.
+
+Tests: `test/domain/tagged.test.ts`, `test/sources/github-graphql-tagged.test.ts`, `test/sources/github-tagged.test.ts`,
+`test/ui/tagged.test.ts`, `test/ui/needs-you.test.ts`.
