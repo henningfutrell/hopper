@@ -18486,3 +18486,38 @@ use; and the Grok Bot routine posting the disk budget's events.
 `test/client/survey-roots.test.ts` (the survey for real, its measure too), `test/scripts/update.test.ts` (the older images
 removed, none on a failed update), `test/integration/disk-budget.test.ts` (the setting through the daemon),
 `test/ui/hopper-disk.test.ts` (the card's text and the budget form).
+
+## Tool accounts (issue #1128, 2026-10-14, part 1)
+
+Owner request: an operator with several Claude accounts on several machines cannot see which machine is signed in as which
+account, and a signed-out Claude holds jobs with no way to fix it away from the desk. The issue asks for eight parts; this
+part ships the inventory: the **tool accounts** (glossary), an Accounts view, `hopper accounts` and its route, and each
+account's week windows (part 6). Expiry warnings, remote sign-in, remote herdr access, failover, infra-credential hygiene
+and the API for those are follow-ups.
+
+- **From the usage sources, no new read.** A usage source already reads its machine's tool and account (`claude-plan`:
+  `claude auth status --json` beside `/usage`, every `intervalSeconds`, on the machine or through its client). The tool
+  accounts group those accounts by service and identity (`toolAccountsOf`, `src/http/accounts.ts`, pure). An account
+  names its machine in `detail.machine`; a source with no account read yet names no machine and is left out.
+- **Sign-in.** `Account.signedOut` (new): the tool read that it is signed in as nobody (`claude-plan`: `loggedIn` not
+  true). Such machines are one entry per service with no identity, so a signed-out machine is seen beside the accounts;
+  a machine whose read failed (not dialled in, the command failed) is `unknown`, an entry of its own, with the reason.
+  An account is `signed-in` when it has an identity.
+- **Read at, last used.** `UsageSourceState` gains `accountReadAt` (each read that gave an account, with or without
+  readings) and `executors` (the option, so the route knows which jobs are the tool's). Last used is the latest
+  `startedAt` of a job on that machine (`machineOf`: its lane's) whose executor the source names, every job when it names
+  none. No expiry: `claude auth status` gives none, so no expiry is shown; part 2 needs one.
+- **Spend.** The week windows (`window` starting `week`) of the sources of the account's signed-in machines: the newest
+  reading of each window, throttling ones first. Machines on one account read the same limit, so one reading is the
+  account's. The session window is left out: it is not a spend limit.
+- **Route.** `GET /api/tool-accounts` → `{ accounts: ToolAccount[] }`, a read as every `/api/` read (UI session, API
+  token with its scope in State and usage, the API door). No token or id: the accounts carry what `parseAuthStatus`
+  keeps (email, plan, organization, sign-in method).
+- **CLI.** `hopper accounts` prints that answer (viewer).
+- **UI.** Accounts is a nav group of its own (not Settings, not Machines): `ui/src/views/accounts.tsx`, model
+  `ui/src/model/tool-accounts.ts`, read through the shared polled reads (`useToolAccounts`, every 30 s; a usage source
+  emits no event). A card per account: its plan and organization, each machine with its sign-in, read and last-used
+  times and why, and its week gauges. The nav badge counts the machines signed out.
+
+Tests: `test/http/tool-accounts.test.ts` (the grouping), `test/integration/usage-accounts.test.ts` (the route and
+`hopper accounts` against the fake claude, signed in and signed out), `test/ui/accounts-view.test.ts`.

@@ -4,7 +4,7 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { get } from '@/lib/api';
-import type { OutOfBandView, PlanView, PullRequestsView, YoloModeView } from '@/model/wire';
+import type { OutOfBandView, PlanView, PullRequestsView, ToolAccountsReport, YoloModeView } from '@/model/wire';
 import { useHopper } from './index';
 
 const POLL_MS = 30_000;
@@ -41,3 +41,5 @@ export const usePullRequestsView = (): PullRequestsView | undefined => usePolled
 export const useInfraPlans = (): { plans: PlanView[] } | undefined => usePolled('/api/infra-plans');
 export const useOutOfBand = (): { changes: OutOfBandView[] } | undefined => usePolled('/api/out-of-band', ['infra.out_of_band_']);
 export const useYoloMode = (): YoloModeView | undefined => usePolled('/api/yolo-mode', ['yolo_mode.']);
+/** The tool accounts (issue #1128): the Accounts view and its badge. A usage source reads with no event: polled only. */
+export const useToolAccounts = (): ToolAccountsReport | undefined => usePolled('/api/tool-accounts');

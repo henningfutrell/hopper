@@ -37,6 +37,7 @@ export function createPolledUsageSource(
   let refreshedAt: Date | undefined;
   let lastError: string | undefined;
   let account: Account | undefined;
+  let accountReadAt: Date | undefined;
   let running: Promise<void> | undefined;
   let retryAt: number | undefined;
   let stopped = false;
@@ -60,6 +61,7 @@ export function createPolledUsageSource(
     }
     note('problem' in r ? r.problem : undefined);
     account = r.account;
+    accountReadAt = r.account ? ctx.clock.now() : undefined;
   };
 
   const kick = () => {
@@ -100,6 +102,8 @@ export function createPolledUsageSource(
         ...(refreshedAt ? { refreshedAt: refreshedAt.toISOString() } : {}),
         ...(problem ? { problem } : {}),
         ...(account ? { account } : {}),
+        ...(accountReadAt ? { accountReadAt: accountReadAt.toISOString() } : {}),
+        ...(o.executors ? { executors: [...o.executors] } : {}),
       };
     },
     stop() {

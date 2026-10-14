@@ -11,15 +11,18 @@
 // covers the whole system and is the landing page; Needs you's badge already sums other entries', so no group sums it again. Your reports (issue #694) is a view of
 // its own (issue #897): it left Settings, which keeps configuration only. Direct jobs (issue #901) submits a job with no GitHub issue and reads it back. Resources (issue #947) shows what every
 // container of the stack and its Postgres use now. Search (issue #945) finds jobs by their words: the header's search box opens it too.
-import { BellRing, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, Cpu, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Send, Server, Settings, ShieldQuestion, Telescope, type LucideIcon } from 'lucide-react';
+// Accounts (issue #1128) is a group of its own, not under Settings or Machines: who each machine's agent tool is signed in as,
+// badged with the machines signed in as nobody.
+import { BellRing, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, Cpu, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Send, Server, Settings, ShieldQuestion, Telescope, UserRound, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useHopper } from '@/store';
 import { useAwaitingSort, useSectionBadges } from '@/store/selectors';
 import { useNeedsYou } from '@/store/needs-you';
-import { useOutOfBand } from '@/store/polled';
+import { useOutOfBand, useToolAccounts } from '@/store/polled';
 import { changesUnmarked } from '@/model/out-of-band';
+import { signedOutMachines } from '@/model/tool-accounts';
 import { needsYouTotal } from '@/model/needs-you';
 import { SECTION_KINDS } from '@/model/sections';
 import { onTheBackburner, requestsWaiting } from '@/model/intake';
@@ -27,7 +30,7 @@ import { groupBadges, type NavBadge } from '@/model/nav-groups';
 import { toggleNavGroup, useNavCollapsed } from '@/hooks/use-nav-collapsed';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['dashboard', 'needs-you', 'search', 'jobs', 'queue', 'direct-jobs', 'intake', 'access-requests', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'sources', 'machines', 'infra', 'usage', 'resources', 'settings'] as const;
+export const VIEWS = ['dashboard', 'needs-you', 'search', 'jobs', 'queue', 'direct-jobs', 'intake', 'access-requests', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'accounts', 'sources', 'machines', 'infra', 'usage', 'resources', 'settings'] as const;
 /** The routes: every view in the navigation, and the job view, which has no nav entry. */
 const ROUTES = [...VIEWS, 'job'] as const;
 export type View = (typeof ROUTES)[number];
@@ -38,6 +41,7 @@ export const NAV_GROUPS = [
   { id: 'waiting', label: 'Waiting on you', views: ['intake', 'access-requests', ...SECTION_KINDS] },
   { id: 'jobs', label: 'Jobs', views: ['search', 'jobs', 'queue', 'direct-jobs', 'pull-requests', 'artifacts', 'decisions', 'events', 'reports'] },
   { id: 'infra', label: 'Infra', views: ['infra'] },
+  { id: 'accounts', label: 'Accounts', views: ['accounts'] },
   { id: 'sources-machines', label: 'Sources & machines', views: ['sources', 'machines', 'usage', 'resources'] },
   { id: 'settings', label: 'Settings', views: ['settings'] },
 ] as const satisfies readonly { id: string; label: string; views: readonly (typeof VIEWS)[number][] }[];
@@ -63,6 +67,7 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   decisions: { label: 'Decisions', icon: Scale },
   events: { label: 'Events', icon: ListTree },
   reports: { label: 'Your reports', icon: Bug },
+  accounts: { label: 'Accounts', icon: UserRound },
   sources: { label: 'Sources', icon: Inbox },
   machines: { label: 'Machines', icon: Server },
   infra: { label: 'Infra', icon: FileDiff },
@@ -95,6 +100,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const plans = n('plans');
   const unmarked = changesUnmarked(useOutOfBand());
   const gaveUp = n('pull-requests');
+  const signedOut = signedOutMachines(useToolAccounts()?.accounts ?? []);
   const badge: Partial<Record<View, NavBadge>> = {
     queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
     'needs-you': { n: total.n, high: total.high, cls: 'bg-warn text-background', title: `${total.n} ${total.n === 1 ? 'decision waits' : 'decisions wait'} on you` },
@@ -103,6 +109,7 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
     ...sections,
     infra: { n: plans + unmarked, cls: 'bg-warn text-background', title: [plans > 0 && `${plans} ${plans === 1 ? 'plan waits' : 'plans wait'} for a person to approve`, unmarked > 0 && `${unmarked} out-of-band ${unmarked === 1 ? 'change waits' : 'changes wait'} to be marked`].filter(Boolean).join('; ') },
     'pull-requests': { n: gaveUp, cls: 'bg-bad text-background', title: `the hopper gave up on ${gaveUp} ${gaveUp === 1 ? 'pull request' : 'pull requests'}` },
+    accounts: { n: signedOut, cls: 'bg-bad text-background', title: `${signedOut} ${signedOut === 1 ? 'machine is' : 'machines are'} signed in as nobody` },
     sources: { n: failedSources, cls: 'bg-bad text-background' },
   };
   const collapsed = useNavCollapsed();
