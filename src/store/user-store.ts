@@ -18,6 +18,7 @@ import { createFailureRepository, createProblemRepository } from './failures.ts'
 import { createHandoffRepository } from './handoffs.ts';
 import { createItemSnapshotRepository } from './item-snapshots.ts';
 import { createIssueGraphRepository } from './issue-graph.ts';
+import { createWorkItemLedger } from './work-items.ts';
 import { createVaultGrantRepository } from './vault-grants.ts';
 import { createLoginRepository } from './logins.ts';
 import { createPointedJobRepository } from './pointed-jobs.ts';
@@ -60,8 +61,12 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     onCommit: () => { events.flush(); jobStream.flush(); },
     onRollback: () => { events.discard(); jobStream.discard(); },
   });
-  events = createEventLog(ctx, ctx.inTx);
+  // The ledger moves in the transaction of the event or the issue graph read that moves it (issue #1067).
+  const workItems = createWorkItemLedger(db, ctx.tx);
+  events = createEventLog(ctx, ctx.inTx, workItems);
   jobStream = createJobStreamRepository(ctx);
+  // Rebuilt when it missed an event: one the build before appended, or one a fold of users moved in (issue #1067).
+  workItems.catchUp();
   return {
     jobs: createJobRepository(ctx),
     lanes: createLaneRepository(ctx),
@@ -82,7 +87,8 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     itemSnapshots: createItemSnapshotRepository(ctx),
     vaultGrants: createVaultGrantRepository(ctx),
     bugReports: createBugReportRepository(ctx),
-    issueGraph: createIssueGraphRepository(ctx),
+    issueGraph: createIssueGraphRepository(ctx, workItems),
+    workItems,
     pointedJobs: createPointedJobRepository(ctx),
     directJobs: createDirectJobRepository(ctx),
     promotions: createPromotionRepository(ctx),
