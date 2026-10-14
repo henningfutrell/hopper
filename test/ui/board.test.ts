@@ -94,7 +94,7 @@ describe('Park and Re-queue (issue #501): offered only where the daemon takes th
   it('a parked job is in no other group: never running, never waiting, never on a lane', () => {
     const b = jobBoard([job('p', { status: 'parked', resumeOn: 'm1' })], []);
     const k = kpis(b, [machine([lane('lane-1', 'idle')])], null);
-    expect([k.running, k.waiting, k.waitingAnswer, k.lanesBusy, k.parked]).toEqual([0, 0, 0, 0, 1]);
+    expect([b.running.length, k.waiting, k.waitingAnswer, k.lanesBusy, k.parked]).toEqual([0, 0, 0, 0, 1]);
     expect(laneRows([machine([lane('lane-1', 'idle')])], b.running).every((r) => r.job === undefined)).toBe(true);
   });
 });

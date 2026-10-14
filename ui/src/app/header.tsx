@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Dot, StatusBadge } from '@/components/status';
 import { duration } from '@/model/format';
 import { IN_FLIGHT_SECTION } from '@/model/jobs-view';
+import { inFlightParts } from '@/model/in-flight';
 import type { Health } from '@/model/wire';
 import { connectionEnded } from '@/model/sources';
 import { yoloIndicator } from '@/model/yolo-mode';
@@ -61,9 +62,9 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           )}
           {inFlight !== null && (
             <a data-slot="in-flight" href={`#jobs/${IN_FLIGHT_SECTION}`}
-              title={`${inFlight} ${inFlight === 1 ? 'job' : 'jobs'} in flight: working, or a pull request with its checks running, its checks being fixed, or waiting on the merge`}
-              className={cn('flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium hover:bg-muted/60', inFlight > 0 ? 'border-busy/40 text-busy' : 'border-border text-muted-foreground')}>
-              <Activity className="size-3.5" aria-hidden /><span className="num">{inFlight}</span> <span className="max-sm:sr-only">in flight</span>
+              title={`${inFlight.total} in flight: ${inFlightParts(inFlight)}`}
+              className={cn('flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium hover:bg-muted/60', inFlight.total > 0 ? 'border-busy/40 text-busy' : 'border-border text-muted-foreground')}>
+              <Activity className="size-3.5" aria-hidden /><span className="num">{inFlight.total}</span> <span className="max-sm:sr-only">in flight</span>
             </a>
           )}
           {logins.n > 0 && (

@@ -16,7 +16,7 @@ import { refreshPriorityLanes, refreshPriorityLanesSoon } from './priority-lanes
 import { refreshAllReviews, refreshReviewsSoon } from './reviews';
 import { EMPTY_REVIEWS, REVIEW_KINDS, REVIEW_UI, type ReviewState } from '@/model/reviews';
 import type { ReviewKind } from '@/model/wire';
-import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, PreSort, Queue, QueueGate, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookDelivery, WebhookView, WebhooksView, WindowsLink, WorkItemState } from '@/model/wire';
+import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, PreSort, Queue, QueueGate, RoutingReport, SourceStatus, UpdateStatus, UsageReport, InFlight, WebhookDelivery, WebhookView, WebhooksView, WindowsLink, WorkItemState } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
 export type Conn = 'connecting' | 'live' | 'reconnecting';
@@ -40,7 +40,7 @@ export interface HopperState {
   /** The locked entries, as /api/queue gave them (issue #355): failed jobs of any age, so kept apart from `jobs`. */
   locked: Job[];
   items: Record<WorkItemState, number> | null; // the work-item ledger's counts per state, as /api/queue gave them (issue #1067); null until read
-  inFlight: number | null; // how many work items are in flight, as /api/queue gave it (issue #1113): the header's badge; null until read
+  inFlight: InFlight | null; // how many work items are in flight, and in each part, as /api/queue gave it (issues #1113, #1164): the header's badge and the dashboard's card; null until read
   /** The queue gate and the pre-sort of the jobs not yet accepted, as /api/queue gave them (issue #159). */
   gate: QueueGate | null;
   presort: PreSort | null;
@@ -113,7 +113,7 @@ const upsert = <T,>(list: T[], item: T, same: (x: T) => boolean, cap: number) =>
 const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'locked' | 'items' | 'inFlight' | 'gate' | 'presort' | 'highPriority'> => ({
   jobs: Object.fromEntries([...q.waiting, ...q.waitingAnswer, ...q.operatorLed, ...q.parked, ...(q.waitingOn ?? []), ...q.running, ...q.ended].map((j) => [j.id, j])),
   waitingOrder: q.waiting.map((j) => j.id),
-  locked: q.locked, items: q.items ?? null, inFlight: typeof q.inFlight === 'number' ? q.inFlight : null,
+  locked: q.locked, items: q.items ?? null, inFlight: q.inFlight ?? null,
   gate: q.gate, presort: q.presort,
   highPriority: typeof q.highPriority === 'number' ? q.highPriority : null,
 });

@@ -17911,12 +17911,23 @@ Failures, the dashboard and the queue agree with `SELECT state, count(*) FROM wo
   "Ready for review" is gone from the graph, the list and the stage filter ("PR open").
 
 **In flight (issue #1113, 2026-10-14).** An item is **in flight** (`isInFlight`, `src/domain/work-items.ts`) while it
-is `working`, or `pr_open` with its pull request wait `checks_running`, `fixing_checks` or `merge` — or not yet seen by
-the follow, with its checks and the merge ahead. A draft or merge conflicts wait on a fix, not on the run. The ledger
+is `working`, or `pr_open` with its pull request wait `checks_running`, `fixing_checks` or `merge` (issue #1164: no
+longer one the follow has not seen yet). A draft or merge conflicts wait on a fix, not on the run. The ledger
 counts them (`inFlight()`: the rows in `working` and `pr_open`, through the same rule), and `GET /api/queue` answers
 `inFlight`. The header shows that count on every screen, a link to `#jobs/in-flight`: the Jobs view with its in-flight
 filter on, the job nodes the graph marks `inFlight` — each the item's own job, its item in flight. The badge has no
 poll of its own: the store reads the queue after each event on the stream, as it does for every other count.
+
+**One count, one breakdown (issue #1164, 2026-10-14).** The badge read the ledger and the dashboard's Running card
+counted the jobs `claimed` or `running`, so they disagreed: the badge counted pull requests with no job, and a pull
+request whose wait the follow never read stayed in it for good. Now `inFlightOf` gives each item one part
+(`inFlightPartOf`): `running` (`working`, no wait), `ownCommand` (`working` on its own command wait: it holds its lane,
+so it counts; any other own wait is `waiting_outside` and holds no lane), `pullRequests` (`pr_open`, its wait
+`checks_running`, `fixing_checks` or `merge`). A pull request whose wait was never read is not in flight: an item the
+follow lost cannot inflate the count, and its first look puts it in. `GET /api/queue` answers
+`inFlight: { total, running, ownCommand, pullRequests }`; the badge shows `total` with the parts as its title, and the
+dashboard's **In flight** card (in place of Running) shows the same `total` and the same parts in the same words
+(`ui/src/model/in-flight.ts`). The Jobs view's filter reads the same rule. Neither recounts the job list.
 
 **Part 3: what GitHub says is ledger input (2026-10-14).** Before it, the ledger heard of GitHub only through the
 issue graph's reads and the follow's merge or close, so an item whose issue closed while its pull request waited, or
