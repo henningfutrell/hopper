@@ -7,6 +7,10 @@ import { plansWaiting } from '../../ui/src/model/infra-plans.ts';
 import { conflictedPullRequests, gaveUpLines } from '../../ui/src/model/pull-requests.ts';
 import { accessRequestsWaiting, templateWaits } from '../../ui/src/model/vault.ts';
 import { yoloIndicator } from '../../ui/src/model/yolo-mode.ts';
+import { requestsWaiting } from '../../ui/src/model/intake.ts';
+import { openHandoffs } from '../../ui/src/model/failures.ts';
+import { countStates } from '../../src/domain/work-items.ts';
+import type { FailuresView } from '../../src/domain/types.ts';
 import type { PlanView, PullRequestCard, PullRequestsView, TemplateView, VaultView, YoloModeView } from '../../ui/src/model/wire.ts';
 
 const none = { n: 0, high: 0 };
@@ -35,6 +39,19 @@ describe('Needs you rows (issue #897)', () => {
     const rows = needsYouRows(counts({ sections: { questions: none, proposals: none, research: none, logins: none, failures: none, parked: { n: 2, high: 1 } } }));
     expect(rows.some((r) => (r.kind as string) === 'parked')).toBe(false);
     expect(needsYouTotal(rows)).toEqual({ n: 0, high: 0 });
+  });
+});
+
+describe('Intake and Needs a person read the work-item ledger (issue #1067)', () => {
+  it('the Intake badge and row count the items the ledger has waiting for approval; none before the ledger is read', () => {
+    expect(requestsWaiting({ ...countStates([]), waiting_for_approval: 3, failed: 2 })).toBe(3);
+    expect(requestsWaiting(null)).toBe(0);
+  });
+
+  it('Needs a person counts the items the ledger has handed to a person, not the hand-off records still open', () => {
+    const view = { counts: { failed: 1, needsPerson: 2 }, handoffs: [{ status: 'open' }, { status: 'open' }, { status: 'open' }] } as unknown as FailuresView;
+    expect(openHandoffs(view)).toBe(2);
+    expect(openHandoffs(null)).toBe(0);
   });
 });
 

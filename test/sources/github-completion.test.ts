@@ -135,7 +135,7 @@ describe('closed as complete (issue #350)', () => {
     expect(await source.notComplete!(job)).toBeUndefined();
   });
 
-  it('closedAsComplete: a failed job whose issue was closed as complete, by any pull request or by hand (issue #637); an open issue or one closed as not planned is not', async () => {
+  it('issueState: what GitHub says of a failed job\'s issue, for the ledger (issue #1067): closed as completed by any pull request or by hand, closed as not planned, open', async () => {
     const { gh, source } = setup();
     for (let n = 1; n <= 5; n++) gh.createIssue({ repo: REPO, labels: ['hopper'] });
     gh.closeByPullRequest(REPO, 1, { createdAt: AFTER, mergedAt: AFTER });
@@ -143,17 +143,20 @@ describe('closed as complete (issue #350)', () => {
     gh.closeIssue(REPO, 3, 'owner', { at: AFTER, reason: 'not_planned' });
     gh.closeByPullRequest(REPO, 5, { createdAt: BEFORE, mergedAt: AFTER });
     const failed = (n: number) => jobForIssue(n, { status: 'failed' });
-    expect(await Promise.all([1, 2, 3, 4, 5].map((n) => source.closedAsComplete!(failed(n))))).toEqual([true, true, false, false, true]);
+    expect(await Promise.all([1, 2, 3, 4, 5].map((n) => source.issueState!(failed(n))))).toEqual([
+      { state: 'closed', reason: 'completed' }, { state: 'closed', reason: 'completed' }, { state: 'closed', reason: 'not_planned' },
+      { state: 'open' }, { state: 'closed', reason: 'completed' },
+    ]);
   });
 
-  it('closedAsComplete: a permanent error (an issue gone) is not; a transient error throws, to be asked again', async () => {
+  it('issueState: a permanent error (an issue gone) is no answer; a transient error throws, to be asked again', async () => {
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     gh.deleteIssue(REPO, 1);
-    expect(await source.closedAsComplete!(jobForIssue(1, { status: 'failed' }))).toBe(false);
+    expect(await source.issueState!(jobForIssue(1, { status: 'failed' }))).toBeUndefined();
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     gh.failNext('getIssue', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
-    await expect(source.closedAsComplete!(jobForIssue(1, { status: 'failed' }))).rejects.toThrow('Bad Gateway');
+    await expect(source.issueState!(jobForIssue(1, { status: 'failed' }))).rejects.toThrow('Bad Gateway');
   });
 
   it('workState (issues #529, #621): an issue closed as completed is done, closed any other way is closed, deleted is gone; a transient error throws', async () => {
