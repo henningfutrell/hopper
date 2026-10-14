@@ -4,6 +4,8 @@
 // the job runs it. When the issue changed since a person approved it, the change shows line by line. Approve waits at once
 // and sends once while the daemon approves and syncs; a refusal shows on the card, which stays (issue #811). Decline
 // (issue #1035) makes no job and writes nothing to GitHub: an edit to the issue's title or body shows the card again.
+// A reopened card (issue #1126): the issue was reopened after its job was done; it links the item's earlier jobs and its
+// pull request, and Approve runs the item again.
 import { Check, Loader2, X } from 'lucide-react';
 import type { IntakeRequest } from '../../../src/domain/intake-origin.ts';
 import { Button } from '@/components/ui/button';
@@ -21,11 +23,20 @@ export function RequestCard({ request, source, itemKey, canOperate }: { request:
       <ul className="space-y-0.5" data-slot="request-why">
         {request.why.map((w) => <li key={w}>{w}</li>)}
       </ul>
-      <div className="flex flex-wrap gap-x-3 text-muted-foreground" data-slot="request-actors">
+      {request.reopened && (
+        <div className="flex flex-wrap gap-x-3 text-muted-foreground" data-slot="request-history">
+          <span>Before:</span>
+          {request.reopened.jobs.map((j) => (
+            <a key={j.id} href={`#job/${j.id}`} className="font-mono underline" data-job={j.id}>{j.id.slice(0, 8)} ({j.status})</a>
+          ))}
+          {request.reopened.pullRequest && <a href={request.reopened.pullRequest} target="_blank" rel="noreferrer" className="underline" data-slot="request-pull-request">its pull request</a>}
+        </div>
+      )}
+      {request.actors.length > 0 && <div className="flex flex-wrap gap-x-3 text-muted-foreground" data-slot="request-actors">
         {request.actors.map((a) => (
           <span key={a.role} className={a.trusted ? 'text-ok' : 'text-warn'}>{ROLE[a.role]} {a.login ?? 'nobody known'}{a.app ? ` (${a.app})` : ''}</span>
         ))}
-      </div>
+      </div>}
       {request.approved && request.approved.title !== request.title && (
         <div data-slot="request-title-change">Title was <span className="line-through">{request.approved.title}</span></div>
       )}

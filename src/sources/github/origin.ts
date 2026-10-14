@@ -4,16 +4,23 @@
 // a trusted origin. Not trusted: the text a person approved, when its title and body hash the same, makes it approved;
 // else it is a request card. A new request card's text records `source.request_opened` once (issue #798), so it notifies;
 // a card that leaves Intake with no approval or decline records `source.request_withdrawn` (issue #1067, part 4).
+// An open issue with `hopper:done` whose job here ended was reopened (issue #1126): it is a request card again, the
+// reopened card (`reopenedRequest`), whatever its origin, so a person decides whether the item runs again.
 import {
-  FILED_BY_JOB, FILED_BY_JOB_REASON, isBotLogin, requestHash, untrustedReason, type ActorRef, type IntakeRequest, type JobOrigin, type OriginActor, type OriginRole,
+  FILED_BY_JOB, FILED_BY_JOB_REASON, isBotLogin, requestHash, untrustedReason, type ActorRef, type IntakeRequest, type ItemHistory, type JobOrigin, type OriginActor, type OriginRole,
 } from '../../domain/intake-origin.ts';
 import type { IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
 import type { GitHubApi, GitHubIssue, IssueEvent } from './api.ts';
+import { DONE_OPEN } from './discover.ts';
 
 /** An issue's origin: trusted or approved (it may be taken), else the request card a person approves. */
 export type OriginVerdict = { origin: JobOrigin } | { request: IntakeRequest };
 
 export const REQUEST_REASON = 'a request: approve it to take it';
+/** A reopened card (issue #1126). */
+export const REOPENED_REASON = 'reopened after its job was done: approve it to run it again';
+/** Why a reopened card is a request. */
+export const REOPENED_WHY = 'reopened after its job was done';
 /** A request card a person declined (issue #1035). */
 export const DECLINED_REASON = 'a request you declined: an edit to its title or body shows it again';
 
@@ -82,7 +89,32 @@ export async function originsOf(api: GitHubApi, trust: IntakeTrust, issues: GitH
 export function requestOutcome(x: IntakeOutcome, r: IntakeRequest | undefined, trust: Pick<IntakeTrust, 'declined'>): IntakeOutcome {
   if (!r) return x;
   if (trust.declined(x.key, r.hash)) return { ...x, reason: DECLINED_REASON, group: 'declined' };
-  return { ...x, reason: REQUEST_REASON, action: 'approve', group: 'request', request: r };
+  return { ...x, reason: r.reopened ? REOPENED_REASON : REQUEST_REASON, action: 'approve', group: 'request', request: r };
+}
+
+/**
+ * The reopened card of an issue (issue #1126): its text as read, and the item's history. Its acts are not read: a person
+ * approves it whatever its origin, and the origin is judged again at the sync after the approval.
+ */
+export function reopenedRequest(issue: Pick<GitHubIssue, 'title' | 'body' | 'author'>, history: ItemHistory): IntakeRequest {
+  return { hash: requestHash(issue), title: issue.title, body: issue.body, author: issue.author, actors: [], why: [REOPENED_WHY], reopened: history };
+}
+
+/**
+ * The reopened cards of a sync (issue #1126): of the issues listed (`seen`) whose outcome is `done, but the issue is still
+ * open`, those whose job here ended, each read again for its body. The listing lists them as every open labelled issue, so
+ * no GitHub delivery is needed.
+ */
+export async function reopenedRequests(api: Pick<GitHubApi, 'getIssue'>, seen: readonly GitHubIssue[], outcomes: readonly IntakeOutcome[],
+  rerunnable: ((keys: string[]) => Set<string>) | undefined, intake: Pick<IntakeContext, 'history'> | undefined): Promise<Map<string, IntakeRequest>> {
+  const doneOpen = outcomes.filter((x) => x.reason === DONE_OPEN).map((x) => x.key);
+  const ended = rerunnable && doneOpen.length > 0 ? rerunnable(doneOpen) : new Set<string>();
+  const requests = new Map<string, IntakeRequest>();
+  for (const i of seen.filter((x) => ended.has(x.url))) {
+    const issue = await api.getIssue(i.repo, i.number);
+    if (issue.state === 'open') requests.set(i.url, reopenedRequest(issue, intake?.history?.(i.url) ?? { jobs: [] }));
+  }
+  return requests;
 }
 
 /**

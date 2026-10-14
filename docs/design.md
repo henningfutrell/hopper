@@ -15066,6 +15066,28 @@ Nothing is written to GitHub: no label, no comment, no close; an issue a person 
 line. An edit to its title or body makes a new hash, so it is a request card again. A declined text cannot be approved
 later; the request's author edits it, or a trusted actor files the work again.
 
+**Reopened (issue #1126, 2026-10-14).** An issue whose job was done keeps `hopper:done`, so when a person reopened it —
+the merged pull request did not fix it all — intake said `done, but the issue is still open` and offered nothing: no job
+could start. Now an open issue with `hopper:done` whose job here ended (`rerunnable`: its end reported to the source) is a
+request card again, the **reopened card** (`reopenedRequest`, `src/sources/github/origin.ts`): reason
+`reopened after its job was done: approve it to run it again`, group `request`, its title and body as read, no acts, and
+the item's history (`IntakeRequest.reopened`, `itemHistory`, `src/domain/intake.ts`): the newest job and the jobs it ran
+again (`rerunOf`), newest first, at most ten, and the item's pull request from the work-item ledger. It is a card whatever
+the issue's origin: a person decides whether the item runs again. It records `source.request_opened` as any card, so the
+item's ledger row moves from `done` to `waiting_for_approval` and the Intake badge counts it. A card opens again after an
+approval of the same text (`requestOpenedSince`: since the last `source.request_withdrawn` or `source.request_approved`).
+Approve is the card's Approve, checked the same way; it also takes `hopper:done` off the issue (a label, the hopper's own
+write) before it records the text. The next sync — at once, as for every Approve — lists the issue with no end label, judges
+its origin as any issue's (a trusted origin, or the text just approved), and makes a new job of the item, which runs again
+from its ended job (`rerunOf`). Decline makes no job and writes nothing; the item is `done` again (a dropped item whose pull
+request merged is done). An issue with `hopper:done` and no job here, another hopper's, stays `done, but the issue is still
+open`.
+
+No GitHub delivery is needed: the source lists every open labelled issue of its job repositories at each intake sync
+(the listing cache, "Repository listings": one batched read per due repository at the intake sync interval), and a
+reopened issue is one of them. A delivery of `reopened` (issue #1079, off by default) only makes its repository due at
+once.
+
 **The job's origin.** `SourceItem.origin` → `JobSourceRef.origin`: `trusted` or `approved`. Run again and Rework keep the
 origin of the job they follow. A job of a source that does not judge origins has none; one taken before this change has
 none until the backfill below judges it.
