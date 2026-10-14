@@ -122,6 +122,14 @@ describe('the Windows install (WSL)', () => {
     expect(steps).toContain('wsl.exe -d Ubuntu-24.04 -e sleep infinity; Start-Sleep -Seconds 5');
     expect(page).not.toContain('Keep one Ubuntu window open');
   });
+
+  it('keeps the hopper running with one command from Windows, after the CLI with both scripts (issue #712)', () => {
+    expect(windows).toContain('data-copy="hopper autostart on"');
+    expect(windows).toContain('href="#windows-cli"');
+    const cli = page.slice(page.indexOf('id="windows-cli"'), page.indexOf('id="windows-machine"'));
+    expect(cli).toContain('https://henningfutrell.github.io/hopper/hopper.cmd -OutFile');
+    expect(cli).toContain('https://henningfutrell.github.io/hopper/hopper.ps1 -OutFile');
+  });
 });
 
 describe('a Windows computer as a machine (issue #704)', () => {
