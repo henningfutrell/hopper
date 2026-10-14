@@ -488,6 +488,21 @@ Each check prints `ok`, or `FAIL` and the fix. A broken link gets the same fix a
 - **Not checked here:** there is no Windows runner, so `test/scripts/windows-cli.test.ts` reads the script. A person
   checks it once on Windows: `hopper doctor` after a fresh install and after `wsl --shutdown`.
 
+### The Windows link, checked by default
+
+On Windows the install page has the person add the distro the hopper runs in as a machine (issue #712, "Add this
+Ubuntu as a machine"): **Machines** → **Add machine** → **A computer**, with the UI open at `http://localhost:<port>`
+in the Windows browser. The join line carries the URL the page is open at, so the client dials the hopper on loopback.
+A client in WSL that dials loopback tests the Windows link (`docs/design.md` "The Windows link"): every 5 minutes it
+runs `Invoke-WebRequest` on `http://localhost:<port>/api/health` through interop. When the link breaks, the Machines
+card and a banner over every view say so, with the fix for the networking mode. Jobs need a machine anyway, so the
+check costs no extra step.
+
+- **Security:** nothing new. It is the usual join flow; the bind stays `127.0.0.1`, and the test carries no token.
+- **When it does not run:** a line copied from a page open at another address (`127.0.0.1`, a LAN name, the public
+  URL) dials that address. Only a loopback address starts the test, so copy the line from the page at `localhost`.
+  With no client in the distro, `hopper doctor` ("Check it from Windows") is the check.
+
 ### The hopper's network
 
 `compose.yaml` makes its own network, `hopper_default`, on every `up` (issue #711). The name is fixed in the file, so it
