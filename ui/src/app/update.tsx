@@ -86,7 +86,7 @@ function Command({ text }: { text: string }) {
 
 /**
  * How to update a container install (issues #697, #970): plain compose commands in the folder that holds compose.yaml, for the
- * chosen container tool — give the master key, back up the database, make and read the new compose.yaml that image ships
+ * chosen container tool — give the master key, check that the tool sees the stack that runs (issue #1063), back up the database, make and read the new compose.yaml that image ships
  * with, put it in, then pull and start the whole stack; then the prune; and what a recreate would end now.
  */
 function ImageUpdateSteps({ s }: { s: UpdateStatus }) {
@@ -107,6 +107,9 @@ function ImageUpdateSteps({ s }: { s: UpdateStatus }) {
         </div>
       </div>
       <Command text={c.give} />
+      <p className="text-muted-foreground">Check that this compose tool sees the stack that runs. It stops when another compose tool started the stack: its <code>up</code> would start a second stack on the same data. The last command checks again.</p>
+      <Command text={c.check} />
+      {tool === 'Podman' && <p className="text-muted-foreground">When the check stops and podman-compose started the stack, run <code>{PODMAN_PROVIDER_HINT}</code>, then the check again.</p>}
       <p className="text-muted-foreground">Back up the database:</p>
       <Command text={c.backup} />
       <p className="text-muted-foreground">Make the <code>compose.yaml</code> that image ships with, with your own settings in it. Read what it says, and read the change:</p>
@@ -116,7 +119,6 @@ function ImageUpdateSteps({ s }: { s: UpdateStatus }) {
       <Command text={c.swap} />
       <p className="text-muted-foreground">Pull and start the whole stack. Without the master key this stops before anything changes. Never recreate the hopper's container alone: a new version can add services.</p>
       <Command text={c.up} />
-      {tool === 'Podman' && <p className="text-muted-foreground">When <code>podman compose ps</code> shows no hopper but <code>podman-compose ps</code> does, run <code>{PODMAN_PROVIDER_HINT}</code> first.</p>}
       <p className="text-muted-foreground">Then, optionally, remove the image it replaced:</p>
       <Command text={c.prune} />
       <p className={s.restartBlockers > 0 ? TEXT.warn : 'text-muted-foreground'} data-slot="restart-blockers">{u.blockers}</p>

@@ -21,7 +21,7 @@ const SHIPPED = readFileSync(join(ROOT, 'compose.yaml'), 'utf8');
 const OLD_LAN = readFileSync(join(ROOT, 'test', 'fixtures', 'compose', 'old-lan.yaml'), 'utf8');
 
 /** Issue #1063: a stack runs, but this compose tool sees none of it: it would start a second stack on the same volumes. */
-const PODMAN_CHECK = `[ -z "$(podman ps -q --filter label=com.docker.compose.project=hopper)" ] || podman compose ps -q 2>/dev/null | grep -Eq '^[0-9a-f]{12,}$' || { echo 'hopper: podman compose does not see the hopper stack that runs. It would start a second stack on the same volumes: the update stops. Use the compose tool that started the stack. When podman-compose started it: export PODMAN_COMPOSE_PROVIDER=podman-compose' >&2; false; }`;
+const PODMAN_CHECK = `[ -z "$(podman ps -q --filter label=com.docker.compose.project=hopper)" ] || podman compose ps -q 2>/dev/null | grep -Eq '^[0-9a-f]{12,}$' || { echo 'hopper: podman compose does not see the hopper stack that runs. It would start a second stack on the same data: the update stops. Use the compose tool that started the stack. When podman-compose started it: export PODMAN_COMPOSE_PROVIDER=podman-compose' >&2; false; }`;
 
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
@@ -111,9 +111,12 @@ describe('the update commands (issue #970)', () => {
     expect(r.out).toMatch(/Add this to compose\.override\.yaml/);
     expect(r.out).toContain('whoami:');
     expect(r.out).not.toContain(KEY);
+    // The check (issue #1063) asks first, and again in the up line: no stack runs here.
     expect(r.calls).toEqual([
+      'ps -q --filter label=com.docker.compose.project=hopper | HOPPER_IMAGE=',
       'compose exec -T postgres pg_dump -U hopper -d hopper -Fc | HOPPER_IMAGE=',
       `run --rm -i --pull=always ${IMAGE} hopper update carry --image ${IMAGE} | HOPPER_IMAGE=`,
+      'ps -q --filter label=com.docker.compose.project=hopper | HOPPER_IMAGE=',
       `compose pull | HOPPER_IMAGE=${IMAGE}`,
       `compose up -d | HOPPER_IMAGE=${IMAGE}`,
     ]);
@@ -150,6 +153,12 @@ describe('the update commands (issue #970)', () => {
     expect(updateCommands('docker', IMAGE).check).toMatch(/^\[ -z "\$\(docker ps -q --filter label=com\.docker\.compose\.project=hopper\)" \] \|\| docker compose ps -q /);
     expect(updateCommands('docker', IMAGE).check).not.toContain('PODMAN_COMPOSE_PROVIDER');
     expect(updateCommands('podman-compose', IMAGE).check).toMatch(/\] \|\| podman-compose ps -q /);
+  });
+
+  it('the install page gives the same commands to copy, the check among them (issue #1063)', () => {
+    const page = readFileSync(join(ROOT, 'site', 'install.html'), 'utf8');
+    const copied = [...page.matchAll(/data-copy="([^"]*)"/g)].map((m) => m[1]!.replaceAll('&quot;', '"').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&'));
+    for (const line of updateLines(updateCommands('podman', 'ghcr.io/henningfutrell/hopper:stable'))) expect(copied).toContain(line);
   });
 
   it('the drift log line gives the same commands', () => {

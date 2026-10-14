@@ -40,6 +40,7 @@ export interface ImageUpdate {
 
 export interface UpdateCommands {
   give: string;
+  check: string;
   backup: string;
   carry: string;
   diff: string;
@@ -52,8 +53,11 @@ export interface UpdateCommands {
 export const GIVE_MASTER_KEY = 'read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY';
 /** Stops the command line when the master key is not given: compose never runs without it. */
 const REQUIRE_MASTER_KEY = `: "\${HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: ${GIVE_MASTER_KEY}}"`;
-/** For `podman compose` when the stack answers to podman-compose (issue #924). */
+/** For `podman compose` when the stack answers to podman-compose (issues #924, #1063). */
 export const PODMAN_PROVIDER_HINT = 'export PODMAN_COMPOSE_PROVIDER=podman-compose';
+/** Stops the command line when a hopper stack runs but `compose` sees none of it: its `up` would make a second stack on the same volumes (issue #1063). */
+const composeCheck = (runtime: string, compose: string, hint: string) =>
+  `[ -z "$(${runtime} ps -q --filter label=com.docker.compose.project=hopper)" ] || ${compose} ps -q 2>/dev/null | grep -Eq '^[0-9a-f]{12,}$' || { echo 'hopper: ${compose} does not see the hopper stack that runs. It would start a second stack on the same data: the update stops. Use the compose tool that started the stack.${hint}' >&2; false; }`;
 
 const cli = (tool: ContainerTool) => tool.toLowerCase();
 
@@ -61,19 +65,21 @@ const cli = (tool: ContainerTool) => tool.toLowerCase();
 export function updateCommands(tool: ContainerTool, image: string): UpdateCommands {
   const r = cli(tool);
   const c = `${r} compose`;
+  const check = composeCheck(r, c, tool === 'Podman' ? ` When podman-compose started it: ${PODMAN_PROVIDER_HINT}` : '');
   return {
     give: GIVE_MASTER_KEY,
+    check,
     backup: `${c} exec -T postgres pg_dump -U hopper -d hopper -Fc > hopper-backup.dump`,
     carry: `${r} run --rm -i --pull=always ${image} hopper update carry --image ${image} < compose.yaml > compose.yaml.next`,
     diff: 'diff -u compose.yaml compose.yaml.next',
     swap: 'cp compose.yaml compose.yaml.bak && mv compose.yaml.next compose.yaml',
-    up: `${REQUIRE_MASTER_KEY} && HOPPER_IMAGE=${image} ${c} pull && HOPPER_IMAGE=${image} ${c} up -d`,
+    up: `${REQUIRE_MASTER_KEY} && ${check} && HOPPER_IMAGE=${image} ${c} pull && HOPPER_IMAGE=${image} ${c} up -d`,
     prune: `${r} ${PRUNE}`,
   };
 }
 
 /** The commands as lines to run, in order (the prune aside). */
-export const updateLines = (u: UpdateCommands): string[] => [u.give, u.backup, u.carry, u.diff, u.swap, u.up];
+export const updateLines = (u: UpdateCommands): string[] => [u.give, u.check, u.backup, u.carry, u.diff, u.swap, u.up];
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 

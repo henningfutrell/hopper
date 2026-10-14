@@ -38,7 +38,9 @@ describe('update model', () => {
         const [podman, docker] = u.commands;
         expect(podman!.tool).toBe('Podman');
         expect(podman!.carry).toBe(`podman run --rm -i --pull=always ${img} hopper update carry --image ${img} < compose.yaml > compose.yaml.next`);
-        expect(podman!.up).toMatch(new RegExp(`^: "\\$\\{HOPPER_MASTER_KEY:\\?.*\\}" && HOPPER_IMAGE=${img} podman compose pull && HOPPER_IMAGE=${img} podman compose up -d$`));
+        expect(podman!.up).toMatch(/^: "\$\{HOPPER_MASTER_KEY:\?/);
+        // Then the check that podman compose sees the stack that runs (issue #1063), then pull and up.
+        expect(podman!.up.endsWith(` && ${podman!.check} && HOPPER_IMAGE=${img} podman compose pull && HOPPER_IMAGE=${img} podman compose up -d`)).toBe(true);
         expect(podman!.prune).toBe('podman image prune -f --filter label=org.opencontainers.image.title=hopper');
         expect(docker!.tool).toBe('Docker');
         expect(docker!.up).toContain(`HOPPER_IMAGE=${img} docker compose pull && HOPPER_IMAGE=${img} docker compose up -d`);
