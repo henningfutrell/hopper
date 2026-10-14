@@ -9,6 +9,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { jobGraph, type JobGraphWait } from '../../src/domain/job-graph.ts';
 import type { DomainEvent, Job, JobStatus } from '../../src/domain/types.ts';
+import type { WorkItem } from '../../src/domain/work-items.ts';
 
 const REPOS = ['acme/widgets', 'acme/site', 'other-org/tools'];
 const STATUSES: JobStatus[] = ['queued', 'running', 'waiting_answer', 'finished', 'failed'];
@@ -27,18 +28,20 @@ const event = (seq: number, jobId: string, type: string): DomainEvent =>
 
 let jobs: Job[] = [];
 let questions: JobGraphWait[] = [];
+let items = new Map<string, WorkItem>();
+let inFlight: number | undefined;
 
 function fakeDaemon() {
   const queue = () => {
     const of = (...s: JobStatus[]) => jobs.filter((j) => s.includes(j.status));
-    return { waiting: of('queued'), running: of('claimed', 'running'), operatorLed: [], parked: [], waitingAnswer: of('waiting_answer'), ended: of('finished', 'failed'), locked: [] };
+    return { waiting: of('queued'), running: of('claimed', 'running'), operatorLed: [], parked: [], waitingAnswer: of('waiting_answer'), ended: of('finished', 'failed'), locked: [], ...(inFlight !== undefined ? { inFlight } : {}) };
   };
   const routes: Record<string, () => unknown> = {
     '/api/health': () => ({ ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 }),
     '/api/queue': queue,
     '/api/machines': () => ({ machines: [{ id: 'm1', label: 'box', maxLanes: 300, online: true, executors: ['test'], usage: [], lanes: [] }] }),
     '/api/jobs/last-events': () => ({ events: jobs.map((j, i) => event(i + 1, j.id, 'job.queued')) }),
-    '/api/jobs/graph': () => jobGraph({ jobs, questions }),
+    '/api/jobs/graph': () => jobGraph({ jobs, questions, items }),
     '/api/decisions': () => ({ decisions: [] }), '/api/events': () => ({ events: [] }),
     '/api/webhooks': () => ({ subscriptions: [] }), '/api/webhooks/deliveries': () => ({ deliveries: [] }),
     '/api/questions': () => ({ questions: [] }), '/api/sources': () => ({ sources: [] }),
@@ -104,6 +107,8 @@ afterEach(() => {
   act(() => root?.unmount());
   root = undefined;
   questions = [];
+  items = new Map();
+  inFlight = undefined;
   vi.unstubAllGlobals();
 });
 
@@ -237,5 +242,52 @@ describe('the Jobs view (issue #434)', () => {
     await vi.waitFor(() => expect(document.querySelector('[data-slot="jobs-graph"]')?.textContent).toContain('No jobs yet'));
     await click(document.querySelector<HTMLElement>('[data-slot="jobs-mode-list"]')!);
     expect(document.querySelector('[data-slot="jobs-list"]')?.textContent).toContain('No jobs yet');
+  });
+});
+
+const itemOf = (j: Job, state: WorkItem['state'], pullRequestWait?: WorkItem['pullRequestWait']): WorkItem => ({
+  key: j.source!.key, jobId: j.id, state, stateSince: '2026-10-01T00:00:00Z', eventState: state, eventAt: '2026-10-01T00:00:00Z', keptWork: [], version: 1,
+  ...(pullRequestWait ? { pullRequestWait } : {}),
+});
+
+describe('the in-flight badge (issue #1113)', () => {
+  it('shows the ledger\'s in-flight count in the header, live, and opens the Jobs view filtered to in flight', async () => {
+    jobs = [pointed(1, 'running'), pointed(2, 'queued'), pointed(3, 'finished'), pointed(4, 'finished')];
+    items = new Map([itemOf(jobs[0]!, 'working'), itemOf(jobs[1]!, 'queued'), itemOf(jobs[2]!, 'pr_open', 'checks_running'), itemOf(jobs[3]!, 'pr_open', 'draft')].map((i) => [i.key, i]));
+    inFlight = 2;
+    await boot();
+    const badge = () => document.querySelector<HTMLAnchorElement>('header [data-slot="in-flight"]');
+    await vi.waitFor(() => expect(badge()?.textContent).toContain('2'));
+    expect(badge()!.getAttribute('href')).toBe('#jobs/in-flight');
+
+    // Live: the store reads the queue again after an event, with no polling.
+    inFlight = 1;
+    await act(async () => { FakeEventSource.last!.send(event(1000, 'job-1', 'job.finished')); });
+    await vi.waitFor(() => expect(badge()?.textContent).toContain('1'));
+    inFlight = 2;
+    await act(async () => { FakeEventSource.last!.send(event(1001, 'job-1', 'job.started')); });
+    await vi.waitFor(() => expect(badge()?.textContent).toContain('2'));
+
+    // Its link: the Jobs view, only the jobs in flight, the filter on.
+    await act(async () => {
+      window.location.hash = '#jobs/in-flight';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    await vi.waitFor(() => expect(cards().map((c) => c.dataset.jobId).sort()).toEqual(['job-1', 'job-3']));
+    const toggle = document.querySelector<HTMLElement>('[data-slot="jobs-filter-in-flight"]')!;
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(document.querySelector('[data-slot="jobs-count"]')?.textContent).toContain('2 of 4');
+
+    // Off: every job again.
+    await click(toggle);
+    await vi.waitFor(() => expect(cards()).toHaveLength(4));
+    expect(window.location.hash).toBe('#jobs');
+  });
+
+  it('shows the count even at zero, and nothing before the queue is read', async () => {
+    jobs = [pointed(2, 'queued')];
+    inFlight = 0;
+    await boot();
+    await vi.waitFor(() => expect(document.querySelector('header [data-slot="in-flight"]')?.textContent).toContain('0'));
   });
 });
