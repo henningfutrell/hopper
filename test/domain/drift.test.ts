@@ -115,6 +115,13 @@ describe('the drift issue', () => {
     const lanes = driftIssue({ watcher: 'lanes-jobs', kind: 'job_running_no_lane', items: [{ key: 'j1', says: 'no lane runs it', truth: 'job running' }] }, { firstSeen: NOW });
     expect(lanes.title).toBe('Drift: lanes vs jobs: a job runs with no lane');
     expect(lanes.body).toContain('| item | lane | job record | since |');
+    const intake = driftIssue({ watcher: 'intake-jobs', kind: 'taken_no_job', items: [{ key: 'k1', says: 'taken', truth: 'no job' }] }, { firstSeen: NOW });
+    expect(intake.title).toBe('Drift: intake vs jobs: taken by intake, with no job');
+    expect(intake.body).toContain('| item | intake | job record or sync timer | since |');
+    expect(driftIssue({ watcher: 'intake-jobs', kind: 'sync_overdue', items: [{ key: 'github', says: 'next sync at x', truth: 'no sync ran' }] }, { firstSeen: NOW }).title)
+      .toBe('Drift: intake vs jobs: a source\'s next sync is overdue');
+    expect(driftIssue({ watcher: 'intake-jobs', kind: 'sync_stuck', items: [{ key: 'github', says: 'a sync runs', truth: 'no sync ended' }] }, { firstSeen: NOW }).title)
+      .toBe('Drift: intake vs jobs: a source\'s sync runs too long');
   });
 
   it('says so when no item is in the drift any more', () => {
