@@ -30,8 +30,10 @@
 // changed that a read must confirm — merged or closed, a new head or base, merge conflicts changed or not known yet, checks
 // that fail now (the tend is told which), its item closed as not planned, a part that names it no more — or before the
 // hopper's merge. A follow with no batch answer reads GitHub as before.
+// Strays (issue #1143 part 4): a pull request a job named that no job follows, of an item no job works on, gets the same
+// housekeeping, with no follow (`housekeepStrays`): moved to the landing branch, or closed as superseded, and said on it.
 
-import { rechecksMerge, readyToMerge, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen, type TendStep } from '../../domain/types.ts';
+import { rechecksMerge, readyToMerge, type FollowUp, type Job, type PullRequestAct, type PullRequestSeen, type Stray, type StrayHousekept, type TendStep } from '../../domain/types.ts';
 import type { Clock } from '../../domain/ports.ts';
 import { SourceError } from '../../domain/ports.ts';
 import { GitHubApiError, type GitHubApi, type GitHubIssue, type NumberedPullRequest, type PullRequestState } from './api.ts';
@@ -179,13 +181,9 @@ async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRe
   };
   // Housekeeping (issue #1143), never on a person's act: off the landing branch, it moves there, and waits for the next
   // read; with no commit its base lacks, nothing is left to land, and it is closed.
-  const to = !act && pr.state === 'open' ? await retargetTo(ctx, repo, pr) : undefined;
-  if (to) {
-    await ctx.api.retarget(repo, numberOf(url), to);
-    await note(ctx.api, repo, url, retargetNote(pr.base!, to));
-    return { seen: { ...seen, base: to }, retargeted: { from: pr.base!, to } };
-  }
-  if (!act && pr.state === 'open' && pr.commits?.length === 0 && pr.base) return closeSuperseded(ctx.api, repo, url, `its changes are already on ${pr.base}`);
+  const kept = !act ? await housekeep(ctx, repo, url, pr) : undefined;
+  if (kept && 'retargeted' in kept) return { seen: { ...seen, base: kept.retargeted.to }, retargeted: kept.retargeted };
+  if (kept) return { ended: 'closed', superseded: kept.superseded };
   const now = (ctx.clock?.now() ?? new Date()).getTime();
   // Whatever its job's origin (issue #805): the trust decision was made when the job ran, before its pull request.
   if (pr.state !== 'open' || !ctx.yoloMode?.(repo) || !readyToMerge(seen, now)) return { seen };
@@ -197,6 +195,58 @@ async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRe
     if (err instanceof GitHubApiError && !err.permanent) throw err;
     return { seen: { ...seen, mergeError: (err as Error).message } };
   }
+}
+
+/**
+ * Housekeeping of the open pull request `url` (issue #1143): off the landing branch, it is moved there; with no commit its
+ * base lacks, nothing is left to land, and it is closed. Each said on it. Undefined: it stays as it is.
+ */
+async function housekeep(ctx: FollowContext, repo: string, url: string, pr: NumberedPullRequest):
+  Promise<{ retargeted: { from: string; to: string } } | { superseded: string } | undefined> {
+  if (pr.state !== 'open') return undefined;
+  const to = await retargetTo(ctx, repo, pr);
+  if (to) {
+    await ctx.api.retarget(repo, numberOf(url), to);
+    await note(ctx.api, repo, url, retargetNote(pr.base!, to));
+    return { retargeted: { from: pr.base!, to } };
+  }
+  if (pr.commits?.length === 0 && pr.base) return closeSuperseded(ctx.api, repo, url, `its changes are already on ${pr.base}`);
+  return undefined;
+}
+
+/**
+ * Housekeeping of stray pull requests (issue #1143 part 4, `JobSource.housekeepStrays`): which are open, from one batched read
+ * of their repositories' open pull requests; each open one of its job's own repository is read, then closed as superseded by
+ * the pull request that closed its issue, or as `housekeep` says. Its item closed as not planned, it is left as it is, as an
+ * abandoned follow leaves it. A repository GitHub does not answer for, or a stray whose housekeeping throws, is logged and
+ * asked again at the next round.
+ */
+export async function housekeepStrays(ctx: FollowContext, strays: Stray[]): Promise<StrayHousekept[]> {
+  const own = strays.filter((s) => s.job.source?.repo && s.job.source.number && repoOfPull(s.pullRequest).toLowerCase() === s.job.source.repo.toLowerCase());
+  if (own.length === 0) return [];
+  const open = await ctx.api.openPullRequestsIn([...new Set(own.map((s) => s.job.source!.repo!))]);
+  for (const [repo, error] of open.repoErrors) console.warn(`hopper: the stray pull requests of ${repo} were not read, asked again at the next round: ${error}`);
+  const done: StrayHousekept[] = [];
+  for (const s of own) {
+    if (!open.repos.get(s.job.source!.repo!)?.some((p) => p.url === s.pullRequest)) continue;
+    try {
+      const kept = await housekeepStray(ctx, s);
+      if (kept) done.push({ jobId: s.job.id, pullRequest: s.pullRequest, part: s.part, ...kept });
+    } catch (e) {
+      console.warn(`hopper: housekeeping of the stray pull request ${s.pullRequest} failed, asked again at the next round: ${(e as Error).message}`);
+    }
+  }
+  return done;
+}
+
+async function housekeepStray(ctx: FollowContext, s: Stray): Promise<{ retargeted: { from: string; to: string } } | { superseded: string } | undefined> {
+  const { repo, number } = s.job.source as { repo: string; number: number };
+  const issue = await ctx.api.getIssue(repo, number);
+  if (issue.state === 'closed' && issue.stateReason === 'not_planned') return undefined;
+  const elsewhere = s.part ? undefined : await supersededBy(ctx.api, repo, number, issue, s.pullRequest);
+  if (elsewhere) return { superseded: (await closeSuperseded(ctx.api, repo, s.pullRequest, elsewhere)).superseded };
+  const pr = await ctx.api.pullRequest(repo, numberOf(s.pullRequest));
+  return pr && housekeep(ctx, repo, s.pullRequest, pr);
 }
 
 /** Close pull request `url` without a merge, as nothing is left to land (issue #1143), and say why on it. */

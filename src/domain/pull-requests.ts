@@ -92,6 +92,13 @@ export interface FollowsPullRequests {
    * job (`crossReferences` in its source state). None for a job of no item there. A throw is asked again on a later sync. Absent: none.
    */
   crossReferences?(job: Job): Promise<CrossReference[]>;
+  /**
+   * Housekeeping of stray pull requests (issue #1143 part 4, `strayPullRequests`): of `strays`, each one still open is moved
+   * to its repository's landing branch, or closed as superseded, and the source says so on it, as the follow does for a
+   * followed one. What it did with each; one it left as it is is not in the answer. A throw is asked again at the next
+   * round. Absent: strays are left as they are.
+   */
+  housekeepStrays?(strays: Stray[]): Promise<StrayHousekept[]>;
 }
 
 /**
@@ -103,6 +110,41 @@ export type BaseMerge = { outcome: 'pushed'; commit: string; resolved: string[] 
 
 /** An open pull request of a done job's item that the job does not follow (issue #763); `part`: it ships part of the item. */
 export interface FoundPullRequest { jobId: string; pullRequest: string; part: boolean }
+
+/** A stray pull request (issue #1143 part 4) and the job that holds it: the newest job that names it. */
+export interface Stray { job: Job; pullRequest: string; part: boolean }
+
+/** What housekeeping did with a stray pull request (issue #1143 part 4): moved it to the landing branch, or closed it as superseded, and why. */
+export type StrayHousekept = FoundPullRequest & ({ retargeted: { from: string; to: string } } | { superseded: string });
+
+/** The follows after which a job's pull request is no longer open: nothing is left to do with it. */
+const ENDED_FOLLOWS: ReadonlySet<unknown> = new Set(['merged', 'closed', 'abandoned']);
+const ended = (j: Job): boolean => j.status === 'finished' || j.status === 'failed' || j.status === 'cancelled' || j.status === 'rejected';
+
+/**
+ * The stray pull requests of `jobs` (issue #1143 part 4): a pull request a job named in its source state, that no job
+ * follows, of an item no job works on — every job of the item ended. A tend whose tend job failed or was cancelled, a
+ * cancelled or rejected newer job, a rework that ended with none leave one. The newest job that names it holds it. Not one
+ * merged, closed or abandoned by any job's follow, nor one a proposal's follow-ons took (issue #859). Pure: the source says
+ * whether each is still open.
+ */
+export function strayPullRequests(jobs: readonly Job[]): FoundPullRequest[] {
+  const items = new Map<string, Job[]>();
+  for (const j of jobs) if (j.source?.key) items.set(j.source.key, [...(items.get(j.source.key) ?? []), j]);
+  const found: FoundPullRequest[] = [];
+  for (const js of items.values()) {
+    if (!js.every(ended)) continue;
+    const sourceOf = (j: Job) => j.sourceState?.source as { pullRequest?: unknown; follow?: unknown; part?: unknown } | undefined;
+    const taken = new Set(js.filter((j) => (following(j) && followsWhenEnded(j)) || ENDED_FOLLOWS.has(sourceOf(j)?.follow)).map((j) => sourceOf(j)?.pullRequest));
+    const holders = new Map<string, Job>();
+    for (const j of [...js].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))) {
+      const pr = sourceOf(j)?.pullRequest;
+      if (typeof pr === 'string' && !taken.has(pr) && !handedToFollowOns(j)) holders.set(pr, j);
+    }
+    for (const [pullRequest, j] of holders) found.push({ jobId: j.id, pullRequest, part: sourceOf(j)?.part === true });
+  }
+  return found;
+}
 
 /**
  * What following a waiting pull request last saw of it (issue #637), kept in the job's source state (`seen`): what the

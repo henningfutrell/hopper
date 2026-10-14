@@ -10,6 +10,10 @@
     },
     "to": {
       "type": "string"
+    },
+    "stray": {
+      "type": "boolean",
+      "const": true
     }
   },
   "required": [

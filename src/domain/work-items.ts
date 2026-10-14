@@ -205,6 +205,8 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     return d.part === true ? move('partly_done', { ...change, waitingOn: 'the next part' }) : move('done', change);
   }
   if (event.type === 'job.pull_request_closed' || event.type === 'job.pull_request_abandoned') {
+    // A stray's close (issue #1143 part 4): no job followed it, so it ends no wait of the item; only its own pull request's state.
+    if (d.stray === true) return pr !== undefined && pr === base.pullRequest ? mark({ pullRequestState: 'closed' as const, pullRequestWait: undefined }) : undefined;
     const change = { pullRequest: pr, pullRequestState: event.type === 'job.pull_request_closed' ? 'closed' as const : 'abandoned' as const, pullRequestWait: undefined, waitingOn: undefined };
     return isActive(base.eventState) || base.eventState === 'done' ? mark(change) : move('dropped', change);
   }

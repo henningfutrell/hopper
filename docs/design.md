@@ -1581,7 +1581,7 @@ remains. The only mutations are the owner's actions in the local UI, behind a UI
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass), intake from the listing cache (`github/listing.ts`) and its listed reads (`github/listed-reads.ts`, issue #985) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822; `github/app/graphql-pulls.ts` and `github/followed-batch.ts`, issue #985: the in-motion cycle's), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its signals (`sync-signals.ts`), its follow rounds (`follow-rounds.ts`, issue #985: the in-motion cycle, and a sync at once after a merge), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again), its closed-as-complete rule (`closed-as-complete.ts`, issue #1067: a failed job whose item the work-item ledger holds closed as complete is finished; the source's read is ledger input), the failed checks' logs a `fix_checks` tend quotes (`github/check-logs.ts`, issue #993: read once per run, through the port); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
+| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass), intake from the listing cache (`github/listing.ts`) and its listed reads (`github/listed-reads.ts`, issue #985) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822; `github/app/graphql-pulls.ts` and `github/followed-batch.ts`, issue #985: the in-motion cycle's), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its signals (`sync-signals.ts`), its follow rounds (`follow-rounds.ts`, issue #985: the in-motion cycle, and a sync at once after a merge), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again; `strays.ts`, issue #1143 part 4: the housekeeping of pull requests no job follows), its closed-as-complete rule (`closed-as-complete.ts`, issue #1067: a failed job whose item the work-item ledger holds closed as complete is finished; the source's read is ledger input), the failed checks' logs a `fix_checks` tend quotes (`github/check-logs.ts`, issue #993: read once per run, through the port); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
 | `src/events/` | versioned payload schemas (zod) per event type, the envelope, JSON Schema export | everything but `domain/` and `zod` |
 | `src/http/ui/` | UI session: login codes, session cookie, CSRF, origin/host guard, the UI-only mutation routes | engine internals beyond the engine's public commands |
 
@@ -18793,15 +18793,38 @@ hopper does not leave it to a person for ever:
   job before it. So `failedTend` and the tending queue's head (`tending`) look up the whole chain of runs again. Before,
   a failed retry was taken as no tend: reconciling followed its pull request again and tended it at once, past the cap.
 
-Still left on issue #1143:
+**Part 4: strays.** A **stray pull request** is an open pull request a job named in its source state that no job
+follows, of an item no job works on: every job of the item ended (`strayPullRequests`, pure). A tend whose tend job failed
+or was cancelled leaves one, as do a cancelled or rejected newer job of the item and a rework that ended with none. Before,
+only the batch runner's move from the tested branch reached it.
 
-- A pull request no job follows is moved off the tested branch only; it is not tended or closed as superseded.
-- "Behind" without merge conflicts starts nothing: with merge commits, a pull request behind its base merges as it is.
-  Only a repository that wants branches up to date before a merge needs it (GitHub then refuses the merge, `mergeError`).
+- In a round of every follow (the reconcile interval), after reconciling, the sync loop gives the source its strays, each
+  held by the newest job that names it, once that job's end is reported (`JobSource.housekeepStrays`). The source reads the
+  open pull requests of their repositories in one batch (`openPullRequestsIn`, as reconciling does); one not open is left.
+  For each open one: its item closed as not planned, it is left as it is (as an abandoned follow leaves it); else it is
+  closed as superseded by the pull request that closed its issue (never a part), or gets the follow's housekeeping
+  (`housekeep` in `follow.ts`, shared with the follow): moved to the landing branch, or closed with its changes on its base.
+  Each act says so on the pull request, with the same notes.
+- What the source did is recorded on the job that holds it, with `stray: true`: `job.pull_request_retargeted`, or
+  `job.pull_request_closed` with `superseded`, and that job's `follow: closed`, so it is a stray no more.
+- **A stray's close moves no work item.** No job followed it, so its close ends no wait of its item: a hand-off stays a
+  hand-off. Only the item's own pull request's state is marked closed.
+- **A stray is never tended.** Each way to a stray is a decision that stands: a person cancelled or rejected the newer job,
+  the hopper gave up after a failed tend (part 3 retries a rebase once its base moves), or the cap of retries was used.
+  Tending it again would undo that. A person's Tend again, or Run again, still works.
+- A source that is paused does nothing; a repository GitHub does not answer for, or a stray whose housekeeping throws, is
+  logged and asked again at the next round.
+
+**Not done, by decision: "behind" with no merge conflicts.** With merge commits, a pull request behind its base merges as
+it is, and the landing batch tests it on top of the tip. A repository that requires branches up to date before a merge
+refuses the merge, and the card shows it (`mergeError`). Rebasing every pull request at each move of the base would spend
+a lane and a check run on each, for no change in what lands.
 
 Tests: `test/sources/github-pr-housekeeping.test.ts` (retarget, a stack, no landing branch known, after the batch,
 superseded both ways, a part), `test/integration/pull-request-housekeeping.test.ts` (the events and the comments over the
 real daemon, and a rebase held an hour), `test/landing-batches/runner.test.ts` (the batch runner's move and its note),
-`test/store/jobs-lanes.test.ts` (`namesPullRequest`), `test/integration/pull-request-retend.test.ts` (part 3: a failed
+`test/store/jobs-lanes.test.ts` (`namesPullRequest`), `test/domain/stray-pull-requests.test.ts` (part 4: which pull
+requests are strays, and which job holds each), `test/domain/work-items.test.ts` (a stray's close moves no item), the strays
+in `test/integration/pull-request-housekeeping.test.ts`, `test/integration/pull-request-retend.test.ts` (part 3: a failed
 rebase tended again once its base moves, at most three in a row; no mirror, no retry), `test/domain/tend-retries.test.ts`
 (`tendOf`, `tendRetryAt` with a moved base), `test/git-mirror/mirrors.test.ts` (`baseTip`).
