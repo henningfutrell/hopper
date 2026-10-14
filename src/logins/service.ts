@@ -2,18 +2,23 @@
 // reports it; it never opens a question and never reaches an escalation level. The hopper keeps the login
 // (`logins`, the user's schema) and its events, but the URL and the code — credentials in flight — only in
 // this process's memory, dropped when the login ends; only a UI session of the user reads them. The run polls
-// `check` for what the user did (a new code, cancel), and the hopper expires a login at `expiresAt` itself.
+// `check` for what the user did (a new code, cancel), and the hopper expires a login at `expiresAt` itself. Only the
+// requester knows whether a login worked (issue #1110): it reports the outcome (`outcome`), and a person may dismiss one.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import {
-  DEFAULT_LOGIN_SETTINGS, jobPriorityTag, type EventType, type PriorityTag, type Login, type LoginBlocks, type LoginCheck, type LoginReport, type LoginSettings, type LoginStatus, type LoginView, type RunLogins,
+  DEFAULT_LOGIN_SETTINGS, jobPriorityTag, type EventType, type PriorityTag, type Login, type LoginBlocks, type LoginCheck, type LoginOutcome, type LoginReport, type LoginSettings, type LoginStatus, type LoginView, type RunLogins,
 } from '../domain/types.ts';
 import { LOGIN_KIND_HANDLERS } from './kinds.ts';
+import { hideCodes } from './recognise.ts';
 
 /** The host of a login's URL (issue #698): what asks, with no path or query, which may carry the code. */
 const hostOf = (url: string): string => new URL(url).hostname;
 
 /** Statuses a login is still open in: the user may still act on it. */
 const OPEN: readonly LoginStatus[] = ['pending', 'expired'];
+
+/** How long a reopened login waits for its requester's new code before it expires (issue #1110): a device code's usual life. */
+export const REOPENED_SEC = 900;
 
 export type LoginAction = { ok: true; login: Login } | { ok: false; reason: 'not_found' | 'ended' | 'not_renewable'; message: string };
 
@@ -34,6 +39,13 @@ export interface Logins {
   failed(id: string, reason: string): void;
   /** The user cancelled it. */
   cancel(id: string): LoginAction;
+  /**
+   * Its requester says what came of it (issue #1110): `completed` ends it, or completes one that ended otherwise;
+   * `failed` fails an open one, or reopens a completed or dismissed one with the reason. Whatever its job does now.
+   */
+  outcome(id: string, outcome: LoginOutcome): LoginAction;
+  /** A person put an open login away (issue #1110): dismissed, whatever its job does; its run is told it ended. */
+  dismiss(id: string): LoginAction;
   /** The user asked for a new code: the run asks its tool again. */
   newCode(id: string): LoginAction;
   /**
@@ -81,7 +93,7 @@ export function createLogins(o: LoginsOptions): Logins {
   /** End an open login: its status, the event, and its URL and code dropped. */
   const end = (l: Login, status: Exclude<LoginStatus, 'pending' | 'expired'>, data: Record<string, unknown>, patch: Partial<Login> = {}): Login => {
     secrets.delete(l.id);
-    const type: EventType = status === 'completed' ? 'auth.completed' : status === 'cancelled' ? 'auth.cancelled' : 'auth.failed';
+    const type: EventType = status === 'completed' ? 'auth.completed' : status === 'cancelled' ? 'auth.cancelled' : status === 'dismissed' ? 'auth.dismissed' : 'auth.failed';
     return store.tx(() => {
       const next = store.logins.update(l.id, { status, endedAt: now(), newCodeAskedAt: undefined, ...patch });
       emit(type, next, data);
@@ -148,7 +160,7 @@ export function createLogins(o: LoginsOptions): Logins {
         if (before !== undefined && before.userCode === secret.userCode && before.verificationUrl === secret.verificationUrl) return same;
         secrets.set(same.id, secret);
         return store.tx(() => {
-          const next = store.logins.update(same.id, { ...blocks, ...fields, status: 'pending', newCodeAskedAt: undefined });
+          const next = store.logins.update(same.id, { ...blocks, ...fields, status: 'pending', newCodeAskedAt: undefined, reason: undefined });
           emit('auth.pending', next, { host, expiresAt: next.expiresAt, ...(next.intervalSec ? { intervalSec: next.intervalSec } : {}), run: next.run, ...(next.questionId ? { questionId: next.questionId } : {}), renewed: true, ...tagOf(next) });
           return next;
         });
@@ -189,6 +201,38 @@ export function createLogins(o: LoginsOptions): Logins {
         asked.set(id, { act: 'cancelled' });
         return { ok: true, login: end(l, 'cancelled', { by: 'user' }) };
       });
+    },
+
+    outcome(id, o) {
+      const l = store.logins.get(id);
+      if (!l) return { ok: false, reason: 'not_found', message: `login ${id} not found` };
+      if (o.outcome === 'completed') {
+        return { ok: true, login: l.status === 'completed' ? l : end(l, 'completed', { by: 'requester' }, { reason: undefined }) };
+      }
+      // The requester's words: a code in them is hidden, as in any run's output.
+      const code = secrets.get(id)?.userCode;
+      const reason = hideCodes(o.reason, o.reason, code ? [code] : []);
+      if (OPEN.includes(l.status)) return { ok: true, login: end(l, 'failed', { reason, by: 'requester' }, { reason }) };
+      // Failed or cancelled already: nothing to reopen, as the user did not end it as done.
+      if (l.status !== 'completed' && l.status !== 'dismissed') return { ok: true, login: l };
+      // A completed login that does not work after all (issue #1110): open again, with why, until the requester reports a new code.
+      return {
+        ok: true, login: store.tx(() => {
+          const next = store.logins.update(id, {
+            status: 'pending', reason, endedAt: undefined, newCodeAskedAt: undefined, expiresAt: new Date(clock.now().getTime() + REOPENED_SEC * 1000).toISOString(),
+          });
+          emit('auth.reopened', next, { reason });
+          return next;
+        }),
+      };
+    },
+
+    dismiss(id) {
+      const l = store.logins.get(id);
+      if (!l) return { ok: false, reason: 'not_found', message: `login ${id} not found` };
+      if (!OPEN.includes(l.status)) return { ok: false, reason: 'ended', message: `login ${id} is ${l.status}` };
+      asked.delete(id);
+      return { ok: true, login: end(l, 'dismissed', { by: 'user' }) };
     },
 
     newCode(id) {

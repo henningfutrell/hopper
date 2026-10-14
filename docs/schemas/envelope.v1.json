@@ -98,6 +98,8 @@
         "auth.expired",
         "auth.cancelled",
         "auth.failed",
+        "auth.reopened",
+        "auth.dismissed",
         "job.assessed",
         "failure.grouped",
         "failure.resolved",

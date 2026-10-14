@@ -1,4 +1,4 @@
-// The UI session's actions on a login (issue #476): cancel it, ask its run for a new code (operator), and the
+// The UI session's actions on a login (issue #476): cancel it, ask its run for a new code, dismiss it (operator, issue #1110), and the
 // logins settings (admin): what a job does when its login expires, and how long before a code runs out the
 // Logins view warns (issue #477). The logins answer them; a herdr job is told in its pane.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -25,6 +25,7 @@ export function registerLoginRoutes(app: FastifyInstance, o: { operator: Guard; 
     throw new HttpError(STATUS[r.reason], r.message);
   };
   app.post('/ui/api/logins/:id/cancel', o.operator, async (req) => answer(o.tenant(req).logins.cancel(parseWith(idParams, req.params).id)));
+  app.post('/ui/api/logins/:id/dismiss', o.operator, async (req) => answer(o.tenant(req).logins.dismiss(parseWith(idParams, req.params).id)));
   app.post('/ui/api/logins/:id/new-code', o.operator, async (req) => answer(o.tenant(req).logins.newCode(parseWith(idParams, req.params).id)));
   // Read at each expiry: applies without a restart (issue #356).
   app.post('/ui/api/logins/settings', o.admin, async (req) => {

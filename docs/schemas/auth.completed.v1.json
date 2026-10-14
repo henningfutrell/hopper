@@ -14,6 +14,12 @@
     "tool": {
       "type": "string",
       "minLength": 1
+    },
+    "by": {
+      "type": "string",
+      "enum": [
+        "requester"
+      ]
     }
   },
   "required": [
