@@ -168,6 +168,13 @@ export interface Executor {
    */
   answeredInPane?(job: Job): Promise<PaneAnswer | null>;
   /**
+   * A job waiting on its own background command (issue #1037): true while its pane shows background work; false when it
+   * shows none, or its pane or agent is gone; null when that cannot be told now. Must not throw. Absent → never asked.
+   */
+  ownCommandRuns?(job: Job): Promise<boolean | null>;
+  /** Type `text` into a waiting job's pane (issue #1037), as a message to its agent; the job stays as it is. False: not delivered. Must not throw. */
+  nudgeInPane?(job: Job, text: string): Promise<boolean>;
+  /**
    * Park a job (issue #501): end its pane and its agent, and stop its processes, keeping its work tree and
    * its agent session, so a later `resume` reopens that session (`ctx.job.parked` set). Absent → the executor
    * cannot park. Rejects only when it could not reach the job's machine: the sweep stops what runs there later.

@@ -45,7 +45,7 @@ export function KpiRow() {
   }, [board.ended, spans, quarter]);
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-      <Kpi kpi="running" label="Running" icon={Activity} tone="busy" value={k.running} sub="lanes in use · 6 h" spark={series.running} />
+      <Kpi kpi="running" label="Running" icon={Activity} tone="busy" value={k.running} sub={k.onOwnCommand ? `lanes in use · 6 h · ${k.onOwnCommand} on its own command` : 'lanes in use · 6 h'} spark={series.running} />
       <Kpi kpi="lanes" label="Lanes" icon={Layers} tone="busy" value={<>{k.lanesBusy}<span className="text-muted-foreground">/{k.lanesMax}</span></>}
         sub={`${k.lanesOpen} open · ${Math.max(0, k.lanesMax - k.lanesOpen)} unopened`} />
       <Kpi kpi="waiting" label="Waiting" icon={Timer} tone={k.held ? 'warn' : 'muted'} value={k.waiting}

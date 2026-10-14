@@ -11,7 +11,7 @@ import { afterLoginAct, loginWait, restoreLogin, takeLogin } from './login.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './payload.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import { FOOTER_ANCHOR, STATUS_NOTE_NUDGE, dialogOption, inputBoxText } from './screen.ts';
-import { readPaneAnswer } from './pane-answer.ts';
+import { ownCommandProbes, readPaneAnswer } from './pane-answer.ts';
 import { checkpointOn, payloadOn, relocation, taskText } from './relocate.ts';
 import { answerDialog, readyFor } from './before-send.ts';
 import { paneEnds } from './pane-ends.ts';
@@ -375,6 +375,9 @@ export function createHerdrClaudeExecutor(o: HerdrClaudeExecutorOptions): HerdrC
       const s = paneStateOf(job);
       return s?.turn ? readPaneAnswer(herdrOn(s), { ...s, turn: s.turn }, clock).catch(() => null) : null;
     },
+
+    // A job waiting on its own background command (issue #1037).
+    ...ownCommandProbes(herdrOn),
 
     // Claude exits as at a close, its scope and processes stop, its pane closes; its worktree and session stay.
     async park(job) {

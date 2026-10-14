@@ -963,7 +963,7 @@ When you are asked to research, do not do the work: research, then write a resea
 When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), as Markdown, as a set of alternative paths. Start with TL;DR: (one or two sentences) and Problem: (a short problem statement). Then write each path as a heading "Path N: <title>" with these lines: Summary:, Security:, Effort:, Risk:, Friction: (for the person), Creates: (the jobs, issues or research that continuing with it creates), and more detail in Markdown if needed. Then Recommended: the number of the path, or the numbers of a combination, and why in one or two sentences. If no change is needed or no viable path was found, write Paths: none — and the reason. End with Context: (what you read and relied on). Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_PROPOSAL. A person selects one or more paths to continue with; you are told the decision, or what to change.
 When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>, and, when the command shows them, account: <the account or host it signs in to>, scopes: <the scopes it asks for>. The user completes the login; then the command goes on and you continue.
 Keep a task list for the job: the tasks that take it to done. When you make the list, and each time a task completes, write a line containing only: HOPPER_TASKS <completed>/<total>, for example HOPPER_TASKS 2/5. When the list changes, write the new total. The hopper shows this count as the progress of the job.
-When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, and, if you can, one line: until: <how you will know it happened>. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait.
+When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, and, if you can, one line: until: <how you will know it happened>. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait. A wait only for a command of your own that runs in the background (a build, a test run) is not blocked: if you end your message with HOPPER_WAITING for it, write until: own command <its id> ends.
 When the job is completely finished, end your final message with a line containing only: HOPPER_DONE
 If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.
 ```
@@ -3548,6 +3548,7 @@ Supersedes the slice-1 bullets "plugins.yaml in slice 1" (env-derived router) an
 | `HOPPER_RECONNECT_GRACE_MS` | `120000` — issue #368: after a restart, how long a running job waits for its machine to answer before it fails ("Recovery at startup") |
 | `HOPPER_LINK_GRACE_MS` | `600000` — issue #752: how long a running job is held once its machine's link drops, before it fails ("Link-lost hold") |
 | `HOPPER_DONE_RECHECK_MS` | `60000` — issue #637: a job that ended done whose source finds it not done is asked again after this long (GitHub's lag) before it fails; `0`: at once ("Done is a pull request") |
+| `HOPPER_OWN_COMMAND_GRACE_MS` | `300000` — issue #1037: a job waiting on its own background command whose pane shows no background work this long, its agent not gone on, is nudged once; this long after the nudge it is flagged stuck ("A wait on its own command") |
 | `HOPPER_LOCAL_MACHINE` | `true`: this host may be a machine, though a fresh plugins config lists none (issue #259); `false` in the image: the container is not a machine, and the boot removes a `local` one (issue #141) |
 | `HOPPER_WEBHOOKS_FILE` | `~/.config/hopper/webhooks.yaml` |
 | `HOPPER_UI_SESSION_HOURS` | `12` (no longer read since issue #439: "Session lifetime") |
@@ -14064,6 +14065,36 @@ person's question list as if it needed an answer), or ended failed though it was
   note field for End the wait in the UI (the route takes one).
 - **Persisted state.** No schema change: the status and `wait` are in the job's JSON. A build before this one, on a store
   holding a `waiting_on` job, shows it in no group and never runs it; its pane stays until it is cancelled.
+
+## A wait on its own command (issue #1037, 2026-10-13)
+
+A job that started a long local test run in the background ended its turn with `HOPPER_WAITING` and `until: background
+command <id> ends`. It went to `waiting_on`, and the Jobs graph showed it as waiting on the outside world, as a job blocked
+on a person. Nothing outside the job was involved: the command ends by itself, and the agent goes on.
+
+- **Read.** `namesOwnCommand` (`src/domain/own-command.ts`): the wait's `until:` names its own background command and its
+  end — `own command <id> ends`, `background command|shell|task|process … ends|exits|finishes|completes|stops`. A poll is
+  the outside world. The protocol's wait line tells the job to write `until: own command <its id> ends` for such a wait.
+  Recorded (`src/engine/outcome.ts`): `ownCommand: true` on the wait and on `job.waiting`. The status stays `waiting_on`:
+  its lane is free and its pane stays, as for any own wait.
+- **Shown as running.** `stageOf` gives stage *running* while it is not stuck: "Running: waiting on its own command", its
+  stage since the wait began (the command's runtime as near as the hopper knows it), next "It goes on when its own command
+  ends." The Dashboard and the Queue view list it under On its own wait with a running badge and "running for"; the
+  Waiting card does not count it, the Running card says how many run so. It was never in Needs you, and is not now.
+- **The harness's running shell is not the test.** Every outside wait also runs a background poll (the wait line asks for
+  one), so Claude Code's footer ("1 shell") cannot tell the two apart. The footer is the liveness check below only.
+- **Its command gone** (`src/engine/pane-answers.ts` `watchOwnCommand`). On every tick, a job on its own command that has
+  not gone on is asked `ownCommandRuns` (herdr-claude: its agent and pane alive and the footer naming background work,
+  `backgroundWork`). No background work, or its pane or agent gone: `goneSince` on the wait. After the own command grace
+  (`HOPPER_OWN_COMMAND_GRACE_MS`, default 5 min) the hopper types one nudge into its pane (`nudgeInPane`, `ownCommandNudge`:
+  check the command, read its output or start it again, then go on), `nudgedAt`, `job.own_command_nudged { delivered }`.
+  Its agent going on ends the wait in the pane as before. A grace after the nudge, still not gone on: `stuckAt`,
+  `job.own_command_stuck`. A stuck job is stage *waiting*, "Waiting on you: its own command is gone, so it is stuck", a
+  stuck badge; End the wait and Cancel work as for any own wait. Background work seen again clears `goneSince`.
+- **Not built.** A stuck job in Needs you (it shows in Waiting and on the Jobs graph as waiting on you); the command's own
+  start time (the wait's start stands in); a check of the command by the hopper itself.
+- **Persisted state.** No schema change: the new fields are optional in the job's `wait` JSON. A build before this one
+  reads such a job as any own wait. A wait recorded before this build has no `ownCommand` and shows as before.
 
 ## Item snapshots (issue #662, 2026-10-10)
 

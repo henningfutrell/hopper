@@ -23,6 +23,8 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.checkpointed': { machineId: 'laptop', bytes: 48213, session: true, commits: 2 },
   'job.continued': { handoffId: 'h1' },
   'job.waiting': { for: 'write access to the repository', until: 'a background poll of the push' },
+  'job.own_command_nudged': { delivered: true },
+  'job.own_command_stuck': {},
   'job.wait_ended': { by: 'person', note: 'Write access is granted.' },
   'job.note_added': { noteId: 'note-1', text: 'The instance is up on port 8443.', person: 'ada', via: 'ui' },
   'job.note_delivered': { noteIds: ['note-1'], delivery: 'turn' },
