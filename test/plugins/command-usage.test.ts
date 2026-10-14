@@ -67,7 +67,7 @@ describe('command-usage plugin', () => {
       { source: 'codex', window: 'session', used: 40, limit: 100, unit: '%', resetsAt: '2026-10-03T18:00:00.000Z', executors: ['herdr-codex'], at },
     ]);
     await waitFor(() => s.state!().account, { what: 'the account' });
-    expect(s.state!()).toEqual({ refreshedAt: at, account: { service: 'codex', identity: 'user@example.com', detail: { plan: 'pro' } } });
+    expect(s.state!()).toEqual({ refreshedAt: at, accountReadAt: at, executors: ['herdr-codex'], account: { service: 'codex', identity: 'user@example.com', detail: { plan: 'pro' } } });
     const calls = readFileSync(join(control, 'calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { argv: string[]; cwd: string });
     expect(calls[0]).toEqual({ argv: ['--json'], cwd: join(scratch, 'probe') });
   });

@@ -74,7 +74,7 @@ describe('claude-plan parser', () => {
   it('auth status: the email, plan, organisation and sign-in method — nothing else (no ids, no tokens)', () => {
     const json = JSON.stringify({ loggedIn: true, authMethod: 'claude.ai', apiProvider: 'firstParty', email: 'h@example.com', orgId: 'o1', orgName: 'Org', subscriptionType: 'max', accessToken: 'sk-SECRET' });
     expect(parseAuthStatus(json)).toEqual({ service: 'claude', identity: 'h@example.com', detail: { plan: 'max', organization: 'Org', authMethod: 'claude.ai' } });
-    expect(parseAuthStatus(JSON.stringify({ loggedIn: false }))).toEqual({ service: 'claude', detail: {}, problem: 'not logged in' });
+    expect(parseAuthStatus(JSON.stringify({ loggedIn: false }))).toEqual({ service: 'claude', detail: {}, problem: 'not logged in', signedOut: true });
     expect(parseAuthStatus('nope')).toEqual({ service: 'claude', detail: {}, problem: 'claude auth status: output is not JSON' });
   });
 });
@@ -149,7 +149,7 @@ describe('claude-plan plugin', () => {
     ]);
     await waitFor(() => s.state!().account, { what: 'account' });
     expect(s.state!()).toEqual({
-      refreshedAt: at,
+      refreshedAt: at, accountReadAt: at, executors: ['herdr-claude', 'claude'],
       account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'local' } },
     });
     expect(JSON.stringify(s.state!())).not.toContain('SECRET');
@@ -191,7 +191,7 @@ describe('claude-plan plugin', () => {
     writeFileSync(join(control, 'mode'), 'logged-out');
     const u = await create();
     await waitFor(() => u.state!().account, { what: 'the account' });
-    expect(u.state!().account).toEqual({ service: 'claude', detail: { machine: 'local' }, problem: 'not logged in' });
+    expect(u.state!().account).toEqual({ service: 'claude', detail: { machine: 'local' }, problem: 'not logged in', signedOut: true });
   });
 
   it('a window past its reset is left out; readings older than 3 intervals are stale: none, and the reason', async () => {

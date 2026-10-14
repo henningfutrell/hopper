@@ -7,7 +7,9 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { CONNECTED_VIA, type Job, type PartAccount, type UsageReport } from '../../src/domain/types.ts';
+import { runCli, type CliIo } from '../../src/cli.ts';
+import { CONNECTED_VIA, type Job, type PartAccount, type ToolAccount, type UsageReport } from '../../src/domain/types.ts';
+import { databaseUrlFor } from '../support/database.ts';
 import { createFakeGitHub } from '../../src/sources/index.ts';
 import { NO_ASSIGNEE } from '../../src/sources/compose.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -69,7 +71,7 @@ describe('claude-plan through the composition root', () => {
       ['session', 80, 100, '%', false], ['week', 30, 100, '%', false], ['week (Fable)', 99, 100, '%', true],
     ]);
     expect(report.sources).toEqual([
-      { name: 'claude', refreshedAt: expect.any(String), account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'local' } } },
+      { name: 'claude', refreshedAt: expect.any(String), accountReadAt: expect.any(String), executors: ['scripted'], account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'local' } } },
       { name: 'fake' },
     ]);
     expect(report.limits).toEqual({ soft: 0.7, hard: 0.95, defaults: { soft: 0.7, hard: 0.95 }, set: false });
@@ -106,6 +108,45 @@ describe('claude-plan through the composition root', () => {
     expect(report.sources[0]).toMatchObject({ name: 'claude', problem: expect.stringMatching(/^usage unavailable: /) });
     expect(report.readings.filter((r) => r.source === 'claude')).toEqual([]);
     expect(report.machines[0]).toMatchObject({ cap: 4, band: 'free' });
+  });
+});
+
+const toolAccounts = async (a: TestApp) => (await a.api<{ accounts: ToolAccount[] }>('GET', '/api/tool-accounts')).body.accounts;
+
+async function hopper(a: TestApp, argv: string[]) {
+  const out: string[] = [];
+  const io: CliIo = { env: { HOPPER_DATABASE_URL: databaseUrlFor(a.dbPath) }, stdin: () => '', out: (x) => out.push(x), err: () => {} };
+  const code = await runCli([...argv, '--url', a.url], io);
+  return { code, out: out.join('') };
+}
+
+describe('tool accounts (issue #1128)', () => {
+  it('GET /api/tool-accounts: the Claude account, the machine signed in as it, its week windows; hopper accounts prints the same; never a token', async () => {
+    const when = resetsIn2Days();
+    writeFileSync(join(control, 'result.txt'), [`Current session: 80% used · resets ${when}`, `Current week (all models): 30% used · resets ${when}`].join('\n'));
+    const a = await boot({ plugins: { usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE, executors: ['scripted'] } }] } });
+    const list = await waitFor(async () => { const l = await toolAccounts(a); return l[0]?.spend.length ? l : undefined; }, { what: 'the tool account and its spend' });
+    expect(list).toEqual([{
+      service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai' }, login: 'signed-in',
+      machines: [{ machineId: 'local', label: expect.any(String), source: 'claude', login: 'signed-in', readAt: expect.any(String) }],
+      spend: [expect.objectContaining({ source: 'claude', window: 'week', used: 30, limit: 100, unit: '%', machineId: 'local' })],
+    }]);
+    const raw = JSON.stringify(list);
+    expect(raw).not.toContain('SECRET');
+    expect(raw).not.toContain('org-1');
+
+    const out = await hopper(a, ['accounts']);
+    expect(out.code).toBe(0);
+    expect((JSON.parse(out.out) as { accounts: ToolAccount[] }).accounts.map((x) => [x.identity, x.login])).toEqual([['user@example.com', 'signed-in']]);
+    expect((await hopper(a, ['accounts', 'extra'])).code).toBe(2);
+  });
+
+  it('a machine whose claude is signed out: an entry with no identity, signed out, and why', async () => {
+    writeFileSync(join(control, 'mode'), 'logged-out');
+    const a = await boot({ plugins: { usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE } }] } });
+    const list = await waitFor(async () => { const l = await toolAccounts(a); return l.length ? l : undefined; }, { what: 'the signed-out machine' });
+    expect(list).toEqual([{ service: 'claude', detail: {}, login: 'signed-out', spend: [],
+      machines: [{ machineId: 'local', label: expect.any(String), source: 'claude', login: 'signed-out', problem: 'not logged in', readAt: expect.any(String) }] }]);
   });
 });
 
