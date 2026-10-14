@@ -1,0 +1,1 @@
+- On Windows, the hopper doctor command now checks that Windows reaches the hopper in WSL and that the hopper keeps running, and tells you how to fix each problem it finds.

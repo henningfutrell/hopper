@@ -2526,7 +2526,7 @@ inbound webhook to the laptop.
 |-----|------|-----------------|
 | `src/sources/github/app/` | the App `GitHubApi` adapter: app config file loader, JWT + installation tokens (`@octokit/auth-app`), REST + GraphQL via `@octokit/request`, per-repo scoped token minting | engine, http, store |
 | `scripts/create-github-app.*` | the manifest-flow helper the owner runs once | everything in `src/` except small pure helpers it imports explicitly |
-| `scripts/hopper.cmd`, `scripts/hopper.ps1` | the **Windows CLI wrapper** (issue #712, `docs/deploy.md` "The hopper CLI from Windows"): runs `hopper` in the hopper's container in WSL, found by its compose labels, through `wsl.exe -e podman exec`; served by the site | everything in `src/`; it keeps no credential |
+| `scripts/hopper.cmd`, `scripts/hopper.ps1` | the **Windows CLI wrapper** (issue #712, `docs/deploy.md` "The hopper CLI from Windows"): runs `hopper` in the hopper's container in WSL, found by its compose labels, through `wsl.exe -e podman exec`; `hopper doctor` checks from Windows what a hopper in WSL needs; served by the site | everything in `src/`; it keeps no credential |
 
 ## App configuration (files the owner's one click produces)
 
@@ -12759,6 +12759,10 @@ cannot see which. A client in the same distro can, so it tests the link:
   `[wsl2]` in `.wslconfig`, and if it is set, `networkingMode=mirrored`, or open `http://127.0.0.1:<port>`; mirrored
   or no mode read, open `http://127.0.0.1:<port>`, or set `networkingMode=mirrored`; then `wsl --shutdown`.
 - **No client in the distro: no result.** The hopper's own container has no interop; issue #712's other paths cover it.
+  One is `hopper doctor` in the **Windows CLI wrapper** (`docs/deploy.md` "Check it from Windows"): run on Windows, it
+  tests the same URL, reads the mode and `.wslconfig`, and gives the same fix as the banner; it also checks the
+  keep-alive shortcut and, through `wsl.exe -e`, systemd, linger and `podman-restart.service` in the distro. It only
+  reads. Settings → Host link names it in WSL. Tests: `test/scripts/windows-cli.test.ts` (it reads the script).
 
 Tests: `test/client/windows-link.test.ts` (the URL, the answer, when it tests, stale, not WSL), `test/adapters/
 machine-resources.test.ts` (a client's link checked), `test/machines/windows-link-watch.test.ts` (told once, restored,

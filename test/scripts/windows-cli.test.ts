@@ -71,7 +71,7 @@ describe('hopper.ps1', () => {
 
 describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () => {
   it('in hopper.cmd, runs hopper.ps1 from its own folder, and says how to get it when it is missing', () => {
-    expect(cmd).toMatch(/if \/i "%~1"=="autostart" goto autostart/);
+    expect(cmd).toMatch(/if \/i "%~1"=="autostart" goto ps1/);
     expect(cmd).toContain('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0hopper.ps1" %*');
     expect(cmd).toContain('https://henningfutrell.github.io/hopper/hopper.ps1');
   });
@@ -131,7 +131,7 @@ describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () =>
 });
 
 describe('hopper doctor (docs/deploy.md "Check it from Windows")', () => {
-  const doctor = ps1.slice(ps1.indexOf('function Invoke-Doctor'), ps1.indexOf('# The container\'s name changes'));
+  const doctor = ps1.slice(ps1.indexOf('function Write-Check'), ps1.indexOf('# The container\'s name changes'));
 
   it('in hopper.cmd, runs hopper.ps1 from its own folder, and says how to get it when it is missing', () => {
     expect(cmd).toMatch(/if \/i "%~1"=="doctor" goto ps1/);
@@ -168,6 +168,8 @@ describe('hopper doctor (docs/deploy.md "Check it from Windows")', () => {
   it('checks the keep-alive shortcut in this user\'s Startup folder', () => {
     expect(doctor).toContain("[Environment]::GetFolderPath('Startup')");
     expect(doctor).toContain("'hopper-wsl.lnk'");
+    expect(doctor).not.toContain('keep-alive.lnk');
+    expect(doctor).toContain('hopper autostart on');
     expect(doctor).toContain('install.html#windows-keep-running');
   });
 
@@ -188,7 +190,7 @@ describe('hopper doctor (docs/deploy.md "Check it from Windows")', () => {
 
   it('only reads: it changes nothing, sends no token and starts nothing', () => {
     expect(doctor).not.toMatch(/TOKEN|Authorization|password/i);
-    expect(doctor).not.toMatch(/Set-Content|New-Item|Remove-Item|Start-Process|Stop-Process|CreateShortcut|enable-linger \$|systemctl --user enable [^\n]*'\)/);
+    expect(doctor).not.toMatch(/Set-Content|New-Item|Remove-Item|Start-Process|Stop-Process|CreateShortcut|enable-linger \$|'--user', 'enable'/);
     expect(doctor).not.toMatch(/-Method (Post|Put|Delete)/i);
   });
 });

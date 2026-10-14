@@ -399,7 +399,8 @@ once, before the hopper's first start, with `pg_dump` from one and `psql` into t
 WSL stops a distro soon after no Windows program uses it, and every container in it stops too. Rootless Podman has no
 daemon to start them again. So a hopper in WSL with Podman needs three things, done once. `hopper autostart on` from
 Windows does 2 and 3 and checks 1, and `hopper autostart status` checks them all ("Keep it running on Windows" below).
-By hand, `site/install.html` "On Windows" has the lines to copy.
+By hand, `site/install.html` "On Windows" has the lines to copy. `hopper doctor` checks them from Windows ("Check it
+from Windows" below).
 
 1. **systemd on in the distro.** `[boot]` `systemd=true` in `/etc/wsl.conf`, then `wsl --shutdown` in PowerShell.
 2. **The containers start with the distro.** In the distro: `sudo loginctl enable-linger "$USER"` and
@@ -461,6 +462,31 @@ that folder. It works on the distro `HOPPER_WSL_DISTRO` names; unset, WSL's defa
   checks it once on Windows: `hopper autostart on`, `wsl --shutdown`, wait 30 s, then
   `Invoke-WebRequest http://localhost:4790/api/health`. If the hidden loop is not reliable on a WSL release, a scheduled
   task with restart on failure is the fallback.
+
+### Check it from Windows
+
+`hopper doctor` (issue #712), in `scripts/hopper.ps1`, checks from Windows what a hopper in WSL with Podman needs.
+`hopper.cmd` runs `hopper.ps1` from its own folder for it (`powershell.exe -ExecutionPolicy Bypass`, this process only),
+so put both in that folder. It runs on Windows, so it needs no interop from the hopper's container. The checks, in order:
+
+1. **The Windows link.** `Invoke-WebRequest http://localhost:<port>/api/health`, 10 s at most, must answer 200. The port
+   is `HOPPER_PORT`; unset, `4790`.
+2. **The networking mode.** `wsl.exe -e wslinfo --networking-mode`, and `localhostForwarding` and `networkingMode` under
+   `[wsl2]` in `%UserProfile%\.wslconfig`. It fails in NAT mode with `localhostForwarding=false`, and when `.wslconfig`
+   names another mode than the one WSL runs (it needs `wsl --shutdown`).
+3. **The keep-alive shortcut.** `hopper-wsl.lnk` in this Windows user's Startup folder (`shell:startup`): the one
+   `hopper autostart on` makes, or the one made by hand ("Keep a hopper in WSL running" above). The fix names both.
+4. **In the distro, through `wsl.exe -e`:** `systemd=true` under `[boot]` in `/etc/wsl.conf`; linger on for the distro
+   user (`loginctl show-user`); `podman-restart.service` enabled (`systemctl --user is-enabled`).
+
+Each check prints `ok`, or `FAIL` and the fix. A broken link gets the same fix as the Machines banner
+(`ui/src/model/windows-link.ts`), by the mode it read. It exits 1 when a check fails. The distro is the one
+`HOPPER_WSL_DISTRO` names; unset, WSL's default distro.
+
+- **Security:** it only reads. It sends no token, changes nothing, and adds no listener or route. It runs as the
+  signed-in Windows user, who could already run `wsl.exe`.
+- **Not checked here:** there is no Windows runner, so `test/scripts/windows-cli.test.ts` reads the script. A person
+  checks it once on Windows: `hopper doctor` after a fresh install and after `wsl --shutdown`.
 
 ### The hopper's network
 

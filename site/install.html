@@ -266,6 +266,13 @@ $s.Save()</pre><button type="button" data-copy="$s = (New-Object -ComObject WScr
 <div class="cmd"><pre>Invoke-Item &quot;$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\hopper-wsl.lnk&quot;</pre><button type="button" data-copy="Invoke-Item &quot;$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\hopper-wsl.lnk&quot;">Copy</button></div>
 <p>To stop it, delete <code>hopper-wsl.lnk</code> from the Startup folder (<code>shell:startup</code> in the Run box) and
 sign out. Nothing new listens, and it needs no administrator rights and no secret.</p></li>
+<li id="windows-doctor"><p><strong>Check it from Windows.</strong> Install <a href="#windows-cli">the hopper CLI from Windows</a>,
+then run this in PowerShell:</p>
+<div class="cmd"><pre>hopper doctor</pre><button type="button" data-copy="hopper doctor">Copy</button></div>
+<p>It checks that Windows opens <code>http://localhost:4790/api/health</code>, the WSL networking mode and
+<code>.wslconfig</code>, the shortcut from the step before, and, in Ubuntu, systemd, linger and
+<code>podman-restart.service</code>. Each check says <code>ok</code>, or the fix. Run it again after
+<code>wsl --shutdown</code>. It only reads: it changes nothing.</p></li>
 </ol>
 
 <details>
@@ -301,7 +308,7 @@ container in WSL, with the credentials the CLI already has there. Windows keeps 
 <ol class="steps">
 <li><p>In PowerShell, download <a href="https://henningfutrell.github.io/hopper/hopper.cmd"><code>hopper.cmd</code></a> and
 <a href="https://henningfutrell.github.io/hopper/hopper.ps1"><code>hopper.ps1</code></a> to a folder of their own.
-<code>hopper autostart</code> needs both:</p>
+<code>hopper autostart</code> and <code>hopper doctor</code> need both:</p>
 <div class="cmd"><pre>New-Item -ItemType Directory -Force &quot;$env:LOCALAPPDATA\hopper&quot; | Out-Null
 Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.cmd -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.cmd&quot;
 Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.ps1 -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.ps1&quot;</pre><button type="button" data-copy="New-Item -ItemType Directory -Force &quot;$env:LOCALAPPDATA\hopper&quot; | Out-Null; Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.cmd -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.cmd&quot;; Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.ps1 -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.ps1&quot;">Copy</button></div></li>

@@ -24,6 +24,10 @@ function WslHint({ base }: { base: string }) {
         <code className="font-mono">localhostForwarding=true</code>, or set <code className="font-mono">networkingMode=mirrored</code>.
         Then run <code className="font-mono">wsl --shutdown</code> and start the hopper again.
       </p>
+      <p>
+        Or run <code className="font-mono">hopper doctor</code> in PowerShell, with the hopper CLI from Windows (install page, On Windows). It
+        checks the link, the WSL setup and the keep-alive shortcut, and gives the fix for each check that fails.
+      </p>
       <p className="text-muted-foreground">A client in this distro makes the check automatic: Add machine → A computer.</p>
     </div>
   );
