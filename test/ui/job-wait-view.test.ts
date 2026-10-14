@@ -15,12 +15,17 @@ const waitingJob = {
   wait: { for: 'write access to the repository', until: 'a background poll of the push', since: T },
 };
 
-function fakeDaemon(role: Role) {
+const ownCommandJob = {
+  ...waitingJob, id: 'w2', source: { ...waitingJob.source, key: 'k-w2', title: 'Run the tests', number: 8 },
+  wait: { for: 'the test run to end', until: 'background command b7x2 ends', since: T, ownCommand: true },
+};
+
+function fakeDaemon(role: Role, waitingOn: unknown[] = [waitingJob]) {
   const posts: { path: string; body: unknown }[] = [];
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: ['herdr-claude'], parkingExecutors: ['herdr-claude'], uptimeS: 1 },
-    '/api/queue': { waiting: [], running: [], operatorLed: [], ended: [], locked: [], highPriority: 75, waitingAnswer: [], parked: [], waitingOn: [waitingJob] },
+    '/api/queue': { waiting: [], running: [], operatorLed: [], ended: [], locked: [], highPriority: 75, waitingAnswer: [], parked: [], waitingOn },
     '/api/machines': { machines: [{ id: 'desk', label: 'desk', maxLanes: 2, online: true, executors: ['herdr-claude'], lanes: [], usage: [] }] },
     '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] }, '/api/sources': { sources: [] },
@@ -49,11 +54,11 @@ class FakeEventSource {
 let root: Root | undefined;
 let daemon: ReturnType<typeof fakeDaemon>;
 
-async function boot(role: Role, hash: string) {
+async function boot(role: Role, hash: string, waitingOn?: unknown[]) {
   window.location.hash = hash;
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
-  daemon = fakeDaemon(role);
+  daemon = fakeDaemon(role, waitingOn);
   vi.stubGlobal('fetch', daemon.fetch);
   vi.stubGlobal('EventSource', FakeEventSource);
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -99,5 +104,14 @@ describe('a job on its own wait', () => {
     await boot('viewer', '#dashboard');
     expect(row()).not.toBeNull();
     expect(buttonIn(row()!, 'End the wait')).toBeUndefined();
+  });
+
+  it('a wait on its own command shows as running, with its runtime, not as waiting on the outside world (issue #1037)', async () => {
+    await boot('admin', '#dashboard', [ownCommandJob, { ...ownCommandJob, id: 'w3', wait: { ...ownCommandJob.wait, stuckAt: T } }]);
+    const own = document.querySelector('[data-job-group="waitingOn"][data-job-id="w2"]')!;
+    expect(own.querySelector('[data-slot="own-wait"]')!.textContent).toBe('running: waiting on its own command');
+    expect(own.textContent).toContain('running for');
+    const stuck = document.querySelector('[data-job-group="waitingOn"][data-job-id="w3"]')!;
+    expect(stuck.querySelector('[data-slot="own-wait"]')!.textContent).toBe('stuck: its own command is gone');
   });
 });

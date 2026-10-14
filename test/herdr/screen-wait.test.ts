@@ -22,6 +22,8 @@ describe('the wait marker', () => {
     expect(line).toContain('for:');
     expect(line).toContain('until:');
     expect(line).toContain('Never open a question only to wait');
+    // Issue #1037: a wait on its own command names it so in until:.
+    expect(line).toContain('until: own command <its id> ends');
     expect(FOOTER_ANCHOR).toContain('HOPPER_FAILED');
   });
 

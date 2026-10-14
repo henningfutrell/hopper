@@ -1,7 +1,7 @@
 // The dashboard's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
-import { GROUP, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, rerunOutcome, laneJobState, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
+import { GROUP, ownWaitOf, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, rerunOutcome, laneJobState, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
 import type { MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
@@ -44,11 +44,23 @@ describe('kpis', () => {
     const k = kpis(b, [machine([lane('lane-1', 'busy'), lane('lane-2', 'draining'), lane('lane-3', 'idle')], 4)]);
     expect(k).toEqual({
       running: b.running.length, waiting: b.waiting.length, held: b.waiting.filter((j) => j.status === 'held').length,
-      waitingAnswer: b.waitingAnswer.length, parked: b.parked.length, waitingOn: b.waitingOn.length,
+      waitingAnswer: b.waitingAnswer.length, parked: b.parked.length, waitingOn: b.waitingOn.length, onOwnCommand: 0,
       finished: b.ended.filter((j) => j.status === 'finished').length, failed: b.ended.filter((j) => j.status === 'failed').length,
       cancelled: b.ended.filter((j) => j.status === 'cancelled').length,
       lanesBusy: 2, lanesOpen: 3, lanesMax: 4,
     });
+  });
+  it('a job on its own command counts as running work, not as a wait on the outside world; stuck, it waits (issue #1037)', () => {
+    const since = '2026-10-03T10:00:00Z';
+    const own = { for: 'the test run', until: 'background command 1 ends', since, ownCommand: true as const };
+    const b = jobBoard([
+      job('own', { status: 'waiting_on', wait: own }),
+      job('stuck', { status: 'waiting_on', wait: { ...own, stuckAt: since } }),
+      job('out', { status: 'waiting_on', wait: { for: 'a review', since } }),
+    ], []);
+    const k = kpis(b, []);
+    expect([k.waitingOn, k.onOwnCommand]).toEqual([2, 1]);
+    expect(b.waitingOn.map(ownWaitOf)).toEqual(['command', 'stuck', undefined]);
   });
   it('one job on a question and nothing queued: waiting 0, waiting answer 1 (issue #45)', () => {
     const b = jobBoard([job('q', { status: 'waiting_answer' })], []);
