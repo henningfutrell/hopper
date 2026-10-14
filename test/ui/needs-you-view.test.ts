@@ -7,6 +7,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { countStates } from '../../src/domain/work-items.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { NEEDS_YOU_KINDS } from '../../ui/src/model/needs-you.ts';
 
 const url = (n: number) => `https://github.com/octo-user/hopper/issues/${n}`;
 const REQUEST = {
@@ -203,7 +204,7 @@ describe('empty states: every page renders when nothing waits (issue #897)', () 
   it('Needs you says nothing waits, and still lists what would show', async () => {
     await boot('#needs-you', { sources: [], vault: EMPTY_VAULT, pullRequests: { yolo: { on: 0, total: 0 }, waiting: [], repos: [] }, plans: { plans: [], applies: [] } });
     await vi.waitFor(() => expect(main().textContent).toContain('Nothing waits on you'));
-    expect(document.querySelectorAll('[data-needs-you]').length).toBe(10);
+    expect(document.querySelectorAll('[data-needs-you]').length).toBe(NEEDS_YOU_KINDS.length);
   });
 
   it('Intake with no source says what will show there', async () => {

@@ -68,6 +68,18 @@ describe('hopper update (issue #970)', () => {
     expect((await cli(['update', 'carry'], SHIPPED)).code).toBe(2);
   });
 
+  it('carry --podman-socket: the host\'s rootless Podman socket, mounted into the hopper; empty: none (issue #1157)', async () => {
+    const socket = '/run/user/1000/podman/podman.sock';
+    const found = await cli(['update', 'carry', '--image', IMAGE, '--podman-socket', socket], SHIPPED);
+    expect(found.code, found.err).toBe(0);
+    expect(found.out).toContain(`\${HOPPER_PODMAN_SOCKET_HOST:-${socket}}`);
+    const none = await cli(['update', 'carry', '--image', IMAGE, '--podman-socket', ''], SHIPPED);
+    expect(none.code, none.err).toBe(0);
+    expect(none.out).toContain('${HOPPER_PODMAN_SOCKET_HOST:-/dev/null}');
+    expect((await cli(['update', 'carry', '--image', IMAGE, '--podman-socket', 'podman.sock'], SHIPPED)).code).toBe(2);
+    expect((await cli(['update', 'carry', '--image', IMAGE, '--podman-socket', '/run/x}/podman.sock'], SHIPPED)).code).toBe(2);
+  });
+
   it('makes no update script to keep any more', async () => {
     for (const tool of COMPOSE_TOOLS) {
       const r = await cli(['update', tool, '--image', IMAGE]);

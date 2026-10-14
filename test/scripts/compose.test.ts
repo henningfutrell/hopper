@@ -28,13 +28,11 @@ interface Rendered { name: string; services: Record<string, Service & { networks
 
 /**
  * `docker compose config` of compose.yaml copied alone into a fresh directory, with `launch` (`KEY=value` lines) in the
- * environment compose is launched with — never a `.env` file (issue #894) — and compose.sandboxes.yaml as
- * compose.override.yaml (`override`).
+ * environment compose is launched with — never a `.env` file (issue #894).
  */
-function render(launch?: string, env: Record<string, string> = {}, override = false): Rendered {
+function render(launch?: string, env: Record<string, string> = {}): Rendered {
   const dir = mkdtempSync(join(tmpdir(), 'jh-compose-'));
   copyFileSync(join(ROOT, 'compose.yaml'), join(dir, 'compose.yaml'));
-  if (override) copyFileSync(join(ROOT, 'compose.sandboxes.yaml'), join(dir, 'compose.override.yaml'));
   const given = Object.fromEntries((launch ?? '').split('\n').filter(Boolean).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
   const out = spawnSync('docker', ['compose', 'config', '--format', 'json'], {
     cwd: dir, encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: dir, ...given, ...env },
@@ -259,7 +257,8 @@ describe('the install page', () => {
 
   it('gives the container install with Podman as commands to copy', () => {
     expect(page).toContain('data-copy="curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml"');
-    expect(page).toContain('data-copy="podman compose up -d"');
+    expect(page).toContain('data-copy="podman compose up -d"'); // and the Podman socket at the first start (issue #1157)
+    expect(page).toContain('data-copy="systemctl --user enable --now podman.socket &amp;&amp; export HOPPER_PODMAN_SOCKET_HOST=&quot;$XDG_RUNTIME_DIR/podman/podman.sock&quot;"');
     expect(page).not.toContain('login-code');
     expect(page).toContain('The first person to sign in with GitHub is the admin');
     // Updated by its user (issue #494): the release's compose file, the whole stack (#697), one command (#1104).
@@ -353,20 +352,21 @@ describe('optional services (issue #586): each behind a compose profile, none re
   });
 });
 
-describe('sandbox boxes the hopper starts (issue #603): opt in with compose.sandboxes.yaml, saved as compose.override.yaml', () => {
-  it('compose.yaml alone gives the hopper no Podman socket', () => {
+describe('the container runtime socket (issues #603, #1157): compose.yaml gives it, no override file', () => {
+  it('with no socket named, mounts /dev/null at its path: the stack starts, and the hopper says it has no socket', () => {
     const hopper = svc(render(), 'hopper');
-    expect(hopper.environment?.HOPPER_PODMAN_SOCKET).toBeUndefined();
-    expect(hopper.volumes?.map((v) => v.target)).not.toContain('/run/podman/podman.sock');
+    expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: '/dev/null', target: '/run/podman/podman.sock' }));
   });
 
-  it('beside compose.yaml, it gives the hopper the rootless Podman socket under XDG_RUNTIME_DIR, and the group that opens it', () => {
-    const hopper = svc(render(undefined, { XDG_RUNTIME_DIR: '/run/user/1000' }, true), 'hopper');
+  it('gives the hopper the rootless Podman socket HOPPER_PODMAN_SOCKET_HOST names, the group that opens it, and no SELinux label', () => {
+    const hopper = svc(render('HOPPER_PODMAN_SOCKET_HOST=/run/user/1000/podman/podman.sock'), 'hopper');
     expect(hopper.environment?.HOPPER_PODMAN_SOCKET).toBe('/run/podman/podman.sock');
     expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: '/run/user/1000/podman/podman.sock', target: '/run/podman/podman.sock' }));
-    expect(hopper.group_add).toEqual(['0']);
-    // Nothing else changes: the rest of the hopper's service is compose.yaml's.
-    expect(hopper.image).toBe(IMAGE);
-    expect(hopper.environment?.HOPPER_LAN_NAMES).toBe('hopper');
+    expect([hopper.group_add, hopper.security_opt]).toEqual([['0'], ['label=disable']]);
+  });
+
+  it('ships no compose.sandboxes.yaml any more: nothing to copy in by hand', () => {
+    expect(existsSync(join(ROOT, 'compose.sandboxes.yaml'))).toBe(false);
+    for (const f of [['site', 'vite.config.ts'], ['site', 'install.html']]) expect(readFileSync(join(ROOT, ...f), 'utf8')).not.toContain('compose.sandboxes.yaml');
   });
 });

@@ -16,12 +16,16 @@
 //   Scenario: a repeat write ask on an approved account runs with zero clicks, until the approval is forgotten (issue #1001)
 //   Scenario: a job says why it asks, and its plan for a change; the cards show it with the job (issue #1001)
 //   Scenario: a person declines the sandbox run, and the job is told why
+//   Scenario: a delegate approver approves the sandbox run with `hopper sandbox approve` and its refresh token alone; one whose
+//     approver policy names the account is refused (issue #1138)
 //   Scenario: the toggles are the admin's, a box action: shown in the vault's view, an event; an API token with no box grant refused
 import { execFile, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { runCli } from '../../src/cli.ts';
 import type { TemplateView, VaultView } from '../../src/domain/types.ts';
 import { proxyToken } from '../../src/github-proxy/token.ts';
 import { SKILL_SCRIPT } from '../../src/skills/index.ts';
@@ -221,6 +225,38 @@ describe('sandboxes start from jobs (issue #991)', () => {
     expect(r.stdout + r.stderr).toContain('use the lab account');
     expect(runtime.boxes.size).toBe(0);
     expect((await a.ui('/ui/api/sandbox-requests', { action: 'approve', id: 'nope' }, { token })).status).toBe(404);
+  });
+
+  it('a delegate approver approves the sandbox run with its refresh token alone; one whose policy names the account is refused (issue #1138)', async () => {
+    const { a, token, runtime } = await boot();
+    expect((await a.ui('/ui/api/sandbox-approvals', { skipTemplateApproval: true }, { token })).status).toBe(200);
+    const creds = await runningJob(a);
+    expect((await skill(a, creds, ['sandbox', '--needs', NEEDS, ...ASK])).code).toBe(3);
+    const [req] = (await view(a, token)).sandboxRequests!;
+    const delegate = async (deny: string[]) => {
+      const minted = await a.ui<{ refresh: string }>('/ui/api/api-tokens', { action: 'mint', label: 'cos', preset: 'delegate-approver', deny }, { token });
+      expect(minted.status).toBe(200);
+      const file = join(temp('delegate-'), 'refresh');
+      writeFileSync(file, minted.body.refresh, { mode: 0o600 });
+      return file;
+    };
+    const cli = async (file: string, argv: string[]) => {
+      const out: string[] = [], err: string[] = [];
+      const code = await runCli(argv, { env: { HOPPER_REFRESH_TOKEN_FILE: file, HOPPER_URL: a.url }, stdin: () => '', out: (x) => out.push(x), err: (x) => err.push(x) });
+      return { code, out: out.join(''), err: err.join('') };
+    };
+
+    const prodOnly = await delegate(['123456789012']);
+    expect(await cli(prodOnly, ['sandbox', 'approve', req!.id])).toMatchObject({ code: 2, err: expect.stringMatching(/refused \(403\).*approver policy denies 123456789012/) });
+    expect(runtime.boxes.size).toBe(0);
+
+    const file = await delegate(['prod']);
+    const listed = await cli(file, ['sandbox', 'requests']);
+    expect(JSON.parse(listed.out)).toEqual([expect.objectContaining({ id: req!.id, state: 'waiting' })]);
+    const approved = await cli(file, ['sandbox', 'approve', req!.id]);
+    expect(approved.code, approved.err).toBe(0);
+    expect(readFileSync(file, 'utf8')).toMatch(/^hopper_rt_/);
+    expect((await a.events()).find((e) => e.type === 'vault.sandbox_approved')?.data).toMatchObject({ by: expect.stringMatching(/^cos \(delegate of .+\)$/) });
   });
 
   it('the toggles are the admin\'s, a box action: shown in the vault\'s view and an event; an API token with no box grant is refused', async () => {

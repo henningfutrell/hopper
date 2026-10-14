@@ -159,6 +159,10 @@ describe('Pull requests view', () => {
       .toBe('the hopper cannot tend it: its issue is not assigned to the connected account');
     expect(doingText(card({ waits: 'checks failing', queue: { held: { pullRequest: 904, why: 'merging' } } }))).toBe('held behind #904, which the hopper merges first: they conflict');
     expect(doingText(card({ waits: 'conflicts', queue: { held: { pullRequest: 904, why: 'tending' } } }))).toBe('held behind #904, which a job works on now: they conflict');
+    // Issue #1162: the hold's age, and the state of the tend job that holds it.
+    const now = Date.parse('2026-10-14T12:00:00.000Z');
+    expect(doingText(card({ waits: 'conflicts', queue: { held: { pullRequest: 904, why: 'tending', since: '2026-10-14T11:35:00.000Z', holder: { jobId: 'abcdef0123', status: 'waiting_on' } } } }), now))
+      .toBe('held behind #904 since 25m ago, which job abcdef01 works on now (waiting on): they conflict');
     expect(doingText(card({ waits: 'checks failing', gaveUp: 'checks still fail after 3 fixes: a person must look at them' }))).toBe('the hopper gave up: checks still fail after 3 fixes: a person must look at them');
     expect(doingText(card({ state: 'closed', waits: undefined }))).toBe('');
   });

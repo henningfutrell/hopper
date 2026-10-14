@@ -11,14 +11,21 @@
 // (`JobSource.conflictBetween`, the hopper's mirror); the after-done half asks it, so pull requests whose changes do not
 // conflict are tended at the same time. Where the source cannot say, they conflict: one tend at a time, as before.
 // No hold lasts for ever (issue #1143): a due rebase held `MAX_HELD_MS` is tended whatever holds it.
+// A merged pull request holds nothing (issue #1162): a tend job holds its queue only while it is at work or its end is still
+// to report. A finished one whose end is reported holds nothing (it follows its pull request then, or the pull request was
+// merged or closed first and there is nothing to follow), nor one that waits on a person, nor one whose pull request any
+// job saw merged or closed.
 import { following, tendOf, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Job } from './types.ts';
 
 /** A waiting pull request a tend is due for: its job, the pull request, and the step. */
 export interface TendDue { jobId: string; pullRequest: string; step: TendStep }
 
-/** What holds a repository's tending queue: a tend job works on the pull request, or the hopper is to merge it. */
-export interface QueueHead { pullRequest: string; why: 'tending' | 'merging' }
+/**
+ * What holds a repository's tending queue: a tend job works on the pull request, or the hopper is to merge it. `jobId`: that
+ * tend job, when a tend job holds it (issue #1162), so the card says the holder's state.
+ */
+export interface QueueHead { pullRequest: string; why: 'tending' | 'merging'; jobId?: string }
 
 /**
  * What a waiting pull request that needs tending waits behind (issue #939), kept in its job's source state by the sync: a
@@ -50,18 +57,24 @@ interface Followed { pullRequest?: string; follow?: string; seen?: PullRequestSe
 
 const followedOf = (job: Job | undefined): Followed => (job?.sourceState?.source ?? {}) as Followed;
 const ENDED: readonly string[] = ['failed', 'cancelled', 'rejected'];
+/** A tend job's statuses that wait on a person (issue #1162): it works on nothing meanwhile, so it holds nothing. */
+const WAITS_ON_PERSON: readonly string[] = ['waiting_answer', 'parked', 'operator_led'];
+/** A followed pull request's ends (issue #1162): one seen so holds nothing. */
+const FOLLOW_ENDS: readonly string[] = ['merged', 'closed', 'abandoned'];
 
 /** A job's repository, lowercased: the queue's key. */
 export const repoOf = (job: Job): string | undefined => job.source?.repo?.toLowerCase();
 
 /**
- * The tend job at work on a pull request: one a tend handed the pull request to (`tended`), not ended — or finished and not
- * yet following it again (its end is still to report). A failed one waits on a person and holds nothing.
+ * The tend job at work on a pull request: one a tend handed the pull request to (`tended`), not ended and not waiting on a
+ * person — or finished, its end still to report (`reported`), and not following it again yet (issue #1162: once reported, it
+ * follows the pull request, or there is none left to follow). A failed one waits on a person and holds nothing.
  */
-function tending(job: Job, get: (id: string) => Job | undefined): string | undefined {
+function tending(job: Job, get: (id: string) => Job | undefined, reported: (job: Job) => boolean): string | undefined {
   const t = tendOf(job, get);
-  if (!t || ENDED.includes(job.status)) return undefined;
-  return job.status !== 'finished' || followedOf(job).follow === undefined ? t.pullRequest : undefined;
+  if (!t || ENDED.includes(job.status) || WAITS_ON_PERSON.includes(job.status)) return undefined;
+  if (job.status !== 'finished') return t.pullRequest;
+  return followedOf(job).follow === undefined && !reported(job) ? t.pullRequest : undefined;
 }
 
 /**
@@ -84,11 +97,19 @@ function merging(job: Job, merges: (repo: string) => boolean, now: number): stri
   return f.seen && soonMerged(f.seen, now) ? f.pullRequest : undefined;
 }
 
-/** The heads of `repo`'s tending queue at `now` (ms), of `jobs`: every tend job at work, then every pull request on its way to the merge. */
-export function queueHeads(repo: string, jobs: readonly Job[], get: (id: string) => Job | undefined, merges: (repo: string) => boolean, now: number): QueueHead[] {
+/**
+ * The heads of `repo`'s tending queue at `now` (ms), of `jobs`: every tend job at work, then every pull request on its way to
+ * the merge. `reported`: whether a job's end is reported to its source. A pull request any job saw merged or closed is no
+ * head (issue #1162).
+ */
+export function queueHeads(repo: string, jobs: readonly Job[], get: (id: string) => Job | undefined, merges: (repo: string) => boolean, now: number, reported: (job: Job) => boolean): QueueHead[] {
   const here = jobs.filter((j) => repoOf(j) === repo);
+  const ended = new Set(here.flatMap((j) => { const f = followedOf(j); return f.pullRequest && FOLLOW_ENDS.includes(f.follow ?? '') ? [f.pullRequest] : []; }));
   return [
-    ...here.flatMap((job): QueueHead[] => { const t = tending(job, get); return t ? [{ pullRequest: t, why: 'tending' }] : []; }),
+    ...here.flatMap((job): QueueHead[] => {
+      const t = tending(job, get, reported);
+      return t && !ended.has(t) ? [{ pullRequest: t, why: 'tending', jobId: job.id }] : [];
+    }),
     ...here.flatMap((job): QueueHead[] => { const m = merging(job, merges, now); return m ? [{ pullRequest: m, why: 'merging' }] : []; }),
   ];
 }

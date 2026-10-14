@@ -54,21 +54,22 @@ export function typesafeKeyCall(args: string[], stdin: () => string): Call {
 }
 
 export const TOKEN_USAGE = `  hopper token mint --label <who uses it> (--preset <id> | --scope <scope>) [--scope <scope> ...] [--holder <who keeps it>]
-                    [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box]
+                    [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box] [--deny <name>]...
                                                      mint a grant for an agent (issue #881): its refresh token and first access
                                                      token printed once. The agent trades the refresh token at
                                                      POST /ui/auth/token/refresh, each time for a new one. --scope: <area>:<act>,
                                                      <area>:*, *:<act> or *; --preset: a preset's scopes, and its box flag
                                                      unless --box (hopper token scopes names both); --no-expiry: an
                                                      admin's grant with no fixed end; --box: its tokens may do a box action
-                                                     (start a job, run a command, merge, update)
+                                                     (start a job, run a command, merge, update); --preset delegate-approver
+                                                     with --deny prod: a delegate approver that never approves prod (issue #1138)
   hopper token scopes                                every scope a grant may hold, by area, with what it does, and the presets
   hopper token list                                  the user's live grants and exchanged API tokens, and the scopes there are;
                                                      never a token
   hopper token revoke <id>                           end one grant or API token, and every API token of it
   hopper token revoke-all                            end every grant and API token of the user`;
 
-const TOKEN_MINT = 'token mint --label <who uses it> (--preset <id> | --scope <scope>) [--scope <scope> ...] [--holder <who keeps it>] [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box]';
+const TOKEN_MINT = 'token mint --label <who uses it> (--preset <id> | --scope <scope>) [--scope <scope> ...] [--holder <who keeps it>] [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box] [--deny <name>]...';
 
 const whole = (flag: string, v: string | undefined): number | undefined => {
   if (v === undefined) return undefined;
@@ -81,7 +82,7 @@ const whole = (flag: string, v: string | undefined): number | undefined => {
 export function tokenCall(args: string[]): Call {
   const { values, positionals } = parseArgs({
     args, allowPositionals: true,
-    options: { label: { type: 'string' }, holder: { type: 'string' }, scope: { type: 'string', multiple: true }, preset: { type: 'string' }, role: { type: 'string' }, days: { type: 'string' }, 'no-expiry': { type: 'boolean' }, minutes: { type: 'string' }, box: { type: 'boolean' } },
+    options: { label: { type: 'string' }, holder: { type: 'string' }, scope: { type: 'string', multiple: true }, preset: { type: 'string' }, role: { type: 'string' }, days: { type: 'string' }, 'no-expiry': { type: 'boolean' }, minutes: { type: 'string' }, box: { type: 'boolean' }, deny: { type: 'string', multiple: true } },
   });
   const [verb, ...rest] = positionals;
   const flags = Object.keys(values).length > 0;
@@ -101,6 +102,7 @@ export function tokenCall(args: string[]): Call {
     body: async () => ({
       action: 'mint', label: values.label, ...(values.scope?.length ? { scopes: values.scope } : {}), ...(values.preset ? { preset: values.preset } : {}), role, ...(values.holder === undefined ? {} : { holder: values.holder }),
       ...(days === undefined ? {} : { days }), ...(minutes === undefined ? {} : { minutes }), ...(values.box ? { box: true } : {}),
+      ...(values.deny ? { deny: values.deny } : {}),
     }),
   };
 }

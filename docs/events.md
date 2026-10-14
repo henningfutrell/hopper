@@ -2548,7 +2548,7 @@ Version 1 (`docs/schemas/machine.memory_recovered.v1.json`). A machine told low 
 
 ## `machine.windows_link_broken`
 
-Version 1 (`docs/schemas/machine.windows_link_broken.v1.json`). A WSL machine's client found that Windows does not reach the hopper (issue #712): Windows, through PowerShell, opened `url` (the health route at localhost, at the port the client dials the hopper on) and got no answer. `error` says why; `mode` is WSL's networking mode (`nat`, `mirrored`), when read. The Machines view and a banner show the fix. Once per break.
+Version 1 (`docs/schemas/machine.windows_link_broken.v1.json`). A WSL machine's client found that Windows does not reach the hopper (issue #712): Windows, through PowerShell, opened `url` (the address check, `/job/address`, at localhost, at the port the client dials the hopper on; the health route at localhost before it) and got no answer. `error` says why; `mode` is WSL's networking mode (`nat`, `mirrored`), when read. The Machines view and a banner show the fix. Once per break. `machineId` `windows`: the keep-alive loop on Windows found it and reported it (`hopper windows-link report`), with no client in the distro.
 
 | field | type | required |
 |---|---|---|
@@ -2561,7 +2561,7 @@ Version 1 (`docs/schemas/machine.windows_link_broken.v1.json`). A WSL machine's 
 ```json
 {
   "machineId": "win-desk",
-  "url": "http://localhost:4790/api/health",
+  "url": "http://localhost:4790/job/address",
   "mode": "nat",
   "error": "Unable to connect to the remote server"
 }
@@ -2580,7 +2580,7 @@ Version 1 (`docs/schemas/machine.windows_link_restored.v1.json`). A machine told
 ```json
 {
   "machineId": "win-desk",
-  "url": "http://localhost:4790/api/health",
+  "url": "http://localhost:4790/job/address",
   "mode": "nat"
 }
 ```
@@ -3891,7 +3891,7 @@ Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the v
 
 ## `vault.granted`
 
-Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`) — on Settings → Vault, or as the submitter of a direct job that authorizes `vault` (issue #901): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it.
+Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`) — on Settings → Vault, or as the submitter of a direct job that authorizes `vault` (issue #901): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it; a delegate approver's (issue #1138) names the delegate and the person it acts for.
 
 | field | type | required |
 |---|---|---|
@@ -3922,6 +3922,24 @@ Version 1 (`docs/schemas/vault.grant_revoked.v1.json`). A person took back a job
   "job": "f3b1c2d4-0000-4000-8000-000000000001",
   "key": "https://github.com/octo-org/hello/issues/7",
   "by": "octocat"
+}
+```
+
+## `vault.grant_denied`
+
+Version 1 (`docs/schemas/vault.grant_denied.v1.json`). A person, or a delegate approver for them (issue #1138), denied a job's vault grant ask: the ask goes, and the job, which still has no vault grant, asks no more. `by` who denied it; a delegate's `by` names the delegate and the person it acts for.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | yes |
+| `key` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "key": "https://github.com/octo-org/hello/issues/7",
+  "by": "cos (delegate of octocat)"
 }
 ```
 

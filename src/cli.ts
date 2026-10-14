@@ -28,7 +28,9 @@
 //   hopper update drift [--url <hopper URL>]          the running stack's drift from its compose file (issue #1017, cli-update-drift.ts)
 //   hopper help                                       what each command does
 //
-// There is no login from here (issue #238: no bootstrap login): people sign in through a realm.
+// There is no login from here (issue #238: no bootstrap login): people sign in through a realm. An agent with a grant — a
+// delegate approver (issue #1138) — runs the operator actions with no database: HOPPER_REFRESH_TOKEN_FILE names the file
+// that holds the grant's refresh token, HOPPER_URL (or --url) the hopper.
 //
 // <record>: plugins, rules or job-rules (a user's: --user, default the one user), or sign-in (the instance's). A
 // record that would not load is refused.
@@ -46,7 +48,7 @@ import { openInstanceStore } from './store/index.ts';
 import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { mintJoinCode } from './machines/join-code.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
-import { OPERATOR_COMMANDS, OPERATOR_USAGE, runOperatorAction } from './cli-operator.ts';
+import { OPERATOR_COMMANDS, OPERATOR_USAGE, REFRESH_TOKEN_FILE, runOperatorAction, runOperatorActionWithGrant } from './cli-operator.ts';
 import { OperatorRefusal } from './cli-operator-call.ts';
 import { runUpdate, UPDATE_USAGE } from './cli-update.ts';
 
@@ -77,6 +79,10 @@ usage:
 ${OPERATOR_USAGE}
 ${UPDATE_USAGE}
   hopper help                                        this text
+
+With ${REFRESH_TOKEN_FILE} set, the operator actions (job … search) open no database: they act with the grant whose
+refresh token that file holds (a delegate approver's, minted on Access requests), on the hopper HOPPER_URL or --url names.
+Each use writes the grant's new refresh token to the file. The grant's scopes decide what it may do.
 
 The job, queue, question, problem, handoff and failure commands act on the running daemon, through its own checks
 and events, as the UI does: --url names it (default HOPPER_URL, else http://127.0.0.1:<HOPPER_PORT, default 4790>).
@@ -265,6 +271,15 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   if (command === undefined || !COMMANDS.includes(command)) {
     io.err(`${USAGE}\n`);
     return 2;
+  }
+  // An agent's grant (issue #1138): no database, only the hopper's routes.
+  if (io.env[REFRESH_TOKEN_FILE] && (OPERATOR_COMMANDS as readonly string[]).includes(command)) {
+    try {
+      return await runOperatorActionWithGrant(command, rest, io);
+    } catch (e) {
+      io.err(`hopper: ${e instanceof Error ? e.message : String(e)}\n`);
+      return e instanceof OperatorRefusal ? 2 : 1;
+    }
   }
   let url: string | undefined;
   try {

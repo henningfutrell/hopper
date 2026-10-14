@@ -5,7 +5,7 @@
 import type { EventType } from '../domain/types.ts';
 import type { GraphNode } from '../domain/issue-graph.ts';
 import {
-  applyEvent, applyRead, countInFlight, countStates, IN_FLIGHT_STATES, jobIdOfEvent, keyOfEvent, LEDGER_EVENT_TYPES,
+  applyEvent, applyRead, inFlightOf, countStates, IN_FLIGHT_STATES, jobIdOfEvent, keyOfEvent, LEDGER_EVENT_TYPES,
   type LedgerJob, type WorkItem, type WorkItemLedger, type WorkItemState,
 } from '../domain/work-items.ts';
 import { applyLanding, LANDING_LEDGER_EVENTS, landingTargets } from '../domain/work-item-landing.ts';
@@ -183,7 +183,7 @@ export function createWorkItemLedger(db: Db, tx: <T>(fn: () => T) => T): WorkIte
     },
     inFlight() {
       const states = [...IN_FLIGHT_STATES];
-      return countInFlight(db.all(`SELECT body FROM work_items WHERE state IN (${states.map(() => '?').join(',')})`, ...states).map((r) => parse<WorkItem>(r.body)));
+      return inFlightOf(db.all(`SELECT body FROM work_items WHERE state IN (${states.map(() => '?').join(',')})`, ...states).map((r) => parse<WorkItem>(r.body)));
     },
     rebuild: () => tx(() => rebuildWorkItems(db)),
     catchUp() {

@@ -4,6 +4,7 @@
 // from the routes themselves (./token-scopes.ts names their scopes), so a new route's scope shows up with no edit here: an
 // area no section names goes under "Other". Pure: the HTTP layer gives the routes and what a box action is.
 import { actionWord, scopeAllows, scopeOfAction, scopeOfRoute } from './token-scopes.ts';
+import { DELEGATE_PRESET, DELEGATE_SCOPES } from './delegates.ts';
 import { roleAllows, type ScopePermission, type ScopePreset, type ScopeRegistry, type ScopeSection, type UiRole } from './sign-in.ts';
 
 export type { ScopePermission, ScopePreset, ScopeRegistry, ScopeSection };
@@ -28,7 +29,7 @@ export const SCOPE_SECTIONS: readonly { id: string; title: string; description: 
   { id: 'pull-requests', title: 'Pull requests', description: 'The pull requests jobs open: merge, close, yolo mode, landing batches, contribution, the shrink guard and GitHub watches.', areas: ['pull-requests', 'yolo-mode', 'landing-batches', 'contribution', 'shrink-guard', 'github-watches', 'github-rate-limiter'] },
   { id: 'infra', title: 'Infra changes', description: 'Plans of infrastructure changes, their approval, out-of-band changes and the blast radius.', areas: ['infra-plans', 'out-of-band', 'blast-radius'] },
   { id: 'vault', title: 'Vault and credentials', description: 'The vault, its templates and credential requests, a job\'s vault grant, the sandbox runs jobs ask for and their approval toggles, Access and the master key.', areas: ['vault', 'sandbox-requests', 'sandbox-approvals', 'access', 'master-key'] },
-  { id: 'machines', title: 'Machines', description: 'Where jobs run: machines, sandboxes, lanes and Windows hosts.', areas: ['machines', 'sandboxes', 'lanes', 'windows-hosts'] },
+  { id: 'machines', title: 'Machines', description: 'Where jobs run: machines, sandboxes, lanes, Windows hosts and the Windows link.', areas: ['machines', 'sandboxes', 'lanes', 'windows-hosts', 'windows-link'] },
   { id: 'decider', title: 'Decider and rules', description: 'How the hopper decides: Jev\'s picks, the rules, the job rules and the routing.', areas: ['minor-decisions', 'typesafe-key', 'rules', 'job-rules', 'routing', 'decisions', 'router'] },
   { id: 'state', title: 'State and usage', description: 'What the hopper is doing: health, events, usage, accounts and the tool accounts, users, the instance and the resources of its stack.', areas: ['health', 'events', 'component-watchers', 'usage', 'usage-history', 'accounts', 'tool-accounts', 'instance', 'resources', 'scopes'] },
   { id: 'sign-in', title: 'Sign-in and users', description: 'Who signs in and how: the realms, the users, a login link for another device, and the end of a session.', areas: ['realms', 'users', 'device-link', 'logout'] },
@@ -36,7 +37,7 @@ export const SCOPE_SECTIONS: readonly { id: string; title: string; description: 
 ];
 
 /** Scopes shown in another section than their area's: a job's vault grant is a vault approval. */
-const MOVED: Readonly<Record<string, string>> = { 'jobs:grant-vault': 'vault', 'jobs:revoke-vault': 'vault' };
+const MOVED: Readonly<Record<string, string>> = { 'jobs:grant-vault': 'vault', 'jobs:revoke-vault': 'vault', 'jobs:deny-vault': 'vault' };
 
 const OTHER = { id: 'other', title: 'Other', description: 'Routes no section names yet.' };
 
@@ -45,6 +46,7 @@ const PRESETS: readonly Omit<ScopePreset, 'box'>[] = [
   { id: 'read-only', label: 'Read only', description: 'Reads everything you can see — jobs, questions, intake, the Needs you list, settings — and changes nothing.', scopes: ['*:read'] },
   { id: 'agent-intake', label: 'Agent: read everything and approve intake', description: 'Reads everything, the Needs you list included, and acts on intake: approves request cards, assigns issues to you, releases claims, takes issues off the backburner. An approval starts a job, so it is a box grant.', scopes: ['*:read', 'sources:intake'] },
   { id: 'agent-approvals', label: 'Agent: read everything and approve what waits', description: 'Reads everything, and approves what waits for a person and is no infrastructure change: request cards in intake, held jobs, and a job\'s vault grant ask. A box grant. Infra plans and vault templates stay a person\'s: tick them below to add them.', scopes: ['*:read', 'sources:intake', 'jobs:approve', 'jobs:grant-vault'] },
+  { id: DELEGATE_PRESET, label: 'Delegate approver', description: 'Approves on your behalf what waits for a person, and nothing else: a job\'s vault grant ask, a template, a sandbox request; it declines or denies them too. It reads the vault\'s view only. Its approver policy names what stays yours (e.g. prod). Each approval it makes names it and you. Mint it on Access requests.', scopes: [...DELEGATE_SCOPES] },
   { id: 'full-admin', label: 'Full admin', description: 'Everything your role allows, box actions included, and every route added later.', scopes: ['*'] },
 ];
 

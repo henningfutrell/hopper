@@ -34,13 +34,14 @@ describe.each([['hopper.ps1', ps1], ['hopper.cmd', cmd]])('%s', (_name, script) 
   it('runs in the distro HOPPER_WSL_DISTRO names, else WSL\'s default one, with no shell between', () => {
     expect(code).toContain('HOPPER_WSL_DISTRO');
     expect(code).toContain('-d');
-    const calls = code.match(/wsl\.exe [^\n]*/g) ?? [];
+    const calls = (code.match(/wsl\.exe [^\n]*/g) ?? []).filter((c) => !c.startsWith('wsl.exe -ArgumentList'));
     expect(calls.length).toBeGreaterThanOrEqual(2);
     for (const call of calls) {
       expect(call).toMatch(/^wsl\.exe (@wsl|%HOPPER_WSL%) -e /);
       expect(call).not.toMatch(/ -e (sh|bash)\b/);
     }
-    expect(code.match(/wsl\.exe [^\n]* -e podman /g)?.length).toBe(2);
+    // hopper.ps1's keep-alive loop finds the container and runs the CLI too, to report the Windows link.
+    expect(code.match(/wsl\.exe [^\n]* -e podman /g)?.length).toBe(script === ps1 ? 4 : 2);
   });
 
   it('runs the CLI in the container with every argument, and ends with its exit code', () => {
@@ -70,6 +71,7 @@ describe('hopper.ps1', () => {
 });
 
 describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () => {
+  const loop = ps1.slice(ps1.indexOf("$body = @'"), ps1.indexOf("'@", ps1.indexOf("$body = @'")));
   it('in hopper.cmd, runs hopper.ps1 from its own folder, and says how to get it when it is missing', () => {
     expect(cmd).toMatch(/if \/i "%~1"=="autostart" goto ps1/);
     expect(cmd).toContain('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0hopper.ps1" %*');
@@ -96,8 +98,27 @@ describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () =>
 
   it('on: writes a keep-alive loop under %LOCALAPPDATA%\\hopper that starts the distro again 5 s after it ends', () => {
     expect(ps1).toContain("Join-Path $env:LOCALAPPDATA 'hopper'");
-    expect(ps1).toContain("'  & wsl.exe @wsl -e sleep infinity'");
-    expect(ps1).toContain("'  Start-Sleep -Seconds 5'");
+    expect(loop).toContain("Start-Process wsl.exe -ArgumentList (@($wsl) + @('-e', 'sleep', 'infinity')) -WindowStyle Hidden -PassThru");
+    expect(loop).toContain('$keep.HasExited');
+    expect(loop).toContain('Start-Sleep -Seconds 5');
+  });
+
+  it('on: the loop reports the Windows link through the CLI, at most every 5 minutes, with no token', () => {
+    expect(loop).toContain('AddMinutes(5)');
+    expect(loop).not.toContain('/api/health');
+    expect(loop).toContain("$urls = @('http://localhost:__PORT__/job/address', 'http://127.0.0.1:__PORT__/job/address')");
+    expect(loop).toContain('foreach ($u in $urls)');
+    expect(ps1).toContain("if ($env:HOPPER_PORT) { $env:HOPPER_PORT } else { '4790' }");
+    expect(loop).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Uri $u');
+    expect(loop).toContain("@('--status', [string][int]$_.Exception.Response.StatusCode)");
+    expect(loop).toContain("& wsl.exe @wsl -e wslinfo --networking-mode");
+    expect(loop).toContain('-e podman exec $container.Trim() hopper windows-link report --link $url @result');
+    expect(loop).not.toMatch(/TOKEN|Authorization|password/i);
+  });
+
+  it('on: a loop that runs now is stopped, so the new loop runs in its place', () => {
+    const on = ps1.slice(ps1.indexOf("'on' {"), ps1.indexOf("'off' {"));
+    expect(on.indexOf('Stop-Loops $running')).toBeLessThan(on.indexOf('Start-Process $powershell'));
   });
 
   it('on: adds a hidden Startup-folder shortcut for this user only, and starts the loop now', () => {
@@ -116,7 +137,8 @@ describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () =>
 
   it('off: stops the loop and removes the shortcut, and changes nothing in the distro', () => {
     const off = ps1.slice(ps1.indexOf("'off' {"), ps1.indexOf("'status' {"));
-    expect(off).toContain('Stop-Process');
+    expect(off).toContain('Stop-Loops $running');
+    expect(ps1.slice(ps1.indexOf('function Stop-Loops'), ps1.indexOf('function Invoke-Autostart'))).toContain('Stop-Process');
     expect(off).toContain('Remove-Item');
     expect(off).not.toContain('wsl.exe');
   });
@@ -141,12 +163,20 @@ describe('hopper doctor (docs/deploy.md "Check it from Windows")', () => {
 
   it('in hopper.ps1, runs before the container is looked up, so it works when the hopper does not run', () => {
     expect(ps1).toMatch(/\$args\[0\] -eq 'doctor'\) \{ Invoke-Doctor \}/);
-    expect(ps1.indexOf("-eq 'doctor'")).toBeLessThan(ps1.indexOf('podman ps -q'));
+    expect(ps1.indexOf("-eq 'doctor'")).toBeLessThan(ps1.indexOf("# The container's name changes"));
   });
 
-  it('opens /api/health at localhost on the port HOPPER_PORT names, else 4790', () => {
+  it('opens the address check (/job/address, no session) at localhost, then at 127.0.0.1, on the port HOPPER_PORT names, else 4790', () => {
     expect(doctor).toContain("if ($env:HOPPER_PORT) { $env:HOPPER_PORT } else { '4790' }");
-    expect(doctor).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "http://localhost:$port/api/health"');
+    expect(doctor).not.toContain('/api/health');
+    expect(doctor).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "http://localhost:$port/job/address"');
+    expect(doctor).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "$loopback/job/address"');
+  });
+
+  it('any HTTP answer is a working link; only 127.0.0.1 answering is a warning, not a FAIL, that says to open 127.0.0.1', () => {
+    expect(doctor).toContain('$_.Exception.Response');
+    expect(doctor).toContain("'warn'");
+    expect(doctor).toContain('Windows tries ::1 first for localhost: open $loopback in place of localhost.');
   });
 
   it('reads the networking mode from wslinfo, and localhostForwarding and networkingMode from %UserProfile%\\.wslconfig', () => {
@@ -160,7 +190,7 @@ describe('hopper doctor (docs/deploy.md "Check it from Windows")', () => {
     const model = '../../ui/src/model/windows-link.ts'; // browser code, type-checked by ui/tsconfig.json: imported by path
     const { windowsLinkFix } = (await import(model)) as { windowsLinkFix(l: { url: string; mode?: string; ok: boolean; at: string }): string[] };
     for (const mode of ['nat', 'mirrored', undefined]) {
-      const fix = windowsLinkFix({ url: 'http://localhost:4790/api/health', mode, ok: false, at: '' });
+      const fix = windowsLinkFix({ url: 'http://localhost:4790/job/address', mode, ok: false, at: '' });
       for (const line of fix) expect(doctor).toContain(line.replace('http://127.0.0.1:4790', '$loopback'));
     }
   });

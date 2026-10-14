@@ -346,9 +346,9 @@ export function createAfterDone(c: AfterDoneContext) {
    */
   async function heldBy(source: JobSource, d: TendDue, heads: readonly QueueHead[]): Promise<QueueHead | undefined> {
     if (d.step !== 'rebase') return undefined;
-    const job = store.jobs.get(d.jobId)!;
-    // Held an hour (issue #1143): new heads keep coming, so it is tended now.
-    if (heldTooLong((job.sourceState?.source as Holds | undefined)?.heldSince, c.now())) return undefined;
+    // Held an hour (issue #1143): new heads keep coming, so it is tended now, and the log says so (issue #1162).
+    const job = store.jobs.get(d.jobId)!, held = job.sourceState?.source as Holds | undefined;
+    if (heldTooLong(held?.heldSince, c.now())) return void console.warn(`hopper: ${source.name}: ${d.pullRequest} was held behind ${held?.heldBehind?.pullRequest} since ${held?.heldSince}: tended now`);
     for (const h of heads) if (await conflict(source, job, h.pullRequest) !== false) return h;
     return undefined;
   }
@@ -368,7 +368,7 @@ export function createAfterDone(c: AfterDoneContext) {
     const held = new Map<string, QueueHead>();
     for (const repo of new Set(due.map((d) => repoOf(get(d.jobId)!)))) {
       if (repo === undefined) continue;
-      const heads = queueHeads(repo, jobs, get, merges, c.now());
+      const heads = queueHeads(repo, jobs, get, merges, c.now(), (j) => c.finalReported(j));
       const free: TendDue[] = [];
       for (const d of tendOrder(due.filter((x) => repoOf(get(x.jobId)!) === repo), get)) {
         const h = await heldBy(source, d, heads);
@@ -386,8 +386,8 @@ export function createAfterDone(c: AfterDoneContext) {
           if (merges(repo)) started.push({ pullRequest: d.pullRequest, why: 'merging' });
           continue;
         }
-        started.push({ pullRequest: d.pullRequest, why: 'tending' });
-        await tendIfDue(source, d.jobId).catch((e: unknown) => { c.failed(d.jobId, e); });
+        const r = await tendIfDue(source, d.jobId).catch((e: unknown) => { c.failed(d.jobId, e); });
+        started.push({ pullRequest: d.pullRequest, why: 'tending', ...(r?.ok ? { jobId: r.job.id } : {}) });
       }
     }
     for (const j of jobs) {

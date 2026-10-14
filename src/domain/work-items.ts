@@ -348,17 +348,41 @@ export const IN_FLIGHT_WAITS: readonly PullRequestWait[] = ['checks_running', 'f
 export const IN_FLIGHT_STATES: readonly WorkItemState[] = ['working', 'pr_open'];
 
 /**
- * Whether the item is in flight (issue #1113): a job is at work on it, or its pull request is open with its checks
- * running, its checks being fixed, or waiting on the merge — or not yet seen by the follow, with all that ahead. A draft
- * or merge conflicts wait on a fix, not on the run. The one rule the header's badge and the Jobs view's filter read.
+ * The parts of in flight (issue #1164): `running`, a job at work on it; `ownCommand`, its job waits on its own background
+ * command (it holds its lane: running work); `pullRequests`, its pull request is open with its checks running, its checks
+ * being fixed, or waiting on the merge.
  */
-export function isInFlight(i: Pick<WorkItem, 'state' | 'pullRequestWait'>): boolean {
-  if (i.state === 'working') return true;
-  return i.state === 'pr_open' && (i.pullRequestWait === undefined || IN_FLIGHT_WAITS.includes(i.pullRequestWait));
+export const IN_FLIGHT_PARTS = ['running', 'ownCommand', 'pullRequests'] as const;
+export type InFlightPart = typeof IN_FLIGHT_PARTS[number];
+
+/** How many items are in flight, and in each part: the one count the header's badge and the dashboard read (`GET /api/queue`). */
+export type InFlight = { total: number } & Record<InFlightPart, number>;
+
+/**
+ * Which part of in flight the item is in (issue #1113, #1164), else undefined. A job's own command wait is the only own
+ * wait in `working`; any other is `waiting_outside` and holds no lane. A draft or merge conflicts wait on a fix, not on
+ * the run; a pull request whose wait the follow never read is not counted, so an item the follow lost never stays in flight.
+ * The one rule the header's badge, the dashboard and the Jobs view's filter read.
+ */
+export function inFlightPartOf(i: Pick<WorkItem, 'state' | 'pullRequestWait' | 'waitingOn'>): InFlightPart | undefined {
+  if (i.state === 'working') return i.waitingOn === undefined ? 'running' : 'ownCommand';
+  return i.state === 'pr_open' && i.pullRequestWait !== undefined && IN_FLIGHT_WAITS.includes(i.pullRequestWait) ? 'pullRequests' : undefined;
 }
 
-/** How many items are in flight. */
-export const countInFlight = (items: Iterable<Pick<WorkItem, 'state' | 'pullRequestWait'>>): number => [...items].filter(isInFlight).length;
+/** Whether the item is in flight (`inFlightPartOf`). */
+export const isInFlight = (i: Pick<WorkItem, 'state' | 'pullRequestWait' | 'waitingOn'>): boolean => inFlightPartOf(i) !== undefined;
+
+/** How many items are in flight, and in each part. */
+export function inFlightOf(items: Iterable<Pick<WorkItem, 'state' | 'pullRequestWait' | 'waitingOn'>>): InFlight {
+  const out: InFlight = { total: 0, running: 0, ownCommand: 0, pullRequests: 0 };
+  for (const i of items) {
+    const part = inFlightPartOf(i);
+    if (part === undefined) continue;
+    out[part]++;
+    out.total++;
+  }
+  return out;
+}
 
 /** The ledger: each item's row, and the counts every view reads. */
 export interface WorkItemLedger {
@@ -373,8 +397,8 @@ export interface WorkItemLedger {
   list(filter?: { state?: WorkItemState[]; keptWork?: true; landing?: true; limit?: number }): WorkItem[];
   /** How many items are in each state: `SELECT state, count(*)`. */
   counts(): Record<WorkItemState, number>;
-  /** How many items are in flight (`isInFlight`, issue #1113). */
-  inFlight(): number;
+  /** How many items are in flight, and in each part (`inFlightOf`, issues #1113, #1164). */
+  inFlight(): InFlight;
   /** Replay every event and the issue graph through the reducer, in place of the rows there are. How many items. */
   rebuild(): number;
 }

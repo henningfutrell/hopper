@@ -2065,7 +2065,17 @@ is kept on its job (`heldSince`, cleared when nothing holds it), and a rebase he
 (`heldTooLong`). On a busy repository new pull requests reach their checks all the time, each a new head, and each
 conflicts with the same old pull request: it was held behind one head after another, conflicted, with no job on it and no
 signal on GitHub. At worst the late rebase needs one more rebase after the head's merge. The tend job it starts is said on
-the pull request ("Pull request housekeeping").
+the pull request ("Pull request housekeeping"). The log says each such release: the pull request, its head, and since when.
+
+**A merged pull request holds nothing** (issue #1162). A tend job holds its queue only while it works on the pull request:
+queued, held, claimed, running, or in its own wait, or finished with its end still to report to its source
+(`queueHeads`' `reported`). Once that end is reported, the finished tend job follows the pull request, which holds the
+queue only on its way to the merge, or the pull request was merged or closed first and there is nothing to follow; either
+way the tend job holds nothing. Before, a tend job whose pull request a person merged while it worked finished following
+nothing, and held every conflicted pull request of its repository until the hour above ran out, again and again. A tend job
+that waits on a person (a question, parked, worked by hand) holds nothing either, nor one whose pull request any job saw
+merged or closed. A held card says since when (`heldSince`) and the tend job that holds it with its status now
+(`heldBehind.jobId`).
 
 **Rework goes back at once** (issue #938). The queue holds only a `rebase`: a rebase onto a base that a head is about to
 move is made again after that merge. A `fix_checks` is rework, and no head holds it: every pull request with failed checks
@@ -4660,7 +4670,8 @@ about where a machine can reach the hopper from, so both were run, not assumed:
    privileges), and then as an opt-in mount, never in the default compose file. *Since issue #603 (owner
    direction): B is built, as that opt-in mount — `compose.sandboxes.yaml`, not the default compose file — and
    the hopper builds every request body itself, so no request carries a bind, a device or a privilege
-   ("Sandbox boxes the hopper launches").*
+   ("Sandbox boxes the hopper launches"). Since issue #1157 (owner direction): the default compose file mounts the
+   socket, as the update finds it; an opt-in left every install without it.*
 3. **C as the bulk form of A, later.** When a set of boxes is wanted at once, a compose profile with a
    reusable join code is the same box line in a file; it needs nothing A does not build.
 4. **D's two cheap parts land anyway, on the ssh path #312 demotes:** no ssh-config warning (#309), herdr
@@ -4944,10 +4955,15 @@ again at the next check, and dropped when the box is gone. `GET /api/sandboxes` 
 problem?}, problems}` for the session's user; Machines shows the problems under *Sandbox boxes not removed*, and Add
 machine starts a box with **Start the box** when `launch.available`, else says why and shows the line.
 
-**Deploy.** Opt-in: `compose.sandboxes.yaml`, saved as `compose.override.yaml` beside `compose.yaml` (every compose
-command reads that file with no flag; podman-compose does not read `COMPOSE_FILE` from `.env`), mounts the
-rootless socket under `$XDG_RUNTIME_DIR`, sets `HOPPER_PODMAN_SOCKET` and adds group 0 — the user's own group in a
-rootless container, which `podman.socket` (mode 0660) lets open it. `docs/deploy.md` "Sandbox boxes the hopper starts".
+**Deploy.** In `compose.yaml` (issue #1157; before it, the opt-in `compose.sandboxes.yaml`, which every install had to
+copy in by hand, so none had the socket): the hopper's service mounts `HOPPER_PODMAN_SOCKET_HOST` at
+`/run/podman/podman.sock`, sets `HOPPER_PODMAN_SOCKET` to it, adds group 0 — the user's own group in a rootless
+container, which `podman.socket` (mode 0660) lets open it — and sets `label=disable`. Compose cannot mount a file that is
+not there, so the variable's default is `/dev/null`; the hopper takes a path with no socket at it as no socket given
+(`givenSocket`, `src/sandbox/runtime.ts`). The update (`scripts/update.sh`) finds `$XDG_RUNTIME_DIR/podman/podman.sock`
+and writes it in (`hopper update carry --podman-socket`), or says the line that turns `podman.socket` on; it moves an old
+`compose.sandboxes.yaml` override aside, as podman-compose would mount the socket twice. `docs/deploy.md` "Sandbox boxes
+the hopper starts".
 
 **Residual risk.** The socket is the user's account: a compromise of the hopper's process can start any container as
 the user. What the hopper itself starts is fixed in code, and an admin UI session can start and remove boxes as it can
@@ -5061,7 +5077,7 @@ nothing again.
 ### The read-only check on a client target (issue #708 part 8, 2026-10-11)
 
 Before it, the check pass ran only on the runtime beside the hopper, and the remote runtime refused `wait` and `logs`.
-A hopper given no runtime socket (no `compose.sandboxes.yaml`) never checked a template: a read-only template waited
+A hopper given no runtime socket never checked a template: a read-only template waited
 for its check for good, though its user's machines had Podman.
 
 - **Where it runs** (`Placements.forCheck`, `src/sandbox/runtime.ts`). Beside the hopper when it is given a runtime,
@@ -5292,7 +5308,7 @@ volume; a box not joined yet is kept; at start an orphan of its own goes and ano
 shown with its reason until it goes; a box that does not start leaves nothing; no socket, or a rootful one, starts
 nothing and says why. `test/adapters/podman-sandbox.test.ts` against real rootless Podman when
 `HOPPER_TEST_PODMAN_SOCKET` names its socket: the flags, the labels, no capability left, removal with the volume.
-`test/scripts/compose.test.ts`: the socket only with `compose.sandboxes.yaml`.
+`test/scripts/compose.test.ts`: the socket `HOPPER_PODMAN_SOCKET_HOST` names, else `/dev/null` (issue #1157).
 
 ## Client releases (issue #70, 2026-10-05)
 
@@ -5642,7 +5658,7 @@ On a hopper in a container (compose, rootless Podman in WSL among them), the fir
   list), or empty for the default. It applies to the next link, without a restart.
 - **The WSL hint.** A container shares its host's kernel, so the daemon reads `/proc/version` once at start; when it names
   Microsoft, the hopper runs in WSL and `HostLinkView.wsl` is true. Settings → Host link then shows how to test the link
-  from Windows (`Invoke-WebRequest <host link base>/api/health` in PowerShell) and the `.wslconfig` fixes
+  from Windows (`Invoke-WebRequest <host link base>/job/address` in PowerShell, which answers 204) and the `.wslconfig` fixes
   (`localhostForwarding=true` or `networkingMode=mirrored` under `[wsl2]`, then `wsl --shutdown`). The daemon cannot run a
   Windows command itself, so a person runs the test; a client in this distro (Add machine → A computer) can make it
   automatic. It reads `/proc/version` only (`AppSeams.procVersion` in tests).
@@ -12878,27 +12894,51 @@ cannot see which. A client in the same distro can, so it tests the link:
   background, at most every 5 minutes, and at its first `/release` after a start; a result older than 15 minutes is
   dropped.
 - **The test** (`src/client/windows-link.ts`). `wslinfo --networking-mode` gives the **mode** (`nat`, `mirrored`).
-  `powershell.exe` through WSL interop (the same way the client reads Windows' memory) runs `Invoke-WebRequest` on
-  `http://localhost:<the port the client dials>/api/health`, 10 s at most. Any HTTP answer, an error status too,
-  means the hopper answered: the link works. No answer, or no interop, is a broken link with the reason, cut to 200
-  characters. The test carries no token and only reads; it adds no listener and no route.
+  `powershell.exe` through WSL interop (the same way the client reads Windows' memory) runs `Invoke-WebRequest` on the
+  **address check** (`/job/address`, issue #698: 204 to anyone the Host guard lets in, with no session; `/api/health`
+  asks for a UI session of a request that is not loopback inside the container) at `http://localhost:<the port the
+  client dials>`, then, when that gets no answer, at `http://127.0.0.1:<that port>`, 10 s at most each. Windows tries
+  `::1` first for `localhost`, so `localhost` can fail where `127.0.0.1` works. Any HTTP answer, an error status too,
+  means the hopper answered: the link works, and `url` is the URL that answered. Only `127.0.0.1` answering is a
+  working link that the card states, with the hint to open `127.0.0.1`. No answer, or no interop, is a broken link with
+  the reason, cut to 200 characters, at the `localhost` URL. The test carries no token and only reads; it adds no
+  listener and no route.
 - **The reading.** The result is `windowsLink` (`WindowsLink`: `url`, `mode`, `ok`, `status`, `error`, `at`) in the
-  resources the client says in `/release`. `resourcesOf` keeps it only for a WSL reading and only when sane: a
-  localhost health URL, a boolean `ok`, a time. It is not kept in machine samples: no migration.
+  resources the client says in `/release`. `resourcesOf` keeps it only for a WSL reading and only when sane: the
+  address check's URL at `localhost` or `127.0.0.1` (or the `localhost` health URL of a client before it), a boolean
+  `ok`, a time. It is not kept in machine samples: no migration.
 - **Told and shown.** At each record the **Windows link watch** (`src/machines/windows-link-watch.ts`) tells
   `machine.windows_link_broken` once when a machine's link breaks, and `machine.windows_link_restored` once when it
   works again, as the memory alert does; kept in memory, so a link still broken is told again after a restart. A
   Machines card says *Windows link*, with a *Windows link broken* badge and the fix; a banner over every view names
   each online machine with a broken link and its fix. The fix by mode: NAT, set `localhostForwarding=true` under
-  `[wsl2]` in `.wslconfig`, and if it is set, `networkingMode=mirrored`, or open `http://127.0.0.1:<port>`; mirrored
-  or no mode read, open `http://127.0.0.1:<port>`, or set `networkingMode=mirrored`; then `wsl --shutdown`.
+  `[wsl2]` in `.wslconfig`, and if it is set, `networkingMode=mirrored`, or open `http://127.0.0.1:<port>`, then
+  `wsl --shutdown`; mirrored, open `http://127.0.0.1:<port>` (mirrored networking is on already, so it is never the
+  fix), and if that does not open either, `wsl --shutdown`; no mode read, both: open `http://127.0.0.1:<port>`, or
+  `localhostForwarding=true` in NAT mode, or `networkingMode=mirrored`, then `wsl --shutdown`.
+- **The keep-alive loop reports it** (the path "The Windows keep-alive loop reports the Windows link through the
+  operator CLI"). With no client in the distro there is no result above, so the loop `hopper autostart on` writes on
+  Windows (`docs/deploy.md` "Keep it running on Windows") tests the link itself: at most every 5 minutes, while the
+  hopper's container runs, the same URLs and the same rule (any HTTP answer means the hopper answered; `url` the one that answered), and the mode
+  from `wsl.exe -e wslinfo`. It runs `hopper windows-link report --link <url> (--status <n> | --error <why>) [--mode
+  <mode>]` in the container through `wsl.exe -e podman exec`. That operator action (`src/cli-operator-windows-link.ts`)
+  mints a UI session for one `POST /ui/api/windows-link`, an admin's (`src/http/ui/windows-link.ts`). The hopper stamps
+  the time and gives the report to the Windows link watch: a **second source**, told as the machine `windows`
+  (`WINDOWS_REPORTER`), once broken and once restored, and kept in memory; `GET /api/machines` carries the last report
+  as `windowsLink` while it is at most 15 minutes old, and the banner names it after the machines. Nothing is kept in
+  the database: no migration. No new listener and no new trust: the CLI uses the container's credentials, which the
+  signed-in Windows user could already use through `wsl.exe`; the loop keeps no token, and the report carries no
+  secret. It runs only while the loop runs. Tests: `test/machines/windows-link-watch.test.ts` (the report),
+  `test/integration/windows-link-report.test.ts` (the CLI, the route, `/api/machines`, the event),
+  `test/scripts/windows-cli.test.ts` (the loop), `test/ui/windows-link.test.ts` (the banner).
 - **No client in the distro: no result.** The hopper's own container has no interop; issue #712's other paths cover it.
   One is `hopper doctor` in the **Windows CLI wrapper** (`docs/deploy.md` "Check it from Windows"): run on Windows, it
-  tests the same URL, reads the mode and `.wslconfig`, and gives the same fix as the banner; it also checks the
+  tests the same URLs, reads the mode and `.wslconfig`, and gives the same fix as the banner (only `127.0.0.1`
+  answering is a `warn`, not a `FAIL`, with the hint to open it); it also checks the
   keep-alive shortcut and, through `wsl.exe -e`, systemd, linger and `podman-restart.service` in the distro. It only
   reads. Settings → Host link names it in WSL. Tests: `test/scripts/windows-cli.test.ts` (it reads the script).
 
-Tests: `test/client/windows-link.test.ts` (the URL, the answer, when it tests, stale, not WSL), `test/adapters/
+Tests: `test/client/windows-link.test.ts` (the URLs, the answer, only 127.0.0.1, when it tests, stale, not WSL), `test/adapters/
 machine-resources.test.ts` (a client's link checked), `test/machines/windows-link-watch.test.ts` (told once, restored,
 offline), `test/integration/machine-history.test.ts` (the snapshot carries it; the event), `test/ui/windows-link.test.ts`
 (the card's line, the fix by mode, the banner's machines).
@@ -13075,8 +13115,8 @@ The broker (`createGitProxy`, `src/github-proxy/git-broker.ts`), in order:
    asks its helper once more and stops);
 2. the path: `owner/name` (`.git` optional) and a smart-HTTP service; dumb HTTP is not served — else **404**;
 3. a push (`git-receive-pack`): only to the job's **own repository** (its source's, or for a fork its parent's), and only
-   when that is one of its user's **job repositories** and the user can push to it, or to the **job's fork** ("The
-   contribution flow") — else **403** with the reason, which git shows as `remote: …`;
+   when the user can push to it — whether or not it is one of its user's **job repositories** (issue #1131, below) —, or
+   to the **job's fork** ("The contribution flow") — else **403** with the reason, which git shows as `remote: …`;
 4. the job's user's GitHub connection: none — **403** for a push or a job repository, **503** otherwise;
 5. a push's ref updates, read from the pkt-lines before the pack (`receivePackCommands`; gzip is opened; a signed push or
    a shallow one is not taken) and checked (`checkPush`): only `refs/heads/*`, never the repository's default branch
@@ -15297,6 +15337,56 @@ with the database's credentials. Tests: `test/integration/operator-cli-vault.tes
 scope, as every box job did before. A person who grants a job of a request card's approved text grants that text's work.
 A job on a person's own account (no box) can still read that home's files (`~/.ssh`, a gh login): only a box keeps them
 out ("Git through the hopper", residual risk).
+
+## Delegate approvers (issue #1138, 2026-10-14)
+
+Requirement: the owner hands approvals to an agent (Chief of Staff) without the agent touching the owner's browser session
+or session token. A named, revocable credential with an end, scoped to approvals only; usable from the CLI headless; each
+approval records the delegate, whom it acted for, and when; optional limits on what it may approve, prod staying the
+owner's.
+
+- **What it is.** A **delegate approver** is a **grant** ("Grants and refresh tokens") of the preset `delegate-approver`
+  (`src/domain/delegates.ts` `DELEGATE_SCOPES`): `vault:read`, `jobs:grant-vault`, `jobs:deny-vault`,
+  `vault:edit.approve-template`, `sandbox-requests:edit.approve`, `sandbox-requests:edit.decline`. A box grant, as a
+  sandbox request is a box action. A mint that names the preset and any other `scopes` is refused (400): it is approvals
+  only, so settings, secrets, `revoke-vault`, the sandbox toggles and the master key are out of its scopes (403). Its name
+  is the grant's label, its end the grant's `days`; its role is its minter's, at most. No new kind of token: the grant's
+  refresh rotation, reuse detection, idle end and revoke all apply.
+- **Minted and revoked on Access requests.** The panel **Delegate approvers** (`ui/src/views/delegate-approvers.tsx`, an
+  admin's) mints one (`POST /ui/api/api-tokens` `{ action: 'mint', label, preset: 'delegate-approver', deny, days }`),
+  shows its refresh token once with the command an agent runs, lists each delegate with its policy, and revokes it at
+  once. `hopper token mint --preset delegate-approver --deny prod` mints one from the operator CLI.
+- **The approver policy.** `deny` on the mint (at most 32 entries): each entry matches, in any case, any name an approval
+  touches. A grant ask: its template, machine or Windows host, the names the job asked for, and the template's secrets and
+  assets. A template: its name, secrets and profiles' assets, waiting ones too. A sandbox request: its template's. A match
+  is 403 (`src/http/ui/delegates.ts` `refuseDenied`); the owner still approves it. Substring, not glob: `prod` keeps
+  `shop-prod` and `prod/apps` the owner's. Kept on the grant's row (`api_grants` body `delegate`), so no migration; a build
+  before this one reads the row and ignores the field, and its scopes still keep the token to the approval routes.
+- **Only what waits.** A delegate grants or denies only a grant ask that waits (409 else): it never grants an item no job
+  asked for. Its template approval and sandbox decisions are those of the routes, which approve only what waits already.
+- **Deny.** `POST /ui/api/jobs/:id/deny-vault` (a person's too: Deny on the ask's card) drops the ask and records
+  `vault.grant_denied`; that job, still with no grant, asks no more (kept in memory). Run again makes a new job, which may
+  ask again.
+- **Audit.** An approval by a delegate records `by` as `<label> (delegate of <person>)` in its event (`vault.granted`,
+  `vault.grant_denied`, `vault.approved`, `vault.sandbox_approved`, `vault.sandbox_declined`), on the vault grant and on the
+  template's approval, so Access requests shows it on the card, with the time. A notifier or webhook subscribed to those
+  events tells the owner.
+- **The CLI, headless.** `hopper grant [list] | approve <job> | deny <job>`, `hopper sandbox requests | approve <id> |
+  decline <id> --reason <text>`, `hopper template approve <name>`. With `HOPPER_REFRESH_TOKEN_FILE` set the operator CLI
+  opens no database (`runOperatorActionWithGrant`, `src/cli-operator.ts`): it trades the refresh token in that file at
+  `POST /ui/auth/token/refresh`, writes the new one to the file (mode 600, by rename) before it acts, and sends the action
+  with the API token. `HOPPER_URL` or `--url` names the hopper; `--user` is refused (the grant names its user). Any
+  operator action works this way, within the grant's scopes.
+- **Not built.** "Read-only approvals can be set to auto" is the read policy and the auto-approve policy already
+  ("Templates on request", "Sandboxes jobs start"). A limit by role is not built: a delegate's role is its minter's, and its
+  scopes already keep it to approvals.
+
+**Residual risk.** Whoever holds the refresh-token file approves what waits, within the policy, until the grant ends or
+is revoked. The policy is by name: an asset named with none of the deny entries is approved. A deny entry that is a
+common word (`a`) denies nearly everything.
+
+Tests: `test/integration/delegate-approver.test.ts`, `test/integration/job-sandboxes.test.ts` (a delegate's sandbox
+approval), `test/domain/delegates.test.ts`, `test/ui/delegate-approvers-view.test.ts`.
 
 ## Repository-agnostic lanes (issue #431, 2026-10-11)
 
@@ -17831,12 +17921,23 @@ Failures, the dashboard and the queue agree with `SELECT state, count(*) FROM wo
   "Ready for review" is gone from the graph, the list and the stage filter ("PR open").
 
 **In flight (issue #1113, 2026-10-14).** An item is **in flight** (`isInFlight`, `src/domain/work-items.ts`) while it
-is `working`, or `pr_open` with its pull request wait `checks_running`, `fixing_checks` or `merge` — or not yet seen by
-the follow, with its checks and the merge ahead. A draft or merge conflicts wait on a fix, not on the run. The ledger
+is `working`, or `pr_open` with its pull request wait `checks_running`, `fixing_checks` or `merge` (issue #1164: no
+longer one the follow has not seen yet). A draft or merge conflicts wait on a fix, not on the run. The ledger
 counts them (`inFlight()`: the rows in `working` and `pr_open`, through the same rule), and `GET /api/queue` answers
 `inFlight`. The header shows that count on every screen, a link to `#jobs/in-flight`: the Jobs view with its in-flight
 filter on, the job nodes the graph marks `inFlight` — each the item's own job, its item in flight. The badge has no
 poll of its own: the store reads the queue after each event on the stream, as it does for every other count.
+
+**One count, one breakdown (issue #1164, 2026-10-14).** The badge read the ledger and the dashboard's Running card
+counted the jobs `claimed` or `running`, so they disagreed: the badge counted pull requests with no job, and a pull
+request whose wait the follow never read stayed in it for good. Now `inFlightOf` gives each item one part
+(`inFlightPartOf`): `running` (`working`, no wait), `ownCommand` (`working` on its own command wait: it holds its lane,
+so it counts; any other own wait is `waiting_outside` and holds no lane), `pullRequests` (`pr_open`, its wait
+`checks_running`, `fixing_checks` or `merge`). A pull request whose wait was never read is not in flight: an item the
+follow lost cannot inflate the count, and its first look puts it in. `GET /api/queue` answers
+`inFlight: { total, running, ownCommand, pullRequests }`; the badge shows `total` with the parts as its title, and the
+dashboard's **In flight** card (in place of Running) shows the same `total` and the same parts in the same words
+(`ui/src/model/in-flight.ts`). The Jobs view's filter reads the same rule. Neither recounts the job list.
 
 **Part 3: what GitHub says is ledger input (2026-10-14).** Before it, the ledger heard of GitHub only through the
 issue graph's reads and the follow's merge or close, so an item whose issue closed while its pull request waited, or
@@ -18864,3 +18965,23 @@ requests are strays, and which job holds each), `test/domain/work-items.test.ts`
 in `test/integration/pull-request-housekeeping.test.ts`, `test/integration/pull-request-retend.test.ts` (part 3: a failed
 rebase tended again once its base moves, at most three in a row; no mirror, no retry), `test/domain/tend-retries.test.ts`
 (`tendOf`, `tendRetryAt` with a moved base), `test/git-mirror/mirrors.test.ts` (`baseTip`).
+
+## A job pushes to its own repository outside the job repositories (issue #1131, 2026-10-14)
+
+**The problem.** A tend job's `git push --force-with-lease` to its own pull request's branch was refused: "<repo> is not
+one of the repositories your jobs use, so the hopper pushes nothing there". The git broker let a job push to its own
+repository only when that repository was one of its user's **job repositories**. But a job's own repository comes from its
+source item, and a job can hold one that is not on that list: a job of the app source (its repositories are the app's
+installation's), a direct job, or a job of a repository the user chose no more after intake (a tend job runs its item
+again later). Its fetch worked (issue #1015) and GitHub said its user could push, so the refusal named no real reason.
+
+**The change.** The job repositories decide intake, not where a job's own work goes. A push goes to the job's own
+repository (or its fork) when its user can push to it (GitHub's `canPush`), with the same ref check (`checkPush`) and the
+shrink guard as before. No job repository check is left on a push. A push with no GitHub connection is refused with the
+connection's problem (403), as before.
+
+**Not changed.** The GitHub proxy's writes (`hopper-gh`: an issue, a pull request, a comment) stay on the job repositories
+(`checkRequest`, issue #1015). A job of a repository outside them still cannot open its pull request there through the
+hopper; that is a separate change.
+
+Tests: `test/integration/git-proxy.test.ts` ("pushes to the job's own repository when it is no job repository, forced too").

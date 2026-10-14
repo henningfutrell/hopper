@@ -15,6 +15,10 @@
 //     Then the push is refused with the reason, nothing changes on GitHub, and the refusal is on its timeline
 //   Scenario: a job pushes to another repository than its own
 //     Then the push is refused with the reason
+//   Scenario: a job of a repository outside the job repositories pushes to its own repository (issue #1131)
+//     Given a job whose own repository is no job repository (a source other than the account's, or one chosen no more)
+//     When the job pushes a branch, then pushes it again with --force-with-lease, as a tend job's rebase does
+//     Then both pushes are on GitHub
 //   Scenario: a job reads a repository its jobs do not use (issue #1015)
 //     Given a private repository outside the job repositories that the user's connection sees
 //     Then the hopper reads it with the user's connection, and pushes nothing there
@@ -109,6 +113,20 @@ describe('git through the hopper (issue #652)', () => {
     expect(r.code).not.toBe(0);
     expect(r.stderr).toContain('a job pushes only to its own repository (octo/tools)');
     expect((await branchesOf(t, 'octo/site')).stdout).not.toContain('issue-7-elsewhere');
+  });
+
+  it('pushes to the job\'s own repository when it is no job repository, forced too (issue #1131)', async () => {
+    const t = await start();
+    const { job, home, git } = await running(t, 'elsewhere/lib');
+    expect((await git(['clone', '--quiet', `${t.github.url}/elsewhere/lib.git`, 'lib'])).code).toBe(0);
+    const work = join(home, 'lib');
+    await git(['commit', '--quiet', '--allow-empty', '-m', 'Fix'], work);
+    expect(await git(['push', 'origin', 'HEAD:refs/heads/issue-7-fix'], work)).toMatchObject({ code: 0 });
+    await git(['commit', '--quiet', '--amend', '--allow-empty', '-m', 'Fix, rebased'], work);
+    expect(await git(['push', '--force-with-lease', 'origin', 'HEAD:refs/heads/issue-7-fix'], work)).toMatchObject({ code: 0 });
+    const head = (await git(['rev-parse', 'HEAD'], work)).stdout.trim();
+    expect((await branchesOf(t, 'elsewhere/lib')).stdout).toContain(`issue-7-fix ${head}`);
+    expect(eventsOf(t.app, 'github_proxy.refused').filter((e) => e.jobId === job.id)).toEqual([]);
   });
 
   it('reads a private repository its jobs do not use with its user\'s connection, and pushes nothing there (issue #1015)', async () => {

@@ -34,6 +34,12 @@ export const MERGE_WAITS = [
 ] as const;
 export type MergeWait = (typeof MERGE_WAITS)[number];
 
+/**
+ * What a card is held behind (issues #939, #1162): the pull request and why; since when, while the sync keeps it held; and
+ * the tend job that holds it, with its status now.
+ */
+export interface HeldBehind { pullRequest: number; why: QueueHead['why']; since?: string; holder?: { jobId: string; status: Job['status'] } }
+
 export interface PullRequestCard {
   jobId: string;
   repo: string;
@@ -69,7 +75,7 @@ export interface PullRequestCard {
    * tending queue that conflicts with it (issue #939), and why. A ready one whose merge is held: behind the one merged first.
    * One whose tend the source refused (issue #967): why, so a refusal is never shown as "next".
    */
-  queue?: { next: true } | { held: { pullRequest: number; why: QueueHead['why'] } } | { refused: string };
+  queue?: { next: true } | { held: HeldBehind } | { refused: string };
   /**
    * Its tend job is not at work yet (issue #967): why it waits — the lane cap that binds, or its hold; no reason kept, no
    * free lane yet. Absent: it works, or there is no tend job.
@@ -197,15 +203,20 @@ function gaveUpOn(job: Job, card: PullRequestCard, tendJob: Job | undefined, get
  * merge is held: behind the pull request merged first.
  */
 function withQueue(cards: PullRequestCard[], waiting: Job[], tendJobs: Job[], get: (id: string) => Job | undefined): PullRequestCard[] {
-  const heldAs = (pullRequest: string, why: QueueHead['why']) => ({ queue: { held: { pullRequest: numberOf(pullRequest), why } } });
+  const heldAs = (h: QueueHead, since?: string): { queue: { held: HeldBehind } } => {
+    const holder = h.jobId ? get(h.jobId) : undefined;
+    return { queue: { held: {
+      pullRequest: numberOf(h.pullRequest), why: h.why, ...(since ? { since } : {}), ...(holder ? { holder: { jobId: holder.id, status: holder.status } } : {}),
+    } } };
+  };
   return cards.map((c) => {
     const job = waiting.find((j) => j.id === c.jobId)!;
     const f = followedOf(job);
-    if (c.waits === 'merge held' && f.seen?.mergeHeldBehind) return { ...c, ...heldAs(f.seen.mergeHeldBehind, 'merging') };
+    if (c.waits === 'merge held' && f.seen?.mergeHeldBehind) return { ...c, ...heldAs({ pullRequest: f.seen.mergeHeldBehind, why: 'merging' }) };
     if (c.state !== 'open' || (c.waits !== 'conflicts' && c.waits !== 'checks failing' && c.waits !== 'tend failed')) return c;
     const gaveUp = gaveUpOn(job, c, tendJobs.find((t) => t.id === c.tendJobId), get);
     if (gaveUp) return { ...c, gaveUp };
-    if (f.heldBehind) return { ...c, ...heldAs(f.heldBehind.pullRequest, f.heldBehind.why) };
+    if (f.heldBehind) return { ...c, ...heldAs(f.heldBehind, f.heldSince) };
     return { ...c, queue: f.tendRefused ? { refused: f.tendRefused } : { next: true } };
   });
 }

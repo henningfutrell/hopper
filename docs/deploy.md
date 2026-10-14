@@ -298,7 +298,11 @@ is only in the hopper's environment, given at launch.
        it stops before it changes anything (issue #1063, below).
     3. **Backs up the database** to `hopper-backup.dump` (`pg_dump -Fc`), while Postgres runs.
     4. **Puts in the new `compose.yaml`**: `hopper update carry` from the new image (below); it shows the change and
-       keeps the old file as `compose.yaml.bak`.
+       keeps the old file as `compose.yaml.bak`. With Podman it first looks for your rootless Podman socket
+       (`$XDG_RUNTIME_DIR/podman/podman.sock`, issue #1157): when `podman.socket` is on, the new file gives it to the
+       hopper; when it is off, the update goes on without it and says the line that turns it on (`systemctl --user
+       enable --now podman.socket`). A `compose.override.yaml` that is the old `compose.sandboxes.yaml` goes to
+       `compose.override.yaml.bak` ("Sandbox boxes the hopper starts" below).
     5. **Pulls, stops the stack and starts it on the new image**: `compose pull`, `compose down` (the volumes and the
        data stay), `compose up -d`, with `HOPPER_IMAGE` set to the image. Every container is made again on the new
        image: podman-compose's plain `up -d` keeps a container whose image changed under the same tag, and it cannot
@@ -451,19 +455,29 @@ that folder. It works on the distro `HOPPER_WSL_DISTRO` names; unset, WSL's defa
   - writes `%LOCALAPPDATA%\hopper\hopper-keepalive.ps1`, a loop: `wsl.exe -e sleep infinity`, wait 5 s, again. The
     process in the distro keeps WSL from stopping it. After `wsl --shutdown` the `wsl.exe` ends, the loop starts it
     again, the distro boots, and systemd starts the containers through `podman-restart.service`;
+  - the loop also reports the Windows link: at most every 5 minutes, while the hopper's container runs, it opens
+    the address check, `http://localhost:<port>/job/address`, else `http://127.0.0.1:<port>/job/address` (`HOPPER_PORT`;
+    unset, `4790`), 10 s at most each, reads the networking mode
+    (`wsl.exe -e wslinfo --networking-mode`), and runs `hopper windows-link report` in the container with the result:
+    the HTTP status (any status means the hopper answered) or why there was no answer. The hopper keeps the report in
+    memory for 15 minutes, and a broken link shows the banner with the fix and tells `machine.windows_link_broken`
+    (machine `windows`), as a WSL machine's client does (`docs/design.md` "The Windows link");
   - writes the shortcut `hopper-wsl.lnk` in this Windows user's Startup folder, which runs the loop in a hidden
-    PowerShell at each sign-in, and starts the loop now when it does not run. It has the name of the shortcut made by
-    hand ("Keep a hopper in WSL running" above), so it replaces that one, and a loop started by hand counts as running:
+    PowerShell at each sign-in, and starts the loop now. A loop that runs is stopped first, so a new loop takes its
+    place: run `hopper autostart on` again after an update of `hopper.ps1`. The shortcut has the name of the one made by
+    hand ("Keep a hopper in WSL running" above), so it replaces that one, and a loop started by hand is stopped too:
     the distro never gets two.
 - **`hopper autostart off`:** stops the loop (its own or the one made by hand) and its `wsl.exe`, and removes the shortcut and the loop's script. It
   changes nothing in the distro: linger and `podman-restart.service` stay on, and WSL stops the distro when it is idle.
 - **`hopper autostart status`:** says whether the shortcut exists, the loop runs, linger is on and
   `podman-restart.service` is enabled. It exits 1 when one of them is not.
 - **Security:** nothing new listens; the hopper's bind stays `127.0.0.1`. It needs no admin rights and no secret: the
-  Startup folder is this user's, not the common one, and no scheduled task is made.
+  Startup folder is this user's, not the common one, and no scheduled task is made. The report adds no trust: the CLI in
+  the container uses its own credentials, as for every operator action, and the signed-in Windows user could already
+  run them through `wsl.exe`. The loop keeps no token, and the report carries no secret.
 - **Not checked here:** there is no Windows runner, so `test/scripts/windows-cli.test.ts` reads the scripts. A person
   checks it once on Windows: `hopper autostart on`, `wsl --shutdown`, wait 30 s, then
-  `Invoke-WebRequest http://localhost:4790/api/health`. If the hidden loop is not reliable on a WSL release, a scheduled
+  `Invoke-WebRequest http://localhost:4790/job/address` (it answers 204). If the hidden loop is not reliable on a WSL release, a scheduled
   task with restart on failure is the fallback.
 
 ### Check it from Windows
@@ -472,8 +486,11 @@ that folder. It works on the distro `HOPPER_WSL_DISTRO` names; unset, WSL's defa
 `hopper.cmd` runs `hopper.ps1` from its own folder for it (`powershell.exe -ExecutionPolicy Bypass`, this process only),
 so put both in that folder. It runs on Windows, so it needs no interop from the hopper's container. The checks, in order:
 
-1. **The Windows link.** `Invoke-WebRequest http://localhost:<port>/api/health`, 10 s at most, must answer 200. The port
-   is `HOPPER_PORT`; unset, `4790`.
+1. **The Windows link.** `Invoke-WebRequest` on the address check (`/job/address`: 204 to anyone the Host guard lets
+   in, with no session) at `http://localhost:<port>`, 10 s at most. Any HTTP answer means the hopper answered. When
+   `localhost` gets no answer, it tries `http://127.0.0.1:<port>`: Windows tries `::1` first for `localhost`. Only
+   `127.0.0.1` answering is a `warn`, not a `FAIL`: open `http://127.0.0.1:<port>` in place of `localhost`. Neither
+   answering is a `FAIL`, with the fix for the networking mode. The port is `HOPPER_PORT`; unset, `4790`.
 2. **The networking mode.** `wsl.exe -e wslinfo --networking-mode`, and `localhostForwarding` and `networkingMode` under
    `[wsl2]` in `%UserProfile%\.wslconfig`. It fails in NAT mode with `localhostForwarding=false`, and when `.wslconfig`
    names another mode than the one WSL runs (it needs `wsl --shutdown`).
@@ -482,14 +499,16 @@ so put both in that folder. It runs on Windows, so it needs no interop from the 
 4. **In the distro, through `wsl.exe -e`:** `systemd=true` under `[boot]` in `/etc/wsl.conf`; linger on for the distro
    user (`loginctl show-user`); `podman-restart.service` enabled (`systemctl --user is-enabled`).
 
-Each check prints `ok`, or `FAIL` and the fix. A broken link gets the same fix as the Machines banner
+Each check prints `ok`, `warn` and the hint, or `FAIL` and the fix. A broken link gets the same fix as the Machines banner
 (`ui/src/model/windows-link.ts`), by the mode it read. It exits 1 when a check fails. The distro is the one
 `HOPPER_WSL_DISTRO` names; unset, WSL's default distro.
 
 - **Security:** it only reads. It sends no token, changes nothing, and adds no listener or route. It runs as the
   signed-in Windows user, who could already run `wsl.exe`.
 - **Not checked here:** there is no Windows runner, so `test/scripts/windows-cli.test.ts` reads the script. A person
-  checks it once on Windows: `hopper doctor` after a fresh install and after `wsl --shutdown`.
+  checks it once on Windows: `hopper doctor` after a fresh install and after `wsl --shutdown`. By hand, in PowerShell:
+  `Invoke-WebRequest http://127.0.0.1:4790/job/address` and `Invoke-WebRequest http://localhost:4790/job/address` each
+  answer 204.
 
 ### The Windows link, checked by default
 
@@ -497,7 +516,8 @@ On Windows the install page has the person add the distro the hopper runs in as 
 Ubuntu as a machine"): **Machines** → **Add machine** → **A computer**, with the UI open at `http://localhost:<port>`
 in the Windows browser. The join line carries the URL the page is open at, so the client dials the hopper on loopback.
 A client in WSL that dials loopback tests the Windows link (`docs/design.md` "The Windows link"): every 5 minutes it
-runs `Invoke-WebRequest` on `http://localhost:<port>/api/health` through interop. When the link breaks, the Machines
+runs `Invoke-WebRequest` on the address check, `http://localhost:<port>/job/address`, else
+`http://127.0.0.1:<port>/job/address`, through interop. When the link breaks, the Machines
 card and a banner over every view say so, with the fix for the networking mode. Jobs need a machine anyway, so the
 check costs no extra step.
 
@@ -534,7 +554,7 @@ fallback:
 1. In that engine, find the address `host.containers.internal` names:
    `podman run --rm docker.io/library/alpine:3 getent hosts host.containers.internal`.
 2. Publish the port on that address too, in a `compose.override.yaml` beside `compose.yaml` (compose adds it to the
-   loopback port; with `compose.sandboxes.yaml` already saved there, add the lines to that file):
+   loopback port; with a `compose.override.yaml` already there, add the lines to that file):
 
    ```yaml
    services:
@@ -725,7 +745,7 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   namespaces it lists. The `helm.install` probe asks the cluster to create each object of a chart in a server dry run:
   each one must be refused.
 - **Where the check runs** (issue #708): beside the hopper when it is given a container runtime socket
-  (`compose.sandboxes.yaml`). With none, it runs on a machine of the template's user that joined with Add machine, is
+  ("Sandbox boxes the hopper starts" below). With none, it runs on a machine of the template's user that joined with Add machine, is
   dialled in, and has rootless Podman or Docker. The minted read credentials then go down that machine's link into
   the check box there. With neither, the template waits for its check. A client older than this release refuses the
   check box, and the check fails with that reason; run it again once the machine has the new client.
@@ -940,8 +960,8 @@ Keep in mind:
 
 ## Sandbox boxes the hopper starts
 
-Optional (issues #603, #708). Give the hopper your rootless Podman socket, and it starts, stops and removes sandbox
-boxes itself. Without it, Add machine → *A sandbox box* shows a line that you run. The line carries the same sandbox
+On by default in `compose.yaml` (issues #603, #708, #1157). Give the hopper your rootless Podman socket, and it starts,
+stops and removes sandbox boxes itself. Without it, Add machine → *A sandbox box* shows a line that you run. The line carries the same sandbox
 flags as the boxes the hopper starts: one builder makes both. Its CPUs and memory start at the template's defaults
 (the hopper's for a box of no template); change them before *Show the line*, within the template's max.
 
@@ -950,18 +970,30 @@ the Docker Engine API (never the docker CLI): `HOPPER_DOCKER_SOCKET` names its s
 given or Podman is not reached, or always with `HOPPER_SANDBOX_RUNTIME=docker`. The hopper refuses a rootful socket of
 either (root on the computer), and an image that runs as root.
 
-Turn it on, in the directory of `compose.yaml`:
+`compose.yaml` mounts the file `HOPPER_PODMAN_SOCKET_HOST` names into the hopper at `/run/podman/podman.sock`, sets
+`HOPPER_PODMAN_SOCKET` to that path, adds group 0 to the hopper's user (in a rootless container, group 0 is your own
+group, which may open the socket: `podman.socket` makes it mode 0660), and sets `label=disable` (SELinux does not let a
+container open the socket; without SELinux this changes nothing). Unset, `HOPPER_PODMAN_SOCKET_HOST` is `/dev/null`:
+compose cannot mount a file that is not there, so the stack starts with no socket, and the hopper says it has none.
+
+The update ("One command updates the install" above) gives the hopper the socket. It looks for `$XDG_RUNTIME_DIR/podman/podman.sock`: when
+`podman.socket` is on, it writes that path into `compose.yaml` as the default of `HOPPER_PODMAN_SOCKET_HOST`; when it is
+off, it goes on without it and says the line that turns it on. So turn the socket on, then run the update:
 
 ```sh
 systemctl --user enable --now podman.socket
-curl -fsSL https://henningfutrell.github.io/hopper/compose.sandboxes.yaml -o compose.override.yaml
+```
+
+On a fresh install, before the first update, give it at launch (the update then keeps it in `compose.yaml`):
+
+```sh
+export HOPPER_PODMAN_SOCKET_HOST="$XDG_RUNTIME_DIR/podman/podman.sock"
 podman compose up -d
 ```
 
-Saved as `compose.override.yaml` beside `compose.yaml`, it is read with `compose.yaml` by every compose command
-(`podman compose`, `podman-compose`, `docker compose`), with no flag. It mounts `$XDG_RUNTIME_DIR/podman/podman.sock` into the hopper at `/run/podman/podman.sock`,
-sets `HOPPER_PODMAN_SOCKET` to that path, and adds group 0 to the hopper's user: in a rootless container, group 0 is
-your own group, which may open the socket (`podman.socket` makes it mode 0660). A hopper on this host (not in a
+An install that saved the old `compose.sandboxes.yaml` (issue #603) as `compose.override.yaml` needs nothing: the update
+moves that file to `compose.override.yaml.bak`, as `compose.yaml` gives the socket now. An override of your own that also
+mounts the socket stops the update before it changes anything: remove those lines from it. A hopper on this host (not in a
 container) needs only `HOPPER_PODMAN_SOCKET=$XDG_RUNTIME_DIR/podman/podman.sock` in its environment.
 
 The same socket lets the hopper read what each container of its stack and each box uses, for the Resources page (issue #947):
@@ -1000,8 +1032,9 @@ or an approved template's image, and a request to it can name only an agent or a
 template's limits, never an image, a mount or a flag. An admin UI session can start and remove
 boxes, as it can add and remove any machine.
 
-Turn it off: remove `compose.override.yaml` and run `podman compose up -d`. The boxes it started keep
-running; remove their machines in the Machines view first if you want them gone.
+Turn it off: `export HOPPER_PODMAN_SOCKET_HOST=/dev/null` and run `podman compose up -d`, or turn `podman.socket` off
+and run the update. The boxes it started keep running; remove their machines in the Machines view first if you want
+them gone.
 
 ### Sandbox boxes on another machine
 

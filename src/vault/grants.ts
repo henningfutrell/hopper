@@ -4,6 +4,7 @@
 // no grant is refused, and the hopper asks a person: a grant ask, kept in memory, shown on the Vault page, one event per
 // job. A person grants or revokes through the UI session, after Access (the route's); the grant is kept for the item, so
 // Run again and Rework keep it. The template's approved scope still bounds what a granted job gets: the vault decides that.
+// A person, or a delegate approver (issue #1138), may deny an ask instead: it goes, and that job asks no more.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Job } from '../domain/types.ts';
 import { directIdOf, grantItemOf, grantKeyOf, grantView, noGrant, type VaultGrantAsk } from '../domain/vault-grants.ts';
@@ -23,9 +24,12 @@ export function withVaultGrants(v: Vault, o: {
   const { events, jobs, vaultGrants } = o.store;
   /** The open asks, by job. */
   const asks = new Map<string, VaultGrantAsk>();
+  /** The jobs whose ask a person denied (issue #1138): still refused, they ask no more. */
+  const denied = new Set<string>();
 
   /** Records that `job` asked for `name` with no grant, from `where`: one ask per job, one event. */
   function ask(job: Job, name: string, where: { machine: string; template: string } | { windowsHost: string }): void {
+    if (denied.has(job.id)) return;
     const open = asks.get(job.id);
     if (open) {
       if (!open.names.includes(name)) open.names.push(name);
@@ -116,6 +120,15 @@ export function withVaultGrants(v: Vault, o: {
         return true;
       });
       return removed ? { ok: true } : { ok: false, code: 'conflict', error: `job ${jobId} has no vault grant to revoke` };
+    },
+    denyGrant(jobId, by) {
+      const job = jobs.get(jobId);
+      if (!job) return missing(jobId);
+      if (!open().some((a) => a.job === job.id)) return { ok: false, code: 'conflict', error: `no grant ask waits for job ${jobId}` };
+      asks.delete(job.id);
+      denied.add(job.id);
+      events.append({ type: 'vault.grant_denied', jobId: job.id, data: { job: job.id, key: grantKeyOf(job), by } });
+      return { ok: true };
     },
   };
 }

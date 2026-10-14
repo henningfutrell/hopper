@@ -124,7 +124,7 @@ function Card({ c, onChanged }: { c: PullRequestCard; onChanged: () => void }) {
         {age && <span title={age}>{c.openedAt ? 'opened' : 'done'} {ago(age, now)}</span>}
         {c.waits && <span data-slot="pr-waits" className={c.waits === 'ready' ? 'text-ok' : ''}>{waitsText(c)}</span>}
       </div>
-      {doingText(c) && <div data-slot="pr-doing" className={c.gaveUp ? 'text-xs text-bad' : 'text-xs text-muted-foreground'}>{doingText(c)}</div>}
+      {doingText(c, now) && <div data-slot="pr-doing" className={c.gaveUp ? 'text-xs text-bad' : 'text-xs text-muted-foreground'}>{doingText(c, now)}</div>}
       {c.mergeError && <div data-slot="pr-merge-error" className="text-xs text-bad">merge refused: {c.mergeError}</div>}
       <CardActions c={c} onChanged={onChanged} />
       <TendAgain c={c} onChanged={onChanged} />

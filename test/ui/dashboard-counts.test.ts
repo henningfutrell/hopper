@@ -15,17 +15,17 @@ const job = (id: string, status: JobStatus, o: Partial<Job> = {}): Job => ({
 } as Job);
 
 /** What /api/queue answers: the daemon's partition of the jobs it holds, and the work-item ledger's counts (issue #1067). */
-function queueOf(jobs: Job[], failedItems: number) {
+function queueOf(jobs: Job[], failedItems: number, inFlight = { total: 0, running: 0, ownCommand: 0, pullRequests: 0 }) {
   const of = (...s: JobStatus[]) => jobs.filter((j) => s.includes(j.status));
   const items = { waiting_for_approval: 0, queued: 0, working: 0, needs_you: 0, waiting_outside: 0, pr_open: 0, partly_done: 0, done: 0, failed: failedItems, dropped: 0 };
-  return { waiting: of('queued', 'held'), running: of('claimed', 'running'), waitingAnswer: of('waiting_answer'), operatorLed: of('operator_led'), parked: of('parked'), ended: of('finished', 'failed', 'cancelled'), locked: [], items };
+  return { waiting: of('queued', 'held'), running: of('claimed', 'running'), waitingAnswer: of('waiting_answer'), operatorLed: of('operator_led'), parked: of('parked'), ended: of('finished', 'failed', 'cancelled'), locked: [], items, inFlight };
 }
 
-function fakeDaemon(initial: Job[], failedItems: number) {
+function fakeDaemon(initial: Job[], failedItems: number, inFlight?: ReturnType<typeof queueOf>['inFlight']) {
   let jobs = initial;
   const routes = (): Record<string, unknown> => ({
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
-    '/api/queue': queueOf(jobs, failedItems),
+    '/api/queue': queueOf(jobs, failedItems, inFlight),
     '/api/machines': { machines: [{ id: 'm1', label: 'm1', maxLanes: 2, online: true, executors: ['test'], usage: [],
       lanes: [{ id: 'm1/lane-1', machineId: 'm1', state: 'busy', jobId: 'r1', openedAt: hoursAgo(1) }] }] },
     '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
@@ -56,12 +56,12 @@ class FakeEventSource {
 let root: Root | undefined;
 
 /** `failedItems`: the work items the ledger has as failed; by default, one per failed job. */
-async function boot(jobs: Job[], failedItems = jobs.filter((j) => j.status === 'failed').length) {
+async function boot(jobs: Job[], failedItems = jobs.filter((j) => j.status === 'failed').length, inFlight?: ReturnType<typeof queueOf>['inFlight']) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   window.location.hash = '#dashboard';
   localStorage.clear();
-  const daemon = fakeDaemon(jobs, failedItems);
+  const daemon = fakeDaemon(jobs, failedItems, inFlight);
   vi.stubGlobal('fetch', daemon.fetch);
   vi.stubGlobal('EventSource', FakeEventSource);
   vi.resetModules();
@@ -79,7 +79,7 @@ const rows = (group: string, status?: string) =>
 /** Every card that names a list, and the rows of that list. */
 function cardsAndLists() {
   return {
-    running: [card('running'), rows('running')], waiting: [card('waiting'), rows('waiting')],
+    waiting: [card('waiting'), rows('waiting')],
     waitingAnswer: [card('waitingAnswer'), rows('waitingAnswer')],
     finished: [card('finished'), rows('ended', 'finished')], failed: [card('failed'), rows('ended', 'failed')],
   };
@@ -110,8 +110,8 @@ describe('Dashboard cards and lists', () => {
     ];
     const daemon = await boot(jobs);
     const before = cardsAndLists();
-    expect(agree(before)).toEqual({ running: true, waiting: true, waitingAnswer: true, finished: true, failed: true });
-    expect(before).toMatchObject({ running: [2, 2], waiting: [2, 2], waitingAnswer: [1, 1], finished: [2, 2], failed: [1, 1] });
+    expect(agree(before)).toEqual({ waiting: true, waitingAnswer: true, finished: true, failed: true });
+    expect(before).toMatchObject({ waiting: [2, 2], waitingAnswer: [1, 1], finished: [2, 2], failed: [1, 1] });
 
     // The daemon moves on: w1 starts, r1 finishes. The stream says so; the store refreshes.
     daemon.setJobs(jobs.map((j) => j.id === 'w1' ? { ...j, status: 'running' as const, laneId: 'm1/lane-2', startedAt: hoursAgo(0) }
@@ -121,8 +121,8 @@ describe('Dashboard cards and lists', () => {
     });
     await vi.waitFor(() => expect(card('finished')).toBe(3));
     const after = cardsAndLists();
-    expect(agree(after)).toEqual({ running: true, waiting: true, waitingAnswer: true, finished: true, failed: true });
-    expect(after).toMatchObject({ running: [2, 2], waiting: [1, 1], finished: [3, 3] });
+    expect(agree(after)).toEqual({ waiting: true, waitingAnswer: true, finished: true, failed: true });
+    expect(after).toMatchObject({ waiting: [1, 1], finished: [3, 3] });
   });
 
   it('the Failed card is the work-item ledger\'s count (issue #1067): a failed job the ledger does not count is no failure', async () => {
@@ -138,7 +138,8 @@ describe('Dashboard cards and lists', () => {
       job('r1', 'running', { laneId: 'm1/lane-1', startedAt: hoursAgo(1), agentSession: 's' }),
     ]);
     await vi.waitFor(() => expect(rows('parked')).toBe(1));
-    expect(cardsAndLists()).toMatchObject({ running: [1, 1], waiting: [0, 0], waitingAnswer: [0, 0] });
+    expect(rows('running')).toBe(1);
+    expect(cardsAndLists()).toMatchObject({ waiting: [0, 0], waitingAnswer: [0, 0] });
     expect(document.querySelector('[data-kpi="waiting"]')!.textContent).toContain('1 parked');
     const buttons = [...document.querySelectorAll('button')].map((b) => b.textContent);
     expect(buttons.filter((t) => t === 'Park' || t === 'Re-queue')).toEqual([]);

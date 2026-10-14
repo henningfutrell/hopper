@@ -66,6 +66,11 @@ Check with <code>podman --version</code>.</p></li>
 the image, which takes a minute or two:</p>
 <div class="cmd"><pre>mkdir hopper &amp;&amp; cd hopper</pre><button type="button" data-copy="mkdir hopper &amp;&amp; cd hopper">Copy</button></div>
 <div class="cmd main-cmd"><pre>curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml</pre><button type="button" data-copy="curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml">Copy</button></div>
+<div class="cmd"><pre>systemctl --user enable --now podman.socket
+export HOPPER_PODMAN_SOCKET_HOST="$XDG_RUNTIME_DIR/podman/podman.sock"</pre><button type="button" data-copy="systemctl --user enable --now podman.socket &amp;&amp; export HOPPER_PODMAN_SOCKET_HOST=&quot;$XDG_RUNTIME_DIR/podman/podman.sock&quot;">Copy</button></div>
+<p class="note">That gives the hopper your Podman socket: it then shows its containers under Resources and starts sandbox
+boxes. The first update writes the socket into <code>compose.yaml</code>, so you give it only this once. With Docker,
+skip it.</p>
 <div class="cmd main-cmd"><pre>podman compose up -d</pre><button type="button" data-copy="podman compose up -d">Copy</button></div>
 <p>Run the later commands in this folder too. You can read the file first: <a href="compose.yaml">compose.yaml</a>.
 Docker works the same: <code>docker compose</code> in place of <code>podman compose</code>.</p></li>
@@ -271,12 +276,13 @@ the Windows link for you. Open <code>http://localhost:4790/</code> in your Windo
 <strong>Machines</strong> → <strong>Add machine</strong> → <strong>A computer</strong>, and run the line it shows in
 Ubuntu: <a href="#windows-machine">A Windows computer as a machine</a> says what it needs. Copy the line from the
 page at <code>localhost</code>: the machine then dials the hopper at <code>localhost</code>, and every 5 minutes tests that
-Windows opens <code>http://localhost:4790/api/health</code>. If Windows cannot, Machines and a banner over every view
+Windows opens <code>http://localhost:4790/job/address</code>, else <code>http://127.0.0.1:4790/job/address</code>. If Windows cannot, Machines and a banner over every view
 say so, with the setting in <code>.wslconfig</code> that fixes it. Nothing new listens.</p></li>
 <li id="windows-doctor"><p><strong>Check it from Windows.</strong> Install <a href="#windows-cli">the hopper CLI from Windows</a>,
 then run this in PowerShell:</p>
 <div class="cmd"><pre>hopper doctor</pre><button type="button" data-copy="hopper doctor">Copy</button></div>
-<p>It checks that Windows opens <code>http://localhost:4790/api/health</code>, the WSL networking mode and
+<p>It checks that Windows opens <code>http://localhost:4790/job/address</code> (else <code>http://127.0.0.1:4790</code>, then
+it says to open that one), the WSL networking mode and
 <code>.wslconfig</code>, the shortcut from the step before, and, in Ubuntu, systemd, linger and
 <code>podman-restart.service</code>. Each check says <code>ok</code>, or the fix. Run it again after
 <code>wsl --shutdown</code>. It only reads: it changes nothing.</p></li>

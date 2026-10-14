@@ -1,6 +1,6 @@
 // Read models for the HTTP edge.
 import { isLocked } from '../domain/locked.ts';
-import type { WorkItemLedger, WorkItemState } from '../domain/work-items.ts';
+import type { InFlight, WorkItemLedger, WorkItemState } from '../domain/work-items.ts';
 import { effectivePriority, order } from '../decider/assign.ts';
 import { laneEffect, readingsOf } from '../decider/usage.ts';
 import { TERMINAL_STATUSES, highFirst, withPhase, isHighPriority, prioritySettingsOf, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type HopperDisk, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
@@ -24,8 +24,8 @@ export interface QueueView {
   locked: Job[];
   /** How many work items are in each state (issue #1067): the work-item ledger's counts, the ones every view shows. */
   items: Record<WorkItemState, number>;
-  /** How many work items are in flight (issue #1113): the ledger's, by `isInFlight`. The header's badge. */
-  inFlight: number;
+  /** How many work items are in flight, and in each part (issues #1113, #1164): the ledger's, by `inFlightOf`. The header's badge and the dashboard's card. */
+  inFlight: InFlight;
   /** Jobs that ended (finished, failed, cancelled, rejected) in the last `ENDED_WINDOW_MS`, newest end first. */
   ended: Job[];
   /** The user's queue gate (issue #159). */

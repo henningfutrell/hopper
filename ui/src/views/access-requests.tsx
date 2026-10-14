@@ -4,6 +4,7 @@
 // configuration. Its nav badge, and its row in Needs you, count what waits (accessRequestsWaiting).
 // Issue #1018: an admin selects template and sandbox run cards, or all that wait, and one Approve selected approves
 // them all, side by side; each card shows its own progress and result, and the bar counts what was approved and failed.
+// Issue #1138: an admin mints a delegate approver here, an agent that approves what waits for them, and revokes it here.
 import { CheckCheck, Ticket } from 'lucide-react';
 import { useEffect } from 'react';
 import { Confirm } from '@/components/confirm';
@@ -18,6 +19,7 @@ import { AskedFor } from './vault-requests';
 import { VaultGrants } from './vault-grants';
 import { TemplateApprovals } from './template-approvals';
 import { SandboxRuns } from './sandbox-approvals';
+import { DelegateApprovers } from './delegate-approvers';
 
 /** The template and sandbox run cards that wait: each one Approve selected can approve. */
 const waitingItems = (view: VaultView | null) => [...(view?.templates ?? []).filter(templateWaits).map(templateItem), ...sandboxRunsWaiting(view).map(runItem)];
@@ -56,6 +58,7 @@ export function AccessRequests() {
       {can && <ApproveSelected view={view} />}
       <TemplateApprovals templates={view?.templates ?? []} {...(view?.asks ? { asks: view.asks } : {})} secrets={view?.secrets ?? []} can={can} />
       <SandboxRuns view={view} can={can} />
+      {can && <DelegateApprovers />}
       <Panel title="Box tokens" icon={Ticket}>
         <p className="text-sm text-muted-foreground">An agent that approves or merges work, or starts a job, through the API needs a box token: a token of a grant minted with Box grant on. Mint one, or end one, on <a href="#settings/api-tokens" className="underline">Settings → API tokens</a>.</p>
       </Panel>

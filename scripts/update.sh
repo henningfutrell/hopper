@@ -10,12 +10,15 @@
 #      not see the stack that runs would start a second stack on the same data, so the update stops before it changes anything;
 #   2. takes the master key from HOPPER_MASTER_KEY at launch (a secret manager), else asks for it on the terminal (nothing
 #      is shown); without it the update stops, so the hopper never comes back limited. It reads no file and no container;
-#   3. backs up the database (hopper-backup.dump), puts in the compose.yaml of the image with the install's own settings
+#   3. looks for your rootless Podman socket (issue #1157): when podman.socket is on, the new compose.yaml gives it to the
+#      hopper; when it is off, the update goes on without it and says the one line that turns it on. A compose.override.yaml
+#      that is the old compose.sandboxes.yaml goes to compose.override.yaml.bak: compose.yaml gives the socket now;
+#   4. backs up the database (hopper-backup.dump), puts in the compose.yaml of the image with the install's own settings
 #      (`hopper update carry`; the old one stays as compose.yaml.bak), pulls, stops the stack and starts it on the image,
 #      so every container is made again (when it does not start: back to the old compose.yaml and stack);
-#   4. checks that the hopper runs the image pulled, answers /api/health, has its master key and that the stack has no
+#   5. checks that the hopper runs the image pulled, answers /api/health, has its master key and that the stack has no
 #      drift (`hopper update drift`), and says the result. It exits 1 when one of these fails;
-#   5. when all of these pass, removes the older hopper images (issue #1120): it keeps the one it runs and the one it ran
+#   6. when all of these pass, removes the older hopper images (issue #1120): it keeps the one it runs and the one it ran
 #      before, to go back to. An image a container still uses is not removed.
 #
 #   HOPPER_UPDATE_WAIT  seconds to wait for the hopper's health (default: 180)
@@ -86,6 +89,25 @@ main() {
     mv hopper-backup.dump.next hopper-backup.dump
   fi
 
+  # The rootless Podman socket (issue #1157): compose.yaml mounts the path the update writes in, else /dev/null.
+  local socket=''
+  if [ "$runtime" = podman ]; then
+    if [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -S "$XDG_RUNTIME_DIR/podman/podman.sock" ]; then
+      socket="$XDG_RUNTIME_DIR/podman/podman.sock"
+      say "the hopper gets your rootless Podman socket: $socket"
+    else
+      say 'podman.socket is off: the hopper starts with no container runtime socket, so it cannot read its containers (Resources) or start sandbox boxes. Turn it on with this line, then run the update again: systemctl --user enable --now podman.socket'
+    fi
+  fi
+  # compose.sandboxes.yaml saved as compose.override.yaml (issue #603) mounts the same socket: podman-compose would mount it
+  # twice, and the stack would not start.
+  local sandboxes=0
+  if [ -f compose.override.yaml ] && grep -q '/run/podman/podman.sock' compose.override.yaml; then
+    [ "$(grep -Ev '^ *(#|$)' compose.override.yaml)" = "$SANDBOXES_OVERRIDE" ] \
+      || fail 'compose.override.yaml gives the hopper the Podman socket, and compose.yaml does that now: remove those lines from compose.override.yaml (keep the rest), then run the update again. Nothing changed'
+    sandboxes=1
+  fi
+
   local local_image=0
   [[ "$image" == localhost/* ]] && local_image=1
   if [ "$local_image" = 0 ]; then
@@ -94,11 +116,15 @@ main() {
   fi
 
   say "put in the compose.yaml of $image (the old one: compose.yaml.bak)"
-  "$runtime" run --rm -i "$image" hopper update carry --image "$image" <compose.yaml >compose.yaml.next \
+  "$runtime" run --rm -i "$image" hopper update carry --image "$image" --podman-socket "$socket" <compose.yaml >compose.yaml.next \
     || { rm -f compose.yaml.next; fail 'hopper update carry failed: the update stops, and nothing changed'; }
   diff -u compose.yaml compose.yaml.next >&2 || true
   cp compose.yaml compose.yaml.bak
   mv compose.yaml.next compose.yaml
+  if [ "$sandboxes" = 1 ]; then
+    say 'compose.override.yaml was compose.sandboxes.yaml: compose.yaml gives the socket now (the old file: compose.override.yaml.bak)'
+    mv compose.override.yaml compose.override.yaml.bak
+  fi
 
   export HOPPER_IMAGE="$image"
   say 'pull the stack'
@@ -113,6 +139,7 @@ main() {
     unset HOPPER_IMAGE
     "${compose[@]}" down </dev/null >/dev/null 2>&1 || true
     cp compose.yaml.bak compose.yaml
+    [ "$sandboxes" = 0 ] || mv compose.override.yaml.bak compose.override.yaml
     "${compose[@]}" up -d </dev/null >&2 || true
     fail "${compose[*]} up failed on $image. The old compose.yaml is back and the old stack was started again; the database backup is hopper-backup.dump"
   fi
@@ -172,6 +199,18 @@ check() {
     || fail "the stack differs from the compose file of this version: $drift"
   say "done: the hopper runs $image (${want:0:12}), it is healthy, its master key is given (fingerprint ${fingerprint:0:16}), and the stack is whole"
 }
+
+# compose.sandboxes.yaml (issue #603) as it was shipped, without its comments and blank lines.
+SANDBOXES_OVERRIDE='services:
+  hopper:
+    environment:
+      HOPPER_PODMAN_SOCKET: /run/podman/podman.sock
+    volumes:
+      - type: bind
+        source: ${XDG_RUNTIME_DIR:?the rootless Podman socket is under XDG_RUNTIME_DIR, which is not set}/podman/podman.sock
+        target: /run/podman/podman.sock
+    group_add: ["0"]
+    security_opt: [label=disable]'
 
 say() { printf 'hopper update: %s\n' "$*" >&2; }
 fail() { say "$*"; exit 1; }

@@ -180,7 +180,6 @@ export function laneJobState(job: Job): LaneJobState {
 }
 
 export interface Kpis {
-  running: number;
   lanesBusy: number;
   lanesOpen: number;
   lanesMax: number;
@@ -190,8 +189,6 @@ export interface Kpis {
   parked: number;
   /** On their own wait (issue #483) for a person or the outside world: not on their own command. */
   waitingOn: number;
-  /** On a wait for their own background command (issue #1037): running work. */
-  onOwnCommand: number;
   finished: number;
   /** Work items failed now, as the work-item ledger counts them (issue #1067): no count of job statuses. */
   failed: number;
@@ -202,7 +199,6 @@ export function kpis(board: JobBoard, machines: MachineView[], items: Record<Wor
   const lanes = machines.flatMap((m) => m.lanes);
   const ended = (status: JobStatus) => board.ended.filter((j) => j.status === status).length;
   return {
-    running: board.running.length,
     lanesBusy: lanes.filter((l) => l.state !== 'idle').length,
     lanesOpen: lanes.length,
     lanesMax: machines.reduce((s, m) => s + m.maxLanes, 0),
@@ -211,7 +207,6 @@ export function kpis(board: JobBoard, machines: MachineView[], items: Record<Wor
     waitingAnswer: board.waitingAnswer.length,
     parked: board.parked.length,
     waitingOn: board.waitingOn.filter((j) => ownWaitOf(j) !== 'command').length,
-    onOwnCommand: board.waitingOn.filter((j) => ownWaitOf(j) === 'command').length,
     finished: ended('finished'),
     failed: items?.failed ?? 0,
   };

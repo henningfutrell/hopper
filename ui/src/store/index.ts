@@ -16,7 +16,7 @@ import { refreshPriorityLanes, refreshPriorityLanesSoon } from './priority-lanes
 import { refreshAllReviews, refreshReviewsSoon } from './reviews';
 import { EMPTY_REVIEWS, REVIEW_KINDS, REVIEW_UI, type ReviewState } from '@/model/reviews';
 import type { ReviewKind } from '@/model/wire';
-import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, PreSort, Queue, QueueGate, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookDelivery, WebhookView, WebhooksView, WorkItemState } from '@/model/wire';
+import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, PreSort, Queue, QueueGate, RoutingReport, SourceStatus, UpdateStatus, UsageReport, InFlight, WebhookDelivery, WebhookView, WebhooksView, WindowsLink, WorkItemState } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
 export type Conn = 'connecting' | 'live' | 'reconnecting';
@@ -40,7 +40,7 @@ export interface HopperState {
   /** The locked entries, as /api/queue gave them (issue #355): failed jobs of any age, so kept apart from `jobs`. */
   locked: Job[];
   items: Record<WorkItemState, number> | null; // the work-item ledger's counts per state, as /api/queue gave them (issue #1067); null until read
-  inFlight: number | null; // how many work items are in flight, as /api/queue gave it (issue #1113): the header's badge; null until read
+  inFlight: InFlight | null; // how many work items are in flight, and in each part, as /api/queue gave it (issues #1113, #1164): the header's badge and the dashboard's card; null until read
   /** The queue gate and the pre-sort of the jobs not yet accepted, as /api/queue gave them (issue #159). */
   gate: QueueGate | null;
   presort: PreSort | null;
@@ -49,7 +49,7 @@ export interface HopperState {
   /** GET /api/priority-lanes (issue #535): the settings, the lanes chosen, every lane's reliability; null until read. */
   priorityLanes: PriorityLanesView | null;
   blastRadius: BlastRadiusView | null; // GET /api/blast-radius (issue #542); null until read
-  machines: MachineView[];
+  machines: MachineView[]; windowsLink?: WindowsLink | undefined; // the keep-alive loop on Windows' last report (issue #712)
   decisions: Decision[];
   /** Open questions, every stage, each with its job's live priority (issue #535). */
   questions: QuestionView[];
@@ -113,7 +113,7 @@ const upsert = <T,>(list: T[], item: T, same: (x: T) => boolean, cap: number) =>
 const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'locked' | 'items' | 'inFlight' | 'gate' | 'presort' | 'highPriority'> => ({
   jobs: Object.fromEntries([...q.waiting, ...q.waitingAnswer, ...q.operatorLed, ...q.parked, ...(q.waitingOn ?? []), ...q.running, ...q.ended].map((j) => [j.id, j])),
   waitingOrder: q.waiting.map((j) => j.id),
-  locked: q.locked, items: q.items ?? null, inFlight: typeof q.inFlight === 'number' ? q.inFlight : null,
+  locked: q.locked, items: q.items ?? null, inFlight: q.inFlight ?? null,
   gate: q.gate, presort: q.presort,
   highPriority: typeof q.highPriority === 'number' ? q.highPriority : null,
 });
@@ -210,8 +210,8 @@ export async function updateAct(body: { action: 'check' | 'apply' } | { action: 
   }
 }
 export async function refreshLive() {
-  const [queue, machines, usage] = await Promise.all([get<Queue>('/api/queue'), get<{ machines: MachineView[] }>('/api/machines'), get<UsageReport>('/api/usage')]);
-  set({ ...jobsOf(queue), machines: machines.machines, usage });
+  const [queue, machines, usage] = await Promise.all([get<Queue>('/api/queue'), get<{ machines: MachineView[]; windowsLink?: WindowsLink }>('/api/machines'), get<UsageReport>('/api/usage')]);
+  set({ ...jobsOf(queue), machines: machines.machines, windowsLink: machines.windowsLink, usage });
 }
 /** Usage and accounts change without an event (a usage source reads in the background): views poll this. */
 export async function refreshUsage() {
@@ -359,7 +359,7 @@ export async function load(): Promise<boolean> {
   if (mustSignIn(state())) return false;
   const since = encodeURIComponent(HISTORY_TYPES.join(','));
   const [health, queue, machines, decisions, events, history, subs, deliveries, questions, allQuestions, sources, usage, accounts] = await Promise.all([
-    get<Health>('/api/health'), get<Queue>('/api/queue'), get<{ machines: MachineView[] }>('/api/machines'),
+    get<Health>('/api/health'), get<Queue>('/api/queue'), get<{ machines: MachineView[]; windowsLink?: WindowsLink }>('/api/machines'),
     get<{ decisions: Decision[] }>('/api/decisions?limit=50'), get<{ events: DomainEvent[] }>('/api/events?limit=200'),
     get<{ events: DomainEvent[] }>(`/api/events?limit=${CAP.history}&types=${since}`),
     get<WebhooksView>('/api/webhooks'),
@@ -369,7 +369,7 @@ export async function load(): Promise<boolean> {
     get<UsageReport>('/api/usage'), get<{ accounts: PartAccount[] }>('/api/accounts'),
   ]);
   set({
-    loaded: true, loadError: null, health, ...jobsOf(queue), machines: machines.machines, decisions: decisions.decisions,
+    loaded: true, loadError: null, health, ...jobsOf(queue), machines: machines.machines, windowsLink: machines.windowsLink, decisions: decisions.decisions,
     events: events.events.slice().sort((a, b) => b.seq - a.seq), history: history.events.slice().sort((a, b) => a.seq - b.seq),
     subscriptions: subs.subscriptions, deliveries: deliveries.deliveries,
     questions: questions.questions, handled: handledOf(allQuestions.questions), sources: sources.sources, usage, accounts: accounts.accounts,

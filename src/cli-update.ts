@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { CliIo } from './cli.ts';
-import { carryCompose, carryOverride } from './update/compose-carry.ts';
+import { carryCompose, carryOverride, PODMAN_SOCKET_PATH } from './update/compose-carry.ts';
 import { BUILD_DIR, readShippedCompose } from './update/shipped-compose.ts';
 import { COMPOSE_TOOLS, IMAGE_REF, PUBLISHED_IMAGE, runtimeOf, updateCommand, type ComposeTool } from './update/update-commands.ts';
 import { UPDATE_SKILL } from './update/update-skill.ts';
@@ -19,7 +19,9 @@ export const UPDATE_USAGE = `  hopper update script                             
   hopper update carry --image <ref>                  print the compose.yaml of this image's version, with the settings of
                                                      the old compose.yaml (on stdin) as its defaults and <ref> as
                                                      HOPPER_IMAGE; run as <tool> run --rm -i <ref> hopper update carry
-                                                     --image <ref> < compose.yaml > compose.yaml.next
+                                                     --image <ref> < compose.yaml > compose.yaml.next. --podman-socket
+                                                     <path>: the rootless Podman socket on the host, mounted into the
+                                                     hopper; empty or absent: none (/dev/null)
   hopper update compose                              print the compose.yaml this build ships with, stamped with its version
   hopper update skill                                print the steps an agent follows to update a container hopper
 ${DRIFT_USAGE}`;
@@ -41,7 +43,7 @@ function removed(what: string, image: string | undefined): string | undefined {
 
 /** `hopper update …`; the exit code. */
 export function runUpdate(args: string[], io: CliIo, appDir = BUILD_DIR): number {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { image: { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { image: { type: 'string' }, 'podman-socket': { type: 'string' } } });
   const [what, ...extra] = positionals;
   const fail = (text: string, code = 2): number => { io.err(`hopper update: ${text}\n`); return code; };
   if (extra.length > 0 || what === undefined) return fail(`usage:\n${UPDATE_USAGE}`);
@@ -59,7 +61,9 @@ export function runUpdate(args: string[], io: CliIo, appDir = BUILD_DIR): number
   if (!values.image || !IMAGE_REF.test(values.image)) return fail('carry needs --image <ref>, the image updated to');
   const old = io.stdin();
   if (!old.trim()) return fail('no compose.yaml on stdin: run it as … hopper update carry --image <ref> < compose.yaml', 1);
-  const carried = carryCompose({ old, shipped: read.shipped.compose, image: values.image });
+  const podmanSocket = values['podman-socket'] || undefined;
+  if (podmanSocket !== undefined && !PODMAN_SOCKET_PATH.test(podmanSocket)) return fail(`--podman-socket ${podmanSocket}: not an absolute path compose.yaml can hold`);
+  const carried = carryCompose({ old, shipped: read.shipped.compose, image: values.image, ...(podmanSocket ? { podmanSocket } : {}) });
   for (const note of carried.notes) io.err(`hopper update: ${note}\n`);
   // What the new compose.yaml cannot hold is said, never dropped in silence: the person adds it to compose.override.yaml.
   const kept = carryOverride(old, carried.compose, undefined, carried.overrideEnv);

@@ -6,6 +6,7 @@ import { COLOR, TEXT, type Tone } from '@/components/status';
 import { Sparkline } from '@/charts/sparkline';
 import { useNow } from '@/hooks/use-now';
 import { kpis } from '@/model/board';
+import { inFlightParts } from '@/model/in-flight';
 import { concurrency, throughput } from '@/model/history';
 import { useHopper } from '@/store';
 import { useJobBoard, useLaneSpans } from '@/store/selectors';
@@ -33,6 +34,7 @@ export function KpiRow() {
   const board = useJobBoard();
   const machines = useHopper((s) => s.machines);
   const items = useHopper((s) => s.items);
+  const inFlight = useHopper((s) => s.inFlight);
   const now = useNow();
   const k = kpis(board, machines, items);
   const quarter = Math.floor(now / QUARTER);
@@ -46,7 +48,7 @@ export function KpiRow() {
   }, [board.ended, spans, quarter]);
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-      <Kpi kpi="running" label="Running" icon={Activity} tone="busy" value={k.running} sub={k.onOwnCommand ? `lanes in use · 6 h · ${k.onOwnCommand} on its own command` : 'lanes in use · 6 h'} spark={series.running} />
+      <Kpi kpi="in-flight" label="In flight" icon={Activity} tone="busy" value={inFlight?.total ?? 0} sub={inFlight ? inFlightParts(inFlight) : undefined} spark={series.running} />
       <Kpi kpi="lanes" label="Lanes" icon={Layers} tone="busy" value={<>{k.lanesBusy}<span className="text-muted-foreground">/{k.lanesMax}</span></>}
         sub={`${k.lanesOpen} open · ${Math.max(0, k.lanesMax - k.lanesOpen)} unopened`} />
       <Kpi kpi="waiting" label="Waiting" icon={Timer} tone={k.held ? 'warn' : 'muted'} value={k.waiting}
