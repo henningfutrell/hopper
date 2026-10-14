@@ -48,15 +48,14 @@ describe('moving what .env cannot hold to compose.override.yaml (issue #697)', (
     expect(r.override).toBeDefined();
     expect(parse(r.override!)).toEqual({
       services: {
-        hopper: { volumes: ['/run/podman/podman.sock:/run/podman/podman.sock'], group_add: ['0'] },
         whoami: { image: 'docker.io/traefik/whoami:v1.10', restart: 'unless-stopped', volumes: ['whoami-data:/data'] },
       },
       volumes: { 'whoami-data': null },
     });
     expect(r.override).toMatch(/^# .*hopper update/);
+    // compose.yaml mounts the Podman socket with its group itself now (issue #1157): a second mount would stop the stack.
     expect(r.notes).toEqual([
-      'hopper: volume /run/podman/podman.sock:/run/podman/podman.sock moved to compose.override.yaml',
-      'hopper: group_add moved to compose.override.yaml',
+      'hopper: volume /run/podman/podman.sock:/run/podman/podman.sock: compose.yaml mounts /run/podman/podman.sock itself now, not moved',
       'service whoami moved to compose.override.yaml',
       'volume whoami-data moved to compose.override.yaml',
     ]);
@@ -68,11 +67,8 @@ describe('moving what .env cannot hold to compose.override.yaml (issue #697)', (
     expect(r.override).toMatch(/^# mine\n/);
     const doc = parse(r.override!);
     expect(doc.services.whoami).toEqual({ image: 'docker.io/traefik/whoami:v1.11' });
-    expect(doc.services.hopper).toEqual({ group_add: ['1'], volumes: ['/run/podman/podman.sock:/run/podman/podman.sock'] });
-    expect(r.notes).toEqual(expect.arrayContaining([
-      'service whoami: compose.override.yaml has it already, kept',
-      'hopper: group_add: compose.override.yaml has it already, kept',
-    ]));
+    expect(doc.services.hopper).toEqual({ group_add: ['1'] });
+    expect(r.notes).toEqual(expect.arrayContaining(['service whoami: compose.override.yaml has it already, kept']));
   });
 
   it('keeps an install\'s own project name: another name would start the stack on new, empty volumes', () => {
@@ -114,6 +110,18 @@ describe('the new compose.yaml, with the install\'s own settings in it: no .env 
     });
     expect(r.overrideEnv).toEqual({});
     expect(r.notes).toEqual(expect.arrayContaining(['HOPPER_BIND: set in compose.yaml']));
+  });
+
+  it('gives the hopper the host\'s Podman socket the update found, and none when it found none (issue #1157)', () => {
+    const socket = '/run/user/1000/podman/podman.sock';
+    const found = carryCompose({ old: SHIPPED, shipped: SHIPPED, image: IMAGE, podmanSocket: socket });
+    expect(found.compose).toContain(`source: \${HOPPER_PODMAN_SOCKET_HOST:-${socket}}`);
+    expect(found.overrideEnv).toEqual({});
+    expect(carryCompose({ old: SHIPPED, shipped: SHIPPED, image: IMAGE }).compose).toContain('source: ${HOPPER_PODMAN_SOCKET_HOST:-/dev/null}');
+    // The next update looks again: a socket found before and gone now is not carried.
+    expect(carryCompose({ old: found.compose, shipped: SHIPPED, image: IMAGE }).compose).toContain('source: ${HOPPER_PODMAN_SOCKET_HOST:-/dev/null}');
+    // Its mount, group and SELinux option are the shipped file's: nothing of them moves to compose.override.yaml.
+    expect(carryOverride(found.compose, SHIPPED, undefined).override).toBeUndefined();
   });
 
   it('keeps what an earlier update set in compose.yaml, at the next update', () => {

@@ -142,17 +142,22 @@ const variableOf = (key: string): RegExp => new RegExp(`(?<!\\$)\\$\\{${key}(?::
 /** `profiles: [a, b]` of a service, as the shipped file writes it. */
 const PROFILES_LINE = /^ {4}profiles: \[([^\]]*)\]\n/gm;
 
+/** An absolute path a variable's default holds: the host's rootless Podman socket (issue #1157). */
+export const PODMAN_SOCKET_PATH = /^\/[A-Za-z0-9._/@+-]*$/;
+
 /**
  * The compose.yaml an update puts in: `shipped` (the image's own) with what the install set in `old` (its compose.yaml) as
- * the defaults of the file's own variables, and `image` as HOPPER_IMAGE's. COMPOSE_PROFILES turns its services on in the
- * file. A secret is in no file: a launch setting.
+ * the defaults of the file's own variables, `image` as HOPPER_IMAGE's, and `podmanSocket` (the host's rootless Podman
+ * socket the update found, issue #1157) as HOPPER_PODMAN_SOCKET_HOST's; absent, the file's own (/dev/null, no socket).
+ * COMPOSE_PROFILES turns its services on in the file. A secret is in no file: a launch setting.
  */
-export function carryCompose(o: { old: string; shipped: string; image: string }): CarriedCompose {
+export function carryCompose(o: { old: string; shipped: string; image: string; podmanSocket?: string }): CarriedCompose {
   const local = carryLocalSettings(o.old, o.shipped);
   const values = new Map<string, string>();
   for (const line of local.env) values.set(line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1));
   const notes = [...local.notes];
   values.set('HOPPER_IMAGE', o.image);
+  if (o.podmanSocket) values.set('HOPPER_PODMAN_SOCKET_HOST', o.podmanSocket);
   let compose = o.shipped;
   const overrideEnv: Record<string, string> = {};
   for (const [key, value] of values) {
@@ -194,6 +199,9 @@ export interface CarriedOverride {
 
 const volumeSource = (v: unknown): string | undefined =>
   typeof v === 'string' ? v.split(':')[0] : v && typeof v === 'object' ? String((v as { source?: unknown }).source ?? '') : undefined;
+
+const volumeTarget = (v: unknown): string | undefined =>
+  typeof v === 'string' ? v.split(':')[1] : v && typeof v === 'object' ? String((v as { target?: unknown }).target ?? '') : undefined;
 
 /** The top-level volumes the moved services name, that the new file does not declare. */
 function namedVolumes(services: Record<string, unknown>[], declared: Record<string, unknown>): string[] {
@@ -240,10 +248,17 @@ export function carryOverride(oldText: string, newText: string, overrideText: st
       movedServices.push(service);
       continue;
     }
-    const nextTargets = new Set((Array.isArray(next[name]?.volumes) ? next[name].volumes as unknown[] : []).map(String));
+    const nextVolumes = Array.isArray(next[name]?.volumes) ? next[name].volumes as unknown[] : [];
+    const nextTargets = new Set(nextVolumes.map(String));
+    const nextMounted = new Set(nextVolumes.map(volumeTarget));
     const mounts = (Array.isArray(service.volumes) ? service.volumes : [])
       .filter((v) => typeof v === 'string' && HOST_PATH.test(v) && !nextTargets.has(v)) as string[];
     for (const mount of mounts) {
+      // A path the new file mounts itself (the Podman socket, issue #1157): mounted twice, the stack would not start.
+      if (nextMounted.has(volumeTarget(mount))) {
+        notes.push(`${name}: volume ${mount}: compose.yaml mounts ${volumeTarget(mount)} itself now, not moved`);
+        continue;
+      }
       const list = doc.getIn(['services', name, 'volumes']);
       if (Array.isArray((list as { items?: unknown[] } | undefined)?.items) && (list as { items: { value?: unknown }[] }).items.some((i) => i.value === mount)) {
         notes.push(`${name}: volume ${mount}: ${OVERRIDE} has it already, kept`);

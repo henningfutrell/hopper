@@ -66,6 +66,11 @@ Check with <code>podman --version</code>.</p></li>
 the image, which takes a minute or two:</p>
 <div class="cmd"><pre>mkdir hopper &amp;&amp; cd hopper</pre><button type="button" data-copy="mkdir hopper &amp;&amp; cd hopper">Copy</button></div>
 <div class="cmd main-cmd"><pre>curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml</pre><button type="button" data-copy="curl -fsSLO https://henningfutrell.github.io/hopper/compose.yaml">Copy</button></div>
+<div class="cmd"><pre>systemctl --user enable --now podman.socket
+export HOPPER_PODMAN_SOCKET_HOST="$XDG_RUNTIME_DIR/podman/podman.sock"</pre><button type="button" data-copy="systemctl --user enable --now podman.socket &amp;&amp; export HOPPER_PODMAN_SOCKET_HOST=&quot;$XDG_RUNTIME_DIR/podman/podman.sock&quot;">Copy</button></div>
+<p class="note">That gives the hopper your Podman socket: it then shows its containers under Resources and starts sandbox
+boxes. The first update writes the socket into <code>compose.yaml</code>, so you give it only this once. With Docker,
+skip it.</p>
 <div class="cmd main-cmd"><pre>podman compose up -d</pre><button type="button" data-copy="podman compose up -d">Copy</button></div>
 <p>Run the later commands in this folder too. You can read the file first: <a href="compose.yaml">compose.yaml</a>.
 Docker works the same: <code>docker compose</code> in place of <code>podman compose</code>.</p></li>

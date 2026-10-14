@@ -158,12 +158,28 @@ services:
       # "Reaching the UI across the LAN"). `hopper` is the name other containers reach it by.
       HOPPER_LAN_NAMES: ${HOPPER_LAN_NAMES:-hopper}
       HOPPER_LAN_PEERS: ${HOPPER_LAN_PEERS:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      # The container runtime socket (issues #603, #947, #1157), mounted below: the hopper reads its stack's containers
+      # through it (Resources, drift) and starts sandbox boxes. Nothing there but /dev/null: the hopper says it has none.
+      HOPPER_PODMAN_SOCKET: /run/podman/podman.sock
     volumes:
       - runtime-secrets:/run/hopper-secrets:ro
       - vault-token:/run/hopper-vault:ro
       - tunnel-key:/run/hopper-tunnel:ro
       # Its home: the claude sign-in.
       - home:/home/node
+      # Your rootless Podman socket (docs/deploy.md "Sandbox boxes the hopper starts"): HOPPER_PODMAN_SOCKET_HOST, its path
+      # on this computer. The update writes it in when podman.socket is on (`systemctl --user enable --now podman.socket`),
+      # as $XDG_RUNTIME_DIR/podman/podman.sock; unset, /dev/null: compose cannot mount a file that is not there, so no
+      # socket is given and the stack still starts. Whoever controls the hopper can then start containers as you; the
+      # hopper itself only starts locked-down boxes, and refuses a rootful socket.
+      - type: bind
+        source: ${HOPPER_PODMAN_SOCKET_HOST:-/dev/null}
+        target: /run/podman/podman.sock
+    # podman.socket makes the socket readable and writable by your group (mode 0660). In a rootless container your group is
+    # group 0, so the hopper's user joins group 0 to reach the socket.
+    group_add: ["0"]
+    # The socket is not a file SELinux lets a container open (Fedora and the like); without SELinux this changes nothing.
+    security_opt: [label=disable]
     ports:
       # HOPPER_BIND: the address the UI is published on; 0.0.0.0 reaches it from the LAN (issue #697).
       - "${HOPPER_BIND:-127.0.0.1}:${HOPPER_PORT:-4790}:${HOPPER_PORT:-4790}"

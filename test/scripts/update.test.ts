@@ -6,6 +6,7 @@
 // stubs on PATH that record each call; `run … hopper …` runs this checkout's CLI. Nothing leaves this process tree.
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createServer, type Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -18,8 +19,25 @@ const SHIPPED = readFileSync(join(ROOT, 'compose.yaml'), 'utf8');
 const NEW_ID = 'b'.repeat(64);
 const HOPPER_ID = 'c'.repeat(64);
 
+const SANDBOXES = readFileSync(join(ROOT, 'test', 'fixtures', 'compose', 'sandboxes-override.yaml'), 'utf8');
+
 const dirs: string[] = [];
-afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
+const servers: Server[] = [];
+afterEach(async () => {
+  for (const s of servers.splice(0)) await new Promise((done) => s.close(done));
+  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+});
+
+/** An XDG_RUNTIME_DIR with a listening podman/podman.sock in it, as podman.socket makes. */
+async function runtimeDir(): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), 'jh-xdg-'));
+  dirs.push(dir);
+  mkdirSync(join(dir, 'podman'));
+  const server = createServer();
+  servers.push(server);
+  await new Promise<void>((done) => server.listen(join(dir, 'podman', 'podman.sock'), done));
+  return dir;
+}
 
 // The stack (STUB_STACK) was started by podman-compose or docker-compose, or there is none. `podman compose` runs the
 // provider PODMAN_COMPOSE_PROVIDER names, else docker-compose (it runs docker-compose when it finds it); a compose tool sees
@@ -62,12 +80,13 @@ esac
 exit 0
 `;
 
-interface Run { masterKey?: string; tty?: string; stack?: '' | 'podman-compose' | 'docker-compose'; noPodmanCompose?: boolean; env?: Record<string, string>; args?: string[] }
+interface Run { masterKey?: string; tty?: string; stack?: '' | 'podman-compose' | 'docker-compose'; noPodmanCompose?: boolean; env?: Record<string, string>; args?: string[]; override?: string }
 
 function update(o: Run = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'jh-update-sh-'));
   dirs.push(dir);
   writeFileSync(join(dir, 'compose.yaml'), SHIPPED.replace('${HOPPER_IMAGE:-ghcr.io/henningfutrell/hopper:latest}', `\${HOPPER_IMAGE:-${IMAGE}}`));
+  if (o.override !== undefined) writeFileSync(join(dir, 'compose.override.yaml'), o.override);
   const bin = join(dir, '.bin');
   mkdirSync(bin);
   writeFileSync(join(bin, 'podman'), PODMAN);
@@ -224,6 +243,45 @@ describe('scripts/update.sh (issue #1104)', () => {
     expect(r.status, r.out).toBe(0);
     expect(r.calls).toContain(`podman pull ${IMAGE} | HOPPER_IMAGE=`);
     expect(r.calls.some((c) => c.includes('pg_dump'))).toBe(false);
+  });
+
+  it('gives the hopper the rootless Podman socket when podman.socket is on (issue #1157)', async () => {
+    const xdg = await runtimeDir();
+    const r = update({ masterKey: KEY, stack: 'podman-compose', env: { XDG_RUNTIME_DIR: xdg } });
+    expect(r.status, r.out).toBe(0);
+    expect(r.read('compose.yaml')).toContain(`source: \${HOPPER_PODMAN_SOCKET_HOST:-${xdg}/podman/podman.sock}`);
+    expect(r.out).toContain(`the hopper gets your rootless Podman socket: ${xdg}/podman/podman.sock`);
+  });
+
+  it('goes on without the socket when podman.socket is off, and says the one line that turns it on (issue #1157)', () => {
+    const r = update({ masterKey: KEY, stack: 'podman-compose', env: { XDG_RUNTIME_DIR: mkdtempSync(join(tmpdir(), 'jh-xdg-')) } });
+    expect(r.status, r.out).toBe(0);
+    expect(r.read('compose.yaml')).toContain('source: ${HOPPER_PODMAN_SOCKET_HOST:-/dev/null}');
+    expect(r.out).toMatch(/podman\.socket is off: the hopper starts with no container runtime socket.*systemctl --user enable --now podman\.socket/);
+  });
+
+  it('moves aside a compose.override.yaml that is the old compose.sandboxes.yaml: compose.yaml gives the socket now', async () => {
+    const r = update({ masterKey: KEY, stack: 'podman-compose', override: SANDBOXES, env: { XDG_RUNTIME_DIR: await runtimeDir() } });
+    expect(r.status, r.out).toBe(0);
+    expect(() => r.read('compose.override.yaml')).toThrow();
+    expect(r.read('compose.override.yaml.bak')).toBe(SANDBOXES);
+    expect(r.out).toMatch(/compose\.override\.yaml was compose\.sandboxes\.yaml/);
+  });
+
+  it('puts the old compose.sandboxes.yaml back with the old compose.yaml when the new stack does not start', async () => {
+    const r = update({ masterKey: KEY, stack: 'podman-compose', override: SANDBOXES, env: { STUB_UP: '1', XDG_RUNTIME_DIR: await runtimeDir() } });
+    expect(r.status).not.toBe(0);
+    expect(r.read('compose.override.yaml')).toBe(SANDBOXES);
+  });
+
+  it('stops before it changes anything when an override of the install\'s own mounts the socket too', () => {
+    const own = `${SANDBOXES}  mine:\n    image: docker.io/library/alpine\n`;
+    const r = update({ masterKey: KEY, stack: 'podman-compose', override: own });
+    expect(r.status).not.toBe(0);
+    expect(r.out).toMatch(/compose\.override\.yaml gives the hopper the Podman socket, and compose\.yaml does that now: remove those lines/);
+    expect(r.read('compose.override.yaml')).toBe(own);
+    expect(() => r.read('compose.yaml.bak')).toThrow();
+    expect(r.calls.filter((c) => / pull| up |carry/.test(c))).toEqual([]);
   });
 
   it('refuses an image reference a shell would read, and a folder without compose.yaml', () => {

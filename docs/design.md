@@ -4660,7 +4660,8 @@ about where a machine can reach the hopper from, so both were run, not assumed:
    privileges), and then as an opt-in mount, never in the default compose file. *Since issue #603 (owner
    direction): B is built, as that opt-in mount — `compose.sandboxes.yaml`, not the default compose file — and
    the hopper builds every request body itself, so no request carries a bind, a device or a privilege
-   ("Sandbox boxes the hopper launches").*
+   ("Sandbox boxes the hopper launches"). Since issue #1157 (owner direction): the default compose file mounts the
+   socket, as the update finds it; an opt-in left every install without it.*
 3. **C as the bulk form of A, later.** When a set of boxes is wanted at once, a compose profile with a
    reusable join code is the same box line in a file; it needs nothing A does not build.
 4. **D's two cheap parts land anyway, on the ssh path #312 demotes:** no ssh-config warning (#309), herdr
@@ -4944,10 +4945,15 @@ again at the next check, and dropped when the box is gone. `GET /api/sandboxes` 
 problem?}, problems}` for the session's user; Machines shows the problems under *Sandbox boxes not removed*, and Add
 machine starts a box with **Start the box** when `launch.available`, else says why and shows the line.
 
-**Deploy.** Opt-in: `compose.sandboxes.yaml`, saved as `compose.override.yaml` beside `compose.yaml` (every compose
-command reads that file with no flag; podman-compose does not read `COMPOSE_FILE` from `.env`), mounts the
-rootless socket under `$XDG_RUNTIME_DIR`, sets `HOPPER_PODMAN_SOCKET` and adds group 0 — the user's own group in a
-rootless container, which `podman.socket` (mode 0660) lets open it. `docs/deploy.md` "Sandbox boxes the hopper starts".
+**Deploy.** In `compose.yaml` (issue #1157; before it, the opt-in `compose.sandboxes.yaml`, which every install had to
+copy in by hand, so none had the socket): the hopper's service mounts `HOPPER_PODMAN_SOCKET_HOST` at
+`/run/podman/podman.sock`, sets `HOPPER_PODMAN_SOCKET` to it, adds group 0 — the user's own group in a rootless
+container, which `podman.socket` (mode 0660) lets open it — and sets `label=disable`. Compose cannot mount a file that is
+not there, so the variable's default is `/dev/null`; the hopper takes a path with no socket at it as no socket given
+(`givenSocket`, `src/sandbox/runtime.ts`). The update (`scripts/update.sh`) finds `$XDG_RUNTIME_DIR/podman/podman.sock`
+and writes it in (`hopper update carry --podman-socket`), or says the line that turns `podman.socket` on; it moves an old
+`compose.sandboxes.yaml` override aside, as podman-compose would mount the socket twice. `docs/deploy.md` "Sandbox boxes
+the hopper starts".
 
 **Residual risk.** The socket is the user's account: a compromise of the hopper's process can start any container as
 the user. What the hopper itself starts is fixed in code, and an admin UI session can start and remove boxes as it can
@@ -5061,7 +5067,7 @@ nothing again.
 ### The read-only check on a client target (issue #708 part 8, 2026-10-11)
 
 Before it, the check pass ran only on the runtime beside the hopper, and the remote runtime refused `wait` and `logs`.
-A hopper given no runtime socket (no `compose.sandboxes.yaml`) never checked a template: a read-only template waited
+A hopper given no runtime socket never checked a template: a read-only template waited
 for its check for good, though its user's machines had Podman.
 
 - **Where it runs** (`Placements.forCheck`, `src/sandbox/runtime.ts`). Beside the hopper when it is given a runtime,
@@ -5292,7 +5298,7 @@ volume; a box not joined yet is kept; at start an orphan of its own goes and ano
 shown with its reason until it goes; a box that does not start leaves nothing; no socket, or a rootful one, starts
 nothing and says why. `test/adapters/podman-sandbox.test.ts` against real rootless Podman when
 `HOPPER_TEST_PODMAN_SOCKET` names its socket: the flags, the labels, no capability left, removal with the volume.
-`test/scripts/compose.test.ts`: the socket only with `compose.sandboxes.yaml`.
+`test/scripts/compose.test.ts`: the socket `HOPPER_PODMAN_SOCKET_HOST` names, else `/dev/null` (issue #1157).
 
 ## Client releases (issue #70, 2026-10-05)
 
