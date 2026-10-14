@@ -13,13 +13,14 @@
 //   Scenario: an agent submits through a box token; an API token that is no box token is refused
 //   Scenario: a submission with no brief, or a repository that is not owner/name, is refused, and nothing is kept
 //   Scenario: Run again takes the same submission again
+//   Scenario: a failed direct job is stuck work with a bulk action, and one press runs it again (issue #1010)
 //   Scenario: the authorization vault grants the job's item the vault at submit, after Access, recorded with who
 //     When the person submits a direct job that authorizes vault
 //     Then its item has a vault grant by that person, and vault.granted records it
 //     And a submission that does not authorize vault makes no grant
 //   Scenario: Access that cannot be asked refuses the vault authorization (503), and nothing is kept
 import { afterEach, describe, expect, it } from 'vitest';
-import { ADMIN_ID, type DomainEvent } from '../../src/domain/types.ts';
+import { ADMIN_ID, type DomainEvent, type FailuresView, type StuckActResult } from '../../src/domain/types.ts';
 import type { DirectJobView } from '../../src/domain/direct-jobs.ts';
 import { rawRequest } from '../support/http.ts';
 import { createFakeAuthorizationServer, type FakeAuthorizationServer } from '../support/fake-authorization-server.ts';
@@ -124,6 +125,27 @@ describe('Direct jobs (issue #901)', () => {
     }, { what: 'Run again' });
     expect(again.rerunOf).toBe(job.id);
     expect((await readBack(app, directJob.id, (d) => d.job?.id === again.id)).job!.id).toBe(again.id);
+  });
+
+  it('counts a failed direct job as stuck work with a bulk action, and one press runs it again (issue #1010)', async () => {
+    const { app, token } = await start();
+    const { directJob, job } = (await app.ui<{ directJob: DirectJobView; job: { id: string } }>('/ui/api/direct-jobs', submission({ op: 'fail', message: 'HOPPER_FAILED the realm is down' }), { token })).body;
+    await app.waitForStatus(job.id, 'failed');
+    // Its hand-off, or its failure, is in one cause with a bulk action, once the source takes the item back.
+    const stuck = await waitFor(async () => {
+      const v = (await app.api<FailuresView>('GET', '/api/failures')).body;
+      const ids = new Set([...v.handoffs.filter((h) => h.jobId === job.id && h.status === 'open').map((h) => h.id), ...v.recent.filter((r) => r.jobId === job.id).map((r) => r.id)]);
+      const cause = v.stuck.find((c) => c.ids.some((id) => ids.has(id)));
+      return cause?.act ? cause : undefined;
+    }, { what: 'the failed direct job in Stuck, with a bulk action' });
+    expect(['continue', 'run_again', 'retry']).toContain(stuck.cause);
+
+    const r = await app.ui<StuckActResult>(`/ui/api/failures/stuck/${stuck.cause}`, {}, { token });
+    expect(r.status).toBe(200);
+    expect(r.body.refused).toEqual([]);
+    expect(r.body.done.length).toBeGreaterThan(0);
+    // The submission runs again: a new job, or the same one queued again to resume.
+    await readBack(app, directJob.id, (d) => d.job !== undefined && (d.job.id !== job.id || d.job.status !== 'failed'));
   });
 
   it('grants the job\'s item the vault at submit when the submitter authorizes vault, recorded with who', async () => {
