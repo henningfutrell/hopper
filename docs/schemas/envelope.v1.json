@@ -129,6 +129,8 @@
         "job.gate_passed",
         "machine.memory_low",
         "machine.memory_recovered",
+        "machine.windows_link_broken",
+        "machine.windows_link_restored",
         "minor_decision.picked",
         "minor_decision.compared",
         "minor_decision.overridden",

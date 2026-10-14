@@ -39,6 +39,7 @@ import { defaultRuntimeSockets, runtimeRoute, type RuntimeSockets } from './runt
 import { level, runClaude } from './level.ts';
 import { checkRelease, installRelease, readRelease } from './release.ts';
 import { createResourceMeter, diskOfHome } from './resources.ts';
+import type { WindowsLink } from './windows-link.ts';
 import { workTreeCall } from './work-tree.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResponse, verifyRequest } from './signature.ts';
 
@@ -78,6 +79,8 @@ export interface ClientOptions {
   maxIsolationMs?: number;
   /** How often it checks how long it has not heard the hopper; default 15 s. */
   isolationCheckMs?: number;
+  /** The Windows link (windows-link.ts, issue #712): said in `/release` with the resources, once tested. */
+  windowsLink?: () => WindowsLink | undefined;
 }
 
 export interface Client { stop(): Promise<void> }
@@ -130,6 +133,9 @@ const SCRIPT_TIMEOUT_MS = 60000;
 /** This machine's CPU, memory and swap (issue #560): each `/release` reads it; CPU busy is over the time since the last. */
 const resources = createResourceMeter();
 
+/** The resources with the Windows link, when it was tested. */
+const withWindowsLink = <R extends object>(r: R, link: WindowsLink | undefined): R | (R & { windowsLink: WindowsLink }) => (link ? { ...r, windowsLink: link } : r);
+
 /** What a client knows of its releases: the one it runs, and the one a load put in its install dir. */
 interface Releases { running: string; installed: string }
 
@@ -154,7 +160,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   }
   nonce = v.nonce;
   watch.heard();
-  if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome(), resources: resources(), ...(o.vaultHelper ? { vault: o.vaultHelper } : {}), ...(o.door?.() ? { door: o.door() } : {}), ...watch.probed(body) });
+  if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome(), resources: withWindowsLink(resources(), o.windowsLink?.()), ...(o.vaultHelper ? { vault: o.vaultHelper } : {}), ...(o.door?.() ? { door: o.door() } : {}), ...watch.probed(body) });
   if (path === '/load') return load(o, releases, stream, body, answer);
   if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree' || path === '/reach' || path === '/checkpoint') return fixed(path, body, answer);
   // Discovery (issue #542): the fixed script, no argument of the request's.

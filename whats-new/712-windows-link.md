@@ -1,0 +1,1 @@
+- When the hopper runs in WSL, Machines and a banner now say when Windows on the same PC cannot open the hopper at localhost, with the setting that fixes it.

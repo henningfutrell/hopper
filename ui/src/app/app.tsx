@@ -37,6 +37,7 @@ import { Header } from './header';
 import { Landing } from './landing';
 import { StackNotices } from './drift';
 import { MasterKeyNotice } from './master-key';
+import { WindowsLinkNotice } from '@/components/windows-link';
 import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
@@ -68,6 +69,7 @@ function Shell() {
         <main className="min-w-0 flex-1 space-y-3 p-3 sm:p-4 lg:p-6">
           <MasterKeyNotice />
           <StackNotices />
+          <WindowsLinkNotice />
           <UpdateNotice />
           {loadError && (
             <div className="flex items-center gap-2 rounded-lg border border-bad/40 bg-bad/5 p-3 text-sm text-bad">

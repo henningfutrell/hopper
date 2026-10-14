@@ -75,12 +75,17 @@ export function readWindowsMemory(stdout: string): HostMemory | undefined {
   return total > 0 && free <= total ? { freeBytes: free, totalBytes: total } : undefined;
 }
 
-/** Windows' memory through WSL interop: powershell.exe on PATH, else at its usual place. */
-const windowsMemory: HostMemoryReader = async () => {
+/** Runs a PowerShell script through WSL interop: powershell.exe on PATH, else at its usual place; its stdout, or undefined when it did not run. */
+export async function powershell(script: string, timeoutMs = 20_000): Promise<string | undefined> {
   const run = (cmd: string) => new Promise<string | undefined>((resolve) => {
-    execFile(cmd, ['-NoProfile', '-NonInteractive', '-Command', WINDOWS_MEMORY], { timeout: 20_000, windowsHide: true }, (err, stdout) => resolve(err ? undefined : String(stdout)));
+    execFile(cmd, ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: timeoutMs, windowsHide: true }, (err, stdout) => resolve(err ? undefined : String(stdout)));
   });
-  const out = (await run('powershell.exe')) ?? (existsSync(POWERSHELL_PATH) ? await run(POWERSHELL_PATH) : undefined);
+  return (await run('powershell.exe')) ?? (existsSync(POWERSHELL_PATH) ? await run(POWERSHELL_PATH) : undefined);
+}
+
+/** Windows' memory through WSL interop. */
+const windowsMemory: HostMemoryReader = async () => {
+  const out = await powershell(WINDOWS_MEMORY);
   return out === undefined ? undefined : readWindowsMemory(out);
 };
 
