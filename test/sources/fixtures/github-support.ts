@@ -25,6 +25,8 @@ export function githubConfig(over: Record<string, unknown> = {}): GitHubSourceCo
 /** A test's intake trust (issue #652): `logins` (default: the connected login) are trusted actors; approvals kept in memory. */
 export interface TestTrust extends IntakeTrust {
   approvals: Map<string, { text: ItemText; request: IntakeRequest; source: string }>;
+  /** The request cards a person declined (issue #1035), by key: the text's request as declined. */
+  declines: Map<string, { request: IntakeRequest; source: string }>;
   /** Every set of logins asked, in order. */
   asked: string[][];
   /** Every set of acts asked, with their GitHub user ids (issue #930), in order. */
@@ -33,10 +35,11 @@ export interface TestTrust extends IntakeTrust {
 
 export function testTrust(logins?: string[], o: { assignedHere?: string[] | ((key: string) => boolean); pending?: string[] } = {}): TestTrust {
   const approvals: TestTrust['approvals'] = new Map();
+  const declines: TestTrust['declines'] = new Map();
   const asked: string[][] = [];
   const askedActs: { login: string; id?: number }[][] = [];
   return {
-    approvals, asked, askedActs,
+    approvals, declines, asked, askedActs,
     async trusted(acts, connected) {
       const ls = acts.map((a) => a.login);
       asked.push(ls);
@@ -46,6 +49,8 @@ export function testTrust(logins?: string[], o: { assignedHere?: string[] | ((ke
     },
     approvedText: (key) => { const a = approvals.get(key); return a && { title: a.text.title, body: a.text.body }; },
     approve: (source, key, text, request) => { approvals.set(key, { text, request, source }); },
+    declined: (key, hash) => declines.get(key)?.request.hash === hash,
+    decline: (source, key, request) => { declines.set(key, { request, source }); },
     assignedHere: (key) => (typeof o.assignedHere === 'function' ? o.assignedHere(key) : (o.assignedHere ?? []).includes(key)),
     originPending: (key) => (o.pending ?? []).includes(key),
   };
