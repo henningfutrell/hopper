@@ -1,16 +1,22 @@
-// `hopper update` (issues #697, #970, design.md "Self-update"): what the update of a container install needs from the
-// image to update to. Needs no database: it is run as `podman run --rm -i <image> hopper update carry …` on the host.
-// `carry` answers the new compose.yaml: the one this image ships with, the settings of the old one (on stdin) as its
-// variables' defaults. It reads no .env and writes no file; what the new file cannot hold, it says on stderr.
+// `hopper update` (issues #697, #970, #1104, design.md "Self-update"): what the update of a container install needs from
+// the image to update to. Needs no database: it is run as `podman run --rm <image> hopper update …` on the host. `script`
+// answers scripts/update.sh, the update itself, piped to bash on the host. `carry` answers the new compose.yaml: the one
+// this image ships with, the settings of the old one (on stdin) as its variables' defaults. It reads no .env and writes no
+// file; what the new file cannot hold, it says on stderr.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { CliIo } from './cli.ts';
 import { carryCompose, carryOverride } from './update/compose-carry.ts';
 import { BUILD_DIR, readShippedCompose } from './update/shipped-compose.ts';
-import { COMPOSE_TOOLS, IMAGE_REF, PUBLISHED_IMAGE, updateCommands, updateLines, type ComposeTool } from './update/update-commands.ts';
+import { COMPOSE_TOOLS, IMAGE_REF, PUBLISHED_IMAGE, runtimeOf, updateCommand, type ComposeTool } from './update/update-commands.ts';
 import { UPDATE_SKILL } from './update/update-skill.ts';
 import { DRIFT_USAGE } from './cli-update-drift.ts';
 
-export const UPDATE_USAGE = `  hopper update carry --image <ref>                  print the compose.yaml of this image's version, with the settings of
+export const UPDATE_USAGE = `  hopper update script                               print the update of a container install (scripts/update.sh); run in the
+                                                     folder that holds compose.yaml: <tool> run --rm --pull=always <ref>
+                                                     hopper update script | bash -s -- <ref>
+  hopper update carry --image <ref>                  print the compose.yaml of this image's version, with the settings of
                                                      the old compose.yaml (on stdin) as its defaults and <ref> as
                                                      HOPPER_IMAGE; run as <tool> run --rm -i <ref> hopper update carry
                                                      --image <ref> < compose.yaml > compose.yaml.next
@@ -20,7 +26,7 @@ ${DRIFT_USAGE}`;
 
 /**
  * Issue #1013: the update commands issue #970 removed. `hopper update <tool> > hopper-update.sh` was the documented update
- * before it; run now, it says so and gives the commands that replace it, on stderr, so the script file stays empty.
+ * before it; run now, it says so and gives the command that replaces it (issue #1104), on stderr, so the script file stays empty.
  */
 function removed(what: string, image: string | undefined): string | undefined {
   const tool = COMPOSE_TOOLS.find((t) => t === what) as ComposeTool | undefined;
@@ -29,9 +35,8 @@ function removed(what: string, image: string | undefined): string | undefined {
   }
   if (!tool) return undefined;
   const ref = image && IMAGE_REF.test(image) ? image : `${PUBLISHED_IMAGE}:<channel>`;
-  const lines = updateLines(updateCommands(tool, ref)).map((l) => `  ${l}\n`).join('');
-  return `'hopper update ${tool}' was removed: it made an update script, and the update is now plain compose commands. `
-    + `In the folder that holds compose.yaml, run these one at a time (the steps, with what each does: hopper update skill):\n${lines}`;
+  return `'hopper update ${tool}' was removed: it made an update script to keep. The update is now one command. `
+    + `In the folder that holds compose.yaml, run (what it does: hopper update skill):\n  ${updateCommand(runtimeOf(tool), ref)}\n`;
 }
 
 /** `hopper update …`; the exit code. */
@@ -41,6 +46,10 @@ export function runUpdate(args: string[], io: CliIo, appDir = BUILD_DIR): number
   const fail = (text: string, code = 2): number => { io.err(`hopper update: ${text}\n`); return code; };
   if (extra.length > 0 || what === undefined) return fail(`usage:\n${UPDATE_USAGE}`);
   if (what === 'skill') { io.out(UPDATE_SKILL); return 0; }
+  if (what === 'script') {
+    try { io.out(readFileSync(join(appDir, 'scripts', 'update.sh'), 'utf8')); } catch { return fail(`this build ships no scripts/update.sh (${appDir})`, 1); }
+    return 0;
+  }
   const gone = removed(what, values.image);
   if (gone !== undefined) return fail(gone);
   if (what !== 'compose' && what !== 'carry') return fail(`unknown command ${what}; usage:\n${UPDATE_USAGE}`);

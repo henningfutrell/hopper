@@ -6992,6 +6992,38 @@ that the hopper sets up remote access itself. Remote access stays optional and o
   and run no agent; starting a container from the UI would need the container runtime's socket in the hopper, which is
   more exposure than an idle loop.
 
+### One update command, which checks its result (issue #1104, 2026-10-14)
+
+Supersedes in part issue #970 (below): the commands to run one at a time are gone; the update is one command.
+
+The issue: the update was seven commands typed by hand. `podman compose` ran docker-compose and started a second stack beside
+one podman-compose started (#1063); the person had to give the master key and check the result by hand; and a plain
+`up -d` of podman-compose kept a container whose image changed under the same tag, so the hopper ran the old image.
+
+- **One command** (`src/update/update-commands.ts` `updateCommand`; the UI's twin in `ui/src/model/update.ts`):
+  `<runtime> run --rm --pull=always <image> hopper update script | bash -s -- <image>`, in the folder of `compose.yaml`.
+  `hopper update script` prints `scripts/update.sh`, a static file every image carries, so the update is the target's
+  own and no script is kept on the host or generated. Not served from the Pages site: the site is the stable version's,
+  and a dev install would run stable's update. The update notice, the drift banner and its log line, the agent update
+  skill, the help, `docs/deploy.md` "Update", the README, `compose.yaml` and the install page give the same command.
+- **The compose tool and project that started the stack.** The script always passes `-p hopper`. podman-compose labels
+  its containers `io.podman.compose.project`; when the stack's containers carry it, the update uses podman-compose, else
+  `podman compose` (docker-compose, or `PODMAN_COMPOSE_PROVIDER`), and `docker compose` on Docker. Before it changes
+  anything it checks that the tool's `ps -q` lists the stack that runs (#1063), and stops when not.
+- **The master key, before anything changes.** From `HOPPER_MASTER_KEY` in its environment, else read from the terminal
+  (`/dev/tty`: stdin is the script). No key, or a value that is no 32-byte key, stops the update first. Never from a file
+  or the running container (issue #970).
+- **Down, then up.** `compose pull`, `compose down` (volumes stay), `compose up -d`: every container is made again on the
+  new image. Not `up -d --force-recreate`: podman-compose cannot force-recreate a service with no container yet (issue
+  #894). When `up` fails, the script puts `compose.yaml.bak` back and starts the old stack.
+- **The result is checked.** The hopper container's image id equals the pulled image's; `/api/health` answers inside the
+  container (`HOPPER_UPDATE_WAIT`, 180 s); `hopper master-key status` is not `missing` (limited); `hopper update drift`
+  exits 0. Each failure is said and exits 1; a stopped container shows its last log lines (a wrong key stops it).
+- **Residual risk, stated.** The update does not check the key against the database before it stops the stack: a wrong
+  key is found when the new hopper refuses to start, and the stack is down until the update runs again with the right
+  key. A `compose up` run by hand without the key still recreates the hopper limited. Running jobs are not counted by
+  the script: the notice shows the count, and the person waits until none.
+
 ### The update is plain compose commands; the master key is required (issue #970, 2026-10-12)
 
 The issue: the update notice ran a one-off container that printed a 180-line generated script, and the person ran that. The
@@ -7102,8 +7134,8 @@ setting never reached it, installs drifted apart, and features failed in confusi
 `compose.yaml` of its commit (`Dockerfile`, `/app/compose.yaml`); `src/update/shipped-compose.ts` reads it, stamped on
 its first line `# hopper version: <branch> <commit>` from install.json (`unknown` when the build does not know them),
 and `GET /api/update/compose` answers it (`ShippedCompose`; 404 with the reason for a build that ships none). The one
-update is **the update commands** (issue #970, "The update is plain compose commands" above): plain compose commands
-in the folder of `compose.yaml`, the new file made from the image to update to — `hopper update carry --image <ref>`
+update is **the update command** (issue #1104, "One update command" above; issue #970 before it): in the folder of
+`compose.yaml`, the new file made from the image to update to — `hopper update carry --image <ref>`
 (`src/cli-update.ts`, no database; `src/update/compose-carry.ts` `carryCompose`), the old `compose.yaml` on stdin — so the
 compose file put in is always the target's. It answers the new `compose.yaml`: the image's own, with what the install set
 as the defaults of the file's own variables — the first published port's address as `HOPPER_BIND` (none: every interface,
@@ -18022,7 +18054,7 @@ conflicts, "PR tending without lanes").
 **The branch model.** `main` (the **landing branch**) → `dev` (the **tested branch**) → `beta` → `stable`. A
 job's pull request merges into `main` after the fast checks only: the gates (typecheck, lint, the UI build,
 What's new) and the test files its change affects (`.github/workflows/pr.yml` job `affected`, `vitest run --changed
-HEAD^1`; issue #1038). The full suite runs on `main`'s tip as a **batch run**, and a green batch run moves
+HEAD^1`, in the full suite's ten shards, issue #1104; issue #1038). The full suite runs on `main`'s tip as a **batch run**, and a green batch run moves
 `dev` by the whole batch in one merge. `dev` → `beta` → `stable` stays as it is (`scripts/promote.sh`). `main` is
 no update channel: no hopper follows it.
 

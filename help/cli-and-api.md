@@ -39,7 +39,7 @@ A secret never goes on the command line. `hopper vault set` and `hopper typesafe
 | `hopper user transfer <from> <to>` | `<to>` takes over the work of `<from>`. Stop the hopper first. |
 | `hopper join-code` | A one-time join code for 10 minutes. A machine joins with `<hopper address>#<code>`. |
 | `hopper ssh-key` | The public half of the hopper's ssh key. |
-| `hopper update carry\|compose\|skill` | Print the new compose.yaml of a container install from its old one (`--image <ref>`, the old file on stdin), the compose file, or the update steps for an agent. Needs no database. See [Deploy and update](deploy-and-update.md). |
+| `hopper update script\|carry\|compose\|skill` | Print the update of a container install (run it as `podman run --rm --pull=always <ref> hopper update script \| bash -s -- <ref>`), the new compose.yaml of a container install from its old one (`--image <ref>`, the old file on stdin), the compose file, or the update steps for an agent. Needs no database. See [Deploy and update](deploy-and-update.md). |
 
 ### Jobs and the queue
 

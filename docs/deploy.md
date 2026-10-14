@@ -270,54 +270,53 @@ is only in the hopper's environment, given at launch.
 - **Upgrade: you update a container install, never the hopper** (issues #51, #409, #494). Self-update and
   Auto-update do not apply to a container: the UI offers neither Update now nor the Auto-update switch, and the
   server ignores an auto-update setting for it. When the update check finds a newer build, the update notice
-  and Settings → Version give the commands below with the selected channel's tag.
+  and Settings → Version give the command below with the selected channel's tag.
   - **The channel is the image tag.** `ghcr.io/henningfutrell/hopper:<channel>`, the default of `HOPPER_IMAGE` in
     `compose.yaml` (the update writes it there), where `<channel>` is the channel picked in Settings → Version:
     `dev`, `beta` or `stable`. Unset, it is `:latest`, the same image as `:stable`. A container on `:latest` with the channel set to `dev`
     never reaches `dev`'s head by pulling, so the notice says "this container runs the `stable` image; the
     selected channel is `dev`: switch the image tag". **Switch channels** by running the update below with the
     channel's image (it sets `HOPPER_IMAGE`); pick the same channel in Settings → Version.
-  - **The master key at an update** (issue #970). The new container gets the key only from the environment of the
-    compose command. The update reads it from nowhere else: not from a file, and not from the running container. Give
-    it at launch first (`read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY`). The last command of the update stops
-    before compose runs when it is not given, so the stack never comes back limited. An update with no person (an
-    agent, a scheduled task; issue #1013) gives the key from a secret manager into that environment
-    (`export HOPPER_MASTER_KEY="$(pass show hopper/master-key)"`) and skips the prompt; no other step waits for a person. The KMS (`kms` profile) wraps only
-    the vault's data key: the master key is required with it too. An install from before keeps its key in the old
-    `secrets` volume's `token_key`, which the new compose file does not read: save the key the UI shows, and give it at
-    launch first ("The master key" above).
-  - **The removed update script** (issue #1013). `hopper update podman`, `hopper update podman-compose`,
-    `hopper update docker` and `hopper update override` are removed (issue #970). Run, each says so on stderr, gives the
-    commands below (with `--image <ref>`, for that image) and exits 2, so `… > hopper-update.sh` writes an empty script.
-  - **Update with the compose file the new image ships with, the whole stack** (issues #697, #970). Every image carries
-    the `compose.yaml` of its commit. The update is plain compose commands, no script and no settings file. In the folder
-    that holds `compose.yaml`, run them one at a time (the update notice gives them with the channel's image):
+  - **One command updates the install** (issue #1104). Every image carries the `compose.yaml` of its commit and the
+    update itself, `scripts/update.sh`. In the folder that holds `compose.yaml`, run (the update notice gives it with the
+    channel's image; Docker: `docker run`):
 
     ```sh
-    read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY
-    [ -z "$(podman ps -q --filter label=com.docker.compose.project=hopper)" ] || podman compose ps -q 2>/dev/null | grep -Eq '^[0-9a-f]{12,}$' || { echo 'hopper: podman compose does not see the hopper stack that runs. It would start a second stack on the same data: the update stops. Use the compose tool that started the stack. When podman-compose started it: export PODMAN_COMPOSE_PROVIDER=podman-compose' >&2; false; }
-    podman compose exec -T postgres pg_dump -U hopper -d hopper -Fc > hopper-backup.dump
-    podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update carry --image ghcr.io/henningfutrell/hopper:<channel> < compose.yaml > compose.yaml.next
-    diff -u compose.yaml compose.yaml.next
-    cp compose.yaml compose.yaml.bak && mv compose.yaml.next compose.yaml
-    : "${HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY}" && [ -z "$(podman ps -q --filter label=com.docker.compose.project=hopper)" ] || podman compose ps -q 2>/dev/null | grep -Eq '^[0-9a-f]{12,}$' || { echo 'hopper: podman compose does not see the hopper stack that runs. It would start a second stack on the same data: the update stops. Use the compose tool that started the stack. When podman-compose started it: export PODMAN_COMPOSE_PROVIDER=podman-compose' >&2; false; } && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose pull && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose up -d
+    podman run --rm --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update script | bash -s -- ghcr.io/henningfutrell/hopper:<channel>
     ```
 
-    Docker: `docker run` and `docker compose`. podman-compose alone: `podman-compose` in place of `podman compose`.
-    `podman compose` runs docker-compose when it finds it, and docker-compose reaches Podman only through its socket:
-    when `podman compose ps` shows no hopper but `podman-compose ps` does, `export PODMAN_COMPOSE_PROVIDER=podman-compose`
-    first (issue #924).
+    In order, it:
+    1. **Takes the master key** from `HOPPER_MASTER_KEY` in its environment, else asks for it on the terminal (paste
+       it; nothing is shown). Without it, or with a value that is no master key, it stops before it changes anything,
+       so the stack never comes back limited. It reads the key from nowhere else: not from a file, and not from the
+       running container (issue #970). An update with no person (an agent, a scheduled task; issue #1013) gives the key
+       from a secret manager: `export HOPPER_MASTER_KEY="$(pass show hopper/master-key)"`. The KMS (`kms` profile)
+       wraps only the vault's data key: the master key is required with it too.
+    2. **Finds the compose tool that started the stack** and uses it with the project `hopper` (`-p hopper`): podman-compose
+       when its containers carry podman-compose's label, else `podman compose` (docker-compose, or the provider
+       `PODMAN_COMPOSE_PROVIDER` names), and `docker compose` on Docker. When that tool does not see the stack that runs,
+       it stops before it changes anything (issue #1063, below).
+    3. **Backs up the database** to `hopper-backup.dump` (`pg_dump -Fc`), while Postgres runs.
+    4. **Puts in the new `compose.yaml`**: `hopper update carry` from the new image (below); it shows the change and
+       keeps the old file as `compose.yaml.bak`.
+    5. **Pulls, stops the stack and starts it on the new image**: `compose pull`, `compose down` (the volumes and the
+       data stay), `compose up -d`, with `HOPPER_IMAGE` set to the image. Every container is made again on the new
+       image: podman-compose's plain `up -d` keeps a container whose image changed under the same tag, and it cannot
+       `--force-recreate` a service that has no container yet (issue #894). When the new stack does not start, it puts
+       the old `compose.yaml` back and starts the old stack again.
+    6. **Checks the result**: the hopper's container runs the image pulled (the image ids match), answers `/api/health`
+       (it waits up to `HOPPER_UPDATE_WAIT` seconds, 180 by default, and shows the last log lines when the container
+       stops: a wrong master key stops it), has its master key (`hopper master-key status` is not `missing`), and the
+       stack has no drift (`hopper update drift` exits 0). Then it says `hopper update: done: …` with the image and the
+       key's fingerprint, and exits 0. When a check fails, it says which and exits 1.
 
     **Use the compose tool that started the stack** (issue #1063). docker-compose does not see a stack podman-compose
     started, and podman-compose does not see one docker-compose started: each finds containers by its own labels. Both
     resolve the same project name, `hopper`, and the same named volumes, so the other tool's `up` starts a second stack
-    on them, with a second Postgres on the live data directory. The second line (the check) stops when containers of
-    the `hopper` project run but this compose tool sees none of them; the last command checks again before `pull` and
-    `up`. When it stops and podman-compose started the stack, `export PODMAN_COMPOSE_PROVIDER=podman-compose` and run the
-    check again. When docker-compose started it, use `podman compose` with docker-compose as its provider, or
-    `docker compose`. Never go around the check.
+    on them, with a second Postgres on the live data directory. The update picks the tool by the labels on the stack's
+    containers, and stops when that tool sees none of the containers of the `hopper` project. Never go around the stop.
 
-    **One Postgres per data volume** (issue #1063). The check guards the update only: a plain `podman compose up -d`
+    **One Postgres per data volume** (issue #1063). The update guards only itself: a plain `podman compose up -d`
     with the wrong tool still makes the second stack's containers. Its Postgres stops at once: before anything else,
     Postgres locks its data volume (`flock`, held for the database's whole life), and a second Postgres on the same
     volume exits 75 with `postgres: another container runs on this data volume` before it writes anything, the start
@@ -334,13 +333,15 @@ is only in the hopper's environment, given at launch.
     writes no file itself. When the old file has what the new one cannot name — a setting it does not name, a service of
     the install's own with the volumes it names, a host folder mounted into a service, a key of a service the hopper
     never sets, the install's own project name — it prints that part on stderr, to add to `compose.override.yaml`. A
-    service the hopper once shipped and no longer does is dropped, and said so. Then `compose pull` and a plain
-    `compose up -d` start the whole stack (never `--force-recreate`: podman-compose cannot force-recreate a service that
-    has no container yet).
+    service the hopper once shipped and no longer does is dropped, and said so.
 
-    **To go back:** `podman compose down`, `cp compose.yaml.bak compose.yaml`, give the master key, `podman compose up -d`.
-    A migration leaves a store the build before still runs on. To restore the database itself:
-    `podman compose exec -T postgres pg_restore -U hopper -d hopper --clean < hopper-backup.dump`.
+    **To go back:** run the update with the image you ran before (`ghcr.io/henningfutrell/hopper:sha-<commit>`;
+    `compose.yaml.bak` names it). A migration leaves a store the build before still runs on. To restore the database
+    itself: `podman compose -p hopper exec -T postgres pg_restore -U hopper -d hopper --clean < hopper-backup.dump`.
+  - **The removed update script** (issue #1013). `hopper update podman`, `hopper update podman-compose`,
+    `hopper update docker` and `hopper update override` are removed (issue #970). Run, each says so on stderr, gives the
+    update command above (with `--image <ref>`, for that image) and exits 2, so `… > hopper-update.sh` writes an empty
+    script.
   - **Never update the hopper's container alone** (`pull hopper`, `up -d --no-deps hopper`). It keeps the old
     compose file: a version that adds a required service (OpenFGA, issue #559) or a setting never gets it, and
     features fail. **Never edit `compose.yaml`**: each update replaces it whole. Give a setting it names at launch
@@ -350,7 +351,7 @@ is only in the hopper's environment, given at launch.
     compares the stack it runs in with the compose file of its own version: each service that must run (no profile,
     or one the hopper's `COMPOSE_PROFILES` turns on), by its name on the compose network; the settings that file gives the
     hopper's container; and the version `hopper-vault` runs. A gap is logged at start and shown in a banner over every
-    view: what is missing, what is off until then, and the fix — the update's commands with the image the hopper runs.
+    view: what is missing, what is off until then, and the fix — the update command with the image the hopper runs.
     `GET /api/update/drift` answers the same (`StackDrift`). It sees only from inside its container: a service of the
     install's own, and the versions of OpenFGA and Postgres, are not compared. A headless update reads it with no
     sign-in in a browser (issue #1017): `podman compose exec hopper hopper update drift` prints the `StackDrift` as JSON,
