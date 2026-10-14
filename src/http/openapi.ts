@@ -37,8 +37,7 @@ import { UPDATE_OPERATIONS } from './update.ts';
 import { BUG_REPORT_OPERATIONS } from './ui/bug-reports.ts';
 import { POINTED_JOB_OPERATIONS } from './ui/pointed-jobs.ts'; import { JOB_NOTE_OPERATIONS } from './ui/job-actions.ts'; import { DIRECT_JOB_OPERATIONS } from './ui/direct-jobs.ts'; import { PROMOTION_OPERATIONS } from './ui/promotions.ts';
 import { GITHUB_WATCH_OPERATIONS } from './ui/github-watches.ts'; import { COMPONENT_WATCHER_OPERATIONS } from './ui/component-watchers.ts'; // issue #1077
-import { LANDING_BATCH_OPERATIONS } from './ui/landing-batches.ts';
-import { INFRA_PLAN_OPERATIONS } from './ui/infra-plans.ts'; import { SANDBOX_REQUEST_OPERATIONS } from './ui/sandbox-requests.ts';
+import { LANDING_BATCH_OPERATIONS } from './ui/landing-batches.ts'; import { INFRA_PLAN_OPERATIONS } from './ui/infra-plans.ts'; import { SANDBOX_REQUEST_OPERATIONS } from './ui/sandbox-requests.ts';
 import { PULL_REQUEST_ACT_OPERATIONS } from './ui/pull-request-acts.ts';
 import { REPO_CHECKS_OPERATIONS } from './ui/repo-checks.ts'; import { MEMORY_ALERT_OPERATIONS } from './ui/memory-alert.ts';
 import { tldrBody } from './ui/tldr.ts';
