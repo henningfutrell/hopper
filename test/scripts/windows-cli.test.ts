@@ -105,9 +105,11 @@ describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () =>
 
   it('on: the loop reports the Windows link through the CLI, at most every 5 minutes, with no token', () => {
     expect(loop).toContain('AddMinutes(5)');
-    expect(loop).toContain("$url = 'http://localhost:__PORT__/api/health'");
+    expect(loop).not.toContain('/api/health');
+    expect(loop).toContain("$urls = @('http://localhost:__PORT__/job/address', 'http://127.0.0.1:__PORT__/job/address')");
+    expect(loop).toContain('foreach ($u in $urls)');
     expect(ps1).toContain("if ($env:HOPPER_PORT) { $env:HOPPER_PORT } else { '4790' }");
-    expect(loop).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Uri $url');
+    expect(loop).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Uri $u');
     expect(loop).toContain("@('--status', [string][int]$_.Exception.Response.StatusCode)");
     expect(loop).toContain("& wsl.exe @wsl -e wslinfo --networking-mode");
     expect(loop).toContain('-e podman exec $container.Trim() hopper windows-link report --link $url @result');

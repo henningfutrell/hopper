@@ -16,7 +16,7 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) c();
 });
 
-const URL_ = 'http://localhost:4790/api/health';
+const URL_ = 'http://localhost:4790/job/address';
 
 async function boot(): Promise<TestApp> {
   const db = tempDbPath();
@@ -55,12 +55,19 @@ describe('the Windows link report', () => {
     expect((await hopper(a, ['windows-link', 'report', '--link', URL_, '--status', '401'])).code).toBe(0);
     expect((await machinesView(a)).windowsLink).toMatchObject({ ok: true, status: 401 });
     await waitFor(async () => (await a.events('types=machine.windows_link_restored'))[0]);
+
+    // Only 127.0.0.1 answered; a loop written before the address check reports the health route at localhost.
+    for (const link of ['http://127.0.0.1:4790/job/address', 'http://localhost:4790/api/health']) {
+      expect((await hopper(a, ['windows-link', 'report', '--link', link, '--status', '204'])).code).toBe(0);
+      expect((await machinesView(a)).windowsLink).toMatchObject({ url: link, ok: true });
+    }
   });
 
-  it('refuses a report that is not a localhost health URL with one status or one error', async () => {
+  it('refuses a report that is not the address check at localhost or 127.0.0.1 with one status or one error', async () => {
     const a = await boot();
     for (const argv of [
-      ['--link', 'http://10.0.0.1:4790/api/health', '--status', '200'],
+      ['--link', 'http://10.0.0.1:4790/job/address', '--status', '200'],
+      ['--link', 'http://127.0.0.1:4790/api/health', '--status', '200'],
       ['--link', URL_],
       ['--link', URL_, '--status', '200', '--error', 'both'],
       ['--link', URL_, '--status', '42'],
