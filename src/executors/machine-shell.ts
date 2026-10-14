@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import type { MachineShell } from '../domain/ports.ts';
 import { CREDENTIAL_KEPT, credentialArgv } from '../client/credential.ts';
-import { readReap, readSurvey, reapArgv, surveyArgv } from '../client/server.ts';
+import { readReap, readSurvey, reapArgv, surveyArgv } from '../client/reap.ts';
 import { DISCOVER_TIMEOUT_MS, discoverArgv } from '../client/discover.ts';
 import { REACH_TIMEOUT_MS, reachArgv, readReach } from '../client/reach.ts';
 import { CHECKPOINT_TIMEOUT_MS, checkpointArgv, readCheckpoint } from '../client/checkpoint.ts';

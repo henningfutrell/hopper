@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { userSystemd } from '../support/systemd.ts';
-import { REAP_DONE, readReap, readSurvey, reapArgv, scopeUnitOf, scriptArgvOf, surveyArgv } from '../../src/client/server.ts';
+import { REAP_DONE, readReap, readSurvey, reapArgv, scopeUnitOf, scriptArgvOf, surveyArgv } from '../../src/client/reap.ts';
 
 const JOB = 'job-401-abcdef';
 const OTHER = 'job-401-other';

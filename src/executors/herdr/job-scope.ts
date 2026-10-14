@@ -5,7 +5,7 @@
 // `hopper-job-<job id>`, so every process the job starts is in that scope's cgroup, whatever it does to
 // its environment; the reap stops the scope (KillMode=control-group). Without systemd, the shell stays as
 // it is and the reap falls back to the environment variable.
-import { scopeUnitOf } from '../../client/server.ts';
+import { scopeUnitOf } from '../../client/reap.ts';
 
 /** What the scope commands print, followed by the outcome. */
 export const SCOPE_MARK = 'hopper-scope-';

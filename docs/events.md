@@ -852,7 +852,7 @@ Version 1 (`docs/schemas/job.reassigned.v1.json`). A flagged job's issue is assi
 
 ## `job.work_kept`
 
-Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (issue #401), or a later sweep (issue #410), kept its scratch dir: each of `paths` is a repository in it holding uncommitted or unpushed work. Nothing in it was removed; the job's processes were still stopped. The sweep tries again on each pass, and removes it once the work is pushed (`job.work_removed`).
+Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (issue #401), or a later sweep (issue #410), kept its scratch dir and its job worktrees (issue #1103: in its work tree's workspace): each of `paths` is a repository there holding uncommitted or unpushed work. Nothing in it was removed; the job's processes were still stopped. The sweep tries again on each pass, and removes it once the work is pushed (`job.work_removed`).
 
 | field | type | required |
 |---|---|---|
@@ -861,7 +861,7 @@ Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (iss
 ```json
 {
   "paths": [
-    "/home/me/hopper-jobs/.hopper-scratch/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f/hopper"
+    "/home/me/hopper-jobs/workspace/worktrees/hopper-7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f"
   ]
 }
 ```

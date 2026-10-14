@@ -155,7 +155,7 @@ describe('the reap after shared dependencies (issue #410)', () => {
     git(tree, 'worktree', 'add', '-q', '--detach', w, 'origin/main');
     expect(await share(w)).toBe('installed');
     const shared = readlinkSync(join(w, 'node_modules'));
-    const { reapArgv, readReap } = await import('../../src/client/server.ts');
+    const { reapArgv, readReap } = await import('../../src/client/reap.ts');
     const [file, ...args] = reapArgv('j1', join(tree, '.hopper-scratch', 'j1'));
     expect(readReap(execFileSync(file!, args, { encoding: 'utf8' }))).toEqual({ kept: [] });
     expect(existsSync(w)).toBe(false);

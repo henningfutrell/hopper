@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { checkoutOf, jobWorktreeOf, makeJobWorktreeCommand } from '../../src/executors/herdr/job-worktree.ts';
-import { reapArgv } from '../../src/client/server.ts';
+import { reapArgv } from '../../src/client/reap.ts';
 import { jobScratchOf } from '../../src/executors/herdr/start.ts';
 import { GIT_ENV, ID, git, repository, served, sh } from './job-worktree-support.ts';
 

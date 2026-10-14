@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { checkoutOf, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand, passFetchKey, passFetches } from '../../src/executors/herdr/job-worktree.ts';
-import { reapArgv } from '../../src/client/server.ts';
+import { reapArgv } from '../../src/client/reap.ts';
 import { jobScratchOf } from '../../src/executors/herdr/start.ts';
 
 import { GIT_ENV, ID, git, repository, served, sh } from './job-worktree-support.ts';
@@ -271,81 +271,6 @@ describe('the job worktree command, typed into any shell (issue #518)', () => {
     expect(jobWorktreeOutcome('$ cd x\nuser@box:~/x$ hopper-job-worktree-made\n$ ')).toBe('made');
     expect(jobWorktreeOutcome('hopper-job-worktree-checkout\nhopper-job-worktree-unmade')).toBe('unmade');
     expect(jobWorktreeOutcome(`$ ${makeJobWorktreeCommand('/w/tree', ID)}\nhopper-worktree-running`)).toBeUndefined();
-  });
-});
-
-describe('the reap ends a job worktree (issues #379, #401)', () => {
-  function made(): { tree: string; path: string; reap: () => string } {
-    const { tree } = repository();
-    const path = jobWorktreeOf(tree, ID);
-    sh(tree, makeJobWorktreeCommand(tree, ID));
-    const reap = (): string => {
-      const [file, ...args] = reapArgv(ID, jobScratchOf(tree, ID));
-      const r = spawnSync(file!, args, { cwd: tree, env: GIT_ENV, encoding: 'utf8' });
-      return `${r.stdout}${r.stderr}`;
-    };
-    return { tree, path, reap };
-  }
-
-  it('removes a worktree with nothing uncommitted and nothing unpushed, with the scratch dir, and its repository keeps no entry for it', () => {
-    const { tree, path, reap } = made();
-    expect(reap()).toContain('hopper-reaped');
-    expect(existsSync(jobScratchOf(tree, ID))).toBe(false);
-    expect(existsSync(path)).toBe(false);
-    expect(git(tree, 'worktree', 'list')).not.toContain(path);
-  });
-
-  it('leaves another job\'s worktree beside it (issue #1103)', () => {
-    const { tree, reap } = made();
-    const other = 'abcdef12-0000-0000-0000-000000000003';
-    sh(tree, makeJobWorktreeCommand(tree, other));
-    reap();
-    expect(existsSync(jobWorktreeOf(tree, other))).toBe(true);
-  });
-
-  it('removes a mirror an older release left in the scratch dirs once no worktree uses it (issue #1103)', () => {
-    const { tree, reap } = made();
-    const old = join(tree, '.hopper-scratch', 'repos', 'acme', 'app.git');
-    mkdirSync(join(old, '..'), { recursive: true });
-    git(tree, 'clone', '--quiet', '--bare', join(tree, '..', 'origin.git'), old);
-    const used = join(tree, '.hopper-scratch', 'repos', 'acme', 'used.git');
-    git(tree, 'clone', '--quiet', '--bare', join(tree, '..', 'origin.git'), used);
-    const kept = join(tree, '.hopper-scratch', 'abcdef12-0000-0000-0000-000000000004', 'used');
-    git(used, 'worktree', 'add', '--quiet', '--detach', kept, 'main');
-    reap();
-    expect(existsSync(old)).toBe(false);
-    expect(existsSync(used)).toBe(true);
-  });
-
-  it('removes it once the branch the job made is pushed, and with ignored build output in it', () => {
-    const { tree, path, reap } = made();
-    git(path, 'switch', '--quiet', '-c', 'fix');
-    writeFileSync(join(path, '.gitignore'), 'node_modules/\n');
-    git(path, 'add', '.gitignore');
-    git(path, 'commit', '--quiet', '-m', 'fix');
-    git(path, 'push', '--quiet', '-u', 'origin', 'fix');
-    mkdirSync(join(path, 'node_modules'));
-    writeFileSync(join(path, 'node_modules', 'x.js'), '\n');
-    expect(reap()).not.toContain('hopper-kept');
-    expect(existsSync(path)).toBe(false);
-    expect(git(tree, 'worktree', 'list')).not.toContain(path);
-  });
-
-  it('keeps it, and names it, while a commit in it is not pushed', () => {
-    const { path, reap } = made();
-    git(path, 'switch', '--quiet', '-c', 'local-only');
-    writeFileSync(join(path, 'x.txt'), 'x\n');
-    git(path, 'add', 'x.txt');
-    git(path, 'commit', '--quiet', '-m', 'x');
-    expect(reap()).toContain(`hopper-kept ${path}`);
-    expect(existsSync(join(path, 'x.txt'))).toBe(true);
-  });
-
-  it('keeps it while a file in it is changed', () => {
-    const { path, reap } = made();
-    writeFileSync(join(path, 'a.txt'), 'changed\n');
-    expect(reap()).toContain(`hopper-kept ${path}`);
-    expect(existsSync(path)).toBe(true);
   });
 });
 

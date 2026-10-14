@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readReap, reapArgv } from '../../src/client/server.ts';
+import { readReap, reapArgv } from '../../src/client/reap.ts';
 
 const JOB = 'job-401-abcdef';
 
