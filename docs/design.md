@@ -6995,12 +6995,17 @@ status it printed a note and went on, so the stack could come back limited.
 
 - **Plain compose commands, no script** (`src/update/update-commands.ts` `updateCommands`; the UI's twin in
   `ui/src/model/update.ts`, which imports nothing of `src/`). In the folder of `compose.yaml`, one at a time: give the
-  master key (`read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY`); back up the database (`compose exec -T postgres
+  master key (`read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY`); check that the compose tool sees the stack that
+  runs (`composeCheck`, issue #1063: containers labelled `com.docker.compose.project=hopper` run, but `<compose> ps -q`
+  lists none — another compose tool started them, and this one's `up` would make a second stack on the same named
+  volumes); back up the database (`compose exec -T postgres
   pg_dump -Fc > hopper-backup.dump`); `<runtime> run --rm -i --pull=always <image> hopper update carry --image <image> <
   compose.yaml > compose.yaml.next`; `diff -u`; `cp compose.yaml compose.yaml.bak && mv compose.yaml.next compose.yaml`;
-  then `: "${HOPPER_MASTER_KEY:?…}" && HOPPER_IMAGE=<image> <compose> pull && HOPPER_IMAGE=<image> <compose> up -d`. The
+  then `: "${HOPPER_MASTER_KEY:?…}" && <the check> && HOPPER_IMAGE=<image> <compose> pull && HOPPER_IMAGE=<image> <compose> up -d`. The
   update notice, the drift banner and its log line, the agent update skill, the help, `docs/deploy.md` "Update", the README
-  and the install page give the same commands. `PODMAN_COMPOSE_PROVIDER` (issue #924) is one line of advice, not logic.
+  and the install page give the same commands. `PODMAN_COMPOSE_PROVIDER` (issue #924) is one line of advice, not logic. The check
+  guards only the update; compose.yaml's Postgres guards the data whatever starts it: it locks its data volume (`flock` on
+  an fd the database keeps) before anything else, and a second Postgres on that volume exits 75 (issue #1063).
 - **No `.env`, read or written.** `hopper update carry` takes the old `compose.yaml` on stdin and nothing else:
   `HOPPER_UPDATE_ENV`, `HOPPER_UPDATE_LAUNCH`, `HOPPER_UPDATE_OVERRIDE`, `hopper update override` and
   `hopper update <tool>` are gone. What the old file has that the new one cannot name, `carryOverride` prints on stderr

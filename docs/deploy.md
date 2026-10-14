@@ -295,17 +295,37 @@ is only in the hopper's environment, given at launch.
 
     ```sh
     read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY
+    [ -z "$(podman ps -q --filter label=com.docker.compose.project=hopper)" ] || podman compose ps -q 2>/dev/null | grep -Eq '^[0-9a-f]{12,}$' || { echo 'hopper: podman compose does not see the hopper stack that runs. It would start a second stack on the same data: the update stops. Use the compose tool that started the stack. When podman-compose started it: export PODMAN_COMPOSE_PROVIDER=podman-compose' >&2; false; }
     podman compose exec -T postgres pg_dump -U hopper -d hopper -Fc > hopper-backup.dump
     podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update carry --image ghcr.io/henningfutrell/hopper:<channel> < compose.yaml > compose.yaml.next
     diff -u compose.yaml compose.yaml.next
     cp compose.yaml compose.yaml.bak && mv compose.yaml.next compose.yaml
-    : "${HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY}" && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose pull && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose up -d
+    : "${HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY}" && [ -z "$(podman ps -q --filter label=com.docker.compose.project=hopper)" ] || podman compose ps -q 2>/dev/null | grep -Eq '^[0-9a-f]{12,}$' || { echo 'hopper: podman compose does not see the hopper stack that runs. It would start a second stack on the same data: the update stops. Use the compose tool that started the stack. When podman-compose started it: export PODMAN_COMPOSE_PROVIDER=podman-compose' >&2; false; } && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose pull && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose up -d
     ```
 
     Docker: `docker run` and `docker compose`. podman-compose alone: `podman-compose` in place of `podman compose`.
     `podman compose` runs docker-compose when it finds it, and docker-compose reaches Podman only through its socket:
     when `podman compose ps` shows no hopper but `podman-compose ps` does, `export PODMAN_COMPOSE_PROVIDER=podman-compose`
     first (issue #924).
+
+    **Use the compose tool that started the stack** (issue #1063). docker-compose does not see a stack podman-compose
+    started, and podman-compose does not see one docker-compose started: each finds containers by its own labels. Both
+    resolve the same project name, `hopper`, and the same named volumes, so the other tool's `up` starts a second stack
+    on them, with a second Postgres on the live data directory. The second line (the check) stops when containers of
+    the `hopper` project run but this compose tool sees none of them; the last command checks again before `pull` and
+    `up`. When it stops and podman-compose started the stack, `export PODMAN_COMPOSE_PROVIDER=podman-compose` and run the
+    check again. When docker-compose started it, use `podman compose` with docker-compose as its provider, or
+    `docker compose`. Never go around the check.
+
+    **One Postgres per data volume** (issue #1063). The check guards the update only: a plain `podman compose up -d`
+    with the wrong tool still makes the second stack's containers. Its Postgres stops at once: before anything else,
+    Postgres locks its data volume (`flock`, held for the database's whole life), and a second Postgres on the same
+    volume exits 75 with `postgres: another container runs on this data volume` before it writes anything, the start
+    files in `runtime-secrets` included. The hopper of that stack waits for a healthy Postgres, so it does not start.
+    Remove the second stack's containers with the tool that made them (`docker-compose down` or `podman-compose down`,
+    never with `-v`: that removes the volumes the first stack uses). Postgres's own `postmaster.pid` check does not
+    work across containers, because in each one the database is PID 1. A stack started from an older compose.yaml
+    holds no lock: the lock is in place once the update recreates Postgres.
 
     `hopper update carry --image <ref>` reads the old `compose.yaml` on stdin and prints the new one: the image's own,
     stamped `# hopper version: <branch> <commit>`, with this install's settings written into the old `compose.yaml` as

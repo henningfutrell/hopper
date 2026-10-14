@@ -30,6 +30,10 @@ Do them in order. Do not do the update another way.
   skip the step that gives it. No other step waits for a person. The update reads the key from nowhere else:
   never from the running container, and never from a file (issue #970).
 - **Never show the master key.** Do not print it or write it to a file.
+- **Use the compose tool that started the stack** (issue #1063). \`podman compose\` runs docker-compose when it is
+  installed. docker-compose does not see a stack podman-compose started, and podman-compose does not see one
+  docker-compose started: its \`up\` starts a second stack on the same volumes, a second Postgres on the live data. The
+  check step, and the last command, stop when the tool does not see the stack that runs. Never go around the check.
 
 ## Steps
 
@@ -40,6 +44,10 @@ Do them in order. Do not do the update another way.
 4. Run these commands, one at a time (Podman; for Docker, \`docker\` in place of \`podman\`; for podman-compose,
    \`podman-compose\` in place of \`podman compose\`):
    - Give the master key: \`${podman.give}\`.
+   - Check that the compose tool sees the stack that runs: \`${podman.check}\`.
+     When it stops and podman-compose started the stack, give \`${PODMAN_PROVIDER_HINT}\` and run the check again.
+     When it stops and docker-compose started it, use \`podman compose\` with docker-compose as its provider (or
+     \`docker compose\`). Do not continue until the check passes.
    - Back up the database: \`${podman.backup}\`.
    - Make the new compose.yaml: \`${podman.carry}\`.
      Read what it says: a part of the old compose.yaml the new one cannot hold goes in \`compose.override.yaml\`.
@@ -48,7 +56,7 @@ Do them in order. Do not do the update another way.
    - Pull and start the whole stack: \`${podman.up}\`.
    - Docker: \`${docker.up}\`.
 5. Podman: when \`podman compose ps\` shows no hopper, but \`podman-compose ps\` does, give \`${PODMAN_PROVIDER_HINT}\`
-   and run the last command again.
+   in this shell, and run the check again before any other compose command.
 6. Check the result: \`podman compose ps\` (or \`docker compose ps\`) shows postgres, openfga, tunnel, cloudflared, solr and hopper running;
    the UI opens; Settings → Version names the new commit; and \`podman compose exec hopper hopper update drift\` exits 0
    with no gaps (exit 3: a gap is open; the UI shows the same in a "stack differs" banner). A gap names what is still missing; the fix is these commands again, never a hand edit.

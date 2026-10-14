@@ -26,15 +26,19 @@
 # carries the compose.yaml of its commit (issue #697, docs/deploy.md "Update"). Run these here, one at a time (issue #970);
 # the last one stops before compose runs when the master key is not given:
 #   read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY
+#   [ -z "$(podman ps -q --filter label=com.docker.compose.project=hopper)" ] || podman compose ps -q 2>/dev/null | grep -Eq '^[0-9a-f]{12,}$' || { echo 'hopper: podman compose does not see the hopper stack that runs …' >&2; false; }
 #   podman compose exec -T postgres pg_dump -U hopper -d hopper -Fc > hopper-backup.dump
 #   podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update carry --image ghcr.io/henningfutrell/hopper:<channel> < compose.yaml > compose.yaml.next
 #   diff -u compose.yaml compose.yaml.next
 #   cp compose.yaml compose.yaml.bak && mv compose.yaml.next compose.yaml
-#   : "${HOPPER_MASTER_KEY:?}" && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose pull && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose up -d
+#   : "${HOPPER_MASTER_KEY:?}" && <the check above> && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose pull && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose up -d
 #   podman image prune -f --filter label=org.opencontainers.image.title=hopper    (optional: the image it replaced)
 # The new compose.yaml is the one that image ships with, your own settings as the defaults of its variables. (docker run …,
-# docker compose …, docker image prune the same; when `podman compose ps` shows no hopper but `podman-compose ps` does:
-# export PODMAN_COMPOSE_PROVIDER=podman-compose.) Never update the hopper service alone (pull hopper, up --no-deps hopper):
+# docker compose …, docker image prune the same.) Always use the compose tool that started the stack (issue #1063):
+# `podman compose` runs docker-compose when it is installed, and docker-compose does not see a stack podman-compose started
+# (nor podman-compose one docker-compose started). Its `up` would make a second stack on the same volumes. The check line
+# stops the update when the tool does not see the stack that runs; when podman-compose started it:
+# export PODMAN_COMPOSE_PROVIDER=podman-compose, then run the check again. Never update the hopper service alone (pull hopper, up --no-deps hopper):
 # a new version can add services it needs. Recreating ends jobs a restart would lose: when an update is out, the UI shows
 # how many; wait until none.
 #
@@ -74,12 +78,18 @@ services:
   # `openfga` schema, that key — rewritten at each start; the schema is made once Postgres takes connections.
   # pg_stat_statements (issue #947) is loaded, and made once Postgres takes connections: the Resources page shows statement
   # latency from it.
+  # One Postgres per data volume (issue #1063): first of all, Postgres locks its data volume (flock, held by the database
+  # for its whole life). A second Postgres on the same volume — a second compose stack, made by another compose tool on the
+  # same named volumes — stops at once (exit 75), before it writes anything. Postgres's own postmaster.pid check does not
+  # work across containers: in each one the database is PID 1.
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
     entrypoint: [sh, -euc]
     command:
       - |
+        exec 9< /var/lib/postgresql/data
+        flock -n 9 || { echo 'postgres: another container runs on this data volume (a second compose stack?): this one does not start. Use the compose tool that started the stack (docs/deploy.md "Update").' >&2; exit 75; }
         s=/run/hopper-secrets
         rm -f $$s/password_set
         (

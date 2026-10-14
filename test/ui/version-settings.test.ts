@@ -191,6 +191,8 @@ describe('a container install is updated by its user (issue #494)', () => {
     const block = document.querySelector('[data-slot="image-update"]')!;
     const text = block.textContent ?? '';
     expect(text).toContain('podman compose exec -T postgres pg_dump -U hopper -d hopper -Fc > hopper-backup.dump');
+    // The check that podman compose sees the stack that runs (issue #1063).
+    expect(text).toContain('podman compose does not see the hopper stack that runs');
     expect(text).toContain('podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:dev hopper update carry --image ghcr.io/henningfutrell/hopper:dev < compose.yaml > compose.yaml.next');
     expect(text).toContain('diff -u compose.yaml compose.yaml.next');
     expect(text).toContain('cp compose.yaml compose.yaml.bak && mv compose.yaml.next compose.yaml');
@@ -200,7 +202,7 @@ describe('a container install is updated by its user (issue #494)', () => {
     expect(text).toContain('podman image prune -f --filter label=org.opencontainers.image.title=hopper');
     expect(text).toContain('this container runs the stable image; the selected channel is dev: switch the image tag');
     expect(text).toContain('2 running jobs would be lost');
-    expect([...block.querySelectorAll('button')].filter((b) => b.textContent === 'Copy').length).toBe(7);
+    expect([...block.querySelectorAll('button')].filter((b) => b.textContent === 'Copy').length).toBe(8);
   });
 
 });

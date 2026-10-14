@@ -146,33 +146,40 @@ You update a container install. The hopper never updates its own container, and 
    To update with no person at the keyboard (an agent or a scheduled task), put the key in the environment of the commands from your secret manager, for example `export HOPPER_MASTER_KEY="$(pass show hopper/master-key)"`, and skip this step. No other step waits for a person. The update does not read the key from the running container or from a file.
 
    `hopper update podman`, `hopper update docker` and `hopper update podman-compose` made an update script before. They are removed. Run them now and they print these commands.
-4. Back up the database:
+4. Check that your compose tool sees the stack that runs. Use the compose tool that started the stack. `podman compose` runs docker-compose when it is installed. docker-compose does not see a stack that podman-compose started, and podman-compose does not see a stack that docker-compose started. The wrong tool starts a second stack on the same data. The check stops when this can happen:
+
+   ```sh
+   [ -z "$(podman ps -q --filter label=com.docker.compose.project=hopper)" ] || podman compose ps -q 2>/dev/null | grep -Eq '^[0-9a-f]{12,}$' || { echo 'hopper: podman compose does not see the hopper stack that runs. It would start a second stack on the same data: the update stops. Use the compose tool that started the stack. When podman-compose started it: export PODMAN_COMPOSE_PROVIDER=podman-compose' >&2; false; }
+   ```
+
+   When it stops and podman-compose started the stack, run `export PODMAN_COMPOSE_PROVIDER=podman-compose`, then the check again. When docker-compose started the stack, use `podman compose` with docker-compose, or `docker compose`. Do not continue until the check passes. The last command checks again.
+5. Back up the database:
 
    ```sh
    podman compose exec -T postgres pg_dump -U hopper -d hopper -Fc > hopper-backup.dump
    ```
 
-5. Make the compose file of the new version. It is the file the image ships with, with your own settings as the defaults of its variables and `HOPPER_IMAGE` the new image:
+6. Make the compose file of the new version. It is the file the image ships with, with your own settings as the defaults of its variables and `HOPPER_IMAGE` the new image:
 
    ```sh
    podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:<channel> hopper update carry --image ghcr.io/henningfutrell/hopper:<channel> < compose.yaml > compose.yaml.next
    ```
 
    Read what it says. When your old `compose.yaml` has a part that the new one cannot hold (a service of your own, a mounted folder), it shows that part. Add it to `compose.override.yaml`.
-6. Read the change, then put the new file in. The old file stays as `compose.yaml.bak`:
+7. Read the change, then put the new file in. The old file stays as `compose.yaml.bak`:
 
    ```sh
    diff -u compose.yaml compose.yaml.next
    cp compose.yaml compose.yaml.bak && mv compose.yaml.next compose.yaml
    ```
 
-7. Pull and start the whole stack. The command stops before anything changes when the master key is not given:
+8. Pull and start the whole stack. The command stops before anything changes when the master key is not given, or when the check of step 4 fails:
 
    ```sh
-   : "${HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY}" && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose pull && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose up -d
+   : "${HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: read -rs HOPPER_MASTER_KEY && export HOPPER_MASTER_KEY}" && [ -z "$(podman ps -q --filter label=com.docker.compose.project=hopper)" ] || podman compose ps -q 2>/dev/null | grep -Eq '^[0-9a-f]{12,}$' || { echo 'hopper: podman compose does not see the hopper stack that runs. It would start a second stack on the same data: the update stops. Use the compose tool that started the stack. When podman-compose started it: export PODMAN_COMPOSE_PROVIDER=podman-compose' >&2; false; } && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose pull && HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:<channel> podman compose up -d
    ```
 
-8. Optional: remove the image it replaced:
+9. Optional: remove the image it replaced:
 
    ```sh
    podman image prune -f --filter label=org.opencontainers.image.title=hopper
@@ -246,6 +253,8 @@ podman compose exec -T postgres pg_restore -U hopper -d hopper --clean < hopper-
 | "Access checks are off" | OpenFGA does not run. Run the update (see "Update a container install"), or `podman compose up -d`. Read `podman compose logs openfga openfga-migrate`. |
 | "This hopper's stack differs from the compose file of its version" | Run the update commands with the image the hopper runs: the banner gives them. |
 | The hopper stops at start and names two schema versions | The database is from a newer version. Run that newer version again, or restore a backup from before it. |
+| `podman compose does not see the hopper stack that runs` | Another compose tool started the stack. Use that tool. When podman-compose started it, run `export PODMAN_COMPOSE_PROVIDER=podman-compose`, then the command again. |
+| `postgres: another container runs on this data volume` | A second stack runs on the same data. Its Postgres does not start, and the first one keeps running. Remove the second stack with the tool that made it (`docker-compose down` or `podman-compose down`). Do not add `-v`: it removes the data. |
 | `unrecognized command "podman compose"` | Your Podman is older than 4.7. Use `podman-compose`, or install a newer Podman. |
 | Host install: `did not answer /api/health` | Read `journalctl --user -u hopper -n 50`. |
 | A **stalled** badge in the top bar | The hopper stopped answering for more than 2 s. Point at the badge to see how long, and the requests in flight. Read the log line `the event loop stalled` (`podman compose logs hopper`). The badge goes after 10 minutes. |
