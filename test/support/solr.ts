@@ -2,7 +2,7 @@
 // container (testcontainers) with one core made from Solr's default config, as compose.yaml makes it, removed after the
 // file's tests. Tests share the core and stay apart as two hoppers do: each document carries its hopper's instance id.
 import { GenericContainer, Wait, type StartedTestContainer } from 'testcontainers';
-import { PID_LABEL } from './sweep.ts';
+import { containerLabels } from './sweep.ts';
 
 export const SOLR_IMAGE = 'docker.io/library/solr:9.11.0-slim';
 
@@ -14,7 +14,7 @@ export async function startTestSolr(): Promise<TestSolr> {
   const c: StartedTestContainer = await new GenericContainer(SOLR_IMAGE)
     .withCommand(['solr-precreate', 'hopper'])
     .withExposedPorts(8983)
-    .withLabels({ [PID_LABEL]: String(process.pid) })
+    .withLabels(containerLabels())
     .withWaitStrategy(Wait.forHttp('/solr/hopper/admin/ping', 8983).forStatusCode(200))
     .withStartupTimeout(120_000)
     .start();

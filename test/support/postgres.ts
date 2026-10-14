@@ -5,7 +5,7 @@
 // a crashed run's container is swept by the next run (support/sweep.ts). Its shared memory is 1 GiB, not the
 // runtime's 64 MiB default: with every worker connected, Postgres ran out of it and restarted mid-run (57P03, issue #1038).
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
-import { PID_LABEL } from './sweep.ts';
+import { containerLabels } from './sweep.ts';
 
 /** The test Postgres's shared memory, in bytes. */
 const SHARED_MEMORY = 1024 ** 3;
@@ -15,7 +15,7 @@ export default async function setup(): Promise<(() => Promise<void>) | undefined
   const container: StartedPostgreSqlContainer = await new PostgreSqlContainer(process.env.POSTGRES_IMAGE ?? 'postgres:17-alpine')
     .withCommand(['postgres', '-c', 'max_connections=300', '-c', 'fsync=off'])
     .withSharedMemorySize(SHARED_MEMORY)
-    .withLabels({ [PID_LABEL]: String(process.pid) })
+    .withLabels(containerLabels())
     .start();
   process.env.HOPPER_TEST_POSTGRES_URL = container.getConnectionUri();
   return async () => { await container.stop(); };

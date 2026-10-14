@@ -20,8 +20,10 @@
 // scratch dir at once, whatever its age (work not pushed is still kept), and measures again; still over, a person is told
 // once (machine.disk_over_budget), and once more when it is back within it (machine.disk_within_budget). Kept in memory:
 // after a restart, the first pass measures again, and a machine still over is told again.
+// An ended job with a container or a volume labelled with its id still on the machine (issue #1120) is reaped at once,
+// whatever its age: the reap removes them. What any reap removed of them is recorded as job.containers_removed.
 import type { ActingPerson, DiskBudget, HopperDisk, HopperDiskPath, Job, KeptWork, MachineSnapshot } from '../domain/types.ts';
-import type { MachineShell, Survey } from '../domain/ports.ts';
+import type { MachineShell, Reaped, Survey } from '../domain/ports.ts';
 import { hopperDiskOf, keptScratchOf, keptWorkOf, machineRanOn, TERMINAL_STATUSES, WORK_EVENTS } from '../domain/types.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
@@ -59,6 +61,10 @@ export function planSweep(found: Survey, jobOf: (id: string) => Job | undefined,
   for (const id of new Set([...found.scopes, ...found.processes])) {
     const job = jobOf(id);
     if (job && !LIVE.has(job.status)) plan.set(id, { jobId: id });
+  }
+  for (const id of found.containers ?? []) {
+    const job = jobOf(id);
+    if (job && TERMINAL_STATUSES.includes(job.status)) plan.set(id, { jobId: id });
   }
   for (const dir of found.scratch) {
     const job = jobOf(dir.jobId);
@@ -114,6 +120,7 @@ export interface Sweep {
 }
 
 const gb = (bytes: number): string => `${(bytes / 1e9).toFixed(1)} GB`;
+const count = (n: number, what: string): string => `${n} ${what}${n === 1 ? '' : 's'}`;
 
 export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'machines' | 'clock' | 'stopping'>, log: (line: string) => void = (l) => console.warn(l)): Sweep {
   const last = new Map<string, number>();
@@ -140,6 +147,14 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     const key = job?.source?.key;
     return key !== undefined && c.store.workItems.get(key)?.state === 'done';
   };
+
+  /** What a reap removed of the job's containers and volumes (issue #1120), recorded. */
+  function recordRemoved(jobId: string, m: MachineSnapshot, said: Reaped): void {
+    if (!said.removed) return;
+    const { containers, volumes } = said.removed;
+    log(`hopper: removed ${count(containers.length, 'container')} and ${count(volumes.length, 'volume')} of job ${jobId} on ${m.id}`);
+    c.store.events.append({ type: 'job.containers_removed', jobId, machineId: m.id, data: { containers, volumes } });
+  }
 
   /** The machine's measure kept, and a person told when it goes over the budget or back within it. */
   function measure(m: MachineSnapshot, found: Survey, budget: DiskBudget | undefined): void {
@@ -188,6 +203,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
         log(`hopper: the sweep could not reap job ${r.jobId} on ${m.id}: ${(e as Error).message}`);
         continue;
       }
+      recordRemoved(r.jobId, m, said);
       if (r.scratch && said.kept.length === 0) removed += 1;
       if (discard && said.kept.length === 0) {
         log(`hopper: the sweep discarded job ${r.jobId}'s kept work on ${m.id}: its item is done`);
@@ -231,6 +247,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
       } catch (e) {
         throw refuse(jobId, (e as Error).message);
       }
+      recordRemoved(jobId, m, said);
       if (said.kept.length > 0) throw refuse(jobId, `the machine ${m.id} kept it: update its client, then discard it again`);
       log(`hopper: job ${jobId}'s kept work was discarded on ${m.id}, its scratch dir removed`);
       c.store.events.append({ type: 'job.work_removed', jobId, data: { paths: [scratch], discarded: true, ...by } });

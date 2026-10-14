@@ -880,6 +880,12 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   stays in the job's scope, so it is stopped: the container goes on unmonitored (no restart policy, no
   `--rm`). A service meant to outlive the job is started outside it, e.g. `env -u HOPPER_JOB_ID
   systemd-run --user …`, or through a socket's daemon (`docker compose` against a podman socket).
+  A **job container** (issue #1120, "Hopper's own disk use" → "Part 3"): a container or a volume labelled
+  `hopper.job=<job id>` is the job's, whichever way it was started. The reap removes each one in each container
+  runtime there (`docker`, `podman`), a container with its anonymous volumes (`rm -f -v`), and prints
+  `hopper-removed-container <id>` and `hopper-removed-volume <name>`; `Reaped.removed` carries them, and the engine records
+  `job.containers_removed { containers, volumes }`. Asked with `keep` it removes none, nor does a client's isolation
+  stop: neither is the job's end.
 - **The sweep** (issue #410, `src/engine/sweep.ts`). The reap runs when a pane closes; a hopper that
   crashed, a lost pane, a machine that rebooted or could not be reached left nothing to run it. So at
   startup, after recovery and the reap of each job it ended, and then on each machine every
@@ -900,6 +906,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   - kept work that is gone (issue #1120, "Hopper's own disk use"): no record of kept work outlives its folder;
   - over the disk budget (issue #1120, "Hopper's own disk use"): every ended job's scratch dir at once, whatever its
     age, with the reap's rule. Each pass also measures the hopper's own disk use there, which Machines shows.
+  - an ended job with a **job container** still there (issue #1120, the survey's `hopper-container <job id>`, read
+    through the `hopper.job` label of each container and volume): reaped at once, whatever its age, which removes it
+    (`job.containers_removed`).
   A job id the hopper does not know is never touched: it may be another hopper's, or a test's. A machine
   offline at startup is swept once it is online. Each reap is one log line.
 - **Each job its own git worktree** (issue #379). One work tree serves every job given it, so jobs
@@ -7608,7 +7617,9 @@ marker, which every process of the run inherits. Its teardown kills every proces
 containers and removes the run root. Setup and teardown both sweep what a dead run left
 (`test/support/sweep.ts`): run roots whose pid is dead, containers named `jh-<kind>-<pid>` (a test's
 container names end in its pid) and containers labelled `hopper.test-pid=<pid>` (the Postgres) whose
-pid is dead. A live pid's are never touched: they belong to a run still going. Older leftovers in the
+pid is dead, each with its anonymous volumes. A live pid's are never touched: they belong to a run still going. A run
+in a hopper job (`HOPPER_JOB_ID` set) also labels each container it starts `hopper.job=<job id>`
+(`containerLabels`, issue #1120), so the job's reap removes it when the job ends. Older leftovers in the
 tmpdir (`jh-test-home-*`, …) are not swept by name; another suite may own them. A unix socket path is
 capped at 108 bytes, so a test that listens on a socket makes its dir in `/tmp`, not under the run root.
 
@@ -18707,15 +18718,32 @@ runs and the one it ran before (read from the hopper's container before the stac
   `machine.disk_within_budget` once it is back within it. Webhooks take them. The budget turned off forgets who was told. Kept
   in memory, as the memory alert: a machine still over after a restart is told again.
 
-**Left for later parts:** a record of each resource the hopper makes (job containers, volumes, logs, bundles) with its
-owner, removed as an event when the owner ends; a periodic reconcile of orphans and of images the hopper's boxes left, with a
-retention for backups and update logs; the shared checkouts (`workspace/<name>`) and the shared dependencies in the disk
-use; and the Grok Bot routine posting the disk budget's events.
+**Part 3: a job's containers and volumes** (`src/client/reap.ts` `JOB_LABEL`; `src/engine/sweep.ts`; `src/engine/cleanup.ts`).
+The exited per-job database containers and the orphaned volumes came from jobs' own test runs: a job killed at its end
+left its test container, and the test sweep removed a dead run's containers without their anonymous volumes.
+- **The owner is a label.** A container or a volume labelled `hopper.job=<job id>` is that job's (a **job container**).
+  The hopper's own tests label every container they start so when they run in a job (`HOPPER_JOB_ID`;
+  `test/support/sweep.ts` `containerLabels`), and their sweep of a dead run's containers now removes their anonymous
+  volumes too (`rm -f -v`).
+- **The reap removes them at the job's end**, in each container runtime on the machine, and the engine records
+  `job.containers_removed` with each one (the cleanup's reap, the sweep's, a discard's). Not with `keep` (a timed-out
+  job's), nor at a client's isolation stop: the job may go on.
+- **The sweep removes orphans**: the survey names each job with a job container there, and the sweep reaps an ended one
+  at once, whatever its age. A job the hopper does not know, or one not ended (parked too), is never touched.
+- Each runtime call is cut off at 30 s by `timeout` where it is, and only ids a runtime gave are passed on, never one
+  that starts with `-`. A machine with no runtime, or one whose runtime cannot be reached, removes and names none.
+
+**Left for later parts:** a container a job starts without the label (the job's own tooling outside the hopper's tests);
+the images the hopper's boxes left; a retention for database backups and update logs (the update keeps one backup,
+`hopper-backup.dump`, and one build log, each replaced, so neither grows now); the shared checkouts (`workspace/<name>`)
+and the shared dependencies in the disk use; and the Grok Bot routine posting the disk budget's events.
 
 **Verification:** `test/engine/sweep.test.ts` ("kept work whose folder is gone", "the hopper's own disk use"),
 `test/client/survey-roots.test.ts` (the survey for real, its measure too), `test/scripts/update.test.ts` (the older images
 removed, none on a failed update), `test/integration/disk-budget.test.ts` (the setting through the daemon),
-`test/ui/hopper-disk.test.ts` (the card's text and the budget form).
+`test/ui/hopper-disk.test.ts` (the card's text and the budget form). Part 3: `test/client/job-containers.test.ts` (the reap and the
+survey for real, with a fake container runtime), `test/engine/sweep.test.ts` ("a job's containers and volumes"),
+`test/integration/work-kept.test.ts` (the event at a job's end), `test/support-run.test.ts` (the tests' labels).
 
 ## Tool accounts (issue #1128, 2026-10-14, part 1)
 

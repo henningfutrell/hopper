@@ -886,6 +886,26 @@ Version 1 (`docs/schemas/job.work_removed.v1.json`). The sweep (issue #410), or 
 }
 ```
 
+## `job.containers_removed`
+
+Version 1 (`docs/schemas/job.containers_removed.v1.json`). The job's reap (issue #1120), at its end or in a later sweep, removed the containers and volumes on its machine labelled with its id (`hopper.job=<job id>`): `containers`, each with its anonymous volumes, and `volumes`, by name. The sweep reaps an ended job that still has one, whatever its age. A timed-out job's reap removes none: it may go on there.
+
+| field | type | required |
+|---|---|---|
+| `containers` | string[] | yes |
+| `volumes` | string[] | yes |
+
+```json
+{
+  "containers": [
+    "3f2a9c1b7d4e"
+  ],
+  "volumes": [
+    "hopper-test-db"
+  ]
+}
+```
+
 ## `job.cleanup_deferred`
 
 Version 1 (`docs/schemas/job.cleanup_deferred.v1.json`). The job ended, but its cleanup could not reach its machine (`error`), so its pane and agent may still run there. Recorded once per deferral; the cleanup is tried again on every tick, and a waiting job of the same item is held until it goes through.

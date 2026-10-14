@@ -2,7 +2,7 @@
 // Called after the transaction that recorded a terminal outcome, and by restart recovery. Never throws.
 // A cleanup that could not reach the job's machine is deferred (issue #371): recorded on the job, tried
 // again on every tick until it goes through, and meanwhile a waiting job of the same item is held.
-import { keptScratchOf, keptWorkOf, WORK_EVENTS, type CleanupDue, type Job } from '../domain/types.ts';
+import { keptScratchOf, keptWorkOf, machineRanOn, WORK_EVENTS, type CleanupDue, type Job } from '../domain/types.ts';
 import { EngineError } from './errors.ts';
 import { nowIso, type EngineContext } from './context.ts';
 
@@ -43,6 +43,12 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'k
       c.store.tx(() => {
         // Never removed silently (issue #401): what the reap kept is flagged on the job.
         if (reaped && reaped.kept.length > 0) c.store.events.append({ type: 'job.work_kept', jobId, data: { paths: reaped.kept } });
+        // The job's containers and volumes it removed (issue #1120).
+        const removed = reaped?.removed;
+        const machineId = machineRanOn(job);
+        if (removed && (removed.containers.length > 0 || removed.volumes.length > 0)) {
+          c.store.events.append({ type: 'job.containers_removed', jobId, ...(machineId ? { machineId } : {}), data: { containers: removed.containers, volumes: removed.volumes } });
+        }
         // Work an earlier end kept, pushed by the job that went on with it (issue #1010): no longer kept.
         const before = reaped && reaped.kept.length === 0 ? keptWorkOf(c.store.events.recent(1, [...WORK_EVENTS], jobId))[0] : undefined;
         if (before) c.store.events.append({ type: 'job.work_removed', jobId, data: { paths: [keptScratchOf(before, job) ?? before.paths[0]!] } });

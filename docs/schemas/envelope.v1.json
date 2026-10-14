@@ -64,6 +64,7 @@
         "job.reassigned",
         "job.work_kept",
         "job.work_removed",
+        "job.containers_removed",
         "job.cleanup_deferred",
         "job.cleaned_up",
         "job.parked",

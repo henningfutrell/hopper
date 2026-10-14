@@ -1,6 +1,7 @@
 // A HashiCorp Vault for the vault backend tests (issue #585): the one HOPPER_TEST_VAULT_ADDR and HOPPER_TEST_VAULT_TOKEN
 // name, else a throwaway dev-mode server in a container (testcontainers), on loopback. Its KV v2 engine is at `secret`.
 import { GenericContainer, type StartedTestContainer } from 'testcontainers';
+import { containerLabels } from './sweep.ts';
 
 export interface TestVault {
   addr: string;
@@ -21,6 +22,7 @@ export async function startTestVault(): Promise<TestVault> {
       .withEnvironment({ VAULT_DEV_ROOT_TOKEN_ID: ROOT, VAULT_DEV_LISTEN_ADDRESS: '0.0.0.0:8200' })
       .withAddedCapabilities('IPC_LOCK')
       .withExposedPorts(8200)
+      .withLabels(containerLabels())
       .start();
     addr = `http://127.0.0.1:${container.getMappedPort(8200)}`;
     token = ROOT;

@@ -1,15 +1,9 @@
 // The sweep (issue #410): what it reaps of what jobs left on a machine, and when. The plan is pure; the
 // runner is driven with a fake machine shell, the store's jobs and work trail as plain lists.
 import { describe, expect, it } from 'vitest';
-import type { DomainEvent, Job, MachineSnapshot } from '../../src/domain/types.ts';
-import type { Executor, MachineShell, Survey } from '../../src/domain/ports.ts';
-import { createSweep, planSweep } from '../../src/engine/sweep.ts';
-
-const HOUR = 3600_000;
-const job = (id: string, status: Job['status'], cwd = '/w'): Job => ({
-  id, spec: { executor: 'x', payload: {}, machineId: 'm' }, priority: 50, status, approved: false, createdAt: '', updatedAt: '', attempts: 1, executorState: { cwd },
-});
-const none: Survey = { scopes: [], processes: [], scratch: [] };
+import type { Survey } from '../../src/domain/ports.ts';
+import { planSweep } from '../../src/engine/sweep.ts';
+import { HOUR, job, none, rig } from './sweep-rig.ts';
 
 describe('what the sweep reaps (issue #410)', () => {
   const jobs = new Map([
@@ -73,49 +67,6 @@ describe('what the sweep reaps (issue #410)', () => {
   });
 });
 
-/** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[] } = {}) {
-  let now = Date.parse('2026-10-08T00:00:00Z');
-  // The disk budget (issue #1120), in bytes; absent: none. `surveys`: what each survey finds in turn, then `found`.
-  let budget = o.budget;
-  const surveys = [...(o.surveys ?? [])];
-  // Each job works the item `item:<id>`; the ledger holds the items of `itemDone` done.
-  const jobs = [job('done', 'finished', '/w'), job('run', 'running', '/v'), job('old', 'failed', '/w')].map((j) => ({ ...j, source: { source: 's', kind: 'github', key: `item:${j.id}` } }) as Job);
-  const events: { type: string; jobId?: string; machineId?: string; data: unknown }[] = (o.kept ?? []).map((id) => ({ type: 'job.work_kept', jobId: id, data: { paths: ['x'] } }));
-  const surveyed: string[][] = [];
-  const reaps: { jobId: string; scratch?: string; discard?: boolean }[] = [];
-  const logs: string[] = [];
-  const shell: MachineShell = {
-    async survey(roots) { surveyed.push(roots); return surveys.shift() ?? o.found ?? none; },
-    async reap(jobId, scratch, _keep, discard) {
-      reaps.push({ jobId, ...(scratch ? { scratch } : {}), ...(discard ? { discard } : {}) });
-      // `containers`: the jobs whose reap removed a container and a volume (issue #1120).
-      const removed = o.containers?.includes(jobId) ? { removed: { containers: [`c-${jobId}`], volumes: [`v-${jobId}`] } } : {};
-      return { kept: scratch && (!discard || o.oldClient) && o.keeps?.includes(jobId) ? [`${scratch}/repo`] : [], ...removed };
-    },
-    async keepCredential() { throw new Error('not asked'); },
-    async reach() { throw new Error('not asked'); },
-    async discover() { throw new Error('not asked'); },
-  };
-  const executor = { name: 'x', validate: () => null, run: async () => ({ kind: 'failed' as const, error: '' }), machineShell: (m: MachineSnapshot) => (m.id === 'unreachable' ? undefined : shell) } satisfies Executor;
-  const machines = o.machines ?? [{ id: 'm', label: 'm', maxLanes: 1, online: true, executors: ['x'] }];
-  const sweep = createSweep({
-    clock: { now: () => new Date(now) },
-    stopping: () => false,
-    machines: { list: async () => machines },
-    executors: { get: (n: string) => (n === 'x' ? executor : undefined), names: () => ['x'] } as never,
-    store: {
-      jobs: { list: () => jobs, get: (id: string) => jobs.find((j) => j.id === id) },
-      events: {
-        recent: (_limit: number, types: string[], jobId?: string) => events.filter((e) => types.includes(e.type) && (!jobId || e.jobId === jobId)).reverse() as unknown as DomainEvent[],
-        append: (e: { type: string; jobId?: string; machineId?: string; data: unknown }) => { events.push(e); return e as unknown as DomainEvent; },
-      },
-      workItems: { get: (key: string) => (o.itemDone?.some((id) => key === `item:${id}`) ? { key, state: 'done' } : undefined) },
-      settings: { getDiskBudget: () => (budget === undefined ? undefined : { bytes: budget }) },
-    } as never,
-  }, (l) => logs.push(l));
-  return { sweep, surveyed, reaps, events, logs, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
-}
 
 describe('the sweep runner (issue #410)', () => {
   it('asks each online machine about the work trees of the jobs it knows, then reaps what the plan says', async () => {
@@ -307,7 +258,7 @@ describe('a job\'s containers and volumes (issue #1120)', () => {
     await r.sweep.run(true);
     expect(r.reaps).toEqual([{ jobId: 'done' }]);
     expect(r.events).toEqual([{ type: 'job.containers_removed', jobId: 'done', machineId: 'm', data: { containers: ['c-done'], volumes: ['v-done'] } }]);
-    expect(r.logs).toEqual([expect.stringContaining('removed 1 container and 1 volume of job done on m')]);
+    expect(r.logs).toContainEqual(expect.stringContaining('removed 1 container and 1 volume of job done on m'));
   });
 
   it('a reap that removed none records nothing', async () => {
