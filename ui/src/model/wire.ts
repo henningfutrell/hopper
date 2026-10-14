@@ -119,6 +119,7 @@ export interface WebhooksView {
 export type { GitHubCallKind, HourlyCalls, RateBucket, RateLimiterSettings, RateLimiterView } from '../../../src/domain/github-rate-limit.ts';
 export type { CredentialMeta, RemoteAccessChange, RemoteAccessLinks, RemoteAccessProvider, RemoteAccessState, RemoteAccessStatus, RemoteAccessView } from '../../../src/domain/remote-access.ts';
 export type { GitHubWatch, GitHubWatchSettings, GitHubWatchView } from '../../../src/domain/github-watch.ts';
+export type { ComponentWatcherSettings, ComponentWatcherView, ComponentWatchersView, DriftView } from '../../../src/domain/drift.ts';
 export type { DirectJob, DirectJobInput, DirectJobQuestion, DirectJobView } from '../../../src/domain/direct-jobs.ts';
 export type { SearchAnswer, SearchFacet, SearchState, SearchStatus, SuggestAnswer } from '../../../src/domain/search.ts';
 export type { Promotion, PromotionArtifact, PromotionDraft, PromotionRequest, PromotionTarget, PromotionView, ScanFinding } from '../../../src/domain/promotions.ts';

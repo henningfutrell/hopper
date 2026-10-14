@@ -160,6 +160,17 @@ export const githubWatchEvents = {
   'github_watch.settings_changed': strict({ from: watchSettings, to: watchSettings, by: z.string() }),
 };
 
+const driftAt = { watcher: z.string(), kind: z.string() };
+const driftIssueAt = strict({ ...driftAt, number: z.number().int(), url: z.string() });
+const componentWatcherSettings = strict({ fileIssues: z.boolean() });
+export const driftEvents = {
+  'drift.found': strict({ ...driftAt, items: z.number().int().min(1) }),
+  'drift.cleared': strict(driftAt),
+  'drift.issue_filed': driftIssueAt,
+  'drift.issue_updated': driftIssueAt,
+  'component_watchers.settings_changed': strict({ from: componentWatcherSettings, to: componentWatcherSettings, by: z.string() }),
+};
+
 /** A job's task count (issue #794): done of total, 0 ≤ done ≤ total, total ≥ 1. */
 // A terraform workspace need's state backend on `template.saved` (issue #715).
 export const stateBackend = strict({ bucket: z.string(), region: z.string(), keyPrefix: z.string().optional() });

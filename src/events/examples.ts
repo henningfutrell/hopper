@@ -270,7 +270,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     pointedJob: 'p1', repo: 'octo-org/hello', pointer: { kind: 'issue', number: 7, url: 'https://github.com/octo-org/hello/issues/7' },
     changes: { labels: { added: ['ready'], removed: [] }, comments: { added: [{ id: 1201, author: 'octocat', at: '2026-10-11T12:00:00Z' }], removed: 0 } },
   },
-  'github_watch.settings_changed': { from: { intervalSeconds: 60 }, to: { intervalSeconds: 300 }, by: 'octocat' },
+  'github_watch.settings_changed': { from: { intervalSeconds: 60 }, to: { intervalSeconds: 300 }, by: 'octocat' }, 'drift.found': { watcher: 'ledger-github', kind: 'failed_but_finished', items: 2 }, 'drift.cleared': { watcher: 'ledger-github', kind: 'failed_but_finished' }, 'drift.issue_filed': { watcher: 'ledger-github', kind: 'failed_but_finished', number: 1101, url: 'https://github.com/henningfutrell/hopper/issues/1101' }, 'drift.issue_updated': { watcher: 'ledger-github', kind: 'failed_but_finished', number: 1101, url: 'https://github.com/henningfutrell/hopper/issues/1101' }, 'component_watchers.settings_changed': { from: { fileIssues: false }, to: { fileIssues: true }, by: 'octocat' },
   'infra.plan_recorded': {
     plan: '0b7e5a3c-0000-4000-8000-000000000870', tool: 'terraform', asset: { kind: 'aws-role', name: '123456789012/deploy' }, target: 'uat-network', repo: 'octo-org/infra',
     ref: 'issue-12', commit: 'e83c5163316f89bfbde7d9ab23ca2e25604af290', pullRequest: 13, read: 'read/aws-role/123456789012/readonly',

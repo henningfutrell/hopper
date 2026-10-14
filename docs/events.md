@@ -4716,6 +4716,102 @@ Version 1 (`docs/schemas/github_watch.settings_changed.v1.json`). A person chang
 }
 ```
 
+## `drift.found`
+
+Version 1 (`docs/schemas/drift.found.v1.json`). A component watcher (issue #1077) found a kind of drift that was not there at its check before: `watcher` (`ledger-github`: the work-item ledger against GitHub), `kind` (`failed_but_finished`, `pr_open_but_ended`, `pull_request_state`, `issue_state`) and how many `items` are in it. Never an item's key.
+
+| field | type | required |
+|---|---|---|
+| `watcher` | string | yes |
+| `kind` | string | yes |
+| `items` | integer | yes |
+
+```json
+{
+  "watcher": "ledger-github",
+  "kind": "failed_but_finished",
+  "items": 2
+}
+```
+
+## `drift.cleared`
+
+Version 1 (`docs/schemas/drift.cleared.v1.json`). A kind of drift a component watcher found before is gone at its check (issue #1077): `watcher` and `kind`. Its drift issue, if it has one, is updated to say so.
+
+| field | type | required |
+|---|---|---|
+| `watcher` | string | yes |
+| `kind` | string | yes |
+
+```json
+{
+  "watcher": "ledger-github",
+  "kind": "failed_but_finished"
+}
+```
+
+## `drift.issue_filed`
+
+Version 1 (`docs/schemas/drift.issue_filed.v1.json`). A component watcher filed a drift issue on the hopper's own repository with the user's GitHub connection (issue #1077), the user's setting on: `watcher`, `kind`, the issue's `number` and `url`. One per kind of drift: the next check finds it by its drift key.
+
+| field | type | required |
+|---|---|---|
+| `watcher` | string | yes |
+| `kind` | string | yes |
+| `number` | integer | yes |
+| `url` | string | yes |
+
+```json
+{
+  "watcher": "ledger-github",
+  "kind": "failed_but_finished",
+  "number": 1101,
+  "url": "https://github.com/henningfutrell/hopper/issues/1101"
+}
+```
+
+## `drift.issue_updated`
+
+Version 1 (`docs/schemas/drift.issue_updated.v1.json`). A component watcher updated the drift issue of a kind of drift (issue #1077), found by its drift key: what it lists changed, or the drift is gone. Fields as `drift.issue_filed`.
+
+| field | type | required |
+|---|---|---|
+| `watcher` | string | yes |
+| `kind` | string | yes |
+| `number` | integer | yes |
+| `url` | string | yes |
+
+```json
+{
+  "watcher": "ledger-github",
+  "kind": "failed_but_finished",
+  "number": 1101,
+  "url": "https://github.com/henningfutrell/hopper/issues/1101"
+}
+```
+
+## `component_watchers.settings_changed`
+
+Version 1 (`docs/schemas/component_watchers.settings_changed.v1.json`). An admin changed whether the component watchers file drift issues (issue #1077): `from` and `to`, each `fileIssues`. Applies at the next check.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "fileIssues": false
+  },
+  "to": {
+    "fileIssues": true
+  },
+  "by": "octocat"
+}
+```
+
 ## `direct_job.submitted`
 
 Version 1 (`docs/schemas/direct_job.submitted.v1.json`). A person submitted a direct job (issue #901): `id` the direct job, `by` who and `via` the way (`ui`, `api` for an API token, `cli`), its routing `labels`, the `authorizations` they gave it, and `repo` when its work may open a pull request there. Its job is queued in the same transaction (`job.queued`, source `direct`). Never its title or brief: those stay on the record.
