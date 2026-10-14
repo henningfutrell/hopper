@@ -1,0 +1,1 @@
+- The Machines and Accounts pages now warn when a machine keeps cloud or infrastructure credential folders in its home, so you can remove them.

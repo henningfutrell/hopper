@@ -15,6 +15,7 @@
 // whose start check fails, with what it wrote (issue #708, sandbox-reach.tsx). A machine whose link dropped under a running
 // job says since when it is out of reach and that the job is held (issue #752, machine-away.tsx). Each card
 // says the hopper's own disk use there, against the disk budget set under the machines (issue #1120, disk-budget.tsx).
+// A machine whose home holds infra credential folders is flagged with their names (issue #1128 part 7).
 import { Activity, Box, Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -27,7 +28,7 @@ import { StatusBadge, TEXT } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
-import { clientReleaseText, clientUpdateLine, diskText, herdrText, kindOf, ownedHerdrText, mayAddThisMachine, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
+import { clientReleaseText, clientUpdateLine, diskText, herdrText, infraCredentialsText, kindOf, ownedHerdrText, mayAddThisMachine, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
 import { resourcesText } from '@/model/machine-history';
 import { hopperDiskText } from '@/model/hopper-disk';
 import { windowsLinkText } from '@/model/windows-link';
@@ -110,7 +111,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   );
   return (
     <Panel title={m.label || m.id} icon={Server} bodyClassName="space-y-4"
-      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}{m.hopperDisk?.over && <StatusBadge status="over disk budget" tone="warn" />}{m.resources?.windowsLink?.ok === false && <StatusBadge status="Windows link broken" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
+      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}{infraCredentialsText(m) && <StatusBadge status="infra credentials" tone="warn" />}{m.hopperDisk?.over && <StatusBadge status="over disk budget" tone="warn" />}{m.resources?.windowsLink?.ok === false && <StatusBadge status="Windows link broken" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
       <MachineAway machine={m.id} />
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div><div className="text-[11px] text-muted-foreground">max lanes</div><div className="num text-lg font-semibold">{m.maxLanes}</div></div>
@@ -153,6 +154,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       {m.herdrProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.herdrProblem}. Its jobs wait for another machine.</p>
       )}
+      {infraCredentialsText(m) && <p role="alert" data-slot="infra-credentials" className="text-sm text-warn">{infraCredentialsText(m)}</p>}
       {m.resources?.windowsLink && <WindowsLinkProblem link={m.resources.windowsLink} />}
       {m.workTreeProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.workTreeProblem}. Its jobs wait for another machine; set its work tree with Edit.</p>

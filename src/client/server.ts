@@ -5,7 +5,7 @@
 // answers `{code, stdout, stderr}` — the binary and the session are the client's own, never the
 // request's; `POST /release` answers `{release, loads, home, disk, resources}`, the id of the release this process runs
 // (release.ts, issue #70), `loads: 'manifest'` — it loads any release its manifest vouches for (issue #545; a
-// client before that says nothing, and checks a fixed list of file names) — and this user's home, where `~` in a job's work tree resolves (issue #323), the disk it is on (issue #401) and this machine's CPU, memory and swap (issue #560, resources.ts), and its client door (issue #695, door.ts); `POST /load {release}` writes the hopper's release into the install dir
+// client before that says nothing, and checks a fixed list of file names) — and this user's home, where `~` in a job's work tree resolves (issue #323), the disk it is on (issue #401), the infra credential folders its home holds (issue #1128 part 7, infra-credentials.ts) and this machine's CPU, memory and swap (issue #560, resources.ts), and its client door (issue #695, door.ts); `POST /load {release}` writes the hopper's release into the install dir
 // and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files);
 // `POST /reap {jobId, scratch?, keep?, discard?}`, `POST /survey {roots}` (reap.ts) and `POST /credential` (issue #441, credential.ts) run fixed
 // scripts on this machine (issue #410): the reap of an ended job, what the sweep asks, a running job's token; `{code, stdout, stderr}`;
@@ -43,6 +43,7 @@ import { level, runClaude } from './level.ts';
 import { createSignInRoute, startSignIn } from './sign-in.ts';
 import { checkRelease, installRelease, readRelease } from './release.ts';
 import { createResourceMeter, diskOfHome } from './resources.ts';
+import { infraCredentialsAt } from './infra-credentials.ts';
 import type { WindowsLink } from './windows-link.ts';
 import { workTreeCall } from './work-tree.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResponse, verifyRequest } from './signature.ts';
@@ -167,7 +168,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   }
   nonce = v.nonce;
   watch.heard();
-  if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome(), resources: withWindowsLink(resources(), o.windowsLink?.()), ...(o.vaultHelper ? { vault: o.vaultHelper } : {}), ...(o.door?.() ? { door: o.door() } : {}), ...watch.probed(body) });
+  if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome(), infraCredentials: infraCredentialsAt(homedir()), resources: withWindowsLink(resources(), o.windowsLink?.()), ...(o.vaultHelper ? { vault: o.vaultHelper } : {}), ...(o.door?.() ? { door: o.door() } : {}), ...watch.probed(body) });
   if (path === '/load') return load(o, releases, stream, body, answer);
   if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree' || path === '/reach' || path === '/checkpoint') return fixed(path, body, answer);
   // Discovery (issue #542): the fixed script, no argument of the request's.

@@ -67,6 +67,8 @@ describe('infra credential folders on machines (issue #1128)', () => {
 
   it('a client target: its client answers them in /release, and the probe carries them', async () => {
     process.env.FAKE_HERDR_DIR = join(homedir(), 'herdr');
+    mkdirSync(process.env.FAKE_HERDR_DIR, { recursive: true });
+    made.push(process.env.FAKE_HERDR_DIR);
     process.env.FAKE_HERDR_RUNNING = '1';
     const token = mintToken();
     client = await startTestClient({ token: () => token, herdrBin: HERDR, session: 'hopper' });
