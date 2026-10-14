@@ -7,10 +7,12 @@ export const LOGIN_KINDS = ['device_code'] as const;
 export type LoginKind = typeof LOGIN_KINDS[number];
 
 /**
- * `pending`: waiting for the user. `completed`: the machine went on (the tool proceeded, or ended). `expired`: its
- * code ran out first. `cancelled`: the user cancelled it. `failed`: what waited on it ended first, or could not take it.
+ * `pending`: waiting for the user (again, with `reason`, once its requester said a completed login does not work, issue
+ * #1110). `completed`: the machine went on (the tool proceeded, or ended), or its requester said it went through.
+ * `expired`: its code ran out first. `cancelled`: the user cancelled it. `failed`: what waited on it ended first, could
+ * not take it, or its requester said it did not go through. `dismissed`: a person put it away (issue #1110).
  */
-export const LOGIN_STATUSES = ['pending', 'completed', 'expired', 'cancelled', 'failed'] as const;
+export const LOGIN_STATUSES = ['pending', 'completed', 'expired', 'cancelled', 'failed', 'dismissed'] as const;
 export type LoginStatus = typeof LOGIN_STATUSES[number];
 
 /**
@@ -71,7 +73,7 @@ export interface Login extends LoginBlocks {
   status: LoginStatus;
   expiresAt: string;
   intervalSec?: number;
-  /** Why it failed. */
+  /** Why it failed, or, on a pending login, why its requester reopened it (issue #1110). */
   reason?: string;
   /** When the user last asked for a new code, while it is answered. */
   newCodeAskedAt?: string;
@@ -97,6 +99,14 @@ export interface LoginView extends Login {
   account?: string;
   scopes?: string[];
 }
+
+/**
+ * What the requester of a login says of it (issue #1110): only it knows whether the login worked. `completed` ends the
+ * login, or completes one that failed; `failed` fails an open login, or reopens a completed or dismissed one, with
+ * `reason`.
+ */
+export const LOGIN_OUTCOMES = ['completed', 'failed'] as const;
+export type LoginOutcome = { outcome: 'completed' } | { outcome: 'failed'; reason: string };
 
 /**
  * What a run waiting on a login does next: wait, ask its tool for a new code, stop waiting (cancelled), or fail.

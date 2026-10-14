@@ -20,7 +20,7 @@ const ALL: Record<EventType, true> = {
   'job.parked': true, 'job.unparked': true, 'job.continued': true, 'job.waiting': true, 'job.wait_ended': true, 'job.own_command_nudged': true, 'job.own_command_stuck': true, 'job.checkpointed': true, 'job.note_added': true, 'job.note_delivered': true, 'job.note_carried': true,
   'source.stalled': true, 'connected_account.expired': true, 'connected_account.renewed': true, 'connected_account.renewal_failed': true, 'ui_session.ended': true,
   'source.claim_released': true, 'source.intake_migrated': true, 'source.issues_assigned': true,
-  'auth.pending': true, 'auth.completed': true, 'auth.expired': true, 'auth.cancelled': true, 'auth.failed': true,
+  'auth.pending': true, 'auth.completed': true, 'auth.expired': true, 'auth.cancelled': true, 'auth.failed': true, 'auth.reopened': true, 'auth.dismissed': true,
   'job.assessed': true, 'failure.grouped': true, 'failure.resolved': true, 'failure.released': true, 'handoff.opened': true, 'handoff.closed': true, 'handoff.checked': true,
   'usage.limits_changed': true, 'priority_lanes.changed': true, 'priority_lanes.settings_changed': true,
   'proposal.asked': true, 'proposal.submitted': true, 'proposal.escalated': true, 'proposal.escalated_to_human': true, 'proposal.reviewed': true,

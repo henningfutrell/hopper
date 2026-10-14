@@ -1466,13 +1466,14 @@ Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (
 
 ## `auth.completed`
 
-Version 1 (`docs/schemas/auth.completed.v1.json`). The machine went on after the login: the tool proceeded (or ended), and the job works again.
+Version 1 (`docs/schemas/auth.completed.v1.json`). The machine went on after the login: the tool proceeded (or ended), and the job works again. `by: requester` (issue #1110): the job that asked for the login said it went through (`sh "$HOPPER_LOGIN" completed`, `POST /job/login`); it may complete a login that had failed.
 
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
 | `kind` | `device_code` | yes |
 | `tool` | string | yes |
+| `by` | `requester` | no |
 
 ```json
 {
@@ -1525,7 +1526,28 @@ Version 1 (`docs/schemas/auth.cancelled.v1.json`). The user cancelled the login.
 
 ## `auth.failed`
 
-Version 1 (`docs/schemas/auth.failed.v1.json`). What waited on the login ended first (`reason`: the job ended, the run ended with an error).
+Version 1 (`docs/schemas/auth.failed.v1.json`). What waited on the login ended first (`reason`: the job ended, the run ended with an error), or, `by: requester` (issue #1110), the job that asked for it said it did not go through, and why.
+
+| field | type | required |
+|---|---|---|
+| `loginId` | string | yes |
+| `kind` | `device_code` | yes |
+| `tool` | string | yes |
+| `reason` | string | yes |
+| `by` | `requester` | no |
+
+```json
+{
+  "loginId": "l1",
+  "kind": "device_code",
+  "tool": "gh",
+  "reason": "the job ended: timed out"
+}
+```
+
+## `auth.reopened`
+
+Version 1 (`docs/schemas/auth.reopened.v1.json`). The job that asked for a login said a completed (or dismissed) login does not work after all (issue #1110, `sh "$HOPPER_LOGIN" failed`): the login waits on the user again, with the `reason`, until the job reports a new code (`auth.pending`, `renewed: true`).
 
 | field | type | required |
 |---|---|---|
@@ -1538,8 +1560,28 @@ Version 1 (`docs/schemas/auth.failed.v1.json`). What waited on the login ended f
 {
   "loginId": "l1",
   "kind": "device_code",
+  "tool": "codex",
+  "reason": "codex login status says not logged in"
+}
+```
+
+## `auth.dismissed`
+
+Version 1 (`docs/schemas/auth.dismissed.v1.json`). A person put an open login away (issue #1110, `POST /ui/api/logins/:id/dismiss`), whatever its job does: it leaves the active list, and the run that waited on it stops waiting.
+
+| field | type | required |
+|---|---|---|
+| `loginId` | string | yes |
+| `kind` | `device_code` | yes |
+| `tool` | string | yes |
+| `by` | `user` | yes |
+
+```json
+{
+  "loginId": "l1",
+  "kind": "device_code",
   "tool": "gh",
-  "reason": "the job ended: timed out"
+  "by": "user"
 }
 ```
 

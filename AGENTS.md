@@ -65,7 +65,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   approved. The toggles (`POST /ui/api/sandbox-approvals`, a box action; both is sandbox YOLO) are an admin's; a job never
   sets one, approves its own request, or names an image, a flag or a launch parameter. A running job's
   stream (issue #613, `docs/design.md` "The job stream"): `GET /job/stream` and `GET /job/stream/results/:seq`, with the
-  job's proxy token, serve the job its own stream events and results, kept in the database; they change nothing. A job resuming
+  job's proxy token, serve the job its own stream events and results, kept in the database; they change nothing. A running job's
+  login outcome (issue #1110, `docs/design.md` "Logins"): `POST /job/login`, with the job's proxy token, says one of the job's own
+  logins went through or did not, which completes, fails or reopens it; it changes no job, question, webhook or setting. A job resuming
   elsewhere (issue #921, `docs/design.md` "Checkpoints and resume elsewhere"): `GET /job/checkpoint/patch|session`, with the
   job's proxy token, serves that job its own checkpoint, scrubbed, only while it runs resuming elsewhere; it changes nothing. A machine's address check (issue #698,
   `docs/design.md` "GitHub through the hopper"): `GET /job/address` answers 204 to anyone the Host guard lets in, so an ssh

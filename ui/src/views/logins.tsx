@@ -3,10 +3,11 @@
 // code with copy and open (`DeviceCode`) and a countdown of server time. What asks — the tool, the host of its page,
 // the account and the scopes it showed (issue #698) — and the lane are listed under what waits. Under the warning it warns, and a screen
 // reader hears that once; at `expiresAt` the code goes and the card says Expired, on the browser's clock before the
-// server's `auth.expired` arrives, whose word is final. Completed, cancelled and failed say so. Ended logins stay a
-// short while, then go to Earlier logins below. A session whose UI role cannot act (viewer) sees a notice, never
+// server's `auth.expired` arrives, whose word is final. Cancelled and failed say so. Ended logins stay a short while,
+// then go to Earlier logins below; a completed or dismissed one goes there at once (issue #1110). Dismiss puts an open
+// login away when its job never says what came of it; a login its job reopened says why (issue #1110). A session whose UI role cannot act (viewer) sees a notice, never
 // the code (the server answers it none either). A 403 on an action drops the UI to the landing page.
-import { Ban, Check, KeyRound, Lock, RotateCw, X } from 'lucide-react';
+import { Ban, Check, EyeOff, KeyRound, Lock, RotateCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Confirm } from '@/components/confirm';
@@ -25,10 +26,10 @@ import { useCanAdmin, useCanOperate, useJobIndex, useMachineName, useServerNow }
 import { LoginHistory, LoginSettingsPanel } from './login-settings';
 
 const BORDER: Record<LoginPhase, string> = {
-  pending: '', expiring: 'border-warn/60 bg-warn/5', expired: 'border-bad/40', completed: 'border-ok/40', cancelled: '', failed: 'border-bad/40',
+  pending: '', expiring: 'border-warn/60 bg-warn/5', expired: 'border-bad/40', completed: 'border-ok/40', cancelled: '', failed: 'border-bad/40', dismissed: '',
 };
-const TONE: Record<LoginPhase, 'warn' | 'bad' | 'ok' | 'muted'> = { pending: 'warn', expiring: 'warn', expired: 'bad', completed: 'ok', cancelled: 'muted', failed: 'bad' };
-const LABEL: Record<LoginPhase, string> = { pending: 'pending', expiring: 'expires soon', expired: 'expired', completed: 'signed in', cancelled: 'cancelled', failed: 'failed' };
+const TONE: Record<LoginPhase, 'warn' | 'bad' | 'ok' | 'muted'> = { pending: 'warn', expiring: 'warn', expired: 'bad', completed: 'ok', cancelled: 'muted', failed: 'bad', dismissed: 'muted' };
+const LABEL: Record<LoginPhase, string> = { pending: 'pending', expiring: 'expires soon', expired: 'expired', completed: 'signed in', cancelled: 'cancelled', failed: 'failed', dismissed: 'dismissed' };
 
 /** What waits on the login, as a noun: the job, or the escalation run. */
 const waiter = (l: LoginView): string => (l.jobId ? 'The job' : 'The escalation run');
@@ -44,6 +45,7 @@ function outcome(l: LoginView, phase: LoginPhase, settings: LoginSettings): stri
     case 'completed': return `${waiter(l)} goes on.`;
     case 'cancelled': return l.jobId ? 'The job was told to go on without it, or to fail.' : 'The escalation run stops waiting on it.';
     case 'failed': return l.reason ? `Failed: ${l.reason}.` : 'Failed.';
+    case 'dismissed': return `Dismissed. ${waiter(l)} no longer waits on it here.`;
     default: return '';
   }
 }
@@ -57,15 +59,18 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
   const [busy, setBusy] = useState(false);
   const left = countdownText(l, now);
   const open = isOpen(phase);
-  const act = async (what: 'cancel' | 'new-code') => {
+  const act = async (what: 'cancel' | 'new-code' | 'dismiss') => {
     setBusy(true);
-    await actFor(`/ui/api/logins/${encodeURIComponent(l.id)}/${what}`, {}, what === 'cancel' ? 'Login cancelled' : 'Asked for a new code');
+    await actFor(`/ui/api/logins/${encodeURIComponent(l.id)}/${what}`, {}, what === 'cancel' ? 'Login cancelled' : what === 'dismiss' ? 'Login dismissed' : 'Asked for a new code');
     setBusy(false);
     refreshLogins().catch(() => {});
   };
   // A new code: while it is pending, or expired and waiting for one; only a run that can ask its tool.
   const canRenew = l.renewable && (open || (phase === 'expired' && settings.onExpiry !== 'fail'));
-  const actions = canAct && (open || canRenew) && (
+  // Dismiss (issue #1110): any login the server still holds open, whatever its job does — the fallback when its job never
+  // says what came of it.
+  const canDismiss = l.status === 'pending' || l.status === 'expired';
+  const actions = canAct && (open || canRenew || canDismiss) && (
     <div className="flex flex-wrap justify-center gap-2">
       {canRenew && <Button size="sm" variant="outline" disabled={busy} onClick={() => void act('new-code')}><RotateCw />Request a new code</Button>}
       {open && (
@@ -74,6 +79,7 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
           <Button size="sm" variant="ghost" disabled={busy}><X />Cancel</Button>
         </Confirm>
       )}
+      {canDismiss && <Button size="sm" variant="ghost" disabled={busy} title="The login is done or no longer needed: put it away" onClick={() => void act('dismiss')}><EyeOff />Dismiss</Button>}
     </div>
   );
   const name = machine ?? 'machine unknown';
@@ -109,7 +115,10 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
         {open && canAct && l.userCode && l.verificationUrl && (
           <DeviceCode provider={l.tool} userCode={l.userCode} verificationUri={l.verificationUrl} waiting="Waiting for the sign-in" actions={actions || undefined} />
         )}
-        {open && canAct && !l.codeKept && (
+        {open && l.reason && (
+          <div data-slot="login-reopened" className="text-center text-sm text-bad">The login did not work: {l.reason}. {waiter(l)} reports a new code here.</div>
+        )}
+        {open && canAct && !l.codeKept && !l.reason && (
           <div className="text-center text-sm text-muted-foreground">The hopper no longer holds this code (it restarted).{l.renewable ? ' Request a new one.' : ''}</div>
         )}
         {open && canAct && !l.userCode && actions}
