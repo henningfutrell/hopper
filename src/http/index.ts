@@ -22,6 +22,7 @@ import { connectedAccountsRoutes } from './connected-accounts.ts';
 import { installHostGuard } from './host-guard.ts';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
 import { tunnelAgentRoutes, type RemoteAccess } from './remote-access.ts';
+import { githubDeliveryRoutes, type GitHubDeliveries } from './github-deliveries.ts';
 import { installTunnelEdge } from './tunnel.ts';
 import { jobRoutes } from './jobs.ts';
 import { jobGitHubRoutes } from './job-github.ts';
@@ -77,6 +78,7 @@ import { webhookRoutes } from './webhooks.ts';
 export type { TenantParts, Tenants } from './tenants.ts';
 export { installTunnelEdge, tunnelCaller, watchTunnel, type TunnelWatch } from './tunnel.ts';
 export { createRemoteAccess, type RemoteAccess } from './remote-access.ts';
+export { createGitHubDeliveries, type GitHubDeliveries } from './github-deliveries.ts';
 export { createAllowedHosts } from './allowed-hosts.ts';
 export { kernelVersion, runsInWsl } from './ui/host-link.ts';
 export type { TailnetSource } from './tailnet.ts';
@@ -106,6 +108,8 @@ export interface ServerOptions {
   stackResources: StackResourcesReader;
   /** Remote access (issue #880): GET /api/remote-access, POST /ui/api/remote-access, and the tunnel service's GET /tunnel/agent. */
   remoteAccess: RemoteAccess;
+  /** GitHub deliveries (issue #1079): POST /github/webhook, GET /api/github-deliveries, POST /ui/api/github-deliveries. */
+  githubDeliveries: GitHubDeliveries;
   /** The hosts the admin allowed and this host's tailnet (issue #1024): GET /api/allowed-hosts, POST /ui/api/allowed-hosts. `lan` reads them. */
   allowedHosts: AllowedHosts;
   /** The hopper runs in WSL (issue #712): GET /api/host-link says so, for Settings' Windows hint. */
@@ -211,6 +215,8 @@ export function createServer(o: ServerOptions): FastifyInstance {
   jobCheckpointRoutes(app, { tenants: o.tenants });
   // A machine's probe asks where it reaches the hopper (issue #698).
   jobAddressRoutes(app);
+  // GitHub, or a relay in front, sends its deliveries (issue #1079), signed with the GitHub webhook secret.
+  githubDeliveryRoutes(app, { deliveries: o.githubDeliveries });
   // The tunnel service asks for its settings (issue #880), with its preshared key; never through the tunnel.
   const peers = peerList(o.lan.peers);
   tunnelAgentRoutes(app, { remoteAccess: o.remoteAccess, isPublic: (req) => {
@@ -232,7 +238,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
-    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, allowedHosts: o.allowedHosts, hostLink: o.instance.settings, wsl: o.wsl,
+    updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, hostLink: o.instance.settings, wsl: o.wsl,
   });
   return app;
 }

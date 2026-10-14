@@ -17,7 +17,7 @@ import { machineOfLane } from './domain/raised-by.ts';
 import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
-import { createAllowedHosts, createRemoteAccess, createServer, kernelVersion, runsInWsl, tunnelCaller, type TailnetSource } from './http/index.ts';
+import { createAllowedHosts, createGitHubDeliveries, createRemoteAccess, createServer, kernelVersion, runsInWsl, tunnelCaller, type TailnetSource } from './http/index.ts';
 import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
@@ -324,7 +324,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
       },
     },
     port: () => port, signIn, signInEnvironment,
-    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, wsl: runsInWsl(seams.procVersion ?? kernelVersion()), uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
+    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts,
+    // GitHub deliveries (issue #1079): signed with the GitHub webhook secret of the instance's vault; each makes its repository due at every user's sources.
+    githubDeliveries: createGitHubDeliveries({ secrets: secrets.system, tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, clock }), wsl: runsInWsl(seams.procVersion ?? kernelVersion()), uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
     client: { links, release: clientRelease, installScript: readFileSync(join(APP_DIR, 'scripts', 'client-install.sh'), 'utf8') },
   });
 
