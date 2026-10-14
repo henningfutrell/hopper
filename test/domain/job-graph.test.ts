@@ -36,6 +36,11 @@ describe('the stage of a job (issue #900)', () => {
     expect(stageOf(job('j', 'finished', { partlyDone: PR(5) }))).toBe('partly_done');
     expect(stageOf(job('j', 'finished', { partlyDone: PR(5), ...followed(PR(5), 'merged') }))).toBe('done');
   });
+
+  it('a partly done job that handed its pull request on to a tend or a rework is done (issue #994)', () => {
+    expect(stageOf(job('j', 'finished', { partlyDone: PR(5), ...followed(PR(5), 'tended') }))).toBe('done');
+    expect(stageOf(job('j', 'finished', { partlyDone: PR(5), ...followed(PR(5), 'reworked') }))).toBe('done');
+  });
 });
 
 describe('the job graph (issue #900)', () => {
