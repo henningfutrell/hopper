@@ -957,10 +957,11 @@ If your work overlaps another job's, sort it out yourself. Either state the assu
 [hopper writing style] Write all text for people in Simplified Technical English (ASD-STE100): short sentences, one instruction per sentence, active voice, simple common words, one meaning per word.
 [hopper formatting] Format the text you write for a person in the hopper (a question, a research report, a proposal, a note) in Markdown: a short summary first, then sections and lists. Put names, paths and commands in code spans. Do not use raw HTML or images.
 [hopper work tree] This job's work tree is <cwd>. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in <cwd>/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.
+[hopper decisions] Decide and go on when a path is clear. The standing rules are these job rules and the rules of the repository (its AGENTS.md, CLAUDE.md, CONTRIBUTING.md and design documents). When one path is recommended and it stays inside the standing rules, take it and continue to the pull request: do not ask a question or write a proposal for a person to pick it. Ask a person only when: the paths differ in security or cost in a way the rules do not settle; you need a credential or access from outside; or the change is destructive. Then say which of these cases it is, and which rule does not settle it. A check that no CI runner can do (for example a live test on Windows) is not a reason to stop: write the manual check in the pull request body and continue. List each decision you made yourself in the pull request body, under a heading Decisions made, so a person can change it later.
 [hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), in Markdown: one short sentence that says what you need first, then the context, with the options as a numbered list. End your message with a line containing only: HOPPER_QUESTION
 If your question needs research or a proposal before it can be answered, say so on a line of its own before HOPPER_QUESTION: "Suggest: research — <the aspect>" or "Suggest: proposal — <the aspect>". A person decides.
 When you are asked to research, do not do the work: research, then write a research report in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Question:, Findings:, Sources and evidence:, Confidence:, Open threads:, Next step: —. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.
-When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), as Markdown, as a set of alternative paths. Start with TL;DR: (one or two sentences) and Problem: (a short problem statement). Then write each path as a heading "Path N: <title>" with these lines: Summary:, Security:, Effort:, Risk:, Friction: (for the person), Creates: (the jobs, issues or research that continuing with it creates), and more detail in Markdown if needed. Then Recommended: the number of the path, or the numbers of a combination, and why in one or two sentences. If no change is needed or no viable path was found, write Paths: none — and the reason. End with Context: (what you read and relied on). Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_PROPOSAL. A person selects one or more paths to continue with; you are told the decision, or what to change.
+When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), as Markdown, as a set of alternative paths. Start with TL;DR: (one or two sentences) and Problem: (a short problem statement). Then write each path as a heading "Path N: <title>" with these lines: Summary:, Security:, Effort:, Risk:, Friction: (for the person), Creates: (the jobs, issues or research that continuing with it creates), and more detail in Markdown if needed. Then Recommended: the number of the path, or the numbers of a combination, and why in one or two sentences. If no change is needed or no viable path was found, write Paths: none — and the reason. End with Context: (what you read and relied on). When a person must decide (a case the decisions line names), write Needs a person: and the case, and which rule does not settle it. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_PROPOSAL. When you recommend one path, inside the standing rules, and need no person, the hopper continues with that path at once. Else a person selects one or more paths to continue with; you are told the decision, or what to change.
 When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>, and, when the command shows them, account: <the account or host it signs in to>, scopes: <the scopes it asks for>. The user completes the login; then the command goes on and you continue.
 Keep a task list for the job: the tasks that take it to done. When you make the list, and each time a task completes, write a line containing only: HOPPER_TASKS <completed>/<total>, for example HOPPER_TASKS 2/5. When the list changes, write the new total. The hopper shows this count as the progress of the job.
 When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, and, if you can, one line: until: <how you will know it happened>. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait. A wait only for a command of your own that runs in the background (a build, a test run) is not blocked: if you end your message with HOPPER_WAITING for it, write until: own command <its id> ends.
@@ -11579,6 +11580,47 @@ links open in a new tab, `rel=noopener noreferrer`. A checkbox per path, a note 
 section's decisions; zero paths shows the reason with Accept, Ask for more paths and Steer only. Decided, the earlier
 proposals list each path of the signed-off version: a selected one links to its follow-on with its live status, the
 others greyed out and kept.
+
+## Decide and proceed (issue #1059, 2026-10-13)
+
+Owner requirement: a job for well-scoped work does not stop to write a proposal or ask a question when a recommended path
+is already clear. Before, a job asked for a proposal (its issue had a Proposal heading, "Proposals" above) marked a
+recommended path, then waited (`waiting_answer`) until a person picked it, round after round, though the repository's
+standing rules (for example: Windows is supported only as Podman on WSL) already settled the choice.
+
+**The decisions line** (`DECIDE_LINE`, `src/job-rules/`): a fixed protocol line, the first, before the question line, so
+every job is told it whatever its job rules. The standing rules are the job rules and the repository's own (its
+`AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md` and design documents): a standing decision is configured per repository there,
+where the job reads it, not in a store of the hopper's. A recommended path inside them is taken, on to the pull request.
+A person is asked only when the paths differ in security or cost in a way the rules do not settle, a credential or
+outside access is needed, or the change is destructive; the question or proposal says which case and which rule does not
+settle it. A check no CI runner can do (a live test on Windows) is no reason to stop: the job writes the manual check in
+the pull request body. Each decision the job made itself is listed in the pull request body under **Decisions made**, so a
+person can change it later without being blocked now.
+
+**The hopper continues with the recommended path** (`autoContinue`, a proposal setting, default on). Where a proposal would
+go to a person — no reviewer levels, or the levels passed it up without signing it off — the review service
+(`src/review/service.ts`) signs it off itself, at the stage `hopper` (`AUTO_CONTINUE`), with that one path selected, and
+the path continues as a follow-on job as a person's selection would ("Proposals: a set of paths"):
+`proposal.accepted { stage: "hopper", selected }`, notes "the hopper continued with the recommended path N: no rule needs a
+person to decide". It goes to a person instead (`proposal.escalated_to_human`), the reason naming the first that holds:
+
+| hold | reason |
+|---|---|
+| the job wrote `Needs a person: <why>` (`needsAPerson`, `src/domain/proposal-paths.ts`; empty, `no` or `none` is no hold) | `the job says a person must decide: <why>` |
+| a reviewer level escalated this version | `a reviewer level escalated it: <level>: <notes>` |
+| the structural pre-check finds a gap (it runs here even with no reviewer levels) | `the proposal has gaps: …` |
+| no viable path | `the proposal has no path to continue with: a person decides` |
+| none recommended | `no viable path is recommended: a person selects` |
+| a combination recommended | `the proposal recommends a combination of paths (1, 3): a person selects` |
+| a risk rule (`src/questions/risk.ts`) matches the recommended path's title or summary | `a risk rule matches the recommended path: <rules>` |
+
+Off (`POST /ui/api/proposals/settings` `{ autoContinue: false }`, admin; Proposals → settings), every such proposal goes
+to a person as before. Research has no such setting (400). A saved setting row without the field reads as on; no stored
+row changes.
+
+**The UI.** The earlier proposals list shows a proposal the hopper continued with as **Continued by the hopper**, with its
+reason; its follow-on is linked there with its live state, so a person can cancel or steer that job later.
 
 ## Blast radius and actor machines (issue #542, 2026-10-09)
 

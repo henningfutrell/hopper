@@ -24,7 +24,7 @@ const proposal = (id: string, over: Record<string, unknown> = {}) => ({
   reviews: [{ version: 1, stage: 'opus', role: 'level', verdict: 'approve', notes: 'sound and small', startedAt: T0, finishedAt: T0 }],
   ...over,
 });
-const SETTINGS = { reviewers: ['opus'], signOff: 'owner', levelRevisions: 1, levels: ['opus', 'fable'] };
+const SETTINGS = { reviewers: ['opus'], signOff: 'owner', levelRevisions: 1, autoContinue: true, levels: ['opus', 'fable'] };
 // The section type as the server declares it (issue #543): the UI offers exactly these parts and decisions.
 const TYPE = {
   parts: [['tldr', 'TL;DR'], ['problem', 'Problem'], ['paths', 'Paths'], ['recommended', 'Recommended'], ['context', 'Context']],
@@ -170,12 +170,31 @@ describe('the Proposals view', () => {
   it('an admin\'s settings offer only the escalation levels the server names, and save the reviewers', async () => {
     await boot('#proposals', { proposals: [], jobs: [], role: 'admin' });
     const panel = document.querySelector('[data-slot="review-settings"][data-section="proposals"]')!;
-    const boxes = [...panel.querySelectorAll('input[type="checkbox"]')] as HTMLInputElement[];
+    const boxes = [...panel.querySelectorAll('fieldset input[type="checkbox"]')] as HTMLInputElement[];
     expect(boxes.map((b) => b.name)).toEqual(['opus', 'fable']);
     expect(boxes.map((b) => b.checked)).toEqual([true, false]);
     await act(async () => { boxes[1]!.click(); });
     await act(async () => { button(panel, 'Save')!.click(); });
     await settle();
-    expect(daemon.posts).toContainEqual({ path: '/ui/api/proposals/settings', body: { reviewers: ['opus', 'fable'], signOff: 'owner', levelRevisions: 1 } });
+    expect(daemon.posts).toContainEqual({ path: '/ui/api/proposals/settings', body: { reviewers: ['opus', 'fable'], signOff: 'owner', levelRevisions: 1, autoContinue: true } });
+  });
+
+  it('an admin turns off the hopper continuing with one recommended path (issue #1059)', async () => {
+    await boot('#proposals', { proposals: [], jobs: [], role: 'admin' });
+    const panel = document.querySelector('[data-slot="review-settings"][data-section="proposals"]')!;
+    const auto = panel.querySelector('input[name="autoContinue"]') as HTMLInputElement;
+    expect(auto.checked).toBe(true);
+    await act(async () => { auto.click(); });
+    await act(async () => { button(panel, 'Save')!.click(); });
+    await settle();
+    expect(daemon.posts).toContainEqual({ path: '/ui/api/proposals/settings', body: { reviewers: ['opus'], signOff: 'owner', levelRevisions: 1, autoContinue: false } });
+  });
+
+  it('an earlier proposal the hopper continued with by itself says so, with its reason (issue #1059)', async () => {
+    const signOff = { decision: 'accept', stage: 'hopper', at: T0, version: 1, notes: 'the hopper continued with the recommended path 1: no rule needs a person to decide', selected: [{ id: '1', title: 'two coats with a brush' }] };
+    await boot('#proposals', { proposals: [proposal('j9', { status: 'accepted', stage: 'hopper', signOff })], jobs: [] });
+    const row = document.querySelector('[data-earlier-item="p-j9"]')!;
+    expect(row.querySelector('[data-slot="auto-continued"]')!.textContent).toContain('Continued by the hopper');
+    expect(row.textContent).toContain('no rule needs a person to decide');
   });
 });

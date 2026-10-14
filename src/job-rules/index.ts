@@ -63,8 +63,16 @@ export const WAIT_LINE = 'When the job is blocked on something only a person or 
 /** The protocol line on a job's task count (issue #794): the job's progress is its tasks done of its task list. */
 export const TASKS_LINE = 'Keep a task list for the job: the tasks that take it to done. When you make the list, and each time a task completes, write a line containing only: HOPPER_TASKS <completed>/<total>, for example HOPPER_TASKS 2/5. When the list changes, write the new total. The hopper shows this count as the progress of the job.';
 
+/**
+ * The protocol line on decisions (issue #1059): a job with a clear path inside the standing rules takes it and goes on to
+ * its pull request; it asks a person only in the cases named here, and says which rule does not settle it.
+ */
+export const DECIDE_LINE = '[hopper decisions] Decide and go on when a path is clear. The standing rules are these job rules and the rules of the repository (its AGENTS.md, CLAUDE.md, CONTRIBUTING.md and design documents). When one path is recommended and it stays inside the standing rules, take it and continue to the pull request: do not ask a question or write a proposal for a person to pick it. Ask a person only when: the paths differ in security or cost in a way the rules do not settle; you need a credential or access from outside; or the change is destructive. Then say which of these cases it is, and which rule does not settle it. A check that no CI runner can do (for example a live test on Windows) is not a reason to stop: write the manual check in the pull request body and continue. List each decision you made yourself in the pull request body, under a heading Decisions made, so a person can change it later.';
+
 /** The fixed protocol lines: the markers the hopper reads back. The last one is the turn anchor. */
 export const PROTOCOL_LINES: readonly string[] = [
+  // Decide and proceed (issue #1059): before the question line, so a job reads when not to ask first.
+  DECIDE_LINE,
   '[hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), in Markdown: one short sentence that says what you need first, then the context, with the options as a numbered list. End your message with a line containing only: HOPPER_QUESTION',
   // How to suggest research or a proposal first, on a question (issue #548).
   SUGGEST_PROTOCOL,

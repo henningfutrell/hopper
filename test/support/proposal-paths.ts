@@ -82,7 +82,7 @@ export const ONE_PATH = [
   'Problem: Tools on the host cannot reach the hopper.',
   '',
   '## Path 1: Loopback port',
-  'Summary: Publish the UI on the loopback port only.',
+  'Summary: Bind the UI to the loopback port only.',
   'Security: no new listener on the LAN.',
   'Effort: one day.',
   'Risk: low.',

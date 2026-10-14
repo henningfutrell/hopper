@@ -12,11 +12,12 @@
 // selection made so far for the next version.
 import type { Clock, ConfigRecords, EscalationLevel, ReviewActionResult, ReviewReply, ReviewRequest, ReviewService, ReviewServices, UserStore } from '../domain/ports.ts';
 import {
-  amendPaths, jobPriorityTag, pathsOf, selectionRefusal, viablePaths, type PathPick, type SelectedPath, PRE_CHECK, PRE_CHECK_RETURNS, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, TERMINAL_STATUSES, type EventType,
+  AUTO_CONTINUE, amendPaths, jobPriorityTag, needsAPerson, pathsOf, selectionRefusal, viablePaths, type PathPick, type SelectedPath, PRE_CHECK, PRE_CHECK_RETURNS, REVIEW_KINDS, REVIEW_OPEN_STATUSES, REVIEW_SECTIONS, TERMINAL_STATUSES, type EventType,
   thenChoices, type ReviewDecisionId, type ReviewEntry, type ReviewItem, type ReviewKind, type ReviewSettings, type ShiftThen,
 } from '../domain/types.ts';
 import type { Logins } from '../logins/index.ts';
 import { check } from '../questions/results.ts';
+import { riskRules } from '../questions/risk.ts';
 import { readRules } from '../questions/rules.ts';
 import { preCheck } from './pre-check.ts';
 import { REVIEW_REPLY } from './reply.ts';
@@ -238,8 +239,39 @@ export function createReviewService(kind: ReviewKind, o: ReviewServiceOptions): 
     }
     store.tx(() => {
       const p = items.get(id);
-      if (p && p.status === 'open') toHuman(p, reviewers.length === 0 ? 'no reviewer levels configured' : why);
+      if (!p || p.status !== 'open') return;
+      const reason = reviewers.length === 0 ? 'no reviewer levels configured' : why;
+      if (kind !== 'proposal' || !s.autoContinue) return void toHuman(p, reason);
+      // Where a person would decide, the hopper continues with the one recommended path, unless a rule does not settle it (issue #1059).
+      const held = autoContinueHold(p);
+      if (typeof held === 'string') return void toHuman(p, held);
+      const now = items.update(p.id, { stage: AUTO_CONTINUE });
+      signOff(now, 'accept', AUTO_CONTINUE, `the hopper continued with the recommended path ${held.id}: no rule needs a person to decide`, undefined, undefined, [held]);
     });
+  }
+
+  /**
+   * Inside a tx. Why a person decides on a proposal the hopper would continue with (issue #1059) — the job says a person
+   * must, a reviewer level escalated it, it has gaps, no one viable path is recommended, or a risk rule matches that
+   * path —, else the path it continues with.
+   */
+  function autoContinueHold(p: ReviewItem): string | SelectedPath {
+    const v = p.versions.at(-1)!;
+    const asked = needsAPerson(v.text);
+    if (asked) return `the job says a person must decide: ${asked}`;
+    const escalated = p.reviews.find((r) => r.version === v.number && r.role === 'level' && r.verdict === 'escalate');
+    if (escalated) return `a reviewer level escalated it: ${escalated.stage}: ${escalated.notes}`;
+    const gaps = preCheck(kind, p.versions);
+    if (gaps.length > 0) return `the proposal has gaps: ${gaps.join(' ')}`;
+    const viable = viablePaths(pathsOf(v));
+    const recommended = viable.filter((x) => x.recommended);
+    if (viable.length === 0) return 'the proposal has no path to continue with: a person decides';
+    if (recommended.length === 0) return 'no viable path is recommended: a person selects';
+    if (recommended.length > 1) return `the proposal recommends a combination of paths (${recommended.map((x) => x.id).join(', ')}): a person selects`;
+    const path = recommended[0]!;
+    const risks = riskRules(`${path.title}\n${path.summary ?? ''}`);
+    if (risks.length > 0) return `a risk rule matches the recommended path: ${risks.join(', ')}`;
+    return { id: path.id, title: path.title };
   }
 
   function start(id: string, reason: string) {

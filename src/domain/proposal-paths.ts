@@ -233,6 +233,18 @@ function singlePath(text: string): ProposalPath | undefined {
 /** A version's paths: the ones read when it was written (and amended by the levels), else read from its text now. */
 export const pathsOf = (v: { text: string; paths?: ProposalPathSet }): ProposalPathSet => v.paths ?? proposalDocument(v.text).paths;
 
+/**
+ * Why a person must decide on a proposal, as its job says on a line of its own (issue #1059): `Needs a person: <the case,
+ * and which rule does not settle it>`, labels and marks aside. Undefined: no such line, an empty one, or one that says no.
+ */
+export function needsAPerson(text: string): string | undefined {
+  for (const line of text.split('\n')) {
+    const why = /^[\s#>*•_-]*needs a person[*_]*\s*:[*_]*\s*(.*)$/i.exec(line)?.[1]?.trim();
+    if (why !== undefined) return why === '' || /^(no|none|nothing)\b\.?$/i.test(why) ? undefined : why;
+  }
+  return undefined;
+}
+
 /** The paths a person may select: every path no reviewer level found not viable. */
 export const viablePaths = (set: ProposalPathSet): ProposalPath[] => set.paths.filter((p) => !p.notViable);
 
