@@ -1,5 +1,6 @@
 // The fake GitHub's reads of a pull request a job asks through the hopper (issue #1074, fake-forges.ts): its files with
-// their patches, its commits, and the check runs and combined status of a commit. What a test did not set is empty.
+// their patches, its commits, and the check runs and combined status of a commit. What a test did not set is empty. And
+// the list of a repository's open pull requests (issue #1147).
 
 /** One file of a pull request, as GitHub's REST answers it. */
 export interface FakePullFile { filename: string; status: string; additions: number; deletions: number; patch?: string; previous_filename?: string }
@@ -29,4 +30,11 @@ export function pullReadsRoute(forge: PullReadsForge | undefined, method: string
   const checks = forge?.commitChecks?.[`${repo}@${c[1]}`];
   if (c[2] === 'check-runs') return { status: 200, body: { total_count: checks?.runs?.length ?? 0, check_runs: checks?.runs ?? [] } };
   return { status: 200, body: { state: 'success', statuses: checks?.statuses ?? [] } };
+}
+
+/** The open pull requests of `repo`, by `head` (`owner:branch`) and `base` when asked (issue #1147: the shrink guard's base); undefined: `rest` is none. */
+export function pullListRoute<P extends { repo: string; head: string; base: string }>(pulls: P[], rest: (p: P) => unknown, method: string, repo: string, path: string, q: Record<string, string>): Answer | undefined {
+  if (method !== 'GET' || path !== 'pulls') return undefined;
+  const head = q.head?.split(':').at(-1);
+  return { status: 200, body: pulls.filter((p) => p.repo === repo && (!head || p.head.split(':').at(-1) === head) && (!q.base || p.base === q.base)).map(rest) };
 }
