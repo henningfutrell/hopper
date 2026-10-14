@@ -65,6 +65,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
+| `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
@@ -17749,3 +17750,58 @@ Tests: `test/github-proxy/repo-query.test.ts` (the key, fresh and final answers,
 read, the bounds, a write's drop, who may ask, the broker's `source` and `ledger`, the measurement, no connection),
 `test/integration/github-proxy.test.ts` (the four queries through the real daemon and `hopper-gh`, GitHub read once
 each, the ledger's word, a write's drop), `test/store/work-items.test.ts` (`byPullRequest`).
+
+## Component watchers (issue #1077, 2026-10-13)
+
+The problem: drift between the hopper's state and reality — stale job states, wrong failure counts, stuck pull
+requests — was found by people, late. The answer: a dedicated watcher per component, as in "Redesigning source
+control" (Anthropic engineering). Each **component watcher** checks one component on its own interval against its
+source of truth and reports **drift**: where the two disagree.
+
+**The runner** (`src/component-watchers/service.ts`). One per user, in the user's runtime, beside the GitHub watches;
+it starts and stops with it. Each watcher checks at start, then every `intervalMs`, one check at a time. A check
+answers the drift by **kind**. A kind new since the check before is one `drift.found { watcher, kind, items }`; one gone
+is one `drift.cleared { watcher, kind }`. A failed check keeps the drift as it was, stores why (`error`, logged once per
+new problem) and records nothing. The drift lives in memory: a restart checks again at once, and a drift still there is
+found again.
+
+**The first watcher: ledger vs GitHub** (`src/component-watchers/ledger-github.ts`, every 15 minutes). It reads the
+work-item ledger ("The work-item ledger") and compares each item no job or person acts on with GitHub. The sample
+(`ledgerGitHubSample`, pure): the items in `pr_open`, `failed` and `partly_done` first, then the `done` and `dropped`
+ones of the last 7 days, newest first, at most 100, each item's issue and its pull request. The read: one GraphQL call
+per 50 URLs (`resource(url:)`, each URL a variable), with the user's own GitHub connection through `makeRequest`, so the
+shared rate limiter paces it; it counts as a `reconcile` call. A URL GitHub does not answer for is no drift. The kinds
+(`ledgerGitHubDrift`, pure), the first that fits each item:
+
+- `failed_but_finished`: the ledger says `failed`; GitHub says its pull request merged, or its issue closed as
+  completed. A wrong failure count.
+- `pr_open_but_ended`: the ledger says `pr_open`; GitHub says its pull request merged or closed, or its issue closed. A
+  stuck pull request.
+- `pull_request_state`: the pull request state the ledger holds is not GitHub's (`abandoned` reads as closed).
+- `issue_state`: the issue state the ledger holds is not GitHub's.
+
+A close or a merge on GitHub newer than the grace (10 minutes) is no drift yet: the hopper's own follow may not have
+seen it. An item a job or a person acts on is never drift: the events win while they last.
+
+**The drift issue.** With the user's setting on (`fileIssues`), each kind of drift is one issue on the hopper's own
+repository (`REPORT_REPO`), through the user's own GitHub connection, as a bug report is ("Report a bug"): labelled
+`user-report`, no assignee, so it never starts a job. Its body ends with its **drift key** (`Drift key:
+<watcher>/<kind>`). Before it files, the runner looks for the open issue with that key in its body (`GET
+/search/issues`, then the line itself), so a restart or a second hopper updates the issue it finds instead of filing
+again. While the drift lasts, the issue's body is edited (`PATCH`) when what it lists changed; once it is gone, the
+body says no item is in it now. A person closes it. Each write is one event: `drift.issue_filed` or
+`drift.issue_updated { watcher, kind, number, url }`. A write that fails is stored (`issueError`) and tried again at
+the next check. The text names no item, repository or person: an item's repository may be private, so each item is the
+first 12 hex digits of the SHA-256 of its key, with what the ledger and GitHub say and since when; Settings → Component
+watchers lists the items by key.
+
+**The setting.** `fileIssues`, default off: the user's (`componentWatchers` in the user's settings), an admin's,
+Settings → Component watchers (`POST /ui/api/component-watchers`), `component_watchers.settings_changed`. Off, a drift
+is an event and a line in the panel only: a hopper filing on another repository with a person's account is that
+person's choice. It applies at the next check.
+
+**API.** `GET /api/component-watchers`: the setting, and each watcher with its last check and the drift it found now,
+each item by key.
+
+**Not yet (the next parts).** More watchers on the same runner: job seats and lanes (a lane stuck, or idle while its
+job runs), intake (items waiting with no action), the integration branch's health, and the database and stack's health.

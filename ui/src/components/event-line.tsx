@@ -28,6 +28,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'artifact.posted': 'ok', 'artifact.revised': 'ok',
   'lanes.recommended': 'warn', 'lanes.tuning_changed': 'warn', 'lanes.applied': 'warn', 'lanes.undone': 'warn', 'lanes.dismissed': 'warn',
   'bug_report.filed': 'ok', 'bug_report.failed': 'bad',
+  'drift.found': 'warn', 'drift.cleared': 'ok', 'drift.issue_filed': 'warn', 'drift.issue_updated': 'muted', 'component_watchers.settings_changed': 'warn',
   'job.note_added': 'question', 'job.note_delivered': 'ok',
 };
 export const eventTone = (type: string): Tone => TYPE_TONE[type] ?? 'muted';

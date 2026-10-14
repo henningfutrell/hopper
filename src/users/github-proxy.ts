@@ -12,6 +12,7 @@ import { createActorsGitHub, type ActorsGitHub } from '../intake-actors/index.ts
 import { createPromotionGitHub } from '../promotions/github.ts';
 import { userPromotions, type Promotions } from '../promotions/service.ts';
 import { createGitHubWatches, createWatchGitHub, type GitHubWatches } from '../github-watch/index.ts';
+import { createComponentWatchers, createWatcherGitHub, ledgerGitHubWatcher, type ComponentWatchers } from '../component-watchers/index.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts';
 import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
@@ -38,6 +39,8 @@ export interface UserGitHubProxy {
   bugReports: ReportSender;
   /** The GitHub watches of this user's pointed jobs (issue #427), with this user's own connection; they poll with the user's runtime. */
   watches: GitHubWatches;
+  /** The component watchers (issue #1077): the ledger against GitHub with this user's own connection, and its drift issues; they check with the user's runtime. */
+  componentWatchers: ComponentWatchers;
   /**
    * The infra plans (issue #870): what this user's jobs plan to change, a person's approvals, the vault's apply gate. Here
    * because the gate reads each plan's branch head on GitHub with this user's connection.
@@ -132,6 +135,14 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       watches: createGitHubWatches({
         store: o.store, now: () => o.clock.now().toISOString(), log: (l) => o.logger.warn(l),
         github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatchGitHub(mine())),
+      }),
+      componentWatchers: createComponentWatchers({
+        watchers: [ledgerGitHubWatcher({
+          ledger: o.store.workItems, now: () => o.clock.now().toISOString(),
+          github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatcherGitHub(mine())),
+        })],
+        store: o.store, now: () => o.clock.now().toISOString(), log: (l) => o.logger.warn(l),
+        github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatcherGitHub(mine())),
       }),
       bugReports: createReportSender({ github: reports, reports: o.store.bugReports, now: () => o.clock.now().toISOString(), record: (e) => { o.store.events.append(e); }, log: (l) => o.logger.warn(l) }),
       repoChecks: () => {

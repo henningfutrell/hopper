@@ -10,7 +10,7 @@ import type { RememberedWrite } from './remembered-writes.ts';
 import type { RemoteAccessSettings } from './remote-access.ts';
 import type { MemoryAlert } from './machine-history.ts';
 import type {
-  AutoAnswerSettings, AutoParkSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
+  AutoAnswerSettings, AutoParkSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
   PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings,
 } from './types.ts';
 
@@ -100,6 +100,9 @@ export interface UserSettingsRepository {
   /** GitHub watches (issue #427): how often each polls; absent: never set, the default. */
   getGitHubWatch(): GitHubWatchSettings | undefined;
   setGitHubWatch(settings: GitHubWatchSettings): void;
+  /** Component watchers (issue #1077): whether a drift files a drift issue; absent: never set, off. */
+  getComponentWatchers(): ComponentWatcherSettings | undefined;
+  setComponentWatchers(settings: ComponentWatcherSettings): void;
   getYoloMode(): YoloModeSettings | undefined;
   setYoloMode(settings: YoloModeSettings): void;
   /** Contribution (issue #429): whether jobs may work through a fork of a repository their user cannot push to; absent: off. */

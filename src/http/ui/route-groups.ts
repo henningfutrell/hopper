@@ -21,6 +21,7 @@ import { registerPointedJobRoutes } from './pointed-jobs.ts';
 import { registerDirectJobRoutes } from './direct-jobs.ts';
 import { registerPromotionRoutes } from './promotions.ts';
 import { registerGitHubWatchRoutes } from './github-watches.ts';
+import { registerComponentWatcherRoutes } from './component-watchers.ts';
 import { registerReviewRoutes } from './reviews.ts';
 import { registerSourceIntakeRoutes } from './source-intake.ts';
 import { registerIntakeActorRoutes } from './intake-actors.ts';
@@ -36,4 +37,4 @@ import { registerContributionRoutes } from './contribution.ts';
 import { registerWindowsHostRoutes } from './windows-hosts.ts';
 import { registerSearchRoutes } from '../search.ts';
 
-export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerIntakeActorRoutes, registerLoginRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes, registerVaultGrantRoutes, registerSandboxRequestRoutes, registerMintTestRoutes, registerYoloModeRoutes, registerContributionRoutes, registerArtifactRoutes, registerAutoParkRoutes, registerTldrRoutes, registerLaneTuningRoutes, registerBugReportRoutes, registerPullRequestActRoutes, registerRepoChecksRoutes, registerThreadAskRoutes, registerPointedJobRoutes, registerDirectJobRoutes, registerPromotionRoutes, registerGitHubWatchRoutes, registerInfraPlanRoutes, registerWindowsHostRoutes, registerSearchRoutes] as const;
+export const ROUTE_GROUPS = [registerJobActionRoutes, registerSourceIntakeRoutes, registerIntakeActorRoutes, registerLoginRoutes, registerFailureRoutes, registerPriorityLaneRoutes, registerReviewRoutes, registerBlastRadiusRoutes, registerMinorDecisionRoutes, registerPhaseShiftRoutes, registerVaultRoutes, registerVaultGrantRoutes, registerSandboxRequestRoutes, registerMintTestRoutes, registerYoloModeRoutes, registerContributionRoutes, registerArtifactRoutes, registerAutoParkRoutes, registerTldrRoutes, registerLaneTuningRoutes, registerBugReportRoutes, registerPullRequestActRoutes, registerRepoChecksRoutes, registerThreadAskRoutes, registerPointedJobRoutes, registerDirectJobRoutes, registerPromotionRoutes, registerGitHubWatchRoutes, registerComponentWatcherRoutes, registerInfraPlanRoutes, registerWindowsHostRoutes, registerSearchRoutes] as const;
