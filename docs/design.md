@@ -18392,10 +18392,15 @@ host against a budget; and that kept-work records are reconciled against disk. I
 - **Should it come back** (a disk mounted again), the sweep finds the scratch dir; once it is `scratchMaxAgeHours` old it
   reaps it with the reap's rule, and work not pushed is kept again as `job.work_kept`.
 
-**Left for later parts:** a record of each resource the hopper makes (containers, images, volumes, backups, logs,
-bundles) with its owner, removed as an event when the owner ends; the periodic reconcile of orphans and old images (keep the
-current and the previous), with a backup retention; and the hopper's disk use per host on Machines, with a budget and an
-alert.
+**Part 1: older images go with the update** (`scripts/update.sh` `prune`, docs/deploy.md "Update" step 7). Once every
+check of the update passed, it removes each image labelled `org.opencontainers.image.title=hopper` but the one the hopper
+runs and the one it ran before (read from the hopper's container before the stack stops), so a person can still go back.
+`rmi` without force: an image a container uses, or with more than one name, stays. The update keeps one database backup
+(`hopper-backup.dump`, replaced each time), so it adds no backups. The manual `image prune` command stays valid.
+
+**Left for later parts:** a record of each resource the hopper makes (job containers, volumes, logs, bundles) with its
+owner, removed as an event when the owner ends; a periodic reconcile of orphans and of images the hopper's boxes left, with a
+retention for backups and update logs; and the hopper's disk use per host on Machines, with a budget and an alert.
 
 **Verification:** `test/engine/sweep.test.ts` ("kept work whose folder is gone"), `test/client/survey-roots.test.ts` (the
-survey for real).
+survey for real), `test/scripts/update.test.ts` (the older images removed, none on a failed update).
