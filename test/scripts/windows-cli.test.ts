@@ -110,8 +110,13 @@ describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () =>
     expect(loop).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Uri $url');
     expect(loop).toContain("@('--status', [string][int]$_.Exception.Response.StatusCode)");
     expect(loop).toContain("& wsl.exe @wsl -e wslinfo --networking-mode");
-    expect(loop).toContain('-e podman exec $container.Trim() hopper windows-link report --url $url @result');
+    expect(loop).toContain('-e podman exec $container.Trim() hopper windows-link report --link $url @result');
     expect(loop).not.toMatch(/TOKEN|Authorization|password/i);
+  });
+
+  it('on: a loop that runs now is stopped, so the new loop runs in its place', () => {
+    const on = ps1.slice(ps1.indexOf("'on' {"), ps1.indexOf("'off' {"));
+    expect(on.indexOf('Stop-Loops $running')).toBeLessThan(on.indexOf('Start-Process $powershell'));
   });
 
   it('on: adds a hidden Startup-folder shortcut for this user only, and starts the loop now', () => {
@@ -130,7 +135,8 @@ describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () =>
 
   it('off: stops the loop and removes the shortcut, and changes nothing in the distro', () => {
     const off = ps1.slice(ps1.indexOf("'off' {"), ps1.indexOf("'status' {"));
-    expect(off).toContain('Stop-Process');
+    expect(off).toContain('Stop-Loops $running');
+    expect(ps1.slice(ps1.indexOf('function Stop-Loops'), ps1.indexOf('function Invoke-Autostart'))).toContain('Stop-Process');
     expect(off).toContain('Remove-Item');
     expect(off).not.toContain('wsl.exe');
   });
@@ -155,7 +161,7 @@ describe('hopper doctor (docs/deploy.md "Check it from Windows")', () => {
 
   it('in hopper.ps1, runs before the container is looked up, so it works when the hopper does not run', () => {
     expect(ps1).toMatch(/\$args\[0\] -eq 'doctor'\) \{ Invoke-Doctor \}/);
-    expect(ps1.indexOf("-eq 'doctor'")).toBeLessThan(ps1.indexOf('podman ps -q'));
+    expect(ps1.indexOf("-eq 'doctor'")).toBeLessThan(ps1.indexOf("# The container's name changes"));
   });
 
   it('opens /api/health at localhost on the port HOPPER_PORT names, else 4790', () => {

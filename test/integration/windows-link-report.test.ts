@@ -40,7 +40,7 @@ describe('the Windows link report', () => {
   it('the CLI reports a broken link: /api/machines carries it, and machine.windows_link_broken is told once', async () => {
     const a = await boot();
     expect(await machinesView(a)).not.toHaveProperty('windowsLink');
-    const r = await hopper(a, ['windows-link', 'report', '--url', URL_, '--mode', 'mirrored', '--error', 'The operation has timed out.']);
+    const r = await hopper(a, ['windows-link', 'report', '--link', URL_, '--mode', 'mirrored', '--error', 'The operation has timed out.']);
     expect(r.err).toBe('');
     expect(r.code).toBe(0);
     expect(JSON.parse(r.out).windowsLink).toMatchObject({ url: URL_, mode: 'mirrored', ok: false, error: 'The operation has timed out.' });
@@ -48,11 +48,11 @@ describe('the Windows link report', () => {
     const broken = await waitFor(async () => (await a.events('types=machine.windows_link_broken'))[0]);
     expect(broken.data).toEqual({ machineId: 'windows', url: URL_, mode: 'mirrored', error: 'The operation has timed out.' });
 
-    expect((await hopper(a, ['windows-link', 'report', '--url', URL_, '--mode', 'mirrored', '--error', 'The operation has timed out.'])).code).toBe(0);
+    expect((await hopper(a, ['windows-link', 'report', '--link', URL_, '--mode', 'mirrored', '--error', 'The operation has timed out.'])).code).toBe(0);
     expect(await a.events('types=machine.windows_link_broken')).toHaveLength(1);
 
     // Any HTTP answer means the hopper answered, an error status too.
-    expect((await hopper(a, ['windows-link', 'report', '--url', URL_, '--status', '401'])).code).toBe(0);
+    expect((await hopper(a, ['windows-link', 'report', '--link', URL_, '--status', '401'])).code).toBe(0);
     expect((await machinesView(a)).windowsLink).toMatchObject({ ok: true, status: 401 });
     await waitFor(async () => (await a.events('types=machine.windows_link_restored'))[0]);
   });
@@ -60,11 +60,11 @@ describe('the Windows link report', () => {
   it('refuses a report that is not a localhost health URL with one status or one error', async () => {
     const a = await boot();
     for (const argv of [
-      ['--url', 'http://10.0.0.1:4790/api/health', '--status', '200'],
-      ['--url', URL_],
-      ['--url', URL_, '--status', '200', '--error', 'both'],
-      ['--url', URL_, '--status', '42'],
-      ['--url', URL_, '--status', '200', '--mode', 'Not A Mode'],
+      ['--link', 'http://10.0.0.1:4790/api/health', '--status', '200'],
+      ['--link', URL_],
+      ['--link', URL_, '--status', '200', '--error', 'both'],
+      ['--link', URL_, '--status', '42'],
+      ['--link', URL_, '--status', '200', '--mode', 'Not A Mode'],
     ]) {
       const r = await hopper(a, ['windows-link', 'report', ...argv]);
       expect(r.code, argv.join(' ')).toBe(2);

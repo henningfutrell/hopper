@@ -45,7 +45,7 @@ import { createUserGitHubProxy, type UserGitHubProxy } from './github-proxy.ts';
 import { createUserLink, type UserLink } from './link.ts';
 import { installations, whoIs } from '../connected-accounts/identity.ts';
 
-import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } from './history.ts';
+import { createHistoryRecorders, type ResourceRecorder, type UsageRecorder } from './history.ts'; import type { WindowsLinkWatch } from '../machines/windows-link-watch.ts';
 import { createWebhooksEditor, type WebhooksEditor } from '../webhooks/edit.ts';
 import { createWebhookDispatcher, createWebhookSecrets } from '../webhooks/index.ts'; import { createOutbound, type Outbound, type OutboundGuard } from '../outbound/index.ts';
 import { approvalWait, clientTargets as vaultTargets, openUserVault, type LaunchScope, type Vault, withLaunch } from '../vault/index.ts';
@@ -165,7 +165,7 @@ export interface UserRuntime {
   /** The usage history's recorder (issue #385): `record` and `prune` now, in tests. */
   usageHistory: UsageRecorder;
   /** The resource recorder (issue #560): `record` and `prune` now, in tests. */
-  machineHistory: ResourceRecorder;
+  machineHistory: ResourceRecorder; windowsLink: WindowsLinkWatch; // the Windows link watch (issue #712): the keep-alive loop's reports
   /** The GitHub proxy's view of this user (issue #563). */
   githubProxy: UserGitHubProxy;
   /** A job's step run on a Windows host the user set up (issue #731); search (issue #945): the index kept from job events, and the permission-checked search; the boxes the user's jobs ask for (issue #991). */
@@ -397,7 +397,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, needSteps, directJobs, sandboxRequests,
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }),
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
-    ...history.recorders,
+    ...history.recorders, windowsLink: history.windowsLink,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
     secretProblem: (sub) => webhookSecrets.problem(sub), vault, // issues #558, #585, #586
     machineLink: { hopperKey: hopperLink.publicKey, join: (j) => host.joinMachine(j), client: link,

@@ -43,6 +43,7 @@ import type { NeedSteps } from '../sandbox/need-steps.ts';
 import type { SandboxRequests } from '../sandbox/requests.ts';
 import type { UsageRecorder } from '../usage/history.ts';
 import type { ResourceRecorder } from '../machines/history.ts';
+import type { WindowsLinkWatch } from '../machines/windows-link-watch.ts';
 
 /** One user's parts, as the HTTP edge reads and changes them. */
 export interface TenantParts {
@@ -90,6 +91,8 @@ export interface TenantParts {
   usageHistory: Pick<UsageRecorder, 'onRecorded'>;
   /** The resource recorder: new machine samples (SSE machine.recorded, issue #560). */
   machineHistory: Pick<ResourceRecorder, 'onRecorded'>;
+  /** The Windows link (issue #712): what the keep-alive loop on Windows reports, and the last report. */
+  windowsLink: Pick<WindowsLinkWatch, 'report' | 'reported'>;
   /** The GitHub proxy's view of the user (issue #563): their jobs asking, their GitHub connection. */
   githubProxy: UserGitHubProxy;
   /** Windows sandbox steps (issue #731): the user's Windows hosts, and their jobs' steps on them. */

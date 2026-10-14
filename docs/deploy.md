@@ -451,16 +451,25 @@ that folder. It works on the distro `HOPPER_WSL_DISTRO` names; unset, WSL's defa
   - writes `%LOCALAPPDATA%\hopper\hopper-keepalive.ps1`, a loop: `wsl.exe -e sleep infinity`, wait 5 s, again. The
     process in the distro keeps WSL from stopping it. After `wsl --shutdown` the `wsl.exe` ends, the loop starts it
     again, the distro boots, and systemd starts the containers through `podman-restart.service`;
+  - the loop also reports the Windows link: at most every 5 minutes, while the hopper's container runs, it opens
+    `http://localhost:<port>/api/health` (`HOPPER_PORT`; unset, `4790`), 10 s at most, reads the networking mode
+    (`wsl.exe -e wslinfo --networking-mode`), and runs `hopper windows-link report` in the container with the result:
+    the HTTP status (any status means the hopper answered) or why there was no answer. The hopper keeps the report in
+    memory for 15 minutes, and a broken link shows the banner with the fix and tells `machine.windows_link_broken`
+    (machine `windows`), as a WSL machine's client does (`docs/design.md` "The Windows link");
   - writes the shortcut `hopper-wsl.lnk` in this Windows user's Startup folder, which runs the loop in a hidden
-    PowerShell at each sign-in, and starts the loop now when it does not run. It has the name of the shortcut made by
-    hand ("Keep a hopper in WSL running" above), so it replaces that one, and a loop started by hand counts as running:
+    PowerShell at each sign-in, and starts the loop now. A loop that runs is stopped first, so a new loop takes its
+    place: run `hopper autostart on` again after an update of `hopper.ps1`. The shortcut has the name of the one made by
+    hand ("Keep a hopper in WSL running" above), so it replaces that one, and a loop started by hand is stopped too:
     the distro never gets two.
 - **`hopper autostart off`:** stops the loop (its own or the one made by hand) and its `wsl.exe`, and removes the shortcut and the loop's script. It
   changes nothing in the distro: linger and `podman-restart.service` stay on, and WSL stops the distro when it is idle.
 - **`hopper autostart status`:** says whether the shortcut exists, the loop runs, linger is on and
   `podman-restart.service` is enabled. It exits 1 when one of them is not.
 - **Security:** nothing new listens; the hopper's bind stays `127.0.0.1`. It needs no admin rights and no secret: the
-  Startup folder is this user's, not the common one, and no scheduled task is made.
+  Startup folder is this user's, not the common one, and no scheduled task is made. The report adds no trust: the CLI in
+  the container uses its own credentials, as for every operator action, and the signed-in Windows user could already
+  run them through `wsl.exe`. The loop keeps no token, and the report carries no secret.
 - **Not checked here:** there is no Windows runner, so `test/scripts/windows-cli.test.ts` reads the scripts. A person
   checks it once on Windows: `hopper autostart on`, `wsl --shutdown`, wait 30 s, then
   `Invoke-WebRequest http://localhost:4790/api/health`. If the hidden loop is not reliable on a WSL release, a scheduled

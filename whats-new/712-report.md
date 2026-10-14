@@ -1,0 +1,1 @@
+- On Windows, the keep-alive loop that keeps the hopper running now also checks that Windows opens the hopper, and the hopper shows a warning with the fix when it does not.
