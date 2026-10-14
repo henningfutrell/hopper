@@ -1,0 +1,1 @@
+- On Windows, one command now keeps the hopper running after you sign in to Windows, after you close the last Ubuntu window, and after WSL restarts.

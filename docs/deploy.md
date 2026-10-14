@@ -397,8 +397,9 @@ once, before the hopper's first start, with `pg_dump` from one and `psql` into t
 ### Keep a hopper in WSL running
 
 WSL stops a distro soon after no Windows program uses it, and every container in it stops too. Rootless Podman has no
-daemon to start them again. So a hopper in WSL with Podman needs three things, done once by hand (`site/install.html`
-"On Windows" has the lines to copy). Nothing checks them.
+daemon to start them again. So a hopper in WSL with Podman needs three things, done once. `hopper autostart on` from
+Windows does 2 and 3 and checks 1, and `hopper autostart status` checks them all ("Keep it running on Windows" below).
+By hand, `site/install.html` "On Windows" has the lines to copy.
 
 1. **systemd on in the distro.** `[boot]` `systemd=true` in `/etc/wsl.conf`, then `wsl --shutdown` in PowerShell.
 2. **The containers start with the distro.** In the distro: `sudo loginctl enable-linger "$USER"` and
@@ -410,7 +411,8 @@ daemon to start them again. So a hopper in WSL with Podman needs three things, d
    `wsl.exe` exits, the loop starts it again 5 seconds later.
 
 The keep-alive runs as the signed-in Windows user: it needs no administrator rights and no secret, and nothing new
-listens. It starts only when that user signs in to Windows. To stop it, delete the shortcut and sign out.
+listens. It starts only when that user signs in to Windows. To stop it, run `hopper autostart off`, or delete the
+shortcut and sign out.
 
 ### The hopper CLI from Windows
 
@@ -428,6 +430,37 @@ and nothing new listens. Anyone who can run `wsl.exe` as that Windows user could
 - **`HOPPER_WSL_DISTRO`:** the WSL distro the hopper runs in; unset, WSL's default distro.
 - **`HOPPER_COMPOSE_PROJECT`:** the compose project; unset, `hopper`, the `name:` in `compose.yaml`.
 - **No hopper running:** the wrapper says so, and exits 1.
+
+### Keep it running on Windows
+
+WSL stops a distro soon after its last Windows process ends, and rootless Podman has no daemon, so the hopper in WSL
+stops with the last Ubuntu window and starts again with nothing. `hopper autostart on|off|status` (issue #712), in
+`scripts/hopper.ps1`, keeps it running: after a Windows sign-in and after `wsl --shutdown`. `hopper.cmd` runs
+`hopper.ps1` from its own folder for it (`powershell.exe -ExecutionPolicy Bypass`, this process only), so put both in
+that folder. It works on the distro `HOPPER_WSL_DISTRO` names; unset, WSL's default distro.
+
+- **`hopper autostart on`:**
+  - checks through `wsl.exe` that systemd runs in the distro (`/proc/1/comm`); if not, it stops and gives the fix
+    (`systemd=true` under `[boot]` in `/etc/wsl.conf`, then `wsl --shutdown`);
+  - runs `sudo loginctl enable-linger <user>` when linger is off (sudo can ask for the distro user's password once) and
+    `systemctl --user enable podman-restart.service`, as the Linux path does ("Keep it running" above);
+  - writes `%LOCALAPPDATA%\hopper\hopper-keepalive.ps1`, a loop: `wsl.exe -e sleep infinity`, wait 5 s, again. The
+    process in the distro keeps WSL from stopping it. After `wsl --shutdown` the `wsl.exe` ends, the loop starts it
+    again, the distro boots, and systemd starts the containers through `podman-restart.service`;
+  - writes the shortcut `hopper-wsl.lnk` in this Windows user's Startup folder, which runs the loop in a hidden
+    PowerShell at each sign-in, and starts the loop now when it does not run. It has the name of the shortcut made by
+    hand ("Keep a hopper in WSL running" above), so it replaces that one, and a loop started by hand counts as running:
+    the distro never gets two.
+- **`hopper autostart off`:** stops the loop (its own or the one made by hand) and its `wsl.exe`, and removes the shortcut and the loop's script. It
+  changes nothing in the distro: linger and `podman-restart.service` stay on, and WSL stops the distro when it is idle.
+- **`hopper autostart status`:** says whether the shortcut exists, the loop runs, linger is on and
+  `podman-restart.service` is enabled. It exits 1 when one of them is not.
+- **Security:** nothing new listens; the hopper's bind stays `127.0.0.1`. It needs no admin rights and no secret: the
+  Startup folder is this user's, not the common one, and no scheduled task is made.
+- **Not checked here:** there is no Windows runner, so `test/scripts/windows-cli.test.ts` reads the scripts. A person
+  checks it once on Windows: `hopper autostart on`, `wsl --shutdown`, wait 30 s, then
+  `Invoke-WebRequest http://localhost:4790/api/health`. If the hidden loop is not reliable on a WSL release, a scheduled
+  task with restart on failure is the fallback.
 
 ### The hopper's network
 
