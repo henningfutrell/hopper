@@ -1,0 +1,1 @@
+- Push it now works for a job that finished or was cancelled with work that is not pushed, not only for a failed job.

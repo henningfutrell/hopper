@@ -1,10 +1,10 @@
 // Work not pushed (issue #1010, design.md "Work not pushed"): the ended jobs whose reap kept work not pushed, as the
-// Failures view lists them, and Push it — the failed job goes on in its own agent session and kept work tree, told to
+// Failures view lists them, and Push it — the failed, finished or cancelled job goes on in its own agent session and kept work tree, told to
 // push its work and open the pull request. Through its open hand-off when it has one (resolved as Continue), else as a
 // Continue of its own (`job.continued` with `keptWork`). Discard is the engine's (`Engine.discardWork`): it reaches
 // the job's machine.
 import type { RerunResult, UserStore } from '../domain/ports.ts';
-import { keptWorkOf, machineRanOn, TERMINAL_STATUSES, WORK_EVENTS, type ActingPerson, type Allowed, type ContinuedBy, type HandoffView, type Job, type KeptWorkView } from '../domain/types.ts';
+import { keptWorkOf, machineRanOn, PUSHABLE_ENDS, TERMINAL_STATUSES, WORK_EVENTS, type ActingPerson, type Allowed, type ContinuedBy, type HandoffView, type Job, type KeptWorkView } from '../domain/types.ts';
 import type { HandoffResolve } from './handoffs.ts';
 import { handoffView, newestOfItem } from './view.ts';
 
@@ -25,9 +25,9 @@ export function pushBrief(note: string | undefined): string {
   ].join('\n');
 }
 
-/** Whether Push it is taken now, and why not: a failed job whose own session resumes, the newest of its item. */
+/** Whether Push it is taken now, and why not: a failed, finished or cancelled job whose own session resumes, the newest of its item. */
 function pushAllowed(store: Reads, job: Job, handoff: ReturnType<Reads['handoffs']['forJob']>, resumable: (job: Job) => boolean): Allowed {
-  if (job.status !== 'failed') return no(`it is ${job.status}: only a failed job goes on in its work tree`);
+  if (!PUSHABLE_ENDS.includes(job.status)) return no(`it is ${job.status}: only a failed, finished or cancelled job goes on in its work tree`);
   if (!resumable(job)) return no('its agent session cannot resume: open its work tree on its machine, or discard it');
   if (handoff?.status === 'open') return handoffView(store, handoff, resumable).actions.continue;
   return newestOfItem(store, job.id);

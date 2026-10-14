@@ -1,10 +1,13 @@
 // Work not pushed (issue #1010, design.md "Work not pushed"): an ended job whose scratch dir the reap or the sweep kept,
 // because a repository in it holds uncommitted or unpushed work (`job.work_kept`, issue #401). It stays kept until the
 // work is pushed (`job.work_removed`, by the sweep) or a person discards it (`job.work_removed` with `discarded`). The
-// Failures view lists each with its ways out: Push it (the failed job goes on in its own session and work tree, told to
-// push) and Discard. Pure. Re-exported from types.ts.
+// Failures view lists each with its ways out: Push it (the failed, finished or cancelled job goes on in its own session and
+// work tree, told to push) and Discard. Pure. Re-exported from types.ts.
 import type { DomainEvent, Job, JobStatus } from './types.ts';
 import type { Allowed } from './failures.ts';
+
+/** The ends whose kept work Push it takes: the job goes on in its own session and work tree. Not a rejected job: it never ran. */
+export const PUSHABLE_ENDS: readonly JobStatus[] = ['failed', 'finished', 'cancelled'];
 
 /** The work trail: the events that keep and remove an ended job's scratch dir. */
 export const WORK_EVENTS = ['job.work_kept', 'job.work_removed'] as const;
