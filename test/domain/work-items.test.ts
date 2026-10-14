@@ -2,7 +2,7 @@
 // settled with what GitHub said of its issue and pull request. "Failed" is only the newest attempt's failure, nobody
 // dismissed and nothing replaced; a finished job waits on its pull request until it merges.
 import { describe, expect, it } from 'vitest';
-import { applyEvent, applyRead, countStates, type LedgerJob, type WorkItem } from '../../src/domain/work-items.ts';
+import { applyEvent, applyRead, countStates, isFailureOf, keptWorkShown, type LedgerJob, type WorkItem } from '../../src/domain/work-items.ts';
 import type { EventType } from '../../src/domain/types.ts';
 
 const KEY = 'https://github.com/o/r/issues/1';
@@ -105,5 +105,39 @@ describe('the work-item reducer', () => {
     expect(counts.failed).toBe(2);
     expect(counts.done).toBe(1);
     expect(counts.queued).toBe(0);
+  });
+});
+
+describe('what every view reads of an item (issue #1067, part 2)', () => {
+  it('a job\'s failure is its item\'s only while the item is failed or handed to a person on it', () => {
+    const failed = fold([['job.queued'], ['job.failed', { error: 'x' }]])!;
+    expect(isFailureOf(failed, 'j1')).toBe(true);
+    expect(isFailureOf(failed, 'j2')).toBe(false);
+    const handed = fold([['job.queued'], ['job.failed', { error: 'x' }], ['handoff.opened', {}]])!;
+    expect(isFailureOf(handed, 'j1')).toBe(true);
+    // Dismissed, run again, or its issue closed: no failure any more.
+    expect(isFailureOf(fold([['job.queued'], ['job.failed', { error: 'x' }], ['job.dismissed', {}]])!, 'j1')).toBe(false);
+    expect(isFailureOf(fold([['job.queued'], ['job.failed', { error: 'x' }], ['job.queued', {}, j2]])!, 'j1')).toBe(false);
+    expect(isFailureOf(applyRead(failed, { kind: 'issue', at: '2026-10-13T12:00:00.000Z', state: 'closed', reason: 'completed' })!, 'j1')).toBe(false);
+    expect(isFailureOf(undefined, 'j1')).toBe(false);
+  });
+
+  it('kept work counts while nothing finished the item and no newer job works it', () => {
+    const kept: [EventType, Record<string, unknown>?, LedgerJob?][] = [['job.queued'], ['job.failed', { error: 'x' }], ['job.work_kept', { paths: ['/w'] }]];
+    expect(keptWorkShown(fold(kept)!)).toEqual(['j1']);
+    // A newer job works the item: the older job's kept work is history.
+    expect(keptWorkShown(fold([...kept, ['job.queued', {}, j2], ['job.started', {}, j2]])!)).toEqual([]);
+    expect(keptWorkShown(fold([...kept, ['job.queued', {}, j2], ['job.finished', {}, j2], ['job.pull_request_followed', { pullRequest: PR }, j2]])!)).toEqual([]);
+    // The newer job failed too: both are left to look at.
+    expect(keptWorkShown(fold([...kept, ['job.queued', {}, j2], ['job.failed', { error: 'y' }, j2], ['job.work_kept', { paths: ['/v'] }, j2]])!)).toEqual(['j1', 'j2']);
+    // The item is done: its pull request merged, or its issue closed.
+    expect(keptWorkShown(fold([...kept, ['job.pull_request_merged', { pullRequest: PR }]])!)).toEqual([]);
+    const closed = applyRead(fold(kept)!, { kind: 'issue', at: '2026-10-13T12:00:00.000Z', state: 'closed', reason: 'completed' })!;
+    expect(keptWorkShown(closed)).toEqual([]);
+    expect(keptWorkShown(applyRead(fold(kept)!, { kind: 'issue', at: '2026-10-13T12:00:00.000Z', state: 'closed', reason: 'not_planned' })!)).toEqual([]);
+    // A finished job of its own item with work not pushed: still to push.
+    expect(keptWorkShown(fold([['job.queued'], ['job.finished', {}], ['job.work_kept', { paths: ['/w'] }]])!)).toEqual(['j1']);
+    // Cancelled by a person: still to push or discard.
+    expect(keptWorkShown(fold([['job.queued'], ['job.cancelled', {}], ['job.work_kept', { paths: ['/w'] }]])!)).toEqual(['j1']);
   });
 });

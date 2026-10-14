@@ -14,7 +14,7 @@ export const STAGES: readonly { stage: JobStage; label: string; tone: Tone; titl
   { stage: 'queued', label: 'Queued', tone: 'muted', title: 'waits for a lane' },
   { stage: 'running', label: 'Building it', tone: 'busy', title: 'an agent works it now' },
   { stage: 'waiting', label: 'Waiting', tone: 'question', title: 'waits on a person or the outside world: a question, an operator, parked, its own wait' },
-  { stage: 'pr_open', label: 'Ready for review', tone: 'warn', title: 'finished; its pull request is open' },
+  { stage: 'pr_open', label: 'PR open', tone: 'warn', title: 'finished; its pull request is open, on its way to the merge' },
   { stage: 'partly_done', label: 'Part shipped', tone: 'operator', title: 'shipped part of its issue; the rest runs once its pull request merges' },
   { stage: 'done', label: 'Done', tone: 'ok', title: 'finished, its pull request merged or none' },
   { stage: 'failed', label: 'Failed', tone: 'bad', title: 'failed' },

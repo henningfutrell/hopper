@@ -1,10 +1,11 @@
-// What the Failures view reads (issue #509): how many failed jobs are left (issue #517), the hand-offs waiting on a
+// What the Failures view reads (issue #509): how many failures are left, from the work-item ledger (issues #517, #1067), the hand-offs waiting on a
 // person and those closed in the last day (issue #516), the open problems and those resolved in the last day, the
 // newest assessed failures still open (issues #529, #618) and those that ended in the last day, the profile — and, on
 // each problem, failure and hand-off (issue #551), whether the daemon takes each action now and why not. The routes
 // refuse with the same reasons, so the view offers only what is taken.
 import type { UserStore } from '../domain/ports.ts';
 import { DEFAULT_YOLO_MODE, highFirst, jobPriorityTag, pullRequestList, stuckOf, type Allowed, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
+import { HANDOFF_WAIT } from '../domain/work-items.ts';
 import { handoffCard, takenCard } from './card.ts';
 import { keptWorkViews } from './kept-work.ts';
 import { knownCauses } from './causes.ts';
@@ -21,7 +22,7 @@ const SCAN = 500;
 const OK: Allowed = { ok: true };
 const no = (why: string): Allowed => ({ ok: false, why });
 
-type Reads = Pick<UserStore, 'failures' | 'problems' | 'jobs'>;
+type Reads = Pick<UserStore, 'failures' | 'problems' | 'jobs' | 'workItems'>;
 
 /** Records by their job's live priority, highest first, each priority in the order given (issue #535). */
 export function highestFirst(store: Pick<UserStore, 'jobs'>, records: FailureRecord[]): FailureRecord[] {
@@ -35,11 +36,14 @@ export function newerOf(store: Pick<UserStore, 'jobs'>, job: Job): string | unde
   return newest && newest.id !== job.id ? newest.id : undefined;
 }
 
-/** How many failed jobs are left (issue #517): not assessed yet, and handed off to a person (open hand-offs). */
-export function countsOf(store: Pick<UserStore, 'jobs' | 'handoffs'>): FailureCounts {
+/**
+ * How many failures are left (issues #517, #1067): the work items the ledger has as failed, and those handed to a person
+ * on their failure — the counts every other view reads too.
+ */
+export function countsOf(store: Pick<UserStore, 'workItems'>): FailureCounts {
   return {
-    unassessed: store.jobs.list({ status: ['failed'], unassessed: true }).length,
-    needsPerson: store.handoffs.list({ status: 'open', limit: 1_000_000 }).length,
+    failed: store.workItems.counts().failed,
+    needsPerson: store.workItems.list({ state: ['needs_you'] }).filter((i) => i.waitingOn === HANDOFF_WAIT).length,
   };
 }
 

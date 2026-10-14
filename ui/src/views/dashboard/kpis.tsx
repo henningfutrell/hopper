@@ -32,8 +32,9 @@ function Kpi({ kpi, label, icon: Icon, value, sub, tone, spark, alert }: {
 export function KpiRow() {
   const board = useJobBoard();
   const machines = useHopper((s) => s.machines);
+  const items = useHopper((s) => s.items);
   const now = useNow();
-  const k = kpis(board, machines);
+  const k = kpis(board, machines, items);
   const quarter = Math.floor(now / QUARTER);
   // Per quarter hour, not per tick: spans and buckets only move that often.
   const since = (quarter - 24) * QUARTER;
@@ -52,7 +53,7 @@ export function KpiRow() {
         sub={[k.held ? `${k.held} held` : 'none held', ...(k.parked ? [`${k.parked} parked`] : []), ...(k.waitingOn ? [`${k.waitingOn} on their own wait`] : [])].join(' · ')} />
       <Kpi kpi="waitingAnswer" label="On a question" icon={MessageCircleQuestion} tone="question" value={k.waitingAnswer} sub={k.waitingAnswer ? 'needs an answer' : 'nothing asked'} alert={k.waitingAnswer > 0} />
       <Kpi kpi="finished" label="Finished" icon={CircleCheck} tone="ok" value={k.finished} sub="in 24 h" spark={series.finished} />
-      <Kpi kpi="failed" label="Failed" icon={CircleX} tone={k.failed ? 'bad' : 'muted'} value={k.failed} sub={k.cancelled ? `in 24 h · ${k.cancelled} cancelled` : 'in 24 h'} spark={series.failed} />
+      <Kpi kpi="failed" label="Failed" icon={CircleX} tone={k.failed ? 'bad' : 'muted'} value={k.failed} sub={k.failed === 1 ? 'work item failed now' : 'work items failed now'} spark={series.failed} />
     </div>
   );
 }

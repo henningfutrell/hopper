@@ -60,8 +60,10 @@ describe('a newer job of its item supersedes a failure waiting on a person', () 
     const record = store.failures.forJob(job.id)!;
     store.failures.update(record.id, { outcome: 'surfaced', nextJobId: undefined, note: undefined });
     // Read in the same tick as the writes (issue #756): the background sweep runs every tick and may close the row
-    // before an HTTP round trip reads it.
-    expect(failures.view().counts.needsPerson).toBe(1);
+    // before an HTTP round trip reads it. The work-item ledger counts no stale row (issue #1067): its item has a newer job.
+    const before = failures.view();
+    expect(before.handoffs.find((x) => x.id === stale.id)?.status).toBe('open');
+    expect(before.counts.needsPerson).toBe(0);
 
     // A sweep already under way may have read before the row was written: the next one sees it.
     await failures.sweep();

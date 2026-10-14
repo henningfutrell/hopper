@@ -1,9 +1,11 @@
-// Issue #1036: finished work rolls up on the job graph — a merged pull request is merged for every job that names it, an
-// issue closed as completed is done, and a failed or cancelled job something took the place of is superseded. Pure.
+// Issue #1036: finished work rolls up on the job graph — a merged pull request is merged for every job that names it.
+// Issue #1067: an issue is at its work item's state, and a failed or cancelled job whose item the ledger has moved on is
+// superseded; one handed to a person waits on you. Pure.
 import { describe, expect, it } from 'vitest';
 import { issueNodeId, jobGraph, jobNodeId, pullRequestNodeId, type JobGraph } from '../../src/domain/job-graph.ts';
 import { placeGraph } from '../../src/domain/issue-graph.ts';
 import type { Job, JobStatus } from '../../src/domain/types.ts';
+import type { WorkItem, WorkItemState } from '../../src/domain/work-items.ts';
 
 const PR = (n: number) => `https://github.com/acme/app/pull/${n}`;
 
@@ -14,6 +16,12 @@ const job = (id: string, status: JobStatus, over: Partial<Job> = {}, issue = 1):
   source: { source: 'github', kind: 'issue', key: `https://github.com/acme/app/issues/${issue}`, url: `https://github.com/acme/app/issues/${issue}`, repo: 'acme/app', number: issue, title: `issue ${issue}` },
   ...over,
 } as Job);
+/** A work item of issue `issue`, as the ledger has it (issue #1067). */
+const item = (issue: number, state: WorkItemState, jobId: string, over: Partial<WorkItem> = {}): WorkItem => ({
+  key: `https://github.com/acme/app/issues/${issue}`, state, stateSince: '2026-10-02T00:00:00.000Z', eventState: state,
+  eventAt: '2026-10-02T00:00:00.000Z', jobId, keptWork: [], version: 1, ...over,
+});
+const items = (...list: WorkItem[]): Map<string, WorkItem> => new Map(list.map((i) => [i.key, i]));
 const followed = (pullRequest: string, follow: string, seen?: object) => ({ sourceState: { source: { pullRequest, follow, ...(seen ? { seen } : {}) } } });
 
 const node = (g: JobGraph, id: string) => g.nodes.find((n) => n.id === id)!;
@@ -59,8 +67,9 @@ describe('finished work rolls up (issue #1036)', () => {
     expect(node(g, jobNodeId('a')).pullRequest).toMatchObject({ state: 'tended', checks: 'passing', conflicting: false });
   });
 
-  it('an issue closed as completed is done, and the failed or cancelled jobs of it are superseded', () => {
-    const g = jobGraph({ jobs: [job('first', 'cancelled'), job('second', 'failed')], issueGraph: closedIssue(1, 'completed') });
+  // Where each issue stands, and whether a failure is still one, is the work-item ledger's (issue #1067): the graph reads it.
+  it('an issue the ledger has done (closed as completed) is done, and the failed or cancelled jobs of it are superseded', () => {
+    const g = jobGraph({ jobs: [job('first', 'cancelled'), job('second', 'failed')], issueGraph: closedIssue(1, 'completed'), items: items(item(1, 'done', 'second', { issueState: 'closed', issueReason: 'completed' })) });
     expect(node(g, issueNodeId('acme/app', 1))).toMatchObject({ stage: 'done', stageText: 'Done' });
     expect(node(g, jobNodeId('first'))).toMatchObject({ stage: 'superseded', stageText: 'Superseded' });
     expect(node(g, jobNodeId('second')).stage).toBe('superseded');
@@ -68,17 +77,18 @@ describe('finished work rolls up (issue #1036)', () => {
     expect(g.trees[0]!.blocking).toEqual([]);
   });
 
-  it('an issue closed as not planned is not done by its close', () => {
-    const g = jobGraph({ jobs: [job('a', 'failed')], issueGraph: closedIssue(1, 'not_planned') });
-    expect(node(g, issueNodeId('acme/app', 1)).stage).toBe('failed');
-    expect(node(g, jobNodeId('a')).stage).toBe('failed');
+  it('an issue closed as not planned is dropped, not done: its job shows cancelled, no failure', () => {
+    const g = jobGraph({ jobs: [job('a', 'failed')], issueGraph: closedIssue(1, 'not_planned'), items: items(item(1, 'dropped', 'a', { issueState: 'closed', issueReason: 'not_planned' })) });
+    expect(node(g, issueNodeId('acme/app', 1)).stage).toBe('cancelled');
+    expect(node(g, jobNodeId('a')).stage).toBe('cancelled');
+    expect(g.stages.failed).toBeUndefined();
   });
 
   it('an issue a later job finished is done: the cancelled or failed jobs before it are superseded', () => {
     const g = jobGraph({ jobs: [
       job('cancelled', 'cancelled'), job('done', 'finished', { rerunOf: 'cancelled', ...followed(PR(3), 'merged') }),
       job('failed', 'failed', {}, 2), job('rerun', 'running', { rerunOf: 'failed' }, 2),
-    ] });
+    ], items: items(item(1, 'done', 'done'), item(2, 'working', 'rerun')) });
     expect(node(g, issueNodeId('acme/app', 1)).stage).toBe('done');
     expect(node(g, jobNodeId('cancelled')).stage).toBe('superseded');
     expect(node(g, jobNodeId('failed')).stage).toBe('superseded');
@@ -93,28 +103,41 @@ describe('finished work rolls up (issue #1036)', () => {
       closedBy: [{ kind: 'pull_request', repo: 'acme/app', number: 3, url: PR(3), state: 'merged' }],
     });
     const done = job('done', 'finished', { sourceState: { source: { pullRequest: PR(3), follow: 'tended', tended: { pullRequest: PR(3), step: 'rebase', nextJobId: 'tend' } } } });
-    const g = jobGraph({ jobs: [done, job('tend', 'cancelled', { rerunOf: 'done' })], issueGraph });
+    const g = jobGraph({ jobs: [done, job('tend', 'cancelled', { rerunOf: 'done' })], issueGraph, items: items(item(1, 'done', 'tend', { pullRequest: PR(3), pullRequestState: 'merged' })) });
     expect(node(g, jobNodeId('done')).stage).toBe('done');
     expect(node(g, issueNodeId('acme/app', 1)).stage).toBe('done');
     expect(node(g, jobNodeId('tend')).stage).toBe('superseded');
   });
 
   it('a run again that failed after a finished job stays failed: nothing took its place', () => {
-    const g = jobGraph({ jobs: [job('done', 'finished'), job('again', 'failed', { rerunOf: 'done' })] });
+    const g = jobGraph({ jobs: [job('done', 'finished'), job('again', 'failed', { rerunOf: 'done' })], items: items(item(1, 'failed', 'again', { failedJobId: 'again' })) });
     expect(node(g, jobNodeId('again')).stage).toBe('failed');
     expect(node(g, issueNodeId('acme/app', 1)).stage).toBe('failed');
+    expect(g.stages.failed).toBe(1);
   });
 
   it('a dismissed failed job is superseded: it counts as no failure', () => {
-    const g = jobGraph({ jobs: [job('a', 'failed', { dismissedAt: '2026-10-03T00:00:00.000Z' })] });
+    const g = jobGraph({ jobs: [job('a', 'failed', { dismissedAt: '2026-10-03T00:00:00.000Z' })], items: items(item(1, 'dropped', 'a')) });
     expect(node(g, jobNodeId('a'))).toMatchObject({ stage: 'superseded', stageText: 'Dismissed' });
     expect(g.trees[0]!.stages).toEqual({ superseded: 1 });
     expect(g.trees[0]!.summary).not.toContain('failed');
   });
 
-  it('a partly done job of an issue closed as completed waits on nothing', () => {
-    const g = jobGraph({ jobs: [job('part', 'finished', { partlyDone: PR(4), ...followed(PR(4), 'open') })], issueGraph: closedIssue(1, 'completed') });
+  it('a failed job handed to a person waits on you: no failure counted', () => {
+    const g = jobGraph({ jobs: [job('a', 'failed')], items: items(item(1, 'needs_you', 'a', { failedJobId: 'a', waitingOn: 'a hand-off' })) });
+    expect(node(g, jobNodeId('a'))).toMatchObject({ stage: 'waiting', handedOff: true, waitsOnYou: true, stageText: 'Waiting on you: take it over' });
+    expect(node(g, issueNodeId('acme/app', 1)).stage).toBe('waiting');
+    expect(g.stages).toEqual({ waiting: 1 });
+  });
+
+  it('a partly done job of an issue the ledger has done waits on nothing', () => {
+    const g = jobGraph({ jobs: [job('part', 'finished', { partlyDone: PR(4), ...followed(PR(4), 'open') })], issueGraph: closedIssue(1, 'completed'), items: items(item(1, 'done', 'part', { issueState: 'closed' })) });
     expect(node(g, jobNodeId('part')).stage).toBe('done');
     expect(node(g, issueNodeId('acme/app', 1)).stage).toBe('done');
+  });
+
+  it('with no ledger item (a job of no source), a job keeps its own stage', () => {
+    const g = jobGraph({ jobs: [job('a', 'failed', { dismissedAt: '2026-10-03T00:00:00.000Z' })] });
+    expect(node(g, jobNodeId('a')).stage).toBe('failed');
   });
 });
