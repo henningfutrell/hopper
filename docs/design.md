@@ -17621,3 +17621,50 @@ staging and `stageAt` for items deleted), Failures' counts and lists (its `statu
 the separate "still a failure" rules in `locked.ts` and `job-words.ts`. The pull request's checks (`pr_open`:
 checks running, fixing checks, merging) and GitHub's issue close and reopen as events of their own, from the webhooks
 and the follow; a batched fallback read for items in `pr_open` with no news in a while.
+
+## One start at a time per repository mirror (issue #1075, 2026-10-13)
+
+The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of
+cloning. Issue #858 built most of it: the **repository mirror** (one bare, blobless clone per repository per work tree,
+"Git efficiency"), a job worktree made of it, and one fetch per repository per sync pass. What was missing is safety
+for concurrent jobs: two starts on one machine could fetch into the same mirror at once, add worktrees at once, and git's
+automatic gc ran detached, beside whatever the next start did.
+
+**As built** (`src/executors/herdr/job-worktree.ts`):
+- **The start lock** (`JOB_WORKTREE_LOCK`, `hopper-start.lock`). A directory in the git common dir of the repository a job
+  worktree is made of: the repository mirror, or the work tree's own repository. A start that makes a worktree takes it
+  around its fetch and its worktree add, and lets it go after, also when git fails or the shell is stopped (a trap). So
+  starts on one machine use one repository one at a time. A start whose worktree is there already (a run again) takes no
+  lock and waits on nothing.
+- **Why a directory.** `mkdir` is made or refused at once on every machine the job worktree command runs on; `flock` is
+  not on every one (macOS has none). The holder writes its pid in it.
+- **A lock whose holder ended** (its pid no longer runs), or one held for more than 300 seconds, is moved aside and taken
+  over, and the start says so on its stderr (`hopper: took over the start lock <path>`). The start's own wait for the
+  outcome is 10 minutes, so a start that waits the whole time still finishes.
+- **Git's gc in the foreground.** Every git command under the lock runs with `gc.autoDetach=false` and
+  `maintenance.autoDetach=false`, which `-c` passes on to the fetches a blobless checkout makes. Git's automatic gc and
+  maintenance then run inside the lock, never beside another start's fetch or worktree add. `git worktree prune` before
+  each add removes the entries of worktrees the reap removed.
+- **A later start in the same sync pass** (`$6` 0, it fetches nothing) waits on the lock too, so it makes its worktree of
+  what the first start's fetch got, not of what was there before it.
+
+**Done when, as the issue says it:**
+- A new job on a warm machine fetches only what changed on the default branch, or nothing in the same pass (issue #858).
+- Concurrent jobs on one machine share the mirror without corrupting it: this section.
+- The repo-query API is its own issue.
+
+**Not done, and why.**
+- **A fetch on push webhooks.** The hopper pulls: it takes no webhook from GitHub ("Loopback plus the LAN names and the
+  public URL, and the hopper pulls"). The fetch at a start, once per sync pass, is its pull.
+- **Mounting the mirror read-only into job containers.** A job worktree writes to the common dir (its index, its commits,
+  blobs fetched on demand), so a read-only mount cannot hold a job's worktree. Not built until a box needs one.
+- **A lock around the job's own git.** A job's commits, fetches and pushes in its worktree are outside the lock; git's own
+  ref and index locks cover them, and git keeps unreferenced objects for two weeks before a gc removes them.
+
+**Residual risk, stated.** Two starts that find the same ended holder at the same moment can both take the lock. Then they
+run at once, as every start did before; git's own locks still keep the repository sound.
+
+Tests: `test/herdr/job-worktree-lock.test.ts` (real git and sh: a start waits while a live process holds the lock, then
+makes its worktree and lets the lock go; a lock whose holder ended is taken over and said; six concurrent starts each get
+a worktree at the remote's newest commit, and `git fsck` passes; a work tree that is the job's repository locks the same
+way; a worktree there already is entered whatever holds the lock).
