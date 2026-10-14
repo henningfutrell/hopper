@@ -5648,7 +5648,7 @@ On a hopper in a container (compose, rootless Podman in WSL among them), the fir
   list), or empty for the default. It applies to the next link, without a restart.
 - **The WSL hint.** A container shares its host's kernel, so the daemon reads `/proc/version` once at start; when it names
   Microsoft, the hopper runs in WSL and `HostLinkView.wsl` is true. Settings → Host link then shows how to test the link
-  from Windows (`Invoke-WebRequest <host link base>/api/health` in PowerShell) and the `.wslconfig` fixes
+  from Windows (`Invoke-WebRequest <host link base>/job/address` in PowerShell, which answers 204) and the `.wslconfig` fixes
   (`localhostForwarding=true` or `networkingMode=mirrored` under `[wsl2]`, then `wsl --shutdown`). The daemon cannot run a
   Windows command itself, so a person runs the test; a client in this distro (Add machine → A computer) can make it
   automatic. It reads `/proc/version` only (`AppSeams.procVersion` in tests).
@@ -12884,24 +12884,32 @@ cannot see which. A client in the same distro can, so it tests the link:
   background, at most every 5 minutes, and at its first `/release` after a start; a result older than 15 minutes is
   dropped.
 - **The test** (`src/client/windows-link.ts`). `wslinfo --networking-mode` gives the **mode** (`nat`, `mirrored`).
-  `powershell.exe` through WSL interop (the same way the client reads Windows' memory) runs `Invoke-WebRequest` on
-  `http://localhost:<the port the client dials>/api/health`, 10 s at most. Any HTTP answer, an error status too,
-  means the hopper answered: the link works. No answer, or no interop, is a broken link with the reason, cut to 200
-  characters. The test carries no token and only reads; it adds no listener and no route.
+  `powershell.exe` through WSL interop (the same way the client reads Windows' memory) runs `Invoke-WebRequest` on the
+  **address check** (`/job/address`, issue #698: 204 to anyone the Host guard lets in, with no session; `/api/health`
+  asks for a UI session of a request that is not loopback inside the container) at `http://localhost:<the port the
+  client dials>`, then, when that gets no answer, at `http://127.0.0.1:<that port>`, 10 s at most each. Windows tries
+  `::1` first for `localhost`, so `localhost` can fail where `127.0.0.1` works. Any HTTP answer, an error status too,
+  means the hopper answered: the link works, and `url` is the URL that answered. Only `127.0.0.1` answering is a
+  working link that the card states, with the hint to open `127.0.0.1`. No answer, or no interop, is a broken link with
+  the reason, cut to 200 characters, at the `localhost` URL. The test carries no token and only reads; it adds no
+  listener and no route.
 - **The reading.** The result is `windowsLink` (`WindowsLink`: `url`, `mode`, `ok`, `status`, `error`, `at`) in the
-  resources the client says in `/release`. `resourcesOf` keeps it only for a WSL reading and only when sane: a
-  localhost health URL, a boolean `ok`, a time. It is not kept in machine samples: no migration.
+  resources the client says in `/release`. `resourcesOf` keeps it only for a WSL reading and only when sane: the
+  address check's URL at `localhost` or `127.0.0.1` (or the `localhost` health URL of a client before it), a boolean
+  `ok`, a time. It is not kept in machine samples: no migration.
 - **Told and shown.** At each record the **Windows link watch** (`src/machines/windows-link-watch.ts`) tells
   `machine.windows_link_broken` once when a machine's link breaks, and `machine.windows_link_restored` once when it
   works again, as the memory alert does; kept in memory, so a link still broken is told again after a restart. A
   Machines card says *Windows link*, with a *Windows link broken* badge and the fix; a banner over every view names
   each online machine with a broken link and its fix. The fix by mode: NAT, set `localhostForwarding=true` under
-  `[wsl2]` in `.wslconfig`, and if it is set, `networkingMode=mirrored`, or open `http://127.0.0.1:<port>`; mirrored
-  or no mode read, open `http://127.0.0.1:<port>`, or set `networkingMode=mirrored`; then `wsl --shutdown`.
+  `[wsl2]` in `.wslconfig`, and if it is set, `networkingMode=mirrored`, or open `http://127.0.0.1:<port>`, then
+  `wsl --shutdown`; mirrored, open `http://127.0.0.1:<port>` (mirrored networking is on already, so it is never the
+  fix), and if that does not open either, `wsl --shutdown`; no mode read, both: open `http://127.0.0.1:<port>`, or
+  `localhostForwarding=true` in NAT mode, or `networkingMode=mirrored`, then `wsl --shutdown`.
 - **The keep-alive loop reports it** (the path "The Windows keep-alive loop reports the Windows link through the
   operator CLI"). With no client in the distro there is no result above, so the loop `hopper autostart on` writes on
   Windows (`docs/deploy.md` "Keep it running on Windows") tests the link itself: at most every 5 minutes, while the
-  hopper's container runs, the same URL and the same rule (any HTTP answer means the hopper answered), and the mode
+  hopper's container runs, the same URLs and the same rule (any HTTP answer means the hopper answered; `url` the one that answered), and the mode
   from `wsl.exe -e wslinfo`. It runs `hopper windows-link report --link <url> (--status <n> | --error <why>) [--mode
   <mode>]` in the container through `wsl.exe -e podman exec`. That operator action (`src/cli-operator-windows-link.ts`)
   mints a UI session for one `POST /ui/api/windows-link`, an admin's (`src/http/ui/windows-link.ts`). The hopper stamps
@@ -12915,11 +12923,12 @@ cannot see which. A client in the same distro can, so it tests the link:
   `test/scripts/windows-cli.test.ts` (the loop), `test/ui/windows-link.test.ts` (the banner).
 - **No client in the distro: no result.** The hopper's own container has no interop; issue #712's other paths cover it.
   One is `hopper doctor` in the **Windows CLI wrapper** (`docs/deploy.md` "Check it from Windows"): run on Windows, it
-  tests the same URL, reads the mode and `.wslconfig`, and gives the same fix as the banner; it also checks the
+  tests the same URLs, reads the mode and `.wslconfig`, and gives the same fix as the banner (only `127.0.0.1`
+  answering is a `warn`, not a `FAIL`, with the hint to open it); it also checks the
   keep-alive shortcut and, through `wsl.exe -e`, systemd, linger and `podman-restart.service` in the distro. It only
   reads. Settings → Host link names it in WSL. Tests: `test/scripts/windows-cli.test.ts` (it reads the script).
 
-Tests: `test/client/windows-link.test.ts` (the URL, the answer, when it tests, stale, not WSL), `test/adapters/
+Tests: `test/client/windows-link.test.ts` (the URLs, the answer, only 127.0.0.1, when it tests, stale, not WSL), `test/adapters/
 machine-resources.test.ts` (a client's link checked), `test/machines/windows-link-watch.test.ts` (told once, restored,
 offline), `test/integration/machine-history.test.ts` (the snapshot carries it; the event), `test/ui/windows-link.test.ts`
 (the card's line, the fix by mode, the banner's machines).

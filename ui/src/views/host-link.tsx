@@ -18,7 +18,7 @@ function WslHint({ base }: { base: string }) {
   return (
     <div data-slot="host-link-wsl" className="space-y-1 rounded-md border p-2 text-xs">
       <p className="font-medium">This hopper runs in WSL. Test the link from Windows.</p>
-      <p>In PowerShell on this computer, run <code className="font-mono">Invoke-WebRequest {base}/api/health</code>. It must answer 200.</p>
+      <p>In PowerShell on this computer, run <code className="font-mono">Invoke-WebRequest {base}/job/address</code>. It must answer 204.</p>
       <p>
         If it fails, edit <code className="font-mono">.wslconfig</code> in your Windows user folder. Under <code className="font-mono">[wsl2]</code>, set{' '}
         <code className="font-mono">localhostForwarding=true</code>, or set <code className="font-mono">networkingMode=mirrored</code>.

@@ -68,11 +68,11 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
   };
 }
 
-/** A client's Windows link (issue #712), when sane: a localhost health URL, `ok` and a time; a bad mode or status dropped, the reason cut short. */
+/** A client's Windows link (issue #712), when sane: the address check's URL at localhost or 127.0.0.1 (a client before it: the health URL at localhost), `ok` and a time; a bad mode or status dropped, the reason cut short. */
 function windowsLinkOf(v: unknown): WindowsLink | undefined {
   if (typeof v !== 'object' || v === null) return undefined;
   const l = v as Record<string, unknown>;
-  if (typeof l.url !== 'string' || !/^https?:\/\/localhost(:\d{1,5})?\/api\/health$/.test(l.url) || typeof l.ok !== 'boolean') return undefined;
+  if (typeof l.url !== 'string' || !/^https?:\/\/(localhost(:\d{1,5})?\/(job\/address|api\/health)|127\.0\.0\.1(:\d{1,5})?\/job\/address)$/.test(l.url) || typeof l.ok !== 'boolean') return undefined;
   if (typeof l.at !== 'string' || Number.isNaN(Date.parse(l.at))) return undefined;
   return {
     url: l.url,

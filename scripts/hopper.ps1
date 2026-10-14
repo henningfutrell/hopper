@@ -158,6 +158,12 @@ function Write-Check([string] $name, [bool] $ok, [string[]] $fix) {
   foreach ($line in $fix) { Write-Output "      $line" }
 }
 
+# A warning line of hopper doctor: the check works, but not as it should; the hint, one step a line. Not a failure.
+function Write-Warn([string] $name, [string[]] $hint) {
+  Write-Output ('{0}  {1}' -f 'warn', $name)
+  foreach ($line in $hint) { Write-Output "      $line" }
+}
+
 function Invoke-Doctor {
   $script:failed = $false
   $port = if ($env:HOPPER_PORT) { $env:HOPPER_PORT } else { '4790' }
@@ -171,15 +177,30 @@ function Invoke-Doctor {
     @("In .wslconfig, in your Windows user folder (%UserProfile%), set localhostForwarding=true under [wsl2].",
       "If it is already set, in .wslconfig, in your Windows user folder (%UserProfile%), set networkingMode=mirrored under [wsl2] instead, or open $loopback in place of localhost.",
       $shutdown)
+  } elseif ($mode -eq 'mirrored') {
+    @("Open $loopback in place of localhost.",
+      'If it does not open either, run wsl --shutdown in PowerShell, and start the hopper again.')
   } else {
     @("Open $loopback in place of localhost.",
-      "Or: In .wslconfig, in your Windows user folder (%UserProfile%), set networkingMode=mirrored under [wsl2].",
+      "Or, in NAT mode: in .wslconfig, in your Windows user folder (%UserProfile%), set localhostForwarding=true under [wsl2].",
+      "Or: in .wslconfig, in your Windows user folder (%UserProfile%), set networkingMode=mirrored under [wsl2].",
       $shutdown)
   }
 
-  $status = 0
-  try { $status = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "http://localhost:$port/api/health").StatusCode } catch { $status = 0 }
-  Write-Check "Windows opens http://localhost:$port/api/health" ($status -eq 200) (@('If the hopper does not run, run podman compose up -d in its folder in WSL.') + $linkFix)
+  # The address check (/job/address) answers 204 to anyone the Host guard lets in, with no session. Any HTTP answer, an
+  # error status too, means the hopper answered. localhost first; Windows tries ::1 first for it, so 127.0.0.1 next.
+  $atLocalhost = $false
+  try { $null = Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "http://localhost:$port/job/address"; $atLocalhost = $true } catch { $atLocalhost = [bool] $_.Exception.Response }
+  $atLoopback = $false
+  if (-not $atLocalhost) {
+    try { $null = Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "$loopback/job/address"; $atLoopback = $true } catch { $atLoopback = [bool] $_.Exception.Response }
+  }
+  if ($atLoopback) {
+    Write-Warn "Windows opens $loopback/job/address, but not http://localhost:$port/job/address" @(
+      "Windows tries ::1 first for localhost: open $loopback in place of localhost.")
+  } else {
+    Write-Check "Windows opens http://localhost:$port/job/address" $atLocalhost (@('If the hopper does not run, run podman compose up -d in its folder in WSL.') + $linkFix)
+  }
 
   $forwarding = $wsl2['localhostforwarding']
   $configured = $wsl2['networkingmode']

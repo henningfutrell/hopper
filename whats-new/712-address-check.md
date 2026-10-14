@@ -1,0 +1,1 @@
+- On Windows, the check that the hopper in WSL can be opened now works without a sign-in, also tries 127.0.0.1 when localhost does not answer, and gives the fix that fits your WSL networking mode.

@@ -31,8 +31,9 @@ export interface ResourceReading {
 }
 
 /**
- * The Windows link (issue #712): what a client in WSL found when Windows, through PowerShell, opened the hopper's health
- * route at `url` (localhost, at the port the client dials). `ok`: the hopper answered, with `status`; else `error` says why.
+ * The Windows link (issue #712): what a client in WSL found when Windows, through PowerShell, opened the hopper's address
+ * check (`/job/address`) at localhost, else at 127.0.0.1, at the port the client dials. `url`: the one that answered, else
+ * the localhost one. `ok`: the hopper answered, with `status`; else `error` says why.
  * `mode`: WSL's networking mode (`nat`, `mirrored`), absent when not read. `at`: when it was tested.
  */
 export interface WindowsLink {
