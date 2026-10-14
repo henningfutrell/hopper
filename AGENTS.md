@@ -68,7 +68,11 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   elsewhere (issue #921, `docs/design.md` "Checkpoints and resume elsewhere"): `GET /job/checkpoint/patch|session`, with the
   job's proxy token, serves that job its own checkpoint, scrubbed, only while it runs resuming elsewhere; it changes nothing. A machine's address check (issue #698,
   `docs/design.md` "GitHub through the hopper"): `GET /job/address` answers 204 to anyone the Host guard lets in, so an ssh
-  target's probe learns which of the hopper's addresses its jobs reach; it changes and records nothing. The tunnel
+  target's probe learns which of the hopper's addresses its jobs reach; it changes and records nothing. A GitHub delivery (issue #1079,
+  `docs/design.md` "GitHub deliveries"): `POST /github/webhook`, signed with the GitHub webhook secret (HMAC-SHA256, a system
+  secret the hopper's admin makes through the UI session), only GitHub's `issues` events, makes the repository it names due
+  at the sources whose job repository it is, so they list it again at a sync soon after; it changes no job, question,
+  webhook or setting, only records the delivery. The hopper still pulls: a delivery never carries a job. The tunnel
   services' ask (issues #880, #968, `docs/design.md` "Remote access"): `GET /tunnel/agent`, with the preshared key the
   compose stack makes in memory (`HOPPER_TUNNEL_KEY`), never as a public request, answers the tunnel token the hopper
   minted (and for ngrok the remote access URL) to the service of the tunnel provider that is on; it changes no job,
@@ -143,7 +147,7 @@ hopper's note naming the job and the request by id only, and gets no label or as
   "The vault's system scope"): the GitHub connection's access and refresh tokens, each webhook signing secret and each
   user's TypeSafe API key in that user's vault, each sign-in realm's `clientSecret` or `bindPassword` (set in the UI or
   from the `HOPPER_SIGN_IN_*` environment) and remote access's — each tunnel provider's credential and the tunnel token the hopper
-  minted with it (issues #880, #968, set in Settings → Remote access, never in `.env`) — in the instance's vault — rows named `system/<name>`, sealed, written only
+  minted with it (issues #880, #968, set in Settings → Remote access, never in `.env`) — and the GitHub webhook secret (issue #1079, made in Settings → GitHub webhook) in the instance's vault — rows named `system/<name>`, sealed, written only
   through `SystemSecrets.keep` (src/vault/system.ts), each set, replace, rotation, removal, move and read an event with no
   value, shown with its audit trail on Settings → Vault, and never given to a job, a machine or a box: OpenFGA
   (`system_secret#can_read`) denies them, and the vault refuses them whatever it answers. One kind is answered by a route: the

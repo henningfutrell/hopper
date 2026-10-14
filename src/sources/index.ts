@@ -11,7 +11,7 @@ export type { GitHubAccountOptions, GitHubAppOptions, GitHubSourceConfig } from 
 export { APP_MISSING, appProblem, createAccountSource, createAppSource, followEvery } from './compose.ts';
 export { createAccountGitHubApi } from './github/account/api.ts';
 export { loadGitHubApp } from './github/app/index.ts';
-export { createSourceSync } from './sync.ts';
+export { createSourceSync, DELIVERY_SYNC_MS } from './sync.ts';
 export type { SourceSync, SourceSyncOptions } from './sync.ts';
 
 /** A status for a source that is configured but not running. */
@@ -34,5 +34,6 @@ export function withFixedStatuses(running: SourceRegistry, fixed: () => SourceSt
     tendAgain: (jobId, acting) => running.tendAgain(jobId, acting),
     rework: (jobId, notes, acting) => running.rework(jobId, notes, acting),
     intakeAction: (source, action) => running.intakeAction(source, action),
+    repoChanged: (repo) => running.repoChanged(repo),
   };
 }

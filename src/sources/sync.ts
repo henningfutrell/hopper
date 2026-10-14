@@ -19,6 +19,8 @@
 // What a sync reads (issue #985): the first sync after start, a sync of a source new or changed in the plugins config, and a
 // sync a person asked for (Sync now, an intake action, a new connection) ask the source to read everything again; every
 // other sync — its timer, one after a merge, a rerun — only what is due (`discover({ due: true })`).
+// A GitHub delivery (issue #1079, `repoChanged`) makes the repository due at each source whose job repository it is, and
+// that source syncs once `DELIVERY_SYNC_MS` after the first delivery of a burst: a timed sync, before its timer.
 
 import { SourceError } from '../domain/ports.ts';
 import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
@@ -48,6 +50,9 @@ export interface SourceSyncOptions {
   /** How often a round follows the pull requests in motion, and every one (issue #985), read at each sync. Absent: every sync follows every one. */
   followEvery?: () => FollowEvery;
 }
+
+/** How long after a GitHub delivery its sources sync (issue #1079): GitHub sends opened, labeled and assigned at once. */
+export const DELIVERY_SYNC_MS = 2_000;
 
 /** A source in error this long has stopped intake: the owner is told. */
 export const STALL_AFTER_MS = 30 * 60_000;
@@ -367,10 +372,15 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       unsubscribe = store.events.subscribe(onEvent);
       for (const slot of slots.values()) void runSync(slot, true);
     },
+    repoChanged(repo) {
+      const named = running ? [...slots.values()].filter((s) => !s.removed && s.source.repoChanged?.(repo) === true) : [];
+      for (const slot of named) slot.delivered ??= setTimeout(() => { delete slot.delivered; if (running) void runSync(slot); }, DELIVERY_SYNC_MS);
+      return named.map((s) => s.source.name);
+    },
     async stop() {
       running = false;
       unsubscribe?.();
-      for (const slot of slots.values()) clearTimeout(slot.timer);
+      for (const slot of slots.values()) { clearTimeout(slot.timer); clearTimeout(slot.delivered); delete slot.delivered; }
       await drain();
       await Promise.allSettled([...syncs]);
       await drain();

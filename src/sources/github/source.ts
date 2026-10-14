@@ -10,7 +10,8 @@
 // installed on, and tells hopper comments by the bot author (marker secondary). Neither searches.
 //
 // Intake reads the listing cache (issue #985, `listing.ts`): the job repositories are listed again every intake sync
-// interval, or at once when a person asked for the sync. A discover and a check read a job's issue from what was kept
+// interval, at once when a person asked for the sync, or at the next sync after a GitHub delivery said the repository
+// changed (issue #1079, `repoChanged`). A discover and a check read a job's issue from what was kept
 // while its listing shows no change (`listed-reads.ts`); every other read — before a write — goes to GitHub.
 
 import type { IntakeAction, IntakeChange, IntakeContext, IntakeOutcome, IntakeTrust } from '../../domain/intake.ts';
@@ -123,6 +124,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   /** When the installed repositories were last asked (issue #985): a timed sync asks again only each intake sync interval. */
   let installedAt: number | undefined;
   let nothingToScan = false;
+  /** The job repositories the last discover scanned: what a GitHub delivery may name (issue #1079). */
+  let scanned: string[] = [];
   const labelledRepos = new Set<string>();
   /** The request cards this process saw opened, as `<key> <hash>`: the events are read once per text. */
   const opened = new Set<string>();
@@ -268,7 +271,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     discover: (d) => reads.cached(async () => {
       const bot = await botLogin();
       const assignee = o.assignee();
-      const repos = bot === undefined ? config.repos : await appScope(d?.due === true);
+      const repos = scanned = bot === undefined ? config.repos : await appScope(d?.due === true);
       nothingToScan = app && repos.length === 0;
       if (nothingToScan || assignee === undefined) {
         repoErrors = {};
@@ -321,6 +324,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       lastDiscoverAt = o.clock.now().toISOString();
       return items;
     }),
+    repoChanged: (repo) => { const own = scanned.find((r) => r.toLowerCase() === repo.toLowerCase()); if (own !== undefined) listing.markDue(own); return own !== undefined; },
     check: (active) => reads.cached(async () => {
       const mine = active.filter((j) => j.source?.source === o.name && !TERMINAL_STATUSES.includes(j.status));
       if (mine.length === 0) return [];

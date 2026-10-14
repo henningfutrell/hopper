@@ -34,6 +34,8 @@ export interface Slot {
   /** When its last round of follows started, and its last round of every one (issue #985), ms since the epoch. */
   followedAt?: number;
   followedAllAt?: number;
+  /** A GitHub delivery named one of its job repositories (issue #1079): the sync it starts soon after. */
+  delivered?: NodeJS.Timeout;
 }
 
 export function newSlot(source: JobSource): Slot {

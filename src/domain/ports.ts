@@ -468,6 +468,11 @@ export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses {
    * the sync, and the source reads everything again.
    */
   discover(o?: { due?: boolean }): Promise<SourceItem[]>;
+  /**
+   * A GitHub delivery said `repo` (`owner/name`) changed (issue #1079): the next discover, a timed one too, reads it again.
+   * true when it is one of the source's job repositories, as its last discover scanned them. Absent: the source takes none.
+   */
+  repoChanged?(repo: string): boolean;
   /** Signals for this source's non-terminal jobs: cancellations and assignment drift. */
   check(active: Job[]): Promise<SourceSignal[]>;
   /**
@@ -659,6 +664,11 @@ export interface SourceRegistry {
    * source, so its status shows the result. not_found: no running source of that name; conflict: it takes no such act.
    */
   intakeAction(source: string, action: IntakeAction): Promise<IntakeActionOutcome>;
+  /**
+   * A GitHub delivery said `repo` (`owner/name`) changed (issue #1079): each running source whose job repository it is
+   * reads it again at a sync soon after. The names of those sources; none when no source takes it.
+   */
+  repoChanged(repo: string): string[];
   /**
    * A person's Merge now or Close PR on a finished job's open pull request (issue #677): its source merges it — whatever
    * yolo mode and its checks say — or closes it without a merge, on the job's report chain, and it is recorded as a
