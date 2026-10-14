@@ -1,6 +1,6 @@
 // Landing batches in the UI (issue #1073), pure: one line per configured repository saying where its batch runs stand,
 // and the change a save sends — only what differs. A red batch (part 2): the bisect at work, the culprit, its revert
-// and its fix issue, and the event lines of each step.
+// and its fix issue, and the event lines of each step. A back-merge after merge conflicts (part 4).
 import { describe, expect, it } from 'vitest';
 import { landingBatchLine, landingBatchPatch, redBatchDetail } from '../../ui/src/model/landing-batches.ts';
 import type { LandingBatchRepoView } from '../../ui/src/model/wire.ts';
@@ -49,5 +49,17 @@ describe('landing batches model', () => {
     expect(redBatchDetail('landing_batch.reverted', { repo: 'owner/a', pullRequest: 13 })).toBe('owner/a: revert #13 merged');
     expect(redBatchDetail('landing_batch.revert_failed', { repo: 'owner/a', reason: 'a direct commit' })).toBe('owner/a: not reverted: a direct commit');
     expect(redBatchDetail('landing_batch.fix_filed', { repo: 'owner/a', issue: 14 })).toBe('owner/a: fix issue #14 filed');
+  });
+
+  it('line and event lines: a back-merge after merge conflicts (part 4)', () => {
+    const open = { tip: '0123456789abcdef', state: 'open' as const, pullRequest: 15, url: 'u', at: 'a' };
+    expect(landingBatchLine(row({ why: 'w', state: { repo: 'owner/a', backMerge: open } }))).toBe('Waiting: w. Merging dev into the landing branch: #15.');
+    const failed = { tip: '0123456789abcdef', state: 'failed' as const, conflict: true, reason: 'r', at: 'a' };
+    expect(landingBatchLine(row({ why: 'w', state: { repo: 'owner/a', backMerge: failed } }))).toBe('Waiting: w. Merge conflicts with dev: no issue yet.');
+    expect(landingBatchLine(row({ why: 'w', state: { repo: 'owner/a', backMerge: failed, backMergeIssue: { tip: 't', issue: 16, url: 'u' } } }))).toBe('Waiting: w. Merge conflicts with dev: issue #16.');
+    expect(redBatchDetail('landing_batch.back_merge_opened', { repo: 'owner/a', tested: 'dev', landing: 'main', pullRequest: 15 })).toBe('owner/a: merging dev into main: #15');
+    expect(redBatchDetail('landing_batch.back_merged', { repo: 'owner/a', pullRequest: 15 })).toBe('owner/a: back-merge #15 merged');
+    expect(redBatchDetail('landing_batch.back_merge_failed', { repo: 'owner/a', reason: 'nothing to merge' })).toBe('owner/a: no back-merge: nothing to merge');
+    expect(redBatchDetail('landing_batch.back_merge_issue_filed', { repo: 'owner/a', issue: 16 })).toBe('owner/a: issue #16 filed for the merge conflicts');
   });
 });

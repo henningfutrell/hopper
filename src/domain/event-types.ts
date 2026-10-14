@@ -44,7 +44,7 @@ export const EVENT_TYPES = [
   'step.started', 'step.finished', 'step.refused', 'vault.step_delivered', 'vault.step_refused',
   'landing_batch.started', 'landing_batch.promoted', 'landing_batch.failed', 'landing_batch.retargeted', 'landing_batches.changed',
   'landing_batch.bisect_started', 'landing_batch.bisect_run', 'landing_batch.bisect_tested', 'landing_batch.culprit', 'landing_batch.revert_opened', 'landing_batch.reverted', 'landing_batch.revert_failed', 'landing_batch.fix_filed',
-  'landing_batch.pending',
+  'landing_batch.pending', 'landing_batch.back_merge_opened', 'landing_batch.back_merged', 'landing_batch.back_merge_failed', 'landing_batch.back_merge_issue_filed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -97,4 +97,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'step.started': 1, 'step.finished': 1, 'step.refused': 1, 'vault.step_delivered': 1, 'vault.step_refused': 1,
   'landing_batch.started': 1, 'landing_batch.promoted': 1, 'landing_batch.failed': 1, 'landing_batch.retargeted': 1, 'landing_batches.changed': 1,
   'landing_batch.bisect_started': 1, 'landing_batch.bisect_run': 1, 'landing_batch.bisect_tested': 1, 'landing_batch.culprit': 1, 'landing_batch.revert_opened': 1, 'landing_batch.reverted': 1, 'landing_batch.revert_failed': 1, 'landing_batch.fix_filed': 1, 'landing_batch.pending': 1,
+  'landing_batch.back_merge_opened': 1, 'landing_batch.back_merged': 1, 'landing_batch.back_merge_failed': 1, 'landing_batch.back_merge_issue_filed': 1,
 };

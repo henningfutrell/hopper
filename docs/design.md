@@ -67,7 +67,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items in `pr_open` or `failed`, read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts` | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
-| `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch; for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event (`runner.ts`); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
+| `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch; for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event (`runner.ts`); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
@@ -18038,7 +18038,8 @@ pure):
 - a check failed (or was cancelled or timed out), no check in 30 minutes, merge conflicts with the tested branch, or
   its branch moved: **red**. The hopper closes the pull request and removes the branch: `landing_batch.failed` with the
   reason and the checks (`checkRuns`: with their ids). The tested branch does not move, and the same tip does not run
-  again. When checks failed, a bisect within the batch starts ("A red batch" below).
+  again. When checks failed, a bisect within the batch starts ("A red batch" below); with merge conflicts, a back-merge
+  ("Merge conflicts: the back-merge" below).
 - a person merged it first: `landing_batch.promoted` with no merge commit; closed without a merge: failed.
 
 **Job pull requests move to the landing branch.** Each pass, an open pull request of one of the user's jobs whose base
@@ -18053,8 +18054,8 @@ each configured repository's state with what the last pass found (`why` no run s
 Landing batches shows it.
 
 **A red batch** (part 2, `src/landing-batches/red.ts`, the rules `src/domain/landing-bisect.ts`, pure). Only failing
-checks say that the batch itself fails; a red batch for another reason (merge conflicts, no check in time) waits for
-the next merge as before. When checks failed:
+checks say that the batch itself fails; a red batch for no check in time waits for the next merge as before, and one with
+merge conflicts gets a back-merge (below). When checks failed:
 
 1. **The batch's points.** The hopper compares the tested branch with the failed tip and walks the landing branch's
    first-parent line back from the tip (`batchPoints`): each point is the merge of one pull request (its number from
@@ -18119,6 +18120,31 @@ recorded before it set each item's stage.
 stage that is not `promoted`, a `reverted` one for a week, the newest stage first. The view lists them under
 **Landing**, each with its pull request, its stage in plain words, its fix issue and how long ago.
 
-**Not yet (the next parts).** Merge conflicts on `main` fixed by the hopper. Then `beta` → `stable` through a canary: a
-subset of installs runs the candidate first, and it reaches every install only when its health stays good for the
-canary window, with the subset and the window as settings.
+**Merge conflicts: the back-merge** (part 4, `src/landing-batches/back-merge.ts`, the state and text
+`src/domain/landing-back-merge.ts`, pure). A job's pull request with merge conflicts against the landing branch is
+tended as before ("PR tending without lanes"): its base is the landing branch. What tending cannot see is a conflict
+between the two branches themselves: a batch run with merge conflicts says the tested branch has a change the landing
+branch lacks (a fix pushed to it, a pull request merged into it by a person), and every later batch run would have the
+same conflicts, so the tested branch would never move again. So, after `landing_batch.failed` for merge conflicts:
+
+1. **The back-merge.** A branch `hopper-batch/back-merge-<tip, 12 characters>` at the failed tip (under the batch prefix,
+   so no job pushes to it), and the tested branch merged into it by GitHub's own merge (`POST …/merges`). Merged: a
+   pull request of it into the landing branch, neutral text (`backMergeBody`), `landing_batch.back_merge_opened`.
+2. **Its merge.** Each pass merges it (a merge commit, only at its head) once GitHub lets it — branch protection may want
+   the fast checks first —, and removes its branch: `landing_batch.back_merged`. While it is open no batch run starts;
+   once merged, the next one starts at once (`backMergedSinceRun`), whatever N or the timer say. Closed without a merge:
+   `landing_batch.back_merge_failed`, and the next merge starts a batch run as usual.
+3. **A real conflict.** GitHub answers 409: it cannot merge the two. The branch is removed, `landing_batch.back_merge_failed`
+   with `conflict: true`, and one issue is filed through the user's own connection — the hopper label, assigned to their
+   connected account, so Intake takes it (`landing_batch.back_merge_issue_filed`). Its text (`backMergeIssueText`) says
+   which batch run had the conflicts and what to do: a branch of the landing branch, the tested branch merged into it, each
+   conflict resolved, a pull request into the landing branch. While that issue stands — until a back-merge or a batch run
+   is promoted — a later batch run with the same conflicts files none. GitHub answers 204 (nothing to merge: the landing
+   branch has the tested branch already, so GitHub's `mergeable` was stale): `back_merge_failed`, no issue.
+
+Not taken: the base merge of the hopper's mirror ("The base merge"), which also resolves additions files. It works on a
+pull request inside a source's sync pass, with that pass's fetch; the batch runner has neither, and a back-merge is rare.
+A conflict in an additions file therefore files the issue, and a job resolves it.
+
+**Not yet (the next part).** `beta` → `stable` through a canary: a subset of installs runs the candidate first, and it
+reaches every install only when its health stays good for the canary window, with the subset and the window as settings.

@@ -4,8 +4,9 @@
 // by the hopper after `everyMerges` merges or `everyMinutes` minutes since the last batch run, and only when the landing
 // branch has something the tested branch lacks and the tip was not tested before. Green, the hopper merges it: the
 // tested branch moves by the whole batch in one merge. Red, it is recorded and closed; failing checks start a bisect
-// within the batch (part 2, `landing-bisect.ts`). Each step is an event (`landing_batch.*`); the state of each
+// within the batch (part 2, `landing-bisect.ts`); merge conflicts start a back-merge (part 4, `landing-back-merge.ts`). Each step is an event (`landing_batch.*`); the state of each
 // repository is reduced from them. Pure.
+import { reduceBackMerge, type BackMergeState } from './landing-back-merge.ts';
 import type { Bisect, BisectResult, Culprit, FailedCheck } from './landing-bisect.ts';
 import type { DomainEvent } from './types.ts';
 
@@ -52,7 +53,7 @@ export function patchLandingBatches(s: LandingBatchSettings, p: LandingBatchPatc
 export interface RunningBatch { tip: string; branch: string; pullRequest: number; url: string; startedAt: string; merges: number[] }
 
 /** Where one repository's landing batches stand, from its events. */
-export interface LandingBatchState {
+export interface LandingBatchState extends BackMergeState {
   repo: string;
   /** The newest tip a batch run ended on, green or red: it does not run again. */
   lastTestedTip?: string;
@@ -79,7 +80,8 @@ export const LANDING_BATCH_EVENT_TYPES = [
   'landing_batch.started', 'landing_batch.promoted', 'landing_batch.failed', 'landing_batch.retargeted', 'landing_batches.changed',
   'landing_batch.bisect_started', 'landing_batch.bisect_run', 'landing_batch.bisect_tested', 'landing_batch.culprit',
   'landing_batch.revert_opened', 'landing_batch.reverted', 'landing_batch.revert_failed', 'landing_batch.fix_filed',
-  'landing_batch.pending',
+  'landing_batch.pending', 'landing_batch.back_merge_opened', 'landing_batch.back_merged', 'landing_batch.back_merge_failed',
+  'landing_batch.back_merge_issue_filed',
 ] as const;
 
 /** A red batch's events onto the state: the bisect, its runs and results, the culprit, its revert and its fix issue. */
@@ -135,16 +137,18 @@ export function landingBatchStates(events: readonly DomainEvent[]): Record<strin
       s.lastStartedAt = e.at;
       s.running = { tip, branch: String(d.branch), pullRequest: Number(d.pullRequest), url: String(d.url), startedAt: e.at, merges: (d.merges as number[] | undefined) ?? [] };
       delete s.revertedSinceRun;
+      delete s.backMergedSinceRun;
       delete s.pending;
     } else if (e.type === 'landing_batch.pending') {
       s.pending = { tip, merges: (d.merges as number[] | undefined) ?? [] };
     } else if (e.type === 'landing_batch.promoted' || e.type === 'landing_batch.failed') {
       const outcome = e.type === 'landing_batch.promoted' ? 'promoted' : 'failed';
       s.lastTestedTip = tip;
-      if (outcome === 'promoted') s.lastPromotedTip = tip;
+      if (outcome === 'promoted') { s.lastPromotedTip = tip; delete s.backMergeIssue; }
       if (s.running?.tip === tip) delete s.running;
       s.last = { outcome, tip, at: e.at, pullRequest: Number(d.pullRequest), url: String(d.url), ...(typeof d.reason === 'string' ? { reason: d.reason } : {}) };
-    } else reduceRed(s, e.type, d, e.at);
+    } else if (e.type.startsWith('landing_batch.back_merge')) reduceBackMerge(s, e.type, d, e.at);
+    else reduceRed(s, e.type, d, e.at);
   }
   return out;
 }
@@ -167,10 +171,12 @@ export function batchDue(s: LandingBatchState | undefined, f: LandingFacts, cfg:
   if (c?.pullRequest !== undefined && c.revertProblem === undefined && c.revert?.state !== 'merged') {
     return { due: false, why: c.revert ? `the revert #${c.revert.pullRequest} of #${c.pullRequest} waits to merge` : `the revert of #${c.pullRequest} is not open yet` };
   }
+  if (s?.backMerge?.state === 'open') return { due: false, why: `the merge of ${cfg.tested} into the landing branch (#${s.backMerge.pullRequest}) waits to merge` };
   if (f.aheadBy <= 0) return { due: false, why: `nothing new on the landing branch beyond ${cfg.tested}` };
   if (s?.lastTestedTip === f.tip) return { due: false, why: `the landing branch tip ${short(f.tip)} was tested already` };
   if (s?.lastStartedAt === undefined) return { due: true, why: 'no batch run before' };
   if (s.revertedSinceRun && c) return { due: true, why: `the culprit ${c.pullRequest !== undefined ? `#${c.pullRequest}` : short(c.sha)} was reverted` };
+  if (s.backMergedSinceRun) return { due: true, why: `${cfg.tested} was merged into the landing branch` };
   if (f.merges >= cfg.everyMerges) return { due: true, why: `${f.merges} merges since the last batch run` };
   const minutes = Math.floor((now.getTime() - Date.parse(s.lastStartedAt)) / 60_000);
   if (minutes >= cfg.everyMinutes) return { due: true, why: `${minutes} minutes since the last batch run` };

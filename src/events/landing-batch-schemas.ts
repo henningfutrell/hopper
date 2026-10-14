@@ -1,7 +1,7 @@
 // Landing batches' events (issue #1073, design.md "Landing batches"): a batch run started on the landing branch's tip, its
 // end — promoted to the tested branch, or failed —, a job's pull request moved from the tested branch to the landing
 // branch, and an admin's change of the settings; a red batch's bisect, its runs and results, the culprit, its revert and
-// its fix issue (part 2). Part of EVENT_SCHEMAS (schemas.ts).
+// its fix issue (part 2); a back-merge of the tested branch into the landing branch after merge conflicts, and its issue (part 4). Part of EVENT_SCHEMAS (schemas.ts).
 import { z } from 'zod';
 
 const strict = z.strictObject;
@@ -36,4 +36,12 @@ export const LANDING_BATCH_EVENT_SCHEMAS = {
   'landing_batch.reverted': strict({ ...culpritAt, pullRequest: z.number().int(), url: z.string(), merge: z.string().optional() }),
   'landing_batch.revert_failed': strict({ ...culpritAt, reason: z.string(), pullRequest: z.number().int().optional(), url: z.string().optional() }),
   'landing_batch.fix_filed': strict({ ...culpritAt, issue: z.number().int(), url: z.string() }),
+  'landing_batch.back_merge_opened': strict({
+    repo: z.string(), landing: z.string(), tested: z.string(), tip: z.string(), batch: z.number().int(), branch: z.string(), merge: z.string(), pullRequest: z.number().int(), url: z.string(),
+  }),
+  'landing_batch.back_merged': strict({ repo: z.string(), tip: z.string(), pullRequest: z.number().int(), url: z.string(), merge: z.string().optional() }),
+  'landing_batch.back_merge_failed': strict({
+    repo: z.string(), tip: z.string(), batch: z.number().int().optional(), conflict: z.boolean(), reason: z.string(), pullRequest: z.number().int().optional(), url: z.string().optional(),
+  }),
+  'landing_batch.back_merge_issue_filed': strict({ repo: z.string(), tip: z.string(), issue: z.number().int(), url: z.string() }),
 } as const;

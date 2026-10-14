@@ -212,7 +212,8 @@ describe('the batch runner on a red batch (issue #1073)', () => {
     await r.pass();
     w.pulls.get(100)!.mergeable = false;
     await r.pass();
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed']);
+    // A back-merge in its place (part 4).
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_opened']);
   });
 
   it('merge conflicts: the tested branch is merged into the landing branch, and the batch runs again at once', async () => {
