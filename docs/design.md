@@ -67,7 +67,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts` | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
-| `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch; for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event (`runner.ts`); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
+| `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event (`runner.ts`); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
@@ -2059,6 +2059,13 @@ the mirror cannot say (no mirror, outside a pass, a head not fetched), they conf
 sync, after the follows: the due pull requests no head conflicts with, Jev's pick first (`merge-order`, asked only when two
 or more are free), then the rules' order, each tended unless it conflicts with one tended before it in the same sync. What
 holds each other one is kept on its job (`heldBehind`, `Holds`) and shown on its card.
+
+**No hold lasts for ever** (issue #1143). A head holds a due rebase at most `MAX_HELD_MS` (one hour): since when it is held
+is kept on its job (`heldSince`, cleared when nothing holds it), and a rebase held that long is tended whatever holds it
+(`heldTooLong`). On a busy repository new pull requests reach their checks all the time, each a new head, and each
+conflicts with the same old pull request: it was held behind one head after another, conflicted, with no job on it and no
+signal on GitHub. At worst the late rebase needs one more rebase after the head's merge. The tend job it starts is said on
+the pull request ("Pull request housekeeping").
 
 **Rework goes back at once** (issue #938). The queue holds only a `rebase`: a rebase onto a base that a head is about to
 move is made again after that merge. A `fix_checks` is rework, and no head holds it: every pull request with failed checks
@@ -18755,14 +18762,24 @@ landing branch: none of its pull requests is moved.
 
 **The shrink guard** (issue #1096) covers every tend job already: their pushes go through the git proxy.
 
-Not in this part, left on issue #1143:
+**Part 2: what no follow reaches.**
 
-- A pull request no job follows (one of an item whose newest job does not follow it, or whose tend failed) is not
-  housekept. Owning them needs a record of which pull requests a job opened that does not depend on the follow.
+- **A pull request a job named, followed or not, leaves the tested branch.** The batch runner's move from the tested branch
+  ("Landing batches") took only followed pull requests; one of an item whose newest job follows it no more (a failed tend,
+  a rework, a job from before the follow) stayed on `dev`. Its list is now every job whose source state names a pull
+  request not merged and not abandoned (`JobFilter.namesPullRequest`): the record of the pull requests jobs opened, which
+  does not depend on the follow. The batch runner's move posts the same fixed note as the follow's
+  (`LandingBatchGitHub.comment`, `retargetNote`).
+- **A held rebase is tended within an hour** ("No hold lasts for ever", above).
+
+Still left on issue #1143:
+
+- A pull request no job follows is moved off the tested branch only; it is not tended or closed as superseded.
 - "Behind" without merge conflicts starts nothing: with merge commits, a pull request behind its base merges as it is.
   Only a repository that wants branches up to date before a merge needs it (GitHub then refuses the merge, `mergeError`).
 - A failed rebase tend still waits on a person. Tending it again when its base moves again is a later part.
 
 Tests: `test/sources/github-pr-housekeeping.test.ts` (retarget, a stack, no landing branch known, after the batch,
-superseded both ways, a part), `test/integration/pull-request-tending.test.ts` (the events and the comments over the
-real daemon).
+superseded both ways, a part), `test/integration/pull-request-housekeeping.test.ts` (the events and the comments over the
+real daemon, and a rebase held an hour), `test/landing-batches/runner.test.ts` (the batch runner's move and its note),
+`test/store/jobs-lanes.test.ts` (`namesPullRequest`).

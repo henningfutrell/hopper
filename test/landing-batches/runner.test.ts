@@ -8,13 +8,14 @@
 //   Scenario: a green batch run is merged into the tested branch at its tip, and its branch removed
 //   Scenario: a merge that waits for its batch run is recorded pending once
 //   Scenario: a red batch run is closed and recorded failed; failing checks start a bisect; with none, the same tip does not run again
-//   Scenario: a job's open pull request on the tested branch moves to the landing branch; another's does not
+//   Scenario: a job's open pull request on the tested branch moves to the landing branch, and says so on it; another's does not
 //   Scenario: the landing branch is the one the settings name, whatever the repository's default branch (issue #1142)
 //   Scenario: a landing branch that is the tested branch runs nothing and says why
 import { describe, expect, it } from 'vitest';
 import type { LandingBatchSettings } from '../../src/domain/landing-batches.ts';
 import type { DomainEvent, NewEvent } from '../../src/domain/types.ts';
 import { createLandingBatches, type LandingBatchGitHub } from '../../src/landing-batches/runner.ts';
+import { retargetNote } from '../../src/sources/github/pr-notes.ts';
 
 const REPO = 'owner/app';
 const SETTINGS: LandingBatchSettings = { repos: { [REPO]: { tested: 'dev', everyMerges: 2, everyMinutes: 60 } } };
@@ -62,6 +63,7 @@ function fake(w: World): LandingBatchGitHub {
     mergeInto: async () => ({ kind: 'nothing' }),
     openPullRequests: async (_repo, base) => [...w.pulls.entries()].filter(([, p]) => p.state === 'open' && p.base === base).map(([number, p]) => ({ number, url: p.url })),
     retarget: async (_repo, n, base) => { w.pulls.get(n)!.base = base; w.calls.push(`retarget #${n} ${base}`); },
+    comment: async (_repo, n, body) => { w.calls.push(`comment #${n} ${body}`); },
     pullRequestOf: async () => undefined,
     revert: async () => { throw new Error('no revert here'); },
     checkLog: async () => '',
@@ -174,6 +176,8 @@ describe('the batch runner (issue #1073)', () => {
     expect(w.pulls.get(7)!.base).toBe('main');
     expect(w.pulls.get(8)!.base).toBe('dev');
     expect(events.map((e) => [e.type, e.data])).toEqual([['landing_batch.retargeted', { repo: REPO, pullRequest: 7, url: `https://github.test/${REPO}/pull/7`, from: 'dev', to: 'main' }]]);
+    // The pull request shows it (issue #1143): the same fixed note as the follow's move.
+    expect(w.calls.filter((c) => c.startsWith('comment'))).toEqual([`comment #7 ${retargetNote('dev', 'main')}`]);
   });
 
   it('batches the landing branch the settings name, and reads no default branch (issue #1142)', async () => {

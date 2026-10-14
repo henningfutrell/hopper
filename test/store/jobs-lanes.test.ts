@@ -61,6 +61,18 @@ describe('jobs', () => {
     expect(s2.jobs.get(j.id)).toEqual(u);
     s2.close();
   });
+
+  it('lists the jobs that named a pull request still to land, whatever their follow (issue #1143)', () => {
+    const s = t.open(t.url());
+    const named = (follow: string | undefined, n: number) => s.jobs.update(s.jobs.create(spec, 50).id,
+      { status: 'finished', sourceState: { source: { pullRequest: `https://github.com/o/r/pull/${n}`, ...(follow ? { follow } : {}) } } }).id;
+    const ids = [named(undefined, 1), named('open', 2), named('tended', 3), named('reworked', 4), named('closed', 5)];
+    named('merged', 6);
+    named('abandoned', 7);
+    s.jobs.update(s.jobs.create(spec, 50).id, { status: 'finished', sourceState: { source: { follow: 'open' } } });
+    expect(s.jobs.list({ namesPullRequest: true }).map((j) => j.id).sort()).toEqual([...ids].sort());
+    s.close();
+  });
 });
 
 describe('lanes', () => {

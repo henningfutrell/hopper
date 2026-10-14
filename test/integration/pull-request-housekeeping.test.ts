@@ -1,8 +1,10 @@
 // Pull request housekeeping (issue #1143), over the real daemon: a tend job started is said on its pull request; a job's
 // pull request off the landing branch is moved to it and recorded (`job.pull_request_retargeted`); one superseded by another
 // pull request that closed its issue is closed, and the close is recorded with why. In-memory fake GitHub at the GitHubApi
-// seam; issues carry a scripted-executor op as their first body line.
+// seam; issues carry a scripted-executor op as their first body line. A rebase held behind other heads for an hour is tended
+// anyway (`MAX_HELD_MS`), as new heads keep coming.
 import { afterEach, describe, expect, it } from 'vitest';
+import { MAX_HELD_MS } from '../../src/domain/tending-queue.ts';
 import type { Job } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -75,6 +77,34 @@ describe('pull request housekeeping (issue #1143)', () => {
     await waitFor(async () => (await app.events('types=job.pull_request_retargeted')).length > 0, { what: 'job.pull_request_retargeted' });
     expect((await app.events('types=job.pull_request_retargeted')).map((e) => [e.jobId, e.data])).toEqual([[job.id, { pullRequest: url, from: 'dev', to: 'main' }]]);
     expect(gh.pullRequestComments(url)).toEqual([retargetNote('dev', 'main')]);
+  });
+
+  it('a rebase held behind a head for an hour is tended anyway, and says so on its pull request', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    expect((await app.ui('/ui/api/yolo-mode', { repos: { [REPO]: true } }, { token: await app.login() })).status).toBe(200);
+    // The head: on its way to the hopper's merge, its checks running. Git cannot say whether the two conflict: they do.
+    const head = await pullRequestWaiting(gh, app, () => undefined);
+    const held = await pullRequestWaiting(gh, app, (pr) => gh.pushToPullRequest(pr, new Date().toISOString()));
+    gh.pushToPullRequest(head.url, new Date().toISOString());
+    gh.setChecks(head.url, 'pending');
+    gh.setConflicting(held.url, true);
+    await app.sync();
+    type Holds = { heldBehind?: unknown; heldSince?: string };
+    const holds = async (): Promise<Holds> => (await app.job(held.job.id)).sourceState?.source as Holds;
+    expect((await holds()).heldBehind).toEqual({ pullRequest: head.url, why: 'merging' });
+    expect(Date.now() - Date.parse((await holds()).heldSince!)).toBeLessThan(60_000);
+    expect(await app.events('types=job.pull_request_tended')).toEqual([]);
+    // Held since longer than the limit: it is tended now, whatever holds it.
+    const store = app.user().store;
+    const s = store.jobs.get(held.job.id)!.sourceState!;
+    store.jobs.update(held.job.id, { sourceState: { ...s, source: { ...s.source, heldSince: new Date(Date.now() - MAX_HELD_MS - 1000).toISOString() } } });
+    await app.sync();
+    const tender = await nextJob(app, held.issue.url, 2);
+    await app.waitForStatus(tender!.id, 'finished');
+    expect((await app.events('types=job.pull_request_tended')).map((e) => [e.jobId, (e.data as { step: string }).step])).toEqual([[held.job.id, 'rebase']]);
+    expect(await holds()).not.toHaveProperty('heldSince');
+    expect(gh.pullRequestComments(held.url)).toEqual([tendNote('rebase')]);
   });
 
   it('a pull request superseded by another that closed its issue: closed, and recorded with why', async () => {

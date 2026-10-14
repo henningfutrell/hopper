@@ -198,7 +198,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         settings: () => o.store.settings.getLandingBatches() ?? DEFAULT_LANDING_BATCHES,
         events: () => o.store.events.recent(500, [...LANDING_BATCH_EVENT_TYPES]),
         record: (e) => { o.store.events.append(e); },
-        jobPullRequests: () => o.store.jobs.list({ followed: true }).flatMap((j) => {
+        // Every pull request a job named, followed or not (issue #1143): a job's pull request never stays on the tested branch.
+        jobPullRequests: () => o.store.jobs.list({ namesPullRequest: true }).flatMap((j) => {
           const url = (j.sourceState?.source as { pullRequest?: unknown } | undefined)?.pullRequest;
           return typeof url === 'string' ? [url] : [];
         }),

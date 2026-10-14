@@ -82,6 +82,7 @@ function fake(w: World): LandingBatchGitHub {
     },
     openPullRequests: async () => [],
     retarget: async () => {},
+    comment: async () => {},
     pullRequestOf: async (_repo, sha) => [...w.pulls.entries()].find(([, p]) => p.merged && p.mergeSha === sha)?.[0],
     revert: async (_repo, n, t) => {
       const r = w.next++;
