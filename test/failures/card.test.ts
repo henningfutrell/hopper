@@ -1,8 +1,8 @@
 // A hand-off's card (issue #621): one plain sentence says what happened, from what the job's work shows at its source —
 // its pull requests and its item — never from the raw error; one resolution is recommended, with why in a few words.
 import { describe, expect, it } from 'vitest';
-import type { HandoffReason, WorkPullRequest, WorkState } from '../../src/domain/types.ts';
-import { handoffCard } from '../../src/failures/card.ts';
+import type { Allowed, HandoffReason, WorkPullRequest, WorkState } from '../../src/domain/types.ts';
+import { handoffCard, takenCard } from '../../src/failures/card.ts';
 
 const URL = 'https://github.com/o/r/pull/';
 const pr = (number: number, o: Partial<WorkPullRequest> = {}): WorkPullRequest =>
@@ -86,5 +86,40 @@ describe('before the work state is known', () => {
     ['dismissed', 'wont_do', 'It was removed from the queue with its failure open.'],
   ] as const)('handed off for %s, no pull request: recommends %s', (reason, recommended, why) => {
     expect(card(work(), reason)).toMatchObject({ recommended, why });
+  });
+});
+
+describe('only an action the hopper takes now (issue #1010)', () => {
+  const OK: Allowed = { ok: true };
+  const refused = (why: string, soon = false): Allowed => ({ ok: false, why, ...(soon ? { soon: true as const } : {}) });
+  const actions = (runs: Allowed) => ({ continue: runs, fixed: runs, doneByHand: OK, wontDo: OK });
+
+  it('the recommended action is taken: the card is as it was', () => {
+    const c = card(work());
+    expect(takenCard(c, actions(OK))).toEqual(c);
+  });
+
+  it('Continue and Run again refused for good: recommends Done, and says why and what a person does', () => {
+    expect(takenCard(card(work()), actions(refused('its source manual cannot run an item again')))).toEqual({
+      whatHappened: 'The job stopped before it opened or updated a PR.',
+      recommended: 'done_by_hand',
+      why: 'Continue is not taken: its source manual cannot run an item again. Do the work by hand, then press Done. Or press Won\'t do.',
+    });
+  });
+
+  it('only Continue refused: recommends Run again', () => {
+    const c = takenCard(card(work()), { ...actions(OK), continue: refused('its agent session is gone') });
+    expect(c).toMatchObject({ recommended: 'fixed', why: 'Continue is not taken: its agent session is gone. A new job can start again.' });
+  });
+
+  it('refused for a short time only: keeps the recommendation, and says it is taken soon', () => {
+    const c = takenCard(card(work(), 'retry_limit'), actions(refused('its end is not reported to its source yet', true)));
+    expect(c).toMatchObject({ recommended: 'fixed', why: 'Run again is taken soon: its end is not reported to its source yet. Try again in a minute.' });
+  });
+
+  it('Done refused (a closed hand-off): the card is as it was', () => {
+    const c = card(work({ pullRequests: [pr(9)] }));
+    const closed = refused('already closed');
+    expect(takenCard(c, { continue: closed, fixed: closed, doneByHand: closed, wontDo: closed })).toEqual(c);
   });
 });

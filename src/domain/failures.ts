@@ -314,8 +314,11 @@ export interface Handoff {
   tldr?: Tldr;
 }
 
-/** Whether the daemon takes an action now, and why not. */
-export type Allowed = { ok: true } | { ok: false; why: string };
+/**
+ * Whether the daemon takes an action now, and why not. `soon` (issue #1010): the refusal clears by itself in a short time
+ * (it runs again by itself, its end is reported to its source in a moment).
+ */
+export type Allowed = { ok: true } | { ok: false; why: string; soon?: true };
 
 export interface ProblemView extends Problem {
   /** The jobs that wait on its release. */

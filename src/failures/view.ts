@@ -5,7 +5,7 @@
 // refuse with the same reasons, so the view offers only what is taken.
 import type { UserStore } from '../domain/ports.ts';
 import { highFirst, jobPriorityTag, type Allowed, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
-import { handoffCard } from './card.ts';
+import { handoffCard, takenCard } from './card.ts';
 import { keptWorkViews } from './kept-work.ts';
 import { knownCauses } from './causes.ts';
 import { RAN_AGAIN, SETTLED } from './handoff.ts';
@@ -71,13 +71,22 @@ export function endedAt(store: Pick<UserStore, 'jobs' | 'handoffs'>, r: FailureR
   return undefined;
 }
 
+/** Whether the job's source takes its item back now (issue #1010): the sync loop's `takesBack`. */
+export type TakesBack = (jobId: string) => Allowed;
+
+/** Whether the job can run again, and its source takes its item back (issue #1010). */
+function runsAgain(store: Pick<UserStore, 'jobs'>, jobId: string, takesBack: TakesBack): Allowed {
+  const newest = newestOfItem(store, jobId);
+  return newest.ok ? takesBack(jobId) : newest;
+}
+
 /** Whether a person may run a failure's job again now. */
-export function recordRetry(store: Reads, r: FailureRecord): Allowed {
+export function recordRetry(store: Reads, r: FailureRecord, takesBack: TakesBack): Allowed {
   if (r.pending) return no(r.pending === 'retry' ? 'it runs again by itself' : 'it is being run again');
   if (r.outcome === 'retried' || r.outcome === 'redirected' || r.outcome === 'released' || r.outcome === 'superseded') return no('already run again');
   if (r.outcome === 'item_closed') return no('its item is closed');
   if (r.outcome === 'held') return no('it waits on its problem: resolve or release it');
-  return newestOfItem(store, r.jobId);
+  return runsAgain(store, r.jobId, takesBack);
 }
 
 /** A resolution in words, as the card and the refusals say it (issue #551). */
@@ -88,10 +97,11 @@ export const RESOLUTION_TEXT: Record<HandoffResolutionAction, string> = {
 /**
  * Whether a person may resolve a hand-off each way now, and why not (issue #551): one that runs its item again
  * (Continue, I fixed it) only while it is the newest job of its item and nothing runs it again already; Done by hand
- * and Won't do while it is open. `resumable`: whether its job's own agent session can resume — then Continue resumes
- * it, else it runs a new job. Its card (issue #621) says what happened and the resolution to take.
+ * and Won't do while it is open, and those only while its source takes its item back (`takesBack`, issue #1010).
+ * `resumable`: whether its job's own agent session can resume — then Continue resumes it, else it runs a new job. Its
+ * card (issue #621) says what happened and the resolution to take, one the hopper takes now (`takenCard`).
  */
-export function handoffView(store: Pick<UserStore, 'failures' | 'jobs'>, h: Handoff, resumable: (job: Job) => boolean): HandoffView {
+export function handoffView(store: Pick<UserStore, 'failures' | 'jobs'>, h: Handoff, resumable: (job: Job) => boolean, takesBack: TakesBack): HandoffView {
   const record = h.recordId ? store.failures.get(h.recordId) : undefined;
   const job = store.jobs.get(h.jobId);
   const learn = record ? { signature: record.signature, ...(record.causeName ? { causeName: record.causeName } : {}) } : {};
@@ -102,8 +112,9 @@ export function handoffView(store: Pick<UserStore, 'failures' | 'jobs'>, h: Hand
     return { ...h, ...learn, continueResumes, card, actions: { continue: closed, fixed: closed, doneByHand: closed, wontDo: closed } };
   }
   const pending = record?.pending;
-  const runs = pending ? no(pending === 'retry' ? 'it runs again by itself' : 'it is being run again') : newestOfItem(store, h.jobId);
-  return { ...h, ...learn, continueResumes, card, actions: { continue: runs, fixed: runs, doneByHand: OK, wontDo: OK } };
+  const runs: Allowed = pending ? { ok: false, why: pending === 'retry' ? 'it runs again by itself' : 'it is being run again', soon: true } : runsAgain(store, h.jobId, takesBack);
+  const actions = { continue: runs, fixed: runs, doneByHand: OK, wontDo: OK };
+  return { ...h, ...learn, continueResumes, card: takenCard(card, actions), actions };
 }
 
 function problemView(store: Reads, p: Problem): ProblemView {
@@ -114,7 +125,7 @@ function problemView(store: Reads, p: Problem): ProblemView {
   };
 }
 
-export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 'events'>, settings: FailureSettings, now: Date, resumable: (job: Job) => boolean): FailuresView {
+export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 'events'>, settings: FailureSettings, now: Date, resumable: (job: Job) => boolean, takesBack: TakesBack): FailuresView {
   const dayAgo = new Date(now.getTime() - DAY_MS).toISOString();
   const handoffs = [...store.handoffs.list({ status: 'open' }), ...store.handoffs.list({ status: 'closed', closedSince: dayAgo, limit: 50 })];
   const resolved = store.problems.list({ status: 'resolved', limit: 50 }).filter((p) => (p.resolvedAt ?? '') >= dayAgo);
@@ -123,16 +134,16 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 
   const saved = store.settings.getPriorityLanes();
   const tag = (jobId: string) => jobPriorityTag(store.jobs, saved, jobId);
   const tldr = tldrSettings(store);
-  const recordView = (r: FailureRecord) => ({ ...r, ...tag(r.jobId), actions: { retry: recordRetry(store, r) } });
+  const recordView = (r: FailureRecord) => ({ ...r, ...tag(r.jobId), actions: { retry: recordRetry(store, r, takesBack) } });
   return {
     now: now.toISOString(),
     counts: countsOf(store),
     settings,
     // Each with its TL;DR (issue #569) only while it is shown.
-    handoffs: highFirst(handoffs.map((h) => ({ ...handoffView(store, withShownTldr('handoff', h, tldr), resumable), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true),
+    handoffs: highFirst(handoffs.map((h) => ({ ...handoffView(store, withShownTldr('handoff', h, tldr), resumable, takesBack), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true),
     causes: knownCauses(store.settings.getNamedCauses()),
     // Work not pushed (issue #1010): ended jobs whose reap kept work, each with Push it and Discard.
-    keptWork: keptWorkViews(store, resumable),
+    keptWork: keptWorkViews(store, resumable, takesBack),
     problems: [...store.problems.list({ status: 'open' }), ...resolved].map((p) => problemView(store, p)),
     // Nothing waits on an ended one (issues #529, #618): out of the open failures, in Ended for a day, still in the profile.
     recent: store.failures.list({ limit: SCAN, notOutcome: [...SETTLED, ...RAN_AGAIN] }).filter((r) => endedAt(store, r) === undefined).slice(0, RECENT).map(recordView),

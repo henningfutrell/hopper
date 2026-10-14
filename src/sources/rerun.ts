@@ -7,7 +7,7 @@
 import type { JobSource, RerunBy, RerunResult, SourceHost, SourceItem } from '../domain/ports.ts';
 import { RerunRefused } from '../domain/rerun-refused.ts';
 import { sourceRef, withEdits } from './item-text.ts';
-import { following, PUSHABLE_ENDS, tendRetryAt, type ActingPerson, type ContinuedBy, type Job, type JobStatus, type Tended } from '../domain/types.ts';
+import { following, PUSHABLE_ENDS, tendRetryAt, type ActingPerson, type Allowed, type ContinuedBy, type Job, type JobStatus, type Tended } from '../domain/types.ts';
 
 export interface RerunContext {
   host: SourceHost;
@@ -45,14 +45,21 @@ export function createRerun(c: RerunContext) {
     }
     if (!ends.includes(job.status)) return conflict(jobId, `it is ${job.status}, not ${ends.join(', ').replace(/, ([^,]+)$/, ' or $1')}`);
     const source = c.sourceOf(job);
-    if (!source) return conflict(jobId, 'its source is not running');
-    if (!source.rerun) return conflict(jobId, `its source ${source.name} cannot run an item again`);
+    const taken = takesBackOf(job, source);
+    if (!taken.ok || !source) return conflict(jobId, taken.ok ? 'its source is not running' : taken.why);
     if (rework && !source.rework) return conflict(jobId, `its source ${source.name} cannot rework a pull request`);
     const newest = store.jobs.getBySourceKey(job.source!.key);
     const retried = tending && tendRetryAt((job.sourceState?.source as { tended?: Tended } | undefined)?.tended, newest) !== undefined;
     if (newest?.id !== jobId && !retried) return conflict(jobId, 'a newer job of its item exists');
-    if (!c.flagsOf(job).finalReported) return conflict(jobId, 'its end is not reported to its source yet');
     return source;
+  }
+
+  /** Whether the job's source takes its item back now: it runs, it can run an item again, and the job's end is reported to it. */
+  function takesBackOf(job: Job, source: JobSource | undefined): Allowed {
+    if (!source) return { ok: false, why: 'its source is not running: turn it on in Sources' };
+    if (!source.rerun) return { ok: false, why: `its source ${source.name} cannot run an item again` };
+    if (!c.flagsOf(job).finalReported) return { ok: false, why: 'its end is not reported to its source yet', soon: true };
+    return { ok: true };
   }
 
   /**
@@ -86,6 +93,11 @@ export function createRerun(c: RerunContext) {
   }
 
   return {
+    /** Whether its source takes the job's item back now (issue #1010), as Run again, Continue and Push it need: the views offer only that. */
+    takesBack(jobId: string): Allowed {
+      const job = store.jobs.get(jobId);
+      return job ? takesBackOf(job, c.sourceOf(job)) : { ok: false, why: 'its job is gone' };
+    },
     rerun(jobId: string, by: RerunBy = 'user', brief?: string, acting?: ActingPerson): Promise<RerunResult> {
       return takeBack(jobId, (item, source) => ({ ok: true, job: c.host.rerun(jobId, item, sourceRef(source), by, brief, acting) }), undefined, false, by === 'tending');
     },

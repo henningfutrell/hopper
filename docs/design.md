@@ -11079,6 +11079,21 @@ A model's short summary of a long assessment is the hand-off's TL;DR (issue #569
 Not done here, carried: Park, ask a question, or send to another machine or model as resolutions; a model-written
 diagnosis of the failure on the card (issue #550).
 
+**Only an action the hopper takes** (issue #1010, 2026-10-13). A card recommended Run again or Continue that its source
+then refused (409), so the main button failed the same way each time. Now the view asks the source first, and the card
+recommends only what is taken.
+
+- **What the source takes back** (`SourceRegistry.takesBack`, `rerun.ts` `takesBackOf`): its source runs, can run an
+  item again (`JobSource.rerun`), and was told the job's end. Run again, Continue and Push it refuse with the same words.
+  Continue and Run again on a card (`handoffView`), Retry on a failure (`recordRetry`) and Push it on work not pushed
+  (`pushAllowed`) are offered only when it does, else said with its why.
+- **`Allowed.soon`**: a refusal that clears by itself in a short time — the job runs again by itself, or its end is
+  reported to its source in a moment.
+- **The card** (`card.ts` `takenCard`, pure): the recommended resolution refused for a short time stays, "… is taken soon:
+  <why>. Try again in a minute."; refused for good, the other one that runs it again (Continue ↔ Run again) when taken,
+  else Done: "<label> is not taken: <why>. Do the work by hand, then press Done. Or press Won't do." A closed hand-off's
+  card is as it was.
+
 Open decisions taken (issue #516): the name is *Needs a person*, a section of the Failures view, not a nav entry of its
 own, and the domain word is *hand-off* (*dead letter* stays a not-term, as for the locked entry); the locked entry
 stays in the Queue beside its hand-off (Won't do dismisses it; Clear did, before issue #551); entering notifies by a setting, default on. No setting
@@ -11110,9 +11125,9 @@ Now Failures lists it, and each has an action that moves it.
   the work: the refusal says to update it.
 - **Quieter sweep.** The sweep logs kept work only when it keeps it the first time.
 
-Not done here, carried in issue #1010: a Stuck view with counts by cause and one bulk action per cause; a
-check of each hand-off card's recommended action against the causes that refuse it; Run again and tending for direct
-jobs. Done since: Tend again on a pull request the hopper gave up on ("PR waiting", "A pull request stays in sight"); Push it
+Not done here, carried in issue #1010: a Stuck view with counts by cause and one bulk action per cause; Run again
+and tending for direct jobs. Done since: a hand-off card recommends only an action the hopper takes ("Only an action the
+hopper takes", under "Needs a person"); Tend again on a pull request the hopper gave up on ("PR waiting", "A pull request stays in sight"); Push it
 for a finished or cancelled job — its source takes the item back as for Run again (a cancelled job's too, for this
 Continue only), and `SourceHost.continueJob` takes those ends only `by` `keptWork` (a hand-off's Continue stays a failed
 job's).

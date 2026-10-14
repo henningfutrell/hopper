@@ -3,7 +3,7 @@
 // take, with why in a few words. The work shipped (a pull request merged, the item closed as completed): Done. The item
 // closed any other way, or gone: Won't do. Else the pull request most worth a look decides: ready for review, Done;
 // a draft or with merge conflicts, Continue; closed without a merge, Run again. No pull request: why it was handed off.
-import { workShipped, type Handoff, type HandoffCard, type HandoffReason, type HandoffResolutionAction, type WorkPullRequest, type WorkState } from '../domain/types.ts';
+import { workShipped, type Allowed, type Handoff, type HandoffCard, type HandoffReason, type HandoffResolutionAction, type HandoffView, type WorkPullRequest, type WorkState } from '../domain/types.ts';
 
 /** How many pull requests the sentence names; more are counted. */
 const NAMED = 2;
@@ -68,4 +68,26 @@ export function handoffCard(h: Pick<Handoff, 'reason' | 'work'> & { status?: Han
   }
   const prs = w.pullRequests.map((pr, i) => ({ pr, i })).sort((a, b) => rank(a.pr) - rank(b.pr) || a.i - b.i).map((x) => x.pr);
   return { whatHappened: whatHappened(w, prs), ...(fromWork(w, prs[0]) ?? byReason(h.reason, continueResumes)) };
+}
+
+/** A resolution as its button says it. */
+const LABEL: Record<HandoffResolutionAction, string> = { continue: 'Continue', fixed: 'Run again', done_by_hand: 'Done', wont_do: 'Won\'t do' };
+const KEY = { continue: 'continue', fixed: 'fixed', done_by_hand: 'doneByHand', wont_do: 'wontDo' } as const;
+
+/**
+ * The card as the hopper takes its resolutions now (issue #1010): it never recommends one that is refused for good. Refused
+ * for a short time (`soon`): the same one, taken soon. Else the other one that runs it again, when taken; else Done, and
+ * what a person does. Done refused too (a closed hand-off): as it was.
+ */
+export function takenCard(card: HandoffCard, actions: HandoffView['actions']): HandoffCard {
+  const allowed: Allowed = actions[KEY[card.recommended]];
+  if (allowed.ok || !actions.doneByHand.ok) return card;
+  const label = LABEL[card.recommended];
+  if (allowed.soon) return { ...card, why: `${label} is taken soon: ${allowed.why}. Try again in a minute.` };
+  const other = card.recommended === 'continue' ? 'fixed' : card.recommended === 'fixed' ? 'continue' : undefined;
+  if (other && actions[KEY[other]].ok) {
+    const then = other === 'fixed' ? 'A new job can start again.' : 'The job can go on with your note.';
+    return { whatHappened: card.whatHappened, recommended: other, why: `${label} is not taken: ${allowed.why}. ${then}` };
+  }
+  return { whatHappened: card.whatHappened, recommended: 'done_by_hand', why: `${label} is not taken: ${allowed.why}. Do the work by hand, then press Done. Or press Won't do.` };
 }
