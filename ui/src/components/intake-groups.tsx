@@ -1,10 +1,10 @@
 // A source's intake outcomes grouped by why (issue #798), for Intake (issue #897): one heading per group with its count,
-// then each issue — taken (with its job, and whether that job has ended since), or its reason — with the action the source
+// then each issue waiting on an intake decision (issue #1035) — its reason — with the action the source
 // offers: Assign to me, Release claim, Take off the backburner (GitHub writes the user makes), and a request card with
 // Approve. No inner scroll box: the page scrolls, so no row hides. Each row says its issue number; an issue on the
 // backburner says since when and by whom (issue #808), and has a dashed edge, so it never looks taken or dropped. An issue a
 // person approved here stays in its place in Needs approval, says approved and what the sync made of it, and takes the
-// focus (issue #811): the list does not move under the person who acted.
+// focus (issue #811): the list does not move under the person who acted. Taken and partly done issues are on Jobs.
 import { Flame, Hand, Loader2, Unlock } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
@@ -78,15 +78,15 @@ function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; can
   );
 }
 
-/** The outcomes, grouped; `taken: false` lists only the issues not taken. */
-export function IntakeGroups({ items, source, taken }: { items: IntakeOutcome[]; source: string; taken: boolean }) {
+/** The outcomes waiting on an intake decision, grouped. */
+export function IntakeGroups({ items, source }: { items: IntakeOutcome[]; source: string }) {
   const canOperate = useCanOperate();
   const approvals = useApprovals();
   const kept = useMemo(() => new Set(Object.keys(approvals).filter((k) => keepsPlace(approvals[k]))), [approvals]);
   useEffect(() => forgetEndedApprovals, []);
   return (
     <div className="space-y-3">
-      {intakeGroups(items, { taken, kept }).map((g) => (
+      {intakeGroups(items, kept).map((g) => (
         <section key={g.kind} data-intake-group={g.kind} className="space-y-1">
           <h3 className="flex items-center gap-1.5 font-medium">
             {g.kind === 'backburner' && <Flame className="size-3.5 text-muted-foreground" aria-hidden />}

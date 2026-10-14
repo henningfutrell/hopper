@@ -16351,7 +16351,9 @@ rendered nothing when empty, so a person could not tell the feature was there.
   Its nav badge is the sum. Parked jobs have no row: they wait to be picked up, not for a decision; Parked keeps its
   quiet badge. It acts on nothing itself.
 - **Intake.** `#intake` (it was Not taken, `#not-taken`, which still opens it): per source, every open labelled issue
-  grouped by why, taken last, with Assign all; the request cards' one home. Sources keeps each source's sync, the intake
+  that waits on an intake decision, grouped by why, with Assign all; the request cards' one home. Since issue #1035 an
+  issue that passed intake (taken, partly done, its pull request waits for review) is job progress, on Jobs: Intake lists
+  none of them, only counts them in one line that links to Jobs, and says *Nothing waiting for intake* when none waits. Sources keeps each source's sync, the intake
   migration and the repos outside the job repositories, and links to Intake with its counts; it lists no issue and offers
   no Approve.
 - **Access requests.** `#access-requests` (`ui/src/views/access-requests.tsx`): Asked for (credential requests), Vault

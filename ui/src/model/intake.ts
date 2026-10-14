@@ -1,6 +1,7 @@
 // The issues a source did not take, grouped by why (issue #798): its not-taken group, in the order the UI lists them —
-// request cards first, as they wait for a person —, with a count per group. Sources lists the taken ones last. The issues
-// on the backburner are counted apart (issue #808), so the nav and the Queue always show how many are kept out.
+// request cards first, as they wait for a person —, with a count per group. The issues on the backburner are counted apart
+// (issue #808), so the nav and the Queue always show how many are kept out. Taken, partly done and pull-request-waits issues
+// passed intake (issue #1035): their state is job progress, on Jobs, and Intake only counts them.
 import type { IntakeOutcome, NotTakenGroup } from '../../../src/domain/intake.ts';
 import type { JobStatus, SourceStatus } from './wire';
 
@@ -23,12 +24,17 @@ export interface IntakeGroup {
 /** The group of one outcome: taken, or the group the daemon named. */
 export const groupOf = (x: IntakeOutcome): IntakeGroupKind => (x.reason === undefined ? 'taken' : x.group ?? 'other');
 
-/** The non-empty groups of these outcomes, in order; `taken: false` leaves the taken ones out. An item in `kept` (a request
+/** The groups of the issues that passed intake (issue #1035): job progress, shown on Jobs. */
+const IN_PROGRESS: ReadonlySet<IntakeGroupKind> = new Set(['taken', 'pr-waiting', 'partly-done']);
+/** An outcome that passed intake: taken, partly done, or its pull request waits for review. */
+export const inProgress = (x: IntakeOutcome): boolean => IN_PROGRESS.has(groupOf(x));
+
+/** The non-empty groups of the outcomes waiting on an intake decision, in order (issue #1035). An item in `kept` (a request
  *  card a person approves or approved from this page, issue #811) stays in Needs approval, where it was, whatever the sync
  *  made of it: the list does not move under the person who acted. */
-export function intakeGroups(items: IntakeOutcome[], o: { taken: boolean; kept?: ReadonlySet<string> }): IntakeGroup[] {
-  const of = (x: IntakeOutcome): IntakeGroupKind => (o.kept?.has(x.key) ? 'request' : groupOf(x));
-  return ORDER.filter((k) => o.taken || k !== 'taken')
+export function intakeGroups(items: IntakeOutcome[], kept?: ReadonlySet<string>): IntakeGroup[] {
+  const of = (x: IntakeOutcome): IntakeGroupKind => (kept?.has(x.key) ? 'request' : groupOf(x));
+  return ORDER.filter((k) => !IN_PROGRESS.has(k))
     .map((kind) => {
       const listed = items.filter((x) => of(x) === kind);
       return { kind, items: listed, count: kind === 'request' ? listed.filter((x) => x.action === 'approve').length : listed.length };

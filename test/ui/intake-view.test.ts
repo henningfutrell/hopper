@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 // Issue #798 in the UI, against a fake of the daemon's HTTP surface. The issues a source listed have their own view, Intake
 // (issue #897; Not taken until then), badged with the request cards waiting for approval: each source's issues grouped by
-// why, with a count per group, taken last, no inner scroll box, Approve on a request card and Take off the backburner on a
-// backburner issue. A taken issue whose job has ended says so, not "taken". Issue #808: the issues on the backburner are
+// why, with a count per group, no inner scroll box, Approve on a request card and Take off the backburner on a
+// backburner issue. Issue #1035: only the issues waiting on an intake decision; taken, partly done and pull-request-waits
+// issues are job progress, on Jobs, and Intake counts them in one line that links there. Issue #808: the issues on the backburner are
 // counted in the nav and from the Queue, and each says its number, since when and by whom it is on the backburner.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -113,15 +114,14 @@ describe('Intake: the issues a source listed, grouped by why (issues #798, #897)
     expect(navLink('#intake').textContent).toContain('Intake');
   });
 
-  it('groups every issue by why, with counts, requests first, taken last', async () => {
+  it('groups the issues waiting on an intake decision by why, with counts, requests first', async () => {
     await boot('#intake');
     await vi.waitFor(() => expect(view()).not.toBeNull());
     const groups = [...view()!.querySelectorAll<HTMLElement>('[data-intake-group]')].map((g) => g.getAttribute('data-intake-group'));
-    expect(groups).toEqual(['request', 'not-assigned', 'backburner', 'pr-waiting', 'partly-done', 'other', 'taken']);
+    expect(groups).toEqual(['request', 'not-assigned', 'backburner', 'other']);
     const count = (g: string) => group(view()!, g).querySelector('[data-intake-group-count]')!.textContent;
-    expect([count('request'), count('backburner'), count('pr-waiting')]).toEqual(['2', '2', '1']);
+    expect([count('request'), count('backburner'), count('other')]).toEqual(['2', '2', '1']);
     expect(group(view()!, 'request').textContent).toContain('Needs approval');
-    expect(row(view()!, url(1)).textContent).toContain('taken');
     expect(view()!.querySelector('.overflow-y-auto')).toBeNull();
   });
 
@@ -138,17 +138,27 @@ describe('Intake: the issues a source listed, grouped by why (issues #798, #897)
   });
 });
 
-describe('Intake: no inner scroll box, a taken issue whose job ended (issue #798)', () => {
-  it('groups the issues, taken last, with no nested scroll region', async () => {
+describe('Intake leaves job progress to Jobs (issue #1035)', () => {
+  it('lists no taken, partly done or pull-request-waits issue, and counts them in one line that links to Jobs', async () => {
     await boot('#intake');
-    const intake = () => document.querySelector<HTMLElement>('[data-intake="github-account"]');
-    await vi.waitFor(() => expect(intake()).not.toBeNull());
-    const groups = [...intake()!.querySelectorAll<HTMLElement>('[data-intake-group]')].map((g) => g.getAttribute('data-intake-group'));
-    expect(groups).toEqual(['request', 'not-assigned', 'backburner', 'pr-waiting', 'partly-done', 'other', 'taken']);
-    expect(intake()!.querySelector('.overflow-y-auto')).toBeNull();
-    expect(row(intake()!, url(1)).textContent).toContain('taken');
-    expect(row(intake()!, url(2)).textContent).toContain('its job ended: finished');
-    expect(row(intake()!, url(2)).querySelector('.text-ok')).toBeNull();
+    await vi.waitFor(() => expect(view()).not.toBeNull());
+    for (const n of [1, 2, 6, 7]) expect(row(view()!, url(n))).toBeNull();
+    const link = view()!.querySelector<HTMLAnchorElement>('[data-intake-in-progress]')!;
+    expect(link.getAttribute('href')).toBe('#jobs');
+    expect(link.textContent).toBe('4 in progress on Jobs');
+    expect(view()!.querySelector('[data-intake-summary]')!.textContent).toContain('6 waiting for intake');
+  });
+
+  it('with 4 taken issues, 1 partly done issue and 0 requests, it lists no issue and says nothing is waiting', async () => {
+    const taken = (n: number) => ({ key: url(n), title: `Taken ${n}`, repo: 'octo-user/hopper', jobId: `j-${n}`, jobStatus: 'running' });
+    const intake = [taken(1), taken(2), taken(3), taken(4),
+      { key: url(5), title: 'Half', repo: 'octo-user/hopper', reason: 'partly done: the rest runs once its pull request merges', group: 'partly-done' }];
+    await boot('#intake');
+    await act(async () => { streamed.get('source.updated')!({ data: JSON.stringify({ ...SOURCES[0], detail: { ...DETAIL, intake } }) }); });
+    await vi.waitFor(() => expect(view()!.querySelector('[data-intake-item]')).toBeNull());
+    expect(view()!.querySelector('[data-intake-group]')).toBeNull();
+    expect(view()!.textContent).toContain('Nothing waiting for intake');
+    expect(view()!.querySelector<HTMLAnchorElement>('[data-intake-in-progress]')!.textContent).toBe('5 in progress on Jobs');
   });
 });
 
