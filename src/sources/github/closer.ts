@@ -47,7 +47,7 @@ export const REFERENCING_PULL_REQUESTS_QUERY = `query($owner: String!, $name: St
 }`;
 
 export const PULL_REQUEST_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
-  repository(owner: $owner, name: $name) { defaultBranchRef { name } issueOrPullRequest(number: $number) {
+  repository(owner: $owner, name: $name) { issueOrPullRequest(number: $number) {
     __typename ... on PullRequest { url createdAt isDraft state mergeable mergedAt ${HEAD_COMMIT_CHECKS} }
   } }
 }`;
@@ -77,7 +77,7 @@ interface Numbered extends Referenced { __typename?: string; mergedAt?: string |
 interface Source extends Referenced { __typename?: string; body?: string; mergedAt?: string | null; repository?: { nameWithOwner?: string } }
 const PR_STATES: Record<string, ReferencingPullRequest['state']> = { OPEN: 'open', CLOSED: 'closed', MERGED: 'merged' };
 interface GqlResponse {
-  data?: { repository?: { defaultBranchRef?: { name?: string } | null; issueOrPullRequest?: Numbered | null; pullRequests?: { nodes?: (Referenced | null)[] }; issue?: {
+  data?: { repository?: { issueOrPullRequest?: Numbered | null; pullRequests?: { nodes?: (Referenced | null)[] }; issue?: {
     timelineItems?: { nodes?: ({ closer?: Closer | null; source?: Source | null } | null)[] };
     closedByPullRequestsReferences?: { nodes?: (Referenced | null)[] };
   } | null } | null };
@@ -174,10 +174,9 @@ export function pullRequestFrom(body: unknown, what: string): NumberedPullReques
   const n = r2.data?.repository?.issueOrPullRequest;
   const state = PR_STATES[n?.state ?? ''];
   if (n?.__typename !== 'PullRequest' || !n.url || !n.createdAt || !state) return undefined;
-  const defaultBranch = r2.data?.repository?.defaultBranchRef?.name;
   return {
     url: n.url, createdAt: n.createdAt, isDraft: n.isDraft === true, conflicting: n.mergeable === 'CONFLICTING', state,
-    ...(n.mergedAt ? { mergedAt: n.mergedAt } : {}), ...headOf(n, r2.checksUnknown), ...(defaultBranch ? { defaultBranch } : {}),
+    ...(n.mergedAt ? { mergedAt: n.mergedAt } : {}), ...headOf(n, r2.checksUnknown),
   };
 }
 

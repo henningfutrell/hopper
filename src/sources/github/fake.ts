@@ -108,7 +108,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const touch = (i: GitHubIssue) => { i.updatedAt = stamp(); };
   const listing = fakeListing(issues, (m, a) => enter(m, a));
   const acts = fakePullActs(pulls, (m, a) => enter(m, a), notFound);
-  const batched = fakePulls(pulls, issues, (m, a) => enter(m, a), acts.defaultBranch);
+  const batched = fakePulls(pulls, issues, (m, a) => enter(m, a));
 
   const api: GitHubApi = {
     listRepos: listing.listRepos, issuesChangedSince: listing.issuesChangedSince, pullRequestStates: batched.pullRequestStates, openPullRequestsIn: batched.openPullRequestsIn,
@@ -208,7 +208,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       const p = pulls.find((x) => x.url === `https://github.com/${repo}/pull/${n}`);
       if (!p) return undefined;
       const { issue: _i, closes: _c, body: _b, repo: _r, ...pr } = p;
-      return { ...pr, ...(acts.defaultBranch(repo) ? { defaultBranch: acts.defaultBranch(repo) } : {}) } satisfies NumberedPullRequest;
+      return { ...pr } satisfies NumberedPullRequest;
     },
     async openPullRequests(repo) {
       enter('openPullRequests', [repo]);

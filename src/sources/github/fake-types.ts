@@ -70,8 +70,6 @@ export interface FakeGitHub extends GitHubApi {
   commentsOn(repo: string, number: number): GitHubComment[];
   /** The bodies of the comments on a pull request, by its URL, oldest first (issue #1143). */
   pullRequestComments(url: string): string[];
-  /** The repository's default branch, the landing branch (issue #1143); never set: GitHub does not say. */
-  setDefaultBranch(repo: string, branch: string): void;
   labelsIn(repo: string): string[];
   /** App identity only: replace the repos the app is installed on. */
   setInstalledRepos(repos: string[]): void;

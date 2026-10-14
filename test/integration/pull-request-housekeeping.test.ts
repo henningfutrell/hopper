@@ -68,7 +68,8 @@ describe('pull request housekeeping (issue #1143)', () => {
   it('a pull request off the landing branch: moved to it, and recorded', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
-    gh.setDefaultBranch(REPO, 'main');
+    // The landing branch is the landing batch setting's (issue #1142), never GitHub's default branch.
+    expect((await app.ui('/ui/api/landing-batches', { repos: { [REPO]: { tested: 'beta', landing: 'main' } } }, { token: await app.login() })).status).toBe(200);
     const { job, url } = await pullRequestWaiting(gh, app, () => undefined);
     await app.sync();
     await waitFor(async () => (await app.events('types=job.pull_request_retargeted')).length > 0, { what: 'job.pull_request_retargeted' });

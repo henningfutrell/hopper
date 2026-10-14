@@ -83,8 +83,6 @@ export interface NumberedPullRequest extends OpenPullRequest {
   state: 'open' | 'closed' | 'merged';
   /** When it was merged; absent unless merged. */
   mergedAt?: string;
-  /** Its repository's default branch, the landing branch (issue #1143); absent: GitHub did not say. */
-  defaultBranch?: string;
 }
 
 /** An open pull request of a repository, with its branch (issue #637) and its body (issue #763: the issue it closes). */
@@ -159,8 +157,6 @@ export interface PullRequestState {
   checks?: ChecksState;
   body: string;
   issue?: { state: 'open' | 'closed'; stateReason?: string; updatedAt: string };
-  /** Its repository's default branch, the landing branch (issue #1143); absent: GitHub did not say. */
-  defaultBranch?: string;
 }
 
 /** The answer of a batched pull request read, each by `pullKey`; one GitHub did not answer for is in `errors`, never a throw. */

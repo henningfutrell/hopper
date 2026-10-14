@@ -4063,7 +4063,7 @@ Version 1 (`docs/schemas/job.pull_request_base_merged.v1.json`). A PR waiting jo
 
 ## `job.pull_request_retargeted`
 
-Version 1 (`docs/schemas/job.pull_request_retargeted.v1.json`). A followed job's open pull request had a base branch that is not its repository's landing branch (the default branch) and is no open pull request's head: the hopper changed its base to the landing branch (issue #1143), with no job, and said so in one comment on it. `from`: the base before; `to`: the landing branch.
+Version 1 (`docs/schemas/job.pull_request_retargeted.v1.json`). A followed job's open pull request had a base branch that is not its repository's landing branch (its landing batch setting, never GitHub's default branch) and is no open pull request's head: the hopper changed its base to the landing branch (issue #1143), with no job, and said so in one comment on it. `from`: the base before; `to`: the landing branch.
 
 | field | type | required |
 |---|---|---|

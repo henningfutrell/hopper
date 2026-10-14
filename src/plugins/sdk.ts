@@ -171,6 +171,8 @@ export interface JobSourceContext {
   intakeTrust: IntakeTrust;
   /** Whether a job on this repository (`owner/repo`) may merge its own pull request: the user's yolo mode (issue #579), read at each call. */
   yoloMode(repo: string): boolean;
+  /** A repository's landing branch (issue #1143): its landing batch setting (issue #1142), read at each call; undefined: no landing batches. */
+  landingBranch?(repo: string): string | undefined;
   /** The artifacts a job made (issue #673): each one's id and the URL of the issue it is linked to. */
   jobArtifacts(jobId: string): { id: string; issue?: string }[];
   /** The user's issue graph (issue #437): a source keeps the place of each issue it sees there. Store only. */

@@ -1,5 +1,5 @@
 // Pull request housekeeping (issue #1143): the follow of a job's open pull request does two things itself, with no job.
-// A pull request whose base is not the repository's landing branch (its default branch) and not the head of another open
+// A pull request whose base is not the repository's landing branch (its landing batch setting, issue #1142) and not the head of another open
 // pull request (a stack) moves to the landing branch. A pull request with nothing left to land — its issue closed as
 // completed by another pull request, or no commit its base lacks — is closed. Each act leaves one comment on the pull
 // request that says what the hopper did and why.
@@ -12,8 +12,8 @@ const AFTER = '2026-10-02T11:00:00.000Z';
 const LATER = '2026-10-02T12:00:00.000Z';
 const numberOf = (url: string) => Number(url.slice(url.lastIndexOf('/') + 1));
 
-function waiting(pr: { base?: string; headRef?: string; commits?: string[]; part?: boolean } = {}) {
-  const s = setup();
+function waiting(pr: { base?: string; headRef?: string; commits?: string[]; part?: boolean } = {}, landing?: string) {
+  const s = setup({}, landing ? { landingBranch: (repo) => (repo === REPO ? landing : undefined) } : {});
   s.gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:pr-ready'] });
   const open = pr.part ? s.gh.openPartPullRequest : s.gh.openPullRequest;
   const made = open(REPO, 1, { createdAt: AFTER, checks: 'passing', ...pr });
@@ -23,8 +23,7 @@ function waiting(pr: { base?: string; headRef?: string; commits?: string[]; part
 
 describe('a job\'s pull request off the landing branch', () => {
   it('moves to the landing branch, with one comment that says so; it is not merged in the same follow', async () => {
-    const s = waiting({ base: 'dev' });
-    s.gh.setDefaultBranch(REPO, 'main');
+    const s = waiting({ base: 'dev' }, 'main');
     const r = await s.source.follow!(s.job());
     expect(r).toMatchObject({ outcome: 'open', retargeted: { from: 'dev', to: 'main' }, state: { seen: { base: 'main' } } });
     expect(s.gh.calls.filter((c) => c.method === 'retarget').map((c) => c.args)).toEqual([[REPO, numberOf(s.pr.url), 'main']]);
@@ -33,8 +32,7 @@ describe('a job\'s pull request off the landing branch', () => {
   });
 
   it('once moved, a later follow moves nothing and says nothing more', async () => {
-    const s = waiting({ base: 'dev' });
-    s.gh.setDefaultBranch(REPO, 'main');
+    const s = waiting({ base: 'dev' }, 'main');
     const r = await s.source.follow!(s.job());
     await s.source.follow!(s.job(r!.state.seen as PullRequestSeen));
     expect(s.gh.calls.filter((c) => c.method === 'retarget')).toHaveLength(1);
@@ -42,15 +40,14 @@ describe('a job\'s pull request off the landing branch', () => {
   });
 
   it('stacked on another open pull request (its base is that one\'s head): left as it is', async () => {
-    const s = waiting({ base: 'feature-a' });
-    s.gh.setDefaultBranch(REPO, 'main');
+    const s = waiting({ base: 'feature-a' }, 'main');
     s.gh.openUnlinkedPullRequest(REPO, { createdAt: AFTER, headRef: 'feature-a', base: 'main' });
     const r = await s.source.follow!(s.job());
     expect(r).not.toHaveProperty('retargeted');
     expect(s.gh.calls.some((c) => c.method === 'retarget')).toBe(false);
   });
 
-  it('the landing branch not known: left as it is', async () => {
+  it('a repository with no landing batches: left as it is, whatever GitHub\'s default branch (issue #1142)', async () => {
     const s = waiting({ base: 'dev' });
     const r = await s.source.follow!(s.job());
     expect(r).not.toHaveProperty('retargeted');
@@ -58,11 +55,15 @@ describe('a job\'s pull request off the landing branch', () => {
   });
 
   it('after the batch: a base off the landing branch is read from GitHub, and moved', async () => {
-    const s = waiting({ base: 'dev' });
-    const seen = (await s.source.follow!(s.job()))!.state.seen as PullRequestSeen;
-    s.gh.setDefaultBranch(REPO, 'main');
-    await s.source.readFollowed!([s.job(seen)]);
-    expect(await s.source.follow!(s.job(seen))).toMatchObject({ retargeted: { from: 'dev', to: 'main' } });
+    const at: { landing?: string } = {};
+    const s = setup({}, { landingBranch: () => at.landing });
+    s.gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:pr-ready'] });
+    const pr = s.gh.openPullRequest(REPO, 1, { createdAt: AFTER, checks: 'passing', base: 'dev' });
+    const job = (seen?: PullRequestSeen): Job => jobForIssue(1, { status: 'finished', sourceState: { source: { pullRequest: pr.url, follow: 'open', ...(seen ? { seen } : {}) } } });
+    const seen = (await s.source.follow!(job()))!.state.seen as PullRequestSeen;
+    at.landing = 'main';
+    await s.source.readFollowed!([job(seen)]);
+    expect(await s.source.follow!(job(seen))).toMatchObject({ retargeted: { from: 'dev', to: 'main' } });
   });
 });
 

@@ -6,7 +6,7 @@ import { pullKey } from './api.ts';
 
 type Pull = ReferencingPullRequest & { headRef: string; base?: string };
 
-export function fakePulls(pulls: Pull[], issues: Map<string, GitHubIssue>, enter: (method: 'pullRequestStates' | 'openPullRequestsIn', args: unknown[]) => void, defaultBranch: (repo: string) => string | undefined = () => undefined) {
+export function fakePulls(pulls: Pull[], issues: Map<string, GitHubIssue>, enter: (method: 'pullRequestStates' | 'openPullRequestsIn', args: unknown[]) => void) {
   return {
     async pullRequestStates(refs: PullRequestRef[]): Promise<PullRequestStates> {
       enter('pullRequestStates', [refs]);
@@ -19,7 +19,6 @@ export function fakePulls(pulls: Pull[], issues: Map<string, GitHubIssue>, enter
           state: p.state, isDraft: p.isDraft, mergeable: p.conflicting ? 'CONFLICTING' : 'MERGEABLE', createdAt: p.createdAt, body: p.body,
           headRef: p.headRef, ...(p.base ? { base: p.base } : {}), ...(p.headCommittedAt ? { headCommittedAt: p.headCommittedAt } : {}), ...(p.checks ? { checks: p.checks } : {}),
           ...(i ? { issue: { state: i.state, ...(i.stateReason ? { stateReason: i.stateReason } : {}), updatedAt: i.updatedAt } } : {}),
-          ...(defaultBranch(r.repo) ? { defaultBranch: defaultBranch(r.repo) } : {}),
         });
       }
       return out;

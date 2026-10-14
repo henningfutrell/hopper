@@ -18722,9 +18722,9 @@ nothing left to land, and stayed open. The pull request itself never showed what
 **What the follow does now** (`src/sources/github/follow.ts`), with no job and no lane, for an open pull request a job
 follows, never on a person's act:
 
-- **Retarget.** Its base is not its repository's default branch (the landing branch, read with the pull request:
-  `defaultBranchRef`) and is no open pull request's head (a stack, issue #900, stays as it is): the hopper changes its
-  base to the landing branch (`GitHubApi.retarget`, `PATCH …/pulls/{n}` with `base`). The follow returns `retargeted`,
+- **Retarget.** Its repository has landing batches, and its base is not their landing branch (the setting's `landing`,
+  `main` when left out; never GitHub's default branch, issue #1142) and is no open pull request's head (a stack, issue
+  #900, stays as it is): the hopper changes its base to the landing branch (`GitHubApi.retarget`, `PATCH …/pulls/{n}` with `base`). The follow returns `retargeted`,
   recorded as `job.pull_request_retargeted { pullRequest, from, to }`. It is not merged in the same follow: the next read
   sees its merge conflicts and checks against the new base, and tending goes on from there. The batch runner's own move
   from the tested branch stays: it runs for every job pull request of a repository with landing batches, followed or not.
@@ -18740,8 +18740,9 @@ follows, never on a person's act:
   "rebases this pull request", or "fixes the failing checks"). Neutral text: it names no person and no machine. A comment
   GitHub refuses is lost, never retried: the act it reports stands.
 
-**The batch read** (issue #985) reads the default branch too. A follow reads GitHub, not the batch, when the base is off
-the landing branch or the issue is closed, so housekeeping is never skipped for want of a read.
+**The batch read** (issue #985): a follow reads GitHub, not the batch, when the base is off the landing branch or the
+issue is closed, so housekeeping is never skipped for want of a read. A repository with no landing batches has no
+landing branch: none of its pull requests is moved.
 
 **The shrink guard** (issue #1096) covers every tend job already: their pushes go through the git proxy.
 

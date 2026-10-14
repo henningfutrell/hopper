@@ -50,6 +50,8 @@ interface Followed { pullRequest?: string; follow?: string; part?: boolean; seen
  */
 export interface FollowContext extends ReportContext {
   yoloMode?: (repo: string) => boolean;
+  /** A repository's landing branch (issue #1143, its landing batch setting); absent or undefined: no pull request is moved. */
+  landingBranch?: (repo: string) => string | undefined;
   clock?: Clock;
   /** The batch's answer for pull request `number` of `repo`, taken once (issue #985); absent or undefined: read GitHub. */
   batched?: (repo: string, number: number) => PullRequestState | undefined;
@@ -73,7 +75,8 @@ function seenFromBatch(ctx: FollowContext, job: Job, s: Followed, url: string): 
   const b = repoOfPull(url).toLowerCase() === repo.toLowerCase() ? ctx.batched?.(repo, numberOf(url)) : undefined;
   if (!b || !before || b.state !== 'open' || b.mergeable === 'UNKNOWN') return undefined;
   // Its issue closed (abandoned, or superseded), or a base off the landing branch (issue #1143): a read decides.
-  if (b.issue?.state === 'closed' || (b.defaultBranch && b.base && b.base !== b.defaultBranch)) return undefined;
+  const landing = ctx.landingBranch?.(repo);
+  if (b.issue?.state === 'closed' || (landing && b.base && b.base !== landing)) return undefined;
   if (s.part && !new RegExp(`\\bpart of #${number}\\b`, 'i').test(b.body)) return undefined;
   const conflicting = b.mergeable === 'CONFLICTING';
   const pushedAt = pushedAtOf(b);
@@ -143,13 +146,14 @@ export const tendStartedOn = (api: GitHubApi) => async (job: Job, pullRequest: s
 };
 
 /**
- * The landing branch to move the open pull request to (issue #1143): its repository's default branch, when its base is
- * another branch that is no open pull request's head (a stack, issue #900). Undefined: it stays.
+ * The landing branch to move the open pull request to (issue #1143): its repository's, as its landing batch setting names
+ * it (never GitHub's default branch, issue #1142), when its base is another branch that is no open pull request's head (a
+ * stack, issue #900). Undefined: it stays, and so does every pull request of a repository with no landing batches.
  */
-async function retargetTo(api: GitHubApi, repo: string, pr: NumberedPullRequest): Promise<string | undefined> {
-  const to = pr.defaultBranch;
+async function retargetTo(ctx: FollowContext, repo: string, pr: NumberedPullRequest): Promise<string | undefined> {
+  const to = ctx.landingBranch?.(repo);
   if (!to || !pr.base || pr.base === to) return undefined;
-  const stacked = (await api.openPullRequests(repo)).some((p) => p.headRef === pr.base);
+  const stacked = (await ctx.api.openPullRequests(repo)).some((p) => p.headRef === pr.base);
   return stacked ? undefined : to;
 }
 
@@ -175,7 +179,7 @@ async function waiting(ctx: FollowContext, job: Job, url: string, before: PullRe
   };
   // Housekeeping (issue #1143), never on a person's act: off the landing branch, it moves there, and waits for the next
   // read; with no commit its base lacks, nothing is left to land, and it is closed.
-  const to = !act && pr.state === 'open' ? await retargetTo(ctx.api, repo, pr) : undefined;
+  const to = !act && pr.state === 'open' ? await retargetTo(ctx, repo, pr) : undefined;
   if (to) {
     await ctx.api.retarget(repo, numberOf(url), to);
     await note(ctx.api, repo, url, retargetNote(pr.base!, to));

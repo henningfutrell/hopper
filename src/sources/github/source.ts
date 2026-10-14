@@ -81,8 +81,11 @@ export interface GitHubSourceOptions {
   intake?: IntakeContext;
   /** The user's trusted actors and approvals (issue #652): an issue not of a trusted origin is a request card. */
   trust: IntakeTrust;
-  /** Whether a job on the repo may merge its own pull request (yolo mode, issue #579), read at each prompt; absent: never. */
-  yoloMode?: (repo: string) => boolean;
+  /**
+   * Whether a job on the repo may merge its own pull request (yolo mode, issue #579), read at each prompt; absent: never.
+   * And a repository's landing branch, from its landing batch settings (issue #1143); absent or undefined: no pull request is moved.
+   */
+  yoloMode?: (repo: string) => boolean; landingBranch?: (repo: string) => string | undefined;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. Absent: none. */
   jobArtifacts?: JobArtifacts;
   /** The user's issue graph (issue #437): each listed issue's place is kept there. Absent: none is kept. */
@@ -368,7 +371,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return unfinishedPullRequest(api, job);
     },
     follow(job, act) {
-      return followPullRequest({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}) }, job, act);
+      return followPullRequest({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}) }, job, act);
     },
     unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api),
     readFollowed: (jobs) => batch.read(jobs),
