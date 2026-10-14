@@ -11,7 +11,9 @@ describe('local machine source', () => {
     expect(await src.list()).toEqual([
       { id: 'local', label: hostname(), maxLanes: 4, online: true, executors: ['test'], disk: expect.objectContaining({ low: expect.any(Boolean) }),
         // Its CPU, memory and swap (issue #560), read from this machine.
-        resources: expect.objectContaining({ cores: expect.any(Number), memTotalBytes: expect.any(Number) }) },
+        resources: expect.objectContaining({ cores: expect.any(Number), memTotalBytes: expect.any(Number) }),
+        // The infra credential folders its home holds (issue #1128 part 7): the test home holds none.
+        infraCredentials: [] },
     ]);
   });
   it('names the executors registered when it is asked, not when it was made', async () => {
@@ -53,7 +55,7 @@ describe('local machine source', () => {
   });
   it('honours id and label', async () => {
     const src = createLocalMachineSource({ maxLanes: 2, executors: () => [], id: 'm1', label: 'M one', disk: () => undefined, resources: () => undefined });
-    expect(await src.list()).toEqual([{ id: 'm1', label: 'M one', maxLanes: 2, online: true, executors: [] }]);
+    expect(await src.list()).toEqual([{ id: 'm1', label: 'M one', maxLanes: 2, online: true, executors: [], infraCredentials: [] }]);
   });
 });
 

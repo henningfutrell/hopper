@@ -7,7 +7,7 @@ import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
-import type { JobMachineLink, MachineHerdr } from './machines.ts';
+import type { JobMachineLink, MachineHerdr, MachineInfraCredentials } from './machines.ts';
 import type { ParkedElsewhere } from './checkpoints.ts';
 import type { ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
@@ -288,8 +288,8 @@ export interface Lane {
   idleSince?: string;
 }
 
-/** Point-in-time view of one machine, as polled by the engine. Its herdr: `MachineHerdr` (src/domain/machines.ts). */
-export interface MachineSnapshot extends MachineHerdr {
+/** Point-in-time view of one machine, as polled by the engine. Its herdr and infra credentials: `MachineHerdr`, `MachineInfraCredentials` (src/domain/machines.ts). */
+export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials {
   id: MachineId;
   label: string;
   /** Hard ceiling on lanes this machine may run: in the engine, the lanes lane tuning applied in active mode (issue #688). */

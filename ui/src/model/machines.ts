@@ -103,6 +103,12 @@ function herdrSide(what: string, side: { version?: string; protocol?: number; bi
   return `${what}${side.version ? ` ${side.version}` : ''}${said ? ` (${said})` : ''}`;
 }
 
+/** The infra credential folders its home holds, and what to do (issue #1128 part 7): a machine must hold none. None, or not read: null. */
+export function infraCredentialsText(m: MachineSnapshot): string | null {
+  if (!m.infraCredentials?.length) return null;
+  return `${m.infraCredentials.join(', ')} in its home: a machine must hold no infra credentials. Remove them on the machine.`;
+}
+
 /** An ssh target's herdr client and server versions on Machines (issue #741); null when its probe read none. */
 export function herdrText(m: MachineSnapshot): string | null {
   const sides = [herdrSide('client', m.herdr?.client), herdrSide('server', m.herdr?.server)].filter((x) => x !== null);

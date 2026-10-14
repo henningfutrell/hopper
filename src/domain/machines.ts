@@ -24,6 +24,13 @@ export interface HerdrVersions {
   owned?: { version?: string; inUse: boolean; note?: string };
 }
 
+/**
+ * The infra credential folders a machine's home holds, as its last read found them (issue #1128 part 7, design.md "Infra credentials
+ * on machines"): a machine must hold none, so Machines and Accounts flag them; no job is held for them. Only the names. `[]`: none.
+ * Absent: not read (a container target, a client older than this, offline).
+ */
+export interface MachineInfraCredentials { infraCredentials?: string[] }
+
 /** A machine's herdr, as its snapshot (`MachineSnapshot`) carries it. */
 export interface MachineHerdr {
   /**

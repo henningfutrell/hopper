@@ -144,6 +144,8 @@ export interface ToolAccountMachine {
   lastUsedAt?: string;
   /** Its source can start the tool's sign-in there (issue #1128): `POST /ui/api/tool-accounts/sign-in`. */
   signIn?: true;
+  /** The infra credential folders the machine's home holds (issue #1128 part 7): a machine must hold none. Absent: none, or not read. */
+  infraCredentials?: string[];
 }
 
 /** One tool account: a service and the identity its machines are signed in as. No identity: the machines signed in as nobody. */

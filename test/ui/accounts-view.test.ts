@@ -97,6 +97,14 @@ describe('the Accounts view', () => {
     expect(window.location.hash).toBe('#logins');
   });
 
+  it('a machine whose home holds infra credential folders is flagged with their names (issue #1128 part 7)', async () => {
+    const flagged: ToolAccount = { ...SIGNED_IN, machines: [{ ...SIGNED_IN.machines[0]!, infraCredentials: ['.aws', '.keycloak'] }, SIGNED_IN.machines[1]!] };
+    await render({ accounts: [flagged] });
+    const [desk, laptop] = machines();
+    expect(desk).toContain('infra credentials in its home: .aws, .keycloak');
+    expect(laptop).not.toContain('infra credentials');
+  });
+
   it('no tool account: says where to add a usage source', async () => {
     await render({ accounts: [] });
     expect(document.body.textContent).toContain('no usage source reads a tool account yet');
