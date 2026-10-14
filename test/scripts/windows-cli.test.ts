@@ -164,9 +164,17 @@ describe('hopper doctor (docs/deploy.md "Check it from Windows")', () => {
     expect(ps1.indexOf("-eq 'doctor'")).toBeLessThan(ps1.indexOf("# The container's name changes"));
   });
 
-  it('opens /api/health at localhost on the port HOPPER_PORT names, else 4790', () => {
+  it('opens the address check (/job/address, no session) at localhost, then at 127.0.0.1, on the port HOPPER_PORT names, else 4790', () => {
     expect(doctor).toContain("if ($env:HOPPER_PORT) { $env:HOPPER_PORT } else { '4790' }");
-    expect(doctor).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "http://localhost:$port/api/health"');
+    expect(doctor).not.toContain('/api/health');
+    expect(doctor).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "http://localhost:$port/job/address"');
+    expect(doctor).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "$loopback/job/address"');
+  });
+
+  it('any HTTP answer is a working link; only 127.0.0.1 answering is a warning, not a FAIL, that says to open 127.0.0.1', () => {
+    expect(doctor).toContain('$_.Exception.Response');
+    expect(doctor).toContain("'warn'");
+    expect(doctor).toContain('Windows tries ::1 first for localhost: open $loopback in place of localhost.');
   });
 
   it('reads the networking mode from wslinfo, and localhostForwarding and networkingMode from %UserProfile%\\.wslconfig', () => {
@@ -180,7 +188,7 @@ describe('hopper doctor (docs/deploy.md "Check it from Windows")', () => {
     const model = '../../ui/src/model/windows-link.ts'; // browser code, type-checked by ui/tsconfig.json: imported by path
     const { windowsLinkFix } = (await import(model)) as { windowsLinkFix(l: { url: string; mode?: string; ok: boolean; at: string }): string[] };
     for (const mode of ['nat', 'mirrored', undefined]) {
-      const fix = windowsLinkFix({ url: 'http://localhost:4790/api/health', mode, ok: false, at: '' });
+      const fix = windowsLinkFix({ url: 'http://localhost:4790/job/address', mode, ok: false, at: '' });
       for (const line of fix) expect(doctor).toContain(line.replace('http://127.0.0.1:4790', '$loopback'));
     }
   });
