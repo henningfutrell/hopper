@@ -87,6 +87,7 @@ describe('Settings → Host link (issue #712)', () => {
     expect(hint).toContain('networkingMode=mirrored');
     expect(hint).toContain('wsl --shutdown');
     expect(hint).toContain('Add machine → A computer');
+    expect(hint).toContain('hopper doctor');
   });
 
   it('in WSL tests the host link base the admin set, not the default', async () => {
