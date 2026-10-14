@@ -3,7 +3,7 @@
 // dismissed and nothing replaced; a finished job waits on its pull request until it merges.
 import { describe, expect, it } from 'vitest';
 import {
-  applyEvent, applyRead, countInFlight, countStates, isFailureOf, isInFlight, issueClosedAsComplete, keptWorkShown, keyOfEvent, pullRequestWaitOf, requestsWaitingOf,
+  applyEvent, applyRead, countStates, inFlightOf, inFlightPartOf, isFailureOf, isInFlight, issueClosedAsComplete, keptWorkShown, keyOfEvent, pullRequestWaitOf, requestsWaitingOf,
   type LedgerJob, type WorkItem,
 } from '../../src/domain/work-items.ts';
 import type { EventType } from '../../src/domain/types.ts';
@@ -243,13 +243,29 @@ describe('what GitHub says moves the item (issue #1067, part 3)', () => {
     expect(isInFlight(at('pr_open', 'checks_running'))).toBe(true);
     expect(isInFlight(at('pr_open', 'fixing_checks'))).toBe(true);
     expect(isInFlight(at('pr_open', 'merge'))).toBe(true);
-    // Not yet seen by the follow: its checks and the merge are ahead of it.
-    expect(isInFlight(at('pr_open'))).toBe(true);
     // A draft or merge conflicts wait on a fix, not on the run.
     expect(isInFlight(at('pr_open', 'draft'))).toBe(false);
     expect(isInFlight(at('pr_open', 'conflicts'))).toBe(false);
     for (const s of ['waiting_for_approval', 'queued', 'needs_you', 'waiting_outside', 'partly_done', 'done', 'failed', 'dropped'] as const) expect(isInFlight(at(s))).toBe(false);
-    expect(countInFlight([at('working'), at('pr_open', 'merge'), at('pr_open', 'draft'), at('queued'), at('done')])).toBe(2);
-    expect(countInFlight([])).toBe(0);
+  });
+
+  it('in flight has one breakdown (issue #1164): running, on its own command, pull requests; a wait the follow never saw is not in flight', () => {
+    const own = fold([['job.queued'], ['job.started'], ['job.waiting', { for: 'the test run', ownCommand: true }]])!;
+    const outside = fold([['job.queued'], ['job.started'], ['job.waiting', { for: 'a review' }]])!;
+    const running = fold([['job.queued'], ['job.started']])!;
+    const unseen = fold([['job.queued'], ['job.started'], ['job.finished', { result: 'opened a pull request' }]])!;
+    expect([running.state, own.state, outside.state, unseen.state]).toEqual(['working', 'working', 'waiting_outside', 'pr_open']);
+    expect(inFlightPartOf(running)).toBe('running');
+    // A job on its own command holds its lane: in flight, not running.
+    expect(inFlightPartOf(own)).toBe('ownCommand');
+    // Any other own wait holds no lane.
+    expect(inFlightPartOf(outside)).toBeUndefined();
+    // Its pull request's wait never read: it is not counted until the follow reads one, so a stale item never inflates the count.
+    expect(inFlightPartOf(unseen)).toBeUndefined();
+    const pr = (pullRequestWait: WorkItem['pullRequestWait']) => ({ ...unseen, pullRequestWait });
+    expect(inFlightPartOf(pr('checks_running'))).toBe('pullRequests');
+    expect(inFlightPartOf(pr('conflicts'))).toBeUndefined();
+    expect(inFlightOf([running, own, outside, unseen, pr('merge'), pr('fixing_checks'), pr('draft')])).toEqual({ total: 4, running: 1, ownCommand: 1, pullRequests: 2 });
+    expect(inFlightOf([])).toEqual({ total: 0, running: 0, ownCommand: 0, pullRequests: 0 });
   });
 });

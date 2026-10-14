@@ -35,7 +35,7 @@ describe('GET /api/work-items', () => {
   });
 });
 
-type Queue = { locked: Job[]; items: Record<WorkItemState, number>; inFlight: number };
+type Queue = { locked: Job[]; items: Record<WorkItemState, number>; inFlight: { total: number; running: number; ownCommand: number; pullRequests: number } };
 
 describe('every view reads the ledger (issue #1067, part 2)', () => {
   it('Failures, the queue and the job graph count one failure as the ledger does, and none once it is dismissed', async () => {
@@ -77,20 +77,20 @@ describe('in flight (issue #1113)', () => {
     cleanup = db.cleanup;
     const a = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(2) } });
     apps.push(a);
-    expect((await a.api<Queue>('GET', '/api/queue')).body.inFlight).toBe(0);
+    expect((await a.api<Queue>('GET', '/api/queue')).body.inFlight).toEqual({ total: 0, running: 0, ownCommand: 0, pullRequests: 0 });
     const job = await a.pull({ op: 'sleep', ms: 60000 });
     await a.waitForStatus(job.id, 'running');
     const working = await waitFor(async () => {
       const r = (await a.api<Ledger>('GET', '/api/work-items?state=working')).body;
       return r.counts.working === 1 ? r : undefined;
     }, { what: 'the item at work in the ledger' });
-    expect((await a.api<Queue>('GET', '/api/queue')).body.inFlight).toBe(working.items.length);
+    expect((await a.api<Queue>('GET', '/api/queue')).body.inFlight).toEqual({ total: working.items.length, running: working.items.length, ownCommand: 0, pullRequests: 0 });
     const graph = (await a.api<JobGraph>('GET', '/api/jobs/graph')).body;
     expect(graph.nodes.find((n) => n.id === `job:${job.id}`)).toMatchObject({ inFlight: true });
 
     const failed = await a.pull({ op: 'fail', message: 'HOPPER_FAILED the tests do not pass', ms: 0 });
     await a.waitForStatus(failed.id, 'failed');
     await waitFor(async () => ((await a.api<Ledger>('GET', '/api/work-items')).body.counts.needs_you === 1 ? true : undefined), { what: 'handed to a person' });
-    expect((await a.api<Queue>('GET', '/api/queue')).body.inFlight).toBe(1);
+    expect((await a.api<Queue>('GET', '/api/queue')).body.inFlight).toMatchObject({ total: 1, running: 1 });
   });
 });
