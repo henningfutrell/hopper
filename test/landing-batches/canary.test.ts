@@ -23,7 +23,6 @@ interface World { aheadBy: number; reports: number[]; calls: string[]; issues: {
 function fake(w: World): LandingBatchGitHub {
   const no = async (): Promise<never> => { throw new Error('not in this test'); };
   return {
-    defaultBranch: async () => 'main',
     compare: async (_repo, base, head) => {
       w.calls.push(`compare ${base}...${head}`);
       return base === 'stable' ? { aheadBy: w.aheadBy, tip: TIP, commits: [] } : { aheadBy: 0, tip: 'landing', commits: [] };
