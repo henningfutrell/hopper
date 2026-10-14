@@ -106,6 +106,34 @@ describe('GitHub deliveries (issue #1079)', () => {
     expect(view.lastRefused).toMatchObject({ why: 'no signature' });
   });
 
+  it('an issue closed or reopened that is a work item moves its item in the ledger (issue #1067)', async () => {
+    const { a, token } = await boot();
+    const secret = (await a.ui<{ generatedSecret: string }>('/ui/api/github-deliveries', { action: 'make' }, { token })).body.generatedSecret;
+    const key = `https://github.com/${REPO}/issues/7`;
+    // A request card a person declined: no job, so only the deliveries move it.
+    const { store } = a.user();
+    const card = { source: 'gh', key, hash: 'a'.repeat(64), author: 'someone' };
+    store.events.append({ type: 'source.request_opened', data: { ...card, why: ['not a trusted actor'] } });
+    store.events.append({ type: 'source.request_declined', data: card });
+    expect(store.workItems.get(key)?.state).toBe('dropped');
+
+    const closed = (action: string, reason?: string) => ({
+      action, issue: { number: 7, html_url: key, state: action === 'closed' ? 'closed' : 'open', ...(reason ? { state_reason: reason } : {}) }, repository: { full_name: REPO },
+    });
+    expect((await deliver(a, { body: closed('closed', 'completed'), secret, id: 'c-1' })).status).toBe(202);
+    expect(store.workItems.get(key)).toMatchObject({ state: 'done', issueState: 'closed', issueReason: 'completed' });
+    expect((await a.events('types=work_item.issue_closed')).map((e) => e.data)).toEqual([{ key, reason: 'completed', via: 'delivery' }]);
+
+    expect((await deliver(a, { body: closed('reopened'), secret, id: 'c-2' })).status).toBe(202);
+    expect(store.workItems.get(key)).toMatchObject({ state: 'dropped', issueState: 'open' });
+    // The same state again, or an issue that is no work item: nothing recorded.
+    expect((await deliver(a, { body: closed('reopened'), secret, id: 'c-3' })).status).toBe(202);
+    const other = { ...closed('closed', 'completed'), issue: { number: 8, html_url: `https://github.com/${REPO}/issues/8`, state: 'closed', state_reason: 'completed' } };
+    expect((await deliver(a, { body: other, secret, id: 'c-4' })).status).toBe(202);
+    expect(await a.events('types=work_item.issue_reopened')).toHaveLength(1);
+    expect(await a.events('types=work_item.issue_closed')).toHaveLength(1);
+  });
+
   it('a form-encoded delivery is refused with what to set', async () => {
     const { a, token } = await boot();
     const secret = (await a.ui<{ generatedSecret: string }>('/ui/api/github-deliveries', { action: 'make' }, { token })).body.generatedSecret;

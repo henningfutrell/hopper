@@ -65,6 +65,22 @@ describe('the work-item ledger in the database', () => {
     store.close();
   });
 
+  it('what GitHub says — a pull request\'s wait, an issue closed — moves the item as an event, and a rebuild replays it', () => {
+    const store = t.open(t.url());
+    const a = store.jobs.create(spec, 50, ref(KEY, 1));
+    store.events.append({ type: 'job.queued', jobId: a.id, data: { spec, priority: 50 } });
+    store.events.append({ type: 'job.finished', jobId: a.id, data: { result: 'pull request ready for review' } });
+    store.events.append({ type: 'job.pull_request_followed', jobId: a.id, data: { pullRequest: PR, part: false } });
+    store.events.append({ type: 'job.pull_request_seen', jobId: a.id, data: { pullRequest: PR, wait: 'fixing_checks' } });
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'pr_open', pullRequestWait: 'fixing_checks', waitingOn: 'a fix of its failed checks' });
+    store.events.append({ type: 'work_item.issue_closed', data: { key: KEY, reason: 'completed', via: 'delivery' } });
+    expect(store.workItems.get(KEY)).toMatchObject({ state: 'done', issueState: 'closed' });
+    const live = store.workItems.list();
+    store.workItems.rebuild();
+    expect(store.workItems.list()).toEqual(live);
+    store.close();
+  });
+
   it('a store opened with an event the ledger missed — the build before appended it — is rebuilt at open', () => {
     const url = t.url();
     const first = t.open(url);

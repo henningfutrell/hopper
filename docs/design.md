@@ -65,6 +65,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
+| `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items in `pr_open` or `failed`, read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts` | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
 | `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event (`runner.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
@@ -17655,10 +17656,33 @@ Failures, the dashboard and the queue agree with `SELECT state, count(*) FROM wo
   it waits on: "PR open: checks running", "fixing checks", "has merge conflicts", "draft", "waiting for the merge".
   "Ready for review" is gone from the graph, the list and the stage filter ("PR open").
 
-**Left (the next part).** The pull request's checks as ledger input (`pr_open`: checks running, fixing checks,
-merging) and GitHub's issue close and reopen as events of their own, from the webhooks and the follow; a batched
-fallback read for items in `pr_open` with no news in a while; Intake and Needs you read from the ledger; the sync's
-re-offer rule ("issue closed as complete"). Then #1036, #994, #1057, #1064 and #1065 close in favour of #1067.
+**Part 3: what GitHub says is ledger input (2026-10-14).** Before it, the ledger heard of GitHub only through the
+issue graph's reads and the follow's merge or close, so an item whose issue closed while its pull request waited, or
+after its job failed, stayed `pr_open` or `failed` until the next read happened to see it.
+
+- **The pull request wait** (`PullRequestWait`, `pullRequestWaitOf`): what an open pull request waits on first —
+  `draft`, `conflicts`, `fixing_checks`, `checks_running`, `merge` —, from what the follow saw of it. The follow
+  (`src/sources/after-done.ts`) records `job.pull_request_seen` when it differs from the item's `pullRequestWait` for
+  that pull request — also at a follow that found nothing new, so an install that saw its pull requests before this
+  part records each once. The item keeps it and says it in `waitingOn` ("its checks to pass", "a fix of its failed
+  checks", "the merge"); a merge, a close or a new job clears it. The Jobs graph's words read the same rule
+  (`src/domain/job-words.ts`): one answer to "what does this pull request wait on".
+- **An issue closed or reopened** is an event of its own: `work_item.issue_closed` (`reason`) and
+  `work_item.issue_reopened`, keyed by the item's source key, `via` a GitHub delivery ("GitHub deliveries") or the
+  fallback read. The reducer folds it as a read of the issue (`applyRead`): an item no job or person acts on is done
+  when closed as completed, dropped when not planned; reopened, it stands where its events put it. One rule makes the
+  event for both (`issueChangeEvent`), and none when the ledger holds that state already.
+- **The fallback read** (`src/work-items/fallback-read.ts`, one per user, in the user's runtime): every 5 minutes it
+  picks up to 50 items in `pr_open` or `failed`, of a GitHub issue, with no news for 30 minutes — no event moved them
+  and it did not read them — (`fallbackReadPick`), reads their issues in one GraphQL call through the component
+  watchers' `states` (the user's own connection, the shared rate limiter, a reconcile call), and records each close or
+  reopen. A pull request's merge stays the follow's, which already polls the pull requests in motion. With no GitHub
+  connection it reads nothing and logs why. When it read each item lives in memory. The ledger-vs-GitHub watcher still
+  reports drift: the fallback read is how the ledger catches up, the watcher how a missed path is found.
+- Rebuild replays the new events as any other: no migration. `GET /api/work-items` answers `pullRequestWait`.
+
+**Left (the next part).** Intake and Needs you read from the ledger; the sync's re-offer rule ("issue closed as
+complete") moves onto it. #1036, #994, #1057, #1064 and #1065 are closed already.
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
@@ -17931,6 +17955,10 @@ the hopper takes no inbound webhooks (issues #967, #985).
   lists only the repositories due, so the one named, and reads its new issues as any discover does. No other GitHub read is
   made. The delivery is a `source.delivery_received` in that user's log, with the sources that took it; none for a
   repository no source of the user takes. It changes no job, question, webhook or setting.
+- **The work-item ledger** (issue #1067, part 3): a delivery that closed or reopened an issue that is one of a user's work
+  items is also a `work_item.issue_closed` (with GitHub's `state_reason`) or `work_item.issue_reopened` in that user's log,
+  which moves the item in the event's transaction; none when the ledger holds that state already. That is a read model
+  moving, not a job, a question, a webhook or a setting.
 - **The timed listing stays** as the fallback for a delivery that never comes. A listing a delivery made resets that
   repository's interval, so timed listings per hour do not rise.
 - **The secret** is a system secret of the instance's vault (`github-webhook-secret`, kind `github-webhook`), the whole

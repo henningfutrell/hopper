@@ -3,6 +3,9 @@
 // delivery changes no job, question, webhook or setting; it only makes the repository it names due at each user's sources
 // whose job repository it is (`SourceRegistry.repoChanged`), which list it again at a sync a few seconds later, and records
 // `source.delivery_received` in that user's log. The timed listing stays: a delivery that never comes costs only time.
+// An issue closed or reopened that is a user's work item is also that event in the user's log (`work_item.issue_closed`,
+// `work_item.issue_reopened`, issue #1067 part 3), which moves the item in the work-item ledger; when the ledger holds that
+// state already, nothing is recorded.
 //
 // Signed: GitHub signs the body with the GitHub webhook secret (HMAC-SHA256, `X-Hub-Signature-256`), a system secret of the
 // instance's vault the hopper's admin makes on Settings → GitHub webhook and pastes into GitHub; shown once. Without one,
@@ -13,6 +16,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { DELIVERY_EVENTS, DELIVERY_PATH, deliveryTarget, type GitHubDeliveriesView } from '../domain/github-deliveries.ts';
+import { issueChangeEvent } from '../domain/work-items.ts';
 import type { SystemSecretName } from '../domain/vault.ts';
 import type { Clock } from '../domain/ports.ts';
 import { SecretUnreadable } from '../secrets/sealer.ts';
@@ -133,6 +137,9 @@ export function createGitHubDeliveries(o: {
       for (const user of o.tenants.list()) {
         const parts = o.tenants.user(user.id);
         if (!parts) continue;
+        const item = target.issue && parts.store.workItems.get(target.issue.url);
+        const moved = item && issueChangeEvent(item, { state: target.action === 'closed' ? 'closed' : 'open', ...(target.issue?.reason ? { reason: target.issue.reason } : {}) }, 'delivery');
+        if (moved) parts.store.events.append(moved);
         const sources = parts.registry.repoChanged(target.repo);
         if (sources.length === 0) continue;
         parts.store.events.append({

@@ -48,6 +48,9 @@
 // pull requests in motion (`inMotion`); `none` follows nothing. Before its follows, a round asks the source for every pull
 // request they follow in one batch (`readFollowed`); a throw is logged, and the round follows nothing. Tending runs at every
 // sync, from what was last seen.
+// The work-item ledger (issue #1067, part 3): what an open pull request waits on (its **pull request wait**: a draft, merge
+// conflicts, failed checks, checks running, the merge) is recorded as `job.pull_request_seen` when it differs from what the
+// ledger holds for it, so the item says what it waits on. What was seen of it stays kept with no event otherwise.
 import type { JobSource, PullRequestActResult, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
 import { queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
@@ -56,9 +59,10 @@ import {
   failedTend, following, followsWhenEnded, inMotion, judge, MAX_TENDS, rechecksMerge, reconcilable, tendAgainRefusal, tendBrief, tendRetryAt, tendsInRow, tendStep,
   type ActingPerson, type BaseMerge, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestAct, type PullRequestSeen, type Tended, type TendChecks,
 } from '../domain/types.ts';
+import { pullRequestWaitOf } from '../domain/work-items.ts';
 
 export interface AfterDoneContext {
-  store: Pick<UserStore, 'jobs' | 'events' | 'handoffs'>;
+  store: Pick<UserStore, 'jobs' | 'events' | 'handoffs' | 'workItems'>;
   host: Pick<SourceHost, 'finishComplete'>;
   /** Run fn on the job's report chain, so it never overlaps the job's own reports. */
   enqueue(jobId: string, fn: () => Promise<void>): Promise<void>;
@@ -95,11 +99,22 @@ export function createAfterDone(c: AfterDoneContext) {
   /** Keep what following found, and record a merge or a close: by the hopper, by `acting`, or as seen on GitHub. */
   function record(jobId: string, r: FollowUp, acting?: ActingPerson): void {
     c.setSource(jobId, r.state);
+    if (r.outcome === 'open') seen(jobId, r.pullRequest, r.state.seen as PullRequestSeen | undefined);
     if (r.outcome === 'open' || r.outcome === 'checked') return;
     store.events.append({
       type: r.outcome === 'merged' ? 'job.pull_request_merged' : r.outcome === 'abandoned' ? 'job.pull_request_abandoned' : 'job.pull_request_closed', jobId,
       data: { pullRequest: r.pullRequest, part: r.part, ...(r.byHopper ? { byHopper: true } : {}), ...(acting ? { person: acting.person, via: acting.via } : {}) },
     });
+  }
+
+  /** What the open pull request waits on, recorded when its work item holds another wait for it. */
+  function seen(jobId: string, pullRequest: string, s: PullRequestSeen | undefined): void {
+    const key = store.jobs.get(jobId)?.source?.key;
+    if (!s || key === undefined) return;
+    const item = store.workItems.get(key);
+    const wait = pullRequestWaitOf(s);
+    if (!item || (item.pullRequest !== undefined && item.pullRequest !== pullRequest) || (item.pullRequest === pullRequest && item.pullRequestWait === wait)) return;
+    store.events.append({ type: 'job.pull_request_seen', jobId, data: { pullRequest, wait } });
   }
 
   /** Keep the cross-references of a following job's item (issue #430), when they changed; a throw is logged, not kept as a retry. */
@@ -120,7 +135,10 @@ export function createAfterDone(c: AfterDoneContext) {
     if (all) await crossReference(source, job);
     job = store.jobs.get(jobId) ?? job;
     const r = await source.follow!(job);
-    if (r) record(jobId, r);
+    if (r) return record(jobId, r);
+    // Nothing changed: the ledger may not hold what it waits on yet (it was seen before the ledger read it).
+    const s = job.sourceState?.source as { pullRequest?: string; seen?: PullRequestSeen } | undefined;
+    if (following(job) && s?.pullRequest) seen(jobId, s.pullRequest, s.seen);
   }
 
   /** A person's Merge now or Close PR (issue #677), on the job's report chain. */
