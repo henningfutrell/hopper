@@ -36,6 +36,7 @@ import { ReportBugButton } from '@/app/bug-report';
 import { FailureProfilePanel, NameCause } from './failure-profile';
 import { FailureSettingsPanel } from './failure-settings';
 import { WorkNotPushed } from './kept-work';
+import { Stuck } from './stuck';
 
 /** Where a problem applies, in words. */
 function scopeText(p: ProblemView): string {
@@ -283,6 +284,7 @@ export function Failures() {
   return (
     <div className="space-y-3">
       <div data-section="failure-counts" className={`text-sm ${left ? 'text-foreground' : 'text-muted-foreground'}`}>{countsText(failures.counts)}</div>
+      <Stuck stuck={failures.stuck} />
       <NeedsAPerson handoffs={failures.handoffs} />
       <WorkNotPushed kept={failures.keptWork} />
       {open.length
