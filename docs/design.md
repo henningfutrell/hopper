@@ -1861,6 +1861,7 @@ title: …
 labels: a, b · author: owner
 priority: 75 (label:hopper:high) · project item: <project title> · Priority=P1 (or "none")
 windows: …: only with a Windows label: the Windows work runs as Windows sandbox steps ("Windows sandbox steps")
+checks: …: not for an artifact deliverable: run the type check, lint, build and the affected test files here; the pull request's checks run the full suite; list environment skips apart (issue #1038, `CHECKS_LINE`)
 done: …: done is the job's pull request, ready for review; with yolo mode on for the repo, it may also merge it ("Done is a pull request" below)
 recent comments (oldest first, up to recentComments; only the assignee's, no hopper-marked comments — anyone else's text never reaches the job; issue #387):
 - <author> at <ISO>: <body, ≤ 1000 chars>
@@ -7469,6 +7470,15 @@ build does not know.
 **Tests and local development** run against Postgres too: `npm test` starts a throwaway container
 through `testcontainers` (vitest globalSetup, `test/support/postgres.ts`), each test in its own
 schema; `HOPPER_TEST_POSTGRES_URL` points the suite at an existing database instead.
+
+**The suite on a seat** (issue #1038): the test Postgres gets 1 GiB of shared memory (the runtime's default 64 MiB ran
+out with every worker connected, and Postgres restarted mid-run, 57P03). The suite finds its container runtime as
+testcontainers does; when that docker socket is one this user may not open, the first usable docker or podman socket
+becomes `DOCKER_HOST` (`containerRuntime`, `test/support/host-services.ts`). With none, the tests that start containers
+are left out, and the run says which and why: environment skips, not failures. A test that runs a `#!/usr/bin/env node`
+double with a bare system PATH uses `systemPath()` (`test/support/system-path.ts`): `/usr/bin`, `/bin`, and a dir with
+the run's own node alone. A job runs the type check, lint, build and the affected test files; the full suite is the pull
+request check's (`CHECKS_LINE`, "Full issue context into the job").
 
 **A test run leaves nothing behind** (issue #401), on a pass, a failure or a crash. The first
 globalSetup (`test/support/run.ts`) makes one run root, `jh-run-<pid>-*` in the tmpdir, and sets

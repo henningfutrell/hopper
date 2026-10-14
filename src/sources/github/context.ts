@@ -117,6 +117,13 @@ export function partsLine(n: number, parts: Parts): string {
  */
 export const WINDOWS_LINE = 'windows: this issue needs Windows. No Windows machine takes the job: do the work here, and run each step that needs Windows (a build, tests, a packing step) as a Windows sandbox step on a Windows host. sh "$HOPPER_SKILL" windows-step gives the help; sh "$HOPPER_STEP" hosts lists the hosts. When no host is set up, ask the user to add one in Settings → Windows hosts';
 
+/**
+ * What a code job checks here (issue #1038): the fast checks and the tests its change affects. A full local test run
+ * failed on a seat for reasons of the machine, not the change, and a job spent most of its time on it; the pull
+ * request's checks run the full suite, and yolo mode merges only once they pass.
+ */
+export const CHECKS_LINE = 'checks: run the repo\'s type check, lint and build here, and only the test files the change affects. The pull request\'s checks run the full test suite: do not run the full test suite here, and do not compare full runs with the default branch. Only when the repo has no checks on pull requests, run its full test suite here. A test that fails here for a reason of this machine, not of the change (no container runtime, a service that stopped, a timeout under load), is an environment skip: in the pull request body, list environment skips apart from real failures';
+
 /** The hopper's own context: where the issue is, its labels and priority, its parts, its Windows steps, and what done means. */
 export function contextBlock(issue: GitHubIssue, p: Priority, yoloMode: boolean, parts?: Parts): string {
   return [
@@ -126,7 +133,7 @@ export function contextBlock(issue: GitHubIssue, p: Priority, yoloMode: boolean,
     `priority: ${p.priority} (${p.reason}) · project item: ${p.projectItem}`,
     ...(parts ? [partsLine(issue.number, parts)] : []),
     ...(needsWindows(issue.labels) ? [WINDOWS_LINE] : []),
-    isArtifactDeliverable(issue) ? artifactDoneLine() : doneLine(issue.number, yoloMode),
+    ...(isArtifactDeliverable(issue) ? [artifactDoneLine()] : [CHECKS_LINE, doneLine(issue.number, yoloMode)]),
   ].join('\n');
 }
 

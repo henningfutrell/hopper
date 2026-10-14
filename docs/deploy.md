@@ -1243,8 +1243,10 @@ database, and runs as hopper; `docs/design.md` "Rename from job-hopper" says wha
 
 `deploy/compose.yaml` is the bundled Postgres alone: `up -d postgres` for a database (optional —
 any Postgres will do). `npm test` starts its own throwaway Postgres container (testcontainers;
-needs docker), each test in its own schema; `HOPPER_TEST_POSTGRES_URL=postgres://…` uses an
-existing database instead.
+needs docker or podman), each test in its own schema; `HOPPER_TEST_POSTGRES_URL=postgres://…` uses an
+existing database instead. With no docker or podman socket the tests that start containers are skipped, and the run
+names them. For a change, run the gates and the affected test files (`npx vitest run test/…`); the PR check runs the
+full suite.
 
 **The PR check** (issue #672): `.github/workflows/pr.yml` runs on every pull request to `dev`, `beta` or
 `stable`. Its job `pr / gates` runs `npm ci`, `npm run typecheck`, `npm run lint` and `npm run build:ui`;

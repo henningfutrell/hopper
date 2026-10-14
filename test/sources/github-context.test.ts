@@ -182,7 +182,8 @@ describe('GitHub source: a Windows label sends the Windows work to Windows sandb
     const { gh, source } = setup();
     gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:win'] });
     const lines = (await discoverOne(source)).prompt.split('\n');
-    expect(lines.indexOf(WINDOWS_LINE)).toBe(lines.findIndex((l) => l.startsWith('done')) - 1);
+    expect(lines.indexOf(WINDOWS_LINE)).toBeGreaterThan(0);
+    expect(lines.indexOf(WINDOWS_LINE)).toBeLessThan(lines.findIndex((l) => l.startsWith('done')));
   });
 
   it('no Windows label: no line', async () => {
