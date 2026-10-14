@@ -897,7 +897,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
     keeps the first time, as `job.work_kept`. A job worktree `<name>-<job id>` of an ended job is reaped
     the same way, by the job's scratch dir in that work tree, also once that dir is gone: no worktree
     outlives its job;
-  - kept work that is gone (issue #1120, "Hopper's own disk use"): no record of kept work outlives its folder.
+  - kept work that is gone (issue #1120, "Hopper's own disk use"): no record of kept work outlives its folder;
+  - over the disk budget (issue #1120, "Hopper's own disk use"): every ended job's scratch dir at once, whatever its
+    age, with the reap's rule. Each pass also measures the hopper's own disk use there, which Machines shows.
   A job id the hopper does not know is never touched: it may be another hopper's, or a test's. A machine
   offline at startup is swept once it is online. Each reap is one log line.
 - **Each job its own git worktree** (issue #379). One work tree serves every job given it, so jobs
@@ -18398,9 +18400,30 @@ runs and the one it ran before (read from the hopper's container before the stac
 `rmi` without force: an image a container uses, or with more than one name, stays. The update keeps one database backup
 (`hopper-backup.dump`, replaced each time), so it adds no backups. The manual `image prune` command stays valid.
 
+**Part 2: the hopper's disk use per machine, and the disk budget** (`src/domain/hopper-disk.ts`, pure; `src/engine/sweep.ts`;
+`src/client/reap.ts`; Machines).
+- **The survey measures it.** For each work tree it names (`hopper-root`), it prints `hopper-du <KiB> <path>` for the
+  scratch area and for `workspace/worktrees`, by `du -skx` (a link, such as a worktree's `node_modules`, counts as a link).
+  Each measure is cut off at 20 s by `timeout`, so a slow disk never holds the survey (and so the sweep) up; one cut off
+  says nothing, and a machine with no `timeout` (macOS by default) or a client older than this measures nothing.
+- **The sweep keeps it.** Each machine's last measure (`Sweep.disk`), in memory: after a restart the first pass, at
+  startup, measures again. `GET /api/machines` carries it on each machine it measured as `hopperDisk` — each place, their
+  sum, when, and the disk budget now —, and each Machines card says it, "over disk budget" when over.
+- **The disk budget** (`diskBudget`, a user setting; none by default): `POST /ui/api/machines/disk-budget` (admin, `null`
+  turns it off), `GET /api/machines/disk-budget`, the Disk budget panel on Machines. One budget for each machine.
+- **Over it, the sweep frees what it may.** It plans with no age, so every ended job's scratch dir and job worktree is
+  reaped at once, not after `scratchMaxAgeHours`; the reap's rule still keeps work not pushed, and a parked or live job's
+  work is never touched. When a reap removed one, it surveys again for the measure.
+- **Still over, a person is told**: `machine.disk_over_budget` (the use, the budget, each place), once while it stays over;
+  `machine.disk_within_budget` once it is back within it. Webhooks take them. The budget turned off forgets who was told. Kept
+  in memory, as the memory alert: a machine still over after a restart is told again.
+
 **Left for later parts:** a record of each resource the hopper makes (job containers, volumes, logs, bundles) with its
 owner, removed as an event when the owner ends; a periodic reconcile of orphans and of images the hopper's boxes left, with a
-retention for backups and update logs; and the hopper's disk use per host on Machines, with a budget and an alert.
+retention for backups and update logs; the shared checkouts (`workspace/<name>`) and the shared dependencies in the disk
+use; and the Grok Bot routine posting the disk budget's events.
 
-**Verification:** `test/engine/sweep.test.ts` ("kept work whose folder is gone"), `test/client/survey-roots.test.ts` (the
-survey for real), `test/scripts/update.test.ts` (the older images removed, none on a failed update).
+**Verification:** `test/engine/sweep.test.ts` ("kept work whose folder is gone", "the hopper's own disk use"),
+`test/client/survey-roots.test.ts` (the survey for real, its measure too), `test/scripts/update.test.ts` (the older images
+removed, none on a failed update), `test/integration/disk-budget.test.ts` (the setting through the daemon),
+`test/ui/hopper-disk.test.ts` (the card's text and the budget form).

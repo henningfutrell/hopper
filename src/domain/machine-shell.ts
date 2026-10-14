@@ -24,6 +24,11 @@ export interface Survey {
    * missing from one of these is gone. Absent (a client older than this), none is known.
    */
   roots?: string[];
+  /**
+   * The hopper's own disk use there (issue #1120): for each work tree in `roots`, the bytes its scratch area and its job
+   * worktrees hold. Absent or empty: not measured (a client older than this, a machine with no `timeout`, a slow disk).
+   */
+  usage?: { path: string; bytes: number }[];
 }
 
 /**
