@@ -9,12 +9,12 @@ import type { Interrupt, Sleep } from './monitor.ts';
 import { abortReason, tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
 import {
-  JOB_WORKTREE_MARK, JOB_WORKTREE_RUNNING, jobStartFetches, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand, mirrorOf, mirrorWorktreeOf, passFetchKey,
+  JOB_WORKTREE_MARK, JOB_WORKTREE_RUNNING, jobStartFetches, checkoutOf, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand, passFetchKey,
   type PassFetches,
 } from './job-worktree.ts';
 import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from './job-scope.ts';
 import { DEPS_MARK, depsOutcome, shareDepsCommand } from './shared-deps.ts';
-import { scopeUnitOf } from '../../client/server.ts';
+import { scopeUnitOf } from '../../client/reap.ts';
 import { RESTORE_MARK, restoreOutcome } from '../../client/checkpoint.ts';
 import { SCRATCH_DIR, windowsShellOf } from './screen.ts';
 import { awaitOnScreen, shows } from './pane-wait.ts';
@@ -77,9 +77,9 @@ export interface PaneState {
   paneId: string;
   agentName: string;
   cwd: string;
-  /** The job's own git worktree of `cwd` or of `checkout`, in its scratch dir, where Claude runs (issue #379). Absent: Claude runs in `cwd`. */
+  /** The job's own git worktree of `cwd` or of `checkout`, in `cwd`'s workspace, where Claude runs (issues #379, #1103). Absent: Claude runs in `cwd`. */
   jobWorktree?: string;
-  /** The mirror of the job's repository its worktree was made of, when `cwd` is not the job's repository (issues #361, #858). */
+  /** The checkout of the job's repository its worktree was made of, when `cwd` is not the job's repository (issues #361, #1103). */
   checkout?: string;
   /** The systemd user scope the pane's shell runs in (issue #410). Absent: the machine has none; the reap goes by HOPPER_JOB_ID. */
   scope?: string;
@@ -262,9 +262,9 @@ async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Pr
 }
 
 /**
- * Make the job its own git worktree and move the pane's shell into it (issues #379, #361, #431, #858): of the work
- * tree when that is the top of the job's git repository; else of the mirror of the job's repository in the work
- * tree's scratch dir, fetched or cloned there first. `s` then names it, saved, and it is reported as the job's work tree.
+ * Make the job its own git worktree and move the pane's shell into it (issues #379, #361, #431, #1103): of the work
+ * tree when that is the top of the job's git repository; else of the checkout of the job's repository in the work
+ * tree's workspace, fetched or cloned there first. `s` then names it, saved, and it is reported as the job's work tree.
  * With job worktrees off, only the checkout is made, and the job runs in the work tree. Git refusing fails
  * the job with what it said. The command says first that it runs: a shell that lost or mangled it (issue
  * #518, a zsh whose start-up files were busy) gets the line cleared and the command typed again, and one
@@ -272,7 +272,7 @@ async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Pr
  * the first one made and enters it.
  */
 async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneState, repo: string | undefined): Promise<ExecutionOutcome | StartTimedOut | null> {
-  if (repo) ctx.progress(`fetching or cloning ${repo}'s mirror in the work tree`);
+  if (repo) ctx.progress(`fetching or cloning ${repo}'s checkout in the work tree's workspace`);
   // One fetch per repository per sync pass on each machine (issue #858): a later start in the pass takes what it got.
   const fetches = d.passFetches ?? jobStartFetches;
   const key = passFetchKey(ctx.machine.id, s.cwd, repo);
@@ -291,15 +291,15 @@ async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneStat
   if (ctx.signal.aborted) return null;
   const { found: outcome, screen } = await awaitOnScreen(d, ctx, s.paneId, JOB_WORKTREE_MARK, jobWorktreeOutcome, JOB_WORKTREE_WAIT_MS);
   if (outcome === 'none' || ctx.signal.aborted) return null;
-  const ofMirror = outcome === 'mirror' && repo;
-  const path = ofMirror ? mirrorWorktreeOf(s.cwd, ctx.job.id, repo) : jobWorktreeOf(s.cwd, ctx.job.id);
-  if (outcome !== 'made' && !ofMirror) {
+  const ofCheckout = outcome === 'checkout' && repo;
+  const path = ofCheckout ? jobWorktreeOf(s.cwd, ctx.job.id, repo) : jobWorktreeOf(s.cwd, ctx.job.id);
+  if (outcome !== 'made' && !ofCheckout) {
     return { kind: 'failed', error: outcome === 'unmade' ? `the job worktree ${path} could not be made on ${ctx.machine.id}: ${tail(screen, 10)}`
       : `pane ${s.paneId} never made the job worktree within ${JOB_WORKTREE_WAIT_MS} ms: ${tail(screen, 10)}` };
   }
   if (fetch) fetches.fetched(key);
   s.jobWorktree = path;
-  if (ofMirror) s.checkout = mirrorOf(s.cwd, repo);
+  if (ofCheckout) s.checkout = checkoutOf(s.cwd, repo);
   ctx.saveState({ ...s });
   ctx.workTree(path);
   return null;

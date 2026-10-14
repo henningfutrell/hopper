@@ -54,10 +54,10 @@ describe('herdr-claude executor: the work tree is the machine\'s (issue #361)', 
     const r = await run({}, { ...FAR, workTree: '/srv/trees' }, fromRepo);
     expect(r.out).toMatchObject({ kind: 'finished' });
     const command = r.runs.find((c) => c.includes('hopper-worktree'))!;
-    expect(command).toMatch(/^cd '\/srv\/trees' && \{ printf 'hopper-%s-%s\\n' worktree running; o=\$\(sh -c '.*' hopper-worktree '[^']*' '\/srv\/trees\/\.hopper-scratch\/[^/']+\/app' 'acme\/app' 'https:\/\/github\.com\/acme\/app\.git' '1'/s);
+    expect(command).toMatch(/^cd '\/srv\/trees' && \{ printf 'hopper-%s-%s\\n' worktree running; o=\$\(sh -c '.*' hopper-worktree '[^']*' '\/srv\/trees\/workspace\/worktrees\/app-[^/']+' 'acme\/app' 'https:\/\/github\.com\/acme\/app\.git' '1'/s);
     // No GitHub token anywhere (issue #652): git asks the hopper, through the variables the job runs with.
     expect(command).not.toMatch(/GH_TOKEN|gh auth|credential\.helper/);
-    expect(r.workTrees.at(-1)).toMatch(/^\/srv\/trees\/\.hopper-scratch\/[^/]+\/app$/);
+    expect(r.workTrees.at(-1)).toMatch(/^\/srv\/trees\/workspace\/worktrees\/app-[^/]+$/);
   });
 
   it('a job with no repository names none to the job worktree command', async () => {

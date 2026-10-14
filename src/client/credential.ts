@@ -4,7 +4,7 @@
 // renewal reaches the jobs already running: the file is replaced whole (written beside, then moved), mode
 // 600, only ever under the job's own credentials dir. The content comes on stdin, never as an argument a
 // process list shows. Imports nothing of hopper but its own directory: it is installed as plain files.
-import { isJobId } from './server.ts';
+import { isJobId } from './reap.ts';
 
 export const CREDENTIAL_KEPT = 'hopper-credential-kept';
 

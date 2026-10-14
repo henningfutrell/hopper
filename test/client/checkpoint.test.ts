@@ -111,6 +111,9 @@ describe('taking a checkpoint', () => {
     expect(checkpointOf({ jobId: JOB, worktree: `/w/.hopper-scratch/${JOB}/../../etc`, session: SESSION })).toMatch(/scratch dir/);
     expect(checkpointOf({ jobId: JOB, worktree: `/w/.hopper-scratch/${JOB}/repo`, session: '$(rm -rf ~)' })).toMatch(/session/);
     expect(checkpointOf({ jobId: JOB, worktree: `/w/.hopper-scratch/${JOB}/repo`, session: SESSION })).toEqual(expect.arrayContaining([JOB, SESSION]));
+    expect(checkpointOf({ jobId: JOB, worktree: `/w/workspace/worktrees/repo-${JOB}`, session: SESSION })).toEqual(expect.arrayContaining([JOB, SESSION]));
+    expect(checkpointOf({ jobId: JOB, worktree: `/w/workspace/worktrees/repo-${JOB}/../x`, session: SESSION })).toMatch(/worktree/);
+    expect(checkpointOf({ jobId: JOB, worktree: `/w/workspace/worktrees/repo-other`, session: SESSION })).toMatch(/worktree/);
   });
 });
 

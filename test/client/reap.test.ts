@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { userSystemd } from '../support/systemd.ts';
-import { REAP_DONE, readReap, readSurvey, reapArgv, scopeUnitOf, scriptArgvOf, surveyArgv } from '../../src/client/server.ts';
+import { REAP_DONE, readReap, readSurvey, reapArgv, scopeUnitOf, scriptArgvOf, surveyArgv } from '../../src/client/reap.ts';
 
 const JOB = 'job-401-abcdef';
 const OTHER = 'job-401-other';
@@ -247,6 +247,18 @@ describe('the survey a sweep asks of a machine (issue #410)', () => {
     expect(aged.jobId).toBe(OTHER);
     expect(aged.ageMs).toBeGreaterThanOrEqual(3590_000);
     expect(found!.scratch.find((d) => d.path === scratch)!.ageMs).toBeLessThan(60_000);
+  });
+
+  it('lists each job worktree in the work trees\' workspace with its age (issue #1103), so one whose scratch dir is gone is swept too', () => {
+    const work = join(root, 'work');
+    const tree = join(work, 'workspace', 'worktrees', `app-${OTHER}`);
+    mkdirSync(tree, { recursive: true });
+    writeFileSync(join(work, 'workspace', 'worktrees', '.gitignore'), '*\n');
+    const hour = Date.now() / 1000 - 3600;
+    utimesSync(tree, hour, hour);
+    const found = readSurvey(survey(work));
+    expect(found?.trees).toEqual([{ path: tree, ageMs: expect.any(Number) }]);
+    expect(found!.trees![0]!.ageMs).toBeGreaterThanOrEqual(3590_000);
   });
 
   it.runIf(userSystemd)('names each job with a running scope', () => {

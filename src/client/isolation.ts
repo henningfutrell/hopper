@@ -5,7 +5,7 @@
 // scratch dir: the job's scope and processes stop, its work stays for the hopper's own reap. The next `/release` answer
 // says which jobs it stopped, once. The max isolation is longer than the hopper's link grace, so in the normal case
 // the hopper decides first. Imports nothing of hopper but its own directory: it is installed as plain files.
-import { isJobId } from './server.ts';
+import { isJobId } from './reap.ts';
 
 /** Default max isolation: 30 min, well past the hopper's link grace (HOPPER_LINK_GRACE_MS, 10 min by default). */
 export const MAX_ISOLATION_MS = 30 * 60_000;
