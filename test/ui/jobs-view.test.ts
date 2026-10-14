@@ -34,7 +34,7 @@ let inFlight: number | undefined;
 function fakeDaemon() {
   const queue = () => {
     const of = (...s: JobStatus[]) => jobs.filter((j) => s.includes(j.status));
-    return { waiting: of('queued'), running: of('claimed', 'running'), operatorLed: [], parked: [], waitingAnswer: of('waiting_answer'), ended: of('finished', 'failed'), locked: [], ...(inFlight !== undefined ? { inFlight } : {}) };
+    return { waiting: of('queued'), running: of('claimed', 'running'), operatorLed: [], parked: [], waitingAnswer: of('waiting_answer'), ended: of('finished', 'failed'), locked: [], ...(inFlight !== undefined ? { inFlight: { total: inFlight, running: inFlight, ownCommand: 0, pullRequests: 0 } } : {}) };
   };
   const routes: Record<string, () => unknown> = {
     '/api/health': () => ({ ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 }),
