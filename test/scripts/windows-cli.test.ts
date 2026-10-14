@@ -12,6 +12,7 @@ const ROOT = join(import.meta.dirname, '..', '..');
 const read = (...p: string[]): string => readFileSync(join(ROOT, ...p), 'utf8');
 const ps1 = read('scripts', 'hopper.ps1');
 const cmd = read('scripts', 'hopper.cmd');
+const page = read('site', 'install.html');
 const project = /^name: (\S+)$/m.exec(read('compose.yaml'))?.[1];
 
 describe.each([['hopper.ps1', ps1], ['hopper.cmd', cmd]])('%s', (_name, script) => {
@@ -103,6 +104,13 @@ describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () =>
     expect(ps1).not.toMatch(/CommonStartup|Register-ScheduledTask|schtasks|RunAs/);
     expect(ps1).toContain('-WindowStyle Hidden');
     expect(ps1).toContain('Start-Process $powershell -WindowStyle Hidden');
+  });
+
+  it('on and off: use the shortcut name of the install page and see its loop, so the distro never gets two loops', () => {
+    expect(ps1).toContain("'hopper-wsl.lnk'");
+    expect(page).toContain('Startup\\hopper-wsl.lnk');
+    expect(ps1).toContain("Contains('-e sleep infinity; Start-Sleep')");
+    expect(page).toContain('-e sleep infinity; Start-Sleep -Seconds 5');
   });
 
   it('off: stops the loop and removes the shortcut, and changes nothing in the distro', () => {
