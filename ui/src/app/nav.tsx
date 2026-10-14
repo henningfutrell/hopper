@@ -3,8 +3,7 @@
 // Research, Logins, Failures, Parked; issues #543, #565) is a view whose badge follows the one section rule (useSectionBadges).
 // The Jobs view (issue #434) has a card per job. Needs you (issue #897) comes first: its badge counts every decision that waits on a
 // person. Intake (issue #897; it was Not taken, issue #798) is badged with the request cards waiting for approval, Access requests
-// with what jobs on boxes wait for. Tagged (issue #1141) with the open issues and pull requests that ask for the user's review,
-// mention the user or are assigned to the user. An old link (#not-taken) opens the view it became (MOVED). The job view (#job/<id>, issue #433) is a
+// with what jobs on boxes wait for. An old link (#not-taken) opens the view it became (MOVED). The job view (#job/<id>, issue #433) is a
 // route with no nav entry: timeline entries link to it. Infra (issue #896) holds plans, applies and out-of-band changes, and is badged
 // with the plans that wait for a person to approve them and the out-of-band changes no one marked (issue #871); Pull requests with the ones the hopper gave up on (issues #897, #927).
 // The entries are in nav groups (issue #906, model/nav-groups.ts): a collapsed group shows its entries' badges as one. The Dashboard
@@ -14,7 +13,7 @@
 // container of the stack and its Postgres use now. Search (issue #945) finds jobs by their words: the header's search box opens it too.
 // Accounts (issue #1128) is a group of its own, not under Settings or Machines: who each machine's agent tool is signed in as,
 // badged with the machines signed in as nobody.
-import { AtSign, BellRing, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, Cpu, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Send, Server, Settings, ShieldQuestion, Telescope, UserRound, type LucideIcon } from 'lucide-react';
+import { BellRing, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, Cpu, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, KeyRound, LayoutDashboard, LayoutGrid, ListOrdered, ListTree, Menu, MessageCircleQuestion, OctagonAlert, CirclePause, Scale, Send, Server, Settings, ShieldQuestion, Telescope, UserRound, type LucideIcon } from 'lucide-react';
 import { useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -31,7 +30,7 @@ import { groupBadges, type NavBadge } from '@/model/nav-groups';
 import { toggleNavGroup, useNavCollapsed } from '@/hooks/use-nav-collapsed';
 import { cn } from '@/lib/utils';
 
-export const VIEWS = ['dashboard', 'needs-you', 'search', 'jobs', 'queue', 'direct-jobs', 'intake', 'tagged', 'access-requests', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'accounts', 'sources', 'machines', 'infra', 'usage', 'resources', 'settings'] as const;
+export const VIEWS = ['dashboard', 'needs-you', 'search', 'jobs', 'queue', 'direct-jobs', 'intake', 'access-requests', ...SECTION_KINDS, 'pull-requests', 'artifacts', 'decisions', 'events', 'reports', 'accounts', 'sources', 'machines', 'infra', 'usage', 'resources', 'settings'] as const;
 /** The routes: every view in the navigation, and the job view, which has no nav entry. */
 const ROUTES = [...VIEWS, 'job'] as const;
 export type View = (typeof ROUTES)[number];
@@ -39,7 +38,7 @@ export type View = (typeof ROUTES)[number];
 export const NAV_PINNED = ['dashboard', 'needs-you'] as const satisfies readonly (typeof VIEWS)[number][];
 /** The nav groups, in nav order, each with its entries in order. A view of the navigation neither pinned nor in a group fails the typecheck. */
 export const NAV_GROUPS = [
-  { id: 'waiting', label: 'Waiting on you', views: ['intake', 'tagged', 'access-requests', ...SECTION_KINDS] },
+  { id: 'waiting', label: 'Waiting on you', views: ['intake', 'access-requests', ...SECTION_KINDS] },
   { id: 'jobs', label: 'Jobs', views: ['search', 'jobs', 'queue', 'direct-jobs', 'pull-requests', 'artifacts', 'decisions', 'events', 'reports'] },
   { id: 'infra', label: 'Infra', views: ['infra'] },
   { id: 'accounts', label: 'Accounts', views: ['accounts'] },
@@ -56,7 +55,6 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   queue: { label: 'Queue', icon: ListOrdered },
   'direct-jobs': { label: 'Direct jobs', icon: Send },
   intake: { label: 'Intake', icon: CircleDashed },
-  tagged: { label: 'Tagged', icon: AtSign },
   'access-requests': { label: 'Access requests', icon: ShieldQuestion },
   questions: { label: 'Questions', icon: MessageCircleQuestion },
   proposals: { label: 'Proposals', icon: FileCheck },
@@ -102,13 +100,11 @@ function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const plans = n('plans');
   const unmarked = changesUnmarked(useOutOfBand());
   const gaveUp = n('pull-requests');
-  const tagged = n('tagged');
   const signedOut = signedOutMachines(useToolAccounts()?.accounts ?? []);
   const badge: Partial<Record<View, NavBadge>> = {
     queue: { n: sorting, cls: 'bg-warn text-background', title: `${sorting} ${sorting === 1 ? 'job waits' : 'jobs wait'} on the pre-sort` },
     'needs-you': { n: total.n, high: total.high, cls: 'bg-warn text-background', title: `${total.n} ${total.n === 1 ? 'decision waits' : 'decisions wait'} on you` },
     intake: { n: requests, cls: 'bg-warn text-background', title: `${requests} ${requests === 1 ? 'request waits' : 'requests wait'} for approval` },
-    tagged: { n: tagged, cls: 'bg-warn text-background', title: `${tagged} ${tagged === 1 ? 'item asks' : 'items ask'} for your review, mention you or are assigned to you` },
     'access-requests': { n: access, cls: 'bg-warn text-background', title: `${access} ${access === 1 ? 'access request waits' : 'access requests wait'} on you` },
     ...sections,
     infra: { n: plans + unmarked, cls: 'bg-warn text-background', title: [plans > 0 && `${plans} ${plans === 1 ? 'plan waits' : 'plans wait'} for a person to approve`, unmarked > 0 && `${unmarked} out-of-band ${unmarked === 1 ? 'change waits' : 'changes wait'} to be marked`].filter(Boolean).join('; ') },

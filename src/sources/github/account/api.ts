@@ -8,7 +8,6 @@ import type { GitHubApi } from '../api.ts';
 import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../app/graphql.ts';
 import { batchGraphQL } from '../app/graphql-batch.ts';
 import { listRepos } from '../app/graphql-listing.ts';
-import { taggedItems } from '../app/graphql-tagged.ts';
 import { openPullRequestsIn, pullRequestStates } from '../app/graphql-pulls.ts';
 import { SOURCE_DEFER_AFTER_MS, makeRequest, rateLimitedError } from '../app/http.ts';
 import * as rest from '../app/rest.ts';
@@ -66,7 +65,6 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     addAssignees: (repo, number, logins) => call(`assign ${repo}#${number}`, (t) => rest.addAssignees(req, t, repo, number, logins)),
     listAssignedIssues: (label) => call('issues assigned to the account', (t) => rest.listAssignedIssues(intake, t, label)),
     listRepos: (repos, labels) => call(`list ${repos.length} repositories`, (t) => listRepos(intake, t, repos, labels)),
-    taggedItems: (login, repos) => call(`tagged items of ${repos.length} repositories`, (t) => taggedItems(intake, t, login, repos)),
     issuesChangedSince: (repo, since) => call(`changes of ${repo}`, (t) => rest.issuesChangedSince(changes, t, repo, since)),
     reopenIssue: (repo, number) => call(`reopen ${repo}#${number}`, (t) => rest.reopenIssue(req, t, repo, number)),
     closeAsCompleted: (repo, number) => call(`close ${repo}#${number}`, (t) => rest.closeIssue(req, t, repo, number)),

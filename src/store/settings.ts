@@ -8,7 +8,7 @@ import type { InfraPlanSettings } from '../domain/infra-plans.ts';
 import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ComponentWatcherSettings, ConnectedAccountProvider, ContributionSettings, ShrinkGuardSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, LandingBatchSettings } from '../domain/types.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
-import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts'; import { memoryAlertSettings } from './memory-alert-settings.ts'; import { diskBudgetSettings } from './disk-budget-settings.ts'; import { taggedSettings } from './tagged-settings.ts';
+import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts'; import { memoryAlertSettings } from './memory-alert-settings.ts'; import { diskBudgetSettings } from './disk-budget-settings.ts';
 
 /** Each review section's settings row (issues #537, #543). */
 const REVIEW_SETTINGS_KEYS: Readonly<Record<ReviewKind, string>> = { proposal: 'proposalSettings', research: 'researchSettings' };
@@ -34,7 +34,7 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
   const { read, write } = keyValues(c);
   return {
     ...sandboxSettings(read, write), // the read policy (issue #716) and the sandbox approval toggles (issue #991)
-    ...memoryAlertSettings(read, write), ...diskBudgetSettings(read, write), ...taggedSettings(read, write), // the memory alert (issue #868), the disk budget (issue #1120), tagged items (issue #1141)
+    ...memoryAlertSettings(read, write), ...diskBudgetSettings(read, write), // the memory alert (issue #868), the disk budget (issue #1120)
     getQueueGate() {
       const text = read('queueGate');
       return text === undefined ? undefined : JSON.parse(text) as QueueGate;

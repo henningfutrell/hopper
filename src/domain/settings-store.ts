@@ -4,7 +4,6 @@
 import type { RateLimiterSettings } from './github-rate-limit.ts';
 import type { IntakeActorSettings } from './intake-origin.ts';
 import type { IntakeMigration } from './intake.ts';
-import type { TaggedRecord } from './tagged.ts';
 import type { ReadPolicy } from './read-policy.ts';
 import type { SandboxApprovals } from './sandbox-approvals.ts';
 import type { RememberedWrite } from './remembered-writes.ts';
@@ -76,9 +75,6 @@ export interface UserSettingsRepository {
   /** A job source's intake migration (issue #440), by its instance name; absent: not run yet. */
   getIntakeMigration(source: string): IntakeMigration | undefined;
   setIntakeMigration(source: string, migration: IntakeMigration): void;
-  /** What a job source keeps of its tagged items (issue #1141), by its instance name; absent: nothing kept yet. */
-  getTaggedRecord(source: string): TaggedRecord | undefined;
-  setTaggedRecord(source: string, record: TaggedRecord): void;
   /** What a job does when its login expires (issue #476); absent: never chosen. */
   getLoginExpiry(): LoginExpiryAction | undefined;
   setLoginExpiry(action: LoginExpiryAction): void;

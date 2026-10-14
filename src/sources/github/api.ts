@@ -10,10 +10,6 @@ import type { IssuePlace } from '../../domain/issue-graph.ts';
 import type { BaseMergeTarget, GitRemote } from '../../git-mirror/mirrors.ts';
 import type { BaseMerge } from '../../domain/pull-requests.ts';
 import type { RepoListing } from '../../domain/github-listing.ts';
-import type { TaggedHit } from '../../domain/tagged.ts';
-
-/** One hit of a tagged-item search (issue #1141), with its labels: an item with the source's label is intake's, not tagged. */
-export type TaggedSearchHit = TaggedHit & { labels: string[] };
 
 export interface GitHubIssue {
   /** owner/repo */
@@ -285,12 +281,6 @@ export interface GitHubApi {
    * read, and intake waits for the timed listing.
    */
   issuesChangedSince?(repo: string, since: string | undefined): Promise<IssueChange[]>;
-  /**
-   * The open issues and pull requests of `repos` where `login` is a requested reviewer, is @mentioned, or is assigned (issue
-   * #1141, **tagged items**): GitHub's issue search, batched GraphQL, one hit per item and reason. Through the intake reserve.
-   * Absent on the App adapter: an installation token has no user. Absent: none is read.
-   */
-  taggedItems?(login: string, repos: string[]): Promise<TaggedSearchHit[]>;
 
   // ---- GitHub App mode only (absent on the connected account's adapter) ----------------------------
 

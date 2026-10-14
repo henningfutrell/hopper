@@ -33,7 +33,6 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       requestOpened: (key, hash) => requestOpenedSince(
         store.events.between(['source.request_opened', 'source.request_withdrawn', 'source.request_approved'], EPOCH).filter((e) => e.data.source === name && e.data.key === key), hash),
       requestsWaiting: () => requestsWaitingOf(store.workItems.list({ state: ['waiting_for_approval'] }), name),
-      tagged: { get: () => store.settings.getTaggedRecord(name), set: (r) => store.settings.setTaggedRecord(name, r) },
       history: (key) => itemHistory(store.jobs.getBySourceKey(key), (id) => store.jobs.get(id), store.workItems.get(key)?.pullRequest),
     }),
     intakeTrust: storeIntakeTrust(store, decideActor),

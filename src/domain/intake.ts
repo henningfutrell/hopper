@@ -12,7 +12,6 @@ import type { AccessAnswer } from './access.ts';
 import type { ActorRef, IntakeRequest, ItemHistory } from './intake-origin.ts';
 import type { ActingPerson } from './failures.ts';
 import type { JobStatus } from './types.ts';
-import type { TaggedRecord } from './tagged.ts';
 
 /** What became of one open item in a source's scope. */
 export interface IntakeOutcome {
@@ -56,10 +55,8 @@ export type NotTakenGroup = typeof NOT_TAKEN_GROUPS[number];
  * approve a request card's text (issue #652), the one key named, only while its text hashes as `hash`. `unbackburner`:
  * take the item off the backburner (issue #798): remove its `hopper:backburner` label. `decline` (issue #1035): decline a
  * request card's text, offered with `approve`, the one key named, only while its text hashes as `hash`; nothing on GitHub.
- * `dismiss` (issue #1141): take **tagged items** the last sync listed off Tagged, for the reasons they have now; nothing on
- * GitHub.
  */
-export type IntakeActionKind = 'assign' | 'release' | 'approve' | 'unbackburner' | 'decline' | 'dismiss';
+export type IntakeActionKind = 'assign' | 'release' | 'approve' | 'unbackburner' | 'decline';
 
 export interface IntakeAction {
   kind: IntakeActionKind;
@@ -97,7 +94,7 @@ export interface OutsideRepo {
 
 /** The events intake records (issue #440). */
 export type IntakeEventType = 'source.claim_released' | 'source.intake_migrated' | 'source.issues_assigned' | 'source.request_approved'
-  | 'source.request_opened' | 'source.backburner_lifted' | 'source.request_declined' | 'source.request_withdrawn' | 'source.review_requested';
+  | 'source.request_opened' | 'source.backburner_lifted' | 'source.request_declined' | 'source.request_withdrawn';
 
 /** What a job source learns for its intake (issue #440), for its own instance name. */
 export interface IntakeContext {
@@ -118,8 +115,6 @@ export interface IntakeContext {
   requestsWaiting(): string[];
   /** The item's jobs here and its pull request (issue #1126): a reopened card's history. Undefined: no job here. */
   history?(key: string): ItemHistory | undefined;
-  /** What the source keeps of its **tagged items** between reads (issue #1141), in the user's settings. Absent: kept in memory. */
-  tagged?: { get(): TaggedRecord | undefined; set(record: TaggedRecord): void };
 }
 
 /**
