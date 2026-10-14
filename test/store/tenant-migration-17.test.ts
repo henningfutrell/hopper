@@ -37,7 +37,7 @@ describe('tenant migration 17: the one machine that can run claude is named', ()
   });
 
   it('no candidate, or several: left as it is, for Settings to flag', () => {
-    for (const machines of [[], [{ name: 'phone', plugin: 'client' }], [{ name: 'here', plugin: 'local' }, { name: 'desk', plugin: 'ssh', options: { ssh: 'desk' } }]]) {
+    for (const machines of [[], [{ name: 'box', plugin: 'docker', options: { docker: 'box' } }], [{ name: 'here', plugin: 'local' }, { name: 'desk', plugin: 'ssh', options: { ssh: 'desk' } }]]) {
       const doc = { version: 1, machines, escalationLevels: LEVELS };
       const raw = at16(doc);
       migrateTenant(raw, 17);

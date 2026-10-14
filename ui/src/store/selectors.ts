@@ -1,12 +1,18 @@
 // Derived reads over the store, memoised so a view re-renders only when what it derives from changes.
 import { useMemo } from 'react';
+import { useNow } from '@/hooks/use-now';
 import { jobBoard, type JobBoard } from '@/model/board';
 import { laneSpans, questionWaits, type LaneSpan, type QuestionWait } from '@/model/history';
 import { goalOf, issueRef } from '@/model/job';
+import { loginsBadge } from '@/model/logins';
 import { allows } from '@/model/roles';
-import { awaitsOwner } from '@/model/questions';
+import { reviewBadge } from '@/model/reviews';
+import { sectionBadges, type SectionBadge } from '@/model/sections';
+import { keptAlone, openHandoffs, openProblems } from '@/model/failures';
+import { highHandoffs, highQuestions, isHighJob } from '@/model/priority';
+import { awaitsOwner, notParked } from '@/model/questions';
 import { awaitingSort } from '@/model/queue';
-import type { Job } from '@/model/wire';
+import type { Job, QuestionView, SectionKind } from '@/model/wire';
 import { useHopper } from './index';
 
 /** Every job the UI currently knows, by id. */
@@ -36,8 +42,39 @@ export function useQuestionWaits(since: number): QuestionWait[] {
   return useMemo(() => questionWaits(history, since, jobs), [history, since, jobs]);
 }
 
-/** How many open questions wait on the owner and are not yet seen: the nav badge. */
-export const useUnseenForOwner = (): number => useHopper((s) => s.questions.filter(awaitsOwner).length);
+/** The open questions but a parked job's (issue #565): what Questions shows and counts, and Attention lists. */
+export function useQuestions(): QuestionView[] {
+  const questions = useHopper((s) => s.questions);
+  const jobs = useJobIndex();
+  return useMemo(() => notParked(questions, jobs), [questions, jobs]);
+}
+
+/** How many open questions wait on the owner, seen or not: the nav badge (issue #499); a parked job's not (issue #565). */
+export const useAwaitingOwner = (): number => useQuestions().filter(awaitsOwner).length;
+
+/** The parked jobs, and how many are high priority: the Parked nav badge (issue #565). */
+export function useParkedBadge(): { n: number; high: number } {
+  const { parked } = useJobBoard();
+  const threshold = useHopper((s) => s.highPriority);
+  return useMemo(() => ({ n: parked.length, high: parked.filter((j) => isHighJob(j, threshold)).length }), [parked, threshold]);
+}
+
+
+/** Server time, ticking each second: the browser's shared clock plus the offset read with the logins (issue #477). */
+export const useServerNow = (): number => useNow() + useHopper((s) => s.serverOffsetMs);
+
+/** How many logins wait on the user, and whether one is about to expire: the nav badge and the header (issue #477). */
+export function useLoginsBadge(): { n: number; warn: boolean; high: number } {
+  const now = useServerNow();
+  const logins = useHopper((s) => s.logins);
+  const settings = useHopper((s) => s.loginSettings);
+  return settings ? loginsBadge(logins, now, settings) : { n: 0, warn: false, high: 0 };
+}
+
+/** A machine's name: its label, else its id; undefined for none. */
+export function useMachineName(id: string | undefined): string | undefined {
+  return useHopper((s) => (id ? s.machines.find((m) => m.id === id)?.label ?? id : undefined));
+}
 
 /** How many waiting jobs wait on the pre-sort: the Queue nav badge. */
 export const useAwaitingSort = (): number => useHopper((s) => awaitingSort(Object.values(s.jobs)));
@@ -62,3 +99,21 @@ export const useSignedInWith = (provider: 'github'): boolean =>
 export const useCanAdmin = (): boolean => useHopper((s) => s.authed && allows(s.user, 'admin'));
 /** The session is an instance admin's (issue #240): sign-in, users, updates, the plugin store. */
 export const useCanAdminInstance = (): boolean => useHopper((s) => s.authed && allows(s.user, 'admin') && s.user?.instanceAdmin === true);
+
+/** Every section's nav badge (issue #543), by the one rule: what is open and waits on a person, seen or not (#499). */
+export function useSectionBadges(): Record<SectionKind, SectionBadge> {
+  const open = useQuestions();
+  const questions = open.filter(awaitsOwner).length;
+  const highQ = highQuestions(open);
+  const parked = useParkedBadge();
+  const reviews = useHopper((s) => s.reviews);
+  const logins = useLoginsBadge();
+  const failures = useHopper((s) => s.failures);
+  return useMemo(() => sectionBadges({
+    questions: { n: questions, high: highQ },
+    reviews: { proposal: reviewBadge(reviews.proposal.items), research: reviewBadge(reviews.research.items) },
+    logins,
+    failures: { problems: openProblems(failures), handoffs: openHandoffs(failures), kept: keptAlone(failures), high: highHandoffs(failures) },
+    parked,
+  }), [questions, highQ, reviews, logins, failures, parked]);
+}

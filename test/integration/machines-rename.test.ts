@@ -88,11 +88,11 @@ describe('POST /ui/api/plugins — rename a machine', () => {
     expect(held.body.error).toContain(pinned.id);
     store.jobs.update(pinned.id, { status: 'cancelled' });
 
-    const parked = store.jobs.create({ executor: 'test', payload: {} }, 50);
-    store.jobs.update(parked.id, { status: 'waiting_answer', resumeOn: 'desk' });
+    const onQuestion = store.jobs.create({ executor: 'test', payload: {} }, 50);
+    store.jobs.update(onQuestion.id, { status: 'waiting_answer', resumeOn: 'desk' });
     const waiting = await rename();
     expect(waiting.status).toBe(409);
-    expect(waiting.body.error).toContain(parked.id);
+    expect(waiting.body.error).toContain(onQuestion.id);
     expect(read(a)).toEqual(before);
   });
 

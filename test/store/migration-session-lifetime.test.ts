@@ -4,11 +4,10 @@
 // stays signed in, counted from the migration; one already expired is gone, as it would have been.
 import { describe, expect, it } from 'vitest';
 import { openInstanceStore } from '../../src/store/index.ts';
-import { INSTANCE_SCHEMA_VERSION } from '../../src/store/migrations.ts';
 import { fixedClock, useTempStore } from './helpers.ts';
 
 const t = useTempStore();
-const BEFORE = INSTANCE_SCHEMA_VERSION - 1;
+const BEFORE = 26;
 
 describe('migration: sessions renew', () => {
   it('a live session stays, counted from the migration; an expired one is gone', () => {

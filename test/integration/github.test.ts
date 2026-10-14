@@ -23,7 +23,7 @@ function github(extra: Record<string, unknown> = {}) {
   return [{
     name: 'github', plugin: 'github-account', options: {
       enabled: true, pollSeconds: 3600, executor: 'scripted',
-      defaultCwd: '/tmp', ...extra,
+      ...extra,
     },
   }];
 }
@@ -106,23 +106,23 @@ describe('GitHub issue → job → issue', () => {
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
     const failed = await a.waitForStatus(job.id, 'failed');
-    expect(failed.error).toBe(`not complete: no merged pull request opened by this job closes ${issue.url}`);
+    expect(failed.error).toBe(`not complete: the issue ${issue.url} is open, and no pull request in ${REPO} closes or references it`);
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:done');
     expect(gh.issue(REPO, issue.number).state).toBe('open');
     expect(await a.events('types=job.finished')).toEqual([]);
   });
 
-  it('a pull request merged before the job began is not the job shipping: it ends failed (issue #171)', async () => {
+  it('an issue closed as completed by an older pull request is done: what GitHub shows decides (issue #637)', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
     a.scripted.ships((j) => gh.closeByPullRequest(REPO, j.source!.number!, { createdAt: '2020-01-01T00:00:00.000Z', mergedAt: '2020-01-02T00:00:00.000Z' }));
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
-    await a.waitForStatus(job.id, 'failed');
-    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
-    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:done');
+    await a.waitForStatus(job.id, 'finished');
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:done'), { what: 'hopper:done' });
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:failed');
   });
 
   it('when GitHub cannot say whether the work is complete, the job is not recorded done (issue #171)', async () => {
@@ -233,10 +233,10 @@ describe('GitHub issue → job → issue', () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
     a.setUsage(100);
-    const parked = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper', 'hopper:backburner'] });
+    const backburner = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper', 'hopper:backburner'] });
     const waiting = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
     await a.sync();
-    expect(await jobFor(a, parked.url)).toBeUndefined();
+    expect(await jobFor(a, backburner.url)).toBeUndefined();
     const job = (await jobFor(a, waiting.url))!;
     expect(['queued', 'held']).toContain(job.status);
 
@@ -247,10 +247,10 @@ describe('GitHub issue → job → issue', () => {
     await a.sync();
     expect((await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs).toHaveLength(1);
 
-    gh.removeLabel(REPO, parked.number, 'hopper:backburner');
+    gh.removeLabel(REPO, backburner.number, 'hopper:backburner');
     gh.removeLabel(REPO, waiting.number, 'hopper:backburner');
     await a.sync();
-    expect(['queued', 'held']).toContain((await jobFor(a, parked.url))?.status);
+    expect(['queued', 'held']).toContain((await jobFor(a, backburner.url))?.status);
     const jobs = (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.filter((j) => j.source?.key === waiting.url);
     expect(jobs.map((j) => j.status === 'cancelled' ? 'cancelled' : 'waiting').sort()).toEqual(['cancelled', 'waiting']);
     expect(gh.commentsOn(REPO, waiting.number)).toEqual([]);

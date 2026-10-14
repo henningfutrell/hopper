@@ -6,7 +6,6 @@
 // own herdr (its session from its `ssh` machine instance, herdr by name there), reached over ssh (design.md "Attached machines"),
 // or a client target's herdr, through its reverse tunnel (design.md "Client targets").
 import { join } from 'node:path';
-import { JOBS_DIR } from '../../../domain/types.ts';
 import type { HerdrClient, RemoteHerdr } from '../../../executors/herdr/index.ts';
 import { claudeArgsFor, createHerdrClaudeExecutor, createHerdrCliClient } from '../../../executors/herdr/index.ts';
 import type { ClientTransport } from '../../../executors/client.ts';
@@ -19,12 +18,13 @@ export interface HerdrClaudeOptions {
   session: string;
   yolo: boolean;
   args: string[];
-  cwd: string;
   trustWorkdir: boolean;
+  unattended: boolean;
   jobWorktrees: boolean;
   sharedDependencies: boolean;
   pollMs: number;
   idleNudgeMs: number;
+  promptSteadyMs: number;
 }
 
 /**
@@ -49,9 +49,11 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       }),
       args: z.array(z.string()).default([])
         .meta({ commandBearing: true, description: "Claude Code's other arguments: allowed tools, MCP config (yolo decides the permissions)" }),
-      cwd: z.string().min(1).default(JOBS_DIR)
-        .meta({ commandBearing: true, description: 'working directory of a job whose payload names none' }),
       trustWorkdir: z.boolean().default(true),
+      // Issue #533: a job on a machine nobody watches never waits on a key press.
+      unattended: z.boolean().default(true).meta({
+        description: "unattended: Claude starts with no key press — its config seeded where the machine has none (a fresh container's empty home), its first-run screens (the theme, the machine's API key, notices) answered with their defaults, and it never updates itself in a job's pane. Any screen the hopper may not answer is a question to the job's answerers, on or off. Off: every first-run screen is such a question",
+      }),
       // Issue #379: jobs at one work tree share it; a git repository's top gets each job a worktree of its own.
       jobWorktrees: z.boolean().default(true).meta({
         description: 'job worktrees: when a job\'s work tree is the top of a git repository, the job runs in its own git worktree of it, made in its scratch dir from the freshly fetched default branch; the reap removes it when the job ends unless it holds uncommitted or unpushed work. Off: jobs at one work tree share it',
@@ -62,6 +64,9 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       }),
       pollMs: z.number().int().positive().default(1000),
       idleNudgeMs: z.number().int().positive().default(20000),
+      promptSteadyMs: z.number().int().positive().default(2000).meta({
+        description: 'prompt steady ms: how long Claude\'s input box stays on screen at startup before Claude is taken as ready',
+      }),
     }),
     async detect(sys, o) {
       if (seam) return { status: 'available', detail: 'herdr seam (tests)' };
@@ -106,8 +111,9 @@ export function herdrClaudePlugin(seam?: HerdrClient): PluginDefinition<'executo
       // (which starts the session's server) and every pane, through its tab's environment.
       return createHerdrClaudeExecutor({
         herdr: seam ?? createHerdrCliClient({ bin: o.bin, session: o.session, userEnv: ctx.userEnv }), remote, local, paneEnv: ctx.userEnv,
-        clock: ctx.clock, defaultCwd: o.cwd, claudeArgs: claudeArgsFor(o.yolo, o.args), trustWorkdir: o.trustWorkdir, yolo: o.yolo,
+        clock: ctx.clock, claudeArgs: claudeArgsFor(o.yolo, o.args), trustWorkdir: o.trustWorkdir, yolo: o.yolo, unattended: o.unattended,
         jobWorktrees: o.jobWorktrees, sharedDependencies: o.sharedDependencies, pollMs: o.pollMs, idleNudgeMs: o.idleNudgeMs,
+        promptSteadyMs: o.promptSteadyMs,
       });
     },
   };

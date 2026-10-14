@@ -408,7 +408,9 @@ curl -H "Authorization: Bearer $ACCESS_TOKEN" https://hopper.example.com/api/que
   it makes no new user. A GitHub token reads only as the user whose connected GitHub account it is:
   once it is forgotten (Sources → **Stop working through GitHub**, offered to a user signed in another
   way) it no longer does.
-- **Reads only.** Every change (`POST /ui/api/*`) still needs a UI session.
+- **Reads only.** This door only reads. To change anything, exchange the same sign-in for an API token at
+  `POST /ui/auth/api-token`, or mint a grant in Settings → API tokens, and send `Authorization: Bearer hopper_at_…`
+  (help page "The operator CLI and the API", `/help/cli-and-api`).
 - The same realms and role rules decide: turning the realm off, or a rule that grants no role, closes
   this door as it closes the sign-in page. A refused token is 401 with the reason, no role is 403, an
   issuer or GitHub that could not be asked is 502.
@@ -793,7 +795,7 @@ are not read: a group rule matches nothing here.
 
 The hopper's GitHub App is public: any GitHub account or organization installs it, at
 https://github.com/apps/hopper-qm/installations/new. It may read and write issues, pull requests and
-contents, and read metadata — nothing else (why each: `docs/design.md` "The hopper's app, for everyone").
+contents, and read checks, commit statuses and metadata — nothing else (why each: `docs/design.md` "The hopper's app, for everyone").
 It reaches only the repositories it is **installed** on. After signing in, the
 Sources page lists, for each account it is installed on, the repositories it reaches there and what it may
 do there, with a link to choose them, and a link to add it to another account or organization; only where it is installed nowhere does it link to install it. When GitHub cannot say
@@ -808,7 +810,7 @@ https://github.com/settings/apps/new (or the organization's *Developer settings 
 URL: anything. Callback URL: required by the form, never used. Webhook: off. **Enable Device Flow**: on.
 Optional features: leave **user-to-server token expiration** on — the hopper renews the 8-hour tokens
 with their refresh token (a device flow grant needs no client secret for it). Repository permissions: Issues read/write, Pull
-requests read/write, Contents read/write, Metadata read. Add Workflows read/write if jobs change
+requests read/write, Contents read/write, Checks read, Commit statuses read, Metadata read. Add Workflows read/write if jobs change
 `.github/workflows/`, organization Projects read for a `projects` priority on an organization board, or
 account Email addresses read for an email on the identity. Where can it be installed: *Only on this
 account* for one person or organization, *Any account* for others too. Generate no private key and no client secret.
@@ -923,10 +925,11 @@ The same for every realm, no sign-in and the login code:
 - **Every end has a reason**, logged to the journal (`hopper: UI session ended (<reason>): …`) and recorded as
   the event `ui_session.ended` of the session's user ([events](events.md)): `expired-idle`,
   `expired-absolute`, `refresh-refused` and `provider-unreachable` (a gateway realm's), `realm-changed` (the
-  change below) and `logout`. A request carrying a token the hopper holds no session for (it ended earlier,
+  change below), `connection-ended` (signed in with GitHub, and the GitHub connection ended: GitHub refused
+  to renew it; sign in with GitHub again to restore both) and `logout`. A request carrying a token the hopper holds no session for (it ended earlier,
   the database was reset, or it is another hopper's) is logged once. Read them to tell why someone was
   sent back to sign-in: `journalctl --user -u hopper | grep 'UI session'`.
-- **Log out** (the header's button) ends the hopper session. It does not sign you out of the
+- **Sign out** (in the user menu, under your initials) ends the hopper session. It does not sign you out of the
   identity provider: signing in again may need no password.
 - Every change saved in Settings → Sign-in, and every start, applies the sign-in config to the stored
   sessions: a realm removed or turned off, no sign-in turned off, or an

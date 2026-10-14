@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "object",
+      "properties": {
+        "defaultMode": {
+          "type": "string",
+          "enum": [
+            "fork",
+            "switch"
+          ]
+        },
+        "forkParent": {
+          "type": "string",
+          "enum": [
+            "wait",
+            "park"
+          ]
+        },
+        "levels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "defaultMode",
+        "forkParent",
+        "levels"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "defaultMode": {
+          "type": "string",
+          "enum": [
+            "fork",
+            "switch"
+          ]
+        },
+        "forkParent": {
+          "type": "string",
+          "enum": [
+            "wait",
+            "park"
+          ]
+        },
+        "levels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "defaultMode",
+        "forkParent",
+        "levels"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "from",
+    "to"
+  ],
+  "additionalProperties": false
+}

@@ -1,11 +1,11 @@
 // The job rules (issue #172): what every job is told before its work tree and the protocol — the config
 // record `job-rules`, a text, edited from the UI (POST /ui/api/job-rules) or with `hopper config set`.
 // Read when each job starts, so an edit reaches the next job without a restart. While none is saved, a
-// job gets the default: the publishing rule and the parallel-work rule. The work tree line and the
-// protocol lines are fixed: the executors set the work tree up, and the hopper reads the markers back
+// job gets the default: the publishing rule, the parallel-work rule, the writing style and the formatting. The work
+// tree line and the protocol lines are fixed: the executors set the work tree up, and the hopper reads the markers back
 // (src/executors/herdr/screen.ts). design.md "Job rules".
 import type { ConfigRecords } from '../domain/ports.ts';
-import type { JobRulesView } from '../domain/types.ts';
+import { asksOfSpec, followOnBrief, forkBrief, REVIEW_KINDS, REVIEW_SECTIONS, SUGGEST_PROTOCOL, type FollowOnOf, type ForkOf, type JobRulesView, type ReviewKind } from '../domain/types.ts';
 
 /** The config record that holds them. */
 export const JOB_RULES = 'job-rules';
@@ -17,8 +17,14 @@ const PARALLEL_WORK = [
   'If your work overlaps another job\'s, sort it out yourself. Either state the assumptions you made about the other work, or make the needed fix in the other project and annotate it with which way the dependency runs (which work depends on which).',
 ];
 
+/** The writing style (issue #571): every text a job writes for people is in Simplified Technical English. */
+export const STE_RULE = '[hopper writing style] Write all text for people in Simplified Technical English (ASD-STE100): short sentences, one instruction per sentence, active voice, simple common words, one meaning per word.';
+
+/** The formatting (issue #569): the UI renders what a job writes for a person as Markdown, so the job writes it so. */
+export const MARKDOWN_RULE = '[hopper formatting] Format the text you write for a person in the hopper (a question, a research report, a proposal, a note) in Markdown: a short summary first, then sections and lists. Put names, paths and commands in code spans. Do not use raw HTML or images.';
+
 /** What a job is told while no job rules are saved. */
-export const DEFAULT_JOB_RULES = [PUBLISHING_RULE, ...PARALLEL_WORK].join('\n');
+export const DEFAULT_JOB_RULES = [PUBLISHING_RULE, ...PARALLEL_WORK, STE_RULE, MARKDOWN_RULE].join('\n');
 
 /** Where a job's temporary files go, inside its work tree (design.md "Work tree"). */
 export const SCRATCH_DIR = '.hopper-scratch';
@@ -28,25 +34,80 @@ export const SCRATCH_DIR = '.hopper-scratch';
  * removes when the job ends (issue #401); without, the work tree's shared one.
  */
 export const workTreeRule = (cwd: string, scratch?: string): string => `[hopper work tree] This job's work tree is ${cwd}. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. ${scratch
-  ? `Temporary files, and clones or git worktrees made only for this job, go in ${scratch}: git ignores it, and TMPDIR and your scratchpad point there. When the job ends, the hopper stops every process the job started and removes that directory, unless a repository in it holds uncommitted or unpushed work.`
+  ? `Temporary files, and clones or git worktrees made only for this job, go in ${scratch}: git ignores it, and TMPDIR and your scratchpad point there, through a short link in /tmp, so a Unix socket path under TMPDIR fits. When the job ends, the hopper stops every process the job started and removes that directory, unless a repository in it holds uncommitted or unpushed work.`
   : `Temporary files go in ${cwd}/${SCRATCH_DIR}: git ignores it, and TMPDIR and your scratchpad point there.`} Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.`;
 
 /**
  * The fixed line of a job that runs in its own git worktree of its work tree (issue #379): the worktree is
- * the job's alone, in its scratch dir; the work tree is shared with the other jobs there. With
+ * the job's alone, in its scratch dir; the work tree is shared with the other jobs there. Git goes through the
+ * worktree's origin only (issue #858): a clone or an ssh remote of the job's own bypassed the mirror and the hopper. With
  * `sharedDependencies`, its node_modules is a link to dependencies shared with the repository's other jobs
  * (issue #410).
  */
-export const jobWorktreeRule = (path: string, cwd: string, sharedDependencies = false): string => `[hopper job worktree] Work in ${path}: a git worktree of ${cwd} made for this job alone, detached at its remote's default branch as just fetched (at its HEAD when it has no remote), and where you start. Make your branch in it. ${cwd} itself is shared with other jobs: never edit files, switch branches or build in it, and make no other clone or worktree of it for this job. ${sharedDependencies
+export const jobWorktreeRule = (path: string, cwd: string, sharedDependencies = false): string => `[hopper job worktree] Work in ${path}: a git worktree of ${cwd} made for this job alone, detached at its remote's default branch as just fetched (at its HEAD when it has no remote), and where you start. Make your branch in it. ${cwd} itself is shared with other jobs: never edit files, switch branches or build in it, and make no other clone or worktree of it for this job. Fetch and push through the worktree's origin only: never clone the repository again and never add a remote of your own, such as an ssh one. ${sharedDependencies
   ? 'Its node_modules is a link to dependencies shared with the other jobs of this repository: read-only. Before you add, remove or upgrade a dependency, replace the link with an install of your own (rm node_modules && npm ci). '
   : ''}The worktree is in this job's scratch dir, so the reap removes it when the job ends, unless it holds uncommitted or unpushed work.`;
 
+/** The protocol line on GitHub (issue #563): never a login of the job's own; the hopper's proxy, its help read only when needed. */
+export const GITHUB_PROXY_LINE = 'Never log in to GitHub yourself: no gh auth login, no device code. This machine holds no GitHub token: git fetch and git push to GitHub go through the hopper by themselves, and a push goes only to a new branch of your own work. For any other GitHub operation (filing an issue, opening a pull request from your pushed branch, reading an issue and its discussion, a pull request, its diff, commits and checks, or a failed check\'s log, and the like), ask the hopper, which does it with its own GitHub connection: run sh "$HOPPER_GH" help to see how. Read GitHub only through the hopper: never curl api.github.com or a github.com page. When your user cannot push to the repository of the job (sh "$HOPPER_GH" repo view --repo OWNER/NAME says canPush false), contribute through a fork: the help says how. Never ask a person for a check\'s log: read it through the hopper, and ask only when the hopper says it cannot read it. If the hopper cannot be reached from here (HOPPER_URL is not set, or hopper-gh or git to GitHub cannot connect to it), do not sign in to GitHub another way: end with HOPPER_FAILED and say that this machine cannot reach the hopper.';
+
+/** The protocol line on a short outage (issue #752): the client door's 503 says since when; the job works on locally and waits to push. */
+export const OUT_OF_REACH_LINE = 'When an answer says "the hopper is out of reach since <time>", the hopper is away for a short time. Keep the local work going: edit, build, test and commit. Wait to push and to ask the hopper, then try again in a few minutes. Never sign in another way.';
+
+/** The protocol line on skills (issue #582; artifacts, issue #624): the catalog first, a skill loaded only when needed, a no taken as it is. */
+export const SKILL_LINE = 'When you need something set up from outside this machine, or a credential (a read-only link to a cluster or an AWS account, a token for another service, and the like), or a place to show a person a visual you made (a diagram or a chart: the artifacts skill), ask the hopper what it can set up: run sh "$HOPPER_SKILL". Load a skill only when you need it. Never ask for a credential in a question. When the hopper says no, it says why: find another way.';
+
+/** The protocol line on a job's own wait (issue #483); a wait on its own command says so in `until:` (issue #1037). */
+export const WAIT_LINE = 'When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, and, if you can, one line: until: <how you will know it happened>. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait. A wait only for a command of your own that runs in the background (a build, a test run) is not blocked: if you end your message with HOPPER_WAITING for it, write until: own command <its id> ends.';
+
+/** The protocol line on a job's task count (issue #794): the job's progress is its tasks done of its task list. */
+export const TASKS_LINE = 'Keep a task list for the job: the tasks that take it to done. When you make the list, and each time a task completes, write a line containing only: HOPPER_TASKS <completed>/<total>, for example HOPPER_TASKS 2/5. When the list changes, write the new total. The hopper shows this count as the progress of the job.';
+
+/**
+ * The protocol line on decisions (issue #1059): a job with a clear path inside the standing rules takes it and goes on to
+ * its pull request; it asks a person only in the cases named here, and says which rule does not settle it.
+ */
+export const DECIDE_LINE = '[hopper decisions] Decide and go on when a path is clear. The standing rules are these job rules and the rules of the repository (its AGENTS.md, CLAUDE.md, CONTRIBUTING.md and design documents). When one path is recommended and it stays inside the standing rules, take it and continue to the pull request: do not ask a question or write a proposal for a person to pick it. Ask a person only when: the paths differ in security or cost in a way the rules do not settle; you need a credential or access from outside; or the change is destructive. Then say which of these cases it is, and which rule does not settle it. A check that no CI runner can do (for example a live test on Windows) is not a reason to stop: write the manual check in the pull request body and continue. List each decision you made yourself in the pull request body, under a heading Decisions made, so a person can change it later.';
+
 /** The fixed protocol lines: the markers the hopper reads back. The last one is the turn anchor. */
 export const PROTOCOL_LINES: readonly string[] = [
-  '[hopper protocol] When you need an answer from the user, ask exactly one question and end your message with a line containing only: HOPPER_QUESTION',
+  // Decide and proceed (issue #1059): before the question line, so a job reads when not to ask first.
+  DECIDE_LINE,
+  '[hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), in Markdown: one short sentence that says what you need first, then the context, with the options as a numbered list. End your message with a line containing only: HOPPER_QUESTION',
+  // How to suggest research or a proposal first, on a question (issue #548).
+  SUGGEST_PROTOCOL,
+  // Each review section's (issues #537, #543): how to come back with a research report, a proposal.
+  ...REVIEW_KINDS.map((k) => REVIEW_SECTIONS[k].protocol),
+  // GitHub through the hopper (issue #563): a job never logs in to GitHub; `hopper-gh` is kept beside its proxy token.
+  GITHUB_PROXY_LINE,
+  // A short outage (issue #752): the client door holds, then says since when; the job works on locally.
+  OUT_OF_REACH_LINE,
+  // Skills (issue #582): `hopper-skill` beside it, the catalog in a few lines.
+  SKILL_LINE,
+  'When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>, and, when the command shows them, account: <the account or host it signs in to>, scopes: <the scopes it asks for>. The user completes the login; then the command goes on and you continue. Report a login once per code, never again while you wait on it; when it goes through, say so in a line of its own: Logged in.',
+  // A job's task count (issue #794): its progress, x/y, as each task completes; never a clock.
+  TASKS_LINE,
+  // A job's own wait (issue #483): blocked on a person or the outside world, it says so; never a question only to wait.
+  WAIT_LINE,
   'When the job is completely finished, end your final message with a line containing only: HOPPER_DONE',
   'If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.',
 ];
+
+/** What a job asked for a review section's special job (issues #537, #543) is told after its job rules. */
+export const askLine = (kind: ReviewKind): string => REVIEW_SECTIONS[kind].ask;
+
+/**
+ * The job rules a job starting now is told: with its first ask, when it asks for any (research before the proposal),
+ * and what follows once that one is accepted.
+ */
+export function withAsks(jobRules: string, spec: { proposal?: true; research?: true }, forkOf?: ForkOf, followOn?: FollowOnOf): string {
+  const [first, ...then] = asksOfSpec(spec);
+  // A proposal's follow-on (issue #651) is told the path it continues.
+  if (!first) return followOn ? `${jobRules}\n${followOnBrief(followOn)}` : jobRules;
+  const after = then.length > 0 ? `\nOnce your ${REVIEW_SECTIONS[first].noun} is accepted, you are asked for the ${then.map((k) => REVIEW_SECTIONS[k].noun).join(', then the ')} in this same session.` : '';
+  // A fork (issue #548) is told the question it was forked from, and the aspect.
+  return `${jobRules}\n${askLine(first)}${after}${forkOf ? `\n${forkBrief(forkOf)}` : ''}`;
+}
 
 /** The lines after the job rules, as the UI shows them: the work tree (named `<work tree>`), then the protocol. */
 export const FIXED_JOB_LINES: readonly string[] = [workTreeRule('<work tree>', `<work tree>/${SCRATCH_DIR}/<job id>`), ...PROTOCOL_LINES];

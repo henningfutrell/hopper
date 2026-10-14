@@ -1,11 +1,13 @@
 // The GitHub job sources' options (the plugins config `jobSources[].options` of `github-account` and
 // `github-app`), and the
-// source config they turn into: `model: null` dropped; a `~` stays, for the job's machine (issue #323). The plugin host validates
+// source config they turn into: `model: null` dropped. No path: a job's work tree is its machine's (issue #361). The plugin host validates
 // them with these schemas; an invalid instance is dropped with the error shown. There is no `authors`
 // option (issue #387): a source takes an issue by its label and its assignee, never by who filed it. An
-// instance still carrying one loads with it dropped; tenant migration 16 removes it from the stored config.
+// instance still carrying one loads with it dropped; tenant migration 16 removes it from the stored config. There
+// is no `completion` option either (issue #579): done is always a pull request ready for review, and whether a job
+// may merge it is yolo mode, a setting of the user's (src/domain/yolo-mode.ts). Dropped on load the same way;
+// tenant migration 30 removes it.
 import { z } from 'zod';
-import { JOBS_DIR } from '../domain/types.ts';
 
 const projectSchema = z.object({
   owner: z.string().min(1),
@@ -27,27 +29,24 @@ const sharedKeys = {
     .meta({ description: 'this hopper\'s name: an issue labelled hopper@<name> is taken only by the hopper of that name; null takes only issues addressed to no hopper' }),
   priorityLabels: z.record(z.string(), z.number()).default({ 'hopper:high': 75, 'hopper:low': 25 }),
   defaultPriority: z.number().min(0).max(100).default(50),
-  repoPaths: z.record(z.string(), z.string()).default({})
-    .meta({ commandBearing: true, description: 'owner/repo → the working directory of its jobs' }),
-  defaultCwd: z.string().min(1).default(JOBS_DIR)
-    .meta({ commandBearing: true, description: 'working directory of jobs from repos not in repoPaths, on a machine with no work tree of its own' }),
   executor: z.string().min(1).default('herdr-claude'),
   model: z.string().min(1).nullable().default(null),
   recentComments: z.number().int().min(0).default(10),
   projects: z.record(z.string(), projectSchema).default({}),
-  completion: z.enum(['merge', 'pull-request']).default('merge')
-    .meta({ description: "when a job's work is done: merge — its pull request merged; pull-request — its pull request open for review. Issue labels hopper:complete-at-merge and hopper:complete-at-pr override it" }),
+  issueGraph: z.boolean().default(true).meta({ description: 'keep the issue graph: each listed issue with its repository, owner, Projects and linked issues and pull requests' }),
+  graphRefreshMinutes: z.number().int().min(0).default(60)
+    .meta({ description: 'the issue graph: how many minutes an issue\'s place is kept before it is read again, unchanged; 0 reads it at every sync' }),
 };
 
-/** Options as stored before issue #387 may carry `authors`: dropped, not refused. */
-function withoutAuthors(raw: unknown): unknown {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw) || !('authors' in raw)) return raw;
-  const { authors: _authors, ...rest } = raw as Record<string, unknown>;
+/** Options as stored before issue #387 may carry `authors`, before issue #579 `completion`: dropped, not refused. */
+function withoutGone(raw: unknown): unknown {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw) || !('authors' in raw || 'completion' in raw)) return raw;
+  const { authors: _authors, completion: _completion, ...rest } = raw as Record<string, unknown>;
   return rest;
 }
 
 /** github-app: the App source, posting as the app's bot, taking issues assigned to the user's connected account. */
-export const githubAppOptions = z.preprocess(withoutAuthors, z.object({
+export const githubAppOptions = z.preprocess(withoutGone, z.object({
   enabled: z.boolean().default(true),
   // The identity the source acts as, and where its key comes from: command-bearing.
   appId: z.number().int().positive().optional().meta({ commandBearing: true, description: "the GitHub App's id" }),
@@ -73,17 +72,17 @@ const accountKeys = {
 };
 
 /** github-account: the GitHub account the user connected. */
-export const githubAccountOptions = z.preprocess(withoutAuthors, z.object(accountKeys).strict());
+export const githubAccountOptions = z.preprocess(withoutGone, z.object(accountKeys).strict());
 
 
 export type GitHubProjectConfig = z.infer<typeof projectSchema>;
 export type GitHubAccountOptions = z.output<typeof githubAccountOptions>;
 export type GitHubAppOptions = z.output<typeof githubAppOptions>;
 
-/** What the source logic reads: the shared keys, no `model: null`. A `~` stays: it resolves on the job's machine (issue #323). */
+/** What the source logic reads: the shared keys, no `model: null`. */
 export type GitHubSourceConfig = Omit<z.output<z.ZodObject<typeof sharedKeys>>, 'model'> & { model?: string };
 
-export function sourceConfig<T extends { model: string | null; defaultCwd: string; repoPaths: Record<string, string> }>(raw: T): Omit<T, 'model'> & { model?: string } {
+export function sourceConfig<T extends { model: string | null }>(raw: T): Omit<T, 'model'> & { model?: string } {
   const { model, ...rest } = raw;
   return { ...rest, ...(model ? { model } : {}) };
 }

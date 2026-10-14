@@ -17,6 +17,13 @@ const GATES = {
     { name: 'delete', describe: 'deleting or wiping things' },
     { name: 'deploy', describe: 'deploying or publishing' },
   ],
+  autoAnswer: {
+    enabled: true, threshold: 'high', holdHighPriority: false, stats: { windowDays: 30, answered: 4, corrected: 1, agreement: 0.75 },
+    calibration: [
+      { level: 'opus', high: 3, medium: 0, low: 0, none: 0, total: 3, below: 0, flagged: false },
+      { level: 'fable', high: 1, medium: 2, low: 0, none: 1, total: 4, below: 3, flagged: true },
+    ],
+  },
 };
 const claudeSchema = {
   type: 'object',
@@ -44,7 +51,7 @@ const PLUGINS = {
   instances: LEVELS.map((instance) => ({ role: 'escalation-level', instance })),
   router: { instance: { name: 'pass-through', plugin: 'pass-through' }, selection: 'detected', detection: { status: 'available' }, active: 'pass-through', fallback: false },
   escalationLevels: LEVELS.map((instance) => ({ instance, detection: { status: 'available' }, active: 'claude-cli' })),
-  executors: { instances: [] }, jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] },
+  executors: { instances: [] }, jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] }, vaultBackends: { instances: [] },
   plugins: [
     { id: 'claude-cli', role: 'escalation-level', describe: 'claude -p', builtin: true, detection: { status: 'available' }, options: claudeSchema, choices: { model: MODELS, machine: MACHINES } },
   ],
@@ -58,7 +65,7 @@ function fakeDaemon() {
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
-    '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [], locked: [] },
+    '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked: [] },
     '/api/machines': { machines: [] },
     '/api/decisions': { decisions: [] },
     '/api/events': { events: [] },
@@ -79,6 +86,7 @@ function fakeDaemon() {
     if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
     if (path === '/ui/api/rules') return json(200, { ...RULES, text: body!.text, version: 'v2' });
     if (path === '/ui/api/plugins') return json(200, PLUGINS);
+    if (path === '/ui/api/auto-answer') return json(200, { ...GATES.autoAnswer, ...body });
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
   });
@@ -132,6 +140,40 @@ describe('question gates panel', () => {
     const text = panel()!.textContent!;
     for (const s of ['Escalation levels', 'Risk rules', 'Owner', 'level-1', 'level-2', 'delete', 'deploying or publishing', 'Standing rules']) expect(text).toContain(s);
     expect(rulesBox()!.value).toBe(RULES.text);
+  });
+
+  it('auto-answer (#632): on at high confidence, with its agreement stats; the threshold is posted to /ui/api/auto-answer', async () => {
+    const daemon = await boot();
+    const box = panel()!.querySelector('[data-slot="auto-answer"]')!;
+    expect(box.textContent).toContain('4 auto-answers in 30 days · 1 corrected · 75% kept');
+    const select = box.querySelector<HTMLSelectElement>('select#auto-answer-threshold')!;
+    expect(select.value).toBe('high');
+    await act(async () => {
+      select.value = 'medium';
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await vi.waitFor(() => expect(daemon.calls.find((c) => c.path === '/ui/api/auto-answer')?.body).toEqual({ threshold: 'medium' }));
+    await vi.waitFor(() => expect(select.value).toBe('medium'));
+  });
+
+  it('issue #679: "hold high-priority questions for me", off by default, is posted to /ui/api/auto-answer', async () => {
+    const daemon = await boot();
+    const box = panel()!.querySelector('[data-slot="auto-answer"]')!;
+    const toggle = box.querySelector<HTMLElement>('[data-slot="hold-high-priority"] [role="switch"]')!;
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    await click(toggle);
+    await vi.waitFor(() => expect(daemon.calls.find((c) => c.path === '/ui/api/auto-answer')?.body).toEqual({ holdHighPriority: true }));
+    expect(box.textContent).not.toMatch(/high-priority jobs always come to you/);
+  });
+
+  it('issue #679: each level\'s confidence spread; a level whose answers mostly fall below the threshold is flagged', async () => {
+    await boot();
+    const box = panel()!.querySelector('[data-slot="confidence-spread"]')!;
+    expect(box.textContent).toContain('opus: 3 high · 0 medium · 0 low · 0 none — 0 of 3 below high');
+    expect(box.textContent).toContain('fable: 1 high · 2 medium · 0 low · 1 none — 3 of 4 below high');
+    const flagged = [...box.querySelectorAll('[data-flagged="true"]')];
+    expect(flagged.map((f) => f.getAttribute('data-level'))).toEqual(['fable']);
+    expect(flagged[0]!.textContent).toMatch(/Most of fable's answers fall below the threshold/);
   });
 
   it('Save posts the draft with the version it was based on', async () => {
@@ -230,5 +272,28 @@ describe('question gates panel', () => {
     await click(button('Save level-2'));
     await vi.waitFor(() => expect(pluginsCall(daemon)).toBeDefined());
     expect(pluginsCall(daemon)).toEqual({ action: 'options', role: 'escalation-level', name: 'level-2', options: { model: 'claude-fable-0', machine: 'box' }, version: 'p1' });
+  });
+});
+
+// Issue #444: the one level editor offers nothing the server refuses. A level with no machine picked
+// cannot save its options until one is (the server refuses them without one, issue #174).
+describe('a level with no machine', () => {
+  it('Save waits until a machine is picked', async () => {
+    await boot();
+    const form = panel()!.querySelector('[data-slot="instance-form"][data-instance="level-2"]')!;
+    const model = form.querySelector<HTMLSelectElement>('select[name="model"]')!;
+    await act(async () => {
+      model.value = 'sonnet';
+      model.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const save = [...form.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Save level-2')!;
+    expect(save.disabled).toBe(true);
+    expect(form.textContent).toContain('pick a machine to save');
+    const machine = form.querySelector<HTMLSelectElement>('select[name="machine"]')!;
+    await act(async () => {
+      machine.value = 'box';
+      machine.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(save.disabled).toBe(false);
   });
 });

@@ -2,11 +2,15 @@
 // Each command validates, writes in one transaction, emits its event, and lets the event
 // listener schedule the next Decision. Jobs are created only by ingest (source-host.ts).
 import { TERMINAL_STATUSES } from '../domain/types.ts';
-import type { Job, UsageReading } from '../domain/types.ts';
+import type { ActingPerson, Job, JobNote, UsageReading } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import type { Cleanups } from './cleanup.ts';
+import { parkRefusal, recordPark, recordUnpark, releaseParked } from './park.ts';
 import type { Runner } from './runner.ts';
+import { recordEndWait, type WaitEnder } from './wait.ts';
+import { recordNote } from './notes.ts';
+import { acceptNewText, keepOriginal } from './item-snapshots.ts';
 
 const isTerminal = (job: Job): boolean => TERMINAL_STATUSES.includes(job.status);
 
@@ -28,8 +32,34 @@ export interface Commands {
   claimByOperator(id: string): Job;
   /** Take a locked entry out of the queue (issue #355): the failed job stays failed, and can still run again. */
   dismiss(id: string): Job;
+  /**
+   * Park a running job, or one on a question (issue #501): its lane frees, its pane and agent end, its work tree,
+   * agent session, machine and open question are kept. A running job is parked once its executor stepped aside.
+   */
+  park(id: string): Job;
+  /**
+   * Re-queue a parked job (issue #501): pinned to its machine, its claim resumes its agent session; with its question open, it waits on it again.
+   * A job with no agent session only with `freshSession` (issue #530): its claim starts a fresh one in its kept work tree.
+   * `elsewhere` (issue #921): not pinned to its machine; its claim rebuilds its work from its checkpoint where it runs.
+   */
+  requeue(id: string, o?: { freshSession?: boolean; elsewhere?: boolean }): Job;
+  /**
+   * End a job's own wait (issue #483), a person's act, or the hopper's with an answer the job asked it for (issue #998): it
+   * is queued again, pinned to its machine, and told in its pane that what it waited for has happened, with `note`.
+   * Conflict unless it is `waiting_on`.
+   */
+  endWait(id: string, note?: string, by?: WaitEnder): Job;
+  /**
+   * A person's note to a job (issue #997): queued on it until its session gets it — at the next turn boundary while it
+   * runs, with its task or the answer it resumes with — or a new job of its item carries it. Conflict for an ended job.
+   */
+  addNote(id: string, text: string, acting: ActingPerson): JobNote;
   /** Issue #371: what a job's deferred cleanup could not reach was closed by hand; it is no longer tried, and its item's jobs may run. */
   markCleanedUp(id: string): Job;
+  /** Rerun the original (issue #662): a job held for its changed item runs the snapshot's text. item.original_kept. */
+  keepOriginalText(id: string, acting: ActingPerson): Job;
+  /** Accept the new text (issue #662), the owner's act, allowed by Access first: the job runs it, and it is the item's snapshot. */
+  acceptNewText(id: string, acting: ActingPerson): Job;
   /** Tests only: the fake usage source has no HTTP route. */
   setFakeUsage(reading: Omit<UsageReading, 'source' | 'at'>): UsageReading[];
 }
@@ -44,10 +74,10 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
         // The runner ends it `cancelled` once the executor has stopped.
         if (runner.cancel(id, reason)) return job;
       }
-      // A waiting_answer job's question is cancelled in the same tx; a job parked or about to
-      // resume holds a pane, released after the commit.
+      // A waiting_answer or parked job's question is cancelled in the same tx; a job on a question or about to
+      // resume holds a pane, and a parked job its work tree, released after the commit by the normal reap.
       const next = store.tx(() => {
-        if (job.status === 'waiting_answer' && job.questionId) c.questions.cancel(job.questionId);
+        if ((job.status === 'waiting_answer' || job.status === 'parked') && job.questionId) c.questions.cancel(job.questionId);
         const cancelled = store.jobs.update(id, { status: 'cancelled', finishedAt: nowIso(c), pendingAnswer: undefined });
         store.events.append({ type: 'job.cancelled', jobId: id, data: { reason } });
         return cancelled;
@@ -86,7 +116,39 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
       });
     },
 
+    park(id) {
+      const job = existing(c, id);
+      const refused = parkRefusal(c, job);
+      if (refused) throw new EngineError('conflict', refused);
+      if (job.status === 'running') {
+        if (runner.park(id)) return job;
+        throw new EngineError('conflict', `job ${id} is not running here yet: try again`);
+      }
+      const parked = store.tx(() => {
+        // Read again in the tx: an answer may have re-queued it meanwhile.
+        const now = existing(c, id);
+        const late = parkRefusal(c, now);
+        if (late) throw new EngineError('conflict', late);
+        return recordPark(c, now, 'waiting_answer');
+      });
+      void releaseParked(c, parked);
+      return parked;
+    },
+
+    requeue(id, o = {}) {
+      const next = store.tx(() => recordUnpark(c, id, o.freshSession === true, o.elsewhere === true));
+      if (next.status === 'waiting_answer' && next.questionId) c.questions.unparked(next.questionId);
+      return next;
+    },
+
+    endWait: (id, note, by) => store.tx(() => recordEndWait(c, id, note, by)),
+
+    addNote: (id, text, acting) => store.tx(() => recordNote(c, id, text, acting)),
+
     markCleanedUp: (id) => cleanups.markCleanedUp(id),
+
+    keepOriginalText: (id, acting) => store.tx(() => keepOriginal(c, id, acting)),
+    acceptNewText: (id, acting) => store.tx(() => acceptNewText(c, id, acting)),
 
     setFakeUsage(reading) {
       if (!c.fakeUsage) throw new EngineError('not_found', 'no fake usage source is configured');

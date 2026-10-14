@@ -1,7 +1,7 @@
 // gate-router: a router that asks Jev's gates about each job and routes on the answers, run through
 // gate_shim.py (design.md "Gate router"). Reads the grok-bot-jev checkout at `jevPath`; never writes
-// into it. Jev, through TypeSafe, answers the gates in JEV_GATES once TYPESAFE_API_KEY is in the
-// daemon's environment; the Claude model (`model`, Haiku) answers the rest, through the `claude` on PATH.
+// into it. Jev, through TypeSafe, answers the gates in JEV_GATES once the user's TypeSafe API key is set (issue #657:
+// on the Jev page, kept in the vault's system scope; `env('TYPESAFE_API_KEY')` answers it); the Claude model (`model`, Haiku) answers the rest, through the `claude` on PATH.
 import { join } from 'node:path';
 import { claudeModelChoices, detectClaude } from '../../claude-print.ts';
 import { expandHome } from '../../expand-home.ts';
@@ -32,7 +32,7 @@ const gateRouter: PluginDefinition<'router', GateRouterOptions> = {
     const claude = await detectClaude(sys, 'claude');
     if (claude.status === 'unavailable') return claude;
     let jev = `Jev through TypeSafe for ${JEV_GATES.join(', ')}`;
-    if (!sys.env('TYPESAFE_API_KEY')) jev = 'Jev off until TYPESAFE_API_KEY is set';
+    if (!sys.env('TYPESAFE_API_KEY')) jev = 'Jev off until a TypeSafe API key is set';
     else if (!(await sys.pythonImports(o.python, 'typesafe_sdk'))) jev = `Jev off: ${o.python} cannot import typesafe_sdk`;
     return { status: 'available', detail: `${jev}; Claude ${o.model} answers the other gates via ${claude.detail}` };
   },

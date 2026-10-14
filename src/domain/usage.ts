@@ -93,10 +93,23 @@ export interface MachineLaneEffect {
   executors: ExecutorLaneEffect[];
 }
 
+/** The usage limits (issue #522): the usage fraction where a machine's lanes scale down (soft) and where it starts nothing (hard). */
+export interface UsageLimitPair {
+  soft: number;
+  hard: number;
+}
+
+/** The usage limits the decider uses now: the user's, once set in the UI, else the defaults (HOPPER_SOFT_LIMIT / HOPPER_HARD_LIMIT). */
+export interface UsageLimits extends UsageLimitPair {
+  defaults: UsageLimitPair;
+  /** True once the user set them: they win over the defaults from then on. */
+  set: boolean;
+}
+
 /** `GET /api/usage`: every reading, every usage source's state, the limits, and the lane effect per machine. */
 export interface UsageReport {
   readings: UsageReading[];
   sources: UsageSourceReport[];
-  limits: { soft: number; hard: number };
+  limits: UsageLimits;
   machines: MachineLaneEffect[];
 }

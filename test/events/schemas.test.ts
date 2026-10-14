@@ -58,7 +58,17 @@ describe('event schemas', () => {
   });
 
   it('job.progressed accepts message undefined (in-memory emitters)', () => {
-    expect(validateEvent(event('job.progressed', { progress: 1, message: undefined })).ok).toBe(true);
+    expect(validateEvent(event('job.progressed', { message: undefined, tasks: { done: 1, total: 1 } })).ok).toBe(true);
+  });
+
+  // Issue #794: progress is a task count, never a fraction of time; a stored v1 event still reads.
+  it('job.progressed is v2: a task count, done of total, and no fraction', () => {
+    expect(EVENT_SCHEMA_VERSIONS['job.progressed']).toBe(2);
+    expect(validateEvent(event('job.progressed', { tasks: { done: 0, total: 3 } })).ok).toBe(true);
+    expect(validateEvent(event('job.progressed', { message: 'Reading files' })).ok).toBe(true);
+    expect(validateEvent(event('job.progressed', { progress: 0.5 })).ok).toBe(false);
+    expect(validateEvent(event('job.progressed', { tasks: { done: 1, total: 0 } })).ok).toBe(false);
+    expect(validateEvent({ ...event('job.progressed', { progress: 0.5, message: 'half' }), schemaVersion: 1 }).ok).toBe(true);
   });
 });
 
@@ -66,15 +76,24 @@ describe('superseded payload versions (stored events are never rewritten)', () =
   const v1Advice = { action: 'proceed_full', reason: 'ok', jevUsed: true, details: {}, source: 'fake', at: '2026-10-02T00:00:00.000Z' };
   const old = (type: string, data: Record<string, unknown>) => ({ ...event('job.held', data), type: type as EventType, schemaVersion: 1 });
 
-  it('no router mode: job.prioritized and decision.made are v3, router.mode_changed is retired', () => {
+  it('no router mode: job.prioritized and decision.made are v3, router.mode_changed is retired; remote_access.changed v1 kept (issue #968)', () => {
     expect(EVENT_SCHEMA_VERSIONS['job.prioritized']).toBe(3);
     expect(EVENT_SCHEMA_VERSIONS['decision.made']).toBe(3);
     expect(EVENT_TYPES).not.toContain('router.mode_changed');
     expect(EVENT_TYPES).not.toContain('jev.mode_changed');
     expect(Object.keys(LEGACY_EVENT_SCHEMAS).sort()).toEqual([
-      'decision.made.v1', 'decision.made.v2', 'jev.mode_changed.v1', 'job.prioritized.v1', 'job.prioritized.v2',
-      'question.answered.v1', 'question.escalated.v1', 'router.mode_changed.v1',
+      'decision.made.v1', 'decision.made.v2', 'jev.mode_changed.v1', 'job.prioritized.v1', 'job.prioritized.v2', 'job.progressed.v1',
+      'proposal.escalated.v1', 'proposal.submitted.v1', 'question.answered.v1', 'question.escalated.v1', 'remote_access.changed.v1', 'router.mode_changed.v1',
     ]);
+  });
+
+  it('a proposal\'s events before paths (v1, its goal as headline) still validate; v2 names its TL;DR (issue #651)', () => {
+    const at = '2026-10-01T00:00:00.000Z';
+    const env = (type: string, schemaVersion: number, data: Record<string, unknown>) => ({ schemaVersion, seq: 1, id: '00000000-0000-4000-8000-000000000000', type, at, data });
+    expect(validateEvent(env('proposal.submitted', 1, { proposalId: 'p', version: 1, goal: 'paint it', missing: ['effort'] }))).toEqual({ ok: true });
+    expect(validateEvent(env('proposal.escalated', 1, { proposalId: 'p', version: 1, target: 'human', reason: 'r', goal: 'paint it' }))).toEqual({ ok: true });
+    expect(validateEvent(env('proposal.submitted', 2, { proposalId: 'p', version: 1, tldr: 'paint it', missing: ['context'], paths: 3 }))).toEqual({ ok: true });
+    expect(validateEvent(env('proposal.submitted', 2, { proposalId: 'p', version: 1, goal: 'paint it', missing: [] })).ok).toBe(false);
   });
 
   it('a stored v2 job.prioritized, v2 decision.made and router.mode_changed still validate; v3 carries no mode', () => {

@@ -35,10 +35,10 @@ export function gateChain(report: PluginsReport, riskRuleCount: number): Gate[] 
 
 /**
  * The default escalation machine's choices (issue #442): the configured machines claude-cli runs on —
- * this one and the ssh ones; a client or container target cannot run it.
+ * this one, the ssh ones and the client targets (issue #482); a container target cannot run it.
  */
 export function escalationMachineChoices(report: PluginsReport): string[] {
-  return report.instances.filter((i) => i.role === 'machine-source' && (i.instance.plugin === 'local' || i.instance.plugin === 'ssh')).map((i) => i.instance.name);
+  return report.instances.filter((i) => i.role === 'machine-source' && ['local', 'ssh', 'client'].includes(i.instance.plugin)).map((i) => i.instance.name);
 }
 
 /** Matches RULES_MAX_BYTES in src/questions/rules.ts; the daemon refuses more (400). */

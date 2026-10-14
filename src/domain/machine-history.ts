@@ -1,0 +1,127 @@
+// Machine resources over time (issue #560, design.md "Machine resources over time"): a machine's CPU, memory and
+// swap as its probe last read them, each reading kept as a machine sample, and what the resource graph reads.
+// Re-exported by types.ts.
+import type { LaneChange } from './lane-tuning.ts';
+import type { UsageGap, UsageGraphView, UsagePoint, UsageSeries } from './usage-history.ts';
+
+/** A machine's CPU, memory and swap as last read (src/client/resources.ts is the meter; the same shape). */
+export interface ResourceReading {
+  /** CPUs it may use: the host's, or a container's CPU quota (may be fractional). */
+  cores: number;
+  /** Share of CPU time busy since the read before, 0..1. Absent: its first read. */
+  cpuBusyFrac?: number;
+  /** Load averages over 1, 5 and 15 minutes. Absent: Windows, which has none. */
+  load?: [number, number, number];
+  memTotalBytes: number;
+  memAvailableBytes: number;
+  /** Absent: not read (Windows, macOS, a container). */
+  swapTotalBytes?: number;
+  swapUsedBytes?: number;
+  /** Read inside a container's cgroup limits, not the host's. */
+  container?: true;
+  /** Read inside WSL (issue #868): a VM on a Windows host. */
+  wsl?: true;
+  /** WSL only: the memory the VM holds of the host, MemTotal less MemFree — page cache too, which Windows cannot use. */
+  vmHeldBytes?: number;
+  /** WSL only, with interop: the Windows host's physical memory, free and total. Absent: not read. */
+  hostMemFreeBytes?: number;
+  hostMemTotalBytes?: number;
+  /** WSL only, a client that dials the hopper on loopback (issue #712): whether Windows reaches the hopper. Absent: not tested. */
+  windowsLink?: WindowsLink;
+}
+
+/**
+ * The Windows link (issue #712): what a client in WSL found when Windows, through PowerShell, opened the hopper's health
+ * route at `url` (localhost, at the port the client dials). `ok`: the hopper answered, with `status`; else `error` says why.
+ * `mode`: WSL's networking mode (`nat`, `mirrored`), absent when not read. `at`: when it was tested.
+ */
+export interface WindowsLink {
+  url: string;
+  mode?: string;
+  ok: boolean;
+  status?: number;
+  error?: string;
+  at: string;
+}
+
+/** One machine's resources and disk at one time, with its lanes in use: what the resource recorder keeps. */
+export interface MachineSample {
+  machineId: string;
+  at: string;
+  cores?: number;
+  cpuBusyFrac?: number;
+  load1?: number;
+  memTotalBytes?: number;
+  memAvailableBytes?: number;
+  swapTotalBytes?: number;
+  swapUsedBytes?: number;
+  diskFreeBytes?: number;
+  diskTotalBytes?: number;
+  /** A WSL machine (issue #868): the memory its VM holds, and Windows' own memory, free and total, when read. */
+  vmHeldBytes?: number;
+  hostMemFreeBytes?: number;
+  hostMemTotalBytes?: number;
+  lanesBusy: number;
+  lanesMax: number;
+}
+
+/**
+ * What the resource graph draws per machine: each a share, 0..1. A WSL machine (issue #868) adds memory held (the memory
+ * its VM holds, of its memory total) and host memory (Windows' memory used).
+ */
+export const MACHINE_RESOURCES = ['cpu', 'memory', 'held', 'host', 'swap', 'disk', 'lanes'] as const;
+export type MachineResource = typeof MACHINE_RESOURCES[number];
+
+/** One line of the resource graph: one machine's resource, per graph step its peak share; the gaps where the machine gave no sample. */
+export interface ResourceSeries {
+  machineId: string;
+  resource: MachineResource;
+  points: UsagePoint[];
+  gaps: UsageGap[];
+}
+
+/** `GET /api/machines/history` and `GET /api/machines/:id/history`: the resource graph. */
+export interface MachineHistory {
+  view: UsageGraphView;
+  from: string;
+  to: string;
+  stepMs: number;
+  /** The history retention, shared with the usage samples. */
+  retentionDays: number;
+  series: ResourceSeries[];
+  /**
+   * One machine's graph only (issue #688, lane tuning's graph): the usage that limits it — the lines of its own usage
+   * readings and of a budget every machine shares — at the resource step.
+   */
+  usage?: UsageSeries[];
+  /** One machine's graph only: its lane changes in the range, oldest first. */
+  laneChanges?: LaneChange[];
+  /** The memory alert (issue #868); absent: off. */
+  memoryAlert?: MemoryAlert;
+}
+
+/**
+ * The memory alert (issue #868): a person is told (`machine.memory_low`) when a machine's free memory stays under
+ * `freeBytes` for `minutes` (0: at the first reading under), and again (`machine.memory_recovered`) when it is back over.
+ * The free memory is Windows' own for a WSL machine that reads it, else memory available. The user's setting, an admin's to change.
+ */
+export interface MemoryAlert {
+  freeBytes: number;
+  minutes: number;
+}
+
+/** The longest a memory alert waits: a day. */
+export const MAX_MEMORY_ALERT_MINUTES = 1440;
+
+/** The resource graph's default range: a day. */
+export const DEFAULT_MACHINE_GRAPH_VIEW: UsageGraphView = { range: { preset: '24h' } };
+
+/**
+ * The resource graph's step for a stretch this long: finer than the usage graph's, since a machine is read every
+ * minute — 15 minutes up to a day, an hour up to four, six hours up to two weeks, a day up to sixty, else a week.
+ */
+export function resourceStepMs(spanMs: number): number {
+  const days = spanMs / 86_400_000;
+  const h = 3_600_000;
+  return days <= 1 ? h / 4 : days <= 4 ? h : days <= 14 ? 6 * h : days <= 60 ? 24 * h : 168 * h;
+}

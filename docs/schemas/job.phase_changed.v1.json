@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "string",
+      "enum": [
+        "work",
+        "research",
+        "proposal"
+      ]
+    },
+    "to": {
+      "type": "string",
+      "enum": [
+        "work",
+        "research",
+        "proposal"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "switch"
+      ]
+    },
+    "questionId": {
+      "type": "string"
+    },
+    "note": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "reason"
+  ],
+  "additionalProperties": false
+}

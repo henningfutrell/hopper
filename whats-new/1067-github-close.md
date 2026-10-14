@@ -1,0 +1,1 @@
+- When an issue is closed or reopened on GitHub, the hopper now moves its work at once when a GitHub webhook is set up, and within about half an hour when none is, so closed work no longer stays counted as failed or open.

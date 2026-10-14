@@ -47,7 +47,7 @@ const LOCAL: MachineSnapshot = { id: 'local', label: 'local', maxLanes: 4, onlin
 const ctx = (machines: MachineSnapshot[] = [LOCAL], escalationMachine?: string) => ({
   clock: fixedClock, logger: { info() {}, warn() {} }, dataDir: dir, userEnv: {}, secretName: (n: string) => n, scratchDir: join(dir, 'scratch'), instanceName: 'opus',
   env: (_n: string): string | undefined => undefined, machine: async (id: string): Promise<MachineSnapshot | undefined> => machines.find((m) => m.id === id),
-  machines: async () => machines, escalationMachine: () => escalationMachine,
+  machines: async () => machines, escalationMachine: () => escalationMachine, client: () => undefined,
 });
 const signal = () => new AbortController().signal;
 const rec = () => JSON.parse(readFileSync(out, 'utf8')) as { argv: string[]; stdin: string; env: Record<string, string>; cwd: string };
@@ -79,20 +79,26 @@ describe('claude-cli (escalation level)', () => {
   });
 
   it('this machine is no default: one not configured or offline returns { error } and claude never runs here (#174)', async () => {
-    expect(await (await level({}, [])).answer(req(), signal())).toEqual({ error: 'machine local is not configured' });
-    expect(await (await level({}, [{ ...LOCAL, online: false }])).answer(req(), signal())).toEqual({ error: 'machine local is offline' });
+    expect(await (await level({}, [])).answer(req(), signal())).toEqual({ error: expect.stringMatching(/^machine local is not configured\. Pick another machine/) });
+    expect(await (await level({}, [{ ...LOCAL, online: false }])).answer(req(), signal())).toEqual({ error: expect.stringMatching(/^machine local is offline: questions skip this level until it is back/) });
     expect(existsSync(out)).toBe(false);
   });
 
-  it('spawns locked down with the reply schema { answer, escalate, reason }, --tools "" last, in the data dir', async () => {
+  it('spawns locked down with the reply schema { answer, escalate, reason, confidence, suggest? }, --tools "" last, in the data dir', async () => {
     await (await level()).answer(req(), signal());
     const { argv, schema } = argvAndSchema();
     expect(argv).toEqual(['-p', '--model', 'opus', '--output-format', 'json', '--json-schema', '<schema>', ...LOCKDOWN_TAIL]);
     // Literal draft-07 shape: the claude CLI rejects a `$schema` it does not know.
     expect(schema).toEqual({
       type: 'object',
-      properties: { answer: { type: 'string' }, escalate: { type: 'boolean' }, reason: { type: 'string' } },
-      required: ['answer', 'escalate', 'reason'],
+      properties: {
+        answer: { type: 'string' }, escalate: { type: 'boolean' }, reason: { type: 'string' },
+        // Issue #632: how sure it is; only at or above the auto-answer threshold does its answer go into the job.
+        confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
+        // Issue #548: a phase shift the level suggests, optional.
+        suggest: { type: 'object', properties: { to: { type: 'string', enum: ['research', 'proposal'] }, note: { type: 'string' } }, required: ['to'], additionalProperties: false },
+      },
+      required: ['answer', 'escalate', 'reason', 'confidence'],
       additionalProperties: false,
     });
     expect(rec().cwd).toBe(dir);
@@ -119,8 +125,8 @@ describe('claude-cli (escalation level)', () => {
   });
 
   it.each([
-    [{ answer: 'use sqlite', escalate: false, reason: 'routine' }, { answer: 'use sqlite', escalate: false, reason: 'routine', model: 'claude-opus-resolved' }],
-    [{ answer: 'pick option 1', escalate: true, reason: 'irreversible' }, { answer: 'pick option 1', escalate: true, reason: 'irreversible', model: 'claude-opus-resolved' }],
+    [{ answer: 'use sqlite', escalate: false, reason: 'routine', confidence: 'high' }, { answer: 'use sqlite', escalate: false, reason: 'routine', confidence: 'high', model: 'claude-opus-resolved' }],
+    [{ answer: 'pick option 1', escalate: true, reason: 'irreversible', confidence: 'high' }, { answer: 'pick option 1', escalate: true, reason: 'irreversible', confidence: 'high', model: 'claude-opus-resolved' }],
   ])('returns a schema-valid reply %j, with the model the CLI reports it ran (modelUsage)', async (structured, want) => {
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify(structured);
     expect(await (await level()).answer(req(), signal())).toEqual(want);
@@ -131,6 +137,8 @@ describe('claude-cli (escalation level)', () => {
     ['escalate missing', { answer: 'a', reason: 'r' }],
     ['reason missing', { answer: 'a', escalate: false }],
     ['answer missing', { escalate: false, reason: 'r' }],
+    ['confidence missing', { answer: 'a', escalate: false, reason: 'r' }],
+    ['confidence off the scale', { answer: 'a', escalate: false, reason: 'r', confidence: 'certain' }],
   ])('%s returns { error }', async (_n, structured) => {
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify(structured);
     expect(await (await level()).answer(req(), signal())).toEqual({ error: expect.any(String) });
@@ -165,20 +173,20 @@ describe('detection: never a model call', () => {
 
 describe('a level that names no machine (#442)', () => {
   const OTHER: MachineSnapshot = { ...LOCAL, id: 'other', label: 'other' };
-  const PHONE: MachineSnapshot = { id: 'phone', label: 'phone', maxLanes: 1, online: true, executors: [], client: {} };
+  const BOX: MachineSnapshot = { id: 'box', label: 'box', maxLanes: 1, online: true, executors: [], docker: 'box' };
   const unnamed = (machines: MachineSnapshot[], fallback?: string) => claudeCli.create(ctx(machines, fallback), opts(claudeCli, { bin: BIN, timeoutMs: 5000 }));
-  const ANSWER = { answer: 'use sqlite', escalate: false, reason: 'routine' };
+  const ANSWER = { answer: 'use sqlite', escalate: false, reason: 'routine', confidence: 'high' };
 
   it('the only machine that can run claude answers; the reply names it and why', async () => {
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify(ANSWER);
-    expect(await (await unnamed([PHONE, LOCAL])).answer(req(), signal())).toEqual({ ...ANSWER, model: 'claude-opus-resolved', machine: { id: 'local', why: 'the only machine that can run claude' } });
+    expect(await (await unnamed([BOX, LOCAL])).answer(req(), signal())).toEqual({ ...ANSWER, model: 'claude-opus-resolved', machine: { id: 'local', why: 'the only machine that can run claude' } });
     expect(rec().cwd).toBe(dir);
   });
 
-  it('the job\'s machine, where claude can run there; skipped when it is a client target', async () => {
+  it('the job\'s machine, where claude can run there; skipped when it is a container target', async () => {
     process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify(ANSWER);
     expect(await (await unnamed([LOCAL, OTHER])).answer(req({ jobMachine: 'other' }), signal())).toMatchObject({ machine: { id: 'other', why: 'the job\'s machine' } });
-    expect(await (await unnamed([PHONE, OTHER])).answer(req({ jobMachine: 'phone' }), signal())).toMatchObject({ machine: { id: 'other', why: 'the only machine that can run claude' } });
+    expect(await (await unnamed([BOX, OTHER])).answer(req({ jobMachine: 'box' }), signal())).toMatchObject({ machine: { id: 'other', why: 'the only machine that can run claude' } });
   });
 
   it('the default escalation machine when several can and the job\'s cannot', async () => {
@@ -187,7 +195,7 @@ describe('a level that names no machine (#442)', () => {
   });
 
   it('no machine can: the level does not run, and escalates with the plain reason, never an options-validation text', async () => {
-    const reply = await (await unnamed([PHONE])).answer(req(), signal());
+    const reply = await (await unnamed([BOX])).answer(req(), signal());
     expect(reply).toEqual({ escalate: true, reason: NO_MACHINE_FOR_LEVEL });
     expect(existsSync(out)).toBe(false);
   });
@@ -229,13 +237,13 @@ describe('claude-cli on a designated machine (issue #150)', () => {
   });
 
   it('runs claude over the machine\'s connection, locked down, the prompt on stdin, in a fresh dir removed after', async () => {
-    process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'rules' });
-    expect(await (await onMachine([LAPTOP])).answer(req(), signal())).toEqual({ answer: 'use sqlite', escalate: false, reason: 'rules', model: 'claude-opus-resolved' });
+    process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'rules', confidence: 'high' });
+    expect(await (await onMachine([LAPTOP])).answer(req(), signal())).toEqual({ answer: 'use sqlite', escalate: false, reason: 'rules', confidence: 'high', model: 'claude-opus-resolved' });
     const [call] = sshCalls();
     expect(call!.argv.slice(call!.argv.indexOf('--') + 1, -1)).toEqual(['laptop.example']);
     const { argv, schema } = argvAndSchema();
     expect(argv).toEqual(['-p', '--model', 'opus', '--output-format', 'json', '--json-schema', '<schema>', ...LOCKDOWN_TAIL]);
-    expect(schema).toMatchObject({ required: ['answer', 'escalate', 'reason'] });
+    expect(schema).toMatchObject({ required: ['answer', 'escalate', 'reason', 'confidence'] });
     expect(rec().stdin).toContain('Which database should I use?');
     expect(rec().cwd).not.toBe(dir);
     expect(existsSync(rec().cwd)).toBe(false);
@@ -249,7 +257,6 @@ describe('claude-cli on a designated machine (issue #150)', () => {
   it.each([
     ['not configured', [] as MachineSnapshot[], /machine laptop is not configured/],
     ['offline', [{ ...LAPTOP, online: false }], /machine laptop is offline/],
-    ['a client target', [{ id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: [], client: {} }], /client target/],
     ['a container target', [{ id: 'laptop', label: 'laptop', maxLanes: 1, online: true, executors: [], docker: 'box' }], /container target/],
   ])('a machine %s returns { error }: the question escalates', async (_n, machines, why) => {
     expect(await (await onMachine(machines)).answer(req(), signal())).toEqual({ error: expect.stringMatching(why) });

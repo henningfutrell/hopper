@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { scrubbedEnv } from '../../src/executors/env.ts';
 import { createHerdrClaudeExecutor, createHerdrCliClient } from '../../src/executors/herdr/index.ts';
 import { claudeArgsFor, openPane, startClaude } from '../../src/executors/herdr/start.ts';
-import { contextFor, jobWith } from './support.ts';
+import { LOCAL, contextFor, jobWith } from './support.ts';
 
 const REAL = process.env.HOPPER_REAL_HERDR === '1';
 const BIN = process.env.HOPPER_HERDR_BIN ?? 'herdr';
@@ -42,7 +42,7 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
   it('asks a question, resumes with the answer, finishes, and the file exists', async () => {
     const executor = createHerdrClaudeExecutor({
       herdr: createHerdrCliClient({ bin: BIN, session: SESSION }),
-      clock: { now: () => new Date() }, defaultCwd: dir, claudeArgs: ['--dangerously-skip-permissions'],
+      clock: { now: () => new Date() }, claudeArgs: ['--dangerously-skip-permissions'],
       trustWorkdir: true, pollMs: 1000, idleNudgeMs: 30000,
     });
     const id = randomUUID();
@@ -51,13 +51,14 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
         + 'Do not create the file yet. After I answer, write exactly that word (no newline needed) into answer.txt and finish.',
       model: process.env.HOPPER_REAL_MODEL ?? 'sonnet', timeoutMs: 240000,
     };
-    const first = contextFor(jobWith(payload, { id }));
+    const here = { ...LOCAL, workTree: dir };
+    const first = contextFor(jobWith(payload, { id }), undefined, here);
     const asked = await executor.run(first.ctx);
     expect(asked.kind, JSON.stringify(asked)).toBe('question');
     console.warn('real herdr: question', JSON.stringify(asked.kind === 'question' ? asked.question.text : asked));
     console.warn('real herdr: progress', JSON.stringify(first.progress.map((p) => p.message)));
 
-    const second = contextFor(jobWith(payload, { id, executorState: first.saved.at(-1) }));
+    const second = contextFor(jobWith(payload, { id, executorState: first.saved.at(-1) }), undefined, here);
     const done = await executor.resume!(second.ctx, 'pineapple');
     expect(done.kind, JSON.stringify(done)).toBe('finished');
     console.warn('real herdr: finished', JSON.stringify(done));
@@ -74,7 +75,7 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
     execFileSync('git', ['init', '-q', tree]);
     const executor = createHerdrClaudeExecutor({
       herdr: createHerdrCliClient({ bin: BIN, session: SESSION }),
-      clock: { now: () => new Date() }, defaultCwd: tree, claudeArgs: ['--dangerously-skip-permissions'],
+      clock: { now: () => new Date() }, claudeArgs: ['--dangerously-skip-permissions'],
       trustWorkdir: true, pollMs: 1000, idleNudgeMs: 30000,
     });
     const payload = {
@@ -82,7 +83,7 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
         + 'Then write the full path of your scratchpad directory into scratchpad.txt in the current directory, and finish.',
       model: process.env.JOB_HOPPER_REAL_MODEL ?? 'sonnet', timeoutMs: 240000,
     };
-    const { ctx } = contextFor(jobWith(payload, { id: randomUUID() }));
+    const { ctx } = contextFor(jobWith(payload, { id: randomUUID() }), undefined, { ...LOCAL, workTree: tree });
     const done = await executor.run(ctx);
     expect(done.kind, JSON.stringify(done)).toBe('finished');
     const scratch = join(tree, '.hopper-scratch');
@@ -97,7 +98,7 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
   it('8 jobs started at once in fresh tabs all reach Claude ready (no start race)', async () => {
     const herdr = createHerdrCliClient({ bin: BIN, session: SESSION });
     const deps = {
-      herdr, clock: { now: () => new Date() }, pollMs: 500, claudeArgs: claudeArgsFor(true, []), trustWorkdir: true, yolo: true, jobWorktrees: false, sharedDependencies: false,
+      herdr, clock: { now: () => new Date() }, pollMs: 500, claudeArgs: claudeArgsFor(true, []), trustWorkdir: true, yolo: true, unattended: true, jobWorktrees: false, sharedDependencies: false,
       sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
     };
     const ids = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => `${i}0000000-0000-0000-0000-000000000000`);
@@ -107,7 +108,7 @@ describe.skipIf(!REAL)('herdr-claude against a real herdr and Claude (opt-in)', 
         const { ctx } = contextFor(jobWith({ prompt: 'unused' }, { id }), `local/lane-${i}`);
         const state = await openPane(deps, ctx, dir, {});
         panes.push(state.paneId);
-        return startClaude(deps, ctx, state, { prompt: 'unused', cwd: dir, env: {}, expectedMs: 1, timeoutMs: 1 });
+        return startClaude(deps, ctx, state, { prompt: 'unused', cwd: dir, env: {}, timeoutMs: 1 });
       }));
       expect(outcomes).toEqual(ids.map(() => null));
       expect(new Set(panes).size).toBe(ids.length);

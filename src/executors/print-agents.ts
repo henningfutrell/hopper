@@ -1,10 +1,10 @@
 // How each print-mode agent CLI is called and how its answer is read (design.md "Print-mode agent
-// executors", issues #142 and #307): Cursor's agent prints one JSON result; codex, opencode and omp print
-// JSON events, one per line. The shapes are the real CLIs' (cursor-agent 2026.10, codex-cli 0.160,
-// opencode 1.18, omp 18.7). Only the call and the reading differ; the turn is print-agent.ts's.
+// executors", issues #142, #307 and #533): Cursor's agent and Claude Code print one JSON result; codex, opencode
+// and omp print JSON events, one per line. The shapes are the real CLIs' (cursor-agent 2026.10, codex-cli 0.160,
+// opencode 1.18, omp 18.7, claude 2.1.292). Only the call and the reading differ; the turn is print-agent.ts's.
 
 /** The agent CLIs a print-mode executor runs, by the id of its executor plugin. */
-export const PRINT_AGENTS = ['cursor-agent', 'codex', 'opencode', 'omp'] as const;
+export const PRINT_AGENTS = ['cursor-agent', 'codex', 'opencode', 'omp', 'claude'] as const;
 export type PrintAgent = (typeof PRINT_AGENTS)[number];
 
 /** One turn's call: the CLI, its own arguments, the model, the session to resume, the text to send. */
@@ -34,17 +34,30 @@ function events(stdout: string): Json[] {
 
 const model = (c: TurnCall): string[] => (c.model ? ['--model', c.model] : []);
 
+/** One JSON result: `result` the last message, `session_id` the session, `is_error` the CLI's own error. Cursor's agent and Claude Code alike. */
+function readResult(stdout: string): TurnAnswer {
+  let r: Json;
+  try { r = obj(JSON.parse(stdout.trim())); } catch { return { unreadable: `printed no JSON result: ${stdout.trim()}` }; }
+  const said = str(r.result) ?? '';
+  if (r.is_error) return { error: said.trim() || 'error without a message' };
+  const session = str(r.session_id);
+  return session ? { text: said, session } : { unreadable: 'answered without a chat id' };
+}
+
 const cursor: Dialect = {
   argv: (c) => [c.bin, '-p', '--output-format', 'json', '--workspace', c.cwd, ...c.args, ...model(c), ...(c.session ? ['--resume', c.session] : []), '--', c.text],
-  read(stdout) {
-    let r: Json;
-    try { r = obj(JSON.parse(stdout.trim())); } catch { return { unreadable: `printed no JSON result: ${stdout.trim()}` }; }
-    const said = str(r.result) ?? '';
-    if (r.is_error) return { error: said.trim() || 'error without a message' };
-    const session = str(r.session_id);
-    return session ? { text: said, session } : { unreadable: 'answered without a chat id' };
-  },
+  read: readResult,
 };
+
+/**
+ * `claude -p --output-format json` (issue #533): Claude Code in print mode shows no screen — no onboarding, no trust
+ * dialog, nothing to press — so a fresh home runs it as it is. It works in its cwd, the job's work tree.
+ */
+const claude: Dialect = {
+  argv: (c) => [c.bin, '-p', '--output-format', 'json', ...c.args, ...model(c), ...(c.session ? ['--resume', c.session] : []), '--', c.text],
+  read: readResult,
+};
+
 
 /** `codex exec --json`: `thread.started` names the thread; each `agent_message` item is a message; `turn.failed` ends it. */
 const codex: Dialect = {
@@ -106,4 +119,4 @@ const omp: Dialect = {
   },
 };
 
-export const DIALECTS: Readonly<Record<PrintAgent, Dialect>> = { 'cursor-agent': cursor, codex, opencode, omp };
+export const DIALECTS: Readonly<Record<PrintAgent, Dialect>> = { 'cursor-agent': cursor, codex, opencode, omp, claude };

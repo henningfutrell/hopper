@@ -1,6 +1,7 @@
 // Intake by label and assignee (issue #387), end to end through the real daemon against the in-memory
 // fake GitHub at the GitHubApi seam. A user's source takes an open issue that carries the source label and
-// is assigned to the user's connected account, whoever filed it. Rejecting it is the user's own record: the
+// is assigned to the user's connected account; since issue #652 only from a trusted origin (intake-origin.test.ts has
+// the rest). Rejecting it is the user's own record: the
 // issue gets no label, no comment, is never closed, and is not taken again until it is assigned to the user
 // again or run again. Unassigned while waiting, its job leaves the queue; while running, the job is flagged
 // and the user decides.
@@ -24,7 +25,7 @@ async function boot(gh: FakeGitHub) {
   const db = tempDbPath();
   cleanup = db.cleanup;
   const plugins = { jobSources: [{ name: 'github', plugin: 'github-account', options: {
-    enabled: true, pollSeconds: 3600, executor: 'scripted', defaultCwd: '/tmp',
+    enabled: true, pollSeconds: 3600, executor: 'scripted',
   } }] };
   const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh }, plugins });
   apps.push(a);
@@ -38,13 +39,13 @@ const jobsFor = async (a: TestApp, url: string): Promise<Job[]> =>
 const setGate = (a: TestApp, token: string, mode: string) => a.ui('/ui/api/queue-gate', { mode, autoAcceptPerHour: null }, { token });
 
 describe('intake by label and assignee (issue #387)', () => {
-  it('an issue filed by any account, labelled and assigned to the user, becomes a job on the next sync', async () => {
+  it('an issue the user filed, labelled and assigned to the user, becomes a job on the next sync', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);
-    const issue = gh.createIssue({ repo: REPO, author: 'stranger', assignees: ['owner'], body: body({ op: 'sleep', ms: 10000 }), labels: ['hopper'] });
+    const issue = gh.createIssue({ repo: REPO, assignees: ['owner'], body: body({ op: 'sleep', ms: 10000 }), labels: ['hopper'] });
     await a.sync();
     const [job] = await jobsFor(a, issue.url);
-    expect(job).toMatchObject({ source: { author: 'stranger', assignee: 'owner' } });
+    expect(job).toMatchObject({ source: { author: 'owner', assignee: 'owner', origin: 'trusted' } });
   });
 
   it('not assigned, assigned to someone else, or without the label: no job', async () => {
@@ -63,7 +64,7 @@ describe('intake by label and assignee (issue #387)', () => {
     const db = tempDbPath();
     cleanup = db.cleanup;
     const plugins = { jobSources: [{ name: 'github', plugin: 'github-account', options: {
-      pollSeconds: 3600, authors: ['someone-else'], executor: 'scripted', defaultCwd: '/tmp',
+      pollSeconds: 3600, authors: ['someone-else'], executor: 'scripted',
     } }] };
     const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh }, plugins });
     apps.push(a);
@@ -78,7 +79,7 @@ describe('intake by label and assignee (issue #387)', () => {
     const a = await boot(gh);
     const token = await a.login();
     await setGate(a, token, 'review');
-    const issue = gh.createIssue({ repo: REPO, author: 'stranger', body: body({ op: 'echo' }), labels: ['hopper'] });
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
     await a.sync();
     const [job] = await jobsFor(a, issue.url);
     const r = await a.ui<Job>(`/ui/api/jobs/${job!.id}/reject`, { reason: 'not mine to do' }, { token });

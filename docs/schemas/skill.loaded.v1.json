@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "requestId": {
+      "type": "string"
+    },
+    "machine": {
+      "type": "string"
+    },
+    "template": {
+      "type": "string"
+    },
+    "asset": {
+      "type": "string"
+    },
+    "skill": {
+      "type": "string"
+    },
+    "decision": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "skill"
+  ],
+  "additionalProperties": false
+}

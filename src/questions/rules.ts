@@ -10,7 +10,7 @@ export const RULES = 'rules';
 
 export interface Rules {
   text: string;
-  /** True when there are no rules yet; the prompt and the attempt reason say so. */
+  /** True when there are no rules yet; the rules view says so. */
   missing: boolean;
 }
 

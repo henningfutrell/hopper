@@ -54,7 +54,7 @@ describe('a question a level answers', () => {
     expect(types.indexOf('question.answered')).toBeLessThan(types.indexOf('job.requeued'));
     expect(types.filter((x) => x === 'job.started')).toHaveLength(2);
     expect(types.at(-1)).toBe('job.finished');
-    expect(events.find((e) => e.type === 'question.asked')!.data).toEqual({ questionId: q!.id, text: 'Which colour?', detectedBy: 'test' });
+    expect(events.find((e) => e.type === 'question.asked')!.data).toEqual({ questionId: q!.id, text: 'Which colour?', detectedBy: 'test', raisedBy: q!.raisedBy, priority: 50, high: false });
     expect(events.find((e) => e.type === 'question.answered')).toMatchObject({ schemaVersion: 2, data: { by: 'opus', answer: 'fake opus answer' } });
     expect(events.find((e) => e.type === 'job.requeued')!.data).toEqual({ from: 'waiting_answer', reason: 'answered' });
     expect(events.filter((e) => e.type === 'question.escalated').map((e) => e.data.target)).toEqual(['opus']);
@@ -83,7 +83,7 @@ describe('the pipeline end to end through the seams', () => {
   it('scripted levels answer a pulled job\'s question; the level above sees the recommendation below', async () => {
     const seen: string[] = [];
     const low = createFakeLevel({ name: 'low', script: (req) => ({ answer: `draft for ${req.question.text}`, escalate: true, reason: 'not sure' }) });
-    const high = createFakeLevel({ name: 'high', script: (req) => { seen.push(req.previous.map((x) => x.answer).join()); return { answer: 'spaces', escalate: false, reason: 'fine' }; } });
+    const high = createFakeLevel({ name: 'high', script: (req) => { seen.push(req.previous.map((x) => x.answer).join()); return { answer: 'spaces', escalate: false, reason: 'fine', confidence: 'high' }; } });
     const a = await start({}, { seams: { levels: [low, high] } });
     const job = await a.pull(ask('Tabs or spaces?'));
     expect((await a.waitForStatus(job.id, 'finished')).result).toEqual({ answer: 'spaces' });
@@ -108,6 +108,20 @@ describe('the pipeline end to end through the seams', () => {
     const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human' && x.notifyCount === 1);
     expect(q.attempts).toEqual([]);
     expect(ofJob(await a.events(), job.id).filter((e) => e.type === 'question.escalated').map((e) => e.data.target)).toEqual(['human']);
+  });
+});
+
+describe('the order of the question lists (issue #450)', () => {
+  it('open questions come oldest first, the longest waiting on top; every other listing newest first', async () => {
+    const a = await start({}, { seams: { levels: [] } });
+    const first = await a.pull(ask('Which colour?'));
+    const q1 = await a.waitForQuestion(first.id, (x) => x.tier === 'human');
+    const second = await a.pull(ask('Which size?'));
+    const q2 = await a.waitForQuestion(second.id, (x) => x.tier === 'human');
+    const ids = async (path: string) => (await a.api<{ questions: Question[] }>('GET', path)).body.questions.map((x) => x.id);
+    expect(await ids('/api/questions')).toEqual([q1.id, q2.id]);
+    expect(await ids('/api/questions?status=open')).toEqual([q1.id, q2.id]);
+    expect(await ids('/api/questions?status=all')).toEqual([q2.id, q1.id]);
   });
 });
 
@@ -267,7 +281,7 @@ describe('a question escalated to the human', () => {
     expect(body).toMatchObject({ type: 'question.escalated', jobId: job.id, questionId: q.id, schemaVersion: 2 });
     expect(body.data).toEqual({
       questionId: q.id, target: 'human', reason: expect.any(String), text: 'Is this risky?', jobId: job.id,
-      goal: 'tidy up', answerUrl: `${a.url}/#question-${q.id}`, notifyCount: 1,
+      goal: 'tidy up', answerUrl: `http://localhost:${new URL(a.url).port}/#question-${q.id}`, notifyCount: 1, raisedBy: q.raisedBy, priority: 50, high: false,
     });
   });
 
@@ -283,7 +297,7 @@ describe('a question escalated to the human', () => {
     expect(body).toMatchObject({ type: 'question.escalated_to_human', jobId: job.id, questionId: q.id, schemaVersion: 1 });
     expect(body.data).toEqual({
       questionId: q.id, reason: expect.any(String), text: 'Is this risky?', jobId: job.id,
-      goal: 'tidy up', answerUrl: `${a.url}/#question-${q.id}`, notifyCount: 1,
+      goal: 'tidy up', answerUrl: `http://localhost:${new URL(a.url).port}/#question-${q.id}`, notifyCount: 1, raisedBy: q.raisedBy, priority: 50, high: false,
     });
     const events = ofJob(await a.events(), job.id);
     expect(events.filter((e) => e.type === 'question.escalated').map((e) => e.data.target)).toEqual(['opus', 'fable', 'human']);

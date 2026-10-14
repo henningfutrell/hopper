@@ -10,6 +10,8 @@ const TONE: Record<string, Tone> = {
   held: 'warn', draining: 'warn', retrying: 'warn', pending: 'warn', starting: 'warn', escalated: 'warn', reconnecting: 'warn', drafted: 'warn',
   waiting_answer: 'question', question: 'question', human: 'question',
   operator_led: 'operator', 'operator-led': 'operator',
+  parked: 'muted',
+  waiting_on: 'muted',
 };
 export const toneOf = (status: string): Tone => TONE[status] ?? 'muted';
 
@@ -47,3 +49,8 @@ export function StatusBadge({ status, label, tone, title, className }: { status:
     </span>
   );
 }
+
+/** A repository's yolo mode (issue #579): whether its jobs' pull requests merge once the checks pass. */
+export const YoloBadge = ({ on }: { on: boolean }) => (
+  <StatusBadge status={on ? 'yolo-on' : 'yolo-off'} label={on ? 'yolo on' : 'yolo off'} tone={on ? 'warn' : 'muted'} />
+);

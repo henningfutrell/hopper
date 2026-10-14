@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Issue #355: a failed job is a locked entry. The Overview's Waiting panel lists the locked entries
+// Issue #355: a failed job is a locked entry. The Dashboard's Waiting panel lists the locked entries
 // (rendered in happy-dom inside the whole app against a fake of the daemon's HTTP surface), each with
 // its failure, Run again and Dismiss.
 import { createElement } from 'react';
@@ -19,7 +19,7 @@ function fakeDaemon(locked: ReturnType<typeof failedJob>[]) {
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
     '/api/queue': {
-      waiting: [], running: [], waitingAnswer: [], ended: [], locked,
+      waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked,
       gate: { mode: 'review', autoAcceptPerHour: null }, presort: { sorter: 'oldest-first', jobIds: [], reject: [] },
     },
     '/api/machines': { machines: [] }, '/api/decisions': { decisions: [] }, '/api/events': { events: [] },

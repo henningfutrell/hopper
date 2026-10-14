@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "questionId": {
+      "type": "string"
+    },
+    "level": {
+      "type": "string",
+      "minLength": 1
+    },
+    "was": {
+      "type": "string"
+    },
+    "answer": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    },
+    "raisedBy": {
+      "type": "object",
+      "properties": {
+        "machineId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "laneId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machineId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "questionId",
+    "level",
+    "was",
+    "answer",
+    "by"
+  ],
+  "additionalProperties": false
+}

@@ -25,6 +25,7 @@
     </a>
     <ul class="flex items-center gap-1 text-sm font-medium text-muted-foreground sm:gap-2">
       <li><a href="./" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Home</a></li>
+      <li><a href="guide.html" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Guide</a></li>
       <li><a href="https://github.com/henningfutrell/hopper/blob/stable/README.md" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">Docs</a></li>
       <li><a href="https://github.com/henningfutrell/hopper" class="rounded-md px-2.5 py-1.5 transition-colors hover:text-foreground">GitHub</a></li>
     </ul>
@@ -98,7 +99,7 @@ let issues written by you become jobs.</div>
 <ol class="steps">
 <li><p><strong>Pick a repository.</strong> Use a repository on GitHub you can write to. Jobs run on the
 machines attached to the hopper (the container is not one): add one with <strong>Add machine</strong> in the
-UI's <strong>Machines</strong> view, and keep a clone of the repository there.</p></li>
+UI's <strong>Machines</strong> view. The hopper clones the repository there for each job.</p></li>
 <li><p><strong>Choose it for jobs.</strong> In the UI, open <strong>Sources</strong>, and under
 <strong>GitHub account</strong> tick the repository and press <strong>Save</strong>. The hopper takes jobs only
 from the repositories chosen there, and only from issues you opened. Nothing to restart. If the repository is
@@ -107,9 +108,9 @@ organization (<a href="https://github.com/apps/hopper-qm/installations/new">gith
 where you pick the repositories it may reach. It asks to read and write issues, pull requests and
 contents, and to read metadata; nothing else.</p>
 <figure class="shot"><img src="../docs/screenshots/sources.webp" alt="The Sources view: a connected GitHub account, with four of its five repositories ticked for jobs and the Save button." width="1440" height="820" loading="lazy" decoding="async"><figcaption>Sources → GitHub account: tick the repositories, then Save.</figcaption></figure>
-<p class="note">Where a job runs: the machine's work tree, unless you set <code>repoPaths</code> on the
-<code>github-account</code> source (Settings → Plugins → Job sources), for example
-<code>{ your-login/your-repo: ~/your-repo }</code>.</p></li>
+<p class="note">Where a job runs: its machine's work tree, <code>~/hopper-jobs</code> unless you set another
+with <strong>Edit</strong> in the <strong>Machines</strong> view. The hopper makes it, and fetches or clones the
+repository in it before each job.</p></li>
 <li><p><strong>Create the <code>hopper</code> label</strong> in the repository, once: on GitHub (Issues →
 Labels → New label), or with the GitHub CLI on your own computer:</p>
 <div class="cmd"><pre>gh label create hopper -R your-login/your-repo</pre><button type="button" data-copy="gh label create hopper -R your-login/your-repo">Copy</button></div></li>
@@ -124,18 +125,17 @@ The issue's labels show where it is:</p>
 <tr><td><code>hopper:done</code></td><td>it finished, and the issue is closed</td></tr>
 <tr><td><code>hopper:failed</code></td><td>it failed; remove this label to run it again</td></tr>
 </table></div>
-<figure class="shot"><img src="../docs/screenshots/queue.webp" alt="The hopper's overview, busy: nine lanes on four machines running jobs, a lane timeline of finished and failed runs, the waiting queue and recent ended jobs." width="1440" height="1010" loading="lazy" decoding="async"><figcaption>The overview once it has work: every lane, what waits, and what just ended.</figcaption></figure>
+<figure class="shot"><img src="../docs/screenshots/queue.webp" alt="The hopper's dashboard, busy: nine lanes on four machines running jobs, a lane timeline of finished and failed runs, the waiting queue and recent ended jobs." width="1440" height="1010" loading="lazy" decoding="async"><figcaption>The dashboard once it has work: every lane, what waits, and what just ended.</figcaption></figure>
 <p>When a job asks something it cannot answer for itself, the question waits for you in the UI's
 <strong>Questions</strong> view.</p>
 <figure class="shot"><img src="../docs/screenshots/question.webp" alt="A job's question in the Questions view: it escalated past both escalation levels, each with its suggested answer, and an answer is typed in the box." width="1440" height="760" loading="lazy" decoding="async"><figcaption>A question that waits for you, with what each escalation level suggested.</figcaption></figure></li>
 </ol>
 <details>
 <summary>Installed on the machine itself? Its first step</summary>
-<p>Jobs run on this machine. Keep a clone of the repository here (for example
-<code>git clone https://github.com/your-login/your-repo ~/your-repo</code>), then choose the repository in
-<strong>Sources</strong> as above, and set <code>repoPaths</code> to
-<code>{ your-login/your-repo: ~/your-repo }</code> on the <code>github-account</code> source (Settings →
-Plugins → Job sources) so its jobs run in that clone.</p>
+<p>Jobs run on this machine, in its work tree. Choose the repository in <strong>Sources</strong> as above. To
+work in a clone you already have (for example <code>~/your-repo</code>), set this machine's work tree to the
+folder that holds it with <strong>Edit</strong> in the <strong>Machines</strong> view: the hopper fetches that
+clone instead of making another.</p>
 </details>
 <p>That is the whole loop. From here, label any issue <code>hopper</code> to hand it over. <code>hopper:high</code>
 and <code>hopper:low</code> change its priority; <code>hopper:backburner</code> keeps it waiting.</p>
@@ -235,14 +235,45 @@ from in the UI: <strong>Sources</strong> → <strong>GitHub account</strong>. If
 <div class="cmd"><pre>wsl --install -d Ubuntu-24.04</pre><button type="button" data-copy="wsl --install -d Ubuntu-24.04">Copy</button></div>
 <p>Restart Windows if it asks. Then open <strong>Ubuntu</strong> from the Start menu and choose a user name
 and password. Every command below runs in that Ubuntu window, not in PowerShell, unless it says so.</p></li>
+<li><p>Turn systemd on in Ubuntu. Podman needs it to start your containers again:</p>
+<div class="cmd"><pre>printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf</pre><button type="button" data-copy="printf &#x27;[boot]\nsystemd=true\n&#x27; | sudo tee -a /etc/wsl.conf">Copy</button></div>
+<p>Then run <code>wsl --shutdown</code> in PowerShell and open Ubuntu again. <code>systemctl --user status</code>
+must not say <code>System has not been booted with systemd</code>.</p></li>
 <li><p>Install Podman in Ubuntu:</p>
 <div class="cmd"><pre>sudo apt-get update &amp;&amp; sudo apt-get install -y podman podman-compose</pre><button type="button" data-copy="sudo apt-get update &amp;&amp; sudo apt-get install -y podman podman-compose">Copy</button></div></li>
-<li><p>Continue with <a href="#podman">Run it with Podman</a> from step 2, in Ubuntu. The sign-in link opens in
-your Windows browser: WSL passes <code>127.0.0.1</code> through to Windows.</p></li>
+<li><p>Continue with <a href="#podman">Run it with Podman</a> from step 2, in Ubuntu, to its last step,
+<strong>Keep it running after a reboot</strong>. The sign-in link opens in
+your Windows browser: WSL passes <code>127.0.0.1</code> through to Windows. Do not skip the last step. It makes
+the hopper's containers start each time Ubuntu starts:</p>
+<div class="cmd"><pre>sudo loginctl enable-linger "$USER"
+systemctl --user enable podman-restart.service</pre><button type="button" data-copy="sudo loginctl enable-linger &quot;$USER&quot; &amp;&amp; systemctl --user enable podman-restart.service">Copy</button></div></li>
+<li id="windows-keep-running"><p><strong>Keep Ubuntu running.</strong> WSL stops Ubuntu, and the hopper with it, soon after
+no Windows program uses it. A shortcut in your Startup folder starts Ubuntu when you sign in to Windows,
+and keeps it running in a hidden window. If <code>wsl.exe</code> stops, it starts it again after 5 seconds.
+Install <a href="#windows-cli">the hopper CLI from Windows</a>, then run this in PowerShell, once:</p>
+<div class="cmd"><pre>hopper autostart on</pre><button type="button" data-copy="hopper autostart on">Copy</button></div>
+<p>It also does step 4 if you skipped it, and can ask for your Ubuntu password once. <code>hopper autostart status</code>
+says what is on, and <code>hopper autostart off</code> stops it.</p>
+<p>Or make the shortcut by hand. In
+PowerShell, not as administrator (change <code>Ubuntu-24.04</code> if your distro has another name; <code>wsl --list</code>
+shows the names):</p>
+<div class="cmd"><pre>$s = (New-Object -ComObject WScript.Shell).CreateShortcut(&quot;$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\hopper-wsl.lnk&quot;)
+$s.TargetPath = &#x27;powershell.exe&#x27;
+$s.Arguments = &#x27;-NoProfile -WindowStyle Hidden -Command &quot;while ($true) { wsl.exe -d Ubuntu-24.04 -e sleep infinity; Start-Sleep -Seconds 5 }&quot;&#x27;
+$s.WindowStyle = 7
+$s.Save()</pre><button type="button" data-copy="$s = (New-Object -ComObject WScript.Shell).CreateShortcut(&quot;$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\hopper-wsl.lnk&quot;); $s.TargetPath = &#x27;powershell.exe&#x27;; $s.Arguments = &#x27;-NoProfile -WindowStyle Hidden -Command &quot;while ($true) { wsl.exe -d Ubuntu-24.04 -e sleep infinity; Start-Sleep -Seconds 5 }&quot;&#x27;; $s.WindowStyle = 7; $s.Save()">Copy</button></div>
+<p>Start it now, so you need not sign out:</p>
+<div class="cmd"><pre>Invoke-Item &quot;$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\hopper-wsl.lnk&quot;</pre><button type="button" data-copy="Invoke-Item &quot;$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\hopper-wsl.lnk&quot;">Copy</button></div>
+<p>To stop it, delete <code>hopper-wsl.lnk</code> from the Startup folder (<code>shell:startup</code> in the Run box) and
+sign out. Nothing new listens, and it needs no administrator rights and no secret.</p></li>
+<li id="windows-doctor"><p><strong>Check it from Windows.</strong> Install <a href="#windows-cli">the hopper CLI from Windows</a>,
+then run this in PowerShell:</p>
+<div class="cmd"><pre>hopper doctor</pre><button type="button" data-copy="hopper doctor">Copy</button></div>
+<p>It checks that Windows opens <code>http://localhost:4790/api/health</code>, the WSL networking mode and
+<code>.wslconfig</code>, the shortcut from the step before, and, in Ubuntu, systemd, linger and
+<code>podman-restart.service</code>. Each check says <code>ok</code>, or the fix. Run it again after
+<code>wsl --shutdown</code>. It only reads: it changes nothing.</p></li>
 </ol>
-<p class="note">WSL stops Ubuntu, and hopper with it, soon after you close the last Ubuntu window.
-Keep one Ubuntu window open while jobs run, and run <code>podman compose up -d</code> in the hopper's folder
-after you open it again.</p>
 
 <details>
 <summary>Install it on the machine itself in WSL instead</summary>
@@ -267,7 +298,46 @@ as <a href="#before">step 1</a> says, sign in to <code>claude</code>, and run th
 </ol>
 <p class="note">Keep the repositories jobs work in inside Ubuntu (for example <code>~/src</code>), not under
 <code>/mnt/c</code>: it is much faster.</p>
+<p class="note">WSL stops Ubuntu, and the hopper with it, when no Windows program uses it. Add the shortcut from
+<a href="#windows-keep-running">Keep Ubuntu running</a> here too.</p>
 </details>
+
+<h3 id="windows-cli">The hopper CLI from Windows</h3>
+<p>Run the <code>hopper</code> CLI from PowerShell or the Command Prompt. <code>hopper.cmd</code> runs it in the hopper's
+container in WSL, with the credentials the CLI already has there. Windows keeps no token.</p>
+<ol class="steps">
+<li><p>In PowerShell, download <a href="https://henningfutrell.github.io/hopper/hopper.cmd"><code>hopper.cmd</code></a> and
+<a href="https://henningfutrell.github.io/hopper/hopper.ps1"><code>hopper.ps1</code></a> to a folder of their own.
+<code>hopper autostart</code> and <code>hopper doctor</code> need both:</p>
+<div class="cmd"><pre>New-Item -ItemType Directory -Force &quot;$env:LOCALAPPDATA\hopper&quot; | Out-Null
+Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.cmd -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.cmd&quot;
+Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.ps1 -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.ps1&quot;</pre><button type="button" data-copy="New-Item -ItemType Directory -Force &quot;$env:LOCALAPPDATA\hopper&quot; | Out-Null; Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.cmd -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.cmd&quot;; Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.ps1 -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.ps1&quot;">Copy</button></div></li>
+<li><p>Add that folder to your PATH, then open a new PowerShell window:</p>
+<div class="cmd"><pre>[Environment]::SetEnvironmentVariable(&#x27;Path&#x27;, [Environment]::GetEnvironmentVariable(&#x27;Path&#x27;, &#x27;User&#x27;) + &quot;;$env:LOCALAPPDATA\hopper&quot;, &#x27;User&#x27;)</pre><button type="button" data-copy="[Environment]::SetEnvironmentVariable(&#x27;Path&#x27;, [Environment]::GetEnvironmentVariable(&#x27;Path&#x27;, &#x27;User&#x27;) + &quot;;$env:LOCALAPPDATA\hopper&quot;, &#x27;User&#x27;)">Copy</button></div></li>
+<li><p>Run a command, for example:</p>
+<div class="cmd"><pre>hopper help</pre><button type="button" data-copy="hopper help">Copy</button></div></li>
+</ol>
+<p class="note">If the hopper runs in a WSL distro that is not your default one, set <code>HOPPER_WSL_DISTRO</code> to
+its name (<code>wsl --list</code> shows the names). If you changed the compose project name, set
+<code>HOPPER_COMPOSE_PROJECT</code>. The wrapper finds the container by its compose labels, not by its name. For a
+terminal the CLI can use interactively, run <code>hopper.ps1</code> instead: it does the same in PowerShell.</p>
+
+<h3 id="windows-machine">A Windows computer as a machine</h3>
+<p>hopper is not supported natively on Windows. A client that runs on Windows itself (Node.js for Windows, Git Bash)
+cannot join: hopper refuses it with <code>Windows isn't supported natively. Run the client inside WSL.</code> Run the
+machine inside WSL instead, with Podman for its sandbox boxes:</p>
+<ol class="steps">
+<li><p>On the Windows computer, turn systemd on, and install Podman in it: <a href="#windows">On Windows</a>, steps 1 to 3.
+To keep the machine online, also do <a href="#windows-keep-running">Keep Ubuntu running</a>.</p></li>
+<li><p>Start the Podman socket, and keep your user's services running after you log out:</p>
+<div class="cmd"><pre>systemctl --user enable --now podman.socket
+sudo loginctl enable-linger "$USER"</pre><button type="button" data-copy="systemctl --user enable --now podman.socket &amp;&amp; sudo loginctl enable-linger &quot;$USER&quot;">Copy</button></div></li>
+<li><p>In the hopper's UI, open <strong>Machines</strong> → <strong>Add machine</strong>, and run the line it shows in
+Ubuntu, not in PowerShell. For a computer, Ubuntu needs Node.js 24, herdr and a signed-in <code>claude</code> first,
+as for any Linux computer. The WSL distro then shows in Machines as one machine.</p></li>
+</ol>
+<p class="note">Not supported, and not planned: the client on Windows itself, Git Bash or MSYS, and Podman machine,
+Docker Desktop or Hyper-V virtual machines.</p>
 
 <h2 id="sign-in">Sign-in for a team</h2>
 <p>Alone on one machine, signing in with GitHub is enough. For a team, or a hopper reached over the internet, people
@@ -288,9 +358,27 @@ copy, and how to check it works:
 <p>However they sign in, each person then connects their own GitHub inside the hopper, from the UI.</p>
 
 <h2 id="upgrade">Upgrade</h2>
-<p><strong>With Podman:</strong> in the hopper's folder, download the newest image, restart on it, and remove the image it
-replaced. It keeps your settings, database and sign-ins. It ends the jobs running at the time, so upgrade when none runs.</p>
-<div class="cmd"><pre>podman compose pull &amp;&amp; podman compose up -d &amp;&amp; podman image prune -f --filter label=org.opencontainers.image.title=hopper</pre><button type="button" data-copy="podman compose pull &amp;&amp; podman compose up -d &amp;&amp; podman image prune -f --filter label=org.opencontainers.image.title=hopper">Copy</button></div>
+<p><strong>With Podman:</strong> you update it; the hopper never updates a container itself. In the hopper's folder,
+run these compose commands, one at a time. First give the master key (paste it from your password manager; nothing is
+shown). Check that <code>podman compose</code> sees the stack that runs: use the compose tool that started it, or the
+other tool starts a second stack on the same data (when podman-compose started it:
+<code>export PODMAN_COMPOSE_PROVIDER=podman-compose</code>, then the check again). Then back up the database, make the new image's <code>compose.yaml</code> with your own settings in it, read the
+change, put it in, and pull and start the whole stack. The last command stops before anything changes when the master key
+is not given, or when the check fails. It keeps your settings, database and sign-ins. Never update the hopper's container alone: a new version can
+add services it needs. When an update is out, the hopper's update notice shows these commands and how many running jobs
+the restart would end: wait until none. Then remove the image it replaced.</p>
+<div class="cmd"><pre>read -rs HOPPER_MASTER_KEY &amp;&amp; export HOPPER_MASTER_KEY</pre><button type="button" data-copy="read -rs HOPPER_MASTER_KEY &amp;&amp; export HOPPER_MASTER_KEY">Copy</button></div>
+<div class="cmd"><pre>[ -z "$(podman ps -q --filter label=com.docker.compose.project=hopper)" ] || podman compose ps -q 2&gt;/dev/null | grep -Eq '^[0-9a-f]{12,}$' || { echo 'hopper: podman compose does not see the hopper stack that runs. It would start a second stack on the same data: the update stops. Use the compose tool that started the stack. When podman-compose started it: export PODMAN_COMPOSE_PROVIDER=podman-compose' &gt;&amp;2; false; }</pre><button type="button" data-copy="[ -z &quot;$(podman ps -q --filter label=com.docker.compose.project=hopper)&quot; ] || podman compose ps -q 2&gt;/dev/null | grep -Eq '^[0-9a-f]{12,}$' || { echo 'hopper: podman compose does not see the hopper stack that runs. It would start a second stack on the same data: the update stops. Use the compose tool that started the stack. When podman-compose started it: export PODMAN_COMPOSE_PROVIDER=podman-compose' &gt;&amp;2; false; }">Copy</button></div>
+<div class="cmd"><pre>podman compose exec -T postgres pg_dump -U hopper -d hopper -Fc &gt; hopper-backup.dump</pre><button type="button" data-copy="podman compose exec -T postgres pg_dump -U hopper -d hopper -Fc &gt; hopper-backup.dump">Copy</button></div>
+<div class="cmd"><pre>podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:stable hopper update carry --image ghcr.io/henningfutrell/hopper:stable &lt; compose.yaml &gt; compose.yaml.next</pre><button type="button" data-copy="podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:stable hopper update carry --image ghcr.io/henningfutrell/hopper:stable &lt; compose.yaml &gt; compose.yaml.next">Copy</button></div>
+<div class="cmd"><pre>diff -u compose.yaml compose.yaml.next</pre><button type="button" data-copy="diff -u compose.yaml compose.yaml.next">Copy</button></div>
+<div class="cmd"><pre>cp compose.yaml compose.yaml.bak &amp;&amp; mv compose.yaml.next compose.yaml</pre><button type="button" data-copy="cp compose.yaml compose.yaml.bak &amp;&amp; mv compose.yaml.next compose.yaml">Copy</button></div>
+<div class="cmd"><pre>: "${HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: read -rs HOPPER_MASTER_KEY &amp;&amp; export HOPPER_MASTER_KEY}" &amp;&amp; [ -z "$(podman ps -q --filter label=com.docker.compose.project=hopper)" ] || podman compose ps -q 2&gt;/dev/null | grep -Eq '^[0-9a-f]{12,}$' || { echo 'hopper: podman compose does not see the hopper stack that runs. It would start a second stack on the same data: the update stops. Use the compose tool that started the stack. When podman-compose started it: export PODMAN_COMPOSE_PROVIDER=podman-compose' &gt;&amp;2; false; } &amp;&amp; HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:stable podman compose pull &amp;&amp; HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:stable podman compose up -d</pre><button type="button" data-copy=": &quot;${HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: read -rs HOPPER_MASTER_KEY &amp;&amp; export HOPPER_MASTER_KEY}&quot; &amp;&amp; [ -z &quot;$(podman ps -q --filter label=com.docker.compose.project=hopper)&quot; ] || podman compose ps -q 2&gt;/dev/null | grep -Eq '^[0-9a-f]{12,}$' || { echo 'hopper: podman compose does not see the hopper stack that runs. It would start a second stack on the same data: the update stops. Use the compose tool that started the stack. When podman-compose started it: export PODMAN_COMPOSE_PROVIDER=podman-compose' &gt;&amp;2; false; } &amp;&amp; HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:stable podman compose pull &amp;&amp; HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:stable podman compose up -d">Copy</button></div>
+<div class="cmd"><pre>podman image prune -f --filter label=org.opencontainers.image.title=hopper</pre><button type="button" data-copy="podman image prune -f --filter label=org.opencontainers.image.title=hopper">Copy</button></div>
+<p class="note">The image tag is the update channel: <code>ghcr.io/henningfutrell/hopper:dev</code> (or <code>:beta</code>,
+<code>:stable</code>). The update writes it into <code>compose.yaml</code> as the default of <code>HOPPER_IMAGE</code>; unset, it is <code>:latest</code>, the same as <code>:stable</code>.
+Pick the same channel in the hopper's Settings → Version. Give your own settings at launch (for a LAN install,
+<code>export HOPPER_BIND=0.0.0.0</code>) or put them in <code>compose.override.yaml</code>, never in <code>compose.yaml</code>: each update replaces it.</p>
 <p><strong>On the machine itself:</strong> run the install command again. It updates hopper and keeps your
 settings, database and running jobs. The UI also tells you when an update is out, says what is new, and can
 apply it for you.</p>
@@ -315,8 +403,8 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <tr><td><code>looking up compose provider failed</code></td><td>Install <code>podman-compose</code> (<a href="#podman">step 1</a>).</td></tr>
 <tr><td><code>failed to connect to the docker API at unix:///run/user/…/podman/podman.sock</code></td><td>Podman found Docker's compose program and uses it, which talks to Podman through its socket. Turn the socket on: <code>systemctl --user enable --now podman.socket</code>. Or use the other one: <code>PODMAN_COMPOSE_PROVIDER=podman-compose podman compose up -d</code>.</td></tr>
 <tr><td>The UI does not open</td><td>See whether both containers run: <code>podman compose ps</code>. Read why the hopper stopped: <code>podman compose logs hopper</code>.</td></tr>
-<tr><td>A job fails with <code>… is PowerShell, and the hopper needs a POSIX shell</code></td><td>The machine is a Windows computer whose jobs open in PowerShell. Give its hopper session Git Bash as the shell: <a href="https://github.com/henningfutrell/hopper#a-computer-or-a-sandbox-box-one-line">A Windows computer</a>.</td></tr>
-<tr><td>A job is <code>hopper:failed</code> at once</td><td>Its folder in <code>repoPaths</code> may not exist on the machine that ran it, or <code>claude</code> is not signed in: <a href="#podman">step 4</a>. The job in the UI says why it failed.</td></tr>
+<tr><td><code>Windows isn't supported natively. Run the client inside WSL.</code></td><td>The line ran on Windows itself. Run it inside WSL: <a href="#windows-machine">A Windows computer as a machine</a>.</td></tr>
+<tr><td>A job is <code>hopper:failed</code> at once</td><td>The repository could not be cloned on the machine that ran it, or <code>claude</code> is not signed in: <a href="#podman">step 4</a>. The job in the UI says why it failed.</td></tr>
 </table></div>
 <p>Everything else is the same as on the machine itself, below, with <code>podman compose exec hopper</code> in front of
 <code>hopper</code> commands.</p>
@@ -342,13 +430,14 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <tr><td><code>hopper</code> is not running</td><td>Read why: <code>journalctl --user -u hopper -n 50</code>. If it says <code>/usr/bin/node</code> is missing or too old, install Node.js system-wide (<a href="#before">step 1</a>), then <code>systemctl --user restart hopper</code>.</td></tr>
 <tr><td>The services are gone after you log out</td><td>Do <a href="#running">step 3</a>, then <code>systemctl --user start hopper-herdr hopper</code>.</td></tr>
 <tr><td>The UI does not open, or asks you to sign in</td><td>Open <code>http://localhost:4790/</code> and sign in with GitHub. From another computer, use the <a href="#ui">ssh tunnel</a>.</td></tr>
-<tr><td>A labelled issue is not picked up after a few minutes</td><td>Check: it is assigned to you; its repository is chosen under <strong>Sources</strong> → <strong>GitHub account</strong>; the label is exactly <code>hopper</code>. The UI's <strong>Sources</strong> view shows whether the GitHub source is running or paused, and why: <em>not connected</em> or <em>sign-in expired</em> means sign in with GitHub again.</td></tr>
-<tr><td>A job is <code>hopper:failed</code> at once</td><td>Its folder in <code>repoPaths</code> may not exist, or <code>claude</code> is not signed in: run <code>claude</code> once. The job in the UI says why it failed.</td></tr>
+<tr><td>A labelled issue is not picked up after a few minutes</td><td>Check: it is assigned to you; its repository is chosen under <strong>Sources</strong> → <strong>GitHub account</strong>; the label is exactly <code>hopper</code>; you (or a trusted actor in <strong>Settings</strong> → <strong>Intake</strong>) wrote, labelled and assigned it. Otherwise <strong>Sources</strong> shows it as a request: read it and select <strong>Approve</strong>. Every issue is a request while OpenFGA does not run. The UI's <strong>Sources</strong> view shows whether the GitHub source is running or paused, and why: <em>not connected</em> or <em>sign-in expired</em> means sign in with GitHub again.</td></tr>
+<tr><td>A job is <code>hopper:failed</code> at once</td><td>The repository could not be cloned, or <code>claude</code> is not signed in: run <code>claude</code> once. The job in the UI says why it failed.</td></tr>
 </table></div>
 <p>Still stuck? <a href="https://github.com/henningfutrell/hopper/issues">Open an issue</a> with the message you see.</p>
 
 <h2 id="more">More</h2>
 <ul>
+<li><a href="guide.html">User guide</a>: what hopper does with a job once it runs, and what you can do.</li>
 <li><a href="https://github.com/henningfutrell/hopper#add-machines">Add machines</a>: run jobs on other computers too, or in a sandbox container.</li>
 <li><a href="https://github.com/henningfutrell/hopper#send-jobs-to-one-machine">Routing rules</a>: send some jobs to one machine.</li>
 <li><a href="https://github.com/henningfutrell/hopper/blob/stable/docs/deploy.md">docs/deploy.md</a>: every install path in detail.</li>
@@ -359,7 +448,7 @@ Delete those yourself if you want them gone. The docker database also stays; to 
 <footer class="border-t border-border">
   <div class="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3 px-4 py-8 text-sm text-muted-foreground sm:px-8">
     <span class="flex items-center gap-2"><img src="hopper-logo.svg" alt="" width="13" height="20" class="h-5 w-auto">hopper</span>
-    <span class="flex gap-4"><a href="./" class="hover:text-foreground">Home</a><a href="https://github.com/henningfutrell/hopper" class="hover:text-foreground">Source</a><a href="https://github.com/henningfutrell/hopper/issues" class="hover:text-foreground">Issues</a></span>
+    <span class="flex gap-4"><a href="./" class="hover:text-foreground">Home</a><a href="https://github.com/henningfutrell/hopper" class="hover:text-foreground">Source</a><a href="https://github.com/henningfutrell/hopper/issues" class="hover:text-foreground">Issues</a><a href="https://github.com/henningfutrell/hopper/blob/dev/LICENSE" class="hover:text-foreground">MIT license</a></span>
   </div>
 </footer>
 </body>

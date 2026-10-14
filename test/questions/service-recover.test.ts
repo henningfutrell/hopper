@@ -102,3 +102,31 @@ describe('recover: every open non-human question restarts at the first level', (
     expect(r.expired).toHaveLength(1);
   });
 });
+
+describe('stale questions clear themselves (issue #529)', () => {
+  it.each(['failed', 'finished', 'cancelled'])('an open question whose job ended %s is cancelled, at recover and by the sweep', (status) => {
+    const r = rig();
+    const q = r.question();
+    (r.mem.store.jobs.get(q.jobId) as { status: string }).status = status;
+    r.svc.recover();
+    expect(r.mem.store.questions.get(q.id)).toMatchObject({ status: 'cancelled' });
+    const later = r.question();
+    (r.mem.store.jobs.get(later.jobId) as { status: string }).status = status;
+    r.svc.sweep();
+    expect(r.mem.store.questions.get(later.id)).toMatchObject({ status: 'cancelled' });
+  });
+
+  it('an open question whose job is gone is cancelled', () => {
+    const r = rig();
+    const q = r.mem.store.questions.create({ jobId: 'no-such-job', text: 'still?', recentOutput: '', detectedBy: 'marker', tier: 'human' });
+    r.svc.sweep();
+    expect(r.mem.store.questions.get(q.id)).toMatchObject({ status: 'cancelled' });
+  });
+
+  it('a question whose job still waits on it stays open', () => {
+    const r = rig();
+    const q = r.question();
+    r.svc.sweep();
+    expect(r.mem.store.questions.get(q.id)).toMatchObject({ status: 'open' });
+  });
+});

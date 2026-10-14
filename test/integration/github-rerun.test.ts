@@ -21,7 +21,7 @@ async function boot(gh: FakeGitHub) {
   const db = tempDbPath();
   cleanup = db.cleanup;
   const plugins = { jobSources: [{ name: 'github', plugin: 'github-account', options: {
-    enabled: true, pollSeconds: 3600, executor: 'scripted', defaultCwd: '/tmp',
+    enabled: true, pollSeconds: 3600, executor: 'scripted',
   } }] };
   const a = await startTestApp({ dbPath: db.dbPath, env: {}, seams: { github: gh }, plugins });
   apps.push(a);
@@ -46,6 +46,8 @@ describe('Run again on a GitHub job', () => {
     // The answer is the new job, already in the hopper: no later sync is needed to create it.
     expect(r.body).toMatchObject({ rerunOf: first!.id, source: { key: issue.url } });
     expect(r.body.id).not.toBe(first!.id);
+    // A person's Run again makes no tend job (issue #967): only tending's may elbow in past a lane cap.
+    expect(r.body.spec.tend).toBeUndefined();
     expect((await jobsFor()).map((j) => j.id)).toContain(r.body.id);
     expect(gh.calls).toContainEqual(expect.objectContaining({ method: 'removeLabels', args: [REPO, issue.number, expect.arrayContaining(['hopper:failed', 'hopper:claimed'])] }));
     expect((await a.events('types=job.rerun')).map((e) => e.jobId)).toEqual([first!.id]);
@@ -80,5 +82,26 @@ describe('Run again on a GitHub job', () => {
     expect(second.error).toBe('boom');
     await a.sync();
     expect((await jobsFor()).map((j) => j.status)).toEqual(['failed', 'failed']);
+  });
+  it('Run again on a job whose issue is no longer assigned to the connected account assigns it again and runs (issues #527, #1010)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const token = await a.login();
+    const issue = gh.createIssue({ repo: REPO, body: '{"op":"fail","message":"boom"}', labels: ['hopper'] });
+    const jobsFor = async () => (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.filter((j) => j.source?.key === issue.url);
+    await a.sync();
+    await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
+    const [first] = await jobsFor();
+    gh.unassign(REPO, issue.number, 'owner');
+    gh.closeIssue(REPO, issue.number, undefined, { reason: 'not_planned' });
+
+    const r = await a.ui<Job>(`/ui/api/jobs/${first!.id}/rerun`, {}, { token });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ rerunOf: first!.id });
+    // The hopper took the step a person had to take in Sources: the issue is the connected account's again, and open.
+    expect(gh.issue(REPO, issue.number)).toMatchObject({ state: 'open', assignees: expect.arrayContaining(['owner']) });
+    // So its new job runs to its own end, never cancelled as unassigned.
+    const second = await a.waitForStatus(r.body.id, 'failed');
+    expect(second.error).toBe('boom');
   });
 });

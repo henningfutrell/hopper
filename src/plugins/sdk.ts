@@ -2,19 +2,24 @@
 // Out-of-tree plugins import it type-only as `hopper/plugin` (package.json `exports`), which
 // type stripping erases, so a plugin needs nothing of hopper at runtime. Types only here.
 import type { z } from 'zod';
-import type { IntakeContext } from '../domain/intake.ts';
+import type { IntakeContext, IntakeTrust } from '../domain/intake.ts';
 import type {
   AnswerRequest, Clock, ConnectedAccountTokens, EscalationLevel, ExecutionContext, ExecutionOutcome, Executor, JobSource, LevelReply,
-  MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
+  MachineSource, Notifier, NotifierEvents, QueueEntry, QueueSorter, ReviewReply, ReviewRequest, Router, SourceItem, SourceReport, SourceSignal, UsageSource,
 } from '../domain/ports.ts';
+import type { VaultBackend } from '../domain/vault.ts';
+import type { InfraPlanNotice } from '../domain/infra-watchers.ts';
 import type { ClientTransport } from '../executors/client.ts';
-import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, Role, UsageReading } from '../domain/types.ts';
+import type { Advice, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, RaisedBy, Role, UsageReading } from '../domain/types.ts';
 import type { Rejection } from '../domain/rejection.ts';
+import type { IssueGraphRepository } from '../domain/issue-graph.ts';
+import type { GitHubListingRepository } from '../domain/github-listing.ts';
+import type { GitMirrors } from '../git-mirror/mirrors.ts';
 
 export type {
   Advice, AdviceAction, AnswerRequest, AttachedMachine, Clock, ConnectedAccountTokens, Detection, DomainEvent, EscalationLevel, ExecutionContext, LevelReply,
-  ExecutionOutcome, Executor, Job, JobSource, MachineSnapshot, MachineSource, Notifier, NotifierActionResult, NotifierEvents, PreSortReject, Question, QuestionAttempt, QueueEntry,
-  QueueSorter, Role, Router, SourceItem, SourceReport, SourceSignal, UsageReading, UsageSource,
+  ExecutionOutcome, Executor, InfraPlanNotice, Job, JobSource, MachineSnapshot, MachineSource, Notifier, NotifierActionResult, NotifierEvents, PreSortReject, Question, QuestionAttempt, QueueEntry, RaisedBy,
+  QueueSorter, ReviewReply, ReviewRequest, Role, Router, SourceItem, SourceReport, SourceSignal, UsageReading, UsageSource, VaultBackend,
 };
 
 /** What `detect` may use. Cheap; never a paid model call; never runs a GUI binary. */
@@ -94,6 +99,7 @@ export interface RoleInstance {
   'machine-source': MachineSource;
   'usage-source': UsageSource;
   notifier: Notifier;
+  'vault-backend': VaultBackend;
 }
 
 /**
@@ -109,6 +115,7 @@ export interface RoleContext {
   'machine-source': MachineSourceContext;
   'usage-source': UsageSourceContext;
   notifier: object;
+  'vault-backend': object;
 }
 
 /** A machine by its id, as the machine sources list it now (absent: not configured, or its source cannot run); and all of them. */
@@ -118,8 +125,8 @@ export interface MachineLookup {
   machines(): Promise<MachineSnapshot[]>;
 }
 
-/** What an escalation level learns: the machines, and the default escalation machine of the plugins config (issue #442), read at each call. */
-export interface EscalationLevelContext extends MachineLookup {
+/** What an escalation level learns: the machines, the default escalation machine of the plugins config (issue #442), read at each call, and how to reach a client target (issue #482). */
+export interface EscalationLevelContext extends MachineLookup, Pick<ExecutorContext, 'client'> {
   escalationMachine(): string | undefined;
 }
 
@@ -160,6 +167,18 @@ export interface JobSourceContext {
   connectedAccounts: ConnectedAccountTokens;
   /** For the source of this instance name: claim holders, the intake migration and intake events (issue #440); undefined: none kept. */
   intake(sourceName: string): IntakeContext | undefined;
+  /** The user's trusted actors and approved requests (issue #652): what an item's origin is judged by. */
+  intakeTrust: IntakeTrust;
+  /** Whether a job on this repository (`owner/repo`) may merge its own pull request: the user's yolo mode (issue #579), read at each call. */
+  yoloMode(repo: string): boolean;
+  /** The artifacts a job made (issue #673): each one's id and the URL of the issue it is linked to. */
+  jobArtifacts(jobId: string): { id: string; issue?: string }[];
+  /** The user's issue graph (issue #437): a source keeps the place of each issue it sees there. Store only. */
+  issueGraph: Pick<IssueGraphRepository, 'record' | 'lastRead'>;
+  /** The user's listing cache (issue #985): each repository's latest repository listing. Absent: a source keeps it in memory. */
+  githubListings?: GitHubListingRepository;
+  /** The user's mirrors of the job repositories (issue #858): whether a pull request has conflicts, as git says. Absent: none. */
+  gitMirrors?: GitMirrors;
 }
 
 export type { OptionChoice };

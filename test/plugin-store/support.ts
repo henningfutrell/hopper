@@ -46,3 +46,17 @@ export function createStoreRepo(root: string): StoreRepo {
   };
   return repo;
 }
+
+/** Serve `dir` as plain files on loopback, as the Pages site serves the default plugin store. */
+export async function serveDir(dir: string): Promise<{ url: string; close(): Promise<void> }> {
+  const { createServer } = await import('node:http');
+  const { readFile } = await import('node:fs/promises');
+  const server = createServer((req, res) => {
+    const path = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname);
+    if (path.includes('..')) { res.writeHead(400).end(); return; }
+    readFile(join(dir, path)).then((b) => res.writeHead(200, { 'content-type': 'application/octet-stream' }).end(b), () => res.writeHead(404).end());
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as { port: number };
+  return { url: `http://127.0.0.1:${port}`, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
+}

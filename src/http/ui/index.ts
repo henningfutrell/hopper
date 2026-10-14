@@ -2,14 +2,15 @@
 // login code (when the sign-in config leaves local sign-in on), no sign-in or a realm (sign-in.ts) → a page
 // that keeps the session token in localStorage → POST /ui/api/* with that token in
 // x-hopper-session, exact Origin, same-origin, JSON, and a role that allows it (design.md
-// "Sign-in: realms"). Every refusal is a logged 403. A logged-in admin hands another
+// "Sign-in: realms"). Every refusal is a logged 403; only one with no live session says `session: 'ended'`, the one the
+// UI reads as signed out (issue #696). A logged-in admin hands another
 // device a login link per LAN name (design.md "Reaching the UI across the LAN"). A mutation acts for the
 // session's user only (issue #158); the instance's (update, plugin store, users, realms) need admin.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { isSuperAdmin, type SignIn } from '../../auth/index.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
-import { CONNECTED_ACCOUNT_PROVIDERS, MAX_HISTORY_RETENTION_DAYS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, UPDATE_CHANNELS, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
+import { ACCESS_UNAVAILABLE, CONNECTED_ACCOUNT_PROVIDERS, MAX_HISTORY_RETENTION_DAYS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { lanHosts, uiOrigins, type Lan } from '../reach.ts';
 import type { RealmsAdmin } from '../realms.ts';
@@ -17,22 +18,35 @@ import { writeJobRules } from '../../job-rules/index.ts';
 import { writeRules } from '../../questions/index.ts';
 import { userIdOf, type TenantParts, type Tenants } from '../tenants.ts';
 import { usageGraphViewBody } from '../usage-history.ts';
-import { SESSION_HEADER, mutationRefusal } from './guard.ts';
+import { mutationRefusal, sessionIn } from './guard.ts';
+import { apiTokenAnswer, registerApiTokenRoutes } from './api-tokens.ts';
+import { isBoxAction } from './box-actions.ts';
 import { loginCodeLive, mintLoginCode } from './login-code.ts';
-import { mintJoinCode } from '../../machines/join-code.ts';
+import { registerMachineJoinRoutes } from './machine-join.ts'; import { registerMemoryAlertRoutes } from './memory-alert.ts';
+import { registerInstanceRoutes } from './instance.ts';
 import { INSTANCE_ADMIN_ONLY, type InstanceAdmin } from '../instance-admin.ts';
 import { identityName, sessionUser, type UiSession, type UiSessions } from './sessions.ts';
-import { registerSignInRoutes } from './sign-in.ts';
-import { answerBody, intakeActionBody, rejectBody, sourceParams } from './job-bodies.ts';
+import { registerSignInRoutes, type CallerOf } from './sign-in.ts';
+import { answerBody } from './job-bodies.ts';
+import { questionView } from '../questions.ts';
+import { ROUTE_GROUPS } from './route-groups.ts';
+import { registerAutoAnswerRoutes } from './auto-answer.ts';
+import { registerAccessRoutes } from './access.ts';
+import { registerSharedSecretRoutes } from './vault-shared.ts';
+import type { ArtifactEdge } from '../artifacts.ts';
+import type { Access } from '../../authz/service.ts';
 import { registerWebhookAndNotifierRoutes } from './webhooks-notifiers.ts';
+import { knownTemplate } from './vault.ts';
 
-
-export interface UiRouteOptions {
+/** The master key's status (issue #659): the one reveal, a person's word that they saved it; the shared GitHub rate limiter's settings (issue #436); remote access (issue #880). */
+export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceRoutes>[1], 'masterKey' | 'rateLimiter' | 'remoteAccess' | 'githubDeliveries' | 'hostLink' | 'wsl' | 'allowedHosts'> {
   /** The request's user's parts (the session's user). */
   tenant: (req: FastifyRequest) => TenantParts;
   tenants: Tenants;
   instance: Pick<InstanceStore, 'loginCodes' | 'joinCodes' | 'users'>;
   sessions: UiSessions;
+  /** Grants (issue #881), and every scope a route needs. */
+  grants: import('./api-grants.ts').ApiGrants; scopeRegistry: import('../../domain/scope-registry.ts').ScopeRegistry;
   signIn: SignIn;
   /** Settings → Sign-in: the sign-in config's realms (issue #185). */
   realms: RealmsAdmin;
@@ -40,10 +54,18 @@ export interface UiRouteOptions {
   /** The bound port (known only after listen). */
   port: () => number;
   lan: Lan;
+  /** Who a request counts as for the sign-in limit: its address, or the tunnel's caller (issue #795). */
+  caller: CallerOf;
   clock: Clock;
   updater: Updater;
   /** Whether a session may do what is the instance's (issue #240). */
   instanceAdmin: InstanceAdmin;
+  /** Access (issue #559): the instance's. */
+  access: Access;
+  /** Artifacts (issue #624): the signer of content URLs, and where people open the hopper. */
+  artifacts: ArtifactEdge;
+  /** The sandbox boxes the hopper starts (issue #603). */
+  sandboxes: Parameters<typeof registerMachineJoinRoutes>[1]['sandboxes'];
 }
 
 const idParams = z.object({ id: z.string() });
@@ -59,8 +81,15 @@ export const pluginsEditBody = z.discriminatedUnion('action', [
 // The plugin store (issue #75): ids only — what is installed is what the store catalogue lists.
 // A plugin id, never a path: it names a directory under the plugin dir.
 const pluginId = z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'id must be a plugin id');
+// The plugin store setting (issue #445): the default plugin store, none, or a git repository — anything
+// `git fetch` takes, never read as an option.
+const storeRepo = z.string().trim().min(1, 'repo must name a git repository').max(2048).refine((r) => !r.startsWith('-'), 'repo must not start with -');
+const pluginStoreSource = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('default') }), z.strictObject({ kind: z.literal('none') }), z.strictObject({ kind: z.literal('repo'), repo: storeRepo }),
+]);
 export const pluginStoreBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('refresh') }),
+  z.strictObject({ action: z.literal('source'), source: pluginStoreSource }),
   z.strictObject({ action: z.literal('install'), id: pluginId }),
   z.strictObject({ action: z.literal('remove'), id: pluginId }),
 ]);
@@ -112,44 +141,41 @@ export const machinesEditBody = z.union([
 export const machineHostKeyBody = z.strictObject({ ssh: z.string().min(1) });
 
 export const machineDefaultsBody = z.strictObject({ lanes: machineLanes, executors: machineExecutors, version: z.string().min(1) });
-// Self-update (issue #44): check now, apply the available update, or set the channel / auto-update.
-export const updateBody = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.literal('check') }),
-  z.strictObject({ action: z.literal('apply') }),
-  z.strictObject({ action: z.literal('settings'), channel: z.enum(UPDATE_CHANNELS).optional(), autoUpdate: z.boolean().optional() }),
-]);
 // The queue gate (issue #159): the user order (distinct waiting jobs, first to last) and the gate itself.
 export const queueOrderBody = z.strictObject({
   jobIds: z.array(z.string().min(1)).refine((ids) => new Set(ids).size === ids.length, 'a job is named twice'),
 });
 // The usage graph (issue #385): the history retention, whole days.
+/** The usage limits (issue #522): the same bounds as HOPPER_SOFT_LIMIT / HOPPER_HARD_LIMIT. */
+const limitFraction = z.number().min(0, 'a limit is a fraction from 0 to 1').max(1, 'a limit is a fraction from 0 to 1');
+export const usageLimitsBody = z.strictObject({ soft: limitFraction, hard: limitFraction })
+  .refine((b) => b.soft < b.hard, { message: 'the soft limit must be below the hard limit', path: ['soft'] });
 export const historyRetentionBody = z.strictObject({ days: z.number().int().min(1, 'keep at least 1 day').max(MAX_HISTORY_RETENTION_DAYS) });
 export { usageGraphViewBody };
 export const queueGateBody = z.strictObject({ mode: z.enum(QUEUE_GATE_MODES), autoAcceptPerHour: z.number().int().min(1).nullable() });
-// Connected accounts (issue #214): connect (start the device flow), cancel a waiting code, disconnect.
+// Connected accounts (issue #214): connect (start the device flow), cancel a waiting code, disconnect; take or drop a
+// sign-in's held grant (issue #647).
 export const connectedAccountsBody = z.discriminatedUnion('action', [
-  z.strictObject({ action: z.enum(['connect', 'cancel', 'disconnect']), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS) }),
+  z.strictObject({ action: z.enum(['connect', 'cancel', 'disconnect', 'take-held', 'drop-held']), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS) }),
   // Issue #321: the job repositories, the whole list.
   z.strictObject({ action: z.literal('choose'), provider: z.enum(CONNECTED_ACCOUNT_PROVIDERS), repositories: z.array(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo')).max(5000) }),
 ]);
 const EDIT_STATUS = { invalid: 400, not_found: 404, conflict: 409 } as const;
-const RERUN_STATUS = { not_found: 404, conflict: 409, source: 502 } as const;
 /** The rules themselves are validated by the plugin host (the plugins config schema), so a refusal names the field. */
 export const routingEditBody = z.strictObject({ rules: z.array(z.any()), version: z.string().min(1) });
 
-const refuse = (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole) => {
+const refuse = (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole, session?: 'ended') => {
   console.warn(`hopper: UI ${req.method} ${req.url} refused: ${why}`);
-  return reply.code(403).send(needs ? { error: why, needs } : { error: why });
+  return reply.code(403).send({ error: why, ...(needs ? { needs } : {}), ...(session ? { session } : {}) });
 };
 
+
+/** Add machine's join code: for a sandbox box of a template, the template (issue #558). */
 export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void {
   const { sessions, signIn } = o;
   /** The session's user's name (the user may be gone from a stale session's view: its id then). */
   const userName = (s: UiSession): string => o.instance.users.get(s.userId)?.name ?? s.userId;
-  const sessionOf = (req: FastifyRequest): UiSession | undefined => {
-    const header = req.headers[SESSION_HEADER];
-    return sessions.find(typeof header === 'string' ? header : undefined);
-  };
+  const sessionOf = (req: FastifyRequest): UiSession | undefined => sessionIn(req.headers, sessions);
 
   app.get('/ui/api/session', async (req): Promise<SessionView> => {
     const s = sessionOf(req);
@@ -163,44 +189,41 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   registerSignInRoutes(app, {
-    sessions, signIn, refuse, instance: o.instance, clock: o.clock, isUiOrigin: (origin) => uiOrigins(o.port(), o.lan).includes(origin),
+    sessions, signIn, refuse, caller: o.caller, instance: o.instance, clock: o.clock, isUiOrigin: (origin) => uiOrigins(o.port(), o.lan).includes(origin),
     userFor: (who) => o.tenants.signInAs(who),
     connect: (userId, connection) => o.tenants.user(userId)?.connectedAccounts.adopt(connection),
     userName: (id) => o.instance.users.get(id)?.name ?? id,
     instanceAdmin: o.instanceAdmin,
   });
 
-  // Each mutation names the least role that may make it (design.md "Sign-in" Roles).
+  /**
+   * Why Access refuses the request's API token the role it needs (issue #718), or a box action (issue #795: a box token
+   * only, and `can_run_on_box`), or undefined: allowed, or no API token.
+   */
+  const tokenRefusal = async (req: FastifyRequest, reply: FastifyReply, needs: UiRole): Promise<unknown> => {
+    const s = sessionOf(req)!;
+    if (s.kind !== 'api') return undefined;
+    const d = await apiTokenAnswer(o.access, s, needs, isBoxAction(req.routeOptions.url), { grants: o.grants, method: req.method, route: req.routeOptions.url });
+    if (d.allowed) return undefined;
+    if (d.unavailable) return reply.code(503).send({ error: `${ACCESS_UNAVAILABLE}: ${d.reason}` });
+    return refuse(req, reply, `the API token may not do this: ${d.reason}`);
+  };
+  // Each mutation names the least role that may make it (design.md "Sign-in" Roles); an API token's use is Access's too.
   const allow = (needs: UiRole) => ({ onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
     const r = mutationRefusal(req.headers, o.port(), o.lan, sessions, needs);
-    if (r) return refuse(req, reply, r.why, r.needs);
+    if (r) return refuse(req, reply, r.why, r.needs, r.session);
+    return tokenRefusal(req, reply, needs);
   } });
   const operator = allow('operator');
   const admin = allow('admin');
   // What is the instance's (issue #240): an admin session of the hopper's admin, not any admin session.
   const instance = { onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
     const r = mutationRefusal(req.headers, o.port(), o.lan, sessions, 'admin');
-    if (r) return refuse(req, reply, r.why, r.needs);
-    // `needs` keeps the session: the UI reads a bare 403 as a dead one.
+    if (r) return refuse(req, reply, r.why, r.needs, r.session);
     if (!o.instanceAdmin(sessionOf(req)!)) return refuse(req, reply, INSTANCE_ADMIN_ONLY, 'admin');
+    return tokenRefusal(req, reply, 'admin');
   } };
 
-  app.post('/ui/api/jobs/:id/cancel', operator, async (req) => o.tenant(req).engine.cancel(parseWith(idParams, req.params).id, 'cancelled in UI'));
-  app.post('/ui/api/jobs/:id/approve', operator, async (req) => o.tenant(req).engine.approve(parseWith(idParams, req.params).id));
-  app.post('/ui/api/jobs/:id/operator-led', operator, async (req) => o.tenant(req).engine.claimByOperator(parseWith(idParams, req.params).id));
-  app.post('/ui/api/jobs/:id/reject', operator, async (req) => o.tenant(req).engine.reject(parseWith(idParams, req.params).id, parseWith(rejectBody, req.body ?? {}).reason));
-  app.post('/ui/api/jobs/:id/rerun', operator, async (req) => {
-    const r = await o.tenant(req).registry.rerun(parseWith(idParams, req.params).id);
-    if (r.ok) return r.job;
-    throw new HttpError(RERUN_STATUS[r.reason], r.message);
-  });
-  app.post('/ui/api/sources/:name/intake', operator, async (req) => {
-    const r = await o.tenant(req).registry.intakeAction(parseWith(sourceParams, req.params).name, parseWith(intakeActionBody, req.body));
-    if (r.ok) return r.result;
-    throw new HttpError(r.reason === 'not_found' ? 404 : 409, r.message);
-  });
-  app.post('/ui/api/jobs/:id/dismiss', operator, async (req) => o.tenant(req).engine.dismiss(parseWith(idParams, req.params).id));
-  app.post('/ui/api/jobs/:id/cleaned-up', operator, async (req) => o.tenant(req).engine.markCleanedUp(parseWith(idParams, req.params).id));
   app.post('/ui/api/queue/order', operator, async (req) => ({ jobs: o.tenant(req).engine.orderQueue(parseWith(queueOrderBody, req.body).jobIds) }));
   app.post('/ui/api/queue/accept-presort', operator, async (req) => ({ presort: o.tenant(req).engine.acceptPreSort() }));
   // The usage graph's range and step are the user's own choice, a viewer's too; the history retention deletes samples: admin.
@@ -214,16 +237,20 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const { store } = o.tenant(req);
     store.settings.setHistoryRetentionDays(days);
     // Applied at once (issue #356): what is now past it goes.
-    const pruned = store.usageHistory.prune(new Date(o.clock.now().getTime() - days * 86_400_000));
+    const before = new Date(o.clock.now().getTime() - days * 86_400_000);
+    // The machine samples share it (issue #560).
+    const pruned = store.usageHistory.prune(before) + store.machineHistory.prune(before);
     return { retentionDays: days, pruned };
   });
+  // The usage limits (issue #522): read at every Decision, so they apply without a restart; the change wakes the engine.
+  app.post('/ui/api/usage/limits', admin, async (req) => ({ limits: o.tenant(req).engine.setUsageLimits(parseWith(usageLimitsBody, req.body)) }));
   app.post('/ui/api/queue-gate', admin, async (req) => ({ gate: o.tenant(req).engine.setQueueGate(parseWith(queueGateBody, req.body)) }));
 
   app.post('/ui/api/questions/:id/answer', operator, async (req) => {
     const { id } = parseWith(idParams, req.params);
     const { answer } = parseWith(answerBody, req.body);
     const r = o.tenant(req).questions.answerByHuman(id, answer);
-    if (r.ok) return r.question;
+    if (r.ok) return questionView(o.tenant(req), r.question);
     if (r.reason === 'not_found') throw new HttpError(404, `question ${id} not found`);
     throw new HttpError(409, `question ${id} is not open`);
   });
@@ -231,7 +258,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.post('/ui/api/questions/:id/close', operator, async (req) => {
     const { id } = parseWith(idParams, req.params);
     const r = o.tenant(req).questions.closeByHuman(id);
-    if (r.ok) return r.question;
+    if (r.ok) return questionView(o.tenant(req), r.question);
     if (r.reason === 'not_found') throw new HttpError(404, `question ${id} not found`);
     throw new HttpError(409, `question ${id} is not open`);
   });
@@ -239,7 +266,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.post('/ui/api/questions/:id/dismiss', operator, async (req) => {
     const { id } = parseWith(idParams, req.params);
     const r = o.tenant(req).questions.dismissByHuman(id);
-    if (r.ok) return r.question;
+    if (r.ok) return questionView(o.tenant(req), r.question);
     if (r.reason === 'not_found') throw new HttpError(404, `question ${id} not found`);
     throw new HttpError(409, `question ${id} is not open`);
   });
@@ -247,20 +274,20 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   app.post('/ui/api/questions/:id/seen', operator, async (req) => {
     const { id } = parseWith(idParams, req.params);
     const r = o.tenant(req).questions.markSeen(id);
-    if (r.ok) return r.question;
+    if (r.ok) return questionView(o.tenant(req), r.question);
     throw new HttpError(404, `question ${id} not found`);
   });
 
   // design.md "UI and mutation": one instance's options (command-bearing ones too, issue #198), the
   // plugin filling a one-instance role, or a rescan. Answers the new GET /api/plugins report.
   app.post('/ui/api/plugins', admin, async (req) => {
-    const r = await o.tenant(req).plugins.edit(parseWith(pluginsEditBody, req.body));
+    const r = await o.tenant(req).plugins.edit(knownTemplate(o.tenant(req).vault, parseWith(pluginsEditBody, req.body)));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
     return r.report;
   });
 
-  // design.md "Plugin store": read the store again, install (or update) a plugin it lists into the
-  // plugin dir, or remove a store install. Answers the new GET /api/plugin-store report.
+  // design.md "Plugin store": read the store again, set the plugin store (issue #445), install (or update)
+  // a plugin it lists, or remove a store install. Answers the new GET /api/plugin-store report.
   app.post('/ui/api/plugin-store', instance, async (req) => {
     const r = await o.pluginStore.edit(parseWith(pluginStoreBody, req.body));
     if (!r.ok) throw new HttpError(EDIT_STATUS[r.code], r.error);
@@ -286,6 +313,12 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   registerWebhookAndNotifierRoutes(app, { admin, tenant: o.tenant });
+  // A job's actions (issue #501), a job source's intake actions (issue #440), the logins' (issue #476), the failures' (issue #509).
+  for (const register of ROUTE_GROUPS) register(app, { operator, admin, tenant: o.tenant, tenants: o.tenants, grants: o.grants, edge: o.artifacts, access: o.access, updater: o.updater });
+  registerAutoAnswerRoutes(app, { operator, admin, tenant: o.tenant, clock: o.clock });
+  registerAccessRoutes(app, { instance, access: o.access, by: (req) => userName(sessionOf(req)!) });
+  registerSharedSecretRoutes(app, { instance, tenant: o.tenant });
+  registerApiTokenRoutes(app, { allow, instance, sessions, grants: o.grants, registry: o.scopeRegistry, sessionOf, access: o.access, tenants: o.tenants, signIn, caller: o.caller });
 
   // design.md "Machines from the UI" (issues #18, #74): attach an ssh target as a new `ssh` instance
   // in the plugins config `machines:`; applies without a restart. Answers the new GET /api/machines/config.
@@ -303,13 +336,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.offer;
   });
 
-  // Issue #308: Add machine's one-time join code, for the session's user: the line the machine runs carries it
-  // (design.md "Joining a machine"). Writes only the code's hash; the machine's join adds it.
-  app.post('/ui/api/machines/join', admin, async (req) => {
-    const id = userIdOf(req);
-    if (id === undefined) throw new HttpError(401, 'sign in to add a machine');
-    return mintJoinCode(o.instance, o.clock, id);
-  });
+  // Add machine (issues #308, #603): a join code for the line, or a sandbox box the hopper starts (src/http/ui/machine-join.ts).
+  registerMachineJoinRoutes(app, { admin, tenant: o.tenant, instance: o.instance, clock: o.clock, sandboxes: o.sandboxes }); registerMemoryAlertRoutes(app, { admin, tenant: o.tenant }); // the memory alert: issue #868
 
   // Issue #142: the plugins config `machineDefaults:`, what a machine attached here starts with. Answers the new GET /api/machines/config.
   app.post('/ui/api/machines/defaults', admin, async (req) => {
@@ -326,19 +354,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     return r.report;
   });
 
-  // design.md "Self-update": answers the new GET /api/update status. `apply` answers at once (the
-  // build runs in the background; the daemon then restarts), or 409 when nothing can be applied.
-  app.post('/ui/api/update', instance, async (req) => {
-    const body = parseWith(updateBody, req.body);
-    if (body.action === 'check') return o.updater.check();
-    if (body.action === 'settings') {
-      const { action: _, ...patch } = body;
-      return o.updater.settings(patch);
-    }
-    const r = o.updater.apply();
-    if (!r.ok) throw new HttpError(409, r.error);
-    return r.status;
-  });
+  // Self-update, the master key, the shared GitHub rate limiter and remote access (issues #44, #659, #436, #880): the hopper's admin's alone.
+  registerInstanceRoutes(app, { instance, instanceAdmin: o.instanceAdmin, updater: o.updater, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, hostLink: o.hostLink, wsl: o.wsl, port: o.port, origins: () => o.artifacts.origins(), by: (req) => userName(sessionOf(req)!) });
 
   // design.md "Connected accounts": answers the provider's new GET /api/connected-accounts status — the
   // device code once the provider shows it. The user's own accounts: their session's user alone.
@@ -347,7 +364,8 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
     const { connectedAccounts } = o.tenant(req);
     if (body.action === 'choose') return connectedAccounts.choose(body.provider, body.repositories);
     if (body.action === 'connect') return connectedAccounts.connect(body.provider);
-    return body.action === 'cancel' ? connectedAccounts.cancel(body.provider) : connectedAccounts.disconnect(body.provider);
+    if (body.action === 'take-held') return connectedAccounts.takeHeld(body.provider).catch((e: Error) => { throw new HttpError(409, e.message); });
+    return body.action === 'cancel' ? connectedAccounts.cancel(body.provider) : body.action === 'drop-held' ? connectedAccounts.dropHeld(body.provider) : connectedAccounts.disconnect(body.provider);
   });
 
   // A login code as a link per LAN name, in the fragment (never sent to a server). The links
@@ -386,7 +404,7 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
   });
 
   app.post('/ui/api/logout', allow('viewer'), async (req) => {
-    sessions.drop(String(req.headers[SESSION_HEADER]), 'logout');
+    sessions.drop(sessionOf(req)!.token, 'logout');
     return { ok: true };
   });
 }

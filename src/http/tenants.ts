@@ -7,37 +7,96 @@
 //
 // The API door signs nobody in: the token's identity, checked by the sign-in service as the UI door
 // checks it, reads as the user it is linked to, and a GitHub realm's only as the user whose connected
-// GitHub account it is. A token given and refused is refused, on loopback too. A token reads only: every
-// mutation stays behind a UI session (src/http/ui/guard.ts).
+// GitHub account it is. A token given and refused is refused, on loopback too. A sign-in's token reads only;
+// what it may do beyond is exchange itself for an API token (issue #718, src/http/api-tokens.ts). An API token is a
+// session (src/http/ui/sessions.ts) and reads as its user, once Access allows its read (`api_token#can_view`).
+import type { Outbound } from '../outbound/index.ts';
+import type { DirectJobs } from '../direct-jobs/index.ts';
+import type { UserSearch } from '../search/index.ts';
+import type { Vault } from '../vault/vault.ts';
+import type { JobStream } from '../job-stream/index.ts';
+import type { UserArtifacts } from '../artifacts/index.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { SignIn } from '../auth/index.ts';
-import type { ConnectedAccounts, PluginsView, QuestionService, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
-import type { Identity, UiRole, User } from '../domain/types.ts';
+import type { ConnectedAccounts, PluginsView, QuestionService, ReviewServices, SourceRegistry, UserStore, WebhookDispatcher } from '../domain/ports.ts';
+import type { Identity, SessionKind, UiRole, User } from '../domain/types.ts';
+import type { Access } from '../authz/service.ts';
 import type { Engine } from '../engine/index.ts';
+import type { Failures } from '../failures/index.ts';
+import type { Logins } from '../logins/index.ts';
+import type { MinorDecisions, TypesafeKey } from '../minor-decisions/index.ts';
+import type { Tldrs } from '../tldr/index.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
 import { HttpError } from './errors.ts';
-import { atApiDoor, sessionToken } from './host-guard.ts';
+import { atApiDoor, requestSession } from './host-guard.ts';
+import { apiTokenIn } from './ui/guard.ts';
+import { accessIdOf, grantActionRefusal, grantScopeRefusal } from './ui/api-tokens.ts';
+import type { ApiGrants } from './ui/api-grants.ts';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
 import type { UiSessions } from './ui/sessions.ts';
 import type { SecretProblem } from './webhooks.ts';
 import type { UserMachineLink } from '../users/runtime.ts';
+import type { UserGitHubProxy } from '../users/github-proxy.ts';
+import type { WindowsSteps } from '../windows-steps/index.ts';
+import type { NeedSteps } from '../sandbox/need-steps.ts';
+import type { SandboxRequests } from '../sandbox/requests.ts';
+import type { UsageRecorder } from '../usage/history.ts';
+import type { ResourceRecorder } from '../machines/history.ts';
 
 /** One user's parts, as the HTTP edge reads and changes them. */
 export interface TenantParts {
   store: UserStore;
   engine: Engine;
   questions: QuestionService;
+  /** Each review section's review: proposals (issue #537), research (issue #543). */
+  reviews: ReviewServices;
+  /** The levels that may review a review section's items now: the escalation levels' names (issues #537, #543). */
+  levelNames(): string[];
+  /** The logins a job or run waits on (issue #476). */
+  logins: Logins;
+  /** The failure assessor (issue #509). */
+  failures: Failures;
+  /** Decider calls through Jev first (issue #550). */
+  minorDecisions: MinorDecisions;
+  /** The TypeSafe API key Jev asks with (issue #657): its view, set and remove; never the key. */
+  typesafeKey: TypesafeKey;
+  /** The TL;DR of every long card (issue #569): its sweep, run at once when the setting turns on. */
+  tldrs: Pick<Tldrs, 'sweep'>;
   /** Every job source's status (/api/sources, SSE source.updated). */
   registry: SourceRegistry;
   plugins: PluginsView;
   dispatcher: WebhookDispatcher;
+  /** The user's outbound sends (issue #1014): the open circuits of the destinations the user sent to. */
+  outbound: Pick<Outbound, 'circuits'>;
   /** The user's connected GitHub account (issue #214). */
   connectedAccounts: ConnectedAccounts;
   webhooksEditor: WebhooksEditor;
-  /** Why the user's runtime gives no secret for a webhook subscription's variable. */
+  /** Why a webhook subscription has no secret to sign with (issue #451); never the secret. */
   secretProblem: SecretProblem;
   /** The user's machines that dial in (issue #308). */
   machineLink: UserMachineLink;
+  /** The vault (issue #558). */
+  vault: Vault;
+  /** The job stream (issue #613): what the user's running jobs subscribe to. */
+  jobStream: JobStream;
+  /** The artifacts (issue #624): what the user's jobs make for a person to see. */
+  artifacts: UserArtifacts;
+  /** The usage history's recorder: new usage samples (SSE usage.recorded, issue #502). */
+  usageHistory: Pick<UsageRecorder, 'onRecorded'>;
+  /** The resource recorder: new machine samples (SSE machine.recorded, issue #560). */
+  machineHistory: Pick<ResourceRecorder, 'onRecorded'>;
+  /** The GitHub proxy's view of the user (issue #563): their jobs asking, their GitHub connection. */
+  githubProxy: UserGitHubProxy;
+  /** Windows sandbox steps (issue #731): the user's Windows hosts, and their jobs' steps on them. */
+  windowsSteps: WindowsSteps;
+  /** need steps (issue #1007): their jobs' steps in need boxes of a template that covers their needs. */
+  needSteps: NeedSteps;
+  /** Direct jobs (issue #901): jobs a person submits straight to the hopper, with no GitHub issue. */
+  directJobs: DirectJobs;
+  /** Search (issue #945): the user's index and the permission-checked search. */
+  search: UserSearch;
+  /** The boxes the user's jobs ask for (issue #991). */
+  sandboxRequests: SandboxRequests;
 }
 
 /** The users and their running parts. */
@@ -59,11 +118,18 @@ const users = new WeakMap<FastifyRequest, string>();
 const roles = new WeakMap<FastifyRequest, UiRole>();
 /** Who signed in, for the request's session or token: what the instance admin check reads (issue #240). */
 const identities = new WeakMap<FastifyRequest, Identity>();
+/** Whether the request's session is an API token (issue #718); absent: no session. */
+const kinds = new WeakMap<FastifyRequest, SessionKind>();
+/** An API token's label (its grant's, issue #881): who acts, when the token is an agent's (issue #871 part 2). */
+const labels = new WeakMap<FastifyRequest, string>();
 
-export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sessions: UiSessions; signIn: Pick<SignIn, 'checkToken'>; port: () => number; lan: Lan }): void {
-  const peers = peerList(o.lan.peers);
-  /** The API door: the user and role the token reads as, or why not. */
-  const throughApiDoor = async (req: FastifyRequest): Promise<{ userId: string; role: UiRole; who: Identity } | { status: number; error: string }> => {
+/** What a refused API token, or one that names no live session, is told. */
+export const API_TOKEN_GONE = 'the API token is unknown, revoked or expired';
+
+/** The API door: the user and role a sign-in's token reads as, or why not. Never given an API token: that is a session. */
+export function createApiDoor(o: { tenants: Tenants; signIn: Pick<SignIn, 'checkToken'> }) {
+  return async (req: FastifyRequest): Promise<{ userId: string; role: UiRole; who: Identity } | { status: number; error: string }> => {
+    if (apiTokenIn(req.headers) !== undefined) return { status: 401, error: API_TOKEN_GONE };
     const r = await o.signIn.checkToken(req.headers);
     if (!r.ok) return r;
     const user = o.tenants.linked(r.who);
@@ -72,9 +138,34 @@ export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sess
     if (!user || !connected) return { status: 401, error: notLinked(r.who, r.via) };
     return { userId: user.id, role: r.role, who: r.who };
   };
+}
+
+export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sessions: UiSessions; grants: Pick<ApiGrants, 'live'>; signIn: Pick<SignIn, 'checkToken'>; access: Pick<Access, 'decideApiToken'>; port: () => number; lan: Lan;
+  /** The field of a POST route's body that names its action (issue #909), by the route as registered; undefined: none. */
+  actionField: (route: string) => string | undefined;
+}): void {
+  const peers = peerList(o.lan.peers);
+  const throughApiDoor = createApiDoor(o);
   app.addHook('onRequest', async (req, reply) => {
-    const session = o.sessions.find(sessionToken(req));
-    if (session) { users.set(req, session.userId); roles.set(req, session.role); identities.set(req, session.identity); return; }
+    const session = requestSession(req, o.sessions);
+    if (session) {
+      // An API token's read: its grant's scopes (issue #881), then Access decide it (a mutation's is decided by its guard).
+      if (session.kind === 'api' && req.method === 'GET' && req.url.startsWith('/api/')) {
+        const outOfScope = grantScopeRefusal(o.grants, session, req.method, req.routeOptions.url);
+        if (outOfScope !== undefined) {
+          console.warn(`hopper: API token refused for ${req.method} ${req.url.split('?')[0]}: ${outOfScope}`);
+          return reply.code(403).send({ error: `the API token may not read this: ${outOfScope}` });
+        }
+        const d = await o.access.decideApiToken({ userId: session.userId, tokenId: accessIdOf(session), role: 'viewer' });
+        if (!d.allowed) {
+          console.warn(`hopper: API token refused for ${req.method} ${req.url.split('?')[0]}: ${d.reason}`);
+          return reply.code(403).send({ error: `the API token may not read: ${d.reason}` });
+        }
+      }
+      users.set(req, session.userId); roles.set(req, session.role); identities.set(req, session.identity); kinds.set(req, session.kind);
+      if (session.kind === 'api' && session.label !== undefined) labels.set(req, session.label);
+      return;
+    }
     if (atApiDoor(req)) {
       const at = await throughApiDoor(req);
       if ('error' in at) {
@@ -90,6 +181,20 @@ export function installTenancy(app: FastifyInstance, o: { tenants: Tenants; sess
     if (!('reach' in r) || r.reach !== 'local') return;
     const all = o.tenants.list();
     if (all.length === 1) users.set(req, all[0]!.id);
+  });
+  // A grant's mutation that names one of its route's actions (issue #909): once the body is read, the grant's scopes
+  // must cover that action, or the whole route. The door let the grant through on a part of the route's actions.
+  app.addHook('preHandler', async (req, reply) => {
+    if (req.method !== 'POST' || kinds.get(req) !== 'api') return;
+    const route = req.routeOptions.url;
+    const field = route === undefined ? undefined : o.actionField(route);
+    if (field === undefined) return;
+    const session = requestSession(req, o.sessions);
+    if (!session) return;
+    const outOfScope = grantActionRefusal(o.grants, session, req.method, route, (req.body as Record<string, unknown> | undefined)?.[field]);
+    if (outOfScope === undefined) return;
+    console.warn(`hopper: API token refused for ${req.method} ${req.url.split('?')[0]}: ${outOfScope}`);
+    return reply.code(403).send({ error: `the API token may not do this: ${outOfScope}` });
   });
 }
 
@@ -108,12 +213,17 @@ export const userIdOf = (req: FastifyRequest): string | undefined => users.get(r
 /** The role of the request's session or token (after `installTenancy`); undefined: neither. */
 export const roleOfRequest = (req: FastifyRequest): UiRole | undefined => roles.get(req);
 
-/** The request's session or token as the instance admin check reads it (issue #240); undefined: neither. */
-export function signedInOf(req: FastifyRequest): { role: UiRole; identity: Identity; userId: string } | undefined {
+/**
+ * The request's session or token as the instance admin check reads it (issue #240); undefined: neither. `kind`: the
+ * session's (an API token's is `api`); absent for a sign-in's token on the API door. `label`: an API token's.
+ */
+export function signedInOf(req: FastifyRequest): { role: UiRole; identity: Identity; userId: string; kind?: SessionKind; label?: string } | undefined {
   const role = roles.get(req);
   const identity = identities.get(req);
   const userId = users.get(req);
-  return role === undefined || identity === undefined || userId === undefined ? undefined : { role, identity, userId };
+  const kind = kinds.get(req);
+  const label = labels.get(req);
+  return role === undefined || identity === undefined || userId === undefined ? undefined : { role, identity, userId, ...(kind ? { kind } : {}), ...(label !== undefined ? { label } : {}) };
 }
 
 const notLinked = (who: Identity, via: 'gateway' | 'github'): string => via === 'github'

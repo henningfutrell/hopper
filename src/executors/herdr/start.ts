@@ -1,34 +1,45 @@
-// Opening a job's pane and getting Claude ready in it: workspace, tab, agent start, and the
-// startup dialogs (folder trust; the bypass permissions warning when yolo). docs/design.md "Phase 2" → "Start".
+// Opening a job's pane and getting Claude ready in it: workspace, tab, Claude's config seeded where the machine
+// has none, agent start, and the screens Claude shows before its prompt (startup.ts). docs/design.md "Phase 2" →
+// "Start", "Startup screens".
 
+import { randomUUID } from 'node:crypto';
 import type { Clock, ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
-import type { HerdrClient } from './client.ts';
-import type { Sleep } from './monitor.ts';
-import { tail } from './monitor.ts';
+import { HerdrError, type HerdrClient } from './client.ts';
+import type { Interrupt, Sleep } from './monitor.ts';
+import { abortReason, tail } from './monitor.ts';
 import type { ClaudeJobPayload } from './payload.ts';
-import { JOB_WORKTREE_MARK, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand } from './job-worktree.ts';
+import {
+  JOB_WORKTREE_MARK, JOB_WORKTREE_RUNNING, jobStartFetches, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand, mirrorOf, mirrorWorktreeOf, passFetchKey,
+  type PassFetches,
+} from './job-worktree.ts';
 import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from './job-scope.ts';
 import { DEPS_MARK, depsOutcome, shareDepsCommand } from './shared-deps.ts';
 import { scopeUnitOf } from '../../client/server.ts';
-import { SCRATCH_DIR, isBypassDialog, isTrustDialog, windowsShellOf } from './screen.ts';
+import { RESTORE_MARK, restoreOutcome } from '../../client/checkpoint.ts';
+import { SCRATCH_DIR, windowsShellOf } from './screen.ts';
+import { awaitOnScreen, shows } from './pane-wait.ts';
+import { seedClaudeConfig, settleStartup } from './startup.ts';
 import { shellQuote } from '../ssh.ts';
 
 export const WORKSPACE_LABEL = 'hopper';
 const START_TIMEOUT_MS = 60000;
 const SHELL_RETRY_MS = 100;
 /** What the scratch command prints last, so the hopper knows the shell ran it. */
-const SCRATCH_READY = 'hopper-scratch-ready';
+export const SCRATCH_READY = 'hopper-scratch-ready';
 /** What it prints instead when the shell cannot enter the work tree or make the scratch dir (issue #323). */
-const SCRATCH_UNUSABLE = 'hopper-scratch-unusable';
+export const SCRATCH_UNUSABLE = 'hopper-scratch-unusable';
 const SCRATCH_WAIT_MS = 1000;
-/** How long the job worktree command may take: it fetches first (issue #379). */
-const JOB_WORKTREE_WAIT_MS = 120000;
+/** How long the job worktree command may take: it fetches first (issue #379), or clones the job's repository (issue #361). */
+const JOB_WORKTREE_WAIT_MS = 10 * 60000;
+/** How long the shell has to start the job worktree command, and how often it is typed, before the start is tried again (issue #518). */
+const JOB_WORKTREE_RUNNING_WAIT_MS = 10000;
+const JOB_WORKTREE_TYPINGS = 3;
+/** How long restoring a checkpoint may take (issue #921): it gets the parts from the hopper and may fetch the base. */
+const RESTORE_WAIT_MS = 10 * 60000;
 /** How long sharing dependencies may take: the first job with a lockfile installs them (issue #410). */
 const DEPS_WAIT_MS = 15 * 60000;
 /** A machine's scratch age when it sets none: an entry of shared dependencies nothing links to goes after it. */
 const SCRATCH_MAX_AGE_HOURS = 24;
-/** Startup dialogs answered at most: folder trust and the bypass permissions warning, with room to spare. */
-const MAX_STARTUP_DIALOGS = 4;
 
 /** What grants Claude every permission: the flag, and the permission mode that means the same. */
 const YOLO_FLAG = '--dangerously-skip-permissions';
@@ -66,8 +77,10 @@ export interface PaneState {
   paneId: string;
   agentName: string;
   cwd: string;
-  /** The job's own git worktree of `cwd`, in its scratch dir, where Claude runs (issue #379). Absent: Claude runs in `cwd`. */
+  /** The job's own git worktree of `cwd` or of `checkout`, in its scratch dir, where Claude runs (issue #379). Absent: Claude runs in `cwd`. */
   jobWorktree?: string;
+  /** The mirror of the job's repository its worktree was made of, when `cwd` is not the job's repository (issues #361, #858). */
+  checkout?: string;
   /** The systemd user scope the pane's shell runs in (issue #410). Absent: the machine has none; the reap goes by HOPPER_JOB_ID. */
   scope?: string;
   /** The job worktree's node_modules links to dependencies shared with the repository's other jobs (issue #410). */
@@ -75,10 +88,15 @@ export interface PaneState {
   laneId: string;
   /** The turn in flight, recorded at every send, so a restarted daemon can watch it again. */
   turn?: TurnAnchor;
-  /** state_change_seq when the turn parked on a question: Claude moving past it means the owner answered in the pane. */
+  /**
+   * state_change_seq when the turn stopped on a question: Claude moving past it means the owner answered in the pane.
+   * Named before parked jobs (issue #501), which it has nothing to do with; kept, as jobs on a question hold it.
+   */
   parkedSeq?: number;
-  /** The parked turn waits at a dialog Claude Code denies by itself at this time (issue #376). */
+  /** The waiting turn waits at a dialog Claude Code denies by itself at this time (issue #376). */
   lapsesAt?: string;
+  /** The login the turn waits on (issue #476): Claude going on by itself completes it. */
+  login?: { id: string; tool: string };
 }
 
 /** What the monitor needs to find one turn's outcome: design.md "Turn anchor (B1)". */
@@ -91,6 +109,16 @@ export interface TurnAnchor {
   blockedAtSend: boolean;
   /** What was sent, to send again when it never reached Claude (issue #278). Absent in turns saved before. */
   text?: string;
+  /**
+   * Nothing of it reached Claude (issue #534): Claude stood at a dialog before `text` was sent, and the job asked the
+   * dialog as its question. `text` is sent once the dialog is answered.
+   */
+  unsent?: true;
+  /**
+   * Markers in the turn's first that many lines are left out (issue #483): the job's own wait, already taken. Claude
+   * went on from it by itself, in the same turn.
+   */
+  markersAfter?: number;
 }
 
 export interface StartDeps {
@@ -98,15 +126,29 @@ export interface StartDeps {
   clock: Clock;
   sleep: Sleep;
   pollMs: number;
+  /** How long Claude's input box stays on screen at startup before Claude is taken as ready; default PROMPT_STEADY_MS (startup.ts). */
+  promptSteadyMs?: number;
   claudeArgs: string[];
   trustWorkdir: boolean;
   /** Claude starts with every permission granted: its warning about that is accepted at startup. */
   yolo: boolean;
+  /** Claude's config seeded where the machine has none, and its first-run screens answered with their defaults (issue #533). */
+  unattended: boolean;
   /** A work tree that is the top of a git repository gets each job its own worktree of it (issue #379). */
   jobWorktrees: boolean;
   /** A job worktree's node_modules is linked to dependencies shared with the repository's other jobs (issue #410). */
   sharedDependencies: boolean;
+  /** A new agent session id (issue #501); default a random UUID, as Claude's `--session-id` takes. */
+  newSession?: () => string;
+  /** Which work trees a start fetched in this sync pass (issue #858); default the process's own. */
+  passFetches?: PassFetches;
 }
+
+/**
+ * A start that did not finish in time (issue #462): the pane's shell or Claude never came up. Nothing of
+ * the job has run yet, so the executor may try it again in a new pane. `error` carries the pane's last output.
+ */
+export interface StartTimedOut { startTimedOut: string }
 
 export const agentNameFor = (jobId: string): string => `jh-${jobId.slice(0, 8)}`;
 
@@ -120,18 +162,40 @@ export const scratchDirOf = (cwd: string): string => `${cwd.replace(/\/+$/, '')}
 export const jobScratchOf = (cwd: string, jobId: string): string => `${scratchDirOf(cwd)}/${jobId}`;
 
 /**
+ * The job's temp link (issue #506), its TMPDIR: a short link to its scratch dir. A Unix socket path takes at most 108
+ * bytes, and a tool binds its sockets under TMPDIR (Chromium's `org.chromium.Chromium.XXXXXX/SingletonSocket`
+ * alone takes 45), so the scratch dir's own path left too little room. What is written through it lands in
+ * the scratch dir all the same; the reap removes the link.
+ */
+export const jobTmpOf = (jobId: string): string => `/tmp/hopper-${jobId}`;
+
+/** Points the job's temp link at its scratch dir; fails when the link there is not that. */
+export const linkTmpCommand = (scratch: string, jobId: string): string => {
+  const link = shellQuote(jobTmpOf(jobId));
+  return `ln -sfn ${shellQuote(scratch)} ${link} && [ "$(readlink ${link})" = ${shellQuote(scratch)} ]`;
+};
+
+/** Makes the job's scratch dir, git-ignored, and its temp link; prints the ready or unusable marker. */
+export const scratchCommand = (cwd: string, jobId: string, make: boolean): string => {
+  const scratch = jobScratchOf(cwd, jobId);
+  return `${make ? `mkdir -p ${shellQuote(cwd)} && ` : ''}cd ${shellQuote(cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(cwd)}/.gitignore`)}`
+    + ` && ${linkTmpCommand(scratch, jobId)} && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`;
+};
+
+/**
  * Create the tab and record it at once, before anything can fail in it. The tab's environment
  * points Claude's scratchpad and every temp file at the scratch dir.
  */
 export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string, env: Record<string, string>): Promise<PaneState> {
-  const scratch = jobScratchOf(cwd, ctx.job.id);
+  const tmp = jobTmpOf(ctx.job.id);
   const workspaceId = await d.herdr.ensureWorkspace(WORKSPACE_LABEL, cwd);
   const { tabId, paneId } = await d.herdr.createTab({
     workspaceId, cwd, label: `${ctx.laneId} · ${ctx.job.id.slice(0, 8)}`,
     // HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them. Claude Code's
     // countdown that denies a dangerous rm by itself is off (issue #376): the question climbs to the owner,
     // which takes longer than its two minutes.
-    env: { ...env, CLAUDE_CODE_TMPDIR: scratch, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' },
+    // Unattended (issue #533), Claude never updates itself in a job's pane, so no update notice stands in its way.
+    env: { ...env, CLAUDE_CODE_TMPDIR: tmp, TMPDIR: tmp, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1', ...(d.unattended ? { DISABLE_AUTOUPDATER: '1' } : {}) },
   });
   const state: PaneState = {
     ...(d.herdr.session ? { session: d.herdr.session } : {}),
@@ -144,42 +208,6 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
 }
 
 /**
- * Wait until Claude is ready for the prompt, answering the startup dialogs the hopper may answer: the
- * folder-trust dialog naming the job's cwd (when `trustWorkdir`), and the bypass permissions warning
- * (when yolo). Any other dialog fails the job with the screen. A dialog is judged once per state
- * change, so keys sent to one never land on the next. `started`: herdr's agent start found Claude
- * ready, so anything but a dialog is; else herdr found it held at one. Null when ready (or aborted),
- * else the failure.
- */
-async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, started: boolean): Promise<ExecutionOutcome | null> {
-  const until = d.clock.now().getTime() + START_TIMEOUT_MS;
-  let answeredAt = -1;
-  let answered = 0;
-  while (d.clock.now().getTime() < until) {
-    if (ctx.signal.aborted) return null;
-    const agent = await d.herdr.getAgent(s.agentName);
-    if (!agent) return { kind: 'failed', error: 'claude exited at startup' };
-    if (agent.status === 'idle' || agent.status === 'done' || (started && answered === 0 && agent.status !== 'blocked')) return null;
-    if ((agent.status === 'blocked' || (!started && answered === 0)) && agent.stateChangeSeq !== answeredAt) {
-      const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
-      const dir = s.jobWorktree ?? s.cwd;
-      const dialog = d.trustWorkdir && isTrustDialog(screen, dir) ? `trusted workdir ${dir}`
-        : d.yolo && isBypassDialog(screen) ? 'accepted bypass permissions mode' : undefined;
-      if (!dialog || answered >= MAX_STARTUP_DIALOGS) return { kind: 'failed', error: `claude blocked at startup: ${tail(screen, 30)}` };
-      // Both dialogs open on their refusing option; the next one down accepts.
-      await d.herdr.sendKeys(s.paneId, ['down', 'enter']);
-      ctx.progress(0, dialog);
-      answeredAt = agent.stateChangeSeq;
-      answered++;
-      continue;
-    }
-    await d.sleep(d.pollMs, ctx.signal);
-  }
-  const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
-  return { kind: 'failed', error: `claude not ready at startup: ${tail(screen, 30)}` };
-}
-
-/**
  * Make the scratch dir in the pane's own shell, so on whichever machine the work tree is; its
  * `.gitignore` hides it from git. The shell enters the work tree first: herdr opens a tab whose cwd
  * does not exist there in the home instead, so only the shell can say the work tree is not usable,
@@ -188,16 +216,16 @@ async function settleStartup(d: StartDeps, ctx: ExecutionContext, s: PaneState, 
  * prompt, so the command runs again until its output shows. The command is POSIX shell: a pane whose
  * shell is PowerShell or cmd fails the job at once, naming it (issue #367). Null when made, else the failure.
  */
-async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, make: boolean): Promise<ExecutionOutcome | null> {
-  const scratch = jobScratchOf(s.cwd, ctx.job.id);
-  const command = `${make ? `mkdir -p ${shellQuote(s.cwd)} && ` : ''}cd ${shellQuote(s.cwd)} && mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(s.cwd)}/.gitignore`)}`
-    + ` && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`;
+async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, make: boolean): Promise<ExecutionOutcome | StartTimedOut | null> {
+  const command = scratchCommand(s.cwd, ctx.job.id, make);
   for (let waited = 0; waited < START_TIMEOUT_MS; waited += SCRATCH_WAIT_MS) {
     if (ctx.signal.aborted) return null;
     await d.herdr.runInPane(s.paneId, command);
-    if (await d.herdr.waitOutput(s.paneId, SCRATCH_READY, SCRATCH_WAIT_MS)) return null;
+    await d.herdr.waitOutput(s.paneId, SCRATCH_READY, SCRATCH_WAIT_MS);
+    // herdr's answer is not taken for the screen (issue #518): the line itself shows it ran.
     const screen = await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: 40 });
-    if (screen.split('\n').some((l) => l.trim() === SCRATCH_UNUSABLE)) {
+    if (shows(SCRATCH_READY)(screen)) return null;
+    if (shows(SCRATCH_UNUSABLE)(screen)) {
       return { kind: 'failed', error: `the work tree ${s.cwd} is not usable on ${ctx.machine.id}: ${tail(screen, 10)}` };
     }
     const shell = windowsShellOf(screen);
@@ -205,7 +233,7 @@ async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, ma
       return { kind: 'failed', error: `the shell of pane ${s.paneId} on ${ctx.machine.id} is ${shell}, and the hopper needs a POSIX shell (sh, bash, zsh) there: make one herdr's default shell for the hopper's herdr session on that machine (README "A Windows computer")` };
     }
   }
-  return { kind: 'failed', error: `pane ${s.paneId} never ran the scratch dir command within ${START_TIMEOUT_MS} ms` };
+  return { startTimedOut: `pane ${s.paneId} never ran the scratch dir command within ${START_TIMEOUT_MS} ms` };
 }
 
 /**
@@ -215,7 +243,7 @@ async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, ma
  * A machine without systemd, or a shell that did not land in the scope, goes on without one. Null when
  * done, else the failure (the shell never answered: the pane is gone or hung).
  */
-async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | null> {
+async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<StartTimedOut | null> {
   await d.herdr.runInPane(s.paneId, enterScopeCommand(ctx.job.id));
   for (let waited = 0; waited < START_TIMEOUT_MS; waited += SCRATCH_WAIT_MS) {
     if (ctx.signal.aborted) return null;
@@ -230,30 +258,69 @@ async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Pr
     }
     await d.herdr.runInPane(s.paneId, scopeCheckCommand(ctx.job.id));
   }
-  return { kind: 'failed', error: `pane ${s.paneId} never answered where its shell runs within ${START_TIMEOUT_MS} ms` };
+  return { startTimedOut: `pane ${s.paneId} never answered where its shell runs within ${START_TIMEOUT_MS} ms` };
 }
 
 /**
- * Make the job its own git worktree of the work tree, when that is the top of a git repository, and move
- * the pane's shell into it (issue #379): `s` then names it, saved, and it is reported as the job's work
- * tree. A work tree that is no repository's top is used as it is. Git refusing fails the job with what
- * it said. The scratch command has run, so the shell is at its prompt: the command is typed once.
+ * Make the job its own git worktree and move the pane's shell into it (issues #379, #361, #431, #858): of the work
+ * tree when that is the top of the job's git repository; else of the mirror of the job's repository in the work
+ * tree's scratch dir, fetched or cloned there first. `s` then names it, saved, and it is reported as the job's work tree.
+ * With job worktrees off, only the checkout is made, and the job runs in the work tree. Git refusing fails
+ * the job with what it said. The command says first that it runs: a shell that lost or mangled it (issue
+ * #518, a zsh whose start-up files were busy) gets the line cleared and the command typed again, and one
+ * that never runs it times the start out, to be tried again in a new pane. A run again finds the worktree
+ * the first one made and enters it.
  */
-async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | null> {
-  const path = jobWorktreeOf(s.cwd, ctx.job.id);
-  await d.herdr.runInPane(s.paneId, makeJobWorktreeCommand(s.cwd, path));
-  const seen = await d.herdr.waitOutput(s.paneId, JOB_WORKTREE_MARK, JOB_WORKTREE_WAIT_MS);
-  const screen = await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: 40 });
-  const outcome = seen ? jobWorktreeOutcome(screen) : undefined;
-  if (outcome === 'none') return null;
-  if (outcome !== 'made') {
+async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneState, repo: string | undefined): Promise<ExecutionOutcome | StartTimedOut | null> {
+  if (repo) ctx.progress(`fetching or cloning ${repo}'s mirror in the work tree`);
+  // One fetch per repository per sync pass on each machine (issue #858): a later start in the pass takes what it got.
+  const fetches = d.passFetches ?? jobStartFetches;
+  const key = passFetchKey(ctx.machine.id, s.cwd, repo);
+  const fetch = !fetches.fresh(key);
+  const command = makeJobWorktreeCommand(s.cwd, ctx.job.id, { ...(repo ? { repo } : {}), worktrees: d.jobWorktrees, fetch });
+  for (let typed = 1; ; typed++) {
+    await d.herdr.runInPane(s.paneId, command);
+    const running = await awaitOnScreen(d, ctx, s.paneId, JOB_WORKTREE_RUNNING, shows(JOB_WORKTREE_RUNNING), JOB_WORKTREE_RUNNING_WAIT_MS);
+    if (running.found || ctx.signal.aborted) break;
+    if (typed >= JOB_WORKTREE_TYPINGS) {
+      return { startTimedOut: `pane ${s.paneId} never ran the job worktree command (typed ${typed} times): ${tail(running.screen, 10)}` };
+    }
+    ctx.progress(`the shell did not run the job worktree command; typing it again (${typed + 1} of ${JOB_WORKTREE_TYPINGS})`);
+    await d.herdr.sendKeys(s.paneId, ['ctrl+c']);
+  }
+  if (ctx.signal.aborted) return null;
+  const { found: outcome, screen } = await awaitOnScreen(d, ctx, s.paneId, JOB_WORKTREE_MARK, jobWorktreeOutcome, JOB_WORKTREE_WAIT_MS);
+  if (outcome === 'none' || ctx.signal.aborted) return null;
+  const ofMirror = outcome === 'mirror' && repo;
+  const path = ofMirror ? mirrorWorktreeOf(s.cwd, ctx.job.id, repo) : jobWorktreeOf(s.cwd, ctx.job.id);
+  if (outcome !== 'made' && !ofMirror) {
     return { kind: 'failed', error: outcome === 'unmade' ? `the job worktree ${path} could not be made on ${ctx.machine.id}: ${tail(screen, 10)}`
       : `pane ${s.paneId} never made the job worktree within ${JOB_WORKTREE_WAIT_MS} ms: ${tail(screen, 10)}` };
   }
+  if (fetch) fetches.fetched(key);
   s.jobWorktree = path;
+  if (ofMirror) s.checkout = mirrorOf(s.cwd, repo);
   ctx.saveState({ ...s });
   ctx.workTree(path);
   return null;
+}
+
+/**
+ * Rebuild a job's work from its checkpoint in its new worktree (issue #921, checkpoint.ts `restoreCommand`), in the
+ * pane's shell, which has the job's way to the hopper: before its dependencies are linked, so the worktree it checks is
+ * the job's own. A worktree that holds changes already is kept as it is. Null when done, else the failure.
+ */
+async function restoreCheckpoint(d: StartDeps, ctx: ExecutionContext, s: PaneState, command: string): Promise<ExecutionOutcome | null> {
+  if (!s.jobWorktree) return { kind: 'failed', error: `the job got no worktree of its own on ${ctx.machine.id} to restore its checkpoint into: it needs job worktrees, or a repository` };
+  ctx.progress('restoring the checkpoint in the job worktree');
+  await d.herdr.runInPane(s.paneId, command);
+  const { found: outcome, screen } = await awaitOnScreen(d, ctx, s.paneId, RESTORE_MARK, restoreOutcome, RESTORE_WAIT_MS);
+  if (ctx.signal.aborted) return null;
+  if (outcome === 'restored' || outcome === 'kept') {
+    ctx.progress(outcome === 'restored' ? 'restored the checkpoint: its base checked out, its patch applied, its session in place' : 'the job worktree holds work already: kept it as it is');
+    return null;
+  }
+  return { kind: 'failed', error: outcome ? `the checkpoint could not be restored on ${ctx.machine.id}: ${tail(screen, 10)}` : `pane ${s.paneId} never restored the checkpoint within ${RESTORE_WAIT_MS} ms: ${tail(screen, 10)}` };
 }
 
 /**
@@ -262,49 +329,123 @@ async function enterJobWorktree(d: StartDeps, ctx: ExecutionContext, s: PaneStat
  * on: a failed install is the job's to redo. Only a shell that never answers fails it.
  */
 async function shareDependencies(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | null> {
-  ctx.progress(0, 'sharing dependencies with the repository\'s other jobs');
+  ctx.progress('sharing dependencies with the repository\'s other jobs');
   await d.herdr.runInPane(s.paneId, shareDepsCommand(s.cwd, s.jobWorktree!, ctx.machine.sweep?.scratchMaxAgeHours ?? SCRATCH_MAX_AGE_HOURS));
-  if (!await d.herdr.waitOutput(s.paneId, DEPS_MARK, DEPS_WAIT_MS)) {
-    const screen = await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: 40 });
-    return { kind: 'failed', error: `pane ${s.paneId} never shared dependencies within ${DEPS_WAIT_MS} ms: ${tail(screen, 10)}` };
-  }
-  const outcome = depsOutcome(await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: 40 }));
+  const { found: outcome, screen } = await awaitOnScreen(d, ctx, s.paneId, DEPS_MARK, depsOutcome, DEPS_WAIT_MS);
+  if (ctx.signal.aborted) return null;
+  if (!outcome) return { kind: 'failed', error: `pane ${s.paneId} never shared dependencies within ${DEPS_WAIT_MS} ms: ${tail(screen, 10)}` };
   if (outcome === 'linked' || outcome === 'installed') {
     s.sharedDependencies = true;
     ctx.saveState({ ...s });
   }
-  ctx.progress(0, `dependencies: ${outcome ?? 'unknown'}`);
+  ctx.progress(`dependencies: ${outcome ?? 'unknown'}`);
   return null;
 }
 
 /**
- * Start Claude in the pane, in the job's own worktree when it gets one (`s` moves there). Resolves null
- * when Claude is ready for the prompt (or the signal fired — the caller checks), else the failure to
- * report; the caller closes the pane.
+ * herdr's agent start, its timeout (`timeout`: Claude never came up while herdr waited, issue #462) answered
+ * as a start that timed out, with the pane's last output.
  */
-export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload): Promise<ExecutionOutcome | null> {
+async function startAgent(d: StartDeps, s: PaneState, args: string[]): Promise<Awaited<ReturnType<HerdrClient['startAgent']>> | StartTimedOut> {
+  try {
+    return await d.herdr.startAgent({ name: s.agentName, paneId: s.paneId, args, timeoutMs: START_TIMEOUT_MS });
+  } catch (err) {
+    if (!(err instanceof HerdrError) || err.code !== 'timeout') throw err;
+    const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 }).catch((e: unknown) => `(the pane could not be read: ${(e as Error).message})`);
+    return { startTimedOut: `herdr: ${err.message}: ${tail(screen, 30)}` };
+  }
+}
+
+/**
+ * Start Claude in the pane, in the job's own worktree when it gets one (`s` moves there). Resolves null
+ * when Claude is ready for the prompt (or the signal fired — the caller checks), a start that timed out
+ * (issue #462), else the failure to report; the caller closes the pane. Claude starts in a session whose id
+ * the hopper chose, or (`resume`) resumes that session (issue #501); once it is up, the id is the job's
+ * `agentSession`. A parked job's worktree is still there: the worktree command finds it and enters it. `restore`: the
+ * command that rebuilds the job's work from its checkpoint in a new worktree (issue #921), run before Claude resumes.
+ */
+export async function startClaude(d: StartDeps, ctx: ExecutionContext, s: PaneState, p: ClaudeJobPayload, resume?: string, restore?: string): Promise<ExecutionOutcome | StartTimedOut | null> {
   const unmade = await makeScratch(d, ctx, s, p.makeWorkTree === true);
   if (unmade || ctx.signal.aborted) return unmade;
   const unscoped = await enterScope(d, ctx, s);
   if (unscoped || ctx.signal.aborted) return unscoped;
-  if (d.jobWorktrees) {
-    const unentered = await enterJobWorktree(d, ctx, s);
+  if (d.jobWorktrees || p.repo) {
+    const unentered = await enterJobWorktree(d, ctx, s, p.repo);
     if (unentered || ctx.signal.aborted) return unentered;
+    if (restore) {
+      const unrestored = await restoreCheckpoint(d, ctx, s, restore);
+      if (unrestored || ctx.signal.aborted) return unrestored;
+    }
     if (s.jobWorktree && d.sharedDependencies) {
       const unshared = await shareDependencies(d, ctx, s);
       if (unshared || ctx.signal.aborted) return unshared;
     }
   }
-  const args = [...d.claudeArgs, ...(p.model ? ['--model', p.model] : [])];
+  // Restoring a checkpoint needs the job's own worktree (issue #921): without one, the job fails here.
+  if (restore && !d.jobWorktrees && !p.repo) return restoreCheckpoint(d, ctx, s, restore);
+  if (d.unattended) await seedClaudeConfig(d, ctx, s);
+  if (ctx.signal.aborted) return null;
+  const session = resume ?? (d.newSession ?? randomUUID)();
+  const args = [...d.claudeArgs, ...(p.model ? ['--model', p.model] : []), ...(resume ? ['--resume', resume] : ['--session-id', session])];
   const until = d.clock.now().getTime() + START_TIMEOUT_MS;
-  let started = await d.herdr.startAgent({ name: s.agentName, paneId: s.paneId, args, timeoutMs: START_TIMEOUT_MS });
+  let started = await startAgent(d, s, args);
   // A pane spawned a moment ago is not at its shell prompt yet; herdr refuses `agent start` until it is.
-  while (!started.ok && 'paneBusy' in started) {
+  while ('ok' in started && !started.ok && 'paneBusy' in started) {
     if (ctx.signal.aborted) return null;
-    if (d.clock.now().getTime() >= until) return { kind: 'failed', error: `pane ${s.paneId} never reached its shell prompt within ${START_TIMEOUT_MS} ms` };
+    if (d.clock.now().getTime() >= until) return { startTimedOut: `pane ${s.paneId} never reached its shell prompt within ${START_TIMEOUT_MS} ms` };
     await d.sleep(SHELL_RETRY_MS, ctx.signal);
-    started = await d.herdr.startAgent({ name: s.agentName, paneId: s.paneId, args, timeoutMs: START_TIMEOUT_MS });
+    started = await startAgent(d, s, args);
   }
+  if ('startTimedOut' in started) return started;
   // Started, or held at a dialog (herdr's agent_not_ready): either way, a dialog may stand before the prompt.
-  return settleStartup(d, ctx, s, started.ok);
+  const settled = await settleStartup(d, ctx, s, started.ok);
+  if (!settled && !ctx.signal.aborted) ctx.agentSession?.(session);
+  return settled;
+}
+
+/**
+ * Starts of one run (issue #462): a start that times out is tried again in a new pane, after a pause
+ * that grows and is spread at random, so lanes that filled at once do not start again at once.
+ */
+const START_ATTEMPTS = 3;
+const START_PAUSES_MS = [10000, 30000];
+const START_PAUSE_SPREAD = 0.5;
+
+/** What the executor does around each start of `startInPane`. */
+export interface StartHooks {
+  /** The pane's environment, placed afresh for each start: the close of a failed one reaped the scratch dir, credentials too. */
+  env(): Promise<Record<string, string>>;
+  /** A pane just opened: the outcome that refuses it (another lane holds it), or null once the executor holds it. */
+  opened(s: PaneState): ExecutionOutcome | null;
+  /** A start that failed: its pane is closed. */
+  close(s: PaneState): Promise<void>;
+  /** Spreads the pause before a start is tried again. */
+  random(): number;
+  /** The agent session a parked job resumes (issue #501). */
+  resume?: string;
+  /** The command that restores a job's checkpoint in its new worktree before it resumes elsewhere (issue #921). */
+  restore?: string;
+}
+
+/**
+ * Open the job's pane in `p.cwd` and start Claude there, tried again in a new pane when the start times out
+ * (issue #462): nothing of the job has run yet. The pane's state once Claude is ready, else the outcome or
+ * interrupt that ends the run.
+ */
+export async function startInPane(d: StartDeps, ctx: ExecutionContext, p: ClaudeJobPayload, h: StartHooks): Promise<PaneState | ExecutionOutcome | Interrupt> {
+  for (let attempt = 1; ; attempt++) {
+    const s = await openPane(d, ctx, p.cwd, await h.env());
+    const refused = h.opened(s);
+    if (refused) return refused;
+    if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
+    const failed = await startClaude(d, ctx, s, p, h.resume, h.restore);
+    if (!failed) return ctx.signal.aborted ? { interrupt: abortReason(ctx.signal) } : s;
+    await h.close(s);
+    if (!('startTimedOut' in failed)) return failed;
+    if (attempt >= START_ATTEMPTS) return { kind: 'failed', error: `claude did not start in ${attempt} attempts: ${failed.startTimedOut}` };
+    const pause = Math.round(START_PAUSES_MS[attempt - 1]! * (1 + START_PAUSE_SPREAD * h.random()));
+    ctx.progress(`claude did not start (attempt ${attempt} of ${START_ATTEMPTS}), trying again in a new pane in ${Math.round(pause / 1000)} s: ${failed.startTimedOut}`);
+    await d.sleep(pause, ctx.signal);
+    if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
+  }
 }

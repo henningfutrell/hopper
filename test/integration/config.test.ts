@@ -28,6 +28,16 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     expect(loadConfig({ ...DB, HOPPER_SECRET_KEY: 'k' }).leftoverEnv).toEqual({ HOPPER_SECRET_KEY: 'k' });
   });
 
+  it('HOPPER_MASTER_KEY and its _FILE are read, never a leftover: the GitHub connection\'s tokens are sealed under it (issue #441)', () => {
+    expect(loadConfig({ ...DB, HOPPER_MASTER_KEY: 'k' }).leftoverEnv).toEqual({});
+    expect(loadConfig({ ...DB, HOPPER_MASTER_KEY_FILE: '/run/hopper-secrets/token_key' }).leftoverEnv).toEqual({});
+  });
+
+  it('HOPPER_MASTER_KEY_PREVIOUS and its _FILE are read: the older keys that still open what they sealed (issue #451)', () => {
+    expect(loadConfig({ ...DB, HOPPER_MASTER_KEY_PREVIOUS: 'k' }).leftoverEnv).toEqual({});
+    expect(loadConfig({ ...DB, HOPPER_MASTER_KEY_PREVIOUS_FILE: '/run/hopper-secrets/token_key_previous' }).leftoverEnv).toEqual({});
+  });
+
   it('HOPPER_DB is no longer read: it is a leftover variable', () => {
     expect(loadConfig({ ...DB, HOPPER_DB: '/x.db' }).leftoverEnv).toEqual({ HOPPER_DB: '/x.db' });
   });
@@ -37,6 +47,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     expect(c).toEqual({
       host: '127.0.0.1',
       port: 4790,
+      tunnelApis: {},
       databaseUrl: 'postgres://u:p@db:5432/jh',
       workDir: join(tmpdir(), 'hopper'),
       tickMs: 2000,
@@ -46,7 +57,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       routerCheapBoost: 10,
       webhookBaseMs: 1000,
       laneIdleGraceMs: 5000,
-      reconnectGraceMs: 120000,
+      reconnectGraceMs: 120000, linkGraceMs: 600000, doneRecheckMs: 60000, ownCommandGraceMs: 300000,
       answerTimeoutMs: 180000,
       humanRenotifyMs: 900000,
       humanTimeoutMs: 86400000,
@@ -74,7 +85,7 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       HOPPER_PORT: '0', HOPPER_DATABASE_URL: 'postgres://jh:pw@db:5432/jh', HOPPER_WORK_DIR: '/var/tmp/jh', HOPPER_TICK_MS: '50',
       HOPPER_SOFT_LIMIT: '0.5', HOPPER_HARD_LIMIT: '0.9', HOPPER_ROUTER_CHEAP_BOOST: '5',
       HOPPER_BURN_WINDOW_HOURS: '0', HOPPER_RESET_AWARE_PLACEMENT: 'false', HOPPER_CRITICAL_PRIORITY: '0',
-      HOPPER_WEBHOOK_BASE_MS: '20', HOPPER_LANE_IDLE_GRACE_MS: '100', HOPPER_RECONNECT_GRACE_MS: '3000', HOPPER_ANSWER_TIMEOUT_MS: '1000',
+      HOPPER_WEBHOOK_BASE_MS: '20', HOPPER_LANE_IDLE_GRACE_MS: '100', HOPPER_RECONNECT_GRACE_MS: '3000', HOPPER_LINK_GRACE_MS: '4000', HOPPER_DONE_RECHECK_MS: '500', HOPPER_OWN_COMMAND_GRACE_MS: '700', HOPPER_ANSWER_TIMEOUT_MS: '1000',
       HOPPER_HUMAN_RENOTIFY_MS: '10', HOPPER_HUMAN_TIMEOUT_MS: '20',
       HOPPER_RESUME_BOOST: '7', HOPPER_MAX_QUESTIONS: '1', HOPPER_KEEP_PANES: 'true', HOPPER_LOCAL_MACHINE: 'false',
       HOPPER_PLUGIN_DIR: '/srv/p', HOPPER_PUBLIC_URL: 'https://Hopper.Example.com/',
@@ -83,8 +94,8 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
       HOPPER_GITHUB_URL: 'https://github.example.com/', HOPPER_GITHUB_CLIENT_ID: 'gh-id', HOPPER_GITHUB_APP_SLUG: 'hopper-x',
     });
     expect(c).toEqual({
-      host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', workDir: '/var/tmp/jh', tickMs: 50,
-      softLimit: 0.5, hardLimit: 0.9, pacing: { burnWindowMs: 0, resetAwarePlacement: false, criticalPriority: 0 }, routerCheapBoost: 5, webhookBaseMs: 20, laneIdleGraceMs: 100, reconnectGraceMs: 3000, answerTimeoutMs: 1000,
+      host: '::', port: 0, databaseUrl: 'postgres://jh:pw@db:5432/jh', workDir: '/var/tmp/jh', tickMs: 50, tunnelApis: {},
+      softLimit: 0.5, hardLimit: 0.9, pacing: { burnWindowMs: 0, resetAwarePlacement: false, criticalPriority: 0 }, routerCheapBoost: 5, webhookBaseMs: 20, laneIdleGraceMs: 100, reconnectGraceMs: 3000, linkGraceMs: 4000, doneRecheckMs: 500, ownCommandGraceMs: 700, answerTimeoutMs: 1000,
       humanRenotifyMs: 10, humanTimeoutMs: 20, resumeBoost: 7, maxQuestions: 1, keepPanes: true, localMachine: false,
       pluginDir: '/srv/p', publicUrl: 'https://hopper.example.com',
       lanNames: ['server', '192.0.2.29'], lanPeers: ['192.0.2.0/24', '100.64.0.0/10'], updateCheckMs: 0, restart: 'respawn', leftoverEnv: {},
@@ -119,6 +130,13 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     ['another scheme', 'ftp://example.com', /http/],
   ])('refuses a public URL with %s', (_what, url, msg) => {
     expect(() => loadConfig({ ...DB, HOPPER_PUBLIC_URL: url })).toThrow(msg);
+  });
+
+  it('HOPPER_TUNNEL_API is the tunnel agent\'s local API; the URL it forwards is set in the UI, so it needs no public URL (issue #880)', () => {
+    expect(loadConfig(DB).tunnelApis).toEqual({});
+    expect(loadConfig({ ...DB, HOPPER_TUNNEL_API: 'http://tunnel:4040' }).tunnelApis).toEqual({ ngrok: 'http://tunnel:4040' });
+    expect(loadConfig({ ...DB, HOPPER_CLOUDFLARED_API: 'http://cloudflared:2000' }).tunnelApis).toEqual({ cloudflare: 'http://cloudflared:2000' });
+    expect(() => loadConfig({ ...DB, HOPPER_PUBLIC_URL: 'https://h.example', HOPPER_TUNNEL_API: 'tunnel:4040' })).toThrow(/HOPPER_TUNNEL_API/);
   });
 
   it('a part-choosing variable is no longer read: it lands in leftoverEnv with every other unread HOPPER_* variable, unvalidated', () => {

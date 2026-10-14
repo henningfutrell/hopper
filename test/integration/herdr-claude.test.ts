@@ -11,7 +11,7 @@ let cleanup: (() => void) | undefined;
 
 const ASK = { output: ['● Which colour should the shed be?', '  HOPPER_QUESTION'] };
 const DONE = { steps: ['● Painting'], output: ['● Painted the shed.', '  HOPPER_DONE'] };
-const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }];
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000, promptSteadyMs: 100 } }];
 
 async function start(herdr: FakeHerdrClient, env: Record<string, string> = {}): Promise<TestApp> {
   const db = tempDbPath();
@@ -24,7 +24,7 @@ async function start(herdr: FakeHerdrClient, env: Record<string, string> = {}): 
 async function startNudging(herdr: FakeHerdrClient): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  const executors = [EXECUTORS[0]!, { ...EXECUTORS[1]!, options: { pollMs: 10, idleNudgeMs: 50 } }];
+  const executors = [EXECUTORS[0]!, { ...EXECUTORS[1]!, options: { pollMs: 10, idleNudgeMs: 50, promptSteadyMs: 100 } }];
   t = await startTestApp({ dbPath: db.dbPath, plugins: { executors }, seams: { herdr } });
   return t;
 }
@@ -35,7 +35,7 @@ afterEach(async () => {
   cleanup?.();
 });
 
-const item = (over: Partial<SourceItem> = {}) => ({ executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: { HOPPER_REPO: 'o/r' }, ...over });
+const item = (over: Partial<SourceItem> = {}) => ({ executor: 'herdr-claude', prompt: 'Paint the shed', env: { HOPPER_REPO: 'o/r' }, ...over });
 
 describe('herdr-claude job through the daemon', () => {
   it('asks, gets the opus answer typed into its pane, finishes, and its pane is closed', async () => {
@@ -47,9 +47,23 @@ describe('herdr-claude job through the daemon', () => {
     expect(q).toMatchObject({ status: 'answered', answeredBy: 'opus', detectedBy: 'marker' });
     expect(herdr.prompts.map((p) => p.text)).toEqual([expect.stringContaining('Paint the shed'), 'fake opus answer']);
     expect(done.result).toMatchObject({ summary: expect.stringContaining('Painted the shed.') });
-    expect(done.workTree).toBe('/tmp');
+    // Its machine's work tree: this machine names none, so the jobs directory (issue #361).
+    expect(done.workTree).toMatch(/\/hopper-jobs$/);
     const paneId = (done.executorState as { paneId: string }).paneId;
     await waitFor(() => herdr.closed.includes(paneId));
+  });
+
+  // Issue #533: on a machine whose home has no Claude config (a fresh container), the default instance (unattended)
+  // seeds it, and the job runs with no key pressed: no first-run screen, no trust dialog.
+  it('a fresh home: Claude\'s config is seeded and the job runs with no key pressed', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', claudeConfig: 'absent', trustDialogFor: '/x', turns: [DONE] });
+    const a = await start(herdr);
+    const job = await a.pull({}, item());
+    await a.waitForStatus(job.id, 'finished', 15000);
+    expect(herdr.seeds).toHaveLength(1);
+    expect(herdr.keys.filter((k) => !k.keys.includes('ctrl+c') && !k.keys.includes('esc'))).toEqual([]);
+    const tab = herdr.calls.find((c) => c.method === 'createTab')!.args[0] as { env: Record<string, string> };
+    expect(tab.env.DISABLE_AUTOUPDATER).toBe('1');
   });
 
   // Issue #163: a status note is progress, not a question.
@@ -86,7 +100,6 @@ describe('herdr-claude job through the daemon', () => {
   it('an item with a payload herdr-claude rejects is created failed; health lists the executors', async () => {
     const a = await start(createFakeHerdrClient({ session: 'jh-test' }));
     expect((await a.pull({}, item({ prompt: '' }))).error).toContain('prompt');
-    expect((await a.pull({}, item({ cwd: 'rel' }))).error).toContain('cwd');
     expect((await a.pull({}, item({ env: { 'bad-key': 'x' } }))).error).toContain('env key bad-key');
     expect((await a.api('GET', '/api/health')).body.executors).toEqual(['test', 'herdr-claude', 'scripted']);
   });

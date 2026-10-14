@@ -1,0 +1,1 @@
+- Failures lists the jobs that ended with work that is not pushed. Push it lets the job go on and push its work and open its pull request. Discard removes the work.

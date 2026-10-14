@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "for": {
+      "type": "string"
+    },
+    "until": {
+      "type": "string"
+    },
+    "ownCommand": {
+      "type": "boolean",
+      "const": true
+    }
+  },
+  "required": [
+    "for"
+  ],
+  "additionalProperties": false
+}

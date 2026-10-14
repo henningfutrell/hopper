@@ -45,7 +45,7 @@ async function boot(container: string): Promise<{ a: TestApp; gh: ReturnType<typ
         { name: 'local', plugin: 'local', options: { lanes: 2, executors: ['test'] } },
         { name: 'box', plugin: 'docker', options: { docker: container, lanes: 1 } },
       ],
-      jobSources: [{ name: 'github', plugin: 'github-account', options: { enabled: true, pollSeconds: 3600, executor: 'test', defaultCwd: '/tmp' } }],
+      jobSources: [{ name: 'github', plugin: 'github-account', options: { enabled: true, pollSeconds: 3600, executor: 'test' } }],
       routing: [{ name: 'commands to the box', match: { label: 'on-box' }, set: { machine: 'box', executor: 'command' } }],
     },
     seams: { github: gh },

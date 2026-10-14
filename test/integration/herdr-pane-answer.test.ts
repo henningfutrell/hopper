@@ -1,4 +1,4 @@
-// The owner answers a parked herdr-claude job by typing into its pane, not the UI (design.md
+// The owner answers a herdr-claude job on a question by typing into its pane, not the UI (design.md
 // "Questions" → "Answered in the pane"). The fake herdr stands in for the pane: the test calls
 // `herdr.prompt` itself, as the owner's keyboard would. The hopper notices Claude working again,
 // marks the question answered by the human with the typed text, aborts the answer chain, and
@@ -17,7 +17,7 @@ let cleanup: (() => void) | undefined;
 
 const ASK = { output: ['● Which colour should the shed be?', '  HOPPER_QUESTION'] };
 const DONE = { steps: ['● Painting', '● Still painting', '● Almost'], output: ['● Painted the shed blue.', '  HOPPER_DONE'] };
-const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }];
+const EXECUTORS = [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000, promptSteadyMs: 100 } }];
 const item = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: {} };
 
 async function start(herdr: FakeHerdrClient, seams: AppSeams = {}, laneCount = 4): Promise<TestApp> {
@@ -41,9 +41,9 @@ describe('a question answered by typing into the pane', () => {
     const a = await start(herdr);
     const job = await a.pull({}, item);
     const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
-    const parked = await a.job(job.id);
-    expect(parked.status).toBe('waiting_answer');
-    const { agentName } = parked.executorState as { agentName: string };
+    const waiting = await a.job(job.id);
+    expect(waiting.status).toBe('waiting_answer');
+    const { agentName } = waiting.executorState as { agentName: string };
 
     await herdr.prompt(agentName, 'Blue.');
 
@@ -53,7 +53,7 @@ describe('a question answered by typing into the pane', () => {
     expect(after).toMatchObject({ id: q.id, status: 'answered', answeredBy: 'human', answer: 'Blue.' });
     expect(herdr.prompts.map((p) => p.text)).toEqual([expect.stringContaining('Paint the shed'), 'Blue.']);
     const events = await ofJob(a, job.id);
-    expect(events.find((e) => e.type === 'question.answered')!.data).toEqual({ questionId: q.id, by: 'human', answer: 'Blue.', via: 'pane' });
+    expect(events.find((e) => e.type === 'question.answered')!.data).toEqual({ questionId: q.id, by: 'human', answer: 'Blue.', via: 'pane', raisedBy: q.raisedBy });
     const reattached = events.find((e) => e.type === 'job.reattached')!;
     expect(reattached.data).toEqual({ reason: 'answered in the pane' });
     expect(reattached.laneId).toEqual(expect.any(String));
@@ -68,7 +68,7 @@ describe('a question answered by typing into the pane', () => {
     const level = createFakeLevel({
       name: 'drafter',
       script: (_req, signal) => new Promise<LevelReply>((resolve) => {
-        signal.addEventListener('abort', () => { aborted.push(signal.reason); resolve({ answer: 'late', escalate: false, reason: 'late' }); }, { once: true });
+        signal.addEventListener('abort', () => { aborted.push(signal.reason); resolve({ answer: 'late', escalate: false, reason: 'late', confidence: 'high' }); }, { once: true });
       }),
     });
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [ASK, DONE] });
@@ -135,7 +135,7 @@ describe('a dialog Claude Code denies by itself', () => {
     expect(after!.answer).toBeUndefined();
     const events = await ofJob(a, job.id);
     expect(events.find((e) => e.type === 'question.answered')).toBeUndefined();
-    expect(events.find((e) => e.type === 'question.lapsed')!.data).toEqual({ questionId: q.id, lapsesAt: q.lapsesAt });
+    expect(events.find((e) => e.type === 'question.lapsed')!.data).toEqual({ questionId: q.id, lapsesAt: q.lapsesAt, raisedBy: q.raisedBy });
     expect(events.find((e) => e.type === 'job.reattached')!.data).toEqual({ reason: 'the dialog lapsed' });
     expect(herdr.prompts).toHaveLength(1);
   });

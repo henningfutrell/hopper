@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /* global process, setInterval */
 // A stand-in for the agent CLIs the print-mode executors run (issue #307): `codex exec --json`,
-// `opencode run --format json` and `omp -p --mode json`, chosen by $FAKE_AGENT_KIND. Appends its argv,
+// `opencode run --format json`, `omp -p --mode json` and `claude -p --output-format json` (issue #533), chosen by $FAKE_AGENT_KIND. Appends its argv,
 // cwd and the environment the hopper sets to agent-calls.jsonl in $FAKE_AGENT_DIR, then answers as that
 // CLI does — JSON events, one per line, in the shapes each prints (taken from the real CLIs, 2026-10-07).
 // The reply is $FAKE_AGENT_REPLY; $FAKE_AGENT_REPLIES (a JSON array) gives the reply of each call in
@@ -19,7 +19,7 @@ const argv = process.argv.slice(2);
 const log = join(process.env.FAKE_AGENT_DIR, 'agent-calls.jsonl');
 appendFileSync(log, JSON.stringify({
   argv, cwd: process.cwd(),
-  env: { TMPDIR: process.env.TMPDIR, HOPPER_JOB_ID: process.env.HOPPER_JOB_ID, HOPPER_REPO: process.env.HOPPER_REPO, GH_TOKEN: process.env.GH_TOKEN },
+  env: { TMPDIR: process.env.TMPDIR, HOPPER_JOB_ID: process.env.HOPPER_JOB_ID, HOPPER_REPO: process.env.HOPPER_REPO, HOPPER_URL: process.env.HOPPER_URL },
 }) + '\n');
 const kind = process.env.FAKE_AGENT_KIND;
 const mode = process.env.FAKE_AGENT_MODE ?? 'ok';
@@ -30,10 +30,17 @@ const after = (flag) => { const i = argv.indexOf(flag); return i >= 0 ? argv[i +
 const out = (o) => process.stdout.write(`${JSON.stringify(o)}\n`);
 
 // `leave`, `escape`: what a careless turn leaves (issue #410): a temp file, and a process that left its session,
-// named $FAKE_AGENT_LEFTOVER — with `escape`, one that cleared its environment too.
+// named $FAKE_AGENT_LEFTOVER — with `escape`, one that cleared its environment too. bash, for `exec -a`: dash, a
+// distribution's sh, has none (issue #672).
 if (mode === 'leave' || mode === 'escape') {
   writeFileSync(join(process.env.TMPDIR, 'left.txt'), 'x');
-  spawn('setsid', ['sh', '-c', `exec -a ${process.env.FAKE_AGENT_LEFTOVER} sleep 300`], { detached: true, stdio: 'ignore', env: mode === 'escape' ? {} : process.env }).unref();
+  spawn('setsid', ['bash', '-c', `exec -a ${process.env.FAKE_AGENT_LEFTOVER} sleep 300`], { detached: true, stdio: 'ignore', env: mode === 'escape' ? {} : process.env }).unref();
+}
+// `device-code`, `device-code-fails` (issue #476): a tool of the agent's waits on a login and prints codex's device
+// code, as `codex login --device-auth` does; the turn then answers as usual, or its CLI fails.
+if (mode === 'device-code' || mode === 'device-code-fails') {
+  process.stderr.write('Follow these steps to sign in with ChatGPT using device code authorization:\n\n1. Open this link in your browser and sign in to your account\n   https://auth.openai.com/codex/device\n\n2. Enter this one-time code (expires in 15 minutes)\n   ABCD-EFGHJ\n\n');
+  if (mode === 'device-code-fails') { process.stderr.write('login timed out; the code was ABCD-EFGHJ\n'); process.exit(1); }
 }
 if (mode === 'hang') setInterval(() => {}, 1000);
 else if (kind === 'codex') {
@@ -74,7 +81,15 @@ else if (kind === 'codex') {
     ? { role: 'assistant', content: [], stopReason: 'error', errorMessage: 'No API key found for anthropic' }
     : { role: 'assistant', content: [{ type: 'thinking', thinking: '' }, { type: 'text', text: reply }], stopReason: 'stop', errorMessage: null };
   out({ type: 'agent_end', messages: [user, { role: 'assistant', content: [{ type: 'text', text: 'Looking at it.' }], stopReason: 'toolUse' }, assistant] });
+} else if (kind === 'claude') {
+  // One JSON result, as claude 2.1.292 prints it (fields the hopper does not read left out); its own error says so with is_error.
+  const session = after('--resume') ?? 'claude-session-1';
+  if (mode === 'error') {
+    out({ type: 'result', subtype: 'success', is_error: true, api_error_status: 401, result: 'Invalid API key · Fix external API key', session_id: session, terminal_reason: 'api_error' });
+    process.exit(1);
+  }
+  out({ type: 'result', subtype: 'success', is_error: false, num_turns: 2, result: reply, session_id: session, permission_denials: [] });
 } else {
-  process.stderr.write(`fake-print-agent: FAKE_AGENT_KIND must be codex, opencode or omp, not ${kind}\n`);
+  process.stderr.write(`fake-print-agent: FAKE_AGENT_KIND must be codex, opencode, omp or claude, not ${kind}\n`);
   process.exit(2);
 }

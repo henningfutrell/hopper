@@ -107,7 +107,7 @@ describe('GET /api/plugins: the executor role', () => {
   it('the instances the plugins config names, detection per plugin and per instance', async () => {
     const a = await boot(newDb());
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.roles).toEqual(['router', 'queue-sorter', 'escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier']);
+    expect(body.roles).toEqual(['router', 'queue-sorter', 'escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier', 'vault-backend']);
     expect(body.executors).toEqual({
       instances: [{ instance: { name: 'test', plugin: 'test', options: {} }, detection: { status: 'available' }, active: 'test' }],
     });
@@ -122,14 +122,14 @@ describe('GET /api/plugins: the executor role', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- loose JSON
     const marked = (id: string) => Object.entries((byId.get(id) as any).options.properties as Record<string, { commandBearing?: boolean }>)
       .filter(([, s]) => s.commandBearing === true).map(([k]) => k).sort();
-    expect(marked('herdr-claude')).toEqual(['args', 'bin', 'claudeBin', 'cwd', 'yolo']);
+    expect(marked('herdr-claude')).toEqual(['args', 'bin', 'claudeBin', 'yolo']);
     expect(marked('test')).toEqual([]);
     expect(marked('claude-cli')).toEqual(['bin', 'sshBin']);
     expect(marked('anthropic-api')).toEqual(['apiKeyEnv', 'baseUrl']);
     expect(marked('gate-router')).toEqual(['jevPath', 'python']);
-    expect(marked('github-account')).toEqual(['defaultCwd', 'repoPaths']);
-    expect(marked('github-app')).toEqual(['apiUrl', 'appId', 'defaultCwd', 'privateKeyEnv', 'repoPaths', 'slug']);
-    expect(marked('local')).toEqual(['workTree']);
+    expect(marked('github-account')).toEqual([]);
+    expect(marked('github-app')).toEqual(['apiUrl', 'appId', 'privateKeyEnv', 'slug']);
+    expect(marked('local')).toEqual(['workTree', 'workTrees']);
   });
 
   it('an executor added to the plugins config runs without a restart (issue #142)', async () => {

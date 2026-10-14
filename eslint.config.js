@@ -3,7 +3,8 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['node_modules/**', 'data/**', 'coverage/**', 'ui/dist/**', 'site/dist/**'] },
+  // test/e2e/sse-vault-wiremock/driver.ts runs from the checkout root (/src/e2e-driver.ts): its imports resolve only there.
+  { ignores: ['node_modules/**', 'data/**', 'coverage/**', 'ui/dist/**', 'site/dist/**', 'test/e2e/sse-vault-wiremock/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -14,7 +15,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**', 'src/main.ts', 'src/startup-log.ts'],
+    files: ['scripts/**', 'src/main.ts', 'src/startup-log.ts', 'src/vault/main.ts'],
     rules: { 'no-console': 'off' },
   },
   {

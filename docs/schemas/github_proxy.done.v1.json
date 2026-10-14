@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "own": {
+          "type": "boolean"
+        },
+        "forUser": {
+          "type": "string"
+        },
+        "job": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "enum": [
+            "issue.create",
+            "issue.comment",
+            "issue.view",
+            "issue.comments",
+            "issue.close",
+            "pr.create",
+            "pr.view",
+            "pr.diff",
+            "pr.commits",
+            "pr.checks",
+            "pr.ready",
+            "repo.view",
+            "repo.fork",
+            "check.log"
+          ]
+        },
+        "repo": {
+          "type": "string"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "url": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "github",
+            "cache"
+          ]
+        }
+      },
+      "required": [
+        "requestId",
+        "own",
+        "op",
+        "repo",
+        "number",
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "own": {
+          "type": "boolean"
+        },
+        "forUser": {
+          "type": "string"
+        },
+        "job": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "const": "git.push"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "requestId",
+        "own",
+        "op",
+        "repo",
+        "refs"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string"
+        },
+        "machine": {
+          "type": "string"
+        },
+        "own": {
+          "type": "boolean"
+        },
+        "forUser": {
+          "type": "string"
+        },
+        "job": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "enum": [
+            "repo.view",
+            "repo.fork"
+          ]
+        },
+        "repo": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "fork": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "github",
+            "cache"
+          ]
+        }
+      },
+      "required": [
+        "requestId",
+        "own",
+        "op",
+        "repo",
+        "url"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

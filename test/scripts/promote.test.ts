@@ -1,4 +1,5 @@
-// scripts/promote.sh (issue #423): a promotion moves a commit up one update channel, dev → beta → stable,
+// scripts/promote.sh (issue #423): a promotion moves a commit up one update channel, dev → beta → canary → stable
+// (the canary: issue #1073 part 5),
 // as a fast-forward of the steadier branch to a commit the branch below already has, and only once that
 // commit's image built there. The repository is a local bare one; gh is a stand-in on PATH that answers
 // the image run's conclusion. Nothing leaves this process tree.
@@ -36,7 +37,11 @@ function imageRun(conclusion: string): void {
 }
 
 function promote(...args: string[]) {
-  return spawnSync('bash', [SCRIPT, ...args], { cwd: work, encoding: 'utf8', env: { PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: dir } });
+  return promoteIn(work, ...args);
+}
+
+function promoteIn(cwd: string, ...args: string[]) {
+  return spawnSync('bash', [SCRIPT, ...args], { cwd, encoding: 'utf8', env: { PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, HOME: dir } });
 }
 
 beforeEach(() => {
@@ -58,11 +63,15 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe('promote.sh', () => {
-  it('promotes the head of dev to beta, then beta to stable, once each image built', () => {
+  it('promotes the head of dev to beta, then beta to canary (made the first time), then canary to stable, once each image built', () => {
     const c = onDev('second');
     const toBeta = promote('beta');
     expect(toBeta.status, toBeta.stderr).toBe(0);
     expect(head('beta')).toBe(c);
+    expect(head('stable')).not.toBe(c);
+    const toCanary = promote('canary');
+    expect(toCanary.status, toCanary.stderr).toBe(0);
+    expect(head('canary')).toBe(c);
     expect(head('stable')).not.toBe(c);
     const toStable = promote('stable');
     expect(toStable.status, toStable.stderr).toBe(0);
@@ -70,6 +79,22 @@ describe('promote.sh', () => {
     const asked = readFileSync(join(dir, 'gh.log'), 'utf8');
     expect(asked).toContain(`--branch dev --commit ${c}`);
     expect(asked).toContain(`--branch beta --commit ${c}`);
+    expect(asked).toContain(`--branch canary --commit ${c}`);
+  });
+
+  it('stable takes only what canary has; with no canary branch yet, it says so', () => {
+    const c = onDev('second');
+    expect(promote('beta').status).toBe(0);
+    const none = promote('stable');
+    expect(none.status).not.toBe(0);
+    expect(none.stderr).toContain('there is no canary branch yet');
+    expect(promote('canary').status).toBe(0);
+    const d = onDev('third');
+    expect(promote('beta').status).toBe(0);
+    const r = promote('stable', d);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('not on canary');
+    expect(head('stable')).not.toBe(c);
   });
 
   it('promotes a named commit of the branch below, not only its head', () => {
@@ -79,12 +104,21 @@ describe('promote.sh', () => {
     expect(head('beta')).toBe(c);
   });
 
-  it('never skips a step: stable takes only what beta has', () => {
+  it('never skips a step: canary takes only what beta has', () => {
     const c = onDev('second');
-    const r = promote('stable', c);
+    const r = promote('canary', c);
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain('not on beta');
-    expect(head('stable')).not.toBe(c);
+    expect(() => head('canary')).toThrow();
+  });
+
+  it('says a commit only dev has is not on beta, also from a clone that has not fetched it yet', () => {
+    const stale = join(dir, 'stale');
+    git(dir, 'clone', '-q', origin, stale);
+    const c = onDev('second');
+    const r = promoteIn(stale, 'canary', c);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('not on beta');
   });
 
   it('refuses a commit whose image did not build on the branch below', () => {
@@ -110,7 +144,23 @@ describe('promote.sh', () => {
     expect(head('beta')).toBe(before);
   });
 
-  it('takes only beta or stable', () => {
+  it('refuses a commit with What\'s new fragments left: they go into WHATS-NEW.md on dev first (issue #824)', () => {
+    mkdirSync(join(work, 'whats-new'), { recursive: true });
+    writeFileSync(join(work, 'whats-new', 'README.md'), 'how to');
+    const readme = onDev('whats-new/12.md');
+    const r = promote('beta');
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("What's new fragments not in WHATS-NEW.md yet (12.md)");
+    expect(r.stderr).toContain('node scripts/whats-new.ts assemble');
+    expect(head('beta')).not.toBe(readme);
+    git(work, 'rm', '-q', 'whats-new/12.md');
+    git(work, 'commit', '-q', '-m', 'assemble');
+    git(work, 'push', '-q', 'origin', 'dev');
+    const ok = promote('beta');
+    expect(ok.status, ok.stderr).toBe(0);
+  });
+
+  it('takes only beta, canary or stable', () => {
     for (const to of ['dev', 'main', 'release']) expect(promote(to).status).not.toBe(0);
   });
 });

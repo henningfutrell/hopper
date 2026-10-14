@@ -10,7 +10,7 @@ import { TERMINAL_STATUSES, isRerunnable } from '../../src/domain/types.ts';
 export function item(key: string, over: Partial<SourceItem> = {}): SourceItem {
   return {
     key, url: key, title: `title ${key}`, body: 'body', prompt: 'prompt', env: {}, author: 'me',
-    priority: 50, priorityReason: 'default', cwd: '/tmp', labels: [], executor: 'test', ...over,
+    priority: 50, priorityReason: 'default', labels: [], executor: 'test', ...over,
   };
 }
 
@@ -54,6 +54,10 @@ export function createWorld(): World {
       list: () => [...jobs.values()],
       getBySourceKey: (key: string) => [...jobs.values()].filter((j) => j.source?.key === key).at(-1),
     },
+    // No work-item ledger here (issue #1067): nothing to record of a pull request's wait.
+    workItems: { get: () => undefined },
+    // No hand-off is resolved here: nothing to tell a source (issue #551).
+    handoffs: { get: () => undefined, list: () => [] },
     questions: {
       get: (id: string) => questions.get(id),
       list: (f?: { jobId?: string; status?: string[] }) => [...questions.values()]
@@ -70,6 +74,9 @@ export function createWorld(): World {
 
   const host: SourceHost = {
     store,
+    // No snapshot is kept here (issue #662): nothing changed since one.
+    changedSince: () => undefined,
+    answerFromThread: () => false,
     ingest(it, source) {
       calls.ingest.push(it);
       const known = store.jobs.getBySourceKey(it.key);
@@ -96,10 +103,16 @@ export function createWorld(): World {
       emit('job.finished', id, { result: 'operator-led work complete' });
       return true;
     },
-    finishClosedAsComplete(id) {
+    finishComplete(id, partlyDone) {
       if (jobs.get(id)?.status !== 'failed') return false;
-      patchJob(id, { status: 'finished', error: undefined });
-      emit('job.finished', id, { result: 'issue closed as complete' });
+      patchJob(id, { status: 'finished', error: undefined, ...(partlyDone ? { partlyDone } : {}) });
+      emit('job.finished', id, { result: partlyDone ? 'partly done' : 'pull request ready for review', ...(partlyDone ? { partlyDone } : {}) });
+      return true;
+    },
+    finishShipped(id, result) {
+      if (jobs.get(id)?.status !== 'failed') return false;
+      patchJob(id, { status: 'finished', error: undefined, ...(result ? { result } : {}) });
+      emit('job.finished', id, { result: result ?? 'issue closed as complete' });
       return true;
     },
     setSourceState(id, state) {
@@ -110,6 +123,18 @@ export function createWorld(): World {
       const job = host.ingest(it, source) ?? store.jobs.getBySourceKey(it.key)!;
       emit('job.rerun', id, { by: 'user' });
       return job;
+    },
+    rework(id, it, source, rework) {
+      patchJob(id, { sourceState: { ...jobs.get(id)!.sourceState, source: rework.state } });
+      const job = patchJob((host.ingest(it, source) ?? store.jobs.getBySourceKey(it.key)!).id, { rework: { pullRequest: rework.pullRequest, notes: rework.notes, at: iso() } });
+      emit('job.rework_requested', id, { pullRequest: rework.pullRequest, notes: rework.notes, nextJobId: job.id });
+      return job;
+    },
+    continueJob(id, brief, by) {
+      if (jobs.get(id)?.status !== 'failed') return { ok: false, reason: 'conflict', message: `job ${id} is not failed` };
+      const job = patchJob(id, { status: 'queued', pendingAnswer: brief, continued: { at: iso(), ...by } });
+      emit('job.continued', id, { ...by });
+      return { ok: true, job };
     },
   };
 

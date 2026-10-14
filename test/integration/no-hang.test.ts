@@ -50,7 +50,7 @@ function heldLevel() {
     name: 'drafter',
     script: (_req, signal) => new Promise<LevelReply>((resolve) => {
       release = resolve;
-      signal.addEventListener('abort', () => { aborted.push(signal.reason); resolve({ answer: 'late answer', escalate: false, reason: 'late' }); }, { once: true });
+      signal.addEventListener('abort', () => { aborted.push(signal.reason); resolve({ answer: 'late answer', escalate: false, reason: 'late', confidence: 'high' }); }, { once: true });
     }),
   });
   return { level, aborted, started: () => release !== undefined, release: (d: LevelReply) => release?.(d) };
@@ -82,7 +82,7 @@ describe('everything runs in parallel', () => {
 });
 
 describe('a question frees its lane at once', () => {
-  it('the parked job\'s lane goes to the next queued job in the Decision the question woke', async () => {
+  it('the lane of the job on a question goes to the next queued job in the Decision the question woke', async () => {
     const held = heldLevel();
     const a = await start(1, { seams: { levels: [held.level] } });
     const [asker, next] = await pullAll(a, [{ op: 'ask', message: 'Which colour?', ms: 100 }, { op: 'sleep', ms: 3000 }]);
@@ -97,7 +97,7 @@ describe('a question frees its lane at once', () => {
 });
 
 describe('a herdr-claude question frees its lane at once', () => {
-  it('the parked pane stays open; the next herdr job runs on the same lane while a level works on the question', async () => {
+  it('the waiting pane stays open; the next herdr job runs on the same lane while a level works on the question', async () => {
     const herdr = createFakeHerdrClient({
       session: 'jh-test',
       turns: [{ output: ['● Which colour should the shed be?', '  HOPPER_QUESTION'] }, { steps: ['● Working'], output: [], end: 'working' }],
@@ -105,14 +105,15 @@ describe('a herdr-claude question frees its lane at once', () => {
     const held = heldLevel();
     const a = await start(
       1,
-      { seams: { herdr, levels: [held.level] }, plugins: { executors: [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000 } }] } },
+      { seams: { herdr, levels: [held.level] }, plugins: { executors: [{ name: 'test', plugin: 'test' }, { name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000, promptSteadyMs: 100 } }] } },
     );
     const herdrItem = (prompt: string) => ({ executor: 'herdr-claude', prompt, cwd: '/tmp', env: {} });
     const [asker, next] = await pullAll(a, [herdrItem('Paint the shed'), herdrItem('Mow the lawn')], true);
-    await waitFor(async () => (await a.job(next!.id)).status === 'running' && herdr.prompts.length === 2, { what: 'next job prompted', timeoutMs: 4000 });
-    const parked = await a.job(asker!.id);
-    expect(parked.status).toBe('waiting_answer');
-    expect(parked.laneId).toBeUndefined();
+    // Each start holds Claude's input box on screen for 2 s before it is ready (issue #533).
+    await waitFor(async () => (await a.job(next!.id)).status === 'running' && herdr.prompts.length === 2, { what: 'next job prompted', timeoutMs: 10000 });
+    const waiting = await a.job(asker!.id);
+    expect(waiting.status).toBe('waiting_answer');
+    expect(waiting.laneId).toBeUndefined();
     expect(herdr.closed).toEqual([]);
     const claims = await ofType(a, 'job.claimed');
     const nextClaim = claims.find((e) => e.jobId === next!.id)!;
@@ -126,7 +127,7 @@ describe('a question is the owner\'s the moment it is asked', () => {
   it('visible and answerable in the UI while a level works on it; their answer wins and aborts the climb', async () => {
     const held = heldLevel();
     const judged: string[] = [];
-    const judge = createFakeLevel({ name: 'judge', script: (req) => { judged.push(req.question.text); return { answer: 'fine', escalate: false, reason: 'fine' }; } });
+    const judge = createFakeLevel({ name: 'judge', script: (req) => { judged.push(req.question.text); return { answer: 'fine', escalate: false, reason: 'fine', confidence: 'high' }; } });
     const a = await start(1, { seams: { levels: [held.level, judge] } });
     const token = await a.login();
     const [job] = await pullAll(a, [{ op: 'ask', message: 'Tabs or spaces?' }]);

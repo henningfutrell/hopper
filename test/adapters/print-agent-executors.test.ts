@@ -1,20 +1,23 @@
-// Issue #307: every agent box runs jobs, so codex, opencode and omp have executors, as Cursor's agent
+// Issue #307: every agent box runs jobs, so codex, opencode and omp have executors (and, issue #533, Claude Code), as Cursor's agent
 // does (issue #142): the agent's CLI in print mode on the job's machine, in the job's work tree, one run
 // per turn; the hopper protocol's marker on its last message decides done, a question (answered by
 // resuming the same session) or failed (design.md "Print-mode agent executors"). The CLIs are stand-ins
 // that print the JSON events each real one prints.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, lstatSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExecutionContext } from '../../src/domain/ports.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
+import type { TaskCount } from '../../src/domain/task-count.ts';
 import { createPrintAgentExecutor, type PrintAgent } from '../../src/executors/index.ts';
 import { STATUS_NOTE_NUDGE } from '../../src/executors/herdr/index.ts';
 import { userSystemd } from '../support/systemd.ts';
 
 const FAKE = join(import.meta.dirname, 'fake-print-agent.mjs');
+// Its own per run: the job's TMPDIR is a link in /tmp named for the job id (issue #506), and runs share /tmp.
+const ID = `job-print-${process.pid}`;
 const HERE: MachineSnapshot = { id: 'local', label: 'here', maxLanes: 1, online: true, executors: ['agent'] };
 let dir: string;
 let work: string;
@@ -24,7 +27,7 @@ beforeAll(() => {
   work = join(dir, 'work');
   process.env.FAKE_AGENT_DIR = dir;
   // A job's credential reaches the agent only from the hopper, never from the environment the tests run in.
-  delete process.env.GH_TOKEN;
+  delete process.env.HOPPER_URL;
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 beforeEach(() => {
@@ -39,15 +42,16 @@ const reply = (text: string) => { process.env.FAKE_AGENT_REPLY = text; };
 
 function ctxFor(payload: Record<string, unknown>, o: { state?: Record<string, unknown>; signal?: AbortSignal; credentials?: Record<string, string> } = {}) {
   const saved: Record<string, unknown>[] = [];
+  const progress: { message?: string; tasks?: TaskCount }[] = [];
   const job: Job = {
-    id: 'job-print-1234', spec: { executor: 'agent', payload }, priority: 50, status: 'running', approved: false,
+    id: ID, spec: { executor: 'agent', payload, machineId: HERE.id }, priority: 50, status: 'running', approved: false,
     createdAt: '', updatedAt: '', attempts: 1, ...(o.state ? { executorState: o.state } : {}),
   };
   const ctx: ExecutionContext = {
-    job, laneId: 'local/lane-1', machine: HERE, signal: o.signal ?? new AbortController().signal, progress() {}, saveState: (s) => { saved.push(s); },
+    job, laneId: 'local/lane-1', machine: HERE, signal: o.signal ?? new AbortController().signal, progress: (message, tasks) => { progress.push({ message, tasks }); }, saveState: (s) => { saved.push(s); },
     workTree() {}, ...(o.credentials ? { credentials: async () => o.credentials! } : {}),
   };
-  return { ctx, saved };
+  return { ctx, saved, progress };
 }
 
 /** Per agent: its arguments in the test, how a first turn and a resumed turn call its CLI, and its session id. */
@@ -70,25 +74,40 @@ const AGENTS: { agent: PrintAgent; args: string[]; first: (model: string) => str
     resumed: (id) => ['-p', '--mode', 'json', '--no-title', '--auto-approve', '--resume', id, '--'],
     error: 'omp on local: No API key found for anthropic',
   },
+  {
+    // Issue #533: Claude Code in print mode, never shows a screen: nothing to answer in a fresh home.
+    agent: 'claude', args: ['--dangerously-skip-permissions'], session: 'claude-session-1',
+    first: (m) => ['-p', '--output-format', 'json', '--dangerously-skip-permissions', '--model', m, '--'],
+    resumed: (id) => ['-p', '--output-format', 'json', '--dangerously-skip-permissions', '--resume', id, '--'],
+    error: 'claude exited 1 on local: Invalid API key · Fix external API key',
+  },
 ];
 
 describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, session, error }) => {
   const noSsh = () => { throw new Error('no ssh in this test'); };
-  const ex = createPrintAgentExecutor({ agent, name: agent, bin: FAKE, args, defaultCwd: '/nowhere', sshAuth: noSsh });
+  const ex = createPrintAgentExecutor({ agent, name: agent, bin: FAKE, args, sshAuth: noSsh });
   beforeEach(() => { process.env.FAKE_AGENT_KIND = agent; });
 
-  it('runs the CLI in print mode in the job\'s work tree, with the protocol after the prompt and the job\'s GitHub credential, and finishes on HOPPER_DONE', async () => {
+  it('runs the CLI in print mode in the job\'s work tree, with the protocol after the prompt and the job\'s way to the hopper, and finishes on HOPPER_DONE', async () => {
     reply('I wrote greeting.txt.\n\nHOPPER_DONE');
-    const out = await ex.run(ctxFor({ prompt: 'Write a greeting', cwd: work, env: { HOPPER_REPO: 'o/r' }, model: 'm-1' }, { credentials: { GH_TOKEN: 'gho_job' } }).ctx);
+    const out = await ex.run(ctxFor({ prompt: 'Write a greeting', cwd: work, env: { HOPPER_REPO: 'o/r' }, model: 'm-1' }, { credentials: { HOPPER_URL: 'http://hopper.test' } }).ctx);
     expect(out).toEqual({ kind: 'finished', result: { machine: 'local', summary: 'I wrote greeting.txt.', chatId: session } });
     const [call] = calls();
     expect(call!.cwd).toBe(work);
-    expect(call!.env).toEqual({ TMPDIR: `${work}/.hopper-scratch/job-print-1234`, HOPPER_JOB_ID: 'job-print-1234', HOPPER_REPO: 'o/r', GH_TOKEN: 'gho_job' });
+    expect(call!.env).toEqual({ TMPDIR: `/tmp/hopper-${ID}`, HOPPER_JOB_ID: ID, HOPPER_REPO: 'o/r', HOPPER_URL: 'http://hopper.test' });
     expect(call!.argv.slice(0, -1)).toEqual(first('m-1'));
     expect(call!.argv.at(-1)).toMatch(/^Write a greeting\n\n\[hopper publishing rule\][\s\S]*HOPPER_FAILED followed by the reason\.$/);
   });
 
-  it('a question parks the job with its session; the answer resumes that session', async () => {
+  // Issue #794: the last task count the turn wrote is the job's progress.
+  it('reports the last task count the turn wrote', async () => {
+    reply('Wrote the test.\nHOPPER_TASKS 1/2\nWrote greeting.txt.\nHOPPER_TASKS 2/2\n\nHOPPER_DONE');
+    const t = ctxFor({ prompt: 'Write a greeting', cwd: work });
+    expect((await ex.run(t.ctx)).kind).toBe('finished');
+    expect(t.progress.filter((p) => p.tasks).map((p) => p.tasks)).toEqual([{ done: 2, total: 2 }]);
+  });
+
+  it('a question pauses the job with its session; the answer resumes that session', async () => {
     reply('Which language should it be in?\nHOPPER_QUESTION');
     const firstTurn = ctxFor({ prompt: 'Write a greeting', cwd: work });
     expect(await ex.run(firstTurn.ctx)).toEqual({
@@ -139,16 +158,19 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     reply('Done.\n\nHOPPER_DONE');
     const { ctx, saved } = ctxFor({ prompt: 'p', cwd: work });
     expect(await ex.run(ctx)).toMatchObject({ kind: 'finished' });
-    const scratch = `${work}/.hopper-scratch/job-print-1234`;
+    const scratch = `${work}/.hopper-scratch/${ID}`;
     expect(existsSync(`${scratch}/left.txt`)).toBe(true);
+    expect(readlinkSync(`/tmp/hopper-${ID}`)).toBe(scratch);
     expect(saved[0]).toEqual({ cwd: work });
     const running = (): boolean => spawnSync('pgrep', ['-f', leftover]).status === 0;
     try {
-      expect(running()).toBe(true);
+      // The CLI ends as soon as it spawned the leftover; its exec under its name can come a moment later.
+      await vi.waitFor(() => expect(running()).toBe(true), { timeout: 5000 });
       const job = { ...ctx.job, status: 'finished' as const, executorState: saved.at(-1)! };
       expect(await ex.cleanup!(job)).toEqual({ kept: [] });
       expect(running()).toBe(false);
       expect(existsSync(scratch)).toBe(false);
+      expect(() => lstatSync(`/tmp/hopper-${ID}`)).toThrow();
     } finally {
       spawnSync('pkill', ['-f', leftover]);
     }

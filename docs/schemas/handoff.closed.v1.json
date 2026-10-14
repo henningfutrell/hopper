@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "handoffId": {
+      "type": "string"
+    },
+    "end": {
+      "type": "string",
+      "enum": [
+        "run_again",
+        "continued",
+        "done_by_hand",
+        "wont_do",
+        "cleared",
+        "finished",
+        "superseded",
+        "item_closed",
+        "job_gone"
+      ]
+    },
+    "nextJobId": {
+      "type": "string"
+    },
+    "resolution": {
+      "type": "string",
+      "enum": [
+        "continue",
+        "fixed",
+        "done_by_hand",
+        "wont_do"
+      ]
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api"
+      ]
+    }
+  },
+  "required": [
+    "handoffId",
+    "end"
+  ],
+  "additionalProperties": false
+}

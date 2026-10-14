@@ -150,8 +150,8 @@ function RuleCard({ d, i, n, sources, machines, executors, disabled, set, moveBy
           <Input className={input} type="number" inputMode="numeric" min={0} max={100} step={1} placeholder="the source's" value={d.set.priority} disabled={disabled}
             onChange={(e) => set({ ...d, set: { ...d.set, priority: e.target.value } })} />
         </Labeled>
-        <Labeled label="work tree (on the job's machine)">
-          <Input className={input} placeholder="the machine's, else the source's" value={d.set.workTree} disabled={disabled}
+        <Labeled label="work tree (on the machine set here)">
+          <Input className={input} placeholder="the machine's" value={d.set.workTree} disabled={disabled}
             onChange={(e) => set({ ...d, set: { ...d.set, workTree: e.target.value } })} />
         </Labeled>
       </fieldset>
@@ -201,6 +201,7 @@ function RulesPanel({ ctx }: { ctx: PluginCtx }) {
       <p className="text-xs text-muted-foreground">
         When a source item becomes a job, the rules are tried in order and the <b>first</b> match sets the job's machine, executor, priority or work tree.
         A change applies to new jobs, and to waiting jobs that have not started on the next sync of their source; a started job keeps how it was routed.
+        A machine named in the issue text does not pin the job: only a rule here pins a machine.
       </p>
       {report.error && <div className="text-xs text-bad">{report.error}</div>}
       {report.skipped.map((s) => <div key={s.rule} className="text-xs text-warn">skipped at intake: {s.rule} — {s.reason}</div>)}

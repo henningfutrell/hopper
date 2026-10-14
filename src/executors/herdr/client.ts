@@ -54,4 +54,6 @@ export interface HerdrClient extends MachineShell {
   waitOutput(paneId: string, text: string, timeoutMs: number): Promise<boolean>;
   /** Rejects `pane_not_found` for a pane already gone. */
   closePane(paneId: string): Promise<void>;
+  /** True while the machine's link is down (issue #752): a client target not dialled in. Absent: the machine has no link. */
+  linkDown?(): boolean;
 }

@@ -23,7 +23,7 @@ export interface AppInstallation {
 
 /**
  * A user's connected account at one provider, as GET /api/connected-accounts reports it: connected
- * (the account, when), not connected, expired, waiting on the device code the user enters at
+ * (the account, when), not connected, expired, unreadable, waiting on the device code the user enters at
  * `verificationUri`, or failed. Facts only, never a token.
  */
 export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: typeof CONNECTED_VIA } & (
@@ -43,10 +43,32 @@ export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; via: 
     expiresAt?: string;
     /** Why the last renewal failed, while it is tried again (issue #441): GitHub not answering, or this hopper set up so it cannot renew. The sign-in goes on. */
     renewal?: string;
+    /**
+     * Why the token cannot be renewed at all (issue #518): GitHub gave it no refresh token. It ends at `expiresAt`, and
+     * only connecting again (or signing in with GitHub again) gets one that renews.
+     */
+    unrenewable?: string;
+    /** How GitHub granted it (issue #647): the browser's web flow or the device flow. */
+    grantedBy?: 'device' | 'web';
+    /** How the person made it (issue #647): connected from Sources, or signed in with GitHub. */
+    connectedBy?: 'sources' | 'sign-in';
+    /** When its token was last renewed (issue #647); absent: not since it was connected. */
+    renewedAt?: string;
+    /** When the renewer renews it next (issue #647): an hour before its expiry, or the retry of a failed renewal. */
+    nextRenewalAt?: string;
+    /** The last renewal that failed (issue #647), kept after later renewals succeed: when, and why. */
+    lastError?: { at: string; error: string };
+    /**
+     * A **held grant** (issue #647): a GitHub sign-in made while this connection was healthy, kept apart until the person
+     * takes it (it replaces this connection) or drops it. A sign-in never quietly replaces a working connection.
+     */
+    held?: { account: string; at: string };
   }
   | { state: 'not-connected' }
   /** Its sign-in ended (issue #358): GitHub refused its refresh token (revoked, or the app's authorization removed), or it expired with nothing to renew it. Connect again. `error`: why. */
   | { state: 'expired'; account: string; connectedAt: string; error: string }
+  /** Its tokens are sealed under a key the runtime does not give (issue #514): not ended — give the key back. `error`: what to do. */
+  | { state: 'unreadable'; account: string; connectedAt: string; error: string }
   | { state: 'waiting'; userCode: string; verificationUri: string; expiresAt: string }
   | { state: 'failed'; error: string }
 );

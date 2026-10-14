@@ -1,14 +1,16 @@
 // The tenant track (issue #158, design.md "Users: one hopper, separate users"): the migrations of a
 // user schema, with its own `schema_version`. Version 1 is the tenant tables exactly as they were at
 // instance version 16 — where instance migration 17 moved owner's. A new user's schema is created at
-// TENANT_BASE; a later change to a user's tables is appended to TENANT_MIGRATIONS and runs on every
-// user schema as its store opens. Schema changes never drop a queue (persisted state is the user's).
+// TENANT_BASE; a later change to a user's tables is appended to TENANT_MIGRATIONS — from 48 on, in
+// tenant-migrations-recent.ts — and runs on every user schema as its store opens. Schema changes never
+// drop a queue (persisted state is the user's).
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml';
 import type { Db } from './db.ts';
 import { documentsToRecords } from './migration-config.ts';
 import { gateRouterSettingsAsConcepts } from './migration-gate-router-settings.ts';
 import { connectedAccounts } from './migration-connected-accounts.ts';
 import { levelsNamedAsLevels } from './migration-level-names.ts';
+import { noOpusLevel } from './migration-no-opus-level.ts';
 import { yoloOption } from './migration-yolo.ts';
 import { jobRepositoriesSetting } from './migration-job-repositories.ts';
 import { jobsDirWorkTrees } from './migration-jobs-dir.ts';
@@ -16,9 +18,28 @@ import { herdrByName } from './migration-herdr-by-name.ts';
 import { clientTargetsDialIn } from './migration-client-key.ts';
 import { noGhSource } from './migration-no-gh-source.ts';
 import { noAuthors } from './migration-no-authors.ts';
+import { noCompletion } from './migration-no-completion.ts';
 import { nameTheOnlyMachine } from './migration-name-the-machine.ts';
+import { machineWorkTrees } from './migration-machine-work-trees.ts';
+import { collapseFloodedLogins } from './migration-login-flood.ts';
+import { raisedByBackfill } from './migration-raised-by.ts';
+import { JOB_STREAM_TABLES } from './migration-job-stream.ts';
+import { ARTIFACT_REVISION_TABLES, ARTIFACT_TABLES } from './migration-artifacts.ts';
+import { BUG_REPORT_TABLE } from './bug-reports.ts';
+import { INFRA_PLAN_TABLES } from './infra-plans.ts';
+import { OUT_OF_BAND_TABLES } from './out-of-band.ts';
+import { ISSUE_GRAPH_TABLES } from './issue-graph.ts';
+import { POINTED_JOB_TABLE } from './pointed-jobs.ts';
+import { RECENT_TENANT_MIGRATIONS } from './tenant-migrations-recent.ts';
+import { GITHUB_WATCH_TABLE } from './github-watches.ts';
+import { itemSnapshotsBackfill } from './migration-item-snapshots.ts';
+import { commentHoldsReleased } from './migration-comment-holds.ts';
+import { originPendingBackfill } from './migration-origin-pending.ts';
+import { laneRecommendationsOnly } from './migration-lane-recommendations.ts';
+import { VAULT_GRANT_TABLE } from './vault-grants.ts';
+import { newerStore } from './migrations.ts';
 
-type Migration = string | ((db: Db) => void);
+export type Migration = string | ((db: Db) => void);
 
 export const TENANT_BASE_VERSION = 1;
 
@@ -37,18 +58,8 @@ const TENANT_BASE = `
   );
   CREATE INDEX jobs_status ON jobs (status);
   CREATE INDEX jobs_source_key ON jobs (source_key);
-  CREATE TABLE lanes (
-    id TEXT PRIMARY KEY,
-    machine_id TEXT NOT NULL,
-    number INTEGER NOT NULL,
-    body TEXT NOT NULL,
-    UNIQUE (machine_id, number)
-  );
-  CREATE TABLE decisions (
-    seq BIGSERIAL PRIMARY KEY,
-    id TEXT NOT NULL UNIQUE,
-    body TEXT NOT NULL
-  );
+  CREATE TABLE lanes (id TEXT PRIMARY KEY, machine_id TEXT NOT NULL, number INTEGER NOT NULL, body TEXT NOT NULL, UNIQUE (machine_id, number));
+  CREATE TABLE decisions (seq BIGSERIAL PRIMARY KEY, id TEXT NOT NULL UNIQUE, body TEXT NOT NULL);
   CREATE TABLE events (
     seq BIGSERIAL PRIMARY KEY,
     id TEXT NOT NULL UNIQUE,
@@ -201,23 +212,166 @@ const TENANT_MIGRATIONS: readonly Migration[] = [
   noAuthors,
   // 17: a claude-cli level or claude-plan source that names no machine names the one that can run claude, where one alone can (issue #442).
   nameTheOnlyMachine,
+  // 18: a work tree is set per machine (issue #361): the paths that named no machine move onto machines and routing rules.
+  machineWorkTrees,
+  // 19: a webhook subscription's signing secret, sealed (src/secrets/sealer.ts), and when it last changed (issue #451).
+  // A subscription from before keeps `secret_env` until one is stored. Columns only: the build before runs on it.
+  `ALTER TABLE webhooks ADD COLUMN secret_sealed TEXT;
+   ALTER TABLE webhooks ADD COLUMN secret_changed_at TEXT`,
+  // 20: a question gets its raising machine where it can be known: its asked lane, its job's resumeOn, its job's pin (issue #485).
+  raisedByBackfill,
+  // 21: logins (issue #476): what the hopper keeps of a login a job or run waits on; never its URL or code.
+  `CREATE TABLE logins (
+    seq BIGSERIAL PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    job_id TEXT,
+    question_id TEXT,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX logins_status ON logins (status);
+  CREATE INDEX logins_job ON logins (job_id)`,
+  // 22: the failure assessor (issue #509): a record per assessed failed job, and the problems shared causes are grouped into.
+  `CREATE TABLE failures (
+    seq BIGSERIAL PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    job_id TEXT NOT NULL,
+    signature TEXT NOT NULL,
+    at TEXT NOT NULL,
+    pending_at TEXT,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX failures_job ON failures (job_id);
+  CREATE INDEX failures_signature ON failures (signature, at);
+  CREATE INDEX failures_at ON failures (at);
+  CREATE INDEX failures_pending ON failures (pending_at);
+  CREATE TABLE problems (
+    seq BIGSERIAL PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    signature TEXT NOT NULL,
+    status TEXT NOT NULL,
+    opened_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX problems_status ON problems (status, signature)`,
+  // 23: Needs a person (issue #516): a failed job automatic handling ended for, open until a person acts. A table
+  // only: the build before runs on it.
+  `CREATE TABLE handoffs (
+    seq BIGSERIAL PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    job_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    opened_at TEXT NOT NULL,
+    closed_at TEXT,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX handoffs_job ON handoffs (job_id);
+  CREATE INDEX handoffs_status ON handoffs (status, opened_at)`,
+  // 24: Proposals (issue #537): a job's proposal, its versions and review trail in its body. A table only: the
+  // build before runs on it.
+  `CREATE TABLE proposals (
+    seq BIGSERIAL PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    job_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX proposals_job ON proposals (job_id);
+  CREATE INDEX proposals_status ON proposals (status, created_at)`,
+  // 25: Research reports (issue #543): the Research section's items, the same shape as the proposals'. A table only:
+  // the build before runs on it.
+  `CREATE TABLE research_reports (
+    seq BIGSERIAL PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    job_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX research_reports_job ON research_reports (job_id);
+  CREATE INDEX research_reports_status ON research_reports (status, created_at)`,
+  // 26: machine resources over time (issue #560): one machine sample per machine and time. A table only: the build
+  // before runs on it.
+  `CREATE TABLE machine_samples (
+    seq BIGSERIAL PRIMARY KEY,
+    at TIMESTAMPTZ NOT NULL,
+    machine_id TEXT NOT NULL,
+    cores DOUBLE PRECISION,
+    cpu_busy DOUBLE PRECISION,
+    load1 DOUBLE PRECISION,
+    mem_total DOUBLE PRECISION,
+    mem_available DOUBLE PRECISION,
+    swap_total DOUBLE PRECISION,
+    swap_used DOUBLE PRECISION,
+    disk_free DOUBLE PRECISION,
+    disk_total DOUBLE PRECISION,
+    lanes_busy INTEGER NOT NULL,
+    lanes_max INTEGER NOT NULL,
+    UNIQUE (machine_id, at)
+  );
+  CREATE INDEX machine_samples_at ON machine_samples (at)`,
+  // 27: the logins a device-flow polling loop flooded collapse into one per real prompt (issue #567).
+  collapseFloodedLogins,
+  // 28: The vault (issue #558): each secret's sealed value (`sealed`, never read into its metadata) beside its metadata.
+  // A table only: the build before runs on it.
+  'CREATE TABLE vault_secrets (seq BIGSERIAL PRIMARY KEY, id TEXT NOT NULL UNIQUE, name TEXT NOT NULL UNIQUE, sealed TEXT NOT NULL, body TEXT NOT NULL)',
+  // 29: Templates (issue #558): an image and the vault secrets its boxes may ask for, with its last approval, in its
+  // body. A table only: the build before runs on it.
+  'CREATE TABLE templates (seq BIGSERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE, body TEXT NOT NULL)',
+  // 30: done is always a pull request ready for review (issue #579): the GitHub sources' `completion` option goes.
+  // The build before reads a source with none as its old default.
+  noCompletion,
+  // 31: Vault backends (issue #585): a vault secret kept in a backend has no sealed value, only its reference in its
+  // body. The build before reads a missing value as one it cannot open, and refuses to deliver it.
+  'ALTER TABLE vault_secrets ALTER COLUMN sealed DROP NOT NULL',
+  // 32: The job stream (issue #613): each job's stream events and the watches its requests are waited on by.
+  JOB_STREAM_TABLES,
+  // 33: the default ladder goes straight to the frontier level (issue #632): the old built-in opus level goes. The build
+  // before runs on the one level left.
+  noOpusLevel,
+  // 34: Artifacts (issue #624): what jobs make for a person to see, their content, and their shares.
+  ARTIFACT_TABLES,
+  // 35: Item snapshots (issue #662): each item's approved text, from its first job. A table: the build before runs on it.
+  itemSnapshotsBackfill,
+  // 36: Artifact revisions (issue #675); the artifact row stays the latest, so the build before runs on it.
+  ARTIFACT_REVISION_TABLES,
+  // 37: A comment holds no job (issue #747): a text change whose title and body are the snapshot's is dropped.
+  commentHoldsReleased,
+  // 38: Lane tuning recommends, an admin applies (issue #688): the lanes active mode applied become configured lanes.
+  laneRecommendationsOnly,
+  // 39: Queued GitHub jobs with no origin wait for it (issue #652, the backfill); the build before ignores the flag.
+  originPendingBackfill,
+  // 40: Vault grants (issue #652): a person's grant of the vault to an item's jobs. A table: the build before runs on it.
+  VAULT_GRANT_TABLE,
+  // 41: Bug reports (issue #694): a person's reports, filed or kept to send later. A table only: the build before runs on it.
+  BUG_REPORT_TABLE,
+  // 42: The issue graph (issue #437): issues, repositories, owners, Projects and their links. Tables only: the build before runs on it.
+  ISSUE_GRAPH_TABLES,
+  // 43: Pointed jobs (issue #425): a table only; the jobs a store has read as pointed jobs. The build before runs on it.
+  POINTED_JOB_TABLE,
+  // 44: GitHub watches (issue #427): each pointed job's last snapshot. A table only: the build before runs on it.
+  GITHUB_WATCH_TABLE,
+  // 45: Each job's last event (issue #434), read for the Jobs view's cards. An index only: the build before runs on it.
+  'CREATE INDEX IF NOT EXISTS events_job ON events (job_id, seq)',
+  // 46: Infra plans (issue #870): each plan a job recorded, and a person's approval of it. Tables only: the build before runs on it.
+  INFRA_PLAN_TABLES,
+  // 47: Out-of-band changes (issue #871): each change a job's check reported, a person's mark, the controller identities. Tables only: the build before runs on it.
+  OUT_OF_BAND_TABLES,
+  // 48 on: in tenant-migrations-recent.ts, where a new one is appended.
+  ...RECENT_TENANT_MIGRATIONS,
 ];
 
 /** A user schema's version once migrated. */
 export const TENANT_SCHEMA_VERSION = TENANT_BASE_VERSION + TENANT_MIGRATIONS.length;
 
-/** `"name"`, quotes doubled: an identifier safe in SQL. */
-export const quoteIdent = (name: string): string => `"${name.replaceAll('"', '""')}"`;
-
-/** A user's schema: `u_<id>` beside the `public` instance schema, else `<instance schema>_u_<id>`. */
-export const userSchemaName = (instanceSchema: string, userId: string): string =>
-  (instanceSchema === 'public' ? `u_${userId}` : `${instanceSchema}_u_${userId}`);
+export { quoteIdent, userSchemaName } from './schema-names.ts';
 
 function step(db: Db, m: Migration, record: () => void): void {
   db.exec('BEGIN');
   try {
-    if (typeof m === 'string') db.exec(m);
-    else m(db);
+    if (typeof m === 'string') db.exec(m); else m(db);
     record();
     db.exec('COMMIT');
   } catch (e) {
@@ -234,6 +388,8 @@ export function migrateTenant(db: Db, to = TENANT_SCHEMA_VERSION): void {
     db.run('DELETE FROM schema_version');
     db.run('INSERT INTO schema_version (version) VALUES (?)', v);
   };
-  if (version() === 0) step(db, TENANT_BASE, record(TENANT_BASE_VERSION));
+  const from = version();
+  if (from > TENANT_SCHEMA_VERSION) throw new Error(newerStore(`a user schema is at version ${from}`, TENANT_SCHEMA_VERSION));
+  if (from === 0) step(db, TENANT_BASE, record(TENANT_BASE_VERSION));
   for (let v = version(); v < to; v++) step(db, TENANT_MIGRATIONS[v - TENANT_BASE_VERSION]!, record(v + 1));
 }

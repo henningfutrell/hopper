@@ -1,0 +1,204 @@
+// The GitHub proxy (issue #563, design.md "GitHub through the hopper"): a running job asks the hopper for a
+// GitHub operation, and the hopper does it with its own GitHub connection — the job's machine holds no GitHub
+// login, and no device code is spent. Each request is, in order: the job's proxy token checked (its job at
+// work), the request's shape checked, the asker checked (policy.ts), the rate limits taken (limits.ts), then
+// done on GitHub (`github_proxy.done`, `.refused`, `.failed`). Every outcome but a token that names no job is
+// an event on the job's timeline; a request of
+// another user's job is also an event of the hopper's own user, whose connection it would act with. A job's bug report
+// (`report.bug`, issue #694) is checked and limited the same way, then handed to `report`: Report a bug's own path, with
+// the job's own user's connection, whose events (`bug_report.filed`, `.failed`) record it. An issue a job with an issue
+// files is a child of that issue (issue #729, issue lineage): its text names the parent, a required one is linked as a
+// GitHub sub-issue of it, and the link is recorded on the job's timeline (`job.child_issue_filed`). The contribution flow
+// (issue #429): before the check, what it decides on is read from GitHub — whether a repository outside the job
+// repositories is the job's fork, and, for `repo.fork`, whether the user can push to the job's own repository.
+// A read — a **repo query** (issue #1074) — is answered from the repo-query cache when what it kept answers now
+// (repo-query.ts), else read from GitHub and kept; the answer says which (`source`) and, where the work-item ledger holds
+// the item, what it says (`ledger`). A write drops what the cache kept of the issue or pull request it changed.
+import { randomUUID } from 'node:crypto';
+import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
+import { maskGitHubTokens } from '../secrets/mask.ts';
+import { ProxyGitHubError, type ProxyApi } from './api.ts';
+import type { ProxyLimiter } from './limits.ts';
+import { checkRequest, filedNote, isRead, proxyRequest, REPORT_OP, reportRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
+import { answersNow, createRepoQueryCache, queryKey, type LedgerView, type RepoQueryCache } from './repo-query.ts';
+import { parseProxyToken, type ProxyTokenParts } from './token.ts';
+
+/** The statuses whose jobs may ask: the job's processes are at work on its machine. */
+const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
+
+/** One user's side: their jobs, the check of a token against their link key, and their event log. */
+export interface ProxyUser {
+  id: string;
+  holds(parts: ProxyTokenParts): boolean;
+  job(jobId: string): Job | undefined;
+  /** The machine the job runs on now; undefined when it holds no lane. */
+  machineOf(job: Job): string | undefined;
+  record(event: NewEvent): void;
+  /** What this user's work-item ledger says of the issue or pull request at `url` (issue #1074); undefined: it holds none. */
+  ledger?(url: string): LedgerView | undefined;
+}
+
+/** The hopper's own GitHub connection: the repositories it works on, and its calls; or why it has none. */
+export interface ProxyConnection {
+  jobRepositories(): string[];
+  api(): ProxyApi | { problem: string };
+  /** Its user's Contribution (issue #429), read at each request. */
+  contribution(): boolean;
+  /** Its user's GitHub login; undefined: not connected. */
+  login(): string | undefined;
+}
+
+export interface ProxyAnswer { status: number; body: Record<string, unknown> }
+
+export interface GitHubProxy {
+  /** One request: `authorization` as the job sent it, `body` its fields. Never throws. */
+  handle(authorization: string | undefined, body: unknown): Promise<ProxyAnswer>;
+}
+
+export interface GitHubProxyOptions {
+  user(id: string): ProxyUser | undefined;
+  /** The user whose GitHub connection the hopper acts with (the oldest), and that connection; undefined: no user yet. */
+  hopper(): { user: ProxyUser; connection: ProxyConnection } | undefined;
+  limiter: ProxyLimiter;
+  /** A job's bug report, filed with its own user's connection (issue #694); absent: this hopper files none. Never throws. */
+  report?(user: ProxyUser, job: Job, req: ReportRequest): Promise<ProxyAnswer>;
+  log(line: string): void;
+  newId?: () => string;
+  /** The repo-query cache (issue #1074); absent: one of its own. */
+  cache?: RepoQueryCache;
+  /** Now, in ms: when an answer was read. */
+  now?: () => number;
+}
+
+const BEARER = /^Bearer\s+(\S+)$/i;
+
+const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+
+/** A job's own repository: its source item's (`sourceItemOf`: a fork's or an older follow-on's is its parent's). */
+const repoOf = (job: Job): string | undefined => sourceItemOf(job)?.repo;
+
+export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
+  const newId = o.newId ?? (() => randomUUID());
+  const cache = o.cache ?? createRepoQueryCache();
+  const now = o.now ?? (() => Date.now());
+  return {
+    async handle(authorization, body) {
+      const parts = parseProxyToken(BEARER.exec(authorization ?? '')?.[1] ?? '');
+      const user = parts ? o.user(parts.userId) : undefined;
+      const job = parts && user?.holds(parts) ? user.job(parts.jobId) : undefined;
+      if (!parts || !user || !job) {
+        o.log('hopper: GitHub proxy: refused a request whose token is no job\'s');
+        return { status: 401, body: { error: 'refused: the token is not a job\'s of this hopper. A job asks with its own HOPPER_TOKEN_FILE' } };
+      }
+      if (!AT_WORK.includes(job.status)) {
+        o.log(`hopper: GitHub proxy: refused job ${job.id}: it is ${job.status}`);
+        return { status: 401, body: { error: `refused: job ${job.id} is ${job.status}, not at work: only a running job asks the hopper` } };
+      }
+      const requestId = newId();
+      const machine = user.machineOf(job);
+      const hopper = o.hopper();
+      const own = hopper?.user.id === user.id;
+      // Who asked and from where stay in the hopper: the job's timeline, and the hopper's user's log for another user's job.
+      const record = (type: 'github_proxy.done' | 'github_proxy.refused' | 'github_proxy.failed', data: Record<string, unknown>): void => {
+        const at = { requestId, ...(machine ? { machine } : {}), own, ...data };
+        user.record({ type, jobId: job.id, data: at });
+        if (hopper && !own) hopper.user.record({ type, data: { ...at, forUser: user.id, job: job.id } });
+      };
+      const refuse = (status: number, reason: string, req?: { op?: string; repo?: string }): ProxyAnswer => {
+        record('github_proxy.refused', { ...(req?.op ? { op: req.op } : {}), ...(req?.repo ? { repo: req.repo } : {}), reason });
+        return { status, body: { error: `refused: ${reason}`, requestId } };
+      };
+      const raw = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>;
+      const report = raw.op === REPORT_OP;
+      const parsed = report ? reportRequest.safeParse(body) : proxyRequest.safeParse(body);
+      if (!parsed.success) {
+        const why = parsed.error.issues.map((i) => `${i.path.join('.') || 'request'}: ${i.message}`).join('; ');
+        return refuse(400, `not a request the hopper takes (${why}). sh "$HOPPER_GH" help`, { ...(typeof raw.op === 'string' ? { op: raw.op } : {}), ...(typeof raw.repo === 'string' ? { repo: raw.repo } : {}) });
+      }
+      if (parsed.data.op === REPORT_OP) {
+        if (!o.report) return refuse(503, 'this hopper files no bug reports', parsed.data);
+        const over = o.limiter.take(REPORT_OP, `${user.id}/${job.id}`, machine === undefined ? undefined : `${user.id}/${machine}`);
+        if (over) return refuse(429, over, parsed.data);
+        const answer = await o.report(user, job, parsed.data);
+        return { status: answer.status, body: { ...answer.body, requestId } };
+      }
+      const req = parsed.data;
+      if (!hopper) return refuse(503, 'the hopper has no user yet, so no GitHub connection', req);
+      const issue = job.source?.number;
+      const jobRepo = repoOf(job);
+      const connection = hopper.connection;
+      const contribution = own && connection.contribution();
+      const login = connection.login();
+      const api = connection.api();
+      // What the contribution flow decides on, read from GitHub only when it can matter (issue #429).
+      const facts: Pick<ProxyAsker, 'fork' | 'canPush'> = {};
+      const maybeFork = contribution && jobRepo !== undefined && login !== undefined && same(req.repo.split('/')[0]!, login)
+        && !connection.jobRepositories().some((r) => same(r, req.repo));
+      const forking = req.op === 'repo.fork' && contribution && jobRepo !== undefined && same(jobRepo, req.repo);
+      if ((maybeFork || forking) && !('problem' in api)) {
+        try {
+          const read = await api.repo(req.repo);
+          if (maybeFork && read.fork && [read.parent, read.source].some((p) => p !== undefined && same(p, jobRepo!))) facts.fork = req.repo;
+          if (forking) facts.canPush = read.canPush;
+        } catch (e) {
+          record('github_proxy.failed', { op: req.op, repo: req.repo, error: (e as Error).message });
+          return { status: 502, body: { error: (e as Error).message, requestId } };
+        }
+      }
+      const asker: ProxyAsker = {
+        jobId: job.id, own, contribution, ...(login ? { login } : {}), ...facts,
+        ...(jobRepo ? { repo: jobRepo } : {}), ...(issue !== undefined ? { issue } : {}),
+      };
+      const allowed = checkRequest(req, asker, connection.jobRepositories());
+      if (!allowed.ok) return refuse(403, allowed.reason, req);
+      if ('problem' in api) return refuse(503, api.problem, req);
+      const over = o.limiter.take(req.op, `${user.id}/${job.id}`, machine === undefined ? undefined : `${user.id}/${machine}`);
+      if (over) return refuse(429, over, req);
+      // An issue says the hopper filed it, for which job: never labelled or assigned, so a person triages it (issue #597: mask tokens).
+      const maskRequest = (r: ProxyRequest): ProxyRequest => {
+        if (r.op === 'issue.create' || r.op === 'pr.create') return { ...r, title: maskGitHubTokens(r.title), body: maskGitHubTokens(r.body) };
+        if (r.op === 'issue.comment') return { ...r, body: maskGitHubTokens(r.body) };
+        return r;
+      };
+      const masked = maskRequest(req);
+      const parent: IssueParent | undefined = masked.op === 'issue.create' && jobRepo && issue !== undefined ? { repo: jobRepo, number: issue, required: masked.required === true } : undefined;
+      const sent: ProxyRequest = masked.op === 'issue.create' ? { ...masked, body: `${masked.body}${filedNote(job.id, requestId, parent)}` } : masked;
+      // A repo query (issue #1074): what the cache kept, when it answers now; the ledger's word on the item beside it.
+      const read = isRead(req.op);
+      const key = queryKey(req);
+      const ledgerOf = (url: unknown): LedgerView | undefined => (typeof url === 'string' ? user.ledger?.(url) : undefined);
+      const answered = (result: Record<string, unknown>, source: 'github' | 'cache', at: number): ProxyAnswer => {
+        const ledger = ledgerOf(result.url);
+        record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, source });
+        const seen = req.op === 'repo.view' ? { contribution } : {};
+        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result, ...seen, source, readAt: new Date(at).toISOString(), ...(ledger ? { ledger } : {}) } };
+      };
+      if (read) {
+        const kept = cache.get(key);
+        if (kept && answersNow(req.op, kept, now(), ledgerOf(kept.result.url))) return answered(kept.result, 'cache', kept.at);
+      }
+      try {
+        const result = await api.perform(sent, parent?.required ? parent : undefined);
+        if (read) {
+          const at = now();
+          cache.put(key, result, at);
+          return answered(result, 'github', at);
+        }
+        if ('number' in req) cache.forget(req.repo, req.number);
+        record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, ...(typeof result.fork === 'string' ? { fork: result.fork } : {}) });
+        if (!parent) return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result } };
+        const { subIssue, subIssueError } = result as { subIssue?: boolean; subIssueError?: string };
+        user.record({ type: 'job.child_issue_filed', jobId: job.id, data: {
+          requestId, parent: { repo: parent.repo, number: parent.number }, child: { repo: req.repo, number: result.number, url: result.url }, required: parent.required,
+          ...(subIssue !== undefined ? { subIssue } : {}), ...(subIssueError ? { subIssueError } : {}),
+        } });
+        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result, parent: `${parent.repo}#${parent.number}`, required: parent.required } };
+      } catch (e) {
+        const status = e instanceof ProxyGitHubError ? e.status : undefined;
+        const error = (e as Error).message;
+        record('github_proxy.failed', { op: req.op, repo: req.repo, error });
+        return { status: 502, body: { error, ...(status ? { githubStatus: status } : {}), requestId } };
+      }
+    },
+  };
+}

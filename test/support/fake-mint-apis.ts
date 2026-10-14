@@ -1,0 +1,48 @@
+// An STS and a Kubernetes API faked on loopback (issue #797): what the vault's real minting adapters call. STS answers
+// every AssumeRole with the session `MINTED_AWS`; the Kubernetes API answers every TokenRequest with `MINTED_KUBE_TOKEN`,
+// and (issue #854, a mint test) a SelfSubjectReview with `KUBE_USER` and a namespace list with `KUBE_NAMESPACES`.
+// Each keeps every request it got, so a test sees what was asked, or that nothing was.
+import { createServer, type Server } from 'node:http';
+
+export const MINTED_AWS = { AccessKeyId: 'ASIAMINTEDCHECK', SecretAccessKey: 'minted-check-secret', SessionToken: 'minted-check-session' };
+export const MINTED_KUBE_TOKEN = 'minted-check-kube-token';
+export const KUBE_USER = { username: 'arn:aws:sts::123456789012:assumed-role/eks-view/hopper', groups: ['hopper:view', 'system:authenticated'] };
+export const KUBE_NAMESPACES = ['default', 'kube-system', 'shop'];
+const EXPIRES = '2030-01-01T00:10:00Z';
+
+export interface Seen { method: string; url: string; authorization?: string; body: string }
+export interface FakeApi { url: string; seen: Seen[]; close(): void }
+
+async function fakeServer(answer: (r: Seen) => { status: number; type: string; body: string }): Promise<FakeApi> {
+  const seen: Seen[] = [];
+  const server: Server = createServer((req, res) => {
+    let body = '';
+    req.setEncoding('utf8');
+    req.on('data', (c: string) => { body += c; });
+    req.on('end', () => {
+      const r: Seen = { method: req.method ?? '', url: req.url ?? '', body, ...(req.headers.authorization ? { authorization: req.headers.authorization } : {}) };
+      seen.push(r);
+      const a = answer(r);
+      res.writeHead(a.status, { 'content-type': a.type }).end(a.body);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return { url: `http://127.0.0.1:${(server.address() as { port: number }).port}`, seen, close: () => { server.close(); } };
+}
+
+/** A Kubernetes API server that answers every TokenRequest, `kubectl auth whoami` and `kubectl get ns`; `forbid`: these two 403. */
+export const fakeKubeApi = (o: { forbid?: boolean } = {}): Promise<FakeApi> => fakeServer((r) => {
+  const json = (status: number, body: unknown) => ({ status, type: 'application/json', body: JSON.stringify(body) });
+  const read = r.url === '/apis/authentication.k8s.io/v1/selfsubjectreviews' || r.url === '/api/v1/namespaces';
+  if (read && o.forbid) return json(403, { kind: 'Status', status: 'Failure', reason: 'Forbidden', message: 'namespaces is forbidden: User "anonymous" cannot list resource "namespaces"' });
+  if (r.url === '/apis/authentication.k8s.io/v1/selfsubjectreviews') return json(201, { kind: 'SelfSubjectReview', status: { userInfo: KUBE_USER } });
+  if (r.url === '/api/v1/namespaces') return json(200, { kind: 'NamespaceList', items: KUBE_NAMESPACES.map((name) => ({ metadata: { name } })) });
+  const spec = (JSON.parse(r.body || '{}') as { spec?: unknown }).spec;
+  return { status: 201, type: 'application/json', body: JSON.stringify({ kind: 'TokenRequest', apiVersion: 'authentication.k8s.io/v1', spec, status: { token: MINTED_KUBE_TOKEN, expirationTimestamp: EXPIRES } }) };
+});
+
+/** STS: AssumeRole answered, in the query protocol's XML. */
+export const fakeSts = (account: string): Promise<FakeApi> => fakeServer(() => ({
+  status: 200, type: 'text/xml',
+  body: `<AssumeRoleResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><AssumeRoleResult><Credentials><AccessKeyId>${MINTED_AWS.AccessKeyId}</AccessKeyId><SecretAccessKey>${MINTED_AWS.SecretAccessKey}</SecretAccessKey><SessionToken>${MINTED_AWS.SessionToken}</SessionToken><Expiration>${EXPIRES}</Expiration></Credentials><AssumedRoleUser><Arn>arn:aws:sts::${account}:assumed-role/readonly/hopper</Arn><AssumedRoleId>AROA:hopper</AssumedRoleId></AssumedRoleUser></AssumeRoleResult><ResponseMetadata><RequestId>r1</RequestId></ResponseMetadata></AssumeRoleResponse>`,
+}));

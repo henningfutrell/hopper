@@ -1,22 +1,26 @@
 // The print-mode agent executors (design.md "Print-mode agent executors"; issue #142 for Cursor's agent,
 // #307 for codex, opencode and omp): one job is an agent CLI in print mode, run on the job's machine
 // through its connection — this machine or an ssh target — in the job's work tree. Each turn is one run;
-// its last message ends with the hopper protocol's marker. A question parks the job with the agent's
+// its last message ends with the hopper protocol's marker. A question pauses the job with the agent's
 // session id, and the answer resumes that session. Not idempotent: a restart fails a running job and
 // never runs the agent twice. As a herdr-claude job (issue #410): its own scratch dir, each turn in the
 // job's systemd user scope where the machine has one (the turn before stopped first), and the reap when
 // the job ends, through the machine's connection. How each CLI is called and read is print-agents.ts's.
 import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor, MachineShell } from '../domain/ports.ts';
-import type { MachineSnapshot } from '../domain/types.ts';
+import { REVIEW_KINDS, REVIEW_SECTIONS, type MachineSnapshot } from '../domain/types.ts';
 import { scopeUnitOf } from '../client/server.ts';
 import { commandOn, run } from './command.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './herdr/payload.ts';
-import { STATUS_NOTE_NUDGE, normaliseMarkerLine, protocolFooter } from './herdr/screen.ts';
-import { jobScratchOf, scratchDirOf } from './herdr/start.ts';
+import { makeJobWorktreeCommand } from './herdr/job-worktree.ts';
+import { STATUS_NOTE_NUDGE, normaliseMarkerLine, protocolFooter, waitFields } from './herdr/screen.ts';
+import { jobScratchOf, jobTmpOf, linkTmpCommand, scratchDirOf } from './herdr/start.ts';
 import { localShell, sshShell } from './machine-shell.ts';
 import { DIALECTS, type PrintAgent } from './print-agents.ts';
 import { shellQuote, type SshAuth } from './ssh.ts';
+import { hideCodes } from '../logins/recognise.ts';
+import { watchRunOutput } from '../logins/run-output.ts';
+import { lastTaskCount } from '../domain/task-count.ts';
 
 /** The answer's tail kept for whoever answers a question. */
 const OUTPUT_CAP = 16000;
@@ -32,8 +36,6 @@ export interface PrintAgentExecutorOptions {
   bin: string;
   /** Its own arguments: permissions, sandbox, workspace trust. */
   args: string[];
-  /** The work tree of a job whose payload names none. */
-  defaultCwd: string;
   sshBin?: string;
   sshControlDir?: string;
   sshAuth: () => SshAuth;
@@ -43,7 +45,7 @@ export interface PrintAgentExecutorOptions {
 
 /**
  * What a job keeps: the work tree it runs in and the ssh target it runs on (absent: this machine), for the
- * reap; once parked, the agent's session (its chat) to resume.
+ * reap; once on a question, the agent's session (its chat) to resume.
  */
 type PrintAgentState = { cwd: string; ssh?: string; chatId?: string };
 
@@ -60,6 +62,12 @@ export function outcomeOf(text: string, machine: string, chatId: string): Execut
   if (last === 'HOPPER_DONE') return { kind: 'finished', result: { machine, summary: before.slice(0, SUMMARY_CHARS), chatId } };
   if (last.startsWith('HOPPER_FAILED')) return { kind: 'failed', error: last.slice('HOPPER_FAILED'.length).trim() || 'HOPPER_FAILED without a reason' };
   if (last === 'HOPPER_QUESTION') return { kind: 'question', question: { text: before, recentOutput: tail(text.trim()), detectedBy: 'marker' } };
+  const review = REVIEW_KINDS.find((k) => REVIEW_SECTIONS[k].marker === last);
+  if (review) return { kind: 'report', review, report: { text: before, recentOutput: tail(text.trim()) } };
+  // Its own wait (issue #483): the marker, then its fields to the end. A person ends it; the answer resumes the session.
+  const at = lines.findLastIndex((l) => normaliseMarkerLine(l) === 'HOPPER_WAITING');
+  const wait = at >= 0 ? waitFields(lines.slice(at + 1)) : undefined;
+  if (wait) return { kind: 'wait', wait };
   return { statusNote: text.trim() };
 }
 
@@ -96,38 +104,53 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
   async function turn(ctx: ExecutionContext, cwd: string, text: string, chatId?: string, notes = 0): Promise<ExecutionOutcome> {
     const refused = refusal(label, ctx);
     if (refused) return { kind: 'failed', error: refused };
-    const p = resolvePayload(ctx.job.spec.payload, ctx.machine, o.defaultCwd);
+    const p = resolvePayload(ctx.job, ctx.machine);
     // The job's own scratch dir (issue #410), so the reap can remove it; the work tree's scratch dirs ignore themselves.
+    // TMPDIR is its temp link (issue #506), so a Unix socket path under TMPDIR fits.
     const scratch = jobScratchOf(cwd, ctx.job.id);
     // Stdin is /dev/null: codex and opencode read a stdin that is not a terminal to its end before the turn,
     // and the one a run would hand them is never closed (issue #307).
-    // The job's credentials (issue #214, kept current on its machine for the turn: #441), HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them.
+    // The job's way to the hopper (issues #563, #652: no GitHub token, git through the hopper), HOPPER_JOB_ID and the scratch dir come from the hopper; a payload cannot move them.
     const credentials = await ctx.credentials?.(scratch);
-    const vars = Object.entries({ ...p.env, ...credentials, TMPDIR: scratch, HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => shellQuote(`${k}=${v}`));
+    const vars = Object.entries({ ...p.env, ...credentials, TMPDIR: jobTmpOf(ctx.job.id), HOPPER_JOB_ID: ctx.job.id }).map(([k, v]) => shellQuote(`${k}=${v}`));
     const argv = dialect.argv({ bin: o.bin, args: o.args, cwd, ...(p.model ? { model: p.model } : {}), ...(chatId ? { session: chatId } : {}), text }).map(shellQuote);
-    const script = `mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(cwd)}/.gitignore`)} && cd ${shellQuote(cwd)} && { ${turnCommand(ctx.job.id, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`)}; }`;
+    // On the first turn, the job's repository fetched or cloned in a work tree that is no repository (issue #361),
+    // with the job's variables (its git through the hopper); what it says goes to stderr, never into the agent's answer.
+    const checkout = !chatId && p.repo ? `( export ${vars.join(' ')}; ${makeJobWorktreeCommand(cwd, ctx.job.id, { repo: p.repo, worktrees: false })} ) >&2; ` : '';
+    const script = `mkdir -p ${shellQuote(scratch)} && printf '*\\n' > ${shellQuote(`${scratchDirOf(cwd)}/.gitignore`)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`)}; }`;
     const where = ctx.machine.id;
     try {
       const [file, args] = commandOn(ctx.machine, ['sh', '-c', script], { ...o, dockerHost: () => { throw new Error('no docker'); } });
-      ctx.progress(0, `${label} ${chatId ? 'resumed' : 'started'} on ${where}`);
-      const r = await run(file, args, p.timeoutMs, ctx.signal, o.userEnv);
+      ctx.progress(`${label} ${chatId ? 'resumed' : 'started'} on ${where}`);
+      // A device code the agent's tools print goes to the logins while the turn waits on it (issue #476).
+      const login = watchRunOutput(ctx.logins, { now: () => new Date() }, (line) => ctx.progress(line));
+      const r = await run(file, args, p.timeoutMs, ctx.signal, o.userEnv, login.feed).then((ran) => {
+        login.end(ran === 'aborted' || ran === 'timeout' ? { ok: false, reason: ran === 'aborted' ? 'aborted' : 'timed out' } : ran.exitCode === 0 ? { ok: true } : { ok: false, reason: `exited ${ran.exitCode}` });
+        return ran;
+      });
       if (r === 'aborted') return { kind: 'failed', error: 'aborted' };
       if (r === 'timeout') return { kind: 'failed', error: `${label} on ${where} timed out after ${p.timeoutMs} ms` };
+      // What the turn printed goes on as an error, a question or progress: never with a device code (issue #476).
+      const seen = `${r.stdout}\n${r.stderr}`;
+      const hidden = (text: string): string => hideCodes(text, seen, login.codes());
       const answer = dialect.read(r.stdout);
       if (r.exitCode !== 0) {
         const said = 'error' in answer ? answer.error : r.stderr.trim() || r.stdout.trim();
-        return { kind: 'failed', error: `${label} exited ${r.exitCode} on ${where}: ${tail(said)}` };
+        return { kind: 'failed', error: `${label} exited ${r.exitCode} on ${where}: ${hidden(tail(said))}` };
       }
-      if ('error' in answer) return { kind: 'failed', error: `${label} on ${where}: ${tail(answer.error)}` };
-      if ('unreadable' in answer) return { kind: 'failed', error: `${label} on ${where} ${tail(answer.unreadable)}` };
-      const out = outcomeOf(answer.text, where, answer.session);
+      if ('error' in answer) return { kind: 'failed', error: `${label} on ${where}: ${hidden(tail(answer.error))}` };
+      if ('unreadable' in answer) return { kind: 'failed', error: `${label} on ${where} ${hidden(tail(answer.unreadable))}` };
+      // The last task count the turn wrote is the job's progress (issue #794).
+      const tasks = lastTaskCount(answer.text);
+      if (tasks) ctx.progress(undefined, tasks);
+      const out = outcomeOf(hidden(answer.text), where, answer.session);
       if ('statusNote' in out) {
         // A status note opens no question (issue #163): the agent is nudged in the same session.
-        ctx.progress(0, out.statusNote);
+        ctx.progress(out.statusNote);
         if (notes >= NUDGES) return { kind: 'failed', error: `${label} answered ${notes + 1} times in a row without a marker: ${tail(out.statusNote)}` };
         return await turn(ctx, cwd, STATUS_NOTE_NUDGE, answer.session, notes + 1);
       }
-      if (out.kind === 'question') ctx.saveState({ ...stateOf(ctx, cwd), chatId: answer.session } satisfies PrintAgentState);
+      if (out.kind === 'question' || out.kind === 'report' || out.kind === 'wait') ctx.saveState({ ...stateOf(ctx, cwd), chatId: answer.session } satisfies PrintAgentState);
       return out;
     } catch (e) {
       return { kind: 'failed', error: `${label} on ${where}: ${(e as Error).message}` };
@@ -137,21 +160,27 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
   return {
     name: o.name,
     idempotent: false,
+    reviews: true,
     validate: validatePayload,
     run(ctx) {
-      const p = resolvePayload(ctx.job.spec.payload, ctx.machine, o.defaultCwd);
+      const refused = refusal(label, ctx);
+      if (refused) return Promise.resolve({ kind: 'failed', error: refused });
+      const p = resolvePayload(ctx.job, ctx.machine);
       // Issue #323: `~` is the lane's machine's home, never this process's when the job runs elsewhere.
       const tree = workTreeOn(ctx.machine, p.cwd);
       if ('error' in tree) return Promise.resolve({ kind: 'failed', error: tree.error });
       ctx.workTree(tree.cwd);
       // Saved before the turn: a job that ends any way at all is reaped where it ran.
       ctx.saveState(stateOf(ctx, tree.cwd));
-      return turn(ctx, tree.cwd, `${p.prompt}\n\n${protocolFooter(tree.cwd, ctx.jobRules, jobScratchOf(tree.cwd, ctx.job.id))}`);
+      // Notes a person sent before it started (issue #997) go in its task; it has no turn boundary the hopper types into.
+      const notes = ctx.notes?.take('start');
+      return turn(ctx, tree.cwd, `${p.prompt}\n\n${notes ? `${notes}\n\n` : ''}${protocolFooter(tree.cwd, ctx.jobRules, jobScratchOf(tree.cwd, ctx.job.id))}`);
     },
     resume(ctx, answer) {
       const s = ctx.job.executorState as Partial<PrintAgentState> | undefined;
       if (!s?.chatId || !s.cwd) return Promise.resolve({ kind: 'failed', error: `${label}: no session to resume` });
-      return turn(ctx, s.cwd, answer, s.chatId);
+      const notes = ctx.notes?.take('resume');
+      return turn(ctx, s.cwd, notes ? `${answer}\n\n${notes}` : answer, s.chatId);
     },
     /** The reap (issue #410): the job's scope and processes stopped, its scratch dir removed unless it holds work not pushed. */
     async cleanup(job) {

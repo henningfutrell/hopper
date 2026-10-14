@@ -18,7 +18,7 @@ const PLUGINS = {
   router: { instance: { name: 'pass-through', plugin: 'pass-through' }, selection: 'detected', detection: { status: 'available' }, active: 'pass-through', fallback: false },
   queueSorter: { instance: { name: 'priority', plugin: 'priority' }, detection: { status: 'available' }, active: 'priority', fallback: false },
   escalationLevels: [],
-  executors: { instances: [] }, jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] },
+  executors: { instances: [] }, jobSources: { instances: [] }, machines: { instances: [] }, usageSources: { instances: [] }, notifiers: { instances: [] }, vaultBackends: { instances: [] },
   plugins: [
     { id: 'pass-through', role: 'router', describe: 'admits every job', builtin: true, detection: { status: 'available' }, options: empty },
     { id: 'gate-router', role: 'router', describe: 'gate router', builtin: true, detection: { status: 'unavailable', reason: 'no grok-bot-jev checkout' }, options: empty },
@@ -35,7 +35,7 @@ function fakeDaemon() {
   const calls: Call[] = [];
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
-    '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [], locked: [] },
+    '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked: [] },
     '/api/machines': { machines: [] }, '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] },
     '/api/questions': { questions: [] }, '/api/sources': { sources: [] },
@@ -89,7 +89,7 @@ afterEach(async () => {
 });
 
 describe('Settings', () => {
-  it('one navigation entry holds the configuration: version, version history, question gates, question history, job rules, routing, plugins, webhooks, users, sign-in', async () => {
+  it('one navigation entry holds the configuration: version, version history, question gates, decider, auto-park, issue thread, TL;DR, job rules, Windows hosts, intake, yolo mode, landing batches, GitHub rate limit, remote access, allowed hosts, Contribution, GitHub watches, component watchers, artifacts, routing, plugins, webhooks, vault, users, sign-in, API tokens, access, permission matrix', async () => {
     await boot();
     const main = document.querySelector('aside nav')!;
     const hrefs = [...main.querySelectorAll('a')].map((a) => a.getAttribute('href'));
@@ -97,8 +97,19 @@ describe('Settings', () => {
     for (const gone of ['#routing', '#plugins', '#webhooks']) expect(hrefs).not.toContain(gone);
     const sections = await vi.waitFor(() => { const n = document.querySelector('[data-slot="settings-nav"]'); expect(n).not.toBeNull(); return n!; });
     expect([...sections.querySelectorAll('a')].map((a) => a.getAttribute('href')))
-      .toEqual(['#settings/version', '#settings/version-history', '#settings/questions', '#settings/history', '#settings/job-rules', '#settings/routing', '#settings/plugins', '#settings/webhooks', '#settings/users', '#settings/sign-in']);
+      .toEqual(['#settings/version', '#settings/version-history', '#settings/questions', '#settings/decider', '#settings/auto-park', '#settings/thread-ask', '#settings/tldr', '#settings/job-rules', '#settings/windows-hosts', '#settings/intake', '#settings/yolo-mode', '#settings/landing-batches', '#settings/github-rate-limit', '#settings/github-webhook', '#settings/remote-access', '#settings/allowed-hosts', '#settings/host-link', '#settings/contribution', '#settings/github-watches', '#settings/component-watchers', '#settings/artifacts', '#settings/routing', '#settings/plugins', '#settings/webhooks', '#settings/vault', '#settings/users', '#settings/sign-in', '#settings/api-tokens', '#settings/access', '#settings/permissions']);
     expect(sections.querySelector('a[aria-current="page"]')!.getAttribute('href')).toBe('#settings/routing');
+  });
+
+  it('the Decider section (issue #661): its nav entry says Decider, and the old route moves to it', async () => {
+    await boot();
+    window.location.hash = '#settings/minor-decisions';
+    await act(async () => { window.dispatchEvent(new HashChangeEvent('hashchange')); });
+    await vi.waitFor(() => expect(window.location.hash).toBe('#settings/decider'));
+    const sections = document.querySelector('[data-slot="settings-nav"]')!;
+    const current = sections.querySelector('a[aria-current="page"]')!;
+    expect(current.getAttribute('href')).toBe('#settings/decider');
+    expect(current.textContent).toBe('Decider');
   });
 });
 

@@ -1,0 +1,125 @@
+// Claude at a dialog when the hopper has text to send. A dialog of the turn in flight is dismissed (the answer named
+// none of its options). Any other — before the hopper's text reached Claude — is never a failure (issue #534): one the
+// hopper may answer at startup is answered; any other is the job's question, its choices with it, the pane kept; the
+// answer is typed into the dialog, and the text goes once Claude is past it. docs/design.md "A dialog before the send".
+// A dialog is known by its screen as well as by herdr (issue #533): herdr calls Claude idle at its first-run screens.
+
+import type { ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
+import type { AgentInfo } from './client.ts';
+import { RECENT_LINES, abortReason, blockedQuestion, type Interrupt } from './monitor.ts';
+import { dialogOption, showsDialog } from './screen.ts';
+import { selectKeys, selectOf } from './select-dialog.ts';
+import type { PaneState, StartDeps } from './start.ts';
+import { MAX_STARTUP_SCREENS, policyOf } from './startup.ts';
+import { NOT_SIGNED_IN, cursorPick, isLoginScreen, notSignedIn, promptShown, standsBeforePrompt, startupStep } from './startup-screens.ts';
+
+/** Looks at a dialog of the turn in flight after esc, before it counts as one esc did not close. */
+const UNBLOCK_POLLS = 10;
+/** Looks at a blocked Claude before its dialog counts as held: a key just typed may not have closed the last one yet. */
+const POLLS = 10;
+
+/** Claude ready for the text, gone from its pane, or held at a dialog the hopper may not answer (at `seq`). */
+export type PastDialog = { ready: true } | { gone: true } | { held: number };
+
+/**
+ * Waits for Claude to leave the dialog it stands at, answering one the hopper has a default for (startup-screens.ts
+ * `startupStep`), judged by its text: herdr's state_change_seq does not move between Claude's startup dialogs (issue
+ * #533), and the screen just answered is not answered again. Ready once it is neither blocked nor at a screen before
+ * its prompt (or the signal fired: the caller checks).
+ */
+export async function pastDialog(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<PastDialog> {
+  const policy = policyOf(d, s);
+  let answered: string | undefined;
+  let count = 0;
+  for (let looks = 1; ; looks++) {
+    if (ctx.signal.aborted) return { ready: true };
+    const agent = await d.herdr.getAgent(s.agentName);
+    if (!agent) return { gone: true };
+    const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
+    if (agent.status !== 'blocked' && !standsBeforePrompt(screen)) return { ready: true };
+    const step = screen !== answered && count < MAX_STARTUP_SCREENS ? startupStep(screen, policy) : undefined;
+    if (step && 'keys' in step) {
+      await d.herdr.sendKeys(s.paneId, step.keys);
+      ctx.progress(step.did);
+      answered = screen;
+      count++;
+      looks = 0;
+    }
+    if (looks >= POLLS) return { held: agent.stateChangeSeq };
+    await d.sleep(d.pollMs, ctx.signal);
+  }
+}
+
+/** The dialog Claude is held at (`seq`), as the job's question; `text` is kept in the turn, unsent, to go once it is answered. */
+export async function askAtDialog(d: StartDeps, ctx: ExecutionContext, s: PaneState, seq: number, text: string, anchor: string): Promise<ExecutionOutcome> {
+  const recent = await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES });
+  const asked = await blockedQuestion({ herdr: d.herdr, paneId: s.paneId, clock: d.clock }, recent);
+  // No credential (issue #533): the login screen, or a prompt that says so; the answer comes once Claude is signed in.
+  const visible = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
+  if (notSignedIn(visible) || isLoginScreen(visible)) asked.question.text = `${NOT_SIGNED_IN}.\n\n${asked.question.text}`;
+  const { lapsesAt } = asked.question;
+  ctx.saveState({ ...s, turn: { seq, anchor, blockedAtSend: true, text, unsent: true }, parkedSeq: seq, lapsesAt });
+  ctx.progress('claude waits at a dialog before the prompt was sent: asked it as a question');
+  return asked;
+}
+
+/**
+ * Types the answer into the dialog Claude waits at before its text was sent: the option it names, or, at a dialog
+ * without options, the answer and Enter. Null once typed; the question again, saying so, when the dialog has options
+ * and the answer names none of them (pressing Enter would pick whichever has the cursor, often the one that quits).
+ * Nothing is typed, null, when Claude is at its prompt (it was not signed in, issue #533: the answer would be its first
+ * message) or at no dialog at all (`blocked` false and its screen asks nothing): the send looks again.
+ */
+export async function answerDialog(d: StartDeps, ctx: ExecutionContext, s: PaneState, answer: string, blocked: boolean): Promise<ExecutionOutcome | null> {
+  const screen = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
+  if (promptShown(screen) || (!blocked && !standsBeforePrompt(screen))) return null;
+  const option = dialogOption(screen, answer);
+  if (option) {
+    await d.herdr.sendText(s.paneId, option);
+    ctx.progress(`picked option ${option} of the dialog`);
+    return null;
+  }
+  const picked = selectKeys(screen, answer);
+  if (picked) {
+    await d.herdr.sendKeys(s.paneId, picked.keys);
+    ctx.progress(`picked option ${picked.option} of the dialog`);
+    return null;
+  }
+  const moved = cursorPick(screen, answer);
+  if (moved) {
+    await d.herdr.sendKeys(s.paneId, moved);
+    ctx.progress('picked the option the answer names');
+    return null;
+  }
+  if (showsDialog(screen) && (dialogOption(screen, '1') !== undefined || selectOf(screen.split('\n')))) {
+    const asked = await blockedQuestion({ herdr: d.herdr, paneId: s.paneId, clock: d.clock }, await d.herdr.read(s.paneId, { source: 'recent-unwrapped', lines: RECENT_LINES }));
+    ctx.saveState({ ...s });
+    return { kind: 'question', question: { ...asked.question, text: `The answer names none of its options: answer with an option's number or its words.\n\n${asked.question.text}` } };
+  }
+  await d.herdr.sendText(s.paneId, answer);
+  await d.herdr.sendKeys(s.paneId, ['enter']);
+  ctx.progress('typed the answer into the dialog');
+  return null;
+}
+
+/**
+ * Claude ready for `text`: its agent to send at, else the end of the run or the dialog asked as the job's question,
+ * `text` kept to send once it is answered. A dialog of the turn in flight is dismissed with esc first.
+ */
+export async function readyFor(d: StartDeps, ctx: ExecutionContext, s: PaneState, text: string, anchor: string): Promise<AgentInfo | ExecutionOutcome | Interrupt> {
+  let agent = await d.herdr.getAgent(s.agentName);
+  for (let i = 0; agent?.status === 'blocked' && s.turn && !s.turn.unsent && i < UNBLOCK_POLLS; i++) {
+    if (i === 0) await d.herdr.sendKeys(s.paneId, ['esc']);
+    await d.sleep(d.pollMs, ctx.signal);
+    if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
+    agent = await d.herdr.getAgent(s.agentName);
+  }
+  // At a screen before its prompt though herdr calls it idle (issue #533): looked at as a dialog.
+  if (agent && (agent.status === 'blocked' || standsBeforePrompt(await d.herdr.read(s.paneId, { source: 'visible', lines: 60 })))) {
+    const past = await pastDialog(d, ctx, s);
+    if (ctx.signal.aborted) return { interrupt: abortReason(ctx.signal) };
+    if ('held' in past) return askAtDialog(d, ctx, s, past.held, text, anchor);
+    agent = 'gone' in past ? null : await d.herdr.getAgent(s.agentName);
+  }
+  return agent ?? { kind: 'failed', error: 'pane lost' };
+}

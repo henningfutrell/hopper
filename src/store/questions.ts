@@ -36,7 +36,8 @@ export function createQuestionRepository(c: StoreContext): QuestionRepository {
       const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
       const limit = filter?.limit !== undefined ? 'LIMIT ?' : '';
       if (filter?.limit !== undefined) args.push(filter.limit);
-      return c.db.all(`SELECT body FROM questions ${where} ORDER BY created_at DESC, seq DESC ${limit}`, ...args).map((r) => parse<Question>(r.body));
+      const dir = filter?.order === 'oldest-first' ? 'ASC' : 'DESC';
+      return c.db.all(`SELECT body FROM questions ${where} ORDER BY created_at ${dir}, seq ${dir} ${limit}`, ...args).map((r) => parse<Question>(r.body));
     },
     update: (id, patch) => save(applyPatch<Question>(need(id), patch)),
     addAttempt(id, attempt) {

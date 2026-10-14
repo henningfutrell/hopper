@@ -3,7 +3,7 @@
 // the work tree line and the protocol lines are fixed: the hopper reads the markers back.
 import { describe, expect, it } from 'vitest';
 import type { ConfigRecords } from '../../src/domain/ports.ts';
-import { DEFAULT_JOB_RULES, FIXED_JOB_LINES, JOB_RULES, jobRulesProblem, jobRulesView, readJobRules, writeJobRules } from '../../src/job-rules/index.ts';
+import { DEFAULT_JOB_RULES, FIXED_JOB_LINES, JOB_RULES, jobRulesProblem, jobRulesView, readJobRules, withAsks, writeJobRules } from '../../src/job-rules/index.ts';
 
 function records(initial?: unknown): ConfigRecords & { value: unknown } {
   const r = {
@@ -31,6 +31,8 @@ describe('the default job rules', () => {
     expect(FIXED_JOB_LINES[0]).toMatch(/^\[hopper work tree\] This job's work tree is <work tree>\./);
     expect(FIXED_JOB_LINES.join('\n')).toContain('HOPPER_QUESTION');
     expect(FIXED_JOB_LINES.join('\n')).toContain('HOPPER_DONE');
+    // Issue #794: every job keeps a task list and writes its count, x/y, as each task completes.
+    expect(FIXED_JOB_LINES.join('\n')).toContain('write a line containing only: HOPPER_TASKS <completed>/<total>');
     expect(FIXED_JOB_LINES.at(-1)).toBe('If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.');
   });
 });
@@ -67,5 +69,22 @@ describe('reading and writing the job rules', () => {
     const r = records();
     expect(writeJobRules(r, 'a'.repeat(16 * 1024 + 1), 'missing')).toMatchObject({ ok: false, code: 'invalid' });
     expect(r.value).toBeUndefined();
+  });
+});
+
+describe('a fork\'s brief (issues #548, #570)', () => {
+  const forkOf = { jobId: 'p1', questionId: 'q1', kind: 'proposal' as const, note: 'options for the schema', question: 'Which schema?' };
+
+  it('names the question and the aspect', () => {
+    const rules = withAsks('rules', { proposal: true }, forkOf);
+    expect(rules).toContain('Which schema?');
+    expect(rules).toContain('options for the schema');
+    expect(rules).not.toContain('answered');
+  });
+
+  it('a question answered before the fork started: the fork is given the answer to take into account', () => {
+    const rules = withAsks('rules', { proposal: true }, { ...forkOf, answered: { answer: 'Use OAuth', by: 'human', at: '2026-10-09T08:00:00.000Z' } });
+    expect(rules).toContain('was answered meanwhile');
+    expect(rules).toContain('Use OAuth');
   });
 });

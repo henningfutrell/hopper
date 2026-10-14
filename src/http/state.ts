@@ -1,11 +1,17 @@
 // Read routes over engine state. Nothing here changes anything.
+import type { EventLoopStall } from './event-loop.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock, PluginsView, UserStore } from '../domain/ports.ts';
 import { userIdOf, type TenantParts } from './tenants.ts';
+import type { Sandboxes } from '../sandbox/service.ts';
 import { EVENT_TYPES } from '../domain/types.ts';
 import type { DomainEvent, EventType } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
+import { pullRequestsView, yoloModeView } from './ui/yolo-mode.ts';
+import { autoParkView } from './ui/auto-park.ts';
+import { threadAskView } from './ui/thread-ask.ts';
+import { tldrView } from './ui/tldr.ts';
 
 export const eventTypeList = z.string().optional().transform((s, ctx) => {
   if (!s) return undefined;
@@ -46,22 +52,44 @@ export function routerView(plugins: PluginsView) {
 }
 
 /** The request's user's engine state (issue #158); `/api/health`'s version and uptime are the instance's. */
-export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts; clock: Clock; version: string; port: () => number }): void {
+export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts; clock: Clock; version: string; port: () => number; sandboxes: Pick<Sandboxes, 'view'>; stall?: () => EventLoopStall | undefined }): void {
   const startedAt = o.clock.now().getTime();
 
   // A request with no user (loopback without a session, several users: issue #221) reads the instance's
   // health only — install.sh and self-update probe it — never a user's router or executors.
   app.get('/api/health', async (req) => {
     const uptimeS = Math.floor((o.clock.now().getTime() - startedAt) / 1000);
-    if (userIdOf(req) === undefined) return { ok: true, version: o.version, uptimeS };
+    // The last stall of the event loop (issue #1002), while it is shown: the instance's, like the uptime.
+    const stall = o.stall?.(), loop = stall ? { eventLoopStall: stall } : {};
+    if (userIdOf(req) === undefined) return { ok: true, version: o.version, uptimeS, ...loop };
     const { engine, plugins } = o.tenant(req);
     const r = plugins.routerStatus();
-    return { ok: true, version: o.version, router: r.name, fallback: r.fallback, executors: engine.executorNames, uptimeS };
+    return { ok: true, version: o.version, router: r.name, fallback: r.fallback, executors: engine.executorNames, parkingExecutors: engine.parkingExecutors, reviewingExecutors: engine.reviewingExecutors, uptimeS, ...loop };
   });
   app.get('/api/queue', async (req) => o.tenant(req).engine.getQueue());
+  // Priority lanes (issue #535): the settings, the lanes chosen, every lane's reliability and why.
+  app.get('/api/priority-lanes', async (req) => o.tenant(req).engine.priorityLanes.view());
+  // Blast radius (issue #542): each machine's discovery, rating and gate, the actor machines, the settings.
+  app.get('/api/blast-radius', async (req) => o.tenant(req).engine.blastRadius.view());
+  // Phase shifts (issue #548): the default mode, what a parent does while its fork runs, the levels that may shift.
+  app.get('/api/phase-shifts', async (req) => { const t = o.tenant(req); return t.engine.phaseShifts.view(t.levelNames()); });
+  // Yolo mode (issue #579): whether jobs may merge their own pull requests, and the job repositories to set it per repository.
+  app.get('/api/yolo-mode', async (req) => yoloModeView(o.tenant(req)));
+  // Auto-park (issue #650): how long a question waits on a person before its job parks by itself.
+  app.get('/api/auto-park', async (req) => autoParkView(o.tenant(req)));
+  app.get('/api/thread-ask', async (req) => threadAskView(o.tenant(req)));
+  // The TL;DR (issue #569): whether a cheap model writes one for every long card, and the cards show it.
+  app.get('/api/tldr', async (req) => tldrView(o.tenant(req)));
+  // The Pull requests list (issue #637): the waiting pull requests, per repository, their state and yolo mode; where merging waits.
+  app.get('/api/pull-requests', async (req) => pullRequestsView(o.tenant(req)));
   app.get('/api/machines', async (req) => ({ machines: await o.tenant(req).engine.getMachines() }));
   // What the Machines view edits (issue #18): the machine source, the attached machines, the detected ssh targets, the file version.
   app.get('/api/machines/config', async (req) => ({ ...(await o.tenant(req).plugins.machinesConfig()), port: o.port() }));
+  // The sandbox boxes the hopper starts (issue #603): whether it can start one now, and the boxes it could not remove.
+  app.get('/api/sandboxes', async (req) => {
+    o.tenant(req);
+    return o.sandboxes.view(userIdOf(req)!);
+  });
 
   app.get('/api/decisions', async (req) => {
     const { limit } = parseWith(decisionsQuery, req.query);
@@ -87,4 +115,6 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
   app.get('/api/routing', async (req) => o.tenant(req).plugins.routing());
 
   app.get('/api/usage', async (req) => o.tenant(req).engine.getUsageReport());
+  app.get('/api/lanes/plan', async (req) => o.tenant(req).engine.laneTuning.plan());
+  app.get('/api/lanes/costs', async (req) => o.tenant(req).engine.laneTuning.costs());
 }

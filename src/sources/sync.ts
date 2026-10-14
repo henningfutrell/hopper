@@ -8,14 +8,34 @@
 // is used from its next sync, for its jobs too; a removed one pulls nothing more, is paused as REMOVED,
 // and goes once each of its jobs ended and its end is reported — a running job is never ended for it.
 // A started job whose item is no longer assigned to its account is flagged, never ended (issue #387).
+// A person's resolution of a hand-off (issue #551) is told to its job's item on the job's report chain, after the job's
+// own end, when it is recorded and again at each sync until the source took it. After done (issue #579, `after-done.ts`): a
+// finished job's pull request is followed to its merge or close, and a job that failed only for want of a merge is judged again.
+// The in-motion cycle (issue #985, `followRound`): a sync follows pull requests in rounds, not each time. Every cycle interval
+// it follows only the pull requests in motion; every reconcile interval it follows every one and reconciles; between rounds
+// it follows none. The first sync, a sync a person asked for, and the sync after a merge or close follow every one. A pull
+// request merged or closed while a source syncs makes its next sync run at once, so the others are seen and tended on the
+// new base; one merged or closed between syncs (a person's Merge now) starts a sync at once.
+// What a sync reads (issue #985): the first sync after start, a sync of a source new or changed in the plugins config, and a
+// sync a person asked for (Sync now, an intake action, a new connection) ask the source to read everything again; every
+// other sync — its timer, one after a merge, a rerun — only what is due (`discover({ due: true })`).
+// A GitHub delivery (issue #1079, `repoChanged`) makes the repository due at each source whose job repository it is, and
+// that source syncs once `DELIVERY_SYNC_MS` after the first delivery of a burst: a timed sync, before its timer.
 
 import { SourceError } from '../domain/ports.ts';
-import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport, SourceSignal } from '../domain/ports.ts';
-import { TERMINAL_STATUSES, isRerunnable } from '../domain/types.ts';
-import { REMOVED, followSources, newSlot, type NotRerun, type Slot } from './sync-slots.ts';
-import type { DomainEvent, Job, SourceStatus } from '../domain/types.ts';
-import type { IntakeOutcome } from '../domain/intake.ts';
+import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from '../domain/ports.ts';
+import { TERMINAL_STATUSES, isRerunnable, type DomainEvent, type JevFirst, type Job, type SourceStatus } from '../domain/types.ts';
+import { offer } from './item-text.ts';
+import { intakeOrder } from './intake-order.ts';
+import { REMOVED, detailOf, followSources, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
+import { liveIntake } from './intake-live.ts';
 import { createRerun } from './rerun.ts';
+import { createWriteBacks } from './write-back.ts';
+import { createAfterDone } from './after-done.ts';
+import { createThreadAsks } from './thread-asks.ts';
+import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts';
+import { signalsApplier, type SyncFlags } from './sync-signals.ts';
+import { finishIfClosedAsComplete } from './closed-as-complete.ts';
 
 export { REMOVED } from './sync-slots.ts';
 
@@ -26,7 +46,14 @@ export interface SourceSyncOptions {
   pollMs: (sourceName: string) => number;
   /** How long a source may stay in error before `source.stalled` is recorded. Default STALL_AFTER_MS. */
   stallAfterMs?: number;
+  /** Jev first, for the order new items enter and the head of each tending queue (issue #796); absent: the rules decide. */
+  jevFirst?: JevFirst;
+  /** How often a round follows the pull requests in motion, and every one (issue #985), read at each sync. Absent: every sync follows every one. */
+  followEvery?: () => FollowEvery;
 }
+
+/** How long after a GitHub delivery its sources sync (issue #1079): GitHub sends opened, labeled and assigned at once. */
+export const DELIVERY_SYNC_MS = 2_000;
 
 /** A source in error this long has stopped intake: the owner is told. */
 export const STALL_AFTER_MS = 30 * 60_000;
@@ -41,17 +68,6 @@ export type SourceSync = SourceRegistry & {
   source(name: string): JobSource | undefined;
 };
 
-
-// Stored rows written before 2026-10-03 may also carry reportedQuestions, answeredQuestions and
-// lastProgressAt; nothing reads them.
-interface SyncFlags {
-  claimReported?: boolean;
-  finalReported?: boolean;
-  cancelReason?: string;
-  /** Set while a started job's item is not assigned to the account it was taken for (issue #387). */
-  unassignedAt?: string;
-  permanentErrors?: Array<{ kind: string; message: string }>;
-}
 
 interface Hint { cancelReason?: string }
 
@@ -123,14 +139,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
   }
 
-  /**
-   * A failed job whose item its source finds closed as complete is finished instead (issue #350), before
-   * its end is reported. false: asking failed; the job's pass stops and the next sync asks again.
-   */
+  /** A failed job whose work landed is finished instead (`finishIfClosedAsComplete`). false: asking failed; the next sync asks again. */
   async function finishedIfClosedAsComplete(slot: Slot, job: Job): Promise<boolean> {
-    if (!slot.source.closedAsComplete) return true;
     try {
-      if (await slot.source.closedAsComplete(job)) host.finishClosedAsComplete(job.id);
+      await finishIfClosedAsComplete(host, slot.source, job);
       return true;
     } catch (e) {
       slot.retrying.set(job.id, message(e));
@@ -158,7 +170,18 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return enqueue(jobId, () => reportJob(slot, jobId, hint));
   }
 
+  /** A pull request ended: the base of the others moved, so its source syncs again at once and follows every one. */
+  function pullRequestEnded(slot: Slot | undefined): void {
+    if (!slot || slot.removed) return;
+    slot.followAll = true;
+    if (slot.status.syncing) { slot.again = true; return; }
+    // Listeners fire inside append; never start a sync from there.
+    setImmediate(() => { if (running && !slot.status.syncing) void runSync(slot); });
+  }
+
   function onEvent(e: DomainEvent) {
+    if (running && PR_ENDED.has(e.type)) pullRequestEnded(slots.get(store.jobs.get(e.jobId ?? '')?.source?.source ?? ''));
+    if (running && (writeBacks.follows(e) || threadAsks.follows(e))) return;
     if (!running || !e.jobId || !TRIGGERS.has(e.type)) return;
     const jobId = e.jobId;
     const hint: Hint = e.type === 'job.cancelled' && typeof e.data.reason === 'string' ? { cancelReason: e.data.reason } : {};
@@ -173,37 +196,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   const jobsOf = (slot: Slot) => store.jobs.list().filter((j) => j.source?.source === slot.source.name);
 
-  /**
-   * A cancel ends the job. Assignment drift (issue #387) only marks it: `unassigned` sets `unassignedAt`
-   * and records `job.unassigned` once; `reassigned` clears the mark and records `job.reassigned`. The user
-   * decides whether to stop a flagged job.
-   */
-  function applySignal(job: Job, s: SourceSignal) {
-    const flags = flagsOf(job);
-    const assignee = job.source?.assignee ?? '';
-    if (s.kind === 'cancel') {
-      write(job.id, { ...flags, cancelReason: s.reason });
-      host.cancel(job.id, s.reason);
-    } else if (s.kind === 'unassigned' && flags.unassignedAt === undefined) {
-      write(job.id, { ...flags, unassignedAt: clock.now().toISOString() });
-      store.events.append({ type: 'job.unassigned', jobId: job.id, data: { assignee } });
-    } else if (s.kind === 'reassigned' && flags.unassignedAt !== undefined) {
-      const { unassignedAt: _gone, ...rest } = flags;
-      write(job.id, rest);
-      store.events.append({ type: 'job.reassigned', jobId: job.id, data: { assignee } });
-    }
-  }
-
-  async function applySignals(slot: Slot, active: Job[]) {
-    const ids = new Set(active.map((j) => j.id));
-    for (const s of await slot.source.check(active)) {
-      if (!ids.has(s.jobId)) continue;
-      await enqueue(s.jobId, async () => {
-        const job = store.jobs.get(s.jobId);
-        if (job && !isTerminal(job)) applySignal(job, s);
-      });
-    }
-  }
+  const applySignals = signalsApplier({ store, host, clock, enqueue, write: (id, f) => write(id, f), flagsOf, isTerminal });
 
   /**
    * Operator-led jobs (issue #318) have no executor to end them: each sync asks the source whether
@@ -224,15 +217,14 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     }
   }
 
-  async function pull(slot: Slot): Promise<{ seen: number; created: number }> {
-    const items = await slot.source.discover();
+  async function pull(slot: Slot, asked: boolean): Promise<{ seen: number; created: number }> {
+    const items = await intakeOrder(o.jevFirst, slot.source.name, await slot.source.discover(asked ? undefined : { due: true }), (i) => { const e = store.jobs.getBySourceKey(i.key); return !e || isRerunnable(e); });
     let created = 0;
     const notRerun: NotRerun[] = [];
     for (const item of items) {
       const existing = store.jobs.getBySourceKey(item.key);
       if (existing && isTerminal(existing) && !isRerunnable(existing)) notRerun.push({ key: item.key, job: existing.id, status: existing.status, reason: NOT_REPORTED });
-      if (existing && !isRerunnable(existing)) host.refresh(existing.id, item, { name: slot.source.name, kind: slot.source.kind });
-      else if (host.ingest(item, { name: slot.source.name, kind: slot.source.kind })) created++;
+      if (await offer(host, slot.source, item, existing)) created++;
     }
     for (const n of notRerun) {
       if (slot.loggedNotRerun.has(n.key)) continue;
@@ -243,41 +235,39 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     return { seen: items.length, created };
   }
 
-  /** Log a changed error, or the end of one; record source.stalled once a run of failures passes the threshold. */
-  function told(slot: Slot, previous: string | undefined) {
+  async function syncOnce(slot: Slot, asked: boolean) {
     const st = slot.status;
-    const name = slot.source.name;
-    if (st.state !== 'error') {
-      if (slot.failing) console.warn(`hopper: source ${name} is ok again`);
-      delete slot.failing;
-      return;
-    }
-    if (st.lastError !== previous) console.warn(`hopper: source ${name} failed: ${st.lastError}`);
-    slot.failing ??= { since: clock.now().toISOString(), stalled: false };
-    if (slot.failing.stalled || clock.now().getTime() - Date.parse(slot.failing.since) < stallAfterMs) return;
-    slot.failing.stalled = true;
-    store.events.append({ type: 'source.stalled', data: { source: name, kind: slot.source.kind, error: st.lastError ?? '', since: slot.failing.since } });
-  }
-
-  async function syncOnce(slot: Slot) {
-    const st = slot.status;
+    // Issue #812: a sync asked for off its timer (Sync now, an intake action) runs now: its timer goes, so one timer per
+    // source fires, at the next sync time shown; and the old next time goes while it runs.
+    clearTimeout(slot.timer);
+    delete st.nextSyncAt;
+    delete slot.again;
+    const round = followRound(slot, clock.now().getTime(), o.followEvery?.(), asked || slot.followAll === true);
+    delete slot.followAll;
+    st.syncing = true;
+    emit(slot);
     const previous = st.state === 'error' ? st.lastError : undefined;
     // Paused: nothing new is pulled, but the source's own active jobs are still checked and reported.
     const paused = slot.removed ? REMOVED : slot.source.paused?.();
-    try {
+    // One pass (issue #822): the source asks GitHub once for what the steps read twice.
+    const pass = async () => {
       if (paused === undefined) {
-        const { seen, created } = await pull(slot);
+        const { seen, created } = await pull(slot, asked);
         st.itemsSeen = seen;
         st.jobsCreated += created;
       } else {
-        st.itemsSeen = 0;
-        slot.notRerun = [];
+        [st.itemsSeen, slot.notRerun] = [0, []];
       }
-      await applySignals(slot, jobsOf(slot).filter((j) => !isTerminal(j)));
+      await applySignals(slot.source, jobsOf(slot).filter((j) => !isTerminal(j)));
       await finishCompleteOperatorLed(slot, jobsOf(slot).filter((j) => !isTerminal(j)));
       await Promise.all(jobsOf(slot)
         .filter((j) => !isTerminal(j) || !flagsOf(j).finalReported || !flagsOf(j).claimReported)
         .map((j) => queueReport(slot, j.id)));
+      await writeBacks.catchUp(slot.source);
+      await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot), round), threadAsks.catchUp(slot.source, jobsOf(slot))]);
+    };
+    try {
+      await (slot.source.pass ? slot.source.pass(pass) : pass());
       await drain();
       st.state = 'ok';
       st.lastOkAt = clock.now().toISOString();
@@ -286,21 +276,13 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       st.state = 'error';
       st.lastError = message(e);
     }
-    told(slot, previous);
+    told(slot, previous, { clock, stallAfterMs, events: store.events });
     const jobs = jobsOf(slot);
+    delete st.syncing;
     st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
     if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
-    // Every item the source listed, taken (with its job) or not (with its reason) — issue #440. None while paused.
-    const intake = paused === undefined ? slot.source.intake?.() : undefined;
-    st.detail = {
-      ...slot.source.describe(),
-      ...(intake ? { intake: intake.map((x): IntakeOutcome => (x.reason === undefined ? withJob(x) : x)) } : {}),
-      ...(paused !== undefined ? { paused } : {}),
-      permanentErrors: jobs.filter((j) => flagsOf(j).permanentErrors?.length).length,
-      reportRetries: slot.retrying.size,
-      ...(slot.notRerun.length ? { notRerun: slot.notRerun } : {}),
-    };
+    st.detail = detailOf(slot, paused, jobs.filter((j) => flagsOf(j).permanentErrors?.length).length);
     if (slot.removed && st.state !== 'error' && jobs.every((j) => isTerminal(j) && flagsOf(j).claimReported && flagsOf(j).finalReported)) {
       // Nothing of its own is left to report: the removed source goes.
       if (slots.get(slot.source.name) === slot) slots.delete(slot.source.name);
@@ -314,61 +296,98 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   function schedule(slot: Slot) {
     if (!running) { delete slot.status.nextSyncAt; return; }
-    const ms = o.pollMs(slot.source.name);
+    const ms = slot.again ? 0 : o.pollMs(slot.source.name);
     slot.status.nextSyncAt = new Date(clock.now().getTime() + ms).toISOString();
     slot.timer = setTimeout(() => { void runSync(slot); }, ms);
   }
 
-  function runSync(slot: Slot): Promise<void> {
+  /**
+   * `asked`: a start, a changed source or a person asked for this sync, so the source reads everything again. A sync asked
+   * for while one waits to start joins it (issue #1019): it starts after the ask, so it sees what the ask did, and ten
+   * approvals in a row wait for one sync behind the running one, not for ten in a row.
+   */
+  function runSync(slot: Slot, asked = false): Promise<void> {
     clearTimeout(slot.timer);
-    slot.chain = slot.chain.then(() => syncOnce(slot));
+    if (slot.queued) {
+      slot.queued.asked ||= asked;
+      return slot.queued.done;
+    }
+    const queued: NonNullable<Slot['queued']> = { asked, done: Promise.resolve() };
+    slot.queued = queued;
+    slot.chain = slot.chain.then(() => { slot.queued = undefined; return syncOnce(slot, queued.asked); });
+    queued.done = slot.chain;
     syncs.add(slot.chain);
     void slot.chain.finally(() => syncs.delete(slot.chain)).catch(() => undefined);
     return slot.chain;
   }
 
-  const withJob = (x: IntakeOutcome): IntakeOutcome => { const job = store.jobs.getBySourceKey(x.key); return job ? { ...x, jobId: job.id } : x; };
+  /** A status with each taken item's job as it is now (issue #798). */
+  const live = (st: SourceStatus): SourceStatus => liveIntake(st, (key) => store.jobs.getBySourceKey(key));
 
-  const emit = (slot: Slot) => { for (const l of listeners) l({ ...slot.status }); };
+  const emit = (slot: Slot) => { for (const l of listeners) l(live(slot.status)); };
+
+  const sourceOfJob = (jobId: string) => (running ? slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.source : undefined);
+  const retry = (jobId: string, e: unknown) => { slots.get(store.jobs.get(jobId)?.source?.source ?? '')?.retrying.set(jobId, message(e)); };
+  const writeBacks = createWriteBacks({ store, enqueue, finalReported: (j) => !isTerminal(j) || flagsOf(j).finalReported === true, sourceOf: sourceOfJob });
+  const threadAsks = createThreadAsks({ store, host, enqueue, sourceOf: sourceOfJob, now: () => clock.now().toISOString(), failed: retry });
+
+  const afterDone = createAfterDone({
+    store, host, enqueue, ...(o.jevFirst ? { jevFirst: o.jevFirst } : {}), finalReported: (j) => flagsOf(j).finalReported === true, sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
+    setSource: (jobId, source) => { const j = store.jobs.get(jobId); if (j) write(jobId, flagsOf(j), source); },
+    reportAgain: (jobId) => { const j = store.jobs.get(jobId); const slot = slots.get(j?.source?.source ?? ''); if (!j || !slot) return; write(jobId, { ...flagsOf(j), finalReported: false }); void queueReport(slot, jobId); },
+    failed: retry, tend: (jobId, brief) => rerunning.rerun(jobId, 'tending', brief), now: () => clock.now().getTime(),
+  });
 
   const rerunning = createRerun({
-    host, flagsOf, enqueue,
-    sourceOf: (job) => (running ? slots.get(job.source?.source ?? '')?.source : undefined),
+    host, flagsOf, enqueue, sourceOf: (job) => sourceOfJob(job.id),
     syncSoon: (source) => { const slot = slots.get(source.name); if (slot) void runSync(slot); },
   });
 
   return {
-    statuses: () => [...slots.values()].map((s) => ({ ...s.status })),
+    statuses: () => [...slots.values()].map((s) => live(s.status)),
     onStatus(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    rerun: rerunning.rerun,
+    // Run again, Continue and Rework.
+    ...rerunning,
+    pullRequestAct: afterDone.act,
+    tendAgain: afterDone.tendAgain,
     async intakeAction(name, action) {
       const slot = slots.get(name);
       if (!slot || slot.removed || !running) return { ok: false, reason: 'not_found', message: `no running job source ${name}` };
       if (!slot.source.intakeAction) return { ok: false, reason: 'conflict', message: `job source ${name} takes no intake action` };
       const result = await slot.source.intakeAction(action);
-      await runSync(slot);
+      // A refusal because the item is taken names its job's status (issue #1045).
+      for (const [key, why] of Object.entries(result.failed)) {
+        const job = why.startsWith('already ') ? store.jobs.getBySourceKey(key) : undefined;
+        if (job) result.failed[key] = `${why}: its job is ${job.status}`;
+      }
+      await runSync(slot, true);
       return { ok: true, result };
     },
     start() {
       if (running) return;
       running = true;
       unsubscribe = store.events.subscribe(onEvent);
-      for (const slot of slots.values()) void runSync(slot);
+      for (const slot of slots.values()) void runSync(slot, true);
+    },
+    repoChanged(repo) {
+      const named = running ? [...slots.values()].filter((s) => !s.removed && s.source.repoChanged?.(repo) === true) : [];
+      for (const slot of named) slot.delivered ??= setTimeout(() => { delete slot.delivered; if (running) void runSync(slot); }, DELIVERY_SYNC_MS);
+      return named.map((s) => s.source.name);
     },
     async stop() {
       running = false;
       unsubscribe?.();
-      for (const slot of slots.values()) clearTimeout(slot.timer);
+      for (const slot of slots.values()) { clearTimeout(slot.timer); clearTimeout(slot.delivered); delete slot.delivered; }
       await drain();
       await Promise.allSettled([...syncs]);
       await drain();
     },
     async syncNow(name) {
       const targets = [...slots.values()].filter((s) => !name || s.source.name === name);
-      await Promise.all(targets.map((s) => runSync(s)));
+      await Promise.all(targets.map((s) => runSync(s, true)));
     },
     setSources(sources) {
-      for (const slot of followSources(slots, sources)) if (running) void runSync(slot);
+      for (const slot of followSources(slots, sources)) if (running) void runSync(slot, true);
     },
     source: (name) => slots.get(name)?.source,
   };

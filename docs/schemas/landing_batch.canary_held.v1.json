@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string"
+    },
+    "canary": {
+      "type": "string"
+    },
+    "stable": {
+      "type": "string"
+    },
+    "tip": {
+      "type": "string"
+    },
+    "reports": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": -9007199254740991,
+        "maximum": 9007199254740991
+      }
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "repo",
+    "canary",
+    "stable",
+    "tip",
+    "reports",
+    "reason"
+  ],
+  "additionalProperties": false
+}

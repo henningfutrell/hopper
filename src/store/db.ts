@@ -31,9 +31,15 @@ export function numberPlaceholders(sql: string): string {
 
 /** The most a call may block the process before it fails: a stuck database must not hang the daemon silently. */
 const CALL_TIMEOUT_MS = 30_000;
+/**
+ * How long Postgres runs a statement before it cancels it (issue #1003); the worker drops a connection that gives no
+ * answer a tenth after that. Both end inside CALL_TIMEOUT_MS, so a call that waits fails with its reason and leaves no
+ * statement on its connection for the calls after it to wait behind.
+ */
+export const STATEMENT_TIMEOUT_MS = 25_000;
 
 interface WorkerCall {
-  (op: 'open', handle: 0, url: string, params: []): { handle: number };
+  (op: 'open', handle: 0, url: string, params: [timeoutMs: number]): { handle: number };
   (op: 'exec' | 'query', handle: number, sql: string, params: Param[]): { rows: Row[]; changes: number };
   (op: 'close', handle: number, sql: '', params: []): null;
 }
@@ -41,10 +47,11 @@ interface WorkerCall {
 /** One worker per process (synckit's), one connection per Db in it. */
 let worker: WorkerCall | undefined;
 
-export function openDb(url: string): Db {
+/** `timeoutMs`: how long a statement may run (default STATEMENT_TIMEOUT_MS, at most it). */
+export function openDb(url: string, o: { timeoutMs?: number } = {}): Db {
   worker ??= createSyncFn(new URL('./postgres-worker.ts', import.meta.url).pathname, { timeout: CALL_TIMEOUT_MS }) as WorkerCall;
   const call = worker;
-  const { handle } = call('open', 0, parseDatabaseUrl(url), []);
+  const { handle } = call('open', 0, parseDatabaseUrl(url), [Math.min(o.timeoutMs ?? STATEMENT_TIMEOUT_MS, STATEMENT_TIMEOUT_MS)]);
   const query = (sql: string, params: Param[]) => call('query', handle, numberPlaceholders(sql), params);
   return {
     exec: (sql) => { call('exec', handle, sql, []); },

@@ -1,28 +1,24 @@
 import { randomUUID } from 'node:crypto';
 import type { Clock, UserStore, WebhookDispatcher } from '../domain/ports.ts';
 import type { DomainEvent, WebhookDelivery, WebhookSubscription } from '../domain/types.ts';
+import { EVENT_EXAMPLES } from '../events/examples.ts';
+import { heldWhy, type Outbound, type OutboundRequest } from '../outbound/index.ts';
 import { sign } from './signer.ts';
-
-/**
- * A subscription's secret from the runtime (design.md "Secrets", issue #56): the subscription names
- * the variable, read at each delivery. Throws, naming the variable, when the runtime gives none.
- */
-export function subscriptionSecret(secret: (name: string) => string | undefined, secretEnv: string): string {
-  const value = secret(secretEnv);
-  if (!value) throw new Error(`${secretEnv || 'its secret variable'} is not set`);
-  return value;
-}
-
-/** Why the runtime gives no secret in `secretEnv`, or undefined when it does. Never the secret. */
-export function secretProblem(secret: (name: string) => string | undefined, secretEnv: string): string | undefined {
-  try { subscriptionSecret(secret, secretEnv); return undefined; } catch (e) { return (e as Error).message; }
-}
 
 export interface WebhookDispatcherOptions {
   store: UserStore;
   clock: Clock;
-  /** The runtime's secrets (src/secrets/runtime.ts): a subscription's secret, by the variable it names, read at each delivery. */
-  secret: (name: string) => string | undefined;
+  /**
+   * The secret a delivery to the subscription is signed with, read at each one (src/webhooks/secrets.ts,
+   * issue #451): a replaced or rotated secret signs from the next. Throws with why there is none.
+   */
+  secretOf: (sub: WebhookSubscription) => string;
+  /**
+   * The user's outbound sends (issue #1014, design.md "Outbound sends"): each new delivery is asked of its destination's
+   * guard — a duplicate is not made, one asked while the circuit is open fails —, each POST waits for a token, and each
+   * POST and held send goes into the send log.
+   */
+  outbound: Outbound;
   baseMs: number;
   timeoutMs?: number;
   maxAttempts?: number;
@@ -51,15 +47,23 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     return d;
   }
 
+  /** An event that says it tells no one (`notify: false`, issue #516) is delivered to none. */
   function matches(sub: WebhookSubscription, event: DomainEvent): boolean {
+    if (event.data.notify === false) return false;
     return sub.active && (sub.events.includes('*') || sub.events.includes(event.type));
   }
+
+  const request = (sub: WebhookSubscription, event: Pick<DomainEvent, 'id' | 'type' | 'jobId'>): OutboundRequest =>
+    ({ sender: 'webhook', name: sub.name, url: sub.url, kind: event.type, key: `${sub.id}:${event.id}`, ...(event.jobId ? { jobId: event.jobId } : {}) });
 
   function enqueue(event: DomainEvent): void {
     for (const sub of store.webhooks.list()) {
       if (!matches(sub, event)) continue;
+      const asked = o.outbound.ask(request(sub, event));
+      if (asked === 'duplicate') continue;
       const d = store.webhooks.createDelivery(sub.id, event);
-      for (const l of [...listeners]) l(d);
+      if (asked === 'circuit-open') update(d.id, { status: 'failed', lastError: heldWhy(asked), nextAttemptAt: undefined });
+      else for (const l of [...listeners]) l(d);
     }
     // Listeners must not re-enter synchronously (ports.ts): defer the sweep.
     setImmediate(sweep);
@@ -70,7 +74,7 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     const body = JSON.stringify(event);
     const timestamp = String(Math.floor(clock.now().getTime() / 1000));
     try {
-      const signature = sign(subscriptionSecret(o.secret, sub.secretEnv), timestamp, body);
+      const signature = sign(o.secretOf(sub), timestamp, body);
       const res = await fetch(sub.url, {
         method: 'POST',
         headers: {
@@ -90,8 +94,9 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     }
   }
 
-  async function post(d: WebhookDelivery, sub: WebhookSubscription, event: DomainEvent): Promise<void> {
+  async function post(d: WebhookDelivery, sub: WebhookSubscription, event: DomainEvent, r: OutboundRequest): Promise<void> {
     const { statusCode, error } = await send(sub, event, d.id);
+    o.outbound.posted(r, { ...(statusCode !== undefined ? { status: statusCode } : {}), ...(error !== undefined ? { error } : {}) });
     const attempts = d.attempts + 1;
     if (error === undefined) {
       update(d.id, { status: 'delivered', attempts, lastStatusCode: statusCode, lastError: undefined, nextAttemptAt: undefined });
@@ -115,8 +120,16 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
       update(d.id, { status: 'failed', lastError: 'event not found', nextAttemptAt: undefined });
       return;
     }
+    const r = request(sub, event);
+    if (o.outbound.isOpen(r)) {
+      o.outbound.held(r, 'circuit-open');
+      update(d.id, { status: 'failed', lastError: heldWhy('circuit-open'), nextAttemptAt: undefined });
+      return;
+    }
+    // No token: the delivery stays due, and a later sweep sends it; no attempt is spent.
+    if (o.outbound.take(r) > 0) return;
     update(d.id, { nextAttemptAt: after(timeoutMs + IN_FLIGHT_GRACE_MS) });
-    await post(d, sub, event);
+    await post(d, sub, event, r);
   }
 
   function sweep(): void {
@@ -154,14 +167,21 @@ export function createWebhookDispatcher(o: WebhookDispatcherOptions): WebhookDis
     async test(name) {
       const sub = store.webhooks.list().find((s) => s.name === name);
       if (!sub) return undefined;
-      const problem = secretProblem(o.secret, sub.secretEnv);
-      if (problem) return { ok: false, detail: problem };
+      try { o.secretOf(sub); } catch (e) { return { ok: false, detail: (e as Error).message }; }
       // Shaped like a delivered event, so a receiver's parser takes it; never appended to the event log.
+      // Issue #481: typed as the first event type the subscription names, with that type's example data,
+      // so the receiver's routing matches real events; `webhook.test` for `*` only.
       const at = clock.now().toISOString();
       const id = `test-${randomUUID()}`;
-      const event = { seq: 0, schemaVersion: 1, id, type: 'webhook.test', at, data: { test: true, subscription: sub.name } };
-      const r = await send(sub, event, id);
-      return { ok: r.error === undefined, ...(r.statusCode !== undefined ? { status: r.statusCode } : {}), detail: r.error ?? `HTTP ${r.statusCode}` };
+      const type = sub.events.find((t) => t !== '*') ?? 'webhook.test';
+      const example = (EVENT_EXAMPLES as Record<string, Record<string, unknown> | undefined>)[type] ?? {};
+      const event = { seq: 0, schemaVersion: 1, id, type, at, data: { ...example, test: true, subscription: sub.name } };
+      // A person's test passes the guard too, with no dedupe key: a press is never a duplicate.
+      const r = await o.outbound.send({ sender: 'webhook', name: sub.name, url: sub.url, kind: type }, async () => {
+        const res = await send(sub, event, id);
+        return { ...(res.statusCode !== undefined ? { status: res.statusCode } : {}), ...(res.error !== undefined ? { error: res.error } : {}) };
+      });
+      return { ok: r.error === undefined, ...(r.status !== undefined ? { status: r.status } : {}), detail: r.error ?? `HTTP ${r.status}` };
     },
   };
 }

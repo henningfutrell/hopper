@@ -3,7 +3,7 @@ import type { DomainEvent } from '../../src/domain/types.ts';
 import { fixedClock, useTempStore } from './helpers.ts';
 
 const t = useTempStore();
-const input = { name: 'hook', url: 'http://127.0.0.1:9/h', events: ['*'], secretEnv: 'S3', active: true };
+const input = { name: 'hook', url: 'http://127.0.0.1:9/h', events: ['*'], active: true };
 
 // The table is the source of truth for webhook subscriptions (issue #78): rows are added, changed and
 // removed one by one, never reconciled from a document.
@@ -34,7 +34,7 @@ describe('webhook add and update', () => {
     s.close();
   });
 
-  it('update changes only the fields given, keeping id, name, secretEnv and createdAt', () => {
+  it('update changes only the fields given, keeping id, name, the secret and createdAt', () => {
     const s = t.open(t.url());
     const a = s.webhooks.add(input)!;
     const b = s.webhooks.update(a.id, { active: false });
@@ -43,6 +43,24 @@ describe('webhook add and update', () => {
     expect(c).toEqual({ ...a, active: false, url: 'http://127.0.0.1:9/new', events: ['job.failed'] });
     expect(s.webhooks.get(a.id)).toEqual(c);
     expect(s.webhooks.update('nope', { active: true })).toBeUndefined();
+    s.close();
+  });
+});
+
+// Issue #451: the signing secret was kept sealed in its own column; since issue #658 it is a system secret in the vault.
+// The subscription the store answers never carries it, only when it last changed; a row's old copy is read only to move it.
+describe('webhook signing secret', () => {
+  it('secretKept records when and drops the old copy; legacySecret reads the old copy; the subscription carries neither', () => {
+    const clock = fixedClock();
+    const s = t.open(t.url(), clock);
+    const w = s.webhooks.add(input)!;
+    expect(s.webhooks.legacySecret(w.id)).toBeUndefined();
+    expect(w.secretChangedAt).toBeUndefined();
+    clock.set('2026-10-02T11:00:00.000Z');
+    const after = s.webhooks.secretKept(w.id)!;
+    expect(after).toEqual({ ...w, secretChangedAt: '2026-10-02T11:00:00.000Z' });
+    expect(s.webhooks.legacySecret(w.id)).toBeUndefined();
+    expect(s.webhooks.secretKept('nope')).toBeUndefined();
     s.close();
   });
 });

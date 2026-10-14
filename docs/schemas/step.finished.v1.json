@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "step": {
+      "type": "string"
+    },
+    "host": {
+      "type": "string"
+    },
+    "box": {
+      "type": "string"
+    },
+    "exit": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "outputsBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "problem": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "step",
+    "exit",
+    "seconds"
+  ],
+  "additionalProperties": false
+}

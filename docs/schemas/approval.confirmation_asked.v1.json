@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "infra-plan",
+        "vault-profile"
+      ]
+    },
+    "ref": {
+      "type": "string"
+    },
+    "words": {
+      "type": "string"
+    },
+    "asker": {
+      "type": "string"
+    },
+    "plan": {
+      "type": "string"
+    },
+    "template": {
+      "type": "string"
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "read",
+        "write",
+        "sync",
+        "apply"
+      ]
+    },
+    "asset": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "cluster",
+            "namespace",
+            "argocd-app",
+            "terraform-workspace",
+            "aws-account",
+            "aws-role"
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "name"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "kind",
+    "ref",
+    "words",
+    "asker"
+  ],
+  "additionalProperties": false
+}

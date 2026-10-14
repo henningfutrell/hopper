@@ -4,8 +4,8 @@ import type { MachineNote } from './machine-pick.ts';
 export type { MachineNote } from './machine-pick.ts';
 
 /** A slot the engine calls through one port. Each slice adds the roles it builds. */
-export type Role = 'router' | 'queue-sorter' | 'escalation-level' | 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
-export const ROLES: readonly Role[] = ['router', 'queue-sorter', 'escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
+export type Role = 'router' | 'queue-sorter' | 'escalation-level' | 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier' | 'vault-backend';
+export const ROLES: readonly Role[] = ['router', 'queue-sorter', 'escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier', 'vault-backend'];
 
 /** A Claude model alias (`opus`, `sonnet[1m]`) or model id (`claude-opus-4-5`). */
 const MODEL_NAME = /^(claude-)?(haiku|sonnet|opus|fable|opusplan)(-[0-9][0-9a-z.-]*)?(\[1m\])?$/i;
@@ -102,8 +102,8 @@ export type SelectableRole = 'router' | 'queue-sorter';
 export const SELECTABLE_ROLES: readonly SelectableRole[] = ['router', 'queue-sorter'];
 
 /** The roles with 0..n instances (executors: 1..n), each added or removed from the UI under its own name. */
-export type ListRole = 'escalation-level' | 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier';
-export const LIST_ROLES: readonly ListRole[] = ['escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
+export type ListRole = 'escalation-level' | 'executor' | 'job-source' | 'machine-source' | 'usage-source' | 'notifier' | 'vault-backend';
+export const LIST_ROLES: readonly ListRole[] = ['escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier', 'vault-backend'];
 
 /** The queue order (DecisionInputs.queueOrder): the waiting jobs as the queue sorter ordered them, and which instance did. */
 export interface QueueOrder {
@@ -182,6 +182,8 @@ export interface PluginsReport {
   usageSources: { instances: InstanceStatus[] };
   /** `actions`: what a running notifier offers the UI (issue #378): `test`, `send-open`. */
   notifiers: { instances: NotifierStatus[] };
+  /** Where vault secrets may be kept outside the hopper (issue #585): 0..n, live. */
+  vaultBackends: { instances: InstanceStatus[] };
   plugins: {
     id: string; role: Role; describe: string; builtin: boolean; path?: string;
     detection: Detection;
@@ -215,24 +217,38 @@ export interface PluginStoreEntry {
 }
 
 /**
- * GET /api/plugin-store. `unavailable`: no plugin store (`reason`). `error`: the last
- * read failed (`error`); `commit`, `checkedAt` and the plugins are the last good read's.
+ * Where the plugin store is (issue #445), an instance setting: the default plugin store, none, or a git
+ * repository (URL or path) an instance admin named. Never set: the default plugin store.
+ */
+export type PluginStoreSource = { kind: 'default' } | { kind: 'none' } | { kind: 'repo'; repo: string };
+
+/**
+ * GET /api/plugin-store. `unavailable`: no plugin store (`reason`); the store installs are still listed,
+ * so they can be removed. `error`: the last read failed (`error`); `commit`, `checkedAt` and the plugins
+ * are the last good read's — of the plugin store `from` when that read was of another one.
  */
 export interface PluginStoreReport {
   state: 'unavailable' | 'ready' | 'error';
   reason?: string;
   error?: string;
-  /** HOPPER_PLUGIN_STORE. */
+  /** The plugin store setting's kind. */
+  source: PluginStoreSource['kind'];
+  /** The plugin store in use: the setting's repository or the default plugin store; absent: none. */
   repo?: string;
+  /** The default plugin store; absent: this build has none. */
+  defaultRepo?: string;
+  /** The plugin store the catalogue shown was read from, when it is not `repo`: nothing installs from it. */
+  from?: string;
   /** The store's head the catalogue was read at. */
   commit?: string;
   checkedAt?: string;
   plugins: PluginStoreEntry[];
 }
 
-/** POST /ui/api/plugin-store. `install` also updates a store install to the store's head. */
+/** POST /ui/api/plugin-store. `install` also updates a store install to the store's head; `source` sets the plugin store and reads it. */
 export type PluginStoreEdit =
   | { action: 'refresh' }
+  | { action: 'source'; source: PluginStoreSource }
   | { action: 'install'; id: string }
   | { action: 'remove'; id: string };
 

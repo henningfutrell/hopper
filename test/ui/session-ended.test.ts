@@ -15,11 +15,11 @@ type Store = {
 const offer = { local: true, none: null, password: false, gateway: false, origin: location.origin, realms: [{ name: 'corp', label: 'Corp SSO', type: 'oidc' }], devices: [], required: false };
 const user = { id: 'u1', name: 'ada', role: 'admin', realm: 'corp', identity: 'Ada', superAdmin: false, instanceAdmin: true };
 
-function daemon(o: { authenticated: boolean; mutation?: number }) {
+function daemon(o: { authenticated: boolean; mutation?: number; refusal?: Record<string, unknown> }) {
   return vi.fn(async (input: string) => {
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
     if (String(input) === '/ui/api/session') return json(o.authenticated ? { authenticated: true, user, signIn: offer } : { authenticated: false, signIn: offer });
-    if (String(input).startsWith('/ui/api/')) return json({ error: 'missing or invalid x-hopper-session' }, o.mutation ?? 403);
+    if (String(input).startsWith('/ui/api/')) return json(o.refusal ?? { error: 'missing or invalid x-hopper-session', session: 'ended' }, o.mutation ?? 403);
     return json({});
   });
 }
@@ -47,6 +47,21 @@ describe('a session that ended while the page was open', () => {
     expect(localStorage.getItem('jh_session')).toBeNull();
     expect(s.useHopper.getState().authed).toBe(false);
   });
+
+  // Issue #696: a save refused for another reason — Access denied it, OpenFGA is down — is that save failing; the person stays signed in.
+  for (const [status, refusal] of [
+    [403, { error: 'access refused: user:u1 may not change system_secret:u1/typesafe-api-key' }],
+    [503, { error: 'access checks are unavailable: OpenFGA is not reachable: connect ECONNREFUSED' }],
+  ] as const) {
+    it(`a ${status} that is not the session's keeps the person signed in`, async () => {
+      const { s, assign } = await openPage();
+      vi.stubGlobal('fetch', daemon({ authenticated: true, mutation: status, refusal }));
+      expect(await s.act('/ui/api/typesafe-key', { action: 'set', value: 'k' })).toBe(false);
+      expect(assign).not.toHaveBeenCalled();
+      expect(localStorage.getItem('jh_session')).toBe('a'.repeat(64));
+      expect(s.useHopper.getState().authed).toBe(true);
+    });
+  }
 
   it('the page\'s own check finds it ended, with no call failing first', async () => {
     const { s, assign } = await openPage();

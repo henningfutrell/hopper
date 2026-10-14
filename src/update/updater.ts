@@ -8,14 +8,15 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
-import type { Clock, InstanceEvents, InstanceSettingsRepository, Restarter, UpdateBuilder, Updater } from '../domain/ports.ts';
-import { isUpdateChannel, type InstallInfo, type UpdateApply, type UpdateSettings, type UpdateStatus, type VersionHistory } from '../domain/types.ts';
-import { createGitMirror, type GitMirror } from './git.ts';
-import { bullets, newSince, WHATS_NEW_FILE } from './whats-new.ts';
+import type { Clock, InstanceEvents, InstanceSettingsRepository, ReleaseCheck, Restarter, UpdateBuilder, Updater } from '../domain/ports.ts';
+import { CANARY_BRANCH } from '../domain/landing-canary.ts';
+import { isUpdateChannel, type InstallInfo, type UpdateApply, type UpdateSettings, type UpdateStatus, type UpdateTarget, type VersionHistory } from '../domain/types.ts';
+import { createGitMirror, type GitMirror, notesAt } from './git.ts';
+import { allBullets, newSince, readNotes, WHATS_NEW_DIR, WHATS_NEW_FILE } from './whats-new.ts';
 import { nextDirOf, readInstallInfo, swapInstall } from './install.ts';
 
 const exec = promisify(execFile);
-const DEFAULTS: UpdateSettings = { channel: 'stable', autoUpdate: false };
+const DEFAULTS: UpdateSettings = { channel: 'stable', autoUpdate: false, canary: false };
 
 /** With no channel chosen: the branch the install came from when it is a channel (issue #282), else `stable` (issue #423). */
 const defaults = (installed: InstallInfo | undefined): UpdateSettings =>
@@ -47,15 +48,17 @@ export interface UpdaterOptions {
   checkMs: number;
   /** How often to look again while waiting on restart blockers. */
   waitMs?: number;
+  /** Whether a newer head may be updated to (issue #652): the merge of a pull request whose checks passed; else it is held. */
+  release: ReleaseCheck;
   /** Default: a bare mirror under `<dataDir>/update/repo.git`. */
   mirror?: GitMirror;
 }
 
 interface Checked {
-  state: 'unavailable' | 'current' | 'available' | 'error';
+  state: 'unavailable' | 'current' | 'available' | 'held' | 'error';
   reason?: string;
   installed?: InstallInfo;
-  target?: { commit: string; ref: string };
+  target?: UpdateTarget;
   whatsNew: string[];
   /** Commits in the target and not installed: the log line and `update.available`, never the UI. */
   commits?: number;
@@ -71,10 +74,9 @@ const messageOf = (e: unknown): string => {
   return firstLine(err.stderr) || firstLine(err.message) || String(e);
 };
 
-/** The newest bullets of the install's own WHATS-NEW.md (install.sh and the image copy it); none without one. */
+/** The newest bullets of the install's own What's new (install.sh and the image copy it); none without it. */
 function installedWhatsNew(appDir: string): string[] {
-  const file = join(appDir, WHATS_NEW_FILE);
-  return existsSync(file) ? bullets(readFileSync(file, 'utf8')).slice(0, INSTALLED_WHATS_NEW) : [];
+  return allBullets(readNotes(appDir)).slice(0, INSTALLED_WHATS_NEW);
 }
 
 /** Imports the new build's composition root in a child process: a module that fails to load fails here, not after the swap. */
@@ -107,11 +109,19 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
   let applyError: string | undefined;
   let checking: Promise<UpdateStatus> | undefined;
   let stopped = false;
+  /** The held target and reason last logged: logged once, not at each check. */
+  let heldWarned: string | undefined;
   const timers: NodeJS.Timeout[] = [];
 
   const settings = (): UpdateSettings => {
     const read = readInstallInfo(o.appDir);
-    return { ...defaults(read.ok ? read.info : undefined), ...o.settings.getUpdateSettings() };
+    const s = { ...defaults(read.ok ? read.info : undefined), ...o.settings.getUpdateSettings() };
+    // An image is updated by its user, never by the hopper (issues #51, #494): a stored auto-update is off for it.
+    return read.ok && read.info.kind === 'image' ? { ...s, autoUpdate: false } : s;
+  };
+  const isImage = (): boolean => {
+    const read = readInstallInfo(o.appDir);
+    return read.ok && read.info.kind === 'image';
   };
   const append = (type: 'update.available' | 'update.started' | 'update.applied' | 'update.failed', data: Record<string, unknown>): void => {
     if (!stopped) o.events.append({ type, data });
@@ -123,7 +133,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
 
   function status(): UpdateStatus {
     const { commits: _commits, ...rest } = checked;
-    const base = { ...settings(), ...rest, installedWhatsNew: installedNews };
+    const base = { ...settings(), ...rest, installedWhatsNew: installedNews, restartBlockers: o.restartBlockers() };
     if (applying) return { ...base, state: 'applying', apply: applying };
     if (applyError) return { ...base, state: 'error', reason: applyError };
     return base;
@@ -137,17 +147,23 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
       return { ...checked, state: 'error', reason: `fetch from ${info.repo} failed: ${messageOf(e)}`, installed: info, checkedAt: at };
     }
     const base = { installed: info, whatsNew: [], checkedAt: at };
-    const { channel } = settings();
+    const { channel, canary } = settings();
     const head = await mirror.branchHead(channel);
     if (!head) return { ...base, state: 'error', reason: `branch ${channel} not found in ${info.repo}` };
-    const target = { commit: head, ref: channel };
-    // Installed from another channel's branch: that channel's head is the target even when the install
+    // In the canary subset (issue #1073 part 5): stable's candidate on `canary`, while it is ahead of stable.
+    const candidate = channel === 'stable' && canary ? await mirror.branchHead(CANARY_BRANCH) : undefined;
+    const early = candidate !== undefined && candidate !== head && (await mirror.contains(candidate, head));
+    const target = early ? { commit: candidate, ref: CANARY_BRANCH } : { commit: head, ref: channel };
+    // Installed from another channel's branch (or the canary's): that branch's head is the target even when the install
     // already contains it — a move to a more stable channel goes back to it (issue #282).
-    const switching = isUpdateChannel(info.branch) && info.branch !== channel;
+    const switching = (isUpdateChannel(info.branch) || info.branch === CANARY_BRANCH) && info.branch !== target.ref;
     if (target.commit === info.commit || (!switching && (await mirror.contains(info.commit, target.commit)))) return { ...base, state: 'current', target };
-    const notes = async (commit: string) => bullets((await mirror.read(commit, WHATS_NEW_FILE)) ?? '');
+    // Only the merge of a pull request whose checks passed is offered (issue #652): nothing else is announced or applied.
+    const verdict = await o.release.verify(info.repo, target.commit);
+    if (!verdict.passed) return { ...base, state: 'held', target, reason: verdict.reason };
+    const notes = async (commit: string) => allBullets(await notesAt(mirror, commit));
     const whatsNew = newSince(await notes(info.commit), await notes(target.commit));
-    return { ...base, state: 'available', target, whatsNew, commits: await mirror.count(info.commit, target.commit) };
+    return { ...base, state: 'available', target: { ...target, pullRequest: verdict.pullRequest }, whatsNew, commits: await mirror.count(info.commit, target.commit) };
   }
 
   async function runCheck(): Promise<UpdateStatus> {
@@ -161,12 +177,16 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     } catch (e) {
       checked = { ...checked, state: 'error', reason: messageOf(e), installed: read.info, checkedAt: now() };
     }
-    if (checked.state === 'error') o.logger.warn(`hopper: update check failed: ${checked.reason}`);
-    applyError = undefined;
     const { target, installed } = checked;
+    if (checked.state === 'error') o.logger.warn(`hopper: update check failed: ${checked.reason}`);
+    if (checked.state === 'held' && target && heldWarned !== `${target.commit} ${checked.reason}`) {
+      heldWarned = `${target.commit} ${checked.reason}`;
+      o.logger.warn(`hopper: update held: ${target.ref} ${short(target.commit)} is not offered: ${checked.reason}`);
+    }
+    applyError = undefined;
     if (checked.state === 'available' && target && installed) {
       if (lastAnnounced() !== target.commit) {
-        append('update.available', { from: installed.commit, to: target.commit, ref: target.ref, changes: checked.commits ?? 0 });
+        append('update.available', { from: installed.commit, to: target.commit, ref: target.ref, changes: checked.commits ?? 0, ...(target.pullRequest ? { pullRequest: target.pullRequest.number } : {}) });
         o.logger.info(`hopper: update available: ${target.ref} ${short(target.commit)} (${checked.commits ?? 0} commit(s) not installed)`);
       }
       if (settings().autoUpdate) apply();
@@ -263,7 +283,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     if (history?.commit === commit) return { versions: history.versions, build };
     if (!(await mirror.has(commit))) await check();
     if (!(await mirror.has(commit))) return { versions: [], build, reason: checked.reason ?? `the installed commit ${short(commit)} is not in ${read.info.repo}` };
-    const versions = (await mirror.added(commit, WHATS_NEW_FILE)).map((v) => ({ commit: v.commit, at: v.at, changes: v.lines }));
+    const versions = (await mirror.added(commit, [WHATS_NEW_FILE, WHATS_NEW_DIR])).map((v) => ({ commit: v.commit, at: v.at, changes: v.lines }));
     history = { commit, versions };
     return { versions, build };
   }
@@ -275,7 +295,9 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     history: versionHistory,
     settings(patch) {
       const before = settings();
-      o.settings.setUpdateSettings(patch);
+      // Auto-update does not apply to an image (issue #494): turning it on there is ignored, never stored.
+      const { autoUpdate: _, ...rest } = patch;
+      o.settings.setUpdateSettings(isImage() ? rest : patch);
       const after = settings();
       // A check already running may have read the old channel: check again once it is done.
       if (after.channel !== before.channel) void (checking ?? Promise.resolve()).catch(() => {}).then(() => check()).catch(() => {});

@@ -1,5 +1,6 @@
-// The sign-in routes (design.md "Sign-in: realms"); the realms themselves are src/auth/. None of them needs a session, so all of them sit behind one per-address
-// rate limit (@fastify/rate-limit, SIGN_IN_RATE a minute) in their own Fastify context. Routes:
+// The sign-in routes (design.md "Sign-in: realms"); the realms themselves are src/auth/. None of them needs a session, so all of them sit behind one per-caller
+// rate limit (@fastify/rate-limit, SIGN_IN_RATE a minute) in their own Fastify context: a caller is its address, or behind the
+// tunnel the address its edge names (issue #795, `tunnelCaller`). Routes:
 //   POST /ui/login                        ← the one-time login code (a form)
 //   POST /ui/auth/none                    → a no-sign-in session (exact UI Origin)
 //   POST /ui/auth/password                ← { username, password }, tried against the LDAP
@@ -27,8 +28,14 @@ import { useLoginCode } from './login-code.ts';
 import type { InstanceAdmin } from '../instance-admin.ts';
 import { sessionUser, type UiSessions } from './sessions.ts';
 
-/** Sign-in attempts a minute from one address, every sign-in route together. */
+/** Sign-in attempts a minute from one caller, every sign-in route together. */
 export const SIGN_IN_RATE = 20;
+
+/** Who a request counts as for the sign-in limit (issue #795): its address, or the tunnel's caller. */
+export type CallerOf = (req: FastifyRequest) => string;
+
+/** The sign-in limit's options: SIGN_IN_RATE a minute per caller. The API-token exchange has its own count of the same. */
+export const signInLimit = (caller: CallerOf) => ({ max: SIGN_IN_RATE, timeWindow: '1 minute', keyGenerator: caller });
 
 const nameParams = z.object({ name: z.string() });
 export const startQuery = z.object({ binding: z.string().optional() });
@@ -86,7 +93,7 @@ export function registerSignInRoutes(parent: FastifyInstance, o: {
   /** The user an identity signs in as (issue #158): linked, or a new one. */
   userFor: (who: Identity) => Promise<User>;
   /** A GitHub sign-in's connection, handed to the session's user (issue #214). */
-  connect: (userId: string, connection: Connection) => void;
+  connect: (userId: string, connection: Connection) => Promise<void> | undefined;
   /** A user's name by id (a login code names its user by id). */
   userName: (id: string) => string;
   /** Whether a session is the hopper's admin's (issue #240). */
@@ -94,9 +101,10 @@ export function registerSignInRoutes(parent: FastifyInstance, o: {
   /** An origin UI mutations come from (loopback, a LAN name, the public URL): no sign-in and password sign-in answer there. */
   isUiOrigin: (origin: string) => boolean;
   refuse: (req: FastifyRequest, reply: FastifyReply, why: string, needs?: UiRole) => unknown;
+  caller: CallerOf;
 }): void {
   parent.register(async (app) => {
-    await app.register(rateLimit, { max: SIGN_IN_RATE, timeWindow: '1 minute' });
+    await app.register(rateLimit, signInLimit(o.caller));
     app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => {
       done(null, Object.fromEntries(new URLSearchParams(body as string)));
     });
@@ -110,7 +118,7 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
   /** A session for `who`, as its user, answered as JSON: the UI stores the token. A GitHub sign-in's connection becomes the user's. */
   const started = async (reply: FastifyReply, who: Identity, role: UiRole, connection?: Connection, extra: Record<string, unknown> = {}) => {
     const user = await o.userFor(who);
-    if (connection) o.connect(user.id, connection);
+    if (connection) await o.connect(user.id, connection);
     const s = sessions.create({ role, identity: who, userId: user.id });
     const shown = sessionUser(s, user.name, isSuperAdmin(signIn.config(), who), o.instanceAdmin(s));
     console.warn(`hopper: UI session started: ${who.realm} ${shown.identity} as user ${user.id}, role ${role}`);

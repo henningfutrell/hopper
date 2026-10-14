@@ -1,0 +1,1 @@
+- When a pull request is merged, closed or pushed to on GitHub, the hopper now sees it within seconds and brings the other pull requests up to date at once, without waiting for its next check.

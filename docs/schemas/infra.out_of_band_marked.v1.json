@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "change": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "gitops",
+        "terraform-plan",
+        "cloudtrail",
+        "kube-audit"
+      ]
+    },
+    "target": {
+      "type": "string"
+    },
+    "what": {
+      "type": "string"
+    },
+    "mark": {
+      "type": "string",
+      "enum": [
+        "adopted",
+        "reverted",
+        "accepted"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "change",
+    "source",
+    "target",
+    "what",
+    "mark",
+    "by"
+  ],
+  "additionalProperties": false
+}

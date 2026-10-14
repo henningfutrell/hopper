@@ -57,7 +57,9 @@ describe('rule drafts', () => {
     expect(draftsProblem([{ ...ok, name: ' ' }])).toMatch(/rule 1: name it/);
     expect(draftsProblem([ok, ok])).toMatch(/urgent: named twice/);
     expect(draftsProblem([{ ...ok, set: { machine: '', executor: '', priority: '', workTree: '' } }])).toMatch(/urgent: set a machine, an executor, a priority or a work tree/);
-    expect(draftsProblem([{ ...ok, set: { machine: '', executor: '', priority: '', workTree: '~/code/app' } }])).toBeUndefined();
+    expect(draftsProblem([{ ...ok, set: { machine: 'laptop', executor: '', priority: '', workTree: '~/code/app' } }])).toBeUndefined();
+    // Issue #361: a work tree is one machine's.
+    expect(draftsProblem([{ ...ok, set: { machine: '', executor: '', priority: '', workTree: '~/code/app' } }])).toMatch(/urgent: a work tree is one machine's: pick the machine too/);
     expect(draftsProblem([{ ...ok, set: { ...ok.set, workTree: 'code/app' } }])).toMatch(/urgent: the work tree is an absolute path or starts with ~/);
     expect(draftsProblem([{ ...ok, set: { ...ok.set, priority: '101' } }])).toMatch(/urgent: priority is a whole number 0..100/);
     expect(draftsProblem([{ ...ok, set: { ...ok.set, priority: '2.5' } }])).toMatch(/priority/);

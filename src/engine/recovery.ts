@@ -4,8 +4,9 @@
 // while the runner asks again, up to the reconnect grace (issue #368). Claimed jobs (nothing ran) and idempotent jobs return to the queue
 // (a pending answer is kept). waiting_answer jobs follow their question. Every other lane closes.
 import type { Job, Question } from '../domain/types.ts';
-import { nowIso, type EngineContext } from './context.ts';
+import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import type { Claim } from './decision-step.ts';
+import { openItemOf } from './reviews.ts';
 
 export interface Recovered {
   /** Jobs whose external work the caller must clean up, after the commit. */
@@ -43,12 +44,12 @@ export async function recover(c: EngineContext): Promise<Recovered> {
   const toClean: string[] = [];
   const fail = (job: Job, error: string): void => {
     store.jobs.update(job.id, { status: 'failed', error, finishedAt: nowIso(c), laneId: undefined, pendingAnswer: undefined });
-    store.events.append({ type: 'job.failed', jobId: job.id, data: { error } });
+    store.events.append({ type: 'job.failed', jobId: job.id, data: { error, ...priorityTagOf(c, job.id) } });
     toClean.push(job.id);
   };
   const requeue = (job: Job, from: string, reason: string, patch: Partial<Job> = {}): void => {
     store.jobs.update(job.id, {
-      status: 'queued', laneId: undefined, holdReason: undefined, waitReason: undefined, progress: undefined, progressMessage: undefined, ...patch,
+      status: 'queued', laneId: undefined, holdReason: undefined, waitReason: undefined, tasks: undefined, progressMessage: undefined, ...patch,
     });
     store.events.append({ type: 'job.requeued', jobId: job.id, data: { from, reason } });
   };
@@ -69,6 +70,9 @@ export async function recover(c: EngineContext): Promise<Recovered> {
       else requeue(job, job.status, 'daemon restart');
     }
     for (const job of store.jobs.list({ status: ['waiting_answer'] })) {
+      // On its proposal or research report (issues #537, #543): it waits on; ReviewService.recover re-drives a review, and
+      // a decision ends it or moves it on.
+      if (!job.questionId && openItemOf(c, job)) continue;
       byQuestion(job, job.questionId ? store.questions.get(job.questionId) : undefined);
     }
     for (const lane of store.lanes.list()) {

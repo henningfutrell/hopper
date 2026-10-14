@@ -7,7 +7,7 @@ const ASK = { output: ['● Which language should the greeting be in?', '  HOPPE
 const DONE_FR = { steps: ['● Writing greeting.txt'], output: ['● I wrote greeting.txt in French.', '  HOPPER_DONE'] };
 
 /** Run to the first question; returns the job as the engine would hand it to resume. */
-async function parked(turns: FakeTurn[]) {
+async function onQuestion(turns: FakeTurn[]) {
   const s = setup({ turns });
   const first = contextFor(jobWith({ prompt: 'Write a greeting' }));
   const out = await s.executor.run(first.ctx);
@@ -18,7 +18,7 @@ async function parked(turns: FakeTurn[]) {
 
 describe('herdr-claude executor: resume', () => {
   it('types the answer once, ignores the previous turn marker, finishes on the new one', async () => {
-    const { herdr, executor, job } = await parked([ASK, DONE_FR]);
+    const { herdr, executor, job } = await onQuestion([ASK, DONE_FR]);
     const { ctx, progress } = contextFor(job, 'local/lane-2');
     const out = await executor.resume!(ctx, 'French.');
     expect(out).toEqual({ kind: 'finished', result: { summary: 'I wrote greeting.txt in French.', paneId: 'w1:p1' } });
@@ -27,13 +27,13 @@ describe('herdr-claude executor: resume', () => {
   });
 
   it('does not report the old question while the resumed turn is still working', async () => {
-    const { executor, job } = await parked([ASK, { steps: ['● a', '● b', '● c'], output: ['● Next: which file name?', '  HOPPER_QUESTION'] }]);
+    const { executor, job } = await onQuestion([ASK, { steps: ['● a', '● b', '● c'], output: ['● Next: which file name?', '  HOPPER_QUESTION'] }]);
     const out = await executor.resume!(contextFor(job).ctx, 'French.');
     expect(out).toMatchObject({ kind: 'question', question: { text: 'Next: which file name?' } });
   });
 
-  it('maps the new lane to the parked pane and saves state with that lane', async () => {
-    const { herdr, executor, job } = await parked([ASK, { ...DONE_FR, steps: ['● a', '● b', '● c'] }]);
+  it('maps the new lane to the waiting pane and saves state with that lane', async () => {
+    const { herdr, executor, job } = await onQuestion([ASK, { ...DONE_FR, steps: ['● a', '● b', '● c'] }]);
     const { ctx, saved } = contextFor(job, 'local/lane-2');
     const resuming = executor.resume!(ctx, 'French.');
     await until(() => herdr.prompts.length === 2);
@@ -44,7 +44,7 @@ describe('herdr-claude executor: resume', () => {
   });
 
   it('sends esc first when Claude is blocked at a dialog and the answer names none of its options', async () => {
-    const { herdr, executor, job } = await parked([{ output: ['● Pick one', '  ❯ 1. Red'], end: 'blocked' }, DONE_FR]);
+    const { herdr, executor, job } = await onQuestion([{ output: ['● Pick one', '  ❯ 1. Red'], end: 'blocked' }, DONE_FR]);
     const out = await executor.resume!(contextFor(job).ctx, 'Green');
     expect(out.kind).toBe('finished');
     const escAt = herdr.calls.findIndex((c) => c.method === 'sendKeys' && (c.args[1] as string[])[0] === 'esc');
@@ -59,7 +59,7 @@ describe('herdr-claude executor: resume', () => {
       output: ['● Bash(rm -rf build)', ' Do you want to proceed?', ' ❯ 1. Yes', "   2. Yes, and don't ask again for rm commands", '   3. No, and tell Claude what to do differently (esc)'],
       end: 'blocked' as const,
     };
-    const { herdr, executor, job } = await parked([dialog, DONE_FR]);
+    const { herdr, executor, job } = await onQuestion([dialog, DONE_FR]);
     const out = await executor.resume!(contextFor(job).ctx, '2');
     expect(out).toEqual({ kind: 'finished', result: { summary: 'I wrote greeting.txt in French.', paneId: 'w1:p1' } });
     expect(herdr.texts.map((t) => t.text)).toContain('2');
@@ -85,7 +85,7 @@ describe('herdr-claude executor: resume', () => {
   });
 
   it('fails with pane lost when the agent is gone', async () => {
-    const { herdr, executor, job } = await parked([ASK]);
+    const { herdr, executor, job } = await onQuestion([ASK]);
     herdr.killAgent('jh-abcdef12');
     expect(await executor.resume!(contextFor(job).ctx, 'French.')).toEqual({ kind: 'failed', error: 'pane lost' });
   });
@@ -126,7 +126,7 @@ describe('herdr-claude executor: cancel, shutdown, cleanup', () => {
   });
 
   it('shutdown during resume also leaves the pane', async () => {
-    const { herdr, executor, job } = await parked([ASK, FOREVER]);
+    const { herdr, executor, job } = await onQuestion([ASK, FOREVER]);
     const { ctx, ac } = contextFor(job);
     const resuming = executor.resume!(ctx, 'French.');
     await until(() => herdr.prompts.length === 2);
@@ -136,7 +136,7 @@ describe('herdr-claude executor: cancel, shutdown, cleanup', () => {
   });
 
   it('cleanup exits Claude and closes the pane from executorState; idempotent and silent', async () => {
-    const { herdr, executor, job } = await parked([ASK]);
+    const { herdr, executor, job } = await onQuestion([ASK]);
     expect(await executor.cleanup!(job)).toEqual({ kept: [] });
     expect(herdr.keys).toEqual([{ paneId: 'w1:p1', keys: ['esc'] }, { paneId: 'w1:p1', keys: ['ctrl+c', 'ctrl+c'] }]);
     expect(herdr.closed).toEqual(['w1:p1']);
@@ -146,7 +146,7 @@ describe('herdr-claude executor: cancel, shutdown, cleanup', () => {
   });
 
   it('cleanup reaps through the machine\'s connection, never the pane, before it closes the pane: the job\'s scope, processes and scratch dir (issues #401, #410)', async () => {
-    const { herdr, executor, job } = await parked([ASK]);
+    const { herdr, executor, job } = await onQuestion([ASK]);
     const typed = herdr.calls.filter((c) => c.method === 'runInPane').length;
     await executor.cleanup!(job);
     const order = herdr.calls.map((c) => c.method);

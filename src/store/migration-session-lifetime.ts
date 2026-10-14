@@ -21,3 +21,22 @@ export function sessionsRenew(db: Db): void {
     ALTER TABLE ui_sessions DROP COLUMN expires_at;
   `);
 }
+
+/** An ISO time as the store keeps it, from a Postgres timestamp expression. */
+const iso = (at: string): string => `to_char((${at}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+
+/**
+ * Migration 28 (issue #527): the table as the build before 27 reads and writes it, beside this build's, until that
+ * build is on no channel (docs/deploy.md "Update channels and promotion"). `expires_at` comes back: a session's
+ * absolute end as it was when made — its own end, else its start plus the default maximum (720 hours) — which that
+ * build sweeps by and this one only writes. The columns that build does not know start when it inserts.
+ */
+export function sessionsTheBuildBeforeReads(db: Db): void {
+  db.exec(`
+    ALTER TABLE ui_sessions ADD COLUMN expires_at TEXT;
+    UPDATE ui_sessions SET expires_at = COALESCE(ends_at, ${iso("started_at::timestamptz + interval '720 hours'")});
+    ALTER TABLE ui_sessions ALTER COLUMN started_at SET DEFAULT ${iso('now()')};
+    ALTER TABLE ui_sessions ALTER COLUMN last_seen_at SET DEFAULT ${iso('now()')};
+    ALTER TABLE ui_sessions ALTER COLUMN checked_at SET DEFAULT ${iso('now()')};
+  `);
+}

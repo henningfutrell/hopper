@@ -9,18 +9,19 @@ import { signInRealms } from './migration-realms.ts';
 import { usersAndOwner } from './migration-users.ts';
 import { ownerToAdmin } from './migration-admin.ts';
 import { noBootstrapUser } from './migration-no-bootstrap.ts';
-import { sessionsRenew } from './migration-session-lifetime.ts';
+import { sessionsRenew, sessionsTheBuildBeforeReads } from './migration-session-lifetime.ts';
 import { attachedMachinesToInstances } from './migration-attached-machines.ts';
+import { RECENT_INSTANCE_MIGRATIONS } from './migrations-recent.ts';
 
 // Schema changes never drop a queue (persisted state is the user's). A migration is SQL, or a
 // function for a rewrite SQL cannot say plainly (JSON bodies); each runs in one transaction.
 //
 // The schema version is the `schema_version` table (design.md "Database"). A new store is created at
-// BASE, version 6; every migration after it is appended to MIGRATIONS. This is the instance track:
+// BASE, version 6; every migration after it is appended to MIGRATIONS — from 37 on, in migrations-recent.ts. This is the instance track:
 // since migration 17 (issue #158) a user's tables live in a user schema with a track of its own
 // (tenant-migrations.ts); a change to them goes there.
 // A function migration is given the version the store had when this run began: 0 for a new store.
-type Migration = string | ((db: Db, from: number) => void);
+export type Migration = string | ((db: Db, from: number) => void);
 
 const BASE_VERSION = 6;
 
@@ -166,7 +167,56 @@ const MIGRATIONS: readonly Migration[] = [
   // 27: sessions renew (issue #439): no fixed expiry; when a session started, was last used and its gateway
   // token last checked out, and the sign-in config's session lengths decide when it ends.
   sessionsRenew,
+  // 28: the UI sessions table as the build before 27 reads and writes it, beside this build's (issue #527): 27 dropped
+  // `expires_at`, and that build, rolled back to on a migrated store, failed every session it made or looked up.
+  sessionsTheBuildBeforeReads,
+  // 29: access (issue #559): the access models, the tuples the hopper pushes to OpenFGA (a revoked one kept with who
+  // and when), what it keeps of OpenFGA (its store and the model pushed there) and every mint decision. New tables
+  // only: the build before never reads them.
+  `
+  CREATE TABLE IF NOT EXISTS access_models (seq BIGSERIAL PRIMARY KEY, dsl TEXT NOT NULL, written_by TEXT NOT NULL, written_at TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS access_tuples (
+    seq BIGSERIAL PRIMARY KEY, subject TEXT NOT NULL, relation TEXT NOT NULL, object TEXT NOT NULL,
+    written_by TEXT NOT NULL, written_at TEXT NOT NULL, revoked_by TEXT, revoked_at TEXT
+  );
+  CREATE UNIQUE INDEX IF NOT EXISTS access_tuples_live ON access_tuples (subject, relation, object) WHERE revoked_at IS NULL;
+  CREATE TABLE IF NOT EXISTS access_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS access_decisions (seq BIGSERIAL PRIMARY KEY, id TEXT NOT NULL UNIQUE, at TEXT NOT NULL, body TEXT NOT NULL);
+  `,
+  // 30: a join code may name the template the machine joins as (issue #558). A column only: the build before runs on it.
+  'ALTER TABLE join_codes ADD COLUMN IF NOT EXISTS template TEXT;',
+  // 31: an access decision names its requester (issue #581): a decision for a job names the job as the requester. The
+  // build before reads a decision with no job as a trial's: it still runs.
+  decisionsNameTheirRequester,
+  // 32: a join code may name the sandbox box the hopper launched with it (issue #603). A column only: the build before
+  // runs on it.
+  'ALTER TABLE join_codes ADD COLUMN IF NOT EXISTS container TEXT;',
+  // 33: the instance's vault (issue #658): the hopper's own secrets for the whole hopper — its sign-in realms' secrets —
+  // as system secrets, sealed. A table only: the build before never reads it, and finds the realms' secrets gone from
+  // the sign-in record once a start of this build has moved them.
+  'CREATE TABLE IF NOT EXISTS vault_secrets (seq BIGSERIAL PRIMARY KEY, id TEXT NOT NULL UNIQUE, name TEXT NOT NULL UNIQUE, sealed TEXT, body TEXT NOT NULL);',
+  // 34: the sandbox records (issue #708): one row per sandbox box the hopper launched, which its sandbox module
+  // reconciles from. A table only: the build before never reads it, and keeps the boxes it finds by their labels.
+  'CREATE TABLE IF NOT EXISTS sandboxes (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL, body TEXT NOT NULL);',
+  // 35: API tokens (issue #718): a session row of kind `api`, with its label. The build before reads every row as a UI
+  // session, and an API token comes in `Authorization`, which it never reads as one: there it signs nobody in.
+  "ALTER TABLE ui_sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'ui'; ALTER TABLE ui_sessions ADD COLUMN label TEXT;",
+  // 36: box tokens (issue #795): an API token a person minted with `box`, which alone may do box actions. Every token
+  // there is is no box token. The build before never reads the column: there every API token may do what its role allows.
+  'ALTER TABLE ui_sessions ADD COLUMN box INTEGER NOT NULL DEFAULT 0;',
+  // 37 on: in migrations-recent.ts, where a new one is appended.
+  ...RECENT_INSTANCE_MIGRATIONS,
 ];
+
+
+/** Each recorded access decision's `job` becomes its `requester`, of kind job; the rest of the record is kept. */
+function decisionsNameTheirRequester(db: Db): void {
+  for (const r of db.all('SELECT id, body FROM access_decisions')) {
+    const { job, ...rest } = JSON.parse(String(r.body)) as { job?: { userId: string; jobId: string } } & Record<string, unknown>;
+    if (!job) continue;
+    db.run('UPDATE access_decisions SET body = ? WHERE id = ?', JSON.stringify({ ...rest, requester: { kind: 'job', userId: job.userId, jobId: job.jobId } }), r.id as string);
+  }
+}
 
 /**
  * An ssh-attached machine that named no session ran its jobs in `job-hopper`, the session its own unit
@@ -338,6 +388,15 @@ function webhooksDocumentToRows(db: Db): void {
   db.run("DELETE FROM config_documents WHERE name = 'webhooks.yaml'");
 }
 
+/**
+ * Why a build stops on a store a newer build migrated (issue #527): it would run on a schema it does not know
+ * (AGENTS.md "Persisted state is the user's"). Nothing is changed; the newer build, or a backup of the store
+ * from before it, runs again.
+ */
+export const newerStore = (what: string, known: number): string =>
+  `${what}, newer than this build's ${known}: a newer hopper migrated it. Run that release or a newer one again`
+  + ' (docs/deploy.md "Update channels and promotion"), or restore a backup of the database taken before it.';
+
 /** The instance schema's version once migrated. */
 export const INSTANCE_SCHEMA_VERSION = BASE_VERSION + MIGRATIONS.length;
 
@@ -358,11 +417,9 @@ function step(db: Db, m: Migration, from: number, record: () => void): void {
 export function migrateInstance(db: Db, to = INSTANCE_SCHEMA_VERSION): void {
   db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)');
   const version = (): number => Number(db.get('SELECT version FROM schema_version')?.version ?? 0);
-  const record = (v: number) => () => {
-    db.run('DELETE FROM schema_version');
-    db.run('INSERT INTO schema_version (version) VALUES (?)', v);
-  };
+  const record = (v: number) => () => { db.run('DELETE FROM schema_version'); db.run('INSERT INTO schema_version (version) VALUES (?)', v); };
   const from = version();
+  if (from > INSTANCE_SCHEMA_VERSION) throw new Error(newerStore(`the database's instance schema is at version ${from}`, INSTANCE_SCHEMA_VERSION));
   if (from === 0) step(db, BASE, from, record(BASE_VERSION));
   for (let v = version(); v < to; v++) step(db, MIGRATIONS[v - BASE_VERSION]!, from, record(v + 1));
 }

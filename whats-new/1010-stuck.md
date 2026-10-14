@@ -1,0 +1,1 @@
+- Failures now starts with a Stuck list. It counts everything that waits on you by its cause. Where the hopper can move them all, one button does it for each one, for example Run again or Tend again. Otherwise it says what you must do.

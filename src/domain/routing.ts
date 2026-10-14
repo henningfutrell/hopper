@@ -23,7 +23,7 @@ export interface RoutingSet {
   executor?: string;
   /** 0..100. */
   priority?: number;
-  /** The job's work tree (issue #324): an absolute path or one under `~`, resolved on the job's machine. */
+  /** The job's work tree (issue #324): an absolute path or one under `~`, resolved on the job's machine. Only with `machine` (issue #361): a path is one machine's. */
   workTree?: string;
 }
 

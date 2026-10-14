@@ -72,6 +72,24 @@ afterEach(() => {
 });
 
 describe('the reap at job end (issue #401)', () => {
+  it('removes the job\'s TMPDIR link to its scratch dir (issue #506), never a link that points elsewhere', () => {
+    const id = `job-506-${process.pid}`;
+    const own = join(root, 'work', '.hopper-scratch', id);
+    mkdirSync(own, { recursive: true });
+    const link = `/tmp/hopper-${id}`;
+    try {
+      symlinkSync(own, link);
+      expect(reap(id, own)).toContain(REAP_DONE);
+      expect(() => lstatSync(link)).toThrow();
+      symlinkSync(root, link);
+      mkdirSync(own, { recursive: true });
+      expect(reap(id, own)).toContain(REAP_DONE);
+      expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    } finally {
+      rmSync(link, { force: true });
+    }
+  });
+
   it.runIf(existsSync('/proc/self/environ'))('stops every process carrying the job\'s HOPPER_JOB_ID, never another job\'s, nor itself when run with that id', () => {
     const mine = [straggler(JOB), straggler(JOB)];
     const theirs = straggler(OTHER);
@@ -162,8 +180,9 @@ describe('the reap stops the job\'s scope (issue #410)', () => {
     const id = `${JOB}-${process.pid}`;
     const marker = `jh-410-escapee-${process.pid}`;
     // The scope's own shell starts the escapee: no HOPPER_JOB_ID, its own session, nothing tying it to the job but its cgroup.
+    // bash, for `exec -a`: dash, a distribution's sh, has none (issue #672).
     execFileSync('systemd-run', ['--user', '--scope', '--quiet', '--collect', `--unit=${unit}`, '-p', 'KillMode=control-group', '-p', 'TimeoutStopSec=10s', '--',
-      'sh', '-c', `env -i setsid sh -c 'exec -a ${marker} sleep 300' </dev/null >/dev/null 2>&1 &`], { timeout: 10000 });
+      'sh', '-c', `env -i setsid bash -c 'exec -a ${marker} sleep 300' </dev/null >/dev/null 2>&1 &`], { timeout: 10000 });
     const running = (): boolean => spawnSync('pgrep', ['-f', marker]).status === 0;
     expect(running()).toBe(true);
     expect(reap(id, '')).toContain(REAP_DONE);
@@ -251,6 +270,11 @@ describe('what a client takes in a /reap or /survey body (issue #410)', () => {
   it('a job id and its own scratch dir, or work trees: nothing else reaches the script', () => {
     expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.hopper-scratch/${JOB}` })).toEqual(reapArgv(JOB, `/w/.hopper-scratch/${JOB}`));
     expect(scriptArgvOf('/reap', { jobId: JOB })).toEqual(reapArgv(JOB));
+    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.hopper-scratch/${JOB}`, keep: true })).toEqual(reapArgv(JOB, `/w/.hopper-scratch/${JOB}`, true));
+    expect(scriptArgvOf('/reap', { jobId: JOB, keep: 'yes' })).toBe('keep must be true or false');
+    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.hopper-scratch/${JOB}`, discard: true })).toEqual(reapArgv(JOB, `/w/.hopper-scratch/${JOB}`, false, true));
+    expect(scriptArgvOf('/reap', { jobId: JOB, discard: 'yes' })).toBe('discard must be true or false');
+    expect(scriptArgvOf('/reap', { jobId: JOB, scratch: `/w/.hopper-scratch/${JOB}`, keep: true, discard: true })).toBe('keep and discard cannot both be true');
     expect(scriptArgvOf('/reap', { jobId: '-rf' })).toBe('jobId must be a job id');
     expect(scriptArgvOf('/reap', { jobId: 'a*' })).toBe('jobId must be a job id');
     expect(scriptArgvOf('/reap', { jobId: JOB, scratch: '/home/me' })).toBe('scratch must be the job\'s own scratch dir');
@@ -258,5 +282,50 @@ describe('what a client takes in a /reap or /survey body (issue #410)', () => {
     expect(scriptArgvOf('/survey', { roots: ['/w', '/x'] })).toEqual(surveyArgv(['/w', '/x']));
     expect(scriptArgvOf('/survey', { roots: ['relative'] })).toBe('roots must be at most 256 absolute paths');
     expect(scriptArgvOf('/survey', {})).toBe('roots must be at most 256 absolute paths');
+  });
+});
+
+describe('the reap at a timeout (issue #630): the scratch dir kept, and what the job pushed said', () => {
+  const keeping = (): string => { const [file, ...args] = reapArgv(JOB, scratch, true); return execFileSync(file!, args, { encoding: 'utf8', timeout: 30000 }); };
+  const commit = (dir: string, name: string): void => { writeFileSync(join(dir, name), `${name}\n`); git(dir, 'add', '.'); git(dir, 'commit', '-q', '-m', name); };
+
+  it('keeps a clean scratch dir, and names each repository whose branch it pushed beyond the default branch', () => {
+    const repo = join(scratch, 'repo');
+    cloneAt(repo);
+    git(repo, 'checkout', '-q', '-b', 'issue-1');
+    commit(repo, 'b.txt');
+    git(repo, 'push', '-q', 'origin', 'issue-1');
+    cloneAt(join(scratch, 'untouched'));
+    expect(readReap(keeping())).toEqual({ kept: [], pushed: [repo] });
+    expect(existsSync(join(repo, 'b.txt'))).toBe(true);
+  });
+
+  it('local commits on top of a pushed branch: kept, and pushed', () => {
+    const repo = join(scratch, 'repo');
+    cloneAt(repo);
+    git(repo, 'checkout', '-q', '-b', 'issue-1');
+    commit(repo, 'b.txt');
+    git(repo, 'push', '-q', 'origin', 'issue-1');
+    commit(repo, 'c.txt');
+    expect(readReap(keeping())).toEqual({ kept: [repo], pushed: [repo] });
+  });
+
+  it('a branch with commits no remote has is not pushed', () => {
+    const repo = join(scratch, 'repo');
+    cloneAt(repo);
+    git(repo, 'checkout', '-q', '-b', 'issue-1');
+    commit(repo, 'b.txt');
+    expect(readReap(keeping())).toEqual({ kept: [repo] });
+    expect(existsSync(scratch)).toBe(true);
+  });
+
+  it('the reap at a job\'s end says what was pushed too, and removes the clean scratch dir', () => {
+    const repo = join(scratch, 'repo');
+    cloneAt(repo);
+    git(repo, 'checkout', '-q', '-b', 'issue-1');
+    commit(repo, 'b.txt');
+    git(repo, 'push', '-q', 'origin', 'issue-1');
+    expect(readReap(reap())).toEqual({ kept: [], pushed: [repo] });
+    expect(existsSync(scratch)).toBe(false);
   });
 });

@@ -22,10 +22,10 @@ const typesFor = (events: DomainEvent[], jobId: string) => events.filter((e) => 
 
 describe('jobs pulled from a source', () => {
   it('an item becomes one queued job with the source spec, its source ref, and a clamped priority', async () => {
-    const job = await t.pull({ op: 'echo', message: 'hi' }, { title: 'Say hi', author: 'owner', priority: 500, cwd: '/tmp/w', env: { HOPPER_X: '1' } });
+    const job = await t.pull({ op: 'echo', message: 'hi' }, { title: 'Say hi', author: 'owner', priority: 500, env: { HOPPER_X: '1' } });
     expect(job).toMatchObject({ priority: 100, approved: false });
     expect(job.spec).toEqual({
-      executor: 'scripted', payload: { prompt: '{"op":"echo","message":"hi"}', body: 'body', cwd: '/tmp/w', env: { HOPPER_X: '1' } },
+      executor: 'scripted', payload: { prompt: '{"op":"echo","message":"hi"}', body: 'body', env: { HOPPER_X: '1' } },
       priority: 100, goal: 'Say hi', submittedBy: 'manual:owner', kind: 'coding',
     });
     expect(job.source).toMatchObject({ source: 'manual', kind: 'manual', key: expect.any(String), title: 'Say hi', author: 'owner' });
@@ -66,6 +66,17 @@ describe('jobs pulled from a source', () => {
     await t.waitForStatus(b.id, 'finished');
     expect((await t.api<{ jobs: Job[] }>('GET', '/api/jobs?status=queued,held')).body.jobs).toEqual([]);
     expect((await t.api('GET', '/api/jobs?status=bogus')).status).toBe(400);
+  });
+
+  // Issue #794: the job's progress is its task count; a progress message alone keeps the count it has.
+  it('a job keeps the task count it reported last, with its last progress message; job.progressed carries no fraction', async () => {
+    const job = await t.pull({ op: 'echo', progress: [[1, 3], 'running the tests', [2, 3], 'opening the pull request'] });
+    const done = await t.waitForStatus(job.id, 'finished');
+    expect(done).toMatchObject({ tasks: { done: 2, total: 3 }, progressMessage: 'opening the pull request' });
+    expect(done).not.toHaveProperty('progress');
+    const progressed = (await t.events('types=job.progressed')).filter((e) => e.jobId === job.id);
+    expect(progressed.at(-1)?.data).toEqual({ message: 'opening the pull request', tasks: { done: 2, total: 3 } });
+    expect(progressed.every((e) => !('progress' in e.data))).toBe(true);
   });
 
   it('a sleep job runs to finished with the full event sequence, and the source hears claimed then finished', async () => {
@@ -199,7 +210,7 @@ describe('jobs pulled from a source', () => {
     expect(ended).toEqual(ids.slice(1).reverse());
   });
 
-  it('re-sorting: a changed item priority reprioritizes a waiting job (job.reprioritized), never a running one', async () => {
+  it('re-sorting: a changed item priority reprioritizes a waiting job (job.reprioritized), and a running one: the live priority (issue #535)', async () => {
     t.setUsage(100);
     const waiting = await t.pull({ op: 'echo' }, { key: 'resort-1', priority: 40 });
     t.source.add(manualItem({ key: 'resort-1', prompt: '{"op":"echo"}', priority: 80, priorityReason: 'label:hopper:high' }));
@@ -215,7 +226,8 @@ describe('jobs pulled from a source', () => {
     await t.waitForStatus(running.id, 'running');
     t.source.add(manualItem({ key: 'resort-2', prompt: '{"op":"sleep","ms":5000}', priority: 90 }));
     await t.sync();
-    expect((await t.job(running.id)).priority).toBe(30);
+    expect((await t.job(running.id)).priority).toBe(90);
+    expect((await t.job(running.id)).status).toBe('running');
   });
 
   it('serves health', async () => {

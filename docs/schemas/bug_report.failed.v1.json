@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string"
+    },
+    "error": {
+      "type": "string"
+    },
+    "jobId": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    },
+    "fromJob": {
+      "type": "boolean",
+      "const": true
+    }
+  },
+  "required": [
+    "repo",
+    "error",
+    "by"
+  ],
+  "additionalProperties": false
+}

@@ -2,7 +2,9 @@
 // Integration tests pull every non-GitHub job through it (nothing pushes jobs to the hopper).
 // Like the GitHub source's markers (hopper:done, hopper:failed, hopper:rejected), a reported finished, failed or rejected end
 // stops the item being offered; add it again to re-run it, or run its job again (`rerun` offers it again and answers it).
+// A hand-off's resolution (issue #551) is kept in `resolutions`. What an item's work shows (issue #621) is set by hand.
 import type { JobSource, SourceItem, SourceReport, SourceSignal } from '../../src/domain/ports.ts';
+import type { HandoffResolution, WorkPullRequest } from '../../src/domain/types.ts';
 
 export interface ManualSource extends JobSource {
   /** Offer an item from the next sync on (replaces one with the same key). */
@@ -10,7 +12,17 @@ export interface ManualSource extends JobSource {
   remove(key: string): void;
   /** Raise a signal on the next sync's check. */
   signal(s: SourceSignal): void;
+  /** Close the item at the source, as an issue closed on GitHub (issue #529): `workState` answers `closed`. */
+  close(key: string): void;
+  /** What the item's work shows (issue #621): its pull requests, and `done` once closed as completed. */
+  setWork(key: string, work: { item?: 'open' | 'done'; pullRequests: WorkPullRequest[] }): void;
   readonly reports: SourceReport[];
+  /** The hand-off resolutions it was told (issue #551), in order. */
+  readonly resolutions: { jobId: string; resolution: HandoffResolution }[];
+  /** A pull request of the item's own job is open (issue #630): `pullRequestOpen` answers true. */
+  openPullRequest(key: string): void;
+  /** From now on `pullRequestOpen` fails, as a source that is down. */
+  failPullRequestLookups(): void;
 }
 
 let counter = 0;
@@ -19,7 +31,7 @@ export function manualItem(o: Partial<SourceItem> = {}): SourceItem {
   const key = o.key ?? `manual:${++counter}:${Date.now()}`;
   return {
     key, url: `https://example.invalid/${encodeURIComponent(key)}`, title: `item ${key}`, body: 'body', prompt: 'prompt',
-    env: {}, author: 'owner', priority: 50, priorityReason: 'default', cwd: '/tmp', labels: [],
+    env: {}, author: 'owner', priority: 50, priorityReason: 'default', labels: [],
     executor: 'scripted', ...o,
   };
 }
@@ -27,16 +39,36 @@ export function manualItem(o: Partial<SourceItem> = {}): SourceItem {
 export function createManualSource(name = 'manual'): ManualSource {
   const items = new Map<string, SourceItem>();
   const ended = new Map<string, SourceItem>();
+  const closed = new Set<string>();
+  const work = new Map<string, { item?: 'open' | 'done'; pullRequests: WorkPullRequest[] }>();
+  const pullRequests = new Set<string>();
+  let lookupsFail = false;
   let signals: SourceSignal[] = [];
   const reports: SourceReport[] = [];
+  const resolutions: { jobId: string; resolution: HandoffResolution }[] = [];
   return {
     name,
     kind: 'manual',
     reports,
+    resolutions,
+    async resolved(job, resolution) { resolutions.push({ jobId: job.id, resolution }); },
     describe: () => ({ items: items.size }),
     add(item) { items.set(item.key, item); },
     remove(key) { items.delete(key); },
     signal(s) { signals.push(s); },
+    close(key) { closed.add(key); items.delete(key); },
+    setWork(key, w) { work.set(key, w); },
+    async workState(job) {
+      const key = job.source!.key;
+      const w = work.get(key);
+      return { item: closed.has(key) ? 'closed' : w?.item ?? 'open', pullRequests: w?.pullRequests ?? [] };
+    },
+    openPullRequest(key) { pullRequests.add(key); },
+    failPullRequestLookups() { lookupsFail = true; },
+    async pullRequestOpen(job) {
+      if (lookupsFail) throw new Error('the source is down');
+      return pullRequests.has(job.source!.key);
+    },
     async discover() { return [...items.values()]; },
     async check(active) {
       const ids = new Set(active.map((j) => j.id));

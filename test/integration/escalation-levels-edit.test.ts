@@ -66,12 +66,12 @@ describe('POST /ui/api/plugins — escalation levels', () => {
     expect(read(a)).toEqual({ ...LEVELS, escalationLevels: [LEVELS.escalationLevels[1], LEVELS.escalationLevels[0]] });
   });
 
-  it('move with no section: the built-in levels are written, in the new order', async () => {
+  it('move with no section: the one built-in level stays where it is (#632)', async () => {
     const { a, token } = await start({ version: 1, executors: [{ name: 'test', plugin: 'test' }] });
     const version = (await report(a)).config.version;
-    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'move', role: 'escalation-level', name: 'level-2', to: 0, version }, { token });
+    const r = await a.ui<Reply>('/ui/api/plugins', { action: 'move', role: 'escalation-level', name: 'level-1', to: 0, version }, { token });
     expect(r.status).toBe(200);
-    expect(read(a).escalationLevels.map((l: { name: string }) => l.name)).toEqual(['level-2', 'level-1']);
+    expect((await report(a)).escalationLevels.map((l: { instance: { name: string } }) => l.instance.name)).toEqual(['level-1']);
   });
 
   it('move refused, nothing written: an unknown level (404), a position out of range (400), another role (400), no session (403)', async () => {
@@ -84,5 +84,21 @@ describe('POST /ui/api/plugins — escalation levels', () => {
     expect((await move({ role: 'executor', name: 'test' })).status).toBe(400);
     expect((await move({}, false)).status).toBe(403);
     expect(read(a)).toEqual(LEVELS);
+  });
+});
+
+// Issue #444: the levels have one editor (Question gates); the change is the UI's alone, so a stored list
+// starts unchanged: its order, names and options, a level with no machine picked included.
+describe('stored escalation levels across a start', () => {
+  it('custom, reordered and machine-less levels read back exactly as stored', async () => {
+    const levels = [
+      { name: 'careful', plugin: 'claude-cli', options: { model: 'fable', machine: 'local', timeoutMs: 60000 } },
+      { name: 'level-1', plugin: 'claude-cli', options: { model: 'opus' } },
+      { name: 'quick', plugin: 'claude-cli', options: { model: 'sonnet', machine: 'local' } },
+    ];
+    const { a } = await start({ version: 1, escalationLevels: levels, executors: [{ name: 'test', plugin: 'test' }] });
+    expect(read(a).escalationLevels).toEqual(levels);
+    const r = await report(a);
+    expect(r.escalationLevels.map((l: { instance: unknown }) => l.instance)).toEqual(levels);
   });
 });

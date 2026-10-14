@@ -1,0 +1,1 @@
+- When a batch cannot move on because the tested branch has changes the batch lacks, the hopper now brings those changes in by itself, and opens an issue when it cannot.

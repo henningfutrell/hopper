@@ -35,17 +35,17 @@ const view = (hash: string) => async (page: Page) => {
 };
 
 const SHOTS: Shot[] = [
-  { name: 'queue', viewport: { width: 1440, height: 1010 }, go: view('#overview') },
+  { name: 'queue', viewport: { width: 1440, height: 1010 }, go: view('#dashboard') },
   {
     name: 'job', viewport: { width: 1440, height: 1010 },
     async go(page) {
-      await view('#overview')(page);
+      await view('#dashboard')(page);
       // A run's tooltip: the job that asked, its question strip along the foot of its lane.
-      const wait = page.locator('[data-overview-panel=timeline] rect[data-wait]').first();
+      const wait = page.locator('[data-dashboard-panel=timeline] rect[data-wait]').first();
       await wait.hover({ force: true });
       await settle(page, 500);
     },
-    pick: (page) => page.locator('[data-overview-panel=timeline]'),
+    pick: (page) => page.locator('[data-dashboard-panel=timeline]'),
   },
   {
     name: 'question', viewport: { width: 1440, height: 760 },
@@ -62,7 +62,7 @@ const SHOTS: Shot[] = [
   { name: 'plugins', go: view('#settings/plugins') },
   { name: 'queue-order', go: view('#queue') },
   { name: 'sign-in', signedOut: true, go: (page) => settle(page, 2500) },
-  { name: 'phone', viewport: PHONE, scale: 2, go: view('#overview') },
+  { name: 'phone', viewport: PHONE, scale: 2, go: view('#dashboard') },
   { name: 'phone-question', viewport: PHONE, scale: 2, go: view('#questions') },
 ];
 
@@ -104,11 +104,11 @@ async function animate(browser: Browser, demo: Demo, token: string, frames = 40,
   await context.addInitScript((t) => localStorage.setItem('jh_session', t), token);
   await sealed(context);
   const page = await context.newPage();
-  await page.goto(`${demo.url}/#overview`);
+  await page.goto(`${demo.url}/#dashboard`);
   await settle(page, 2500);
-  const lanes = await page.locator('[data-overview-panel=lanes]').boundingBox();
-  const waiting = await page.locator('[data-overview-panel=waiting]').boundingBox();
-  if (!lanes || !waiting) throw new Error('screenshots: the Lanes and Waiting panels are not on the overview');
+  const lanes = await page.locator('[data-dashboard-panel=lanes]').boundingBox();
+  const waiting = await page.locator('[data-dashboard-panel=waiting]').boundingBox();
+  if (!lanes || !waiting) throw new Error('screenshots: the Lanes and Waiting panels are not on the dashboard');
   const clip = { x: lanes.x, y: lanes.y, width: waiting.x + waiting.width - lanes.x, height: Math.max(lanes.height, waiting.height) };
   const shots: Buffer[] = [];
   for (let i = 0; i < frames; i++) {

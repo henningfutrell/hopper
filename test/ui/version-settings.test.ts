@@ -15,6 +15,7 @@ const UPDATE = {
   state: 'current', channel: 'stable', autoUpdate: false, whatsNew: [],
   installed: { kind: 'install', repo: 'git@github.com:o/r.git', branch: 'stable', commit: COMMIT, installedAt: '2026-10-06T10:00:00Z' },
   installedWhatsNew: ['You can now do the newest thing.', 'An older change.'],
+  restartBlockers: 0,
   checkedAt: '2026-10-06T10:01:00Z',
 };
 let root: Root | undefined;
@@ -95,7 +96,7 @@ describe('the version, without an update notice', () => {
 
   it('the header version is a visible, labelled control', async () => {
     await render('../../ui/src/app/header.tsx', 'Header');
-    const button = document.querySelector<HTMLButtonElement>('button[aria-label="Version and updates"]');
+    const button = document.querySelector<HTMLButtonElement>('button[aria-label^="Version and updates"]');
     expect(button?.textContent).toContain('0.1.0');
     expect(button?.querySelector('svg')).not.toBeNull();
     expect(button?.className).toMatch(/(^|\s)border(\s|$)/);
@@ -155,12 +156,160 @@ describe('a build that does not know all of itself (issue #409)', () => {
     expect(document.querySelectorAll('[data-slot="version-history"] [data-slot="version"]')).toHaveLength(2);
   });
 
-  it('an image build offers no Update now: it says to pull or rebuild the image', async () => {
+  it('an image build offers no Update now: it says to pull the image', async () => {
     window.location.hash = '#settings/version';
     const target = { commit: 'beef'.padEnd(40, '0'), ref: 'stable' };
     await render('../../ui/src/views/settings.tsx', 'Settings', { update: { ...UPDATE, state: 'available', target, installed: { ...UPDATE.installed, kind: 'image' } } });
     const details = document.querySelector('[data-slot="version-details"]');
     expect([...details!.querySelectorAll('button')].map((b) => b.textContent)).not.toContain('Update now');
-    expect(details!.textContent).toMatch(/pull or rebuild the image/);
+    expect(details!.textContent).toMatch(/pull the stable image/);
+  });
+});
+
+describe('a container install is updated by its user (issue #494)', () => {
+  const target = { commit: 'beef'.padEnd(40, '0'), ref: 'dev' };
+  const image = { ...UPDATE, state: 'available', channel: 'dev', target, restartBlockers: 2, installed: { ...UPDATE.installed, kind: 'image' } };
+  const autoUpdate = () => document.querySelector('[data-slot="version-details"] [aria-label="Auto-update"]');
+
+  it('Version offers no Auto-update switch on an image install, and says why', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings', { update: { ...image, autoUpdate: true } });
+    expect(autoUpdate()).toBeNull();
+    expect(document.querySelector('[data-slot="auto-update-image"]')?.textContent).toMatch(/Auto-update does not apply to a container/);
+  });
+
+  it('a host install keeps the Auto-update switch', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings');
+    expect(autoUpdate()).not.toBeNull();
+    expect(document.querySelector('[data-slot="image-update"]')).toBeNull();
+  });
+
+  it('Version gives the copyable commands for the selected channel\'s tag, the tag mismatch and the restart-blocker count', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings', { update: image });
+    const block = document.querySelector('[data-slot="image-update"]')!;
+    const text = block.textContent ?? '';
+    expect(text).toContain('podman compose exec -T postgres pg_dump -U hopper -d hopper -Fc > hopper-backup.dump');
+    // The check that podman compose sees the stack that runs (issue #1063).
+    expect(text).toContain('podman compose does not see the hopper stack that runs');
+    expect(text).toContain('podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:dev hopper update carry --image ghcr.io/henningfutrell/hopper:dev < compose.yaml > compose.yaml.next');
+    expect(text).toContain('diff -u compose.yaml compose.yaml.next');
+    expect(text).toContain('cp compose.yaml compose.yaml.bak && mv compose.yaml.next compose.yaml');
+    expect(text).toContain('HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:dev podman compose up -d');
+    expect(text).toContain('PODMAN_COMPOSE_PROVIDER=podman-compose');
+    expect(text).not.toContain('--no-deps');
+    expect(text).toContain('podman image prune -f --filter label=org.opencontainers.image.title=hopper');
+    expect(text).toContain('this container runs the stable image; the selected channel is dev: switch the image tag');
+    expect(text).toContain('2 running jobs would be lost');
+    expect([...block.querySelectorAll('button')].filter((b) => b.textContent === 'Copy').length).toBe(8);
+  });
+
+});
+
+describe('the release notes in Version and updates (issue #493)', () => {
+  const TARGET = 'beef123'.padEnd(40, '0');
+  const notes = (n: number, what: string) => Array.from({ length: n }, (_, i) => `${what} change ${i + 1}.`);
+  const pending = (o: Record<string, unknown> = {}) => ({ ...UPDATE, state: 'available', target: { commit: TARGET, ref: 'stable' }, whatsNew: notes(2, 'Update'), ...o });
+  const details = () => document.querySelector('[data-slot="version-details"]')!;
+  const section = (name: string) => details().querySelector(`[data-slot="${name}"]`);
+
+  it('names each list for what it is: the update brings the target commit, the installed one is already running', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings', { update: pending() });
+    expect(section('update-notes')?.querySelector('h3')?.textContent).toBe('Coming in the update · stable beef123');
+    expect(section('installed-notes')?.querySelector('h3')?.textContent).toBe('Already installed · stable c0ffee1');
+    expect(section('update-notes')?.textContent).toContain('Update change 1.');
+    expect(section('installed-notes')?.textContent).toContain('You can now do the newest thing.');
+    const both = [...details().querySelectorAll('[data-slot$="-notes"]')].map((e) => e.getAttribute('data-slot'));
+    expect(both).toEqual(['update-notes', 'installed-notes']);
+  });
+
+  it('no list scrolls in a box of its own', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings', { update: pending({ whatsNew: notes(40, 'Update') }) });
+    expect(details().querySelector('[class*="overflow-y-auto"], [class*="max-h-"]')).toBeNull();
+  });
+
+  it('a long list shows its first five and a Show all that opens the rest in place', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings', { update: pending({ whatsNew: notes(8, 'Update') }) });
+    const update = section('update-notes')!;
+    expect(update.querySelectorAll('li')).toHaveLength(5);
+    const more = [...update.querySelectorAll('button')].find((b) => b.textContent === 'Show all 8');
+    expect(more).toBeDefined();
+    await act(async () => more!.click());
+    expect(update.querySelectorAll('li')).toHaveLength(8);
+    expect([...update.querySelectorAll('button')].map((b) => b.textContent)).toContain('Show fewer');
+  });
+
+  it('with no update pending there is no update list, and the installed one reads on its own', async () => {
+    window.location.hash = '#settings/version';
+    await render('../../ui/src/views/settings.tsx', 'Settings');
+    expect(section('update-notes')).toBeNull();
+    expect(section('installed-notes')?.querySelector('h3')?.textContent).toBe('In this version · stable c0ffee1');
+  });
+
+  it('the header sheet shows the same lists', async () => {
+    await render('../../ui/src/app/header.tsx', 'Header', { update: pending() });
+    await act(async () => document.querySelector<HTMLButtonElement>('button[aria-label^="Version and updates"]')!.click());
+    const sheet = document.querySelector('[data-slot="version-details"]');
+    expect(sheet?.querySelector('[data-slot="update-notes"] h3')?.textContent).toBe('Coming in the update · stable beef123');
+    expect(sheet?.querySelector('[data-slot="installed-notes"] h3')?.textContent).toBe('Already installed · stable c0ffee1');
+  });
+
+  it("the update notice's What's new still opens the update's notes", async () => {
+    await render('../../ui/src/app/update.tsx', 'UpdateNotice', { update: pending() });
+    const open = [...document.querySelectorAll('button')].find((b) => b.textContent === "What's new");
+    await act(async () => open!.click());
+    expect(document.querySelector('[data-update-notice]')?.textContent).toContain('Update change 2.');
+  });
+});
+
+describe('the header badge names the update channel (issue #497)', () => {
+  const badge = () => document.querySelector<HTMLButtonElement>('button[aria-label^="Version and updates"]')!;
+  const tag = () => badge().querySelector('[data-slot="badge-channel"]');
+  const on = (channel: string, branch: string, o: Record<string, unknown> = {}) => ({ ...UPDATE, channel, installed: { ...UPDATE.installed, branch }, ...o });
+
+  for (const channel of ['dev', 'beta']) {
+    it(`${channel}: the channel beside the version and commit, visible on a phone, and named for screen readers`, async () => {
+      await render('../../ui/src/app/header.tsx', 'Header', { update: on(channel, channel) });
+      expect(tag()?.textContent).toBe(channel);
+      expect(tag()?.className).not.toMatch(/hidden/);
+      expect(badge().textContent).toContain('0.1.0');
+      expect(badge().textContent).toContain('c0ffee1');
+      expect(badge().getAttribute('aria-label')).toBe(`Version and updates: ${channel} channel`);
+      expect(badge().title).toContain(`${channel} channel`);
+    });
+  }
+
+  it('stable: no tag, the badge as before', async () => {
+    await render('../../ui/src/app/header.tsx', 'Header');
+    expect(tag()).toBeNull();
+    expect(badge().getAttribute('aria-label')).toBe('Version and updates: stable channel');
+  });
+
+  it('the running build is another channel\'s than the selected one: both, marked, in the notice\'s words', async () => {
+    await render('../../ui/src/app/header.tsx', 'Header', { update: on('dev', 'stable', { installed: { ...UPDATE.installed, kind: 'image', branch: 'stable' } }) });
+    expect(tag()?.textContent).toBe('stable → dev');
+    expect(tag()?.getAttribute('data-mismatch')).toBe('true');
+    expect(badge().getAttribute('aria-label')).toBe('Version and updates: runs the stable image; the selected channel is dev');
+  });
+
+  it('keeps the update dot while an update is available or applying', async () => {
+    const target = { commit: 'beef'.padEnd(40, '0'), ref: 'dev' };
+    await render('../../ui/src/app/header.tsx', 'Header', { update: on('dev', 'dev', { state: 'available', target }) });
+    expect(tag()?.textContent).toBe('dev');
+    expect(badge().querySelector('[data-slot="update-dot"]')).not.toBeNull();
+  });
+
+  it('follows a channel change in Settings without a reload', async () => {
+    await render('../../ui/src/app/header.tsx', 'Header');
+    expect(tag()).toBeNull();
+    const { useHopper } = (await import(store)) as Store;
+    await act(async () => useHopper.setState({ update: on('beta', 'stable') }));
+    expect(tag()?.textContent).toBe('stable → beta');
+    await act(async () => useHopper.setState({ update: on('beta', 'beta') }));
+    expect(tag()?.textContent).toBe('beta');
   });
 });

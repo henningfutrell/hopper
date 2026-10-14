@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pickId": {
+      "type": "string"
+    },
+    "point": {
+      "type": "string",
+      "enum": [
+        "question-risk",
+        "failure-assessment",
+        "lane-count",
+        "job-machine",
+        "intake-order",
+        "merge-order",
+        "question-answer"
+      ]
+    },
+    "pick": {
+      "type": "string"
+    },
+    "actual": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "pickId",
+    "point",
+    "actual"
+  ],
+  "additionalProperties": false
+}

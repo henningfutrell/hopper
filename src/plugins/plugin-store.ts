@@ -1,13 +1,14 @@
-// The plugin store (design.md "Plugin store", issue #75): the catalogue of the git repository the
-// operator names (HOPPER_PLUGIN_STORE), read in the background; installs, updates and removes
-// store installs, one edit at a time. A store install is kept in the database (issue #93); its code
+// The plugin store (design.md "Plugin store", issue #75): the catalogue of the git repository the plugin
+// store setting names (issue #445: the default plugin store unless an instance admin set another, or none),
+// read in the background and again whenever the setting changes; installs, updates and removes store
+// installs, one edit at a time. A store install is kept in the database (issue #93); its code
 // is unpacked into the work dir, proven to load as the catalogue says, renamed into place, and the
 // plugin host rescans. The work dir is scratch: `restore` unpacks every store install again at start.
 import { randomUUID } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Clock, InstanceEvents, PluginsView, InstanceSettingsRepository } from '../domain/ports.ts';
-import { ROLES, type PluginInstall, type PluginStoreEdit, type PluginStoreEditOutcome, type PluginStoreEntry, type PluginStoreReport, type Role } from '../domain/types.ts';
+import { ROLES, type PluginInstall, type PluginStoreEdit, type PluginStoreEditOutcome, type PluginStoreEntry, type PluginStoreReport, type PluginStoreSource, type Role } from '../domain/types.ts';
 import { importPlugin } from './loader.ts';
 import { CATALOGUE, parseCatalogue, type CatalogueEntry } from './plugin-store-catalogue.ts';
 import { createStoreMirror, type StoreMirror } from './plugin-store-git.ts';
@@ -16,16 +17,24 @@ import type { PluginLogger } from './sdk.ts';
 /** Where a store install's directory said where it came from, when store installs lived in the plugin dir. */
 const MARKER = '.plugin-store.json';
 
+/**
+ * The default plugin store (issue #445): this repository's plugin-store.yaml and examples/plugins/, built
+ * into a git repository the Pages site serves as plain files (scripts/build-plugin-store.sh).
+ */
+export const DEFAULT_PLUGIN_STORE = 'https://henningfutrell.github.io/hopper/plugin-store.git';
+
 /** Where store installs are unpacked: scratch, restored at start. */
 export const installedDirOf = (workDir: string): string => join(workDir, 'plugin-store', 'installed');
 
 export interface PluginStoreOptions {
-  /** HOPPER_PLUGIN_STORE. */
-  repo?: string;
+  /** HOPPER_PLUGIN_STORE: copied into the plugin store setting while that was never set. */
+  seed?: string;
+  /** The default plugin store; absent: none (tests). */
+  defaultRepo?: string;
   /** HOPPER_PLUGIN_DIR: the operator's plugins, never written but to move a store install left there into the database. */
   pluginDir?: string;
   workDir: string;
-  installs: Pick<InstanceSettingsRepository, 'getPluginInstalls' | 'setPluginInstalls'>;
+  settings: Pick<InstanceSettingsRepository, 'getPluginInstalls' | 'setPluginInstalls' | 'getPluginStoreSource' | 'setPluginStoreSource'>;
   builtinIds: ReadonlySet<string>;
   plugins: Pick<PluginsView, 'report' | 'edit'>;
   events: Pick<InstanceEvents, 'append'>;
@@ -59,10 +68,11 @@ function readMarker(id: string, dir: string): PluginInstall | undefined {
 }
 
 export function createPluginStore(o: PluginStoreOptions): PluginStore {
-  const unavailable = o.repo === undefined ? 'no plugin store: set HOPPER_PLUGIN_STORE to a git repository holding plugin-store.yaml' : undefined;
   const dir = installedDirOf(o.workDir);
   const mirror = o.mirror ?? createStoreMirror(join(o.workDir, 'plugin-store', 'repo.git'));
   let catalogue: (CatalogueEntry & { tree?: string })[] = [];
+  /** The plugin store the catalogue was read from. */
+  let catalogueRepo: string | undefined;
   let commit: string | undefined;
   let checkedAt: string | undefined;
   let error: string | undefined;
@@ -80,17 +90,36 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
     for (const p of o.plugins.report().plugins) if (!p.builtin) loaded.add(p.id);
   };
 
-  const installs = (): Map<string, PluginInstall> => new Map(o.installs.getPluginInstalls().map((i) => [i.id, i]));
+  const source = (): PluginStoreSource => o.settings.getPluginStoreSource() ?? { kind: 'default' };
+  /** The plugin store in use, or undefined: none. */
+  const repoOf = (s: PluginStoreSource): string | undefined => (s.kind === 'repo' ? s.repo : s.kind === 'default' ? o.defaultRepo : undefined);
+  const repo = (): string | undefined => repoOf(source());
+  /** Why there is no plugin store, or undefined. Names the setting, never an environment variable. */
+  const unavailable = (): string | undefined => {
+    if (repo() !== undefined) return undefined;
+    return source().kind === 'none' ? 'no plugin store is set' : 'this build has no default plugin store';
+  };
+
+  const installs = (): Map<string, PluginInstall> => new Map(o.settings.getPluginInstalls().map((i) => [i.id, i]));
   const keep = (id: string, i: PluginInstall | undefined): void => {
     const all = installs();
     if (i) all.set(id, i);
     else all.delete(id);
-    o.installs.setPluginInstalls([...all.values()]);
+    o.settings.setPluginInstalls([...all.values()]);
   };
 
   function report(): PluginStoreReport {
-    if (unavailable) return { state: 'unavailable', reason: unavailable, ...(o.repo ? { repo: o.repo } : {}), plugins: [] };
     const mine = installs();
+    const at = repo();
+    const common = { source: source().kind, ...(at !== undefined ? { repo: at } : {}), ...(o.defaultRepo !== undefined ? { defaultRepo: o.defaultRepo } : {}) };
+    const why = unavailable();
+    if (why) {
+      const left = [...mine.values()].sort((a, b) => a.id.localeCompare(b.id));
+      return {
+        state: 'unavailable', reason: why, ...common,
+        plugins: left.map((m) => ({ id: m.id, role: m.role, describe: m.describe, listed: false, installed: { commit: m.commit, installedAt: m.installedAt, current: false }, restartPending: pending.has(m.id) })),
+      };
+    }
     const entry = (id: string, role: Role, describe: string, listed: boolean, tree?: string): PluginStoreEntry => {
       const m = mine.get(id);
       return {
@@ -103,7 +132,8 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
     return {
       state: error ? 'error' : 'ready',
       ...(error ? { error } : {}),
-      repo: o.repo,
+      ...common,
+      ...(catalogueRepo !== undefined && catalogueRepo !== at ? { from: catalogueRepo } : {}),
       ...(commit ? { commit } : {}),
       ...(checkedAt ? { checkedAt } : {}),
       plugins: [
@@ -114,9 +144,10 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
   }
 
   async function refresh(): Promise<void> {
-    if (unavailable || o.repo === undefined) return;
+    const at = repo();
+    if (at === undefined) return;
     try {
-      const head = await mirror.fetch(o.repo);
+      const head = await mirror.fetch(at);
       const text = await mirror.show(head, CATALOGUE);
       if (text === undefined) throw new Error(`${CATALOGUE}: not in the store's default branch`);
       const r = parseCatalogue(text);
@@ -126,9 +157,10 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
         return tree === undefined ? p : { ...p, tree };
       }));
       commit = head;
+      catalogueRepo = at;
       error = undefined;
     } catch (e) {
-      error = `plugin store ${o.repo}: ${message(e)}`;
+      error = `plugin store ${at}: ${message(e)}`;
       o.logger.warn(`hopper: ${error}`);
     }
     checkedAt = o.clock.now().toISOString();
@@ -151,12 +183,21 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
     }
   }
 
+  /** HOPPER_PLUGIN_STORE into the plugin store setting, while that was never set (an upgrade, a first boot). */
+  function seed(): void {
+    if (o.seed === undefined || o.settings.getPluginStoreSource() !== undefined) return;
+    o.settings.setPluginStoreSource({ kind: 'repo', repo: o.seed });
+    o.logger.info(`hopper: plugin store ${o.seed} copied from HOPPER_PLUGIN_STORE into the plugin store setting; change it in the UI (Plugins → Plugin store)`);
+  }
+
   async function restore(): Promise<void> {
+    seed();
     adopt();
     const missing = [...installs().values()].filter((i) => !existsSync(join(dir, i.id)));
     if (missing.length === 0) return;
-    if (o.repo === undefined) {
-      o.logger.warn(`hopper: store installs ${missing.map((i) => i.id).join(', ')} not restored: ${unavailable}`);
+    const at = repo();
+    if (at === undefined) {
+      o.logger.warn(`hopper: store installs ${missing.map((i) => i.id).join(', ')} not restored: ${unavailable()}`);
       return;
     }
     await refresh();
@@ -166,7 +207,7 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
         await mirror.extract(i.tree, join(dir, i.id));
       } catch (e) {
         rmSync(join(dir, i.id), { recursive: true, force: true });
-        o.logger.warn(`hopper: store install ${i.id} not restored from ${o.repo} at ${i.commit}: ${message(e)}`);
+        o.logger.warn(`hopper: store install ${i.id} not restored from ${at} at ${i.commit}: ${message(e)}`);
       }
     }
   }
@@ -187,7 +228,11 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
 
   async function install(id: string): Promise<PluginStoreEditOutcome> {
     const c = catalogue.find((x) => x.id === id);
-    if (unavailable) return refuse('conflict', unavailable);
+    const why = unavailable();
+    if (why) return refuse('conflict', why);
+    if (catalogueRepo !== undefined && catalogueRepo !== repo()) {
+      return refuse('conflict', `the catalogue shown was read from ${catalogueRepo}, not from the plugin store ${repo()}: read the plugin store again`);
+    }
     if (!c || commit === undefined) return refuse('not_found', `the plugin store does not list ${id}`);
     if (o.builtinIds.has(id)) return refuse('conflict', `${id} is a built-in plugin`);
     if (o.pluginDir !== undefined && existsSync(join(o.pluginDir, id))) {
@@ -235,10 +280,19 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
     return { ok: true, report: report() };
   }
 
+  /** Set the plugin store and read it: the catalogue and installs follow it without a restart. */
+  async function setSource(s: PluginStoreSource): Promise<PluginStoreEditOutcome> {
+    o.settings.setPluginStoreSource(s);
+    error = undefined;
+    o.logger.info(`hopper: plugin store set to ${repoOf(s) ?? 'none'}`);
+    await refresh();
+    return { ok: true, report: report() };
+  }
+
   return {
     restore: () => serial(restore),
     start() {
-      if (!unavailable) void serial(refresh);
+      void serial(refresh);
     },
     report,
     edit(e) {
@@ -247,6 +301,7 @@ export function createPluginStore(o: PluginStoreOptions): PluginStore {
           await refresh();
           return { ok: true, report: report() };
         }
+        if (e.action === 'source') return setSource(e.source);
         return e.action === 'install' ? install(e.id) : remove(e.id);
       });
     },

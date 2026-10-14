@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "from": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "running",
+        "awaiting_review",
+        "merged",
+        "abandoned"
+      ]
+    },
+    "to": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "running",
+        "awaiting_review",
+        "merged",
+        "abandoned"
+      ]
+    },
+    "lane": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "from",
+    "to",
+    "by"
+  ],
+  "additionalProperties": false
+}

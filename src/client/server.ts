@@ -1,27 +1,46 @@
 // The hopper client (design.md "Client targets", issue #59): what a client target runs. It dials in to
 // the hopper's own URL (dial.ts, issue #308) and serves HTTP/2 on that link's socket: the hopper sends
-// its calls down it. Four routes:
+// its calls down it. Its routes:
 // `POST /herdr {args, timeoutMs?}` runs `<herdrBin> --session <session> <args>` with no shell and
 // answers `{code, stdout, stderr}` — the binary and the session are the client's own, never the
-// request's; `POST /release` answers `{release, home}`, the id of the release this process runs
-// (release.ts, issue #70) and this user's home, where `~` in a job's work tree resolves (issue #323); `POST /load {release}` writes the hopper's release into the install dir
+// request's; `POST /release` answers `{release, loads, home, disk, resources}`, the id of the release this process runs
+// (release.ts, issue #70), `loads: 'manifest'` — it loads any release its manifest vouches for (issue #545; a
+// client before that says nothing, and checks a fixed list of file names) — and this user's home, where `~` in a job's work tree resolves (issue #323), the disk it is on (issue #401) and this machine's CPU, memory and swap (issue #560, resources.ts), and its client door (issue #695, door.ts); `POST /load {release}` writes the hopper's release into the install dir
 // and then asks to be restarted (`onLoaded`; main.ts exits and the unit starts the new files);
-// `POST /reap {jobId, scratch?}`, `POST /survey {roots}` and `POST /credential` (issue #441, credential.ts) run fixed
+// `POST /reap {jobId, scratch?, keep?, discard?}`, `POST /survey {roots}` and `POST /credential` (issue #441, credential.ts) run fixed
 // scripts on this machine (issue #410): the reap of an ended job, what the sweep asks, a running job's token; `{code, stdout, stderr}`;
+// `POST /discover` runs the discovery script (issue #542, discover.ts): only reads, no argument of the request's; `{code, stdout, stderr}`;
+// `POST /reach {url}` runs the reach check (issue #695, reach.ts): whether this machine reaches the hopper at that URL; `{code, stdout, stderr}`;
+// `POST /checkpoint {jobId, worktree, session}` takes a running job's checkpoint (issue #921, checkpoint.ts): it only reads; `{code, stdout, stderr}`;
+// `POST /runtime` carries a container runtime call of the hopper's to this machine's own Podman or Docker, checked (issue #708, runtime.ts);
 // `POST /claude {args, timeoutMs?}` runs `<claudeBin> <args>` for a usage read (issue #366) — only the two
 // read-only calls `claude-plan` makes, nothing else — with no shell, stdin closed, in a fresh private dir
-// removed after with the project dir claude keeps for it, and answers `{code, stdout, stderr}`.
+// removed after with the project dir claude keeps for it, and answers `{code, stdout, stderr}`; `POST /work-tree
+// {workTree}` makes the machine's work tree under this user's home, `{workTreeProblem}` when it cannot (issue #361).
+// `POST /level {model, effort?, jsonSchema, prompt, timeoutMs?}` runs an escalation level's claude in print
+// mode the same way (issue #482, level.ts): the argv locked down and built here, the prompt on stdin.
 // A request runs only when the hopper signed it with the client's token (signature.ts); every answer
 // is signed back. When the link ends, or a dial fails, the client dials again, backing off to 30 s.
+// Each request the hopper signed and each keepalive PING it answers is the hopper heard; cut off from it longer than its
+// max isolation, the client stops the jobs the hopper last named in `/release`, and the next `/release` answer says so (issue #752, isolation.ts).
 // Imports nothing of hopper but its own directory: it is installed on the target as plain files.
 import { execFile } from 'node:child_process';
-import { mkdtempSync, rmSync, statfsSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { performServerHandshake, type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
+import { homedir } from 'node:os';
+import { serveLink, type PingTiming } from './keepalive.ts';
+import { type IncomingHttpHeaders, type ServerHttp2Stream } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import { credentialOf } from './credential.ts';
+import { startIsolationWatch, type StartedIsolationWatch } from './isolation.ts';
+import { DISCOVER_TIMEOUT_MS, discoverArgv } from './discover.ts';
+import { reachOf } from './reach.ts';
+import { CHECKPOINT_TIMEOUT_MS, checkpointOf } from './checkpoint.ts';
+import { runArgv } from './run.ts';
+import { defaultRuntimeSockets, runtimeRoute, type RuntimeSockets } from './runtime.ts';
+import { level, runClaude } from './level.ts';
 import { checkRelease, installRelease, readRelease } from './release.ts';
+import { createResourceMeter, diskOfHome } from './resources.ts';
+import type { WindowsLink } from './windows-link.ts';
+import { workTreeCall } from './work-tree.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResponse, verifyRequest } from './signature.ts';
 
 const MAX_BODY = 1024 * 1024;
@@ -37,17 +56,31 @@ export interface ClientOptions {
   /** This machine's herdr binary (absolute) and the session the hopper's jobs run in (never `default`). */
   herdrBin: string;
   session: string;
-  /** This machine's claude binary, for a usage read (`POST /claude`); default `claude` on its PATH. */
+  /** This machine's claude binary, for a usage read (`POST /claude`) and a level's run (`POST /level`); default `claude` on its PATH. */
   claudeBin?: string;
   /** Dials the hopper once: resolves the link's socket (dial.ts), or rejects. */
   dial: () => Promise<Duplex>;
   log?: (line: string) => void;
   /** Delays between dials; default 1 s, 2 s, 5 s, 10 s, then 30 s. */
   backoffMs?: readonly number[];
+  /** The link's keepalive (keepalive.ts, issue #752); default PING_TIMING. */
+  ping?: PingTiming;
   /** The directory this client's files are installed in: its release is read from it at start, and a load writes there. */
   installDir: string;
   /** A release was loaded into installDir: restart to run it. Called after the answer is sent. */
   onLoaded?: (release: string) => void;
+  /** The vault's helper (vault.ts, issue #558): said in `/release` as `vault`, so the hopper gives each job its path as HOPPER_SECRET. */
+  vaultHelper?: string;
+  /** The client door's URL (door.ts, issue #695), once it is open: said in `/release` as `door`, so the hopper gives it to each job as HOPPER_URL. */
+  door?: () => string | undefined;
+  /** Where this machine's own Podman and Docker sockets are (runtime.ts, issue #708); default under its runtime dir. */
+  runtimeSockets?: () => RuntimeSockets;
+  /** Cut off from the hopper this long, the client stops the jobs the hopper last named (issue #752); 0: never. Default 30 min. */
+  maxIsolationMs?: number;
+  /** How often it checks how long it has not heard the hopper; default 15 s. */
+  isolationCheckMs?: number;
+  /** The Windows link (windows-link.ts, issue #712): said in `/release` with the resources, once tested. */
+  windowsLink?: () => WindowsLink | undefined;
 }
 
 export interface Client { stop(): Promise<void> }
@@ -75,25 +108,6 @@ const CLAUDE_CALLS = [
 const allowedClaude = (v: unknown): v is string[] =>
   Array.isArray(v) && CLAUDE_CALLS.some((c) => c.length === v.length && c.every((a, i) => a === v[i]));
 
-/** One claude call of a usage read, in a fresh private dir; the dir and the project dir claude keeps for it removed after. */
-function claude(o: ClientOptions, args: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
-  const dir = mkdtempSync(join(tmpdir(), 'hopper-claude-'));
-  const done = (r: { code: number; stdout: string; stderr: string }) => {
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects', dir.replace(/[^A-Za-z0-9]/g, '-')), { recursive: true, force: true });
-    return r;
-  };
-  return new Promise((resolve) => {
-    const child = execFile(o.claudeBin ?? 'claude', args, { cwd: dir, timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
-      if (!err) return resolve(done({ code: 0, stdout, stderr }));
-      const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };
-      if (e.killed) return resolve(done({ code: 124, stdout, stderr: `claude timed out after ${timeoutMs} ms` }));
-      resolve(done({ code: typeof e.code === 'number' ? e.code : 127, stdout, stderr: stderr || e.message }));
-    });
-    child.stdin?.end();
-  });
-}
-
 const validArgs = (v: unknown): v is string[] =>
   Array.isArray(v) && v.length > 0 && v.every((a) => typeof a === 'string') && !v.includes('--session');
 
@@ -112,14 +126,20 @@ function readBody(stream: ServerHttp2Stream): Promise<string | 'too large'> {
 }
 
 /** One request on the tunnel: verified, then run; the answer signed. */
-const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/reap', '/survey', '/credential']);
+const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree', '/discover', '/reach', '/checkpoint', '/runtime']);
 /** How long a reap or a survey may take: stopping a scope waits up to its 10 s stop timeout. */
 const SCRIPT_TIMEOUT_MS = 60000;
+
+/** This machine's CPU, memory and swap (issue #560): each `/release` reads it; CPU busy is over the time since the last. */
+const resources = createResourceMeter();
+
+/** The resources with the Windows link, when it was tested. */
+const withWindowsLink = <R extends object>(r: R, link: WindowsLink | undefined): R | (R & { windowsLink: WindowsLink }) => (link ? { ...r, windowsLink: link } : r);
 
 /** What a client knows of its releases: the one it runs, and the one a load put in its install dir. */
 interface Releases { running: string; installed: string }
 
-async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCache>, releases: Releases, stream: ServerHttp2Stream, headers: IncomingHttpHeaders): Promise<void> {
+async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCache>, releases: Releases, watch: StartedIsolationWatch, stream: ServerHttp2Stream, headers: IncomingHttpHeaders): Promise<void> {
   const body = await readBody(stream);
   let nonce = '';
   const answer = (status: number, payload: unknown): void => {
@@ -139,50 +159,41 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
     return answer(401, { error: `refused: ${v.why}` });
   }
   nonce = v.nonce;
-  if (path === '/release') return answer(200, { release: releases.running, home: homedir(), ...diskOfHome() });
+  watch.heard();
+  if (path === '/release') return answer(200, { release: releases.running, loads: 'manifest', home: homedir(), ...diskOfHome(), resources: withWindowsLink(resources(), o.windowsLink?.()), ...(o.vaultHelper ? { vault: o.vaultHelper } : {}), ...(o.door?.() ? { door: o.door() } : {}), ...watch.probed(body) });
   if (path === '/load') return load(o, releases, stream, body, answer);
-  if (path === '/reap' || path === '/survey') return script(path, body, answer);
-  if (path === '/credential') return credential(body, answer);
+  if (path === '/reap' || path === '/survey' || path === '/credential' || path === '/work-tree' || path === '/reach' || path === '/checkpoint') return fixed(path, body, answer);
+  // Discovery (issue #542): the fixed script, no argument of the request's.
+  if (path === '/discover') return answer(200, await runArgv(discoverArgv(), DISCOVER_TIMEOUT_MS));
+  if (path === '/level') return level(o.claudeBin ?? 'claude', body, answer);
+  if (path === '/runtime') { const r = await runtimeRoute(o.runtimeSockets?.() ?? defaultRuntimeSockets(), body); return answer(r.status, r.payload); }
   let parsed: { args?: unknown; timeoutMs?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
   const timeoutMs = typeof parsed.timeoutMs === 'number' && parsed.timeoutMs > 0 ? Math.min(parsed.timeoutMs, MAX_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
   if (path === '/claude') {
     if (!allowedClaude(parsed.args)) return answer(400, { error: 'args must be one of the claude calls of a usage read' });
-    return answer(200, await claude(o, parsed.args, timeoutMs));
+    return answer(200, await runClaude(o.claudeBin ?? 'claude', parsed.args, timeoutMs));
   }
   if (!validArgs(parsed.args)) return answer(400, { error: 'args must be a non-empty list of strings, without --session' });
   answer(200, await herdr(o, parsed.args, timeoutMs));
 }
 
-/** A signed reap or survey: its argv from the body, run with no shell of the request's. */
-async function script(path: '/reap' | '/survey', body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
+/**
+ * A signed call of a fixed script, run with no shell of the request's: a reap or survey, its argv from the
+ * body; a running job's credential (issue #441), its content on stdin; the machine's work tree made (issue #361); the reach check (issue #695); or a checkpoint (issue #921).
+ */
+async function fixed(path: '/reap' | '/survey' | '/credential' | '/work-tree' | '/reach' | '/checkpoint', body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
   let parsed: unknown;
   try { parsed = JSON.parse(body); } catch { return answer(400, { error: 'body must be JSON' }); }
-  const argv = scriptArgvOf(path, parsed);
-  if (typeof argv === 'string') return answer(400, { error: argv });
-  answer(200, await runArgv(argv, SCRIPT_TIMEOUT_MS));
-}
-
-/** A signed credential of a running job (issue #441): kept by the fixed script, its content on stdin. */
-async function credential(body: string, answer: (status: number, payload: unknown) => void): Promise<void> {
-  let call: ReturnType<typeof credentialOf>;
-  try { call = credentialOf(JSON.parse(body)); } catch { return answer(400, { error: 'body must be JSON' }); }
+  if (path === '/work-tree') { const r = workTreeCall(parsed, homedir()); return answer(r.status, r.payload); }
+  // The reach check (issue #695): the fixed script, its one argument a URL.
+  // A checkpoint (issue #921): the fixed script, which only reads the job's own worktree and session.
+  const call = path === '/credential' ? credentialOf(parsed) : path === '/reach' ? reachOf(parsed) : path === '/checkpoint' ? checkpointOf(parsed) : scriptArgvOf(path, parsed);
   if (typeof call === 'string') return answer(400, { error: call });
-  answer(200, await runArgv(call.argv, SCRIPT_TIMEOUT_MS, call.input));
+  const timeout = path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS : SCRIPT_TIMEOUT_MS;
+  answer(200, Array.isArray(call) ? await runArgv(call, timeout) : await runArgv(call.argv, timeout, call.input));
 }
 
-function runArgv(argv: string[], timeoutMs: number, input?: string): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise((resolve) => {
-    const child = execFile(argv[0]!, argv.slice(1), { timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
-      if (!err) return resolve({ code: 0, stdout, stderr });
-      const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };
-      if (e.killed) return resolve({ code: 124, stdout, stderr: `timed out after ${timeoutMs} ms` });
-      resolve({ code: typeof e.code === 'number' ? e.code : 127, stdout, stderr: stderr || e.message });
-    });
-    child.stdin?.on('error', () => undefined); // a script that exits before reading answers its own exit code
-    child.stdin?.end(input ?? '');
-  });
-}
 
 /** After the load's answer leaves this end, how long the link stays up for it to reach the hopper before the restart. */
 const RESTART_GRACE_MS = 1000;
@@ -215,6 +226,10 @@ export function startClient(o: ClientOptions): Client {
   let link: Duplex | undefined;
   let timer: NodeJS.Timeout | undefined;
   let exited: Promise<void> = Promise.resolve();
+  const watch = startIsolationWatch({ ...o, log, stopJob: async (jobId) => {
+    const r = await runArgv(reapArgv(jobId), SCRIPT_TIMEOUT_MS);
+    if (!readReap(r.stdout)) throw new Error(`the reap did not finish (${r.code}): ${r.stderr.slice(0, 200)}`);
+  } });
 
   const again = (why: string, started: number): void => {
     if (stopped) return;
@@ -232,9 +247,9 @@ export function startClient(o: ClientOptions): Client {
     o.dial().then((socket) => {
       if (stopped) { socket.destroy(); close(); return; }
       link = socket;
-      const session = performServerHandshake(socket);
+      const session = serveLink(socket, () => { log('hopper-client: the hopper did not answer a PING; the link is dead'); socket.destroy(); }, o.ping, watch.heard);
       session.on('stream', (stream, headers) => {
-        serve(o, nonces, releases, stream, headers).catch((e: unknown) => {
+        serve(o, nonces, releases, watch, stream, headers).catch((e: unknown) => {
           log(`hopper-client: ${(e as Error).message}`);
           if (!stream.destroyed) stream.close();
         });
@@ -258,27 +273,18 @@ export function startClient(o: ClientOptions): Client {
     async stop() {
       stopped = true;
       clearTimeout(timer);
+      watch.close();
       link?.destroy();
       await exited;
     },
   };
 }
 
-/** The disk this user's home is on (issue #401), for the hopper's warning before it fills; none when it cannot be read. */
-function diskOfHome(): { disk?: { freeBytes: number; totalBytes: number } } {
-  try {
-    const s = statfsSync(homedir());
-    return { disk: { freeBytes: s.bavail * s.bsize, totalBytes: s.blocks * s.bsize } };
-  } catch {
-    return {};
-  }
-}
-
 // ---- The reap and the survey (issues #401, #410, design.md "Work tree" → "The reap") ----
 // What runs on a job's machine when the job ends, and what the sweep asks of it: fixed POSIX sh scripts,
 // run through the machine's own connection (this machine, ssh, or a client target's `/reap` and
 // `/survey`), never typed into a pane where Claude may still be. They live here because a client target
-// runs them, and a client release is exactly its CLIENT_FILES.
+// runs them, and a client release is the files in the client's directory.
 
 /** A job id the scripts take: a uuid, or a test's plain name. Never a pattern, a path or an option. */
 const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
@@ -290,10 +296,11 @@ export const scopeUnitOf = (jobId: string): string => `hopper-job-${jobId}`;
 export const REAP_DONE = 'hopper-reaped';
 export const SURVEY_DONE = 'hopper-surveyed';
 
-// $1 the job id, $2 its scratch dir or empty. Run with HOPPER_JOB_ID unset, so neither it nor what it
-// starts matches the processes it stops.
+// $1 the job id, $2 its scratch dir or empty, $3 `keep` to keep the scratch dir whatever it holds (a timed-out
+// job's, issue #630: it may go on there), or `discard` to remove it whatever it holds (a person discarded the work
+// it kept, issue #1010). Run with HOPPER_JOB_ID unset, so neither it nor what it starts matches the processes it stops.
 const REAP_SCRIPT = [
-  'id=$1; s=$2;',
+  'id=$1; s=$2; k=$3;',
   // The job's scope: every process in it, whatever it did to its environment or session.
   'if command -v systemctl >/dev/null 2>&1; then systemctl --user stop "hopper-job-$id.scope" >/dev/null 2>&1; fi;',
   // Where there is no systemd, or for what left the scope: the processes carrying the job's id.
@@ -306,6 +313,8 @@ const REAP_SCRIPT = [
   '    l=$(pids); [ -n "$l" ] && kill -KILL $l 2>/dev/null;',
   '  fi;',
   'fi;',
+  // The job's temp link /tmp/hopper-<job id> (issue #506), only while it points at this scratch dir.
+  't=/tmp/hopper-$id; [ -n "$s" ] && [ -L "$t" ] && [ "$(readlink "$t")" = "$s" ] && rm -f "$t";',
   // Only ever this job's own scratch dir: <work tree>/.hopper-scratch/<job id>.
   'case $s in */.hopper-scratch/"$id") ;; *) printf "%s\\n" hopper-reaped; exit 0;; esac;',
   // The job's credentials (issue #441) go whatever else is kept: they are the hopper's, not the job's work.
@@ -313,18 +322,25 @@ const REAP_SCRIPT = [
   'repos() { find "$s" -name node_modules -prune -o -name .git -print -prune 2>/dev/null; };',
   // A worktree (.git a file) answers for its own HEAD; a clone for HEAD and every branch it has. A
   // node_modules link to the shared dependencies (issue #410) is no work of the job's.
-  'kept=$(repos | while IFS= read -r g; do',
+  'kept=; [ "$k" = discard ] || kept=$(repos | while IFS= read -r g; do',
   '  d=${g%/.git}; r="HEAD --branches"; [ -f "$g" ] && r=HEAD;',
   '  if ! st=$(git -C "$d" status --porcelain 2>/dev/null) || [ -n "$(printf "%s\\n" "$st" | grep -vx "?? node_modules")" ] || ! un=$(git -C "$d" log --oneline -1 $r --not --remotes 2>/dev/null) || [ -n "$un" ]; then',
   '    printf "hopper-kept %s\\n" "$d";',
   '  fi;',
   'done);',
-  'if [ -n "$kept" ]; then printf "%s\\n" "$kept"; elif [ -d "$s" ]; then',
+  // What the job pushed (issue #630): a remote branch its HEAD holds that the default branch does not.
+  'pushed=$(repos | while IFS= read -r g; do',
+  '  d=${g%/.git}; b=$(git -C "$d" rev-parse -q --verify refs/remotes/origin/HEAD 2>/dev/null) || continue;',
+  '  [ -n "$(git -C "$d" for-each-ref --count=1 --merged HEAD --no-merged "$b" refs/remotes 2>/dev/null)" ] && printf "hopper-pushed %s\\n" "$d";',
+  'done);',
+  '[ -n "$pushed" ] && printf "%s\\n" "$pushed";',
+  'if [ -n "$kept" ]; then printf "%s\\n" "$kept"; elif [ -d "$s" ] && [ "$k" != keep ]; then',
   '  repos | while IFS= read -r g; do',
   '    [ -f "$g" ] || continue; d=${g%/.git};',
   '    [ -L "$d/node_modules" ] && rm -f "$d/node_modules";',
-  // Never --force: it is clean and pushed, so git removes it and its repository keeps no entry.
-  '    c=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && git --git-dir="$c" worktree remove "$d" 2>/dev/null;',
+  // Never --force, but for a discard: it is clean and pushed, so git removes it and its repository keeps no entry.
+  '    f=; [ "$k" = discard ] && f="--force --force";',
+  '    c=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && git --git-dir="$c" worktree remove $f "$d" 2>/dev/null;',
   '  done;',
   '  rm -rf "$s";',
   'fi;',
@@ -349,17 +365,24 @@ const SURVEY_SCRIPT = [
   'printf "%s\\n" hopper-surveyed',
 ].map((l) => l.trim()).join(' ');
 
-/** The argv that reaps a job on the machine it runs on: its scope and processes stopped, its scratch dir (when given) removed unless it holds work. */
-export const reapArgv = (jobId: string, scratch = ''): string[] => ['env', '-u', 'HOPPER_JOB_ID', 'sh', '-c', REAP_SCRIPT, 'sh', jobId, scratch];
+/**
+ * The argv that reaps a job on the machine it runs on: its scope and processes stopped, its scratch dir (when given)
+ * removed unless it holds work — or kept whatever it holds (`keep`, issue #630), or removed whatever it holds
+ * (`discard`, issue #1010).
+ */
+export const reapArgv = (jobId: string, scratch = '', keep = false, discard = false): string[] =>
+  ['env', '-u', 'HOPPER_JOB_ID', 'sh', '-c', REAP_SCRIPT, 'sh', jobId, scratch, ...(keep ? ['keep'] : discard ? ['discard'] : [])];
 
 /** The argv that lists what jobs left on the machine: scopes, processes, and the scratch dirs under `roots`. */
 export const surveyArgv = (roots: readonly string[]): string[] => ['env', '-u', 'HOPPER_JOB_ID', 'sh', '-c', SURVEY_SCRIPT, 'sh', ...roots];
 
-/** What a finished reap said: the repositories it kept. Undefined when it did not finish. */
-export function readReap(stdout: string): { kept: string[] } | undefined {
+/** What a finished reap said: the repositories it kept, and those whose branch was pushed (issue #630). Undefined when it did not finish. */
+export function readReap(stdout: string): { kept: string[]; pushed?: string[] } | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
   if (!lines.includes(REAP_DONE)) return undefined;
-  return { kept: [...new Set(lines.filter((l) => l.startsWith('hopper-kept ')).map((l) => l.slice('hopper-kept '.length)))] };
+  const named = (prefix: string): string[] => [...new Set(lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length)))];
+  const pushed = named('hopper-pushed ');
+  return { kept: named('hopper-kept '), ...(pushed.length ? { pushed } : {}) };
 }
 
 /** One scratch dir the survey found: its job, path and age. */
@@ -388,12 +411,15 @@ const isRoot = (path: unknown): path is string => typeof path === 'string' && pa
 
 /** The argv a `/reap` or `/survey` body asks for; else why it is refused. */
 export function scriptArgvOf(path: '/reap' | '/survey', body: unknown): string[] | string {
-  const b = (typeof body === 'object' && body !== null ? body : {}) as { jobId?: unknown; scratch?: unknown; roots?: unknown };
+  const b = (typeof body === 'object' && body !== null ? body : {}) as { jobId?: unknown; scratch?: unknown; roots?: unknown; keep?: unknown; discard?: unknown };
   if (path === '/survey') {
     if (!Array.isArray(b.roots) || b.roots.length > 256 || !b.roots.every(isRoot)) return 'roots must be at most 256 absolute paths';
     return surveyArgv(b.roots);
   }
   if (!isJobId(b.jobId)) return 'jobId must be a job id';
   if (b.scratch !== undefined && !isScratchOf(b.scratch, b.jobId)) return 'scratch must be the job\'s own scratch dir';
-  return reapArgv(b.jobId, b.scratch);
+  if (b.keep !== undefined && typeof b.keep !== 'boolean') return 'keep must be true or false';
+  if (b.discard !== undefined && typeof b.discard !== 'boolean') return 'discard must be true or false';
+  if (b.keep === true && b.discard === true) return 'keep and discard cannot both be true';
+  return reapArgv(b.jobId, b.scratch, b.keep === true, b.discard === true);
 }

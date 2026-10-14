@@ -1,11 +1,13 @@
 // Running grok-bot-jev's router once per job through gate_shim.py (design.md "Gate router"). Any
 // failure is advice with `source: fallback` — the router's own documented safe fallback — never a throw.
+import { maskSecret } from '../../../secrets/mask.ts';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { claudeArgv, scrubbedEnv } from '../../claude-print.ts';
 import type { Advice, AdviceAction, Clock, Job, Router } from '../../sdk.ts';
 import { userProcessEnv } from '../../../executors/env.ts';
+import { factVerdict, META_KEYS } from './facts.ts';
 
 const SHIM = fileURLToPath(new URL('./gate_shim.py', import.meta.url));
 const ACTIONS: readonly string[] = [
@@ -18,7 +20,6 @@ const ACTIONS: readonly string[] = [
  * The Claude model answers the rest. Fixed: which gate goes where is the router's, not a setting (issue #217).
  */
 export const JEV_GATES: readonly string[] = ['intent', 'reuse_cache', 'stop_retry'];
-const META_KEYS = ['cached_artifact', 'cached_note', 'prior_error', 'same_error_count', 'sources_found', 'constraints'];
 /**
  * The Claude model's answers to the gates, keyed by gate name and grouped by gate type (Jev's own
  * grouping). Draft-07 literal, as claude-print.ts requires; the shim checks names and labels.
@@ -46,7 +47,7 @@ export interface GateRouterShimOptions {
   python: string;
   /** The Claude model, for the `claude` on PATH. */
   model: string;
-  /** The TypeSafe key (TYPESAFE_API_KEY), asked on every call; undefined: Jev off. */
+  /** The user's TypeSafe API key (issue #657: kept in the vault's system scope), asked on every call; undefined: Jev off. */
   typesafeKey(): string | undefined;
   dataDir: string;
   clock: Clock;
@@ -123,6 +124,13 @@ export function createGateRouter(o: GateRouterShimOptions): Router {
   return {
     name: 'gate-router',
     async advise(job: Job): Promise<Advice> {
+      const fixed = factVerdict(job);
+      if (fixed) {
+        return {
+          action: fixed.action, reason: fixed.reason,
+          details: { gatesAsked: false, decidedBy: 'facts', rule: fixed.rule }, source: 'gate-router', at: at(),
+        };
+      }
       try {
         const stdout = await runShim(o, o.typesafeKey() || undefined, {
           jevPath: o.jevPath,
@@ -144,7 +152,8 @@ export function createGateRouter(o: GateRouterShimOptions): Router {
           at: at(),
         };
       } catch (e) {
-        const why = e instanceof Error ? e.message : String(e);
+        // The key is the user's (issue #657): an error that repeats it is masked.
+        const why = maskSecret(e instanceof Error ? e.message : String(e), o.typesafeKey(), 'TypeSafe API key');
         return { action: 'proceed_full', reason: `gate router unavailable: ${why}`, details: { gatesAsked: false }, source: 'fallback', at: at() };
       }
     },

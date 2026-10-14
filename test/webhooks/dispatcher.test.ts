@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createWebhookDispatcher, verify } from '../../src/webhooks/index.ts';
-import type { WebhookDelivery } from '../../src/domain/types.ts';
+import type { WebhookDelivery, WebhookSubscription } from '../../src/domain/types.ts';
+import type { OutboundLimits, OutboundSend } from '../../src/domain/outbound.ts';
+import { createOutbound, createOutboundGuard } from '../../src/outbound/index.ts';
 import { createFakeStore, type FakeStore } from './fakeStore.ts';
 import { startReceiver, type Receiver, type Responder } from './receiver.ts';
 
@@ -26,16 +28,29 @@ afterEach(async () => {
   receiver = undefined;
 });
 
-/** The runtime's secrets (issue #56): what the dispatcher reads a subscription's secret from, at each delivery. */
+/** The secrets the subscriptions sign with, by the name each names: read at each delivery, through `secretOf` (issue #451). */
 let secrets: Record<string, string>;
+/** A subscription's secret, or why there is none: what the user runtime gives the dispatcher (src/webhooks/secrets.ts). */
+const secretOf = (sub: WebhookSubscription): string => {
+  const value = secrets[sub.secretEnv ?? ''];
+  if (!value) throw new Error(`${sub.secretEnv} is not set`);
+  return value;
+};
 
-function setup(responder: Responder, o: { timeoutMs?: number; maxAttempts?: number } = {}) {
+/** The send log the dispatcher writes (issue #1014). */
+let sends: OutboundSend[];
+
+function setup(responder: Responder, o: { timeoutMs?: number; maxAttempts?: number; limits?: Partial<OutboundLimits> } = {}) {
   fake = createFakeStore();
   secrets = { HOOK_SECRET: 'shh' };
-  const dispatcher = createWebhookDispatcher({ store: fake.store, clock, secret: (name) => secrets[name], baseMs: 20, sweepMs: 10, ...o });
+  sends = [];
+  const { limits, ...rest } = o;
+  const log = { add: (s: OutboundSend) => { sends.push(s); }, list: () => sends, prune: () => 0 };
+  const outbound = createOutbound({ guard: createOutboundGuard({ clock, logger: { info: () => undefined, warn: () => undefined }, ...(limits ? { limits } : {}) }), clock, log });
+  const dispatcher = createWebhookDispatcher({ store: fake.store, clock, secretOf, outbound, baseMs: 20, sweepMs: 10, ...rest });
   const updates: WebhookDelivery[] = [];
   dispatcher.onDeliveryUpdated((d) => updates.push(d));
-  stopFn = () => dispatcher.stop();
+  stopFn = async () => { await dispatcher.stop(); outbound.stop(); };
   return { dispatcher, updates, receiverP: startReceiver(responder) };
 }
 
@@ -75,6 +90,17 @@ describe('webhook dispatcher', () => {
     const bySub = (id: string) => fake.deliveries().filter((d) => d.subscriptionId === id).map((d) => d.eventType);
     expect(bySub(only.id)).toEqual(['job.finished']);
     expect(bySub(all.id)).toEqual(['job.queued', 'job.finished']);
+  });
+
+  it('an event that says it tells no one (`notify: false`, issue #516) is not delivered', async () => {
+    const s = setup(ok);
+    receiver = await s.receiverP;
+    fake.subscribe({ url: receiver.url, events: ['*'] });
+    s.dispatcher.start();
+    fake.append('handoff.opened', { handoffId: 'h1', notify: false });
+    fake.append('handoff.opened', { handoffId: 'h2', notify: true });
+    await until(() => fake.deliveries().length === 1 && fake.deliveries()[0]!.status === 'delivered');
+    expect(receiver.received.map((r) => (JSON.parse(r.body) as { data: { handoffId: string } }).data.handoffId)).toEqual(['h2']);
   });
 
   it('retries a 500 with growing backoff, then delivers (attempts 2)', async () => {
@@ -143,7 +169,7 @@ describe('webhook dispatcher', () => {
     expect(verify('rotated', b!.headers['x-hopper-timestamp'] as string, b!.body, b!.headers['x-hopper-signature'] as string)).toBe(true);
   });
 
-  it('a secret the runtime does not provide: nothing is sent; the delivery retries, naming the variable', async () => {
+  it('no secret for the subscription: nothing is sent; the delivery retries with why', async () => {
     const s = setup(ok);
     receiver = await s.receiverP;
     fake.subscribe({ url: receiver.url, events: ['*'], secretEnv: 'UNSET_SECRET' });
@@ -180,5 +206,46 @@ describe('webhook dispatcher', () => {
     await until(() => fake.deliveries()[0]?.status === 'delivered');
     expect(seen).toHaveLength(0);
     expect(s.updates.length).toBeGreaterThan(0);
+  });
+
+  // Issue #1014: every delivery passes its destination's outbound guard, and each POST is in the send log.
+  it('logs each POST in the send log: the subscription, the host, the event type, the status', async () => {
+    const s = setup(ok);
+    receiver = await s.receiverP;
+    fake.subscribe({ name: 'messaging', url: receiver.url, events: ['*'] });
+    s.dispatcher.start();
+    fake.append('job.queued');
+    await until(() => sends.length === 1);
+    expect(sends[0]).toMatchObject({ sender: 'webhook', name: 'messaging', host: new URL(receiver.url).host, kind: 'job.queued', outcome: 'sent', status: 200, count: 1 });
+  });
+
+  it('holds a delivery past the rate limit until a token is free: delivered later, no attempt spent', async () => {
+    const s = setup(ok, { limits: { burst: 2, perSecond: 4 } });
+    receiver = await s.receiverP;
+    fake.subscribe({ url: receiver.url, events: ['*'] });
+    s.dispatcher.start();
+    const started = Date.now();
+    for (let i = 0; i < 6; i++) fake.append('job.queued');
+    await until(() => fake.deliveries().length === 6 && fake.deliveries().every((d) => d.status === 'delivered'));
+    expect(Date.now() - started).toBeGreaterThanOrEqual(900);
+    expect(fake.deliveries().every((d) => d.attempts === 1)).toBe(true);
+    expect(receiver.received).toHaveLength(6);
+  });
+
+  it('a runaway opens the circuit: nothing more is sent, its deliveries fail saying why, the log counts them', async () => {
+    const s = setup(ok, { limits: { burst: 100, runawayAsks: 5 } });
+    receiver = await s.receiverP;
+    fake.subscribe({ url: receiver.url, events: ['*'] });
+    s.dispatcher.start();
+    for (let i = 0; i < 200; i++) fake.append('job.queued');
+    await until(() => fake.deliveries().length === 200 && fake.deliveries().every((d) => d.status === 'delivered' || d.status === 'failed'));
+    expect(receiver.received.length).toBeLessThanOrEqual(5);
+    const failed = fake.deliveries().filter((d) => d.status === 'failed');
+    expect(failed.length).toBeGreaterThanOrEqual(195);
+    expect(failed.every((d) => /circuit/.test(d.lastError ?? ''))).toBe(true);
+    await stopFn?.();
+    stopFn = undefined;
+    expect(sends.filter((r) => r.outcome === 'circuit-open').reduce((n, r) => n + r.count, 0)).toBe(failed.length);
+    expect(sends.length).toBeLessThanOrEqual(10);
   });
 });

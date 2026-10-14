@@ -1,12 +1,12 @@
 // The update notice's words and links (issue #44): pure, from GET /api/update.
 import { describe, expect, it } from 'vitest';
 import type { UpdateStatus } from '../../src/domain/types.ts';
-import { CHANNELS, headline, reloadNeeded, showNotice } from '../../ui/src/model/update.ts';
+import { CHANNELS, channelBadge, headline, imageUpdate, parseContainerTool, reloadNeeded, showNotice, targetLine } from '../../ui/src/model/update.ts';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
 const installed = { kind: 'install' as const, repo: 'git@github.com:o/r.git', branch: 'stable', commit: A, installedAt: '2026-10-04T00:00:00Z' };
-const status = (o: Partial<UpdateStatus>): UpdateStatus => ({ state: 'current', channel: 'stable', autoUpdate: false, whatsNew: [], installedWhatsNew: [], installed, ...o });
+const status = (o: Partial<UpdateStatus>): UpdateStatus => ({ state: 'current', channel: 'stable', autoUpdate: false, whatsNew: [], installedWhatsNew: [], restartBlockers: 0, installed, ...o });
 
 describe('update model', () => {
   it('the channels are dev, beta and stable, least stable first (issue #423)', () => {
@@ -17,18 +17,113 @@ describe('update model', () => {
     expect(headline(status({ state: 'available', target: { commit: B, ref: 'stable' }, whatsNew: ['x', 'y'] }))).toBe('Update available');
     expect(headline(status({ state: 'available', channel: 'beta', target: { commit: B, ref: 'beta' } }))).toBe('Update available: move to the beta channel');
     expect(headline(status({ state: 'available', channel: 'dev', installed: { ...installed, branch: 'dev' }, target: { commit: B, ref: 'dev' } }))).toBe('Update available');
-    // An image is updated by pulling or rebuilding it, not in place (issue #409).
-    expect(headline(status({ state: 'available', installed: { ...installed, kind: 'image' }, target: { commit: B, ref: 'stable' } }))).toBe('Update available: pull or rebuild the image');
+    // An image is updated by the user pulling its channel's tag, never in place (issues #409, #494).
+    expect(headline(status({ state: 'available', installed: { ...installed, kind: 'image' }, target: { commit: B, ref: 'stable' } }))).toBe('Update available: pull the stable image and recreate the container');
     expect(headline(status({ state: 'applying', apply: { phase: 'waiting', detail: 'waiting for job j1', target: B, startedAt: '' } }))).toBe('Updating: waiting for job j1');
     expect(headline(status({ state: 'error', reason: 'fetch failed' }))).toBe('Update problem: fetch failed');
     expect(headline(status({}))).toBe('Up to date');
     expect(headline(status({ state: 'unavailable', installed: undefined, reason: 'no install.json' }))).toBe('Self-update unavailable: no install.json');
   });
 
+  describe('an image install (issue #494): the commands for the selected channel\'s image tag', () => {
+    const image = (channel: UpdateStatus['channel'], branch: string, o: Partial<UpdateStatus> = {}) =>
+      status({ state: 'available', channel, installed: { ...installed, kind: 'image', branch }, target: { commit: B, ref: channel }, ...o });
+
+    for (const channel of ['dev', 'beta', 'stable'] as const) {
+      it(`${channel}: plain compose commands with the channel's image, the whole stack, the master key required, and the prune (issues #697, #970)`, () => {
+        const u = imageUpdate(image(channel, channel))!;
+        expect(headline(image(channel, channel))).toBe(`Update available: pull the ${channel} image and recreate the container`);
+        expect(u.image).toBe(`ghcr.io/henningfutrell/hopper:${channel}`);
+        const img = `ghcr.io/henningfutrell/hopper:${channel}`;
+        const [podman, docker] = u.commands;
+        expect(podman!.tool).toBe('Podman');
+        expect(podman!.carry).toBe(`podman run --rm -i --pull=always ${img} hopper update carry --image ${img} < compose.yaml > compose.yaml.next`);
+        expect(podman!.up).toMatch(/^: "\$\{HOPPER_MASTER_KEY:\?/);
+        // Then the check that podman compose sees the stack that runs (issue #1063), then pull and up.
+        expect(podman!.up.endsWith(` && ${podman!.check} && HOPPER_IMAGE=${img} podman compose pull && HOPPER_IMAGE=${img} podman compose up -d`)).toBe(true);
+        expect(podman!.prune).toBe('podman image prune -f --filter label=org.opencontainers.image.title=hopper');
+        expect(docker!.tool).toBe('Docker');
+        expect(docker!.up).toContain(`HOPPER_IMAGE=${img} docker compose pull && HOPPER_IMAGE=${img} docker compose up -d`);
+        expect(JSON.stringify(u)).not.toMatch(/--no-deps|volume|down|\.env|hopper-update\.sh/);
+        expect(u.mismatch).toBeUndefined();
+      });
+    }
+
+    it('the container tool a browser remembers: Podman, unless it chose Docker (issue #521)', () => {
+      expect(parseContainerTool(null)).toBe('Podman');
+      expect(parseContainerTool('Docker')).toBe('Docker');
+      expect(parseContainerTool('Podman')).toBe('Podman');
+      expect(parseContainerTool('nerdctl')).toBe('Podman');
+    });
+
+    it('says so plainly when the running image is not the selected channel\'s', () => {
+      const s = image('dev', 'stable');
+      expect(imageUpdate(s)!.mismatch).toBe('this container runs the stable image; the selected channel is dev: switch the image tag');
+      expect(headline(s)).toBe('Update available: this container runs the stable image; the selected channel is dev: switch the image tag');
+      expect(imageUpdate(s)!.image).toBe('ghcr.io/henningfutrell/hopper:dev');
+    });
+
+    it('a stable install in the canary subset pulls the canary image (issue #1073 part 5)', () => {
+      const s = image('stable', 'stable', { canary: true, target: { commit: B, ref: 'canary' } });
+      expect(imageUpdate(s)!.image).toBe('ghcr.io/henningfutrell/hopper:canary');
+      expect(headline(s)).toBe('Update available: pull the canary image and recreate the container');
+    });
+
+    it('counts the running jobs a recreate would lose, and says to wait until none', () => {
+      expect(imageUpdate(image('stable', 'stable', { restartBlockers: 2 }))!.blockers).toBe('2 running jobs would be lost by recreating the container: wait until none runs.');
+      expect(imageUpdate(image('stable', 'stable', { restartBlockers: 1 }))!.blockers).toBe('1 running job would be lost by recreating the container: wait until none runs.');
+      expect(imageUpdate(image('stable', 'stable'))!.blockers).toBe('No running job would be lost: jobs that reattach keep running across the recreate.');
+    });
+
+    it('none for an install, or with no update', () => {
+      expect(imageUpdate(status({ state: 'available', target: { commit: B, ref: 'stable' } }))).toBeUndefined();
+      expect(imageUpdate(image('stable', 'stable', { state: 'current' }))).toBeUndefined();
+    });
+  });
+
+  describe('the header badge names the channel (issue #497)', () => {
+    const on = (channel: UpdateStatus['channel'], branch: string, kind: 'install' | 'image' = 'install') =>
+      status({ channel, installed: { ...installed, kind, branch } });
+
+    it('dev and beta: the channel as its tag; stable: no tag', () => {
+      expect(channelBadge(on('dev', 'dev'))).toEqual({ tag: 'dev', mismatch: false, label: 'dev channel' });
+      expect(channelBadge(on('beta', 'beta'))).toEqual({ tag: 'beta', mismatch: false, label: 'beta channel' });
+      expect(channelBadge(on('stable', 'stable'))).toEqual({ tag: undefined, mismatch: false, label: 'stable channel' });
+    });
+
+    it('the running build is another channel\'s than the selected one: both, in the words of the update notice', () => {
+      expect(channelBadge(on('dev', 'stable', 'image'))).toEqual({ tag: 'stable → dev', mismatch: true, label: 'runs the stable image; the selected channel is dev' });
+      expect(channelBadge(on('stable', 'beta'))).toEqual({ tag: 'beta → stable', mismatch: true, label: 'runs the beta build; the selected channel is stable' });
+      // The same rule as the notice: the running build's branch against the selected channel.
+      expect(imageUpdate({ ...on('dev', 'stable', 'image'), state: 'available' })!.mismatch).toBe('this container runs the stable image; the selected channel is dev: switch the image tag');
+    });
+
+    it('a build from a branch older than the channels (issue #423), or no install record: the selected channel alone', () => {
+      expect(channelBadge(on('stable', 'main'))).toEqual({ tag: undefined, mismatch: false, label: 'stable channel' });
+      expect(channelBadge(on('dev', 'main'))).toEqual({ tag: 'dev', mismatch: false, label: 'dev channel' });
+      expect(channelBadge(status({ channel: 'beta', installed: undefined }))).toEqual({ tag: 'beta', mismatch: false, label: 'beta channel' });
+      expect(imageUpdate({ ...on('dev', 'main', 'image'), state: 'available' })!.mismatch).toBeUndefined();
+    });
+  });
+
+  it('a held head says why, and offers nothing (issue #652)', () => {
+    const held = status({ state: 'held', target: { commit: B, ref: 'stable' }, reason: 'bbbbbbb is not the merge of a pull request' });
+    expect(headline(held)).toBe('Update held: bbbbbbb is not the merge of a pull request');
+    expect(imageUpdate({ ...held, installed: { ...installed, kind: 'image' } })).toBeUndefined();
+  });
+
+  it('the notice names the commit to update to, and the pull request whose checks passed (issue #652)', () => {
+    const pullRequest = { number: 9, url: 'https://github.com/o/r/pull/9' };
+    expect(targetLine(status({ state: 'available', target: { commit: B, ref: 'stable', pullRequest } }))).toBe('stable bbbbbbb · pull request #9, checks passed');
+    expect(targetLine(status({ state: 'held', target: { commit: B, ref: 'stable' } }))).toBe('stable bbbbbbb');
+    expect(targetLine(status({}))).toBeUndefined();
+  });
+
   it('shows the notice only when there is something to act on or watch', () => {
     expect(showNotice(status({ state: 'available' }))).toBe(true);
     expect(showNotice(status({ state: 'applying' }))).toBe(true);
     expect(showNotice(status({ state: 'error' }))).toBe(true);
+    expect(showNotice(status({ state: 'held' }))).toBe(true);
     expect(showNotice(status({}))).toBe(false);
     expect(showNotice(status({ state: 'unavailable' }))).toBe(false);
     expect(showNotice(null)).toBe(false);

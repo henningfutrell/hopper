@@ -22,7 +22,7 @@ let cleanup: (() => void) | undefined;
 beforeEach(() => {
   for (const k of KEYS) saved[k] = process.env[k];
   process.env.FAKE_CLAUDE_OUT = join(mkdtempSync(join(tmpdir(), 'jh-claude-')), 'rec.json');
-  process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'routine' });
+  process.env.FAKE_CLAUDE_STRUCTURED = JSON.stringify({ answer: 'use sqlite', escalate: false, reason: 'routine', confidence: 'high' });
   delete process.env.FAKE_CLAUDE_MODE;
 });
 afterEach(async () => {
@@ -54,7 +54,7 @@ describe('a level that names no machine (#442)', () => {
     const [q] = await a.questionsOf(job.id);
     expect(q).toMatchObject({ status: 'answered', answeredBy: 'level-1' });
     expect(q!.attempts).toEqual([expect.objectContaining({
-      tier: 'level-1', outcome: 'accepted', machine: { id: 'local', why: 'the job\'s machine' }, reason: 'routine (no rules yet)',
+      tier: 'level-1', outcome: 'accepted', machine: { id: 'local', why: 'the job\'s machine' }, reason: 'routine',
     })]);
     // Settings: the level runs; which machine it uses is said, nothing flagged.
     const level = (await report(a)).escalationLevels[0]!;
@@ -68,6 +68,15 @@ describe('a level that names no machine (#442)', () => {
     expect(level.reason).toBeUndefined();
     expect(level.machine).toEqual({ needsMachine: true, note: NO_MACHINE_FOR_LEVEL });
     expect(JSON.stringify(level)).not.toMatch(/invalid options|expected string/);
+  });
+});
+
+describe('a level that names a container target (#482)', () => {
+  it('Settings shows it as needing a machine, with the reason and how to fix it, before any question reaches it', async () => {
+    const a = await start({ machines: [...lanes(2), { name: 'box', plugin: 'docker', options: { docker: 'box', lanes: 1 } }], escalationLevels: [{ ...UNNAMED[0]!, options: { ...UNNAMED[0]!.options, machine: 'box' } }] });
+    expect((await report(a)).escalationLevels[0]!.machine).toEqual({
+      needsMachine: true, note: expect.stringMatching(/^machine box is a container target: claude-cli cannot run there\. Pick another machine for this level in Settings → Question gates/),
+    });
   });
 });
 

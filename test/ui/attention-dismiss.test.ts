@@ -25,7 +25,7 @@ let calls: { path: string; method: string }[] = [];
 function fakeDaemon() {
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'jev', fallback: true, executors: [], uptimeS: 1 },
-    '/api/queue': { waiting: [], running: [], waitingAnswer: [], ended: [failed], locked: [] },
+    '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [failed], locked: [] },
     '/api/machines': { machines: [] },
     '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] },
@@ -55,7 +55,7 @@ let root: Root | undefined;
 async function boot(stored?: string, o: { notice: boolean } = { notice: true }) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = '#overview';
+  window.location.hash = '#dashboard';
   localStorage.clear();
   if (stored !== undefined) localStorage.setItem(KEY, stored);
   calls = [];
@@ -76,7 +76,7 @@ async function reload(o?: { notice: boolean }) {
   await boot(stored, o);
 }
 
-const attention = () => document.querySelector<HTMLElement>('[data-overview-panel="attention"]');
+const attention = () => document.querySelector<HTMLElement>('[data-dashboard-panel="attention"]');
 const items = () => [...attention()!.querySelectorAll<HTMLElement>('[data-notice]')].map((e) => e.dataset.notice);
 const notice = () => document.querySelector<HTMLElement>('[data-update-notice]');
 const button = (scope: ParentNode, name: string) =>

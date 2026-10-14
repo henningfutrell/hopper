@@ -1,6 +1,6 @@
 // Issue #142: an executor is disabled in the UI by removing its instance, and executors follow
 // the plugins config live — so a removal is refused while a job still needs that executor (waiting, running,
-// or parked on a question), as a machine's is. The refusal names the jobs.
+// or waiting on a question), as a machine's is. The refusal names the jobs.
 import { describe, expect, it } from 'vitest';
 import type { ConfigRecords } from '../../src/domain/ports.ts';
 import type { ConfiguredInstance } from '../../src/domain/types.ts';

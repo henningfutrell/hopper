@@ -29,7 +29,8 @@ export function githubAppPlugin(seam?: GitHubApi): PluginDefinition<'job-source'
     create(ctx, o) {
       if (!o.enabled) return { disabled: { kind: 'github-app', detail: { mode: 'app' } } };
       const source = createAppSource({
-        name: ctx.instanceName, clock: ctx.clock, knownKeys: ctx.knownKeys, rerunnable: ctx.rerunnable, rejections: ctx.rejections, env: ctx.env, intake: ctx.intake(ctx.instanceName),
+        name: ctx.instanceName, clock: ctx.clock, knownKeys: ctx.knownKeys, rerunnable: ctx.rerunnable, rejections: ctx.rejections, env: ctx.env, intake: ctx.intake(ctx.instanceName), trust: ctx.intakeTrust, yoloMode: ctx.yoloMode,
+        jobArtifacts: ctx.jobArtifacts, issueGraph: ctx.issueGraph, ...(ctx.gitMirrors ? { gitMirrors: ctx.gitMirrors } : {}), ...(ctx.githubListings ? { listings: ctx.githubListings } : {}),
         accounts: ctx.connectedAccounts, ...(seam ? { api: seam } : {}),
       }, o);
       return { source, pollMs: o.pollSeconds * 1000 };

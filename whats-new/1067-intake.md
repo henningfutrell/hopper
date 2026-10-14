@@ -1,0 +1,1 @@
+- The Intake count now shows only the requests that still wait for approval: a request whose issue was closed, unlabelled or unassigned no longer stays counted, and it is counted again when it comes back.

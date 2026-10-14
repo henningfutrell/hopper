@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "requestId": {
+      "type": "string"
+    },
+    "machine": {
+      "type": "string"
+    },
+    "own": {
+      "type": "boolean"
+    },
+    "forUser": {
+      "type": "string"
+    },
+    "job": {
+      "type": "string"
+    },
+    "op": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "issue.create",
+            "issue.comment",
+            "issue.view",
+            "issue.comments",
+            "issue.close",
+            "pr.create",
+            "pr.view",
+            "pr.diff",
+            "pr.commits",
+            "pr.checks",
+            "pr.ready",
+            "repo.view",
+            "repo.fork",
+            "check.log"
+          ]
+        },
+        {
+          "type": "string",
+          "const": "git.push"
+        }
+      ]
+    },
+    "repo": {
+      "type": "string"
+    },
+    "refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "error": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "own",
+    "op",
+    "repo",
+    "error"
+  ],
+  "additionalProperties": false
+}

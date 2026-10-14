@@ -78,7 +78,7 @@ describe('Grok Bot routine: test event, open questions, payload (issue #378)', (
     setHook(secrets, r.url);
     const job = await a.pull(ask('Is this risky?'), { ...SRC, priority: 70, labels: ['hopper', 'area:ui'], repo: 'acme/shed', number: 7 });
     const q = await a.waitForQuestion(job.id, (x) => x.tier === 'human');
-    const hit = await waitFor(() => r.hits.find((h) => h.body.kind === 'question.escalated'), { what: 'escalation post' });
+    const hit = await waitFor(() => r.hits.find((h) => h.body.kind === 'question.escalated_to_human'), { what: 'escalation post' });
     const now = await a.job(job.id);
     const machineId = now.resumeOn ?? now.laneId?.split('/')[0];
     expect(machineId).toBeTruthy();
@@ -102,7 +102,7 @@ describe('Grok Bot routine: test event, open questions, payload (issue #378)', (
     const second = await notifierAction(a, 'test');
     expect(second.body).toMatchObject({ ok: true, status: 200 });
     expect(r.hits[1]!.headers.authorization).toBe('Bearer sekrit');
-    expect(r.hits[1]!.body).toMatchObject({ source: 'hopper', kind: 'test', test: true });
+    expect(r.hits[1]!.body).toMatchObject({ source: 'hopper', kind: 'question.escalated_to_human', test: true });
     expect(typeof r.hits[1]!.body.at).toBe('string');
   });
 
@@ -141,7 +141,7 @@ describe('Grok Bot routine: test event, open questions, payload (issue #378)', (
     await waitFor(() => r.hits.length >= 2, { what: 'open questions offered' });
     await settle();
     expect(r.hits.map((h) => h.body.jobId).sort()).toEqual([one.id, two.id].sort());
-    expect(r.hits.every((h) => h.body.kind === 'question.escalated' && h.body.offered === true)).toBe(true);
+    expect(r.hits.every((h) => h.body.kind === 'question.escalated_to_human' && h.body.offered === true)).toBe(true);
     const { job: three } = await humanQuestion(t, 'third risky?');
     await waitFor(() => r.hits.find((h) => h.body.jobId === three.id), { what: 'post for the third' });
     await settle();

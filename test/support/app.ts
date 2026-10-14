@@ -10,7 +10,8 @@
 // (scripted-executor.ts). Every user (issue #158) has a manual source of its own (`sourceOf(id)`;
 // `source` is admin's); `api` reads without a session (loopback: the one user's work, while there is one
 // user) unless its headers carry one; the helpers that read a user's work (`job`, `pull`, …) carry a
-// session of that user once the hopper has several (issue #221).
+// session of that user once the hopper has several (issue #221). OpenFGA is the in-memory double
+// (fake-authorization-server.ts) unless the test names its own, or `authorizationServer: undefined` for none.
 // Every event the app emits is validated against its schema; stop() fails the test on any
 // nonconforming event (tracker + a scan of every user's whole event log).
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -30,6 +31,7 @@ import { mintLoginCode } from '../../src/http/ui/login-code.ts';
 import { readConfig, writeConfig } from './files.ts';
 import { fakeLevels } from './fake-questions.ts';
 import { createFakeRouter } from './fake-router.ts';
+import { createFakeAuthorizationServer } from './fake-authorization-server.ts';
 import { createManualSource, manualItem, type ManualSource } from './manual-source.ts';
 import { createScriptedExecutor, type ScriptedExecutor } from './scripted-executor.ts';
 import { waitFor } from './wait.ts';
@@ -88,7 +90,8 @@ export interface TestApp {
 /** A temp dir (the app's work dir) and `dbPath` in it: the key of the app's database (support/database.ts databaseUrlFor). */
 export function tempDbPath(): { dbPath: string; cleanup(): void } {
   const dir = mkdtempSync(join(tmpdir(), 'hopper-it-'));
-  return { dbPath: join(dir, 'db.sqlite'), cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+  // Retried: a process the app started (a fake herdr writes into this dir) can still be ending (ENOTEMPTY).
+  return { dbPath: join(dir, 'db.sqlite'), cleanup: () => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }) };
 }
 
 /** The plugins config's `machines`: only the local machine, with this many lanes. */
@@ -101,6 +104,10 @@ export const TEST_PLUGINS = { version: 1, executors: [{ name: 'test', plugin: 't
 export function writePlugins(dbPath: string, value: unknown): void {
   writeConfig(dbPath, 'plugins', value);
 }
+
+/** The master key a test app is given unless the test names its own (issue #659). */
+export { TEST_KEY as TEST_MASTER_KEY } from './system-secrets.ts';
+import { TEST_KEY as TEST_MASTER_KEY } from './system-secrets.ts';
 
 export const TOKEN_RE = /localStorage\.setItem\(\s*['"]jh_session['"]\s*,\s*['"]([0-9a-f]{64})['"]\s*\)/;
 
@@ -121,6 +128,8 @@ export async function startTestApp(o: {
   else if (o.plugins === undefined && !isNewHopper(o.dbPath) && readConfig(o.dbPath, 'plugins') === undefined) writePlugins(o.dbPath, TEST_PLUGINS);
   const secrets = o.secrets ?? {};
   if (secrets.PATH === undefined) secrets.PATH = process.env.PATH;
+  // A deploy gives the master key at launch (issue #659); a test that wants none names it, `HOPPER_MASTER_KEY: undefined`.
+  if (!('HOPPER_MASTER_KEY' in secrets) && !('HOPPER_TOKEN_KEY_FILE' in secrets) && !('HOPPER_TOKEN_KEY' in secrets)) secrets.HOPPER_MASTER_KEY = TEST_MASTER_KEY;
   const config = loadConfig({
     HOPPER_PORT: '0',
     HOPPER_DATABASE_URL: databaseUrlFor(o.dbPath),
@@ -130,6 +139,7 @@ export async function startTestApp(o: {
     HOPPER_LANE_IDLE_GRACE_MS: '200',
     HOPPER_PLUGIN_DIR: join(dataDir, 'plugins'),
     HOPPER_UPDATE_CHECK_MS: '0',
+    HOPPER_DONE_RECHECK_MS: '0',
     ...o.env,
   });
   const source = o.source ?? createManualSource();
@@ -143,8 +153,17 @@ export async function startTestApp(o: {
   const app = await startApp(config, {
     pluginsConfigIntervalMs: 50,
     env: secrets,
+    // No default plugin store: a test never fetches the published one; a test that wants one names it.
+    pluginStoreDefault: null,
     ...(o.realRouter ? {} : { router: createFakeRouter({ clock: { now: () => new Date() } }) }),
     ...(o.realLevels ? {} : fakeLevels()),
+    // No model in tests (issue #569): a long card has no TL;DR unless a test puts a double here.
+    tldrWriter: async () => ({ error: 'no TL;DR model in tests' }),
+    // OpenFGA, as a deploy runs it (issue #652: no issue is of a trusted origin without it); a test of a hopper without
+    // OpenFGA names `authorizationServer: undefined`.
+    authorizationServer: createFakeAuthorizationServer(),
+    // No tailnet (issue #1024): a test never reads this machine's tailscaled; a test that wants one puts a double here.
+    tailnet: null,
     ...o.seams,
     executors: [scripted, ...(o.seams?.executors ?? [])],
     // Each user's own manual source and fake usage; the seams' sources run for admin only.
@@ -205,7 +224,8 @@ export async function startTestApp(o: {
       s.add(item);
       await app.user(userId).sources.syncNow(s.name);
       const jobs = (await api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000', undefined, await as(userId))).body.jobs;
-      const found = jobs.find((j) => j.source?.key === item.key);
+      // The item's own job: a proposal's follow-ons share its source (issue #859).
+      const found = jobs.find((j) => j.source?.key === item.key && !j.followOn);
       if (!found) throw new Error(`no job was pulled for ${item.key}`);
       return found;
     },

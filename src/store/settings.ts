@@ -1,9 +1,17 @@
 import { randomBytes } from 'node:crypto';
+import type { RateLimiterSettings } from '../domain/github-rate-limit.ts';
+import { remoteAccessRecord, type RemoteAccessSettings } from '../domain/remote-access.ts';
+import type { IntakeActorSettings } from '../domain/intake-origin.ts';
 import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
-import type { ConnectedAccountProvider, PluginInstall, QueueGate, UpdateChannel, UpdateSettings, UsageGraphView } from '../domain/types.ts';
-import { UPDATE_CHANNELS } from '../domain/types.ts';
+import type { InfraPlanSettings } from '../domain/infra-plans.ts';
+import type { AutoAnswerSettings, AutoParkSettings, BlastRadiusSettings, ComponentWatcherSettings, ConnectedAccountProvider, ContributionSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, LandingBatchSettings } from '../domain/types.ts';
+import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
+import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts'; import { memoryAlertSettings } from './memory-alert-settings.ts';
+
+/** Each review section's settings row (issues #537, #543). */
+const REVIEW_SETTINGS_KEYS: Readonly<Record<ReviewKind, string>> = { proposal: 'proposalSettings', research: 'researchSettings' };
 
 /** `settings` rows by key, in whichever schema the context's connection reads. */
 function keyValues(c: StoreContext) {
@@ -21,10 +29,12 @@ function keyValues(c: StoreContext) {
 /** The settings key of a connected account's job repositories (issue #321). */
 export const jobRepositoriesKey = (provider: ConnectedAccountProvider): string => `jobRepositories:${provider}`;
 
-/** A user's settings: the queue gate, the hopper's own ssh key (issue #293), its link key (issue #308), the job repositories (issue #321), the usage graph view and history retention (issue #385). */
+/** A user's settings: the queue gate, the hopper's own ssh key (issue #293), its link key (issue #308), the job repositories (issue #321), the usage graph view and history retention (issue #385), the usage limits (issue #522), the memory alert (issue #868). */
 export function createUserSettingsRepository(c: StoreContext): UserSettingsRepository {
   const { read, write } = keyValues(c);
   return {
+    ...sandboxSettings(read, write), // the read policy (issue #716) and the sandbox approval toggles (issue #991)
+    ...memoryAlertSettings(read, write), // the memory alert (issue #868)
     getQueueGate() {
       const text = read('queueGate');
       return text === undefined ? undefined : JSON.parse(text) as QueueGate;
@@ -55,10 +65,13 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     getUsageGraphView() {
       const text = read('usageGraphView');
-      return text === undefined ? undefined : JSON.parse(text) as UsageGraphView;
+      return text === undefined ? undefined : { range: (JSON.parse(text) as UsageGraphView).range };
     },
+    // The step the graph step follows (issue #502) is kept beside the range for the build before, which reads it.
     setUsageGraphView(view) {
-      write('usageGraphView', JSON.stringify({ range: 'preset' in view.range ? { preset: view.range.preset } : { from: view.range.from, to: view.range.to }, step: view.step }));
+      const r = view.range;
+      const span = 'preset' in r ? PRESET_MS[r.preset] : Date.parse(r.to) - Date.parse(r.from);
+      write('usageGraphView', JSON.stringify({ range: 'preset' in r ? { preset: r.preset } : { from: r.from, to: r.to }, step: graphStepFor(span) }));
     },
     getHistoryRetentionDays() {
       const text = read('historyRetentionDays');
@@ -66,6 +79,66 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     },
     setHistoryRetentionDays(days) {
       write('historyRetentionDays', String(days));
+    },
+    getUsageLimits() {
+      const text = read('usageLimits');
+      if (text === undefined) return undefined;
+      const { soft, hard } = JSON.parse(text) as UsageLimitPair;
+      return { soft, hard };
+    },
+    setUsageLimits(limits) {
+      write('usageLimits', JSON.stringify({ soft: limits.soft, hard: limits.hard }));
+    },
+    getLaneTuning() {
+      const text = read('laneTuning');
+      return text === undefined ? {} : JSON.parse(text) as LaneTuningSettings;
+    },
+    setLaneTuning(settings) {
+      write('laneTuning', JSON.stringify(Object.fromEntries(Object.entries(settings).sort(([a], [b]) => a.localeCompare(b))
+        .map(([id, t]) => [id, { autoTune: t.autoTune, minLanes: t.minLanes, maxLanes: t.maxLanes }]))));
+    },
+    getLaneDismissals() {
+      const text = read('laneDismissals');
+      return text === undefined ? {} : JSON.parse(text) as LaneDismissals;
+    },
+    setLaneDismissals(dismissals) {
+      write('laneDismissals', JSON.stringify(dismissals));
+    },
+    getPriorityLanes() {
+      const text = read('priorityLanes');
+      return text === undefined ? undefined : JSON.parse(text) as PriorityLaneSettings;
+    },
+    setPriorityLanes(s) {
+      write('priorityLanes', JSON.stringify({
+        highPriority: s.highPriority, count: s.count, whenIdle: s.whenIdle, windowDays: s.windowDays, minRuns: s.minRuns, ...(s.manual ? { manual: s.manual } : {}),
+      }));
+    },
+    getPriorityLaneChoice() {
+      const text = read('priorityLaneChoice');
+      return text === undefined ? undefined : JSON.parse(text) as string[];
+    },
+    setPriorityLaneChoice(lanes) {
+      write('priorityLaneChoice', JSON.stringify([...lanes]));
+    },
+    getBlastRadius() {
+      const text = read('blastRadius');
+      return text === undefined ? undefined : JSON.parse(text) as BlastRadiusSettings;
+    },
+    setBlastRadius(s) {
+      write('blastRadius', JSON.stringify({
+        gateAt: s.gateAt,
+        pass: { labels: s.pass.labels, repos: s.pass.repos, ...(s.pass.minPriority !== undefined ? { minPriority: s.pass.minPriority } : {}) },
+        rules: { prodPatterns: s.rules.prodPatterns, prodAccounts: s.rules.prodAccounts, unconfirmed: s.rules.unconfirmed },
+        actors: s.actors.map((a) => ({ machineId: a.machineId, purpose: a.purpose, expected: a.expected })),
+        everyMinutes: s.everyMinutes,
+      }));
+    },
+    getDiscovery(machineId) {
+      const text = read(`discovery:${machineId}`);
+      return text === undefined ? undefined : JSON.parse(text) as DiscoveryRecord;
+    },
+    setDiscovery(record) {
+      write(`discovery:${record.machineId}`, JSON.stringify(record));
     },
     claimHolder() {
       const kept = read('claimHolder');
@@ -81,10 +154,112 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     setIntakeMigration(source, migration) {
       write(`intakeMigration:${source}`, JSON.stringify({ at: migration.at, changes: migration.changes.map((x) => ({ key: x.key, change: x.change })) }));
     },
+    getLoginExpiry() {
+      const text = read('loginExpiry');
+      return text !== undefined && (LOGIN_EXPIRY_ACTIONS as readonly string[]).includes(text) ? text as LoginExpiryAction : undefined;
+    },
+    setLoginExpiry(action) {
+      write('loginExpiry', action);
+    },
+    getLoginWarnSec() {
+      const n = Number(read('loginWarnSec'));
+      return Number.isInteger(n) && n > 0 ? n : undefined;
+    },
+    setLoginWarnSec(seconds) {
+      write('loginWarnSec', String(seconds));
+    },
+    getReviewSettings(kind) {
+      const text = read(REVIEW_SETTINGS_KEYS[kind]);
+      return text === undefined ? undefined : JSON.parse(text) as ReviewSettings;
+    },
+    setReviewSettings(kind, settings) {
+      write(REVIEW_SETTINGS_KEYS[kind], JSON.stringify({ reviewers: [...settings.reviewers], signOff: settings.signOff, levelRevisions: settings.levelRevisions, ...(settings.autoContinue !== undefined ? { autoContinue: settings.autoContinue } : {}) }));
+    },
+    getPhaseShifts() {
+      const text = read('phaseShifts');
+      return text === undefined ? undefined : JSON.parse(text) as PhaseShiftSettings;
+    },
+    setPhaseShifts(settings) {
+      write('phaseShifts', JSON.stringify({ defaultMode: settings.defaultMode, forkParent: settings.forkParent, levels: [...settings.levels] }));
+    },
+    getAutoAnswer() {
+      const text = read('autoAnswer');
+      return text === undefined ? undefined : JSON.parse(text) as AutoAnswerSettings;
+    },
+    setAutoAnswer(settings) {
+      // `holdHighPriority` (issue #679): absent in a record from before it, read as off; the build before ignores it.
+      write('autoAnswer', JSON.stringify({ enabled: settings.enabled, threshold: settings.threshold, ...(settings.holdHighPriority === undefined ? {} : { holdHighPriority: settings.holdHighPriority }) }));
+    },
+    getAutoPark() {
+      const text = read('autoPark');
+      return text === undefined ? undefined : JSON.parse(text) as AutoParkSettings;
+    },
+    setAutoPark(settings) {
+      write('autoPark', JSON.stringify({ minutes: settings.minutes, highPriorityMinutes: settings.highPriorityMinutes }));
+    },
+    getThreadAsk: () => { const text = read('threadAsk'); return text === undefined ? undefined : JSON.parse(text) as ThreadAskSettings; },
+    setThreadAsk: (s) => write('threadAsk', JSON.stringify({ ownRepos: s.ownRepos, otherRepos: s.otherRepos })),
+    getTldr() { const text = read('tldr'); return text === undefined ? undefined : JSON.parse(text) as TldrSettings; },
+    setTldr(settings) { write('tldr', JSON.stringify({ enabled: settings.enabled })); },
+    getGitHubWatch: () => { const t = read('githubWatch'); return t === undefined ? undefined : JSON.parse(t) as GitHubWatchSettings; },
+    setGitHubWatch: (s) => write('githubWatch', JSON.stringify({ intervalSeconds: s.intervalSeconds })),
+    getComponentWatchers: () => { const t = read('componentWatchers'); return t === undefined ? undefined : JSON.parse(t) as ComponentWatcherSettings; }, setComponentWatchers: (s) => write('componentWatchers', JSON.stringify({ fileIssues: s.fileIssues })),
+    getYoloMode() {
+      const text = read('yoloMode');
+      return text === undefined ? undefined : JSON.parse(text) as YoloModeSettings;
+    },
+    setYoloMode(settings) {
+      write('yoloMode', JSON.stringify({ on: settings.on, repos: settings.repos }));
+    },
+    getLandingBatches() { const text = read('landingBatches'); return text === undefined ? undefined : JSON.parse(text) as LandingBatchSettings; }, setLandingBatches(settings) { write('landingBatches', JSON.stringify({ repos: settings.repos })); },
+    getContribution() { const text = read('contribution'); return text === undefined ? undefined : JSON.parse(text) as ContributionSettings; }, setContribution(settings) { write('contribution', JSON.stringify({ on: settings.on })); },
+    getInfraPlans() { const text = read('infraPlans'); return text === undefined ? undefined : JSON.parse(text) as InfraPlanSettings; },
+    setInfraPlans(settings) { write('infraPlans', JSON.stringify({ autoApprove: settings.autoApprove })); }, getInfraWatchers() { const text = read('infraWatchers'); return text === undefined ? undefined : JSON.parse(text) as Record<string, string[]>; }, setInfraWatchers(watchers) { write('infraWatchers', JSON.stringify(watchers)); },
+    getIntakeActors() { const text = read('intakeActors'); return text === undefined ? undefined : JSON.parse(text) as IntakeActorSettings; },
+    // `actors` stays the logins (issue #930): the build before ids reads them; `accounts` holds each one's GitHub user id.
+    setIntakeActors: (s) => write('intakeActors', JSON.stringify({ actors: s.actors, ...(s.accounts ? { accounts: s.accounts.map((a) => ({ id: a.id, login: a.login, type: a.type, ...(a.avatarUrl ? { avatarUrl: a.avatarUrl } : {}) })) } : {}) })),
+    getRepoChecksDismissed() {
+      const text = read('repoChecksDismissed');
+      return text === undefined ? [] : JSON.parse(text) as string[];
+    },
+    setRepoChecksDismissed(repos) {
+      write('repoChecksDismissed', JSON.stringify([...repos]));
+    },
+    getBackfills() {
+      const text = read('backfills');
+      return text === undefined ? {} : JSON.parse(text) as Record<string, string>;
+    },
+    setBackfills(done) {
+      write('backfills', JSON.stringify(done));
+    },
+    getFailureSettings() {
+      const text = read('failureSettings');
+      return text === undefined ? undefined : JSON.parse(text) as FailureSettings;
+    },
+    setFailureSettings(settings) {
+      write('failureSettings', JSON.stringify(settings));
+    },
+    getMinorDecisionSettings() {
+      const text = read('minorDecisions');
+      return text === undefined ? {} : JSON.parse(text) as Partial<MinorDecisionSettings>;
+    },
+    setMinorDecisionSettings(settings) {
+      write('minorDecisions', JSON.stringify(settings));
+    },
+    getNamedCauses() {
+      const text = read('failureCauses');
+      return text === undefined ? [] : JSON.parse(text) as NamedCause[];
+    },
+    setNamedCauses(causes) {
+      write('failureCauses', JSON.stringify(causes.map((c) => ({ signature: c.signature, name: c.name, description: c.description, decision: c.decision }))));
+    },
   };
 }
 
-/** The instance's settings: self-update and the store installs. */
+/** The update settings that are on or off, and their keys: auto-update, and taking stable releases early (issue #1073 part 5). */
+const UPDATE_SWITCHES = [['autoUpdate', 'autoUpdate'], ['updateCanary', 'canary']] as const;
+
+/** The instance's settings: self-update, the shared rate limiter (issue #436), the plugin store (issue #445) and the store installs. */
 export function createInstanceSettingsRepository(c: StoreContext): InstanceSettingsRepository {
   const { read, write } = keyValues(c);
   return {
@@ -92,13 +267,12 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
       const out: Partial<UpdateSettings> = {};
       const channel = read('updateChannel');
       if (channel && (UPDATE_CHANNELS as readonly string[]).includes(channel)) out.channel = channel as UpdateChannel;
-      const auto = read('autoUpdate');
-      if (auto !== undefined) out.autoUpdate = auto === 'true';
+      for (const [key, field] of UPDATE_SWITCHES) { const v = read(key); if (v !== undefined) out[field] = v === 'true'; }
       return out;
     },
     setUpdateSettings(patch) {
       if (patch.channel !== undefined) write('updateChannel', patch.channel);
-      if (patch.autoUpdate !== undefined) write('autoUpdate', String(patch.autoUpdate));
+      for (const [key, field] of UPDATE_SWITCHES) if (patch[field] !== undefined) write(key, String(patch[field]));
     },
     getPluginInstalls() {
       const text = read('pluginInstalls');
@@ -107,5 +281,35 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
     setPluginInstalls(installs) {
       write('pluginInstalls', JSON.stringify([...installs].sort((a, b) => a.id.localeCompare(b.id))));
     },
+    getGitHubRateLimiter: () => JSON.parse(read('githubRateLimiter') ?? '{}') as Partial<RateLimiterSettings>,
+    setGitHubRateLimiter: (s) => write('githubRateLimiter', JSON.stringify({ slowBelowPercent: s.slowBelowPercent, reserve: s.reserve, batchSize: s.batchSize, intakeReserve: s.intakeReserve, intakeSyncMinutes: s.intakeSyncMinutes, prCycleMinutes: s.prCycleMinutes })),
+    getPluginStoreSource() {
+      const text = read('pluginStore');
+      return text === undefined ? undefined : JSON.parse(text) as PluginStoreSource;
+    },
+    setPluginStoreSource(source) {
+      write('pluginStore', JSON.stringify(source.kind === 'repo' ? { kind: 'repo', repo: source.repo } : { kind: source.kind }));
+    },
+    instanceId() {
+      return c.tx(() => {
+        c.db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING', 'instanceId', randomBytes(8).toString('hex'));
+        return read('instanceId')!;
+      });
+    },
+    masterKeyFingerprint: () => read('masterKeyFingerprint'),
+    setMasterKeyFingerprint: (fingerprint) => write('masterKeyFingerprint', fingerprint),
+    masterKeySaved: () => read('masterKeySaved'),
+    setMasterKeySaved: (fingerprint) => write('masterKeySaved', fingerprint),
+    masterKeyRotation() {
+      const text = read('masterKeyRotation');
+      return text === undefined ? undefined : JSON.parse(text) as MasterKeyRotation;
+    },
+    setMasterKeyRotation: (rotation) => write('masterKeyRotation', JSON.stringify({ from: rotation.from, at: rotation.at })),
+    getRemoteAccess() { const text = read('remoteAccess'); return text === undefined ? undefined : JSON.parse(text) as RemoteAccessSettings; },
+    setRemoteAccess: (s) => write('remoteAccess', JSON.stringify(remoteAccessRecord(s))),
+    getHostLinkBase: () => read('hostLinkBase') ?? '',
+    setHostLinkBase: (base) => write('hostLinkBase', base),
+    getAllowedHosts() { const text = read('allowedHosts'); return text === undefined ? [] : JSON.parse(text) as string[]; },
+    setAllowedHosts: (hosts) => write('allowedHosts', JSON.stringify([...hosts])),
   };
 }

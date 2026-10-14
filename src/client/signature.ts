@@ -87,6 +87,26 @@ export function verifyConnect(token: string, header: string | undefined, user: s
   return { ok: true, nonce };
 }
 
+/**
+ * A machine asking the hopper for a vault secret (design.md "The vault", issue #558): the client signs which
+ * user's machine it is, its machine key and what it asks, fresh and once, with the client token. Its own
+ * label: never taken for the hopper's request to the client, nor for a dial-in.
+ */
+export function signVault(token: string, user: string, machineKey: string, body: string, now = Date.now()): string {
+  const nonce = randomBytes(16).toString('hex');
+  return `ts=${now},nonce=${nonce},sig=${mac(token, ['hopper-vault', user, machineKey, String(now), nonce, sha256(body)])}`;
+}
+
+export function verifyVault(token: string, header: string | undefined, user: string, machineKey: string, body: string, nonces: NonceCache, now = Date.now()): Verdict {
+  const m = header ? HEADER.exec(header) : null;
+  if (!m) return { ok: false, why: 'unsigned' };
+  const [, ts, nonce, sig] = m as unknown as [string, string, string, string];
+  if (Math.abs(now - Number(ts)) > WINDOW_MS) return { ok: false, why: 'stale' };
+  if (!same(sig, mac(token, ['hopper-vault', user, machineKey, ts, nonce, sha256(body)]))) return { ok: false, why: 'bad signature' };
+  if (nonces.seen(nonce, now)) return { ok: false, why: 'replayed' };
+  return { ok: true, nonce };
+}
+
 /** The nonce a signed request carries (the hopper keeps it to check the answer). */
 export const nonceOf = (header: string): string => HEADER.exec(header)?.[2] ?? '';
 

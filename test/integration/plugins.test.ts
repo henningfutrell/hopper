@@ -46,7 +46,7 @@ describe('router chosen from what is detected, no grok-bot-jev checkout', () => 
   it('GET /api/plugins: roles, the detected instance, and every plugin; a custom router that can run is chosen', async () => {
     const a = await start({ before: installAlwaysProceed });
     const body = (await a.api('GET', '/api/plugins')).body;
-    expect(body.roles).toEqual(['router', 'queue-sorter', 'escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier']);
+    expect(body.roles).toEqual(['router', 'queue-sorter', 'escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier', 'vault-backend']);
     expect(body.config).toMatchObject({ source: 'stored' });
     expect(body.config).not.toHaveProperty('document');
     expect(body.router).toMatchObject({
@@ -55,8 +55,8 @@ describe('router chosen from what is detected, no grok-bot-jev checkout', () => 
     });
     const ids = body.plugins.map((p: { id: string; builtin: boolean }) => [p.id, p.builtin]).sort();
     expect(ids).toEqual([
-      ['always-proceed', false], ['anthropic-api', true], ['claude-cli', true], ['claude-plan', true], ['client', true], ['codex', true], ['command', true], ['command-usage', true], ['cursor-agent', true], ['docker', true], ['gate-router', true], ['github-account', true], ['github-app', true],
-      ['grokbot-routine', true], ['herdr-claude', true], ['local', true], ['newest-first', true], ['oldest-first', true], ['omp', true], ['opencode', true], ['pass-through', true], ['priority', true], ['ssh', true],
+      ['1password', true], ['always-proceed', false], ['anthropic-api', true], ['bitwarden', true], ['claude', true], ['claude-cli', true], ['claude-plan', true], ['client', true], ['codex', true], ['command', true], ['command-usage', true], ['cursor-agent', true], ['docker', true], ['gate-router', true], ['github-account', true], ['github-app', true],
+      ['grokbot-routine', true], ['hashicorp-vault', true], ['herdr-claude', true], ['local', true], ['newest-first', true], ['oldest-first', true], ['omp', true], ['opencode', true], ['pass-through', true], ['priority', true], ['ssh', true],
       ['test', true],
     ]);
     const gates = body.plugins.find((p: { id: string }) => p.id === 'gate-router');
@@ -108,12 +108,11 @@ describe('the plugins config and a custom plugin', () => {
 });
 
 describe('escalation levels in /api/plugins', () => {
-  it('no section: the built-in levels, level-1 then level-2, both claude-cli', async () => {
+  it('no section: the built-in level, level-1, claude-cli on the frontier model; no opus level (#632)', async () => {
     const a = await start();
     const body = (await a.api('GET', '/api/plugins')).body;
     expect(body.escalationLevels.map((l: { instance: unknown }) => l.instance)).toEqual([
-      { name: 'level-1', plugin: 'claude-cli', options: { machine: 'local', bin: 'claude', model: 'opus', timeoutMs: 180000 } },
-      { name: 'level-2', plugin: 'claude-cli', options: { machine: 'local', bin: 'claude', model: 'fable', timeoutMs: 180000 } },
+      { name: 'level-1', plugin: 'claude-cli', options: { machine: 'local', bin: 'claude', model: 'fable', timeoutMs: 180000 } },
     ]);
   });
 

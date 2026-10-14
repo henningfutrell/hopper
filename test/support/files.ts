@@ -4,9 +4,14 @@
 import type { ConfigName, InstanceStore, StoredSignIn, UserStore } from '../../src/domain/ports.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
-import { databaseUrlFor, installFromBefore } from './database.ts';
+import { openDb } from '../../src/store/db.ts';
+import { databaseUrlFor, installFromBefore, ownerSchemaUrlFor } from './database.ts';
 
-export interface WebhookEntry { name: string; url: string; events: string[]; secretEnv: string; active?: boolean }
+/**
+ * A subscription in the database at start. `secretEnv`: one from before issue #451, whose secret the runtime
+ * variable it names gives (the hopper keeps no secret for it).
+ */
+export interface WebhookEntry { name: string; url: string; events: string[]; secretEnv?: string; active?: boolean }
 
 const userOf = (instance: InstanceStore, id: string) => {
   const user = instance.users.get(id);
@@ -57,11 +62,17 @@ export function readConfig(dbPath: string, name: ConfigName): unknown {
   return withStores(dbPath, (_instance, admin) => admin.config.read(name));
 }
 
-/** Add webhook subscriptions to admin's store in the database of `dbPath`. */
+/** Add webhook subscriptions to admin's store in the database of `dbPath`: no secret stored, a `secretEnv` as one from before had. */
 export function writeWebhooks(dbPath: string, webhooks: WebhookEntry[]): void {
-  withStores(dbPath, (_instance, admin) => {
-    for (const w of webhooks) admin.webhooks.add({ ...w, active: w.active ?? true });
-  });
+  const added = withStores(dbPath, (_instance, admin) =>
+    webhooks.map((w) => ({ id: admin.webhooks.add({ name: w.name, url: w.url, events: w.events, active: w.active ?? true })!.id, secretEnv: w.secretEnv })));
+  if (!added.some((w) => w.secretEnv)) return;
+  const db = openDb(ownerSchemaUrlFor(dbPath));
+  try {
+    for (const w of added) if (w.secretEnv) db.run('UPDATE webhooks SET secret_env = ? WHERE id = ?', w.secretEnv, w.id);
+  } finally {
+    db.close();
+  }
 }
 
 /** Owner's store in the database `url` names (its instance store closed with it). */

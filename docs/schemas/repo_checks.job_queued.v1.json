@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string"
+    },
+    "number": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "url": {
+      "type": "string"
+    },
+    "existing": {
+      "type": "boolean"
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "repo",
+    "number",
+    "url",
+    "existing",
+    "by"
+  ],
+  "additionalProperties": false
+}

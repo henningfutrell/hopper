@@ -19,11 +19,10 @@
 //     When GitHub refuses both the token and its refresh token
 //     Then the account reads as expired with why, its source says sign in again, and connected_account.expired is recorded
 //   Scenario: connecting again after an expired sign-in reads as connected
-//   Scenario: a running job keeps GitHub access across a renewal (issue #441)
+//   Scenario: a job of the connected account holds no GitHub token (issue #652; it had one, renewed on its machine, since #441)
 //     Given a job of the connected account running on this machine
-//     When the token is renewed, and GitHub refuses the one the job started with
-//     Then the job's credential file on its machine holds the renewed token, and its variables point there
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+//     Then its variables and files carry no GitHub token: git and gh go through the hopper
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -154,9 +153,9 @@ describe('a connected GitHub account renews its token (#358)', () => {
   });
 });
 
-describe('a running job keeps GitHub access across a renewal (#441)', () => {
-  it('rewrites the job\'s credential file on its machine with the renewed token', async () => {
-    const work = mkdtempSync(join(tmpdir(), 'jh-441-'));
+describe('a job of the connected account holds no GitHub token (#652)', () => {
+  it('runs with git and gh through the hopper: no GH_TOKEN, no gh config, no hosts.yml on its machine', async () => {
+    const work = mkdtempSync(join(tmpdir(), 'jh-652-'));
     cleanups.push(() => rmSync(work, { recursive: true, force: true }));
     mkdirSync(work, { recursive: true });
     let env: Record<string, string> | undefined;
@@ -177,16 +176,42 @@ describe('a running job keeps GitHub access across a renewal (#441)', () => {
 
     const job = (await jobs(app))[0]!;
     const dir = join(work, '.hopper-scratch', job.id, 'credentials');
-    expect(env).toEqual({ GH_CONFIG_DIR: join(dir, 'gh') });
-    const hosts = () => readFileSync(join(dir, 'gh', 'hosts.yml'), 'utf8');
-    const started = /oauth_token: "([^"]+)"/.exec(hosts())![1]!;
-    expect(github.tokens.has(started)).toBe(true);
-
-    const renewed = await app.user().connectedAccounts.renew('github', started);
-    expect(github.tokens.has(started)).toBe(false); // GitHub refuses the token the job started with
-    await waitFor(async () => hosts().includes(renewed), { what: 'the renewed token on the job\'s machine' });
-    expect(hosts()).not.toContain(started);
-    expect(github.tokens.has(renewed)).toBe(true);
+    // The GitHub proxy's files (issue #563): the job's proxy token and hopper-gh; hopper-skill (issue #582) and
+    // hopper-artifact (issue #624); and git's way to the hopper (issue #652). Never a GitHub token.
+    const url = expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(env).toMatchObject({ HOPPER_TOKEN_FILE: join(dir, 'hopper', 'token'), HOPPER_GH: join(dir, 'hopper', 'gh'), HOPPER_SKILL: join(dir, 'hopper', 'skill'), HOPPER_ARTIFACT: join(dir, 'hopper', 'artifact'), HOPPER_URL: url, GIT_CONFIG_COUNT: '5' });
+    expect(Object.keys(env!).filter((k) => !k.startsWith('GIT_CONFIG_')).sort()).toEqual(['HOPPER_ARTIFACT', 'HOPPER_GH', 'HOPPER_SKILL', 'HOPPER_STEP', 'HOPPER_TOKEN_FILE', 'HOPPER_URL']);
+    expect(existsSync(join(dir, 'gh'))).toBe(false);
+    const token = await app.user().connectedAccounts.token('github');
+    expect(JSON.stringify(env)).not.toContain(token);
     expect(JSON.stringify(await jobs(app))).not.toMatch(/gh[or]_/); // never on the job
+  });
+});
+
+// Issue #647: each renewal is recorded with no token.
+describe('the connection\'s renewals are recorded (#647)', () => {
+  async function connected() {
+    const github = await forge(EIGHT_HOURS_S, [{ repo: 'octo-user/tools', number: 7, title: 'x', body: 'Do it.', author: 'octo-user', labels: ['hopper'] }]);
+    const app = await start(github, database());
+    await connect(app, github, await app.login());
+    return { app, github, started: await app.user().connectedAccounts.token('github') };
+  }
+
+  it('records one connected_account.renewed event per renewal, with no token', async () => {
+    const { app, started } = await connected();
+    await app.user().connectedAccounts.renew('github', started);
+    const renewed = (await events(app)).filter((e) => e.type === 'connected_account.renewed');
+    expect(renewed).toHaveLength(1);
+    expect(renewed[0]!.data).toMatchObject({ provider: 'github', account: 'octo-user', expiresAt: expect.any(String) });
+    expect(JSON.stringify(renewed)).not.toMatch(/gh[or]_/);
+  });
+
+  it('records a failed renewal with its error code', async () => {
+    const { app, github, started } = await connected();
+    github.refreshTokens.clear();
+    await app.user().connectedAccounts.renew('github', started).catch(() => undefined);
+    const failed = (await events(app)).filter((e) => e.type === 'connected_account.renewal_failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0]!.data).toEqual({ provider: 'github', account: 'octo-user', code: 'bad_refresh_token' });
   });
 });

@@ -5,7 +5,20 @@
     "by": {
       "type": "string",
       "enum": [
-        "user"
+        "user",
+        "assessor",
+        "tending"
+      ]
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api"
       ]
     }
   },

@@ -1,8 +1,8 @@
 // HerdrClient over the herdr CLI. Every call is `<bin> --session <session> …` with no shell,
 // JSON on stdout, server errors as JSON on stderr with exit 1, usage errors with exit 2.
 // Never the default session: the session is required. On an attached machine (`ssh`) the same
-// argv runs there through `ssh`, quoted for the remote shell, `herdr` found by name from its PATH
-// (`REMOTE_PATH`, issue #311; design.md "Attached machines"), authenticated as `../ssh.ts` says
+// argv runs there through `ssh`, quoted for the remote shell: the hopper's own herdr there when it is linked, else
+// `herdr` found by name from its PATH (`REMOTE_HERDR`, issues #311, #741; design.md "Attached machines"), authenticated as `../ssh.ts` says
 // (design.md "Target authentication").
 
 import { execFile } from 'node:child_process';
@@ -11,7 +11,7 @@ import { scrubbedEnv, userProcessEnv } from '../env.ts';
 import { clientHerdr, type ClientTransport } from '../client.ts';
 import { clientShell, localShell, sshShell } from '../machine-shell.ts';
 import type { MachineShell } from '../../domain/ports.ts';
-import { REMOTE_PATH, SSH_FAILED, shellQuote, sshArgv, type SshTransport } from '../ssh.ts';
+import { REMOTE_HERDR, SSH_FAILED, shellQuote, sshArgv, type SshTransport } from '../ssh.ts';
 import { HerdrError } from './client.ts';
 import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
 
@@ -51,7 +51,10 @@ function failure(code: number, stderr: string, fallback: string): HerdrError {
 }
 
 export function createHerdrCliClient(o: CliOptions | ClientOptions): HerdrCliClient {
-  if ('client' in o) return withCalls('', viaClient(o.client), o.timeoutMs ?? DEFAULT_TIMEOUT_MS, clientShell(o.client));
+  if ('client' in o) {
+    const link = o.client.link;
+    return { ...withCalls('', viaClient(o.client), o.timeoutMs ?? DEFAULT_TIMEOUT_MS, clientShell(o.client)), linkDown: () => link()?.destroyed !== false };
+  }
   if (!o.session) throw new Error('herdr session is required (never the default session)');
   return withCalls(o.session, viaCli(o), o.timeoutMs ?? DEFAULT_TIMEOUT_MS, o.ssh ? sshShell(o.ssh) : localShell(o.userEnv));
 }
@@ -79,7 +82,7 @@ function viaCli(o: CliOptions): Exec {
     const argv = ['--session', o.session, ...args];
     let file: string, fileArgs: string[];
     try {
-      [file, fileArgs] = ssh ? [ssh.bin ?? 'ssh', sshArgv(ssh, `${REMOTE_PATH} exec ${['herdr', ...argv].map(shellQuote).join(' ')}`)] : [o.bin, argv];
+      [file, fileArgs] = ssh ? [ssh.bin ?? 'ssh', sshArgv(ssh, `${REMOTE_HERDR} ${argv.map(shellQuote).join(' ')}`)] : [o.bin, argv];
     } catch (e) {
       // Not authenticated as the hopper must be (no key, unpinned, a jump host): never connected.
       return reject(new HerdrError('ssh', `ssh ${ssh!.target}: ${(e as Error).message}`));
@@ -160,8 +163,11 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
       }
     },
     async closePane(paneId) { await run(['pane', 'close', paneId]); },
-    reap: (jobId, scratch) => shell.reap(jobId, scratch),
+    reap: (jobId, scratch, keep, discard) => shell.reap(jobId, scratch, keep, discard),
     survey: (roots) => shell.survey(roots),
+    discover: () => shell.discover(),
+    reach: (url) => shell.reach(url),
+    checkpoint: (jobId, worktree, session) => (shell.checkpoint ? shell.checkpoint(jobId, worktree, session) : Promise.resolve({ none: 'its machine takes no checkpoint' })),
     keepCredential: (jobId, dir, file, content, make) => shell.keepCredential(jobId, dir, file, content, make),
   };
 }

@@ -8,22 +8,41 @@ import { useForgetCleared } from '@/hooks/use-dismissed';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { load, mustSignIn, recheckSession, SESSION_CHECK_MS, setLoadError, useHopper } from '@/store';
 import { connect } from '@/store/stream';
+import { AccessRequests } from '@/views/access-requests';
+import { Artifacts } from '@/views/artifacts';
+import { BugReports } from '@/views/bug-reports';
 import { Decisions } from '@/views/decisions';
+import { DirectJobs } from '@/views/direct-jobs';
 import { Events } from '@/views/events';
+import { Failures } from '@/views/failures';
+import { Infra } from '@/views/infra';
+import { JobView } from '@/views/job';
+import { Jobs } from '@/views/jobs';
+import { Intake } from '@/views/intake';
+import { Logins } from '@/views/logins';
 import { Machines } from '@/views/machines';
-import { Overview } from '@/views/overview';
+import { NeedsYou } from '@/views/needs-you';
+import { Dashboard } from '@/views/dashboard';
+import { Parked } from '@/views/parked';
+import { PullRequests } from '@/views/pull-requests';
+import { Proposals, Research } from '@/views/review-section';
 import { Questions } from '@/views/questions';
+import { Resources } from '@/views/resources';
+import { Search } from '@/views/search';
 import { Queue } from '@/views/queue';
 import { Settings } from '@/views/settings';
 import { Sources } from '@/views/sources';
 import { Usage } from '@/views/usage';
 import { Header } from './header';
 import { Landing } from './landing';
+import { StackNotices } from './drift';
+import { MasterKeyNotice } from './master-key';
+import { WindowsLinkNotice } from '@/components/windows-link';
 import { UpdateNotice } from './update';
 import { MobileNav, Sidebar, useView, viewLabel, type View } from './nav';
 
 const VIEW: Record<View, () => React.ReactNode> = {
-  overview: Overview, queue: Queue, questions: Questions, decisions: Decisions, events: Events, sources: Sources, machines: Machines, usage: Usage, settings: Settings,
+  'needs-you': NeedsYou, dashboard: Dashboard, search: Search, jobs: Jobs, queue: Queue, 'direct-jobs': DirectJobs, intake: Intake, 'access-requests': AccessRequests, questions: Questions, proposals: Proposals, research: Research, logins: Logins, failures: Failures, parked: Parked, 'pull-requests': PullRequests, artifacts: Artifacts, decisions: Decisions, events: Events, reports: BugReports, sources: Sources, machines: Machines, infra: Infra, usage: Usage, resources: Resources, settings: Settings, job: JobView,
 };
 
 function Loading() {
@@ -40,7 +59,7 @@ function Shell() {
   const loaded = useHopper((s) => s.loaded);
   const loadError = useHopper((s) => s.loadError);
   useForgetCleared();
-  useEffect(() => { document.title = view === 'overview' ? 'hopper' : `${viewLabel(view)} · hopper`; }, [view]);
+  useEffect(() => { document.title = view === 'dashboard' ? 'hopper' : `${viewLabel(view)} · hopper`; }, [view]);
   const Current = VIEW[view];
   return (
     <div className="min-h-dvh">
@@ -48,6 +67,9 @@ function Shell() {
       <div className="flex">
         <Sidebar view={view} />
         <main className="min-w-0 flex-1 space-y-3 p-3 sm:p-4 lg:p-6">
+          <MasterKeyNotice />
+          <StackNotices />
+          <WindowsLinkNotice />
           <UpdateNotice />
           {loadError && (
             <div className="flex items-center gap-2 rounded-lg border border-bad/40 bg-bad/5 p-3 text-sm text-bad">

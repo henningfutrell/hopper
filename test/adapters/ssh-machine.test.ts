@@ -8,7 +8,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAttachedMachineSource, probeHerdrOverSsh, probeSsh, resolveSshTarget } from '../../src/machines/index.ts';
 import { DF_COMMAND, diskOf } from '../../src/machines/disk.ts';
+import { RESOURCES_COMMAND } from '../../src/machines/resources.ts';
 import { TEST_HOST_KEY, testSshAuth } from '../support/ssh.ts';
+import { systemPath } from '../support/system-path.ts';
 
 const HERDR = fileURLToPath(new URL('../herdr/fake-herdr-bin.mjs', import.meta.url));
 const SSH = fileURLToPath(new URL('../herdr/fake-ssh-bin.mjs', import.meta.url));
@@ -136,6 +138,20 @@ describe('attached machine source', () => {
     expect((await src.list())[0]).not.toHaveProperty('disk');
   });
 
+  it('carries what its probe found wrong with its work tree, and drops it once a probe finds it usable (issue #361)', async () => {
+    let answer: { online: boolean; home?: string; workTreeProblem?: string } = { online: true, home: '/home/far', workTreeProblem: 'its work tree /srv/x cannot be made: Permission denied' };
+    let t = 0;
+    const src = createAttachedMachineSource({
+      machine: () => ({ name: 'laptop', ssh: 'laptop', lanes: 1, executors: [], herdr: true, session: 'hopper', workTree: '/srv/x' }),
+      clock: { now: () => new Date(t) }, probeEveryMs: 30000, probe: async () => answer,
+    });
+    await src.list(); await flush();
+    expect((await src.list())[0]).toMatchObject({ workTree: '/srv/x', workTreeProblem: 'its work tree /srv/x cannot be made: Permission denied' });
+    answer = { online: true, home: '/home/far' };
+    t += 30000; await src.list(); await flush();
+    expect((await src.list())[0]).not.toHaveProperty('workTreeProblem');
+  });
+
   it('honours a label', async () => {
     const h = createAttachedMachineSource({
       machine: () => ({ name: 'laptop', label: 'arch-laptop', ssh: 'laptop', lanes: 1, executors: [], herdr: true, session: 'hopper' }), probe: async () => ({ online: true }),
@@ -155,7 +171,7 @@ describe('probeHerdrOverSsh', () => {
     mkdirSync(join(dir, 'there', '.local', 'bin'), { recursive: true });
     symlinkSync(HERDR, join(dir, 'there', '.local', 'bin', 'herdr'));
     // Never this computer's own herdr, wherever its PATH has it.
-    process.env.PATH = '/usr/bin:/bin';
+    process.env.PATH = systemPath();
   });
   afterEach(() => {
     process.env = { ...saved };
@@ -163,13 +179,13 @@ describe('probeHerdrOverSsh', () => {
   });
   const probe = (target: string) => probeHerdrOverSsh({ target, sshBin: SSH, session: 'hopper', controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')) });
 
-  it('true when the remote herdr session reports running', async () => {
+  it('online when the remote herdr session reports running', async () => {
     process.env.FAKE_HERDR_RUNNING = '1';
-    expect(await probe('laptop')).toBe(true);
+    expect(await probe('laptop')).toEqual({ online: true });
   });
 
-  it('false when the session is not running', async () => {
-    expect(await probe('laptop')).toBe(false);
+  it('offline when the session is not running', async () => {
+    expect(await probe('laptop')).toEqual({ online: false });
   });
 
   it('rejects with the ssh failure when the machine cannot be reached', async () => {
@@ -193,13 +209,53 @@ describe('probeSsh', () => {
     // The fake ssh runs the command in a local shell: the home is this test's own HOME.
     expect(await probe('laptop')).toMatchObject({ home: process.env.HOME });
     const argv = (JSON.parse(readFileSync(join(dir, 'ssh-calls.jsonl'), 'utf8').trim()) as { argv: string[] }).argv;
-    expect(argv.at(-1)).toBe(`${DF_COMMAND}; printf '%s\\n' "$HOME"`);
+    expect(argv.at(-1)).toMatch(/^printf '%s\\n' "\$HOME"; /);
+    expect(argv.at(-1)).toContain(DF_COMMAND);
+    expect(argv.at(-1)).not.toContain('herdr');
   });
 
   it('answers the disk its home is on too, so the UI warns before it fills (issue #401)', async () => {
     const { disk } = await probe('laptop');
     expect(disk?.totalBytes).toBeGreaterThan(0);
     expect(disk?.freeBytes).toBeLessThanOrEqual(disk!.totalBytes);
+  });
+
+  it('answers the machine\'s CPU, memory and swap too, from two reads of /proc a second apart (issue #560)', async () => {
+    const { resources } = await probe('laptop');
+    expect(resources?.cores).toBeGreaterThan(0);
+    expect(resources?.cpuBusyFrac).toBeGreaterThanOrEqual(0);
+    expect(resources?.cpuBusyFrac).toBeLessThanOrEqual(1);
+    expect(resources?.memTotalBytes).toBeGreaterThan(0);
+    expect(resources?.memAvailableBytes).toBeLessThanOrEqual(resources!.memTotalBytes);
+    const argv = (JSON.parse(readFileSync(join(dir, 'ssh-calls.jsonl'), 'utf8').trim()) as { argv: string[] }).argv;
+    expect(argv.at(-1)).toContain(RESOURCES_COMMAND);
+  });
+
+  // Issue #361: the probe also makes the machine's work tree there (the jobs directory when it names none),
+  // so a machine whose work tree cannot be made is known before any job is routed to it.
+  it('makes the machine\'s work tree there, under its home, and finds nothing wrong', async () => {
+    const r = await probeSsh({ target: 'laptop', sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')), workTree: '~/trees/a' });
+    expect(r).toMatchObject({ home: process.env.HOME });
+    expect(r).not.toHaveProperty('workTreeProblem');
+    expect(existsSync(join(process.env.HOME!, 'trees', 'a'))).toBe(true);
+  });
+
+  it('a machine naming no work tree: the jobs directory is made', async () => {
+    const r = await probeSsh({ target: 'laptop', sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')) });
+    expect(r).toMatchObject({ home: process.env.HOME });
+    expect(r).not.toHaveProperty('workTreeProblem');
+    expect(existsSync(join(process.env.HOME!, 'hopper-jobs'))).toBe(true);
+  });
+
+  it('a work tree that cannot be made there: online, with what was wrong', async () => {
+    const r = await probeSsh({ target: 'laptop', sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')), workTree: '/proc/hopper-no-such/tree' });
+    expect(r.home).toBe(process.env.HOME);
+    expect(r.workTreeProblem).toMatch(/^its work tree \/proc\/hopper-no-such\/tree cannot be made: /);
+  });
+
+  it('a work tree that is the home is a problem, and nothing is made', async () => {
+    const r = await probeSsh({ target: 'laptop', sshBin: SSH, controlDir: join(dir, 's'), auth: testSshAuth(join(dir, 'auth')), workTree: '~' });
+    expect(r.workTreeProblem).toBe('its work tree ~ is its home or above it: a job runs only in a directory below the home');
   });
 
   it('rejects when the machine answers with no absolute home', async () => {
@@ -227,7 +283,7 @@ describe('resolveSshTarget', () => {
     process.env.HOME = home;
     process.env.SHELL = '/bin/sh';
     // Never this computer's own herdr, wherever its PATH has it.
-    process.env.PATH = '/usr/bin:/bin';
+    process.env.PATH = systemPath();
     mkdirSync(join(home, '.ssh'), { mode: 0o700 });
     // The stand-in resolves <target> to <target>.example port 2222.
     writeFileSync(join(home, '.ssh', 'known_hosts'), [
@@ -252,7 +308,7 @@ describe('resolveSshTarget', () => {
 
   it('herdr on its PATH: the ed25519 key the user\'s known_hosts holds for it, and no herdr path (issue #311)', async () => {
     executable(join(home, 'tools', 'herdr'));
-    process.env.PATH = `${join(home, 'tools')}:/usr/bin:/bin`;
+    process.env.PATH = systemPath(join(home, 'tools'));
     expect(await resolve('laptop')).toEqual({ hostKey: TEST_HOST_KEY });
   });
 
@@ -269,7 +325,7 @@ describe('resolveSshTarget', () => {
   it('else ~/.local/bin/herdr when it is executable, as every herdr call there finds it', async () => {
     executable(join(home, '.local', 'bin', 'herdr'));
     expect(await resolve('laptop')).toEqual({ hostKey: TEST_HOST_KEY });
-    expect(sshCalls()[0]!.at(-1)).toMatch(/^PATH="\$PATH:\$HOME\/\.local\/bin"; command -v herdr /);
+    expect(sshCalls()[0]!.at(-1)).toMatch(/^PATH="\$HOME\/\.local\/bin:\$PATH"; command -v herdr /);
   });
 
   it('a target the user has never connected to: rejected before any connection', async () => {

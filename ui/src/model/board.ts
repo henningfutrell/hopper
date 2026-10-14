@@ -1,13 +1,17 @@
 // Every job view's data, from the one job store: which group each status is in, the groups as
-// lists, the overview's numbers counted off those lists, the lane board, the waiting order, and how a lane,
+// lists, the dashboard's numbers counted off those lists, the lane board, the waiting order, and how a lane,
 // a machine or an event's subject is named.
-import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineView } from './wire.ts';
+import { highFirst, isHighJob } from './priority.ts';
+import { raisedByOf, raisedName } from './questions.ts';
+import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineView, WorkItemState } from './wire.ts';
 
-/** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Operator-led, Running, Ended). */
+/** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Operator-led, Parked, Waiting on, Running, Ended). */
 export const GROUP = {
   queued: 'waiting', held: 'waiting',
   waiting_answer: 'waitingAnswer',
   operator_led: 'operatorLed',
+  parked: 'parked',
+  waiting_on: 'waitingOn',
   claimed: 'running', running: 'running',
   finished: 'ended', failed: 'ended', cancelled: 'ended', rejected: 'ended',
 } as const satisfies Record<JobStatus, string>;
@@ -18,9 +22,18 @@ export type JobBoard = Record<JobGroup, Job[]>;
 
 const endOf = (j: Job) => j.finishedAt ?? j.updatedAt;
 
+/**
+ * A job on a wait for its own background command (issue #1037): `command` while it runs — running work, not a wait on the
+ * outside world —, `stuck` once the hopper flagged it stuck. Undefined for any other job. As the daemon's `ownWaitOf`.
+ */
+export function ownWaitOf(job: Job): 'command' | 'stuck' | undefined {
+  if (job.status !== 'waiting_on' || !job.wait?.ownCommand) return undefined;
+  return job.wait.stuckAt ? 'stuck' : 'command';
+}
+
 /** `waitingOrder`: the queue order of the waiting jobs as /api/queue gave it; a job it lacks follows, oldest first. */
 export function jobBoard(jobs: Iterable<Job>, waitingOrder: readonly string[]): JobBoard {
-  const board: JobBoard = { waiting: [], waitingAnswer: [], operatorLed: [], running: [], ended: [] };
+  const board: JobBoard = { waiting: [], waitingAnswer: [], operatorLed: [], parked: [], waitingOn: [], running: [], ended: [] };
   for (const j of jobs) board[GROUP[j.status]].push(j);
   const place = new Map(waitingOrder.map((id, i) => [id, i]));
   const at = (j: Job) => place.get(j.id) ?? Infinity;
@@ -28,6 +41,8 @@ export function jobBoard(jobs: Iterable<Job>, waitingOrder: readonly string[]): 
   board.waiting.sort((a, b) => at(a) - at(b) || oldest(a, b));
   board.waitingAnswer.sort(oldest);
   board.operatorLed.sort(oldest);
+  board.parked.sort(oldest);
+  board.waitingOn.sort(oldest);
   board.running.sort(oldest);
   board.ended.sort((a, b) => endOf(b).localeCompare(endOf(a)));
   return board;
@@ -44,6 +59,32 @@ export function canRerun(job: Job, jobs: Iterable<Job>): boolean {
   for (const j of jobs) if (j.id !== job.id && j.source?.key === key && j.createdAt > job.createdAt) return false;
   return true;
 }
+
+/**
+ * Why Park does not apply to a job, as the daemon refuses it (issues #501, #530), or undefined: a running job or one on
+ * a question, its executor one of `parkingExecutors` (GET /api/health). An agent session is not needed. The daemon decides.
+ */
+export function parkRefusal(job: Job, parkingExecutors: readonly string[]): string | undefined {
+  if (job.status !== 'running' && job.status !== 'waiting_answer') return `it is ${job.status}: only a running job or one on a question can be parked`;
+  if (!parkingExecutors.includes(job.spec.executor)) return `its executor ${job.spec.executor} cannot park a job`;
+  return undefined;
+}
+
+/** Whether Park is offered (issues #501, #530): where the daemon takes it. */
+export const canPark = (job: Job, parkingExecutors: readonly string[]): boolean => parkRefusal(job, parkingExecutors) === undefined;
+
+/** A parked job with no agent session to resume (issue #530): picked up, it starts a fresh one, and asks first. */
+export const startsFresh = (job: Job): boolean => job.status === 'parked' && job.agentSession === undefined;
+
+/** A parked job that may resume elsewhere (issue #921): its last checkpoint holds its agent session. */
+export const canResumeElsewhere = (job: Job): boolean => job.status === 'parked' && job.agentSession !== undefined && job.checkpoint?.session === true;
+
+/** The Parked section's order (issue #565): high-priority jobs first, then the longest parked on top. */
+export const parkedOrder = (jobs: readonly Job[], threshold: number | null): Job[] =>
+  highFirst([...jobs].sort((a, b) => (a.parked?.at ?? a.updatedAt).localeCompare(b.parked?.at ?? b.updatedAt)), (j) => isHighJob(j, threshold));
+
+/** Whether Pick up is offered (issues #501, #565): a parked job. */
+export const canPickUp = (job: Job): boolean => job.status === 'parked';
 
 /** What Run again made, as its toast says it (issue #354): the new job queued — waiting for acceptance, or held and why — or failed at once. */
 export function rerunOutcome(job: Job): { ok: boolean; message: string } {
@@ -72,6 +113,8 @@ export function startTarget(s: { machineId: string; laneId?: string | null }, ma
 
 /** An event's subject as people read it: its job's name, else its lane or machine named by `laneName`/`machineName` (issue #166). */
 export function subjectOf(e: DomainEvent, nameOf: (jobId: string) => string, machines: readonly Pick<MachineView, 'id' | 'label'>[]): string {
+  // A question event names the machine that raised it (issue #485), as it was then.
+  if (e.type.startsWith('question.')) return `${e.jobId ? `${nameOf(e.jobId)} · ` : ''}on ${raisedName(raisedByOf(e))}`;
   if (e.jobId) return nameOf(e.jobId);
   if (e.laneId) return laneName(e.laneId, machines);
   if (e.machineId) return machineName(e.machineId, machines);
@@ -87,19 +130,35 @@ export interface LaneRow {
   workTree?: string;
   /** `unopened`: capacity under maxLanes with no lane open. */
   state: Lane['state'] | 'unopened';
+  /** A specialty or tend job's lane past the machine's lanes (issues #762, #967): it elbowed in, and closes when its job ends. */
+  elbowIn?: true;
 }
 
-export function laneRows(machines: MachineView[], running: Job[]): LaneRow[] {
-  const byId = new Map(running.map((j) => [j.id, j]));
+const inUse = (m: Pick<MachineView, 'lanes'>): number => m.lanes.filter((l) => l.state !== 'idle').length;
+
+/** The machines with more lanes in use than their lanes (issue #762): specialty or tend jobs elbowed in, e.g. 7 of 6. */
+export function overCap(machines: readonly MachineView[]): { machineId: string; inUse: number; lanes: number }[] {
+  return machines.filter((m) => inUse(m) > m.maxLanes).map((m) => ({ machineId: m.id, inUse: inUse(m), lanes: m.maxLanes }));
+}
+
+/**
+ * `jobs`: every job the store holds. A job that waits (on a question or on its own wait) while its lane still names it
+ * shows on that lane too (issue #432), never an empty busy lane. An ended or parked job a stale lane names does not.
+ */
+export function laneRows(machines: MachineView[], running: Job[], jobs: ReadonlyMap<string, Job> = new Map()): LaneRow[] {
+  const waits = [...jobs.values()].filter((j) => GROUP[j.status] === 'waitingAnswer' || GROUP[j.status] === 'waitingOn');
+  const byId = new Map([...waits, ...running].map((j) => [j.id, j]));
   const byLane = new Map(running.filter((j) => j.laneId).map((j) => [j.laneId, j]));
   const placed = new Set<string>();
   const rows: LaneRow[] = [];
   for (const m of machines) {
     const machine = { id: m.id, label: m.label || m.id };
+    const over = inUse(m) > m.maxLanes;
     for (const lane of m.lanes) {
       const job = (lane.jobId && byId.get(lane.jobId)) || byLane.get(lane.id);
       if (job) placed.add(job.id);
-      rows.push({ key: lane.id, machine, lane, job, ...(job?.workTree ? { workTree: job.workTree } : {}), state: lane.state });
+      const elbowIn = over && (job?.spec.specialty === true || job?.spec.tend === true) && lane.state !== 'idle';
+      rows.push({ key: lane.id, machine, lane, job, ...(job?.workTree ? { workTree: job.workTree } : {}), state: lane.state, ...(elbowIn ? { elbowIn: true as const } : {}) });
     }
     for (let i = m.lanes.length; i < m.maxLanes; i += 1) rows.push({ key: `${m.id}/unopened-${i}`, machine, state: 'unopened' });
   }
@@ -112,6 +171,14 @@ export function laneRows(machines: MachineView[], running: Job[]): LaneRow[] {
   return rows;
 }
 
+/** What a lane with a job does now (issue #432): its job starts (claimed), runs, or waits while it holds the lane. */
+export type LaneJobState = 'starting' | 'busy' | 'waiting';
+
+export function laneJobState(job: Job): LaneJobState {
+  if (job.status === 'claimed') return 'starting';
+  return job.status === 'running' ? 'busy' : 'waiting';
+}
+
 export interface Kpis {
   running: number;
   lanesBusy: number;
@@ -120,12 +187,18 @@ export interface Kpis {
   waiting: number;
   held: number;
   waitingAnswer: number;
+  parked: number;
+  /** On their own wait (issue #483) for a person or the outside world: not on their own command. */
+  waitingOn: number;
+  /** On a wait for their own background command (issue #1037): running work. */
+  onOwnCommand: number;
   finished: number;
+  /** Work items failed now, as the work-item ledger counts them (issue #1067): no count of job statuses. */
   failed: number;
-  cancelled: number;
 }
 
-export function kpis(board: JobBoard, machines: MachineView[]): Kpis {
+/** `items`: the work-item ledger's counts (issue #1067), null until read. */
+export function kpis(board: JobBoard, machines: MachineView[], items: Record<WorkItemState, number> | null): Kpis {
   const lanes = machines.flatMap((m) => m.lanes);
   const ended = (status: JobStatus) => board.ended.filter((j) => j.status === status).length;
   return {
@@ -136,9 +209,11 @@ export function kpis(board: JobBoard, machines: MachineView[]): Kpis {
     waiting: board.waiting.length,
     held: board.waiting.filter((j) => j.status === 'held').length,
     waitingAnswer: board.waitingAnswer.length,
+    parked: board.parked.length,
+    waitingOn: board.waitingOn.filter((j) => ownWaitOf(j) !== 'command').length,
+    onOwnCommand: board.waitingOn.filter((j) => ownWaitOf(j) === 'command').length,
     finished: ended('finished'),
-    failed: ended('failed'),
-    cancelled: ended('cancelled'),
+    failed: items?.failed ?? 0,
   };
 }
 

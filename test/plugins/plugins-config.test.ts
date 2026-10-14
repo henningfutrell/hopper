@@ -75,13 +75,13 @@ describe('the plugins config (router, escalationLevels, executors, jobSources, m
     const r = loadPluginsConfig({
       version: 1,
       executors: [
-        { name: 'herdr-claude', plugin: 'herdr-claude', options: { cwd: '~/w', args: ['--x'] } },
+        { name: 'herdr-claude', plugin: 'herdr-claude', options: { args: ['--x'] } },
         { name: 'test', plugin: 'test' },
       ],
     });
     expect(r).toEqual({
       executors: [
-        { name: 'herdr-claude', plugin: 'herdr-claude', options: { cwd: '~/w', args: ['--x'] } },
+        { name: 'herdr-claude', plugin: 'herdr-claude', options: { args: ['--x'] } },
         { name: 'test', plugin: 'test', options: {} },
       ],
       warnings: [],

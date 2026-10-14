@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "artifact": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "removed",
+        "retention",
+        "merged"
+      ]
+    },
+    "into": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "artifact",
+    "reason"
+  ],
+  "additionalProperties": false
+}

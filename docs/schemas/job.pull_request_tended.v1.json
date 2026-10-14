@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "pullRequest": {
+      "type": "string"
+    },
+    "step": {
+      "type": "string",
+      "enum": [
+        "rebase",
+        "fix_checks"
+      ]
+    },
+    "nextJobId": {
+      "type": "string"
+    },
+    "person": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api"
+      ]
+    }
+  },
+  "required": [
+    "pullRequest",
+    "step",
+    "nextJobId"
+  ],
+  "additionalProperties": false
+}

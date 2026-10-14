@@ -3,7 +3,8 @@
 // POST /ui/api/machines and an Edit form to POST /ui/api/plugins, and why it may not yet.
 import { describe, expect, it } from 'vitest';
 import type { MachinesConfig } from '../../src/domain/types.ts';
-import { addBody, addProblem, authorizedKeysLine, BOX_AGENTS, boxPlace, joinLine, hostKeyCheck, clientReleaseText, diskText, reservedText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { addBody, addProblem, authorizedKeysLine, BOX_AGENTS, boxPlace, boxSignInLine, joinLine, hostKeyCheck, clientReleaseText, clientUpdateLine, diskText, reservedText, defaultsBody, DETAILS, editBody, editDraft, editProblem, hasThisMachine, isThisMachineTarget, kindOf, mayAddThisMachine, localBody, newDraft, newThisDraft, thisBody, thisProblem, type MachineDraft } from '../../ui/src/model/machines.ts';
+import { runFlags } from '../../src/sandbox/flags.ts';
 
 const CONFIG: MachinesConfig = {
   version: 'v1',
@@ -122,20 +123,21 @@ describe('editing a machine\'s name and details', () => {
   it('the Edit form starts from the instance: its name, and the details of its connection as set (empty when unset)', () => {
     expect(editDraft(desk)).toEqual({
       name: 'desk', lanes: '1', executors: ['test'], label: '', herdr: true,
-      details: { ssh: 'desk', session: '', hostKey: '' },
+      details: { ssh: 'desk', session: '', hostKey: '', workTree: '' },
     });
     expect(editDraft(box)).toEqual({ name: 'box', lanes: '2', executors: ['command'], label: '', herdr: true, details: { docker: 'box' } });
     // No herdr binary to name (issue #311): herdr is called by name there, from its PATH.
-    expect(DETAILS.ssh!.map((f) => f.key)).toEqual(['ssh', 'session', 'hostKey']);
+    expect(DETAILS.ssh!.map((f) => f.key)).toEqual(['ssh', 'session', 'hostKey', 'workTree']);
     // There is never an ssh config (issue #309): no hint names one.
     expect(DETAILS.ssh!.map((f) => f.hint).join(' ')).not.toMatch(/ssh\/config/);
     expect(DETAILS.docker!.map((f) => f.key)).toEqual(['docker']);
-    expect(DETAILS.client).toEqual([]);
+    // A client target dials in: nothing of how it is reached to type, only its work tree (issue #361).
+    expect(DETAILS.client!.map((f) => f.key)).toEqual(['workTree']);
   });
 
   it('a new name is sent as rename, trimmed; the details as typed, trimmed; an emptied optional detail goes', () => {
     const d = editDraft(desk);
-    expect(editBody(desk, { ...d, name: ' study ', details: { ssh: ' laptop ', session: 'work', hostKey: '' } }, 'v1')).toEqual({
+    expect(editBody(desk, { ...d, name: ' study ', details: { ssh: ' laptop ', session: 'work', hostKey: '', workTree: '' } }, 'v1')).toEqual({
       action: 'options', role: 'machine-source', name: 'desk', rename: 'study', version: 'v1',
       options: { ssh: 'laptop', session: 'work', lanes: 1, executors: ['test'] },
     });
@@ -158,7 +160,7 @@ describe('editing a machine\'s name and details', () => {
     expect(editProblem(desk, d, CONFIG)).toBeNull();
     expect(editProblem(desk, { ...d, name: ' ' }, CONFIG)).toMatch(/name/);
     expect(editProblem(desk, { ...d, name: 'local' }, CONFIG)).toMatch(/local/);
-    // Issue #365: 0 lanes parks a machine without removing it.
+    // Issue #365: 0 lanes rests a machine without removing it.
     expect(editProblem(desk, { ...d, lanes: '0' }, CONFIG)).toBeNull();
     expect(editProblem(desk, { ...d, lanes: 'x' }, CONFIG)).toMatch(/lanes/);
     expect(editProblem(desk, { ...d, details: { ...d.details, ssh: ' ' } }, CONFIG)).toMatch(/ssh target/);
@@ -199,6 +201,14 @@ describe('clientReleaseText (issue #70)', () => {
     expect(clientReleaseText({ current: false })).toBe('none: older than releases, add it again: Add machine');
     expect(clientReleaseText({})).toBeNull();
     expect(clientReleaseText(undefined)).toBeNull();
+  });
+
+  it('a client the hopper could not update (issue #545): says so, and the line that reinstalls its client, with no join code', () => {
+    const update = { problem: 'its client still runs release 0123456789abcdef after 3 loads of the hopper\'s fedcba9876543210: whatever runs it did not start the new files' };
+    expect(clientReleaseText({ release: '0123456789abcdef', current: false, update })).toBe('0123456789abcdef (not the hopper\'s, and it cannot be updated from here)');
+    expect(clientUpdateLine({ release: '0123456789abcdef', current: false, update }, 'https://hopper.example')).toBe("curl -fsSL 'https://hopper.example/client/install' | sh -s -- 'https://hopper.example'");
+    expect(clientUpdateLine({ release: '0123456789abcdef', current: false }, 'https://hopper.example')).toBeNull();
+    expect(clientUpdateLine(undefined, 'https://hopper.example')).toBeNull();
   });
 });
 
@@ -266,14 +276,16 @@ describe('an ssh target that is this machine', () => {
 describe('the Add machine line (issue #308)', () => {
   const code = 'c'.repeat(64);
   const join = { boxUrl: 'http://hopper:4790', boxNetwork: 'hopper_default', boxImage: 'ghcr.io/henningfutrell/hopper' };
+  // The sandbox flags come from the hopper (the join answer's `flags`), built by the same builder as the boxes it starts (issue #708).
+  const flags = runFlags({ cpus: 4, memoryMb: 8192 }).join(' ');
 
   it('a computer: the hopper\'s install script, from the URL this page is open at, joined with the code', () => {
-    expect(joinLine({ kind: 'computer' }, { origin: 'http://localhost:4790', code, join }))
+    expect(joinLine({ kind: 'computer' }, { origin: 'http://localhost:4790', code, join, flags }))
       .toBe(`curl -fsSL 'http://localhost:4790/client/install' | sh -s -- 'http://localhost:4790#${code}'`);
   });
 
   it('a sandbox box: a locked-down container on the hopper\'s network, its home a volume of its own, joined with the code', () => {
-    const line = joinLine({ kind: 'box', agent: 'claude', engine: 'podman' }, { origin: 'http://localhost:4790', code, join });
+    const line = joinLine({ kind: 'box', agent: 'claude', runtime: 'podman' }, { origin: 'http://localhost:4790', code, join, flags });
     expect(line.startsWith('podman run -d --name hopper-sandbox-claude ')).toBe(true);
     // Named by the client's own setting: Docker refuses a host name on the host network.
     expect(line).toContain('-e HOPPER_CLIENT_NAME=hopper-sandbox-claude');
@@ -283,11 +295,21 @@ describe('the Add machine line (issue #308)', () => {
     for (const flag of ['--network hopper_default', '--cap-drop ALL', '--security-opt no-new-privileges', '--read-only', '-v hopper-sandbox-claude-home:/home/agent']) {
       expect(line).toContain(flag);
     }
+    expect(line).toContain(` ${flags} `);
     expect(line).toContain(`-e HOPPER_JOIN='http://hopper:4790#${code}'`);
     expect(line.endsWith(' ghcr.io/henningfutrell/hopper:box-claude')).toBe(true);
     // Nothing of the computer is mounted into it.
     expect(line).not.toMatch(/-v \/|--privileged|docker\.sock/);
-    expect(joinLine({ kind: 'box', agent: 'claude', engine: 'docker' }, { origin: 'x', code, join })).toMatch(/^docker run -d --name hopper-sandbox-claude .* --tmpfs \/tmp .* ghcr\.io\/henningfutrell\/hopper:box-claude$/);
+    expect(joinLine({ kind: 'box', agent: 'claude', runtime: 'docker' }, { origin: 'x', code, join, flags })).toMatch(/^docker run -d --name hopper-sandbox-claude .* --tmpfs \/tmp:rw,nosuid,nodev .* ghcr\.io\/henningfutrell\/hopper:box-claude$/);
+  });
+
+  it('a sandbox box from a template (issue #558): named after the template, its image the template\'s', () => {
+    const line = joinLine({ kind: 'box', agent: 'claude', runtime: 'podman', template: { name: 'kube', image: 'localhost/box-kubectl:1' } }, { origin: 'http://localhost:4790', code, join, flags });
+    expect(line).toContain('--name hopper-sandbox-kube ');
+    expect(line).toContain('-v hopper-sandbox-kube-home:/home/agent');
+    expect(line).toContain('-e HOPPER_CLIENT_NAME=hopper-sandbox-kube ');
+    expect(line.endsWith(' localhost/box-kubectl:1')).toBe(true);
+    expect(line).toContain(flags);
   });
 
   it('the agents a box is offered with are those an executor drives on a client target', () => {
@@ -326,5 +348,11 @@ describe('reservedText', () => {
   it('says nothing for a machine that keeps none', () => {
     expect(reservedText({ maxLanes: 4 })).toBeNull();
     expect(reservedText({ maxLanes: 4, reservedLanes: 0 })).toBeNull();
+  });
+});
+
+describe('boxSignInLine (issue #603)', () => {
+  it('a box the hopper started is signed in once, in that box, through Podman', () => {
+    expect(boxSignInLine('hopper-sandbox-claude-2', 'claude')).toBe('podman exec -it hopper-sandbox-claude-2 claude');
   });
 });

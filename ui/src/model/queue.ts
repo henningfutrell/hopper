@@ -1,7 +1,7 @@
 // The Queue view (issue #159): the two columns — the pre-sort (waiting jobs not yet accepted, in the
 // pre-sort's order, each with the reason it would reject it) and the user order (accepted waiting
 // jobs, in queue order) — and the user orders a move posts (POST /ui/api/queue/order). Issue #201: how many
-// jobs wait on the pre-sort, the Queue nav badge.
+// jobs wait on the pre-sort, the Queue nav badge. Issue #737: which job cards are open — collapsed by default.
 import { GROUP } from './board.ts';
 import type { Job, PreSort } from './wire.ts';
 
@@ -33,12 +33,34 @@ export const awaitingSort = (jobs: Iterable<Job>): number => [...jobs].filter((j
 /** The user order once a pre-sorted job is accepted: it joins at the end. */
 export const accepting = (order: readonly string[], id: string): string[] => [...order.filter((x) => x !== id), id];
 
-/** The user order with one job moved up (-1), down (1) or to the top; at an edge nothing moves. */
-export function moved(order: readonly string[], id: string, by: -1 | 1 | 'top'): string[] {
+/**
+ * The user order with one job moved up (-1), down (1) or to the top, among the jobs of its own priority
+ * only (issue #461: the user order never puts a job ahead of one of higher priority); at an edge of its
+ * priority nothing moves.
+ */
+export function moved(jobs: readonly Job[], id: string, by: -1 | 1 | 'top'): string[] {
+  const order = jobs.map((j) => j.id);
   const from = order.indexOf(id);
-  const to = by === 'top' ? 0 : from + by;
-  if (from < 0 || to < 0 || to >= order.length || to === from) return [...order];
-  const next = order.filter((x) => x !== id);
+  if (from < 0) return order;
+  const level = jobs.filter((j) => j.priority === jobs[from]!.priority).map((j) => j.id);
+  const at = level.indexOf(id);
+  const to = by === 'top' ? 0 : at + by;
+  if (to < 0 || to >= level.length || to === at) return order;
+  const next = level.filter((x) => x !== id);
   next.splice(to, 0, id);
-  return next;
+  const places = new Set(level);
+  return order.map((x) => (places.has(x) ? next.shift()! : x));
 }
+
+/** Which job cards are open (issue #737): `all` after Expand all or Collapse all, `own` a card opened or closed on its own since. */
+export interface CardsOpen { all: boolean; own: Readonly<Record<string, boolean>> }
+
+/** Every card collapsed: the default. */
+export const COLLAPSED: CardsOpen = { all: false, own: {} };
+
+export const cardOpen = (c: CardsOpen, id: string): boolean => c.own[id] ?? c.all;
+
+export const toggleCard = (c: CardsOpen, id: string): CardsOpen => ({ all: c.all, own: { ...c.own, [id]: !cardOpen(c, id) } });
+
+/** Expand all (`true`) or Collapse all (`false`): every card, whatever it was. */
+export const setAllCards = (all: boolean): CardsOpen => ({ all, own: {} });

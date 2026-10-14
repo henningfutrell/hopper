@@ -63,7 +63,7 @@ describe('the queue gate', () => {
     expect((await a.events('types=queue.ordered')).at(-1)?.data).toEqual({ jobIds: [job.id] });
   });
 
-  it('the user order runs before the sorter\'s: a low-priority job ordered first starts first', async () => {
+  it('the user order never puts a lower-priority job first (issue #461): the high one starts first', async () => {
     const a = await boot();
     const token = await a.login();
     await setGate(a, token, { mode: 'review', autoAcceptPerHour: null });
@@ -76,11 +76,11 @@ describe('the queue gate', () => {
     expect((await queue(a)).presort.jobIds).toEqual([high.id, low.id]);
 
     expect((await a.ui('/ui/api/queue/order', { jobIds: [low.id, high.id] }, { token })).status).toBe(200);
-    expect((await queue(a)).waiting.map((j: Job) => j.id)).toEqual([low.id, high.id]);
+    expect((await queue(a)).waiting.map((j: Job) => j.id)).toEqual([high.id, low.id]);
     expect((await a.ui(`/ui/api/jobs/${blocker.id}/cancel`, {}, { token })).status).toBe(200);
     for (const id of [low.id, high.id]) await a.waitForStatus(id, 'finished');
     const claims = (await a.events('types=job.claimed')).map((e) => e.jobId).filter((id) => id === low.id || id === high.id);
-    expect(claims[0]).toBe(low.id);
+    expect(claims[0]).toBe(high.id);
   });
 
   it('an order naming a job that is not waiting, or one twice, is refused', async () => {

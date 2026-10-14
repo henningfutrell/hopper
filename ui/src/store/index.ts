@@ -9,9 +9,14 @@ import { beginSignIn, signInThroughGateway, signInWithoutCredential, wantsGatewa
 import { reauthFor, rememberReturn, takeReturn } from '@/lib/reauth';
 import { rerunOutcome } from '@/model/board';
 import { HISTORY_TYPES } from '@/model/event-types';
+import { clockOffset } from '@/model/logins';
 import { reloadNeeded } from '@/model/update';
-import type { SessionUser, SessionView } from '@/model/wire';
-import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, PreSort, Question, Queue, QueueGate, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
+import type { BlastRadiusView, FailureSettings, FailuresView, LoginSettings, LoginsRead, LoginView, PriorityLanesView, QuestionView, SessionUser, SessionView } from '@/model/wire';
+import { refreshPriorityLanes, refreshPriorityLanesSoon } from './priority-lanes';
+import { refreshAllReviews, refreshReviewsSoon } from './reviews';
+import { EMPTY_REVIEWS, REVIEW_KINDS, REVIEW_UI, type ReviewState } from '@/model/reviews';
+import type { ReviewKind } from '@/model/wire';
+import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, PreSort, Queue, QueueGate, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookDelivery, WebhookView, WebhooksView, WorkItemState } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
 export type Conn = 'connecting' | 'live' | 'reconnecting';
@@ -34,15 +39,35 @@ export interface HopperState {
   waitingOrder: string[];
   /** The locked entries, as /api/queue gave them (issue #355): failed jobs of any age, so kept apart from `jobs`. */
   locked: Job[];
+  items: Record<WorkItemState, number> | null; // the work-item ledger's counts per state, as /api/queue gave them (issue #1067); null until read
   /** The queue gate and the pre-sort of the jobs not yet accepted, as /api/queue gave them (issue #159). */
   gate: QueueGate | null;
   presort: PreSort | null;
+  /** The high-priority threshold /api/queue answered (issue #535); null until read: nothing is tagged. */
+  highPriority: number | null;
+  /** GET /api/priority-lanes (issue #535): the settings, the lanes chosen, every lane's reliability; null until read. */
+  priorityLanes: PriorityLanesView | null;
+  blastRadius: BlastRadiusView | null; // GET /api/blast-radius (issue #542); null until read
   machines: MachineView[];
   decisions: Decision[];
-  /** Open questions, every stage. */
-  questions: Question[];
+  /** Open questions, every stage, each with its job's live priority (issue #535). */
+  questions: QuestionView[];
   /** The question history: every question no longer open, newest first (GET /api/questions?status=all). */
-  handled: Question[];
+  handled: QuestionView[];
+  /**
+   * Each review section (issues #537, #543): its open items — in review or sent back, each with its job's live priority,
+   * never in `questions` —, the decided and cancelled ones newest first, its settings and its type, as GET /api/<section>
+   * answered them.
+   */
+  reviews: Readonly<Record<ReviewKind, ReviewState>>;
+  /** The logins, newest first (GET /api/logins, issue #477): open and ended; never in `questions`. */
+  logins: LoginView[];
+  /** The logins settings, as GET /api/logins answered them; null until read. */
+  loginSettings: LoginSettings | null;
+  /** GET /api/failures (issue #509): hand-offs (issue #516), problems, assessed failures, the profile, the settings; null until read. */
+  failures: FailuresView | null;
+  /** Server time less the browser's when the logins were read: countdowns run on server time. */
+  serverOffsetMs: number;
   /** Newest first, every type: the live log. */
   events: DomainEvent[];
   /** Oldest first, HISTORY_TYPES only: the charts. */
@@ -64,12 +89,18 @@ export interface HopperState {
   update: UpdateStatus | null;
   /** The installed commit when this page loaded: another one later means the daemon restarted on an update. */
   loadedCommit: string | undefined;
+  /**
+   * How many times the stream said new samples were kept: usage samples (SSE usage.recorded) and machine samples (SSE
+   * machine.recorded, issue #560). The usage graphs and the resource graphs read again on each.
+   */
+  recorded: Readonly<Record<'usage' | 'machine', number>>;
 }
 
 export const useHopper = create<HopperState>(() => ({
-  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], gate: null, presort: null, machines: [],
-  decisions: [], questions: [], handled: [], events: [], history: [], sources: [], deliveries: [], subscriptions: [],
+  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], items: null, gate: null, presort: null, highPriority: null, priorityLanes: null, blastRadius: null, machines: [],
+  decisions: [], questions: [], handled: [], reviews: EMPTY_REVIEWS, logins: [], loginSettings: null, failures: null, serverOffsetMs: 0, events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
+  recorded: { usage: 0, machine: 0 },
 }));
 const set = useHopper.setState;
 const state = useHopper.getState;
@@ -79,12 +110,12 @@ const upsert = <T,>(list: T[], item: T, same: (x: T) => boolean, cap: number) =>
   list.some(same) ? list.map((x) => (same(x) ? item : x)) : capped([item, ...list], cap);
 
 /** The one way jobs enter the store: an /api/queue answer replaces them all, with the queue gate and its pre-sort. */
-const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'locked' | 'gate' | 'presort'> => ({
-  jobs: Object.fromEntries([...q.waiting, ...q.waitingAnswer, ...q.running, ...q.ended].map((j) => [j.id, j])),
+const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'locked' | 'items' | 'gate' | 'presort' | 'highPriority'> => ({
+  jobs: Object.fromEntries([...q.waiting, ...q.waitingAnswer, ...q.operatorLed, ...q.parked, ...(q.waitingOn ?? []), ...q.running, ...q.ended].map((j) => [j.id, j])),
   waitingOrder: q.waiting.map((j) => j.id),
-  locked: q.locked,
-  gate: q.gate,
-  presort: q.presort,
+  locked: q.locked, items: q.items ?? null,
+  gate: q.gate, presort: q.presort,
+  highPriority: typeof q.highPriority === 'number' ? q.highPriority : null,
 });
 
 export async function refreshHealth() { set({ health: await get<Health>('/api/health') }); }
@@ -100,19 +131,62 @@ export async function refreshRouting() {
 }
 export const setRouting = (routing: RoutingReport) => set({ routing, routingError: null });
 export const HANDLED_LIMIT = 200;
-const handledOf = (all: Question[]) => all.filter((q) => q.status !== 'open');
+const handledOf = (all: QuestionView[]) => all.filter((q) => q.status !== 'open');
 export async function refreshQuestions() {
   const [open, all] = await Promise.all([
-    get<{ questions: Question[] }>('/api/questions?status=open'), get<{ questions: Question[] }>(`/api/questions?status=all&limit=${HANDLED_LIMIT}`),
+    get<{ questions: QuestionView[] }>('/api/questions?status=open'), get<{ questions: QuestionView[] }>(`/api/questions?status=all&limit=${HANDLED_LIMIT}`),
   ]);
   set({ questions: open.questions, handled: handledOf(all.questions) });
 }
-/** The owner has the questions in front of them: mark each seen (POST /ui/api/questions/:id/seen), which clears the nav badge. Quiet: no toast. */
+export const LOGINS_LIMIT = 200;
+const loginsOf = (r: LoginsRead): Pick<HopperState, 'logins' | 'loginSettings' | 'serverOffsetMs'> =>
+  ({ logins: r.logins, loginSettings: r.settings, serverOffsetMs: clockOffset(r.now, Date.now()) });
+/** GET /api/logins: the logins, their settings and the server's time (issue #477). An answer without them is refused, never read as none. */
+export async function refreshLogins() {
+  const r = await get<LoginsRead>(`/api/logins?limit=${LOGINS_LIMIT}`);
+  if (!Array.isArray(r.logins) || !r.settings || Number.isNaN(Date.parse(r.now))) throw new Error('GET /api/logins: the answer holds no logins');
+  set(loginsOf(r));
+}
+/** POST /ui/api/logins/settings (admin): either setting, or both. Failures toast; a rejected session drops to the landing page. */
+export async function saveLoginSettings(body: Partial<LoginSettings>): Promise<void> {
+  try {
+    set({ loginSettings: await post<LoginSettings>('/ui/api/logins/settings', body) });
+    toast.success('Logins settings saved');
+  } catch (e) {
+    if (e instanceof SessionRejected) set({ authed: false, user: null });
+    toast.error((e as Error).message);
+  }
+}
+/** GET /api/failures (issue #509). An answer without its parts is refused, never read as none. */
+export async function refreshFailures() {
+  const r = await get<FailuresView>('/api/failures');
+  if (!Array.isArray(r.handoffs) || !Array.isArray(r.problems) || !Array.isArray(r.recent) || !r.settings || !r.profile) throw new Error('GET /api/failures: the answer holds no failures');
+  set({ failures: r });
+}
+/** A Failures action (issue #509): the daemon's answer, then the failures read again. Failures toast, as `act`. */
+export async function failureAct(path: string, body: unknown, done: string): Promise<boolean> {
+  const r = await actFor(path, body, done);
+  refreshFailures().catch(() => {});
+  return r.ok;
+}
+/** POST /ui/api/failures/settings (admin). Failures toast; a rejected session drops to the landing page. */
+export async function saveFailureSettings(body: Partial<FailureSettings>): Promise<void> {
+  try {
+    const settings = await post<FailureSettings>('/ui/api/failures/settings', body);
+    const f = state().failures;
+    if (f) set({ failures: { ...f, settings } });
+    toast.success('Failures settings saved');
+  } catch (e) {
+    if (e instanceof SessionRejected) set({ authed: false, user: null });
+    toast.error((e as Error).message);
+  }
+}
+/** The owner has the questions in front of them: mark each seen (POST /ui/api/questions/:id/seen). The nav badge does not read it. Quiet: no toast. */
 export async function markSeen(ids: string[]) {
   for (const id of ids) {
     try {
-      const q = await post<Question>(`/ui/api/questions/${encodeURIComponent(id)}/seen`);
-      set({ questions: state().questions.map((x) => (x.id === q.id ? q : x)) });
+      const q = await post<QuestionView>(`/ui/api/questions/${encodeURIComponent(id)}/seen`);
+      set({ questions: state().questions.map((x) => (x.id === q.id ? { ...x, ...q } : x)) });
     } catch (e) {
       if (e instanceof SessionRejected) { set({ authed: false }); return; }
     }
@@ -126,7 +200,7 @@ export async function refreshUpdate() {
   set({ update, loadedCommit: loadedCommit ?? update.installed?.commit });
 }
 /** POST /ui/api/update: check, apply, or settings. Answers the new status; failures toast. */
-export async function updateAct(body: { action: 'check' | 'apply' } | { action: 'settings'; channel?: UpdateStatus['channel']; autoUpdate?: boolean }, done?: string) {
+export async function updateAct(body: { action: 'check' | 'apply' } | { action: 'settings'; channel?: UpdateStatus['channel']; autoUpdate?: boolean; canary?: boolean }, done?: string) {
   try {
     set({ update: await post<UpdateStatus>('/ui/api/update', body) });
     if (done) toast.success(done);
@@ -151,6 +225,10 @@ function debounced(fn: () => Promise<void>, ms = 150) {
 }
 export const refreshLiveSoon = debounced(refreshLive);
 const refreshQuestionsSoon = debounced(refreshQuestions);
+const refreshLoginsSoon = debounced(refreshLogins);
+const refreshFailuresSoon = debounced(refreshFailures);
+/** What the assessor writes, and what changes what it shows (a job run again, a job failed). */
+const FAILURE_EVENTS = new Set(['job.assessed', 'failure.grouped', 'failure.resolved', 'failure.released', 'handoff.opened', 'handoff.closed', 'handoff.checked', 'job.rerun', 'job.failed', 'job.dismissed', 'job.work_kept', 'job.work_removed', 'job.continued']);
 
 export async function checkSession() {
   try {
@@ -203,16 +281,22 @@ export async function recheckSession(): Promise<void> {
 }
 
 /** A UI mutation. Failures toast; a rejected session drops to the landing page. Resolves true on success. */
-export async function act(path: string, body: unknown = {}, done?: string): Promise<boolean> {
+export const act = async (path: string, body: unknown = {}, done?: string): Promise<boolean> => (await actFor(path, body, done)).ok;
+
+/** `act`, with the failure's reason for a view that shows it in place (issue #459). `refused` reads a refusal from an
+ *  answer that is not an HTTP error (an intake action's `failed`, issue #811): it is then a failure too. */
+export async function actFor(path: string, body: unknown = {}, done?: string, refused?: (answer: unknown) => string | undefined): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    await post(path, body);
+    const answer = await post(path, body);
+    const why = refused?.(answer);
+    if (why !== undefined) throw new Error(why);
     if (done) toast.success(done);
     refreshLiveSoon();
-    return true;
+    return { ok: true };
   } catch (e) {
     if (e instanceof SessionRejected) set({ authed: false, user: null });
     toast.error((e as Error).message);
-    return false;
+    return { ok: false, error: (e as Error).message };
   }
 }
 
@@ -245,6 +329,13 @@ export function onDomainEvent(e: DomainEvent) {
   });
   refreshLiveSoon();
   if (e.type.startsWith('question.')) refreshQuestionsSoon();
+  if (e.type.startsWith('auth.')) refreshLoginsSoon();
+  for (const k of REVIEW_KINDS) if (e.type.startsWith(`${REVIEW_UI[k].prefix}.`)) refreshReviewsSoon(k);
+  if (FAILURE_EVENTS.has(e.type)) refreshFailuresSoon();
+  // A job's priority changed (a label): its question, login and hand-off are tagged and sorted by it (issue #535).
+  if (e.type === 'job.reprioritized') { refreshQuestionsSoon(); for (const k of REVIEW_KINDS) refreshReviewsSoon(k); refreshLoginsSoon(); refreshFailuresSoon(); }
+  if (e.type.startsWith('priority_lanes.') && s.priorityLanes) refreshPriorityLanesSoon();
+  if (e.type === 'priority_lanes.settings_changed') refreshQuestionsSoon();
   if (e.type.startsWith('update.')) refreshUpdate().catch(() => {});
   if (e.type === 'decision.made') {
     const id = e.decisionId ?? String(e.data.decisionId);
@@ -256,6 +347,7 @@ export function onDomainEvent(e: DomainEvent) {
 }
 export const onDelivery = (d: WebhookDelivery) => set({ deliveries: upsert(state().deliveries, d, (x) => x.id === d.id, CAP.deliveries) });
 export const onSource = (src: SourceStatus) => set({ sources: upsert(state().sources, src, (x) => x.name === src.name, Infinity) });
+export const onRecorded = (k: 'usage' | 'machine') => set({ recorded: { ...state().recorded, [k]: state().recorded[k] + 1 } });
 export const setConn = (conn: Conn) => set({ conn });
 
 /** True when the page must show only the landing page, with the ways to sign in: logged out (issues #167, #213). */
@@ -272,7 +364,7 @@ export async function load(): Promise<boolean> {
     get<{ events: DomainEvent[] }>(`/api/events?limit=${CAP.history}&types=${since}`),
     get<WebhooksView>('/api/webhooks'),
     get<{ deliveries: WebhookDelivery[] }>('/api/webhooks/deliveries?limit=100'),
-    get<{ questions: Question[] }>('/api/questions?status=open'), get<{ questions: Question[] }>(`/api/questions?status=all&limit=${HANDLED_LIMIT}`),
+    get<{ questions: QuestionView[] }>('/api/questions?status=open'), get<{ questions: QuestionView[] }>(`/api/questions?status=all&limit=${HANDLED_LIMIT}`),
     get<{ sources: SourceStatus[] }>('/api/sources'),
     get<UsageReport>('/api/usage'), get<{ accounts: PartAccount[] }>('/api/accounts'),
   ]);
@@ -283,6 +375,11 @@ export async function load(): Promise<boolean> {
     questions: questions.questions, handled: handledOf(allQuestions.questions), sources: sources.sources, usage, accounts: accounts.accounts,
   });
   refreshUpdate().catch(() => {});
+  // Apart, so the server's time is read close to its answer; until it is read the Logins view says so.
+  refreshLogins().catch(() => {});
+  refreshAllReviews();
+  refreshFailures().catch(() => {});
+  refreshPriorityLanes().catch(() => {});
   return true;
 }
 export const setLoadError = (loadError: string) => set({ loadError });

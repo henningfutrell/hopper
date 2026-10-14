@@ -39,7 +39,7 @@ async function render(mod: string, name: string, state: Record<string, unknown>)
   });
 }
 
-const who = () => document.querySelector<HTMLElement>('[data-who]');
+const who = () => document.querySelector<HTMLElement>('[data-slot="user-menu-trigger"]');
 
 afterEach(async () => {
   await act(async () => root?.unmount());
@@ -49,13 +49,13 @@ afterEach(async () => {
 });
 
 describe('the top bar says who you are', () => {
-  it('signed in: the user and role, at every width', async () => {
+  it('signed in: the user menu button names the user and role, at every width (its menu shows them, issue #666)', async () => {
     await render('../../ui/src/app/header.tsx', 'Header', {
       authed: true, signIn: offer(true), user: { id: 'bea', name: 'Bea', role: 'operator', realm: 'corp', identity: 'bea' },
     });
-    expect(who()?.textContent).toContain('Bea');
-    expect(who()?.textContent).toContain('operator');
-    expect(who()?.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+    expect(who()?.getAttribute('aria-label')).toBe('User menu: Bea, operator');
+    expect(who()?.textContent).toBe('B');
+    expect(who()?.className).not.toMatch(/(^|\s)(max-sm:)?hidden(\s|$)/);
   });
 });
 

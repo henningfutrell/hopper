@@ -19,6 +19,8 @@ const DAY = 24 * HOUR;
 const ada: Identity = { realm: 'dir', subject: 'ada', groups: [] };
 const edgeAda: Identity = { realm: 'edge', subject: 'ada-1', groups: [] };
 
+const githubAda: Identity = { realm: 'github', subject: '1', username: 'ada', groups: [] };
+
 const gatewayRealm = (issuer: string) => ({ name: 'edge', type: 'gateway', issuer, audience: ['hopper'], roles: { defaultRole: 'viewer' } });
 const ldapRealm = { name: 'dir', type: 'ldap', url: 'ldap://127.0.0.1:1', userBase: 'ou=people,dc=example,dc=org', roles: { defaultRole: 'viewer' } };
 
@@ -31,13 +33,21 @@ const clock = fixedClock(new Date().toISOString());
 const at = (ms: number) => clock.set(new Date(start + ms).toISOString());
 let start: number;
 
+/** The users whose GitHub connection ended (issue #513). */
+let connectionEnded: Set<string>;
+/** Why a request's session token named no live session (issue #647). */
+let unknown: string[];
+
 function setUp(o: { idleHours?: number; maxHours?: number; issuer?: string } = {}) {
   const config = loadSignInConfig({
     version: 1, sessions: { idleHours: o.idleHours ?? 168, maxHours: o.maxHours ?? 720 },
-    realms: [ldapRealm, gatewayRealm(o.issuer ?? idp.issuer)],
+    realms: [ldapRealm, gatewayRealm(o.issuer ?? idp.issuer), { name: 'github', type: 'github' }],
   });
   signIn = createSignIn({ config, clock, origin: () => 'http://localhost:1' });
-  sessions = createUiSessions({ repo: instance.uiSessions, clock, signIn, ended: (s) => ended.push(s) });
+  sessions = createUiSessions({
+    repo: instance.uiSessions, clock, signIn, ended: (s) => ended.push(s), connectionEnded: (userId) => connectionEnded.has(userId),
+    unknown: (why) => unknown.push(why),
+  });
 }
 
 beforeEach(async () => {
@@ -45,6 +55,8 @@ beforeEach(async () => {
   clock.set(new Date(start).toISOString());
   instance = openInstanceStore({ url: t.url(), clock });
   ended = [];
+  connectionEnded = new Set();
+  unknown = [];
   idp = await startOidcIdp();
 });
 afterEach(async () => {
@@ -196,5 +208,126 @@ describe('a session a gateway realm made: the gateway stays the authority', () =
     at(3 * 60_000);
     await sessions.renew(s.token, await forwarded());
     expect(sessions.find(s.token)?.expiresAt).toBe(new Date(start + HOUR).toISOString());
+  });
+});
+
+describe('a session signed in with GitHub, when the GitHub connection ends (issue #513)', () => {
+  it('ends every GitHub sign-in of that user, as connection-ended; the next lookup finds none', () => {
+    setUp();
+    const a = sessions.create({ role: 'admin', identity: githubAda, userId: 'u1' });
+    const b = sessions.create({ role: 'admin', identity: githubAda, userId: 'u1' });
+    expect(sessions.find(a.token)).toBeDefined();
+    connectionEnded.add('u1');
+    expect(sessions.find(a.token)).toBeUndefined();
+    expect(sessions.find(b.token)).toBeUndefined();
+    expect(ended).toEqual([
+      { userId: 'u1', identity: githubAda, reason: 'connection-ended' },
+      { userId: 'u1', identity: githubAda, reason: 'connection-ended' },
+    ]);
+  });
+
+  it('a request renewing it ends it too, with nothing renewed', async () => {
+    setUp();
+    const s = sessions.create({ role: 'admin', identity: githubAda, userId: 'u1' });
+    connectionEnded.add('u1');
+    at(2 * 60_000);
+    await sessions.renew(s.token, {});
+    expect(ended.map((e) => e.reason)).toEqual(['connection-ended']);
+  });
+
+  it('keeps a session of that user signed in another way: it may connect GitHub again from Sources', () => {
+    setUp();
+    const s = sessions.create({ role: 'admin', identity: ada, userId: 'u1' });
+    connectionEnded.add('u1');
+    expect(sessions.find(s.token)?.userId).toBe('u1');
+    expect(ended).toEqual([]);
+  });
+
+  it('keeps a GitHub sign-in whose connection lives, and another user\'s', () => {
+    setUp();
+    const mine = sessions.create({ role: 'admin', identity: githubAda, userId: 'u1' });
+    const theirs = sessions.create({ role: 'viewer', identity: { ...githubAda, subject: '2', username: 'bob' }, userId: 'u2' });
+    expect(sessions.find(mine.token)).toBeDefined();
+    connectionEnded.add('u1');
+    expect(sessions.find(theirs.token)?.userId).toBe('u2');
+    expect(sessions.find(mine.token)).toBeUndefined();
+    expect(ended.map((e) => e.userId)).toEqual(['u1']);
+  });
+});
+
+describe('a request whose session is unknown says why (#647)', () => {
+  it('not found: no stored session ever had the token', async () => {
+    setUp();
+    await sessions.renew('not-a-session', {});
+    expect(unknown).toEqual(['not found: it ended before this hopper started, the database was reset, or it is another hopper\'s']);
+  });
+
+  it('ended: the session ended earlier, with its reason', async () => {
+    setUp();
+    const s = sessions.create({ role: 'admin', identity: ada, userId: 'u1' });
+    sessions.drop(s.token, 'logout');
+    await sessions.renew(s.token, {});
+    expect(unknown).toEqual(['ended: logout']);
+  });
+
+  it('expired: the request found it past its idle timeout', async () => {
+    setUp();
+    const s = sessions.create({ role: 'admin', identity: ada, userId: 'u1' });
+    at(7 * DAY);
+    await sessions.renew(s.token, {});
+    expect(unknown).toEqual(['expired: expired-idle']);
+  });
+});
+
+// Issue #718: an API token is a session of kind `api`, with its own fixed end, a role no reconcile raises, and no gateway
+// token in its requests to check again.
+describe('an API token', () => {
+  it('ends at its own end, is listed without its token, and is revoked by its id', () => {
+    setUp();
+    const s = sessions.create({ role: 'operator', identity: ada, userId: 'u1', lastsMs: 15 * 60_000, api: { label: 'grok-bot' } });
+    expect(s.token).toMatch(/^hopper_at_[0-9a-f]{64}$/);
+    expect(s.kind).toBe('api');
+    const [listed] = sessions.apiTokens('u1');
+    expect(listed).toMatchObject({ label: 'grok-bot', role: 'operator', expiresAt: new Date(start + 15 * 60_000).toISOString() });
+    expect(JSON.stringify(sessions.apiTokens('u1'))).not.toContain(s.token);
+    expect(sessions.apiTokens('u2')).toEqual([]);
+    at(16 * 60_000);
+    expect(sessions.find(s.token)).toBeUndefined();
+    expect(sessions.apiTokens('u1')).toEqual([]);
+
+    const t2 = sessions.create({ role: 'admin', identity: ada, userId: 'u1', lastsMs: 60 * 60_000, api: { label: 'ci' } });
+    const id = sessions.apiTokens('u1')[0]!.id;
+    expect(sessions.revokeApiToken('u2', id)).toBe(false);
+    expect(sessions.revokeApiToken('u1', id)).toBe(true);
+    expect(sessions.find(t2.token)).toBeUndefined();
+  });
+
+  it('is a box token only when minted with box (issue #795): the flag is kept, listed and read back', () => {
+    setUp();
+    const box = sessions.create({ role: 'operator', identity: ada, userId: 'u1', lastsMs: 15 * 60_000, api: { label: 'grok-bot', box: true } });
+    const plain = sessions.create({ role: 'operator', identity: ada, userId: 'u1', lastsMs: 15 * 60_000, api: { label: 'ci' } });
+    expect(sessions.find(box.token)).toMatchObject({ kind: 'api', box: true });
+    expect(sessions.find(plain.token)?.box).toBeUndefined();
+    expect(sessions.apiTokens('u1').map((t) => [t.label, t.box]).sort()).toEqual([['ci', false], ['grok-bot', true]]);
+  });
+
+  it('keeps the role it was minted with at most: a reconcile lowers it, never raises it', () => {
+    setUp();
+    const s = sessions.create({ role: 'operator', identity: ada, userId: 'u1', lastsMs: HOUR, api: { label: 'grok-bot' } });
+    sessions.reconcile(() => 'admin');
+    expect(sessions.find(s.token)?.role).toBe('operator');
+    sessions.reconcile(() => 'viewer');
+    expect(sessions.find(s.token)?.role).toBe('viewer');
+    sessions.reconcile(() => null);
+    expect(sessions.find(s.token)).toBeUndefined();
+  });
+
+  it('minted from a gateway sign-in, it renews by its own use: no gateway token is checked again', async () => {
+    setUp({ idleHours: 1 });
+    const s = sessions.create({ role: 'admin', identity: edgeAda, userId: 'u1', lastsMs: HOUR, api: { label: 'grok-bot' } });
+    at(10 * 60_000);
+    await sessions.renew(s.token, { authorization: `Bearer ${s.token}` });
+    expect(sessions.find(s.token)?.userId).toBe('u1');
+    expect(ended).toEqual([]);
   });
 });

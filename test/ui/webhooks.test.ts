@@ -2,7 +2,7 @@
 // the last delivery a subscription card shows.
 import { describe, expect, it } from 'vitest';
 import type { WebhookDelivery } from '../../src/domain/types.ts';
-import { EVENT_CHOICES, lastDelivery, secretEnvFor, toggleEvent } from '../../ui/src/model/webhooks.ts';
+import { EVENT_CHOICES, lastDelivery, secretOf, toggleEvent } from '../../ui/src/model/webhooks.ts';
 
 describe('toggleEvent', () => {
   it('adds and removes an event type, keeping the choices order', () => {
@@ -35,10 +35,25 @@ describe('lastDelivery', () => {
   });
 });
 
-describe('secretEnvFor (issue #56)', () => {
-  it('suggests the WEBHOOK_SECRET_* variable a new subscription names, from its name', () => {
-    expect(secretEnvFor('grok-bot')).toBe('WEBHOOK_SECRET_GROK_BOT');
-    expect(secretEnvFor(' my.phone 2 ')).toBe('WEBHOOK_SECRET_MY_PHONE_2');
-    expect(secretEnvFor('')).toBe('WEBHOOK_SECRET_');
+// Issue #451: the card says whether a secret is stored (and when it changed), or that one from before
+// still reads a runtime variable, and why there is none to sign with — never the secret.
+describe('secretOf', () => {
+  const sub = { id: 's', name: 'hook', url: 'http://127.0.0.1:1/', events: ['*'], active: true, createdAt: '2026-10-01T00:00:00.000Z' };
+
+  it('stored: set, with when it changed', () => {
+    expect(secretOf({ ...sub, secretChangedAt: '2026-10-08T10:00:00.000Z' })).toEqual({ kind: 'stored', changedAt: '2026-10-08T10:00:00.000Z' });
+  });
+
+  it('from before: the runtime variable, to replace', () => {
+    expect(secretOf({ ...sub, secretEnv: 'WEBHOOK_SECRET_HOOK' })).toEqual({ kind: 'runtime', variable: 'WEBHOOK_SECRET_HOOK' });
+  });
+
+  it('neither: none', () => {
+    expect(secretOf(sub)).toEqual({ kind: 'none' });
+  });
+
+  it('a problem goes with each', () => {
+    expect(secretOf({ ...sub, secretChangedAt: '2026-10-08T10:00:00.000Z', secretProblem: 'the stored secret cannot be opened' }))
+      .toEqual({ kind: 'stored', changedAt: '2026-10-08T10:00:00.000Z', problem: 'the stored secret cannot be opened' });
   });
 });

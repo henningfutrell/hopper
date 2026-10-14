@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "artifact": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    },
+    "comment": {
+      "type": "string"
+    },
+    "error": {
+      "type": "string"
+    },
+    "issue": {
+      "type": "boolean",
+      "const": false
+    }
+  },
+  "required": [
+    "artifact",
+    "title",
+    "by"
+  ],
+  "additionalProperties": false
+}

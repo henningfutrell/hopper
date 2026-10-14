@@ -12,6 +12,7 @@ COPY ui ./ui
 COPY site/hopper-logo.svg ./site/hopper-logo.svg
 COPY src ./src
 COPY scripts/check-ui-bundle.ts ./scripts/check-ui-bundle.ts
+COPY scripts/copy-artifact-libs.ts ./scripts/copy-artifact-libs.ts
 RUN npm run build:ui && test -s ui/dist/index.html
 
 # ---- the daemon --------------------------------------------------------------------------------
@@ -19,14 +20,22 @@ FROM node:26-bookworm-slim
 # What an upgrade prunes when this image is replaced (docs/deploy.md "Upgrade"); the published image carries it too.
 LABEL org.opencontainers.image.title=hopper
 # git: self-update's mirror and Jev; openssh-client: attached machines; python3 + PyYAML: the Jev
-# shim; ca-certificates: TLS to GitHub and the identity providers; curl: herdr's installer. No gh: GitHub
-# is read through the signed-in user's connected account (issue #359), and jobs run on attached machines.
+# shim; pip: typesafe-sdk below; ca-certificates: TLS to GitHub and the identity providers; curl: herdr's
+# installer. No gh: GitHub is read through the signed-in user's connected account (issue #359), and jobs
+# run on attached machines.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client python3 python3-yaml \
+ && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client python3 python3-yaml python3-pip \
  && rm -rf /var/lib/apt/lists/*
+# typesafe-sdk: Jev through TypeSafe, for the decider calls and the gate router's Jev gates. Used only once a
+# TypeSafe API key is set on the Jev page; without it nothing calls TypeSafe.
+RUN pip3 install --no-cache-dir --break-system-packages typesafe-sdk==0.7.4 && python3 -c 'import typesafe_sdk'
 # herdr's CLI (herdr.dev; the installer checks the release's SHA-256): the herdr-claude executor
 # detects it before it runs jobs on attached machines.
 RUN curl -fsSL https://herdr.dev/install.sh | HERDR_INSTALL_DIR=/usr/local/bin sh && herdr --version
+# cloudflared (issue #968): the compose service `cloudflared` runs the hopper's image with it, for remote access through
+# Cloudflare Tunnel. Copied from Cloudflare's own image, pinned; the daemon never runs it.
+COPY --from=docker.io/cloudflare/cloudflared:2026.10.0 /usr/local/bin/cloudflared /usr/local/bin/cloudflared
+RUN cloudflared --version
 # The claude CLI, for the escalation levels, the usage reading and Jev's Haiku gates. It signs
 # in from the environment (CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY). INSTALL_CLAUDE=false skips it.
 ARG INSTALL_CLAUDE=true
@@ -45,6 +54,12 @@ COPY src ./src
 COPY scripts/check-ui-bundle.ts ./scripts/check-ui-bundle.ts
 COPY scripts ./scripts
 COPY WHATS-NEW.md ./
+# What's new not assembled yet (issue #824): its fragments are part of "this version".
+COPY whats-new ./whats-new
+# The help pages (issue #782): the daemon serves them at /help/, the version they describe.
+COPY help ./help
+# The compose file of this release (issue #697): `hopper update` puts it in, so an update never keeps an old one.
+COPY compose.yaml ./
 COPY --from=ui /build/ui/dist ./ui/dist
 RUN chmod 755 src/cli.ts && ln -s /app/src/cli.ts /usr/local/bin/hopper
 # What this image is built from (issue #409): install.json, as an install has, and the OCI labels — so Settings →

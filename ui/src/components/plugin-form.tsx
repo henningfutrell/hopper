@@ -1,5 +1,6 @@
 // One plugin instance's options form (Remove for a list role's instance; an escalation level also
-// moves earlier or later), a one-instance role's plugin selector and a list role's Add form (design.md "UI and mutation"), shared by the Plugins view, the Routing view and the Question gates panel. Each form keeps its own
+// moves earlier or later), a one-instance role's plugin selector and a list role's Add form (design.md "UI and mutation"), shared by the Plugins view, the Routing view and the Question gates panel
+// (the escalation levels' one editor, issue #444). Each form keeps its own
 // unsaved edits; every option is edited here, a command-bearing one marked as such (issue #198); an option the plugin lists
 // choices for (a model) is picked from them, not typed (issue #151); a machine option from the configured
 // machines, and never left empty — Add asks for it too (issue #174). One Save sends
@@ -105,6 +106,8 @@ export function InstanceForm({ role, inst }: { role: Role; inst: InstanceSpec })
   const choices = report.plugins.find((p) => p.id === inst.plugin)?.choices ?? {};
   const props = Object.entries(schema?.properties ?? {});
   const current = inst.options ?? {};
+  // The server refuses options that leave a machine option empty (issue #174): Save waits for it (issue #444).
+  const machineless = machineOptions(schema).some((m) => !(m in draft ? draft[m] : current[m]));
   const save = async () => {
     let options: Record<string, unknown>;
     try { options = collectOptions(current, schema, draft); } catch (e) { toast.error((e as Error).message); return; }
@@ -148,8 +151,9 @@ export function InstanceForm({ role, inst }: { role: Role; inst: InstanceSpec })
         : <div className="text-xs text-muted-foreground">no options</div>}
       {authed && (props.length > 0 || isListRole(role)) && (
         <div className="flex flex-wrap gap-2">
-          {props.length > 0 && <Button size="sm" disabled={busy || !dirty} onClick={() => void save()}>Save {inst.name}</Button>}
+          {props.length > 0 && <Button size="sm" disabled={busy || !dirty || machineless} onClick={() => void save()}>Save {inst.name}</Button>}
           {dirty && <Button size="sm" variant="ghost" disabled={busy} onClick={() => setDraft({})}>Discard</Button>}
+          {dirty && machineless && <span className="self-center text-xs text-warn">pick a machine to save</span>}
           {at > 0 && <Button size="sm" variant="ghost" aria-label={`Move ${inst.name} earlier`} title="Earlier in the climb: a question meets it sooner" disabled={busy} onClick={() => void move(at - 1)}><ArrowUp /></Button>}
           {at >= 0 && at < levels.length - 1 && <Button size="sm" variant="ghost" aria-label={`Move ${inst.name} later`} title="Later in the climb: a question meets it after the one before" disabled={busy} onClick={() => void move(at + 1)}><ArrowDown /></Button>}
           {isListRole(role) && (

@@ -10,7 +10,7 @@ const fakeLevel = (name: string, escalates: RegExp): EscalationLevel => createFa
   name,
   script: (req) => {
     const escalate = escalates.test(req.question.text);
-    return { answer: `fake ${name} answer`, escalate, reason: `fake ${name}: escalate=${escalate}` };
+    return { answer: `fake ${name} answer`, escalate, reason: `fake ${name}: escalate=${escalate}`, confidence: 'high' };
   },
 });
 

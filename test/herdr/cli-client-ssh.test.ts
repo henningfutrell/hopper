@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { HerdrError, createHerdrCliClient } from '../../src/executors/herdr/index.ts';
 import { userSshConfig } from '../../src/executors/ssh.ts';
 import { testSshAuth } from '../support/ssh.ts';
+import { systemPath } from '../support/system-path.ts';
 
 const HERDR = fileURLToPath(new URL('./fake-herdr-bin.mjs', import.meta.url));
 const SSH = fileURLToPath(new URL('./fake-ssh-bin.mjs', import.meta.url));
@@ -27,7 +28,7 @@ beforeEach(() => {
   mkdirSync(join(dir, 'there', '.local', 'bin'), { recursive: true });
   symlinkSync(HERDR, join(dir, 'there', '.local', 'bin', 'herdr'));
   // Never this computer's own herdr, wherever its PATH has it.
-  process.env.PATH = '/usr/bin:/bin';
+  process.env.PATH = systemPath();
 });
 
 afterEach(() => {
@@ -46,17 +47,28 @@ describe('herdr CLI client over ssh', () => {
     expect(lines('calls.jsonl')[0]!.argv).toEqual(['--session', 'jh-test-x', 'agent', 'prompt', 'jh-a', text]);
   });
 
-  it('calls herdr by name, from the machine\'s PATH and then ~/.local/bin: no binary path to name (issue #311)', async () => {
+  it('calls the hopper\'s own herdr when it is linked there, else herdr by name, from ~/.local/bin and then the machine\'s PATH (issues #311, #741)', async () => {
     await remote().getAgent('jh-a');
     const argv = lines('ssh-calls.jsonl')[0]!.argv;
-    expect(argv.at(-1)).toBe(`PATH="$PATH:$HOME/.local/bin" exec 'herdr' '--session' 'jh-test-x' 'agent' 'get' 'jh-a'`);
+    expect(argv.at(-1)).toBe(`h="$HOME/.local/share/hopper/herdr/current/herdr"; [ -x "$h" ] || { PATH="$HOME/.local/bin:$PATH"; h=herdr; }; exec "$h" '--session' 'jh-test-x' 'agent' 'get' 'jh-a'`);
   });
 
-  it('herdr on the machine\'s PATH wins over ~/.local/bin', async () => {
+  // Issue #741: a seat image baked an old herdr into /usr/local/bin, on the PATH; herdr's own install in ~/.local/bin
+  // ran the session server. The old one won, and every job start failed on the protocol.
+  it('~/.local/bin, where herdr installs itself, wins over a herdr on the machine\'s PATH', async () => {
     const bin = join(dir, 'path-bin');
     mkdirSync(bin);
     writeFileSync(join(bin, 'herdr'), `#!/bin/sh\necho "{\\"result\\":{\\"from\\":\\"path\\"}}"\n`, { mode: 0o755 });
-    process.env.PATH = `${bin}:/usr/bin:/bin`;
+    process.env.PATH = systemPath(bin);
+    expect(await remote().run(['workspace', 'list'])).toMatchObject({ type: 'workspace_list' });
+  });
+
+  it('a herdr on the machine\'s PATH still serves when ~/.local/bin has none', async () => {
+    rmSync(join(dir, 'there', '.local', 'bin', 'herdr'));
+    const bin = join(dir, 'path-bin');
+    mkdirSync(bin);
+    writeFileSync(join(bin, 'herdr'), `#!/bin/sh\necho "{\\"result\\":{\\"from\\":\\"path\\"}}"\n`, { mode: 0o755 });
+    process.env.PATH = systemPath(bin);
     expect(await remote().run(['status'])).toEqual({ from: 'path' });
   });
 

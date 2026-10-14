@@ -1,0 +1,2 @@
+- The top bar now shows on every screen whether the hopper merges pull requests by itself, and opens the one place where you change it.
+- Needs you now also counts the infrastructure plans that wait for your approval and the pull requests with merge conflicts. Infra and Pull requests show these counts too.

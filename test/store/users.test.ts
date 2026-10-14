@@ -87,7 +87,7 @@ describe('an install from before (issue #238: its default admin account stays)',
     a.events.append({ type: 'job.queued', jobId: job.id, data: {} });
     a.config.write('rules', 'a rules', 'missing');
     a.settings.setQueueGate({ mode: 'review', autoAcceptPerHour: null });
-    a.webhooks.add({ name: 'w', url: 'http://127.0.0.1:1/', events: ['job.*'], secretEnv: 'S', active: true });
+    a.webhooks.add({ name: 'w', url: 'http://127.0.0.1:1/', events: ['job.*'], active: true });
     expect(b.jobs.list()).toEqual([]);
     expect(b.jobs.get(job.id)).toBeUndefined();
     expect(b.questions.list()).toEqual([]);
@@ -116,7 +116,7 @@ describe('identity links, sessions and login codes belong to a user', () => {
     const bea = instance.users.add('bea');
     const identity = { realm: 'local', subject: 'local', groups: [] };
     const at = '2026-10-02T10:00:00.000Z';
-    instance.uiSessions.create({ tokenHash: 'h', startedAt: at, lastSeenAt: at, checkedAt: at, role: 'admin', identity, userId: bea.id });
+    instance.uiSessions.create({ tokenHash: 'h', startedAt: at, lastSeenAt: at, checkedAt: at, role: 'admin', identity, userId: bea.id }, at);
     expect(instance.uiSessions.get('h')).toEqual({ tokenHash: 'h', startedAt: at, lastSeenAt: at, checkedAt: at, role: 'admin', identity, userId: 'bea' });
     instance.close();
   });
@@ -183,7 +183,7 @@ describe('migrations 17 and 21: an install from before becomes the default admin
     instance.close();
     const raw = openDb(testPostgres());
     const left = raw.all("SELECT table_name FROM information_schema.tables WHERE table_schema = ? ORDER BY table_name", schemaOf(url)).map((r) => r.table_name);
-    expect(left).toEqual(['config', 'join_codes', 'login_codes', 'schema_version', 'settings', 'ui_sessions', 'user_identities', 'users']);
+    expect(left).toEqual(['access_decisions', 'access_models', 'access_state', 'access_tuples', 'api_grant_tokens', 'api_grants', 'config', 'join_codes', 'login_codes', 'sandboxes', 'schema_version', 'settings', 'stack_samples', 'ui_sessions', 'user_identities', 'users', 'vault_secrets']);
     expect(raw.all(`SELECT name FROM "${schemaOf(url)}".config`)).toEqual([{ name: 'sign-in' }]);
     expect(raw.all(`SELECT key FROM "${schemaOf(url)}".settings ORDER BY key`).map((r) => r.key)).toEqual(['autoUpdate', 'pluginInstalls', 'updateChannel']);
     raw.close();

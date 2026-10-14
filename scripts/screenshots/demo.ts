@@ -120,14 +120,29 @@ async function offer(a: TestApp, github: FakeGitHub, issues: Issue[]): Promise<v
 const counts = new Map<string, number>();
 const countIn = (repo: string): number => counts.get(repo) ?? 0;
 
-/** Usage samples for the past week: a plan's session window filling and resetting every five hours. */
+/**
+ * Usage samples for the past week: one plan's account read on two machines (one line on the usage graph) and a
+ * second account on a third, each session window filling and resetting every five hours, and a week window.
+ */
 function usageHistory(now: number): UsageSample[] {
   const samples: UsageSample[] = [];
-  for (let t = now - 7 * 24 * 3_600_000; t < now; t += 15 * 60_000) {
-    const hour = new Date(t).getUTCHours();
-    const busy = hour >= 7 && hour <= 22 ? 1 : 0.25;
-    const phase = ((t / 3_600_000) % 5) / 5;
-    samples.push({ source: 'claude-plan', window: 'session', used: Math.round(5 + 85 * phase * busy), limit: 100, unit: '%', at: new Date(t).toISOString() });
+  const readers = [
+    // The live usage source (doubles.ts) reads as `claude-plan` too, naming no account: its samples join this line.
+    { source: 'claude-plan', account: 'dev@example.com', offset: 0, scale: 1 },
+    { source: 'claude-plan-build', machineId: 'build-1', account: 'dev@example.com', offset: 5 * 60_000, scale: 1 },
+    { source: 'claude-plan-gpu', machineId: 'gpu-1', account: 'research@example.com', offset: 0, scale: 0.6 },
+  ];
+  const week = 7 * 24 * 3_600_000;
+  for (const r of readers) {
+    for (let t = now - week + r.offset; t < now; t += 15 * 60_000) {
+      const hour = new Date(t).getUTCHours();
+      const busy = hour >= 7 && hour <= 22 ? 1 : 0.25;
+      const phase = ((t / 3_600_000) % 5) / 5;
+      const at = new Date(t).toISOString();
+      const base = { source: r.source, ...(r.machineId ? { machineId: r.machineId } : {}), account: r.account, limit: 100, unit: '%', at };
+      samples.push({ ...base, window: 'session', used: Math.round((5 + 85 * phase * busy) * r.scale), resetsAt: new Date(t + (1 - phase) * 5 * 3_600_000).toISOString() });
+      samples.push({ ...base, window: 'week', used: Math.round(((t - (now - week)) / week) * 70 * r.scale) });
+    }
   }
   return samples;
 }

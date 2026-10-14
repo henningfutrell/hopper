@@ -24,6 +24,15 @@ const divergence = strict({
   native: z.enum(['start', 'hold']), withAdvice: z.enum(['start', 'hold']), note: z.string(),
 });
 
+/** A proposal event's item fields before issue #651. */
+const proposalV1 = {
+  proposalId: z.string(), version: z.number().int().min(1), priority: z.number().optional(), high: z.boolean().optional(),
+  raisedBy: strict({ machineId: z.string(), name: z.string().optional(), laneId: z.string().optional() }).optional(),
+};
+
+/** Remote access's settings before issue #968. */
+const remoteAccessV1 = strict({ enabled: z.boolean(), domain: z.string().optional(), restartedAt: z.string().optional() });
+
 /** Types nothing emits any more; their stored events still read. */
 export const LEGACY_EVENT_TYPES = ['jev.mode_changed', 'router.mode_changed'] as const;
 
@@ -42,10 +51,17 @@ export const LEGACY_EVENT_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
     starts: z.array(startPlan), holds: z.array(holdPlan), lanes: z.array(lanePlan), divergences: z.array(divergence),
   }),
   'router.mode_changed.v1': strict({ from: routerMode, to: routerMode }),
+  // Issue #794: progress is the job's task count, no more a fraction 0..1 of elapsed time.
+  'job.progressed.v1': strict({ progress: z.number().min(0).max(1), message: z.string().optional() }),
   'question.escalated.v1': strict({
     questionId: z.string(), target: answerTier, reason: z.string(), text: z.string(), jobId: z.string(),
     goal: z.string().optional(), answerUrl: z.string().optional(),
     notifyCount: z.number().int().optional(), renotify: z.boolean().optional(),
   }),
   'question.answered.v1': strict({ questionId: z.string(), by: answerTier, answer: z.string() }),
+  // Issue #651 made a proposal a set of paths: its headline is its TL;DR, no more its goal, and its parts changed.
+  'proposal.submitted.v1': strict({ ...proposalV1, goal: z.string().optional(), missing: z.array(z.enum(['goal', 'approach', 'alternatives', 'risks', 'effort', 'context'])) }),
+  'proposal.escalated.v1': strict({ ...proposalV1, target: z.string().min(1), reason: z.string(), goal: z.string().optional() }),
+  // Issue #968: a provider to pick and its credential, and what the hopper minted, in place of an ngrok authtoken pasted by hand.
+  'remote_access.changed.v1': strict({ from: remoteAccessV1, to: remoteAccessV1, authtoken: z.enum(['set', 'removed']).optional(), by: z.string() }),
 };

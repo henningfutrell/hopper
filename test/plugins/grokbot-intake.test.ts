@@ -44,4 +44,64 @@ describe('Grok Bot routine: intake stopped', () => {
       expect.objectContaining({ source: 'hopper', kind: 'connected_account.expired', provider: 'github', account: 'octo-user', reason: 'GitHub refused the refresh token' }),
     ]));
   });
+
+  it('posts source.request_opened (issue #798): a request card waits for a person to approve it', async () => {
+    const r = await receiver();
+    const listeners: ((e: DomainEvent) => void)[] = [];
+    const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url: r.url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date() }, baseMs: 10 });
+    n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined, question: () => undefined, waitingOnHuman: () => [], answerUrl: () => '' });
+    const key = 'https://github.com/octocat/hello/issues/7';
+    for (const l of listeners) l(event('source.request_opened', { source: 'github-account', key, hash: 'a'.repeat(64), author: 'helper[bot]', why: ['written by an app or a bot (helper[bot])'] }));
+    await waitFor(() => r.hits.length === 1, { what: 'one post' });
+    await n.stop();
+    expect(r.hits[0]).toEqual(expect.objectContaining({
+      source: 'hopper', kind: 'source.request_opened', sourceName: 'github-account', issueUrl: key, author: 'helper[bot]', why: ['written by an app or a bot (helper[bot])'],
+    }));
+  });
+
+  it('posts infra.out_of_band_recorded (issue #871): an out-of-band infrastructure change is never silent', async () => {
+    const r = await receiver();
+    const listeners: ((e: DomainEvent) => void)[] = [];
+    const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url: r.url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date() }, baseMs: 10 });
+    n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined, question: () => undefined, waitingOnHuman: () => [], answerUrl: () => '' });
+    for (const l of listeners) {
+      l(event('infra.out_of_band_recorded', {
+        change: 'c1', source: 'cloudtrail', key: 'evt-1', target: 'sg-0abc', what: 'ec2:AuthorizeSecurityGroupIngress', who: 'arn:aws:sts::123456789012:assumed-role/Admin/console',
+        at: '2026-10-07T20:40:00Z', job: 'j1',
+      }));
+    }
+    await waitFor(() => r.hits.length === 1, { what: 'one post' });
+    await n.stop();
+    expect(r.hits[0]).toEqual(expect.objectContaining({
+      source: 'hopper', kind: 'infra.out_of_band_recorded', change: 'c1', signal: 'cloudtrail', target: 'sg-0abc', what: 'ec2:AuthorizeSecurityGroupIngress',
+      who: 'arn:aws:sts::123456789012:assumed-role/Admin/console', happenedAt: '2026-10-07T20:40:00Z',
+    }));
+    expect(r.hits[0]).not.toHaveProperty('infraUrl');
+  });
+
+  it('links an out-of-band change to the Infra page, where a person marks it (issue #871)', async () => {
+    const r = await receiver();
+    const listeners: ((e: DomainEvent) => void)[] = [];
+    const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url: r.url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date() }, baseMs: 10 });
+    n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined, question: () => undefined, waitingOnHuman: () => [], answerUrl: () => '', infraUrl: () => 'http://hopper.lan:4790/#infra' });
+    for (const l of listeners) l(event('infra.out_of_band_recorded', { change: 'c1', source: 'gitops', key: 'web', target: 'argocd app web', what: 'OutOfSync', at: '2026-10-07T20:40:00Z', job: 'j1' }));
+    await waitFor(() => r.hits.length === 1, { what: 'one post' });
+    await n.stop();
+    expect(r.hits[0]).toEqual(expect.objectContaining({ kind: 'infra.out_of_band_recorded', change: 'c1', infraUrl: 'http://hopper.lan:4790/#infra' }));
+  });
+
+  it('posts machine.memory_low and machine.memory_recovered (issue #868): a machine runs low on free memory, and is back', async () => {
+    const r = await receiver();
+    const listeners: ((e: DomainEvent) => void)[] = [];
+    const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url: r.url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date() }, baseMs: 10 });
+    n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined, question: () => undefined, waitingOnHuman: () => [], answerUrl: () => '' });
+    const free = { machineId: 'win-desk', of: 'windows', freeBytes: 3e9, totalBytes: 32e9, thresholdBytes: 5e9 };
+    for (const l of listeners) l(event('machine.memory_low', { ...free, since: '2026-10-07T20:30:00.000Z' }));
+    await waitFor(() => r.hits.length === 1, { what: 'one post' });
+    for (const l of listeners) l(event('machine.memory_recovered', { ...free, freeBytes: 9e9 }));
+    await waitFor(() => r.hits.length === 2, { what: 'two posts' });
+    await n.stop();
+    expect(r.hits[0]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.memory_low', ...free, since: '2026-10-07T20:30:00.000Z' }));
+    expect(r.hits[1]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.memory_recovered', ...free, freeBytes: 9e9 }));
+  });
 });

@@ -67,6 +67,22 @@
             "set"
           ],
           "additionalProperties": false
+        },
+        "proposal": {
+          "type": "boolean",
+          "const": true
+        },
+        "research": {
+          "type": "boolean",
+          "const": true
+        },
+        "specialty": {
+          "type": "boolean",
+          "const": true
+        },
+        "tend": {
+          "type": "boolean",
+          "const": true
         }
       },
       "required": [
@@ -115,12 +131,63 @@
           "items": {
             "type": "string"
           }
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "trusted",
+            "approved"
+          ]
         }
       },
       "required": [
         "source",
         "kind",
         "key"
+      ],
+      "additionalProperties": false
+    },
+    "forkOf": {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "questionId": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "research",
+            "proposal"
+          ]
+        }
+      },
+      "required": [
+        "jobId",
+        "questionId",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "followOn": {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "proposalId": {
+          "type": "string"
+        },
+        "pathId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId",
+        "proposalId",
+        "pathId"
       ],
       "additionalProperties": false
     }

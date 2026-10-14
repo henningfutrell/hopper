@@ -41,6 +41,35 @@ describe('what a build knows of itself', () => {
     expect(types(w)).toEqual(['update.available']);
   });
 
+  it('never auto-updates an image install: a stored auto-update is shown off and never acted on, and turning it on is ignored (issue #494)', async () => {
+    const w = world();
+    const c1 = w.up.commit('first');
+    w.up.commit('second');
+    const calls: string[] = [];
+    const warned: string[] = [];
+    const { u, restarts } = updater(w, createInstall(w.root, w.up.dir, c1, 'stable', 'image'), {
+      builder: copyBuilder({ calls }), logger: { info: () => {}, warn: (l) => { warned.push(l); } },
+    });
+    w.instance.settings.setUpdateSettings({ autoUpdate: true });
+    expect(u.status().autoUpdate).toBe(false);
+    const s = await u.check();
+    expect(s).toMatchObject({ state: 'available', autoUpdate: false });
+    expect(u.settings({ autoUpdate: true }).autoUpdate).toBe(false);
+    await u.check();
+    await new Promise((res) => setTimeout(res, 50));
+    expect(calls).toEqual([]);
+    expect(restarts).toEqual([]);
+    expect(u.status().state).toBe('available');
+    expect(types(w)).toEqual(['update.available']);
+    expect(warned).toEqual([]);
+  });
+
+  it('says how many running jobs a restart would lose, image or install (issue #494)', async () => {
+    const w = world();
+    const c1 = w.up.commit('first');
+    expect(updater(w, createInstall(w.root, w.up.dir, c1, 'stable', 'image'), { restartBlockers: () => 2 }).u.status().restartBlockers).toBe(2);
+  });
+
   it('reads an install.json from before kinds as an install (issue #409)', async () => {
     const w = world();
     const c1 = w.up.commit('first');

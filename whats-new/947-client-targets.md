@@ -1,0 +1,1 @@
+- The Resources page now also shows the sandbox boxes that run on your other machines: their CPU, memory, network, uptime and restarts, and their use over time.

@@ -71,16 +71,16 @@ export function machineOptions(schema: OptionsSchema | undefined): string[] {
 
 /** The list roles' instances, by their key in GET /api/plugins: every one follows the plugins config live (issue #356). */
 const LIVE = {
-  executor: 'executors', 'job-source': 'jobSources', 'machine-source': 'machines', 'usage-source': 'usageSources', notifier: 'notifiers',
+  executor: 'executors', 'job-source': 'jobSources', 'machine-source': 'machines', 'usage-source': 'usageSources', notifier: 'notifiers', 'vault-backend': 'vaultBackends',
 } as const satisfies Partial<Record<Role, keyof PluginsReport>>;
 
 export const SELECTABLE: readonly SelectableRole[] = ['router', 'queue-sorter'];
 export const isSelectable = (role: Role): role is SelectableRole => (SELECTABLE as readonly Role[]).includes(role);
 
-export const LIST: readonly ListRole[] = ['escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier'];
+export const LIST: readonly ListRole[] = ['escalation-level', 'executor', 'job-source', 'machine-source', 'usage-source', 'notifier', 'vault-backend'];
 export const isListRole = (role: Role): role is ListRole => (LIST as readonly Role[]).includes(role);
 
-const ONE: Record<ListRole, string> = { 'escalation-level': 'an escalation level', executor: 'an executor', 'job-source': 'a job source', 'machine-source': 'a machine', 'usage-source': 'a usage source', notifier: 'a notifier' };
+const ONE: Record<ListRole, string> = { 'escalation-level': 'an escalation level', executor: 'an executor', 'job-source': 'a job source', 'machine-source': 'a machine', 'usage-source': 'a usage source', notifier: 'a notifier', 'vault-backend': 'a vault backend' };
 
 /** The name an added instance gets — what was typed, else the plugin id — and why it cannot have it. */
 export function newInstance(report: PluginsReport, role: ListRole, plugin: string, typed: string): { name: string; problem?: string } {
@@ -98,11 +98,13 @@ export interface InstanceState {
 
 /**
  * A part that runs claude and names no machine (issue #442): needing one, it is flagged with the plain
- * reason; else its state, with the machine it runs on said.
+ * reason; one whose machine cannot run it now (offline, issue #482) cannot run, with why and how to fix it;
+ * else its state, with the machine it runs on said.
  */
 function onMachine(st: InstanceState, machine: InstanceStatus['machine']): InstanceState {
   if (!machine || st.label === 'cannot run') return st;
   if (machine.needsMachine) return { ...st, tone: 'bad', label: 'needs a machine', reason: machine.note };
+  if (machine.cannotRun) return { ...st, tone: 'bad', label: 'cannot run', reason: machine.note };
   return st.reason ? st : { ...st, reason: machine.note };
 }
 
@@ -136,7 +138,7 @@ export function appliedMessage(done: string, loadedAt: string | undefined): stri
 
 export const ROLE_TITLES: Record<Role, string> = {
   router: 'Router', 'queue-sorter': 'Queue sorter', 'escalation-level': 'Escalation levels', executor: 'Executors',
-  'job-source': 'Job sources', 'machine-source': 'Machine sources', 'usage-source': 'Usage sources', notifier: 'Notifiers',
+  'job-source': 'Job sources', 'machine-source': 'Machine sources', 'usage-source': 'Usage sources', notifier: 'Notifiers', 'vault-backend': 'Vault backends',
 };
 
 /**
@@ -145,10 +147,13 @@ export const ROLE_TITLES: Record<Role, string> = {
  */
 export interface ShippedPlugin { id: string; role: ListRole; describe: string; enabled: boolean; instances: string[]; blocked?: string }
 
-/** The built-in plugins of the list roles, machines left out (they are attached in the Machines view). */
+/**
+ * The built-in plugins of the list roles, machines left out (they are attached in the Machines view) and
+ * escalation levels too (issue #444: edited in Question gates alone).
+ */
 export function shippedPlugins(report: PluginsReport): ShippedPlugin[] {
   return report.plugins.flatMap((p): ShippedPlugin[] => {
-    if (!p.builtin || !isListRole(p.role) || p.role === 'machine-source') return [];
+    if (!p.builtin || !isListRole(p.role) || p.role === 'machine-source' || p.role === 'escalation-level') return [];
     const instances = report.instances.filter((i) => i.role === p.role && i.instance.plugin === p.id).map((i) => i.instance.name);
     const enabled = instances.length > 0;
     const blocked = enabled

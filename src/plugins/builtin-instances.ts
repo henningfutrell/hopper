@@ -31,11 +31,11 @@ export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true)
   const question = { ...here, bin: 'claude', timeoutMs: answerTimeoutMs };
   return {
     queueSorter: { name: 'priority', plugin: 'priority' },
-    // Lowest first: level 1 (Opus) answers what it can settle, level 2 (Fable) what level 1
-    // escalates; then the owner. Named as levels, never after a model (issue #209).
+    // One level, the frontier model (issue #632): it answers what it is sure of, and a person gets the rest. A level
+    // below it gave similar answers at more cost and time; an install adds levels where it wants them. Named as a level,
+    // never after a model (issue #209).
     escalationLevels: [
-      { name: 'level-1', plugin: 'claude-cli', options: { ...question, model: 'opus' } },
-      { name: 'level-2', plugin: 'claude-cli', options: { ...question, model: 'fable' } },
+      { name: 'level-1', plugin: 'claude-cli', options: { ...question, model: 'fable' } },
     ],
     executors: [
       { name: 'test', plugin: 'test' },

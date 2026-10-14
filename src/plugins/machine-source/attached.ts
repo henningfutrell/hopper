@@ -8,13 +8,27 @@ import type { DiskThresholds, SweepSettings } from '../../domain/machines.ts';
 import type { MachineSource, MachineSourceContext } from '../sdk.ts';
 
 /**
- * A machine's default work tree (issue #324): an absolute path or one under `~`, which resolves on that
- * machine. Command-bearing: it is where its jobs' commands run. Not on a container target, whose
- * command jobs take no work tree.
+ * A machine's work tree (issues #324, #361): an absolute path or one under `~`, which resolves on that
+ * machine. The hopper makes it there and puts each job's repository in it. Command-bearing: it is where
+ * its jobs' commands run. Not on a container target, whose command jobs take no work tree.
  */
 export const workTreeOption = (z: typeof Z) => z.string().min(1)
   .refine((s) => s.startsWith('/') || s === '~' || s.startsWith('~/'), 'workTree must be an absolute path or start with ~')
-  .optional().meta({ commandBearing: true, description: 'the default work tree of jobs here that name none of their own; ~ is this machine\'s home' });
+  .optional().meta({ commandBearing: true, description: 'where its jobs run, made by the hopper, each job\'s repository fetched or cloned in it; ~ is this machine\'s home. Absent: ~/hopper-jobs' });
+
+/**
+ * A work tree per repository (issue #691): a job from a repository named here works in its tree, made there and
+ * the repository cloned in it when missing; a job from any other, in the machine's own work tree. Keys are
+ * `owner/name`, matched in any case. Command-bearing, as the work tree is.
+ */
+export const workTreesOption = (z: typeof Z) => z.record(
+  z.string(),
+  z.string().min(1).refine((s) => s.startsWith('/') || s === '~' || s.startsWith('~/'), 'a workTrees path must be an absolute path or start with ~'),
+).superRefine((trees, ctx) => {
+  for (const key of Object.keys(trees)) {
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(key)) ctx.addIssue({ code: 'custom', message: `a workTrees key must be a repository, owner/name: ${key} is not` });
+  }
+}).optional().meta({ commandBearing: true, description: 'a work tree per repository, as {"owner/name": "~/path"}: a job from that repository works there, made and cloned by the hopper; a job from any other works in workTree' });
 
 /**
  * Lanes kept for jobs pinned to the machine (issue #372): jobs with no machine pin use at most its lane
@@ -22,6 +36,12 @@ export const workTreeOption = (z: typeof Z) => z.string().min(1)
  */
 export const reservedLanesOption = (z: typeof Z) => z.number().int().min(0, 'reservedLanes must not be negative').optional()
   .meta({ description: 'lanes kept for jobs pinned to this machine; jobs that could run anywhere do not take them' });
+
+/**
+ * How many lanes specialty and tend jobs may elbow in past the machine's lane cap at once (issues #762, #967). Absent: 1; 0: none.
+ */
+export const elbowInsOption = (z: typeof Z) => z.number().int().min(0, 'elbowIns must not be negative').optional()
+  .meta({ description: 'lanes a job labelled hopper:specialty, or a job that tends a pull request, may start past this machine\'s lane cap at once (default 1); 0: none' });
 
 /**
  * When a machine's disk is low (issue #410): below either threshold it takes no new job. Plain options,
@@ -64,15 +84,16 @@ export const sweepOf = (o: { reapEveryMinutes?: number; scratchMaxAgeHours?: num
 export function attachedShape(z: typeof Z, executors: readonly string[]) {
   return {
     label: z.string().min(1).optional().meta({ description: 'shown instead of the name' }),
-    // 0 parks it (issue #365): it stays a machine, online, and takes no job.
-    lanes: z.number().int().min(0, 'lanes must not be negative').default(1).meta({ description: 'jobs it runs at once; 0 parks it' }),
+    // 0 rests it (issue #365): it stays a machine, online, and takes no job.
+    lanes: z.number().int().min(0, 'lanes must not be negative').default(1).meta({ description: 'jobs it runs at once; 0 rests it' }),
     reservedLanes: reservedLanesOption(z),
+    elbowIns: elbowInsOption(z),
     executors: z.array(z.string().min(1)).default([...executors]).meta({ description: 'executor instances that run there' }),
   };
 }
 
 export interface AttachedOptions {
-  label?: string; lanes: number; reservedLanes?: number; executors: string[]; workTree?: string; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
+  label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
   reapEveryMinutes?: number; scratchMaxAgeHours?: number;
 }
 
@@ -81,8 +102,9 @@ export const attachedBase = (name: string, o: AttachedOptions) => {
   const diskLow = diskLowOf(o);
   const sweep = sweepOf(o);
   return {
-    name, ...(o.label !== undefined ? { label: o.label } : {}), lanes: o.lanes, ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}), executors: [...o.executors],
-    ...(o.workTree !== undefined ? { workTree: o.workTree } : {}), ...(diskLow ? { diskLow } : {}), ...(sweep ? { sweep } : {}),
+    name, ...(o.label !== undefined ? { label: o.label } : {}), lanes: o.lanes, ...(o.reservedLanes !== undefined ? { reservedLanes: o.reservedLanes } : {}),
+    ...(o.elbowIns !== undefined ? { elbowIns: o.elbowIns } : {}), executors: [...o.executors],
+    ...(o.workTree !== undefined ? { workTree: o.workTree } : {}), ...(o.workTrees !== undefined ? { workTrees: { ...o.workTrees } } : {}), ...(diskLow ? { diskLow } : {}), ...(sweep ? { sweep } : {}),
   };
 };
 

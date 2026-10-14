@@ -1,0 +1,28 @@
+# Optional (issue #603, docs/deploy.md "Sandbox boxes the hopper starts"): the hopper starts, stops and removes sandbox
+# boxes itself, through your rootless Podman. Without this file, Add machine → A sandbox box shows a line you run.
+#
+# It gives the hopper's container your rootless Podman API socket: whoever controls the hopper can then start
+# containers as you. The hopper only ever starts locked-down boxes (every capability dropped, no new privileges, a
+# read-only root, nothing of this computer mounted) from the published box image or an approved template's image,
+# and refuses a rootful Podman socket. Turn it on, Podman only:
+#
+#   systemctl --user enable --now podman.socket
+#   curl -fsSL https://henningfutrell.github.io/hopper/compose.sandboxes.yaml -o compose.override.yaml
+#   podman compose up -d
+#
+# Saved as compose.override.yaml beside compose.yaml, every compose command reads it with compose.yaml, with no flag.
+# Turn it off: remove compose.override.yaml and `podman compose up -d` again. The boxes the hopper started keep
+# running; remove each machine in the Machines view first if you want them gone.
+services:
+  hopper:
+    environment:
+      HOPPER_PODMAN_SOCKET: /run/podman/podman.sock
+    volumes:
+      - type: bind
+        source: ${XDG_RUNTIME_DIR:?the rootless Podman socket is under XDG_RUNTIME_DIR, which is not set}/podman/podman.sock
+        target: /run/podman/podman.sock
+    # podman.socket makes the socket readable and writable by your group (mode 0660). In a rootless container your
+    # group is group 0, so the hopper's user joins group 0 to reach the socket. No other file of yours is mounted.
+    group_add: ["0"]
+    # The socket is not a file SELinux lets a container open (Fedora and the like); without SELinux this changes nothing.
+    security_opt: [label=disable]

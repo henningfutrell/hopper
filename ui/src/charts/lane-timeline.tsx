@@ -1,17 +1,19 @@
 // What each lane ran, over a time window ending now: one row per lane, one bar per job run,
 // coloured by how the run ended. Running bars grow with the clock. Jobs claimed as operator-led
 // (issue #318) have a row of their own, `operator-led`: worked by hand, on no lane. A job sitting on a question is a
-// hatched strip along the foot of the lane it asked from, until the question is answered.
+// hatched strip along the foot of the lane it asked from, until the question is answered. Each bar and strip links to its
+// job's view (issue #433).
 import { scaleBand, scaleTime, timeFormat } from 'd3';
 import { useId, useMemo, useState } from 'react';
 import { COLOR, type Tone } from '@/components/status';
 import { useSize } from '@/hooks/use-size';
 import { duration } from '@/model/format';
+import { jobHref } from '@/model/job';
 import type { LaneSpan, QuestionWait, SpanOutcome } from '@/model/history';
 import { TimeAxis } from './axis';
 
 export const OUTCOME_TONE: Record<SpanOutcome, Tone> = {
-  running: 'busy', 'operator-led': 'operator', finished: 'ok', failed: 'bad', cancelled: 'muted', requeued: 'warn', question: 'question',
+  running: 'busy', 'operator-led': 'operator', finished: 'ok', failed: 'bad', cancelled: 'muted', requeued: 'warn', question: 'question', parked: 'muted', waiting: 'muted',
 };
 /** The legend swatch of a question wait: the strip's hatching. */
 export const WAIT_SWATCH = `repeating-linear-gradient(135deg, ${COLOR.question} 0 2px, transparent 2px 4px)`;
@@ -69,10 +71,10 @@ export function LaneTimeline({ spans, waits, now, windowMs, lanes, nameOf, laneN
               const x0 = x(Math.max(s.start, since));
               const x1 = x(s.end ?? now);
               return (
-                <rect key={`${s.jobId}-${s.start}`} x={x0} y={y(s.laneId)} width={Math.max(2, x1 - x0)} height={y.bandwidth()} rx={3}
+                <a key={`${s.jobId}-${s.start}`} href={jobHref(s.jobId)} aria-label={nameOf(s.jobId)}><rect x={x0} y={y(s.laneId)} width={Math.max(2, x1 - x0)} height={y.bandwidth()} rx={3}
                   fill={COLOR[OUTCOME_TONE[s.outcome]]} opacity={dim(s) ? 0.4 : s.end === null ? 0.95 : 0.75}
                   className={s.end === null ? 'animate-pulse' : undefined}
-                  onMouseEnter={() => setHover({ kind: 'span', s })} onMouseLeave={() => setHover(null)} />
+                  onMouseEnter={() => setHover({ kind: 'span', s })} onMouseLeave={() => setHover(null)} /></a>
               );
             })}
             {waits.map((w) => {
@@ -80,9 +82,9 @@ export function LaneTimeline({ spans, waits, now, windowMs, lanes, nameOf, laneN
               const x1 = x(w.end ?? now);
               const h = y.bandwidth() * WAIT_SHARE;
               return (
-                <rect key={`wait-${w.jobId}-${w.start}`} data-wait={w.how} x={x0} y={(y(w.laneId) ?? 0) + y.bandwidth() - h} width={Math.max(2, x1 - x0)} height={h} rx={2}
+                <a key={`wait-${w.jobId}-${w.start}`} href={jobHref(w.jobId)} aria-label={nameOf(w.jobId)}><rect data-wait={w.how} x={x0} y={(y(w.laneId) ?? 0) + y.bandwidth() - h} width={Math.max(2, x1 - x0)} height={h} rx={2}
                   fill={`url(#${hatch})`} stroke={COLOR.question} strokeWidth={1} opacity={dim(w) ? 0.4 : 1}
-                  onMouseEnter={() => setHover({ kind: 'wait', s: w })} onMouseLeave={() => setHover(null)} />
+                  onMouseEnter={() => setHover({ kind: 'wait', s: w })} onMouseLeave={() => setHover(null)} /></a>
               );
             })}
             <line x1={iw} x2={iw} y1={0} y2={rows.length * ROW} stroke="var(--busy)" strokeOpacity={0.6} strokeDasharray="2 2" />

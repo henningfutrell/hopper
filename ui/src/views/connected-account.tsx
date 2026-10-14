@@ -9,12 +9,19 @@
 // cannot say where it is installed, the panel says why and links to see the installs, never to install (#263). Signed in
 // with GitHub, the account is the sign-in: the panel offers Sign out, never a Disconnect, and points at Settings → Plugins
 // to stop taking jobs from it while signed in. Signed in another way, Stop working through GitHub forgets the account and
-// its token and keeps the sign-in (issue #322). The connection's job source is shown in it, its sync under the
+// its token and keeps the sign-in (issue #322). Signed in with GitHub, a connection that ended ended the session too: no
+// Connect again here, signing in with GitHub again restores both (issue #513). The connection's job source is shown in it, its sync under the
 // account (issue #254): one GitHub piece, not a card beside it. Of the repositories the app reaches the
 // person ticks the job repositories — the only ones jobs come from — filtering a long list, with how many
 // are chosen of how many reached, saved without disconnecting (issue #321). A chosen one the app no longer
 // reaches stays listed, to be cleared. Each installation says what GitHub granted the app there, and a link adds the app to
 // another account or organization — quiet, under the installations, never a nudge to install it again (issue #352).
+// A connection whose tokens the hopper cannot open (another master key) says to give the key back, and offers
+// only to forget it: connecting again would mint another GitHub grant toward GitHub's ten (issue #514). A connection
+// GitHub gave no refresh token says so while it works, with when it ends, and offers to connect again (issue #518).
+// The connection's health (issue #647): when and how it was made, its last and next renewal, its last error; one GitHub
+// refused reads "reconnect needed". A sign-in made while it works is held: Use this sign-in replaces it, Keep this
+// connection drops the sign-in.
 import { Link2, LogOut, Unlink } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -32,7 +39,7 @@ import { SourceSync } from './source-sync';
 const POLL_MS = 2000;
 type Provider = ConnectedAccountStatus['provider'];
 const NAME: Record<Provider, string> = { github: 'GitHub' };
-const LABEL: Record<ConnectedAccountStatus['state'], string> = { connected: 'connected', 'not-connected': 'not connected', waiting: 'waiting', failed: 'failed', expired: 'sign-in expired' };
+const LABEL: Record<ConnectedAccountStatus['state'], string> = { connected: 'connected', 'not-connected': 'not connected', waiting: 'waiting', failed: 'failed', expired: 'reconnect needed', unreadable: 'cannot be read' };
 
 export function ConnectedAccountPanel({ provider, source }: { provider: Provider; source?: SourceStatus | undefined }) {
   const [s, setS] = useState<ConnectedAccountStatus | null>(null);
@@ -57,8 +64,8 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
       return false;
     }
   };
-  const act = (action: 'connect' | 'cancel' | 'disconnect') => send({ action });
-  const tone = s.state === 'connected' ? 'ok' : s.state === 'failed' || s.state === 'expired' ? 'bad' : 'warn';
+  const act = (action: 'connect' | 'cancel' | 'disconnect' | 'take-held' | 'drop-held') => send({ action });
+  const tone = s.state === 'connected' ? 'ok' : s.state === 'failed' || s.state === 'expired' || s.state === 'unreadable' ? 'bad' : 'warn';
   const adminOnly = canAdmin ? undefined : `An admin can connect ${name}: sign in as one`;
   return (
     <Panel title={`${name} account`} icon={Link2} action={<StatusBadge status={s.state} label={LABEL[s.state]} tone={tone} />} bodyClassName="space-y-2 text-xs">
@@ -71,6 +78,24 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
           {signedInWith
             ? <div>Signed in with {name} as <span className="font-mono">{s.account}</span>. Signing out ends your hopper session.</div>
             : <div>Connected as <span className="font-mono">{s.account}</span>.</div>}
+          {s.held && <div data-held className="space-y-1 rounded-md border border-warn/30 bg-warn/5 p-2">
+            <div className="break-words text-warn">
+              A sign-in with {name} as <span className="font-mono">{s.held.account}</span> at {new Date(s.held.at).toLocaleString()} did not replace this
+              connection, because this connection works. Use the new sign-in only if you want it in place of this connection.
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button size="xs" disabled={!canAdmin} title={adminOnly ?? `Replaces this connection with the new sign-in; running jobs get its token`} onClick={() => void act('take-held')}>Use this sign-in</Button>
+              <Button size="xs" variant="outline" disabled={!canAdmin} title={adminOnly ?? 'Drops the new sign-in; this connection stays'} onClick={() => void act('drop-held')}>Keep this connection</Button>
+            </div>
+          </div>}
+          <ConnectionHealth s={s} name={name} />
+          {s.unrenewable && <div data-unrenewable className="space-y-1">
+            <div className="break-words text-warn">
+              {s.unrenewable}. It ends {s.expiresAt ? new Date(s.expiresAt).toLocaleString() : 'when GitHub expires it'}; then no jobs come from {name} until it is connected again.
+              {signedInWith ? ` Sign out and sign in with ${name} again before then.` : ''}
+            </div>
+            {!signedInWith && <Button size="xs" variant="outline" disabled={!canAdmin} title={adminOnly ?? `A new ${name} connection, whose token renews`} onClick={() => void act('connect')}><Link2 />Connect {name} again</Button>}
+          </div>}
           {s.renewal && <div data-renewal className="break-words text-warn">
             Its token could not be renewed yet: {s.renewal}. The hopper tries again by itself; the connection goes on.
           </div>}
@@ -102,9 +127,21 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
         )}
         {s.state === 'expired' && <>
           <div data-expired className="rounded-md border border-bad/30 bg-bad/5 p-2 break-words text-bad">
-            The sign-in of <span className="font-mono">{s.account}</span> expired: {s.error}. No jobs come from {name} until you connect it again.
+            Reconnect needed: {name} refused the connection of <span className="font-mono">{s.account}</span>: {s.error}. No jobs come from {name} until you connect it again.
           </div>
-          <Button size="xs" disabled={!canAdmin} title={adminOnly ?? `Shows a code to enter on ${name}`} onClick={() => void act('connect')}><Link2 />Connect {name} again</Button>
+          {signedInWith
+            ? <div>Your hopper session ended with it: sign in with {name} again to connect it.</div>
+            : <Button size="xs" disabled={!canAdmin} title={adminOnly ?? `Shows a code to enter on ${name}`} onClick={() => void act('connect')}><Link2 />Connect {name} again</Button>}
+        </>}
+        {s.state === 'unreadable' && <>
+          <div data-unreadable className="rounded-md border border-bad/30 bg-bad/5 p-2 break-words text-bad">
+            The connection of <span className="font-mono">{s.account}</span> is kept, but this hopper cannot open it: {s.error}.
+          </div>
+          <div className="text-muted-foreground">
+            It has not ended: with the key back, it goes on as it was. No jobs come from {name} until then.
+            Connecting again instead would make another {name} sign-in, and GitHub keeps only ten per account for the app.
+          </div>
+          <Button size="xs" variant="outline" disabled={!canAdmin} title={adminOnly ?? `Forgets this ${name} connection here; then you can connect ${name} anew`} onClick={() => void act('disconnect')}><Unlink />Forget this connection</Button>
         </>}
         {(s.state === 'not-connected' || s.state === 'failed') && <>
           {s.state === 'failed' && <div className="rounded-md border border-bad/30 bg-bad/5 p-2 break-words text-bad">{s.error}</div>}
@@ -113,6 +150,23 @@ export function ConnectedAccountPanel({ provider, source }: { provider: Provider
         </>}
       </div>
     </Panel>
+  );
+}
+
+const FLOW: Record<'device' | 'web', string> = { device: 'a device code', web: 'the browser' };
+const when = (iso: string | undefined): string => (iso ? new Date(iso).toLocaleString() : 'not yet');
+
+/** When and how the connection was made, its last and next renewal, and its last error (issue #647). */
+function ConnectionHealth({ s, name }: { s: Extract<ConnectedAccountStatus, { state: 'connected' }>; name: string }) {
+  const by = s.connectedBy === 'sign-in' ? `by signing in with ${name}` : s.connectedBy === 'sources' ? 'from Sources' : undefined;
+  const flow = s.grantedBy ? FLOW[s.grantedBy] : undefined;
+  return (
+    <dl data-connection-health className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted-foreground">
+      <dt>Connected</dt><dd data-connected-at>{when(s.connectedAt)}{by ? `, ${by}` : ''}{flow ? `, through ${flow}` : ''}</dd>
+      <dt>Last renewal</dt><dd data-renewed-at>{when(s.renewedAt)}</dd>
+      <dt>Next renewal</dt><dd data-next-renewal>{s.nextRenewalAt ? when(s.nextRenewalAt) : 'none: its token does not renew'}</dd>
+      <dt>Last error</dt><dd data-last-error className={s.lastError ? 'break-words text-warn' : undefined}>{s.lastError ? `${when(s.lastError.at)}: ${s.lastError.error}` : 'none'}</dd>
+    </dl>
   );
 }
 

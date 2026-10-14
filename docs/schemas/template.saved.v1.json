@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "template": {
+      "type": "string"
+    },
+    "image": {
+      "type": "string"
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "secrets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write",
+              "sync",
+              "apply"
+            ]
+          },
+          "asset": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cluster",
+                  "namespace",
+                  "argocd-app",
+                  "terraform-workspace",
+                  "aws-account",
+                  "aws-role"
+                ]
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "name"
+            ],
+            "additionalProperties": false
+          },
+          "backend": {
+            "type": "object",
+            "properties": {
+              "bucket": {
+                "type": "string"
+              },
+              "region": {
+                "type": "string"
+              },
+              "keyPrefix": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "bucket",
+              "region"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "operation",
+          "asset"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "probeMarks": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "enum": [
+          "expect-denied",
+          "skip"
+        ]
+      }
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "template",
+    "image",
+    "secrets",
+    "by"
+  ],
+  "additionalProperties": false
+}

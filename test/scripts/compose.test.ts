@@ -5,7 +5,7 @@
 // Asserted on the rendered form compose runs (`docker compose config`, the provider `podman compose`
 // uses too), from an empty directory: the file as downloaded.
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -15,6 +15,8 @@ const IMAGE = 'ghcr.io/henningfutrell/hopper:latest';
 
 interface Service {
   image?: string;
+  group_add?: string[];
+  security_opt?: string[];
   build?: { context: string };
   environment?: Record<string, string | null>;
   ports?: { host_ip?: string; published?: string; target: number }[];
@@ -22,15 +24,20 @@ interface Service {
   depends_on?: Record<string, { condition: string }>;
   command?: string[];
 }
-interface Rendered { name: string; services: Record<string, Service>; volumes: Record<string, unknown> }
+interface Rendered { name: string; services: Record<string, Service & { networks?: Record<string, unknown> }>; volumes: Record<string, unknown>; networks?: Record<string, { name?: string; external?: boolean }> }
 
-/** `docker compose config` of compose.yaml copied alone into a fresh directory, with `.env` when given. */
-function render(dotenv?: string, env: Record<string, string> = {}): Rendered {
+/**
+ * `docker compose config` of compose.yaml copied alone into a fresh directory, with `launch` (`KEY=value` lines) in the
+ * environment compose is launched with — never a `.env` file (issue #894) — and compose.sandboxes.yaml as
+ * compose.override.yaml (`override`).
+ */
+function render(launch?: string, env: Record<string, string> = {}, override = false): Rendered {
   const dir = mkdtempSync(join(tmpdir(), 'jh-compose-'));
   copyFileSync(join(ROOT, 'compose.yaml'), join(dir, 'compose.yaml'));
-  if (dotenv !== undefined) writeFileSync(join(dir, '.env'), dotenv);
+  if (override) copyFileSync(join(ROOT, 'compose.sandboxes.yaml'), join(dir, 'compose.override.yaml'));
+  const given = Object.fromEntries((launch ?? '').split('\n').filter(Boolean).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
   const out = spawnSync('docker', ['compose', 'config', '--format', 'json'], {
-    cwd: dir, encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: dir, ...env },
+    cwd: dir, encoding: 'utf8', env: { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: dir, ...given, ...env },
   });
   expect(out.status, out.stderr).toBe(0);
   return JSON.parse(out.stdout) as Rendered;
@@ -49,6 +56,17 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
 
   it('is its own project, apart from the host install\'s bundled Postgres (deploy/compose.yaml)', () => {
     expect(r.name).toBe('hopper');
+  });
+
+  // Issue #711: one shared network, made by the release compose itself, so `http://hopper:<port>` resolves on it.
+  it('makes its own network, named hopper_default whatever the project is called, and every service is on it', () => {
+    expect(r.networks?.default).toMatchObject({ name: 'hopper_default' });
+    expect(r.networks?.default?.external).toBeFalsy();
+    // The hopper is on the tunnel's network too (issue #795); the tunnel on that one alone: no other service, and no box,
+    // reaches the tunnel agent. The same for Solr (issue #945): on search's network, with the hopper alone.
+    const nets: Record<string, string[]> = { hopper: ['default', 'search', 'tunnel'], tunnel: ['tunnel'], cloudflared: ['tunnel'], solr: ['search'] };
+    for (const [name, s] of Object.entries(r.services)) expect(Object.keys(s.networks ?? { default: null }).sort(), name).toEqual(nets[name] ?? ['default']);
+    expect(render(undefined, { COMPOSE_PROJECT_NAME: 'other' }).networks?.default).toMatchObject({ name: 'hopper_default' });
   });
 
   it('pulls the hopper\'s public image by its full name: no clone, no build, no short-name prompt in Podman', () => {
@@ -73,21 +91,94 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     // Postgres makes it, before the database starts; the hopper waits for a healthy Postgres and only reads.
     expect(postgres.command?.join('\n')).toContain('/dev/urandom');
     expect(postgres.command?.join('\n')).toMatch(/exec docker-entrypoint\.sh postgres/);
-    expect(postgres.volumes).toContainEqual(expect.objectContaining({ source: 'secrets', target: '/run/hopper-secrets' }));
-    expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: 'secrets', target: '/run/hopper-secrets', read_only: true }));
+    expect(postgres.volumes).toContainEqual(expect.objectContaining({ source: 'runtime-secrets', target: '/run/hopper-secrets' }));
+    expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: 'runtime-secrets', target: '/run/hopper-secrets', read_only: true }));
     expect(hopper.depends_on?.postgres?.condition).toBe('service_healthy');
   });
 
-  it('gives the hopper a token key made on first start, kept with the database password (issue #441)', () => {
-    expect(hopper.environment?.HOPPER_TOKEN_KEY).toBeUndefined();
-    expect(hopper.environment?.HOPPER_TOKEN_KEY_FILE).toBe('/run/hopper-secrets/token_key');
+  it('keeps no master key in a volume or a file: the hopper reads HOPPER_MASTER_KEY from the launch, and the old token_key only to move it (issues #659, #894)', () => {
+    expect(hopper.environment?.HOPPER_MASTER_KEY ?? '').toBe('');
+    expect(hopper.environment?.HOPPER_MASTER_KEY_FILE).toBeUndefined();
+    const key = 'ab'.repeat(32);
+    expect(svc(render(`HOPPER_MASTER_KEY=${key}\n`), 'hopper').environment?.HOPPER_MASTER_KEY).toBe(key);
+    expect(hopper.environment?.HOPPER_TOKEN_KEY_FILE).toBeUndefined();
     const script = postgres.command!.join('\n');
-    expect(script).toMatch(/\[ -s \$\$?s\/token_key \] \|\| head -c 32 \/dev\/urandom/);
-    expect(script).toMatch(/chown 1000:1000 \$\$?s\/database_url \$\$?s\/token_key/);
+    expect(script).not.toMatch(/token_key/);
   });
 
-  it('has no one-shot service: podman-compose cannot start a container whose dependency has exited (issue #125)', () => {
-    expect(Object.keys(r.services).sort()).toEqual(['hopper', 'postgres']);
+  it('keeps no secret in a persistent volume: the files Postgres makes are in memory (tmpfs), made again after a full stop (issue #659)', () => {
+    expect(r.volumes.secrets).toBeUndefined();
+    expect(r.volumes['runtime-secrets']).toMatchObject({ driver_opts: { type: 'tmpfs', device: 'tmpfs' } });
+    // Each start remakes what is missing; nothing there must outlive the stack.
+    const script = postgres.command!.join('\n');
+    for (const f of ['postgres_password', 'openfga_key', 'vault_key']) expect(script).toMatch(new RegExp(`\\[ -s \\$\\$?s/${f} \\] \\|\\| head -c`));
+  });
+
+  it('sets the database password again at each start: a fresh set of start files does not lock the hopper out of its database (issue #659)', () => {
+    const script = postgres.command!.join('\n');
+    expect(script).toMatch(/ALTER ROLE hopper PASSWORD/);
+    // Healthy only once the password is set: the hopper never meets the old one.
+    expect(script).toMatch(/rm -f \$\$?s\/password_set/);
+    expect(script).toMatch(/ALTER ROLE hopper PASSWORD[^\n]*&& touch \$\$?s\/password_set/);
+    expect((postgres as Service & { healthcheck?: { test: string[] } }).healthcheck?.test.join(' ')).toMatch(/pg_isready -U hopper -d hopper && test -f \/run\/hopper-secrets\/password_set/);
+  });
+
+  it('loads pg_stat_statements, so the Resources page shows statement latency (issue #947)', () => {
+    const script = postgres.command!.join('\n');
+    expect(script).toMatch(/exec docker-entrypoint\.sh postgres -c shared_preload_libraries=pg_stat_statements/);
+    // Made once Postgres takes connections, apart from the password step: it never holds the stack's health back.
+    expect(script).toMatch(/touch \$\$?s\/password_set; psql [^\n]*CREATE EXTENSION IF NOT EXISTS pg_stat_statements SCHEMA public[^\n]*\|\| true/);
+  });
+
+  it('has no one-shot service anything depends on: podman-compose cannot start a container whose dependency has exited (issue #125)', () => {
+    expect(Object.keys(r.services).sort()).toEqual(['cloudflared', 'hopper', 'openfga', 'openfga-migrate', 'postgres', 'solr', 'tunnel']);
+    for (const s of Object.values(r.services)) expect(Object.keys(s.depends_on ?? {})).not.toContain('openfga-migrate');
+  });
+
+  it('runs OpenFGA beside the hopper, in a schema of its Postgres, behind a preshared key made on first start (issue #559)', () => {
+    const openfga = svc(r, 'openfga');
+    const migrate = svc(r, 'openfga-migrate');
+    expect(openfga.image).toMatch(/^docker\.io\/openfga\/openfga:v\d+\.\d+\.\d+$/);
+    expect(migrate.image).toBe(openfga.image);
+    expect(openfga.command).toEqual(['run']);
+    expect(migrate.command).toEqual(['migrate']);
+    expect(openfga.ports ?? []).toEqual([]);
+    expect(hopper.environment?.HOPPER_OPENFGA_URL).toBe('http://openfga:8080');
+    expect(hopper.environment?.HOPPER_OPENFGA_KEY).toBeUndefined();
+    expect(hopper.environment?.HOPPER_OPENFGA_KEY_FILE).toBe('/run/hopper-secrets/openfga_key');
+    const script = postgres.command!.join('\n');
+    expect(script).toMatch(/\[ -s \$\$?s\/openfga_key \] \|\| head -c 32 \/dev\/urandom/);
+    expect(script).toMatch(/search_path=openfga/);
+    expect(script).toMatch(/chown -R 65532:65532 \$\$?s\/openfga/);
+    expect(script).toContain('CREATE SCHEMA IF NOT EXISTS openfga');
+    for (const s of [openfga, migrate]) {
+      expect(s.volumes).toContainEqual(expect.objectContaining({ source: 'runtime-secrets', target: '/run/hopper-secrets', read_only: true }));
+      expect(s.depends_on?.postgres?.condition).toBe('service_healthy');
+    }
+  });
+
+  it('HashiCorp Vault is optional (issue #585): started only with the vault profile, on no host port, and the hopper does not depend on it', () => {
+    expect(r.services.vault).toBeUndefined();
+    expect(hopper.depends_on?.vault).toBeUndefined();
+    expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: 'vault-token', target: '/run/hopper-vault', read_only: true }));
+    expect(hopper.environment?.VAULT_TOKEN_FILE).toBe('/run/hopper-vault/token');
+    const withVault = render(undefined, { COMPOSE_PROFILES: 'vault' });
+    const vault = svc(withVault, 'vault');
+    expect(vault.ports ?? []).toEqual([]);
+    expect(vault.volumes).toContainEqual(expect.objectContaining({ source: 'vault-token', target: '/run/hopper-vault' }));
+    expect(svc(withVault, 'hopper').depends_on?.vault).toBeUndefined();
+  });
+
+  it('runs Solr for search, required, standalone, with one core, on no host port and on a network with the hopper alone (issue #945)', () => {
+    const solr = svc(r, 'solr');
+    expect(solr.image).toMatch(/^docker\.io\/library\/solr:\d+\.\d+\.\d+(-slim)?$/);
+    expect((solr as Service & { profiles?: string[] }).profiles ?? []).toEqual([]);
+    expect(solr.command).toEqual(['solr-precreate', 'hopper']);
+    expect(solr.ports ?? []).toEqual([]); expect(solr.volumes).toContainEqual(expect.objectContaining({ source: 'solr', target: '/var/solr' }));
+    expect(r.networks?.search).toMatchObject({ name: 'hopper_search' });
+    // Search down stops nothing: the hopper does not wait for Solr, and no credential is kept for it.
+    expect([hopper.environment?.HOPPER_SOLR_URL, hopper.depends_on?.solr]).toEqual(['http://solr:8983/solr/hopper', undefined]);
+    expect(Object.keys(hopper.environment ?? {}).filter((k) => k.startsWith('HOPPER_SOLR_'))).toEqual(['HOPPER_SOLR_URL']);
   });
 
   it('keeps Postgres off every host port', () => {
@@ -96,15 +187,19 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
 
   it('keeps the hopper\'s home in a volume: herdr and claude sign-ins and job checkouts survive a rebuild', () => {
     expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: 'home', target: '/home/node' }));
-    expect(Object.keys(r.volumes).sort()).toEqual(['home', 'postgres', 'secrets']);
+    expect(Object.keys(r.volumes).sort()).toEqual(['home', 'postgres', 'runtime-secrets', 'solr', 'tunnel-key', 'vault-token']);
   });
 });
 
-describe('compose.yaml with a .env beside it', () => {
-  it('passes its settings and secrets to the hopper', () => {
-    const hopper = svc(render('HOPPER_PUBLIC_URL=https://hopper.example.com\nCLAUDE_CODE_OAUTH_TOKEN=t0\n'), 'hopper');
+describe('compose.yaml with settings given at launch (issue #894: no .env)', () => {
+  it('reads no env_file: the hopper gets only the settings the file names', () => {
+    const raw = readFileSync(join(ROOT, 'compose.yaml'), 'utf8');
+    expect(raw).not.toMatch(/^\s*env_file:/m);
+    const hopper = svc(render('HOPPER_PUBLIC_URL=https://hopper.example.com\nCLAUDE_CODE_OAUTH_TOKEN=t0\nCOMPOSE_PROFILES=kms\n'), 'hopper');
     expect(hopper.environment?.HOPPER_PUBLIC_URL).toBe('https://hopper.example.com');
-    expect(hopper.environment?.CLAUDE_CODE_OAUTH_TOKEN).toBe('t0');
+    expect(hopper.environment?.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+    // The drift check reads the profiles the stack was started with (src/update/drift.ts).
+    expect(hopper.environment?.COMPOSE_PROFILES).toBe('kms');
   });
 
   it('moves the UI port on both sides, so the Host the browser sends names the daemon\'s port; runs another image', () => {
@@ -113,13 +208,23 @@ describe('compose.yaml with a .env beside it', () => {
     expect(hopper.environment?.HOPPER_PORT).toBe('4800');
     expect(hopper.image).toBe('localhost/hopper:dev');
   });
+
+  it('publishes the port on the address HOPPER_BIND names, so a LAN install keeps it across updates (issue #697)', () => {
+    const hopper = svc(render('HOPPER_BIND=0.0.0.0\n'), 'hopper');
+    expect(hopper.ports).toEqual([expect.objectContaining({ host_ip: '0.0.0.0', published: '4790', target: 4790 })]);
+  });
 });
 
 describe('the image is not a machine (issue #141)', () => {
   const dockerfile = readFileSync(join(ROOT, 'Dockerfile'), 'utf8');
 
-  it('carries WHATS-NEW.md, so the Updates panel says what the running version brought (issue #165)', () => {
+  it('carries WHATS-NEW.md and whats-new/, so the Updates panel says what the running version brought (issues #165, #824)', () => {
     expect(dockerfile).toMatch(/^COPY WHATS-NEW\.md \.\/$/m);
+    expect(dockerfile).toMatch(/^COPY whats-new \.\/whats-new$/m);
+  });
+
+  it('carries its compose.yaml, so an update fetches the compose file of the image it updates to (issue #697)', () => {
+    expect(dockerfile).toMatch(/^COPY compose\.yaml \.\/$/m);
   });
 
   it('registers no `local` machine: it sets HOPPER_LOCAL_MACHINE=false and starts no herdr session of its own', () => {
@@ -157,7 +262,11 @@ describe('the install page', () => {
     expect(page).toContain('data-copy="podman compose up -d"');
     expect(page).not.toContain('login-code');
     expect(page).toContain('The first person to sign in with GitHub is the admin');
-    expect(page).toContain('data-copy="podman compose pull &amp;&amp; podman compose up -d &amp;&amp; podman image prune -f --filter label=org.opencontainers.image.title=hopper"');
+    // Updated by its user (issue #494): the release's compose file, the whole stack (#697), plain compose commands (#970).
+    expect(page).toContain('data-copy="podman run --rm -i --pull=always ghcr.io/henningfutrell/hopper:stable hopper update carry --image ghcr.io/henningfutrell/hopper:stable &lt; compose.yaml &gt; compose.yaml.next"');
+    expect(page).toContain('HOPPER_MASTER_KEY:?is not given: the update stops. Give it first: read -rs HOPPER_MASTER_KEY &amp;&amp; export HOPPER_MASTER_KEY}&quot; &amp;&amp; [ -z '); expect(page).toContain('false; } &amp;&amp; HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:stable podman compose pull &amp;&amp; HOPPER_IMAGE=ghcr.io/henningfutrell/hopper:stable podman compose up -d"');
+    expect(page).not.toMatch(/hopper-update\.sh|--no-deps hopper"/);
+    expect(page).toContain('data-copy="podman image prune -f --filter label=org.opencontainers.image.title=hopper"');
   });
 
   it('upgrades without leaving the replaced image behind: the prune takes only dangling hopper images (issue #401)', () => {
@@ -185,8 +294,8 @@ describe('the published image (issue #125)', () => {
     expect(workflow).toMatch(/push: true/);
   });
 
-  it('is built on every change to dev, beta and stable, the update channels, for Intel/AMD and ARM machines (issue #423)', () => {
-    expect(workflow).toMatch(/branches: \[dev, beta, stable\]/);
+  it('is built on every change to dev, beta, canary and stable, the update channels and the stable candidate (issue #1073), for Intel/AMD and ARM machines (issue #423)', () => {
+    expect(workflow).toMatch(/branches: \[dev, beta, canary, stable\]/);
     expect(workflow).toContain('linux/amd64,linux/arm64');
   });
 
@@ -199,5 +308,66 @@ describe('the published image (issue #125)', () => {
   it('pushes with the workflow\'s own token: no registry credential to keep', () => {
     expect(workflow).toContain('packages: write');
     expect(workflow).toContain('secrets.GITHUB_TOKEN');
+  });
+});
+
+describe('optional services (issue #586): each behind a compose profile, none required', () => {
+  const plain = render();
+  const on = render('COMPOSE_PROFILES=hopper-vault,kms\nHOPPER_VAULT_URL=http://hopper-vault:4791\nHOPPER_KMS_URL=http://kms:8080\n');
+
+  it('a plain `compose up` starts only the required services, and the vault runs in the hopper', () => {
+    expect(Object.keys(plain.services)).not.toContain('hopper-vault');
+    expect(Object.keys(plain.services)).not.toContain('kms');
+    expect(svc(plain, 'hopper').environment?.HOPPER_VAULT_URL ?? '').toBe('');
+    expect(svc(plain, 'hopper').environment?.HOPPER_KMS_URL ?? '').toBe('');
+  });
+
+  it('the profiles `hopper-vault` and `kms` add the vault, from the hopper\'s image, and a local KMS; neither on a host port', () => {
+    const vault = svc(on, 'hopper-vault');
+    const kms = svc(on, 'kms');
+    expect(vault.image).toBe(IMAGE);
+    expect(vault.command).toEqual(['node', 'src/vault/main.ts']);
+    expect(kms.image).toMatch(/^docker\.io\/nsmithuk\/local-kms:\d+\.\d+\.\d+$/);
+    expect(kms.volumes).toContainEqual(expect.objectContaining({ source: 'kms', target: '/data' }));
+    for (const s of [vault, kms]) expect(s.ports ?? []).toEqual([]);
+    // Nothing required waits on an optional service.
+    for (const name of ['hopper', 'postgres', 'openfga', 'openfga-migrate']) {
+      expect(Object.keys(svc(on, name).depends_on ?? {})).not.toContain('hopper-vault');
+      expect(Object.keys(svc(on, name).depends_on ?? {})).not.toContain('kms');
+    }
+  });
+
+  it('the vault holds the keys and the KMS\'s URL; the hopper asks it with a preshared key made on first start', () => {
+    const vault = svc(on, 'hopper-vault');
+    const hopper = svc(on, 'hopper');
+    expect(vault.environment).toMatchObject({
+      HOPPER_DATABASE_URL_FILE: '/run/hopper-secrets/database_url', HOPPER_MASTER_KEY: '',
+      HOPPER_VAULT_KEY_FILE: '/run/hopper-secrets/vault_key', HOPPER_KMS_URL: 'http://kms:8080',
+    });
+    expect(vault.environment?.HOPPER_TOKEN_KEY_FILE).toBeUndefined();
+    expect(vault.volumes).toContainEqual(expect.objectContaining({ source: 'runtime-secrets', target: '/run/hopper-secrets', read_only: true }));
+    expect(vault.depends_on?.postgres?.condition).toBe('service_healthy');
+    expect(hopper.environment).toMatchObject({ HOPPER_VAULT_URL: 'http://hopper-vault:4791', HOPPER_VAULT_KEY_FILE: '/run/hopper-secrets/vault_key' });
+    const script = svc(on, 'postgres').command!.join('\n');
+    expect(script).toMatch(/\[ -s \$\$?s\/vault_key \] \|\| head -c 32 \/dev\/urandom/);
+    expect(script).toMatch(/chown 1000:1000 [^\n]*\$\$?s\/vault_key/);
+  });
+});
+
+describe('sandbox boxes the hopper starts (issue #603): opt in with compose.sandboxes.yaml, saved as compose.override.yaml', () => {
+  it('compose.yaml alone gives the hopper no Podman socket', () => {
+    const hopper = svc(render(), 'hopper');
+    expect(hopper.environment?.HOPPER_PODMAN_SOCKET).toBeUndefined();
+    expect(hopper.volumes?.map((v) => v.target)).not.toContain('/run/podman/podman.sock');
+  });
+
+  it('beside compose.yaml, it gives the hopper the rootless Podman socket under XDG_RUNTIME_DIR, and the group that opens it', () => {
+    const hopper = svc(render(undefined, { XDG_RUNTIME_DIR: '/run/user/1000' }, true), 'hopper');
+    expect(hopper.environment?.HOPPER_PODMAN_SOCKET).toBe('/run/podman/podman.sock');
+    expect(hopper.volumes).toContainEqual(expect.objectContaining({ source: '/run/user/1000/podman/podman.sock', target: '/run/podman/podman.sock' }));
+    expect(hopper.group_add).toEqual(['0']);
+    // Nothing else changes: the rest of the hopper's service is compose.yaml's.
+    expect(hopper.image).toBe(IMAGE);
+    expect(hopper.environment?.HOPPER_LAN_NAMES).toBe('hopper');
   });
 });

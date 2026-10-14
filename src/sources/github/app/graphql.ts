@@ -2,13 +2,24 @@
 // then as a user project. Installation tokens can read organization projects
 // (`organization_projects: read`); user-owned projects need a personal token, so for those this
 // ends in a permanent error and the source falls back to labels (projectErrors). Also: the pull
-// request that closed an issue, and the open ones whose merge will close it (closer.ts).
+// request that closed an issue, the open ones whose merge will close it, a pull request by its number, and the open
+// pull requests of a repository, and an issue's cross-references (issue #430) (closer.ts).
+// And an issue's place for the issue graph (issue-place.ts, issue #437). The reads of one issue or pull request go through
+// `ask` (graphql-batch.ts, issue #822): the ones asked at the same time are one request.
 
-import type { ClosingPullRequest, GitHubProjectItem, OpenPullRequest } from '../api.ts';
+import type { BranchPullRequest, ClosingPullRequest, GitHubProjectItem, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from '../api.ts';
 import { GitHubApiError } from '../api.ts';
-import { CLOSING_PULL_REQUEST_QUERY, OPEN_PULL_REQUESTS_QUERY, closingPullRequestFrom, openPullRequestsFrom } from '../closer.ts';
+import type { ItemEdit } from '../../../domain/item-snapshots.ts';
+import {
+  CLOSING_PULL_REQUEST_QUERY, CROSS_REFERENCES_QUERY, OPEN_PULL_REQUESTS_QUERY, OPEN_REPO_PULL_REQUESTS_QUERY, PULL_REQUEST_QUERY, REFERENCING_PULL_REQUESTS_QUERY, closingPullRequestFrom, openPullRequestsFrom, pullRequestFrom,
+  crossReferencesFrom, referencingPullRequestsFrom, repoPullRequestsFrom,
+} from '../closer.ts';
+import type { IssueCrossReferences } from '../../../domain/cross-references.ts';
+import { ISSUE_PLACE_QUERY, ISSUE_PLACE_QUERY_NO_BLOCKED_BY, issuePlaceFrom, noBlockedBy } from '../issue-place.ts';
+import type { IssuePlace } from '../../../domain/issue-graph.ts';
 import { splitRepo } from './http.ts';
 import type { Request } from './http.ts';
+import type { AskGraphQL } from './graphql-batch.ts';
 
 const MAX_PAGES = 50;
 const named = (value: string) => `${value} field { ... on ProjectV2FieldCommon { name } }`;
@@ -85,18 +96,65 @@ export async function projectItems(req: Request, token: string, owner: string, n
   throw new GitHubApiError(`project ${owner}/projects/${number}: organization: ${org.error}; user: ${user.error}${hint}`, true);
 }
 
-export async function closingPullRequest(req: Request, token: string, repo: string, number: number): Promise<ClosingPullRequest | undefined> {
-  const { owner, repo: name } = splitRepo(repo);
-  const r = await req('POST /graphql', {
-    query: CLOSING_PULL_REQUEST_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` },
-  });
-  return closingPullRequestFrom(r.data, `closer of ${repo}#${number}`);
+export async function closingPullRequest(ask: AskGraphQL, token: string, repo: string, number: number): Promise<ClosingPullRequest | undefined> {
+  return closingPullRequestFrom(await ask(token, CLOSING_PULL_REQUEST_QUERY, repo, number), `closer of ${repo}#${number}`);
 }
 
-export async function openClosingPullRequests(req: Request, token: string, repo: string, number: number): Promise<OpenPullRequest[]> {
+export async function openClosingPullRequests(ask: AskGraphQL, token: string, repo: string, number: number): Promise<OpenPullRequest[]> {
+  return openPullRequestsFrom(await ask(token, OPEN_PULL_REQUESTS_QUERY, repo, number), `pull requests of ${repo}#${number}`);
+}
+
+export async function referencingPullRequests(ask: AskGraphQL, token: string, repo: string, number: number): Promise<ReferencingPullRequest[]> {
+  return referencingPullRequestsFrom(await ask(token, REFERENCING_PULL_REQUESTS_QUERY, repo, number), `pull requests mentioning ${repo}#${number}`);
+}
+
+export async function crossReferences(ask: AskGraphQL, token: string, repo: string, number: number): Promise<IssueCrossReferences> {
+  return crossReferencesFrom(await ask(token, CROSS_REFERENCES_QUERY, repo, number), `cross-references of ${repo}#${number}`);
+}
+
+export async function pullRequest(ask: AskGraphQL, token: string, repo: string, number: number): Promise<NumberedPullRequest | undefined> {
+  return pullRequestFrom(await ask(token, PULL_REQUEST_QUERY, repo, number), `pull request ${repo}#${number}`);
+}
+
+export async function openPullRequests(req: Request, token: string, repo: string): Promise<BranchPullRequest[]> {
   const { owner, repo: name } = splitRepo(repo);
   const r = await req('POST /graphql', {
-    query: OPEN_PULL_REQUESTS_QUERY, variables: { owner, name, number }, headers: { authorization: `token ${token}` },
+    query: OPEN_REPO_PULL_REQUESTS_QUERY, variables: { owner, name }, headers: { authorization: `token ${token}` },
   });
-  return openPullRequestsFrom(r.data, `pull requests of ${repo}#${number}`);
+  return repoPullRequestsFrom(r.data, `open pull requests of ${repo}`);
+}
+
+/** Who edited an issue's body (its content edits) and title (its renames), the newest 50 of each (issue #662). */
+const ISSUE_EDITS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) { issue(number: $number) {
+    userContentEdits(last: 50) { nodes { editedAt editor { login } } }
+    timelineItems(itemTypes: [RENAMED_TITLE_EVENT], last: 50) { nodes { ... on RenamedTitleEvent { createdAt actor { login } } } }
+  } }
+}`;
+
+interface EditsData {
+  repository?: { issue?: {
+    userContentEdits?: { nodes?: ({ editedAt?: string; editor?: { login?: string } | null } | null)[] };
+    timelineItems?: { nodes?: ({ createdAt?: string; actor?: { login?: string } | null } | null)[] };
+  } | null } | null;
+}
+
+/** The edits of an issue's title and body, oldest first; an editor GitHub no longer names is `ghost`. */
+export function issueEditsFrom(data: unknown): ItemEdit[] {
+  const issue = (data as EditsData | undefined)?.repository?.issue;
+  const edits: ItemEdit[] = [
+    ...(issue?.userContentEdits?.nodes ?? []).filter((n) => n?.editedAt).map((n) => ({ what: 'body' as const, editor: n!.editor?.login ?? 'ghost', at: n!.editedAt! })),
+    ...(issue?.timelineItems?.nodes ?? []).filter((n) => n?.createdAt).map((n) => ({ what: 'title' as const, editor: n!.actor?.login ?? 'ghost', at: n!.createdAt! })),
+  ];
+  return edits.sort((a, b) => a.at.localeCompare(b.at));
+}
+
+export async function issueEdits(ask: AskGraphQL, token: string, repo: string, number: number): Promise<ItemEdit[]> {
+  return issueEditsFrom(await ask(token, ISSUE_EDITS_QUERY, repo, number));
+}
+
+/** An issue's place; a GitHub with no issue dependencies is asked again without them (issue #900). */
+export async function issuePlace(ask: AskGraphQL, token: string, repo: string, number: number): Promise<IssuePlace> {
+  const body = await ask(token, ISSUE_PLACE_QUERY, repo, number);
+  return issuePlaceFrom(noBlockedBy(body) ? await ask(token, ISSUE_PLACE_QUERY_NO_BLOCKED_BY, repo, number) : body, `place of ${repo}#${number}`);
 }

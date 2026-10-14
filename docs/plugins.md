@@ -15,13 +15,16 @@ Short guide for authors. The contract is `docs/design.md` "Plugin contract"; the
   or select it (a one-instance role), then set its options in the instance form. Every option is
   edited there, command-bearing ones too. An instance is `{ "name": <instance>, "plugin": <id>,
   "options": { … } }` in the role's section (`router`, `queueSorter`, `escalationLevels`,
-  `executors`, `jobSources`, `machines`, `usageSources`, `notifiers`). Every change applies when it is
+  `executors`, `jobSources`, `machines`, `usageSources`, `notifiers`, `vaultBackends`). Every change applies when it is
   saved, without a restart; the escalation levels are a list in order, lowest first.
 
 ## From the plugin store
 
-With `HOPPER_PLUGIN_STORE` set to a git repository holding `plugin-store.yaml` (design.md "Plugin
-store"), the UI's Plugins view lists what that plugin store offers and installs it:
+A new hopper reads the default plugin store, which the hopper's Pages site publishes
+(`https://henningfutrell.github.io/hopper/plugin-store.git`: the example plugins of this repository). An
+admin of the hopper names another git repository holding `plugin-store.yaml`, goes back to the default,
+or sets none, on the **Plugin store** card (Plugins view). The change is kept in the database and applies
+at once, without a restart (design.md "Plugin store"). The card lists what the plugin store offers and installs it:
 Install, Update (the store's directory changed), Remove (refused while the plugins config names it).
 An installed plugin is a custom plugin like any other; it runs once the plugins config names it. It needs no
 plugin dir: what is installed is kept in the database and its code is unpacked into the work dir,
@@ -29,7 +32,7 @@ restored from the plugin store at start, so an ephemeral container keeps its plu
 plugin dir is never replaced or removed from the UI.
 
 This repository is a plugin store: its `plugin-store.yaml` lists `examples/plugins/`. To publish your
-own, list each plugin in a repository's `plugin-store.yaml`:
+own, list each plugin in a repository's `plugin-store.yaml`, then name the repository on the card:
 
 ```yaml
 version: 1
@@ -93,13 +96,14 @@ Find the machine with the context's `machine(id)`; one with no `ssh`, `docker` o
 machine (issue #174). A config stored before a machine was picked may lack it: the context's
 `machines()` lists every machine, so the part can pick one as it runs, and say which (issue #442). An
 escalation level also gets `escalationMachine()`, the default escalation machine, and the request's
-`jobMachine`; a level that picked its machine returns it on its reply as `machine: { id, why }`.
+`jobMachine`; a level that picked its machine returns it on its reply as `machine: { id, why }`. A usage
+source and an escalation level also get `client(machine)`, how to reach a client target's client (issues #366, #482).
 
 ## Detection
 
 `detect(sys, options)` → `available` | `unavailable` + reason | `needs-setup` + reason + the command
 to run. Use the kit (`which`, `version`, `succeeds`, `output`, `exists`, `readable`, `pythonImports`, `env`).
-Cheap: never a paid model call, never a GUI program (`which` only). Only a job source or a notifier
+Cheap: never a paid model call, never a GUI program (`which` only). Only a job source, a notifier or a vault backend
 that needs setup still runs; any other role's must be `available`.
 
 ## Option choices

@@ -10,27 +10,21 @@ describe('GitHub source discover', () => {
     expect(item).toMatchObject({
       key: `https://github.com/${REPO}/issues/1`, url: `https://github.com/${REPO}/issues/1`, title: 'Add a README', body: 'Write it.',
       author: 'owner', labels: ['hopper'], repo: REPO, number: 1, executor: 'herdr-claude', model: 'claude-sonnet-5',
-      defaultCwd: '/work/default', priority: 50, priorityReason: 'default',
+      priority: 50, priorityReason: 'default',
     });
-    expect(item.cwd).toBeUndefined();
+    // Issue #361: no path: the work tree is the machine's that runs the job.
+    expect(item).not.toHaveProperty('cwd');
+    expect(item).not.toHaveProperty('defaultCwd');
     expect(item.invalid).toBeUndefined();
-    expect(gh.calls.filter((c) => c.method === 'listOpenIssues').map((c) => c.args)).toEqual([[REPO, 'hopper']]);
+    expect(gh.calls.filter((c) => c.method === 'listRepos').map((c) => c.args)).toEqual([[[REPO], ['hopper']]]);
   });
 
-  // Issue #324: only a repository's own path is the job's work tree; the source's default stays a
-  // default, so the machine's work tree comes before it.
-  it('maps cwd from repoPaths; every item carries defaultCwd as its fallback', async () => {
-    const { gh, source } = setup({ repos: [REPO, 'owner/other'], repoPaths: { [REPO]: '/code/sandbox' } });
-    gh.createIssue({ repo: REPO, labels: ['hopper'] });
-    gh.createIssue({ repo: 'owner/other', labels: ['hopper'] });
-    const items = await source.discover();
-    expect(items.map((i) => [i.repo, i.cwd, i.defaultCwd])).toEqual([[REPO, '/code/sandbox', '/work/default'], ['owner/other', undefined, '/work/default']]);
-  });
-
-  it('takes an issue filed by anyone when it is assigned to the account (issue #387)', async () => {
+  it('takes an issue assigned to the account among others (issue #387); one a stranger filed is a request (issue #652)', async () => {
     const { gh, source } = setup();
-    gh.createIssue({ repo: REPO, author: 'stranger', assignees: ['someone', 'Owner'], labels: ['hopper'] });
-    expect((await source.discover()).map((i) => [i.author, i.assignee])).toEqual([['stranger', 'owner']]);
+    gh.createIssue({ repo: REPO, author: 'stranger', assignees: ['someone', 'Owner'], labels: ['hopper'], labelledBy: 'owner', assignedBy: 'owner' });
+    gh.createIssue({ repo: REPO, assignees: ['someone', 'Owner'], labels: ['hopper'] });
+    expect((await source.discover()).map((i) => [i.number, i.author, i.assignee])).toEqual([[2, 'owner', 'owner']]);
+    expect(source.intake?.().find((x) => x.action === 'approve')?.key).toBe(`https://github.com/${REPO}/issues/1`);
   });
 
   it('never takes an issue not assigned to the account, whoever filed it', async () => {
@@ -127,14 +121,14 @@ describe('GitHub source discover', () => {
   it('one repo failing does not hide the others; the error is shown in status', async () => {
     const { gh, source } = setup({ repos: ['owner/gone', REPO] });
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
-    gh.failNext('listOpenIssues', new GitHubApiError('gh: Not Found (HTTP 404)', true, 404));
+    gh.failRepo('owner/gone', 'gh: Not Found (HTTP 404)');
     expect((await source.discover()).map((i) => i.repo)).toEqual([REPO]);
     expect(source.describe().repoErrors).toEqual({ 'owner/gone': 'gh: Not Found (HTTP 404)' });
   });
 
   it('when every repo fails, discover rejects (the sync shows the error)', async () => {
     const { gh, source } = setup();
-    gh.failNext('listOpenIssues', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
+    gh.failNext('listRepos', new GitHubApiError('gh: Bad Gateway (HTTP 502)', false, 502));
     await expect(source.discover()).rejects.toThrow('Bad Gateway');
   });
 

@@ -10,16 +10,16 @@
 // A claim with no holder predates holders: the intake migration releases it once when no user of this hopper
 // has a job for it; after that it is an older hopper's, respected like any other.
 //
-// The scope is given: a repo list (the app's installed repos, a connected account's chosen repos), listed repo
-// by repo. Never a search: the app never passes an empty list, and a connected account's source with none
-// chosen is paused (issue #321).
+// The scope is given: a repo list (the app's installed repos, a connected account's chosen repos), its open labelled
+// issues as the listing cache holds them (issue #985, `listing.ts`). Never a search: the app never passes an empty list,
+// and a connected account's source with none chosen is paused (issue #321).
 
-import type { IntakeOutcome } from '../../domain/intake.ts';
+import type { IntakeOutcome, NotTakenGroup } from '../../domain/intake.ts';
 import type { Rejection } from '../../domain/rejection.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import {
-  ADDRESS_PREFIX, HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_REJECTED, holderLabel,
+  ADDRESS_PREFIX, HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY, LABEL_REJECTED, holderLabel,
 } from './labels.ts';
 
 /** A rejection with no assignee (a job taken before assignment intake) leaves its issue to its labels, as then. */
@@ -29,6 +29,9 @@ export const NOT_ASSIGNED = 'not assigned to you';
 export const BACKBURNER = 'on the backburner';
 export const FAILED = 'failed: hopper:failed is on the issue';
 export const DONE_OPEN = 'done, but the issue is still open';
+export const PR_READY = 'done: its pull request waits for review';
+export const PARTLY_DONE = 'partly done: the rest runs once its pull request merges';
+export const PR_CLOSED = 'its pull request was closed without a merge: hopper:pr-closed is on the issue';
 export const REJECTED_LABEL = 'rejected: hopper:rejected is on the issue';
 export const REJECTED_BY_YOU = 'rejected by you: not taken until assigned to you again';
 export const ADDRESSED_ELSEWHERE = 'addressed to another hopper';
@@ -53,6 +56,8 @@ export interface DiscoverResult {
   outcomes: IntakeOutcome[];
   /** The labels of every issue listed, by URL. */
   listed: Map<string, string[]>;
+  /** Every open labelled issue listed, taken or not: what the issue graph keeps (issue #437). */
+  seen: GitHubIssue[];
   released: Released[];
   /** The intake migration ran in this pass: it was asked for and every repo was listed. */
   migrated: boolean;
@@ -61,7 +66,8 @@ export interface DiscoverResult {
 type DiscoverConfig = Pick<GitHubSourceConfig, 'label' | 'hopperName'>;
 
 export interface DiscoverScope {
-  repos: string[];
+  /** The scope's open labelled issues, and the repositories GitHub did not answer for (`listing.ts`). */
+  listed: { issues: GitHubIssue[]; repoErrors: Record<string, string> };
   /** The login an issue must be assigned to. */
   assignee: string;
   knownKeys?: (keys: string[]) => Set<string>;
@@ -74,24 +80,6 @@ export interface DiscoverScope {
   migrating?: boolean;
 }
 
-async function fetchIssues(api: GitHubApi, config: DiscoverConfig, repos: string[]):
-Promise<{ issues: GitHubIssue[]; repoErrors: Record<string, string> }> {
-  if (repos.length === 0) return { issues: [], repoErrors: {} };
-  const issues: GitHubIssue[] = [];
-  const repoErrors: Record<string, string> = {};
-  let firstError: unknown;
-  for (const repo of repos) {
-    try {
-      issues.push(...(await api.listOpenIssues(repo, config.label)).map((i) => ({ ...i, repo })));
-    } catch (err) {
-      repoErrors[repo] = (err as Error).message;
-      firstError ??= err;
-    }
-  }
-  if (Object.keys(repoErrors).length === repos.length) throw firstError;
-  return { issues, repoErrors };
-}
-
 /** GitHub logins compare without case. */
 export const isAssignedTo = (i: Pick<GitHubIssue, 'assignees'>, login: string): boolean =>
   i.assignees.some((a) => a.toLowerCase() === login.toLowerCase());
@@ -99,6 +87,9 @@ export const isAssignedTo = (i: Pick<GitHubIssue, 'assignees'>, login: string): 
 /** Why the issue's labels keep it out, before assignment and claims are asked; undefined when they do not. */
 export function labelReason(i: Pick<GitHubIssue, 'labels'>, name: string | null): string | undefined {
   if (i.labels.includes(LABEL_DONE)) return DONE_OPEN;
+  if (i.labels.includes(LABEL_PR_READY)) return PR_READY;
+  if (i.labels.includes(LABEL_PARTLY_DONE)) return PARTLY_DONE;
+  if (i.labels.includes(LABEL_PR_CLOSED)) return PR_CLOSED;
   if (i.labels.includes(LABEL_FAILED)) return FAILED;
   if (i.labels.includes(LABEL_REJECTED)) return REJECTED_LABEL;
   if (i.labels.includes(LABEL_BACKBURNER)) return BACKBURNER;
@@ -145,12 +136,15 @@ function claimVerdict(i: GitHubIssue, scope: DiscoverScope, otherUser: boolean):
   return { kind: 'skip', reason: CLAIMED_NO_HOLDER, action: 'release' };
 }
 
+/** The not-taken group of a reason (issue #798); a request card's is set where its origin is judged (source.ts). */
+const GROUP_OF: Record<string, NotTakenGroup> = { [NOT_ASSIGNED]: 'not-assigned', [BACKBURNER]: 'backburner', [PR_READY]: 'pr-waiting', [PARTLY_DONE]: 'partly-done' };
+
 const outcome = (i: GitHubIssue, reason?: string, action?: IntakeOutcome['action']): IntakeOutcome => ({
-  key: i.url, title: i.title, repo: i.repo, ...(reason !== undefined ? { reason } : {}), ...(action ? { action } : {}),
+  key: i.url, title: i.title, repo: i.repo, ...(reason !== undefined ? { reason, group: GROUP_OF[reason] ?? 'other' } : {}), ...(action ? { action } : {}),
 });
 
 export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, scope: DiscoverScope): Promise<DiscoverResult> {
-  const { issues, repoErrors } = await fetchIssues(api, config, scope.repos);
+  const { issues, repoErrors } = scope.listed;
   // The migration waits for a pass that lists every repo: a claim in a repo not read now is not judged.
   const migrated = scope.migrating === true && Object.keys(repoErrors).length === 0;
   const listed = new Map(issues.map((i) => [i.url, [...i.labels]]));
@@ -158,7 +152,7 @@ export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, sco
   const candidates: GitHubIssue[] = [];
   for (const i of issues) {
     const byLabel = labelReason(i, config.hopperName);
-    if (byLabel) reasons.set(i.url, { reason: byLabel });
+    if (byLabel) reasons.set(i.url, { reason: byLabel, ...(byLabel === BACKBURNER ? { action: 'unbackburner' as const } : {}) });
     else if (!isAssignedTo(i, scope.assignee)) reasons.set(i.url, { reason: NOT_ASSIGNED, action: 'assign' });
     else candidates.push(i);
   }
@@ -196,6 +190,7 @@ export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, sco
     repoErrors,
     outcomes: issues.map((i) => { const r = reasons.get(i.url); return outcome(i, r?.reason, r?.action); }),
     listed,
+    seen: issues,
     released,
     migrated,
   };

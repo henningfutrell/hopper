@@ -1,23 +1,89 @@
-// One event as one line: time, type (coloured by what ended or started), and its subject.
+// One event as one line: time, type (coloured by what ended or started), and its subject. An event about a job links to
+// its job view (issue #433); one with no job has no link.
 import { clock } from '@/model/format';
 import { subjectOf } from '@/model/board';
+import { jobHref } from '@/model/job';
+import { artifactCreatedDetail, revisedDetail } from '@/model/artifacts';
+import { pickedEventDetail } from '@/model/minor-decisions';
+import { redBatchDetail } from '@/model/landing-batches';
 import type { DomainEvent, MachineView } from '@/model/wire';
 import { TEXT, type Tone } from '@/components/status';
 import { cn } from '@/lib/utils';
 
 const TYPE_TONE: Record<string, Tone> = {
   'job.started': 'busy', 'job.claimed': 'busy', 'job.reattached': 'busy', 'job.finished': 'ok', 'job.failed': 'bad',
-  'job.held': 'warn', 'job.requeued': 'warn', 'question.asked': 'question', 'question.escalated': 'question', 'question.escalated_to_human': 'question',
+  'job.held': 'warn', 'job.requeued': 'warn', 'job.link_lost': 'warn', 'question.asked': 'question', 'question.escalated': 'question', 'question.escalated_to_human': 'question',
   'question.answered': 'ok', 'question.closed': 'warn', 'question.dismissed': 'muted', 'question.expired': 'bad', 'question.lapsed': 'warn', 'lane.opened': 'busy',
+  'question.thread_held': 'question', 'question.thread_approved': 'ok', 'question.thread_posted': 'question',
   'update.available': 'warn', 'update.started': 'busy', 'update.applied': 'ok', 'update.failed': 'bad',
-  'plugin.installed': 'ok', 'job.accepted': 'ok', 'job.rejected': 'muted', 'queue.gate_changed': 'warn',
+  'plugin.installed': 'ok', 'job.accepted': 'ok', 'job.rejected': 'muted', 'queue.gate_changed': 'warn', 'usage.limits_changed': 'warn',
+  'priority_lanes.changed': 'warn', 'priority_lanes.settings_changed': 'warn',
   'job.claimed_by_operator': 'operator',
-  'job.rerun': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
+  'minor_decision.picked': 'question', 'minor_decision.overridden': 'warn',
+  'job.phase_changed': 'question', 'job.forked': 'question', 'job.fork_resolved': 'ok', 'phase_shifts.settings_changed': 'warn',
+  'question.corrected': 'warn', 'auto_answer.settings_changed': 'warn', 'auto_park.settings_changed': 'warn', 'thread_ask.settings_changed': 'warn', 'tldr.settings_changed': 'warn', 'github_rate_limiter.settings_changed': 'warn', 'allowed_hosts.changed': 'warn', 'github_watch.settings_changed': 'warn',
+  'job.rerun': 'warn', 'job.pull_request_tended': 'warn', 'job.unassigned': 'warn', 'job.work_kept': 'warn', 'job.cleanup_deferred': 'warn',
+  'github_proxy.done': 'ok', 'github_proxy.refused': 'warn', 'github_proxy.failed': 'bad', 'job.child_issue_filed': 'ok',
+  'skill.loaded': 'ok', 'skill.refused': 'warn',
+  'step.refused': 'warn', 'vault.step_delivered': 'ok', 'vault.step_refused': 'warn',
+  'landing_batch.promoted': 'ok', 'landing_batch.failed': 'bad', 'landing_batches.changed': 'warn',
+  'landing_batch.culprit': 'bad', 'landing_batch.reverted': 'ok', 'landing_batch.revert_failed': 'bad', 'landing_batch.fix_filed': 'ok',
+  'landing_batch.back_merged': 'ok', 'landing_batch.back_merge_failed': 'bad', 'landing_batch.back_merge_issue_filed': 'ok',
+  'landing_batch.canary_held': 'bad', 'landing_batch.canary_issue_filed': 'ok', 'landing_batch.canary_promoted': 'ok',
+  'artifact.posted': 'ok', 'artifact.revised': 'ok',
+  'lanes.recommended': 'warn', 'lanes.tuning_changed': 'warn', 'lanes.applied': 'warn', 'lanes.undone': 'warn', 'lanes.dismissed': 'warn',
+  'bug_report.filed': 'ok', 'bug_report.failed': 'bad',
+  'drift.found': 'warn', 'drift.cleared': 'ok', 'drift.issue_filed': 'warn', 'drift.issue_updated': 'muted', 'component_watchers.settings_changed': 'warn',
+  'job.note_added': 'question', 'job.note_delivered': 'ok',
 };
 export const eventTone = (type: string): Tone => TYPE_TONE[type] ?? 'muted';
 
+const NOTE_DELIVERY: Record<string, string> = { start: 'in its task', turn: 'at a turn boundary', resume: 'with the answer' };
+const noteCount = (ids: unknown): string => (Array.isArray(ids) && ids.length !== 1 ? `${ids.length} notes` : 'note');
+
 export function detailOf(e: DomainEvent): string {
   const d = e.data as Record<string, unknown>;
+  if (e.type === 'minor_decision.picked') return pickedEventDetail(d);
+  // Notes to a job (issue #997): who sent one and what it says; how it went in; which job took the ones not delivered.
+  if (e.type === 'job.note_added') return `note from ${String(d.person)} (${String(d.via)}): ${String(d.text)}`;
+  if (e.type === 'job.note_delivered') return `${noteCount(d.noteIds)} typed into its session ${NOTE_DELIVERY[String(d.delivery)] ?? ''}`.trim();
+  if (e.type === 'job.note_carried') return `${noteCount(d.noteIds)} carried to job ${String(d.nextJobId).slice(0, 8)}`;
+  // Phase shifts (issue #548): from which phase to which, and why; a fork, what it is for.
+  if (e.type === 'job.phase_changed') return `${String(d.from)} → ${String(d.to)}: ${String(d.reason)}`;
+  if (e.type === 'job.forked') return `${String(d.to)} forked as ${String(d.forkId).slice(0, 8)}${typeof d.note === 'string' ? `: ${d.note}` : ''}`;
+  // The GitHub proxy (issue #563): what the hopper did on GitHub for the job, where, or why not.
+  if (e.type === 'github_proxy.done') return `${String(d.op)} ${String(d.repo)}#${String(d.number)}: ${String(d.url)}`;
+  if (e.type === 'github_proxy.refused') return `${typeof d.op === 'string' ? `${d.op} ` : ''}refused: ${String(d.reason)}`;
+  // Issue lineage (issue #729): the child issue the job filed, of which parent, and a sub-issue link GitHub refused.
+  if (e.type === 'job.child_issue_filed') {
+    const at = (i: unknown) => { const r = i as { repo?: unknown; number?: unknown }; return `${String(r.repo)}#${String(r.number)}`; };
+    return `${d.required === true ? 'required child' : 'follow-up'} ${at(d.child)} of ${at(d.parent)}${typeof d.subIssueError === 'string' ? `; not linked: ${d.subIssueError}` : ''}`;
+  }
+  if (e.type === 'github_proxy.failed') return `${String(d.op)} ${String(d.repo)}: ${String(d.error)}`;
+  // Skills (issue #582): what the job asked the hopper to set up, and the answer.
+  if (e.type === 'skill.listed') return 'asked what the hopper can set up';
+  if (e.type === 'skill.loaded') return `loaded ${String(d.skill)}${typeof d.asset === 'string' ? ` for ${d.asset}` : ''}`;
+  if (e.type === 'skill.refused') return `${String(d.skill)}: no: ${String(d.reason)}`;
+  // Windows sandbox steps (issue #731): on which host, what ran, how it ended.
+  if (e.type === 'step.started') return `${d.box === undefined ? `on ${String(d.host)}` : `in box ${String(d.box)}`}: ${String(d.command)}`;
+  if (e.type === 'step.finished') return `${d.box === undefined ? `on ${String(d.host)}` : `in box ${String(d.box)}`}: exit ${String(d.exit)} after ${String(d.seconds)} s${typeof d.problem === 'string' ? `; ${d.problem}` : ''}`;
+  if (e.type === 'step.refused') return `no: ${String(d.reason)}`;
+  if (e.type === 'vault.step_delivered') return `${String(d.name)} given to a step on ${String(d.host)}`;
+  if (e.type === 'vault.step_refused') return `${String(d.name)} for a step on ${String(d.host)}: no: ${String(d.reason)}`;
+  // Landing batches (issue #1073): a batch run of the landing branch, how it ended, a job's pull request moved to it.
+  if (e.type === 'landing_batch.started') return `${String(d.repo)}: batch run #${String(d.pullRequest)} of ${String(d.landing)} into ${String(d.tested)}`;
+  if (e.type === 'landing_batch.pending') return `${String(d.repo)}: ${Array.isArray(d.merges) ? d.merges.map((n) => `#${String(n)}`).join(', ') : ''} wait for a batch run`;
+  if (e.type === 'landing_batch.promoted') return `${String(d.repo)}: batch run #${String(d.pullRequest)} moved ${String(d.tested)}`;
+  if (e.type === 'landing_batch.failed') return `${String(d.repo)}: batch run #${String(d.pullRequest)} failed: ${String(d.reason)}`;
+  if (e.type === 'landing_batch.retargeted') return `${String(d.repo)}#${String(d.pullRequest)} moved from ${String(d.from)} to ${String(d.to)}`;
+  if (e.type.startsWith('landing_batch.')) return redBatchDetail(e.type, d);
+  // An artifact shown to its owner (issue #673): where its link was posted, or why not.
+  if (e.type === 'artifact.posted') return `${String(d.title)}: ${typeof d.comment === 'string' ? `posted on the issue, ${d.comment}` : typeof d.error === 'string' ? `not posted: ${d.error}` : 'no issue to post on'}`;
+  if (e.type === 'artifact.created') return artifactCreatedDetail(d);
+  if (e.type === 'artifact.revised') return revisedDetail(d);
+  if (e.type === 'artifact.revision_pinned') return `revision ${String(d.revision)} ${d.pinned === true ? 'pinned' : 'unpinned'}`;
+  if (e.type === 'artifact.revision_removed') return `revision ${String(d.revision)} removed by the retention`;
+  if (e.type === 'job.fork_resolved') return `fork ${String(d.forkId).slice(0, 8)} ${d.decision === 'accept' ? 'accepted' : 'rejected'}${d.delivered ? ': answered the question' : ''}`;
   for (const k of ['error', 'reason', 'message', 'target', 'by', 'mode', 'assignee']) if (typeof d[k] === 'string' && d[k]) return String(d[k]);
   if (e.type.startsWith('update.') && typeof d.to === 'string') return `${typeof d.ref === 'string' ? `${d.ref} ` : ''}${d.to.slice(0, 7)}`;
   return '';
@@ -27,11 +93,12 @@ export function EventLine({ e, nameOf, machines, className }: { e: DomainEvent; 
   const detail = detailOf(e);
   const subject = subjectOf(e, nameOf, machines);
   return (
-    <div className={cn('grid grid-cols-[4.5rem_8.5rem_minmax(0,1fr)] items-baseline gap-2 text-xs', className)}>
+    <div data-event-seq={e.seq} className={cn('grid grid-cols-[4.5rem_8.5rem_minmax(0,1fr)] items-baseline gap-2 text-xs', className)}>
       <span className="num font-mono text-muted-foreground/80" title={e.at}>{clock(e.at)}</span>
       <span className={cn('truncate font-mono font-medium', TEXT[eventTone(e.type)])}>{e.type}</span>
       <span className="min-w-0 truncate" title={detail ? `${subject} — ${detail}` : subject}>
-        {subject}{detail && <span className="text-muted-foreground"> — {detail}</span>}
+        {e.jobId ? <a href={jobHref(e.jobId)} className="underline-offset-4 hover:underline">{subject}</a> : subject}
+        {detail && <span className="text-muted-foreground"> — {detail}</span>}
       </span>
     </div>
   );

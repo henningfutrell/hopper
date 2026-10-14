@@ -10,9 +10,10 @@ export function createLaneRepository(c: StoreContext): LaneRepository {
         : c.db.all('SELECT body FROM lanes WHERE machine_id = ? ORDER BY number', machineId);
       return rows.map((r) => parse<Lane>(r.body));
     },
-    open(machineId) {
+    open(machineId, id) {
       const used = new Set(c.db.all('SELECT number FROM lanes WHERE machine_id = ?', machineId).map((r) => r.number));
-      let n = 1;
+      const named = id?.startsWith(`${machineId}/lane-`) ? Number(id.slice(machineId.length + '/lane-'.length)) : NaN;
+      let n = Number.isInteger(named) && named > 0 && !used.has(named) ? named : 1;
       while (used.has(n)) n++;
       const at = c.clock.now().toISOString();
       const lane: Lane = { id: `${machineId}/lane-${n}`, machineId, state: 'idle', openedAt: at, idleSince: at };

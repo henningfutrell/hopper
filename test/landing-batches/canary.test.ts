@@ -1,0 +1,115 @@
+// Issue #1073 part 5: the canary. With a canary window set for a repository, each pass compares `stable` with `canary`:
+// a new candidate starts the window; a bug report that names it holds it and files one issue; the window passed with no
+// report, `stable` moves to it (a fast-forward). Fake GitHub at the LandingBatchGitHub seam.
+//
+// Feature: the canary step
+//   Scenario: a new candidate on canary starts the window, then waits while it runs
+//   Scenario: the window passed with no bug report: stable moves to the candidate
+//   Scenario: a bug report names the candidate: held, and one issue filed for Intake
+//   Scenario: nothing new on canary: no event
+//   Scenario: no canary window set: canary is not read
+import { describe, expect, it } from 'vitest';
+import type { LandingBatchSettings } from '../../src/domain/landing-batches.ts';
+import type { DomainEvent, NewEvent } from '../../src/domain/types.ts';
+import { createLandingBatches, type LandingBatchGitHub } from '../../src/landing-batches/runner.ts';
+
+const REPO = 'owner/app';
+const TIP = 'abcdef0123456789abcdef0123456789abcdef01';
+const START = new Date('2026-10-14T00:00:00.000Z');
+const later = (h: number) => new Date(START.getTime() + h * 3_600_000);
+
+interface World { aheadBy: number; reports: number[]; calls: string[]; issues: { title: string; body: string; labels: string[]; assignees: string[] }[] }
+
+function fake(w: World): LandingBatchGitHub {
+  const no = async (): Promise<never> => { throw new Error('not in this test'); };
+  return {
+    defaultBranch: async () => 'main',
+    compare: async (_repo, base, head) => {
+      w.calls.push(`compare ${base}...${head}`);
+      return base === 'stable' ? { aheadBy: w.aheadBy, tip: TIP, commits: [] } : { aheadBy: 0, tip: 'landing', commits: [] };
+    },
+    createBranch: no, deleteBranch: no, openPullRequest: no, pullRequest: no, checkRuns: no, merge: no, close: no, mergeInto: no,
+    openPullRequests: async () => [], retarget: no, pullRequestOf: no, revert: no, checkLog: no,
+    fileIssue: async (_repo, issue) => { w.issues.push(issue); return { number: 90, url: `https://github.test/${REPO}/issues/90` }; },
+    bugReports: async (_repo, sha, since) => { w.calls.push(`reports ${sha} ${since}`); return w.reports; },
+    fastForward: async (_repo, branch, sha) => { w.calls.push(`fast-forward ${branch} ${sha}`); },
+  };
+}
+
+function runner(w: World, settings: LandingBatchSettings) {
+  const events: DomainEvent[] = [];
+  let seq = 0;
+  let now = START;
+  const r = createLandingBatches({
+    github: () => fake(w),
+    login: () => 'me',
+    settings: () => settings,
+    events: () => events,
+    record: (e: NewEvent) => { events.push({ ...e, seq: ++seq, id: `e${seq}`, at: now.toISOString(), schemaVersion: 1 } as DomainEvent); },
+    jobPullRequests: () => [],
+    now: () => now,
+    log: () => {},
+  });
+  return { r, events, at: (d: Date) => { now = d; } };
+}
+
+const withCanary: LandingBatchSettings = { repos: { [REPO]: { tested: 'dev', everyMerges: 5, everyMinutes: 60, canaryHours: 24 } } };
+const world = (): World => ({ aheadBy: 2, reports: [], calls: [], issues: [] });
+
+describe('the canary step (issue #1073 part 5)', () => {
+  it('a new candidate starts the window, then waits while it runs with no bug report', async () => {
+    const w = world();
+    const { r, events, at } = runner(w, withCanary);
+    await r.pass();
+    expect(events.map((e) => [e.type, e.data])).toEqual([['landing_batch.canary_started', { repo: REPO, canary: 'canary', stable: 'stable', tip: TIP, hours: 24 }]]);
+    at(later(20));
+    await r.pass();
+    expect(w.calls).toContain(`reports abcdef012345 ${START.toISOString()}`);
+    expect(events).toHaveLength(1);
+    expect(r.view().repos[0]!.canary).toMatchObject({ why: 'the canary abcdef012345 runs 4 more hours with no bug report' });
+  });
+
+  it('the window passed with no bug report: stable moves to the candidate', async () => {
+    const w = world();
+    const { r, events, at } = runner(w, withCanary);
+    await r.pass();
+    at(later(24));
+    await r.pass();
+    expect(w.calls).toContain(`fast-forward stable ${TIP}`);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.canary_started', 'landing_batch.canary_promoted']);
+    expect(events[1]!.data).toEqual({ repo: REPO, canary: 'canary', stable: 'stable', tip: TIP, why: 'no bug report named it in 24 hours' });
+    expect(r.view().repos[0]!.state.canary).toMatchObject({ tip: TIP, state: 'promoted' });
+  });
+
+  it('a bug report names the candidate: held, and one issue filed for Intake', async () => {
+    const w = world();
+    const { r, events, at } = runner(w, withCanary);
+    await r.pass();
+    w.reports = [41];
+    at(later(2));
+    await r.pass();
+    await r.pass();
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.canary_started', 'landing_batch.canary_held', 'landing_batch.canary_issue_filed']);
+    expect(events[1]!.data).toMatchObject({ repo: REPO, tip: TIP, reports: [41], reason: 'bug reports name it: #41' });
+    expect(w.issues).toHaveLength(1);
+    expect(w.issues[0]).toMatchObject({ labels: ['hopper'], assignees: ['me'], title: 'The canary abcdef012345 is held: bug reports name it' });
+    expect(w.calls.filter((c) => c.startsWith('fast-forward'))).toEqual([]);
+  });
+
+  it('nothing new on canary: no event', async () => {
+    const w = world();
+    w.aheadBy = 0;
+    const { r, events } = runner(w, withCanary);
+    await r.pass();
+    expect(events).toEqual([]);
+    expect(r.view().repos[0]!.canary).toMatchObject({ why: 'nothing new on canary beyond stable' });
+  });
+
+  it('no canary window set: canary is not read', async () => {
+    const w = world();
+    const { r } = runner(w, { repos: { [REPO]: { tested: 'dev', everyMerges: 5, everyMinutes: 60 } } });
+    await r.pass();
+    expect(w.calls).toEqual(['compare dev...main']);
+    expect(r.view().repos[0]!.canary).toBeUndefined();
+  });
+});

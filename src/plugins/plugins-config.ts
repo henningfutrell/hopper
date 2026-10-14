@@ -1,7 +1,7 @@
 // The plugins config: which instance fills which role (design.md "Configuration — the plugins
 // config"), the config record `plugins` in the store (design.md "Config in the database"). Read:
 // router, queueSorter, escalationLevels, executors, jobSources, machines (this machine and the
-// attached ones, issue #74), usageSources, notifiers, routing, machineDefaults, escalationMachine. A UI edit (edit.ts,
+// attached ones, issue #74), usageSources, notifiers, vaultBackends (issue #585), routing, machineDefaults, escalationMachine. A UI edit (edit.ts,
 // attached-edit.ts) replaces it against its version.
 import { z } from 'zod';
 import { isModelName } from '../domain/plugins.ts';
@@ -13,7 +13,7 @@ export type PluginsConfigResult =
   /** `escalationLevels: []` = no levels (questions go straight to the owner); absent = the built-in ones. */
   | {
     router?: InstanceSpec; queueSorter?: InstanceSpec; escalationLevels?: InstanceSpec[]; executors?: InstanceSpec[];
-    jobSources?: InstanceSpec[]; machines?: InstanceSpec[]; usageSources?: InstanceSpec[]; notifiers?: InstanceSpec[];
+    jobSources?: InstanceSpec[]; machines?: InstanceSpec[]; usageSources?: InstanceSpec[]; notifiers?: InstanceSpec[]; vaultBackends?: InstanceSpec[];
     routing?: RoutingRule[]; machineDefaults?: Partial<MachineDefaults>; escalationMachine?: string; warnings: string[];
   }
   | { error: string };
@@ -53,6 +53,8 @@ const CONFIG = z.strictObject({
   machines: uniqueList('machines', 'lanes and jobs are stored under it').optional(),
   usageSources: uniqueList('usageSources', 'readings name their source').optional(),
   notifiers: uniqueList('notifiers', 'logs and /api/plugins name a notifier by it').optional(),
+  // 0..n (issue #585); a vault secret kept in a backend names it.
+  vaultBackends: uniqueList('vaultBackends', 'a vault secret kept in a backend names it').optional(),
   // Routing rules, in order (issue #18); absent: none.
   routing: ROUTING_RULES.optional(),
   // What a machine attached from the UI starts with (issue #142); a field left out: the ssh plugin's default.
@@ -79,7 +81,7 @@ export function loadPluginsConfig(raw: unknown): PluginsConfigResult {
   const parsed = CONFIG.safeParse(raw);
   if (!parsed.success) return { error: `the plugins config: ${pluginsConfigProblem(raw)}` };
   const warnings: string[] = [];
-  const { router, queueSorter, escalationLevels, executors, jobSources, machines, usageSources, notifiers, routing, machineDefaults, escalationMachine } = parsed.data;
+  const { router, queueSorter, escalationLevels, executors, jobSources, machines, usageSources, notifiers, vaultBackends, routing, machineDefaults, escalationMachine } = parsed.data;
   return {
     ...(router ? { router } : {}),
     ...(queueSorter ? { queueSorter } : {}),
@@ -89,6 +91,7 @@ export function loadPluginsConfig(raw: unknown): PluginsConfigResult {
     ...(machines ? { machines } : {}),
     ...(usageSources ? { usageSources } : {}),
     ...(notifiers ? { notifiers } : {}),
+    ...(vaultBackends ? { vaultBackends } : {}),
     ...(routing ? { routing } : {}),
     ...(machineDefaults ? { machineDefaults } : {}),
     ...(escalationMachine ? { escalationMachine } : {}),

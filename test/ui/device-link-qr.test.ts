@@ -33,7 +33,12 @@ async function render() {
   current = A;
   vi.stubGlobal('fetch', fakeDaemon());
   const mod = '../../ui/src/app/device-link.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
-  const { DeviceLink } = (await import(mod)) as { DeviceLink: (p: { pollMs?: number }) => ReturnType<typeof createElement> };
+  const { useDeviceLink } = (await import(mod)) as { useDeviceLink: (pollMs?: number) => { open: () => void; dialog: Parameters<typeof createElement>[2] } };
+  // The user menu opens it (issue #666); here a plain button stands in for the menu item.
+  function DeviceLink({ pollMs }: { pollMs: number }) {
+    const d = useDeviceLink(pollMs);
+    return createElement('div', null, createElement('button', { 'aria-label': 'Log in another device', onClick: d.open }), d.dialog);
+  }
   const tooltip = '../../ui/src/components/ui/tooltip.tsx';
   const { TooltipProvider } = (await import(tooltip)) as { TooltipProvider: (p: { children?: unknown }) => ReturnType<typeof createElement> };
   await act(async () => {

@@ -1,0 +1,1 @@
+- A failed job's card in Needs a person now recommends only a step the hopper can take. When it cannot run the job again, the card says why and what you can do.

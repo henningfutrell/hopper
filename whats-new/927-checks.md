@@ -1,0 +1,2 @@
+- When a pull request's checks fail, the job that fixes them is told which checks failed, and a check that failed by chance gets one more run before anyone changes code.
+- Needs you now lists the pull requests the hopper gave up on, each with why. A pull request with merge conflicts is no longer counted there: the hopper fixes those itself.

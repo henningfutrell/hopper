@@ -7,8 +7,10 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { hopperApps, type HopperApps } from './connected-accounts/hopper-app.ts';
 import type { UsagePacing } from './domain/types.ts';
+import { MASTER_KEY_VARIABLES } from './secrets/master-key.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { parseDatabaseUrl } from './store/db.ts';
+import { DEFAULT_KMS_KEY } from './vault/wire.ts';
 
 export interface Config {
   /** The bind address: `127.0.0.1`, or `::` (every interface) when LAN names are set. */
@@ -28,6 +30,12 @@ export interface Config {
   laneIdleGraceMs: number;
   /** How long restart recovery waits for a running job's machine to answer before failing the job (issue #368). */
   reconnectGraceMs: number;
+  /** How long a running job is held once its machine's link drops, before it fails (issue #752). */
+  linkGraceMs: number;
+  /** How long a done job its source finds not done waits before it is asked again (issue #637). */
+  doneRecheckMs: number;
+  /** How long a job waiting on its own command shows no background work before its nudge, then before it is stuck (issue #1037). */
+  ownCommandGraceMs: number;
   /** The question service's ceiling per stage (answer, assess), whatever a plugin's own timeout says. */
   answerTimeoutMs: number;
   humanRenotifyMs: number;
@@ -40,10 +48,15 @@ export interface Config {
   localMachine: boolean;
   /** Custom plugins, one directory each; unset: none. */
   pluginDir?: string;
-  /** The plugin store: a git repository holding plugin-store.yaml; unset: none (design.md "Plugin store"). */
+  /** Seeds the plugin store setting while it was never set (issue #445, design.md "Plugin store"). */
   pluginStore?: string;
   /** The URL people reach the UI at through a reverse proxy (origin only), or undefined. The sign-in origin when set. */
   publicUrl: string | undefined;
+  /**
+   * Each tunnel agent's local API, asked whether the remote access URL is up: HOPPER_TUNNEL_API (issue #795), ngrok's;
+   * HOPPER_CLOUDFLARED_API (issue #968), cloudflared's metrics server. Neither set: no tunnel agent is asked.
+   */
+  tunnelApis: { ngrok?: string; cloudflare?: string };
   /** Host names the UI answers to on the LAN (lowercase, no port); empty: loopback only. */
   lanNames: string[];
   /** CIDR ranges a LAN request may come from. */
@@ -60,6 +73,22 @@ export interface Config {
   leftoverEnv: Record<string, string>;
   /** The hopper's app — its GitHub App — people sign in and connect through (issue #214): the shipped one unless the environment names another. */
   hopperApps: HopperApps;
+  /** The OpenFGA server access asks before every mint (issue #559), or undefined: none, and every mint is denied. */
+  openFgaUrl?: string;
+  /** The Solr core search reads and writes (issue #945): HOPPER_SOLR_URL. Absent: no search. */
+  solrUrl?: string;
+  /** The vault in a container of its own (issue #586); unset: the vault runs in the hopper. */
+  vaultUrl?: string;
+  /** The KMS the vault's data key is wrapped by (issue #586); unset: the vault seals under the master key. */
+  kms?: { url: string; key: string };
+  /** The rootless Podman API socket the hopper starts sandbox boxes through (issue #603); unset: it starts none. */
+  podmanSocket?: string;
+  /** The rootless Docker Engine API socket (issue #708): used when Podman is not given or not reached, or chosen. */
+  dockerSocket?: string;
+  /** The container runtime chosen (issue #708); unset: Podman whenever it is reachable (src/sandbox/runtime.ts). */
+  sandboxRuntime?: 'podman' | 'docker';
+  /** The network the boxes it starts join; unset: `hopper_default` in the container, `host` on the host. */
+  sandboxNetwork?: string;
 }
 
 const int = (min: number, max = Number.MAX_SAFE_INTEGER) => z.coerce.number().int().min(min).max(max);
@@ -79,6 +108,8 @@ const publicUrl = z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' 
   .transform((u) => new URL(u).origin);
 const schema = z.object({
   HOPPER_PUBLIC_URL: publicUrl.optional(),
+  HOPPER_TUNNEL_API: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL (http://tunnel:4040)' }).optional(),
+  HOPPER_CLOUDFLARED_API: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL (http://cloudflared:2000)' }).optional(),
   // Loopback, plus the LAN names when set (AGENTS.md, design.md "Reaching the UI across the LAN").
   HOPPER_LAN_NAMES: list(lanName),
   HOPPER_LAN_PEERS: list(lanPeer),
@@ -96,6 +127,9 @@ const schema = z.object({
   HOPPER_WEBHOOK_BASE_MS: int(1).default(1000),
   HOPPER_LANE_IDLE_GRACE_MS: int(0).default(5000),
   HOPPER_RECONNECT_GRACE_MS: int(0).default(120000),
+  HOPPER_LINK_GRACE_MS: int(0).default(600000),
+  HOPPER_DONE_RECHECK_MS: int(0).default(60000),
+  HOPPER_OWN_COMMAND_GRACE_MS: int(0).default(300000),
   HOPPER_ANSWER_TIMEOUT_MS: int(1).default(180000),
   HOPPER_HUMAN_RENOTIFY_MS: int(1).default(900000),
   HOPPER_HUMAN_TIMEOUT_MS: int(1).default(86400000),
@@ -110,6 +144,15 @@ const schema = z.object({
   HOPPER_GITHUB_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
   HOPPER_GITHUB_CLIENT_ID: z.string().min(1).optional(),
   HOPPER_GITHUB_APP_SLUG: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'a GitHub App slug: lowercase letters, digits and dashes').optional(),
+  HOPPER_OPENFGA_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
+  HOPPER_SOLR_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL: the Solr core, http://solr:8983/solr/hopper' }).optional(),
+  HOPPER_VAULT_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
+  HOPPER_KMS_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
+  HOPPER_KMS_KEY: z.string().min(1).max(256).default(DEFAULT_KMS_KEY),
+  HOPPER_PODMAN_SOCKET: z.string().regex(/^\//, 'must be an absolute path: the Podman API socket').optional(),
+  HOPPER_SANDBOX_NETWORK: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/, 'must be a Podman network name, or host').optional(),
+  HOPPER_DOCKER_SOCKET: z.string().regex(/^\//, 'must be an absolute path: the Docker Engine API socket').optional(),
+  HOPPER_SANDBOX_RUNTIME: z.enum(['podman', 'docker']).optional(),
 }).refine((e) => e.HOPPER_SOFT_LIMIT < e.HOPPER_HARD_LIMIT, {
   message: 'must be below HOPPER_HARD_LIMIT',
   path: ['HOPPER_SOFT_LIMIT'],
@@ -126,11 +169,13 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_DATABASE_URL: 'the Postgres database that holds everything: postgres://user:password@host:port/database[?schema=<name>][&sslmode=require]. Or HOPPER_DATABASE_URL_FILE: a file holding it',
   HOPPER_PORT: 'the HTTP port of the UI, the API and the API reference',
   HOPPER_PUBLIC_URL: 'the origin people reach the UI at through a reverse proxy (https://hopper.example.com); a proxy on another host also needs HOPPER_LAN_PEERS',
+  HOPPER_TUNNEL_API: 'the local API of the ngrok agent (http://tunnel:4040, the compose service `tunnel`), asked whether the remote access URL is up while remote access is on with ngrok (Settings → Remote access); a Grok Bot routine is told where the hopper is reached. Unset: the hopper asks no ngrok agent',
+  HOPPER_CLOUDFLARED_API: 'the metrics server of the cloudflared agent (http://cloudflared:2000, the compose service `cloudflared`), asked whether the tunnel is ready while remote access is on with Cloudflare Tunnel (Settings → Remote access). Unset: the hopper asks no cloudflared agent',
   HOPPER_LAN_NAMES: 'host names the UI answers to on the LAN, comma-separated; needs HOPPER_LAN_PEERS. Unset: loopback only',
   HOPPER_LAN_PEERS: 'CIDR ranges LAN or proxy requests may come from, comma-separated (192.0.2.0/24); binds every interface',
   HOPPER_WORK_DIR: 'scratch space: working files, ssh control sockets. Nothing kept',
   HOPPER_PLUGIN_DIR: 'a directory of custom plugins, one directory each (docs/plugins.md). Unset: none',
-  HOPPER_PLUGIN_STORE: 'the plugin store the UI installs plugins from (kept in the database, restored at start): a git repository (URL or path) holding plugin-store.yaml. Unset: none',
+  HOPPER_PLUGIN_STORE: 'copied once into the plugin store setting (a git repository, URL or path, holding plugin-store.yaml) when that was never set; after that the plugin store is set in the UI (Plugins → Plugin store). Unset: the default plugin store',
   HOPPER_TICK_MS: 'how often the engine decides',
   HOPPER_SOFT_LIMIT: 'usage fraction where a machine starts to close lanes',
   HOPPER_HARD_LIMIT: 'usage fraction where a machine starts nothing',
@@ -141,6 +186,9 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_WEBHOOK_BASE_MS: 'first webhook retry delay; doubles each retry',
   HOPPER_LANE_IDLE_GRACE_MS: 'how long an idle lane stays open',
   HOPPER_RECONNECT_GRACE_MS: 'after a restart, how long a running job waits for its machine to answer (a client to dial in, an ssh target to reply) before it fails',
+  HOPPER_LINK_GRACE_MS: 'once a running job\'s machine link drops, how long the job is held on its lane for the link to come back before it fails',
+  HOPPER_DONE_RECHECK_MS: 'a job that ended done whose source finds it not done is asked again after this long (GitHub may not show a new pull request at once) before it fails; 0: at once',
+  HOPPER_OWN_COMMAND_GRACE_MS: 'a job waiting on its own background command whose pane shows no background work for this long, its agent not gone on, is nudged once; this long after the nudge it is flagged stuck',
   HOPPER_ANSWER_TIMEOUT_MS: 'ceiling per escalation level\'s call on a question',
   HOPPER_HUMAN_RENOTIFY_MS: 'how often an unanswered question is notified again',
   HOPPER_HUMAN_TIMEOUT_MS: 'when an unanswered question expires',
@@ -153,6 +201,15 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_GITHUB_URL: 'the GitHub people sign in with and connect (a GitHub Enterprise origin). Unset: https://github.com',
   HOPPER_GITHUB_CLIENT_ID: 'the client id of the GitHub App (device flow on) people sign in and connect through. Unset: the hopper\'s own',
   HOPPER_GITHUB_APP_SLUG: 'that GitHub App\'s slug, for its install link. Unset: the hopper\'s own',
+  HOPPER_OPENFGA_URL: 'the OpenFGA server asked before every credential a job is given (http://openfga:8080); its preshared key HOPPER_OPENFGA_KEY. Unset: every credential is denied',
+  HOPPER_SOLR_URL: 'the Solr core search keeps its index in (http://solr:8983/solr/hopper, the compose service `solr`). Unset: no search',
+  HOPPER_VAULT_URL: 'the vault in a container of its own (http://hopper-vault:4791, the compose profile `hopper-vault`), reached with its preshared key HOPPER_VAULT_KEY. Unset: the vault runs in the hopper',
+  HOPPER_KMS_URL: 'a local KMS the vault\'s data key is wrapped by (http://kms:8080, the compose profile `kms`), read where the vault runs. Unset: the vault seals under HOPPER_MASTER_KEY',
+  HOPPER_KMS_KEY: 'the KMS key, by id or alias, that wraps the vault\'s data key; an alias the KMS lacks is made',
+  HOPPER_PODMAN_SOCKET: 'the rootless Podman API socket the hopper starts, stops and removes sandbox boxes through (/run/podman/podman.sock in the container: docs/deploy.md "Sandbox boxes the hopper starts"). Unset: Add machine shows the line to run instead',
+  HOPPER_SANDBOX_NETWORK: 'the network the boxes the hopper starts join. Unset: hopper_default in the container (HOPPER_LOCAL_MACHINE=false), host on the host',
+  HOPPER_DOCKER_SOCKET: 'a rootless Docker Engine API socket the hopper starts sandbox boxes through when Podman is not given or not reached, or when HOPPER_SANDBOX_RUNTIME=docker. Unset: Docker is not used',
+  HOPPER_SANDBOX_RUNTIME: 'podman or docker: the container runtime the hopper starts sandbox boxes through. Unset: Podman whenever it is reachable, else Docker',
 };
 
 /** Every setting the daemon reads: name, default (`required`, `unset` or the value), what it does. */
@@ -186,6 +243,20 @@ Sign-in set up at launch (each also NAME_FILE; written to the database at every 
   HOPPER_SIGN_IN_NONE_ROLE                no sign-in: viewer, operator, admin or off
   HOPPER_GITHUB_CLIENT_SECRET             the GitHub App's client secret: Sign in with GitHub goes to GitHub and
                                           back in the browser on the sign-in origin. Unset: the device code only
+  HOPPER_MASTER_KEY                       the master key every secret the hopper keeps is sealed under in the database
+                                          (32 bytes, openssl rand -hex 32). Given at launch, never read from a file:
+                                          keep it in a password manager. Unset on a fresh database: one is made and
+                                          shown once; unset on one that keeps secrets: the hopper starts limited
+  HOPPER_MASTER_KEY_PREVIOUS              older keys, one per line: they still open what they sealed, and what they
+                                          sealed is sealed again under HOPPER_MASTER_KEY at start
+  HOPPER_TOKEN_KEY                        the old token key (also _FILE: the compose secrets volume's token_key): read
+                                          only while HOPPER_MASTER_KEY is unset, to move an install to it
+  HOPPER_OPENFGA_KEY                      the preshared key of the OpenFGA server HOPPER_OPENFGA_URL names, read at
+                                          each call. Unset: none sent
+  HOPPER_VAULT_KEY                        the preshared key of the vault container HOPPER_VAULT_URL names, read at
+                                          each call. Unset: the vault container is not asked
+  HOPPER_TUNNEL_KEY                       the preshared key the tunnel service asks for its settings with (the compose
+                                          stack makes it at each start). Unset: no tunnel service; remote access stays down
 
 Once it runs (default port 4790):
   UI              http://127.0.0.1:4790/        sign in with GitHub: the first person to do so is the admin
@@ -202,7 +273,17 @@ const SECRET_SETTINGS = ['HOPPER_DATABASE_URL'];
  * Read by the parts, not here (design.md "Target authentication"): the hopper's ssh key and its docker socket;
  * and the GitHub App's client secret, read by sign-in at each use (issue #258).
  */
-const PART_SETTINGS = ['HOPPER_SSH_KEY', 'HOPPER_SSH_KEY_FILE', 'HOPPER_DOCKER_HOST', 'HOPPER_GITHUB_CLIENT_SECRET', 'HOPPER_GITHUB_CLIENT_SECRET_FILE'];
+const PART_SETTINGS = [
+  'HOPPER_SSH_KEY', 'HOPPER_SSH_KEY_FILE', 'HOPPER_DOCKER_HOST', 'HOPPER_GITHUB_CLIENT_SECRET', 'HOPPER_GITHUB_CLIENT_SECRET_FILE',
+  // The master key and the old token key, read at start (src/secrets/master-key.ts, issue #659).
+  ...MASTER_KEY_VARIABLES,
+  // Read by access at each call to OpenFGA (src/authz/openfga.ts, issue #559).
+  'HOPPER_OPENFGA_KEY', 'HOPPER_OPENFGA_KEY_FILE',
+  // Read by the vault's client at each call to the vault container (src/vault/remote.ts, issue #586).
+  'HOPPER_VAULT_KEY', 'HOPPER_VAULT_KEY_FILE',
+  // Read at each ask of the tunnel service (src/http/remote-access.ts, issue #880).
+  'HOPPER_TUNNEL_KEY', 'HOPPER_TUNNEL_KEY_FILE',
+];
 const READ = new Set([...Object.keys(schema.shape), ...SECRET_SETTINGS.map((n) => `${n}_FILE`), ...PART_SETTINGS]);
 
 /**
@@ -244,6 +325,9 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     webhookBaseMs: e.HOPPER_WEBHOOK_BASE_MS,
     laneIdleGraceMs: e.HOPPER_LANE_IDLE_GRACE_MS,
     reconnectGraceMs: e.HOPPER_RECONNECT_GRACE_MS,
+    linkGraceMs: e.HOPPER_LINK_GRACE_MS,
+    doneRecheckMs: e.HOPPER_DONE_RECHECK_MS,
+    ownCommandGraceMs: e.HOPPER_OWN_COMMAND_GRACE_MS,
     answerTimeoutMs: e.HOPPER_ANSWER_TIMEOUT_MS,
     humanRenotifyMs: e.HOPPER_HUMAN_RENOTIFY_MS,
     humanTimeoutMs: e.HOPPER_HUMAN_TIMEOUT_MS,
@@ -254,10 +338,19 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     ...(e.HOPPER_PLUGIN_DIR ? { pluginDir: e.HOPPER_PLUGIN_DIR } : {}),
     ...(e.HOPPER_PLUGIN_STORE ? { pluginStore: e.HOPPER_PLUGIN_STORE } : {}),
     publicUrl: e.HOPPER_PUBLIC_URL,
+    tunnelApis: { ...(e.HOPPER_TUNNEL_API ? { ngrok: e.HOPPER_TUNNEL_API } : {}), ...(e.HOPPER_CLOUDFLARED_API ? { cloudflare: e.HOPPER_CLOUDFLARED_API } : {}) },
     lanNames: e.HOPPER_LAN_NAMES,
     lanPeers: e.HOPPER_LAN_PEERS,
     updateCheckMs: e.HOPPER_UPDATE_CHECK_MS,
     ...(e.HOPPER_RESTART ? { restart: e.HOPPER_RESTART } : {}),
+    ...(e.HOPPER_OPENFGA_URL ? { openFgaUrl: e.HOPPER_OPENFGA_URL } : {}),
+    ...(e.HOPPER_SOLR_URL ? { solrUrl: e.HOPPER_SOLR_URL } : {}),
+    ...(e.HOPPER_VAULT_URL ? { vaultUrl: e.HOPPER_VAULT_URL } : {}),
+    ...(e.HOPPER_KMS_URL ? { kms: { url: e.HOPPER_KMS_URL, key: e.HOPPER_KMS_KEY } } : {}),
+    ...(e.HOPPER_PODMAN_SOCKET ? { podmanSocket: e.HOPPER_PODMAN_SOCKET } : {}),
+    ...(e.HOPPER_SANDBOX_NETWORK ? { sandboxNetwork: e.HOPPER_SANDBOX_NETWORK } : {}),
+    ...(e.HOPPER_DOCKER_SOCKET ? { dockerSocket: e.HOPPER_DOCKER_SOCKET } : {}),
+    ...(e.HOPPER_SANDBOX_RUNTIME ? { sandboxRuntime: e.HOPPER_SANDBOX_RUNTIME } : {}),
     leftoverEnv,
     hopperApps: hopperApps({
       github: {

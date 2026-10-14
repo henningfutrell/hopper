@@ -1,7 +1,9 @@
 // The hopper screen protocol over a Claude Code pane: pure functions, no I/O.
 // docs/design.md "Phase 2" → "Turn anchor (B1)".
 
+import { REVIEW_KINDS, REVIEW_SECTIONS, type ReviewKind } from '../../domain/types.ts';
 import { DEFAULT_JOB_RULES, PROTOCOL_LINES, jobWorktreeRule, workTreeRule } from '../../job-rules/index.ts';
+import { selectOf, selectText } from './select-dialog.ts';
 
 export { SCRATCH_DIR } from '../../job-rules/index.ts';
 
@@ -9,32 +11,47 @@ export { SCRATCH_DIR } from '../../job-rules/index.ts';
  * What the hopper types into a job whose turn ended without a marker (issue #163): that turn was a
  * status note, so nothing answers it and no question opens. One line: it is its own turn anchor.
  */
-export const STATUS_NOTE_NUDGE = '[hopper] Your message ended without a marker, so the hopper took it as a status note: no question was opened and nobody will answer it. Go on with the job; if you are waiting for background work, keep waiting. If you need an answer from the user, ask exactly one question and end your message with a line containing only HOPPER_QUESTION. When the job is finished, end with a line containing only HOPPER_DONE; if it cannot be done, a line HOPPER_FAILED followed by the reason.';
+export const STATUS_NOTE_NUDGE = '[hopper] Your message ended without a marker, so the hopper took it as a status note: no question was opened and nobody will answer it. Go on with the job; if you are waiting for background work, keep waiting. If you are blocked on something only a person or the outside world can do, end your message with a line containing only HOPPER_WAITING, then a line for: <what you wait for>. If you need an answer from the user, ask exactly one question and end your message with a line containing only HOPPER_QUESTION. When the job is finished, end with a line containing only HOPPER_DONE; if it cannot be done, a line HOPPER_FAILED followed by the reason.';
 
 /**
  * What follows a job's prompt on its first send: the job rules (issue #172; the default unless given),
- * its work tree (then its own git worktree of it, when it has one: issue #379), the protocol. The job rules
- * are editable; the work tree and the protocol are not.
+ * its work tree (then its own git worktree of it, or of `checkout`, its repository's checkout in it, when it
+ * has one: issues #379, #361), the protocol. The job rules are editable; the work tree and the protocol are not.
  */
-export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES, scratch?: string, jobWorktree?: string, sharedDependencies = false): string {
+export function protocolFooter(cwd: string, jobRules: string = DEFAULT_JOB_RULES, scratch?: string, jobWorktree?: string, sharedDependencies = false, checkout?: string): string {
   const rules = jobRules.trim();
-  return [...(rules ? [rules] : []), workTreeRule(cwd, scratch), ...(jobWorktree !== undefined ? [jobWorktreeRule(jobWorktree, cwd, sharedDependencies)] : []), ...PROTOCOL_LINES].join('\n');
+  return [...(rules ? [rules] : []), workTreeRule(cwd, scratch), ...(jobWorktree !== undefined ? [jobWorktreeRule(jobWorktree, checkout ?? cwd, sharedDependencies)] : []), ...PROTOCOL_LINES].join('\n');
 }
 
 /** The last footer line as Claude echoes it: the turn anchor of the first send. */
 export const FOOTER_ANCHOR = PROTOCOL_LINES.at(-1)!;
 
-export type Marker = 'done' | 'question' | 'failed';
+/** A review kind's marker reads as that kind (issues #537, #543): `proposal`, `research`. */
+export type Marker = 'done' | 'question' | ReviewKind | 'failed' | 'auth' | 'wait';
+
+/** The fields a job reports a login with, after HOPPER_AUTH_PENDING (issue #476): the login's URL and code among them. */
+export const AUTH_FIELDS = ['tool', 'kind', 'url', 'code', 'expires_in', 'expires_at', 'interval', 'account', 'scopes'] as const;
+export type AuthFields = Partial<Record<typeof AUTH_FIELDS[number], string>>;
+
+/** The fields a job names its own wait with, after HOPPER_WAITING (issue #483): `for` is needed, `until` is not. */
+const WAIT_FIELDS = ['for', 'until'] as const;
+export interface WaitFields { for: string; until?: string }
 
 export interface TurnView {
   /** The last marker after the anchor, or null. */
   lastMarker: Marker | null;
   /** For `failed`: text after the marker on its line, or the next line. */
   failedReason?: string;
+  /** For `auth`: the login's fields, as the job wrote them. */
+  auth?: AuthFields;
+  /** For `wait`: what it waits for, and how it will know (issue #483). */
+  wait?: WaitFields;
   /** The assistant message holding the last marker (marker removed), else the last message. */
   assistantText: string;
   /** Last non-empty, non-marker output line after the anchor, gutter stripped. Drives progress. */
   lastLine: string;
+  /** Output lines after the anchor, chrome left out: more of them is new output (issue #491). */
+  outputLines: number;
   anchorFound: boolean;
 }
 
@@ -67,8 +84,42 @@ function markerOf(line: string): Marker | null {
   const s = normaliseMarkerLine(line);
   if (s === 'HOPPER_DONE') return 'done';
   if (s === 'HOPPER_QUESTION') return 'question';
+  const review = REVIEW_KINDS.find((k) => REVIEW_SECTIONS[k].marker === s);
+  if (review) return review;
+  if (s === 'HOPPER_AUTH_PENDING') return 'auth';
+  if (s === 'HOPPER_WAITING') return 'wait';
   if (s.startsWith('HOPPER_FAILED')) return 'failed';
   return null;
+}
+
+/** One field line after a marker, of one of `names`: `tool: gh`, `- URL: https://…` (a list mark, emphasis and the name's case aside). */
+function fieldOf<K extends string>(line: string, names: readonly K[]): [K, string] | undefined {
+  const m = /^[-*•\s]*`?([A-Za-z_]+)`?\s*:\s*`?(.*?)`?\s*$/.exec(normaliseMarkerLine(line));
+  const key = m?.[1]!.toLowerCase() as K | undefined;
+  return key && names.includes(key) && m![2] ? [key, m![2]] : undefined;
+}
+const authField = (line: string) => fieldOf(line, AUTH_FIELDS);
+
+/**
+ * The login after an auth marker at `index` (issue #476): its fields, when nothing but them follows it. A turn
+ * that goes on after it — the job went on once the login completed — holds no login any more.
+ */
+function authAt(lines: string[], index: number): AuthFields | undefined {
+  const fields: AuthFields = {};
+  for (const l of lines.slice(index + 1)) {
+    if (stripGutter(l) === '') continue;
+    const f = authField(l);
+    if (!f) return undefined;
+    fields[f[0]] = f[1];
+  }
+  return fields;
+}
+
+/** The wait in the lines after a wait marker (issue #483): its `for:` line and an `until:` line, when present. None without `for:`. */
+export function waitFields(after: string[]): WaitFields | undefined {
+  const fields: Partial<WaitFields> = {};
+  for (const f of after.filter((x) => stripGutter(x) !== '').map((l) => fieldOf(l, WAIT_FIELDS))) { if (!f) break; fields[f[0]] = f[1]; }
+  return fields.for ? { for: fields.for, ...(fields.until ? { until: fields.until } : {}) } : undefined;
 }
 
 /** True if `line` sits in a user echo block: a ❯ line and its continuation, no assistant line between. */
@@ -114,6 +165,27 @@ const NEW_MESSAGES_LINE = /\d+ new messages? \(ctrl\+End\)/;
  * keeps its version, and the next job starts on the new one.
  */
 const UPDATE_NOTICE = /^\s*[✔✓✗✘⚠]?\s*(Update installed|Update available|Auto-update failed)\b/;
+
+/**
+ * A count of background work in the footer, between its "·" separators: "1 shell", "2 background tasks".
+ * Captured live: "⏵⏵ bypass permissions on · 1 shell · ← for agents · ↓ to manage".
+ */
+const BACKGROUND_WORK = /(?:^|·)\s*(\d+ (?:shells?|background tasks?|monitors?|agents?))\s*(?=·|$)/;
+
+/**
+ * The background work the footer under the input box names, e.g. "1 shell", or undefined (issue #491).
+ * Claude Code wakes the job when it ends, so a job that waits on it needs no nudge.
+ */
+export function backgroundWork(text: string): string | undefined {
+  const lines = text.split('\n');
+  const rule = lines.findLastIndex((l) => SEPARATOR.test(l));
+  if (rule < 0) return undefined;
+  for (const line of lines.slice(rule + 1)) {
+    const found = BACKGROUND_WORK.exec(line.trim());
+    if (found) return found[1];
+  }
+  return undefined;
+}
 
 /** The xterm sequence for Ctrl+End: scrolls Claude Code's transcript to the end. */
 export const CTRL_END = '\x1b[1;5F';
@@ -169,30 +241,72 @@ function blockText(lines: string[], index: number): string {
     .join('\n');
 }
 
+/** The most of a FAILED reason the job keeps. */
+const FAILED_REASON_MAX = 4000;
+
+/**
+ * The FAILED reason: the rest of the marker line, then every line after it in the turn (issue #1007: a reason that goes
+ * on past its first line, or that the terminal wrapped, was cut there — often just after a colon).
+ */
 function failedReason(lines: string[], index: number): string {
   const rest = normaliseMarkerLine(lines[index]!).slice('HOPPER_FAILED'.length).replace(/^[\s:—–-]+/, '').trim();
-  if (rest) return rest;
-  const next = lines.slice(index + 1).map(stripGutter).find((l) => l !== '');
-  return next ?? '';
+  const after = lines.slice(index + 1).filter((l) => markerOf(l) === null).map(stripGutter).filter((l) => l !== '');
+  return [...(rest ? [rest] : []), ...after].join('\n').slice(0, FAILED_REASON_MAX);
 }
 
-export function readTurn(text: string, anchor: string): TurnView {
+/**
+ * The turn after `anchor`. `markersAfter`: markers in its first that many lines are left out — a wait already taken
+ * (issue #483), which the job went on from by itself.
+ */
+export function readTurn(text: string, anchor: string, markersAfter = 0): TurnView {
   const all = text.split('\n');
   const at = anchorLine(all, anchor);
   const lines = turnLines(all, at);
   let markerIndex = -1;
-  lines.forEach((l, i) => { if (markerOf(l)) markerIndex = i; });
+  lines.forEach((l, i) => { if (i >= markersAfter && markerOf(l)) markerIndex = i; });
+  const found = markerIndex >= 0 ? markerOf(lines[markerIndex]!) : null;
+  const wait = found === 'wait' ? waitFields(lines.slice(markerIndex + 1)) : undefined;
+  // A wait that names nothing it waits for is no wait: the turn is a status note.
+  const marker = found === 'wait' && !wait ? null : found;
+  if (!marker) markerIndex = -1;
+  const auth = marker === 'auth' ? authAt(lines, markerIndex) : undefined;
+  // A login's lines carry its code: never activity, never the agent's words (issue #476).
+  const authLines = new Set<number>();
+  lines.forEach((l, i) => { if (markerOf(l) === 'auth') for (let k = i + 1; k < lines.length && (authField(lines[k]!) || stripGutter(lines[k]!) === ''); k++) authLines.add(k); });
+  const shown = lines.filter((_, i) => !authLines.has(i));
   // A bare "…" is where the CLI truncated a long command: not activity.
-  const nonEmpty = lines.filter((l) => markerOf(l) === null).map(stripGutter).filter((l) => l !== '' && l !== '…');
+  const nonEmpty = shown.filter((l) => markerOf(l) === null).map(stripGutter).filter((l) => l !== '' && l !== '…');
+  const lastAt = marker === 'auth' && !auth ? -1 : markerIndex;
   const view: TurnView = {
-    lastMarker: markerIndex >= 0 ? markerOf(lines[markerIndex]!) : null,
-    assistantText: lines.length ? blockText(lines, markerIndex >= 0 ? markerIndex : lines.length - 1) : '',
+    lastMarker: lastAt >= 0 ? marker : null,
+    assistantText: shown.length ? blockText(shown, lastAt >= 0 ? markerIndex - [...authLines].filter((k) => k < markerIndex).length : shown.length - 1) : '',
     lastLine: nonEmpty.at(-1) ?? '',
+    outputLines: lines.length,
     anchorFound: at >= 0,
   };
   if (view.lastMarker === 'failed') view.failedReason = failedReason(lines, markerIndex);
+  if (view.lastMarker === 'auth') view.auth = auth;
+  if (view.lastMarker === 'wait') view.wait = wait;
   return view;
 }
+
+/**
+ * What the turn shows after its last login report (issue #567), the report's field lines left out: where a login
+ * signal is read. Empty while no report is on screen, so nothing above it — the prompt, the job's issue text — is.
+ */
+export function afterLoginReport(text: string, anchor: string): string {
+  const all = text.split('\n');
+  const lines = turnLines(all, anchorLine(all, anchor));
+  let at = -1;
+  lines.forEach((l, i) => { if (markerOf(l) === 'auth') at = i; });
+  if (at < 0) return '';
+  let k = at + 1;
+  while (k < lines.length && (authField(lines[k]!) || stripGutter(lines[k]!) === '')) k++;
+  return lines.slice(k).join('\n');
+}
+
+/** The turn after `anchor`, chrome left out (issue #698): where a device code the job did not report is looked for. Empty when the anchor is not on screen. */
+export const turnText = (text: string, anchor: string): string => { const all = text.split('\n'); const at = anchorLine(all, anchor); return at < 0 ? '' : turnLines(all, at).join('\n'); };
 
 /** Claude Code's suggestion in an empty input box, e.g. `Try "refactor <filepath>"`: not input. */
 const PLACEHOLDER = /^Try "/;
@@ -251,6 +365,15 @@ export function isBypassDialog(text: string): boolean {
   return text.includes('running in Bypass Permissions mode') && text.includes('Yes, I accept');
 }
 
+/**
+ * Claude's dialog when a CLAUDE.md it loads imports files outside its cwd (issue #518): a job worktree lies inside
+ * the work tree, so the work tree's CLAUDE.md importing its AGENTS.md imports a file outside the job's cwd. Its
+ * title and the option that allows the imports; the refusing option comes first and has the cursor.
+ */
+export function isImportsDialog(text: string): boolean {
+  return text.includes('Allow external CLAUDE.md file imports?') && text.includes('Yes, allow external imports');
+}
+
 /** One option of a select dialog: "❯ 1. Yes", "  2. No, and tell Claude what to do differently (esc)". */
 const DIALOG_OPTION = /^\s*(❯\s*)?(\d+)\.\s+(.*\S)\s*$/;
 
@@ -278,6 +401,17 @@ export function dialogOption(text: string, answer: string): string | undefined {
   return options.find((o) => o.words === words)?.n;
 }
 
+/** A dialog's key hints under its options: "Enter to confirm · Esc to cancel", "Esc to cancel · Tab to amend". */
+const DIALOG_HINT = /^\s*(Enter to confirm|Esc to cancel)\b/;
+
+/**
+ * Whether the screen shows a dialog of Claude's (issue #527): its cursor on a numbered option ("❯ 1. Yes"), or its
+ * key hints. Text the pane merely shows is none: a launch or setup command echoed, Claude's banner still drawing.
+ */
+export function showsDialog(text: string): boolean {
+  return text.split('\n').some((l) => DIALOG_OPTION.exec(l)?.[1] !== undefined || DIALOG_HINT.test(l));
+}
+
 /** The top of a dialog: its border. */
 const DIALOG_TOP = /^\s*(─{3,}|╭)/;
 /** Lines that are the dialog's frame or key hints, never its question: "╰───╯", "Esc to cancel · Tab to amend". */
@@ -289,13 +423,17 @@ const MAX_DIALOG_LINES = 40;
  * any countdown and its options, without the transcript above it. The dialog is the lines up to the
  * last option the cursor (❯) is on, or the last line, and from the border or transcript line above
  * them: a ● line is the agent's own words or the tool call and is kept, a ⎿ line is earlier output
- * and is not. Gutter, box edges and the cursor are removed. Empty when the screen shows nothing.
+ * and is not. Gutter, box edges and the cursor are removed. A select without numbers is read by select-dialog.ts.
+ * Empty when the screen shows nothing.
  */
 export function dialogText(text: string): string {
   const lines = text.split('\n');
   const kept = (l: string): boolean => l.trim() !== '' && (DIALOG_OPTION.test(l) || !isChrome(l)) && !DIALOG_FRAME.test(l.trim());
   let at = -1;
   for (let i = lines.length - 1; i >= 0 && at < 0; i--) if (DIALOG_OPTION.exec(lines[i]!)?.[1]) at = i;
+  // A select without numbers (a startup dialog, issue #534): its options numbered, so an answer can name one.
+  const select = at < 0 ? selectOf(lines) : undefined;
+  if (select) return selectText(lines, select);
   let end = lines.length;
   for (let i = Math.max(at, 0); i < lines.length; i++) if (SEPARATOR.test(lines[i]!) && i > at) { end = i; break; }
   if (at < 0) for (let i = end - 1; i >= 0 && at < 0; i--) if (kept(lines[i]!)) at = i;
@@ -328,7 +466,7 @@ export function autoDenyMs(text: string): number | undefined {
 }
 
 /**
- * What was typed into the pane after the turn that parked the job: the first user echo (❯ and
+ * What was typed into the pane after the turn that stopped on the question: the first user echo (❯ and
  * its continuation lines) after Claude's reply to `anchor`, above the input box. Undefined when
  * nothing was typed (text still in the input box does not count). Lines are trimmed, ❯ removed.
  */

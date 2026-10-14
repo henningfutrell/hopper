@@ -54,7 +54,7 @@ describe('hopper config', () => {
   });
 
   it('refuses an unknown record or command', async () => {
-    expect((await cli(db(), ['config', 'get', 'plugins.yaml'])).err).toMatch(/unknown config record plugins.yaml; one of plugins, rules, job-rules, sign-in/);
+    expect((await cli(db(), ['config', 'get', 'plugins.yaml'])).err).toMatch(/unknown config record plugins.yaml; one of plugins, rules, job-rules, windows-hosts, sign-in/);
     expect((await cli(db(), ['deploy'])).code).toBe(2);
   });
 
@@ -303,7 +303,7 @@ describe('hopper join-code (issue #308)', () => {
     try {
       const hash = createHash('sha256').update(code).digest('hex');
       const now = new Date().toISOString();
-      expect(s.joinCodes.take(hash, now)).toBeDefined();
+      expect(s.joinCodes.take(hash, now)).toMatchObject({ userId: expect.any(String) });
       expect(s.joinCodes.take(hash, now)).toBeUndefined();
     } finally { s.close(); }
   });

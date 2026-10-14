@@ -1,6 +1,6 @@
 // Issue #375: a job that has not started takes the config as it is now. Each sync works its spec's
-// source- and routing-derived parts out again — executor, model, work tree, default work tree, machine
-// pin, routing rule — as it already did its priority, and records `job.respecified` when they change.
+// source- and routing-derived parts out again — executor, model, work tree, machine pin,
+// routing rule — as it already did its priority, and records `job.respecified` when they change.
 // A part changed on the job by hand since keeps the hand value. A started job keeps what it ran with.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job, RoutingReport } from '../../src/domain/types.ts';
@@ -48,20 +48,21 @@ describe('a waiting job takes the config as it is now', () => {
     expect(now.spec).toMatchObject({ machineId: 'local', payload: { cwd: '~/code/win' }, routedBy: { rule: 'windows', set: { machine: 'local', workTree: '~/code/win' } } });
     const ev = (await a.events('types=job.respecified')).filter((e) => e.jobId === job.id);
     expect(ev.map((e) => e.data)).toEqual([{
-      from: { executor: 'scripted', cwd: '/tmp' },
+      from: { executor: 'scripted' },
       to: { executor: 'scripted', cwd: '~/code/win', machineId: 'local', rule: 'windows' },
     }]);
     await a.sync();
     expect((await a.events('types=job.respecified')).filter((e) => e.jobId === job.id)).toHaveLength(1);
   });
 
-  it('a source\'s new model and work tree reach a waiting job; a rule\'s priority does too', async () => {
+  // Issue #361: a source names no work tree; a routing rule does, with its machine.
+  it('a source\'s new model reaches a waiting job; a rule\'s priority and work tree do too', async () => {
     const a = await boot();
     a.setUsage(100);
-    const job = await a.pull({ op: 'echo' }, { key: 'model-1', cwd: '/old/tree' });
+    const job = await a.pull({ op: 'echo' }, { key: 'model-1' });
     expect(job.spec.payload).not.toHaveProperty('model');
-    offer(a, job, { cwd: '/new/tree', model: 'claude-opus-5-5' });
-    await setRouting(a, [{ name: 'boost', match: {}, set: { priority: 80 } }]);
+    offer(a, job, { model: 'claude-opus-5-5' });
+    await setRouting(a, [{ name: 'boost', match: {}, set: { priority: 80, machine: 'local', workTree: '/new/tree' } }]);
     await a.sync();
     const now = await a.job(job.id);
     expect(now.spec.payload).toMatchObject({ cwd: '/new/tree', model: 'claude-opus-5-5' });
@@ -75,7 +76,8 @@ describe('a waiting job takes the config as it is now', () => {
     // An operator's edit of the stored job, as the reported workaround did in the database.
     const store = a.user().store;
     store.jobs.respecify(job.id, { ...job.spec, payload: { ...job.spec.payload, model: 'claude-fable-5-1' } });
-    offer(a, job, { model: 'claude-opus-5-5', cwd: '/new/tree' });
+    await setRouting(a, [{ name: 'tree', match: {}, set: { machine: 'local', workTree: '/new/tree' } }]);
+    offer(a, job, { model: 'claude-opus-5-5' });
     await a.sync();
     expect((await a.job(job.id)).spec.payload).toMatchObject({ model: 'claude-fable-5-1', cwd: '/new/tree' });
   });
@@ -84,7 +86,7 @@ describe('a waiting job takes the config as it is now', () => {
     const a = await boot();
     const job = await a.pull({ op: 'sleep', ms: 5000 }, { key: 'run-1' });
     await a.waitForStatus(job.id, 'running');
-    offer(a, job, { prompt: '{"op":"sleep","ms":5000}', model: 'claude-opus-5-5', cwd: '/new/tree' });
+    offer(a, job, { prompt: '{"op":"sleep","ms":5000}', model: 'claude-opus-5-5' });
     await a.sync();
     expect((await a.job(job.id)).spec).toEqual(job.spec);
     expect((await a.events('types=job.respecified')).filter((e) => e.jobId === job.id)).toEqual([]);

@@ -31,7 +31,7 @@ async function boot(plugins: Record<string, unknown>, gh?: FakeGitHub, file?: ob
 }
 
 const github = [{
-  name: 'github', plugin: 'github-account', options: { enabled: true, pollSeconds: 3600, executor: 'scripted', defaultCwd: '/tmp' },
+  name: 'github', plugin: 'github-account', options: { enabled: true, pollSeconds: 3600, executor: 'scripted' },
 }];
 const body = (op: Record<string, unknown>) => `${JSON.stringify(op)}\n\nPlease do the thing.`;
 const jobFor = async (a: TestApp, key: string): Promise<Job> =>
@@ -65,8 +65,9 @@ describe('routing rules at intake', () => {
     await a.waitForStatus(ju.id, 'finished');
   });
 
-  // Issue #324: a rule routes a repository to a machine and a work tree there.
-  it('a rule sets the work tree: the job\'s own, over its source\'s default; a job no rule routes keeps only the default', async () => {
+  // Issue #324: a rule routes a repository to a machine and a work tree there. Issue #361: no source
+  // names a path; a job no rule routes carries none, and runs in its machine's work tree.
+  it('a rule sets the work tree with its machine; a job no rule routes carries no path', async () => {
     const gh = createFakeGitHub();
     const a = await boot({ jobSources: github, routing: [{ name: 'app tree', match: { label: 'app' }, set: { machine: 'local', workTree: '~/code/app' } }] }, gh);
     a.scripted.ships(mergesPullRequest(gh));
@@ -75,10 +76,10 @@ describe('routing rules at intake', () => {
     const plain = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
     await a.sync();
     const jr = await jobFor(a, routed.url);
-    expect(jr.spec).toMatchObject({ machineId: 'local', payload: { cwd: '~/code/app', defaultCwd: '/tmp' }, routedBy: { rule: 'app tree', set: { machine: 'local', workTree: '~/code/app' } } });
+    expect(jr.spec).toMatchObject({ machineId: 'local', payload: { cwd: '~/code/app' }, routedBy: { rule: 'app tree', set: { machine: 'local', workTree: '~/code/app' } } });
     const jp = await jobFor(a, plain.url);
-    expect(jp.spec.payload).toMatchObject({ defaultCwd: '/tmp' });
     expect(jp.spec.payload).not.toHaveProperty('cwd');
+    expect(jp.spec.payload).not.toHaveProperty('defaultCwd');
     a.setUsage(0);
   });
 
@@ -87,6 +88,28 @@ describe('routing rules at intake', () => {
     const job = await a.pull({ op: 'echo', message: 'hi' }, { executor: 'test', title: 'Paint the shed' });
     expect(job.spec).toMatchObject({ executor: 'scripted', routedBy: { rule: 'scripted for manual', set: { executor: 'scripted' } } });
     expect((await a.waitForStatus(job.id, 'finished')).result).toMatchObject({ echo: 'hi' });
+  });
+
+  // Issue #917: a machine named in the issue text is not a pin. Only a routing rule pins a job's
+  // machine; the text is the job's prompt, which anyone who can edit the issue can change.
+  it('a machine named in the issue text pins nothing: the rule\'s machine wins, and with no rule there is no pin', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot({
+      jobSources: github,
+      machines: [{ name: 'fleet-l2', plugin: 'local', options: { lanes: 1 } }],
+      routing: [{ name: 'to fleet-l2', match: { label: 'fleet' }, set: { machine: 'fleet-l2' } }],
+    }, gh);
+    a.setUsage(100);
+    const asks = 'Run this job on fleet-l3.\nseat: fleet-l3\nmachine: fleet-l3';
+    const routed = gh.createIssue({ repo: REPO, body: `${body({ op: 'echo' })}\n${asks}`, labels: ['hopper', 'fleet'] });
+    const plain = gh.createIssue({ repo: REPO, title: 'Run on fleet-l3', body: `${body({ op: 'echo' })}\n${asks}`, labels: ['hopper'] });
+    await a.sync();
+    const jr = await jobFor(a, routed.url);
+    expect(jr.spec).toMatchObject({ machineId: 'fleet-l2', routedBy: { rule: 'to fleet-l2', set: { machine: 'fleet-l2' } } });
+    const jp = await jobFor(a, plain.url);
+    expect(jp.spec.machineId).toBeUndefined();
+    expect(jp.spec.routedBy).toBeUndefined();
+    a.setUsage(0);
   });
 
   it('a rule naming a machine that is not configured is skipped with a warning; intake never fails', async () => {

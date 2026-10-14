@@ -13,8 +13,19 @@
 //   hopper user transfer <from> <to>                  <to> takes over <from>'s work (issue #212)
 //   hopper join-code [--user <id>]                    a one-time join code: a machine joins with <hopper URL>#<code> (issue #308)
 //   hopper ssh-key [--user <id>]                      the public half of the hopper's ssh key (issue #307)
+//   hopper ledger rebuild [--user <id>]               the work-item ledger replayed from every event (issue #1067)
 //   hopper job|queue|question … [--user <id>] [--url <hopper URL>]
 //                                                     an operator action on the running daemon (issue #374, cli-operator.ts)
+//   hopper problem|handoff|failure … [--user <id>] [--url <hopper URL>]
+//                                                     the Failures actions on the running daemon (issue #623, cli-operator.ts)
+//   hopper proposal list|paths|select|accept|more-paths|steer|reject …
+//                                                     the proposals' paths on the running daemon (issue #651, cli-operator.ts)
+//   hopper master-key status [--url <hopper URL>]     the master key's source and fingerprint, never the key (issue #685, cli-operator.ts)
+//   hopper master-key rotate [--url <hopper URL>]     a new master key, every secret sealed again under it; prints it once (issue #659)
+//   hopper lanes plan|tune …                          lane recommendations and a machine's lane tuning (issue #688, cli-operator-lanes.ts)
+//   hopper vault|template|sandbox …                   vault secrets (value on stdin), templates and sandbox boxes (issue #716, cli-operator-vault.ts)
+//   hopper update <tool>|compose|skill                the update of a container install, no database (issue #697, cli-update.ts)
+//   hopper update drift [--url <hopper URL>]          the running stack's drift from its compose file (issue #1017, cli-update-drift.ts)
 //   hopper help                                       what each command does
 //
 // There is no login from here (issue #238: no bootstrap login): people sign in through a realm.
@@ -23,16 +34,21 @@
 // record that would not load is refused.
 import { readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
+import { windowsHostsProblem } from './domain/windows-steps.ts';
 import { CONFIG_NAMES, type ConfigName, type ConfigRecords, type InstanceStore } from './domain/ports.ts';
 import type { User } from './domain/types.ts';
 import { signInConfigProblem } from './auth/config.ts';
+import { withHeldSecrets } from './auth/sealed-secrets.ts';
 import { jobRulesProblem } from './job-rules/index.ts';
 import { pluginsConfigProblem } from './plugins/plugins-config.ts';
 import { rulesProblem } from './questions/index.ts';
 import { openInstanceStore } from './store/index.ts';
+import { openInstanceSecrets } from './users/instance-secrets.ts';
 import { mintJoinCode } from './machines/join-code.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
-import { OPERATOR_COMMANDS, OPERATOR_USAGE, OperatorRefusal, runOperatorAction } from './cli-operator.ts';
+import { OPERATOR_COMMANDS, OPERATOR_USAGE, runOperatorAction } from './cli-operator.ts';
+import { OperatorRefusal } from './cli-operator-call.ts';
+import { runUpdate, UPDATE_USAGE } from './cli-update.ts';
 
 export interface CliIo {
   env: Record<string, string | undefined>;
@@ -56,17 +72,22 @@ usage:
                                                      the machine joins with <hopper URL>#<code>, as Add machine's line does
   hopper ssh-key                                     the public half of the hopper's ssh key, the line a machine's
                                                      authorized_keys takes (scripts/agent-boxes.sh asks it)
+  hopper ledger rebuild                              the work-item ledger replayed from every event and the issue graph,
+                                                     in place of the rows there are; prints how many items it holds
 ${OPERATOR_USAGE}
+${UPDATE_USAGE}
   hopper help                                        this text
 
-The job, queue and question commands act on the running daemon, through its own checks and events, as the UI
-does: --url names it (default HOPPER_URL, else http://127.0.0.1:<HOPPER_PORT, default 4790>).
+The job, queue, question, problem, handoff and failure commands act on the running daemon, through its own checks
+and events, as the UI does: --url names it (default HOPPER_URL, else http://127.0.0.1:<HOPPER_PORT, default 4790>).
+No sign-in is needed: the CLI holds the database's credentials. Each prints the daemon's answer as JSON; the events
+say the operator CLI acted (via cli).
 
-records: ${CONFIG_NAMES.join(', ')}. plugins, rules and job-rules are one user's; sign-in is shared. Every one is edited
+records: ${CONFIG_NAMES.join(', ')}. plugins, rules, job-rules and windows-hosts are one user's; sign-in is shared. Every one is edited
 in the UI too.
---user <id> on config, ssh-key and the job, queue and question commands names the user (default: the one user, while there is one).
+--user <id> on config, ssh-key, ledger and the commands on the running daemon names the user (default: the one user, while there is one).
 
-Every command but help needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
+Every command but help and update (but update drift) needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
 the database the daemon uses, postgres://user:password@host:port/database.
 
 First sign-in:  sign in with GitHub in the UI; the first person to sign in with GitHub is the admin (docs/sign-in.md)
@@ -81,20 +102,24 @@ function recordName(raw: string | undefined): ConfigName {
   throw new CliError(`unknown config record ${raw ?? '(none)'}; one of ${CONFIG_NAMES.join(', ')}`);
 }
 
-/** Why `value` would not load as `name`, or undefined. */
-export function recordProblem(name: ConfigName, value: unknown): string | undefined {
+/**
+ * Why `value` would not load as `name`, or undefined. `held`: the realms' secrets the instance's vault keeps (issue
+ * #658) — the `sign-in` record no longer holds them, so a realm that needs one is checked as having it.
+ */
+export function recordProblem(name: ConfigName, value: unknown, held: readonly string[] = []): string | undefined {
   if (name === 'rules') return rulesProblem(value);
   if (name === 'job-rules') return jobRulesProblem(value);
-  return name === 'sign-in' ? signInConfigProblem(value) : pluginsConfigProblem(value);
+  if (name === 'windows-hosts') return windowsHostsProblem(value);
+  return name === 'sign-in' ? signInConfigProblem(withHeldSecrets(value, held)) : pluginsConfigProblem(value);
 }
 
-/** One config record wherever it lives: a user's (plugins, rules, job-rules) or the instance's (sign-in). */
+/** One config record wherever it lives: a user's (plugins, rules, job-rules, windows-hosts) or the instance's (sign-in). */
 type Records = ConfigRecords<ConfigName>;
 
-function put(records: Records, name: ConfigName, json: string, version: string): void {
+function put(records: Records, name: ConfigName, json: string, version: string, held: readonly string[]): void {
   let value: unknown;
   try { value = JSON.parse(json); } catch (e) { throw new CliError(`${name} refused, nothing written: not valid JSON: ${(e as Error).message}`); }
-  const problem = recordProblem(name, value);
+  const problem = recordProblem(name, value, held);
   if (problem) throw new CliError(`${name} refused, nothing written: ${problem}`);
   if (!records.write(name, value, version)) {
     throw new CliError(`${name} changed since version ${version} (now ${records.version(name)}); nothing written`);
@@ -132,10 +157,11 @@ function config(instance: InstanceStore, args: string[], io: CliIo): void {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { 'if-version': { type: 'string' }, user: { type: 'string' } } });
   const [verb, rawName] = positionals;
   const name = recordName(rawName);
-  withRecords(instance, name, values.user, (records) => configVerb(records, name, verb, values['if-version'], io));
+  const held = name === 'sign-in' ? instance.vault.list().map((s) => s.name) : [];
+  withRecords(instance, name, values.user, (records) => configVerb(records, name, verb, values['if-version'], io, held));
 }
 
-function configVerb(records: Records, name: ConfigName, verb: string | undefined, ifVersion: string | undefined, io: CliIo): void {
+function configVerb(records: Records, name: ConfigName, verb: string | undefined, ifVersion: string | undefined, io: CliIo, held: readonly string[]): void {
   if (verb === 'get') {
     const value = records.read(name);
     if (value === undefined) throw new CliError(`${name}: none yet (version missing)`);
@@ -144,7 +170,7 @@ function configVerb(records: Records, name: ConfigName, verb: string | undefined
     io.out(`${records.version(name)}\n`);
   } else if (verb === 'set') {
     if (!ifVersion) throw new CliError('config set needs --if-version <version> (hopper config version <record>), so nobody else\'s edit is overwritten');
-    put(records, name, io.stdin(), ifVersion);
+    put(records, name, io.stdin(), ifVersion, held);
     io.err(`${name} written (version ${records.version(name)})\n`);
   } else {
     throw new CliError(USAGE);
@@ -211,7 +237,21 @@ function sshKey(instance: InstanceStore, args: string[], io: CliIo): void {
   }
 }
 
-const COMMANDS: readonly string[] = ['config', 'users', 'user', 'join-code', 'ssh-key', ...OPERATOR_COMMANDS];
+/** `hopper ledger rebuild` (issue #1067): the user's work-item ledger replayed from every event and the issue graph. */
+function ledger(instance: InstanceStore, args: string[], io: CliIo): void {
+  const [action, ...rest] = args;
+  if (action !== 'rebuild') throw new CliError('usage: hopper ledger rebuild [--user <id>]');
+  const { values } = parseArgs({ args: rest, options: { user: { type: 'string' } } });
+  const store = instance.userStore(userOf(instance, values.user));
+  try {
+    io.out(`${store.workItems.rebuild()}\n`);
+    io.err(`${Object.entries(store.workItems.counts()).map(([state, n]) => `${state} ${n}`).join(', ')}\n`);
+  } finally {
+    store.close();
+  }
+}
+
+const COMMANDS: readonly string[] = ['config', 'users', 'user', 'join-code', 'ssh-key', 'ledger', 'update', ...OPERATOR_COMMANDS];
 
 /** Run one command; the exit code. */
 export async function runCli(argv: string[], io: CliIo): Promise<number> {
@@ -220,6 +260,8 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     io.out(`${USAGE}\n`);
     return 0;
   }
+  // `update drift` reads the running daemon (issue #1017); every other `update` command needs no database.
+  if (command === 'update' && rest[0] !== 'drift') return runUpdate(rest, io);
   if (command === undefined || !COMMANDS.includes(command)) {
     io.err(`${USAGE}\n`);
     return 2;
@@ -237,15 +279,19 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
   }
   let store: InstanceStore | undefined;
   try {
-    store = openInstanceStore({ url, clock: { now: () => new Date() } });
+    const clock = { now: () => new Date() };
+    // The sign-in config with its realms' secrets from the instance's vault (issue #658), opened with the runtime's key.
+    store = openInstanceStore({ url, clock });
+    store = openInstanceSecrets(store, { env: io.env, clock, logger: { info: () => undefined, warn: (l) => io.err(`${l}\n`) } }).instance;
     if (command === 'users') users(store, io);
     else if (command === 'user') userCommand(store, rest, io);
     else if (command === 'join-code') joinCode(store, rest, io);
     else if (command === 'ssh-key') sshKey(store, rest, io);
+    else if (command === 'ledger') ledger(store, rest, io);
     else if (command === 'config') config(store, rest, io);
     else {
       const instance = store;
-      await runOperatorAction(instance, command, rest, (id) => userOf(instance, id), io);
+      return await runOperatorAction(instance, command, rest, (id) => userOf(instance, id), io);
     }
     return 0;
   } catch (e) {

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { IntakeMigration } from '../../src/domain/intake.ts';
 import { GitHubApiError, createFakeGitHub, createGitHubSource } from '../../src/sources/github/index.ts';
 import type { GitHubSourceOptions } from '../../src/sources/github/index.ts';
-import { REPO, githubConfig } from './fixtures/github-support.ts';
+import { REPO, githubConfig, testTrust } from './fixtures/github-support.ts';
 
 const HOLDER = 'a1b2c3d4e5f6';
 const MINE = `hopper:held-by:${HOLDER}`;
@@ -21,6 +21,8 @@ function setup(o: { migration?: IntakeMigration; knownKeys?: (k: string[]) => Se
   const config = githubConfig({ ...(o.repos ? { repos: o.repos } : {}), ...(o.hopperName ? { hopperName: o.hopperName } : {}) });
   const options: GitHubSourceOptions = {
     name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', config, api: gh,
+    // Assign to me is the user's act (issue #652): what this source assigned, as its events say.
+    trust: testTrust(undefined, { assignedHere: (k) => events.some((e) => e.type === 'source.issues_assigned' && (e.data.keys as string[]).includes(k)) }),
     clock: { now: () => new Date('2026-10-08T10:00:00.000Z') },
     knownKeys: o.knownKeys ?? (() => new Set()),
     intake: {
@@ -29,6 +31,9 @@ function setup(o: { migration?: IntakeMigration; knownKeys?: (k: string[]) => Se
       migration: () => migration,
       migrated: (m) => { migration = m; },
       record: (type, data) => { events.push({ type, data }); },
+      requestOpened: (key, hash) => events.some((e) => e.type === 'source.request_opened' && e.data.key === key && e.data.hash === hash),
+      // No work-item ledger here: no request card waits in it.
+      requestsWaiting: () => [],
     },
   };
   const source = createGitHubSource(options);
@@ -66,7 +71,7 @@ describe('intake outcomes (issue #440)', () => {
     const { gh } = setup({ migration: migrated });
     const rejecting = createGitHubSource({
       name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', config: githubConfig(), api: gh,
-      clock: { now: () => new Date() }, rejections: (keys) => new Map(keys.map((k) => [k, { at: '2026-10-08T09:30:00.000Z', assignee: 'owner' }])),
+      clock: { now: () => new Date() }, trust: testTrust(), rejections: (keys) => new Map(keys.map((k) => [k, { at: '2026-10-08T09:30:00.000Z', assignee: 'owner' }])),
     });
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     expect(await rejecting.discover()).toEqual([]);
@@ -82,7 +87,7 @@ describe('claims name their holder (issue #440)', () => {
     await source.report({ kind: 'claimed', job });
     expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:claimed', MINE]);
     await source.report({ kind: 'finished', job });
-    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
   });
 
   it('the user\'s own claim with no job here is stale: released and taken again, with an event', async () => {
@@ -184,10 +189,11 @@ describe('the intake migration (issue #440)', () => {
   it('waits for a sync that lists every repo', async () => {
     const { gh, source, migration } = setup({ repos: [REPO, 'owner/other'] });
     gh.createIssue({ repo: REPO, labels: ['hopper', 'hopper:claimed'] });
-    gh.failNext('listOpenIssues', new GitHubApiError('GitHub is down', false, 502));
+    gh.failRepo('owner/other', 'GitHub is down');
     await source.discover();
     expect(migration()).toBeUndefined();
     expect(gh.issue(REPO, 1).labels).toContain('hopper:claimed');
+    gh.failRepo('owner/other', undefined);
     await source.discover();
     expect(migration()?.changes.map((c) => c.key)).toEqual([url(1)]);
   });

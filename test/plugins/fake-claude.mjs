@@ -27,6 +27,11 @@ process.stdin.on('end', () => {
     process.stdout.write(`${JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id, response: { models } } })}\n`);
     return;
   }
+  // `device-code`, `device-code-fails` (issue #476): the run waits on a gh login, as `gh auth login` prints it; then it answers, or fails.
+  if (mode === 'device-code' || mode === 'device-code-fails') {
+    process.stderr.write('! First copy your one-time code: WDJB-MJHT\nOpen this URL to continue in your web browser: https://github.com/login/device\n');
+    if (mode === 'device-code-fails') { process.stderr.write('gh: the code WDJB-MJHT expired'); process.exit(1); }
+  }
   if (mode === 'hang') { setInterval(() => {}, 1000); return; }
   if (mode === 'exit1') { process.stderr.write('auth failed'); process.exit(1); }
   if (mode === 'malformed') { process.stdout.write('not json {'); return; }
@@ -39,6 +44,6 @@ process.stdin.on('end', () => {
     modelUsage: { [`claude-${process.argv[process.argv.indexOf('--model') + 1]}-resolved`]: { outputTokens: 1 } },
     structured_output: process.env.FAKE_CLAUDE_STRUCTURED
       ? JSON.parse(process.env.FAKE_CLAUDE_STRUCTURED)
-      : { answer: 'use postgres', escalate: false, reason: 'rules' },
+      : { answer: 'use postgres', escalate: false, reason: 'rules', confidence: 'high' },
   }));
 });

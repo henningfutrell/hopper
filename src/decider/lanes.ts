@@ -1,9 +1,15 @@
-import type { HoldPlan, Lane, LanePlan, StartPlan, WaitPlan } from '../domain/types.ts';
+import type { HoldPlan, JobId, Lane, LanePlan, StartPlan, WaitPlan } from '../domain/types.ts';
 import { NO_NEW_JOB, homeless, unpinnedCap, type MachineState } from './assign.ts';
 
-/** Step 8: per-machine lane plan. `unassignedIdle` = idle lanes no start took. */
+/**
+ * Step 8: per-machine lane plan. `unassignedIdle` = idle lanes no start took. `priorityOf`: the running jobs'
+ * priorities — the lowest-priority busy lane drains first, high-priority work last (issue #535). `elbowing`: the running
+ * jobs that may elbow in, specialty and tend jobs — their lanes drain before any other, so the lanes they elbowed in close
+ * when they end (issues #762, #967).
+ */
 export function planLanes(
   s: MachineState, unassignedIdle: Lane[], lanes: Lane[], starts: StartPlan[], at: string, graceMs: number,
+  priorityOf: ReadonlyMap<JobId, number> = new Map(), elbowing: ReadonlySet<JobId> = new Set(),
 ): LanePlan {
   const mine = lanes.filter((l) => l.machineId === s.machine.id);
   const opening = starts.filter((st) => st.machineId === s.machine.id && st.laneId === null).length;
@@ -21,10 +27,13 @@ export function planLanes(
     else close.push(l.id);
   }
 
-  // Newest busy lanes drain first. An executor past its own cap drains its own lanes (issue #140);
-  // then the machine drains what is still past its cap.
+  // The lowest-priority busy lanes drain first (issue #535), the newest of them first. An executor past its own cap
+  // drains its own lanes (issue #140); then the machine drains what is still past its cap.
   const draining = mine.filter((l) => l.state === 'draining');
-  const busy = mine.filter((l) => l.state === 'busy').sort((a, b) => b.openedAt.localeCompare(a.openedAt) || b.id.localeCompare(a.id));
+  const priority = (l: Lane): number => (l.jobId === undefined ? -Infinity : priorityOf.get(l.jobId) ?? -Infinity);
+  const elbow = (l: Lane): number => (l.jobId !== undefined && elbowing.has(l.jobId) ? 0 : 1);
+  const busy = mine.filter((l) => l.state === 'busy')
+    .sort((a, b) => elbow(a) - elbow(b) || priority(a) - priority(b) || b.openedAt.localeCompare(a.openedAt) || b.id.localeCompare(a.id));
   const drained = new Set<string>();
   for (const e of s.executors.values()) {
     const excess = e.occupied.length - draining.filter((l) => e.occupied.includes(l.id)).length - e.cap;
@@ -62,7 +71,10 @@ export function idleReason(s: MachineState, hold: readonly HoldPlan[], wait: rea
   if (used >= m.maxLanes) return undefined;
   if (!m.online) return 'machine offline';
   if (homeless(m)) return 'its home is not known yet: no job is placed there';
+  if (m.template?.waiting) return `${m.template.waiting}: ${NO_NEW_JOB}`;
   if (m.disk?.low) return `disk low: ${NO_NEW_JOB}`;
+  const gated = s.gate?.gated.find((g) => g.machineId === m.id);
+  if (gated && used === 0) return `gated by blast radius: ${gated.reason}; only jobs let through the gate run here`;
   if (used >= s.cap) return `usage pacing: lane cap ${s.cap} of ${m.maxLanes} (${s.band}${s.band === 'soft' || s.band === 'hard' ? `, used ${Math.round(s.usedFrac * 100)}%` : ''})`;
   if (wait.length > 0 && s.unpinned >= unpinnedCap(s) && (m.reservedLanes ?? 0) > 0) {
     const kept = m.reservedLanes!;

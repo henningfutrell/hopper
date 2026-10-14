@@ -6,7 +6,11 @@
 import { spawn } from 'node:child_process';
 import type { z } from 'zod';
 import type { DetectionKit, OptionChoice, QuestionAttempt } from './sdk.ts';
+import { levelArgv } from '../client/level.ts';
 import { userProcessEnv } from '../executors/env.ts';
+import type { RunLogins } from '../domain/types.ts';
+import { hideCodes } from '../logins/recognise.ts';
+import { watchRunOutput } from '../logins/run-output.ts';
 
 export interface ClaudePrintOptions {
   bin: string;
@@ -24,6 +28,8 @@ export interface ClaudePrintOptions {
   wrap?: (argv: string[]) => [string, string[]];
   /** Over the daemon's environment: the user's CLI config dirs (PluginContext.userEnv, issue #158). */
   userEnv?: Readonly<Record<string, string>>;
+  /** Where a device login the run waits on is reported (issue #476): it goes to the logins, never into the reply. */
+  logins?: RunLogins;
 }
 
 /**
@@ -45,18 +51,15 @@ export function scrubbedEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Proce
   return env;
 }
 
+/** The lockdown argv: one owner, the client's (src/client/level.ts), so a client target runs exactly what this machine does. */
 export function claudeArgv(o: Pick<ClaudePrintOptions, 'model' | 'effort' | 'jsonSchema'>): string[] {
-  // --tools is last so its variadic list cannot swallow another flag.
-  return [
-    '-p', '--model', o.model, ...(o.effort ? ['--effort', o.effort] : []),
-    '--output-format', 'json', '--json-schema', JSON.stringify(o.jsonSchema),
-    '--no-session-persistence', '--setting-sources', '', '--strict-mcp-config', '--tools', '',
-  ];
+  return levelArgv(o);
 }
 
 type Ran<T extends object> = T & { model?: string };
 
-function parse<T extends object>(stdout: string, schema: z.ZodType<T>): Ran<T> | { error: string } {
+/** What a print run printed: the schema-valid structured_output with the model that ran, or `{ error }`. */
+export function parsePrint<T extends object>(stdout: string, schema: z.ZodType<T>): Ran<T> | { error: string } {
   let json: unknown;
   try {
     json = JSON.parse(stdout);
@@ -81,11 +84,15 @@ export function claudePrint<T extends object>(o: ClaudePrintOptions, schema: z.Z
     let stdout = '';
     let stderr = '';
     let settled = false;
+    const login = watchRunOutput(o.logins, { now: () => new Date() });
     const finish = (r: Ran<T> | { error: string }) => {
       if (settled) return;
       settled = true;
       stop.removeEventListener('abort', onAbort);
-      resolve(r);
+      // A device code the run printed never leaves it in an error (issue #476).
+      const said = 'error' in r ? { error: hideCodes(r.error, `${stdout}\n${stderr}`, login.codes()) } : r;
+      login.end('error' in said ? { ok: false, reason: said.error } : { ok: true });
+      resolve(said);
     };
     const [file, args] = o.wrap ? o.wrap([o.bin, ...claudeArgv(o)]) : [o.bin, claudeArgv(o)];
     const child = spawn(file, args, { cwd: o.cwd, env: scrubbedEnv(userProcessEnv(o.wrap ? {} : o.userEnv)), stdio: ['pipe', 'pipe', 'pipe'] });
@@ -96,11 +103,11 @@ export function claudePrint<T extends object>(o: ClaudePrintOptions, schema: z.Z
     if (stop.aborted) return onAbort();
     stop.addEventListener('abort', onAbort);
     child.on('error', (err) => finish({ error: `claude spawn failed: ${err.message}` }));
-    child.stdout.setEncoding('utf8').on('data', (c: string) => { stdout += c; });
-    child.stderr.setEncoding('utf8').on('data', (c: string) => { stderr += c; });
+    child.stdout.setEncoding('utf8').on('data', (c: string) => { stdout += c; login.feed(c); });
+    child.stderr.setEncoding('utf8').on('data', (c: string) => { stderr += c; login.feed(c); });
     child.on('close', (code) => {
       if (code !== 0) return finish({ error: `claude exited ${code}: ${stderr.trim().slice(0, 300)}` });
-      finish(parse(stdout, schema));
+      finish(parsePrint(stdout, schema));
     });
     child.stdin.on('error', () => {});
     child.stdin.end(prompt);

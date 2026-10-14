@@ -53,13 +53,22 @@ export interface SshTransport {
 export const shellQuote = (arg: string): string => `'${arg.replaceAll("'", "'\\''")}'`;
 
 /**
- * How a command finds herdr on an ssh target (issue #311): by name, from the PATH its shell has, then
- * `~/.local/bin`, where herdr installs. Never a path the person names. The shell that runs an ssh command
+ * How a command finds herdr on an ssh target (issue #311): by name, from `~/.local/bin`, where herdr installs
+ * itself and updates, then the PATH its shell has. `~/.local/bin` comes first (issue #741): an older herdr on the
+ * PATH (one an image baked into /usr/local/bin) cannot talk to the session server the newer one runs, and every
+ * job start there failed on the protocol. Never a path the person names. The shell that runs an ssh command
  * is not a login shell, so `~/.local/bin` is often not on its PATH; and it is named here, not read
  * from a shell's env file, which a new pane's shell may be rewriting at that moment (seen live: `zsh:1:
  * command not found: herdr`).
  */
-export const REMOTE_PATH = 'PATH="$PATH:$HOME/.local/bin"';
+export const REMOTE_PATH = 'PATH="$HOME/.local/bin:$PATH"';
+
+/**
+ * How a herdr call on an ssh target starts (issue #741): the hopper's own herdr, `~/.local/share/hopper/herdr/current/herdr`,
+ * when the hopper linked it there (src/machines/herdr-owned.ts: only while the session server takes it), else herdr by
+ * name as `REMOTE_PATH` finds it. The arguments follow, quoted.
+ */
+export const REMOTE_HERDR = 'h="$HOME/.local/share/hopper/herdr/current/herdr"; [ -x "$h" ] || { PATH="$HOME/.local/bin:$PATH"; h=herdr; }; exec "$h"';
 
 /** The user's ssh config, or none: never /etc/ssh (under the unit those files look foreign-owned). */
 export function userSshConfig(home = homedir()): string {
@@ -120,8 +129,8 @@ function controlPath(controlDir: string, d: { user: string; hostname: string; po
   return Buffer.byteLength(path) + CONTROL_SUFFIX <= SOCKET_PATH_MAX ? path : undefined;
 }
 
-/** ssh's argv running one remote shell command on the target, authenticated as above. Throws when it cannot be. */
-export function sshArgv(t: SshTransport, command: string): string[] {
+/** The options every connection to the target carries, authenticated as above, and where it goes. Throws when it cannot be. */
+function connection(t: SshTransport): { options: string[]; d: Destination } {
   if (!TARGET.test(t.target)) throw new Error(`bad ssh target: ${JSON.stringify(t.target)}`);
   const auth = t.auth();
   const d = resolveDestination(t.bin ?? 'ssh', t.target);
@@ -132,12 +141,32 @@ export function sshArgv(t: SshTransport, command: string): string[] {
   }
   const control = t.controlDir ? controlPath(t.controlDir, d) : undefined;
   const shared = control ? ['-o', 'ControlMaster=auto', '-o', `ControlPath=${control}`, '-o', 'ControlPersist=60'] : [];
-  return [
-    '-F', '/dev/null', ...HARDENED_SSH_OPTIONS.flatMap((o) => ['-o', o]),
-    ...keys.flatMap((k) => ['-i', plainPath('ssh key', k)]),
-    '-o', `UserKnownHostsFile=${plainPath('known_hosts', auth.knownHostsFile)}`, '-o', `HostKeyAlias=${t.target}`,
-    ...shared, '-p', d.port, '-l', d.user, '--', d.hostname, command,
-  ];
+  return {
+    d,
+    options: [
+      '-F', '/dev/null', ...HARDENED_SSH_OPTIONS.flatMap((o) => ['-o', o]),
+      ...keys.flatMap((k) => ['-i', plainPath('ssh key', k)]),
+      '-o', `UserKnownHostsFile=${plainPath('known_hosts', auth.knownHostsFile)}`, '-o', `HostKeyAlias=${t.target}`,
+      ...shared,
+    ],
+  };
+}
+
+/** ssh's argv running one remote shell command on the target, authenticated as above. Throws when it cannot be. */
+export function sshArgv(t: SshTransport, command: string): string[] {
+  const { options, d } = connection(t);
+  return [...options, '-p', d.port, '-l', d.user, '--', d.hostname, command];
+}
+
+/**
+ * scp's argv copying between this machine and the target (issue #731), authenticated as ssh is. `to: true` copies the
+ * local `from` paths into the remote `remote`; else the remote `remote` into the local `local`. Throws when it cannot be.
+ */
+export function scpArgv(t: SshTransport, o: { to: true; from: string[]; remote: string } | { to: false; remote: string; local: string }): string[] {
+  const { options, d } = connection(t);
+  const host = d.hostname.includes(':') ? `[${d.hostname}]` : d.hostname;
+  const remote = `${d.user}@${host}:${o.remote}`;
+  return [...options, '-q', '-P', d.port, '--', ...(o.to ? [...o.from, remote] : [remote, o.local])];
 }
 
 /** Where the pinned host keys are written: `<dataDir>/ssh/known_hosts`. */

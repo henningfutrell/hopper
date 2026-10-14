@@ -34,8 +34,10 @@ export async function post<T = unknown>(path: string, body: unknown = {}): Promi
     body: JSON.stringify(body),
   });
   const out = await res.json().catch(() => ({}));
+  // Only the session guard's own refusal ends the session (issue #696): a 403 or 503 for anything else — Access denied,
+  // OpenFGA down — is that change failing, and the person stays signed in.
+  if (res.status === 403 && out.session === 'ended') throw rejected(out.error || 'session rejected');
   if (res.status === 403 && out.needs) throw new RoleRefused(out.error);
-  if (res.status === 403) throw rejected(out.error || 'session rejected');
   if (!res.ok) throw new Error(out.error || `${res.status} ${path}`);
   return out as T;
 }

@@ -128,8 +128,8 @@ describe('the UI across the LAN', () => {
     expect((await t.ui('/ui/api/device-link', {})).status).toBe(403);
   });
 
-  it('a question link in a notification names the first LAN name', () => {
-    expect(t.app.answerUrl('q1')).toBe(`http://server:${port}/#question-q1`);
+  it('a question link in a notification never names a bare LAN name: the host link base, localhost by default (issue #712)', () => {
+    expect(t.app.answerUrl('q1')).toBe(`http://localhost:${port}/#question-q1`);
   });
 });
 
@@ -142,7 +142,7 @@ describe('without LAN names', () => {
       const res = await local.ui<{ error: string }>('/ui/api/device-link', {}, { token });
       expect(res.status).toBe(409);
       expect(res.body.error).toMatch(/HOPPER_LAN_NAMES/);
-      expect(local.app.answerUrl('q1')).toBe(`${local.url}/#question-q1`);
+      expect(local.app.answerUrl('q1')).toBe(`http://localhost:${new URL(local.url).port}/#question-q1`);
     } finally {
       await local.stop();
       db.cleanup();

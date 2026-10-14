@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "request": {
+      "type": "string"
+    },
+    "template": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "request",
+    "template",
+    "reason",
+    "by"
+  ],
+  "additionalProperties": false
+}

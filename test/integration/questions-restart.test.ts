@@ -112,7 +112,7 @@ describe('restart with questions', () => {
     await new Promise((r) => setTimeout(r, 200));
     expect(sticky.runs).toEqual([job.id]);
     const failedEvent = (await second.events()).find((e) => e.type === 'job.failed' && e.jobId === job.id);
-    expect(failedEvent!.data).toEqual({ error: 'interrupted by daemon restart' });
+    expect(failedEvent!.data).toEqual({ error: 'interrupted by daemon restart', priority: 50, high: false });
   });
 
   it('cancelling a running job aborts it with reason cancel and cleans it up', async () => {

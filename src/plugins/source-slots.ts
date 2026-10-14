@@ -5,15 +5,18 @@
 // live since issue #18; one that cannot run lists no machine — never a guessed one). Each is known by
 // its instance name.
 import type { MachineSource, UsageSource } from '../domain/ports.ts';
+import { NO_INTAKE_TRUST } from '../domain/intake.ts';
 import type { Detection, InstanceSpec, InstanceStatus, Role } from '../domain/types.ts';
+import type { ConfiguredBackend, VaultBackend } from '../domain/vault.ts';
 import { instantiate, type SlotDeps } from './router-slot.ts';
 import type { JobSourceContext, JobSourceInstance, RoleInstance } from './sdk.ts';
 
 /** A job source's context where the host is given none (tests of the host alone): no jobs, no connected accounts. */
 export const NO_SOURCE_CONTEXT: JobSourceContext = {
   knownKeys: () => new Set(), rerunnable: () => new Set(), rejections: () => new Map(),
-  intake: () => undefined,
-  connectedAccounts: { account: () => undefined, ended: () => undefined, token: () => Promise.reject(new Error('no connected accounts')), renew: () => Promise.reject(new Error('no connected accounts')), endpoints: () => ({ url: '', apiUrl: '' }), jobRepositories: () => [] },
+  intake: () => undefined, intakeTrust: NO_INTAKE_TRUST, yoloMode: () => false, jobArtifacts: () => [],
+  issueGraph: { record: () => undefined, lastRead: () => undefined },
+  connectedAccounts: { account: () => undefined, ended: () => undefined, expired: () => false, token: () => Promise.reject(new Error('no connected accounts')), renew: () => Promise.reject(new Error('no connected accounts')), endpoints: () => ({ url: '', apiUrl: '' }), jobRepositories: () => [] },
 };
 
 /** One instance of a list role: running (`instance`, `plugin`), or not (`reason`). */
@@ -77,6 +80,23 @@ export function applyUsageSpecs(slot: { built?: Built<UsageSource>[] }, specs: I
     label: 'usage source', logger: deps.logger, build: (spec) => buildUsageSource(spec, deps),
     retire: (gone) => { for (const b of gone) b.instance?.stop?.(); },
   });
+}
+
+/** The vault backends as the plugins config names them now (issue #585); each named after its instance. */
+export function applyVaultBackendSpecs(slot: { built?: Built<VaultBackend>[] }, specs: InstanceSpec[], deps: SlotDeps): Promise<boolean> {
+  return followSpecs(slot, specs, {
+    label: 'vault backend', logger: deps.logger,
+    build: async (spec) => {
+      const b = await buildOne('vault-backend', spec, deps, { needsSetupRuns: true });
+      return b.instance ? { ...b, instance: Object.create(b.instance, { name: { value: b.spec.name, enumerable: true } }) as VaultBackend } : b;
+    },
+  });
+}
+
+/** A vault backend as the vault is given it: running, or why not; and what it still needs (its token). */
+export function configuredBackend(b: Built<VaultBackend>): ConfiguredBackend {
+  const setup = b.detection.status === 'needs-setup' ? b.detection.reason : undefined;
+  return { name: b.spec.name, plugin: b.spec.plugin, ...(b.instance ? { backend: b.instance } : { problem: b.reason }), ...(setup ? { setup } : {}) };
 }
 
 async function buildUsageSource(spec: InstanceSpec, deps: SlotDeps): Promise<Built<UsageSource>> {

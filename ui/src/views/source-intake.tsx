@@ -1,36 +1,17 @@
-// What a job source's intake did with each open labelled issue it listed (issue #440): taken, or the one reason
-// it was not, with Assign to me and Release claim where the source offers them (a GitHub write the user makes);
-// what the intake migration changed, once; and the repos outside the job repositories with issues for the user,
-// each offered to add, never added by itself.
-import { Hand, Plus, Unlock } from 'lucide-react';
+// A job source's intake in Sources (issue #440): how many open labelled issues it listed, taken and not, and a link to
+// Intake, their one home (issue #897), where each is listed with its actions — Approve among them —; what the intake
+// migration changed, once; and the repos outside the job repositories with issues for the user, each offered to add,
+// never added by itself.
+import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { GhLink } from '@/components/job';
 import type { IntakeMigration, IntakeOutcome, OutsideRepo } from '../../../src/domain/intake.ts';
 import type { SourceStatus } from '@/model/wire';
-import { act } from '@/store';
-import { useCanAdmin, useCanOperate } from '@/store/selectors';
+import { useCanAdmin } from '@/store/selectors';
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const arrayOf = <T,>(v: unknown): T[] => (Array.isArray(v) ? v as T[] : []);
-
-function Item({ x, source, canOperate }: { x: IntakeOutcome; source: string; canOperate: boolean }) {
-  const send = (kind: 'assign' | 'release', done: string) => act(`/ui/api/sources/${encodeURIComponent(source)}/intake`, { kind, keys: [x.key] }, done);
-  return (
-    <li data-intake-item={x.key} className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <GhLink url={x.key}>{x.title || x.key}</GhLink>
-      {x.reason === undefined
-        ? <span className="text-ok">taken{x.jobId ? <span className="font-mono text-muted-foreground"> · job {x.jobId.slice(0, 8)}</span> : null}</span>
-        : <span className="text-muted-foreground">{x.reason}</span>}
-      {canOperate && x.action === 'assign' && (
-        <Button size="xs" variant="outline" title="Assigns the issue to your GitHub account: the next sync takes it" onClick={() => void send('assign', 'Assigned to you')}><Hand />Assign to me</Button>
-      )}
-      {canOperate && x.action === 'release' && (
-        <Button size="xs" variant="outline" title="Removes hopper:claimed and its holder label: no job here holds it, and the next sync takes it" onClick={() => void send('release', 'Claim released')}><Unlock />Release claim</Button>
-      )}
-    </li>
-  );
-}
 
 function Migration({ m }: { m: IntakeMigration }) {
   return (
@@ -65,32 +46,23 @@ function Outside({ repos, addRepository }: { repos: OutsideRepo[]; addRepository
   );
 }
 
-/** A source's intake: every open labelled issue it listed, its migration, and repos outside its scope. */
+/** A source's intake: its count and a link to Intake, its migration, and repos outside its scope. */
 export function SourceIntake({ s, addRepository }: { s: SourceStatus; addRepository?: ((repo: string) => Promise<boolean>) | undefined }) {
-  const canOperate = useCanOperate();
   const d = s.detail ?? {};
   const items = arrayOf<IntakeOutcome>(d.intake);
   const outside = arrayOf<OutsideRepo>(d.outsideRepos);
   const migration = d.intakeMigration as IntakeMigration | undefined;
   if (!Array.isArray(d.intake) && !migration && outside.length === 0) return null;
-  const taken = items.filter((x) => x.reason === undefined);
-  // Not taken first: they are what may need the user.
-  const shown = [...items.filter((x) => x.reason !== undefined), ...taken];
-  const assignable = items.filter((x) => x.action === 'assign').map((x) => x.key);
+  const taken = items.filter((x) => x.reason === undefined).length;
+  const requests = items.filter((x) => x.action === 'approve').length;
   return (
-    <div data-intake={s.name} className="space-y-2 text-xs">
-      {Array.isArray(d.intake) && <>
-        <div className="flex flex-wrap items-center gap-2">
-          <span data-intake-summary>{plural(items.length, 'open labelled issue')}: {taken.length} taken, {items.length - taken.length} not taken</span>
-          {canOperate && assignable.length > 1 && (
-            <Button size="xs" variant="outline" title="Assigns every labelled issue not assigned to you to your GitHub account"
-              onClick={() => void act(`/ui/api/sources/${encodeURIComponent(s.name)}/intake`, { kind: 'assign', keys: assignable }, 'Assigned to you')}>
-              <Hand />Assign all {assignable.length} to me
-            </Button>
-          )}
-        </div>
-        {shown.length > 0 && <ul className="max-h-64 space-y-1 overflow-y-auto">{shown.map((x) => <Item key={x.key} x={x} source={s.name} canOperate={canOperate} />)}</ul>}
-      </>}
+    <div className="space-y-2 text-xs">
+      {Array.isArray(d.intake) && (
+        <a href="#intake" data-intake-link={s.name} className="block hover:underline">
+          <span data-intake-summary>{plural(items.length, 'open labelled issue')}: {taken} taken, {items.length - taken} not taken</span>
+          {requests > 0 && <span className="text-warn"> · {plural(requests, 'request waits', 'requests wait')} for approval</span>} · see Intake →
+        </a>
+      )}
       {typeof d.outsideError === 'string' && <div className="text-warn">could not list issues outside the job repositories: {d.outsideError}</div>}
       {outside.length > 0 && <Outside repos={outside} addRepository={addRepository} />}
       {migration && <Migration m={migration} />}

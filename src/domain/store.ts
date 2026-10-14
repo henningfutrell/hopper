@@ -1,18 +1,30 @@
 // The store's ports (design.md "Database", "Users: one hopper, separate users"): the repositories, a
 // user's store and the instance store. Re-exported from ports.ts.
 
-import type { IntakeMigration } from './intake.ts';
-import type {
-  DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus,
-  Identity, QueueGate, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, UpdateSettings, PluginInstall, User,
-  UsageGraphView, UsageSample, UsageSeries, UsageTotalSeries,
-} from './types.ts';
-import type { ConnectedAccountProvider } from './types.ts';
+import type { JobStreamRepository } from './job-stream.ts';
+import type { ArtifactRepository } from './artifacts.ts';
+import type { VaultRepository } from './vault.ts';
+import type { SandboxRecord } from './sandboxes.ts';
+import type { VaultGrant } from './vault-grants.ts';
+import type { BugReportRepository } from './bug-reports.ts';
+import type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
+import type { DomainEvent, Decision, EventType, Job, JobId, JobSpec, JobStatus, Lane, JobSourceRef, LaneId, MachineId, NewEvent, Question, QuestionAttempt, QuestionStatus, RaisedBy, ReviewEntry, ReviewItem, ReviewKind, ReviewStatus, ReviewVersion, PhaseSuggestion, ProposalPathSet,
+  Identity, Login, LoginStatus, SessionLengths, UiRole, WebhookDelivery, WebhookSubscription, User, UsageSample, UsageSeries, UsageTotalSeries, GitHubWatchRepository, PointedJobRepository, FailureOutcome, FailureRecord, Handoff, Problem, ConnectedAccountProvider, JobRun, LaneLoad, MachineSample, ResourcePressure, ResourceSeries, ItemSnapshot, AccessRepository, CheckpointRepository } from './types.ts';
+
+// Report a bug (issue #694): its repository sits beside its record.
+export type { BugReportRepository } from './bug-reports.ts';
+
+export type { InstanceSettingsRepository, UserSettingsRepository } from './settings-store.ts';
+export type { VaultRepository } from './vault.ts';
 
 // ---- Persistence -----------------------------------------------------------------------
 
 export interface JobFilter {
   status?: JobStatus[];
+  /** Only the jobs with no failure assessment (issue #517). */
+  unassessed?: boolean;
+  /** Only the jobs whose pull request is followed, open or closed without a merge (issue #637: the Pull requests list), or handed to a tend job (issue #763). */
+  followed?: boolean;
   limit?: number;
 }
 
@@ -29,8 +41,8 @@ export interface JobRepository {
 
 export interface LaneRepository {
   list(machineId?: MachineId): Lane[];
-  /** Opens the lowest free lane number for the machine. */
-  open(machineId: MachineId): Lane;
+  /** Opens the lane `id` names when it is the machine's and free (issue #535), else the lowest free lane number. */
+  open(machineId: MachineId, id?: LaneId): Lane;
   update(id: LaneId, patch: Partial<Omit<Lane, 'id' | 'machineId' | 'openedAt'>>): Lane;
   close(id: LaneId): void;
 }
@@ -52,8 +64,12 @@ export interface EventLog {
   append(event: NewEvent): DomainEvent;
   /** Events with seq > afterSeq, oldest first. */
   since(afterSeq: number, limit?: number): DomainEvent[];
-  /** Newest first. */
-  recent(limit?: number, types?: EventType[]): DomainEvent[];
+  /** Newest first; one job's alone when `jobId` names it (issue #935: the job page's timeline and parts list). */
+  recent(limit?: number, types?: EventType[], jobId?: string): DomainEvent[];
+  /** Events of these types at or after `since` (ISO), oldest first (issue #535: lane reliability). */
+  between(types: readonly EventType[], since: string): DomainEvent[];
+  /** The newest event of each of these jobs that has one, one per job (issue #434: the Jobs view's last event). */
+  lastOfJobs(jobIds: readonly string[]): DomainEvent[];
   subscribe(listener: (event: DomainEvent) => void): () => void;
 }
 
@@ -68,9 +84,16 @@ export interface InstanceEvents {
 
 export interface WebhookRepository {
   /** A new subscription; undefined (nothing written) when the name is taken. The table is the source of truth (issue #78). */
-  add(input: { name: string; url: string; events: string[]; secretEnv: string; active: boolean }): WebhookSubscription | undefined;
+  add(input: { name: string; url: string; events: string[]; active: boolean }): WebhookSubscription | undefined;
   /** Changes only the fields given; undefined when there is no such subscription. */
   update(id: string, patch: { url?: string; events?: string[]; active?: boolean }): WebhookSubscription | undefined;
+  /**
+   * Records that the subscription's signing secret was kept in the vault (issue #658), with when it changed (default
+   * now): its runtime variable is no longer read, and its copy from before #658 goes. Undefined when there is no such subscription.
+   */
+  secretKept(id: string, changedAt?: string): WebhookSubscription | undefined;
+  /** The signing secret a subscription kept sealed in its row before issue #658, for the move into the vault; undefined: none. */
+  legacySecret(id: string): string | undefined;
   get(id: string): WebhookSubscription | undefined;
   list(): WebhookSubscription[];
   /** Deletes the subscription and marks its pending/retrying deliveries `failed`. */
@@ -85,42 +108,104 @@ export interface WebhookRepository {
 
 export interface QuestionRepository {
   /** `tier`: the stage it starts at (the first escalation level's instance name, or `human`). */
-  create(input: { jobId: JobId; text: string; recentOutput: string; detectedBy: string; tier: string; lapsesAt?: string }): Question;
+  create(input: { jobId: JobId; text: string; recentOutput: string; detectedBy: string; tier: string; lapsesAt?: string; raisedBy?: RaisedBy; suggestion?: PhaseSuggestion }): Question;
   get(id: string): Question | undefined;
   /** Newest first. */
-  list(filter?: { status?: QuestionStatus[]; jobId?: JobId; limit?: number }): Question[];
+  /** By creation: `newest-first` (the default; a history) or `oldest-first` (the open questions, the longest waiting first; issue #450). A limit keeps the first of that order. */
+  list(filter?: { status?: QuestionStatus[]; jobId?: JobId; limit?: number; order?: 'oldest-first' | 'newest-first' }): Question[];
   /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
   update(id: string, patch: Partial<Omit<Question, 'id' | 'jobId' | 'createdAt' | 'attempts'>>): Question;
   /** Append one attempt to the question's trail. */
   addAttempt(id: string, attempt: QuestionAttempt): Question;
 }
 
-/** A user's settings (in the user schema). */
-export interface UserSettingsRepository {
-  /** The user's queue gate (issue #159); absent: never set. */
-  getQueueGate(): QueueGate | undefined;
-  setQueueGate(gate: QueueGate): void;
-  /** The hopper's own ssh key for this user's machines (issue #293): a secret, never answered by any route but its public half. */
-  getSshKey(): { privateKey: string; publicKey: string } | undefined;
-  setSshKey(key: { privateKey: string; publicKey: string }): void;
-  /** The hopper's link key for this user's machines that dial in (issue #308): a secret, never answered by any route but its public half. */
-  getLinkKey(): { privateKey: string; publicKey: string } | undefined;
-  setLinkKey(key: { privateKey: string; publicKey: string }): void;
-  /** The repositories a connected account's jobs may use (issue #321); empty: none chosen. */
-  getJobRepositories(provider: ConnectedAccountProvider): string[];
-  setJobRepositories(provider: ConnectedAccountProvider, repositories: readonly string[]): void;
-  /** The usage graph's range and step the user chose (issue #385); absent: never chosen. */
-  getUsageGraphView(): UsageGraphView | undefined;
-  setUsageGraphView(view: UsageGraphView): void;
-  /** How many days usage samples are kept (issue #385); absent: never chosen. */
-  getHistoryRetentionDays(): number | undefined;
-  setHistoryRetentionDays(days: number): void;
-  /** The user's claim holder id (issue #440): made, random, the first time it is asked, then kept. */
-  claimHolder(): string;
-  /** A job source's intake migration (issue #440), by its instance name; absent: not run yet. */
-  getIntakeMigration(source: string): IntakeMigration | undefined;
-  setIntakeMigration(source: string, migration: IntakeMigration): void;
+/** One review section's items (issues #537, #543): one per job and kind, its versions and review trail in it. */
+export interface ReviewItemRepository {
+  create(input: { jobId: JobId; stage: string; version: ReviewVersion; raisedBy?: RaisedBy; source?: ReviewItem['source']; forkOf?: ReviewItem['forkOf']; switchedFrom?: ReviewItem['switchedFrom'] }): ReviewItem;
+  get(id: string): ReviewItem | undefined;
+  /** By creation: `newest-first` (the default; a history) or `oldest-first` (the open ones, the longest waiting first). */
+  list(filter?: { status?: ReviewStatus[]; jobId?: JobId; limit?: number; order?: 'oldest-first' | 'newest-first' }): ReviewItem[];
+  /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
+  update(id: string, patch: Partial<Omit<ReviewItem, 'id' | 'kind' | 'jobId' | 'createdAt' | 'reviews' | 'versions'>>): ReviewItem;
+  addReview(id: string, review: ReviewEntry): ReviewItem;
+  addVersion(id: string, version: ReviewVersion): ReviewItem;
+  /** A proposal's newest version with its paths amended by a reviewer level (issue #651). */
+  setPaths(id: string, paths: ProposalPathSet): ReviewItem;
 }
+
+/** Logins (issue #476): what the hopper keeps of each, never its URL or code. */
+export interface LoginRepository {
+  create(input: Omit<Login, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Login;
+  get(id: string): Login | undefined;
+  /** Newest first. */
+  list(filter?: { status?: LoginStatus[]; jobId?: JobId; questionId?: string; limit?: number }): Login[];
+  /** Shallow-merge; `undefined` clears. Bumps updatedAt. */
+  update(id: string, patch: Partial<Omit<Login, 'id' | 'createdAt'>>): Login;
+}
+
+/** The failure records (issue #509): one per assessed failed job. */
+export interface FailureRepository {
+  create(input: Omit<FailureRecord, 'id'>): FailureRecord;
+  get(id: string): FailureRecord | undefined;
+  /** The job's newest record. */
+  forJob(jobId: JobId): FailureRecord | undefined;
+  /**
+   * Newest first: of a job, since a time, of a signature, of a problem, with one of the outcomes, with none of
+   * `notOutcome` (no outcome yet counts as none); at most `limit` (default 1000).
+   */
+  list(filter?: { jobId?: JobId; since?: string; signature?: string; problemId?: string; outcome?: FailureOutcome[]; notOutcome?: FailureOutcome[]; limit?: number }): FailureRecord[];
+  /** The records whose pending run is due at `at`, the earliest first. */
+  due(at: string): FailureRecord[];
+  /** Shallow-merge; `undefined` clears. */
+  update(id: string, patch: Partial<Omit<FailureRecord, 'id' | 'jobId'>>): FailureRecord;
+  /** Delete the records older than `before` with no pending run; how many. */
+  prune(before: string): number;
+}
+
+/** The hand-offs (issue #516): failed jobs waiting on a person. */
+/** The vault grants (issue #652), one row per item key: a person's grant of the vault to that item's jobs. */
+export interface VaultGrantRepository {
+  get(key: string): VaultGrant | undefined;
+  list(): VaultGrant[];
+  put(grant: VaultGrant): VaultGrant;
+  /** Whether there was one to remove. */
+  remove(key: string): boolean;
+}
+
+/** The approved text of each source item (issue #662), one row per item key: the newest snapshot replaces the one before. */
+export interface ItemSnapshotRepository {
+  get(key: string): ItemSnapshot | undefined;
+  /** Record `snapshot` as its item's approved text, in place of any before it. */
+  put(snapshot: ItemSnapshot): ItemSnapshot;
+}
+
+export interface HandoffRepository {
+  create(input: Omit<Handoff, 'id'>): Handoff;
+  get(id: string): Handoff | undefined;
+  /** The job's newest hand-off. */
+  forJob(jobId: JobId): Handoff | undefined;
+  /** Open ones oldest first; closed ones newest closed first; at most `limit` (default 500). */
+  list(filter: { status: Handoff['status']; closedSince?: string; limit?: number }): Handoff[];
+  /** Shallow-merge; `undefined` clears. */
+  update(id: string, patch: Partial<Omit<Handoff, 'id' | 'jobId'>>): Handoff;
+  /** Delete the hand-offs closed before `before`, never an open one; how many. */
+  prune(before: string): number;
+}
+
+/** The problems (issue #509): shared causes, one per signature while open. */
+export interface ProblemRepository {
+  create(input: Omit<Problem, 'id'>): Problem;
+  get(id: string): Problem | undefined;
+  /** The open problem of a signature. */
+  open(signature: string): Problem | undefined;
+  /** Newest first; at most `limit` (default 200). */
+  list(filter?: { status?: Problem['status']; since?: string; limit?: number }): Problem[];
+  /** Shallow-merge; `undefined` clears. */
+  update(id: string, patch: Partial<Omit<Problem, 'id'>>): Problem;
+  /** Delete the problems resolved before `before`; how many. */
+  prune(before: string): number;
+}
+
 
 /** What the usage graph reads: a stretch, its graph step, and the time steps are counted from (a local midnight, a Monday). */
 export interface UsageHistoryQuery {
@@ -128,6 +213,8 @@ export interface UsageHistoryQuery {
   to: Date;
   stepMs: number;
   originMs: number;
+  /** Only the usage that limits this machine: its own readings and those of a budget every machine shares (issue #688). */
+  limiting?: string;
 }
 
 /** One user's lines of one unit and usage window, summed per graph step: summed again over every user for the instance usage totals. */
@@ -147,15 +234,25 @@ export interface UsageHistoryRepository {
   prune(before: Date): number;
 }
 
-/** The instance's settings (in the instance schema): self-update and the store installs. */
-export interface InstanceSettingsRepository {
-  /** Self-update settings an admin chose; absent fields were never set. */
-  getUpdateSettings(): Partial<UpdateSettings>;
-  setUpdateSettings(patch: Partial<UpdateSettings>): void;
-  /** The store installs, by id (issue #93). */
-  getPluginInstalls(): PluginInstall[];
-  setPluginInstalls(installs: readonly PluginInstall[]): void;
+/** The resource graph's query (issue #560): the usage graph's, and the one machine when it asks for one. */
+export interface MachineHistoryQuery extends Omit<UsageHistoryQuery, 'limiting'> {
+  machineId?: string;
 }
+
+/** Machine resources over time (issue #560): machine samples in the user schema. */
+export interface MachineHistoryRepository {
+  /** Keep machine samples; one already kept (same machine and time) is kept once. How many were new. */
+  record(samples: readonly MachineSample[]): number;
+  /** The resource graph's lines over [from, to), ordered by machine and resource. */
+  series(q: MachineHistoryQuery): ResourceSeries[];
+  /** Lane load over [from, to): per machine and lanes in use, ordered by machine and lanes in use (issue #688). */
+  laneLoad(q: { from: Date; to: Date; pressure: ResourcePressure }): LaneLoad[];
+  /** The job runs that ended in [from, to), with what the machine and usage samples in each show (issue #688); `jobId`: one job's only (issue #935 part 2). */
+  jobRuns(q: { from: Date; to: Date; jobId?: string }): JobRun[];
+  /** Delete the samples older than `before`; how many. */
+  prune(before: Date): number;
+}
+
 
 /** A stored UI session: never the token, only its SHA-256; the user it acts for (issue #158). */
 /**
@@ -166,11 +263,15 @@ export interface InstanceSettingsRepository {
 export interface UiSessionRow {
   tokenHash: string; startedAt: string; lastSeenAt: string; checkedAt: string; endsAt?: string;
   role: UiRole; identity: Identity; userId: string;
+  /** An API token (issue #718) and its label; absent: a UI session. `box`: a box token (issue #795). */
+  /** `grantId`: the grant an API token was refreshed from (issue #881); absent: no grant's (an exchange, or minted before). */
+  kind?: 'api'; label?: string; box?: true; grantId?: string;
 }
 
 /** UI sessions, keyed by the SHA-256 of the token; the token itself is never stored. Which have ended is the caller's to decide. */
 export interface UiSessionRepository {
-  create(row: UiSessionRow): void;
+  /** `expiresAt`: the session's absolute end as it is now, for the build before store migration 27 to read (issue #527); never read back. */
+  create(row: UiSessionRow, expiresAt: string): void;
   /** The session with this hash, ended or not, or undefined. */
   get(tokenHash: string): UiSessionRow | undefined;
   /** Every stored session, ended or not. */
@@ -191,17 +292,35 @@ export interface LoginCodeRepository {
 }
 
 /** One-time join codes (issue #308): only each code's SHA-256 is kept, with its user and expiry. */
+/**
+ * What a join code names beside its user: the template the machine joins as (issue #558), when the line names one;
+ * the sandbox box the hopper launched with it (issue #603), when it did.
+ */
+export interface JoinCodePlace { template?: string; container?: string }
+
 export interface JoinCodeRepository {
-  create(codeHash: string, expiresAt: string, userId: string): void;
-  /** The code's user, and the code is gone, when it exists and `expiresAt > now`; else undefined. Expired codes are deleted first. */
-  take(codeHash: string, now: string): string | undefined;
+  create(codeHash: string, expiresAt: string, userId: string, place?: JoinCodePlace): void;
+  /** The code's user (and what it names), and the code is gone, when it exists and `expiresAt > now`; else undefined. Expired codes are deleted first. */
+  take(codeHash: string, now: string): ({ userId: string } & JoinCodePlace) | undefined;
+  /** The sandbox boxes live codes name (issue #603): launched, not joined yet. */
+  waiting(now: string): string[];
+}
+
+/** The sandbox records (issue #708, instance migration 34): one per sandbox box the hopper launched, by id; names are unique. */
+export interface SandboxRepository {
+  list(): SandboxRecord[];
+  get(id: string): SandboxRecord | undefined;
+  /** False when a record of that id or name exists. */
+  add(record: SandboxRecord): boolean;
+  update(record: SandboxRecord): void;
+  remove(id: string): boolean;
 }
 
 /**
  * The config records the store holds (design.md "Config in the database", issue #198): a user's
- * `plugins`, `rules` and `job-rules`, and the instance's `sign-in`. No config lives in a file.
+ * `plugins`, `rules`, `job-rules` and `windows-hosts` (issue #731), and the instance's `sign-in`. No config lives in a file.
  */
-export const USER_CONFIG = ['plugins', 'rules', 'job-rules'] as const;
+export const USER_CONFIG = ['plugins', 'rules', 'job-rules', 'windows-hosts'] as const;
 export const INSTANCE_CONFIG = ['sign-in'] as const;
 export const CONFIG_NAMES = [...USER_CONFIG, ...INSTANCE_CONFIG] as const;
 export type UserConfigName = (typeof USER_CONFIG)[number];
@@ -281,6 +400,9 @@ export interface StoredSignIn {
  * The sign-in config: the config record `sign-in`, read and replaced against `version` — the sha-256
  * of what `read` answers.
  */
+/** A vault's table as the system scope uses it (issue #658): the instance's has no templates and no data key. */
+export type InstanceVault = Pick<VaultRepository, 'list' | 'get' | 'add' | 'replace' | 'sealed' | 'remove'>;
+
 export interface SignInConfigRepository {
   read(): StoredSignIn;
   version(): string;
@@ -311,19 +433,26 @@ export interface ConnectedAccount {
   connectedAt: string;
   /** How GitHub granted it (issue #441): a browser (web flow) grant renews only with the app's client secret, a device flow grant without; absent: kept before #441. */
   grantedBy?: 'device' | 'web';
+  /** How the person made the connection (issue #647): connected from Sources, or signed in with GitHub; absent: kept before #647. */
+  connectedBy?: 'sources' | 'sign-in';
+  /** When its token was last renewed (issue #647); absent: not renewed since it was connected. */
+  renewedAt?: string;
 }
 
+/** A connected account's row (issue #658): who and when. Its tokens are system secrets in the user's vault (src/connected-accounts/at-rest.ts). */
+export type StoredAccount = Omit<ConnectedAccount, 'accessToken' | 'refreshToken'>;
+
 export interface ConnectedAccountRepository {
-  /** The account as stored: its tokens sealed when the runtime gives a token key (issue #441). */
-  get(provider: ConnectedAccountProvider): ConnectedAccount | undefined;
-  /** Insert or replace the provider's account. */
-  put(account: ConnectedAccount): void;
-  /**
-   * Replace the account only while its stored refresh token is still `refreshToken` (as stored): one
-   * transaction, the row locked (issue #441). False, nothing written, when another process rotated it
-   * first or it is gone.
-   */
-  swap(provider: ConnectedAccountProvider, refreshToken: string, next: ConnectedAccount): boolean;
+  /** The account's row, without its tokens. */
+  get(provider: ConnectedAccountProvider): StoredAccount | undefined;
+  /** Insert or replace the provider's row; tokens given with it are not kept here. */
+  put(account: StoredAccount): void;
+  /** Inside a transaction: lock the provider's row until it ends (issue #441); false when there is none. */
+  lockRow(provider: ConnectedAccountProvider): boolean;
+  /** The tokens a row kept before issue #658 (sealed by the token box, or in clear), for the move into the vault; none: none left. */
+  legacyTokens(provider: ConnectedAccountProvider): { accessToken: string; refreshToken?: string } | undefined;
+  /** The row without the tokens it kept before issue #658: once they are in the vault. */
+  dropLegacyTokens(provider: ConnectedAccountProvider): void;
   /**
    * Take the account's renewal lock, held by this connection until `unlock` or until the connection
    * ends — a crashed process lets it go (issue #441). False when another connection holds it.
@@ -340,10 +469,38 @@ export interface UserStore {
   decisions: DecisionRepository;
   events: EventLog;
   webhooks: WebhookRepository;
+  /** The vault (issue #558). */
+  vault: VaultRepository;
+  /** The job stream's events and watches (issue #613). */
+  jobStream: JobStreamRepository;
+  /** The artifacts jobs make for a person to see, and their shares (issue #624). */
+  artifacts: ArtifactRepository;
+  /** The infra plans jobs record, and their approvals (issue #870). */
+  infraPlans: import('./infra-plans.ts').InfraPlanRepository;
+  /** The out-of-band infrastructure changes jobs' checks report, their marks, and the controller identities (issue #871). */
+  outOfBand: import('./out-of-band.ts').OutOfBandRepository;
   questions: QuestionRepository;
+  /** Each review section's items, by kind: proposals (issue #537), research reports (issue #543). */
+  reviews: Readonly<Record<ReviewKind, ReviewItemRepository>>;
+  logins: LoginRepository;
+  failures: FailureRepository;
+  problems: ProblemRepository;
+  handoffs: HandoffRepository;
+  itemSnapshots: ItemSnapshotRepository;
+  vaultGrants: VaultGrantRepository;
+  bugReports: BugReportRepository;
+  /** The issue graph (issue #437): store only, nothing reads it yet. */
+  issueGraph: import('./issue-graph.ts').IssueGraphRepository; workItems: import('./work-items.ts').WorkItemLedger; // the work-item ledger (issue #1067)
+  /** Pointed jobs (issue #425); direct jobs (issue #901): what a person submitted straight to the hopper. */
+  pointedJobs: PointedJobRepository; directJobs: import('./direct-jobs.ts').DirectJobRepository; promotions: import('./promotions.ts').PromotionRepository;
+  /** GitHub watches (issue #427): each pointed job's last snapshot; the listing cache (issue #985): each repository's latest repository listing. */
+  githubWatches: GitHubWatchRepository; githubListings: import('./github-listing.ts').GitHubListingRepository;
+  /** Each job's latest checkpoint (issue #921): its patch and agent session, scrubbed; pending index updates (issue #945): the documents search writes again once Solr takes them. */
+  checkpoints: CheckpointRepository; searchPending: import('./search.ts').SearchPendingRepository; outboundSends: import('./outbound.ts').OutboundSendRepository; // the send log (issue #1014)
   settings: UserSettingsRepository;
   connectedAccounts: ConnectedAccountRepository;
   usageHistory: UsageHistoryRepository;
+  machineHistory: MachineHistoryRepository;
   /** `plugins`, `rules` and `job-rules`. */
   config: ConfigRecords<UserConfigName>;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */
@@ -352,19 +509,47 @@ export interface UserStore {
 }
 
 /** The instance store: the instance schema (design.md "Users: one hopper, separate users"). */
+/** What every user's schema keeps sealed under the master key (issue #659): the sealed values' key ids, and the sealed tokens. */
+export interface KeptSecrets {
+  keyIds: readonly string[];
+  tokens: readonly string[];
+}
+
+/** What a master key rotation sealed again, and how many values an old key sealed that do not open (left as they were). */
+export interface MasterKeyResealed {
+  resealed: number;
+  unreadable: number;
+}
+
 export interface InstanceStore {
   users: UserRepository;
   identities: IdentityLinks;
-  uiSessions: UiSessionRepository;
+  /** The UI sessions and API tokens; the grants and their refresh tokens (issue #881). */
+  uiSessions: UiSessionRepository; apiGrants: import('./api-grants.ts').ApiGrantRepository;
   loginCodes: LoginCodeRepository;
   joinCodes: JoinCodeRepository;
+  /** The sandbox records (issue #708). */
+  sandboxes: SandboxRepository;
   /** `sign-in`, without the password accounts (the CLI's `hopper config … sign-in`). */
   config: ConfigRecords<InstanceConfigName>;
   /** The sign-in config: the `sign-in` record with the password accounts. */
   signInConfig: SignInConfigRepository;
   settings: InstanceSettingsRepository;
+  /** Access (issue #559): the models, the approvals pushed to OpenFGA, the mint decisions. */
+  access: AccessRepository;
+  /** The instance's vault (issue #658): the system secrets of the whole hopper — its sign-in realms' secrets. The hopper's
+   * Postgres as Postgres itself says (issue #947): connections, size, cache, locks, transactions, statements; the stack samples. */
+  vault: InstanceVault; databaseStats: import('./stack-resources.ts').DatabaseStats; stackHistory: import('./stack-resources.ts').StackHistoryRepository;
   /** Open the user's store: one more connection, its schema migrated on the tenant track. The caller closes it. */
   userStore(user: User): UserStore;
+  /** What the users' schemas keep sealed under the master key (issue #659); a vault a KMS data key seals is left out. */
+  keptSecrets(): KeptSecrets;
+  /**
+   * The master key rotation (issue #659): in one transaction, every value `from` sealed, in every schema, sealed again
+   * under `to`, its new fingerprint recorded, and the rotation. A value no `from` key sealed is left; one that does not
+   * open is counted, and left. Throws, and changes nothing, when a write fails.
+   */
+  rotateMasterKey(o: { from: { key: string; previous: readonly string[] }; to: string }): MasterKeyResealed;
   /** Take the daemon lock on this database for this store's life: false when another process holds it (a running daemon). */
   holdDaemonLock(): boolean;
   tx<T>(fn: () => T): T;

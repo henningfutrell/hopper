@@ -1,5 +1,6 @@
 import type { EventLog } from '../domain/ports.ts';
 import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type EventType } from '../domain/types.ts';
+import { LEDGER_EVENT_TYPES, type WorkItemLedger } from '../domain/work-items.ts';
 import { parse, type StoreContext } from './context.ts';
 
 type Listener = (event: DomainEvent) => void;
@@ -20,7 +21,8 @@ export interface EventLogInternals extends EventLog {
   discard(): void;
 }
 
-export function createEventLog(c: StoreContext, inTx: () => boolean): EventLogInternals {
+/** `ledger`: folds each event into its work item in the append's own transaction (issue #1067). */
+export function createEventLog(c: StoreContext, inTx: () => boolean, ledger?: Pick<WorkItemLedger, 'applyEvent'>): EventLogInternals {
   const listeners = new Set<Listener>();
   let pending: DomainEvent[] = [];
 
@@ -32,26 +34,44 @@ export function createEventLog(c: StoreContext, inTx: () => boolean): EventLogIn
     }
   };
 
+  const appendOne = (n: Parameters<EventLog['append']>[0]): DomainEvent => {
+    const id = c.idGen();
+    const at = n.at ?? c.clock.now().toISOString();
+    const schemaVersion = EVENT_SCHEMA_VERSIONS[n.type];
+    const r = c.db.get(
+      'INSERT INTO events (id, type, at, job_id, lane_id, machine_id, decision_id, question_id, data, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING seq',
+    id, n.type, at, n.jobId ?? null, n.laneId ?? null, n.machineId ?? null, n.decisionId ?? null, n.questionId ?? null, JSON.stringify(n.data), schemaVersion);
+    const event: DomainEvent = { ...n, schemaVersion, seq: Number(r!.seq), id, at };
+    if (inTx()) pending.push(event);
+    else notify([event]);
+    return event;
+  };
+
   return {
     append(n) {
-      const id = c.idGen();
-      const at = n.at ?? c.clock.now().toISOString();
-      const schemaVersion = EVENT_SCHEMA_VERSIONS[n.type];
-      const r = c.db.get(
-        'INSERT INTO events (id, type, at, job_id, lane_id, machine_id, decision_id, question_id, data, schema_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING seq',
-      id, n.type, at, n.jobId ?? null, n.laneId ?? null, n.machineId ?? null, n.decisionId ?? null, n.questionId ?? null, JSON.stringify(n.data), schemaVersion);
-      const event: DomainEvent = { ...n, schemaVersion, seq: Number(r!.seq), id, at };
-      if (inTx()) pending.push(event);
-      else notify([event]);
-      return event;
+      if (!ledger || !LEDGER_EVENT_TYPES.has(n.type)) return appendOne(n);
+      return c.tx(() => {
+        const event = appendOne(n);
+        ledger.applyEvent(event);
+        return event;
+      });
     },
     since(afterSeq, limit) {
       const sql = `SELECT * FROM events WHERE seq > ? ORDER BY seq ${limit !== undefined ? 'LIMIT ?' : ''}`;
       return (limit !== undefined ? c.db.all(sql, afterSeq, limit) : c.db.all(sql, afterSeq)).map(toEvent);
     },
-    recent(limit = 100, types) {
-      const where = types?.length ? `WHERE type IN (${types.map(() => '?').join(',')})` : '';
-      return c.db.all(`SELECT * FROM events ${where} ORDER BY seq DESC LIMIT ?`, ...(types ?? []), limit).map(toEvent);
+    recent(limit = 100, types, jobId) {
+      const where = [...(types?.length ? [`type IN (${types.map(() => '?').join(',')})`] : []), ...(jobId !== undefined ? ['job_id = ?'] : [])];
+      const args = [...(types?.length ? types : []), ...(jobId !== undefined ? [jobId] : [])];
+      return c.db.all(`SELECT * FROM events ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY seq DESC LIMIT ?`, ...args, limit).map(toEvent);
+    },
+    between(types, since) {
+      if (types.length === 0) return [];
+      return c.db.all(`SELECT * FROM events WHERE type IN (${types.map(() => '?').join(',')}) AND at >= ? ORDER BY seq`, ...types, since).map(toEvent);
+    },
+    lastOfJobs(jobIds) {
+      if (jobIds.length === 0) return [];
+      return c.db.all(`SELECT DISTINCT ON (job_id) * FROM events WHERE job_id IN (${jobIds.map(() => '?').join(',')}) ORDER BY job_id, seq DESC`, ...jobIds).map(toEvent);
     },
     subscribe(l) {
       listeners.add(l);

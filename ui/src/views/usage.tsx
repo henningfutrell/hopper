@@ -1,8 +1,9 @@
 // Usage: who each part acts as (accounts), every usage reading by source, and what usage does to
-// each machine's lanes now (design.md "Usage and accounts (issue #18)"); and how long the usage history
-// is kept (issue #385), the one setting here, an admin's.
+// each machine's lanes now (design.md "Usage and accounts (issue #18)"); the usage limits on their graph
+// (issue #522) and how long the usage history is kept (issue #385), the settings here, an admin's.
 import { useEffect, useState } from 'react';
-import { Gauge as GaugeIcon, History, Layers, UserRound } from 'lucide-react';
+import { Gauge as GaugeIcon, History, Layers, MemoryStick, SlidersHorizontal, UserRound } from 'lucide-react';
+import { UsageLimitsGraph } from '@/charts/usage-limits';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { get } from '@/lib/api';
@@ -13,8 +14,10 @@ import { StatusBadge, type Tone } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
 import { usePoll } from '@/hooks/use-poll';
 import { accountFacts, executorEffectLines, laneEffectText, orderReadings, serviceLabel, sourceLine } from '@/model/usage';
-import type { MachineLaneEffect, PartAccount, UsageHistory, UsageReport } from '@/model/wire';
+import { bandAt, capAt, limitsProblem, throttleLine, type LimitBand } from '@/model/usage-limits';
+import type { MachineHistory, MachineLaneEffect, MemoryAlert, PartAccount, UsageHistory, UsageLimitPair, UsageReport } from '@/model/wire';
 import { act, refreshUsage, useHopper } from '@/store';
+import { MachinesResourcesPanel } from './machine-resources';
 
 const pct = (f: number) => `${Math.round(f * 100)}%`;
 const BAND_TONE: Record<MachineLaneEffect['band'], Tone> = { free: 'ok', soft: 'warn', hard: 'bad', offline: 'muted' };
@@ -97,13 +100,110 @@ function Sources({ usage }: { usage: UsageReport }) {
   );
 }
 
+const BAND_SAYS: Record<LimitBand, string> = { free: 'every lane open', soft: 'lanes scale down', hard: 'nothing new starts' };
+const BAND_TEXT: Record<LimitBand, string> = { free: 'text-ok', soft: 'text-warn', hard: 'text-bad' };
+const same = (a: UsageLimitPair, b: UsageLimitPair) => a.soft === b.soft && a.hard === b.hard;
+const DAY_MS = 86_400_000;
+
+function LimitInput({ id, label, value, disabled, onChange }: { id: string; label: string; value: number; disabled: boolean; onChange: (f: number) => void }) {
+  return (
+    <label htmlFor={id} className="flex items-center gap-1.5 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <Input id={id} type="number" min={0} max={100} step={1} inputMode="numeric" className="num h-8 w-[4.5rem]" disabled={disabled}
+        value={Number.isFinite(value) ? Math.round(value * 100) : ''} onChange={(e) => onChange(e.target.value === '' ? Number.NaN : Number(e.target.value) / 100)} />
+      <span className="text-muted-foreground">%</span>
+    </label>
+  );
+}
+
+/**
+ * The usage limits (issue #522): usage now and over the last day against the free, soft and hard bands; an admin
+ * drags a limit (or types it) and sees the bands, the line's colours and each machine's lane cap follow before
+ * saving. A soft limit at or above the hard one is refused here, before the daemon is asked.
+ */
+function UsageLimits({ usage }: { usage: UsageReport }) {
+  const canSet = useHopper((s) => allows(s.user, 'admin'));
+  const recorded = useHopper((s) => s.recorded.usage);
+  const clock = useNow();
+  const saved = usage.limits;
+  // The daemon's limits, until the admin starts an edit.
+  const [edited, setEdited] = useState<UsageLimitPair | null>(null);
+  const draft = edited ?? { soft: saved.soft, hard: saved.hard };
+  const [history, setHistory] = useState<UsageHistory | null>(null);
+  useEffect(() => { get<UsageHistory>('/api/usage/history?range=24h').then(setHistory, () => {}); }, [recorded]);
+  const edit = (l: UsageLimitPair) => setEdited(l);
+  const problem = limitsProblem(draft);
+  const shown = problem ? { soft: saved.soft, hard: saved.hard } : draft;
+  const online = usage.machines.filter((m) => m.online);
+  const now = online.length ? Math.max(...online.map((m) => m.usedFrac)) : 0;
+  const band = bandAt(now, shown);
+  const half = (history?.stepMs ?? 0) / 2;
+  const points = history ? throttleLine(history.series).map((p) => ({ t: p.t + half, v: p.v })) : [];
+  const dirty = !same(draft, saved);
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (problem || !dirty) return;
+    if (await act('/ui/api/usage/limits', draft, `Usage limits saved: soft ${pct(draft.soft)}, hard ${pct(draft.hard)}`)) {
+      await refreshUsage().catch(() => {});
+      setEdited(null);
+    }
+  };
+  return (
+    <Panel title="Usage limits" icon={SlidersHorizontal} bodyClassName="space-y-3" className="lg:col-span-2">
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
+        <div>
+          <div className="num text-3xl font-semibold tracking-tight" data-slot="usage-now-value">{pct(now)}</div>
+          <div className="text-xs text-muted-foreground">used now, the highest throttling reading</div>
+        </div>
+        <div className={`text-sm font-medium ${BAND_TEXT[band]}`} data-slot="usage-band">{band}: {BAND_SAYS[band]}</div>
+        {online.length > 0 && (
+          <ul className="ml-auto flex flex-wrap gap-1.5" aria-label="Lane cap per machine at these limits">
+            {online.map((m) => {
+              const cap = capAt(m.maxLanes, m.usedFrac, shown);
+              return (
+                <li key={m.machineId} data-machine-cap={m.machineId} className="num rounded-md border px-2 py-0.5 text-xs">
+                  <span className="text-muted-foreground">{m.label || m.machineId}</span>{' '}
+                  {cap !== m.cap && <span className="text-muted-foreground line-through">{m.cap}</span>}{cap !== m.cap && ' '}
+                  <span className="font-semibold">{cap}</span>/{m.maxLanes} lanes
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+      <UsageLimitsGraph points={points} now={now} from={history ? Date.parse(history.from) : clock - DAY_MS} to={clock} limits={shown}
+        {...(canSet ? { onChange: edit } : {})} />
+      <form className="flex flex-wrap items-center gap-x-4 gap-y-2" onSubmit={save}>
+        <LimitInput id="usage-soft-limit" label="Soft" value={draft.soft} disabled={!canSet} onChange={(soft) => edit({ ...draft, soft })} />
+        <LimitInput id="usage-hard-limit" label="Hard" value={draft.hard} disabled={!canSet} onChange={(hard) => edit({ ...draft, hard })} />
+        {canSet && (
+          <div className="ml-auto flex items-center gap-2">
+            {!same(draft, saved.defaults) && (
+              <Button type="button" size="sm" variant="ghost" onClick={() => edit({ ...saved.defaults })}>Defaults ({pct(saved.defaults.soft)} / {pct(saved.defaults.hard)})</Button>
+            )}
+            {dirty && <Button type="button" size="sm" variant="ghost" onClick={() => setEdited(null)}>Undo</Button>}
+            <Button type="submit" size="sm" disabled={!!problem || !dirty}>Save</Button>
+          </div>
+        )}
+      </form>
+      {problem && <p role="alert" className="text-xs text-bad" data-slot="usage-limits-problem">{problem}</p>}
+      <p className="text-xs text-muted-foreground">
+        Below the soft limit every lane is open; between the two a machine's lanes scale down; at the hard limit nothing new starts.
+        Informational readings never throttle. {saved.set
+          ? 'Set here, these win over the HOPPER_SOFT_LIMIT and HOPPER_HARD_LIMIT settings of the environment, and apply at once.'
+          : 'Until saved here, they come from HOPPER_SOFT_LIMIT and HOPPER_HARD_LIMIT in the environment.'}
+      </p>
+    </Panel>
+  );
+}
+
 /** How many days the usage graph's samples are kept; older ones are deleted, at once when it is lowered. */
 function HistoryRetention() {
   const canSet = useHopper((s) => allows(s.user, 'admin'));
   const [days, setDays] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
   useEffect(() => {
-    get<UsageHistory>('/api/usage/history?range=24h&step=1d').then((h) => { setDays(h.retentionDays); setDraft(String(h.retentionDays)); }, () => {});
+    get<UsageHistory>('/api/usage/history?range=24h').then((h) => { setDays(h.retentionDays); setDraft(String(h.retentionDays)); }, () => {});
   }, []);
   const n = Number(draft);
   const valid = Number.isInteger(n) && n >= 1;
@@ -114,7 +214,7 @@ function HistoryRetention() {
   return (
     <Panel title="Usage history" icon={History} bodyClassName="space-y-2">
       <p className="text-xs text-muted-foreground">
-        Every reading of every usage source is kept, for the Overview's usage graph. Readings older than this are deleted.
+        Every reading of every usage source is kept, for the Dashboard's usage graph. Readings older than this are deleted.
       </p>
       {days === null ? <Empty>loading</Empty> : (
         <form className="flex items-center gap-2 text-sm" onSubmit={save}>
@@ -129,16 +229,65 @@ function HistoryRetention() {
   );
 }
 
+const GB = 1e9;
+
+/**
+ * The memory alert (issue #868): a person is told when a machine's free memory stays under a threshold — Windows' own for
+ * a WSL machine, else memory available. Off until an admin sets it.
+ */
+function MemoryAlertPanel() {
+  const canSet = useHopper((s) => allows(s.user, 'admin'));
+  const [alert, setAlert] = useState<MemoryAlert | null | undefined>(undefined);
+  const [gbDraft, setGbDraft] = useState('');
+  const [minDraft, setMinDraft] = useState('');
+  const show = (a: MemoryAlert | null) => { setAlert(a); setGbDraft(a ? String(a.freeBytes / GB) : '5'); setMinDraft(a ? String(a.minutes) : '5'); };
+  useEffect(() => {
+    get<MachineHistory>('/api/machines/history?range=24h').then((h) => show(h.memoryAlert ?? null), () => {});
+  }, []);
+  const gb = Number(gbDraft);
+  const minutes = Number(minDraft);
+  const valid = gb > 0 && Number.isInteger(minutes) && minutes >= 0 && minutes <= 1440;
+  const save = async (next: MemoryAlert | null) => {
+    const done = next ? `Memory alert under ${next.freeBytes / GB} GB free for ${next.minutes} min` : 'Memory alert off';
+    if (await act('/ui/api/machines/memory-alert', { alert: next }, done)) show(next);
+  };
+  return (
+    <Panel title="Memory alert" icon={MemoryStick} bodyClassName="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        Tells you (webhooks and notifiers) when a machine's free memory stays low. On a machine in WSL, this is the free memory of Windows,
+        not of the Linux VM: the VM keeps its page cache, which Windows cannot use.
+      </p>
+      {alert === undefined ? <Empty>loading</Empty> : (
+        <form className="flex flex-wrap items-center gap-2 text-sm" onSubmit={(e) => { e.preventDefault(); if (valid) void save({ freeBytes: Math.round(gb * GB), minutes }); }}>
+          <label htmlFor="memory-alert-gb">Under</label>
+          <Input id="memory-alert-gb" type="number" min={0.1} step={0.1} inputMode="decimal" className="h-8 w-20" value={gbDraft} disabled={!canSet}
+            onChange={(e) => setGbDraft(e.target.value)} />
+          <label htmlFor="memory-alert-min">GB free for</label>
+          <Input id="memory-alert-min" type="number" min={0} max={1440} step={1} inputMode="numeric" className="h-8 w-20" value={minDraft} disabled={!canSet}
+            onChange={(e) => setMinDraft(e.target.value)} />
+          <span>min</span>
+          {canSet && <Button type="submit" size="sm" variant="secondary" disabled={!valid}>{alert ? 'Save' : 'Turn on'}</Button>}
+          {canSet && alert && <Button type="button" size="sm" variant="ghost" onClick={() => void save(null)}>Turn off</Button>}
+          {!alert && <span className="text-xs text-muted-foreground">off</span>}
+        </form>
+      )}
+    </Panel>
+  );
+}
+
 export function Usage() {
   const usage = useHopper((s) => s.usage);
   const accounts = useHopper((s) => s.accounts);
   usePoll(refreshUsage, 30_000);
   return (
     <div className="grid gap-3 lg:grid-cols-2">
+      {usage && <UsageLimits usage={usage} />}
+      <MachinesResourcesPanel className="lg:col-span-2" />
       <div className="space-y-3">
         <Accounts accounts={accounts} />
         {usage && <LaneEffect usage={usage} />}
         <HistoryRetention />
+        <MemoryAlertPanel />
       </div>
       <div className="space-y-3">{usage ? <Sources usage={usage} /> : <Panel title="Usage" icon={GaugeIcon}><Empty>loading</Empty></Panel>}</div>
     </div>

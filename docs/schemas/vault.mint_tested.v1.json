@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "asset": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "cluster",
+                "namespace",
+                "argocd-app",
+                "terraform-workspace",
+                "aws-account",
+                "aws-role"
+              ]
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "credential": {
+      "type": "string"
+    },
+    "sessionName": {
+      "type": "string"
+    },
+    "arn": {
+      "type": "string"
+    },
+    "user": {
+      "type": "string"
+    },
+    "expiresAt": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "asset",
+    "by"
+  ],
+  "additionalProperties": false
+}

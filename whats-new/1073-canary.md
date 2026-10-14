@@ -1,0 +1,1 @@
+- In Settings, Version, you can now take each stable release early. A new stable release goes to these installs first, and goes to everyone only when no bug report names it for a set time.

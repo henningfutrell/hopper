@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { homedir } from 'node:os';
 import { STATUS_NOTE_NUDGE, protocolFooter } from '../../src/executors/herdr/index.ts';
-import { CWD, JOB_ID, LANE, contextFor, jobWith, setup, until } from './support.ts';
+import { CWD, JOB_ID, LANE, LOCAL, contextFor, jobWith, setup, until } from './support.ts';
 
 /** The job's own scratch dir (issue #401): the reap removes it when the job ends. */
 const SCRATCH = `${CWD}/.hopper-scratch/${JOB_ID}`;
+const TMP = `/tmp/hopper-${JOB_ID}`;
 const DONE = { output: ['● Wrote hello.txt.', '  HOPPER_DONE'] };
 
 describe('herdr-claude executor: shape and validation', () => {
@@ -19,7 +20,7 @@ describe('herdr-claude executor: shape and validation', () => {
 
   it.each([
     [{ prompt: 'go' }, null],
-    [{ prompt: 'go', cwd: '/abs', model: 'opus', expectedMs: 1000, timeoutMs: 5000 }, null],
+    [{ prompt: 'go', cwd: '/abs', model: 'opus', timeoutMs: 5000 }, null],
     [{ prompt: 'go', cwd: '~' }, null],
     [{ prompt: 'go', cwd: '~/x' }, null],
     [{}, 'prompt must be a non-empty string'],
@@ -28,7 +29,6 @@ describe('herdr-claude executor: shape and validation', () => {
     [{ prompt: 'go', cwd: 'rel/dir' }, 'cwd must be an absolute path or start with ~'],
     [{ prompt: 'go', cwd: 3 }, 'cwd must be an absolute path or start with ~'],
     [{ prompt: 'go', model: 1 }, 'model must be a string'],
-    [{ prompt: 'go', expectedMs: 0 }, 'expectedMs must be a positive number'],
     [{ prompt: 'go', timeoutMs: -1 }, 'timeoutMs must be a positive number'],
     [{ prompt: 'go', timeoutMs: 'x' }, 'timeoutMs must be a positive number'],
     [{ prompt: 'go', env: { HOPPER_REPO: 'o/r', _X1: '' } }, null],
@@ -48,11 +48,13 @@ describe('herdr-claude executor: shape and validation', () => {
 describe('herdr-claude executor: run', () => {
   it('opens one tab in the hopper workspace, starts Claude, saves state before prompting', async () => {
     const { herdr, executor } = setup({ turns: [DONE] }, { claudeArgs: ['--dangerously-skip-permissions'] });
-    const { ctx, saved } = contextFor(jobWith({ prompt: 'Write hello.txt', model: 'opus' }));
+    const { ctx, saved, sessions } = contextFor(jobWith({ prompt: 'Write hello.txt', model: 'opus' }));
     await executor.run(ctx);
     expect(herdr.calls.find((c) => c.method === 'ensureWorkspace')!.args).toEqual(['hopper', CWD]);
-    expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12`, env: { CLAUDE_CODE_TMPDIR: SCRATCH, TMPDIR: SCRATCH, HOPPER_JOB_ID: JOB_ID, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' } }]);
-    expect(herdr.agentStarts).toEqual([{ name: 'jh-abcdef12', paneId: 'w1:p1', args: ['--dangerously-skip-permissions', '--model', 'opus'], timeoutMs: 60000 }]);
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12`, env: { CLAUDE_CODE_TMPDIR: TMP, TMPDIR: TMP, HOPPER_JOB_ID: JOB_ID, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1' } }]);
+    expect(herdr.agentStarts).toEqual([{ name: 'jh-abcdef12', paneId: 'w1:p1', args: ['--dangerously-skip-permissions', '--model', 'opus', '--session-id', sessions[0]!], timeoutMs: 60000 }]);
+    // The session the hopper chose (issue #501), reported once Claude is up: a parked job resumes it.
+    expect(sessions).toEqual([expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)]);
     expect(saved[0]).toEqual({ session: 'jh-test', workspaceId: 'w1', tabId: 'w1:t1', paneId: 'w1:p1', agentName: 'jh-abcdef12', cwd: CWD, laneId: LANE });
     const order = herdr.calls.map((c) => c.method);
     expect(order.indexOf('createTab')).toBeLessThan(order.indexOf('startAgent'));
@@ -64,16 +66,16 @@ describe('herdr-claude executor: run', () => {
     expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { HOPPER_REPO: 'o/r', HOPPER_JOB_ID: JOB_ID } });
   });
 
-  it('keeps the job in its work tree: Claude\'s scratchpad and temp files point at a scratch dir inside it, which a payload cannot move', async () => {
+  it('keeps the job in its work tree: Claude\'s scratchpad and temp files point, through a short link (issue #506), at a scratch dir inside it, which a payload cannot move', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go', env: { TMPDIR: '/tmp', CLAUDE_CODE_TMPDIR: '/tmp' } })).ctx);
-    expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { CLAUDE_CODE_TMPDIR: SCRATCH, TMPDIR: SCRATCH } });
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { CLAUDE_CODE_TMPDIR: TMP, TMPDIR: TMP } });
   });
 
   it('prepares the scratch dir in the pane before Claude starts, inside the work tree the shell enters, git-ignored by its own .gitignore', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
     await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args).toEqual(['w1:p1', `cd '${CWD}' && mkdir -p '${SCRATCH}' && printf '*\\n' > '${CWD}/.hopper-scratch/.gitignore' && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`]);
+    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args).toEqual(['w1:p1', `mkdir -p '${CWD}' && cd '${CWD}' && mkdir -p '${SCRATCH}' && printf '*\\n' > '${CWD}/.hopper-scratch/.gitignore' && ln -sfn '${SCRATCH}' '${TMP}' && [ "$(readlink '${TMP}')" = '${SCRATCH}' ] && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`]);
     const order = herdr.calls.map((c) => c.method);
     expect(order.indexOf('runInPane')).toBeGreaterThan(order.indexOf('createTab'));
     expect(order.indexOf('runInPane')).toBeLessThan(order.indexOf('startAgent'));
@@ -86,18 +88,18 @@ describe('herdr-claude executor: run', () => {
     expect(herdr.calls.filter((c) => c.method === 'waitOutput' && c.args[1] === 'hopper-scratch-ready').map((c) => c.args.slice(1))).toEqual(Array(3).fill(['hopper-scratch-ready', 1000]));
   });
 
-  it('fails the job, pane closed, when the shell never runs the scratch command', async () => {
+  it('fails the job, panes closed, when the shell never runs the scratch command in 3 starts (issue #462)', async () => {
     const { herdr, executor } = setup({ turns: [DONE], shellDropsRuns: 1000 });
     expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx))
-      .toEqual({ kind: 'failed', error: `pane w1:p1 never ran the scratch dir command within 60000 ms` });
+      .toEqual({ kind: 'failed', error: `claude did not start in 3 attempts: pane w1:p3 never ran the scratch dir command within 60000 ms` });
     expect(herdr.agentStarts).toEqual([]);
-    expect(herdr.closed).toEqual(['w1:p1']);
+    expect(herdr.closed).toEqual(['w1:p1', 'w1:p2', 'w1:p3']);
   });
 
   it('quotes a work tree path for the shell', async () => {
     const { herdr, executor } = setup({ turns: [DONE] });
-    await executor.run(contextFor(jobWith({ prompt: 'go', cwd: "/w/it's here" })).ctx);
-    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args[1]).toBe(`cd '/w/it'\\''s here' && mkdir -p '/w/it'\\''s here/.hopper-scratch/${JOB_ID}' && printf '*\\n' > '/w/it'\\''s here/.hopper-scratch/.gitignore' && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`);
+    await executor.run(contextFor(jobWith({ prompt: 'go' }), LANE, { ...LOCAL, workTree: "/w/it's here" }).ctx);
+    expect(herdr.calls.find((c) => c.method === 'runInPane')!.args[1]).toBe(`mkdir -p '/w/it'\\''s here' && cd '/w/it'\\''s here' && mkdir -p '/w/it'\\''s here/.hopper-scratch/${JOB_ID}' && printf '*\\n' > '/w/it'\\''s here/.hopper-scratch/.gitignore' && ln -sfn '/w/it'\\''s here/.hopper-scratch/${JOB_ID}' '${TMP}' && [ "$(readlink '${TMP}')" = '/w/it'\\''s here/.hopper-scratch/${JOB_ID}' ] && printf 'hopper-scratch-%s\\n' ready || printf 'hopper-scratch-%s\\n' unusable`);
   });
 
   it('every job prompt names its work tree and keeps the work in it', async () => {
@@ -160,7 +162,7 @@ describe('herdr-claude executor: run', () => {
 
   it('fails on HOPPER_FAILED with its reason', async () => {
     const { executor } = setup({ turns: [{ output: ['● I cannot.', '  HOPPER_FAILED no network access'] }] });
-    expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).toEqual({ kind: 'failed', error: 'no network access' });
+    expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).toEqual({ kind: 'failed', error: 'no network access', tail: expect.stringContaining('HOPPER_FAILED no network access') });
   });
 
   it('asks on HOPPER_QUESTION, keeps the pane, and frees the lane mapping', async () => {
@@ -205,14 +207,6 @@ describe('herdr-claude executor: run', () => {
     expect(out).toMatchObject({ kind: 'question', question: { detectedBy: 'marker', text: 'Should I also update the README?' } });
   });
 
-  it('each further status note in a row waits twice as long before the next nudge', async () => {
-    const note = { output: ['● Still waiting for the build.'] };
-    const { herdr, clock, executor } = setup({ turns: [note, note, note, DONE] }, { idleNudgeMs: 20000 });
-    expect(await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).toMatchObject({ kind: 'finished' });
-    expect(herdr.prompts.slice(1).map((p) => p.text)).toEqual([STATUS_NOTE_NUDGE, STATUS_NOTE_NUDGE, STATUS_NOTE_NUDGE]);
-    expect(clock.elapsed()).toBeGreaterThanOrEqual(20000 + 40000 + 80000);
-  });
-
   it('fails when Claude exits, with its last output', async () => {
     const { executor } = setup({ turns: [{ output: ['● Segfault in the matrix'], end: 'exit' }] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
@@ -224,20 +218,29 @@ describe('herdr-claude executor: run', () => {
   it('times out per call: interrupts, exits Claude, closes the pane', async () => {
     const { herdr, clock, executor } = setup({ turns: [{ output: [], end: 'working' }] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go', timeoutMs: 5000 })).ctx);
-    expect(out).toEqual({ kind: 'failed', error: 'timed out' });
+    expect(out).toEqual({ kind: 'failed', error: 'timed out', liveness: { pushed: false } });
     expect(clock.elapsed()).toBeLessThan(10000);
     expect(herdr.keys).toEqual([{ paneId: 'w1:p1', keys: ['esc'] }, { paneId: 'w1:p1', keys: ['ctrl+c', 'ctrl+c'] }]);
     expect(herdr.closed).toEqual(['w1:p1']);
   });
 
-  it('reports progress on each new assistant line, capped at 0.9 and non-decreasing', async () => {
+  it('reports each new assistant line as progress, with no fraction of time', async () => {
     const { executor } = setup({ turns: [{ steps: ['● Reading files', '● Writing hello.txt'], ...DONE }] });
-    const { ctx, progress } = contextFor(jobWith({ prompt: 'go', expectedMs: 2000 }));
+    const { ctx, progress } = contextFor(jobWith({ prompt: 'go' }));
     await executor.run(ctx);
-    const messages = progress.map((p) => p.message);
-    expect(messages).toEqual(expect.arrayContaining(['Reading files', 'Writing hello.txt']));
-    expect(progress.every((p) => p.fraction >= 0 && p.fraction <= 0.9)).toBe(true);
-    expect(progress.map((p) => p.fraction)).toEqual([...progress.map((p) => p.fraction)].sort((a, b) => a - b));
+    expect(progress.map((p) => p.message)).toEqual(expect.arrayContaining(['Reading files', 'Writing hello.txt']));
+    expect(progress.every((p) => p.tasks === undefined)).toBe(true);
+  });
+
+  // Issue #794: progress is the job's task count, x/y, as the job writes it; none before its task list.
+  it('reports the task count each time the job writes a new one; the count line is no progress message', async () => {
+    const steps = ['● Reading files', '● HOPPER_TASKS 0/3', '● Wrote the test', '● HOPPER_TASKS 1/3', '● Writing hello.txt', '● HOPPER_TASKS 2/3'];
+    const { executor } = setup({ turns: [{ steps, ...DONE }] });
+    const { ctx, progress } = contextFor(jobWith({ prompt: 'go' }));
+    await executor.run(ctx);
+    expect(progress.find((p) => p.message === 'Reading files')).toEqual({ message: 'Reading files' });
+    expect(progress.filter((p) => p.tasks).map((p) => p.tasks)).toEqual([{ done: 0, total: 3 }, { done: 1, total: 3 }, { done: 2, total: 3 }]);
+    expect(progress.map((p) => p.message)).not.toContain('HOPPER_TASKS 1/3');
   });
 
   it('maps its lane to its pane while running', async () => {
@@ -258,20 +261,16 @@ describe('herdr-claude executor: run', () => {
     expect(progress.map((p) => p.message)).toContain(`trusted workdir ${CWD}`);
   });
 
-  it('refuses a trust dialog naming another path: failed with the screen, pane closed', async () => {
+  // Issue #534: a dialog the hopper may not answer is asked of a person, its options numbered; the pane stays.
+  it('never answers a trust dialog naming another path itself: asked as a question, with its options, pane kept', async () => {
     const { herdr, executor } = setup({ trustDialogFor: '/somewhere/else', turns: [DONE] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(out.kind).toBe('failed');
-    expect(out.kind === 'failed' && out.error).toContain('Quick safety check');
+    expect(out).toMatchObject({ kind: 'question', question: { detectedBy: 'blocked' } });
+    expect(out.kind === 'question' && out.question.text).toContain('Quick safety check');
+    expect(out.kind === 'question' && out.question.text).toContain('1. No, exit\n2. Yes, I trust this folder');
     expect(herdr.keys.some((k) => k.keys.includes('down'))).toBe(false);
     expect(herdr.prompts).toEqual([]);
-    expect(herdr.closed).toEqual(['w1:p1']);
-  });
-
-  it('refuses its own trust dialog when trustWorkdir is false', async () => {
-    const { herdr, executor } = setup({ trustDialogFor: CWD, turns: [DONE] }, { trustWorkdir: false });
-    expect((await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx)).kind).toBe('failed');
-    expect(herdr.prompts).toEqual([]);
+    expect(herdr.closed).toEqual([]);
   });
 
   // Issue #267: a yolo instance starts Claude with every permission granted; its warning never holds the job.
@@ -293,19 +292,19 @@ describe('herdr-claude executor: run', () => {
     expect(progress.map((p) => p.message)).toEqual(expect.arrayContaining([`trusted workdir ${CWD}`, 'accepted bypass permissions mode']));
   });
 
-  it('not yolo: the bypass permissions warning is never accepted: failed with the screen, pane closed', async () => {
+  it('not yolo: the bypass permissions warning is never accepted by the hopper: asked as a question, pane kept', async () => {
     const { herdr, executor } = setup({ bypassDialog: 'not-ready', turns: [DONE] }, { yolo: false });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(out.kind === 'failed' && out.error).toContain('Bypass Permissions mode');
+    expect(out.kind === 'question' && out.question.text).toContain('Bypass Permissions mode');
     expect(herdr.keys.some((k) => k.keys.includes('down'))).toBe(false);
     expect(herdr.prompts).toEqual([]);
-    expect(herdr.closed).toEqual(['w1:p1']);
+    expect(herdr.closed).toEqual([]);
   });
 
-  it('fails with the screen on any other startup block', async () => {
-    const { executor } = setup({ startupBlockedBy: ['Claude Code needs to update. Press enter.'] });
+  it('asks any other startup block as a question, the dialog its text', async () => {
+    const { executor } = setup({ startupBlockedBy: ['─'.repeat(40), ' Claude Code needs to update', '', ' ❯ 1. Update now', '   2. Exit', '', ' Enter to confirm · Esc to cancel'] });
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(out.kind === 'failed' && out.error).toContain('needs to update');
+    expect(out.kind === 'question' && out.question.text).toContain('needs to update');
   });
 
   it('never rejects: a herdr error becomes failed', async () => {
@@ -323,14 +322,15 @@ describe('herdr-claude executor: run', () => {
     expect(herdr.agentStarts).toHaveLength(1);
   });
 
-  it('gives up at the start deadline when the shell never comes: failed, pane closed', async () => {
+  it('gives up at the start deadline of each of its 3 starts when the shell never comes (issue #462): failed, panes closed', async () => {
     const { herdr, clock, executor } = setup({ turns: [DONE], shellNotReadyStarts: Infinity });
     const t0 = clock.now().getTime();
     const out = await executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
     expect(out.kind === 'failed' && out.error).toMatch(/shell/);
-    expect(clock.now().getTime() - t0).toBeGreaterThanOrEqual(60000);
-    expect(clock.now().getTime() - t0).toBeLessThan(62000);
-    expect(herdr.closed).toEqual(['w1:p1']);
+    // Three start deadlines, and the pauses between them: 10 to 15 s, then 30 to 45 s.
+    expect(clock.now().getTime() - t0).toBeGreaterThanOrEqual(3 * 60000 + 40000);
+    expect(clock.now().getTime() - t0).toBeLessThan(3 * 62000 + 60000);
+    expect(herdr.closed).toEqual(['w1:p1', 'w1:p2', 'w1:p3']);
     expect(herdr.prompts).toEqual([]);
   });
 

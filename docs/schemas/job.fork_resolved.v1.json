@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "forkId": {
+      "type": "string"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "research",
+        "proposal"
+      ]
+    },
+    "questionId": {
+      "type": "string"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "accept",
+        "reject"
+      ]
+    },
+    "delivered": {
+      "type": "boolean"
+    },
+    "question": {
+      "type": "string",
+      "enum": [
+        "open",
+        "answered",
+        "closed",
+        "dismissed",
+        "expired",
+        "lapsed",
+        "cancelled",
+        "missing"
+      ]
+    }
+  },
+  "required": [
+    "forkId",
+    "kind",
+    "questionId",
+    "decision",
+    "delivered"
+  ],
+  "additionalProperties": false
+}

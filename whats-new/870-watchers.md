@@ -1,0 +1,1 @@
+- Each infrastructure plan, its approval and its apply is now sent to your notifications. An admin can name who watches each environment, such as prod or uat, on the Infra page. Each message names those people.

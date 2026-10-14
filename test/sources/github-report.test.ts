@@ -26,10 +26,10 @@ describe('GitHub source report', () => {
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     await source.report({ kind: 'claimed', job: jobForIssue(1) });
     await source.report({ kind: 'claimed', job: jobForIssue(2) });
-    expect(gh.calls.filter((c) => c.method === 'ensureLabel')).toHaveLength(4);
+    expect(gh.calls.filter((c) => c.method === 'ensureLabel')).toHaveLength(7);
   });
 
-  it('finished: claimed → done, no comment, the issue left to the merge that closes it (issue #187); state unchanged', async () => {
+  it('finished with the issue open: claimed → pr-ready, no comment, the issue left to the merge that closes it (issues #187, #579); the pull request to follow kept', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, {
       id: 'abcdef12-3456-7890-abcd-ef1234567890', status: 'finished', result: { summary: 'README added, mindless prose' },
@@ -38,10 +38,22 @@ describe('GitHub source report', () => {
     const claimed = await source.report({ kind: 'claimed', job });
     gh.calls.length = 0;
     const state = await source.report({ kind: 'finished', job });
-    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
-    expect(gh.calls.map((c) => c.method)).toEqual(['removeLabels', 'addLabels']);
+    // No ready pull request closes it: one that references it, or one named for it on its branch, is looked for (issue #637).
+    expect(gh.calls.map((c) => c.method)).toEqual(['getIssue', 'openClosingPullRequests', 'referencingPullRequests', 'openPullRequests', 'removeLabels', 'addLabels']);
     expect(gh.issue(REPO, 1).state).toBe('open');
+    expect(state).toEqual({ ...claimed, follow: 'open' });
+  });
+
+  it('finished, a proposal\'s job whose follow-ons go on with its work: the issue stays claimed, nothing to follow (issue #859)', async () => {
+    const { gh, source } = withIssue();
+    const job = jobForIssue(1, { status: 'finished', result: { proposal: { id: 'p1', version: 1, decision: 'accept', followOns: [{ path: '1', jobId: 'j2' }] } } });
+    const claimed = await source.report({ kind: 'claimed', job });
+    gh.calls.length = 0;
+    const state = await source.report({ kind: 'finished', job: { ...job, sourceState: { source: claimed } } });
+    expect(gh.issue(REPO, 1)).toMatchObject({ state: 'open', labels: ['hopper', 'hopper:claimed'] });
+    expect(gh.calls).toEqual([]);
     expect(state).toEqual(claimed);
   });
 
@@ -124,7 +136,7 @@ describe('GitHub source report', () => {
     const state = await source.report({ kind: 'finished', job });
     await source.report({ kind: 'finished', job: { ...job, sourceState: { source: state } } });
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
-    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:done']);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:pr-ready']);
   });
 
   it('a huge result never reaches the issue', async () => {

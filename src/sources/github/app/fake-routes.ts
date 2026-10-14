@@ -1,9 +1,10 @@
 // REST endpoints of the fake GitHub: app installations, token minting, installation repos,
-// issues (read), comments, assignment events, labels. Response shapes follow the GitHub REST API (the fields the adapter
+// issues (read), comments, assignment events, labels, a pull request's merge. Response shapes follow the GitHub REST API (the fields the adapter
 // reads). Authentication is checked by fake-server.ts before a route runs.
 
 import { randomBytes } from 'node:crypto';
 import type { FakeGitHubOptions, FakeIssue, FakeRepo, FakeState, FakeTokenRecord } from './fake-state.ts';
+import { endPull } from './fake-pull-end.ts';
 
 export interface FakeReply { status: number; body?: unknown; headers?: Record<string, string> }
 export interface FakeCtx { state: FakeState; opts: FakeGitHubOptions; baseUrl: string; bot: string; now(): Date }
@@ -96,6 +97,12 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
     repo.labels.add(name);
     return { status: 201, body: { name, color: body.color, description: body.description } };
   }
+  // The hopper's merge (issue #985 part 4): a pull request not open cannot be merged.
+  const merge = /^\/pulls\/(\d+)\/merge$/.exec(rest);
+  if (req.method === 'PUT' && merge) {
+    if (!endPull(repo, Number(merge[1]), 'MERGED', ctx.now().toISOString())) return { status: 405, body: { message: 'Pull Request is not mergeable' } };
+    return { status: 200, body: { merged: true, message: 'Pull Request successfully merged' } };
+  }
   const m = /^\/issues\/(\d+)(\/comments|\/events|\/labels(?:\/(.+))?)?$/.exec(rest);
   const issue = m ? repo.issues.get(Number(m[1])) : undefined;
   if (!m || !issue) return notFound;
@@ -105,8 +112,18 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
     const p = paginate(ctx, req, issue.comments.map((c) => restComment(repo, issue.number, c)));
     return { status: 200, body: p.items, headers: p.headers };
   }
+  if (req.method === 'POST' && sub === '/comments') {
+    const c = { id: ctx.state.nextCommentId++, author: ctx.bot, body: String(body.body ?? ''), createdAt: ctx.now().toISOString() };
+    issue.comments.push(c);
+    return { status: 201, body: restComment(repo, issue.number, c) };
+  }
   if (req.method === 'GET' && sub === '/events') {
-    const p = paginate(ctx, req, issue.assignees.map((login) => ({ event: 'assigned', created_at: issue.updatedAt, assignee: { login } })));
+    // Its labels and assignments, each by its author (issue #652: who added them is what intake trusts).
+    const actor = { login: issue.author, type: 'User' };
+    const p = paginate(ctx, req, [
+      ...issue.labels.map((name) => ({ event: 'labeled', created_at: issue.updatedAt, actor, label: { name } })),
+      ...issue.assignees.map((login) => ({ event: 'assigned', created_at: issue.updatedAt, actor, assignee: { login } })),
+    ]);
     return { status: 200, body: p.items, headers: p.headers };
   }
   if (req.method === 'POST' && sub === '/labels') {

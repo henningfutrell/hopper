@@ -5,10 +5,19 @@ import type { IntakeAction, IntakeActionResult, IntakeOutcome } from './intake.t
 import type {
   Advice, DomainEvent, HostKeyOfferOutcome, PreSortReject, ExecutorUnavailable, Job, JobId, MachineDefaultsEdit, MachineEdit, MachineEditOutcome, MachinesConfig, PluginsEdit,
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
-  Question, QuestionAttempt, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdateSettings, UpdateStatus, VersionHistory,
-  ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport,
+  Question, SourceStatus, UsageReading, UsageSourceState, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, Allowed, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread,
 } from './types.ts';
 import type { UserStore } from './store.ts';
+import type { NoteDelivery } from './job-notes.ts';
+export type { NoteDelivery } from './job-notes.ts';
+import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
+export type { SourceItem, SourceRef } from './source-item.ts';
+import type { ExecutionReport } from './escalation-ports.ts';
+import type { FollowsPullRequests, FollowUp, PullRequestAct } from './pull-requests.ts';
+export type * from './escalation-ports.ts';
+export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
+export { authorizationServerRefusal, isRefusal } from './access.ts';
+export type { CredentialMinter } from './minting.ts';
 
 // ---- Execution -----------------------------------------------------------------------
 
@@ -18,13 +27,16 @@ export interface ExecutionContext {
   /** The machine the lane is on: an executor that runs work outside the process runs it there. */
   machine: MachineSnapshot;
   /**
-   * Aborted on cancel or daemon shutdown; `signal.reason` is the string `'cancel'` or
-   * `'shutdown'`. On cancel an executor stops the work and releases it; on shutdown it
-   * returns promptly and leaves external work (a herdr pane) as it is.
+   * Aborted on cancel, park or daemon shutdown; `signal.reason` is the string `'cancel'`, `'park'`
+   * or `'shutdown'`. On cancel an executor stops the work and releases it; on park or shutdown it
+   * returns promptly and leaves external work (a herdr pane) as it is: `park` then releases it.
    */
   signal: AbortSignal;
-  /** Report progress 0..1 with an optional message. Emits job.progressed. */
-  progress(fraction: number, message?: string): void;
+  /**
+   * Report progress (issue #794): a progress message, the job's task count, or both. What is left out keeps what the
+   * job has. Emits job.progressed.
+   */
+  progress(message?: string, tasks?: TaskCount): void;
   /**
    * Persist executor-owned state on the job (`job.executorState`) as soon as it exists — e.g.
    * the herdr pane a job runs in — so restart recovery and resume can find it.
@@ -32,13 +44,13 @@ export interface ExecutionContext {
   saveState(state: Record<string, unknown>): void;
   /** Report the job's work tree (its cwd on the lane's machine) once resolved: `job.workTree`, shown on its lane. */
   workTree(path: string): void;
+  /** Report the agent session the job's agent runs in, once its agent is up (`job.agentSession`, issue #501): a parked job resumes it. */
+  agentSession?(id: string): void;
   /**
-   * The variables the job's own processes run with, from its source's connection (issue #214): the GitHub
-   * account the job came from, so what the job does on GitHub acts as that user with the hopper's app marked
-   * on it. Its credential files are first kept under `<scratch>/credentials` on the job's machine, where every
-   * renewal rewrites them, so a running job keeps working across one (issue #441); the variables point
-   * there. Asked when the job starts, resumes, or takes a turn, with the job's own scratch dir, and whether
-   * its work tree may be made (the jobs dir); no token is stored on the job.
+   * The variables the job's own processes run with: its way to the hopper (issues #563, #652) — the hopper's URL, the
+   * files `hopper-gh` and its proxy token kept under `<scratch>/credentials` on the job's machine, and git's way to GitHub
+   * through the hopper. Never a GitHub token: the hopper acts on GitHub for the job. Asked when the job starts, resumes,
+   * or takes a turn, with the job's own scratch dir, and whether its work tree may be made (the jobs dir).
    */
   credentials?: (scratch: string, makeWorkTree?: boolean) => Promise<Readonly<Record<string, string>>>;
   /**
@@ -47,7 +59,27 @@ export interface ExecutionContext {
    * Absent → the default job rules.
    */
   jobRules?: string;
+  /** The logins (issue #476): a login the job's work waits on goes here, never into a question. Absent → none taken. */
+  logins?: RunLogins;
+  /**
+   * Asked before each nudge (issue #627): what the job's source and the hopper say of the job now. A throw: it could
+   * not tell. Absent → nudge.
+   */
+  beforeNudge?(): Promise<NudgeCheck>;
+  /**
+   * The notes a person sent the job (issue #997): whether any wait for its session, and `take` them — the text to type
+   * in, the notes then recorded delivered `how` — or undefined with none. An executor takes them only where its session
+   * can read text: as it starts, at a turn boundary, with an answer it types in. Absent → none.
+   */
+  notes?: { waiting(): boolean; take(how: NoteDelivery): string | undefined };
 }
+
+/**
+ * The check before a nudge (issue #627): nudge; or end the job done, with why — its pull request is ready for review,
+ * or its issue is closed; or no nudge while it waits on a person, with what it waits on.
+ */
+export type NudgeCheck = { nudge: true } | { done: string } | { waiting: string };
+
 
 /** What the executor needs answered before the job can continue. */
 export interface ExecutionQuestion {
@@ -62,10 +94,25 @@ export interface ExecutionQuestion {
 }
 
 export type ExecutionOutcome =
-  | { kind: 'finished'; result: unknown }
-  | { kind: 'failed'; error: string }
+  | { kind: 'finished'; result: unknown; partlyDone?: string }
+  /**
+   * `tail`: the pane or output tail at failure, codes hidden (issue #509): the assessor's evidence. `liveness`: a
+   * timeout's (issue #630), what the job showed of its progress then. `linkLost` (issue #752): its machine's link dropped
+   * while its work was watched, so that work may live on there; the engine holds the job and reattaches it when the link is back.
+   */
+  | { kind: 'failed'; error: string; tail?: string; liveness?: JobLiveness; linkLost?: true }
   /** The job is paused on a question. Its executor state (saveState) must allow resume. */
-  | { kind: 'question'; question: ExecutionQuestion };
+  | { kind: 'question'; question: ExecutionQuestion }
+  /**
+   * The job is paused on a document it wrote for a review section — a proposal, a research report (issues #537, #543)
+   * — as on a question: its executor state must allow resume.
+   */
+  | { kind: 'report'; review: ReviewKind; report: ExecutionReport }
+  /**
+   * The job waits on something it named (issue #483): no question. Its executor state must let `answeredInPane` see it go
+   * on by itself, and `resume` tell it that a person ended the wait.
+   */
+  | { kind: 'wait'; wait: Omit<JobWait, 'since'> };
 
 /**
  * What `Executor.answeredInPane` saw: the typed answer (if readable) and the state to reattach with.
@@ -86,12 +133,18 @@ export interface Executor {
    * running at a restart is never re-run: it is reattached (below) or cleaned up and failed.
    */
   readonly idempotent?: boolean;
+  /**
+   * It runs the research and proposal loop (issues #537, #543, #548): its agent is told the review markers and it comes
+   * back with a `report`. Only a job on such an executor may be asked for research or a proposal from its question.
+   * Absent: it cannot.
+   */
+  readonly reviews?: true;
   /** Validate a payload at push time; return an error string or null. */
   validate(payload: Record<string, unknown>): string | null;
   run(ctx: ExecutionContext): Promise<ExecutionOutcome>;
   /**
-   * Continue a job that returned `question`: deliver `answer` (from `ctx.job.executorState`)
-   * and run until the next outcome. Absent → the executor never asks questions.
+   * Continue a job that returned `question`, or a parked one re-queued (`ctx.job.parked`, issue #501): deliver
+   * `answer` (from `ctx.job.executorState`) and run until the next outcome. Absent → the executor never asks questions.
    */
   resume?(ctx: ExecutionContext, answer: string): Promise<ExecutionOutcome>;
   /**
@@ -110,10 +163,29 @@ export interface Executor {
   /**
    * A `waiting_answer` job whose question the owner answered outside the hopper (typed into its
    * pane): its work runs again. Returns the typed text when it can be read reliably, and the
-   * executor state that lets `reattach` watch the new turn; null while still parked. Absent →
+   * executor state that lets `reattach` watch the new turn; null while it still waits. Absent →
    * never. Must not throw (an error is null). The engine polls it on every tick.
    */
   answeredInPane?(job: Job): Promise<PaneAnswer | null>;
+  /**
+   * A job waiting on its own background command (issue #1037): true while its pane shows background work; false when it
+   * shows none, or its pane or agent is gone; null when that cannot be told now. Must not throw. Absent → never asked.
+   */
+  ownCommandRuns?(job: Job): Promise<boolean | null>;
+  /** Type `text` into a waiting job's pane (issue #1037), as a message to its agent; the job stays as it is. False: not delivered. Must not throw. */
+  nudgeInPane?(job: Job, text: string): Promise<boolean>;
+  /**
+   * Park a job (issue #501): end its pane and its agent, and stop its processes, keeping its work tree and
+   * its agent session, so a later `resume` reopens that session (`ctx.job.parked` set). Absent → the executor
+   * cannot park. Rejects only when it could not reach the job's machine: the sweep stops what runs there later.
+   */
+  park?(job: Job): Promise<void>;
+  /**
+   * Take a running job's checkpoint (issue #921): its agent session and its work not pushed, read on its machine.
+   * Undefined when the job has none to take (no agent session, no worktree of its own). Rejects when its machine
+   * cannot be reached. Absent → the executor takes none.
+   */
+  checkpoint?(job: Job): Promise<import('./checkpoints.ts').CheckpointCapture | undefined>;
   /**
    * Release whatever a job holds outside the process (close its pane), and reap what it left (issue
    * #401): its processes stopped, its scratch dir removed. Called after every terminal outcome, when a
@@ -130,36 +202,8 @@ export interface Executor {
   machineShell?(machine: MachineSnapshot): MachineShell | undefined;
 }
 
-/** What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. */
-export interface Reaped { kept: string[] }
-
-/** What a job left on a machine, as the sweep's survey finds it (issue #410): job ids, and each scratch dir with its age. */
-export interface Survey {
-  /** Jobs with a running scope (`hopper-job-<id>.scope`). */
-  scopes: string[];
-  /** Jobs with a process carrying their HOPPER_JOB_ID. */
-  processes: string[];
-  /** Each `<work tree>/.hopper-scratch/<job id>` under the work trees asked about. */
-  scratch: { jobId: string; path: string; ageMs: number }[];
-}
-
-/**
- * A machine as the reap and the sweep reach it (issue #410): the fixed scripts run there through its own
- * connection — this machine, ssh, or a client target's `/reap` and `/survey` — never in a pane. Each
- * rejects when the machine cannot be reached or the script did not finish.
- */
-export interface MachineShell {
-  /** Stops the job's scope and every process carrying its id; removes `scratch` (its own) unless it holds work not pushed. */
-  reap(jobId: string, scratch?: string): Promise<Reaped>;
-  /** What jobs left there: scopes, processes, and the scratch dirs under `roots`. */
-  survey(roots: string[]): Promise<Survey>;
-  /**
-   * Writes `content` to `file` under `dir`, the job's own credentials dir (`…/.hopper-scratch/<job id>/credentials`),
-   * mode 600, replacing it whole (issue #441): a running job reads its connection's current token there.
-   * `make`: the work tree may be made here (the jobs dir); else a work tree that is not there is refused.
-   */
-  keepCredential(jobId: string, dir: string, file: string, content: string, make?: boolean): Promise<void>;
-}
+import type { MachineShell, Reaped } from './machine-shell.ts';
+export type { MachineShell, Reaped, Survey } from './machine-shell.ts';
 
 // ---- Inputs the decider is made over ---------------------------------------------------
 
@@ -190,10 +234,22 @@ export interface NotifierEvents {
   subscribe(listener: (event: DomainEvent) => void): () => void;
   job(id: JobId): Job | undefined;
   question(id: string): Question | undefined;
-  /** The questions open at the human stage, oldest first. */
+  /** The questions open at the human stage: high-priority jobs' first (issue #535), then oldest first. */
   waitingOnHuman(): Question[];
   /** Where the human answers a question. */
   answerUrl(questionId: string): string;
+  /** The high-priority threshold now (issue #535): a job at or above it is high priority. Absent: the default. */
+  highPriority?(): number;
+  /** Where a person sees the logins (issue #698): the Logins view; and marks out-of-band changes (issue #871): the Infra page. Absent: not known. */
+  loginsUrl?(): string; infraUrl?(): string;
+  /** Where a person opens an artifact (issue #673): its stable URL under the user's link base. Absent: not known. */
+  artifactUrl?(id: string): string;
+  /** What a notification of the question leads with (issue #569): its TL;DR, else the agent's own summary; undefined: a short question, or the TL;DR off. */
+  tldr?(q: Question): string | undefined;
+  /** Where the hopper is reached from outside now (issues #795, #880): the remote access URL while its tunnel is up. Absent or undefined: not reached. */
+  reach?(): string | undefined;
+  /** A plan as a notification says it (issue #870 part 4): what it changes, its risk, who approves it, its watchers. Undefined: no such plan. */
+  infraPlan?(id: string): import('./infra-watchers.ts').InfraPlanNotice | undefined;
 }
 
 /**
@@ -280,50 +336,6 @@ export interface Clock {
 
 // ---- Questions -----------------------------------------------------------------------
 
-/** Everything an escalation level is given. */
-export interface AnswerRequest {
-  question: Question;
-  /** The job's full prompt. */
-  jobPrompt: string;
-  jobGoal?: string;
-  /** The owner's standing rules, read from the rules file at ask time. */
-  rules: string;
-  /** The question's trail so far — earlier runs, and the levels below this one with their recommendations. */
-  previous: QuestionAttempt[];
-  /** Where this level stands: `number` of `of` (1 is the lowest). Above level `of` is the owner. */
-  level: { number: number; of: number };
-  /** The machine the job runs on, or waits on for the answer (issue #442): a level that names no machine runs there when it can. */
-  jobMachine?: string;
-}
-
-/**
- * An escalation level's reply: answer the question (`escalate: false`, with the `answer` to type
- * into the job), or send it to the next level up (`escalate: true`; `answer`, when given, is this
- * level's recommendation, on the trail).
- */
-export interface LevelReply {
-  answer?: string;
-  escalate: boolean;
-  reason: string;
-  /** The model that ran, as its provider reports it (the trail shows it in place of the configured alias). */
-  model?: string;
-  /** The machine it ran on and why, when the level named none and picked it (issue #442): on the trail. */
-  machine?: { id: string; why: string };
-}
-
-/**
- * The escalation-level role: one rung a question climbs. Never throws by contract; the question
- * service fails closed on its reply all the same: only a schema-valid `escalate: false` with an
- * answer answers; an error, a throw, a timeout or anything malformed escalates to the next level up.
- */
-export interface EscalationLevel {
-  /** The instance name (the plugins config), which is also the question's stage while this level holds it. */
-  readonly name: string;
-  /** The model it runs, for the trail. */
-  readonly model?: string;
-  answer(req: AnswerRequest, signal: AbortSignal): Promise<LevelReply | { error: string }>;
-}
-
 export type IdGen = () => string;
 
 export interface ExecutorRegistry {
@@ -349,15 +361,14 @@ export interface WebhookDispatcher {
   /** Called on every delivery state change. Feeds SSE `delivery.updated`. */
   onDeliveryUpdated(listener: (delivery: WebhookDelivery) => void): () => void;
   /**
-   * POST /ui/api/webhooks/test (issue #378): one signed `webhook.test` event to the subscription now,
+   * POST /ui/api/webhooks/test (issue #378): one signed test event to the subscription now — the first
+   * type it names, `data.test: true` (issue #481), or `webhook.test` for `*` only —
    * one attempt, no delivery stored and nothing appended; undefined for no such subscription.
    */
   test(name: string): Promise<NotifierActionResult | undefined>;
 }
 
-export type AnswerByHumanResult =
-  | { ok: true; question: Question }
-  | { ok: false; reason: 'not_found' | 'not_open' };
+export type AnswerByHumanResult = { ok: true; question: Question } | { ok: false; reason: 'not_found' | 'not_open' };
 
 /**
  * Runs the question pipeline: answer → assess → risk rules → accepted or human. Every write is
@@ -371,11 +382,14 @@ export interface QuestionService {
   firstStage(): string;
   /** Start the pipeline for a newly asked question (created at `firstStage()`). */
   handle(questionId: string): void;
+  /** The owner answers an open question. Idempotent per question: the owner's same answer again returns the question unchanged; another answer is `not_open`. */
   answerByHuman(questionId: string, answer: string): AnswerByHumanResult;
   /** The owner ends an open question without answering: status `closed`, the close text becomes its answer, `question.closed`, then onAnswered resumes the job. */
   closeByHuman(questionId: string): AnswerByHumanResult;
   /** The owner drops an open question: status `dismissed`, no answer, `question.dismissed`, then onDismissed (the engine cancels a job still waiting on it). */
   dismissByHuman(questionId: string): AnswerByHumanResult;
+  /** A person corrects a level's auto-answer (issue #632, src/questions/auto-answer.ts `correctAutoAnswer`), then onCorrected. */
+  correct(questionId: string, answer: string, by: string): { ok: true; question: Question } | { ok: false; reason: 'not_found' | 'not_auto' | 'job_ended' };
   /** The owner saw the question in the UI: `seenAt` is set once and kept. Any status. */
   markSeen(questionId: string): { ok: true; question: Question } | { ok: false; reason: 'not_found' };
   /**
@@ -392,54 +406,27 @@ export interface QuestionService {
    * is not open or has no countdown.
    */
   lapsedInPane(questionId: string): Question | undefined;
+  /**
+   * Settle an open question with `answer` given by `by` (issue #548): `human` for a person's switch, a level's name for
+   * its own, `fork:<job id>` for a fork's accepted result; `reason` goes on the trail. Then onAnswered resumes the job,
+   * or keeps the answer for a parked one. Synchronous; call inside the caller's tx. Undefined when it is not open.
+   */
+  settleWith(questionId: string, answer: string, by: string, reason: string): Question | undefined;
   /** Synchronous; call inside the caller's tx. Aborts an in-flight stage, clears timers. */
   cancel(questionId: string): void;
+  /**
+   * A parked job's question (issue #501) is waited on again: at the human stage, its timeout starts again
+   * from now and its timers are armed. While its job is parked, a question never expires and is not renotified.
+   */
+  unparked(questionId: string): void;
   /** Startup: every open non-human question restarts at the answer stage; re-arm human timers, expire overdue ones. */
   recover(): void;
+  /** Cancel the open questions whose job ended or is gone (issue #529): nothing waits on their answer. Run on each tick and by `recover`. */
+  sweep(): void;
   stop(): Promise<void>;
 }
 
 // ---- Job sources (the hopper pulls; nothing pushes) -----------------------------------
-
-/** One eligible item a source offers. Becomes at most one job, deduped by `key`. */
-export interface SourceItem {
-  key: string;
-  url: string;
-  title: string;
-  /** The raw item text (issue body). */
-  body: string;
-  /**
-   * The full prompt sent to the job: `body` followed by the item context (repo, number, URL,
-   * title, labels, author, priority and where it came from, project item, recent comments)
-   * and instructions for commenting back. Built by the source.
-   */
-  prompt: string;
-  /** Environment for the job's process, e.g. HOPPER_ISSUE_URL, HOPPER_REPO, HOPPER_ISSUE_NUMBER. */
-  env: Record<string, string>;
-  author: string;
-  /** The login the item was taken for (issue #387: an issue assigned to the user's connected account). */
-  assignee?: string;
-  priority: number;
-  /** Where `priority` came from, e.g. "project:Priority=P1", "label:hopper:high", "default". */
-  priorityReason: string;
-  /** The job's own work tree: its repository's path (`repoPaths`). Absent: the machine's, then `defaultCwd` (issue #324). */
-  cwd?: string;
-  /** The source's default work tree: the job's when neither it nor its machine names one (issue #324). Absent: the executor's. */
-  defaultCwd?: string;
-  labels: string[];
-  repo?: string;
-  number?: number;
-  /** Executor for the job (from source config), and an optional model. */
-  executor: string;
-  model?: string;
-  /**
-   * Set when the item cannot become a runnable job (e.g. "empty issue body"). `ingest` then
-   * creates the job and fails it in one tx (job.queued + job.failed), so it is claimed and
-   * reported failed once — never retried every poll. An executor rejecting the payload is
-   * treated the same way.
-   */
-  invalid?: string;
-}
 
 /**
  * What a source observed about a job it owns. Questions are answered in the UI, never through a source.
@@ -463,7 +450,7 @@ export type SourceReport =
   | { kind: 'cancelled'; job: Job }
   | { kind: 'rejected'; job: Job };
 
-export interface JobSource {
+export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses {
   readonly name: string;
   readonly kind: string;
   /** Facts for SourceStatus.detail. */
@@ -475,8 +462,17 @@ export interface JobSource {
    * status `disabled` when it has none, with `detail.paused` = the reason. Absent → never paused.
    */
   paused?(): string | undefined;
-  /** Eligible open items (labelled, assigned to the user's account, not already done/failed/rejected). */
-  discover(): Promise<SourceItem[]>;
+  /**
+   * Eligible open items (labelled, assigned to the user's account, not already done/failed/rejected). `due` (issue #985):
+   * a timed sync — the source reads again only what is due and the rest from what it keeps; absent, a person asked for
+   * the sync, and the source reads everything again.
+   */
+  discover(o?: { due?: boolean }): Promise<SourceItem[]>;
+  /**
+   * A GitHub delivery said `repo` (`owner/name`) changed (issue #1079): the next discover, a timed one too, reads it again.
+   * true when it is one of the source's job repositories, as its last discover scanned them. Absent: the source takes none.
+   */
+  repoChanged?(repo: string): boolean;
   /** Signals for this source's non-terminal jobs: cancellations and assignment drift. */
   check(active: Job[]): Promise<SourceSignal[]>;
   /**
@@ -494,6 +490,27 @@ export interface JobSource {
    */
   rerun?(job: Job): Promise<SourceItem>;
   /**
+   * Take a done job's item back to rework its open pull request (issue #724): the pull request the job follows becomes a
+   * draft and stays open on its branch, then the item is taken back as for `rerun`. Answers the item, the pull request,
+   * and the job's source state from now on (it no longer follows the pull request). Throws RerunRefused when there is no
+   * open pull request to rework, SourceError when the source cannot be reached. Absent: the source cannot rework.
+   */
+  rework?(job: Job): Promise<{ item: SourceItem; pullRequest: string; state: Record<string, unknown> }>;
+  /**
+   * The item as it would be with `text` (issue #662): its title, body, prompt and environment rendered from that text, the
+   * rest as read. A source that sets `SourceItem.text` has it: a later job of the item runs its snapshot's text this way.
+   */
+  withText?(item: SourceItem, text: ItemText): SourceItem;
+  /** Who edited the item's title or body since `since` (ISO), from its timeline (issue #662). Absent: the source cannot say. */
+  editsSince?(item: SourceItem, since: string): Promise<ItemEdit[]>;
+  /**
+   * Tell the item what a person did about the job's hand-off (issue #551): on GitHub one short comment — what was
+   * done, the note and the link, naming no person — and the end label (done by hand `hopper:done`, won't do
+   * `hopper:rejected`; Continue and I fixed it took the item back already). Throws SourceError; the sync loop tries it
+   * again. Absent: the source takes no resolution.
+   */
+  resolved?(job: Job, resolution: HandoffResolution): Promise<void>;
+  /**
    * Why a job that ended done is not complete (its work did not reach the item's completion, e.g. a
    * merged or an open pull request), or undefined when it is (issues #171, #187). Asked before the
    * job is recorded finished: a reason fails the job with it, and so does a throw (it could not
@@ -501,14 +518,24 @@ export interface JobSource {
    */
   notComplete?(job: Job): Promise<string | undefined>;
   /**
-   * Whether a failed job's item is closed as complete: its work landed though the job ended failed —
-   * its pane ended after its own pull request merged, say (issue #350). Asked by the sync loop before it
-   * reports the failure: true finishes the job instead. A throw is asked again on a later sync. Absent:
-   * every failed job stays failed.
+   * What the source says of a failed job's item now: open, or closed and why (`completed`, `not_planned`, `duplicate`).
+   * Asked by the sync loop before it reports the failure, only when the work-item ledger does not hold the item closed
+   * already (issue #1067, part 4): the answer is recorded as ledger input (`work_item.issue_closed`), and the ledger
+   * says whether the job's work landed — its pane ended after its own pull request merged, say (issue #350) — and the job
+   * is finished instead. Undefined: it cannot say (the item gone). A throw is asked again on a later sync. Absent: every
+   * failed job stays failed unless the ledger holds its item closed as complete.
    */
-  closedAsComplete?(job: Job): Promise<boolean>;
-  /** What the job's processes act with through the source's connection (ExecutionContext.credentials); absent or undefined: nothing. */
-  credentials?(job: Job): Promise<JobCredentials | undefined>;
+  issueState?(job: Job): Promise<{ state: 'open' | 'closed'; reason?: string } | undefined>;
+  /**
+   * What a handed-off job's work shows at the source (issues #529, #621): its item, and the pull requests the job opened
+   * or pushed to. Undefined: it cannot tell. Throws: asked again later. Absent: a hand-off waits on a person.
+   */
+  workState?(job: Job): Promise<Omit<WorkState, 'checkedAt'> | undefined>;
+  /**
+   * Whether a pull request of the job's own is open (issue #630): one it opened, or an older one it pushed to — a timed-out
+   * job's liveness. Throws when it cannot tell now. Absent: the source cannot tell.
+   */
+  pullRequestOpen?(job: Job): Promise<boolean>;
   /**
    * What became of every open item the last discover listed (issue #440): taken, or the one reason it was not.
    * The sync loop adds each taken item's job and puts the list in SourceStatus.detail.intake. Absent: the source does not say.
@@ -519,16 +546,17 @@ export interface JobSource {
 }
 
 /**
- * What a job acts with through its source's connection (issues #214, #441). `files` are kept in the job's
- * credentials dir on its machine (by path under it) and rewritten at each renewal, so a running job reads
- * the token as it is now; `paths` are the variables pointing into that dir (variable → path under it).
- * Where the files cannot be kept — the machine's connection takes none — the job runs with `env`: the
- * token as it is at the job's start.
+ * What a job asks the hopper's GitHub proxy with (issue #563): its proxy token and the `hopper-gh` script,
+ * kept as files in its credentials dir (by path under it, `paths` the variables pointing there), and `vars`
+ * — the hopper's URL as the job's machine reaches it, and git's way to GitHub through it (issue #652). Only
+ * where its machine keeps files: the token is never in an environment variable.
  */
-export interface JobCredentials {
+export interface JobProxyCredentials {
+  /** The hopper's URL as the job's machine reaches it (HOPPER_URL): what the reach check asks for before the job starts (issue #695). */
+  url: string;
   files: Record<string, string>;
   paths: Record<string, string>;
-  env: Record<string, string>;
+  vars: Record<string, string>;
 }
 
 export class SourceError extends Error {
@@ -546,35 +574,64 @@ export class SourceError extends Error {
  * What the sync loop may do to the hopper. Engine-owned: every method is one store.tx with
  * compare-and-set on the job's current status.
  */
-export interface SourceHost {
+export interface SourceHost extends AnswersFromThread {
   store: UserStore;
   /** Create the job for an item (dedupe by key). null when the key already has a job. */
-  ingest(item: SourceItem, source: { name: string; kind: string }): Job | null;
+  ingest(item: SourceItem, source: SourceRef): Job | null;
+  /**
+   * When the item's text changed since its snapshot and nothing deals with it yet — no change held on `jobId`'s job for
+   * that text, no original kept —, the snapshot's time (issue #662): the sync loop asks the source who edited it since.
+   */
+  changedSince(item: SourceItem, jobId?: JobId): string | undefined;
   cancel(jobId: JobId, reason: string): void;
   /**
-   * The item offered again for a waiting (queued/held) job (issue #375): its priority, from the item or a
-   * routing rule, as now (job.reprioritized); and, while it has not started, its spec's executor, model,
+   * The item offered again for a job not ended (issue #375): its priority, from the item or a routing rule, as
+   * now (job.reprioritized) — a started job's too, the live priority (issue #535); and, while it waits and has not
+   * started, its spec's executor, model,
    * work tree, default work tree and machine pin as its source and routing rules give them now, a part
    * changed on the job by hand kept (job.respecified). True when anything changed.
    */
-  refresh(jobId: JobId, item: SourceItem, source: { name: string; kind: string }): boolean;
+  refresh(jobId: JobId, item: SourceItem, source: SourceRef): boolean;
   /** An operator-led job whose work its source found complete (issue #318): finished. false: it is no longer operator-led. */
   finishOperatorLed(jobId: JobId): boolean;
-  /** A failed job whose item its source found closed as complete (issue #350): finished. false: it is no longer failed. */
-  finishClosedAsComplete(jobId: JobId): boolean;
+  /**
+   * A failed job whose work shipped (issue #350: its item closed as complete, found before its failure was reported;
+   * issue #621: a pull request of its merged, found by the failure assessor's work check): finished, with `result`
+   * (default: issue closed as complete), and its end to be reported to its source again. false: it is no longer failed.
+   */
+  finishShipped(jobId: JobId, result?: { summary: string; link?: string; backfill?: string }): boolean;
+  /** A failed job whose work its source now finds done or partly done (issue #579): finished. false: it is no longer failed. */
+  finishComplete(jobId: JobId, partlyDone?: string): boolean;
   /** Replace sourceState in one tx that re-reads the job. */
   setSourceState(jobId: JobId, state: { sync?: Record<string, unknown>; source?: Record<string, unknown> }): void;
   /**
    * Its source gave this ended job's item back (issues #313, #354): the new job for `item`, created as
    * `ingest` does (routing rules, the queue gate) with `rerunOf` the ended job, and job.rerun on the
    * ended job, in one tx. The ended job stays as it ended. A newer job of the key that already exists
-   * is answered instead of a second one.
+   * is answered instead of a second one. `by`: who asked, the user (the default) or the failure assessor (issue #509).
+   * `brief` (issue #551): what the new job is told after its item's prompt — a person's note and the failure before it.
+   * `acting` (issue #623): the person who asked from Failures, and the way, kept in job.rerun.
    */
-  rerun(jobId: JobId, item: SourceItem, source: { name: string; kind: string }): Job;
+  rerun(jobId: JobId, item: SourceItem, source: SourceRef, by?: RerunBy, brief?: string, acting?: ActingPerson): Job;
+  /**
+   * Its source gave a failed job's item back for a Continue — a person's on its hand-off (issue #551), or the
+   * assessor's on its record (issue #630): the same job is queued again, in one tx, pinned to the machine it ran on
+   * with `brief` pending (`continued`), its end to be reported to its source again, so its claim resumes its own agent
+   * session. job.continued. Push it (issue #1010, `by` `keptWork`) takes a finished or cancelled job too. Refused
+   * (not_found, conflict) when it is gone, no longer failed (or, for Push it, not one of `PUSHABLE_ENDS`), or a newer job
+   * of its item exists.
+   */
+  continueJob(jobId: JobId, brief: string, by: ContinuedBy): RerunResult;
+  /**
+   * Its source gave a done job's item back for rework (issue #724): the ended job's source state is replaced by `state`
+   * (it no longer follows its pull request), and the new job for `item` is created as `rerun` does, told the rework brief,
+   * with `rework` set; job.rework_requested on the ended job, in one tx.
+   */
+  rework(jobId: JobId, item: SourceItem, source: SourceRef, rework: { pullRequest: string; notes: string; state: Record<string, unknown> }, acting?: ActingPerson): Job;
 }
 
 /**
- * Discovery is re-run every poll; for items that already have a waiting job the sync loop
+ * Discovery is re-run every poll; for items that already have a job not ended the sync loop
  * compares `priority` and re-prioritizes the job (event `job.reprioritized`).
  */
 /** The sync loop's view, for /api/sources and SSE `source.updated`. */
@@ -586,17 +643,58 @@ export interface SourceRegistry {
    * (`JobSource.rerun`) and the new job is queued at once; it answers the new job. The ended job is kept.
    * Only a failed or finished job, the newest of its item, once its end was reported to the source.
    */
-  rerun(jobId: JobId): Promise<RerunResult>;
+  rerun(jobId: JobId, by?: RerunBy, brief?: string, acting?: ActingPerson): Promise<RerunResult>;
+  /**
+   * Continue a failed job in its own agent session (issue #551): its source gives the item back as for Run again, and
+   * the same job is queued again with `brief` pending (`SourceHost.continueJob`). Refused as Run again is; Push it's
+   * (`keptWork`, issue #1010) takes a cancelled job too.
+   */
+  continueJob(jobId: JobId, brief: string, by: ContinuedBy): Promise<RerunResult>;
+  /**
+   * Whether the ended job's source takes its item back now (issue #1010), as Run again, Continue and Push it need: its
+   * source runs, can run an item again, and was told the job's end. The views offer those only when it does.
+   */
+  takesBack(jobId: JobId): Allowed;
+  /**
+   * Send a done job's open pull request back for rework (issue #724): its source makes the pull request a draft and gives
+   * the item back, and a new job is queued at once, told `notes`. Only a finished job that follows an open pull request,
+   * the newest of its item, once its end was reported to the source.
+   */
+  rework(jobId: JobId, notes: string, acting?: ActingPerson): Promise<RerunResult>;
   /**
    * The user's act on items a source listed (Assign to me, Release claim; issue #440), then a sync of that
    * source, so its status shows the result. not_found: no running source of that name; conflict: it takes no such act.
    */
   intakeAction(source: string, action: IntakeAction): Promise<IntakeActionOutcome>;
+  /**
+   * A GitHub delivery said `repo` (`owner/name`) changed (issue #1079): each running source whose job repository it is
+   * reads it again at a sync soon after. The names of those sources; none when no source takes it.
+   */
+  repoChanged(repo: string): string[];
+  /**
+   * A person's Merge now or Close PR on a finished job's open pull request (issue #677): its source merges it — whatever
+   * yolo mode and its checks say — or closes it without a merge, on the job's report chain, and it is recorded as a
+   * follow-up is, with who pressed it. Refused (not_found, conflict) when the job is gone or has no open pull request,
+   * or GitHub refuses; source: GitHub could not be reached.
+   */
+  pullRequestAct(jobId: JobId, act: PullRequestAct, acting: ActingPerson): Promise<PullRequestActResult>;
+  /**
+   * A person's Tend again (issue #1010) on a pull request the hopper gave up on (its tend job ended failed, cancelled or
+   * rejected): the same step is tended at once, recorded with who pressed it. Refused (not_found, conflict) with why.
+   */
+  tendAgain(jobId: JobId, acting: ActingPerson): Promise<RerunResult>;
 }
+
+export type PullRequestActResult =
+  | { ok: true; outcome: FollowUp['outcome']; pullRequest: string; part: boolean }
+  | { ok: false; reason: 'not_found' | 'conflict' | 'source'; message: string };
 
 export type IntakeActionOutcome =
   | { ok: true; result: IntakeActionResult }
   | { ok: false; reason: 'not_found' | 'conflict'; message: string };
+
+/** Who asks for an ended job's item to run again: the user, or the failure assessor (issue #509). */
+export type RerunBy = 'user' | 'assessor' | 'tending';
 
 export type RerunResult =
   | { ok: true; job: Job }
@@ -611,6 +709,22 @@ export interface UpdateBuilder {
 
 /** Ends this process so it starts again on the install now in place (exit for the supervisor, or respawn). Never returns in production. */
 export type Restarter = () => Promise<void>;
+
+/** What the hopper sees of the stack it runs in (issue #697, "The stack against its compose file"): from inside its container, never the container runtime's. */
+export interface StackProbe {
+  /** Whether `service` has a name on the compose network: compose names each running service's container by it. */
+  resolves(service: string): Promise<boolean>;
+  /** The commit the vault in its own container says it runs; null when it is not reached or does not say. */
+  vaultCommit(): Promise<string | null>;
+}
+
+/** Whether a commit may be updated to (issue #652): the merge of a pull request whose checks passed, or why not. */
+export type ReleaseVerdict = { passed: true; pullRequest: UpdatePullRequest } | { passed: false; reason: string };
+
+/** The release check: asks where the update repository lives whether `commit` is a merged pull request with passing checks. */
+export interface ReleaseCheck {
+  verify(repo: string, commit: string): Promise<ReleaseVerdict>;
+}
 
 /** The daemon's self-update: GET /api/update, POST /ui/api/update. */
 export interface Updater {
@@ -643,14 +757,23 @@ export interface Connection {
 export interface ConnectedAccounts {
   /** Every provider's, in CONNECTED_ACCOUNT_PROVIDERS order; GitHub's with where the app is installed. */
   status(): Promise<ConnectedAccountStatus[]>;
-  /** Keep the connection a GitHub sign-in made (it replaces the account there was). */
-  adopt(connection: Connection): void;
+  /**
+   * Keep the connection a GitHub sign-in made: it replaces the account there was, unless that one is healthy — then it is
+   * held until the person takes or drops it (issue #647).
+   */
+  adopt(connection: Connection): Promise<void>;
   /** Start the provider's device flow and answer once it shows the device code; a waiting one answers its own code. */
   connect(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
   /** End a waiting device code. */
   cancel(provider: ConnectedAccountProvider): ConnectedAccountStatus;
-  /** Forget the account and its token; its job repositories stay chosen. */
-  disconnect(provider: ConnectedAccountProvider): ConnectedAccountStatus;
+  /** Replace the connection with the held grant of a sign-in (issue #647); running jobs are handed its token. */
+  takeHeld(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
+  /** Drop the held grant of a sign-in (issue #647), its token deleted at GitHub (best effort); the connection stays. */
+  dropHeld(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
+  /** Whether the account's sign-in ended (issue #513): GitHub refused it, or it expired with nothing to renew it. Not while it cannot be read. */
+  expired(provider: ConnectedAccountProvider): boolean;
+  /** Revoke the account's grant at GitHub (best effort; issue #514), then forget the account and its token; its job repositories stay chosen. */
+  disconnect(provider: ConnectedAccountProvider): Promise<ConnectedAccountStatus>;
   /** Choose the repositories the account's jobs may use (issue #321), the whole list; the source syncs now. */
   choose(provider: ConnectedAccountProvider, repositories: readonly string[]): Promise<ConnectedAccountStatus>;
 }
@@ -659,8 +782,10 @@ export interface ConnectedAccounts {
 export interface ConnectedAccountTokens {
   /** The connected account's login, or undefined while none is connected or its sign-in expired. */
   account(provider: ConnectedAccountProvider): string | undefined;
-  /** What to do now that the account's sign-in expired (issue #358); undefined while it has not, or none is connected. */
+  /** What to do now that the account's sign-in expired (issue #358), or its tokens cannot be opened (issue #514); undefined while it lives, or none is connected. */
   ended(provider: ConnectedAccountProvider): string | undefined;
+  /** Whether the account's sign-in ended (issues #513, #514): GitHub refused it, or it expired with nothing to renew it. Not while it cannot be read. */
+  expired(provider: ConnectedAccountProvider): boolean;
   /** Its access token now, renewed first when it is near its expiry (issue #358); throws while none is connected, or once its sign-in expired. */
   token(provider: ConnectedAccountProvider): Promise<string>;
   /** A token GitHub refused (a 401): renewed, unless it was already; throws once the sign-in expired. */
@@ -670,6 +795,18 @@ export interface ConnectedAccountTokens {
   /** The repositories the account's jobs may use, as chosen now (issue #321); empty: none. */
   jobRepositories(provider: ConnectedAccountProvider): string[];
 }
+
+// ---- Sandbox boxes the hopper launches: src/domain/sandboxes.ts (re-exported here, one vocabulary) ----
+
+export type * from './sandboxes.ts';
+
+// ---- Windows sandbox steps (issue #731): the host a step runs on, src/domain/windows-steps.ts ----
+
+export type { WindowsStepHost } from './windows-steps.ts';
+
+// ---- Search (issue #945): the search index, src/domain/search.ts ----
+
+export type { SearchIndex } from './search.ts';
 
 // ---- Persistence: src/domain/store.ts (re-exported here, one vocabulary) ----------------
 

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { UpdateStatus } from '../../src/domain/types.ts';
 import { waitFor } from '../support/wait.ts';
-import { copyBuilder, createInstall, git, readInstall } from './support.ts';
+import { copyBuilder, createInstall, git, readInstall, releaseCheck } from './support.ts';
 import { types, updater, world, type World } from './world.ts';
 
 describe('detecting an update', () => {
@@ -119,6 +119,33 @@ describe('detecting an update', () => {
     for (const v of h.versions) expect(new Date(v.at).getTime()).not.toBeNaN();
   });
 
+  it('reads the fragments of whats-new/ too, newest first; the assembly that moves them into WHATS-NEW.md is no news and no version (issue #824)', async () => {
+    const w = world();
+    w.up.whatsNew(['Older news.']);
+    const c1 = w.up.commit('first');
+    w.up.fragment('12.md', ['Jobs show their machine.']);
+    const c2 = w.up.commit('machine on the job');
+    w.up.fragment('13.md', ['You can pause the queue.']);
+    const c3 = w.up.commit('pause');
+    const { u } = updater(w, createInstall(w.root, w.up.dir, c1));
+    expect((await u.check()).whatsNew).toEqual(['You can pause the queue.', 'Jobs show their machine.']);
+    w.up.whatsNew(['You can pause the queue.', 'Jobs show their machine.', 'Older news.']);
+    w.up.fragment('12.md');
+    w.up.fragment('13.md');
+    const assembled = w.up.commit('assemble what is new');
+    rmSync(join(w.root, 'app'), { recursive: true });
+    const { u: u2 } = updater(w, createInstall(w.root, w.up.dir, c3));
+    expect(u2.status().installedWhatsNew).toEqual(['You can pause the queue.', 'Jobs show their machine.', 'Older news.']);
+    expect(await u2.check()).toMatchObject({ state: 'available', target: { commit: assembled }, whatsNew: [] });
+    rmSync(join(w.root, 'app'), { recursive: true });
+    const h = await updater(w, createInstall(w.root, w.up.dir, assembled)).u.history();
+    expect(h.versions.map((v) => ({ commit: v.commit, changes: v.changes }))).toEqual([
+      { commit: c3, changes: ['You can pause the queue.'] },
+      { commit: c2, changes: ['Jobs show their machine.'] },
+      { commit: c1, changes: ['Older news.'] },
+    ]);
+  });
+
   it('has no version history without install.json, and says why', async () => {
     const w = world();
     const h = await updater(w, join(w.root, 'bare')).u.history();
@@ -143,6 +170,48 @@ describe('detecting an update', () => {
     const s = await updater(w, appDir).u.check();
     expect(s.state).toBe('error');
     expect(s.reason).toMatch(/fetch/);
+  });
+});
+
+describe('only a merged pull request with passing checks (issue #652)', () => {
+  it('offers the head of the channel with the pull request it is the merge of', async () => {
+    const w = world();
+    const c1 = w.up.commit('first');
+    const c2 = w.up.commit('second');
+    const release = releaseCheck(() => ({ passed: true, pullRequest: { number: 9, url: 'https://github.com/o/r/pull/9' } }));
+    const { u } = updater(w, createInstall(w.root, w.up.dir, c1), { release });
+    expect(await u.check()).toMatchObject({ state: 'available', target: { commit: c2, ref: 'stable', pullRequest: { number: 9, url: 'https://github.com/o/r/pull/9' } } });
+    expect(release.asked).toEqual([c2]);
+    expect(w.store.events.since(0).find((e) => e.type === 'update.available')?.data).toMatchObject({ to: c2, pullRequest: 9 });
+  });
+
+  it('holds a head that is not one: says why, announces nothing, never applies it, even with auto-update on', async () => {
+    const w = world();
+    const c1 = w.up.commit('first');
+    const c2 = w.up.commit('pushed straight to the branch');
+    const warned: string[] = [];
+    const { u, restarts } = updater(w, createInstall(w.root, w.up.dir, c1), {
+      release: releaseCheck((c) => ({ passed: false, reason: `${c.slice(0, 7)} is not the merge of a pull request` })),
+      logger: { info: () => {}, warn: (l) => { warned.push(l); } },
+    });
+    u.settings({ autoUpdate: true });
+    const s = await u.check();
+    expect(s).toMatchObject({ state: 'held', target: { commit: c2, ref: 'stable' }, reason: `${c2.slice(0, 7)} is not the merge of a pull request`, whatsNew: [] });
+    expect(s.target?.pullRequest).toBeUndefined();
+    expect(u.apply()).toEqual({ ok: false, error: 'no update available' });
+    await u.check();
+    expect(types(w)).toEqual([]);
+    expect(restarts).toEqual([]);
+    expect(warned.filter((l) => l.includes('held'))).toHaveLength(1);
+  });
+
+  it('asks nothing when the install is at the head', async () => {
+    const w = world();
+    const c1 = w.up.commit('first');
+    const release = releaseCheck();
+    const { u } = updater(w, createInstall(w.root, w.up.dir, c1), { release });
+    expect((await u.check()).state).toBe('current');
+    expect(release.asked).toEqual([]);
   });
 });
 

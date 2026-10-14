@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "key": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "delivery",
+        "read"
+      ]
+    }
+  },
+  "required": [
+    "key",
+    "via"
+  ],
+  "additionalProperties": false
+}

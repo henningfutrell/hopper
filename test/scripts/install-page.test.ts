@@ -110,6 +110,53 @@ describe('the Windows install (WSL)', () => {
     expect(windows).not.toContain('login-code');
     expect(windows).toContain('sign in with GitHub');
   });
+
+  it('keeps the hopper running in WSL with steps a person does once, not an open Ubuntu window (issue #712)', () => {
+    const steps = windows.slice(0, windows.indexOf('<details>'));
+    expect(steps).toContain('systemd=true');
+    expect(steps).toContain('systemctl --user enable podman-restart.service');
+    expect(steps).toContain('sudo loginctl enable-linger');
+    expect(steps).toContain('id="windows-keep-running"');
+    expect(steps).toContain('Startup\\hopper-wsl.lnk');
+    expect(steps).toContain('-WindowStyle Hidden');
+    expect(steps).toContain('wsl.exe -d Ubuntu-24.04 -e sleep infinity; Start-Sleep -Seconds 5');
+    expect(page).not.toContain('Keep one Ubuntu window open');
+  });
+
+  it('keeps the hopper running with one command from Windows, after the CLI with both scripts (issue #712)', () => {
+    expect(windows).toContain('data-copy="hopper autostart on"');
+    expect(windows).toContain('href="#windows-cli"');
+    const cli = page.slice(page.indexOf('id="windows-cli"'), page.indexOf('id="windows-machine"'));
+    expect(cli).toContain('https://henningfutrell.github.io/hopper/hopper.cmd -OutFile');
+    expect(cli).toContain('https://henningfutrell.github.io/hopper/hopper.ps1 -OutFile');
+  });
+
+  it('ends with hopper doctor in PowerShell, which needs hopper.ps1 beside hopper.cmd (issue #712)', () => {
+    const steps = windows.slice(0, windows.indexOf('<details>'));
+    const last = steps.slice(steps.lastIndexOf('<li'));
+    expect(last).toContain('id="windows-doctor"');
+    expect(last).toContain('data-copy="hopper doctor"');
+    expect(last).toContain('href="#windows-cli"');
+    const cli = page.slice(page.indexOf('id="windows-cli"'), page.indexOf('id="windows-machine"'));
+    expect(cli).toContain('hopper.ps1 -OutFile &quot;$env:LOCALAPPDATA\\hopper\\hopper.ps1&quot;');
+  });
+});
+
+describe('a Windows computer as a machine (issue #704)', () => {
+  const machines = page.slice(page.indexOf('id="windows-machine"'));
+
+  it('says native Windows is not supported, and the client runs inside WSL', () => {
+    expect(page).toContain('id="windows-machine"');
+    expect(machines).toContain('not supported natively');
+    expect(machines).toContain('inside WSL');
+  });
+
+  it('turns systemd on in WSL, starts podman.socket, and joins the WSL distro with the Add machine line', () => {
+    expect(machines).toContain('<a href="#windows">On Windows</a>, steps 1 to 3');
+    expect(page.slice(page.indexOf('id="windows"'), page.indexOf('id="windows-machine"'))).toContain('systemd=true');
+    expect(machines).toContain('systemctl --user enable --now podman.socket');
+    expect(machines).toContain('Add machine');
+  });
 });
 
 describe('get.sh without a running systemd (WSL with systemd off)', () => {

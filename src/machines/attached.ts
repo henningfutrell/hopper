@@ -10,14 +10,19 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Clock, MachineSource } from '../domain/ports.ts';
-import type { AttachedMachine, HostKeyOffer, MachineSnapshot } from '../domain/types.ts';
+import type { AttachedMachine, HerdrVersions, HostKeyOffer, MachineSnapshot } from '../domain/types.ts';
 import type { DiskReading } from '../domain/machines.ts';
+import type { ResourceReading } from '../domain/machine-history.ts';
 import { DF_COMMAND, judged, readDf } from './disk.ts';
+import { RESOURCES_COMMAND, readResources } from './resources.ts';
 import { dockerArgv, dockerEnv } from '../executors/docker.ts';
 import { scrubbedEnv } from '../executors/env.ts';
 import type { ClientTransport } from '../executors/client.ts';
-import { createHerdrCliClient } from '../executors/herdr/index.ts';
-import { REMOTE_PATH, SSH_FAILED, isPlainTarget, resolveDestination, sshArgv, type SshAuth, HOST_KEY } from '../executors/ssh.ts';
+import { HerdrError, createHerdrCliClient } from '../executors/herdr/index.ts';
+import { herdrMismatch, readHerdrStatus } from './herdr-version.ts';
+import { REMOTE_PATH, SSH_FAILED, isPlainTarget, resolveDestination, shellQuote, sshArgv, type SshAuth, HOST_KEY } from '../executors/ssh.ts';
+import { DEFAULT_WORK_TREE, resolveWorkTree } from '../client/work-tree.ts';
+import { isAddressLine, addressCommand, networkFix, readAddress } from './hopper-address.ts';
 
 const PROBE_EVERY_MS = 30000;
 
@@ -26,18 +31,34 @@ interface Logger { info(line: string): void; warn(line: string): void }
 /** What one probe of an attached machine found: online or not, and for a client target, its client release. */
 export interface MachineProbe {
   online: boolean;
-  /** A client target: the release its client runs (absent when it predates releases), and whether it is the hopper's. */
-  client?: { release?: string; current: boolean };
+  /** A client target: the release its client runs (absent when it predates releases), whether it is the hopper's, and why it cannot be updated (issue #545). */
+  client?: { release?: string; current: boolean; update?: { problem: string } };
   /** The machine's home, where `~` in a job's work tree resolves there (issue #323). Absent: it did not say. */
   home?: string;
   /** The disk its home is on (issue #401). Absent: not read. */
   disk?: DiskReading;
+  /** Its CPU, memory and swap (issue #560). Absent: not read. */
+  resources?: ResourceReading;
+  /** Why its work tree cannot be made usable (issue #361). Absent: it was made, or the probe could not say. */
+  workTreeProblem?: string;
+  /** An ssh target: the hopper's address it reaches (issue #698). Absent: not asked, or none reached. */
+  hopperUrl?: string;
+  /** An ssh target: why its jobs cannot reach the hopper (issue #698). Absent: one is reached, or not asked. */
+  addressProblem?: string;
+  /** An ssh target running herdr: its herdr client and server versions (issue #741). Absent: not read. */
+  herdr?: HerdrVersions;
+  /** An ssh target running herdr: why its herdr client cannot work with its herdr server (issue #741). */
+  herdrProblem?: string;
 }
 
 interface AttachedOptions {
   clock?: Clock;
   probeEveryMs?: number;
   logger?: Logger;
+  /** Why a box of this template takes no new job now (issue #602), or undefined when the template is approved. Read at every list(). */
+  templateWait?: (template: string) => string | undefined;
+  /** The hopper's network (issue #711): a machine off it is given the command that joins it. Absent or `host`: none. */
+  network?: string;
 }
 
 /** One attached machine. `machine()` is read on every list(), so lanes, executors and label apply at once. */
@@ -64,6 +85,16 @@ export function createAttachedMachineSource(o: AttachedOptions & {
   let home: string | undefined;
   // Only the last probe's: a disk fills.
   let disk: DiskReading | undefined;
+  // Only the last probe's, as the disk: a machine offline has none.
+  let resources: ResourceReading | undefined;
+  // What the last probe found wrong with its work tree (issue #361); each probe says afresh.
+  let workTreeProblem: string | undefined;
+  // Where its jobs reach the hopper, or why they cannot (issue #698); each probe says afresh.
+  let hopperUrl: string | undefined;
+  let addressProblem: string | undefined;
+  // Its herdr client and server, and why they cannot work together (issue #741); each probe says afresh.
+  let herdr: HerdrVersions | undefined;
+  let herdrProblem: string | undefined;
   let lastProbe = -Infinity;
   let inFlight = false;
   let said: string | undefined;
@@ -80,8 +111,15 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     inFlight = true;
     lastProbe = now();
     o.probe().then(
-      (p) => { online = p.online; clientRelease = p.online ? p.client : undefined; home = p.home ?? home; disk = p.disk; const up = p.online; say(up ? `hopper: attached machine ${name} online (${reached()})` : `hopper: attached machine ${name} offline: ${down()}`); },
-      (e: unknown) => { online = false; clientRelease = undefined; disk = undefined; say(`hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
+      (p) => {
+        online = p.online; clientRelease = p.online ? p.client : undefined; home = p.home ?? home; disk = p.disk; resources = p.online ? p.resources : undefined; workTreeProblem = p.online ? p.workTreeProblem : undefined;
+        hopperUrl = p.online ? p.hopperUrl : undefined; addressProblem = p.online ? p.addressProblem : undefined;
+        herdr = p.online ? p.herdr : undefined; herdrProblem = p.online ? p.herdrProblem : undefined;
+        const noJob = [workTreeProblem, addressProblem, herdrProblem].filter((x) => x !== undefined).join('; ');
+        say(!p.online ? `hopper: attached machine ${name} offline: ${down()}`
+          : noJob ? `hopper: attached machine ${name} online (${reached()}), takes no new job: ${noJob}` : `hopper: attached machine ${name} online (${reached()})`);
+      },
+      (e: unknown) => { online = false; clientRelease = undefined; disk = undefined; resources = undefined; workTreeProblem = undefined; hopperUrl = undefined; addressProblem = undefined; herdr = undefined; herdrProblem = undefined; say(`hopper: attached machine ${name} offline: ${e instanceof Error ? e.message : String(e)}`); },
     ).finally(() => { inFlight = false; });
   }
 
@@ -89,49 +127,103 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     async list() {
       probe();
       const m = o.machine();
-      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, ...(m.reservedLanes !== undefined ? { reservedLanes: m.reservedLanes } : {}), online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(home ? { home } : {}), ...(disk ? { disk: judged(disk, 'docker' in m ? undefined : m.diskLow) } : {}), ...('docker' in m || !m.sweep ? {} : { sweep: { ...m.sweep } }) };
+      const base: MachineSnapshot = { id: m.name, label: m.label ?? m.name, maxLanes: m.lanes, ...(m.reservedLanes !== undefined ? { reservedLanes: m.reservedLanes } : {}), ...(m.elbowIns !== undefined ? { elbowIns: m.elbowIns } : {}), online, executors: [...m.executors], ...(m.workTree !== undefined ? { workTree: m.workTree } : {}), ...(m.workTrees !== undefined ? { workTrees: { ...m.workTrees } } : {}), ...(home ? { home } : {}), ...(disk ? { disk: judged(disk, 'docker' in m ? undefined : m.diskLow) } : {}), ...(resources ? { resources } : {}), ...('docker' in m || !m.sweep ? {} : { sweep: { ...m.sweep } }), ...(workTreeProblem ? { workTreeProblem } : {}) };
       if ('docker' in m) return [{ ...base, docker: m.docker }];
-      if ('client' in m) return [{ ...base, client: { ...clientRelease } }];
-      return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session } } : {}) }];
+      if ('client' in m) {
+        const name = m.client.template;
+        // Fails closed: with no way to read the template's approval, its box takes no job.
+        const waiting = name === undefined ? undefined : o.templateWait ? o.templateWait(name) : `waiting for template approval: the approval of ${name} cannot be read`;
+        return [{ ...base, client: { ...clientRelease }, ...(name !== undefined ? { template: { name, ...(waiting !== undefined ? { waiting } : {}) } } : {}) }];
+      }
+      return [{ ...base, ssh: m.ssh, ...(m.herdr ? { herdr: { session: m.session, ...herdr } } : {}), ...(m.herdr && herdrProblem ? { herdrProblem } : {}), ...(hopperUrl ? { hopperUrl } : {}), ...(addressProblem ? { addressProblem, ...withFix(networkFix(m.ssh, o.network)) } : {}) }];
     },
   };
 }
 
-/** Whether the machine's herdr session is running: `herdr --session <s> status server` over ssh. Rejects when ssh fails. */
-export async function probeHerdrOverSsh(o: { target: string; session: string; controlDir: string; sshBin?: string; auth: () => SshAuth }): Promise<boolean> {
+const withFix = (addressFix: string | undefined): { addressFix?: string } => (addressFix ? { addressFix } : {});
+
+/**
+ * Whether the machine's herdr session is running — `herdr --session <s> status server` over ssh —, and (issue #741) the
+ * herdr client the hopper calls there and the server it talks to, with a herdr problem when the server does not take
+ * that client: then every job start there would fail. `status client` that fails says no client version, nothing more.
+ * Rejects when ssh fails.
+ */
+export async function probeHerdrOverSsh(o: { target: string; session: string; controlDir: string; sshBin?: string; auth: () => SshAuth }): Promise<HerdrProbe> {
   const herdr = createHerdrCliClient({
     session: o.session, timeoutMs: 15000,
     ssh: { target: o.target, controlDir: o.controlDir, auth: o.auth, ...(o.sshBin ? { bin: o.sshBin } : {}) },
   });
-  return /^status: running$/m.test(await herdr.exec(['status', 'server']));
+  let server: string;
+  try {
+    server = await herdr.exec(['status', 'server']);
+  } catch (e) {
+    const herdrProblem = e instanceof HerdrError ? herdrMismatch(e.message) : undefined;
+    if (herdrProblem) return { online: true, herdrProblem };
+    throw e;
+  }
+  const client = await herdr.exec(['status', 'client']).catch((e: unknown) => {
+    if (e instanceof HerdrError && e.code === 'ssh') throw e;
+    return undefined;
+  });
+  const r = readHerdrStatus(server, client);
+  return { online: r.running, ...(Object.keys(r.versions).length ? { herdr: r.versions } : {}), ...(r.herdrProblem ? { herdrProblem: r.herdrProblem } : {}) };
 }
+
+/** What probeHerdrOverSsh found (issue #741): the session running, the herdr versions there, and a herdr problem. */
+export type HerdrProbe = Pick<MachineProbe, 'online' | 'herdr' | 'herdrProblem'>;
 
 /**
  * An ssh target's home, asked over ssh with the hopper's key: it answers, so it is online (issue #142),
- * and `~` in a job's work tree resolves there, never in the hopper's own home (issue #323). Rejects when
- * ssh fails or the answer is not an absolute path. With it, the disk the home is on (issue #401), when its df says.
+ * and `~` in a job's work tree resolves there, never in the hopper's own home (issue #323). In the same
+ * call its work tree (the jobs directory when it names none) is made there, and what is wrong with it said
+ * (issue #361): the home or above it, or a directory that cannot be made or written. Rejects when ssh
+ * fails or the answer is not an absolute home. With it, the disk the home is on (issue #401), when its df says, and
+ * its CPU, memory and swap (issue #560), when it has /proc.
  */
-export function probeSsh(o: { target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number }): Promise<{ home: string; disk?: DiskReading }> {
+export function probeSsh(o: {
+  target: string; controlDir: string; sshBin?: string; auth: () => SshAuth; timeoutMs?: number; workTree?: string;
+  /** The hopper's addresses (issue #698): which one the machine reaches is asked in the same call. Absent: not asked. */
+  hopperUrls?: readonly string[];
+}): Promise<{ home: string; disk?: DiskReading; resources?: ResourceReading; workTreeProblem?: string; hopperUrl?: string; addressProblem?: string }> {
+  const workTree = o.workTree ?? DEFAULT_WORK_TREE;
+  // `~` as "$HOME" there; the path itself never reaches the shell unquoted.
+  const there = workTree === '~' || workTree.startsWith('~/') ? `"$HOME"${shellQuote(workTree.slice(1))}` : shellQuote(workTree);
+  const command = `printf '%s\\n' "$HOME"; ${DF_COMMAND}; ${RESOURCES_COMMAND}; ${o.hopperUrls ? `${addressCommand(o.hopperUrls)}; ` : ''}w=${there}; if out=$(mkdir -p -- "$w" 2>&1); then if [ -w "$w" ]; then echo ${WORK_TREE_OK}; else echo "$w is not writable"; echo ${WORK_TREE_UNUSABLE}; fi;`
+    + ` else printf '%s\\n' "$out"; echo ${WORK_TREE_UNUSABLE}; fi`;
+  // Each address asked takes at most 3 s more.
+  const timeoutMs = o.timeoutMs ?? 15000 + 3500 * (o.hopperUrls?.length ?? 0);
   return new Promise((resolve, reject) => {
     let argv: string[];
     try {
       mkdirSync(o.controlDir, { recursive: true, mode: 0o700 });
-      argv = sshArgv({ target: o.target, controlDir: o.controlDir, auth: o.auth, ...(o.sshBin ? { bin: o.sshBin } : {}) }, `${DF_COMMAND}; printf '%s\\n' "$HOME"`);
+      argv = sshArgv({ target: o.target, controlDir: o.controlDir, auth: o.auth, ...(o.sshBin ? { bin: o.sshBin } : {}) }, command);
     } catch (e) {
       return reject(e instanceof Error ? e : new Error(String(e)));
     }
-    execFile(o.sshBin ?? 'ssh', argv, { env: scrubbedEnv(), timeout: o.timeoutMs ?? 15000, killSignal: 'SIGKILL', encoding: 'utf8' }, (err, stdout, stderr) => {
+    execFile(o.sshBin ?? 'ssh', argv, { env: scrubbedEnv(), timeout: timeoutMs, killSignal: 'SIGKILL', encoding: 'utf8' }, (err, stdout, stderr) => {
       const e = err as (Error & { killed?: boolean; code?: number | string }) | null;
       if (!e) {
-        const home = stdout.trim().split('\n').at(-1) ?? '';
+        const lines = stdout.trim().split('\n');
+        const home = lines[0] ?? '';
+        if (!home.startsWith('/')) return reject(new Error(`${o.target}: its home is not an absolute path: ${JSON.stringify(home)}`));
         const disk = readDf(stdout);
-        return home.startsWith('/') ? resolve({ home, ...(disk ? { disk } : {}) }) : reject(new Error(`${o.target}: its home is not an absolute path: ${JSON.stringify(home)}`));
+        const resources = readResources(stdout);
+        const found = { home, ...(disk ? { disk } : {}), ...(resources ? { resources } : {}), ...(o.hopperUrls ? readAddress(stdout, o.hopperUrls) : {}) };
+        const refused = resolveWorkTree(workTree, home);
+        if ('problem' in refused) return resolve({ ...found, workTreeProblem: refused.problem });
+        if (lines.at(-1) === WORK_TREE_OK) return resolve(found);
+        const said = lines.slice(1, -1).filter((l) => !l.startsWith('hopper-disk ') && !l.startsWith('hopper-res ') && !isAddressLine(l)).join(' ').trim() || 'no answer';
+        return resolve({ ...found, workTreeProblem: `its work tree ${workTree} cannot be made: ${said}` });
       }
-      if (e.killed) return reject(new Error(`ssh ${o.target}: no answer within ${o.timeoutMs ?? 15000} ms`));
+      if (e.killed) return reject(new Error(`ssh ${o.target}: no answer within ${timeoutMs} ms`));
       reject(new Error(`ssh ${o.target}: ${stderr.trim() || e.message}`));
     });
   });
 }
+
+/** What the work tree check prints last: made and writable, or not. */
+const WORK_TREE_OK = 'hopper-work-tree-ok';
+const WORK_TREE_UNUSABLE = 'hopper-work-tree-unusable';
 
 /** Whether a client target's herdr session runs: `status server` through its tunnel, signed. Rejects when the client cannot be reached or does not prove itself. */
 export async function probeClient(t: ClientTransport): Promise<boolean> {

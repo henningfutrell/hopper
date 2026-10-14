@@ -9,6 +9,7 @@ import { BUILTIN_PLUGINS } from '../../src/plugins/builtin.ts';
 import codex from '../../src/plugins/executor/codex/index.ts';
 import cursorAgent from '../../src/plugins/executor/cursor-agent/index.ts';
 import herdrClaude, { herdrClaudePlugin } from '../../src/plugins/executor/herdr-claude/index.ts';
+import claude from '../../src/plugins/executor/claude/index.ts';
 import omp from '../../src/plugins/executor/omp/index.ts';
 import opencode from '../../src/plugins/executor/opencode/index.ts';
 import testExecutor from '../../src/plugins/executor/test/index.ts';
@@ -33,19 +34,18 @@ function options<O>(def: PluginDefinition<Role, O>, raw: unknown = {}): O {
 const props = (def: PluginDefinition) => (optionsJsonSchema(def) as { properties: Record<string, Record<string, unknown>> }).properties;
 
 describe('built-in executor plugins are listed', () => {
-  it('herdr-claude, cursor-agent, codex, opencode, omp, command and test, role executor', () => {
+  it('herdr-claude, cursor-agent, codex, opencode, omp, claude, command and test, role executor', () => {
     const executors = BUILTIN_PLUGINS.filter((p) => p.role === 'executor').map((p) => p.id).sort();
-    expect(executors).toEqual(['codex', 'command', 'cursor-agent', 'herdr-claude', 'omp', 'opencode', 'test']);
+    expect(executors).toEqual(['claude', 'codex', 'command', 'cursor-agent', 'herdr-claude', 'omp', 'opencode', 'test']);
   });
 });
 
 describe('cursor-agent (issue #142)', () => {
   it('options: Cursor\'s CLI agent, allowed to run its tools and trusting the work tree; every option command-bearing', () => {
-    expect(options(cursorAgent)).toEqual({ bin: 'cursor-agent', args: ['--force', '--trust'], cwd: '~/hopper-jobs', sshBin: 'ssh' });
-    // ~ resolves on the job's machine, not here (issue #323).
-    expect(options(cursorAgent, { cwd: '~/w' }).cwd).toBe('~/w');
+    // No work tree of its own: a job's is its machine's (issue #361).
+    expect(options(cursorAgent)).toEqual({ bin: 'cursor-agent', args: ['--force', '--trust'], sshBin: 'ssh' });
     const p = props(cursorAgent);
-    for (const key of ['bin', 'args', 'cwd', 'sshBin']) expect(p[key]!.commandBearing, key).toBe(true);
+    for (const key of ['bin', 'args', 'sshBin']) expect(p[key]!.commandBearing, key).toBe(true);
   });
 
   it('detect: available either way, `which` only — a machine over ssh may have Cursor where this one has none', async () => {
@@ -71,11 +71,13 @@ describe.each([
   { def: codex, bin: 'codex', args: ['--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check'] },
   { def: opencode, bin: 'opencode', args: ['--auto'] },
   { def: omp, bin: 'omp', args: ['--auto-approve'] },
-])('$bin (issue #307)', ({ def, bin, args }) => {
-  it('options: the CLI on PATH, running its tools without asking, in the jobs directory; every option command-bearing', () => {
-    expect(options(def)).toEqual({ bin, args, cwd: '~/hopper-jobs', sshBin: 'ssh' });
+  // Issue #533: Claude Code in print mode, which shows no screen to answer.
+  { def: claude, bin: 'claude', args: ['--dangerously-skip-permissions'] },
+])('$bin (issues #307, #533)', ({ def, bin, args }) => {
+  it('options: the CLI on PATH, running its tools without asking; no work tree of its own (issue #361); every option command-bearing', () => {
+    expect(options(def)).toEqual({ bin, args, sshBin: 'ssh' });
     const p = props(def);
-    for (const key of ['bin', 'args', 'cwd', 'sshBin']) expect(p[key]!.commandBearing, key).toBe(true);
+    for (const key of ['bin', 'args', 'sshBin']) expect(p[key]!.commandBearing, key).toBe(true);
   });
 
   it('detect: available either way, `which` only — its jobs run on the machines that have it', async () => {
@@ -94,12 +96,18 @@ describe('herdr-claude', () => {
   it('options default to what the env defaulted to before plugins', () => {
     expect(options(herdrClaude)).toEqual({
       bin: 'herdr', claudeBin: 'claude', session: 'hopper', yolo: true, args: [],
-      cwd: '~/hopper-jobs', trustWorkdir: true, jobWorktrees: true, sharedDependencies: true, pollMs: 1000, idleNudgeMs: 20000,
+      trustWorkdir: true, unattended: true, jobWorktrees: true, sharedDependencies: true, pollMs: 1000, idleNudgeMs: 20000, promptSteadyMs: 2000,
     });
   });
 
-  it('keeps ~ in cwd for the job\'s machine to resolve (issue #323) and refuses the default herdr session', () => {
-    expect(options(herdrClaude, { cwd: '~/w' }).cwd).toBe('~/w');
+  // Issue #533: on by default, so a job on a machine nobody watches never waits on a key press; set per instance in the UI.
+  it('unattended: on by default, its own option, described for the UI', () => {
+    expect(parseOptions(herdrClaude, { unattended: false })).toMatchObject({ ok: true, options: { unattended: false } });
+    expect(props(herdrClaude).unattended!.description).toMatch(/^unattended: Claude starts with no key press/);
+  });
+
+  it('names no work tree of its own (issue #361) and refuses the default herdr session', () => {
+    expect(options(herdrClaude)).not.toHaveProperty('cwd');
     expect(parseOptions(herdrClaude, { session: 'default' })).toEqual({ ok: false, error: expect.stringMatching(/session/) });
   });
 
@@ -142,14 +150,15 @@ describe('herdr-claude', () => {
   ])('starts Claude with yolo on the command, or without it (%j)', async (raw, args) => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● ok', 'HOPPER_DONE'] }] });
     const seamed = herdrClaudePlugin(herdr);
-    const ex = await seamed.create(ctx(temp()), options(seamed, { ...raw, cwd: temp(), pollMs: 1 }));
+    const ex = await seamed.create(ctx(temp()), options(seamed, { ...raw, pollMs: 1 }));
     const ac = new AbortController();
     await ex.run({
       job: { id: 'abcdef12-0000', spec: { executor: 'herdr-claude', payload: { prompt: 'go' } }, priority: 50, status: 'running', approved: false, createdAt: '', updatedAt: '', attempts: 1 },
-      laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'] }, signal: ac.signal,
+      laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'], workTree: temp() }, signal: ac.signal,
       progress() {}, saveState() {}, workTree() {},
     });
-    expect(herdr.agentStarts.map((s) => s.args)).toEqual([args]);
+    // Then the session the hopper chose (issue #501).
+    expect(herdr.agentStarts.map((s) => s.args)).toEqual([[...args, '--session-id', expect.stringMatching(/^[0-9a-f-]{36}$/)]]);
   });
 
   // Issue #379: each job its own git worktree of a git repository work tree, on by default; off, jobs share the work tree.
@@ -160,11 +169,11 @@ describe('herdr-claude', () => {
     const cwd = temp();
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [{ output: ['● ok', 'HOPPER_DONE'] }], repositories: [cwd] });
     const seamed = herdrClaudePlugin(herdr);
-    const ex = await seamed.create(ctx(temp()), options(seamed, { ...raw, cwd, pollMs: 1 }));
+    const ex = await seamed.create(ctx(temp()), options(seamed, { ...raw, pollMs: 1 }));
     const trees: string[] = [];
     await ex.run({
       job: { id: 'abcdef12-0000', spec: { executor: 'herdr-claude', payload: { prompt: 'go' } }, priority: 50, status: 'running', approved: false, createdAt: '', updatedAt: '', attempts: 1 },
-      laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'] }, signal: new AbortController().signal,
+      laneId: 'local/lane-1', machine: { id: 'local', label: 'l', maxLanes: 1, online: true, executors: ['herdr-claude'], workTree: cwd }, signal: new AbortController().signal,
       progress() {}, saveState() {}, workTree(path) { trees.push(path); },
     });
     expect(trees.at(-1)).toBe(made ? `${cwd}/.hopper-scratch/abcdef12-0000/${basename(cwd)}` : cwd);
@@ -183,7 +192,7 @@ describe('test', () => {
 
 describe('command-bearing options carry the mark into JSON Schema (design.md "UI and mutation")', () => {
   it.each([
-    ['herdr-claude', herdrClaude, ['bin', 'claudeBin', 'yolo', 'args', 'cwd']],
+    ['herdr-claude', herdrClaude, ['bin', 'claudeBin', 'yolo', 'args']],
     ['claude-cli', claudeCli, ['bin', 'sshBin']],
     ['anthropic-api', anthropicApi, ['apiKeyEnv', 'baseUrl']],
     ['gate-router', gateRouter, ['jevPath', 'python']],

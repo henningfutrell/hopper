@@ -60,12 +60,14 @@ describe('check-ui-bundle', () => {
 
   it('npm run build:ui runs it on ui/dist, so every build is checked', () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-    expect(pkg.scripts['build:ui']).toMatch(/^vite build --config ui\/vite\.config\.ts && node scripts\/check-ui-bundle\.ts ui\/dist$/);
+    // Issue #675: the artifact libraries are copied into ui/dist before the check.
+    expect(pkg.scripts['build:ui']).toMatch(/^vite build --config ui\/vite\.config\.ts && node scripts\/copy-artifact-libs\.ts ui\/dist && node scripts\/check-ui-bundle\.ts ui\/dist$/);
   });
 
   it('install.sh builds the UI with the check beside it, in a dir that is its own git root', () => {
     const text = readFileSync(join(ROOT, 'scripts', 'install.sh'), 'utf8');
     expect(text).toMatch(/cp "\$APP_DIR\/scripts\/check-ui-bundle\.ts" "\$BUILD\/scripts\/"/);
+    expect(text).toMatch(/cp "\$APP_DIR\/scripts\/copy-artifact-libs\.ts" "\$BUILD\/scripts\/"/);
     const init = text.indexOf('git init -q "$BUILD"');
     expect(init).toBeGreaterThan(-1);
     expect(init).toBeLessThan(text.indexOf('npm run build:ui --prefix "$BUILD"'));
@@ -76,6 +78,8 @@ describe('check-ui-bundle', () => {
     const copy = text.indexOf('COPY scripts/check-ui-bundle.ts ./scripts/check-ui-bundle.ts');
     expect(copy).toBeGreaterThan(-1);
     expect(copy).toBeLessThan(text.indexOf('RUN npm run build:ui'));
+    expect(text.indexOf('COPY scripts/copy-artifact-libs.ts ./scripts/copy-artifact-libs.ts')).toBeGreaterThan(-1);
+    expect(text.indexOf('COPY scripts/copy-artifact-libs.ts ./scripts/copy-artifact-libs.ts')).toBeLessThan(text.indexOf('RUN npm run build:ui'));
   });
 
   // The real failure: a copy of the UI built under a parent dir whose .gitignore is `*`, as a job's

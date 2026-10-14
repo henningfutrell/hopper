@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "artifact": {
+      "type": "string"
+    },
+    "share": {
+      "type": "string"
+    },
+    "with": {
+      "type": "string",
+      "enum": [
+        "user",
+        "link"
+      ]
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "artifact",
+    "share",
+    "with",
+    "by"
+  ],
+  "additionalProperties": false
+}

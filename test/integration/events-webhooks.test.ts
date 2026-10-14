@@ -3,6 +3,7 @@
 import { createHmac } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EVENT_SCHEMA_VERSIONS, type DomainEvent, type WebhookDelivery } from '../../src/domain/types.ts';
+import type { OutboundSend } from '../../src/domain/outbound.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { writeWebhooks } from '../support/files.ts';
 import { startReceiver, type Receiver } from '../support/receiver.ts';
@@ -15,7 +16,7 @@ let sse: SseClient | undefined;
 const receivers: Receiver[] = [];
 
 /** The runtime's secrets every subscription here names (issue #56). */
-const SECRETS = { WH_ONE: 'abc', WH_R: 'k3y', WH_R1: 's1', WH_R2: 's2' };
+const SECRETS = { WH_ONE: 'whsecret-one-zq', WH_R: 'k3y', WH_R1: 's1', WH_R2: 's2' };
 
 async function start(before?: (dbPath: string) => void): Promise<TestApp> {
   const db = tempDbPath();
@@ -110,7 +111,7 @@ describe('webhook subscriptions', () => {
     const body = (await a.api('GET', '/api/webhooks')).body;
     expect(body.subscriptions).toEqual([expect.objectContaining({ name: 'one', url: 'http://127.0.0.1:9/x', events: ['job.finished'], active: true })]);
     for (const s of body.subscriptions) expect(s).not.toHaveProperty('secret');
-    expect(JSON.stringify(body)).not.toContain('abc');
+    expect(JSON.stringify(body)).not.toContain(SECRETS.WH_ONE);
     expect(Object.keys(body)).toEqual(['subscriptions']);
   });
 
@@ -134,4 +135,21 @@ describe('webhook subscriptions', () => {
     const update = await waitFor(() => sse!.messages.find((m) => m.event === 'delivery.updated' && (JSON.parse(m.data) as WebhookDelivery).status === 'delivered'));
     expect(update.id).toBeUndefined();
   });
+
+  it('the send log answers each POST to a webhook, by host only, and the open circuits (issue #1014)', async () => {
+    const r = await receiver();
+    const a = await start((db) => writeWebhooks(db, [{ name: 'r', url: r.url, events: ['job.finished'], secretEnv: 'WH_R' }]));
+    const job = await a.pull({ op: 'echo', message: 'ping' });
+    await a.waitForStatus(job.id, 'finished');
+    const sends = await waitFor(async () => {
+      const b = (await a.api<{ sends: OutboundSend[]; circuits: unknown[] }>('GET', '/api/outbound?limit=10')).body;
+      return b.sends.length > 0 ? b : undefined;
+    }, { what: 'a row in the send log' });
+    expect(sends.circuits).toEqual([]);
+    expect(sends.sends[0]).toMatchObject({ sender: 'webhook', name: 'r', host: new URL(r.url).host, kind: 'job.finished', outcome: 'sent', status: 200, jobId: job.id, count: 1 });
+    expect(JSON.stringify(sends.sends)).not.toContain(new URL(r.url).pathname);
+    expect((await a.api<{ sends: OutboundSend[] }>('GET', '/api/outbound?name=nobody')).body.sends).toEqual([]);
+    expect((await a.api('GET', '/api/outbound?limit=0')).status).toBe(400);
+  });
 });
+

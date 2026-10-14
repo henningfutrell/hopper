@@ -1,0 +1,1 @@
+- Search now finds the issues and pull requests your job sources see, and the issues waiting in Intake with the reason they were not taken. A match opens its job, or the issue or pull request itself.

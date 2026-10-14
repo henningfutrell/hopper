@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "object",
+      "properties": {
+        "minutes": {
+          "type": "number",
+          "minimum": 0
+        },
+        "highPriorityMinutes": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "minutes",
+        "highPriorityMinutes"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "minutes": {
+          "type": "number",
+          "minimum": 0
+        },
+        "highPriorityMinutes": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "minutes",
+        "highPriorityMinutes"
+      ],
+      "additionalProperties": false
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "by"
+  ],
+  "additionalProperties": false
+}

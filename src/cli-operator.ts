@@ -1,53 +1,122 @@
 // The operator's actions from the command line (issue #374, design.md "Operator actions from the CLI"):
-// accept, reject or run a job again, order the queue, set the queue gate, answer, close or dismiss a
-// question. Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
-// runtime (a source told, an answer typed into a parked pane) apply as they do for a click. The session it
+// accept, reject, run a job again or send its pull request back for rework (issue #724), order the queue, set the queue gate, list the open questions with why each came to a
+// person (issue #679), answer, close or dismiss a question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
+// list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637); Merge now and Close PR (issue #677, cli-operator-pr.ts), and Tend again (issue #1010);
+// the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
+// the proposals (issue #651): list them, show one's paths, select paths to continue with, ask for more, steer, reject all;
+// the artifacts (issue #673, cli-operator-artifact.ts); the master key's status (issue #685, cli-operator-keys.ts): never the key;
+// the vault, its templates and the sandbox boxes (issue #716, cli-operator-vault.ts): a secret's value from stdin only;
+// API tokens (issue #718, cli-operator-keys.ts): mint one for an agent, printed once; list and revoke them;
+// Report a bug and Your reports (issue #694, cli-operator-report.ts): its context first, then the report; direct jobs (issue #901, cli-operator-direct.ts);
+// search (issue #945, cli-operator-search.ts): the jobs by their words, type-ahead, the index's state and Reindex.
+// Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
+// runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
 // holds the database's credentials, the daemon's own trust, so a session of theirs adds none.
 import { parseArgs } from 'node:util';
-import { QUEUE_GATE_MODES, type QueueGate, type UiRole, type User } from './domain/types.ts';
+import { ESCALATION_REASONS, HANDOFF_RESOLUTIONS, QUEUE_GATE_MODES, type FailuresView, type QueueGate, type ReviewItemView, type User } from './domain/types.ts';
 import type { InstanceStore } from './domain/ports.ts';
+import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
+import { questionCall } from './cli-operator-questions.ts';
 import { SESSION_HEADER } from './http/ui/guard.ts';
-import { createUiSessions } from './http/ui/sessions.ts';
+import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
 import { loadSignInConfig } from './auth/index.ts';
+import { ARTIFACT_USAGE, artifactCall } from './cli-operator-artifact.ts';
+import { autoParkCall } from './cli-operator-auto-park.ts';
+import { MASTER_KEY_USAGE, TOKEN_USAGE, masterKeyCall, tokenCall, typesafeKeyCall } from './cli-operator-keys.ts';
+import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
+import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts';
+import { REPO_USAGE, repoCall } from './cli-operator-repo.ts';
+import { DIRECT_USAGE, directCall } from './cli-operator-direct.ts';
+import { REPORT_USAGE, reportCall } from './cli-operator-report.ts';
+import { SEARCH_USAGE, searchCall } from './cli-operator-search.ts';
+import { VAULT_USAGE, sandboxCall, templateCall, vaultCall } from './cli-operator-vault.ts';
+import { driftCall } from './cli-update-drift.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'vault', 'template', 'sandbox', 'token', 'report', 'search'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
-  hopper job rerun <id>                              run a failed, finished or rejected job again
+  hopper job rerun <id>                              run a failed, finished or rejected job again; it runs its item's approved text
+  hopper job rework <id> --notes <text>              send a done job's open pull request back: it becomes a draft, a new job reworks it, told the notes
+  hopper job keep-original <id>                      a job held because its item changed: it runs the original text
+  hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)
+${DIRECT_USAGE}
   hopper queue order <id>...                         the user order: these waiting jobs, first to last, before every other
   hopper queue gate <mode> [--per-hour <n>|none]     the queue gate: ${QUEUE_GATE_MODES.join(' or ')}; auto-accept at most <n> an hour
+  hopper question list [--reason <reason>]           the open questions; --reason keeps those sent to a person for it: ${ESCALATION_REASONS.join(', ')}
   hopper question answer <id> <text>                 answer an open question; the job waiting on it resumes
   hopper question close <id>                         close an open question without answering
-  hopper question dismiss <id>                       drop an open question; a job waiting on it is cancelled`;
+  hopper question dismiss <id>                       drop an open question; a job waiting on it is cancelled
+  hopper problem list                                the open problems, each with its jobs and the jobs it holds
+  hopper problem release <id>                        a problem's held jobs run again now; the problem stays open
+  hopper problem resolve <id> [--note <text>]        resolve a problem: its held jobs run again, new jobs are no longer held
+  hopper handoff list                                the open hand-offs (Needs a person)
+  hopper handoff continue <id> [--note <text>]       Continue: the job goes on, told the note
+  hopper handoff fixed <id> [--note <text>]          Run again: a new job of its item runs, told the note
+  hopper handoff done-by-hand <id> [--note <text>] [--link <url>]
+                                                     Done: its job ends finished; the link is the work (a pull request)
+  hopper handoff wont-do <id> --note <why>           Won't do: no more work on it; the note says why
+  hopper failure list                                the open failures
+  hopper failure retry <id>                          run a failure's job again
+  hopper prs                                         the Pull requests list: each waiting pull request, its state and its repository's yolo mode
+${PR_USAGE}
+${REPO_USAGE}
+  hopper yolo <owner/repo> on|off|default            yolo mode for one repository: the hopper merges its ready pull requests; default follows every repository's
+  hopper backfill done-check                         judge again each done-check failure waiting on a person: done, PR waiting, or it stays
+  hopper auto-park                                   the auto-park timeouts: minutes a question waits on a person before its job parks by itself
+  hopper auto-park set [--minutes <n>] [--high-priority-minutes <n>]
+                                                     change them; 0 turns auto-park off, for jobs that are not high priority or for high-priority jobs
+  hopper proposal list                               the open proposals, each with its paths in short
+  hopper proposal paths <id>                         one proposal's newest version: its problem, its paths, the recommendation
+  hopper proposal select <id> <path>... [--path-note <path>=<text>]... [--note <text>]
+                                                     Continue with selected: each path continues as its own follow-on job
+  hopper proposal accept <id> [--note <text>]        accept a proposal of zero paths (no change is needed, or no viable path)
+  hopper proposal more-paths <id> [--note <text>] [--select <path>]...
+                                                     Ask for more paths; the paths named stay selected for the next version
+  hopper proposal steer <id> --note <text>           Steer: the note goes back to the job
+  hopper proposal reject <id> --note <why>           Reject all: the job ends with the rejection
+  hopper typesafe-key                                the TypeSafe API key Jev asks with: set or not, its last 4 characters, when; never the key
+  hopper typesafe-key set                            set it from stdin (never as an argument): checked once against TypeSafe, then kept in the vault
+  hopper typesafe-key remove                         remove it: Jev is off until a key is set
+${MASTER_KEY_USAGE}
+${ARTIFACT_USAGE}
+${REPORT_USAGE}
+${SEARCH_USAGE}
+${LANES_USAGE}
+${VAULT_USAGE}
+${TOKEN_USAGE}
+  Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
 
-/** A refusal: the message, exit 2. */
-export class OperatorRefusal extends Error {}
 
 export interface OperatorIo {
   env: Record<string, string | undefined>;
+  /** All of stdin: the TypeSafe API key for `typesafe-key set`. */
+  stdin(): string;
   out(text: string): void;
 }
 
-interface Call { role: UiRole; path: string; body: (get: Getter) => Promise<unknown> }
-type Getter = (path: string) => Promise<unknown>;
 
 /** A session lives this long at most, whatever the sign-in config's session lengths: one call, then it is dropped. */
 const SESSION_MS = 5 * 60_000;
 /** Who a CLI session is: no realm the sign-in config names, so a reconcile drops it. */
-const CLI_IDENTITY = { realm: 'cli', subject: 'operator-cli', name: 'operator CLI', groups: [] };
+const CLI_IDENTITY = { realm: CLI_REALM, subject: 'operator-cli', name: 'operator CLI', groups: [] };
 
-const usage = (line: string): OperatorRefusal => new OperatorRefusal(`usage: hopper ${line}`);
 
 function jobCall(args: string[]): Call {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' } } });
+  const direct = directCall(args[0], args.slice(1));
+  if (direct) return direct;
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
-  if (!id || extra.length > 0) throw usage('job accept|reject|rerun <id>');
+  if (!id || extra.length > 0) throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');
   const at = `/ui/api/jobs/${encodeURIComponent(id)}`;
+  const notes = values.notes;
+  if (verb === 'rework' && notes !== undefined && values.reason === undefined) return { role: 'operator', path: `${at}/rework`, body: async () => ({ notes }) };
+  if (verb === 'rework' || notes !== undefined) throw usage('job rework <id> --notes <text>');
   if (verb === 'reject') return { role: 'operator', path: `${at}/reject`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
   if (values.reason !== undefined) throw usage('job reject <id> --reason <text>');
-  if (verb === 'rerun') return { role: 'operator', path: `${at}/rerun`, body: async () => ({}) };
+  // Run again, and the two ways on for a job held because its item changed (issue #662): each its own route.
+  if (verb === 'rerun' || verb === 'keep-original' || verb === 'accept-new-text') return { role: 'operator', path: `${at}/${verb}`, body: async () => ({}) };
   if (verb === 'accept') {
     // As the Queue view's Accept: the accepted waiting jobs in queue order, then this one.
     return { role: 'operator', path: '/ui/api/queue/order', body: async (get) => {
@@ -55,7 +124,7 @@ function jobCall(args: string[]): Call {
       return { jobIds: [...waiting.filter((j) => j.accepted !== false && j.id !== id).map((j) => j.id), id] };
     } };
   }
-  throw usage('job accept|reject|rerun <id>');
+  throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');
 }
 
 function perHour(raw: string): number | null {
@@ -85,22 +154,121 @@ function queueCall(args: string[]): Call {
   throw usage('queue order <id>... | hopper queue gate <mode> [--per-hour <n>|none]');
 }
 
-function questionCall(args: string[]): Call {
-  const [verb, id, ...rest] = args;
-  if (verb === 'answer') {
-    const answer = rest.join(' ').trim();
-    if (!id || !answer) throw usage('question answer <id> <text>');
-    return { role: 'operator', path: `/ui/api/questions/${encodeURIComponent(id)}/answer`, body: async () => ({ answer }) };
-  }
-  if ((verb === 'close' || verb === 'dismiss') && id && rest.length === 0) {
-    return { role: 'operator', path: `/ui/api/questions/${encodeURIComponent(id)}/${verb}`, body: async () => ({}) };
-  }
-  throw usage('question answer <id> <text> | close <id> | dismiss <id>');
+/** A list from the Failures view (`GET /api/failures`): what `pick` takes of it. */
+const failuresList = (pick: (v: FailuresView) => unknown): Call => ({ role: 'viewer', path: '/api/failures', pick: (v) => pick(v as FailuresView) });
+const noted = (args: string[]) => parseArgs({ args, allowPositionals: true, options: { note: { type: 'string' }, link: { type: 'string' } } });
+
+function problemCall(args: string[]): Call {
+  const { values, positionals } = noted(args);
+  const [verb, id, ...extra] = positionals;
+  if (verb === 'list' && !id) return failuresList((v) => v.problems.filter((p) => p.status === 'open'));
+  if (!id || extra.length > 0 || values.link !== undefined) throw usage('problem list | release <id> | resolve <id> [--note <text>]');
+  const at = `/ui/api/failures/problems/${encodeURIComponent(id)}`;
+  if (verb === 'release' && values.note === undefined) return { role: 'operator', path: `${at}/release`, body: async () => ({}) };
+  if (verb === 'resolve') return { role: 'operator', path: `${at}/resolve`, body: async () => (values.note === undefined ? {} : { note: values.note }) };
+  throw usage('problem list | release <id> | resolve <id> [--note <text>]');
 }
 
-function callOf(command: string, args: string[]): Call {
+/** The CLI's verb for each hand-off resolution (issue #551): its name, with dashes. */
+const RESOLUTION_OF = new Map(HANDOFF_RESOLUTIONS.map((r) => [r.replaceAll('_', '-'), r]));
+const HANDOFF_USAGE = 'handoff list | continue <id> [--note <text>] | fixed <id> [--note <text>] | done-by-hand <id> [--note <text>] [--link <url>] | wont-do <id> --note <why>';
+
+function handoffCall(args: string[]): Call {
+  const { values, positionals } = noted(args);
+  const [verb, id, ...extra] = positionals;
+  if (verb === 'list' && !id) return failuresList((v) => v.handoffs.filter((h) => h.status === 'open'));
+  const action = verb === undefined ? undefined : RESOLUTION_OF.get(verb);
+  if (!action || !id || extra.length > 0) throw usage(HANDOFF_USAGE);
+  const { link } = values;
+  if (link !== undefined && action !== 'done_by_hand') throw usage('handoff done-by-hand <id> [--note <text>] [--link <url>]: only done-by-hand takes --link');
+  if (action === 'wont_do' && !values.note?.trim()) throw usage('handoff wont-do <id> --note <why>');
+  return {
+    role: 'operator', path: `/ui/api/failures/handoffs/${encodeURIComponent(id)}/resolve`,
+    body: async () => ({ action, ...(values.note === undefined ? {} : { note: values.note }), ...(link === undefined ? {} : { link }) }),
+  };
+}
+
+function failureCall(args: string[]): Call {
+  const [verb, id, ...extra] = args;
+  if (verb === 'list' && !id) return failuresList((v) => v.recent);
+  if (verb === 'retry' && id && extra.length === 0) return { role: 'operator', path: `/ui/api/failures/${encodeURIComponent(id)}/retry`, body: async () => ({}) };
+  throw usage('failure list | retry <id>');
+}
+
+function backfillCall(args: string[]): Call {
+  if (args.length !== 1 || args[0] !== 'done-check') throw usage('backfill done-check');
+  return { role: 'operator', path: '/ui/api/backfill/done-check', body: async () => ({}) };
+}
+
+/** A proposal's paths in short, as the CLI lists them (issue #651). */
+function pathsBrief(p: ReviewItemView) {
+  const v = p.versions.at(-1)!;
+  const set = v.paths ?? { paths: [] };
+  return {
+    id: p.id, jobId: p.jobId, status: p.status, stage: p.stage, version: v.number, title: p.source?.title, tldr: v.sections.tldr, problem: v.sections.problem,
+    paths: set.paths.map((x) => ({
+      id: x.id, title: x.title, summary: x.summary, tradeoffs: x.tradeoffs, ...(x.otherFields ? { otherFields: x.otherFields } : {}), creates: x.creates,
+      ...(x.recommended ? { recommended: true } : {}), ...(x.addedBy ? { addedBy: x.addedBy } : {}), ...(x.notViable ? { notViable: x.notViable } : {}),
+    })),
+    ...(set.recommendation ? { recommendation: set.recommendation } : {}), ...(set.none !== undefined ? { none: set.none } : {}),
+    ...(p.selection ? { selection: p.selection } : {}), ...(p.signOff?.selected ? { selected: p.signOff.selected } : {}), ...(p.followOns ? { followOns: p.followOns } : {}),
+  };
+}
+
+const PROPOSAL_USAGE = 'proposal list | paths <id> | select <id> <path>... [--path-note <path>=<text>]... [--note <text>] | accept <id> [--note <text>] | more-paths <id> [--note <text>] [--select <path>]... | steer <id> --note <text> | reject <id> --note <why>';
+
+function proposalCall(args: string[]): Call {
+  const { values, positionals } = parseArgs({
+    args, allowPositionals: true,
+    options: { note: { type: 'string' }, 'path-note': { type: 'string', multiple: true }, select: { type: 'string', multiple: true } },
+  });
+  const [verb, id, ...rest] = positionals;
+  if (verb === 'list' && !id) return { role: 'viewer', path: '/api/proposals', pick: (v) => (v as { items: ReviewItemView[] }).items.map(pathsBrief) };
+  if (!id) throw usage(PROPOSAL_USAGE);
+  const at = `/ui/api/proposals/${encodeURIComponent(id)}`;
+  const note = values.note === undefined ? {} : { notes: values.note };
+  if (verb === 'paths' && rest.length === 0) return { role: 'viewer', path: `/api/proposals/${encodeURIComponent(id)}`, pick: (v) => pathsBrief(v as ReviewItemView) };
+  if (verb === 'select') {
+    if (rest.length === 0) throw usage('proposal select <id> <path>... [--path-note <path>=<text>]... [--note <text>]');
+    const notes = new Map<string, string>();
+    for (const raw of values['path-note'] ?? []) {
+      const eq = raw.indexOf('=');
+      if (eq < 1 || !rest.includes(raw.slice(0, eq))) throw new OperatorRefusal(`--path-note ${raw}: write <path>=<text> for a path you select`);
+      notes.set(raw.slice(0, eq), raw.slice(eq + 1));
+    }
+    return { role: 'operator', path: `${at}/accept`, body: async () => ({ ...note, paths: rest.map((p) => ({ id: p, ...(notes.get(p) ? { note: notes.get(p) } : {}) })) }) };
+  }
+  if (rest.length > 0 || values['path-note'] !== undefined || (values.select !== undefined && verb !== 'more-paths')) throw usage(PROPOSAL_USAGE);
+  if (verb === 'accept') return { role: 'operator', path: `${at}/accept`, body: async () => note };
+  if (verb === 'more-paths') return { role: 'operator', path: `${at}/more-paths`, body: async () => ({ ...note, ...(values.select ? { paths: values.select.map((p) => ({ id: p })) } : {}) }) };
+  if ((verb === 'steer' || verb === 'reject') && values.note?.trim()) return { role: 'operator', path: `${at}/${verb}`, body: async () => note };
+  throw usage(PROPOSAL_USAGE);
+}
+
+function callOf(command: string, args: string[], stdin: () => string): Call {
+  if (command === 'update') return driftCall(args);
+  if (command === 'master-key') return masterKeyCall(args);
+  if (command === 'lanes') return lanesCall(args);
+  if (command === 'token') return tokenCall(args);
+  if (command === 'vault') return vaultCall(args, stdin);
+  if (command === 'template') return templateCall(args);
+  if (command === 'sandbox') return sandboxCall(args);
+  if (command === 'artifact') return artifactCall(args);
+  if (command === 'report') return reportCall(args);
+  if (command === 'search') return searchCall(args);
+  if (command === 'typesafe-key') return typesafeKeyCall(args, stdin);
+  if (command === 'auto-park') return autoParkCall(args);
+  if (command === 'proposal') return proposalCall(args);
+  if (command === 'prs') return prsCall(args);
+  if (command === 'pr') return prCall(args);
+  if (command === 'repo') return repoCall(args);
+  if (command === 'yolo') return yoloCall(args);
+  if (command === 'backfill') return backfillCall(args);
   if (command === 'job') return jobCall(args);
   if (command === 'queue') return queueCall(args);
+  if (command === 'problem') return problemCall(args);
+  if (command === 'handoff') return handoffCall(args);
+  if (command === 'failure') return failureCall(args);
   return questionCall(args);
 }
 
@@ -114,12 +282,13 @@ function daemonUrl(raw: string | undefined, env: Record<string, string | undefin
   }
 }
 
-/** Take `--url <url>` and `--user <id>` out of `args`, wherever they are. */
+/** Take `--url <url>` and `--user <id>` out of `args`, wherever they are, and `--json`: the answer is JSON anyway. */
 function common(args: string[]): { rest: string[]; url?: string; user?: string } {
   const rest: string[] = [];
   const found: { url?: string; user?: string } = {};
   for (let i = 0; i < args.length; i++) {
     const a = args[i]!;
+    if (a === '--json') continue;
     if (a === '--url' || a === '--user') {
       const v = args[++i];
       if (v === undefined) throw new OperatorRefusal(`${a} needs a value`);
@@ -130,14 +299,14 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question …`: one operator action on the running daemon, as `userOf` names the user.
- * Prints the daemon's answer as JSON.
+ * `hopper job|queue|question|problem|handoff|failure|prs|pr|repo|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|vault|template|sandbox|report|search …`: one operator action on the running daemon, as `userOf` names the user.
+ * Prints the daemon's answer as JSON; the exit code the call gives it.
  */
 export async function runOperatorAction(
   instance: InstanceStore, command: string, args: string[], userOf: (id: string | undefined) => User, io: OperatorIo,
-): Promise<void> {
+): Promise<number> {
   const { rest, url: rawUrl, user: userId } = common(args);
-  const call = callOf(command, rest);
+  const call = callOf(command, rest, io.stdin);
   const url = daemonUrl(rawUrl, io.env);
   const user = userOf(userId);
   // A CLI session is no gateway realm's: no token of one is ever checked for it.
@@ -164,7 +333,9 @@ export async function runOperatorAction(
     throw new Error(`the hopper failed (${res.status}): ${why}`);
   };
   try {
-    io.out(`${JSON.stringify(await send(call.path, await call.body(send)), null, 2)}\n`);
+    const answer = call.body ? await send(call.path, await call.body(send)) : await send(call.path);
+    io.out(`${JSON.stringify(call.pick ? call.pick(answer) : answer, null, 2)}\n`);
+    return call.exit ? call.exit(answer) : 0;
   } finally {
     sessions.drop(session.token, 'logout');
   }

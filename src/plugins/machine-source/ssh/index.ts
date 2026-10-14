@@ -6,7 +6,7 @@
 import type { SshMachine } from '../../../domain/types.ts';
 import { HOST_KEY } from '../../../executors/ssh.ts';
 import type { PluginDefinition } from '../../sdk.ts';
-import { attachedBase, attachedShape, diskLowShape, reach, sweepShape, workTreeOption, type AttachedOptions } from '../attached.ts';
+import { attachedBase, attachedShape, diskLowShape, reach, sweepShape, workTreeOption, workTreesOption, type AttachedOptions } from '../attached.ts';
 
 export interface SshOptions extends AttachedOptions { ssh: string; herdr: boolean; session: string; hostKey?: string }
 
@@ -23,6 +23,7 @@ const ssh: PluginDefinition<'machine-source', SshOptions> = {
       .meta({ commandBearing: true, description: 'the ssh destination: user@host' }),
     ...attachedShape(z, ['herdr-claude']),
     workTree: workTreeOption(z),
+    workTrees: workTreesOption(z),
     ...diskLowShape(z),
     ...sweepShape(z),
     herdr: z.boolean().default(true)

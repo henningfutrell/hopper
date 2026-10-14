@@ -3,14 +3,15 @@
 // token; an answer the client did not sign is not believed. The client is real; the hopper's end is a
 // loopback server standing for the hopper's links. herdr is the stand-in.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer as createH2Server } from 'node:http2';
 import { connect, createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mintToken } from '../../src/client/signature.ts';
-import { ClientError, clientClaude } from '../../src/executors/client.ts';
+import { ClientError, clientClaude, clientScript, clientWorkTree } from '../../src/executors/client.ts';
+import { startClient as startFieldClient } from '../fixtures/client-835e17bd3c9c6ac3/server.ts';
 import { HerdrError, createHerdrCliClient } from '../../src/executors/herdr/index.ts';
 import { startTestClient, type TestClient } from '../support/client.ts';
 import { waitFor } from '../support/wait.ts';
@@ -82,6 +83,16 @@ describe('herdr over a client target', () => {
     }
   });
 
+  it('a client on an older release, asked for a call it does not have: the error says so, not a signature failure (issue #545)', async () => {
+    const install = join(dir, 'hopper-client');
+    cpSync(fileURLToPath(new URL('../fixtures/client-835e17bd3c9c6ac3', import.meta.url)), install, { recursive: true });
+    client = await startTestClient({ token: () => TOKEN, herdrBin: HERDR, session: 'hopper', installDir: install, start: startFieldClient });
+    const err = await clientScript(client.transport(TOKEN), '/discover', {}).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ClientError);
+    expect((err as Error).message).toBe('client studio runs an older client release, which has no /discover: the hopper loads its own release there once no job runs on it');
+    expect((err as Error).message).not.toMatch(/prove itself/);
+  });
+
   it('not dialled in: code client, not dialled in', async () => {
     const h = createHerdrCliClient({ client: { machine: 'studio', link: () => undefined, token: () => TOKEN } });
     await expect(h.exec(['status', 'server'])).rejects.toMatchObject({ code: 'client', message: expect.stringMatching(/is not dialled in/) });
@@ -122,3 +133,16 @@ describe('herdr over a client target', () => {
     await expect(hopper('short').exec(['status', 'server'])).rejects.toMatchObject({ code: 'client', message: expect.stringMatching(/at least 43/) });
   });
 });
+
+// Issue #361: the hopper makes a client target's work tree through its client, when it probes it.
+describe('a client target\'s work tree', () => {
+  it('made where it names; one that cannot be made says why; the client\'s home itself is refused', async () => {
+    await serve();
+    const t = client!.transport(TOKEN);
+    expect(await clientWorkTree(t, join(dir, 'trees', 'a'))).toEqual({});
+    expect(existsSync(join(dir, 'trees', 'a'))).toBe(true);
+    expect((await clientWorkTree(t, '/proc/hopper-no-such/tree')).workTreeProblem).toMatch(/^its work tree \/proc\/hopper-no-such\/tree cannot be made: /);
+    expect(await clientWorkTree(t, '~')).toEqual({ workTreeProblem: 'its work tree ~ is its home or above it: a job runs only in a directory below the home' });
+  });
+});
+

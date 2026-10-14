@@ -1,0 +1,1 @@
+- The Resources page now has a graph of each part's CPU, memory, database connections and failed permission checks over the last day, week or month.

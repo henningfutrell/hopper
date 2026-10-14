@@ -56,10 +56,11 @@ fi
 # build:ui then checks the bundle (scripts/check-ui-bundle.ts) and fails the install on a hollow one.
 BUILD="$(mktemp -d "${TMPDIR:-/tmp}/hopper-ui.XXXXXX")"
 trap 'rm -rf "$BUILD"' EXIT
-step "build the UI bundle in $BUILD (copy ui/, src/, site/hopper-logo.svg, package*.json, the bundle check; git init; npm ci with dev dependencies; npm run build:ui, which checks it)"
+step "build the UI bundle in $BUILD (copy ui/, src/, site/hopper-logo.svg, package*.json, the bundle check and the artifact library copy; git init; npm ci with dev dependencies; npm run build:ui, which checks it)"
 cp -r "$APP_DIR/ui" "$APP_DIR/src" "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$BUILD/"
 mkdir -p "$BUILD/site" && cp "$APP_DIR/site/hopper-logo.svg" "$BUILD/site/"
 mkdir -p "$BUILD/scripts" && cp "$APP_DIR/scripts/check-ui-bundle.ts" "$BUILD/scripts/"
+cp "$APP_DIR/scripts/copy-artifact-libs.ts" "$BUILD/scripts/"
 git init -q "$BUILD"
 rm -rf "$BUILD/ui/dist" "$BUILD/ui/node_modules"
 npm ci --prefix "$BUILD" --no-audit --no-fund
@@ -67,18 +68,20 @@ npm run build:ui --prefix "$BUILD"
 [ -s "$BUILD/ui/dist/index.html" ] || { echo "UI build wrote no $BUILD/ui/dist/index.html" >&2; exit 1; }
 
 # The install: src/, scripts/, systemd/ (self-update installs changed units from here), ui/dist/,
-# package*.json, WHATS-NEW.md (the Updates panel's "this version"), production node_modules, install.json.
+# package*.json, WHATS-NEW.md and whats-new/ (the Updates panel's "this version"), help/ (the help pages), production node_modules, install.json.
 assemble() {
   local target="$1"
-  step "copy src/, scripts/, systemd/, ui/dist/, package.json, package-lock.json, WHATS-NEW.md to $target (replacing old ones; node_modules kept for npm ci)"
+  step "copy src/, scripts/, systemd/, ui/dist/, help/, package.json, package-lock.json, WHATS-NEW.md, whats-new/ to $target (replacing old ones; node_modules kept for npm ci)"
   mkdir -p "$target/ui"
-  rm -rf "$target/src" "$target/scripts" "$target/systemd" "$target/ui/dist"
+  rm -rf "$target/src" "$target/scripts" "$target/systemd" "$target/ui/dist" "$target/help" "$target/whats-new"
   cp -r "$APP_DIR/src" "$target/src"
   cp -r "$BUILD/ui/dist" "$target/ui/dist"
   cp -r --preserve=mode "$APP_DIR/scripts" "$target/scripts"
   cp -r "$APP_DIR/systemd" "$target/systemd"
+  cp -r "$APP_DIR/help" "$target/help"
   cp "$APP_DIR/package.json" "$APP_DIR/package-lock.json" "$target/"
   cp "$APP_DIR/WHATS-NEW.md" "$target/"
+  cp -r "$APP_DIR/whats-new" "$target/whats-new"
 
   step "npm ci --omit=dev --prefix $target"
   npm ci --omit=dev --prefix "$target"
@@ -120,12 +123,11 @@ if [ -z "$(env_line HOPPER_DATABASE_URL)" ] && [ -z "$(env_line HOPPER_DATABASE_
     exit 1
   fi
 fi
-# The key the GitHub connection's tokens are sealed under in the database (issue #441, docs/design.md
-# "Keeping the connection"): made once, kept in daemon.env; one given already (or its _FILE) is kept.
-if [ -z "$(env_line HOPPER_TOKEN_KEY)" ] && [ -z "$(env_line HOPPER_TOKEN_KEY_FILE)" ]; then
-  step "write a new HOPPER_TOKEN_KEY to $ENV_FILE (mode 600)"
-  (umask 077; printf 'HOPPER_TOKEN_KEY=%s\n' "$(od -An -tx1 -N32 /dev/urandom | tr -d ' \n')" >> "$ENV_FILE")
-fi
+# The master key (issue #659, docs/deploy.md "The master key") is not made here: the daemon makes one at its first
+# start and shows it once, in the UI only (never in its log), to be saved and then given as HOPPER_MASTER_KEY in daemon.env.
+# A HOPPER_TOKEN_KEY line from before is read until then, and the daemon says to rename it.
+[ -n "$(env_line HOPPER_MASTER_KEY)" ] || [ -n "$(env_line HOPPER_TOKEN_KEY)" ] \
+  || echo "the master key: the first start makes one; save it from the UI banner (Show the key (once)), then add HOPPER_MASTER_KEY=<it> to $ENV_FILE"
 chmod 600 "$ENV_FILE"
 
 # The operator CLI against the daemon's database, given the way daemon.env gives it.
@@ -158,7 +160,7 @@ step "systemctl --user enable hopper-herdr hopper"
 systemctl --user enable hopper-herdr hopper
 
 if systemctl --user is-active --quiet hopper-herdr; then
-  step "hopper-herdr is active: NOT restarted (restarting it would kill every parked pane and its Claude job)"
+  step "hopper-herdr is active: NOT restarted (restarting it would kill every waiting pane and its Claude job)"
 else
   step "systemctl --user start hopper-herdr"
   systemctl --user start hopper-herdr

@@ -240,13 +240,14 @@ export function MachineDefaultsForm({ config, busy, send, onDone }: {
   );
 }
 
-/** A local machine's name and lane count: its instance's `lanes` option (POST /ui/api/plugins, issue #205). */
+/** A local machine's name, lane count, herdr session and work tree: its instance's options (POST /ui/api/plugins, issues #205, #361). */
 export function LocalMachineForm({ machine, config, busy, send, onDone }: {
   machine: Extract<MachineKind, { kind: 'local' }>; config: MachinesConfig; busy: boolean;
   send: (e: Extract<PluginsEdit, { action: 'options' }>, done: string) => Promise<boolean>; onDone: () => void;
 }) {
   const name = machine.machine.name;
-  const [d, setD] = useState<LocalDraft>({ name, lanes: String(machine.lanes), session: typeof machine.machine.options?.session === 'string' ? machine.machine.options.session : '' });
+  const o = machine.machine.options ?? {};
+  const [d, setD] = useState<LocalDraft>({ name, lanes: String(machine.lanes), session: typeof o.session === 'string' ? o.session : '', workTree: typeof o.workTree === 'string' ? o.workTree : '' });
   const taken = d.name.trim() !== name && config.machines.some((m) => m.name === d.name.trim());
   const body = taken ? null : localBody(machine, d, config.version);
   const submit = async () => { if (body && await send(body, body.rename ? `Renamed ${name} to ${body.rename}` : `Saved ${name}`)) onDone(); };
@@ -261,6 +262,9 @@ export function LocalMachineForm({ machine, config, busy, send, onDone }: {
         </Field>
         <Field label="herdr session" hint="where its jobs run; the hopper starts it when it is not running. Empty: herdr-claude's own">
           <Input className="h-9 font-mono" value={d.session ?? ''} disabled={busy} autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(e) => setD((x) => ({ ...x, session: e.target.value }))} />
+        </Field>
+        <Field label="work tree" hint="where its jobs run; the hopper makes it and fetches or clones each job's repository in it. ~ is the home. Empty: ~/hopper-jobs">
+          <Input className="h-9 font-mono" value={d.workTree ?? ''} disabled={busy} placeholder="~/hopper-jobs" autoCapitalize="none" autoCorrect="off" spellCheck={false} onChange={(e) => setD((x) => ({ ...x, workTree: e.target.value }))} />
         </Field>
       </div>
       <div className="flex flex-wrap gap-2">
