@@ -63,7 +63,8 @@ export function releasable(store: Reads, problemId: string): FailureRecord[] {
 
 /**
  * When a failure ended (issue #618), or undefined while it is open: its job ran again or something settled it (its
- * outcome), its hand-off closed, or its job ended finished. Nothing waits on an ended one.
+ * outcome), its hand-off closed, its job ended finished, or, with no hand-off, its job was dismissed (issue #1123). Nothing
+ * waits on an ended one.
  */
 export function endedAt(store: Pick<UserStore, 'jobs' | 'handoffs'>, r: FailureRecord): string | undefined {
   if (r.pending) return undefined;
@@ -72,6 +73,7 @@ export function endedAt(store: Pick<UserStore, 'jobs' | 'handoffs'>, r: FailureR
   if (h?.status === 'closed') return h.closedAt ?? r.at;
   const job = store.jobs.get(r.jobId);
   if (job?.status === 'finished') return job.finishedAt ?? r.at;
+  if (job?.dismissedAt !== undefined && h === undefined) return job.dismissedAt;
   return undefined;
 }
 

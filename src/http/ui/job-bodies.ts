@@ -17,6 +17,12 @@ export const reworkBody = z.object({
 export const requeueBody = z.object({ freshSession: z.boolean().optional(), elsewhere: z.boolean().optional() }).strict();
 /** Ending a job's own wait (issue #483): the person's optional note, typed into its pane with it. */
 export const endWaitBody = z.object({ note: z.string().trim().max(2000, 'note must be at most 2000 characters').optional() }).strict();
+/** Dismiss many (issue #1123): the failed jobs named, or (`superseded`) every one nothing waits on any more. One of the two. */
+export const MAX_DISMISS = 1000;
+export const dismissManyBody = z.object({
+  jobIds: z.array(z.string().min(1)).min(1, 'jobIds must name a job').max(MAX_DISMISS, `jobIds must name at most ${MAX_DISMISS} jobs`).optional(),
+  superseded: z.literal(true).optional(),
+}).strict().refine((b) => (b.jobIds === undefined) !== (b.superseded === undefined), 'send jobIds or superseded: true, one of the two');
 /** A note to a job (issue #997): typed into its session at the next turn boundary, or kept until it resumes. Required. */
 export const noteBody = z.object({
   text: z.string().trim().min(1, 'text must not be empty').max(MAX_NOTE_CHARS, `text must be at most ${MAX_NOTE_CHARS} characters`),

@@ -2,6 +2,7 @@
 // Each command validates, writes in one transaction, emits its event, and lets the event
 // listener schedule the next Decision. Jobs are created only by ingest (source-host.ts).
 import { TERMINAL_STATUSES } from '../domain/types.ts';
+import type { DismissedBy } from '../domain/locked.ts';
 import type { ActingPerson, Job, JobNote, UsageReading } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
@@ -30,8 +31,11 @@ export interface Commands {
    * hopper. It holds no lane and the decider never runs it; its source finishes it once its work is complete.
    */
   claimByOperator(id: string): Job;
-  /** Take a locked entry out of the queue (issue #355): the failed job stays failed, and can still run again. */
-  dismiss(id: string): Job;
+  /**
+   * Take a locked entry out of the queue (issue #355): the failed job stays failed, and can still run again. `by`: a
+   * person (default), or nothing waits on it any more (issue #1123).
+   */
+  dismiss(id: string, by?: DismissedBy): Job;
   /**
    * Park a running job, or one on a question (issue #501): its lane frees, its pane and agent end, its work tree,
    * agent session, machine and open question are kept. A running job is parked once its executor stepped aside.
@@ -105,13 +109,13 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
       });
     },
 
-    dismiss(id) {
+    dismiss(id, by = 'user') {
       return store.tx(() => {
         const job = store.jobs.get(id);
         if (!job) throw new EngineError('not_found', `job ${id} not found`);
         if (job.status !== 'failed' || job.dismissedAt !== undefined) throw new EngineError('conflict', `job ${id} is not a locked entry: only a failed job not yet dismissed can be dismissed`);
         const next = store.jobs.update(id, { dismissedAt: nowIso(c) });
-        store.events.append({ type: 'job.dismissed', jobId: id, data: { by: 'user' } });
+        store.events.append({ type: 'job.dismissed', jobId: id, data: { by } });
         return next;
       });
     },

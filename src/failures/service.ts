@@ -62,6 +62,8 @@ export interface Failures {
   stop(): Promise<void>;
   /** The due runs again, the checks, the prune — now (tests, and after an action). */
   sweep(): Promise<void>;
+  /** The failed jobs nothing waits on any more, dismissed now (issue #1123): the ids. The sweep and the start do it too. */
+  dismissStale(): string[];
   /** The done-check backfill (issue #637): asked, one pass; `once`, at start, unless it completed before on this store. */
   backfill: { run(): Promise<BackfillResult>; once(): Promise<void> };
   view(): FailuresView;
@@ -260,7 +262,7 @@ export function createFailures(o: FailuresOptions): Failures {
     sweeping ??= (async () => {
       try {
         assessBacklog(JUST_FAILED_MS);
-        if (!stopped) { handoffs.supersede(); handoffs.settle(); }
+        if (!stopped) { handoffs.supersede(); handoffs.settle(); handoffs.dismissStale(); }
         // High-priority jobs run again first (issue #535): by their live priority, then as due.
         for (const r of highestFirst(store, store.failures.due(now().toISOString()))) {
           if (stopped) return;
@@ -307,9 +309,7 @@ export function createFailures(o: FailuresOptions): Failures {
       // Failed jobs left unassessed: a restart between the failure and the assessment, or an older build's backlog.
       assessBacklog();
       // A store from the build before (issue #529): what nothing waits on any more clears before anything is handed off.
-      handoffs.supersede();
-      handoffs.settle();
-      handoffs.catchUp();
+      handoffs.supersede(); handoffs.settle(); handoffs.dismissStale(); handoffs.catchUp();
       unsubscribe = store.events.subscribe((e) => {
         if (stopped) return;
         // A timeout's facts first (issue #630), then the assessment.
@@ -326,6 +326,7 @@ export function createFailures(o: FailuresOptions): Failures {
       await sweeping;
     },
     sweep,
+    dismissStale: () => handoffs.dismissStale(),
     backfill,
     view: () => viewOf(store, settings(), now(), o.resumable, o.takesBack),
     blocks() {

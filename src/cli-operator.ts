@@ -1,5 +1,5 @@
 // The operator's actions from the command line (issue #374, design.md "Operator actions from the CLI"):
-// accept, reject, run a job again or send its pull request back for rework (issue #724), order the queue, set the queue gate, list the open questions with why each came to a
+// accept, reject, run a job again or send its pull request back for rework (issue #724), dismiss failed jobs (issue #1123), order the queue, set the queue gate, list the open questions with why each came to a
 // person (issue #679), answer, close or dismiss a question; and the Failures actions (issue #623): list, release or resolve a problem, list or resolve a hand-off,
 // list or run a failure again; the Pull requests list, yolo mode per repository and the done-check backfill (issue #637); Merge now and Close PR (issue #677, cli-operator-pr.ts), and Tend again (issue #1010);
 // the auto-park timeouts (issue #650); the TypeSafe API key, read from stdin, never an argument (issue #657).
@@ -29,7 +29,7 @@ import { ACCOUNTS_USAGE, accountsCall } from './cli-operator-accounts.ts';
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
 import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts';
 import { REPO_USAGE, repoCall } from './cli-operator-repo.ts';
-import { DIRECT_USAGE, directCall } from './cli-operator-direct.ts';
+import { DIRECT_USAGE, directCall } from './cli-operator-direct.ts'; import { DISMISS_USAGE, dismissCall } from './cli-operator-dismiss.ts';
 import { REPORT_USAGE, reportCall } from './cli-operator-report.ts';
 import { SEARCH_USAGE, searchCall } from './cli-operator-search.ts';
 import { VAULT_USAGE, sandboxCall, templateCall, vaultCall } from './cli-operator-vault.ts';
@@ -43,6 +43,7 @@ export const OPERATOR_USAGE = `  hopper job accept <id>                         
   hopper job rework <id> --notes <text>              send a done job's open pull request back: it becomes a draft, a new job reworks it, told the notes
   hopper job keep-original <id>                      a job held because its item changed: it runs the original text
   hopper job accept-new-text <id>                    a job held because its item changed: it runs the new text (the owner only, as Access decides)
+${DISMISS_USAGE}
 ${DIRECT_USAGE}
   hopper queue order <id>...                         the user order: these waiting jobs, first to last, before every other
   hopper queue gate <mode> [--per-hour <n>|none]     the queue gate: ${QUEUE_GATE_MODES.join(' or ')}; auto-accept at most <n> an hour
@@ -109,6 +110,7 @@ const CLI_IDENTITY = { realm: CLI_REALM, subject: 'operator-cli', name: OPERATOR
 function jobCall(args: string[]): Call {
   const direct = directCall(args[0], args.slice(1));
   if (direct) return direct;
+  if (args[0] === 'dismiss') return dismissCall(args.slice(1));
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
   if (!id || extra.length > 0) throw usage('job accept|reject|rerun|rework|keep-original|accept-new-text <id>');
