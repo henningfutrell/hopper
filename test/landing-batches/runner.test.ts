@@ -6,7 +6,7 @@
 //   Scenario: a due batch starts a batch run: a branch at the tip, a pull request into the tested branch, one event
 //   Scenario: nothing new: no branch, no pull request, no event
 //   Scenario: a green batch run is merged into the tested branch at its tip, and its branch removed
-//   Scenario: a red batch run is closed and recorded failed; the same tip does not run again
+//   Scenario: a red batch run is closed and recorded failed; failing checks start a bisect; with none, the same tip does not run again
 //   Scenario: a job's open pull request on the tested branch moves to the landing branch; another's does not
 //   Scenario: a repository whose default branch is the tested branch runs nothing and says why
 import { describe, expect, it } from 'vitest';
@@ -40,7 +40,10 @@ function fake(w: World): LandingBatchGitHub {
   let next = 100;
   return {
     defaultBranch: async () => w.defaultBranch,
-    compare: async (_repo, base, head) => { w.calls.push(`compare ${base}...${head}`); return { aheadBy: w.aheadBy, tip: w.tip, messages: w.messages }; },
+    compare: async (_repo, base, head) => {
+      w.calls.push(`compare ${base}...${head}`);
+      return { aheadBy: w.aheadBy, tip: w.tip, commits: w.messages.map((message, i) => ({ sha: i === w.messages.length - 1 ? w.tip : `c${i}`, parents: i === 0 ? ['base'] : [`c${i - 1}`], message })) };
+    },
     createBranch: async (_repo, name, sha) => { w.calls.push(`branch ${name} ${sha}`); },
     deleteBranch: async (_repo, name) => { w.calls.push(`delete ${name}`); },
     openPullRequest: async (_repo, p) => {
@@ -51,13 +54,17 @@ function fake(w: World): LandingBatchGitHub {
     },
     pullRequest: async (_repo, n) => {
       const p = w.pulls.get(n)!;
-      return { state: p.state, merged: p.merged, mergeable: p.mergeable, headSha: p.headSha, base: p.base, url: p.url };
+      return { state: p.state, merged: p.merged, mergeable: p.mergeable, headSha: p.headSha, base: p.base, url: p.url, body: '' };
     },
     checkRuns: async () => w.checks,
     merge: async (_repo, n, sha) => { const p = w.pulls.get(n)!; p.merged = true; p.state = 'closed'; w.calls.push(`merge #${n} ${sha}`); return { sha: 'merge-sha' }; },
     close: async (_repo, n) => { w.pulls.get(n)!.state = 'closed'; w.calls.push(`close #${n}`); },
     openPullRequests: async (_repo, base) => [...w.pulls.entries()].filter(([, p]) => p.state === 'open' && p.base === base).map(([number, p]) => ({ number, url: p.url })),
     retarget: async (_repo, n, base) => { w.pulls.get(n)!.base = base; w.calls.push(`retarget #${n} ${base}`); },
+    pullRequestOf: async () => undefined,
+    revert: async () => { throw new Error('no revert here'); },
+    checkLog: async () => '',
+    fileIssue: async () => { throw new Error('no issue here'); },
   };
 }
 
@@ -66,6 +73,7 @@ function runner(w: World, o: { jobPullRequests?: string[]; now?: Date } = {}) {
   let seq = 0;
   const r = createLandingBatches({
     github: () => fake(w),
+    login: () => 'me',
     settings: () => SETTINGS,
     events: () => events,
     record: (e: NewEvent) => { events.push({ ...e, seq: ++seq, id: `e${seq}`, at: (o.now ?? new Date()).toISOString(), schemaVersion: 1 } as DomainEvent); },
@@ -111,15 +119,24 @@ describe('the batch runner (issue #1073)', () => {
     expect(events[1]!.data).toMatchObject({ repo: REPO, tested: 'dev', tip: TIP, pullRequest: 100, merge: 'merge-sha' });
   });
 
-  it('red: closes the batch run, records it failed, and does not run the same tip again', async () => {
+  it('red: closes the batch run, records it failed, and bisects within the batch (red.test.ts)', async () => {
     const w = world();
     const { r, events } = runner(w);
     await r.pass();
     w.checks = [{ name: 'test', status: 'completed', conclusion: 'failure' }];
     await r.pass();
-    expect(w.calls.slice(-2)).toEqual(['close #100', 'delete hopper-batch/abcdef012345']);
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed']);
+    expect(w.calls.slice(-3)).toEqual(['close #100', 'delete hopper-batch/abcdef012345', 'compare dev...abcdef0123456789abcdef0123456789abcdef01']);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.bisect_started']);
     expect(events[1]!.data).toMatchObject({ tip: TIP, reason: 'checks failed: test', checks: ['test'] });
+  });
+
+  it('red with merge conflicts: closed and recorded failed; the same tip does not run again', async () => {
+    const w = world();
+    const { r, events } = runner(w);
+    await r.pass();
+    w.pulls.get(100)!.mergeable = false;
+    await r.pass();
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed']);
     await r.pass();
     expect(events).toHaveLength(2);
     expect(r.view().repos[0]!.why).toBe(`the landing branch tip ${TIP.slice(0, 12)} was tested already`);

@@ -3,8 +3,10 @@
 // on the landing branch's tip as a **batch run**: a pull request of the tip into the **tested branch** (`dev`), opened
 // by the hopper after `everyMerges` merges or `everyMinutes` minutes since the last batch run, and only when the landing
 // branch has something the tested branch lacks and the tip was not tested before. Green, the hopper merges it: the
-// tested branch moves by the whole batch in one merge. Red, it is recorded and closed (part 1; the bisect is a later
-// part). Each step is an event (`landing_batch.*`); the state of each repository is reduced from them. Pure.
+// tested branch moves by the whole batch in one merge. Red, it is recorded and closed; failing checks start a bisect
+// within the batch (part 2, `landing-bisect.ts`). Each step is an event (`landing_batch.*`); the state of each
+// repository is reduced from them. Pure.
+import type { Bisect, BisectResult, Culprit, FailedCheck } from './landing-bisect.ts';
 import type { DomainEvent } from './types.ts';
 
 /** One repository's landing batches: the branch a green batch moves, and when a batch run starts. */
@@ -61,9 +63,61 @@ export interface LandingBatchState {
   running?: RunningBatch;
   /** How the newest batch run ended. */
   last?: { outcome: 'promoted' | 'failed'; tip: string; at: string; pullRequest: number; url: string; reason?: string };
+  /** A bisect at work within the newest red batch. */
+  bisect?: Bisect;
+  /** Why the newest bisect ended with no culprit. */
+  bisectEnded?: { tip: string; reason: string; at: string };
+  /** The newest culprit, its revert and its fix issue. */
+  culprit?: Culprit;
+  /** A culprit's revert merged since the newest batch run started: the next one starts at once. */
+  revertedSinceRun?: boolean;
 }
 
-export const LANDING_BATCH_EVENT_TYPES = ['landing_batch.started', 'landing_batch.promoted', 'landing_batch.failed', 'landing_batch.retargeted', 'landing_batches.changed'] as const;
+export const LANDING_BATCH_EVENT_TYPES = [
+  'landing_batch.started', 'landing_batch.promoted', 'landing_batch.failed', 'landing_batch.retargeted', 'landing_batches.changed',
+  'landing_batch.bisect_started', 'landing_batch.bisect_run', 'landing_batch.bisect_tested', 'landing_batch.culprit',
+  'landing_batch.revert_opened', 'landing_batch.reverted', 'landing_batch.revert_failed', 'landing_batch.fix_filed',
+] as const;
+
+/** A red batch's events onto the state: the bisect, its runs and results, the culprit, its revert and its fix issue. */
+function reduceRed(s: LandingBatchState, type: string, d: Record<string, unknown>, at: string): void {
+  const tip = String(d.tip ?? '');
+  const b = s.bisect?.tip === tip ? s.bisect : undefined;
+  const c = s.culprit?.tip === tip && s.culprit.sha === d.sha ? s.culprit : undefined;
+  const checks = (d.checks as FailedCheck[] | undefined) ?? [];
+  if (type === 'landing_batch.bisect_started') {
+    const points = (d.points as Bisect['points'] | undefined) ?? [];
+    s.bisect = { tip, tested: String(d.tested), ...(typeof d.pullRequest === 'number' ? { batch: d.pullRequest } : {}), points, good: -1, bad: points.length - 1, checks: { [points.length - 1]: checks }, reason: String(d.reason ?? ''), startedAt: at, results: [] };
+    delete s.bisectEnded;
+  } else if (type === 'landing_batch.bisect_run' && b) {
+    b.running = { index: Number(d.index), sha: String(d.sha), branch: String(d.branch), pullRequest: Number(d.pullRequest), url: String(d.url), startedAt: at };
+  } else if (type === 'landing_batch.bisect_tested' && b) {
+    const r: BisectResult = { index: Number(d.index), sha: String(d.sha), outcome: d.outcome === 'good' ? 'good' : d.outcome === 'bad' ? 'bad' : 'unknown' };
+    delete b.running;
+    b.results.push(r);
+    if (r.outcome === 'good') b.good = r.index;
+    else if (r.outcome === 'bad') { b.bad = r.index; b.checks[r.index] = checks; } else {
+      delete s.bisect;
+      s.bisectEnded = { tip, reason: String(d.reason ?? ''), at };
+    }
+  } else if (type === 'landing_batch.culprit') {
+    delete s.bisect;
+    s.culprit = {
+      tip, sha: String(d.sha), ...(typeof d.pullRequest === 'number' ? { pullRequest: d.pullRequest } : {}), ...(typeof d.batch === 'number' ? { batch: d.batch } : {}), checks,
+      reason: String(d.reason ?? ''), at, results: (d.results as BisectResult[] | undefined) ?? [],
+    };
+  } else if (type === 'landing_batch.revert_opened' && c) {
+    c.revert = { pullRequest: Number(d.pullRequest), url: String(d.url), state: 'open' };
+    c.pullRequest = Number(d.culpritPullRequest);
+  } else if (type === 'landing_batch.reverted' && c) {
+    c.revert = { pullRequest: Number(d.pullRequest), url: String(d.url), state: 'merged' };
+    s.revertedSinceRun = true;
+  } else if (type === 'landing_batch.revert_failed' && c) {
+    c.revertProblem = String(d.reason ?? '');
+  } else if (type === 'landing_batch.fix_filed' && c) {
+    c.fix = { issue: Number(d.issue), url: String(d.url) };
+  }
+}
 
 /** Each repository's state, from its `landing_batch.*` events in any order (they are sorted by `seq`). */
 export function landingBatchStates(events: readonly DomainEvent[]): Record<string, LandingBatchState> {
@@ -77,13 +131,14 @@ export function landingBatchStates(events: readonly DomainEvent[]): Record<strin
     if (e.type === 'landing_batch.started') {
       s.lastStartedAt = e.at;
       s.running = { tip, branch: String(d.branch), pullRequest: Number(d.pullRequest), url: String(d.url), startedAt: e.at, merges: (d.merges as number[] | undefined) ?? [] };
+      delete s.revertedSinceRun;
     } else if (e.type === 'landing_batch.promoted' || e.type === 'landing_batch.failed') {
       const outcome = e.type === 'landing_batch.promoted' ? 'promoted' : 'failed';
       s.lastTestedTip = tip;
       if (outcome === 'promoted') s.lastPromotedTip = tip;
       if (s.running?.tip === tip) delete s.running;
       s.last = { outcome, tip, at: e.at, pullRequest: Number(d.pullRequest), url: String(d.url), ...(typeof d.reason === 'string' ? { reason: d.reason } : {}) };
-    }
+    } else reduceRed(s, e.type, d, e.at);
   }
   return out;
 }
@@ -96,9 +151,15 @@ const short = (sha: string): string => sha.slice(0, 12);
 /** Whether a batch run starts now, and why (or why not). */
 export function batchDue(s: LandingBatchState | undefined, f: LandingFacts, cfg: LandingBatchRepo, now: Date): { due: boolean; why: string } {
   if (s?.running) return { due: false, why: `batch run #${s.running.pullRequest} is at work` };
+  if (s?.bisect) return { due: false, why: `a bisect of the batch at ${short(s.bisect.tip)} is at work` };
+  const c = s?.culprit;
+  if (c?.pullRequest !== undefined && c.revertProblem === undefined && c.revert?.state !== 'merged') {
+    return { due: false, why: c.revert ? `the revert #${c.revert.pullRequest} of #${c.pullRequest} waits to merge` : `the revert of #${c.pullRequest} is not open yet` };
+  }
   if (f.aheadBy <= 0) return { due: false, why: `nothing new on the landing branch beyond ${cfg.tested}` };
   if (s?.lastTestedTip === f.tip) return { due: false, why: `the landing branch tip ${short(f.tip)} was tested already` };
   if (s?.lastStartedAt === undefined) return { due: true, why: 'no batch run before' };
+  if (s.revertedSinceRun && c) return { due: true, why: `the culprit ${c.pullRequest !== undefined ? `#${c.pullRequest}` : short(c.sha)} was reverted` };
   if (f.merges >= cfg.everyMerges) return { due: true, why: `${f.merges} merges since the last batch run` };
   const minutes = Math.floor((now.getTime() - Date.parse(s.lastStartedAt)) / 60_000);
   if (minutes >= cfg.everyMinutes) return { due: true, why: `${minutes} minutes since the last batch run` };
@@ -106,16 +167,16 @@ export function batchDue(s: LandingBatchState | undefined, f: LandingFacts, cfg:
 }
 
 /** One check run on a batch run's tip, as GitHub answers it. */
-export interface BatchCheckRun { name: string; status: string; conclusion?: string | null }
+export interface BatchCheckRun { name: string; status: string; conclusion?: string | null; id?: number }
 
 const RED = new Set(['failure', 'cancelled', 'timed_out', 'action_required', 'startup_failure', 'stale']);
 
 /** What a batch run's checks say: pending, green (every one passed), or red with why. */
 export function batchChecks(runs: readonly BatchCheckRun[], pr: { mergeable: boolean | null }, startedAt: string, now: Date):
-  { kind: 'pending' } | { kind: 'green' } | { kind: 'red'; reason: string; checks: string[] } {
+  { kind: 'pending' } | { kind: 'green' } | { kind: 'red'; reason: string; checks: FailedCheck[] } {
   if (pr.mergeable === false) return { kind: 'red', reason: 'the batch has merge conflicts with the tested branch', checks: [] };
-  const failed = runs.filter((r) => r.status === 'completed' && RED.has(r.conclusion ?? '')).map((r) => r.name);
-  if (failed.length > 0) return { kind: 'red', reason: `checks failed: ${failed.join(', ')}`, checks: failed };
+  const failed = runs.filter((r) => r.status === 'completed' && RED.has(r.conclusion ?? '')).map((r): FailedCheck => (r.id !== undefined ? { name: r.name, id: r.id } : { name: r.name }));
+  if (failed.length > 0) return { kind: 'red', reason: `checks failed: ${failed.map((f) => f.name).join(', ')}`, checks: failed };
   if (runs.length === 0) {
     return now.getTime() - Date.parse(startedAt) >= BATCH_NO_CHECKS_MINUTES * 60_000
       ? { kind: 'red', reason: `no check ran in ${BATCH_NO_CHECKS_MINUTES} minutes`, checks: [] }

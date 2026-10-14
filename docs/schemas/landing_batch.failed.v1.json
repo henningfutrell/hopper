@@ -27,6 +27,26 @@
       "items": {
         "type": "string"
       }
+    },
+    "checkRuns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

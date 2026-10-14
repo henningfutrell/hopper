@@ -5464,7 +5464,7 @@ Version 1 (`docs/schemas/landing_batch.promoted.v1.json`). A batch run passed ev
 
 ## `landing_batch.failed`
 
-Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pass (issue #1073): `reason` why — `checks` that failed, no check in time, merge conflicts with the tested branch, its branch moved, or its pull request closed without a merge. The hopper closed it and removed its branch; the tested branch did not move. The same `tip` does not run again: the next batch run waits for a new merge.
+Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pass (issue #1073): `reason` why — `checks` that failed, no check in time, merge conflicts with the tested branch, its branch moved, or its pull request closed without a merge. The hopper closed it and removed its branch; the tested branch did not move. `checkRuns`: the failed checks with their ids, when checks failed; then a bisect within the batch starts (`landing_batch.bisect_started`). The same `tip` does not run again: the next batch run waits for a new merge, or for the culprit's revert.
 
 | field | type | required |
 |---|---|---|
@@ -5475,6 +5475,7 @@ Version 1 (`docs/schemas/landing_batch.failed.v1.json`). A batch run did not pas
 | `url` | string | yes |
 | `reason` | string | yes |
 | `checks` | string[] | yes |
+| `checkRuns` | object[] | no |
 
 ```json
 {
@@ -5537,5 +5538,255 @@ Version 1 (`docs/schemas/landing_batches.changed.v1.json`). An admin changed the
     }
   },
   "by": "owner"
+}
+```
+
+## `landing_batch.bisect_started`
+
+Version 1 (`docs/schemas/landing_batch.bisect_started.v1.json`). A batch run failed its checks, so the hopper bisects within the batch (issue #1073 part 2, design.md "Landing batches"): `points` the landing branch's first-parent commits beyond the `tested` branch, oldest first, each with the pull request its merge names; the `tip` (the last point) fails with `checks`. `pullRequest`, `url`: the batch run that failed.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tested` | string | yes |
+| `tip` | string | yes |
+| `pullRequest` | integer | yes |
+| `url` | string | yes |
+| `points` | object[] | yes |
+| `checks` | object[] | yes |
+| `reason` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "tested": "dev",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "pullRequest": 1101,
+  "url": "https://github.com/owner/repo/pull/1101",
+  "points": [
+    {
+      "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "pullRequest": 1088
+    },
+    {
+      "sha": "fedcba9876543210fedcba9876543210fedcba98",
+      "pullRequest": 1090
+    },
+    {
+      "sha": "0123456789abcdef0123456789abcdef01234567",
+      "pullRequest": 1093
+    }
+  ],
+  "checks": [
+    {
+      "name": "shard (4)",
+      "id": 5512
+    }
+  ],
+  "reason": "checks failed: shard (4)"
+}
+```
+
+## `landing_batch.bisect_run`
+
+Version 1 (`docs/schemas/landing_batch.bisect_run.v1.json`). A bisect run started (issue #1073): `branch` at the point `sha` (`index` in the batch), and a pull request of it into the `tested` branch (`pullRequest`, `url`), so the full test suite runs on that point. The hopper closes it when its checks end; it never merges it.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tested` | string | yes |
+| `tip` | string | yes |
+| `index` | integer | yes |
+| `sha` | string | yes |
+| `branch` | string | yes |
+| `pullRequest` | integer | yes |
+| `url` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "tested": "dev",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "index": 1,
+  "sha": "fedcba9876543210fedcba9876543210fedcba98",
+  "branch": "hopper-batch/bisect-fedcba987654",
+  "pullRequest": 1102,
+  "url": "https://github.com/owner/repo/pull/1102"
+}
+```
+
+## `landing_batch.bisect_tested`
+
+Version 1 (`docs/schemas/landing_batch.bisect_tested.v1.json`). A bisect run ended (issue #1073): `outcome` `good` (every check passed), `bad` (`checks` failed), or `unknown` with its `reason` (no check in time, merge conflicts, its branch moved, closed by a person), which ends the bisect with no culprit. The hopper closed its pull request and removed its branch.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tested` | string | yes |
+| `tip` | string | yes |
+| `index` | integer | yes |
+| `sha` | string | yes |
+| `pullRequest` | integer | yes |
+| `url` | string | yes |
+| `outcome` | `good` \| `bad` \| `unknown` | yes |
+| `reason` | string | no |
+| `checks` | object[] | no |
+
+```json
+{
+  "repo": "owner/repo",
+  "tested": "dev",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "index": 1,
+  "sha": "fedcba9876543210fedcba9876543210fedcba98",
+  "pullRequest": 1102,
+  "url": "https://github.com/owner/repo/pull/1102",
+  "outcome": "bad",
+  "checks": [
+    {
+      "name": "shard (4)",
+      "id": 5530
+    }
+  ]
+}
+```
+
+## `landing_batch.culprit`
+
+Version 1 (`docs/schemas/landing_batch.culprit.v1.json`). The bisect found the first point of the batch that fails (issue #1073): `sha`, the pull request its merge names (`pullRequest`), the `checks` that failed there, and the bisect's `results`. `batch` the batch run that failed. The hopper reverts it next and files a fix issue.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tested` | string | yes |
+| `tip` | string | yes |
+| `index` | integer | yes |
+| `sha` | string | yes |
+| `pullRequest` | integer | no |
+| `checks` | object[] | yes |
+| `reason` | string | yes |
+| `results` | object[] | yes |
+| `batch` | integer | no |
+
+```json
+{
+  "repo": "owner/repo",
+  "tested": "dev",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "index": 1,
+  "sha": "fedcba9876543210fedcba9876543210fedcba98",
+  "pullRequest": 1090,
+  "checks": [
+    {
+      "name": "shard (4)",
+      "id": 5530
+    }
+  ],
+  "reason": "checks failed: shard (4)",
+  "results": [
+    {
+      "index": 1,
+      "sha": "fedcba9876543210fedcba9876543210fedcba98",
+      "outcome": "bad"
+    },
+    {
+      "index": 0,
+      "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "outcome": "good"
+    }
+  ],
+  "batch": 1101
+}
+```
+
+## `landing_batch.revert_opened`
+
+Version 1 (`docs/schemas/landing_batch.revert_opened.v1.json`). The hopper asked GitHub to revert the culprit's pull request (`culpritPullRequest`) from the landing branch (issue #1073): the revert's pull request (`pullRequest`, `url`). It merges it once GitHub lets it.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tip` | string | yes |
+| `sha` | string | yes |
+| `culpritPullRequest` | integer | yes |
+| `pullRequest` | integer | yes |
+| `url` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "sha": "fedcba9876543210fedcba9876543210fedcba98",
+  "culpritPullRequest": 1090,
+  "pullRequest": 1104,
+  "url": "https://github.com/owner/repo/pull/1104"
+}
+```
+
+## `landing_batch.reverted`
+
+Version 1 (`docs/schemas/landing_batch.reverted.v1.json`). The culprit's revert merged into the landing branch (issue #1073): `merge` its merge commit, when the hopper merged it. The next batch run starts at once, with the culprit reverted, and promotes the rest of the batch when it passes.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tip` | string | yes |
+| `sha` | string | yes |
+| `pullRequest` | integer | yes |
+| `url` | string | yes |
+| `merge` | string | no |
+
+```json
+{
+  "repo": "owner/repo",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "sha": "fedcba9876543210fedcba9876543210fedcba98",
+  "pullRequest": 1104,
+  "url": "https://github.com/owner/repo/pull/1104",
+  "merge": "89abcdef0123456789abcdef0123456789abcdef"
+}
+```
+
+## `landing_batch.revert_failed`
+
+Version 1 (`docs/schemas/landing_batch.revert_failed.v1.json`). The culprit was not reverted (issue #1073): `reason` — a direct commit, not a pull request; GitHub refused the revert; or the revert (`pullRequest`, `url`) was closed without a merge. A person reverts it by hand.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tip` | string | yes |
+| `sha` | string | yes |
+| `reason` | string | yes |
+| `pullRequest` | integer | no |
+| `url` | string | no |
+
+```json
+{
+  "repo": "owner/repo",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "sha": "fedcba9876543210fedcba9876543210fedcba98",
+  "reason": "the culprit is a direct commit, not a pull request: revert it by hand"
+}
+```
+
+## `landing_batch.fix_filed`
+
+Version 1 (`docs/schemas/landing_batch.fix_filed.v1.json`). The hopper filed the fix issue for the culprit (issue #1073): `issue`, `url`, on the repository, with the hopper label and assigned to the user, so Intake takes it as any other work. Its text names the culprit, its issue, the revert, the failing checks with their output, and the bisect.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tip` | string | yes |
+| `sha` | string | yes |
+| `issue` | integer | yes |
+| `url` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "sha": "fedcba9876543210fedcba9876543210fedcba98",
+  "issue": 1105,
+  "url": "https://github.com/owner/repo/issues/1105"
 }
 ```

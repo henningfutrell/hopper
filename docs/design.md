@@ -67,7 +67,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items in `pr_open` or `failed`, read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts` | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
-| `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event (`runner.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
+| `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch; for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event (`runner.ts`); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
@@ -18037,7 +18037,8 @@ pure):
   to").
 - a check failed (or was cancelled or timed out), no check in 30 minutes, merge conflicts with the tested branch, or
   its branch moved: **red**. The hopper closes the pull request and removes the branch: `landing_batch.failed` with the
-  reason and the checks. The tested branch does not move, and the same tip does not run again.
+  reason and the checks (`checkRuns`: with their ids). The tested branch does not move, and the same tip does not run
+  again. When checks failed, a bisect within the batch starts ("A red batch" below).
 - a person merged it first: `landing_batch.promoted` with no merge commit; closed without a merge: failed.
 
 **Job pull requests move to the landing branch.** Each pass, an open pull request of one of the user's jobs whose base
@@ -18051,11 +18052,44 @@ tip and the last promoted commit are therefore events, not a table. `GET /api/la
 each configured repository's state with what the last pass found (`why` no run started, or the `problem`); Settings →
 Landing batches shows it.
 
-**Cost.** One full run per batch. A red batch costs a run and holds the batch off `dev` until the next merge.
+**A red batch** (part 2, `src/landing-batches/red.ts`, the rules `src/domain/landing-bisect.ts`, pure). Only failing
+checks say that the batch itself fails; a red batch for another reason (merge conflicts, no check in time) waits for
+the next merge as before. When checks failed:
 
-**Not yet (the next parts).** On a red batch: a bisect within the batch (#939's bisect, not built then), a revert of
-the culprit from `main`, a run again and the rest of the batch promoted, and a new hopper issue for the fix,
-linked to the culprit's job and issue, with the failing output and the bisect's result, through Intake. Then `beta` →
+1. **The batch's points.** The hopper compares the tested branch with the failed tip and walks the landing branch's
+   first-parent line back from the tip (`batchPoints`): each point is the merge of one pull request (its number from
+   `Merge pull request #N …`) or a direct commit, oldest first. The tip is known to fail, the tested branch to pass.
+   One point: it is the **culprit** at once. More: `landing_batch.bisect_started` with the points and the failed checks.
+2. **The bisect** (`bisectNext`), one step a pass. A **bisect run** tests the point in the middle of the good and the
+   bad end: a branch `hopper-batch/bisect-<sha, 12 characters>` at it (under the batch prefix, so no job pushes to it)
+   and a pull request of it into the tested branch, so the full suite runs on that point as on a batch run
+   (`landing_batch.bisect_run`). The hopper reads its checks as a batch run's; when they end it closes the pull request
+   and removes the branch, never merging it: `landing_batch.bisect_tested`, `good` (the good end moves to it) or `bad`
+   (the bad end moves to it, with the checks that failed there). A run with no verdict (no check in time, merge
+   conflicts, its branch moved, closed by a person) is `unknown` and ends the bisect with no culprit: the batch waits
+   for the next merge. A batch of N points takes at most ⌈log₂ N⌉ bisect runs. With one point left between the ends,
+   the bad end is the **culprit**: `landing_batch.culprit`, with its pull request, the checks that failed at it and
+   the bisect's results.
+3. **The revert.** The culprit's pull request — the one its merge names, else the merged pull request GitHub gives for
+   the commit (`GET …/commits/{sha}/pulls`, so a squash merge counts too) — is reverted through GitHub's own revert
+   (GraphQL `revertPullRequest`): a pull request into the landing branch, neutral text (`revertText`),
+   `landing_batch.revert_opened`. Each pass then merges it (a merge commit, only at its head) until GitHub lets it —
+   branch protection may want its checks first —: `landing_batch.reverted`. A direct commit, a refused revert, or a
+   revert closed without a merge is `landing_batch.revert_failed` with the reason: a person reverts it by hand.
+4. **The fix issue.** Once, through the user's own connection: an issue on the repository with the hopper label,
+   assigned to the user's connected account, so Intake takes it like any other work (`landing_batch.fix_filed`). Its
+   text (`fixIssueText`) names the culprit's pull request and the issue its body closes or is part of, the revert (or
+   why there is none), each failing check with the last 60 lines of its log (GitHub Actions' job log, masked:
+   `logTail`), and the bisect's results. It names no person.
+5. **The rest promoted.** While the bisect is at work, or the revert of a pull request waits, no batch run starts
+   (`batchDue`). Once the revert merged, the next batch run starts at once (`revertedSinceRun`), whatever N or the timer
+   say: the landing branch with the culprit reverted, so a green run moves the rest of the batch to the tested branch.
+   A second culprit in it is found the same way.
+
+**Cost.** One full run per batch. A red batch costs a run, plus at most ⌈log₂ N⌉ bisect runs and one run again after
+the revert.
+
+**Not yet (the next parts).** Merge conflicts on `main` fixed by the hopper. Then `beta` →
 `stable` through a canary: a subset of installs runs the candidate first, and it reaches every install only when its
 health stays good for the canary window, with the subset and the window as settings. The batch state in the
 work-item ledger's rows (a job's pull request merged to `main`, waiting for its batch), and the batch state on

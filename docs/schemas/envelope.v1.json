@@ -266,6 +266,14 @@
         "landing_batch.failed",
         "landing_batch.retargeted",
         "landing_batches.changed",
+        "landing_batch.bisect_started",
+        "landing_batch.bisect_run",
+        "landing_batch.bisect_tested",
+        "landing_batch.culprit",
+        "landing_batch.revert_opened",
+        "landing_batch.reverted",
+        "landing_batch.revert_failed",
+        "landing_batch.fix_filed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

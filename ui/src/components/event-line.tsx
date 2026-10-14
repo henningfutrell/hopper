@@ -5,6 +5,7 @@ import { subjectOf } from '@/model/board';
 import { jobHref } from '@/model/job';
 import { artifactCreatedDetail, revisedDetail } from '@/model/artifacts';
 import { pickedEventDetail } from '@/model/minor-decisions';
+import { redBatchDetail } from '@/model/landing-batches';
 import type { DomainEvent, MachineView } from '@/model/wire';
 import { TEXT, type Tone } from '@/components/status';
 import { cn } from '@/lib/utils';
@@ -26,6 +27,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'skill.loaded': 'ok', 'skill.refused': 'warn',
   'step.refused': 'warn', 'vault.step_delivered': 'ok', 'vault.step_refused': 'warn',
   'landing_batch.promoted': 'ok', 'landing_batch.failed': 'bad', 'landing_batches.changed': 'warn',
+  'landing_batch.culprit': 'bad', 'landing_batch.reverted': 'ok', 'landing_batch.revert_failed': 'bad', 'landing_batch.fix_filed': 'ok',
   'artifact.posted': 'ok', 'artifact.revised': 'ok',
   'lanes.recommended': 'warn', 'lanes.tuning_changed': 'warn', 'lanes.applied': 'warn', 'lanes.undone': 'warn', 'lanes.dismissed': 'warn',
   'bug_report.filed': 'ok', 'bug_report.failed': 'bad',
@@ -71,6 +73,7 @@ export function detailOf(e: DomainEvent): string {
   if (e.type === 'landing_batch.promoted') return `${String(d.repo)}: batch run #${String(d.pullRequest)} moved ${String(d.tested)}`;
   if (e.type === 'landing_batch.failed') return `${String(d.repo)}: batch run #${String(d.pullRequest)} failed: ${String(d.reason)}`;
   if (e.type === 'landing_batch.retargeted') return `${String(d.repo)}#${String(d.pullRequest)} moved from ${String(d.from)} to ${String(d.to)}`;
+  if (e.type.startsWith('landing_batch.')) return redBatchDetail(e.type, d);
   // An artifact shown to its owner (issue #673): where its link was posted, or why not.
   if (e.type === 'artifact.posted') return `${String(d.title)}: ${typeof d.comment === 'string' ? `posted on the issue, ${d.comment}` : typeof d.error === 'string' ? `not posted: ${d.error}` : 'no issue to post on'}`;
   if (e.type === 'artifact.created') return artifactCreatedDetail(d);
