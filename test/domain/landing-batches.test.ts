@@ -71,8 +71,8 @@ describe('what a batch run\'s checks say (issue #1073)', () => {
   it('pending while a check runs; green once all passed; red when one failed', () => {
     expect(batchChecks([{ name: 'test', status: 'in_progress' }], { mergeable: true }, started, NOW)).toEqual({ kind: 'pending' });
     expect(batchChecks([{ name: 'test', status: 'completed', conclusion: 'success' }, { name: 'lint', status: 'completed', conclusion: 'skipped' }], { mergeable: true }, started, NOW)).toEqual({ kind: 'green' });
-    expect(batchChecks([{ name: 'test', status: 'completed', conclusion: 'failure' }, { name: 'shard (3)', status: 'completed', conclusion: 'failure' }, { name: 'lint', status: 'in_progress' }], { mergeable: true }, started, NOW))
-      .toEqual({ kind: 'red', reason: 'checks failed: test, shard (3)', checks: ['test', 'shard (3)'] });
+    expect(batchChecks([{ name: 'test', status: 'completed', conclusion: 'failure', id: 7 }, { name: 'shard (3)', status: 'completed', conclusion: 'failure' }, { name: 'lint', status: 'in_progress' }], { mergeable: true }, started, NOW))
+      .toEqual({ kind: 'red', reason: 'checks failed: test, shard (3)', checks: [{ name: 'test', id: 7 }, { name: 'shard (3)' }] });
   });
 
   it('no check in time is red; so are merge conflicts with the tested branch', () => {
