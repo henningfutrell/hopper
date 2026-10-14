@@ -5,6 +5,7 @@
 // Asserted on the rendered form compose runs (`docker compose config`, the provider `podman compose`
 // uses too), from an empty directory: the file as downloaded.
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { copyFileSync, existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -121,6 +122,14 @@ describe('compose.yaml, downloaded alone and started with no settings', () => {
     expect(script).toMatch(/rm -f \$\$?s\/password_set/);
     expect(script).toMatch(/ALTER ROLE hopper PASSWORD[^\n]*&& touch \$\$?s\/password_set/);
     expect((postgres as Service & { healthcheck?: { test: string[] } }).healthcheck?.test.join(' ')).toMatch(/pg_isready -U hopper -d hopper && test -f \/run\/hopper-secrets\/password_set/);
+  });
+
+  // Issue #1063: a second compose stack (another compose tool) mounts the same named volumes. Postgres's own postmaster.pid
+  // check does not work across containers (each one is PID 1), so the data volume itself is locked, first of all.
+  it('locks its data volume before anything else: a second Postgres on it stops at once (issue #1063)', () => {
+    const script = postgres.command!.join('\n');
+    expect(script).toMatch(/^exec 9< \/var\/lib\/postgresql\/data\nflock -n 9 \|\| \{[^\n]*exit 75; \}\n/);
+    expect(script.indexOf('flock -n 9')).toBeLessThan(script.indexOf('rm -f'));
   });
 
   it('loads pg_stat_statements, so the Resources page shows statement latency (issue #947)', () => {
@@ -370,4 +379,44 @@ describe('sandbox boxes the hopper starts (issue #603): opt in with compose.sand
     expect(hopper.image).toBe(IMAGE);
     expect(hopper.environment?.HOPPER_LAN_NAMES).toBe('hopper');
   });
+});
+
+// Issue #1063, for real: two Postgres containers of compose.yaml's service on one data volume. The second stops before it
+// writes anything (exit 75), and the first runs on. It needs a container runtime: Docker, else Podman; elsewhere skipped.
+const runtimeWorks = (bin: string) => spawnSync(bin, ['info'], { stdio: 'ignore' }).status === 0;
+const RUNTIME = runtimeWorks('docker') ? 'docker' : runtimeWorks('podman') ? 'podman' : undefined;
+
+describe.skipIf(!RUNTIME)('one Postgres per data volume, real containers (issue #1063)', () => {
+  it('a second Postgres container on a data volume in use does not start, and the first runs on', () => {
+    const rt = RUNTIME!;
+    // `compose config` keeps compose's `$$`; compose gives the container `$`.
+    const pg = svc(render(), 'postgres') as Service & { entrypoint?: string[] };
+    const p = `jh1063-${randomBytes(4).toString('hex')}`;
+    const run = (args: string[]) => spawnSync(rt, args, { encoding: 'utf8', timeout: 120_000 });
+    const mounts = ['-v', `${p}-postgres:/var/lib/postgresql/data`, '-v', `${p}-secrets:/run/hopper-secrets`, '-v', `${p}-tunnel:/run/hopper-tunnel`];
+    const env = Object.entries(pg.environment ?? {}).flatMap(([k, v]) => ['-e', `${k}=${v ?? ''}`]);
+    const start = (name: string, detach: boolean) => run([
+      'run', ...(detach ? ['-d'] : []), '--name', name, '--network', 'none', ...env, ...mounts,
+      '--entrypoint', pg.entrypoint![0]!, pg.image!, ...pg.entrypoint!.slice(1), ...pg.command!.map((c) => c.replaceAll('$$', '$')),
+    ]);
+    try {
+      const first = start(`${p}-a`, true);
+      expect(first.status, first.stderr).toBe(0);
+      const until = Date.now() + 90_000;
+      while (run(['exec', `${p}-a`, 'test', '-f', '/run/hopper-secrets/password_set']).status !== 0) {
+        expect(Date.now(), run(['logs', `${p}-a`]).stderr).toBeLessThan(until);
+        spawnSync('sleep', ['1']);
+      }
+      const second = start(`${p}-b`, false);
+      expect(second.status, second.stderr).toBe(75);
+      expect(second.stderr).toMatch(/another container runs on this data volume/);
+      expect(run(['inspect', '-f', '{{.State.Running}}', `${p}-a`]).stdout.trim()).toBe('true');
+      // The second one stopped before it touched the start files the first one made.
+      expect(run(['exec', `${p}-a`, 'test', '-f', '/run/hopper-secrets/password_set']).status).toBe(0);
+      expect(run(['logs', `${p}-a`]).stderr).not.toMatch(/lock file is invalid/);
+    } finally {
+      run(['rm', '-f', `${p}-a`, `${p}-b`]);
+      run(['volume', 'rm', '-f', `${p}-postgres`, `${p}-secrets`, `${p}-tunnel`]);
+    }
+  }, 180_000);
 });
