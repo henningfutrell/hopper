@@ -2,6 +2,7 @@
 // and its edges, kept per read issue (`read_of`), so a new read of an issue replaces only the edges its read before gave.
 // `read_at` is set on the node of an issue that was read itself.
 import type { GraphEdge, GraphEdgeKind, GraphNode, GraphNodeKind, IssueGraphRepository } from '../domain/issue-graph.ts';
+import type { WorkItemLedger } from '../domain/work-items.ts';
 import { parse, type StoreContext } from './context.ts';
 
 export const ISSUE_GRAPH_TABLES = `
@@ -19,7 +20,8 @@ export const ISSUE_GRAPH_TABLES = `
 const edgeOf = (r: Record<string, unknown>): GraphEdge => ({ from: String(r.from_id), kind: String(r.kind) as GraphEdgeKind, to: String(r.to_id) });
 const nodeOf = (r: Record<string, unknown>): GraphNode => ({ id: String(r.id), kind: String(r.kind) as GraphNodeKind, attrs: parse<GraphNode['attrs']>(r.attrs) });
 
-export function createIssueGraphRepository(c: StoreContext): IssueGraphRepository {
+/** `ledger`: told what each read says of issues and pull requests, in the read's transaction (issue #1067). */
+export function createIssueGraphRepository(c: StoreContext, ledger?: Pick<WorkItemLedger, 'applyNodes'>): IssueGraphRepository {
   return {
     record(issue, graph, readAt) {
       c.tx(() => {
@@ -29,6 +31,7 @@ export function createIssueGraphRepository(c: StoreContext): IssueGraphRepositor
           n.id, n.kind, JSON.stringify(n.attrs));
         }
         c.db.run('UPDATE graph_nodes SET read_at = ? WHERE id = ?', readAt, issue);
+        ledger?.applyNodes(graph.nodes, readAt);
         c.db.run('DELETE FROM graph_edges WHERE read_of = ?', issue);
         for (const e of graph.edges) {
           c.db.run('INSERT INTO graph_edges (read_of, from_id, kind, to_id) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', issue, e.from, e.kind, e.to);

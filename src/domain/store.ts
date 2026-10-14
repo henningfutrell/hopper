@@ -490,7 +490,7 @@ export interface UserStore {
   vaultGrants: VaultGrantRepository;
   bugReports: BugReportRepository;
   /** The issue graph (issue #437): store only, nothing reads it yet. */
-  issueGraph: import('./issue-graph.ts').IssueGraphRepository;
+  issueGraph: import('./issue-graph.ts').IssueGraphRepository; workItems: import('./work-items.ts').WorkItemLedger; // the work-item ledger (issue #1067)
   /** Pointed jobs (issue #425); direct jobs (issue #901): what a person submitted straight to the hopper. */
   pointedJobs: PointedJobRepository; directJobs: import('./direct-jobs.ts').DirectJobRepository; promotions: import('./promotions.ts').PromotionRepository;
   /** GitHub watches (issue #427): each pointed job's last snapshot; the listing cache (issue #985): each repository's latest repository listing. */

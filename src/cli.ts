@@ -13,6 +13,7 @@
 //   hopper user transfer <from> <to>                  <to> takes over <from>'s work (issue #212)
 //   hopper join-code [--user <id>]                    a one-time join code: a machine joins with <hopper URL>#<code> (issue #308)
 //   hopper ssh-key [--user <id>]                      the public half of the hopper's ssh key (issue #307)
+//   hopper ledger rebuild [--user <id>]               the work-item ledger replayed from every event (issue #1067)
 //   hopper job|queue|question … [--user <id>] [--url <hopper URL>]
 //                                                     an operator action on the running daemon (issue #374, cli-operator.ts)
 //   hopper problem|handoff|failure … [--user <id>] [--url <hopper URL>]
@@ -71,6 +72,8 @@ usage:
                                                      the machine joins with <hopper URL>#<code>, as Add machine's line does
   hopper ssh-key                                     the public half of the hopper's ssh key, the line a machine's
                                                      authorized_keys takes (scripts/agent-boxes.sh asks it)
+  hopper ledger rebuild                              the work-item ledger replayed from every event and the issue graph,
+                                                     in place of the rows there are; prints how many items it holds
 ${OPERATOR_USAGE}
 ${UPDATE_USAGE}
   hopper help                                        this text
@@ -82,7 +85,7 @@ say the operator CLI acted (via cli).
 
 records: ${CONFIG_NAMES.join(', ')}. plugins, rules, job-rules and windows-hosts are one user's; sign-in is shared. Every one is edited
 in the UI too.
---user <id> on config, ssh-key and the commands on the running daemon names the user (default: the one user, while there is one).
+--user <id> on config, ssh-key, ledger and the commands on the running daemon names the user (default: the one user, while there is one).
 
 Every command but help and update (but update drift) needs HOPPER_DATABASE_URL (or HOPPER_DATABASE_URL_FILE):
 the database the daemon uses, postgres://user:password@host:port/database.
@@ -234,7 +237,21 @@ function sshKey(instance: InstanceStore, args: string[], io: CliIo): void {
   }
 }
 
-const COMMANDS: readonly string[] = ['config', 'users', 'user', 'join-code', 'ssh-key', 'update', ...OPERATOR_COMMANDS];
+/** `hopper ledger rebuild` (issue #1067): the user's work-item ledger replayed from every event and the issue graph. */
+function ledger(instance: InstanceStore, args: string[], io: CliIo): void {
+  const [action, ...rest] = args;
+  if (action !== 'rebuild') throw new CliError('usage: hopper ledger rebuild [--user <id>]');
+  const { values } = parseArgs({ args: rest, options: { user: { type: 'string' } } });
+  const store = instance.userStore(userOf(instance, values.user));
+  try {
+    io.out(`${store.workItems.rebuild()}\n`);
+    io.err(`${Object.entries(store.workItems.counts()).map(([state, n]) => `${state} ${n}`).join(', ')}\n`);
+  } finally {
+    store.close();
+  }
+}
+
+const COMMANDS: readonly string[] = ['config', 'users', 'user', 'join-code', 'ssh-key', 'ledger', 'update', ...OPERATOR_COMMANDS];
 
 /** Run one command; the exit code. */
 export async function runCli(argv: string[], io: CliIo): Promise<number> {
@@ -270,6 +287,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     else if (command === 'user') userCommand(store, rest, io);
     else if (command === 'join-code') joinCode(store, rest, io);
     else if (command === 'ssh-key') sshKey(store, rest, io);
+    else if (command === 'ledger') ledger(store, rest, io);
     else if (command === 'config') config(store, rest, io);
     else {
       const instance = store;

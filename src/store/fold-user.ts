@@ -3,7 +3,8 @@
 // events, webhooks and their deliveries) all move, in their order, after `keep`'s; a row whose key `keep`
 // already holds (a lane's machine and number, a webhook's name, a setting, a config record) is `keep`'s.
 // Two exceptions: the plugins config takes the instances only `from` names, and the connected account is
-// `from`'s — its user's own connection, its tokens in the vault with it (issue #658). Runs inside the caller's transaction.
+// `from`'s — its user's own connection, its tokens in the vault with it (issue #658). The work-item ledger (issue #1067)
+// does not move: `keep`'s store rebuilds it from the moved events when it next opens. Runs inside the caller's transaction.
 import type { Db, Param } from './db.ts';
 import { quoteIdent } from './tenant-migrations.ts';
 
@@ -37,7 +38,7 @@ export function foldUserSchema(db: Db, keep: string, from: string): void {
   const k = quoteIdent(keep);
   const f = quoteIdent(from);
   const tables = db.all("SELECT table_name AS t FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE' ORDER BY table_name", from)
-    .map((r) => String(r.t)).filter((t) => t !== 'schema_version');
+    .map((r) => String(r.t)).filter((t) => !['schema_version', 'work_items', 'work_items_applied'].includes(t));
   // Deliveries name their subscription and their event: after webhooks and events.
   const ordered = [...tables.filter((t) => t !== 'deliveries'), ...tables.filter((t) => t === 'deliveries')];
   for (const table of ordered) {

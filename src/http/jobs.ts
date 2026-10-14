@@ -9,6 +9,9 @@ import { HttpError, parseWith } from './errors.ts';
 import type { Operation } from './openapi-operation.ts';
 import type { TenantParts } from './tenants.ts';
 
+// The work-item ledger's read sits beside the jobs' in the API reference (issue #1067).
+export { WORK_ITEM_OPERATIONS } from './work-items.ts';
+
 const STATUSES = [
   'queued', 'held', 'claimed', 'running', 'waiting_answer', 'operator_led', 'parked', 'waiting_on', 'finished', 'failed', 'cancelled', 'rejected',
 ] as const satisfies JobStatus[];
