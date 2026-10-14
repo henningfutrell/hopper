@@ -282,3 +282,90 @@ describe('the tend attempts of a pull request (issue #927)', () => {
     expect(node(g, pullRequestNodeId(PR(5)))).not.toHaveProperty('tends');
   });
 });
+
+describe('finished work rolls up (issue #1036)', () => {
+  const closedIssue = (number: number, stateReason?: string) => placeGraph({
+    issue: { repo: 'acme/app', number, url: `https://github.com/acme/app/issues/${number}`, title: `issue ${number}`, state: 'closed', ...(stateReason ? { stateReason } : {}), updatedAt: '2026-10-01T00:00:00Z' },
+    owner: { login: 'acme' }, projects: [], references: [], closedBy: [], subIssues: [],
+  });
+
+  it('a pull request a later job saw merge is merged for every job that names it, with no checks or conflicts', () => {
+    const old = job('old', 'finished', { partlyDone: PR(5), sourceState: { source: { pullRequest: PR(5), follow: 'reworked', seen: { checks: 'failing', conflicting: true } } } });
+    const pr = job('pr', 'finished', { sourceState: { source: { pullRequest: PR(6), follow: 'tended', seen: { checks: 'pending', conflicting: true }, tended: { pullRequest: PR(6), step: 'rebase', nextJobId: 'tend' } } } }, 2);
+    const tend = job('tend', 'finished', { rerunOf: 'pr', ...followed(PR(6), 'merged') }, 2);
+    const rework = job('rework', 'finished', { rerunOf: 'old', ...followed(PR(5), 'merged') });
+    const g = jobGraph({ jobs: [old, pr, tend, rework] });
+    for (const id of ['old', 'pr', 'tend', 'rework']) {
+      expect(node(g, jobNodeId(id)).stage).toBe('done');
+      expect(node(g, jobNodeId(id)).stageText).toBe('Merged');
+    }
+    expect(node(g, jobNodeId('old')).pullRequest).toEqual({ url: PR(5), state: 'merged' });
+    expect(node(g, jobNodeId('pr')).pullRequest).toEqual({ url: PR(6), state: 'merged' });
+    expect(node(g, pullRequestNodeId(PR(6)))).toMatchObject({ stage: 'done', pullRequest: { url: PR(6), state: 'merged' } });
+    expect(kinds(g)).toContain(`${jobNodeId('old')} opened ${pullRequestNodeId(PR(5))}`);
+  });
+
+  it('a pull request the issue graph has as merged is merged, whatever the jobs last saw', () => {
+    const issueGraph = placeGraph({
+      issue: { repo: 'acme/app', number: 1, url: 'https://github.com/acme/app/issues/1', title: 'Root', state: 'OPEN', updatedAt: '2026-10-01T00:00:00Z' },
+      owner: { login: 'acme' }, projects: [], references: [], subIssues: [],
+      closedBy: [{ kind: 'pull_request', repo: 'acme/app', number: 8, url: PR(8), state: 'MERGED' }],
+    });
+    const g = jobGraph({ jobs: [job('a', 'finished', followed(PR(8), 'tended', { checks: 'pending' }))], issueGraph });
+    expect(node(g, jobNodeId('a'))).toMatchObject({ stage: 'done', pullRequest: { url: PR(8), state: 'merged' } });
+  });
+
+  it('an open pull request shows what its newest follower saw of it', () => {
+    const a = job('a', 'finished', { sourceState: { source: { pullRequest: PR(5), follow: 'tended', seen: { checks: 'failing', conflicting: true }, tended: { pullRequest: PR(5), step: 'rebase', nextJobId: 'b' } } } });
+    const b = job('b', 'finished', { rerunOf: 'a', ...followed(PR(5), 'open', { checks: 'passing', conflicting: false }) });
+    const g = jobGraph({ jobs: [a, b] });
+    expect(node(g, pullRequestNodeId(PR(5))).pullRequest).toMatchObject({ state: 'open', checks: 'passing', conflicting: false });
+    expect(node(g, jobNodeId('a')).pullRequest).toMatchObject({ state: 'tended', checks: 'passing', conflicting: false });
+  });
+
+  it('an issue closed as completed is done, and the failed or cancelled jobs of it are superseded', () => {
+    const g = jobGraph({ jobs: [job('first', 'cancelled'), job('second', 'failed')], issueGraph: closedIssue(1, 'completed') });
+    expect(node(g, issueNodeId('acme/app', 1))).toMatchObject({ stage: 'done', stageText: 'Done' });
+    expect(node(g, jobNodeId('first'))).toMatchObject({ stage: 'superseded', stageText: 'Superseded' });
+    expect(node(g, jobNodeId('second')).stage).toBe('superseded');
+    expect(g.stages).toEqual({ superseded: 2 });
+    expect(g.trees[0]!.blocking).toEqual([]);
+  });
+
+  it('an issue closed as not planned is not done by its close', () => {
+    const g = jobGraph({ jobs: [job('a', 'failed')], issueGraph: closedIssue(1, 'not_planned') });
+    expect(node(g, issueNodeId('acme/app', 1)).stage).toBe('failed');
+    expect(node(g, jobNodeId('a')).stage).toBe('failed');
+  });
+
+  it('an issue a later job finished is done: the cancelled or failed jobs before it are superseded', () => {
+    const g = jobGraph({ jobs: [
+      job('cancelled', 'cancelled'), job('done', 'finished', { rerunOf: 'cancelled', ...followed(PR(3), 'merged') }),
+      job('failed', 'failed', {}, 2), job('rerun', 'running', { rerunOf: 'failed' }, 2),
+    ] });
+    expect(node(g, issueNodeId('acme/app', 1)).stage).toBe('done');
+    expect(node(g, jobNodeId('cancelled')).stage).toBe('superseded');
+    expect(node(g, jobNodeId('failed')).stage).toBe('superseded');
+    expect(node(g, issueNodeId('acme/app', 2)).stage).toBe('running');
+    expect(g.stages).toEqual({ superseded: 2, done: 1, running: 1 });
+  });
+
+  it('a cancelled job after a finished one does not undo the issue: it is superseded', () => {
+    const g = jobGraph({ jobs: [job('done', 'finished', followed(PR(3), 'merged')), job('tend', 'cancelled', { rerunOf: 'done' })] });
+    expect(node(g, issueNodeId('acme/app', 1)).stage).toBe('done');
+    expect(node(g, jobNodeId('tend')).stage).toBe('superseded');
+  });
+
+  it('a dismissed failed job is superseded: it counts as no failure', () => {
+    const g = jobGraph({ jobs: [job('a', 'failed', { dismissedAt: '2026-10-03T00:00:00.000Z' })] });
+    expect(node(g, jobNodeId('a'))).toMatchObject({ stage: 'superseded', stageText: 'Dismissed' });
+    expect(g.trees[0]!.stages).toEqual({ superseded: 1 });
+    expect(g.trees[0]!.summary).not.toContain('failed');
+  });
+
+  it('a partly done job of an issue closed as completed waits on nothing', () => {
+    const g = jobGraph({ jobs: [job('part', 'finished', { partlyDone: PR(4), ...followed(PR(4), 'open') })], issueGraph: closedIssue(1, 'completed') });
+    expect(node(g, jobNodeId('part')).stage).toBe('done');
+    expect(node(g, issueNodeId('acme/app', 1)).stage).toBe('done');
+  });
+});
