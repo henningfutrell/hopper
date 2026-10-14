@@ -27,13 +27,14 @@ Every row shows, also when its count is 0. The page says *Nothing waits on you* 
 
 ## Intake
 
-**Intake** lists every open labelled issue your job sources list, per source. The issues are in groups, each with a count:
+**Intake** lists the open labelled issues your job sources list that wait on an intake decision, per source. The issues are in groups, each with a count:
 
 1. **Needs approval**: request cards. Select **Approve** to let the hopper take the issue.
 2. **Not assigned to you**: select **Assign to me**, or **Assign all to me**.
 3. **On the backburner**: select **Take off the backburner**.
-4. **Pull request waits for review**, **Partly done**, **Other reasons**.
-5. **Taken**: the issues the hopper took, with their jobs.
+4. **Other reasons**.
+
+An issue the hopper took leaves Intake. Its progress (taken, partly done, its pull request waits for review) shows on **Jobs**. Each source shows one line with how many such issues there are, with a link to Jobs. When nothing waits, the source says *Nothing waiting for intake*.
 
 The nav badge counts the request cards. A second, dashed badge counts the issues on the backburner. When no source lists issues, the page says so.
 

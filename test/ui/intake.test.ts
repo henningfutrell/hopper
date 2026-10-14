@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-// Issue #440 in the UI, against a fake of the daemon's HTTP surface. Intake (issue #897; Sources until then) lists every
-// open labelled issue its GitHub connection listed: taken, or the one reason it was not, with Assign to me (one, or all)
+// Issue #440 in the UI, against a fake of the daemon's HTTP surface. Intake (issue #897; Sources until then) lists each
+// open labelled issue its GitHub connection listed and did not take, with the one reason (a taken one is counted and on
+// Jobs, issue #1035), with Assign to me (one, or all)
 // and Release claim where the source offers them. Sources keeps what the intake migration changed, once, and the repos
 // outside the job repositories with issues for the user, each with Add, which saves the job repositories with it. The Dashboard's
 // idle lanes say why they are idle, from the latest Decision. A request card (issue #652) shows the text as read, who
@@ -104,11 +105,12 @@ const button = (el: ParentNode, text: string) => [...el.querySelectorAll('button
 const click = async (b: HTMLButtonElement | undefined) => { await act(async () => { b!.click(); }); };
 
 describe('Intake: what intake did with each labelled issue (issues #440, #897)', () => {
-  it('each issue is taken or says why, with the action the source offers', async () => {
+  it('each issue not taken says why, with the action the source offers; a taken one is counted, on Jobs (issue #1035)', async () => {
     await boot('#intake');
     await vi.waitFor(() => expect(intake()).not.toBeNull());
-    expect(intake()!.querySelector('[data-intake-summary]')?.textContent).toBe('7 open labelled issues: 1 taken, 6 not taken');
-    expect(row(url(1)).textContent).toContain('taken');
+    expect(intake()!.querySelector('[data-intake-summary]')?.textContent).toBe('6 waiting for intake');
+    expect(intake()!.querySelector('[data-intake-in-progress]')?.textContent).toBe('1 in progress on Jobs');
+    expect(intake()!.querySelector(`[data-intake-item="${url(1)}"]`)).toBeNull();
     expect(row(url(2)).textContent).toContain('not assigned to you');
     expect(row(url(5)).textContent).toContain('on the backburner');
     expect(button(row(url(5)), 'Assign to me')).toBeUndefined();
