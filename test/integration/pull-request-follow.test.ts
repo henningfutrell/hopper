@@ -63,6 +63,27 @@ describe('the pull request after done', () => {
     expect(await app.events('types=job.pull_request_merged')).toHaveLength(1);
   });
 
+  it('what the follow sees of the pull request — checks running, then the merge — is what its work item waits on (issue #1067)', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { issue, job } = await doneWithPullRequest(gh, app);
+    await labelled(gh, issue.number, 'hopper:pr-ready');
+    const url = prOf(await app.job(job.id));
+    const item = () => app.user().store.workItems.get(issue.url);
+    gh.setChecks(url, 'pending');
+    await app.sync();
+    await waitFor(() => item()?.pullRequestWait === 'checks_running', { what: 'checks running' });
+    expect(item()).toMatchObject({ state: 'pr_open', pullRequest: url, waitingOn: 'its checks to pass' });
+    gh.setChecks(url, 'passing');
+    await app.sync();
+    await waitFor(() => item()?.pullRequestWait === 'merge', { what: 'waits on the merge' });
+    const seen = (await app.events('types=job.pull_request_seen')).map((e) => e.data);
+    expect(seen.slice(-2)).toEqual([{ pullRequest: url, wait: 'checks_running' }, { pullRequest: url, wait: 'merge' }]);
+    // Seen the same again: nothing recorded.
+    await app.sync();
+    expect(await app.events('types=job.pull_request_seen')).toHaveLength(seen.length);
+  });
+
   it('closed without a merge: hopper:pr-closed, recorded; the job stays finished', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);

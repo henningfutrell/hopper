@@ -2,7 +2,9 @@
 // settled with what GitHub said of its issue and pull request. "Failed" is only the newest attempt's failure, nobody
 // dismissed and nothing replaced; a finished job waits on its pull request until it merges.
 import { describe, expect, it } from 'vitest';
-import { applyEvent, applyRead, countStates, isFailureOf, keptWorkShown, type LedgerJob, type WorkItem } from '../../src/domain/work-items.ts';
+import {
+  applyEvent, applyRead, countStates, isFailureOf, keptWorkShown, keyOfEvent, pullRequestWaitOf, type LedgerJob, type WorkItem,
+} from '../../src/domain/work-items.ts';
 import type { EventType } from '../../src/domain/types.ts';
 
 const KEY = 'https://github.com/o/r/issues/1';
@@ -139,5 +141,51 @@ describe('what every view reads of an item (issue #1067, part 2)', () => {
     expect(keptWorkShown(fold([['job.queued'], ['job.finished', {}], ['job.work_kept', { paths: ['/w'] }]])!)).toEqual(['j1']);
     // Cancelled by a person: still to push or discard.
     expect(keptWorkShown(fold([['job.queued'], ['job.cancelled', {}], ['job.work_kept', { paths: ['/w'] }]])!)).toEqual(['j1']);
+  });
+});
+
+describe('what GitHub says moves the item (issue #1067, part 3)', () => {
+  const open: [EventType, Record<string, unknown>?, LedgerJob?][] = [['job.queued'], ['job.finished', {}], ['job.pull_request_followed', { pullRequest: PR, part: false }]];
+
+  it('an open pull request names what it waits on: a draft, merge conflicts, failed checks, checks running, the merge', () => {
+    expect(pullRequestWaitOf({ draft: true, conflicting: true, checks: 'failing' })).toBe('draft');
+    expect(pullRequestWaitOf({ draft: false, conflicting: true, checks: 'failing' })).toBe('conflicts');
+    expect(pullRequestWaitOf({ draft: false, conflicting: false, checks: 'failing' })).toBe('fixing_checks');
+    expect(pullRequestWaitOf({ draft: false, conflicting: false, checks: 'pending' })).toBe('checks_running');
+    expect(pullRequestWaitOf({ draft: false, conflicting: false, checks: 'passing' })).toBe('merge');
+    expect(pullRequestWaitOf({ draft: false, conflicting: false, checks: 'none' })).toBe('merge');
+  });
+
+  it('what the follow saw of its pull request says what the item waits on, until it merges', () => {
+    const running = fold([...open, ['job.pull_request_seen', { pullRequest: PR, wait: 'checks_running' }]]);
+    expect(running).toMatchObject({ state: 'pr_open', pullRequestWait: 'checks_running', waitingOn: 'its checks to pass' });
+    const fixing = fold([...open, ['job.pull_request_seen', { pullRequest: PR, wait: 'checks_running' }], ['job.pull_request_seen', { pullRequest: PR, wait: 'fixing_checks' }]]);
+    expect(fixing).toMatchObject({ state: 'pr_open', pullRequestWait: 'fixing_checks', waitingOn: 'a fix of its failed checks' });
+    expect(fold([...open, ['job.pull_request_seen', { pullRequest: PR, wait: 'merge' }]])?.waitingOn).toBe('the merge');
+    // The same wait again moves nothing; another pull request's says nothing of this item.
+    const item = fold([...open, ['job.pull_request_seen', { pullRequest: PR, wait: 'merge' }]])!;
+    expect(applyEvent(item, ev('job.pull_request_seen', { pullRequest: PR, wait: 'merge' }), KEY, j1)).toBeUndefined();
+    expect(applyEvent(item, ev('job.pull_request_seen', { pullRequest: 'https://github.com/o/r/pull/9', wait: 'draft' }), KEY, j1)).toBeUndefined();
+    // Merged: done, and it waits on nothing.
+    const merged = fold([...open, ['job.pull_request_seen', { pullRequest: PR, wait: 'merge' }], ['job.pull_request_merged', { pullRequest: PR, part: false }]]);
+    expect(merged?.state).toBe('done');
+    expect(merged?.pullRequestWait).toBeUndefined();
+    expect(merged?.waitingOn).toBeUndefined();
+    // A new job of the item: what the old pull request waited on is history.
+    expect(fold([...open, ['job.pull_request_seen', { pullRequest: PR, wait: 'merge' }], ['job.queued', {}, j2]])?.pullRequestWait).toBeUndefined();
+  });
+
+  it('an issue closed or reopened on GitHub, as a delivery or a read said, moves the item that has its key', () => {
+    expect(keyOfEvent({ type: 'work_item.issue_closed', data: { key: KEY, via: 'delivery' } })).toBe(KEY);
+    const pr = fold(open)!;
+    const closed = applyEvent(pr, ev('work_item.issue_closed', { key: KEY, reason: 'completed', via: 'delivery' }), KEY);
+    expect(closed).toMatchObject({ state: 'done', issueState: 'closed', issueReason: 'completed' });
+    const failed = fold([['job.queued'], ['job.failed', { error: 'x' }]])!;
+    expect(applyEvent(failed, ev('work_item.issue_closed', { key: KEY, reason: 'not_planned', via: 'read' }), KEY)?.state).toBe('dropped');
+    const reopened = applyEvent(applyEvent(failed, ev('work_item.issue_closed', { key: KEY, reason: 'completed', via: 'read' }), KEY)!, ev('work_item.issue_reopened', { key: KEY, via: 'delivery' }), KEY);
+    expect(reopened).toMatchObject({ state: 'failed', issueState: 'open' });
+    // A job at work keeps the item; no item: nothing to move.
+    expect(applyEvent(fold([['job.queued'], ['job.started']]), ev('work_item.issue_closed', { key: KEY, reason: 'completed', via: 'delivery' }), KEY)?.state).toBe('working');
+    expect(applyEvent(undefined, ev('work_item.issue_closed', { key: KEY, via: 'delivery' }), KEY)).toBeUndefined();
   });
 });
