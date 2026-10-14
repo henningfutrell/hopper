@@ -73,10 +73,15 @@ describe('resources a client answers', () => {
 
   it('a WSL client\'s Windows link (issue #712): kept when sane, else dropped', () => {
     const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB, wsl: true };
-    const link = { url: 'http://localhost:4790/api/health', mode: 'nat', ok: false, error: 'Unable to connect to the remote server', at: '2026-10-13T10:00:00.000Z' };
+    const link = { url: 'http://localhost:4790/job/address', mode: 'nat', ok: false, error: 'Unable to connect to the remote server', at: '2026-10-13T10:00:00.000Z' };
     expect(resourcesOf({ ...r, windowsLink: link })).toEqual({ ...r, windowsLink: link });
     expect(resourcesOf({ ...r, windowsLink: { url: link.url, ok: true, status: 200, at: link.at } })?.windowsLink).toEqual({ url: link.url, ok: true, status: 200, at: link.at });
-    expect(resourcesOf({ ...r, windowsLink: { ...link, url: 'http://hopper.example.org/api/health' } })).not.toHaveProperty('windowsLink');
+    for (const url of ['http://127.0.0.1:4790/job/address', 'http://localhost:4790/api/health']) {
+      expect(resourcesOf({ ...r, windowsLink: { ...link, url } })?.windowsLink?.url).toBe(url); // only 127.0.0.1 answered; a client before the address check
+    }
+    for (const url of ['http://hopper.example.org/job/address', 'http://127.0.0.2:4790/job/address', 'http://localhost:4790/api/jobs']) {
+      expect(resourcesOf({ ...r, windowsLink: { ...link, url } })).not.toHaveProperty('windowsLink');
+    }
     expect(resourcesOf({ ...r, windowsLink: { ...link, ok: 'no' } })).not.toHaveProperty('windowsLink');
     expect(resourcesOf({ ...r, windowsLink: { ...link, at: 'yesterday' } })).not.toHaveProperty('windowsLink');
     expect(resourcesOf({ ...r, windowsLink: { ...link, mode: 'NAT; rm -rf' } })?.windowsLink).not.toHaveProperty('mode');

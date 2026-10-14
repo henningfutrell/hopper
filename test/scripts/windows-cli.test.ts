@@ -105,9 +105,11 @@ describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () =>
 
   it('on: the loop reports the Windows link through the CLI, at most every 5 minutes, with no token', () => {
     expect(loop).toContain('AddMinutes(5)');
-    expect(loop).toContain("$url = 'http://localhost:__PORT__/api/health'");
+    expect(loop).not.toContain('/api/health');
+    expect(loop).toContain("$urls = @('http://localhost:__PORT__/job/address', 'http://127.0.0.1:__PORT__/job/address')");
+    expect(loop).toContain('foreach ($u in $urls)');
     expect(ps1).toContain("if ($env:HOPPER_PORT) { $env:HOPPER_PORT } else { '4790' }");
-    expect(loop).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Uri $url');
+    expect(loop).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Uri $u');
     expect(loop).toContain("@('--status', [string][int]$_.Exception.Response.StatusCode)");
     expect(loop).toContain("& wsl.exe @wsl -e wslinfo --networking-mode");
     expect(loop).toContain('-e podman exec $container.Trim() hopper windows-link report --link $url @result');
@@ -164,9 +166,17 @@ describe('hopper doctor (docs/deploy.md "Check it from Windows")', () => {
     expect(ps1.indexOf("-eq 'doctor'")).toBeLessThan(ps1.indexOf("# The container's name changes"));
   });
 
-  it('opens /api/health at localhost on the port HOPPER_PORT names, else 4790', () => {
+  it('opens the address check (/job/address, no session) at localhost, then at 127.0.0.1, on the port HOPPER_PORT names, else 4790', () => {
     expect(doctor).toContain("if ($env:HOPPER_PORT) { $env:HOPPER_PORT } else { '4790' }");
-    expect(doctor).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "http://localhost:$port/api/health"');
+    expect(doctor).not.toContain('/api/health');
+    expect(doctor).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "http://localhost:$port/job/address"');
+    expect(doctor).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "$loopback/job/address"');
+  });
+
+  it('any HTTP answer is a working link; only 127.0.0.1 answering is a warning, not a FAIL, that says to open 127.0.0.1', () => {
+    expect(doctor).toContain('$_.Exception.Response');
+    expect(doctor).toContain("'warn'");
+    expect(doctor).toContain('Windows tries ::1 first for localhost: open $loopback in place of localhost.');
   });
 
   it('reads the networking mode from wslinfo, and localhostForwarding and networkingMode from %UserProfile%\\.wslconfig', () => {
@@ -180,7 +190,7 @@ describe('hopper doctor (docs/deploy.md "Check it from Windows")', () => {
     const model = '../../ui/src/model/windows-link.ts'; // browser code, type-checked by ui/tsconfig.json: imported by path
     const { windowsLinkFix } = (await import(model)) as { windowsLinkFix(l: { url: string; mode?: string; ok: boolean; at: string }): string[] };
     for (const mode of ['nat', 'mirrored', undefined]) {
-      const fix = windowsLinkFix({ url: 'http://localhost:4790/api/health', mode, ok: false, at: '' });
+      const fix = windowsLinkFix({ url: 'http://localhost:4790/job/address', mode, ok: false, at: '' });
       for (const line of fix) expect(doctor).toContain(line.replace('http://127.0.0.1:4790', '$loopback'));
     }
   });

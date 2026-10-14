@@ -2566,7 +2566,7 @@ Version 1 (`docs/schemas/machine.memory_recovered.v1.json`). A machine told low 
 
 ## `machine.windows_link_broken`
 
-Version 1 (`docs/schemas/machine.windows_link_broken.v1.json`). A WSL machine's client found that Windows does not reach the hopper (issue #712): Windows, through PowerShell, opened `url` (the health route at localhost, at the port the client dials the hopper on) and got no answer. `error` says why; `mode` is WSL's networking mode (`nat`, `mirrored`), when read. The Machines view and a banner show the fix. Once per break. `machineId` `windows`: the keep-alive loop on Windows found it and reported it (`hopper windows-link report`), with no client in the distro.
+Version 1 (`docs/schemas/machine.windows_link_broken.v1.json`). A WSL machine's client found that Windows does not reach the hopper (issue #712): Windows, through PowerShell, opened `url` (the address check, `/job/address`, at localhost, at the port the client dials the hopper on; the health route at localhost before it) and got no answer. `error` says why; `mode` is WSL's networking mode (`nat`, `mirrored`), when read. The Machines view and a banner show the fix. Once per break. `machineId` `windows`: the keep-alive loop on Windows found it and reported it (`hopper windows-link report`), with no client in the distro.
 
 | field | type | required |
 |---|---|---|
@@ -2579,7 +2579,7 @@ Version 1 (`docs/schemas/machine.windows_link_broken.v1.json`). A WSL machine's 
 ```json
 {
   "machineId": "win-desk",
-  "url": "http://localhost:4790/api/health",
+  "url": "http://localhost:4790/job/address",
   "mode": "nat",
   "error": "Unable to connect to the remote server"
 }
@@ -2598,7 +2598,7 @@ Version 1 (`docs/schemas/machine.windows_link_restored.v1.json`). A machine told
 ```json
 {
   "machineId": "win-desk",
-  "url": "http://localhost:4790/api/health",
+  "url": "http://localhost:4790/job/address",
   "mode": "nat"
 }
 ```

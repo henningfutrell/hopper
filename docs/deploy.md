@@ -456,7 +456,8 @@ that folder. It works on the distro `HOPPER_WSL_DISTRO` names; unset, WSL's defa
     process in the distro keeps WSL from stopping it. After `wsl --shutdown` the `wsl.exe` ends, the loop starts it
     again, the distro boots, and systemd starts the containers through `podman-restart.service`;
   - the loop also reports the Windows link: at most every 5 minutes, while the hopper's container runs, it opens
-    `http://localhost:<port>/api/health` (`HOPPER_PORT`; unset, `4790`), 10 s at most, reads the networking mode
+    the address check, `http://localhost:<port>/job/address`, else `http://127.0.0.1:<port>/job/address` (`HOPPER_PORT`;
+    unset, `4790`), 10 s at most each, reads the networking mode
     (`wsl.exe -e wslinfo --networking-mode`), and runs `hopper windows-link report` in the container with the result:
     the HTTP status (any status means the hopper answered) or why there was no answer. The hopper keeps the report in
     memory for 15 minutes, and a broken link shows the banner with the fix and tells `machine.windows_link_broken`
@@ -476,7 +477,7 @@ that folder. It works on the distro `HOPPER_WSL_DISTRO` names; unset, WSL's defa
   run them through `wsl.exe`. The loop keeps no token, and the report carries no secret.
 - **Not checked here:** there is no Windows runner, so `test/scripts/windows-cli.test.ts` reads the scripts. A person
   checks it once on Windows: `hopper autostart on`, `wsl --shutdown`, wait 30 s, then
-  `Invoke-WebRequest http://localhost:4790/api/health`. If the hidden loop is not reliable on a WSL release, a scheduled
+  `Invoke-WebRequest http://localhost:4790/job/address` (it answers 204). If the hidden loop is not reliable on a WSL release, a scheduled
   task with restart on failure is the fallback.
 
 ### Check it from Windows
@@ -485,8 +486,11 @@ that folder. It works on the distro `HOPPER_WSL_DISTRO` names; unset, WSL's defa
 `hopper.cmd` runs `hopper.ps1` from its own folder for it (`powershell.exe -ExecutionPolicy Bypass`, this process only),
 so put both in that folder. It runs on Windows, so it needs no interop from the hopper's container. The checks, in order:
 
-1. **The Windows link.** `Invoke-WebRequest http://localhost:<port>/api/health`, 10 s at most, must answer 200. The port
-   is `HOPPER_PORT`; unset, `4790`.
+1. **The Windows link.** `Invoke-WebRequest` on the address check (`/job/address`: 204 to anyone the Host guard lets
+   in, with no session) at `http://localhost:<port>`, 10 s at most. Any HTTP answer means the hopper answered. When
+   `localhost` gets no answer, it tries `http://127.0.0.1:<port>`: Windows tries `::1` first for `localhost`. Only
+   `127.0.0.1` answering is a `warn`, not a `FAIL`: open `http://127.0.0.1:<port>` in place of `localhost`. Neither
+   answering is a `FAIL`, with the fix for the networking mode. The port is `HOPPER_PORT`; unset, `4790`.
 2. **The networking mode.** `wsl.exe -e wslinfo --networking-mode`, and `localhostForwarding` and `networkingMode` under
    `[wsl2]` in `%UserProfile%\.wslconfig`. It fails in NAT mode with `localhostForwarding=false`, and when `.wslconfig`
    names another mode than the one WSL runs (it needs `wsl --shutdown`).
@@ -495,14 +499,16 @@ so put both in that folder. It runs on Windows, so it needs no interop from the 
 4. **In the distro, through `wsl.exe -e`:** `systemd=true` under `[boot]` in `/etc/wsl.conf`; linger on for the distro
    user (`loginctl show-user`); `podman-restart.service` enabled (`systemctl --user is-enabled`).
 
-Each check prints `ok`, or `FAIL` and the fix. A broken link gets the same fix as the Machines banner
+Each check prints `ok`, `warn` and the hint, or `FAIL` and the fix. A broken link gets the same fix as the Machines banner
 (`ui/src/model/windows-link.ts`), by the mode it read. It exits 1 when a check fails. The distro is the one
 `HOPPER_WSL_DISTRO` names; unset, WSL's default distro.
 
 - **Security:** it only reads. It sends no token, changes nothing, and adds no listener or route. It runs as the
   signed-in Windows user, who could already run `wsl.exe`.
 - **Not checked here:** there is no Windows runner, so `test/scripts/windows-cli.test.ts` reads the script. A person
-  checks it once on Windows: `hopper doctor` after a fresh install and after `wsl --shutdown`.
+  checks it once on Windows: `hopper doctor` after a fresh install and after `wsl --shutdown`. By hand, in PowerShell:
+  `Invoke-WebRequest http://127.0.0.1:4790/job/address` and `Invoke-WebRequest http://localhost:4790/job/address` each
+  answer 204.
 
 ### The Windows link, checked by default
 
@@ -510,7 +516,8 @@ On Windows the install page has the person add the distro the hopper runs in as 
 Ubuntu as a machine"): **Machines** → **Add machine** → **A computer**, with the UI open at `http://localhost:<port>`
 in the Windows browser. The join line carries the URL the page is open at, so the client dials the hopper on loopback.
 A client in WSL that dials loopback tests the Windows link (`docs/design.md` "The Windows link"): every 5 minutes it
-runs `Invoke-WebRequest` on `http://localhost:<port>/api/health` through interop. When the link breaks, the Machines
+runs `Invoke-WebRequest` on the address check, `http://localhost:<port>/job/address`, else
+`http://127.0.0.1:<port>/job/address`, through interop. When the link breaks, the Machines
 card and a banner over every view say so, with the fix for the networking mode. Jobs need a machine anyway, so the
 check costs no extra step.
 

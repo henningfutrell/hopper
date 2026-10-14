@@ -82,7 +82,8 @@ describe('Settings → Host link (issue #712)', () => {
   it('in WSL shows how to test the link from Windows, the .wslconfig fixes, and that a client in this distro checks it', async () => {
     await render({ hostLinkBase: '', default: 'http://localhost:4790', wsl: true });
     const hint = document.querySelector('[data-slot="host-link-wsl"]')!.textContent!;
-    expect(hint).toContain('Invoke-WebRequest http://localhost:4790/api/health');
+    expect(hint).toContain('Invoke-WebRequest http://localhost:4790/job/address');
+    expect(hint).toContain('It must answer 204');
     expect(hint).toContain('localhostForwarding=true');
     expect(hint).toContain('networkingMode=mirrored');
     expect(hint).toContain('wsl --shutdown');
@@ -92,6 +93,6 @@ describe('Settings → Host link (issue #712)', () => {
 
   it('in WSL tests the host link base the admin set, not the default', async () => {
     await render({ hostLinkBase: 'http://127.0.0.1:4790', default: 'http://localhost:4790', wsl: true });
-    expect(document.querySelector('[data-slot="host-link-wsl"]')!.textContent).toContain('Invoke-WebRequest http://127.0.0.1:4790/api/health');
+    expect(document.querySelector('[data-slot="host-link-wsl"]')!.textContent).toContain('Invoke-WebRequest http://127.0.0.1:4790/job/address');
   });
 });
