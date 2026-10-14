@@ -83,7 +83,7 @@ export const useSection = (): string => useSyncExternalStore(subscribe, readSect
 
 function Links({ view, onPick }: { view: View; onPick?: () => void }) {
   const failedSources = useHopper((s) => s.sources.filter((x) => x.state === 'error').length);
-  const requests = useHopper((s) => requestsWaiting(s.sources));
+  const requests = useHopper((s) => requestsWaiting(s.items));
   const backburner = useHopper((s) => onTheBackburner(s.sources));
   const sorting = useAwaitingSort();
   // Every section's badge by the one rule; a high-priority item waiting (issue #535) marks it and says how many.

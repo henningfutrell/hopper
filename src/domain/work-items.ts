@@ -81,6 +81,8 @@ export interface WorkItem {
   keptWork: string[];
   /** Its merged pull request on its way from the landing branch to the tested branch (issue #1073): `work-item-landing.ts`. */
   landing?: ItemLanding;
+  /** While it waits for approval: the source whose request card it is (part 4), so only that source withdraws it. */
+  requestSource?: string;
   /** One more at each change. */
   version: number;
 }
@@ -95,7 +97,7 @@ export type LedgerRead =
 
 /** The events the ledger reads; every other event leaves every item as it is. */
 export const LEDGER_EVENT_TYPES: ReadonlySet<EventType> = new Set<EventType>([
-  'source.request_opened', 'source.request_approved', 'source.request_declined',
+  'source.request_opened', 'source.request_approved', 'source.request_declined', 'source.request_withdrawn',
   'job.queued', 'job.claimed', 'job.started', 'job.continued', 'job.wait_ended', 'job.reattached', 'job.requeued',
   'job.parked', 'job.unparked', 'job.waiting', 'question.escalated_to_human', 'handoff.opened', 'handoff.closed',
   'job.finished', 'job.failed', 'job.cancelled', 'job.rejected', 'job.dismissed',
@@ -160,9 +162,15 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
   };
 
   // A request card, before any job.
-  if (event.type === 'source.request_opened') return item && isActive(item.eventState) ? undefined : move('waiting_for_approval', { waitingOn: 'an owner\'s approval of the request' });
-  if (event.type === 'source.request_declined') return item?.eventState === 'waiting_for_approval' ? move('dropped', { waitingOn: undefined }) : undefined;
-  if (event.type === 'source.request_approved') return item?.eventState === 'waiting_for_approval' ? move('queued', { waitingOn: undefined }) : undefined;
+  if (event.type === 'source.request_opened') {
+    if (item && isActive(item.eventState)) return undefined;
+    return move('waiting_for_approval', { waitingOn: 'an owner\'s approval of the request', ...(typeof d.source === 'string' ? { requestSource: d.source } : {}) });
+  }
+  // Declined, or withdrawn: its source no longer offers it, with no person's approval or decline (part 4).
+  if (event.type === 'source.request_declined' || event.type === 'source.request_withdrawn') {
+    return item?.eventState === 'waiting_for_approval' ? move('dropped', { waitingOn: undefined, requestSource: undefined }) : undefined;
+  }
+  if (event.type === 'source.request_approved') return item?.eventState === 'waiting_for_approval' ? move('queued', { waitingOn: undefined, requestSource: undefined }) : undefined;
   // GitHub closed or reopened the item's issue (a delivery, or the fallback read): as a read of the issue says it.
   if (event.type === 'work_item.issue_closed' || event.type === 'work_item.issue_reopened') {
     if (!item) return undefined;
@@ -173,7 +181,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
 
   // A new job of the item takes it over: what an earlier job and GitHub said of it is history.
   if (event.type === 'job.queued') {
-    return move('queued', { jobId: job.id, pullRequest: undefined, pullRequestState: undefined, pullRequestWait: undefined, issueState: undefined, issueReason: undefined, waitingOn: undefined, failedJobId: undefined, landing: undefined });
+    return move('queued', { jobId: job.id, pullRequest: undefined, pullRequestState: undefined, pullRequestWait: undefined, issueState: undefined, issueReason: undefined, waitingOn: undefined, failedJobId: undefined, landing: undefined, requestSource: undefined });
   }
   // Any job's kept work and pull request: a tend hands a pull request to a newer job, and an older job's merge still counts.
   if (event.type === 'job.work_kept') return item?.keptWork.includes(job.id) ? undefined : mark({ keptWork: [...base.keptWork, job.id] });
@@ -277,6 +285,19 @@ export function keptWorkShown(item: Pick<WorkItem, 'state' | 'jobId' | 'issueSta
   if (item.state === 'done' || item.issueState === 'closed') return [];
   const settledOn = item.state === 'failed' || item.state === 'needs_you' || item.state === 'dropped';
   return item.keptWork.filter((j) => settledOn || j === item.jobId);
+}
+
+/**
+ * Whether the item's issue closed as complete, as the ledger holds it (part 4): closed, not as not planned or a duplicate.
+ * The sync's rule for a failed job whose work landed (issue #350): one answer with `stateOf`'s.
+ */
+export function issueClosedAsComplete(item: Pick<WorkItem, 'issueState' | 'issueReason'> | undefined): boolean {
+  return item?.issueState === 'closed' && !NOT_COMPLETED.includes(item.issueReason ?? '');
+}
+
+/** The keys of the request cards of `source` the ledger has waiting for approval (part 4): what Intake withdraws when it no longer offers them. */
+export function requestsWaitingOf(items: Iterable<Pick<WorkItem, 'key' | 'eventState' | 'requestSource'>>, source: string): string[] {
+  return [...items].filter((i) => i.eventState === 'waiting_for_approval' && i.requestSource === source).map((i) => i.key);
 }
 
 /** A GitHub issue's URL: what the fallback read can read. */

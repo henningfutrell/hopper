@@ -91,6 +91,7 @@
         "source.request_opened",
         "source.backburner_lifted",
         "source.request_declined",
+        "source.request_withdrawn",
         "source.delivery_received",
         "auth.pending",
         "auth.completed",

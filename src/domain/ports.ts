@@ -518,12 +518,14 @@ export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses {
    */
   notComplete?(job: Job): Promise<string | undefined>;
   /**
-   * Whether a failed job's item is closed as complete: its work landed though the job ended failed —
-   * its pane ended after its own pull request merged, say (issue #350). Asked by the sync loop before it
-   * reports the failure: true finishes the job instead. A throw is asked again on a later sync. Absent:
-   * every failed job stays failed.
+   * What the source says of a failed job's item now: open, or closed and why (`completed`, `not_planned`, `duplicate`).
+   * Asked by the sync loop before it reports the failure, only when the work-item ledger does not hold the item closed
+   * already (issue #1067, part 4): the answer is recorded as ledger input (`work_item.issue_closed`), and the ledger
+   * says whether the job's work landed — its pane ended after its own pull request merged, say (issue #350) — and the job
+   * is finished instead. Undefined: it cannot say (the item gone). A throw is asked again on a later sync. Absent: every
+   * failed job stays failed unless the ledger holds its item closed as complete.
    */
-  closedAsComplete?(job: Job): Promise<boolean>;
+  issueState?(job: Job): Promise<{ state: 'open' | 'closed'; reason?: string } | undefined>;
   /**
    * What a handed-off job's work shows at the source (issues #529, #621): its item, and the pull requests the job opened
    * or pushed to. Undefined: it cannot tell. Throws: asked again later. Absent: a hand-off waits on a person.

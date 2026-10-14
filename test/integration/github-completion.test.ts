@@ -156,6 +156,9 @@ describe('GitHub done-check: a pull request ready for review', () => {
       ['job.failed', { error: 'pane ended', priority: 50, high: false }],
       ['job.finished', { result: 'issue closed as complete' }],
     ]);
+    // The ledger decides (issue #1067): the read of the issue is its event first, and the item is done.
+    expect((await a.events('types=work_item.issue_closed')).map((e) => e.data)).toEqual([{ key: issue.url, reason: 'completed', via: 'read' }]);
+    expect((await a.api<{ items: { key: string; state: string }[] }>('GET', '/api/work-items')).body.items.find((i) => i.key === issue.url)?.state).toBe('done');
   });
 
   it('a job that fails while its issue is open stays failed (issue #350)', async () => {
@@ -167,6 +170,7 @@ describe('GitHub done-check: a pull request ready for review', () => {
     await a.waitForStatus(job.id, 'failed');
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:failed'), { what: 'hopper:failed' });
     expect((await a.job(job.id)).status).toBe('failed');
+    expect(await a.events('types=work_item.issue_closed')).toEqual([]);
   });
 });
 

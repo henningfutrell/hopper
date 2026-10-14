@@ -7,6 +7,7 @@
 // counted in the nav and from the Queue, and each says its number, since when and by whom it is on the backburner.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { countStates } from '../../src/domain/work-items.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const url = (n: number, repo = 'octo-user/hopper') => `https://github.com/${repo}/issues/${n}`;
@@ -45,7 +46,8 @@ let sources: unknown[] = SOURCES;
 function fakeDaemon() {
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
-    '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked: [] },
+    // The work-item ledger's counts (issue #1067): 3 items wait for approval, though the source's last sync listed 2 cards.
+    '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked: [], items: { ...countStates([]), waiting_for_approval: 3 } },
     '/api/machines': MACHINES, '/api/decisions': { decisions: [DECISION] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] },
     '/api/questions': { questions: [] },
@@ -108,9 +110,9 @@ const click = async (b: HTMLButtonElement | undefined) => { await act(async () =
 const navLink = (hash: string) => document.querySelector<HTMLElement>(`nav a[href="${hash}"]`)!;
 
 describe('Intake: the issues a source listed, grouped by why (issues #798, #897)', () => {
-  it('the nav entry is badged with the request cards waiting for approval', async () => {
+  it('the nav entry is badged with the items the work-item ledger has waiting for approval (issue #1067), and so is Needs you\'s Intake row', async () => {
     await boot('#dashboard');
-    await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2'));
+    await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('3'));
     expect(navLink('#intake').textContent).toContain('Intake');
   });
 
@@ -190,7 +192,7 @@ describe('the backburner is always visible (issue #808)', () => {
     await boot('#dashboard');
     await vi.waitFor(() => expect(navLink('#intake').querySelector('[data-slot="nav-badge-backburner"]')?.textContent).toBe('2'));
     expect(navLink('#intake').querySelector('[data-slot="nav-badge-backburner"]')!.getAttribute('title')).toBe('2 issues on the backburner');
-    expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('2');
+    expect(navLink('#intake').querySelector('[data-slot="nav-badge"]')?.textContent).toBe('3');
   });
 
   it('each row says its issue number; a backburner row says since when and by whom, and looks unlike a taken one', async () => {

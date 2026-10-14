@@ -25,7 +25,7 @@ import { CONNECTED_VIA, TERMINAL_STATUSES, type Account } from '../../domain/typ
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
-import { closedAsComplete, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
+import { issueState, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
 import { followPullRequest } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
@@ -39,7 +39,7 @@ import { intakeAct } from './intake-actions.ts';
 import { outsideReader } from './outside.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
-import { openRequests, originsOf, requestOutcome } from './origin.ts';
+import { openRequests, originsOf, requestOutcome, withdrawRequests } from './origin.ts';
 import { backburnerReader } from './backburner.ts';
 import { recordIssueGraph, type IssueGraphRecorder } from './graph.ts';
 import { reportToGitHub, takeBack, writeResolution } from './report.ts';
@@ -315,7 +315,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         items.push(v ? { ...item, origin: v.origin } : item);
       }
       next = next.map((x) => requestOutcome(x, requests.get(x.key), o.trust));
-      if (intake) openRequests(o.name, intake, requests, opened);
+      if (intake) { openRequests(o.name, intake, requests, opened); withdrawRequests(o.name, intake, requests, { repos, repoErrors: found.repoErrors }, opened); }
       next = await backburner(next);
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
       repoErrors = found.repoErrors;
@@ -374,7 +374,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     readFollowed: (jobs) => batch.read(jobs),
     crossReferences: (job) => crossReferencesOfJob(api, job),
     mergesOnReady: (repo) => o.yoloMode?.(repo) ?? false,
-    closedAsComplete: (job) => closedAsComplete(api, job),
+    issueState: (job) => issueState(api, job),
     workState: (job) => workState(api, job),
     pullRequestOpen(job) {
       return ownPullRequestOpen(api, job);

@@ -111,6 +111,36 @@ describe('issues not taken, grouped and acted on (issue #798)', () => {
     expect(again.map((e) => e.data.hash)).toContain((await intake(b))[issue.url]!.request!.hash);
   });
 
+  it('the ledger counts a request card while Intake offers it: one that leaves Intake is withdrawn, one that comes back waits again (issue #1067)', async () => {
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, author: 'stranger', body: sleepy, labels: ['hopper'], labelledBy: 'owner', assignedBy: 'owner' });
+    const waiting = async () => (await a.api<{ counts: Record<string, number> }>('GET', '/api/work-items')).body.counts.waiting_for_approval;
+    const queued = async () => (await a.api<{ items: Record<string, number> }>('GET', '/api/queue')).body.items.waiting_for_approval;
+    await a.sync();
+    expect(await waiting()).toBe(1);
+    expect(await queued()).toBe(1);
+
+    gh.removeLabel(REPO, issue.number, 'hopper');
+    await a.sync();
+    expect(await waiting()).toBe(0);
+    expect(await queued()).toBe(0);
+    expect((await a.events('types=source.request_withdrawn')).map((e) => e.data)).toEqual([{ source: 'github', key: issue.url }]);
+    await a.sync();
+    expect(await a.events('types=source.request_withdrawn')).toHaveLength(1);
+
+    gh.addLabel(REPO, issue.number, 'hopper', 'owner');
+    await a.sync();
+    expect(await waiting()).toBe(1);
+    expect(await a.events('types=source.request_opened')).toHaveLength(2);
+    await a.sync();
+    expect(await a.events('types=source.request_opened')).toHaveLength(2);
+
+    gh.closeIssue(REPO, issue.number, 'owner', { reason: 'not_planned' });
+    await a.sync();
+    expect(await waiting()).toBe(0);
+  });
+
   it('a taken issue carries its job\'s status now, not as of the last sync', async () => {
     const gh = createFakeGitHub();
     const a = await boot(gh);

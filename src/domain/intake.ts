@@ -93,7 +93,7 @@ export interface OutsideRepo {
 
 /** The events intake records (issue #440). */
 export type IntakeEventType = 'source.claim_released' | 'source.intake_migrated' | 'source.issues_assigned' | 'source.request_approved'
-  | 'source.request_opened' | 'source.backburner_lifted' | 'source.request_declined';
+  | 'source.request_opened' | 'source.backburner_lifted' | 'source.request_declined' | 'source.request_withdrawn';
 
 /** What a job source learns for its intake (issue #440), for its own instance name. */
 export interface IntakeContext {
@@ -105,8 +105,13 @@ export interface IntakeContext {
   migration(): IntakeMigration | undefined;
   migrated(m: IntakeMigration): void;
   record(type: IntakeEventType, data: Record<string, unknown>): void;
-  /** Whether `source.request_opened` was recorded for this item with this text's hash (issue #798): each text opens once. */
+  /**
+   * Whether `source.request_opened` was recorded for this item with this text's hash (issue #798), and no
+   * `source.request_withdrawn` since (issue #1067, part 4): each text opens once while it stays in Intake.
+   */
   requestOpened(key: string, hash: string): boolean;
+  /** The keys of this source's request cards the work-item ledger has waiting for approval (issue #1067, part 4). */
+  requestsWaiting(): string[];
 }
 
 /** What a job source asks of the user's intake to judge an item's origin (issue #652): kept by the user's store, decided by Access. */

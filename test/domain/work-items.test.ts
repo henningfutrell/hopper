@@ -3,7 +3,8 @@
 // dismissed and nothing replaced; a finished job waits on its pull request until it merges.
 import { describe, expect, it } from 'vitest';
 import {
-  applyEvent, applyRead, countStates, isFailureOf, keptWorkShown, keyOfEvent, pullRequestWaitOf, type LedgerJob, type WorkItem,
+  applyEvent, applyRead, countStates, isFailureOf, issueClosedAsComplete, keptWorkShown, keyOfEvent, pullRequestWaitOf, requestsWaitingOf,
+  type LedgerJob, type WorkItem,
 } from '../../src/domain/work-items.ts';
 import type { EventType } from '../../src/domain/types.ts';
 
@@ -187,5 +188,41 @@ describe('what GitHub says moves the item (issue #1067, part 3)', () => {
     // A job at work keeps the item; no item: nothing to move.
     expect(applyEvent(fold([['job.queued'], ['job.started']]), ev('work_item.issue_closed', { key: KEY, reason: 'completed', via: 'delivery' }), KEY)?.state).toBe('working');
     expect(applyEvent(undefined, ev('work_item.issue_closed', { key: KEY, via: 'delivery' }), KEY)).toBeUndefined();
+  });
+
+  it('a request card names its source; one that left Intake with no approval or decline is withdrawn, and dropped (part 4)', () => {
+    const opened = applyEvent(undefined, ev('source.request_opened', { source: 'github', key: KEY, hash: 'h1' }), KEY)!;
+    expect(opened).toMatchObject({ state: 'waiting_for_approval', requestSource: 'github' });
+    expect(keyOfEvent({ type: 'source.request_withdrawn', data: { source: 'github', key: KEY } })).toBe(KEY);
+    const withdrawn = applyEvent(opened, ev('source.request_withdrawn', { source: 'github', key: KEY, hash: 'h1' }), KEY)!;
+    expect(withdrawn.state).toBe('dropped');
+    expect(withdrawn.requestSource).toBeUndefined();
+    expect(withdrawn.waitingOn).toBeUndefined();
+    // A withdraw of an item that waits for no approval moves nothing.
+    expect(applyEvent(fold([['job.queued']]), ev('source.request_withdrawn', { source: 'github', key: KEY }), KEY)).toBeUndefined();
+    // Back in Intake, it waits again.
+    expect(applyEvent(withdrawn, ev('source.request_opened', { source: 'github', key: KEY, hash: 'h1' }), KEY)?.state).toBe('waiting_for_approval');
+    // Approved or declined, it names no source.
+    expect(applyEvent(opened, ev('source.request_approved', { source: 'github', key: KEY }), KEY)?.requestSource).toBeUndefined();
+    expect(applyEvent(opened, ev('source.request_declined', { source: 'github', key: KEY }), KEY)?.requestSource).toBeUndefined();
+  });
+
+  it('the request cards of a source the ledger has waiting for approval: what Intake withdraws when the source no longer offers them', () => {
+    const opened = (key: string, source: string) => applyEvent(undefined, ev('source.request_opened', { source, key, hash: 'h' }), key)!;
+    const other = 'https://github.com/o/r/issues/2';
+    const items = [opened(KEY, 'github'), opened(other, 'work'), fold([['job.queued']])!];
+    expect(requestsWaitingOf(items, 'github')).toEqual([KEY]);
+    expect(requestsWaitingOf(items, 'work')).toEqual([other]);
+  });
+
+  it('closed as complete is the ledger\'s answer: its issue closed, not as not planned or a duplicate', () => {
+    const failed = fold([['job.queued'], ['job.failed', { error: 'x' }]])!;
+    expect(issueClosedAsComplete(failed)).toBe(false);
+    const closed = (reason?: string) => applyEvent(failed, ev('work_item.issue_closed', { key: KEY, ...(reason ? { reason } : {}), via: 'read' }), KEY)!;
+    expect(issueClosedAsComplete(closed('completed'))).toBe(true);
+    expect(issueClosedAsComplete(closed())).toBe(true);
+    expect(issueClosedAsComplete(closed('not_planned'))).toBe(false);
+    expect(issueClosedAsComplete(closed('duplicate'))).toBe(false);
+    expect(issueClosedAsComplete(undefined)).toBe(false);
   });
 });
