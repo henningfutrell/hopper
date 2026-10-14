@@ -1,7 +1,7 @@
 // Intake's events (issue #440): a claim released, a source moved to the current intake rules, issues assigned to the user
 // from Sources; and (issue #652) a person approved a request card's text, the user's trusted actors changed, a job queued
 // before origins were judged got its origin; (issue #798) a new request card opened, and an item taken off the backburner;
-// (issue #1035) a person declined a request card's text.
+// (issue #1035) a person declined a request card's text; (issue #1079) a GitHub delivery named a job repository.
 // Part of EVENT_SCHEMAS (schemas.ts).
 import { z } from 'zod';
 import { JOB_ORIGINS } from '../domain/intake-origin.ts';
@@ -23,6 +23,9 @@ export const INTAKE_EVENT_SCHEMAS = {
   'source.request_declined': strict({
     source: z.string(), key: z.string(), hash: z.string().regex(/^[0-9a-f]{64}$/), author: z.string(),
     person: z.string().optional(), via: z.enum(ACTION_VIAS).optional(),
+  }),
+  'source.delivery_received': strict({
+    sources: z.array(z.string()).min(1), delivery: z.string(), event: z.string(), action: z.string().optional(), repo: z.string(), number: z.number().int().positive().optional(),
   }),
   'intake.actors_changed': strict({ from: z.array(z.string()), to: z.array(z.string()), by: z.string() }),
   'job.origin_judged': strict({ key: z.string(), origin: z.enum(JOB_ORIGINS) }),

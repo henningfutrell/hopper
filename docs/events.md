@@ -1393,6 +1393,32 @@ Version 1 (`docs/schemas/source.request_declined.v1.json`). A person declined a 
 }
 ```
 
+## `source.delivery_received`
+
+Version 1 (`docs/schemas/source.delivery_received.v1.json`). GitHub sent the hopper a **GitHub delivery** (issue #1079): `event` (`issues`) and `action` (`opened`, `labeled`, `assigned`, …) on `repo`, issue `number`; `delivery` is GitHub's id of it (`X-GitHub-Delivery`). Recorded in the log of each user whose job sources `sources` take `repo` as a job repository: each lists it again at a sync a few seconds later, not after the intake sync interval. Not recorded for a repository no job source of the user takes.
+
+| field | type | required |
+|---|---|---|
+| `sources` | string[] | yes |
+| `delivery` | string | yes |
+| `event` | string | yes |
+| `action` | string | no |
+| `repo` | string | yes |
+| `number` | integer | no |
+
+```json
+{
+  "sources": [
+    "github-account"
+  ],
+  "delivery": "72d3162e-cc78-11e3-81ab-4c9367dc0958",
+  "event": "issues",
+  "action": "labeled",
+  "repo": "octocat/hello",
+  "number": 7
+}
+```
+
 ## `auth.pending`
 
 Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`). A risk hold the Decider made (issue #679) carries `decider` in place of `guards`: its `risk`, `categories`, `confidence` and `threshold`, or the `error` it failed with. `host` (issue #698): the host of the URL to open — what asks —, never its path or query. The Grok Bot routine notifier posts it (issue #698).

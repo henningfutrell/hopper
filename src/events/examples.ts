@@ -74,6 +74,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
     actors: [{ role: 'author', login: 'stranger', trusted: false }, { role: 'labelled', login: 'octocat', trusted: true }, { role: 'assigned', login: 'octocat', trusted: true }],
   },
   'source.request_opened': { source: 'github-account', key: 'https://github.com/octocat/hello/issues/8', hash: 'a'.repeat(64), author: 'helper[bot]', why: ['written by an app or a bot (helper[bot])'] },
+  'source.delivery_received': { sources: ['github-account'], delivery: '72d3162e-cc78-11e3-81ab-4c9367dc0958', event: 'issues', action: 'labeled', repo: 'octocat/hello', number: 7 },
   'source.backburner_lifted': { source: 'github-account', key: 'https://github.com/octocat/hello/issues/9' }, 'source.request_declined': { source: 'github-account', key: 'https://github.com/octocat/hello/issues/8', hash: 'a'.repeat(64), author: 'stranger', person: 'octocat', via: 'ui' },
   'intake.actors_changed': { from: [], to: ['octocat', 'teammate'], by: 'octocat' },
   'job.origin_judged': { key: 'https://github.com/octo-org/hello/issues/7', origin: 'approved' },
