@@ -11,7 +11,8 @@ import { dialogOption, showsDialog } from './screen.ts';
 import { selectKeys, selectOf } from './select-dialog.ts';
 import type { PaneState, StartDeps } from './start.ts';
 import { MAX_STARTUP_SCREENS, policyOf } from './startup.ts';
-import { NOT_SIGNED_IN, cursorPick, isLoginScreen, notSignedIn, promptShown, standsBeforePrompt, startupStep } from './startup-screens.ts';
+import { NOT_SIGNED_IN } from '../../domain/types.ts';
+import { cursorPick, isLoginScreen, notSignedIn, promptShown, standsBeforePrompt, startupStep } from './startup-screens.ts';
 
 /** Looks at a dialog of the turn in flight after esc, before it counts as one esc did not close. */
 const UNBLOCK_POLLS = 10;

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
-import { CONNECTED_VIA, type Job, type LoginView, type PartAccount, type ToolAccount, type UsageReport } from '../../src/domain/types.ts';
+import { CONNECTED_VIA, NOT_SIGNED_IN, SIGNED_IN_ANSWER, SIGNED_IN_BY, type Job, type LoginView, type Question, type PartAccount, type ToolAccount, type UsageReport } from '../../src/domain/types.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { createFakeGitHub } from '../../src/sources/index.ts';
 import { NO_ASSIGNEE } from '../../src/sources/compose.ts';
@@ -180,6 +180,27 @@ describe('tool sign-in (issue #1128)', () => {
     const types = (await a.events('types=auth.pending,auth.completed')).map((e) => [e.type, e.machineId, e.data.kind, e.data.run]);
     expect(types).toEqual(expect.arrayContaining([['auth.pending', 'local', 'paste_code', 'sign-in'], ['auth.completed', 'local', 'paste_code', undefined]]));
     expect(JSON.stringify(await a.events())).not.toContain('good-code');
+  });
+
+  it('a job held because claude is signed out on its machine goes on once the sign-in from the hopper completes; another question stays', async () => {
+    writeFileSync(join(control, 'mode'), 'logged-out');
+    const a = await boot({ plugins: { usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE } }] } });
+    const token = await a.login();
+    const held = await a.pull({ op: 'ask', message: `${NOT_SIGNED_IN}.\n\nA hard screen` });
+    const other = await a.pull({ op: 'ask', message: 'Is this risky?' });
+    const q = await a.waitForQuestion(held.id, (x) => x.tier === 'human');
+    expect(q.raisedBy?.machineId).toBe('local');
+    const kept = await a.waitForQuestion(other.id, (x) => x.tier === 'human');
+    const login = await pendingSignIn(a, token);
+    expect((await a.ui<LoginView>(`/ui/api/logins/${login.id}/code`, { code: 'good-code' }, { token })).body.status).toBe('completed');
+    const answered = await a.waitForQuestion(held.id, (x) => x.status === 'answered');
+    expect(answered).toMatchObject({ answeredBy: SIGNED_IN_BY, answer: SIGNED_IN_ANSWER });
+    expect((await a.waitForStatus(held.id, 'finished')).result).toEqual({ answer: SIGNED_IN_ANSWER });
+    expect((await a.api<Question>('GET', `/api/questions/${kept.id}`)).body.status).toBe('open');
+    expect(answered.attempts.at(-1)).toMatchObject({ tier: SIGNED_IN_BY, role: 'fixed', outcome: 'accepted' });
+    expect(answered.attempts.at(-1)!.reason).toContain(login.id);
+    const settled = (await a.events('types=question.answered')).filter((e) => e.jobId === held.id);
+    expect(settled.map((e) => e.data.by)).toEqual([SIGNED_IN_BY]);
   });
 
   it('a wrong code fails the login with the tool\'s reason; a new sign-in cancels the one before; a code to an ended one is 409', async () => {
