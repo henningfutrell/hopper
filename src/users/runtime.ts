@@ -13,7 +13,7 @@ import { doneAtSource, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, ove
 import { storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
-import { logFailures } from '../engine/failure-log.ts';
+import { logFailures } from '../engine/failure-log.ts'; import { createJobTerminal, type JobTerminal } from '../engine/terminal.ts';
 import { linkToken } from '../client/link.ts';
 import type { MachineLinks } from '../machines/links.ts';
 import type { MachineJoin } from '../plugins/attached-edit.ts';
@@ -138,8 +138,8 @@ export interface UserRuntime {
   reviews: ReviewServices;
   /** The escalation levels' names now: what may review a review section's items (issues #537, #543). */
   levelNames(): string[];
-  /** The logins a job or run waits on (issue #476), and the tool sign-ins a person starts from Accounts (issue #1128). */
-  logins: Logins; signIns: SignIns;
+  /** The logins a job or run waits on (issue #476), the tool sign-ins a person starts from Accounts, and the job's terminal (issue #1128). */
+  logins: Logins; signIns: SignIns; terminal: JobTerminal;
   /** The failure assessor (issue #509): every failed job judged, shared causes grouped into problems. */
   failures: Failures;
   /** Decider calls, Jev first (issue #550). */
@@ -394,7 +394,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
   return {
     search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, needSteps, directJobs, sandboxRequests,
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound,
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }),
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),

@@ -1,6 +1,7 @@
 // The owner answered a job on a question in its pane, not the UI (design.md "Questions" → "Answered in the pane"):
 // what the pane shows of it, read for the herdr-claude executor's `answeredInPane`.
 // A job waiting on its own background command (issue #1037): whether its pane still shows that command run.
+// The job's terminal (issue #1128): its pane's screen for a person, and their input to it.
 import type { Clock, Executor, PaneAnswer } from '../../domain/ports.ts';
 import type { HerdrClient } from './client.ts';
 import { RECENT_LINES } from './monitor.ts';
@@ -69,6 +70,24 @@ export function ownCommandProbes(herdrOn: (s: PaneState) => HerdrClient): Requir
     nudgeInPane: (job, text) => {
       const s = paneStateOf(job);
       return s ? Promise.resolve().then(() => herdrOn(s).prompt(s.agentName, text)).then(() => true, () => false) : Promise.resolve(false);
+    },
+  };
+}
+
+/** The job's terminal (issue #1128): what its pane shows, and a person's text or keys to it, on the pane's own herdr. */
+export function terminalProbes(herdrOn: (s: PaneState) => HerdrClient): Required<Pick<Executor, 'paneScreen' | 'typeInPane'>> {
+  return {
+    paneScreen: async (job, lines) => {
+      const s = paneStateOf(job);
+      return s ? herdrOn(s).read(s.paneId, { source: 'recent', lines }) : undefined;
+    },
+    typeInPane: async (job, input) => {
+      const s = paneStateOf(job);
+      if (!s) return false;
+      const herdr = herdrOn(s);
+      if ('text' in input) await herdr.sendText(s.paneId, input.text);
+      else await herdr.sendKeys(s.paneId, input.keys);
+      return true;
     },
   };
 }

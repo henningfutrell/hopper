@@ -8,7 +8,7 @@ import type {
   Question, SourceStatus, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ActingPerson, WorkState, Allowed, RunLogins, JobWait, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread,
 } from './types.ts';
 import type { UserStore } from './store.ts';
-import type { NoteDelivery } from './job-notes.ts';
+import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
 export type { NoteDelivery } from './job-notes.ts';
 import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
@@ -126,7 +126,7 @@ export interface PaneAnswer { answer?: string; lapsed?: true; executorState: Rec
  * Must resolve (never reject) — a thrown error is converted to { kind: 'failed' } by the
  * engine, but adapters should report their own failures.
  */
-export interface Executor {
+export interface Executor extends ExecutorTerminal {
   readonly name: string;
   /**
    * Safe to run again from scratch after a daemon restart? Default true. A non-idempotent job
