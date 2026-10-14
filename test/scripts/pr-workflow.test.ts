@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { HOST_SERVICE_TESTS, testExclude } from '../support/host-services.ts';
+import { CONTAINER_TESTS, containerRuntime, HOST_SERVICE_TESTS, testExclude } from '../support/host-services.ts';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
@@ -76,12 +76,52 @@ describe('.github/workflows/pr.yml, the pull request check', () => {
 
 describe('the tests that need host services', () => {
   it('names only test files that exist', () => {
-    for (const file of HOST_SERVICE_TESTS) expect(existsSync(join(ROOT, file)), file).toBe(true);
+    for (const file of [...HOST_SERVICE_TESTS, ...CONTAINER_TESTS]) expect(existsSync(join(ROOT, file)), file).toBe(true);
   });
 
   it('are left out only when HOPPER_TEST_HOST_SERVICES is 0', () => {
     expect(testExclude({})).not.toContain(HOST_SERVICE_TESTS[0]);
     expect(testExclude({ HOPPER_TEST_HOST_SERVICES: '1' })).not.toContain(HOST_SERVICE_TESTS[0]);
     expect(testExclude({ HOPPER_TEST_HOST_SERVICES: '0' })).toEqual(expect.arrayContaining([...HOST_SERVICE_TESTS]));
+  });
+
+  // Issue #1038: a machine with no docker or podman socket skips the tests that start containers, and says why.
+  it('with no container runtime, leave out every test that starts a container, and say why', () => {
+    const said: string[] = [];
+    const excluded = testExclude({}, { runtime: false, say: (line) => said.push(line) });
+    expect(excluded).toEqual(expect.arrayContaining([...HOST_SERVICE_TESTS, ...CONTAINER_TESTS]));
+    expect(said.join('\n')).toMatch(/no docker or podman socket/);
+    expect(said.join('\n')).toContain(CONTAINER_TESTS[0]);
+    expect(testExclude({}, { runtime: true, say: (line) => said.push(line) })).not.toContain(CONTAINER_TESTS[0]);
+  });
+});
+
+describe('the container runtime the tests reach (issue #1038)', () => {
+  const at = (...usable: string[]) => ({ uid: 1000, home: '/h', exists: (p: string) => usable.includes(p), usable: (p: string) => usable.includes(p) });
+
+  it('trusts DOCKER_HOST and a testcontainers config when one is set, and changes nothing', () => {
+    const env: Record<string, string | undefined> = { DOCKER_HOST: 'tcp://127.0.0.1:2375' };
+    expect(containerRuntime(env, at())).toBe(true);
+    expect(env.DOCKER_HOST).toBe('tcp://127.0.0.1:2375');
+    expect(containerRuntime({}, { ...at(), exists: (p) => p === '/h/.testcontainers.properties' })).toBe(true);
+  });
+
+  it('leaves the docker socket testcontainers finds itself when it is usable', () => {
+    const env: Record<string, string | undefined> = { XDG_RUNTIME_DIR: '/run/user/1000' };
+    expect(containerRuntime(env, at('/var/run/docker.sock', '/run/user/1000/podman/podman.sock'))).toBe(true);
+    expect(env.DOCKER_HOST).toBeUndefined();
+  });
+
+  it('names podman\'s rootless socket as DOCKER_HOST when no docker socket is usable', () => {
+    const env: Record<string, string | undefined> = { XDG_RUNTIME_DIR: '/run/user/1000' };
+    const machine = { ...at('/run/user/1000/podman/podman.sock'), exists: (p: string) => p === '/var/run/docker.sock' || p === '/run/user/1000/podman/podman.sock' };
+    expect(containerRuntime(env, machine)).toBe(true);
+    expect(env.DOCKER_HOST).toBe('unix:///run/user/1000/podman/podman.sock');
+  });
+
+  it('is none with no usable socket', () => {
+    const env: Record<string, string | undefined> = { XDG_RUNTIME_DIR: '/run/user/1000' };
+    expect(containerRuntime(env, { ...at(), exists: (p) => p === '/var/run/docker.sock' })).toBe(false);
+    expect(env.DOCKER_HOST).toBeUndefined();
   });
 });

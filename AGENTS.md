@@ -179,4 +179,7 @@ hopper's note naming the job and the request by id only, and gets no label or as
   assemble` moves the fragments into `WHATS-NEW.md` before a promotion to beta (`whats-new/README.md`,
   `docs/design.md` "Self-update").
 - Gates: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:ui` — all exit 0
-  (`npm run check` runs all four).
+  (`npm run check` runs all four). Locally, run typecheck, lint, the UI build and the **affected** test files
+  (`npx vitest run <files>`); the PR check (`pr / test`) runs the full suite. Do not run the full suite to compare it
+  with `dev`: a seat fails it for machine reasons (issue #1038). In the pull request, list environment skips (no
+  container runtime, a service that stopped, a timeout under load) apart from real failures.

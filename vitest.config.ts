@@ -1,14 +1,15 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
-import { testExclude } from './test/support/host-services.ts';
+import { containerRuntime, testExclude } from './test/support/host-services.ts';
 
 export default defineConfig({
   // The UI's own alias, so happy-dom tests can render ui/src (test/ui/questions.test.ts).
   resolve: { alias: { '@': fileURLToPath(new URL('./ui/src', import.meta.url)) } },
   test: {
     include: ['test/**/*.test.ts'],
-    // HOPPER_TEST_HOST_SERVICES=0 leaves out the tests that need docker, sshd or LDAP (the pull request check, issue #672).
-    exclude: testExclude(process.env),
+    // HOPPER_TEST_HOST_SERVICES=0 leaves out the tests that need docker, sshd or LDAP (the pull request check, issue #672);
+    // no container runtime leaves out every test that starts a container, and says so (issue #1038).
+    exclude: testExclude(process.env, { runtime: containerRuntime(process.env), say: (line) => console.warn(line) }),
     testTimeout: 15000,
     pool: 'forks',
     // One run root as TMPDIR, and teardown of all the run left (test/support/run.ts, first: its
