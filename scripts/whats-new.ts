@@ -4,8 +4,8 @@
 //   node scripts/whats-new.ts assemble        # move every fragment's lines into WHATS-NEW.md, delete the fragments
 //   node scripts/whats-new.ts check <base>    # the What's new of HEAD against the commit <base>: exit 1 on a problem
 //
-// `assemble` runs on dev before a promotion to beta (scripts/promote.sh refuses a commit with fragments), as an
-// ordinary pull request. `check` runs on every pull request into dev (.github/workflows/pr.yml), not on a
+// `assemble` runs on integration as an ordinary pull request, and reaches dev with the next batch run, before a
+// promotion to beta (scripts/promote.sh refuses a commit with fragments). `check` runs on every pull request into integration (.github/workflows/pr.yml), not on a
 // promotion: it refuses a line added to WHATS-NEW.md directly, a released line changed, and a fragment with a wrong
 // name.
 import { execFileSync } from 'node:child_process';

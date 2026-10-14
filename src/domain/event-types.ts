@@ -42,6 +42,7 @@ export const EVENT_TYPES = [
   'approval.confirmation_asked',
   'api_grant.minted', 'api_grant.refreshed', 'api_grant.reuse_detected', 'api_grant.revoked', 'api_tokens.settings_changed',
   'step.started', 'step.finished', 'step.refused', 'vault.step_delivered', 'vault.step_refused',
+  'landing_batch.started', 'landing_batch.promoted', 'landing_batch.failed', 'landing_batch.retargeted', 'landing_batches.changed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -92,4 +93,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'approval.confirmation_asked': 1,
   'api_grant.minted': 1, 'api_grant.refreshed': 1, 'api_grant.reuse_detected': 1, 'api_grant.revoked': 1, 'api_tokens.settings_changed': 1,
   'step.started': 1, 'step.finished': 1, 'step.refused': 1, 'vault.step_delivered': 1, 'vault.step_refused': 1,
+  'landing_batch.started': 1, 'landing_batch.promoted': 1, 'landing_batch.failed': 1, 'landing_batch.retargeted': 1, 'landing_batches.changed': 1,
 };

@@ -3,6 +3,8 @@
 // push may change is read from the ref updates at the head of git's receive-pack request, before anything reaches
 // GitHub: a branch of the job's own work, never the default branch, a release branch, a tag or a delete. Pure: no I/O.
 
+import { BATCH_BRANCH_PREFIX } from '../domain/landing-batches.ts';
+
 /** The route on the hopper's URL a job's git goes to: `<HOPPER_URL>/job/git/<owner>/<name>.git/…`. */
 export const GIT_PATH = '/job/git/';
 
@@ -13,7 +15,7 @@ export type GitService = 'git-upload-pack' | 'git-receive-pack';
 export interface RefUpdate { old: string; new: string; ref: string }
 
 /** Branches no job pushes to, whatever the repository's default branch is: the release branches. */
-export const RELEASE_BRANCHES: readonly string[] = ['main', 'master', 'dev', 'beta', 'stable'];
+export const RELEASE_BRANCHES: readonly string[] = ['main', 'master', 'integration', 'dev', 'beta', 'stable'];
 
 const ZERO = /^0+$/;
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
@@ -60,6 +62,8 @@ export function checkPush(commands: readonly RefUpdate[], at: { defaultBranch?: 
     if (kept.includes(branch.toLowerCase())) {
       return { ok: false, reason: `a job pushes only to a branch of its own work, never to ${branch}: push a new branch and open a pull request` };
     }
+    // A batch run's branch (issue #1073) is the hopper's: what its checks test is what it merges.
+    if (branch.toLowerCase().startsWith(BATCH_BRANCH_PREFIX)) return { ok: false, reason: `a job pushes only to a branch of its own work, never to a batch run's branch (${branch})` };
     if (ZERO.test(c.new)) return { ok: false, reason: `a job deletes no branch (${c.ref})` };
   }
   return { ok: true };

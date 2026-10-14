@@ -11,7 +11,7 @@ import type { RemoteAccessSettings } from './remote-access.ts';
 import type { MemoryAlert } from './machine-history.ts';
 import type {
   AutoAnswerSettings, AutoParkSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountProvider, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
-  PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings,
+  PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings, LandingBatchSettings,
 } from './types.ts';
 
 /** A user's settings (in the user schema). */
@@ -105,6 +105,9 @@ export interface UserSettingsRepository {
   setComponentWatchers(settings: ComponentWatcherSettings): void;
   getYoloMode(): YoloModeSettings | undefined;
   setYoloMode(settings: YoloModeSettings): void;
+  /** Landing batches (issue #1073): per repository, its tested branch and when a batch run starts; absent: never set (none). */
+  getLandingBatches(): LandingBatchSettings | undefined;
+  setLandingBatches(settings: LandingBatchSettings): void;
   /** Contribution (issue #429): whether jobs may work through a fork of a repository their user cannot push to; absent: off. */
   getContribution(): ContributionSettings | undefined;
   setContribution(settings: ContributionSettings): void;

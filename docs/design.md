@@ -66,6 +66,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
+| `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event (`runner.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
@@ -7165,8 +7166,10 @@ channel's branch and the target is not the installed commit: moving from `dev` t
 to `stable`'s head, though the `dev` install contains it (its What's new is then empty; the notice says
 "move to the stable channel").
 
-**Channels and promotion (issues #282, #423).** `dev` is the repository's default branch: every pull
-request, a job's included, merges there. `beta` is promoted from `dev`, and `stable` from `beta`, each by
+**Channels and promotion (issues #282, #423, #1073).** `integration` is the repository's default branch, the
+landing branch: every pull request, a job's included, merges there after the fast checks, and `dev` moves only when a
+green batch run of `integration` merges into it ("Landing batches"). `integration` is no update channel, and not
+`main`, the frozen channel from before #423. `beta` is promoted from `dev`, and `stable` from `beta`, each by
 a maintainer with `scripts/promote.sh beta|stable [commit]`: a fast-forward to a commit the less steady
 branch already has, whose image built there (`docs/deploy.md` "Update channels and promotion" says when). A
 hopper moved to a steadier channel can run an older build on a store a newer one migrated, so a store
@@ -17929,3 +17932,78 @@ after `DELIVERY_SYNC_MS`; a source that takes none does not sync), `test/integra
 server and database: no secret, 404; a wrong or missing signature, 401 and nothing done; a signed delivery syncs its source
 and is recorded; a redelivery is taken once; another repository, `ping` and `push` record nothing; rotate and remove; only
 the admin makes the secret), `test/ui/github-deliveries.test.ts`.
+
+## Landing batches (issue #1073, 2026-10-14)
+
+**The problem.** Job pull requests merged straight into `dev`, each gated on the full test suite. That was slow: every
+pull request waited for about 4 minutes of shards, jobs stalled behind the same failures, and `dev` was still never
+tested as a whole — two pull requests with green checks could break each other (the merge gate only stops merge
+conflicts, "PR tending without lanes").
+
+**The branch model.** `integration` (the **landing branch**) → `dev` (the **tested branch**) → `beta` → `stable`. A
+job's pull request merges into `integration` after the fast checks only: the gates (typecheck, lint, the UI build,
+What's new) and the test files its change affects (`.github/workflows/pr.yml` job `affected`, `vitest run --changed
+HEAD^1`; issue #1038). The full suite runs on `integration`'s tip as a **batch run**, and a green batch run moves
+`dev` by the whole batch in one merge. `dev` → `beta` → `stable` stays as it is (`scripts/promote.sh`). `integration`
+is not `main`: `main` is the update channel from before issue #423, frozen where `docs/deploy.md` "Update channels and
+promotion" says, and nothing lands on it or moves it. Old hoppers that still follow `main` must never see an untested
+batch, which is why the landing branch has a name of its own.
+
+**The landing branch is the default branch.** Every part of the hopper that names a pull request's base — a job's
+work tree, detached at the default branch; `hopper-gh pr create` with no `--base`; the tending queue's rebase; the
+merge gate; yolo mode — reads the repository's default branch on GitHub. So the landing branch is not a setting: it is
+the default branch, and a repository takes landing batches by making its landing branch the default branch on GitHub
+and naming its tested branch in the settings. A repository whose default branch is still its tested branch runs no
+batch and says so (`problem`). Since `integration` is a branch no job pushes to (`RELEASE_BRANCHES`), a job pushes
+its own branch and opens its pull request into `integration`, as it did into `dev`.
+
+**The settings** (`landingBatches`, the user's, `POST /ui/api/landing-batches`, an admin's, Settings → Landing
+batches): per repository (`owner/repo`, lowercased), `tested` (the tested branch), `everyMerges` (N, default 5) and
+`everyMinutes` (the timer, default 60). Read at each pass, so a change applies with no restart
+(`landing_batches.changed`).
+
+**When a batch run starts** (`batchDue`, pure). The runner (`src/landing-batches/runner.ts`) passes once at start and
+every 2 minutes, for each repository the settings name. It reads the landing branch's tip and compares the tested
+branch with it (`GET /repos/{owner}/{repo}/compare/{tested}...{tip}`): the commits ahead, and the pull requests among
+them, from their merge commits (`Merge pull request #N …`). No run while one is at work. **Skip when nothing is
+new:** no run when the landing branch has nothing the tested branch lacks, or when its tip is the last tip a batch run
+tested (a red batch with no merge since) — whatever the timer or N say, so an idle period starts no full suite and
+promotes nothing. Else a run starts with no batch run before, after `everyMerges` merges, or `everyMinutes` after the
+last batch run started.
+
+**A batch run.** A branch `hopper-batch/<tip, 12 characters>` made at the tip (by sha, so the tip tested is the tip
+compared), and a pull request of it into the tested branch, neutral text that lists the pull requests in the batch.
+`pr / test` runs on it with the full suite, as on every pull request into `dev`. No job pushes to a batch run's branch
+(`checkPush`): what its checks test is what the hopper merges. `landing_batch.started` records the tip, the branch, the
+pull request and the merges. Each pass then reads the pull request and its check runs on the tip (`batchChecks`,
+pure):
+
+- every check completed and none failed: **green**. The hopper merges the pull request with a merge commit, only while
+  its head is still the tip (`sha`), and removes the branch: `landing_batch.promoted`. `dev`'s head is then the merge
+  of a pull request whose checks passed, which is what a hopper on the `dev` channel updates to ("What a hopper updates
+  to").
+- a check failed (or was cancelled or timed out), no check in 30 minutes, merge conflicts with the tested branch, or
+  its branch moved: **red**. The hopper closes the pull request and removes the branch: `landing_batch.failed` with the
+  reason and the checks. The tested branch does not move, and the same tip does not run again.
+- a person merged it first: `landing_batch.promoted` with no merge commit; closed without a merge: failed.
+
+**Job pull requests move to the landing branch.** Each pass, an open pull request of one of the user's jobs whose base
+is the tested branch is moved to the landing branch (`PATCH …/pulls/{n}` `base`, `landing_batch.retargeted`), so the
+pull requests jobs opened before the switch land there too. A pull request that is no job's is left as it is.
+
+**The state.** Every step is an event (`landing_batch.started`, `.promoted`, `.failed`, `.retargeted`,
+`landing_batches.changed`); the state of each repository — the batch run at work, the last tip tested and the last tip
+promoted, when the last run started, how it ended — is reduced from them (`landingBatchStates`, pure). The last tested
+tip and the last promoted commit are therefore events, not a table. `GET /api/landing-batches` answers the settings and
+each configured repository's state with what the last pass found (`why` no run started, or the `problem`); Settings →
+Landing batches shows it.
+
+**Cost.** One full run per batch. A red batch costs a run and holds the batch off `dev` until the next merge.
+
+**Not yet (the next parts).** On a red batch: a bisect within the batch (#939's bisect, not built then), a revert of
+the culprit from `integration`, a run again and the rest of the batch promoted, and a new hopper issue for the fix,
+linked to the culprit's job and issue, with the failing output and the bisect's result, through Intake. Then `beta` →
+`stable` through a canary: a subset of installs runs the candidate first, and it reaches every install only when its
+health stays good for the canary window, with the subset and the window as settings. The batch state in the
+work-item ledger's rows (a job's pull request merged to `integration`, waiting for its batch), and the batch state on
+the Pull requests view.

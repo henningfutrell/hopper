@@ -13,6 +13,9 @@ import { createPromotionGitHub } from '../promotions/github.ts';
 import { userPromotions, type Promotions } from '../promotions/service.ts';
 import { createGitHubWatches, createWatchGitHub, type GitHubWatches } from '../github-watch/index.ts';
 import { createComponentWatchers, createWatcherGitHub, intakeJobsWatcher, lanesJobsWatcher, ledgerGitHubWatcher, ledgerJobsWatcher, type ComponentWatchers } from '../component-watchers/index.ts';
+import { createLandingBatchGitHub } from '../landing-batches/github.ts';
+import { createLandingBatches, type LandingBatches } from '../landing-batches/runner.ts';
+import { DEFAULT_LANDING_BATCHES, LANDING_BATCH_EVENT_TYPES } from '../domain/landing-batches.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts';
 import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
@@ -41,6 +44,8 @@ export interface UserGitHubProxy {
   watches: GitHubWatches;
   /** The component watchers (issue #1077): the ledger against GitHub with this user's own connection, the ledger and the lanes against the job records, intake against the jobs and the sync timers, and their drift issues; they check with the user's runtime. */
   componentWatchers: ComponentWatchers;
+  /** Landing batches (issue #1073): batch runs of each landing branch, promoted to its tested branch, with this user's own connection; they run with the user's runtime. */
+  landingBatches: LandingBatches;
   /**
    * The infra plans (issue #870): what this user's jobs plan to change, a person's approvals, the vault's apply gate. Here
    * because the gate reads each plan's branch head on GitHub with this user's connection.
@@ -149,6 +154,18 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         intakeJobsWatcher({ sources: o.sources, jobs: o.store.jobs, now: () => o.clock.now().toISOString() })],
         store: o.store, now: () => o.clock.now().toISOString(), log: (l) => o.logger.warn(l),
         github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatcherGitHub(mine())),
+      }),
+      landingBatches: createLandingBatches({
+        github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createLandingBatchGitHub(mine())),
+        settings: () => o.store.settings.getLandingBatches() ?? DEFAULT_LANDING_BATCHES,
+        events: () => o.store.events.recent(500, [...LANDING_BATCH_EVENT_TYPES]),
+        record: (e) => { o.store.events.append(e); },
+        jobPullRequests: () => o.store.jobs.list({ followed: true }).flatMap((j) => {
+          const url = (j.sourceState?.source as { pullRequest?: unknown } | undefined)?.pullRequest;
+          return typeof url === 'string' ? [url] : [];
+        }),
+        now: () => o.clock.now(),
+        log: (l) => o.logger.warn(l),
       }),
       bugReports: createReportSender({ github: reports, reports: o.store.bugReports, now: () => o.clock.now().toISOString(), record: (e) => { o.store.events.append(e); }, log: (l) => o.logger.warn(l) }),
       repoChecks: () => {

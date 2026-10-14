@@ -170,8 +170,11 @@ hopper's note naming the job and the request by id only, and gets no label or as
   records too. A migration leaves a store the build before it still runs on: a hopper moved to a
   steadier update channel runs that channel's older build on the migrated store (`docs/deploy.md`
   "Update channels and promotion").
-- **Changes reach people dev → beta → stable.** Pull requests merge to `dev`, the default branch;
-  `beta` and `stable` move only by `scripts/promote.sh`, one step at a time.
+- **Changes reach people integration → dev → beta → stable** (issue #1073, `docs/design.md` "Landing batches").
+  Pull requests merge to `integration`, the landing branch and the default branch, after the fast checks (the
+  gates and the affected tests); `dev` moves only when a green batch run of `integration`'s tip merges into it;
+  `beta` and `stable` move only by `scripts/promote.sh`, one step at a time. `integration` is not `main`: `main` is
+  the frozen update channel from before issue #423, and nothing lands on it.
 - **The UI is the daemon's one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served
   by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
   The GitHub Pages site is built too (`npm run build:site` → `site/dist`, gitignored), for Pages only,
@@ -187,6 +190,7 @@ hopper's note naming the job and the request by id only, and gets no label or as
   `docs/design.md` "Self-update").
 - Gates: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build:ui` — all exit 0
   (`npm run check` runs all four). Locally, run typecheck, lint, the UI build and the **affected** test files
-  (`npx vitest run <files>`); the PR check (`pr / test`) runs the full suite. Do not run the full suite to compare it
+  (`npx vitest run <files>`); the PR check (`pr / test`) runs the affected tests on a pull request into
+  `integration`, and the full suite on a batch run into `dev` and on a promotion. Do not run the full suite to compare it
   with `dev`: a seat fails it for machine reasons (issue #1038). In the pull request, list environment skips (no
   container runtime, a service that stopped, a timeout under load) apart from real failures.

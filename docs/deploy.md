@@ -1235,12 +1235,13 @@ GitHub* before it is removed (docs/design.md "One grant per connection").
 
 ## Update channels and promotion
 
-The repository has three long-lived branches, and they are the update channels (issue #423), least stable
-first:
+The repository has three long-lived branches that are the update channels (issue #423), and below them the landing
+branch `integration` (issue #1073, docs/design.md "Landing batches"), least stable first:
 
 | Branch | What is on it | Who moves it, and when |
 |---|---|---|
-| `dev` | the default branch: every pull request, a job's included, merges here | each merge |
+| `integration` | the default branch, the landing branch: every pull request, a job's included, merges here after the fast checks (the gates and the affected tests). No update channel: no hopper follows it | each merge |
+| `dev` | what passed the full test suite on `integration` as one batch run | the hopper merges a green batch run (Settings → Landing batches) |
 | `beta` | changes that ran on `dev` | a maintainer promotes, once a `dev` hopper has run the change without trouble |
 | `stable` | changes that ran on `beta` | a maintainer promotes, once a `beta` hopper has run the change without trouble |
 
@@ -1256,17 +1257,31 @@ It refuses unless the commit is on the branch one step below (`stable` never tak
 `dev`), the move is a fast-forward of the steadier branch, and the commit's image built on the branch below
 (the `image` run, asked of `gh`), and the commit has no What's new fragments left in `whats-new/`. Then it pushes, as the maintainer, so the steadier branch's image build
 starts. `beta` and `stable` therefore only ever hold what ran one step below; nothing is merged or committed
-on them. A fix for something found on `beta` or `stable` lands on `dev` like any change and is promoted from
-there. There is no schedule and nothing promotes on its own: the maintainer decides.
+on them. A fix for something found on `beta` or `stable` lands on `integration` like any change, reaches `dev` with its batch
+run, and is promoted from there. There is no schedule and nothing promotes on its own: the maintainer decides. Only the step below `dev` is the
+hopper's: after N merges into `integration`, or on a timer, and only when `integration` has something new, it opens a
+batch run (a pull request of `integration`'s tip into `dev`), and merges it once the full suite passed on it.
+
+**`integration` is not `main`.** `main` is the frozen channel from before issue #423 ("From before" below): nothing
+lands on it and nothing moves it. `integration` is the new landing branch. Do not read the two as one branch.
+
+**Setting up the landing branch** (once, by a maintainer):
+
+1. Make `integration` at `dev`'s head: `git push origin origin/dev:refs/heads/integration`.
+2. Make `integration` the default branch: the repository's Settings → General → Default branch.
+3. Require `pr / test` on `integration` as on `dev` (a branch protection rule or ruleset), so yolo mode merges only on
+   it.
+4. In the hopper, Settings → Landing batches: add the repository, tested branch `dev`. Open job pull requests on `dev`
+   move to `integration` at the next pass.
 
 **Assemble What's new first (issue #824).** Pull requests add their What's new lines as fragments in
-`whats-new/`, never in `WHATS-NEW.md`. Before `promote.sh beta`, move them into `WHATS-NEW.md` on `dev`:
+`whats-new/`, never in `WHATS-NEW.md`. Before `promote.sh beta`, move them into `WHATS-NEW.md` on `integration`:
 
 ```sh
-node scripts/whats-new.ts assemble        # in a branch of dev; then open a pull request to dev and merge it
+node scripts/whats-new.ts assemble        # in a branch of integration; then open a pull request to integration and merge it
 ```
 
-Then promote the merge of that pull request. The move keeps each line's text, so it brings no update news.
+Then wait for the batch run that carries it to `dev`, and promote that merge. The move keeps each line's text, so it brings no update news.
 
 **What a hopper updates to (issue #652).** A hopper offers its channel's head only when that commit is the merge of a
 pull request whose checks passed (asked of GitHub's API). Promote a merge commit of `dev` (`scripts/promote.sh` takes
