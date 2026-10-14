@@ -15,7 +15,7 @@
 //   Scenario: Your reports refreshes each report's state from GitHub
 //     Given a filed report
 //     When its issue is closed on GitHub and the person refreshes Your reports
-//     Then Your reports lists it as closed
+//     Then Your reports lists it as closed, with when and why it was closed (issue #1147)
 //   Scenario: GitHub refusing the report itself is not kept
 //     Given GitHub answers 422 to the new issue
 //     Then the report fails with the reason, and nothing waits
@@ -36,7 +36,7 @@ afterEach(async () => {
 const REPO = 'henningfutrell/hopper';
 const REPORT = { title: 'The board hangs when a job fails', happened: 'The board stopped.', expected: 'The board shows the failure.', context: '- Install: host' };
 
-interface ReportRow { id: string; title: string; state: string; kind: string; number?: number; url?: string; problem?: string; body?: string; tries: number }
+interface ReportRow { id: string; title: string; state: string; kind: string; number?: number; url?: string; problem?: string; body?: string; tries: number; closedAt?: string; closedAs?: string }
 
 async function start(o: { connected?: boolean } = {}) {
   const github = await createFakeGitHub({ clientId: 'gh-client-id' });
@@ -119,10 +119,11 @@ describe('Report a bug, later', () => {
     const r = await app.ui<{ kind: string; number: number }>('/ui/api/bug-reports', REPORT, { token });
     expect(r.body).toMatchObject({ kind: 'filed', number: 1 });
     expect(await yourReports()).toEqual([expect.objectContaining({ title: REPORT.title, state: 'open', kind: 'issue', number: 1 })]);
-    github.issues.find((i) => i.repo === REPO && i.number === 1)!.state = 'closed';
-    expect((await refresh()).map((x) => x.state)).toEqual(['closed']);
-    github.issues.find((i) => i.repo === REPO && i.number === 1)!.state = 'open';
-    expect((await refresh()).map((x) => x.state)).toEqual(['open']);
+    const issue = github.issues.find((i) => i.repo === REPO && i.number === 1)!;
+    Object.assign(issue, { state: 'closed', stateReason: 'completed', closedAt: '2026-10-14T20:00:00Z' });
+    expect((await refresh()).map((x) => [x.state, x.closedAs, x.closedAt])).toEqual([['closed', 'completed', '2026-10-14T20:00:00Z']]);
+    issue.state = 'open';
+    expect((await refresh()).map((x) => [x.state, x.closedAs, x.closedAt])).toEqual([['open', undefined, undefined]]);
   });
 
   it('does not keep a report that GitHub refuses for itself', async () => {
