@@ -25,7 +25,7 @@ describe('the Component watchers panel', () => {
   });
 
   it('says what the component and its source of truth say of each item', () => {
-    expect(driftItemLine({ ...watcher, name: 'lanes-jobs', component: 'the lanes', truth: 'the job records' }, { key: 'desk/lane-1', says: 'busy with a job', truth: 'job finished' }))
+    expect(driftItemLine({ component: 'the lanes', truth: 'the job records' }, { key: 'desk/lane-1', says: 'busy with a job', truth: 'job finished' }))
       .toBe('desk/lane-1: the lanes: busy with a job; the job records: job finished.');
     expect(driftItemLine(watcher, { key: 'k', says: 'failed', truth: 'pull request merged', since: 'x' }))
       .toBe('k: the work-item ledger: failed; GitHub: pull request merged (since x).');

@@ -12,7 +12,7 @@ const HOUR_AGO = '2026-10-13T11:00:00.000Z';
 const job = (id: string, status: JobStatus, key?: string): Job => ({
   id, status, spec: { prompt: 'p' }, priority: 50, approved: false, createdAt: HOUR_AGO, updatedAt: HOUR_AGO,
   ...(key ? { source: { source: 'github', kind: 'issue', key } } : {}),
-} as Job);
+} as unknown as Job);
 const item = (key: string, state: WorkItemState, jobId: string): WorkItem => ({ key, state, stateSince: HOUR_AGO, eventState: state, eventAt: HOUR_AGO, jobId, keptWork: [], version: 1 });
 
 function fakeJobs(all: Job[]) {

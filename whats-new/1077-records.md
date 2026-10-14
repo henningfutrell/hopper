@@ -1,0 +1,1 @@
+- The hopper now also checks its own records against each other: work it says is running against its jobs, and its lanes against the jobs they run. Settings shows each difference it finds.

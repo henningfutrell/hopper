@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { Panel } from '@/components/panel';
 import { Switch } from '@/components/ui/switch';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import { COMPONENT_WATCHERS_NOTE, componentWatchersSummary, driftLine, watcherLine } from '@/model/component-watchers';
+import { COMPONENT_WATCHERS_NOTE, componentWatchersSummary, driftItemLine, driftLine, watcherLine } from '@/model/component-watchers';
 import type { ComponentWatchersView } from '@/model/wire';
 import { useHopper } from '@/store';
 
@@ -45,7 +45,7 @@ export function ComponentWatchers() {
                 {w.drifts.map((d) => (
                   <details key={d.kind} data-drift={d.kind} className="ml-4 text-xs">
                     <summary className="cursor-pointer">{driftLine(d)} {d.issue && <a className="underline" href={d.issue.url} target="_blank" rel="noreferrer">Open the issue</a>}</summary>
-                    <ul className="mt-1 space-y-0.5">{d.list.map((i) => <li key={i.key} className="break-words">{i.key}: ledger {i.ledger}; GitHub {i.github}</li>)}</ul>
+                    <ul className="mt-1 space-y-0.5">{d.list.map((i) => <li key={i.key} className="break-words">{driftItemLine(w, i)}</li>)}</ul>
                   </details>
                 ))}
               </li>
