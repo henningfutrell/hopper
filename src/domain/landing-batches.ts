@@ -4,9 +4,11 @@
 // by the hopper after `everyMerges` merges or `everyMinutes` minutes since the last batch run, and only when the landing
 // branch has something the tested branch lacks and the tip was not tested before. Green, the hopper merges it: the
 // tested branch moves by the whole batch in one merge. Red, it is recorded and closed; failing checks start a bisect
-// within the batch (part 2, `landing-bisect.ts`); merge conflicts start a back-merge (part 4, `landing-back-merge.ts`). Each step is an event (`landing_batch.*`); the state of each
-// repository is reduced from them. Pure.
+// within the batch (part 2, `landing-bisect.ts`); merge conflicts start a back-merge (part 4, `landing-back-merge.ts`);
+// `beta` → `stable` goes through a canary (part 5, `landing-canary.ts`). Each step is an event (`landing_batch.*`); the
+// state of each repository is reduced from them. Pure.
 import { reduceBackMerge, type BackMergeState } from './landing-back-merge.ts';
+import { reduceCanary, type CanaryState } from './landing-canary.ts';
 import type { Bisect, BisectResult, Culprit, FailedCheck } from './landing-bisect.ts';
 import type { DomainEvent } from './types.ts';
 
@@ -18,6 +20,8 @@ export interface LandingBatchRepo {
   everyMerges: number;
   /** A batch run starts this many minutes after the last one, when the landing branch has something new. */
   everyMinutes: number;
+  /** The canary window (part 5), in hours: a candidate on `canary` goes to `stable` after it. Absent: no canary step. */
+  canaryHours?: number;
 }
 
 /** Per repository, `owner/repo` lowercased. A repository not named has no landing batches. */
@@ -31,8 +35,8 @@ export const BATCH_NO_CHECKS_MINUTES = 30;
 /** The prefix of a batch run's branch. No job pushes to it (src/github-proxy/git.ts `checkPush`). */
 export const BATCH_BRANCH_PREFIX = 'hopper-batch/';
 
-/** A change: per repository, the parts to set, or `null` to take its landing batches away. */
-export interface LandingBatchPatch { repos: Record<string, Partial<LandingBatchRepo> | null> }
+/** A change: per repository, the parts to set (`canaryHours` `null`: no canary step), or `null` to take its landing batches away. */
+export interface LandingBatchPatch { repos: Record<string, (Partial<Omit<LandingBatchRepo, 'canaryHours'>> & { canaryHours?: number | null }) | null> }
 
 const key = (repo: string): string => repo.toLowerCase();
 
@@ -44,7 +48,11 @@ export function patchLandingBatches(s: LandingBatchSettings, p: LandingBatchPatc
     const was = repos[k];
     const tested = v.tested ?? was?.tested;
     if (tested === undefined) continue;
-    repos[k] = { tested, everyMerges: v.everyMerges ?? was?.everyMerges ?? DEFAULT_EVERY_MERGES, everyMinutes: v.everyMinutes ?? was?.everyMinutes ?? DEFAULT_EVERY_MINUTES };
+    const canaryHours = v.canaryHours === null ? undefined : v.canaryHours ?? was?.canaryHours;
+    repos[k] = {
+      tested, everyMerges: v.everyMerges ?? was?.everyMerges ?? DEFAULT_EVERY_MERGES, everyMinutes: v.everyMinutes ?? was?.everyMinutes ?? DEFAULT_EVERY_MINUTES,
+      ...(canaryHours !== undefined ? { canaryHours } : {}),
+    };
   }
   return { repos: Object.fromEntries(Object.entries(repos).sort(([a], [b]) => a.localeCompare(b))) };
 }
@@ -53,7 +61,7 @@ export function patchLandingBatches(s: LandingBatchSettings, p: LandingBatchPatc
 export interface RunningBatch { tip: string; branch: string; pullRequest: number; url: string; startedAt: string; merges: number[] }
 
 /** Where one repository's landing batches stand, from its events. */
-export interface LandingBatchState extends BackMergeState {
+export interface LandingBatchState extends BackMergeState, CanaryState {
   repo: string;
   /** The newest tip a batch run ended on, green or red: it does not run again. */
   lastTestedTip?: string;
@@ -81,7 +89,8 @@ export const LANDING_BATCH_EVENT_TYPES = [
   'landing_batch.bisect_started', 'landing_batch.bisect_run', 'landing_batch.bisect_tested', 'landing_batch.culprit',
   'landing_batch.revert_opened', 'landing_batch.reverted', 'landing_batch.revert_failed', 'landing_batch.fix_filed',
   'landing_batch.pending', 'landing_batch.back_merge_opened', 'landing_batch.back_merged', 'landing_batch.back_merge_failed',
-  'landing_batch.back_merge_issue_filed',
+  'landing_batch.back_merge_issue_filed', 'landing_batch.canary_started', 'landing_batch.canary_held', 'landing_batch.canary_issue_filed',
+  'landing_batch.canary_promoted',
 ] as const;
 
 /** A red batch's events onto the state: the bisect, its runs and results, the culprit, its revert and its fix issue. */
@@ -148,6 +157,7 @@ export function landingBatchStates(events: readonly DomainEvent[]): Record<strin
       if (s.running?.tip === tip) delete s.running;
       s.last = { outcome, tip, at: e.at, pullRequest: Number(d.pullRequest), url: String(d.url), ...(typeof d.reason === 'string' ? { reason: d.reason } : {}) };
     } else if (e.type.startsWith('landing_batch.back_merge')) reduceBackMerge(s, e.type, d, e.at);
+    else if (e.type.startsWith('landing_batch.canary_')) reduceCanary(s, e.type, d, e.at);
     else reduceRed(s, e.type, d, e.at);
   }
   return out;
@@ -248,4 +258,6 @@ export interface LandingBatchRepoView {
   why?: string;
   problem?: string;
   checkedAt?: string;
+  /** What the last pass found of the canary (part 5), when its window is set. */
+  canary?: { why?: string; problem?: string; checkedAt: string };
 }

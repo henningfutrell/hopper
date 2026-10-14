@@ -63,6 +63,12 @@ describe('update model', () => {
       expect(imageUpdate(s)!.image).toBe('ghcr.io/henningfutrell/hopper:dev');
     });
 
+    it('a stable install in the canary subset pulls the canary image (issue #1073 part 5)', () => {
+      const s = image('stable', 'stable', { canary: true, target: { commit: B, ref: 'canary' } });
+      expect(imageUpdate(s)!.image).toBe('ghcr.io/henningfutrell/hopper:canary');
+      expect(headline(s)).toBe('Update available: pull the canary image and recreate the container');
+    });
+
     it('counts the running jobs a recreate would lose, and says to wait until none', () => {
       expect(imageUpdate(image('stable', 'stable', { restartBlockers: 2 }))!.blockers).toBe('2 running jobs would be lost by recreating the container: wait until none runs.');
       expect(imageUpdate(image('stable', 'stable', { restartBlockers: 1 }))!.blockers).toBe('1 running job would be lost by recreating the container: wait until none runs.');

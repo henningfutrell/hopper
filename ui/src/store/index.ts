@@ -200,7 +200,7 @@ export async function refreshUpdate() {
   set({ update, loadedCommit: loadedCommit ?? update.installed?.commit });
 }
 /** POST /ui/api/update: check, apply, or settings. Answers the new status; failures toast. */
-export async function updateAct(body: { action: 'check' | 'apply' } | { action: 'settings'; channel?: UpdateStatus['channel']; autoUpdate?: boolean }, done?: string) {
+export async function updateAct(body: { action: 'check' | 'apply' } | { action: 'settings'; channel?: UpdateStatus['channel']; autoUpdate?: boolean; canary?: boolean }, done?: string) {
   try {
     set({ update: await post<UpdateStatus>('/ui/api/update', body) });
     if (done) toast.success(done);

@@ -24,7 +24,7 @@ type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<
 export const updateBody = z.discriminatedUnion('action', [
   z.strictObject({ action: z.literal('check') }),
   z.strictObject({ action: z.literal('apply') }),
-  z.strictObject({ action: z.literal('settings'), channel: z.enum(UPDATE_CHANNELS).optional(), autoUpdate: z.boolean().optional() }),
+  z.strictObject({ action: z.literal('settings'), channel: z.enum(UPDATE_CHANNELS).optional(), autoUpdate: z.boolean().optional(), canary: z.boolean().optional() }),
 ]);
 /**
  * The master key (issue #659): `reveal` answers the key, once; `saved` records that a person saved it; `rotate` seals every

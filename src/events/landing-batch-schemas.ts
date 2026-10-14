@@ -1,16 +1,18 @@
 // Landing batches' events (issue #1073, design.md "Landing batches"): a batch run started on the landing branch's tip, its
 // end — promoted to the tested branch, or failed —, a job's pull request moved from the tested branch to the landing
 // branch, and an admin's change of the settings; a red batch's bisect, its runs and results, the culprit, its revert and
-// its fix issue (part 2); a back-merge of the tested branch into the landing branch after merge conflicts, and its issue (part 4). Part of EVENT_SCHEMAS (schemas.ts).
+// its fix issue (part 2); a back-merge of the tested branch into the landing branch after merge conflicts, and its issue (part 4);
+// the canary of a stable candidate: started, held with its issue, or promoted to stable (part 5). Part of EVENT_SCHEMAS (schemas.ts).
 import { z } from 'zod';
 
 const strict = z.strictObject;
-const settings = strict({ repos: z.record(z.string(), strict({ tested: z.string(), everyMerges: z.number().int().min(1), everyMinutes: z.number().int().min(1) })) });
+const settings = strict({ repos: z.record(z.string(), strict({ tested: z.string(), everyMerges: z.number().int().min(1), everyMinutes: z.number().int().min(1), canaryHours: z.number().int().min(1).optional() })) });
 const ended = { repo: z.string(), tested: z.string(), tip: z.string(), pullRequest: z.number().int(), url: z.string() };
 const check = strict({ name: z.string(), id: z.number().int().optional() });
 const point = strict({ sha: z.string(), pullRequest: z.number().int().optional() });
 const result = strict({ index: z.number().int(), sha: z.string(), outcome: z.enum(['good', 'bad', 'unknown']) });
 const culpritAt = { repo: z.string(), tip: z.string(), sha: z.string() };
+const canaryAt = { repo: z.string(), canary: z.string(), stable: z.string(), tip: z.string() };
 
 export const LANDING_BATCH_EVENT_SCHEMAS = {
   'landing_batch.started': strict({
@@ -44,4 +46,8 @@ export const LANDING_BATCH_EVENT_SCHEMAS = {
     repo: z.string(), tip: z.string(), batch: z.number().int().optional(), conflict: z.boolean(), reason: z.string(), pullRequest: z.number().int().optional(), url: z.string().optional(),
   }),
   'landing_batch.back_merge_issue_filed': strict({ repo: z.string(), tip: z.string(), issue: z.number().int(), url: z.string() }),
+  'landing_batch.canary_started': strict({ ...canaryAt, hours: z.number().int().min(1) }),
+  'landing_batch.canary_held': strict({ ...canaryAt, reports: z.array(z.number().int()), reason: z.string() }),
+  'landing_batch.canary_issue_filed': strict({ repo: z.string(), tip: z.string(), issue: z.number().int(), url: z.string() }),
+  'landing_batch.canary_promoted': strict({ ...canaryAt, why: z.string() }),
 } as const;

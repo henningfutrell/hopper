@@ -92,6 +92,8 @@ function fake(w: World): LandingBatchGitHub {
     },
     checkLog: async (_repo, id) => { const l = w.logs.get(id); if (l === undefined) throw new Error('no log'); return l; },
     fileIssue: async (_repo, issue) => { w.issues.push(issue); w.calls.push(`issue ${issue.title}`); return { number: 900 + w.issues.length, url: `https://github.test/${REPO}/issues/${900 + w.issues.length}` }; },
+    bugReports: async () => [],
+    fastForward: async () => { throw new Error('no canary here'); },
   };
 }
 

@@ -14,8 +14,8 @@ export type GitService = 'git-upload-pack' | 'git-receive-pack';
 /** One ref update of a push: the ref, from `old` to `new` (40 zeros: none). */
 export interface RefUpdate { old: string; new: string; ref: string }
 
-/** Branches no job pushes to, whatever the repository's default branch is: the release branches. */
-export const RELEASE_BRANCHES: readonly string[] = ['main', 'master', 'dev', 'beta', 'stable'];
+/** Branches no job pushes to, whatever the repository's default branch is: the release branches, and the canary (issue #1073 part 5). */
+export const RELEASE_BRANCHES: readonly string[] = ['main', 'master', 'dev', 'beta', 'canary', 'stable'];
 
 const ZERO = /^0+$/;
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;

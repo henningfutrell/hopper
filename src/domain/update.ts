@@ -55,6 +55,11 @@ export interface UpdateSettings {
   channel: UpdateChannel;
   /** Apply an available update as soon as a check finds it. Always off for an image (issue #494): its user updates it. */
   autoUpdate: boolean;
+  /**
+   * Take stable releases early (issue #1073 part 5): on the stable channel, follow the `canary` branch while it is ahead
+   * of `stable`, so a stable release reaches this install before every other one. This install is then in the canary subset.
+   */
+  canary?: boolean;
 }
 
 /** One version in the version history: a commit of the tracked branch that brought What's new lines. */

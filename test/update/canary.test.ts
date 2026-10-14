@@ -53,7 +53,7 @@ describe('the canary subset (issue #1073 part 5)', () => {
   it('once stable has the candidate, the canary install is current on stable', async () => {
     const w = world();
     const b = branches(w);
-    git(w.up.dir, 'branch', '-f', 'stable', b.canary);
+    git(w.up.dir, 'merge', '-q', '--ff-only', b.canary);
     const { u } = updater(w, createInstall(w.root, w.up.dir, b.canary, 'canary'));
     u.settings({ canary: true });
     expect(await u.check()).toMatchObject({ state: 'current', target: { commit: b.canary, ref: 'stable' } });

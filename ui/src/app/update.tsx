@@ -235,6 +235,13 @@ export function VersionDetails({ className }: { className?: string }) {
             ))}
           </div>
         </div>
+        {s.channel === 'stable' && (
+          <label className="flex items-center justify-between gap-3 text-xs">
+            <span>Take stable releases early<span className="block text-muted-foreground">Get each stable release first, as a canary, before every other install. A bug report you file then holds it back for everyone.</span></span>
+            <Switch aria-label="Take stable releases early" checked={s.canary === true} disabled={!authed}
+              onCheckedChange={(canary) => void updateAct({ action: 'settings', canary }, canary ? 'Stable releases early: on' : 'Stable releases early: off')} />
+          </label>
+        )}
       </div>
       {pending && s.target && <Notes slot="update-notes" primary title={`Coming in the update · ${s.target.ref} ${short(s.target.commit)}`}
         hint="Not installed yet: what updating would bring." lines={s.whatsNew} />}

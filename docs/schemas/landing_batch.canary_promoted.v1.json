@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string"
+    },
+    "canary": {
+      "type": "string"
+    },
+    "stable": {
+      "type": "string"
+    },
+    "tip": {
+      "type": "string"
+    },
+    "why": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "repo",
+    "canary",
+    "stable",
+    "tip",
+    "why"
+  ],
+  "additionalProperties": false
+}

@@ -1243,18 +1243,20 @@ branch `main` (issue #1073, docs/design.md "Landing batches"), least stable firs
 | `main` | the default branch, the landing branch: every pull request, a job's included, merges here after the fast checks (the gates and the affected tests). No update channel: no hopper follows it | each merge |
 | `dev` | what passed the full test suite on `main` as one batch run | the hopper merges a green batch run (Settings → Landing batches) |
 | `beta` | changes that ran on `dev` | a maintainer promotes, once a `dev` hopper has run the change without trouble |
-| `stable` | changes that ran on `beta` | a maintainer promotes, once a `beta` hopper has run the change without trouble |
+| `canary` | the stable candidate: changes that ran on `beta`. No update channel: the stable installs that take stable releases early follow it | a maintainer promotes, once a `beta` hopper has run the change without trouble |
+| `stable` | changes that ran on `canary` for its canary window | the hopper, when the canary window passes with no bug report that names the candidate (Settings → Landing batches); or a maintainer promotes by hand |
 
 A **promotion** moves a commit up one step, and only through `scripts/promote.sh`, run by a maintainer in a
 clone whose `origin` is this repository:
 
 ```sh
 bash scripts/promote.sh beta [commit]     # a commit of dev (default: its head)
-bash scripts/promote.sh stable [commit]   # a commit of beta (default: its head)
+bash scripts/promote.sh canary [commit]   # a commit of beta (default: its head): the stable candidate
+bash scripts/promote.sh stable [commit]   # a commit of canary (default: its head), by hand
 ```
 
 It refuses unless the commit is on the branch one step below (`stable` never takes a commit straight from
-`dev`), the move is a fast-forward of the steadier branch, and the commit's image built on the branch below
+`beta`), the move is a fast-forward of the steadier branch, and the commit's image built on the branch below
 (the `image` run, asked of `gh`), and the commit has no What's new fragments left in `whats-new/`. Then it pushes, as the maintainer, so the steadier branch's image build
 starts. `beta` and `stable` therefore only ever hold what ran one step below; nothing is merged or committed
 on them. A fix for something found on `beta` or `stable` lands on `main` like any change, reaches `dev` with its batch
@@ -1262,6 +1264,14 @@ run, and is promoted from there. There is no schedule and nothing promotes on it
 hopper's: after N merges into `main`, or on a timer, and only when `main` has something new, it opens a
 batch run (a pull request of `main`'s tip into `dev`), and merges it once the full suite passed on it.
 
+
+**The canary** (issue #1073 part 5, docs/design.md "Landing batches: the canary"). A stable release reaches the installs
+that take stable releases early (Settings → Version → Take stable releases early) first. In the hopper, Settings → Landing
+batches → the repository's **Canary window** (hours) turns the canary step on. Each pass compares `stable` with `canary`:
+a new candidate starts the window; a bug report (`user-report`) that names the candidate's commit holds it and files one
+issue for Intake; the window passed with none, the hopper moves `stable` to the candidate (a fast-forward, with its
+admin's GitHub connection, so branch protection on `stable` must let that account update it). Without a canary window,
+`promote.sh stable` is the only way `stable` moves.
 
 **Setting up the landing branch** (once, by a maintainer):
 

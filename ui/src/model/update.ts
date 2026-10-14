@@ -103,12 +103,15 @@ export function channelBadge(s: UpdateStatus): { tag?: string; mismatch: boolean
   return { tag: s.channel === 'stable' ? undefined : s.channel, mismatch: false, label: `${s.channel} channel` };
 }
 
+/** The image tag an update pulls: the channel's, or the candidate's for a stable install in the canary subset (issue #1073 part 5). */
+const imageTag = (s: UpdateStatus): string => (s.target?.ref === 'canary' ? 'canary' : s.channel);
+
 /** The update of an image install with an update available; none otherwise. An image is never updated in place (issues #51, #409). */
 export function imageUpdate(s: UpdateStatus): ImageUpdate | undefined {
   if (s.state !== 'available' || s.installed?.kind !== 'image') return undefined;
   const n = s.restartBlockers;
   const mismatch = channelMismatch(s);
-  const image = `${IMAGE}:${s.channel}`;
+  const image = `${IMAGE}:${imageTag(s)}`;
   return {
     image,
     commands: CONTAINER_TOOLS.map((tool) => ({ tool, ...updateCommands(tool, image) })),
@@ -124,7 +127,7 @@ export function headline(s: UpdateStatus): string {
     case 'available': {
       // An image is updated by its user pulling the channel's tag, never in place (issues #409, #494).
       const image = imageUpdate(s);
-      if (image) return `Update available: ${image.mismatch ?? `pull the ${s.channel} image and recreate the container`}`;
+      if (image) return `Update available: ${image.mismatch ?? `pull the ${imageTag(s)} image and recreate the container`}`;
       // Installed from another channel's branch: applying moves to this channel (issue #282).
       return s.installed && s.installed.branch !== s.channel ? `Update available: move to the ${s.channel} channel` : 'Update available';
     }

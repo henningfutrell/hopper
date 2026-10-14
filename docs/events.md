@@ -5531,7 +5531,7 @@ Version 1 (`docs/schemas/landing_batch.retargeted.v1.json`). The hopper moved a 
 
 ## `landing_batches.changed`
 
-Version 1 (`docs/schemas/landing_batches.changed.v1.json`). An admin changed the landing batches (issue #1073): per repository (`owner/repo`, lowercased), the `tested` branch a green batch run moves, and when a batch run starts (`everyMerges`, `everyMinutes`). `from` and `to` the settings, `by` who changed them.
+Version 1 (`docs/schemas/landing_batches.changed.v1.json`). An admin changed the landing batches (issue #1073): per repository (`owner/repo`, lowercased), the `tested` branch a green batch run moves, when a batch run starts (`everyMerges`, `everyMinutes`), and the canary window (`canaryHours`, part 5; absent: no canary step). `from` and `to` the settings, `by` who changed them.
 
 | field | type | required |
 |---|---|---|
@@ -5925,5 +5925,95 @@ Version 1 (`docs/schemas/landing_batch.back_merge_issue_filed.v1.json`). The hop
   "tip": "0123456789abcdef0123456789abcdef01234567",
   "issue": 1107,
   "url": "https://github.com/owner/repo/issues/1107"
+}
+```
+
+## `landing_batch.canary_started`
+
+Version 1 (`docs/schemas/landing_batch.canary_started.v1.json`). A new stable candidate is on the `canary` branch, ahead of `stable` (issue #1073 part 5, design.md "Landing batches: the canary"): `tip`, and its canary window of `hours` starts now. The installs that take stable releases early update to it first.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `canary` | string | yes |
+| `stable` | string | yes |
+| `tip` | string | yes |
+| `hours` | integer | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "canary": "canary",
+  "stable": "stable",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "hours": 24
+}
+```
+
+## `landing_batch.canary_held`
+
+Version 1 (`docs/schemas/landing_batch.canary_held.v1.json`). Bug reports name the canary candidate within its window (issue #1073 part 5): `reports` (issues labelled `user-report`), `reason`. It does not go to `stable`; an issue is filed for it.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `canary` | string | yes |
+| `stable` | string | yes |
+| `tip` | string | yes |
+| `reports` | integer[] | yes |
+| `reason` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "canary": "canary",
+  "stable": "stable",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "reports": [
+    1112
+  ],
+  "reason": "bug reports name it: #1112"
+}
+```
+
+## `landing_batch.canary_issue_filed`
+
+Version 1 (`docs/schemas/landing_batch.canary_issue_filed.v1.json`). The hopper filed the issue for a held canary candidate (issue #1073 part 5): `issue`, `url`, with the hopper label and assigned to the user, so Intake takes it. Once per candidate.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tip` | string | yes |
+| `issue` | integer | yes |
+| `url` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "issue": 1113,
+  "url": "https://github.com/owner/repo/issues/1113"
+}
+```
+
+## `landing_batch.canary_promoted`
+
+Version 1 (`docs/schemas/landing_batch.canary_promoted.v1.json`). The canary candidate's window passed with no bug report that names it (issue #1073 part 5): the hopper moved `stable` to its `tip` as a fast-forward, so every install on the stable channel is offered it. `why`.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `canary` | string | yes |
+| `stable` | string | yes |
+| `tip` | string | yes |
+| `why` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "canary": "canary",
+  "stable": "stable",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "why": "no bug report named it in 24 hours"
 }
 ```
