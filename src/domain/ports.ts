@@ -603,7 +603,9 @@ export interface SourceHost extends AnswersFromThread {
    * Its source gave a failed job's item back for a Continue — a person's on its hand-off (issue #551), or the
    * assessor's on its record (issue #630): the same job is queued again, in one tx, pinned to the machine it ran on
    * with `brief` pending (`continued`), its end to be reported to its source again, so its claim resumes its own agent
-   * session. job.continued. Refused (not_found, conflict) when it is gone, no longer failed, or a newer job of its item exists.
+   * session. job.continued. Push it (issue #1010, `by` `keptWork`) takes a finished or cancelled job too. Refused
+   * (not_found, conflict) when it is gone, no longer failed (or, for Push it, not one of `PUSHABLE_ENDS`), or a newer job
+   * of its item exists.
    */
   continueJob(jobId: JobId, brief: string, by: ContinuedBy): RerunResult;
   /**
@@ -630,7 +632,8 @@ export interface SourceRegistry {
   rerun(jobId: JobId, by?: RerunBy, brief?: string, acting?: ActingPerson): Promise<RerunResult>;
   /**
    * Continue a failed job in its own agent session (issue #551): its source gives the item back as for Run again, and
-   * the same job is queued again with `brief` pending (`SourceHost.continueJob`). Refused as Run again is.
+   * the same job is queued again with `brief` pending (`SourceHost.continueJob`). Refused as Run again is; Push it's
+   * (`keptWork`, issue #1010) takes a cancelled job too.
    */
   continueJob(jobId: JobId, brief: string, by: ContinuedBy): Promise<RerunResult>;
   /**

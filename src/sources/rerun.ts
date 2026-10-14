@@ -7,7 +7,7 @@
 import type { JobSource, RerunBy, RerunResult, SourceHost, SourceItem } from '../domain/ports.ts';
 import { RerunRefused } from '../domain/rerun-refused.ts';
 import { sourceRef, withEdits } from './item-text.ts';
-import { following, tendRetryAt, type ActingPerson, type ContinuedBy, type Job, type Tended } from '../domain/types.ts';
+import { following, PUSHABLE_ENDS, tendRetryAt, type ActingPerson, type ContinuedBy, type Job, type JobStatus, type Tended } from '../domain/types.ts';
 
 export interface RerunContext {
   host: SourceHost;
@@ -20,6 +20,9 @@ export interface RerunContext {
   syncSoon(source: JobSource): void;
 }
 
+/** The ends Run again takes. */
+const RERUN_ENDS: readonly JobStatus[] = ['failed', 'finished', 'rejected'];
+
 type Reworked = Awaited<ReturnType<NonNullable<JobSource['rework']>>>;
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -31,16 +34,16 @@ export function createRerun(c: RerunContext) {
   /**
    * Why an ended job's item cannot run again now — or, `rework`, be sent back for rework (issue #724) —, or its source.
    * `tending` (issue #1010): a newer job of its item may exist when it is the job's own tend job, cancelled by no person
-   * and no source: the tend runs again.
+   * and no source: the tend runs again. `ends`: the ends taken, Push it's too (issue #1010) for a Continue with kept work.
    */
-  function check(jobId: string, rework = false, tending = false): RerunResult | JobSource {
+  function check(jobId: string, rework = false, tending = false, ends: readonly JobStatus[] = RERUN_ENDS): RerunResult | JobSource {
     const job = store.jobs.get(jobId);
     if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
     if (rework) {
       if (job.status !== 'finished') return conflict(jobId, `it is ${job.status}: only a finished job's pull request is sent back for rework`);
       if (!following(job)) return conflict(jobId, 'it follows no open pull request to rework');
     }
-    if (job.status !== 'failed' && job.status !== 'finished' && job.status !== 'rejected') return conflict(jobId, `it is ${job.status}, not failed, finished or rejected`);
+    if (!ends.includes(job.status)) return conflict(jobId, `it is ${job.status}, not ${ends.join(', ').replace(/, ([^,]+)$/, ' or $1')}`);
     const source = c.sourceOf(job);
     if (!source) return conflict(jobId, 'its source is not running');
     if (!source.rerun) return conflict(jobId, `its source ${source.name} cannot run an item again`);
@@ -59,12 +62,13 @@ export function createRerun(c: RerunContext) {
   async function takeBack<G extends { item: SourceItem }>(
     jobId: string, then: (item: SourceItem, source: JobSource, given: G) => RerunResult,
     give: (source: JobSource, job: Job) => Promise<G> = async (source, job) => ({ item: await source.rerun!(job) }) as G, rework = false, tending = false,
+    ends: readonly JobStatus[] = RERUN_ENDS,
   ): Promise<RerunResult> {
-    const checked = check(jobId, rework, tending);
+    const checked = check(jobId, rework, tending, ends);
     if ('ok' in checked) return checked;
     let result: RerunResult = { ok: false, reason: 'source', message: 'not sent' };
     await c.enqueue(jobId, async () => {
-      const source = check(jobId, rework, tending);
+      const source = check(jobId, rework, tending, ends);
       if ('ok' in source) { result = source; return; }
       let given: G;
       try {
@@ -87,7 +91,7 @@ export function createRerun(c: RerunContext) {
     },
     /** Continue (issue #551): the item given back as for Run again, and the same job queued again to resume its session. */
     continueJob(jobId: string, brief: string, by: ContinuedBy): Promise<RerunResult> {
-      return takeBack(jobId, () => c.host.continueJob(jobId, brief, by));
+      return takeBack(jobId, () => c.host.continueJob(jobId, brief, by), undefined, false, false, 'keptWork' in by ? PUSHABLE_ENDS : RERUN_ENDS);
     },
     /** Rework (issue #724): the pull request made a draft and the item given back, and a new job queued, told the notes. */
     rework(jobId: string, notes: string, acting?: ActingPerson): Promise<RerunResult> {

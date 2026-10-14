@@ -11091,8 +11091,8 @@ Now Failures lists it, and each has an action that moves it.
   newest first, each with its paths, its machine (`machineRanOn`), its open hand-off, and `actions.push` and
   `actions.discard` (`{ ok }` or `{ ok: false, why }`). The Failures badge and `GET /api/sections` count each one that
   no open hand-off counts already.
-- **Push it** (`POST /ui/api/failures/kept-work/:id/push`, operator, a box action, an optional note). Taken for a failed
-  job whose own agent session resumes (`Engine.resumable`), the newest of its item. The job goes on in its own session and
+- **Push it** (`POST /ui/api/failures/kept-work/:id/push`, operator, a box action, an optional note). Taken for a failed,
+  finished or cancelled job (`PUSHABLE_ENDS`; not a rejected one, which never ran) whose own agent session resumes (`Engine.resumable`), the newest of its item. The job goes on in its own session and
   kept work tree, told `pushBrief`: look at the work tree, commit, push, open the pull request, as a draft when the work
   is not finished, and the note. With an open hand-off it resolves it as Continue (`handoff.closed`, `end:
   "continued"`); else `SourceRegistry.continueJob` with `{ keptWork: true }` (`job.continued`). Its source takes the item
@@ -11106,15 +11106,17 @@ Now Failures lists it, and each has an action that moves it.
   the work: the refusal says to update it.
 - **Quieter sweep.** The sweep logs kept work only when it keeps it the first time.
 
-Not done here, carried in issue #1010: Push it for a cancelled or finished job (Run again takes only a failed, finished
-or rejected job, and Continue only a failed one); a Stuck view with counts by cause and one bulk action per cause; a
+Not done here, carried in issue #1010: a Stuck view with counts by cause and one bulk action per cause; a
 check of each hand-off card's recommended action against the causes that refuse it; Run again and tending for direct
-jobs. Done since: Tend again on a pull request the hopper gave up on ("PR waiting", "A pull request stays in sight").
+jobs. Done since: Tend again on a pull request the hopper gave up on ("PR waiting", "A pull request stays in sight"); Push it
+for a finished or cancelled job — its source takes the item back as for Run again (a cancelled job's too, for this
+Continue only), and `SourceHost.continueJob` takes those ends only `by` `keptWork` (a hand-off's Continue stays a failed
+job's).
 
 **Verification:** `test/domain/kept-work.test.ts`, `test/engine/sweep.test.ts` (discard, its refusals, the log once),
 `test/client/reap-discard.test.ts` and `test/client/reap.test.ts` (the script for real: dirty and unpushed work removed,
 the worktree entry gone, nothing outside the job's scratch dir), `test/integration/kept-work.test.ts` (Push it through
-the hand-off, resuming the session; Discard, its event, a second discard refused).
+the hand-off, and for a finished and a cancelled job, resuming the session; Discard, its event, a second discard refused).
 
 ## Parked jobs (issue #501, 2026-10-08)
 

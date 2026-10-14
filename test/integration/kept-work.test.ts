@@ -18,6 +18,8 @@ afterEach(async () => {
 
 const FAIL = { output: ['● The paint ran out halfway.', '  HOPPER_FAILED the paint ran out'] };
 const DONE = { output: ['● Pushed the work and opened the pull request.', '  HOPPER_DONE'] };
+/** A turn that never ends by itself: the job is mid-turn when it is cancelled. */
+const WORKING = { steps: ['● Sanding'], output: [], end: 'working' as const };
 const EXECUTORS = [{ name: 'herdr-claude', plugin: 'herdr-claude', options: { pollMs: 10, idleNudgeMs: 5000, promptSteadyMs: 100 } }];
 const herdrItem = { executor: 'herdr-claude', prompt: 'Paint the shed', cwd: '/tmp', env: {} };
 const KEPT = '/tmp/.hopper-scratch/kept/repo';
@@ -84,5 +86,44 @@ describe('Work not pushed (issue #1010)', () => {
     const again = await a.ui<{ error: string }>(`/ui/api/failures/kept-work/${job.id}/discard`, {}, { token });
     expect(again.status).toBe(409);
     expect(again.body.error).toContain('has no work kept');
+  });
+
+  it('a finished job whose work was kept: Push it goes on in its own session, told to push', { timeout: 30_000 }, async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [DONE, DONE], reapKeeps: [KEPT] });
+    const a = await boot(herdr);
+    const token = await a.login();
+    const job = await a.pull({}, herdrItem);
+    await a.waitForStatus(job.id, 'finished', 8000);
+    const session = (await a.job(job.id)).agentSession!;
+    expect(await keptOf(a, job.id)).toMatchObject({ status: 'finished', actions: { push: { ok: true } } });
+
+    const r = await a.ui<{ job: Job }>(`/ui/api/failures/kept-work/${job.id}/push`, {}, { token });
+    expect(r.status).toBe(200);
+    expect(r.body.job).toMatchObject({ id: job.id, status: 'queued', resumeOn: 'local' });
+    await waitFor(() => herdr.prompts.length === 2, { what: 'the push brief sent' });
+    expect(herdr.agentStarts[1]!.args).toEqual(expect.arrayContaining(['--resume', session]));
+    expect(herdr.prompts[1]!.text).toContain('was not pushed');
+    await a.waitForStatus(job.id, 'finished', 8000);
+    expect((await a.events('types=job.continued')).filter((e) => e.jobId === job.id)).toEqual([expect.objectContaining({ data: { keptWork: true } })]);
+  });
+
+  it('a cancelled job whose work was kept: Push it goes on in its own session, told to push', { timeout: 30_000 }, async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WORKING, DONE], reapKeeps: [KEPT] });
+    const a = await boot(herdr);
+    const token = await a.login();
+    const job = await a.pull({}, herdrItem);
+    await a.waitForStatus(job.id, 'running', 8000);
+    await waitFor(() => herdr.prompts.length === 1, { what: 'the task sent' });
+    expect((await a.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token })).status).toBe(200);
+    await a.waitForStatus(job.id, 'cancelled', 8000);
+    const session = (await a.job(job.id)).agentSession!;
+    expect(await keptOf(a, job.id)).toMatchObject({ status: 'cancelled', actions: { push: { ok: true } } });
+
+    const r = await a.ui<{ job: Job }>(`/ui/api/failures/kept-work/${job.id}/push`, {}, { token });
+    expect(r.status).toBe(200);
+    expect(r.body.job).toMatchObject({ id: job.id, status: 'queued' });
+    await a.waitForStatus(job.id, 'finished', 8000);
+    expect(herdr.agentStarts[1]!.args).toEqual(expect.arrayContaining(['--resume', session]));
+    expect(herdr.prompts[1]!.text).toContain('was not pushed');
   });
 });

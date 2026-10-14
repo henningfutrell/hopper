@@ -3,7 +3,7 @@
 // job a Decision has just claimed. design.md "Job sources".
 import type { RerunResult, SourceHost, SourceItem, SourceRef } from '../domain/ports.ts';
 import { SPECIALTY_LABEL } from '../domain/elbow-in.ts';
-import { asksOf, isRerunnable, machineRanOn, reworkBrief, REVIEW_SECTIONS, TERMINAL_STATUSES } from '../domain/types.ts';
+import { asksOf, isRerunnable, machineRanOn, PUSHABLE_ENDS, reworkBrief, REVIEW_SECTIONS, TERMINAL_STATUSES } from '../domain/types.ts';
 import type { Job, JobSourceRef, JobSpec, RoutedBy, SpecFromConfig } from '../domain/types.ts';
 import { routeItem } from '../routing/index.ts';
 import type { Commands } from './commands.ts';
@@ -303,11 +303,13 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       return store.tx((): RerunResult => {
         const job = store.jobs.get(jobId);
         if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
-        if (job.status !== 'failed') return { ok: false, reason: 'conflict', message: `job ${jobId} is ${job.status}: only a failed job can be continued` };
+        // Push it (issue #1010) goes on with a finished or cancelled job's kept work too.
+        const ends: readonly string[] = 'keptWork' in by ? PUSHABLE_ENDS : ['failed'];
+        if (!ends.includes(job.status)) return { ok: false, reason: 'conflict', message: `job ${jobId} is ${job.status}: only a ${'keptWork' in by ? 'failed, finished or cancelled' : 'failed'} job can be continued` };
         if (job.source && store.jobs.getBySourceKey(job.source.key)?.id !== jobId) return { ok: false, reason: 'conflict', message: `job ${jobId} cannot be continued: a newer job of its item exists` };
         const machineId = machineRanOn(job);
         // Its end is told to its source again: the claim, then however this run ends.
-        const sync = { ...(job.sourceState?.sync ?? {}), claimReported: false, finalReported: false };
+        const sync = { ...(job.sourceState?.sync ?? {}), claimReported: false, finalReported: false, cancelReason: undefined };
         const next = store.jobs.update(jobId, {
           status: 'queued', pendingAnswer: brief, continued: { at: nowIso(c), ...by }, ...(machineId ? { resumeOn: machineId } : {}),
           error: undefined, errorTail: undefined, liveness: undefined, finishedAt: undefined, assessment: undefined, dismissedAt: undefined, result: undefined,
