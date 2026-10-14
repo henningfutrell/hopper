@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { jobGraph } from '../../src/domain/job-graph.ts';
 import type { DomainEvent, Job, JobStatus } from '../../src/domain/types.ts';
+import type { WorkItem } from '../../src/domain/work-items.ts';
 import { filterChoices, jobRows, lastEvents, layoutTree, NO_FILTER, NODE_W, pullRequestText, shownTrees, stageCounts, tendText } from '../../ui/src/model/jobs-view.ts';
 
 const job = (id: string, status: JobStatus, repo: string | null, at: string, over: Partial<Job> = {}): Job => ({
@@ -31,7 +32,28 @@ describe('jobRows', () => {
     expect(ids(jobRows(graph, { ...NO_FILTER, stage: 'running' }))).toEqual(['a', 'd']);
     expect(ids(jobRows(graph, { ...NO_FILTER, stage: 'partly_done' }))).toEqual(['c']);
     expect(ids(jobRows(graph, { ...NO_FILTER, repo: 'acme/widgets' }))).toEqual(['c', 'a']);
-    expect(ids(jobRows(graph, { stage: 'running', repo: 'acme/widgets' }))).toEqual(['a']);
+    expect(ids(jobRows(graph, { ...NO_FILTER, stage: 'running', repo: 'acme/widgets' }))).toEqual(['a']);
+  });
+
+  it('in flight (issue #1113): only the jobs whose work item the ledger has in flight, each the newest job of its item', () => {
+    const item = (key: string, jobId: string, state: WorkItem['state'], pullRequestWait?: WorkItem['pullRequestWait']): WorkItem =>
+      ({ key, jobId, state, stateSince: '2026-10-01T00:00:00Z', eventState: state, eventAt: '2026-10-01T00:00:00Z', keptWork: [], version: 1, ...(pullRequestWait ? { pullRequestWait } : {}) });
+    const jobs = [
+      job('a', 'running', 'acme/widgets', '2026-10-01T10:00:00Z'),
+      job('b', 'queued', 'acme/site', '2026-10-01T12:00:00Z'),
+      job('e', 'finished', 'acme/site', '2026-10-01T13:00:00Z'),
+      job('f', 'finished', 'acme/site', '2026-10-01T14:00:00Z'),
+      job('g', 'finished', 'acme/widgets', '2026-10-01T09:00:00Z'),
+    ];
+    const items = new Map([
+      item('acme/widgets#a', 'a', 'working'), item('acme/site#b', 'b', 'queued'), item('acme/site#e', 'e', 'pr_open', 'checks_running'),
+      item('acme/site#f', 'f', 'pr_open', 'draft'), item('acme/widgets#g', 'other', 'working'),
+    ].map((i) => [i.key, i]));
+    const g = jobGraph({ jobs, items });
+    expect(ids(jobRows(g, { ...NO_FILTER, inFlight: true }))).toEqual(['e', 'a']);
+    expect(ids(jobRows(g, { ...NO_FILTER, inFlight: true, repo: 'acme/site' }))).toEqual(['e']);
+    expect(shownTrees(g, { ...NO_FILTER, inFlight: true }).map((t) => t.nodes.filter((n) => n.startsWith('job:')))).toEqual(expect.arrayContaining([['job:a'], ['job:e']]));
+    expect(shownTrees(g, { ...NO_FILTER, inFlight: true })).toHaveLength(2);
   });
 });
 

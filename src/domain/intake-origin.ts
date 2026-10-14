@@ -37,6 +37,14 @@ export interface IntakeRequest {
   why: string[];
   /** The text a person approved before, when the issue's title or body changed since. */
   approved?: { title: string; body: string };
+  /** A reopened card (issue #1126): the issue was reopened after its job was done; the item's history. */
+  reopened?: ItemHistory;
+}
+
+/** What a reopened item did before (issue #1126): its jobs, newest first, and its pull request. */
+export interface ItemHistory {
+  jobs: { id: string; status: string }[];
+  pullRequest?: string;
 }
 
 /** A GitHub account as GitHub answers it (issue #930): its user id, which a rename keeps, its login now, its type and avatar. */

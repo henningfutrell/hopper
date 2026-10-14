@@ -47,7 +47,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each ssh target on the hopper's own herdr (`herdr-owned.ts`, pure; `herdr-owned-ssh.ts`, over ssh; issue #741), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
-| `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
+| `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the requester's outcome and a person's dismiss (issue #1110), the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`), `hopper-login` (`script.ts`, issue #1110; its route `src/http/job-login.ts`). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place, and a done-check miss's look again before it is assessed (`done-at-source.ts`, issue #637), the done-check backfill (`backfill.ts`, issue #637), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`), and a stuck cause's bulk action (`stuck.ts`, issue #1010). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | decider calls through Jev first (issue #550, "Decider calls"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice, or several in one call, through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, the risk call on a level's answer (`risk.ts`, issue #679), a call's ceiling (`deadline.ts`), what makes a decision consequential and which of it are the guards (`guard.ts`, over the question risk rules), the view from the events (`view.ts`), the user's TypeSafe API key — checked, kept in the vault's system scope, imported once from the variable (`typesafe-key.ts`, issue #657); all but `jev.ts`, `service.ts`, `risk.ts` and `typesafe-key.ts` pure. Its ports (`JevChooser`, `JevFirst`, `QuestionRisk`) are in `src/domain/minor-decisions.ts`; the question pipeline (the risk call, `QuestionRisk`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
@@ -10784,6 +10784,27 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   waits on it, so no Cancel or New code is offered that does nothing), and so does an escalation level's login
   whose question is no longer open (`the question ended`); a pending one past `expiresAt` expires, with or without
   word from the machine.
+- **Login outcome** (issue #1110). Only the requester — the job that asked for the login — knows whether it worked: a
+  signal on screen is a guess, a print-mode run's success is a proxy, and nothing at all reached the hopper from a job
+  whose output differed, so its login stayed pending, then renewed, with no way to clear it. So the job says what came of
+  it: `sh "$HOPPER_LOGIN" completed <tool>`, or `failed <tool> --reason "<why>"` (`hopper-login`,
+  `src/logins/script.ts`, beside `hopper-gh` in the job's credentials dir), which is `POST /job/login`
+  (`src/http/job-login.ts`) with the job's proxy token, while the job is at work. It names the login by its tool (left
+  out: the job's latest login). `completed` ends it `completed` (`auth.completed`, `by: requester`), a login that failed
+  or was cancelled too: the requester's word is the last. `failed` fails an open one (`auth.failed`, `by: requester`,
+  the reason with any code it holds hidden); on a completed or dismissed one — a later check found it does not work — it
+  **reopens** it: `pending` again with the `reason`, a fresh `expiresAt` (`REOPENED_SEC`, 900 s), no code
+  (`auth.reopened`), until the job reports a new code, which the same login takes (`auth.pending`, `renewed: true`,
+  its reason cleared). A failed or cancelled login stays as it is. The protocol line asks for it beside `Logged in.`;
+  the login signals stay, so a job that does not report still ends its login as before. The route changes no job,
+  question, webhook or setting. No polling: the job reports once, when it knows.
+- **Dismiss** (issue #1110, `POST /ui/api/logins/:id/dismiss`, operator). The fallback when the requester never says:
+  a person puts an open login away, whatever its job does. `dismissed` (`auth.dismissed`, `by: user`), its code
+  dropped; the run that waited on it reads `ended` and stops waiting, and nothing is typed into a pane (Cancel does
+  that). A login ended otherwise cannot be dismissed (409).
+- **The active list.** The Logins section counts `pending` logins (`GET /api/sections`); the Logins view's cards are
+  the pending ones, the expired ones a job still waits to renew, and, for a short while, the failed, cancelled and
+  expired ones. A resolved login — completed or dismissed — leaves the cards at once (issue #1110) for Earlier logins.
 - **Expiry.** The logins setting `onExpiry` (`POST /ui/api/logins/settings`, admin; the user's settings,
   read at each expiry, so a change applies without a restart): `renew` (the default since issue #1016: two codes of a
   job expired before a person saw them, and the job stalled) — at each expiry the hopper asks the job for a new code
@@ -10799,7 +10820,8 @@ until its timeout. A **login** (glossary) goes to its **login kind**; `device_co
   into a herdr job's pane that the user cancelled it: stop the command, go on without it or fail. A new
   code types in: stop the command, start the login again, report the new code. A print-mode run takes no
   input, so it cannot be asked for a new code (409); cancel only ends the login there.
-- **Who completes it.** Always the user, at the provider. No agent or other machine completes a login.
+- **Who completes it.** Always the user, at the provider. No agent or other machine completes a login; the job that
+  asked for it only says that it went through (issue #1110).
 - **Sensitive data.** The URL and the code are credentials in flight. Never stored: the `logins` table
   and every `auth.*` event carry the login's id, kind, tool, status, times and what waits on it (`auth.pending` also
   the URL's host, issue #698), never them, nor the account or scopes; they live in the daemon's memory while the login is open and are dropped when it ends (a restart
@@ -15084,6 +15106,28 @@ Nothing is written to GitHub: no label, no comment, no close; an issue a person 
 line. An edit to its title or body makes a new hash, so it is a request card again. A declined text cannot be approved
 later; the request's author edits it, or a trusted actor files the work again.
 
+**Reopened (issue #1126, 2026-10-14).** An issue whose job was done keeps `hopper:done`, so when a person reopened it —
+the merged pull request did not fix it all — intake said `done, but the issue is still open` and offered nothing: no job
+could start. Now an open issue with `hopper:done` whose job here ended (`rerunnable`: its end reported to the source) is a
+request card again, the **reopened card** (`reopenedRequest`, `src/sources/github/origin.ts`): reason
+`reopened after its job was done: approve it to run it again`, group `request`, its title and body as read, no acts, and
+the item's history (`IntakeRequest.reopened`, `itemHistory`, `src/domain/intake.ts`): the newest job and the jobs it ran
+again (`rerunOf`), newest first, at most ten, and the item's pull request from the work-item ledger. It is a card whatever
+the issue's origin: a person decides whether the item runs again. It records `source.request_opened` as any card, so the
+item's ledger row moves from `done` to `waiting_for_approval` and the Intake badge counts it. A card opens again after an
+approval of the same text (`requestOpenedSince`: since the last `source.request_withdrawn` or `source.request_approved`).
+Approve is the card's Approve, checked the same way; it also takes `hopper:done` off the issue (a label, the hopper's own
+write) before it records the text. The next sync — at once, as for every Approve — lists the issue with no end label, judges
+its origin as any issue's (a trusted origin, or the text just approved), and makes a new job of the item, which runs again
+from its ended job (`rerunOf`). Decline makes no job and writes nothing; the item is `done` again (a dropped item whose pull
+request merged is done). An issue with `hopper:done` and no job here, another hopper's, stays `done, but the issue is still
+open`.
+
+No GitHub delivery is needed: the source lists every open labelled issue of its job repositories at each intake sync
+(the listing cache, "Repository listings": one batched read per due repository at the intake sync interval), and a
+reopened issue is one of them. A delivery of `reopened` (issue #1079, off by default) only makes its repository due at
+once.
+
 **The job's origin.** `SourceItem.origin` → `JobSourceRef.origin`: `trusted` or `approved`. Run again and Rework keep the
 origin of the job they follow. A job of a source that does not judge origins has none; one taken before this change has
 none until the backfill below judges it.
@@ -15175,6 +15219,13 @@ and `POST /ui/api/jobs/:id/revoke-vault`, operator: a person's act through the U
 granted. A model edited before this has `vault_grant` gaps apart (`vaultGrantGaps`): every grant is denied, mints are
 not; the hopper's own unedited model is upgraded. `vault.granted { job, key, by }`; `vault.grant_revoked { job, key, by }`
 (409 when there is none). Both answer the vault's view: `GET /api/vault` carries `grantAsks` and `grants`.
+
+**Granting with no browser** (issue #1089). `hopper vault grant <job>` and `hopper vault revoke <job>`
+(`src/cli-operator-vault.ts`) are the same two routes, under the session the operator CLI mints for the one call (issue
+#374), role operator. Access decides as for a click, for the hopper's user the CLI acts as; the answer is the vault's view.
+An agent with an API token uses the routes themselves, with the scope `jobs:grant-vault` (in the preset "Agent: read
+everything and approve what waits"). A job still never grants: its proxy token is no API token, and it runs no operator CLI
+with the database's credentials. Tests: `test/integration/operator-cli-vault.test.ts`.
 
 **Residual risk.** The grant is per item, not per secret: a granted item's jobs get the whole of their template's approved
 scope, as every box job did before. A person who grants a job of a request card's approved text grants that text's work.
@@ -17712,6 +17763,14 @@ Failures, the dashboard and the queue agree with `SELECT state, count(*) FROM wo
   request rollup; its superseded staging and the issue-closed rule are deleted. An open pull request's words name what
   it waits on: "PR open: checks running", "fixing checks", "has merge conflicts", "draft", "waiting for the merge".
   "Ready for review" is gone from the graph, the list and the stage filter ("PR open").
+
+**In flight (issue #1113, 2026-10-14).** An item is **in flight** (`isInFlight`, `src/domain/work-items.ts`) while it
+is `working`, or `pr_open` with its pull request wait `checks_running`, `fixing_checks` or `merge` — or not yet seen by
+the follow, with its checks and the merge ahead. A draft or merge conflicts wait on a fix, not on the run. The ledger
+counts them (`inFlight()`: the rows in `working` and `pr_open`, through the same rule), and `GET /api/queue` answers
+`inFlight`. The header shows that count on every screen, a link to `#jobs/in-flight`: the Jobs view with its in-flight
+filter on, the job nodes the graph marks `inFlight` — each the item's own job, its item in flight. The badge has no
+poll of its own: the store reads the queue after each event on the stream, as it does for every other count.
 
 **Part 3: what GitHub says is ledger input (2026-10-14).** Before it, the ledger heard of GitHub only through the
 issue graph's reads and the follow's merge or close, so an item whose issue closed while its pull request waited, or

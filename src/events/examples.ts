@@ -82,7 +82,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'auth.completed': { loginId: 'l1', kind: 'device_code', tool: 'gh' },
   'auth.expired': { loginId: 'l1', kind: 'device_code', tool: 'gh', expiresAt: '2026-10-08T18:15:00.000Z' },
   'auth.cancelled': { loginId: 'l1', kind: 'device_code', tool: 'gh', by: 'user' },
-  'auth.failed': { loginId: 'l1', kind: 'device_code', tool: 'gh', reason: 'the job ended: timed out' },
+  'auth.failed': { loginId: 'l1', kind: 'device_code', tool: 'gh', reason: 'the job ended: timed out' }, 'auth.reopened': { loginId: 'l1', kind: 'device_code', tool: 'codex', reason: 'codex login status says not logged in' }, 'auth.dismissed': { loginId: 'l1', kind: 'device_code', tool: 'gh', by: 'user' },
   'job.assessed': {
     recordId: 'f1', signature: '3f9c2a1b7d4e', class: 'shared', decision: 'redirect', reasons: ['known cause: Disk full', 'redirected: the job may run on another machine than desk'],
     summary: 'Redirected: Disk full on desk. Ran 1 time on desk. Failed: write: ENOSPC: no space left on device.', attempt: 1, auto: true, causeId: 'disk-full', problemId: 'p1',

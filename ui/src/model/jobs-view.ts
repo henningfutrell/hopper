@@ -39,12 +39,18 @@ export const EDGE_TEXT: Record<JobGraphEdgeKind, string> = {
 /** Each node kind in plain words. */
 export const KIND_TEXT: Record<JobGraphNodeKind, string> = { job: 'job', issue: 'issue', pull_request: 'pull request', question: 'question', handoff: 'hand-off' };
 
-/** The Jobs view's filters: `null` shows every stage or repository. */
-export interface JobsFilter { stage: JobStage | null; repo: string | null }
-export const NO_FILTER: JobsFilter = { stage: null, repo: null };
+/**
+ * The Jobs view's filters: `null` shows every stage or repository. `inFlight`: only the jobs whose work item is in flight
+ * (issue #1113), what the header's badge counts.
+ */
+export interface JobsFilter { stage: JobStage | null; repo: string | null; inFlight: boolean }
+export const NO_FILTER: JobsFilter = { stage: null, repo: null, inFlight: false };
+
+/** The Jobs view's section in the hash (#jobs/in-flight) that turns the in-flight filter on: the badge's link. */
+export const IN_FLIGHT_SECTION = 'in-flight';
 
 const matches = (n: JobGraphNode, f: JobsFilter): boolean =>
-  n.kind === 'job' && (f.stage === null || n.stage === f.stage) && (f.repo === null || n.repo === f.repo);
+  n.kind === 'job' && (f.stage === null || n.stage === f.stage) && (f.repo === null || n.repo === f.repo) && (!f.inFlight || n.inFlight === true);
 
 /** The job nodes the filter lets through, the latest stage change first. */
 export function jobRows(graph: JobGraph, filter: JobsFilter): JobGraphNode[] {

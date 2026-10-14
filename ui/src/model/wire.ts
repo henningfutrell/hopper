@@ -76,6 +76,8 @@ export interface Queue {
   ended: Job[];
   /** How many work items are in each state (issue #1067): the work-item ledger's counts. Absent from an older daemon. */
   items?: Record<import('../../../src/domain/work-items.ts').WorkItemState, number>;
+  /** How many work items are in flight (issue #1113): the ledger's. Absent from an older daemon. */
+  inFlight?: number;
   /** The queue gate (issue #159). */
   gate: QueueGate;
   /** The pre-sort of the waiting jobs not yet accepted. */

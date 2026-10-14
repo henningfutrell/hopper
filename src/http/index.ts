@@ -32,6 +32,7 @@ import { jobSkillRoutes } from './job-skill.ts';
 import { jobStepRoutes } from './job-step.ts';
 import { jobStreamRoutes } from './job-stream.ts';
 import { jobCheckpointRoutes } from './job-checkpoint.ts';
+import { jobLoginRoutes } from './job-login.ts';
 import { pluginStoreRoutes } from './plugin-store.ts';
 import { jobRulesRoutes } from './job-rules.ts';
 import { questionGatesRoutes } from './question-gates.ts';
@@ -215,6 +216,8 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const github = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock, updater: o.updater });
   jobGitRoutes(app, { tenants: o.tenants });
   jobCheckpointRoutes(app, { tenants: o.tenants });
+  // A running job says what came of a login it asked for (issue #1110), with the same token.
+  jobLoginRoutes(app, { tenants: o.tenants });
   // A machine's probe asks where it reaches the hopper (issue #698).
   jobAddressRoutes(app);
   // GitHub, or a relay in front, sends its deliveries (issue #1079), signed with the GitHub webhook secret.

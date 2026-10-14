@@ -1,6 +1,6 @@
 // The GitHub JobSource: open issues labelled `hopper` and assigned to the user's connected account become
 // jobs (issue #387) when their origin is trusted — written, labelled and assigned by the user's trusted actors — or a
-// person approved their text; any other is a request card (issue #652, origin.ts);
+// person approved their text; any other is a request card (issue #652, origin.ts; a reopened issue too, issue #1126);
 // what happens to them goes back as labels only (no comment); closes and unlabels come
 // back as cancel signals; unassigning the account cancels a waiting job and flags a started one. `knownKeys` (wired by the sync loop) tells discover which claimed issues already have
 // a local job; without it every claimed issue is skipped, so nothing is ever re-run blind.
@@ -39,7 +39,7 @@ import { intakeAct } from './intake-actions.ts';
 import { outsideReader } from './outside.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
-import { openRequests, originsOf, requestOutcome, withdrawRequests } from './origin.ts';
+import { openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
 import { backburnerReader } from './backburner.ts';
 import { recordIssueGraph, type IssueGraphRecorder } from './graph.ts';
 import { reportToGitHub, takeBack, writeResolution } from './report.ts';
@@ -306,7 +306,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       // by its origin (issue #652).
       const judged = taken.filter((i) => !known.has(i.url) || rerun.has(i.url) || o.trust.originPending(i.url));
       const verdicts = await originsOf(api, o.trust, judged, config.label, assignee);
-      const requests = new Map<string, IntakeRequest>();
+      const requests = await reopenedRequests(api, found.seen, next, o.rerunnable, intake);
       const items: SourceItem[] = [];
       for (const issue of taken) {
         const v = verdicts.get(issue.url);

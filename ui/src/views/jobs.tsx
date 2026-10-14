@@ -1,7 +1,8 @@
 // The Jobs view (issues #434, #900): where every job stands, at a glance, and how the jobs hang together. It reads the job
 // graph (GET /api/jobs/graph) when it opens and again each time the store's jobs change — the store reads the queue after
 // each event, so a stage change arrives with no reload. Above both modes: how many jobs are in each stage (a count is
-// also its stage's filter) and the filters by stage and by repository.
+// also its stage's filter) and the filters by stage and by repository. In flight (issue #1113): only the jobs whose work
+// item is in flight, on at #jobs/in-flight — the header badge's link — and off at #jobs.
 // - Graph (the default): a section per job tree, named by its root, laid out from it; nodes are jobs, issues and pull
 //   requests, coloured by stage, a job with its task count; edges are typed. What blocks the root is ringed, and the
 //   edges to it are drawn bold. A settled tree starts folded. Select a node to read its details.
@@ -10,11 +11,11 @@
 // A row and a node render again only when what they show changes, so the view stays quick with hundreds of jobs.
 import { Briefcase, ChevronDown, ChevronRight, CircleHelp, List, Network } from 'lucide-react';
 import { memo, useEffect, useMemo, useState } from 'react';
+import { useSection } from '@/app/nav';
 import { detailOf, eventTone } from '@/components/event-line';
 import { GhLink } from '@/components/job';
 import { NodeTends } from '@/components/node-tends';
 import { Empty, Panel } from '@/components/panel';
-import { FIELD } from '@/components/plugin-form';
 import { COLOR, StatusBadge, TEXT, type Tone } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
 import { get } from '@/lib/api';
@@ -23,11 +24,12 @@ import { laneName } from '@/model/board';
 import { clock, elapsed } from '@/model/format';
 import { jobHref } from '@/model/job';
 import {
-  EDGE_TEXT, filterChoices, KIND_TEXT, jobRows, lastEvents, layoutTree, NO_FILTER, NODE_H, NODE_W, pullRequestText, pullRequestTone, shownTrees, stageCounts, stageInfo,
+  EDGE_TEXT, filterChoices, IN_FLIGHT_SECTION, KIND_TEXT, jobRows, lastEvents, layoutTree, NO_FILTER, NODE_H, NODE_W, pullRequestText, pullRequestTone, shownTrees, stageCounts, stageInfo,
   STAGES, tasksText, type JobsFilter,
 } from '@/model/jobs-view';
 import type { DomainEvent, JobGraph, JobGraphEdge, JobGraphNode, JobStage, JobTree } from '@/model/wire';
 import { useHopper } from '@/store';
+import { Filter, InFlightToggle, StageCounts } from './jobs-filters';
 
 const EMPTY: JobGraph = { nodes: [], edges: [], trees: [], stages: {} };
 type Mode = 'graph' | 'list';
@@ -88,39 +90,6 @@ const JobRow = memo(function JobRow({ node, lane, last, since }: RowProps) {
     </div>
   );
 }, same);
-
-function Filter<T extends string>({ slot, label, value, choices, name, onPick }: { slot: string; label: string; value: T | null; choices: readonly T[]; name: (v: T) => string; onPick: (v: T | null) => void }) {
-  return (
-    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">{label}
-      <select data-slot={slot} className={cn(FIELD, 'w-36')} value={value ?? ''} onChange={(e) => onPick(e.target.value === '' ? null : (e.target.value as T))}>
-        <option value="">all</option>
-        {/* A choice no job has any more stays selectable, so the filter never changes by itself. */}
-        {[...new Set([...(value ? [value] : []), ...choices])].map((c) => <option key={c} value={c}>{name(c)}</option>)}
-      </select>
-    </label>
-  );
-}
-
-/** How many jobs are in each stage; a count is a button that filters to its stage. */
-function StageCounts({ counts, chosen, onPick }: { counts: Partial<Record<JobStage, number>>; chosen: JobStage | null; onPick: (s: JobStage | null) => void }) {
-  return (
-    <div data-slot="jobs-stage-counts" className="flex flex-wrap gap-1.5 border-b px-4 py-2">
-      {STAGES.filter((s) => s.stage !== 'no_job').map((s) => {
-        const n = counts[s.stage] ?? 0;
-        const on = chosen === s.stage;
-        return (
-          <button key={s.stage} type="button" data-slot="jobs-stage-count" data-stage={s.stage} title={s.title} aria-pressed={on}
-            onClick={() => onPick(on ? null : s.stage)} disabled={n === 0 && !on}
-            className={cn('inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs disabled:opacity-40', on ? 'border-foreground/40 bg-muted' : 'hover:bg-muted/60')}>
-            <span className="size-2 rounded-full" style={{ background: COLOR[s.tone] }} />
-            <span>{s.label}</span>
-            <span className="num font-mono font-medium">{n}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 const EDGE_STYLE: Record<JobGraphEdge['kind'], { dash?: string; tone: Tone }> = {
   parent: { tone: 'muted' }, follow_up: { dash: '2 3', tone: 'muted' }, works: { tone: 'muted' },
@@ -266,7 +235,9 @@ export function Jobs() {
   const machines = useHopper((s) => s.machines);
   const [graph, setGraph] = useState<JobGraph | null>(null);
   const [fetched, setFetched] = useState<DomainEvent[]>([]);
-  const [filter, setFilter] = useState<JobsFilter>(NO_FILTER);
+  const [picked, setFilter] = useState<JobsFilter>(NO_FILTER);
+  const inFlight = useSection() === IN_FLIGHT_SECTION; // the hash's, so the header badge's link turns it on
+  const filter = useMemo(() => ({ ...picked, inFlight }), [picked, inFlight]);
   const [mode, setMode] = useState<Mode>('graph');
   // A tree a person opened or folded; else it starts open unless nothing blocks it and other trees show.
   const [opened, setOpened] = useState<Record<string, boolean>>({});
@@ -302,6 +273,7 @@ export function Jobs() {
           <button type="button" data-slot="jobs-mode-graph" aria-pressed={mode === 'graph'} onClick={() => setMode('graph')} className={cn('inline-flex items-center gap-1 px-2 py-1 text-xs', mode === 'graph' && 'bg-muted')}><Network className="size-3.5" />Graph</button>
           <button type="button" data-slot="jobs-mode-list" aria-pressed={mode === 'list'} onClick={() => setMode('list')} className={cn('inline-flex items-center gap-1 border-l px-2 py-1 text-xs', mode === 'list' && 'bg-muted')}><List className="size-3.5" />List</button>
         </div>
+        <InFlightToggle on={inFlight} />
         <Filter<JobStage> slot="jobs-filter-stage" label="Stage" value={filter.stage} choices={choices.stages} name={(s) => stageInfo(s).label} onPick={(stage) => setFilter((f) => ({ ...f, stage }))} />
         <Filter<string> slot="jobs-filter-repo" label="Repository" value={filter.repo} choices={choices.repos} name={(r) => r} onPick={(repo) => setFilter((f) => ({ ...f, repo }))} />
         <a href="/help/jobs" target="_blank" rel="noopener" className="text-muted-foreground hover:text-foreground" aria-label="Help for the Jobs view" title="Help for the Jobs view"><CircleHelp className="size-4" /></a>

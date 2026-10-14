@@ -340,6 +340,24 @@ export function countStates(items: Iterable<Pick<WorkItem, 'state'>>): Record<Wo
   return out;
 }
 
+/** The waits of an open pull request that keep its item in flight (issue #1113): its checks run, a job fixes them, or the merge. */
+export const IN_FLIGHT_WAITS: readonly PullRequestWait[] = ['checks_running', 'fixing_checks', 'merge'];
+/** The states an item in flight can be in: what the ledger reads to count them. */
+export const IN_FLIGHT_STATES: readonly WorkItemState[] = ['working', 'pr_open'];
+
+/**
+ * Whether the item is in flight (issue #1113): a job is at work on it, or its pull request is open with its checks
+ * running, its checks being fixed, or waiting on the merge — or not yet seen by the follow, with all that ahead. A draft
+ * or merge conflicts wait on a fix, not on the run. The one rule the header's badge and the Jobs view's filter read.
+ */
+export function isInFlight(i: Pick<WorkItem, 'state' | 'pullRequestWait'>): boolean {
+  if (i.state === 'working') return true;
+  return i.state === 'pr_open' && (i.pullRequestWait === undefined || IN_FLIGHT_WAITS.includes(i.pullRequestWait));
+}
+
+/** How many items are in flight. */
+export const countInFlight = (items: Iterable<Pick<WorkItem, 'state' | 'pullRequestWait'>>): number => [...items].filter(isInFlight).length;
+
 /** The ledger: each item's row, and the counts every view reads. */
 export interface WorkItemLedger {
   /** Fold one appended event into its item. Called by the event log in the append's transaction. */
@@ -353,6 +371,8 @@ export interface WorkItemLedger {
   list(filter?: { state?: WorkItemState[]; keptWork?: true; landing?: true; limit?: number }): WorkItem[];
   /** How many items are in each state: `SELECT state, count(*)`. */
   counts(): Record<WorkItemState, number>;
+  /** How many items are in flight (`isInFlight`, issue #1113). */
+  inFlight(): number;
   /** Replay every event and the issue graph through the reducer, in place of the rows there are. How many items. */
   rebuild(): number;
 }

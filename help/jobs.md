@@ -30,6 +30,12 @@ Each node and each card also says in plain words where it stands. For example:
 - **Checks failed**, **Has merge conflicts** or **Draft**: the job is finished, and its pull request needs this first.
 - **Merged**: the job's pull request merged.
 
+### In flight
+
+The badge at the top of every page shows how many jobs are **in flight**. A job is in flight when an agent works on it now, or when its pull request is open and its checks run, its checks are being fixed, or it waits on the merge. A draft or a pull request with merge conflicts is not in flight. The count updates by itself when a job moves.
+
+Select the badge to open the Jobs view with only the jobs in flight. **In flight** at the top of the view is on. Select it again to show all jobs.
+
 ### The graph
 
 The graph is the default mode. It shows each group of connected work as one **job tree**, named by its root. The root is usually the first issue.

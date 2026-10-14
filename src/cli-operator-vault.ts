@@ -1,6 +1,6 @@
 // The vault, its templates and the sandbox boxes from the operator CLI (issue #716, design.md "The vault and sandbox
 // boxes from the operator CLI"): an agent sets a vault secret, saves and approves a template, sets the read policy
-// (issue #716, item 1), tests a minting credential (issues #781, #854), asks for the template some needs name (issue #718), and launches a box of it without a UI session in a browser. Each is the UI's own read or `POST /ui/api/vault` / `POST /ui/api/machines/sandbox`,
+// (issue #716, item 1), tests a minting credential (issues #781, #854), grants a job the vault (issue #1089), asks for the template some needs name (issue #718), and launches a box of it without a UI session in a browser. Each is the UI's own read or `POST /ui/api/vault` / `POST /ui/api/machines/sandbox`,
 // so the vault's checks and its approval gate apply as they do for a click. A secret's value comes from stdin only.
 import { parseArgs } from 'node:util';
 import { ASSET_KINDS, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from './domain/access.ts';
@@ -13,6 +13,8 @@ export const VAULT_USAGE = `  hopper vault                                      
   hopper vault set <name> --shared [--scope <text>] [--reader <user id>]...
                                                      share a secret with every user's agents, or the readers named (the hopper's admin)
   hopper vault remove <name> [--shared]              remove a vault secret, or a shared secret
+  hopper vault grant <job>                           grant a job the vault (its item's jobs): a grant ask in hopper vault
+  hopper vault revoke <job>                          take a job's vault grant back
   hopper vault mint-test aws-role/<account>/<role>   mint a read session from the account's minting credential and show
                                                      the role and session name STS says it is (sts get-caller-identity)
   hopper vault mint-test cluster/<name>              mint a read token from the cluster's minting credential and show who
@@ -49,7 +51,8 @@ export const VAULT_USAGE = `  hopper vault                                      
 
 const VAULT_SET = 'vault set <name> [--scope <text>] [--shared [--reader <user id>]...] (the value on stdin, never as an argument)';
 const VAULT_MINT_TEST = 'vault mint-test aws-role/<account>/<role>|cluster/<name>';
-const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared] | hopper ${VAULT_MINT_TEST}`;
+const VAULT_GRANT = 'vault grant|revoke <job>';
+const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [--shared] | hopper ${VAULT_GRANT} | hopper ${VAULT_MINT_TEST}`;
 const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]... [--agent-credential <secret>|none] [--mark <probe>=expect-denied|skip|none]...';
 const TEMPLATE_REQUEST = 'template request --needs "<operation>/<kind>/<asset> ..." (or plain words, one line each: "get pods on cluster lab")';
 const TEMPLATE_VERBS = 'template list | save <name> … | request --needs <needs> | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | check <name> | read-policy [set <entry>...]';
@@ -70,6 +73,12 @@ export function vaultCall(args: string[], stdin: () => string): Call {
   if (verb === 'mint-test') {
     if (!name || extra.length > 0 || flags) throw usage(VAULT_MINT_TEST);
     return { role: 'admin', path: '/ui/api/vault/mint-test', body: async () => ({ asset: name }) };
+  }
+  // A vault grant (issue #1089): the Vault page's Grant and Revoke, `POST /ui/api/jobs/:id/grant-vault|revoke-vault`.
+  // Access decides as for a click; the answer is the vault's view.
+  if (verb === 'grant' || verb === 'revoke') {
+    if (!name || extra.length > 0 || flags) throw usage(VAULT_GRANT);
+    return { role: 'operator', path: `/ui/api/jobs/${encodeURIComponent(name)}/${verb}-vault`, body: async () => ({}) };
   }
   if (verb === 'remove' && name && extra.length === 0 && values.scope === undefined && !values.reader) return (values.shared ? shared : edit)({ action: 'remove', name });
   if (verb !== 'set' || !name || extra.length > 0) throw usage(verb === 'set' ? VAULT_SET : VAULT_VERBS);

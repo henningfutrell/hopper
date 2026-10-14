@@ -181,18 +181,27 @@ describe('the Logins view', () => {
     expect(header()).toBeNull();
   });
 
-  it('auth.completed: Signed in, the code cleared, the job goes on', async () => {
+  it('auth.completed: the login leaves the cards at once for Earlier logins, the code cleared (issue #1110)', async () => {
     const d: Daemon = { logins: [pending()] };
     await boot('#logins', d);
     d.logins = [pending({ status: 'completed', endedAt: at(5), updatedAt: at(5), codeKept: false, verificationUrl: undefined, userCode: undefined })];
     await act(async () => { FakeEventSource.last!.send({ seq: 1, schemaVersion: 1, id: 'e1', type: 'auth.completed', at: at(5), jobId: 'j1', data: { loginId: 'l1', kind: 'device_code', tool: 'gh' } }); });
     await pass(1);
-    const c = card()!;
-    expect(c.getAttribute('data-phase')).toBe('completed');
-    expect(c.textContent).toContain('Signed in');
-    expect(c.textContent).toContain('The job goes on');
-    expect(c.querySelector('[data-device-code]')).toBeNull();
+    expect(card()).toBeNull();
+    expect(document.querySelector('[data-earlier-login="l1"]')?.textContent).toContain('completed');
+    expect(document.querySelector('[data-device-code]')).toBeNull();
     expect(navBadge()).toBeNull();
+  });
+
+  it('Dismiss puts an open login away; a reopened login says why (issue #1110)', async () => {
+    const d: Daemon = { logins: [pending({ reason: 'gh auth status: not logged in', codeKept: false, verificationUrl: undefined, userCode: undefined })] };
+    await boot('#logins', d);
+    expect(card()!.querySelector('[data-slot="login-reopened"]')?.textContent).toContain('gh auth status: not logged in');
+    expect(card()!.textContent).not.toContain('it restarted');
+    const dismiss = [...card()!.querySelectorAll('button')].find((b) => b.textContent?.includes('Dismiss'))!;
+    await act(async () => { dismiss.click(); });
+    await pass(1);
+    expect(daemon.posts).toContain('POST /ui/api/logins/l1/dismiss');
   });
 
   it('several pending logins sort by time left, the shortest first', async () => {

@@ -3,7 +3,7 @@
 // dismissed and nothing replaced; a finished job waits on its pull request until it merges.
 import { describe, expect, it } from 'vitest';
 import {
-  applyEvent, applyRead, countStates, isFailureOf, issueClosedAsComplete, keptWorkShown, keyOfEvent, pullRequestWaitOf, requestsWaitingOf,
+  applyEvent, applyRead, countInFlight, countStates, isFailureOf, isInFlight, issueClosedAsComplete, keptWorkShown, keyOfEvent, pullRequestWaitOf, requestsWaitingOf,
   type LedgerJob, type WorkItem,
 } from '../../src/domain/work-items.ts';
 import type { EventType } from '../../src/domain/types.ts';
@@ -224,5 +224,21 @@ describe('what GitHub says moves the item (issue #1067, part 3)', () => {
     expect(issueClosedAsComplete(closed('not_planned'))).toBe(false);
     expect(issueClosedAsComplete(closed('duplicate'))).toBe(false);
     expect(issueClosedAsComplete(undefined)).toBe(false);
+  });
+
+  it('in flight (issue #1113): working, or its pull request open with its checks running, being fixed, or waiting on the merge', () => {
+    const at = (state: WorkItem['state'], pullRequestWait?: WorkItem['pullRequestWait']) => ({ state, ...(pullRequestWait ? { pullRequestWait } : {}) });
+    expect(isInFlight(at('working'))).toBe(true);
+    expect(isInFlight(at('pr_open', 'checks_running'))).toBe(true);
+    expect(isInFlight(at('pr_open', 'fixing_checks'))).toBe(true);
+    expect(isInFlight(at('pr_open', 'merge'))).toBe(true);
+    // Not yet seen by the follow: its checks and the merge are ahead of it.
+    expect(isInFlight(at('pr_open'))).toBe(true);
+    // A draft or merge conflicts wait on a fix, not on the run.
+    expect(isInFlight(at('pr_open', 'draft'))).toBe(false);
+    expect(isInFlight(at('pr_open', 'conflicts'))).toBe(false);
+    for (const s of ['waiting_for_approval', 'queued', 'needs_you', 'waiting_outside', 'partly_done', 'done', 'failed', 'dropped'] as const) expect(isInFlight(at(s))).toBe(false);
+    expect(countInFlight([at('working'), at('pr_open', 'merge'), at('pr_open', 'draft'), at('queued'), at('done')])).toBe(2);
+    expect(countInFlight([])).toBe(0);
   });
 });

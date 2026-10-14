@@ -89,7 +89,7 @@ describe('the logins together', () => {
   });
 
   it('an ended login stays on a card a short while, then goes to the history; an expired one held for a new code stays', () => {
-    const done = login({ status: 'completed', endedAt: at(10) });
+    const done = login({ status: 'failed', endedAt: at(10) });
     expect(onCard(done, T0 + 10_000, SETTINGS)).toBe(true);
     expect(onCard(done, T0 + 10_000 + ENDED_ON_CARD_MS, SETTINGS)).toBe(false);
     const expired = login({ status: 'expired' }, 60);
@@ -98,5 +98,12 @@ describe('the logins together', () => {
     expect(onCard(expired, T0 + 60_000 + ENDED_ON_CARD_MS, { ...SETTINGS, onExpiry: 'hold' })).toBe(true);
     expect(onCard(expired, T0 + 60_000 + ENDED_ON_CARD_MS, { ...SETTINGS, onExpiry: 'renew' })).toBe(true);
     expect(onCard(login(), T0 + 3_600_000, SETTINGS)).toBe(true);
+  });
+
+  it('a resolved login — completed or dismissed — leaves the cards at once (issue #1110)', () => {
+    expect(onCard(login({ status: 'completed', endedAt: at(10) }), T0 + 10_000, SETTINGS)).toBe(false);
+    expect(onCard(login({ status: 'dismissed', endedAt: at(10) }), T0 + 10_000, SETTINGS)).toBe(false);
+    // A reopened login is pending again: on a card, its reason with it.
+    expect(onCard(login({ status: 'pending', reason: 'not logged in' }), T0, SETTINGS)).toBe(true);
   });
 });

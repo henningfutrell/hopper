@@ -230,11 +230,12 @@ export const EVENT_SCHEMAS = {
   // Logins (issue #476): a login a job or run waits on, handled apart from questions. `run`: the executor or escalation level.
   // `host` (issue #698): the host of the URL to open, never its path or query.
   'auth.pending': strict({ ...login, host: z.string().optional(), expiresAt: z.iso.datetime(), intervalSec: z.number().int().positive().optional(), run: z.string(), questionId: z.string().optional(), renewed: z.boolean().optional(), ...priority }),
-  'auth.completed': strict(login),
+  'auth.completed': strict({ ...login, by: z.enum(['requester']).optional() }),
   // `renewing` (issue #1016): the job was asked for a new code by itself (`onExpiry: renew`).
   'auth.expired': strict({ ...login, expiresAt: z.iso.datetime(), renewing: z.boolean().optional() }),
-  'auth.cancelled': strict({ ...login, by: z.enum(['user']) }),
-  'auth.failed': strict({ ...login, reason: z.string().min(1) }),
+  'auth.cancelled': strict({ ...login, by: z.enum(['user']) }), 'auth.failed': strict({ ...login, reason: z.string().min(1), by: z.enum(['requester']).optional() }),
+  // Issue #1110: `by: requester`, the job that asked said so; reopened, a completed login it says does not work; dismissed, put away.
+  'auth.reopened': strict({ ...login, reason: z.string().min(1) }), 'auth.dismissed': strict({ ...login, by: z.enum(['user']) }),
   // The failure assessor (issue #509): its judgement of a failed job, and the problems it groups shared causes into.
   'job.assessed': strict({
     recordId: z.string(), signature: z.string(), class: z.enum(FAILURE_CLASSES), decision: z.enum(FAILURE_DECISIONS),
