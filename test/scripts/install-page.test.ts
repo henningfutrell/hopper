@@ -130,6 +130,16 @@ describe('the Windows install (WSL)', () => {
     expect(cli).toContain('https://henningfutrell.github.io/hopper/hopper.cmd -OutFile');
     expect(cli).toContain('https://henningfutrell.github.io/hopper/hopper.ps1 -OutFile');
   });
+
+  it('ends with hopper doctor in PowerShell, which needs hopper.ps1 beside hopper.cmd (issue #712)', () => {
+    const steps = windows.slice(0, windows.indexOf('<details>'));
+    const last = steps.slice(steps.lastIndexOf('<li'));
+    expect(last).toContain('id="windows-doctor"');
+    expect(last).toContain('data-copy="hopper doctor"');
+    expect(last).toContain('href="#windows-cli"');
+    const cli = page.slice(page.indexOf('id="windows-cli"'), page.indexOf('id="windows-machine"'));
+    expect(cli).toContain('hopper.ps1 -OutFile &quot;$env:LOCALAPPDATA\\hopper\\hopper.ps1&quot;');
+  });
 });
 
 describe('a Windows computer as a machine (issue #704)', () => {

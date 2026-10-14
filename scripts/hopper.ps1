@@ -4,6 +4,8 @@
 #
 # hopper autostart on|off|status keeps the distro, and the hopper in it, running: after you sign in to Windows and
 # after wsl --shutdown (docs/deploy.md "Keep it running on Windows"). It needs no admin rights and no secret.
+# hopper doctor checks, from Windows, what a hopper in WSL needs, and gives the fix for each check that fails
+# (docs/deploy.md "Check it from Windows"). It only reads: it changes nothing and sends no token.
 #
 #   HOPPER_WSL_DISTRO       the WSL distro the hopper runs in (unset: WSL's default distro)
 #   HOPPER_COMPOSE_PROJECT  the compose project of the hopper (unset: hopper, the name in compose.yaml)
@@ -19,9 +21,10 @@ function Fail([string] $message) {
   exit 1
 }
 
-# One line of a command in the distro, or '' when it fails.
+# The output of a command in the distro, or '' when it fails.
 function Read-Distro([string[]] $command) {
-  $out = & wsl.exe @wsl -e @command 2>$null
+  $ErrorActionPreference = 'Continue'
+  try { $out = & wsl.exe @wsl -e @command 2>$null } catch { return '' }
   if ($LASTEXITCODE -ne 0) { return '' }
   return (@($out) -join "`n").Trim()
 }
@@ -97,6 +100,86 @@ function Invoke-Autostart([string] $action) {
 }
 
 if ($args.Count -gt 0 -and $args[0] -eq 'autostart') { Invoke-Autostart $(if ($args.Count -gt 1) { $args[1] } else { '' }) }
+
+# The keys of one [section] of an ini file (.wslconfig, /etc/wsl.conf): names and values in lower case.
+function Read-Ini([string] $text, [string] $section) {
+  $keys = @{}
+  $in = $false
+  foreach ($line in ($text -split "`r?`n")) {
+    $l = $line.Trim()
+    if ($l -match '^\[(.+)\]$') { $in = $Matches[1].Trim() -eq $section; continue }
+    if ($in -and $l -match '^([^#;=]+)=(.*)$') { $keys[$Matches[1].Trim().ToLower()] = ($Matches[2] -replace '\s*[#;].*$', '').Trim().ToLower() }
+  }
+  return $keys
+}
+
+# One line of hopper doctor: ok, or FAIL and the fix, one step a line.
+function Write-Check([string] $name, [bool] $ok, [string[]] $fix) {
+  Write-Output ('{0}  {1}' -f $(if ($ok) { 'ok  ' } else { 'FAIL' }), $name)
+  if ($ok) { return }
+  $script:failed = $true
+  foreach ($line in $fix) { Write-Output "      $line" }
+}
+
+function Invoke-Doctor {
+  $script:failed = $false
+  $port = if ($env:HOPPER_PORT) { $env:HOPPER_PORT } else { '4790' }
+  $loopback = "http://127.0.0.1:$port"
+  $mode = (Read-Distro @('wslinfo', '--networking-mode')).ToLower()
+  $wslconfig = Join-Path $env:USERPROFILE '.wslconfig'
+  $wsl2 = if (Test-Path $wslconfig) { Read-Ini (Get-Content -Raw $wslconfig) 'wsl2' } else { @{} }
+  $shutdown = 'Then run wsl --shutdown in PowerShell, and start the hopper again.'
+  # The fix the Machines banner gives for a broken Windows link (ui/src/model/windows-link.ts), by networking mode.
+  $linkFix = if ($mode -eq 'nat') {
+    @("In .wslconfig, in your Windows user folder (%UserProfile%), set localhostForwarding=true under [wsl2].",
+      "If it is already set, in .wslconfig, in your Windows user folder (%UserProfile%), set networkingMode=mirrored under [wsl2] instead, or open $loopback in place of localhost.",
+      $shutdown)
+  } else {
+    @("Open $loopback in place of localhost.",
+      "Or: In .wslconfig, in your Windows user folder (%UserProfile%), set networkingMode=mirrored under [wsl2].",
+      $shutdown)
+  }
+
+  $status = 0
+  try { $status = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "http://localhost:$port/api/health").StatusCode } catch { $status = 0 }
+  Write-Check "Windows opens http://localhost:$port/api/health" ($status -eq 200) (@('If the hopper does not run, run podman compose up -d in its folder in WSL.') + $linkFix)
+
+  $forwarding = $wsl2['localhostforwarding']
+  $configured = $wsl2['networkingmode']
+  if ($mode -eq 'nat' -and $forwarding -eq 'false') {
+    Write-Check "WSL networking mode: nat, with localhostForwarding=false in $wslconfig" $false $linkFix
+  } elseif ($mode -and $configured -and $configured -ne $mode) {
+    Write-Check "WSL networking mode: $mode, but $wslconfig sets networkingMode=$configured" $false @($shutdown)
+  } else {
+    Write-Check "WSL networking mode: $(if ($mode) { $mode } else { 'unknown (wslinfo did not answer)' })" $true @()
+  }
+
+  # hopper autostart on and the install page make the same shortcut, hopper-wsl.lnk.
+  $link = Join-Path ([Environment]::GetFolderPath('Startup')) 'hopper-wsl.lnk'
+  Write-Check 'keep-alive shortcut in the Startup folder' (Test-Path $link) @(
+    'Run: hopper autostart on',
+    'Or add the shortcut from the install page: https://henningfutrell.github.io/hopper/install.html#windows-keep-running')
+
+  $user = Read-Distro @('id', '-un')
+  if (-not $user) {
+    Write-Check 'the WSL distro answers' $false @('Run wsl --list to see the names of the distros, and set HOPPER_WSL_DISTRO to the one the hopper runs in.')
+  } else {
+    $boot = Read-Ini (Read-Distro @('cat', '/etc/wsl.conf')) 'boot'
+    Write-Check 'systemd=true in /etc/wsl.conf' ($boot['systemd'] -eq 'true') @(
+      "In the WSL distro, run: printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf",
+      'Then run wsl --shutdown in PowerShell, and open the distro again.')
+    Write-Check "linger is on for $user" ((Read-Distro @('loginctl', 'show-user', $user, '-p', 'Linger', '--value')) -eq 'yes') @(
+      'In the WSL distro, run: sudo loginctl enable-linger "$USER"')
+    Write-Check 'podman-restart.service is enabled' ((Read-Distro @('systemctl', '--user', 'is-enabled', 'podman-restart.service')) -eq 'enabled') @(
+      'In the WSL distro, run: systemctl --user enable podman-restart.service')
+  }
+
+  if ($script:failed) { exit 1 }
+  Write-Output 'hopper: every check passed.'
+  exit 0
+}
+
+if ($args.Count -gt 0 -and $args[0] -eq 'doctor') { Invoke-Doctor }
 
 # The container's name changes with the compose project, so find it by its compose labels.
 $container = & wsl.exe @wsl -e podman ps -q --filter "label=com.docker.compose.project=$project" --filter 'label=com.docker.compose.service=hopper' |

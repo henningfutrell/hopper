@@ -3,7 +3,8 @@
 // credentials the CLI already has there; Windows keeps none. They find the container by its compose labels, never by
 // a fixed name, since the name changes with the compose project. `hopper autostart on|off|status` keeps the distro, and
 // the hopper in it, running after a Windows sign-in and after wsl --shutdown, with no admin rights (docs/deploy.md
-// "Keep it running on Windows"). Windows has no runner here, so these read the files.
+// "Keep it running on Windows"). `hopper doctor` checks, from Windows, what a hopper in WSL needs, and gives the fix for
+// each check that fails (docs/deploy.md "Check it from Windows"). Windows has no runner here, so these read the files.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -70,7 +71,7 @@ describe('hopper.ps1', () => {
 
 describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () => {
   it('in hopper.cmd, runs hopper.ps1 from its own folder, and says how to get it when it is missing', () => {
-    expect(cmd).toMatch(/if \/i "%~1"=="autostart" goto autostart/);
+    expect(cmd).toMatch(/if \/i "%~1"=="autostart" goto ps1/);
     expect(cmd).toContain('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0hopper.ps1" %*');
     expect(cmd).toContain('https://henningfutrell.github.io/hopper/hopper.ps1');
   });
@@ -126,5 +127,70 @@ describe('hopper autostart (docs/deploy.md "Keep it running on Windows")', () =>
       expect(status).toContain(part);
     }
     expect(status).toContain('exit 1');
+  });
+});
+
+describe('hopper doctor (docs/deploy.md "Check it from Windows")', () => {
+  const doctor = ps1.slice(ps1.indexOf('function Write-Check'), ps1.indexOf('# The container\'s name changes'));
+
+  it('in hopper.cmd, runs hopper.ps1 from its own folder, and says how to get it when it is missing', () => {
+    expect(cmd).toMatch(/if \/i "%~1"=="doctor" goto ps1/);
+    expect(cmd).toContain('powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0hopper.ps1" %*');
+    expect(cmd).toContain('https://henningfutrell.github.io/hopper/hopper.ps1');
+  });
+
+  it('in hopper.ps1, runs before the container is looked up, so it works when the hopper does not run', () => {
+    expect(ps1).toMatch(/\$args\[0\] -eq 'doctor'\) \{ Invoke-Doctor \}/);
+    expect(ps1.indexOf("-eq 'doctor'")).toBeLessThan(ps1.indexOf('podman ps -q'));
+  });
+
+  it('opens /api/health at localhost on the port HOPPER_PORT names, else 4790', () => {
+    expect(doctor).toContain("if ($env:HOPPER_PORT) { $env:HOPPER_PORT } else { '4790' }");
+    expect(doctor).toContain('Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 "http://localhost:$port/api/health"');
+  });
+
+  it('reads the networking mode from wslinfo, and localhostForwarding and networkingMode from %UserProfile%\\.wslconfig', () => {
+    expect(doctor).toContain("@('wslinfo', '--networking-mode')");
+    expect(doctor).toContain("Join-Path $env:USERPROFILE '.wslconfig'");
+    expect(doctor).toContain("'localhostforwarding'");
+    expect(doctor).toContain("'networkingmode'");
+  });
+
+  it('for a broken link gives the same fix as the Machines banner, by networking mode', async () => {
+    const model = '../../ui/src/model/windows-link.ts'; // browser code, type-checked by ui/tsconfig.json: imported by path
+    const { windowsLinkFix } = (await import(model)) as { windowsLinkFix(l: { url: string; mode?: string; ok: boolean; at: string }): string[] };
+    for (const mode of ['nat', 'mirrored', undefined]) {
+      const fix = windowsLinkFix({ url: 'http://localhost:4790/api/health', mode, ok: false, at: '' });
+      for (const line of fix) expect(doctor).toContain(line.replace('http://127.0.0.1:4790', '$loopback'));
+    }
+  });
+
+  it('checks the keep-alive shortcut in this user\'s Startup folder', () => {
+    expect(doctor).toContain("[Environment]::GetFolderPath('Startup')");
+    expect(doctor).toContain("'hopper-wsl.lnk'");
+    expect(doctor).not.toContain('keep-alive.lnk');
+    expect(doctor).toContain('hopper autostart on');
+    expect(doctor).toContain('install.html#windows-keep-running');
+  });
+
+  it('checks in the distro: systemd=true in /etc/wsl.conf, linger, and podman-restart.service, each with its fix', () => {
+    expect(doctor).toContain("@('cat', '/etc/wsl.conf')");
+    expect(doctor).toContain("printf '[boot]\\nsystemd=true\\n' | sudo tee -a /etc/wsl.conf");
+    expect(doctor).toContain("'-p', 'Linger', '--value'");
+    expect(doctor).toContain('sudo loginctl enable-linger');
+    expect(doctor).toContain("@('systemctl', '--user', 'is-enabled', 'podman-restart.service')");
+    expect(doctor).toContain('systemctl --user enable podman-restart.service');
+  });
+
+  it('prints ok or the fix for each check, and exits 1 when one fails', () => {
+    expect(doctor).toContain("'ok  '");
+    expect(doctor).toContain("'FAIL'");
+    expect(doctor).toMatch(/if \(\$script:failed\) \{ exit 1 \}/);
+  });
+
+  it('only reads: it changes nothing, sends no token and starts nothing', () => {
+    expect(doctor).not.toMatch(/TOKEN|Authorization|password/i);
+    expect(doctor).not.toMatch(/Set-Content|New-Item|Remove-Item|Start-Process|Stop-Process|CreateShortcut|enable-linger \$|'--user', 'enable'/);
+    expect(doctor).not.toMatch(/-Method (Post|Put|Delete)/i);
   });
 });
