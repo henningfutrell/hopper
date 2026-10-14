@@ -1,0 +1,1 @@
+- An admin can now open a machine's Terminal on the Machines page: see every pane the hopper keeps open on that machine, also the ones no job uses, and type into one, from anywhere you reach the hopper.
