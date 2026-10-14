@@ -2,7 +2,8 @@
 // pull request off the landing branch is moved to it and recorded (`job.pull_request_retargeted`); one superseded by another
 // pull request that closed its issue is closed, and the close is recorded with why. In-memory fake GitHub at the GitHubApi
 // seam; issues carry a scripted-executor op as their first body line. A rebase held behind other heads for an hour is tended
-// anyway (`MAX_HELD_MS`), as new heads keep coming.
+// anyway (`MAX_HELD_MS`), as new heads keep coming. A stray pull request (part 4: a job named it, no job follows it, and no
+// job of its item works on it) gets the same housekeeping, recorded with `stray`.
 import { afterEach, describe, expect, it } from 'vitest';
 import { MAX_HELD_MS } from '../../src/domain/tending-queue.ts';
 import type { Job } from '../../src/domain/types.ts';
@@ -10,7 +11,7 @@ import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { waitFor } from '../support/wait.ts';
-import { retargetNote, tendNote } from '../../src/sources/github/pr-notes.ts';
+import { retargetNote, supersededNote, tendNote } from '../../src/sources/github/pr-notes.ts';
 
 const REPO = 'owner/hopper-sandbox';
 let a: TestApp | undefined;
@@ -117,5 +118,58 @@ describe('pull request housekeeping (issue #1143)', () => {
     await waitFor(async () => (await app.events('types=job.pull_request_closed')).length > 0, { what: 'job.pull_request_closed' });
     expect((await app.events('types=job.pull_request_closed')).map((e) => [e.jobId, e.data]))
       .toEqual([[job.id, { pullRequest: url, part: false, superseded: `its issue was closed by ${other.url}` }]]);
+  });
+  /** Make the job's pull request a stray: a tend took it, and no job follows it now (its tend job ended with none). */
+  function stray(app: TestApp, jobId: string): void {
+    const store = app.user().store;
+    const s = store.jobs.get(jobId)!.sourceState!;
+    store.jobs.update(jobId, { sourceState: { ...s, source: { ...s.source, follow: 'tended' } } });
+  }
+
+  it('a stray pull request superseded by another that closed its issue: closed, said on it, and recorded as a stray', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { issue, job, url } = await pullRequestWaiting(gh, app, () => undefined);
+    stray(app, job.id);
+    const now = new Date().toISOString();
+    const other = gh.closeByPullRequest(REPO, issue.number, { createdAt: now, mergedAt: now });
+    await app.sync();
+    await waitFor(async () => (await app.events('types=job.pull_request_closed')).length > 0, { what: 'job.pull_request_closed' });
+    const why = `its issue was closed by ${other.url}`;
+    expect((await app.events('types=job.pull_request_closed')).map((e) => [e.jobId, e.data]))
+      .toEqual([[job.id, { pullRequest: url, part: false, superseded: why, stray: true }]]);
+    expect(gh.pullRequestComments(url)).toEqual([supersededNote(why)]);
+    expect((await app.job(job.id)).sourceState?.source).toMatchObject({ follow: 'closed', pullRequest: url });
+    // Closed, it is no stray: a later sync does nothing more.
+    await app.sync();
+    expect(await app.events('types=job.pull_request_closed')).toHaveLength(1);
+  });
+
+  it('a stray pull request off the landing branch: moved to it, said on it, and recorded as a stray', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { job, url } = await pullRequestWaiting(gh, app, () => undefined);
+    stray(app, job.id);
+    expect((await app.ui('/ui/api/landing-batches', { repos: { [REPO]: { tested: 'beta', landing: 'main' } } }, { token: await app.login() })).status).toBe(200);
+    await app.sync();
+    await waitFor(async () => (await app.events('types=job.pull_request_retargeted')).length > 0, { what: 'job.pull_request_retargeted' });
+    expect((await app.events('types=job.pull_request_retargeted')).map((e) => [e.jobId, e.data]))
+      .toEqual([[job.id, { pullRequest: url, from: 'dev', to: 'main', stray: true }]]);
+    expect(gh.pullRequestComments(url)).toEqual([retargetNote('dev', 'main')]);
+    // On the landing branch now: a later sync does not move it again.
+    await app.sync();
+    expect(await app.events('types=job.pull_request_retargeted')).toHaveLength(1);
+  });
+
+  it('a stray pull request with work left to land, on the landing branch: left as it is', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { job, url } = await pullRequestWaiting(gh, app, () => undefined);
+    stray(app, job.id);
+    await app.sync();
+    await app.sync();
+    expect(await app.events('types=job.pull_request_closed')).toEqual([]);
+    expect(await app.events('types=job.pull_request_retargeted')).toEqual([]);
+    expect(gh.pullRequestComments(url)).toEqual([]);
   });
 });
