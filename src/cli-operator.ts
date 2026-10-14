@@ -8,7 +8,8 @@
 // the vault, its templates and the sandbox boxes (issue #716, cli-operator-vault.ts): a secret's value from stdin only;
 // API tokens (issue #718, cli-operator-keys.ts): mint one for an agent, printed once; list and revoke them;
 // Report a bug and Your reports (issue #694, cli-operator-report.ts): its context first, then the report; direct jobs (issue #901, cli-operator-direct.ts);
-// search (issue #945, cli-operator-search.ts): the jobs by their words, type-ahead, the index's state and Reindex.
+// search (issue #945, cli-operator-search.ts): the jobs by their words, type-ahead, the index's state and Reindex;
+// the Windows link report of the keep-alive loop on Windows (issue #712, cli-operator-windows-link.ts).
 // Each is the UI's own `POST /ui/api/*` on the running daemon, so the daemon's checks, events and
 // runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
@@ -34,8 +35,9 @@ import { REPORT_USAGE, reportCall } from './cli-operator-report.ts';
 import { SEARCH_USAGE, searchCall } from './cli-operator-search.ts';
 import { VAULT_USAGE, sandboxCall, templateCall, vaultCall } from './cli-operator-vault.ts';
 import { driftCall } from './cli-update-drift.ts';
+import { WINDOWS_LINK_USAGE, windowsLinkCall } from './cli-operator-windows-link.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'accounts', 'vault', 'template', 'sandbox', 'token', 'report', 'search'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'accounts', 'vault', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
@@ -90,6 +92,7 @@ ${LANES_USAGE}
 ${ACCOUNTS_USAGE}
 ${VAULT_USAGE}
 ${TOKEN_USAGE}
+${WINDOWS_LINK_USAGE}
   Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
 
 
@@ -262,6 +265,7 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'artifact') return artifactCall(args);
   if (command === 'report') return reportCall(args);
   if (command === 'search') return searchCall(args);
+  if (command === 'windows-link') return windowsLinkCall(args);
   if (command === 'typesafe-key') return typesafeKeyCall(args, stdin);
   if (command === 'auto-park') return autoParkCall(args);
   if (command === 'proposal') return proposalCall(args);
@@ -305,7 +309,7 @@ function common(args: string[]): { rest: string[]; url?: string; user?: string }
 }
 
 /**
- * `hopper job|queue|question|problem|handoff|failure|prs|pr|repo|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|vault|template|sandbox|report|search …`: one operator action on the running daemon, as `userOf` names the user.
+ * `hopper job|queue|question|problem|handoff|failure|prs|pr|repo|yolo|backfill|auto-park|proposal|typesafe-key|artifact|master-key|lanes|vault|template|sandbox|report|search|windows-link …`: one operator action on the running daemon, as `userOf` names the user.
  * Prints the daemon's answer as JSON; the exit code the call gives it.
  */
 export async function runOperatorAction(

@@ -1,5 +1,6 @@
 // The Windows link (issue #712): what a WSL machine's client found when Windows opened the hopper at localhost — the
-// line a machine card says, the fix for the networking mode found, and the machines the banner names. Pure.
+// line a machine card says, the fix for the networking mode found, and the machines the banner names, with the report of
+// the keep-alive loop on Windows. Pure.
 import type { ResourceReading, WindowsLink } from '../../../src/domain/types.ts';
 
 const MODE: Record<string, string> = { nat: 'NAT', mirrored: 'mirrored' };
@@ -32,10 +33,14 @@ export function windowsLinkFix(l: WindowsLink): string[] {
   return [`Open ${loopbackOf(l)} in place of localhost.`, `Or: ${mirrored}.`, SHUTDOWN];
 }
 
-/** Each online machine whose Windows link is broken, for the banner. */
-export function brokenWindowsLinks(machines: readonly { id: string; label?: string; online: boolean; resources?: ResourceReading }[]): { id: string; name: string; link: WindowsLink }[] {
-  return machines.flatMap((m) => {
+/** The id and name the banner gives a report of the keep-alive loop on Windows (src/machines/windows-link-watch.ts). */
+const REPORTER = { id: 'windows', name: 'Windows (the keep-alive loop)' };
+
+/** Each online machine whose Windows link is broken, for the banner; then the keep-alive loop's report, when broken. */
+export function brokenWindowsLinks(machines: readonly { id: string; label?: string; online: boolean; resources?: ResourceReading }[], reported?: WindowsLink): { id: string; name: string; link: WindowsLink }[] {
+  const fromMachines = machines.flatMap((m) => {
     const link = m.online ? m.resources?.windowsLink : undefined;
     return link && !link.ok ? [{ id: m.id, name: m.label || m.id, link }] : [];
   });
+  return reported && !reported.ok ? [...fromMachines, { ...REPORTER, link: reported }] : fromMachines;
 }

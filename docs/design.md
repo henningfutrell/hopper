@@ -12892,6 +12892,21 @@ cannot see which. A client in the same distro can, so it tests the link:
   each online machine with a broken link and its fix. The fix by mode: NAT, set `localhostForwarding=true` under
   `[wsl2]` in `.wslconfig`, and if it is set, `networkingMode=mirrored`, or open `http://127.0.0.1:<port>`; mirrored
   or no mode read, open `http://127.0.0.1:<port>`, or set `networkingMode=mirrored`; then `wsl --shutdown`.
+- **The keep-alive loop reports it** (the path "The Windows keep-alive loop reports the Windows link through the
+  operator CLI"). With no client in the distro there is no result above, so the loop `hopper autostart on` writes on
+  Windows (`docs/deploy.md` "Keep it running on Windows") tests the link itself: at most every 5 minutes, while the
+  hopper's container runs, the same URL and the same rule (any HTTP answer means the hopper answered), and the mode
+  from `wsl.exe -e wslinfo`. It runs `hopper windows-link report --link <url> (--status <n> | --error <why>) [--mode
+  <mode>]` in the container through `wsl.exe -e podman exec`. That operator action (`src/cli-operator-windows-link.ts`)
+  mints a UI session for one `POST /ui/api/windows-link`, an admin's (`src/http/ui/windows-link.ts`). The hopper stamps
+  the time and gives the report to the Windows link watch: a **second source**, told as the machine `windows`
+  (`WINDOWS_REPORTER`), once broken and once restored, and kept in memory; `GET /api/machines` carries the last report
+  as `windowsLink` while it is at most 15 minutes old, and the banner names it after the machines. Nothing is kept in
+  the database: no migration. No new listener and no new trust: the CLI uses the container's credentials, which the
+  signed-in Windows user could already use through `wsl.exe`; the loop keeps no token, and the report carries no
+  secret. It runs only while the loop runs. Tests: `test/machines/windows-link-watch.test.ts` (the report),
+  `test/integration/windows-link-report.test.ts` (the CLI, the route, `/api/machines`, the event),
+  `test/scripts/windows-cli.test.ts` (the loop), `test/ui/windows-link.test.ts` (the banner).
 - **No client in the distro: no result.** The hopper's own container has no interop; issue #712's other paths cover it.
   One is `hopper doctor` in the **Windows CLI wrapper** (`docs/deploy.md` "Check it from Windows"): run on Windows, it
   tests the same URL, reads the mode and `.wslconfig`, and gives the same fix as the banner; it also checks the

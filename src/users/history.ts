@@ -1,12 +1,13 @@
 // A user runtime's history recorders: the usage history's (issue #385) and machine resources over time (issue #560),
 // both pruned to the user's history retention, read at every prune so a retention set in the UI applies without a
 // restart (issue #356). After a record that kept new machine samples, `afterMachineRecord` runs: lane tuning (issue #688).
-// Each record shows the machines to the memory alert (issue #868) and to the Windows link watch (issue #712).
+// Each record shows the machines to the memory alert (issue #868) and to the Windows link watch (issue #712), which also
+// takes the reports of the keep-alive loop on Windows.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import { DEFAULT_HISTORY_RETENTION_DAYS, type MachineSnapshot, type UsageReading, type UsageSourceReport } from '../domain/types.ts';
 import { createResourceRecorder, type ResourceRecorder } from '../machines/history.ts';
 import { createMemoryWatch } from '../machines/memory-alert.ts';
-import { createWindowsLinkWatch } from '../machines/windows-link-watch.ts';
+import { createWindowsLinkWatch, type WindowsLinkWatch } from '../machines/windows-link-watch.ts';
 import { createUsageRecorder, type UsageRecorder } from '../usage/history.ts';
 
 export function createHistoryRecorders(o: {
@@ -17,7 +18,7 @@ export function createHistoryRecorders(o: {
   store: UserStore;
   clock: Clock;
   logger: { warn(line: string): void };
-}): { recorders: { usageHistory: UsageRecorder; machineHistory: ResourceRecorder }; start(): void; stop(): void } {
+}): { recorders: { usageHistory: UsageRecorder; machineHistory: ResourceRecorder }; windowsLink: WindowsLinkWatch; start(): void; stop(): void } {
   const retentionDays = () => o.store.settings.getHistoryRetentionDays() ?? DEFAULT_HISTORY_RETENTION_DAYS;
   const usageHistory = createUsageRecorder({ readings: o.readings, sources: o.sources, history: o.store.usageHistory, retentionDays, clock: o.clock, logger: o.logger });
   // The memory alert (issue #868): told on the event log, where webhooks and notifiers take it.
@@ -35,6 +36,7 @@ export function createHistoryRecorders(o: {
   }
   return {
     recorders: { usageHistory, machineHistory },
+    windowsLink,
     start() { usageHistory.start(); machineHistory.start(); },
     stop() { usageHistory.stop(); machineHistory.stop(); },
   };
