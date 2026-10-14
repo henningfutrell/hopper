@@ -222,4 +222,19 @@ describe('a WSL machine\'s memory and the memory alert (issue #868)', () => {
     expect(off.body.memoryAlert).toBeNull();
     expect((await history(a, '/api/machines/history?range=24h')).body).not.toHaveProperty('memoryAlert');
   });
+
+  it('a WSL machine\'s Windows link (issue #712): the snapshot carries it, and broken tells machine.windows_link_broken once', async () => {
+    const link = { url: 'http://localhost:4790/api/health', mode: 'nat', at: new Date().toISOString() };
+    const a = await boot(true, { ...WSL, windowsLink: { ...link, ok: false, error: 'Unable to connect to the remote server' } });
+    const m = await onlineWith(a, (x) => x.resources?.windowsLink !== undefined);
+    expect(m.resources?.windowsLink).toMatchObject({ ok: false, mode: 'nat' });
+    await a.user().machineHistory.record();
+    const broken = await waitFor(async () => (await a.events('types=machine.windows_link_broken'))[0]);
+    expect(broken.data).toEqual({ machineId: 'laptop', url: link.url, mode: 'nat', error: 'Unable to connect to the remote server' });
+
+    // Told once: a second record of the same broken link tells nothing more (working again: test/machines/windows-link-watch.test.ts).
+    await a.user().machineHistory.record();
+    expect(await a.events('types=machine.windows_link_broken')).toHaveLength(1);
+  });
 });
+

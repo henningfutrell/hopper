@@ -26,6 +26,22 @@ export interface ResourceReading {
   /** WSL only, with interop: the Windows host's physical memory, free and total. Absent: not read. */
   hostMemFreeBytes?: number;
   hostMemTotalBytes?: number;
+  /** WSL only, a client that dials the hopper on loopback (issue #712): whether Windows reaches the hopper. Absent: not tested. */
+  windowsLink?: WindowsLink;
+}
+
+/**
+ * The Windows link (issue #712): what a client in WSL found when Windows, through PowerShell, opened the hopper's health
+ * route at `url` (localhost, at the port the client dials). `ok`: the hopper answered, with `status`; else `error` says why.
+ * `mode`: WSL's networking mode (`nat`, `mirrored`), absent when not read. `at`: when it was tested.
+ */
+export interface WindowsLink {
+  url: string;
+  mode?: string;
+  ok: boolean;
+  status?: number;
+  error?: string;
+  at: string;
 }
 
 /** One machine's resources and disk at one time, with its lanes in use: what the resource recorder keeps. */

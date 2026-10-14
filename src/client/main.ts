@@ -25,6 +25,7 @@ import { maxIsolationOf } from './isolation.ts';
 import { linkToken, unsupportedPlatform } from './link.ts';
 import { startClient, type Client, type ClientOptions } from './server.ts';
 import { askHopper, HELPER_FILE, startVault } from './vault.ts';
+import { createWindowsLinkCheck } from './windows-link.ts';
 
 /** A machine's name as the hopper takes it: letters, digits, `_` and `-`. */
 export const machineName = (name: string): string => name.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^[-_]+|-+$/g, '') || 'machine';
@@ -32,7 +33,8 @@ export const machineName = (name: string): string => name.replace(/[^A-Za-z0-9_-
 /**
  * The client of a joined machine: its link from its client dir, its token derived from its link key and the hopper's
  * public half; its vault (vault.ts, issue #558), the socket and helper a job gets a vault secret through; and its door
- * (door.ts, issue #695), the loopback URL its jobs reach the hopper at.
+ * (door.ts, issue #695), the loopback URL its jobs reach the hopper at; in WSL, its test of the Windows link (windows-link.ts,
+ * issue #712).
  */
 export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herdrBin' | 'claudeBin' | 'session' | 'installDir' | 'backoffMs' | 'log' | 'onLoaded' | 'runtimeSockets' | 'maxIsolationMs'>): Client {
   const link = readLink(o.dir);
@@ -46,6 +48,7 @@ export function startLinkedClient(o: { dir: string } & Pick<ClientOptions, 'herd
   const client = startClient({
     ...rest, vaultHelper: join(dir, HELPER_FILE), door: () => open?.url, token: () => token,
     dial: dialIn({ url: link.url, user: link.user, key: link.key, token: () => token }),
+    windowsLink: createWindowsLinkCheck({ url: link.url }),
   });
   return {
     async stop() {

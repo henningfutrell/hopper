@@ -2,7 +2,7 @@
 // (src/client/resources.ts) at every list; an ssh target's from what RESOURCES_COMMAND prints in its probe —
 // two /proc/stat cpu lines a second apart, the load averages, the memory lines and the core count, each line
 // marked `hopper-res `; a client target's from its `/release` answer, checked before it is believed.
-import type { ResourceReading } from '../domain/machine-history.ts';
+import type { ResourceReading, WindowsLink } from '../domain/machine-history.ts';
 
 const MARK = 'hopper-res ';
 
@@ -64,5 +64,22 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
     ...(count(r.vmHeldBytes) && r.vmHeldBytes <= r.memTotalBytes ? { vmHeldBytes: r.vmHeldBytes } : {}),
     ...(count(r.hostMemFreeBytes) && count(r.hostMemTotalBytes) && r.hostMemTotalBytes > 0 && r.hostMemFreeBytes <= r.hostMemTotalBytes
       ? { hostMemFreeBytes: r.hostMemFreeBytes, hostMemTotalBytes: r.hostMemTotalBytes } : {}),
+    ...(r.wsl === true && windowsLinkOf(r.windowsLink) ? { windowsLink: windowsLinkOf(r.windowsLink)! } : {}),
+  };
+}
+
+/** A client's Windows link (issue #712), when sane: a localhost health URL, `ok` and a time; a bad mode or status dropped, the reason cut short. */
+function windowsLinkOf(v: unknown): WindowsLink | undefined {
+  if (typeof v !== 'object' || v === null) return undefined;
+  const l = v as Record<string, unknown>;
+  if (typeof l.url !== 'string' || !/^https?:\/\/localhost(:\d{1,5})?\/api\/health$/.test(l.url) || typeof l.ok !== 'boolean') return undefined;
+  if (typeof l.at !== 'string' || Number.isNaN(Date.parse(l.at))) return undefined;
+  return {
+    url: l.url,
+    ...(typeof l.mode === 'string' && /^[a-z]{1,20}$/.test(l.mode) ? { mode: l.mode } : {}),
+    ok: l.ok,
+    ...(typeof l.status === 'number' && Number.isInteger(l.status) && l.status >= 100 && l.status <= 599 ? { status: l.status } : {}),
+    ...(typeof l.error === 'string' && l.error ? { error: l.error.slice(0, 200) } : {}),
+    at: l.at,
   };
 }

@@ -12620,6 +12620,36 @@ WSL figures), `test/machines/memory-alert.test.ts` (the free memory watched, the
 `test/integration/machine-history.test.ts` (samples, the two lines, the setting, both events),
 `test/plugins/grokbot-intake.test.ts`, `test/ui/machine-history.test.ts`.
 
+**The Windows link** (issue #712, the path "The machine client in the same distro tests the Windows link"). When the
+hopper runs in WSL, Windows-side tools and a browser on Windows open it at `http://localhost:<port>`. That works only
+when WSL forwards localhost (NAT mode with `localhostForwarding`) or shares it (mirrored mode); the hopper's container
+cannot see which. A client in the same distro can, so it tests the link:
+- **When.** A client in WSL (`/proc/version` says `microsoft`) that dials the hopper on a loopback address
+  (`localhost`, `127.x.x.x`, `[::1]`) is on the same PC as the hopper. Any other client tests nothing. In the
+  background, at most every 5 minutes, and at its first `/release` after a start; a result older than 15 minutes is
+  dropped.
+- **The test** (`src/client/windows-link.ts`). `wslinfo --networking-mode` gives the **mode** (`nat`, `mirrored`).
+  `powershell.exe` through WSL interop (the same way the client reads Windows' memory) runs `Invoke-WebRequest` on
+  `http://localhost:<the port the client dials>/api/health`, 10 s at most. Any HTTP answer, an error status too,
+  means the hopper answered: the link works. No answer, or no interop, is a broken link with the reason, cut to 200
+  characters. The test carries no token and only reads; it adds no listener and no route.
+- **The reading.** The result is `windowsLink` (`WindowsLink`: `url`, `mode`, `ok`, `status`, `error`, `at`) in the
+  resources the client says in `/release`. `resourcesOf` keeps it only for a WSL reading and only when sane: a
+  localhost health URL, a boolean `ok`, a time. It is not kept in machine samples: no migration.
+- **Told and shown.** At each record the **Windows link watch** (`src/machines/windows-link-watch.ts`) tells
+  `machine.windows_link_broken` once when a machine's link breaks, and `machine.windows_link_restored` once when it
+  works again, as the memory alert does; kept in memory, so a link still broken is told again after a restart. A
+  Machines card says *Windows link*, with a *Windows link broken* badge and the fix; a banner over every view names
+  each online machine with a broken link and its fix. The fix by mode: NAT, set `localhostForwarding=true` under
+  `[wsl2]` in `.wslconfig`, and if it is set, `networkingMode=mirrored`, or open `http://127.0.0.1:<port>`; mirrored
+  or no mode read, open `http://127.0.0.1:<port>`, or set `networkingMode=mirrored`; then `wsl --shutdown`.
+- **No client in the distro: no result.** The hopper's own container has no interop; issue #712's other paths cover it.
+
+Tests: `test/client/windows-link.test.ts` (the URL, the answer, when it tests, stale, not WSL), `test/adapters/
+machine-resources.test.ts` (a client's link checked), `test/machines/windows-link-watch.test.ts` (told once, restored,
+offline), `test/integration/machine-history.test.ts` (the snapshot carries it; the event), `test/ui/windows-link.test.ts`
+(the card's line, the fix by mode, the banner's machines).
+
 **Not built yet** (the issue's second step): soft and hard CPU and memory thresholds per machine, a machine taking
 fewer new lanes above soft and no new job above hard (like the disk hold), off by default until the graphs have shown
 sensible levels.

@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
 import { MachineAway } from '@/components/machine-away';
+import { WindowsLinkProblem } from '@/components/windows-link';
 import { ReadingGauge } from '@/components/reading';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge, TEXT } from '@/components/status';
@@ -27,6 +28,7 @@ import { useNow } from '@/hooks/use-now';
 import { get, post, SessionRejected } from '@/lib/api';
 import { clientReleaseText, clientUpdateLine, diskText, herdrText, kindOf, ownedHerdrText, mayAddThisMachine, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
 import { resourcesText } from '@/model/machine-history';
+import { windowsLinkText } from '@/model/windows-link';
 import { orderReadings, readingKey } from '@/model/usage';
 import type { CleanupProblem, MachineDefaultsEdit, MachineEdit, MachinesConfig, MachineView, PluginsEdit, ResourceSeries, SandboxesView } from '@/model/wire';
 import { refreshLive, useHopper } from '@/store';
@@ -105,7 +107,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   );
   return (
     <Panel title={m.label || m.id} icon={Server} bodyClassName="space-y-4"
-      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
+      action={<div className="flex items-center gap-1.5">{m.template?.waiting && <StatusBadge status="waiting for template approval" tone="warn" />}{off && <StatusBadge status="off-network" tone="warn" />}{m.herdrProblem && <StatusBadge status="herdr outdated" tone="warn" />}{m.disk?.low && <StatusBadge status="disk low" tone="warn" />}{m.resources?.windowsLink?.ok === false && <StatusBadge status="Windows link broken" tone="warn" />}<StatusBadge status={m.online ? 'online' : 'offline'} /></div>}>
       <MachineAway machine={m.id} />
       <div className="grid grid-cols-3 gap-3 text-sm">
         <div><div className="text-[11px] text-muted-foreground">max lanes</div><div className="num text-lg font-semibold">{m.maxLanes}</div></div>
@@ -126,6 +128,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
         {reservedText(m) && <Fact label="reserved lanes">{reservedText(m)}</Fact>}
         {res && <Fact label="CPU">{res.cpu}</Fact>}
         {res && <Fact label="memory">{res.memory}</Fact>}
+        {m.resources?.windowsLink && <Fact label="Windows link"><span className={m.resources.windowsLink.ok ? undefined : `font-semibold ${TEXT.warn}`}>{windowsLinkText(m.resources.windowsLink)}</span></Fact>}
         {m.disk && <Fact label="disk (home)"><span className={m.disk.low ? `font-semibold ${TEXT.warn}` : undefined}>{diskText(m.disk)}</span></Fact>}
         {workTreeText(m) && <Fact label="work tree">{workTreeText(m)}</Fact>}
         {workTreesText(m) && <Fact label="work trees per repository">{workTreesText(m)}</Fact>}
@@ -146,6 +149,7 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       {m.herdrProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.herdrProblem}. Its jobs wait for another machine.</p>
       )}
+      {m.resources?.windowsLink && <WindowsLinkProblem link={m.resources.windowsLink} />}
       {m.workTreeProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.workTreeProblem}. Its jobs wait for another machine; set its work tree with Edit.</p>
       )}

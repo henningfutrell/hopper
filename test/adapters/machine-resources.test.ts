@@ -70,4 +70,17 @@ describe('resources a client answers', () => {
     expect(resourcesOf({ ...wsl, hostMemFreeBytes: 33 * GIB })).not.toHaveProperty('hostMemFreeBytes');
     expect(resourcesOf({ ...wsl, hostMemTotalBytes: undefined })).not.toHaveProperty('hostMemFreeBytes');
   });
+
+  it('a WSL client\'s Windows link (issue #712): kept when sane, else dropped', () => {
+    const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB, wsl: true };
+    const link = { url: 'http://localhost:4790/api/health', mode: 'nat', ok: false, error: 'Unable to connect to the remote server', at: '2026-10-13T10:00:00.000Z' };
+    expect(resourcesOf({ ...r, windowsLink: link })).toEqual({ ...r, windowsLink: link });
+    expect(resourcesOf({ ...r, windowsLink: { url: link.url, ok: true, status: 200, at: link.at } })?.windowsLink).toEqual({ url: link.url, ok: true, status: 200, at: link.at });
+    expect(resourcesOf({ ...r, windowsLink: { ...link, url: 'http://hopper.example.org/api/health' } })).not.toHaveProperty('windowsLink');
+    expect(resourcesOf({ ...r, windowsLink: { ...link, ok: 'no' } })).not.toHaveProperty('windowsLink');
+    expect(resourcesOf({ ...r, windowsLink: { ...link, at: 'yesterday' } })).not.toHaveProperty('windowsLink');
+    expect(resourcesOf({ ...r, windowsLink: { ...link, mode: 'NAT; rm -rf' } })?.windowsLink).not.toHaveProperty('mode');
+    expect(resourcesOf({ ...r, windowsLink: { ...link, error: 'x'.repeat(500) } })?.windowsLink?.error).toHaveLength(200);
+    expect(resourcesOf({ cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB, windowsLink: link })).not.toHaveProperty('windowsLink');
+  });
 });

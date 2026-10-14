@@ -1,11 +1,12 @@
 // A user runtime's history recorders: the usage history's (issue #385) and machine resources over time (issue #560),
 // both pruned to the user's history retention, read at every prune so a retention set in the UI applies without a
 // restart (issue #356). After a record that kept new machine samples, `afterMachineRecord` runs: lane tuning (issue #688).
-// Each record shows the machines to the memory alert (issue #868).
+// Each record shows the machines to the memory alert (issue #868) and to the Windows link watch (issue #712).
 import type { Clock, UserStore } from '../domain/ports.ts';
 import { DEFAULT_HISTORY_RETENTION_DAYS, type MachineSnapshot, type UsageReading, type UsageSourceReport } from '../domain/types.ts';
 import { createResourceRecorder, type ResourceRecorder } from '../machines/history.ts';
 import { createMemoryWatch } from '../machines/memory-alert.ts';
+import { createWindowsLinkWatch } from '../machines/windows-link-watch.ts';
 import { createUsageRecorder, type UsageRecorder } from '../usage/history.ts';
 
 export function createHistoryRecorders(o: {
@@ -21,8 +22,10 @@ export function createHistoryRecorders(o: {
   const usageHistory = createUsageRecorder({ readings: o.readings, sources: o.sources, history: o.store.usageHistory, retentionDays, clock: o.clock, logger: o.logger });
   // The memory alert (issue #868): told on the event log, where webhooks and notifiers take it.
   const memory = createMemoryWatch({ alert: () => o.store.settings.getMemoryAlert(), tell: (e) => { o.store.events.append(e); } });
+  const windowsLink = createWindowsLinkWatch({ tell: (e) => { o.store.events.append(e); } });
+  const observe = (machines: readonly MachineSnapshot[], at: string) => { memory.observe(machines, at); windowsLink.observe(machines, at); };
   const machineHistory = createResourceRecorder({
-    machines: o.machines, lanes: () => o.store.lanes.list(), history: o.store.machineHistory, retentionDays, clock: o.clock, logger: o.logger, observe: memory.observe,
+    machines: o.machines, lanes: () => o.store.lanes.list(), history: o.store.machineHistory, retentionDays, clock: o.clock, logger: o.logger, observe,
   });
   const after = o.afterMachineRecord;
   if (after) {
