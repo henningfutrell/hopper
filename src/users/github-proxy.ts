@@ -5,14 +5,14 @@
 import { createInfraPlans, type InfraPlans } from '../infra-plans/service.ts';
 import { createOutOfBandChanges, type OutOfBandChanges } from '../infra-plans/out-of-band.ts';
 import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
-import { DEFAULT_CONTRIBUTION, type Job, type MachineSnapshot, type User } from '../domain/types.ts';
+import { DEFAULT_CONTRIBUTION, type Job, type MachineSnapshot, type SourceStatus, type User } from '../domain/types.ts';
 import { createReportGitHub, createReportSender, type ReportGitHub, type ReportSender } from '../bug-reports/index.ts';
 import { createRepoChecksGitHub, type RepoChecksGitHub } from '../repo-checks/index.ts';
 import { createActorsGitHub, type ActorsGitHub } from '../intake-actors/index.ts';
 import { createPromotionGitHub } from '../promotions/github.ts';
 import { userPromotions, type Promotions } from '../promotions/service.ts';
 import { createGitHubWatches, createWatchGitHub, type GitHubWatches } from '../github-watch/index.ts';
-import { createComponentWatchers, createWatcherGitHub, lanesJobsWatcher, ledgerGitHubWatcher, ledgerJobsWatcher, type ComponentWatchers } from '../component-watchers/index.ts';
+import { createComponentWatchers, createWatcherGitHub, intakeJobsWatcher, lanesJobsWatcher, ledgerGitHubWatcher, ledgerJobsWatcher, type ComponentWatchers } from '../component-watchers/index.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts';
 import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
@@ -39,7 +39,7 @@ export interface UserGitHubProxy {
   bugReports: ReportSender;
   /** The GitHub watches of this user's pointed jobs (issue #427), with this user's own connection; they poll with the user's runtime. */
   watches: GitHubWatches;
-  /** The component watchers (issue #1077): the ledger against GitHub with this user's own connection, the ledger and the lanes against the job records, and their drift issues; they check with the user's runtime. */
+  /** The component watchers (issue #1077): the ledger against GitHub with this user's own connection, the ledger and the lanes against the job records, intake against the jobs and the sync timers, and their drift issues; they check with the user's runtime. */
   componentWatchers: ComponentWatchers;
   /**
    * The infra plans (issue #870): what this user's jobs plan to change, a person's approvals, the vault's apply gate. Here
@@ -63,6 +63,8 @@ export interface UserGitHubProxyOptions {
   /** An artifact's stable URL, and the hopper's public URL (issue #946: a promotion's links are made only on it). */
   artifactUrl(id: string): string;
   publicUrl(): string | undefined;
+  /** The job sources' statuses, each with its last intake (issue #1077: the intake-vs-jobs watcher reads them). */
+  sources(): readonly SourceStatus[];
 }
 
 export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy: UserGitHubProxy; jobProxy(job: Job, machine: MachineSnapshot): JobProxyCredentials | undefined } {
@@ -143,7 +145,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         }),
         // The hopper's own records (issue #1077, the next part): they need no GitHub connection, only their drift issues do.
         ledgerJobsWatcher({ ledger: o.store.workItems, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }),
-        lanesJobsWatcher({ lanes: o.store.lanes, jobs: o.store.jobs, now: () => o.clock.now().toISOString() })],
+        lanesJobsWatcher({ lanes: o.store.lanes, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }),
+        intakeJobsWatcher({ sources: o.sources, jobs: o.store.jobs, now: () => o.clock.now().toISOString() })],
         store: o.store, now: () => o.clock.now().toISOString(), log: (l) => o.logger.warn(l),
         github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatcherGitHub(mine())),
       }),

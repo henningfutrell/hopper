@@ -1,5 +1,5 @@
 // Drift (issue #1077, design.md "Component watchers"): where a part of the hopper's state disagrees with its source of
-// truth. The comparisons of the hopper's own records are in `drift-jobs.ts`. The ledger-vs-GitHub watcher's comparison is here: which work items it reads on GitHub (`ledgerGitHubSample`),
+// truth. The comparisons of the hopper's own records are in `drift-jobs.ts` and `drift-intake.ts`. The ledger-vs-GitHub watcher's comparison is here: which work items it reads on GitHub (`ledgerGitHubSample`),
 // and the drift it finds (`ledgerGitHubDrift`) — grouped by kind, so one kind is one drift issue. And the drift issue's
 // text (`driftIssue`), which names no item: each is a short hash of its key, since an item's repository may be private.
 // Pure: no I/O, no clock.
@@ -40,6 +40,7 @@ const WATCHER_WORDS: Record<string, { words: string; says: string; truth: string
   [LEDGER_GITHUB]: { words: 'ledger vs GitHub', says: 'ledger', truth: 'GitHub' },
   'ledger-jobs': { words: 'ledger vs jobs', says: 'ledger', truth: 'job record' },
   'lanes-jobs': { words: 'lanes vs jobs', says: 'lane', truth: 'job record' },
+  'intake-jobs': { words: 'intake vs jobs', says: 'intake', truth: 'job record or sync timer' },
 };
 /** Each kind of drift in plain words. */
 const KIND_WORDS: Record<string, string> = {
@@ -52,6 +53,9 @@ const KIND_WORDS: Record<string, string> = {
   state_differs: 'the ledger state differs from its job',
   lane_busy_job_not_running: 'a lane is busy with a job that does not run',
   job_running_no_lane: 'a job runs with no lane',
+  taken_no_job: 'taken by intake, with no job',
+  sync_overdue: 'a source\'s next sync is overdue',
+  sync_stuck: 'a source\'s sync runs too long',
 };
 
 /** The states in which an item can be stuck: read first. */

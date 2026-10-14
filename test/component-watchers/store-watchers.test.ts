@@ -1,9 +1,10 @@
-// The watchers of the hopper's own records (issue #1077, the next part): the ledger against the job records, and the lanes
-// against the jobs. Each reads the store in one pass and answers the drift; the store here is a fake at its port.
+// The watchers of the hopper's own records (issue #1077, the next parts): the ledger against the job records, the lanes
+// against the jobs, and intake against the jobs and its timers. Each reads the store in one pass and answers the drift; the
+// store and the source sync here are fakes at their ports.
 import { describe, expect, it } from 'vitest';
-import { lanesJobsWatcher, ledgerJobsWatcher } from '../../src/component-watchers/store-watchers.ts';
+import { intakeJobsWatcher, lanesJobsWatcher, ledgerJobsWatcher } from '../../src/component-watchers/store-watchers.ts';
 import type { JobFilter } from '../../src/domain/store.ts';
-import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
+import type { Job, JobStatus, Lane, SourceStatus } from '../../src/domain/types.ts';
 import type { WorkItem, WorkItemState } from '../../src/domain/work-items.ts';
 
 const NOW = '2026-10-13T12:00:00.000Z';
@@ -47,5 +48,16 @@ describe('the lanes-vs-jobs watcher', () => {
       ['lane_busy_job_not_running', ['desk/lane-1']],
       ['job_running_no_lane', ['j2']],
     ]);
+  });
+});
+
+describe('the intake-vs-jobs watcher', () => {
+  it('reads the sources\' last intake and the job of each item taken', async () => {
+    const intake = [{ key: 'k1', title: 't1' }, { key: 'k2', title: 't2' }];
+    const sources: SourceStatus[] = [{ name: 'github', kind: 'github', state: 'ok', lastSyncAt: HOUR_AGO, lastOkAt: HOUR_AGO, itemsSeen: 2, jobsCreated: 1, activeJobs: 1, detail: { intake } }];
+    const jobs = [job('j1', 'queued', 'k1')];
+    const w = intakeJobsWatcher({ sources: () => sources, jobs: { getBySourceKey: (k) => jobs.find((j) => j.source?.key === k) }, now: () => NOW });
+    expect(w).toMatchObject({ name: 'intake-jobs', component: 'intake', truth: 'the job records and the sync timers', intervalMs: 300_000 });
+    expect((await w.check()).map((d) => [d.kind, d.items.map((i) => i.key)])).toEqual([['taken_no_job', ['k2']]]);
   });
 });
