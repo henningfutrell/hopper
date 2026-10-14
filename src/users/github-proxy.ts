@@ -12,7 +12,10 @@ import { createActorsGitHub, type ActorsGitHub } from '../intake-actors/index.ts
 import { createPromotionGitHub } from '../promotions/github.ts';
 import { userPromotions, type Promotions } from '../promotions/service.ts';
 import { createGitHubWatches, createWatchGitHub, type GitHubWatches } from '../github-watch/index.ts';
-import { createComponentWatchers, createWatcherGitHub, intakeJobsWatcher, lanesJobsWatcher, ledgerGitHubWatcher, ledgerJobsWatcher, type ComponentWatchers } from '../component-watchers/index.ts';
+import {
+  branchChecksWatcher, createComponentWatchers, createWatcherGitHub, intakeJobsWatcher, lanesJobsWatcher, ledgerGitHubWatcher, ledgerJobsWatcher, stackHealthWatcher, type ComponentWatchers,
+} from '../component-watchers/index.ts';
+import type { StackResources } from '../domain/stack-resources.ts';
 import { createLandingBatchGitHub } from '../landing-batches/github.ts';
 import { createLandingBatches, type LandingBatches } from '../landing-batches/runner.ts';
 import { DEFAULT_LANDING_BATCHES, LANDING_BATCH_EVENT_TYPES } from '../domain/landing-batches.ts';
@@ -42,7 +45,11 @@ export interface UserGitHubProxy {
   bugReports: ReportSender;
   /** The GitHub watches of this user's pointed jobs (issue #427), with this user's own connection; they poll with the user's runtime. */
   watches: GitHubWatches;
-  /** The component watchers (issue #1077): the ledger against GitHub with this user's own connection, the ledger and the lanes against the job records, intake against the jobs and the sync timers, and their drift issues; they check with the user's runtime. */
+  /**
+   * The component watchers (issue #1077): the ledger and the job repositories' default branches against GitHub with this
+   * user's own connection, the ledger and the lanes against the job records, intake against the jobs and the sync timers,
+   * the stack when this user is given it, and their drift issues; they check with the user's runtime.
+   */
   componentWatchers: ComponentWatchers;
   /** Landing batches (issue #1073): batch runs of each landing branch, promoted to its tested branch, with this user's own connection; they run with the user's runtime. */
   landingBatches: LandingBatches;
@@ -70,6 +77,8 @@ export interface UserGitHubProxyOptions {
   publicUrl(): string | undefined;
   /** The job sources' statuses, each with its last intake (issue #1077: the intake-vs-jobs watcher reads them). */
   sources(): readonly SourceStatus[];
+  /** The stack resources (issue #1077: the stack-health watcher reads them), given to the oldest user only; absent: none. */
+  stack?: () => Promise<StackResources>;
 }
 
 export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy: UserGitHubProxy; jobProxy(job: Job, machine: MachineSnapshot): JobProxyCredentials | undefined } {
@@ -151,7 +160,13 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         // The hopper's own records (issue #1077, the next part): they need no GitHub connection, only their drift issues do.
         ledgerJobsWatcher({ ledger: o.store.workItems, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }),
         lanesJobsWatcher({ lanes: o.store.lanes, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }),
-        intakeJobsWatcher({ sources: o.sources, jobs: o.store.jobs, now: () => o.clock.now().toISOString() })],
+        intakeJobsWatcher({ sources: o.sources, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }),
+        // The integration branch's health, and the stack's (issue #1077, the last part).
+        branchChecksWatcher({
+          repositories: () => o.accounts.jobRepositories('github'), now: () => o.clock.now().toISOString(),
+          github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatcherGitHub(mine())),
+        }),
+        ...(o.stack ? [stackHealthWatcher({ read: o.stack, now: () => o.clock.now().toISOString() })] : [])],
         store: o.store, now: () => o.clock.now().toISOString(), log: (l) => o.logger.warn(l),
         github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createWatcherGitHub(mine())),
       }),

@@ -1,0 +1,1 @@
+- The hopper now also checks that the main branch of each repository it works on passes its checks, and that its own services and database are healthy. Settings shows each problem it finds.

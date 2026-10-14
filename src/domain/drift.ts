@@ -1,5 +1,6 @@
 // Drift (issue #1077, design.md "Component watchers"): where a part of the hopper's state disagrees with its source of
-// truth. The comparisons of the hopper's own records are in `drift-jobs.ts` and `drift-intake.ts`. The ledger-vs-GitHub watcher's comparison is here: which work items it reads on GitHub (`ledgerGitHubSample`),
+// truth. The comparisons of the hopper's own records are in `drift-jobs.ts` and `drift-intake.ts`, of the default branches
+// `drift-branches.ts`, of the stack `drift-stack.ts`. The ledger-vs-GitHub watcher's comparison is here: which work items it reads on GitHub (`ledgerGitHubSample`),
 // and the drift it finds (`ledgerGitHubDrift`) — grouped by kind, so one kind is one drift issue. And the drift issue's
 // text (`driftIssue`), which names no item: each is a short hash of its key, since an item's repository may be private.
 // Pure: no I/O, no clock.
@@ -23,9 +24,15 @@ export const DEFAULT_COMPONENT_WATCHERS: ComponentWatcherSettings = { fileIssues
 export interface DriftView { kind: string; items: number; list: DriftItem[]; since: string; issue?: { number: number; url: string } }
 export interface ComponentWatcherView {
   name: string; component: string; truth: string; intervalSeconds: number;
+  /** The instance's, not the user's (the stack): only the hopper's admin reads it. */
+  instance?: true;
   checkedAt?: string; error?: string; issueError?: string; drifts: DriftView[];
 }
 export interface ComponentWatchersView { settings: ComponentWatcherSettings; watchers: ComponentWatcherView[] }
+
+/** The view as a viewer reads it: an instance watcher only for the hopper's admin. */
+export const viewFor = (v: ComponentWatchersView, instanceAdmin: boolean): ComponentWatchersView =>
+  (instanceAdmin ? v : { ...v, watchers: v.watchers.filter((w) => !w.instance) });
 
 /** The line of a drift issue's body that names its drift, so the next check finds the issue again. */
 export const DRIFT_MARKER = 'Drift key: ';
@@ -41,6 +48,8 @@ const WATCHER_WORDS: Record<string, { words: string; says: string; truth: string
   'ledger-jobs': { words: 'ledger vs jobs', says: 'ledger', truth: 'job record' },
   'lanes-jobs': { words: 'lanes vs jobs', says: 'lane', truth: 'job record' },
   'intake-jobs': { words: 'intake vs jobs', says: 'intake', truth: 'job record or sync timer' },
+  'branch-checks': { words: 'default branches vs checks', says: 'branch', truth: 'checks' },
+  'stack-health': { words: 'stack health', says: 'stack', truth: 'healthy stack' },
 };
 /** Each kind of drift in plain words. */
 const KIND_WORDS: Record<string, string> = {
@@ -56,6 +65,11 @@ const KIND_WORDS: Record<string, string> = {
   taken_no_job: 'taken by intake, with no job',
   sync_overdue: 'a source\'s next sync is overdue',
   sync_stuck: 'a source\'s sync runs too long',
+  checks_failing: 'a default branch\'s checks fail',
+  checks_stuck: 'a default branch\'s checks wait too long',
+  service_down: 'a service of the stack is down or unhealthy',
+  part_unreadable: 'a part of the stack does not answer',
+  database_strain: 'the database is under strain',
 };
 
 /** The states in which an item can be stuck: read first. */

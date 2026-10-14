@@ -98,7 +98,7 @@ export interface UserRuntimeOptions {
    */
   linkBase(userLinkBase: string): string;
   /** Where the hopper is reached from outside now (issue #795, the tunnel watch). Search (issue #945): the index (absent: none), this hopper's instance id, and Access, which decides each hit. */
-  reach?: () => string | undefined; search?: SearchWiring;
+  reach?: () => string | undefined; search?: SearchWiring; stack?: () => Promise<import('../domain/stack-resources.ts').StackResources>; // the stack resources: the oldest user's stack-health watcher reads them (issue #1077)
   /** A GitHub account this user connected from Sources: link it, so signing in with it lands here (issue #214). */
   linkIdentity?(provider: ConnectedAccountProvider, subject: string): void;
   /** Of these source keys, those another user of this hopper has a job for (issue #440): a claim may be theirs. */
@@ -260,7 +260,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     },
   });
   // The GitHub proxy (issue #563): a client target's jobs reach the hopper where it dialled in.
-  const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase), artifactUrl: (id) => artifactUrl(linkBase(), id), publicUrl: () => config.publicUrl ?? o.reach?.(), sources: () => sync.statuses() });
+  const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase), artifactUrl: (id) => artifactUrl(linkBase(), id), publicUrl: () => config.publicUrl ?? o.reach?.(), sources: () => sync.statuses(), ...(o.stack ? { stack: o.stack } : {}) });
   const notEnded = () => store.jobs.list({ status: [...IN_FLIGHT_STATUSES] });
   const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine);
   let searchChanged = (_keys: readonly string[]): void => undefined; const host = createPluginHost({ // searchChanged: set once search exists (issue #945)
