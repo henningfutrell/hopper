@@ -38,8 +38,8 @@ else if (cmd.startsWith('agent get')) out({ result: { type: 'agent_info', agent:
 else if (cmd.startsWith('pane wait-output') && argv.includes('never-printed')) fail('timeout', 'timed out waiting for output match');
 else if (cmd.startsWith('pane wait-output')) out({ result: { matched_line: argv[6], pane_id: argv[4] } });
 else if (cmd.startsWith('pane run')) process.stdout.write(''); // herdr prints nothing
-// herdr 0.7's pane list, cut down (issue #1128): a person's shell, and a pane Claude runs in.
-else if (cmd === 'pane list') out({ result: { panes: [
+// FAKE_HERDR_PANE_LIST (issue #1128): herdr 0.7's pane list, cut down — a person's shell, and a pane Claude runs in.
+else if (cmd === 'pane list' && process.env.FAKE_HERDR_PANE_LIST) out({ result: { panes: [
   { agent_status: 'unknown', cwd: '/home/a', pane_id: 'w7:p1', tab_id: 'w7:t1', workspace_id: 'w7' },
   { agent: 'claude', agent_status: 'working', cwd: '/home/a/x', pane_id: 'w7:p5', tab_id: 'w7:t3', terminal_title: '◐ Fix it', terminal_title_stripped: 'Fix it', workspace_id: 'w7' },
 ] } });

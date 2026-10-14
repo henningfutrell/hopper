@@ -58,6 +58,7 @@ describe('herdr CLI client', () => {
   });
 
   it('listPanes lists every pane of the session, with no path (issue #1128)', async () => {
+    process.env.FAKE_HERDR_PANE_LIST = '1';
     expect(await herdr().listPanes()).toEqual([
       { paneId: 'w7:p1', tabId: 'w7:t1', workspaceId: 'w7', agentStatus: 'unknown' },
       { paneId: 'w7:p5', tabId: 'w7:t3', workspaceId: 'w7', title: 'Fix it', agent: 'claude', agentStatus: 'working' },
