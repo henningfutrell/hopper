@@ -3972,13 +3972,14 @@ Version 1 (`docs/schemas/job.pull_request_merged.v1.json`). A finished job's pul
 
 ## `job.pull_request_closed`
 
-Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pull request, followed after its end (issue #579), was closed without a merge: its item is flagged (`hopper:pr-closed` on GitHub) until a person acts. `part`: it shipped part of the item. `person`, `via`: a person pressed Close PR (issue #677), in the UI or the operator CLI. `superseded` (issue #1143): the hopper closed it itself, as nothing was left to land, and why: its issue was closed as completed by another pull request (the item is done, `hopper:done`), or its base branch already has every commit of it.
+Version 1 (`docs/schemas/job.pull_request_closed.v1.json`). A finished job's pull request, followed after its end (issue #579), was closed without a merge: its item is flagged (`hopper:pr-closed` on GitHub) until a person acts. `part`: it shipped part of the item. `person`, `via`: a person pressed Close PR (issue #677), in the UI or the operator CLI. `superseded` (issue #1143): the hopper closed it itself, as nothing was left to land, and why: its issue was closed as completed by another pull request (the item is done, `hopper:done`), or its base branch already has every commit of it. `stray` (issue #1143 part 4): no job followed it — a job named it, and no job of its item worked on it —; the close ends no wait of its item.
 
 | field | type | required |
 |---|---|---|
 | `pullRequest` | string | yes |
 | `part` | boolean | yes |
 | `superseded` | string | no |
+| `stray` | boolean | no |
 | `person` | string | no |
 | `via` | `ui` \| `cli` \| `api` | no |
 
@@ -4063,13 +4064,14 @@ Version 1 (`docs/schemas/job.pull_request_base_merged.v1.json`). A PR waiting jo
 
 ## `job.pull_request_retargeted`
 
-Version 1 (`docs/schemas/job.pull_request_retargeted.v1.json`). A followed job's open pull request had a base branch that is not its repository's landing branch (its landing batch setting, never GitHub's default branch) and is no open pull request's head: the hopper changed its base to the landing branch (issue #1143), with no job, and said so in one comment on it. `from`: the base before; `to`: the landing branch.
+Version 1 (`docs/schemas/job.pull_request_retargeted.v1.json`). A followed job's open pull request had a base branch that is not its repository's landing branch (its landing batch setting, never GitHub's default branch) and is no open pull request's head: the hopper changed its base to the landing branch (issue #1143), with no job, and said so in one comment on it. `from`: the base before; `to`: the landing branch. `stray` (issue #1143 part 4): no job followed it — a job named it, and no job of its item worked on it.
 
 | field | type | required |
 |---|---|---|
 | `pullRequest` | string | yes |
 | `from` | string | yes |
 | `to` | string | yes |
+| `stray` | boolean | no |
 
 ```json
 {

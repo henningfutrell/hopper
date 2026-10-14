@@ -140,7 +140,8 @@ conflicts with the tested branch gets a **back-merge** (issue #1073 part 4): the
 landing tip by GitHub's own merge, and a pull request of it into the landing branch, its text fixed, which the hopper merges;
 a conflict GitHub cannot merge files one issue the same way as a fix issue, its text fixed, and no second while it stands
 (`landing_batch.back_merge_issue_filed`). **Pull request housekeeping** (issue #1143, `docs/design.md` "Pull request housekeeping") is the hopper's
-care of a job's open pull request it follows: it moves one based off the landing branch to it, closes one with nothing
+care of a job's open pull request it follows, or a **stray** one (a job named it, no job follows it, no job of its item
+works on it; part 4): it moves one based off the landing branch to it, closes one with nothing
 left to land, and posts on the pull request one fixed comment for each such act and for each tend job it starts,
 naming no person; the batch runner's move of a job's pull request from the tested branch, followed or not, posts the same
 comment. A job's own request through the GitHub proxy (issue #563) is

@@ -26,7 +26,7 @@ import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
 import { issueState, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
-import { followPullRequest, tendStartedOn } from './follow.ts';
+import { followPullRequest, housekeepStrays, tendStartedOn, type FollowContext } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
 import { followedBatch } from './followed-batch.ts';
@@ -136,6 +136,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const backburner = backburnerReader(api);
   /** The pull requests the round's follows read first (issue #985). */
   const batch = followedBatch(api);
+  /** What a follow, and the housekeeping of strays (issue #1143 part 4), need. */
+  const followContext = (): FollowContext => ({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}) });
 
   /** App mode: the bot, once known (the app file, or the first sync). */
   let knownBot: string | undefined;
@@ -370,9 +372,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     unfinishedPullRequest(job) {
       return unfinishedPullRequest(api, job);
     },
-    follow(job, act) {
-      return followPullRequest({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}) }, job, act);
-    },
+    follow: (job, act) => followPullRequest(followContext(), job, act),
+    housekeepStrays: (strays) => housekeepStrays(followContext(), strays),
     unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api),
     readFollowed: (jobs) => batch.read(jobs),
     crossReferences: (job) => crossReferencesOfJob(api, job),

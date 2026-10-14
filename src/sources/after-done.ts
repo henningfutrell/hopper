@@ -55,13 +55,15 @@
 // base branch moves (issue #1143 part 3): each sync, before the tends, the source says the commit that base is at
 // (`JobSource.baseTip`, the hopper's mirror); the first is kept (`tended.baseAt`), and another one marks it moved
 // (`tended.baseMoved`), which makes the same step due (`tendRetryAt`), at most `MAX_TEND_RETRIES` in a row. A source that
-// cannot say leaves it to a person, as before. A throw is only logged.
+// cannot say leaves it to a person, as before. A throw is only logged. Strays (issue #1143 part 4, `strays.ts`): in a round
+// of every one, after reconciling, the pull requests no job follows, of items no job works on, get the same housekeeping.
 // The work-item ledger (issue #1067, part 3): what an open pull request waits on (its **pull request wait**: a draft, merge
 // conflicts, failed checks, checks running, the merge) is recorded as `job.pull_request_seen` when it differs from what the
 // ledger holds for it, so the item says what it waits on. What was seen of it stays kept with no event otherwise.
 import type { JobSource, PullRequestActResult, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
 import { heldTooLong, queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
+import { strayHousekeeping } from './strays.ts';
 import { SourceError } from '../domain/ports.ts';
 import {
   failedTend, following, followsWhenEnded, inMotion, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendAgainRefusal, tendBrief, tendRetryAt, tendsInRow, tendStep,
@@ -99,6 +101,7 @@ export type FollowRound = 'all' | 'in_motion' | 'none';
 
 export function createAfterDone(c: AfterDoneContext) {
   const { store } = c;
+  const strays = strayHousekeeping(c);
 
   /** Only the newest job of its item is checked again: an older one's merge never takes off a later job's `hopper:done`. */
   const newestOfItem = (j: Job) => !j.source || store.jobs.getBySourceKey(j.source.key)?.id === j.id;
@@ -427,7 +430,7 @@ export function createAfterDone(c: AfterDoneContext) {
     /** One sync of the source: the jobs of its round to follow, or to judge again; then the tends. */
     async catchUp(source: JobSource, listed: Job[], round: FollowRound = 'all'): Promise<void> {
       const all = round === 'all';
-      if (all) await reconcile(source, listed);
+      if (all) await reconcile(source, listed).then(() => strays(source, listed));
       const jobs = listed.map((j) => store.jobs.get(j.id) ?? j);
       const run = (j: Job, fn: (s: JobSource, id: string) => Promise<void>) =>
         c.enqueue(j.id, () => fn(source, j.id).catch((e: unknown) => { c.failed(j.id, e); }));

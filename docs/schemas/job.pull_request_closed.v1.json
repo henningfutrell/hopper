@@ -11,6 +11,10 @@
     "superseded": {
       "type": "string"
     },
+    "stray": {
+      "type": "boolean",
+      "const": true
+    },
     "person": {
       "type": "string"
     },

@@ -66,6 +66,17 @@ describe('the work-item reducer', () => {
     expect(fold([['job.queued'], ['job.started'], ['job.waiting', { for: 'the build', ownCommand: true }]])).toMatchObject({ state: 'working', waitingOn: 'the build' });
   });
 
+  it('a stray pull request closed (issue #1143 part 4) moves nothing: its item waits as it did', () => {
+    const other = 'https://github.com/o/r/pull/3';
+    const handoff = fold([['job.queued'], ['job.failed', { error: 'x' }], ['handoff.opened', {}], ['job.pull_request_closed', { pullRequest: other, part: false, superseded: 'why', stray: true }]]);
+    expect(handoff).toMatchObject({ state: 'needs_you', waitingOn: 'a hand-off' });
+    expect(handoff?.pullRequest).toBeUndefined();
+    // The item's own pull request: its state is kept, the item stays where it is.
+    const own = fold([['job.queued'], ['job.finished', {}], ['job.pull_request_followed', { pullRequest: PR, part: false }], ['job.queued', {}, j2],
+      ['job.failed', { error: 'tend failed' }, j2], ['handoff.opened', {}, j2], ['job.pull_request_closed', { pullRequest: PR, part: false, superseded: 'why', stray: true }]]);
+    expect(own).toMatchObject({ state: 'needs_you' });
+  });
+
   it('a request card waits for approval; declined it is dropped', () => {
     const opened = applyEvent(undefined, ev('source.request_opened', { key: KEY }), KEY);
     expect(opened?.state).toBe('waiting_for_approval');
