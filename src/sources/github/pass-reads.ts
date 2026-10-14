@@ -14,7 +14,7 @@ const READS = [
   'closingPullRequest', 'openClosingPullRequests', 'referencingPullRequests', 'crossReferences', 'pullRequest', 'openPullRequests',
   'listAssignedIssues', 'listInstalledRepos', 'listRepos', 'issuesChangedSince', 'openPullRequestsIn', 'pullRequestStates', 'jobLog',
 ] as const;
-export const WRITES = ['ensureLabel', 'addLabels', 'removeLabels', 'addAssignees', 'reopenIssue', 'closeAsCompleted', 'postComment', 'merge', 'closeWithoutMerge', 'toDraft', 'baseMerge'] as const;
+export const WRITES = ['ensureLabel', 'addLabels', 'removeLabels', 'addAssignees', 'reopenIssue', 'closeAsCompleted', 'postComment', 'merge', 'closeWithoutMerge', 'retarget', 'toDraft', 'baseMerge'] as const;
 /** Reads whose first argument is not a repository: any write drops them. */
 const UNSCOPED = new Set<string>(['projectItems', 'listAssignedIssues', 'listInstalledRepos', 'listRepos', 'openPullRequestsIn', 'pullRequestStates']);
 

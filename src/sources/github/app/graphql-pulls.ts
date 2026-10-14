@@ -51,7 +51,7 @@ async function ask<T>(req: Request, token: string, query: string, variables: Rec
   return { data: body.data, errors: body.errors ?? [] };
 }
 
-function stateFrom(p: GqlPull, issue: GqlIssue | null | undefined, checksUnknown: boolean): PullRequestState | undefined {
+function stateFrom(p: GqlPull, issue: GqlIssue | null | undefined, checksUnknown: boolean, defaultBranch: string | undefined): PullRequestState | undefined {
   const state = STATES[p.state ?? ''];
   if (!state || !p.createdAt) return undefined;
   const commit = p.commits?.nodes?.at(-1)?.commit;
@@ -62,6 +62,7 @@ function stateFrom(p: GqlPull, issue: GqlIssue | null | undefined, checksUnknown
     ...(commit?.committedDate ? { headCommittedAt: commit.committedDate } : {}), ...(p.headRefOid ? { headOid: p.headRefOid } : {}),
     ...(p.headRefName ? { headRef: p.headRefName } : {}), ...(p.baseRefName ? { base: p.baseRefName } : {}), ...(checks ? { checks } : {}),
     ...(issueState ? { issue: { state: issueState, ...(issue?.stateReason ? { stateReason: issue.stateReason.toLowerCase() } : {}), updatedAt: issue?.updatedAt ?? '' } } : {}),
+    ...(defaultBranch ? { defaultBranch } : {}),
   };
 }
 
@@ -72,14 +73,14 @@ export async function pullRequestStates(req: Request, token: string, refs: PullR
     const chunk = refs.slice(at, at + PULLS_MAX);
     const { params, variables } = repoVariables(chunk.map((r) => r.repo));
     const fields = chunk.map((r, i) =>
-      `p${i}: repository(owner: $o${i}, name: $n${i}) { pr: pullRequest(number: ${Math.trunc(r.pullRequest)}) { ${PULL} } issue: issue(number: ${Math.trunc(r.issue)}) { state stateReason updatedAt } }`);
-    const { data, errors } = await ask<{ pr?: GqlPull | null; issue?: GqlIssue | null }>(req, token, `query(${params.join(', ')}) {\n${fields.join('\n')}\n}`, variables);
+      `p${i}: repository(owner: $o${i}, name: $n${i}) { defaultBranchRef { name } pr: pullRequest(number: ${Math.trunc(r.pullRequest)}) { ${PULL} } issue: issue(number: ${Math.trunc(r.issue)}) { state stateReason updatedAt } }`);
+    const { data, errors } = await ask<{ defaultBranchRef?: { name?: string } | null; pr?: GqlPull | null; issue?: GqlIssue | null }>(req, token, `query(${params.join(', ')}) {\n${fields.join('\n')}\n}`, variables);
     chunk.forEach((r, i) => {
       const alias = `p${i}`;
       const mine = errors.filter((e) => e.path![0] === alias);
       const failed = mine.find((e) => e.path!.length === 1 || e.path![1] === 'pr' && e.path!.at(-1) !== 'statusCheckRollup');
       const pr = data[alias]?.pr;
-      const state = !failed && pr ? stateFrom(pr, data[alias]?.issue, mine.some((e) => e.path!.at(-1) === 'statusCheckRollup')) : undefined;
+      const state = !failed && pr ? stateFrom(pr, data[alias]?.issue, mine.some((e) => e.path!.at(-1) === 'statusCheckRollup'), data[alias]?.defaultBranchRef?.name) : undefined;
       if (state) out.pulls.set(pullKey(r.repo, r.pullRequest), state);
       else out.errors.set(pullKey(r.repo, r.pullRequest), failed?.message ?? 'not answered');
     });

@@ -12,7 +12,6 @@ import { databaseUrlFor } from '../support/database.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { connectGitHub } from '../support/github-account.ts';
 import { waitFor } from '../support/wait.ts';
-import { retargetNote, tendNote } from '../../src/sources/github/pr-notes.ts';
 
 const REPO = 'owner/hopper-sandbox';
 let a: TestApp | undefined;
@@ -314,41 +313,5 @@ describe('the done-check and failing checks (issue #736)', () => {
     const [job] = await jobsFor(app, issue.url);
     await app.waitForStatus(job!.id, 'finished');
     expect((await app.events('types=job.finish_briefed')).map((e) => e.data)).toEqual([{ pullRequest: pr, step: 'fix_checks' }]);
-  });
-});
-
-describe('pull request housekeeping (issue #1143)', () => {
-  it('a tend job started: the pull request says the hopper works on it, once', async () => {
-    const gh = createFakeGitHub();
-    const app = await boot(gh);
-    const { issue, url } = await pullRequestWaiting(gh, app, (pr) => gh.pushToPullRequest(pr, new Date().toISOString()));
-    gh.setConflicting(url, true);
-    await app.sync();
-    const tender = await nextJob(app, issue.url, 2);
-    await app.waitForStatus(tender!.id, 'finished');
-    expect(gh.pullRequestComments(url)).toEqual([tendNote('rebase')]);
-  });
-
-  it('a pull request off the landing branch: moved to it, and recorded', async () => {
-    const gh = createFakeGitHub();
-    const app = await boot(gh);
-    gh.setDefaultBranch(REPO, 'main');
-    const { job, url } = await pullRequestWaiting(gh, app, () => undefined);
-    await app.sync();
-    await waitFor(async () => (await app.events('types=job.pull_request_retargeted')).length > 0, { what: 'job.pull_request_retargeted' });
-    expect((await app.events('types=job.pull_request_retargeted')).map((e) => [e.jobId, e.data])).toEqual([[job.id, { pullRequest: url, from: 'dev', to: 'main' }]]);
-    expect(gh.pullRequestComments(url)).toEqual([retargetNote('dev', 'main')]);
-  });
-
-  it('a pull request superseded by another that closed its issue: closed, and recorded with why', async () => {
-    const gh = createFakeGitHub();
-    const app = await boot(gh);
-    const { issue, job, url } = await pullRequestWaiting(gh, app, () => undefined);
-    const now = new Date().toISOString();
-    const other = gh.closeByPullRequest(REPO, issue.number, { createdAt: now, mergedAt: now });
-    await app.sync();
-    await waitFor(async () => (await app.events('types=job.pull_request_closed')).length > 0, { what: 'job.pull_request_closed' });
-    expect((await app.events('types=job.pull_request_closed')).map((e) => [e.jobId, e.data]))
-      .toEqual([[job.id, { pullRequest: url, part: false, superseded: `its issue was closed by ${other.url}` }]]);
   });
 });

@@ -218,6 +218,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
     openPullRequests: (repo) => call(`open pull requests of ${repo}`, async (l) => openPullRequests(req, await tokenFor(l, repo), repo)),
     merge: (repo, number) => call(`merge ${repo}#${number}`, async (l) => rest.mergePullRequest(req, await tokenFor(l, repo), repo, number)),
     closeWithoutMerge: (repo, number) => call(`close ${repo}#${number}`, async (l) => rest.closePullRequest(req, await tokenFor(l, repo), repo, number)),
+    retarget: (repo, number, base) => call(`base of ${repo}#${number}`, async (l) => rest.retargetPullRequest(req, await tokenFor(l, repo), repo, number, base)),
     toDraft: (repo, number) => call(`draft ${repo}#${number}`, async (l) => rest.convertToDraft(req, await tokenFor(l, repo), repo, number)),
     jobLog: (repo, jobId) => call(`log of Actions job ${jobId} of ${repo}`, async (l) => rest.jobLog(req, await tokenFor(l, repo), repo, jobId)),
     gitRemote: (repo) => call(`git of ${repo}`, async (l) => ({ url: `${webOriginOf(o.baseUrl ?? 'https://api.github.com')}/${repo}.git`, token: await tokenFor(l, repo) })),

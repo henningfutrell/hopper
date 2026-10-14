@@ -203,6 +203,8 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
       const s = current();
       return s?.crossReferences ? s.crossReferences(job) : Promise.reject(new SourceError(why(), false));
     },
+    // Unconnected, nothing is said on the pull request (issue #1143): a note never throws.
+    tendStarted: async (job, pullRequest, step) => { await current()?.tendStarted?.(job, pullRequest, step); },
     // Unconnected, nothing is merged (issue #796), and nothing is said of conflicts (issue #939).
     mergesOnReady: (repo) => current()?.mergesOnReady?.(repo) ?? false,
     conflictBetween: conflictBetweenOf(api),

@@ -26,7 +26,7 @@ import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
 import { issueState, notComplete, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts } from './completion.ts';
-import { followPullRequest } from './follow.ts';
+import { followPullRequest, tendStartedOn } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
 import { followedBatch } from './followed-batch.ts';
@@ -370,7 +370,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     follow(job, act) {
       return followPullRequest({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}) }, job, act);
     },
-    unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs),
+    unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api),
     readFollowed: (jobs) => batch.read(jobs),
     crossReferences: (job) => crossReferencesOfJob(api, job),
     mergesOnReady: (repo) => o.yoloMode?.(repo) ?? false,

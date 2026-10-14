@@ -139,7 +139,10 @@ the failing checks' output, masked; a `landing_batch.fix_filed` event keeps it f
 conflicts with the tested branch gets a **back-merge** (issue #1073 part 4): the tested branch merged into a branch at the
 landing tip by GitHub's own merge, and a pull request of it into the landing branch, its text fixed, which the hopper merges;
 a conflict GitHub cannot merge files one issue the same way as a fix issue, its text fixed, and no second while it stands
-(`landing_batch.back_merge_issue_filed`). A job's own request through the GitHub proxy (issue #563) is
+(`landing_batch.back_merge_issue_filed`). **Pull request housekeeping** (issue #1143, `docs/design.md` "Pull request housekeeping") is the hopper's
+care of a job's open pull request it follows: it moves one based off the landing branch to it, closes one with nothing
+left to land, and posts on the pull request one fixed comment for each such act and for each tend job it starts,
+naming no person. A job's own request through the GitHub proxy (issue #563) is
 the job's act, as when it pushes: its text is the job's, under the publishing rule; so are, with the user's Contribution on
 (issue #429), the fork of a repository its user cannot push to and the pull request it opens there from that fork; an issue filed that way ends with the
 hopper's note naming the job and the request by id only, and gets no label or assignee. The default job rules carry the rule (`src/job-rules/` `DEFAULT_JOB_RULES`); the job rules are the owner's to edit (issue #172).

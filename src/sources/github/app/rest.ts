@@ -137,6 +137,11 @@ export async function closePullRequest(req: Request, token: string, repo: string
   await req('PATCH /repos/{owner}/{repo}/pulls/{pull_number}', { ...splitRepo(repo), pull_number: number, state: 'closed', headers: auth(token) });
 }
 
+/** Change the base branch of open pull request `number` to `base` (issue #1143). */
+export async function retargetPullRequest(req: Request, token: string, repo: string, number: number, base: string): Promise<void> {
+  await req('PATCH /repos/{owner}/{repo}/pulls/{pull_number}', { ...splitRepo(repo), pull_number: number, base, headers: auth(token) });
+}
+
 /**
  * Make open pull request `number` a draft (issue #724: rework): GitHub's GraphQL `convertPullRequestToDraft`, by its node
  * id. A draft stays a draft. GitHub's refusal throws.
