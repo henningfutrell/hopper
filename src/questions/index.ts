@@ -4,3 +4,4 @@ export { RULES, RULES_MAX_BYTES, readRules, rulesProblem, rulesView, writeRules 
 export { CLOSED_ANSWER, createQuestionService } from './service.ts';
 export { ALLOWED_DIALOGS, FIXED } from './fixed-answers.ts';
 export type { QuestionServiceOptions } from './service.ts';
+export { answerSignedOut, type SignedIn } from './signed-out.ts';

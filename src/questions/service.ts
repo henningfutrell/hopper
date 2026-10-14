@@ -10,7 +10,7 @@
 // never answers.
 import type { AnswerByHumanResult, Clock, ConfigRecords, EscalationLevel, QuestionService, UserStore } from '../domain/ports.ts';
 import type { Logins } from '../logins/index.ts';
-import { jobPriorityTag, type Question, type QuestionAttempt, type QuestionRisk, type ReviewKind, type ShiftMode } from '../domain/types.ts';
+import { jobPriorityTag, SIGNED_IN_BY, type Question, type QuestionAttempt, type QuestionRisk, type ReviewKind, type ShiftMode } from '../domain/types.ts';
 import { answerHold, correctAutoAnswer, riskCall } from './auto-answer.ts';
 import { escalationOf, type Climb, type ToHuman } from './escalation.ts';
 import { emitQuestionEvent, type QuestionEventType } from './events.ts';
@@ -273,7 +273,7 @@ export function createQuestionService(o: QuestionServiceOptions): QuestionServic
     clearTimers(q.id);
     const at = iso();
     store.questions.addAttempt(q.id, {
-      tier: by, role: by === HUMAN || by.startsWith('thread:') ? 'human' : by.startsWith('fork:') ? 'fork' : 'level', startedAt: at, finishedAt: at, answer, outcome: 'accepted',
+      tier: by, role: by === HUMAN || by.startsWith('thread:') ? 'human' : by.startsWith('fork:') ? 'fork' : by === SIGNED_IN_BY ? 'fixed' : 'level', startedAt: at, finishedAt: at, answer, outcome: 'accepted',
       ...(reason ? { reason } : status === 'closed' ? { reason: 'closed without answering' } : via ? { reason: 'answered in the pane' } : {}),
     });
     const updated = store.questions.update(q.id, { status, answer, answeredBy: by });
