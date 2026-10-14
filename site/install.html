@@ -248,8 +248,13 @@ the hopper's containers start each time Ubuntu starts:</p>
 <div class="cmd"><pre>sudo loginctl enable-linger "$USER"
 systemctl --user enable podman-restart.service</pre><button type="button" data-copy="sudo loginctl enable-linger &quot;$USER&quot; &amp;&amp; systemctl --user enable podman-restart.service">Copy</button></div></li>
 <li id="windows-keep-running"><p><strong>Keep Ubuntu running.</strong> WSL stops Ubuntu, and the hopper with it, soon after
-no Windows program uses it. This shortcut in your Startup folder starts Ubuntu when you sign in to Windows,
-and keeps it running in a hidden window. If <code>wsl.exe</code> stops, it starts it again after 5 seconds. In
+no Windows program uses it. A shortcut in your Startup folder starts Ubuntu when you sign in to Windows,
+and keeps it running in a hidden window. If <code>wsl.exe</code> stops, it starts it again after 5 seconds.
+Install <a href="#windows-cli">the hopper CLI from Windows</a>, then run this in PowerShell, once:</p>
+<div class="cmd"><pre>hopper autostart on</pre><button type="button" data-copy="hopper autostart on">Copy</button></div>
+<p>It also does step 4 if you skipped it, and can ask for your Ubuntu password once. <code>hopper autostart status</code>
+says what is on, and <code>hopper autostart off</code> stops it.</p>
+<p>Or make the shortcut by hand. In
 PowerShell, not as administrator (change <code>Ubuntu-24.04</code> if your distro has another name; <code>wsl --list</code>
 shows the names):</p>
 <div class="cmd"><pre>$s = (New-Object -ComObject WScript.Shell).CreateShortcut(&quot;$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\hopper-wsl.lnk&quot;)
@@ -294,9 +299,12 @@ as <a href="#before">step 1</a> says, sign in to <code>claude</code>, and run th
 <p>Run the <code>hopper</code> CLI from PowerShell or the Command Prompt. <code>hopper.cmd</code> runs it in the hopper's
 container in WSL, with the credentials the CLI already has there. Windows keeps no token.</p>
 <ol class="steps">
-<li><p>In PowerShell, download <a href="https://henningfutrell.github.io/hopper/hopper.cmd"><code>hopper.cmd</code></a> to a folder of its own:</p>
+<li><p>In PowerShell, download <a href="https://henningfutrell.github.io/hopper/hopper.cmd"><code>hopper.cmd</code></a> and
+<a href="https://henningfutrell.github.io/hopper/hopper.ps1"><code>hopper.ps1</code></a> to a folder of their own.
+<code>hopper autostart</code> needs both:</p>
 <div class="cmd"><pre>New-Item -ItemType Directory -Force &quot;$env:LOCALAPPDATA\hopper&quot; | Out-Null
-Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.cmd -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.cmd&quot;</pre><button type="button" data-copy="New-Item -ItemType Directory -Force &quot;$env:LOCALAPPDATA\hopper&quot; | Out-Null; Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.cmd -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.cmd&quot;">Copy</button></div></li>
+Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.cmd -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.cmd&quot;
+Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.ps1 -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.ps1&quot;</pre><button type="button" data-copy="New-Item -ItemType Directory -Force &quot;$env:LOCALAPPDATA\hopper&quot; | Out-Null; Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.cmd -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.cmd&quot;; Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.ps1 -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.ps1&quot;">Copy</button></div></li>
 <li><p>Add that folder to your PATH, then open a new PowerShell window:</p>
 <div class="cmd"><pre>[Environment]::SetEnvironmentVariable(&#x27;Path&#x27;, [Environment]::GetEnvironmentVariable(&#x27;Path&#x27;, &#x27;User&#x27;) + &quot;;$env:LOCALAPPDATA\hopper&quot;, &#x27;User&#x27;)</pre><button type="button" data-copy="[Environment]::SetEnvironmentVariable(&#x27;Path&#x27;, [Environment]::GetEnvironmentVariable(&#x27;Path&#x27;, &#x27;User&#x27;) + &quot;;$env:LOCALAPPDATA\hopper&quot;, &#x27;User&#x27;)">Copy</button></div></li>
 <li><p>Run a command, for example:</p>
@@ -305,8 +313,7 @@ Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.cmd -OutFile &q
 <p class="note">If the hopper runs in a WSL distro that is not your default one, set <code>HOPPER_WSL_DISTRO</code> to
 its name (<code>wsl --list</code> shows the names). If you changed the compose project name, set
 <code>HOPPER_COMPOSE_PROJECT</code>. The wrapper finds the container by its compose labels, not by its name. For a
-terminal the CLI can use interactively, use <a href="https://henningfutrell.github.io/hopper/hopper.ps1"><code>hopper.ps1</code></a>
-instead: it does the same in PowerShell.</p>
+terminal the CLI can use interactively, run <code>hopper.ps1</code> instead: it does the same in PowerShell.</p>
 
 <h3 id="windows-machine">A Windows computer as a machine</h3>
 <p>hopper is not supported natively on Windows. A client that runs on Windows itself (Node.js for Windows, Git Bash)
