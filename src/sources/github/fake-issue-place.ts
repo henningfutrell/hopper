@@ -1,5 +1,5 @@
 // The in-memory GitHub's answer to an issue's place (issue #437, fake.ts): its owner (of no known type), the Projects
-// whose items name it, the pull requests that close it or mention it, its parent and its sub-issues.
+// whose items name it, the pull requests that close it or mention it, its parent and its sub-issues, and why each closed.
 import type { IssuePlace, ItemRef } from '../../domain/issue-graph.ts';
 import type { GitHubIssue, GitHubProjectItem } from './api.ts';
 
@@ -12,7 +12,7 @@ export interface FakePlaceState {
   projects: Map<string, GitHubProjectItem[] | Error>;
 }
 
-const issueRef = (i: GitHubIssue): ItemRef => ({ kind: 'issue', repo: i.repo, number: i.number, url: i.url, state: i.state });
+const issueRef = (i: GitHubIssue): ItemRef => ({ kind: 'issue', repo: i.repo, number: i.number, url: i.url, state: i.state, ...(i.stateReason ? { stateReason: i.stateReason } : {}) });
 
 export function fakeIssuePlace(s: FakePlaceState, i: GitHubIssue): IssuePlace {
   const key = `${i.repo}#${i.number}`;
@@ -21,7 +21,7 @@ export function fakeIssuePlace(s: FakePlaceState, i: GitHubIssue): IssuePlace {
   const parentKey = [...s.subIssues].find(([, children]) => children.includes(key))?.[0];
   const parent = parentKey === undefined ? undefined : s.issues.get(parentKey);
   return {
-    issue: { repo: i.repo, number: i.number, url: i.url, title: i.title, state: i.state, updatedAt: i.updatedAt },
+    issue: { repo: i.repo, number: i.number, url: i.url, title: i.title, state: i.state, ...(i.stateReason ? { stateReason: i.stateReason } : {}), updatedAt: i.updatedAt },
     owner: { login: i.repo.slice(0, i.repo.indexOf('/')) },
     projects: [...s.projects].flatMap(([id, items]) => {
       if (items instanceof Error || !items.some((x) => x.url === i.url)) return [];

@@ -19,6 +19,8 @@ export interface Worded {
   attempt?: number;
   attempts?: number;
   pullRequest?: JobGraphPullRequest;
+  /** A failed job a person dismissed (issue #1036). */
+  dismissed?: true;
 }
 
 const WAITING: Partial<Record<JobStatus, string>> = { operator_led: 'A person works on it', parked: 'Parked', waiting_on: 'Waiting on the outside world' };
@@ -68,6 +70,7 @@ export function stageWords(n: Worded): string {
     case 'done': return n.pullRequest?.state === 'merged' ? 'Merged' : 'Done';
     case 'failed': return 'Failed';
     case 'cancelled': return 'Cancelled';
+    case 'superseded': return n.dismissed ? 'Dismissed' : 'Superseded';
     case 'no_job': return 'Not started';
   }
 }
@@ -88,6 +91,7 @@ export function nextWords(n: Worded, tasks?: { done: number; total: number }): s
     case 'done': return 'Nothing: it is done.';
     case 'failed': return 'Read why it failed, then run it again or close it.';
     case 'cancelled': return 'Nothing: it was cancelled.';
+    case 'superseded': return n.dismissed ? 'Nothing: it was dismissed.' : 'Nothing: other work finished its issue.';
     case 'no_job': return 'A job starts when a source takes the issue.';
   }
 }
@@ -132,11 +136,11 @@ export function treeSummary(t: Omit<JobTree, 'summary'>, nodes: ReadonlyMap<stri
   return summaryWords(pieces, waiting);
 }
 
-/** Each node's words (issue #935): an issue says what its newest job says. */
+/** Each node's words (issue #935): an issue says what its newest job says, while it is at that job's stage (issue #1036). */
 export function wordNodes(nodes: ReadonlyMap<string, JobGraphNode>, newestOf: ReadonlyMap<string, Job>): void {
   for (const n of nodes.values()) {
-    const newest = n.kind === 'issue' ? newestOf.get(n.id) : undefined;
-    const worded = newest ? nodes.get(`job:${newest.id}`)! : n;
+    const newest = n.kind === 'issue' ? nodes.get(`job:${newestOf.get(n.id)?.id}`) : undefined;
+    const worded = newest?.stage === n.stage ? newest : n;
     n.stageText = stageWords(worded);
     if (waitsOnYou(worded)) n.waitsOnYou = true;
   }

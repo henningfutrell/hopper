@@ -25,12 +25,13 @@ export interface GraphEdge { from: string; kind: GraphEdgeKind; to: string }
 
 export interface IssueGraph { nodes: GraphNode[]; edges: GraphEdge[] }
 
-/** An issue or a pull request another item names. */
-export interface ItemRef { kind: 'issue' | 'pull_request'; repo: string; number: number; url: string; state?: string }
+/** An issue or a pull request another item names. `stateReason`: why a closed issue closed (`completed`, `not_planned`, `duplicate`, issue #1036). */
+export interface ItemRef { kind: 'issue' | 'pull_request'; repo: string; number: number; url: string; state?: string; stateReason?: string }
 
 /** What one read of an issue on GitHub says of its place. */
 export interface IssuePlace {
-  issue: { repo: string; number: number; url: string; title: string; state: string; updatedAt: string };
+  /** `stateReason`: why it closed, when it is closed (issue #1036). */
+  issue: { repo: string; number: number; url: string; title: string; state: string; stateReason?: string; updatedAt: string };
   /** The owner of the issue's repository: an organization or a user (absent: GitHub did not say which). */
   owner: { login: string; type?: 'Organization' | 'User' };
   projects: { owner: string; number: number; url: string; title?: string }[];
@@ -80,13 +81,13 @@ export function placeGraph(place: IssuePlace): IssueGraph {
     return id;
   };
   const item = (r: ItemRef) => {
-    const id = node(r.url, r.kind, { repo: r.repo, number: r.number, ...(r.state ? { state: r.state } : {}) });
+    const id = node(r.url, r.kind, { repo: r.repo, number: r.number, ...(r.state ? { state: r.state } : {}), ...(r.stateReason ? { stateReason: r.stateReason } : {}) });
     edge(id, 'in_repo', repo(r.repo));
     return id;
   };
   const { issue, owner } = place;
   const own = node(ownerId(owner.login), 'owner', { login: owner.login, ...(owner.type ? { type: owner.type } : {}) });
-  const at = node(issue.url, 'issue', { repo: issue.repo, number: issue.number, title: issue.title, state: issue.state, updatedAt: issue.updatedAt });
+  const at = node(issue.url, 'issue', { repo: issue.repo, number: issue.number, title: issue.title, state: issue.state, ...(issue.stateReason ? { stateReason: issue.stateReason } : {}), updatedAt: issue.updatedAt });
   edge(at, 'in_repo', repo(issue.repo));
   edge(repoId(issue.repo), 'owned_by', own);
   for (const p of place.projects) {

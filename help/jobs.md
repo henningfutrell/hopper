@@ -18,8 +18,9 @@ Each job is in one stage. The counts at the top show how many jobs are in each s
 | Done | The job is finished. Its pull request merged, or it had none. |
 | Failed | The job failed. |
 | Cancelled | The job was cancelled, or the queue gate turned it away. |
+| Superseded | The job failed or was cancelled, but other work took its place: a later job of its issue, the close of its issue as completed, or the merge of the pull request it worked on. A failed job you dismissed shows here too, as **Dismissed**. It does not count as failed. |
 
-An issue that no job works on yet shows as **Not started**.
+An issue that no job works on yet shows as **Not started**. An issue that GitHub closed as completed shows as **Done**. A pull request that merged shows as **Merged** on every job that worked on it.
 
 Each node and each card also says in plain words where it stands. For example:
 

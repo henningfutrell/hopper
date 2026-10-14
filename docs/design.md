@@ -15816,6 +15816,36 @@ settled was said to **block** its root, also a job that only works on its issue.
   answer to. Only `blocked_by` says something must come first. The ring the view draws round a node not settled stays,
   but it reads "not settled yet", never "blocks".
 
+**Part 4: finished work rolls up (issue #1036, 2026-10-13).** The graph made a finished queue look stuck: a pull request
+merged after a tend or a rework took it over still showed its old checks and conflicts, and its job stayed partly done or
+PR open; an issue a later job finished took the stage of an earlier cancelled job; a failure a rerun replaced, or a person
+dismissed, still counted as Failed. The rollup reads only what the hopper keeps already. It adds no GitHub read and no
+poll: the owner's constraint on the issue.
+
+- **A pull request's state over every job that names it** (`src/domain/job-rollup.ts`, split from `job-graph.ts`). A
+  tend or a rework hands the pull request to a newer job (issue #994: the old job is followed no more), and that job
+  follows it to its end, so the link is the pull request URL both jobs name: nothing new is recorded. A final state — `merged`, `closed`, `abandoned` — that
+  any job's follow saw wins for all of them, merged over the rest; so does `merged` in the issue graph (a closing pull
+  request's state, from the issue place read). An ended pull request shows no checks, draft or conflicts. One still open
+  shows what its newest follower saw of it.
+- **An issue closed as completed is done.** The issue place query reads `stateReason` beside `state`, for the issue and
+  for the issues it links (the field is on an issue only, so a pull request item does not ask it): no new query. An issue
+  closed with no reason, or closed as completed, is done whatever its jobs did; `not_planned` and `duplicate` are not. A
+  partly done job of a done issue waits on nothing: done.
+- **Superseded** (a new job stage). A failed or cancelled job is `superseded` when a later job of its issue is in the
+  graph, its issue is closed as completed, the pull request it was the tend of merged after all, or a person dismissed it
+  (`dismissed`, its words "Dismissed", as the Failed jobs list drops it). It is settled: it blocks no root and counts as
+  no failure in the stage counts or a tree's summary. A run again that failed after a finished job stays failed: nothing
+  took its place. An issue reads its stage and words from its newest job that is not superseded.
+- **The route** adds the newest job of each issue it shows (`getBySourceKey`), so an issue whose last job ended before
+  the queue's 24-hour window still takes its stage from it.
+
+Left: an issue no job works, closed after its last read, shows `no_job` until a read of it or of an issue that links it
+(each discover reads the open issues of the hopper's label again). Reading closed issues again would be a new poll.
+
+Tests: `test/domain/job-rollup.test.ts`, `test/domain/issue-graph.test.ts` and
+`test/sources/issue-place.test.ts` (`stateReason`), `test/integration/job-graph.test.ts` (the newest job of an issue).
+
 ## A job's parts list (issue #935, 2026-10-12)
 
 Requirement (issue #935): for each job, everything it touched or made — a bill of materials —, grouped, each item with

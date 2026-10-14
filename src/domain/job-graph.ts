@@ -4,8 +4,11 @@
 // again (the next part after a partly done one), a job to the fork it spawned from a question, a proposal to the job that
 // carries out its path, a job to its pull request, and a partly done job to the pull request whose merge lets the rest run;
 // an issue to an issue that blocks it, a pull request to the one whose branch it is based on, and a job to its open
-// question or hand-off, which are nodes too: each waits on a person. Each node has its **stage**: queued, running, waiting, PR open, partly done, done, failed or cancelled — and an issue no
-// job works yet, no job. A pull request the hopper tended lists each tend attempt, oldest first (issue #927). Each group of
+// question or hand-off, which are nodes too: each waits on a person. Each node has its **stage**: queued, running, waiting, PR open, partly done, done, failed, cancelled or superseded — and an issue no
+// job works yet, no job. Finished work rolls up (issue #1036), from what the hopper already keeps and no read of its own: a
+// pull request any job or the issue graph saw merged is merged for every job that names it, with no checks or conflicts; an
+// issue closed as completed is done; a failed or cancelled job a later job of its issue, its issue's close, the merge of the
+// pull request it tended, or a person's dismissal took the place of is superseded, and counts as no failure. A pull request the hopper tended lists each tend attempt, oldest first (issue #927). Each group of
 // connected nodes is one **job tree**, named by its root, with what blocks the root marked. Pure: no I/O, no clock — the
 // route reads the jobs, the lineage links, the issue graph and the open questions and hand-offs, and passes them in.
 import { ownWaitOf, type OwnWait } from './own-command.ts';
@@ -15,13 +18,12 @@ import { phaseOf } from './phase.ts';
 import type { ChecksState, Tended, TendStep } from './pull-requests.ts';
 import type { TaskCount } from './task-count.ts';
 import { countStages, treesOf } from './job-trees.ts';
+import { rollUp } from './job-rollup.ts';
 import type { Job, JobStatus } from './types.ts';
 
 /** Where a job stands in its life, in the words the Jobs view uses. */
-export const JOB_STAGES = ['queued', 'running', 'waiting', 'pr_open', 'partly_done', 'done', 'failed', 'cancelled', 'no_job'] as const;
+export const JOB_STAGES = ['queued', 'running', 'waiting', 'pr_open', 'partly_done', 'done', 'failed', 'cancelled', 'superseded', 'no_job'] as const;
 export type JobStage = typeof JOB_STAGES[number];
-
-/** A stage that ends nothing more: no node in it blocks its tree's root. */
 
 export type JobGraphNodeKind = 'job' | 'issue' | 'pull_request' | 'question' | 'handoff';
 
@@ -93,6 +95,8 @@ export interface JobGraphNode {
   parts?: { done: number; total: number };
   /** A pull request's node: each tend of it (issue #927), oldest first. Absent: never tended. */
   tends?: JobGraphTend[];
+  /** A failed job a person dismissed (issue #1036): superseded, and its words say so. */
+  dismissed?: true;
 }
 
 /** One tend of a pull request (issue #927): the job the hopper ran to take the step, its status, and when it started and ended. */
@@ -183,8 +187,8 @@ export function pullRequestOf(job: Job): JobGraphPullRequest | undefined {
  * its pull request on to a tend or a rework (follow: tended, reworked) waits on nothing: it is followed no more, and the
  * newer job carries the rest of its issue and its stage (issue #994).
  */
-const waitsOnMerge = (job: Job): boolean =>
-  job.partlyDone !== undefined && !['merged', 'closed', 'abandoned', 'tended', 'reworked'].includes(followedOf(job).follow ?? '');
+const waitsOnMerge = (job: Job, follow: string | undefined): boolean =>
+  job.partlyDone !== undefined && !['merged', 'closed', 'abandoned', 'tended', 'reworked'].includes(follow ?? '');
 
 /**
  * A job's stage. Queued: waiting for a lane (queued, held, claimed). Running, and on a wait for its own command (issue
@@ -193,6 +197,11 @@ const waitsOnMerge = (job: Job): boolean =>
  * merged; PR open while its own pull request is open; else done. Failed; cancelled (and rejected at the queue gate).
  */
 export function stageOf(job: Job): JobStage {
+  return stageAt(job, followedOf(job).follow);
+}
+
+/** A job's stage with its pull request at `follow`: its own follow, or where the graph has that pull request now. */
+export function stageAt(job: Job, follow: string | undefined): JobStage {
   switch (job.status) {
     case 'queued': case 'held': case 'claimed': return 'queued';
     case 'running': return 'running';
@@ -201,8 +210,8 @@ export function stageOf(job: Job): JobStage {
     case 'failed': return 'failed';
     case 'cancelled': case 'rejected': return 'cancelled';
     case 'finished':
-      if (waitsOnMerge(job)) return 'partly_done';
-      return followedOf(job).follow === 'open' ? 'pr_open' : 'done';
+      if (waitsOnMerge(job, follow)) return 'partly_done';
+      return follow === 'open' ? 'pr_open' : 'done';
   }
 }
 
@@ -249,13 +258,15 @@ export function jobGraph(input: JobGraphInput): JobGraph {
 
   const jobs = [...input.jobs].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   const byId = new Map(jobs.map((j) => [j.id, j]));
-  // Each issue's newest job: the issue reads its stage, its words, and whether a run again redoes a failed run.
-  const newestOf = new Map<string, Job>();
-  // The issue nodes, from the jobs: each issue takes the stage and parts of its newest job.
+
+  // Finished work rolls up (issue #1036): each pull request's state over every job that names it, each job's stage, the
+  // issues closed as completed, and the job each issue reads its stage from.
+  const { viewOf, stages, completed, newestOf } = rollUp(jobs, input.issueGraph?.nodes ?? []);
+
   for (const job of jobs) {
     const s = job.source;
-    const stage = stageOf(job);
-    const pr = pullRequestOf(job);
+    const stage = stages.get(job.id)!;
+    const pr = viewOf(job);
     const id = jobNodeId(job.id);
     const phase = phaseOf(job), attempt = attemptIn(job, byId), ownWait = ownWaitOf(job);
     nodes.set(id, {
@@ -264,17 +275,23 @@ export function jobGraph(input: JobGraphInput): JobGraph {
       ...(attempt > 1 ? { attempt, ...(input.maxAttempts !== undefined ? { attempts: input.maxAttempts + 1 } : {}) } : {}),
       ...(s?.repo ? { repo: s.repo } : {}), ...(s?.number !== undefined ? { number: s.number } : {}), ...(s?.url ? { url: s.url } : {}),
       ...(job.tasks ? { tasks: job.tasks } : {}), ...(job.laneId ? { laneId: job.laneId } : {}),
-      ...(pr ? { pullRequest: pr } : {}),
+      ...(pr ? { pullRequest: pr } : {}), ...(job.dismissedAt !== undefined && stage === 'superseded' ? { dismissed: true as const } : {}),
       ...(job.partlyDone && stage === 'partly_done' ? {
         partlyDone: { pullRequest: job.partlyDone, afterMerge: s?.repo && s.number !== undefined ? `the next part of ${ref(s.repo, s.number)} runs` : 'the next part of its issue runs' },
       } : {}),
     });
-    if (s?.repo && s.number !== undefined) {
+    const issue = s?.repo && s.number !== undefined ? issueNodeId(s.repo, s.number) : undefined;
+    if (s?.repo && s.number !== undefined && issue && newestOf.get(issue) === job) {
       const parts = partsOf(job);
-      issueNode(s.repo, s.number, { label: s.title || ref(s.repo, s.number), stage, ...(s.url ? { url: s.url } : {}), ...(parts ? { parts } : {}) });
-      newestOf.set(issueNodeId(s.repo, s.number), job);
+      issueNode(s.repo, s.number, { label: s.title || ref(s.repo, s.number), stage: completed.has(issue) ? 'done' : stage, ...(s.url ? { url: s.url } : {}), ...(parts ? { parts } : {}) });
     }
-    if (pr) prNode(pr, pr.state === 'merged' ? 'done' : STILL_OPEN.includes(pr.state) ? (waitsOnMerge(job) ? 'partly_done' : 'pr_open') : 'cancelled', job.spec.goal || s?.title);
+  }
+  // Each pull request once, as rolled up: partly done while a job's part waits on its merge, labelled by its newest job.
+  for (const job of jobs) {
+    const pr = viewOf(job);
+    if (!pr) continue;
+    const waits = jobs.some((j) => pullRequestOf(j)?.url === pr.url && stages.get(j.id) === 'partly_done');
+    prNode(pr, pr.state === 'merged' ? 'done' : STILL_OPEN.includes(pr.state) ? (waits ? 'partly_done' : 'pr_open') : 'cancelled', job.spec.goal || job.source?.title);
   }
   // The tends (issue #927): each job a tend handed its job's pull request to, on that pull request's node.
   for (const job of jobs) {
@@ -348,7 +365,7 @@ export function jobGraph(input: JobGraphInput): JobGraph {
     if (job.forkOf && byId.has(job.forkOf.jobId)) edge(jobNodeId(job.forkOf.jobId), 'spawned', id);
     if (job.followOn && byId.has(job.followOn.jobId)) edge(jobNodeId(job.followOn.jobId), 'plan_apply', id);
     const pr = pullRequestOf(job);
-    if (pr) edge(id, waitsOnMerge(job) ? 'waits_on_merge' : 'opened', pullRequestNodeId(pr.url));
+    if (pr) edge(id, stages.get(job.id) === 'partly_done' ? 'waits_on_merge' : 'opened', pullRequestNodeId(pr.url));
   }
   // A stack: an open pull request whose base is another open one's head branch, in the same repository.
   const heads = new Map<string, string>();
@@ -376,7 +393,7 @@ export function jobGraph(input: JobGraphInput): JobGraph {
     }
   }
 
-  // The words (issue #935): an issue says what its newest job says.
+  // The words (issue #935): an issue says what its newest job says, unless GitHub closed it as completed.
   wordNodes(nodes, newestOf);
   const allNodes = [...nodes.values()];
   const allEdges = [...edges.values()];
