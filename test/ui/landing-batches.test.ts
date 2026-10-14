@@ -24,6 +24,9 @@ describe('landing batches model', () => {
     expect(landingBatchPatch(settings, { repos: { 'owner/a': { tested: 'dev', everyMerges: 3, everyMinutes: 60 } } })).toEqual({ repos: { 'owner/a': { everyMerges: 3 } } });
     expect(landingBatchPatch(settings, { repos: { 'owner/b': { tested: 'dev', everyMerges: 5, everyMinutes: 60 } } }))
       .toEqual({ repos: { 'owner/a': null, 'owner/b': { tested: 'dev', everyMerges: 5, everyMinutes: 60 } } });
+    // The landing branch (issue #1142): `main` when a record saved before it has none, so only a real change is sent.
+    expect(landingBatchPatch(settings, { repos: { 'owner/a': { ...settings.repos['owner/a']!, landing: 'main' } } })).toBeUndefined();
+    expect(landingBatchPatch(settings, { repos: { 'owner/a': { ...settings.repos['owner/a']!, landing: 'trunk' } } })).toEqual({ repos: { 'owner/a': { landing: 'trunk' } } });
   });
 
   it('line: a bisect at work, then the culprit with its revert and fix issue', () => {

@@ -1,7 +1,7 @@
 // Landing batches (issue #1073, design.md "Landing batches"): per repository, the tested branch a green batch run moves
 // and when a batch run starts (after N merges, or a timer), and each configured repository's batch state. The settings
 // are the user's, in the database, changed by an admin; the runner reads them at each pass, so a change applies with no
-// restart. A job's pull request lands on the repository's default branch, the landing branch.
+// restart. A job's pull request lands on the landing branch the settings name (`main` when left out, issue #1142).
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { DEFAULT_LANDING_BATCHES, patchLandingBatches, type LandingBatchesView } from '../../domain/landing-batches.ts';
@@ -18,6 +18,7 @@ const branchName = z.string().regex(/^[A-Za-z0-9._/-]+$/, 'a branch name').max(2
 export const landingBatchesBody = z.strictObject({
   repos: z.record(repoName, z.strictObject({
     tested: branchName.optional(),
+    landing: branchName.optional(),
     everyMerges: z.number().int().min(1).max(100).optional(),
     everyMinutes: z.number().int().min(1).max(7 * 24 * 60).optional(),
     canaryHours: z.number().int().min(1).max(30 * 24).nullable().optional(),
@@ -25,8 +26,8 @@ export const landingBatchesBody = z.strictObject({
 });
 
 export const LANDING_BATCH_OPERATIONS: Operation[] = [
-  { method: 'get', path: '/api/landing-batches', tag: 'Jobs', summary: 'Landing batches', description: 'Issue #1073: per repository (`owner/repo`, lowercased), the `tested` branch a green batch run moves, and when a batch run starts (`everyMerges` merges, or `everyMinutes` since the last one; none while nothing is new). `repos`: each configured repository\'s state — the batch run at work, the last tip tested and promoted, how the last run ended, a red batch\'s bisect and culprit, the `backMerge` after merge conflicts and its `backMergeIssue` (part 4), the `canary` candidate (part 5) —, and what the last pass found: `why` no run started, or the `problem`, and of the canary `canary.why` or `canary.problem`. `choices.repos` the job repositories. Not cached.', returns: '`LandingBatchesView`' },
-  { method: 'post', path: '/ui/api/landing-batches', tag: 'Jobs', summary: 'Change the landing batches', description: 'Issue #1073: `repos` sets each named repository\'s parts (a new one names its `tested` branch; `everyMerges` 5 and `everyMinutes` 60 when left out; `canaryHours` the canary window, part 5, `null` for no canary step), or `null` to take its landing batches away (`landing_batches.changed`). The landing branch is the repository\'s default branch: make it so on GitHub. Applies at the next pass, with no restart; a save that changes nothing records nothing.', role: 'admin', body: landingBatchesBody, returns: '`LandingBatchesView`', errors: [400] },
+  { method: 'get', path: '/api/landing-batches', tag: 'Jobs', summary: 'Landing batches', description: 'Issue #1073: per repository (`owner/repo`, lowercased), the `landing` branch a batch run tests (issue #1142; `main` when left out), the `tested` branch a green batch run moves, and when a batch run starts (`everyMerges` merges, or `everyMinutes` since the last one; none while nothing is new). `repos`: each configured repository\'s state — the batch run at work, the last tip tested and promoted, how the last run ended, a red batch\'s bisect and culprit, the `backMerge` after merge conflicts and its `backMergeIssue` (part 4), the `canary` candidate (part 5) —, and what the last pass found: `why` no run started, or the `problem`, and of the canary `canary.why` or `canary.problem`. `choices.repos` the job repositories. Not cached.', returns: '`LandingBatchesView`' },
+  { method: 'post', path: '/ui/api/landing-batches', tag: 'Jobs', summary: 'Change the landing batches', description: 'Issue #1073: `repos` sets each named repository\'s parts (a new one names its `tested` branch; `landing` `main`, `everyMerges` 5 and `everyMinutes` 60 when left out; `canaryHours` the canary window, part 5, `null` for no canary step), or `null` to take its landing batches away (`landing_batches.changed`). The landing branch is this setting, whatever the repository\'s default branch on GitHub (issue #1142). Applies at the next pass, with no restart; a save that changes nothing records nothing.', role: 'admin', body: landingBatchesBody, returns: '`LandingBatchesView`', errors: [400] },
 ];
 
 export function landingBatchesView(t: Pick<TenantParts, 'store' | 'githubProxy'>): LandingBatchesView {

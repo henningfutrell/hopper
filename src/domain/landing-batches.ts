@@ -1,5 +1,6 @@
 // Landing batches (issue #1073, design.md "Landing batches"): a job's pull request merges into the **landing branch** —
-// the repository's default branch, `main` for the hopper's own — after the fast checks only. The full suite runs
+// a setting per repository, `main` when left out, whatever the repository's default branch (issue #1142) — after the
+// fast checks only. The full suite runs
 // on the landing branch's tip as a **batch run**: a pull request of the tip into the **tested branch** (`dev`), opened
 // by the hopper after `everyMerges` merges or `everyMinutes` minutes since the last batch run, and only when the landing
 // branch has something the tested branch lacks and the tip was not tested before. Green, the hopper merges it: the
@@ -14,8 +15,10 @@ import type { DomainEvent } from './types.ts';
 
 /** One repository's landing batches: the branch a green batch moves, and when a batch run starts. */
 export interface LandingBatchRepo {
-  /** The tested branch: what a green batch run merges into (`dev`). Never the repository's default branch. */
+  /** The tested branch: what a green batch run merges into (`dev`). Never the landing branch. */
   tested: string;
+  /** The landing branch: where job pull requests merge and what a batch run tests (issue #1142). Absent (saved before it): `main`. */
+  landing?: string;
   /** A batch run starts after this many merges into the landing branch since the last one. */
   everyMerges: number;
   /** A batch run starts this many minutes after the last one, when the landing branch has something new. */
@@ -28,6 +31,7 @@ export interface LandingBatchRepo {
 export interface LandingBatchSettings { repos: Record<string, LandingBatchRepo> }
 
 export const DEFAULT_LANDING_BATCHES: LandingBatchSettings = { repos: {} };
+export const DEFAULT_LANDING_BRANCH = 'main';
 export const DEFAULT_EVERY_MERGES = 5;
 export const DEFAULT_EVERY_MINUTES = 60;
 /** A batch run with no check after this many minutes is red: no full suite ran. */
@@ -40,6 +44,9 @@ export interface LandingBatchPatch { repos: Record<string, (Partial<Omit<Landing
 
 const key = (repo: string): string => repo.toLowerCase();
 
+/** A repository's landing branch: the one its settings name, else `main`. Never read from GitHub's default branch (issue #1142). */
+export const landingBranch = (cfg: LandingBatchRepo): string => cfg.landing ?? DEFAULT_LANDING_BRANCH;
+
 export function patchLandingBatches(s: LandingBatchSettings, p: LandingBatchPatch): LandingBatchSettings {
   const repos = { ...s.repos };
   for (const [repo, v] of Object.entries(p.repos)) {
@@ -50,7 +57,7 @@ export function patchLandingBatches(s: LandingBatchSettings, p: LandingBatchPatc
     if (tested === undefined) continue;
     const canaryHours = v.canaryHours === null ? undefined : v.canaryHours ?? was?.canaryHours;
     repos[k] = {
-      tested, everyMerges: v.everyMerges ?? was?.everyMerges ?? DEFAULT_EVERY_MERGES, everyMinutes: v.everyMinutes ?? was?.everyMinutes ?? DEFAULT_EVERY_MINUTES,
+      tested, landing: v.landing ?? was?.landing ?? DEFAULT_LANDING_BRANCH, everyMerges: v.everyMerges ?? was?.everyMerges ?? DEFAULT_EVERY_MERGES, everyMinutes: v.everyMinutes ?? was?.everyMinutes ?? DEFAULT_EVERY_MINUTES,
       ...(canaryHours !== undefined ? { canaryHours } : {}),
     };
   }

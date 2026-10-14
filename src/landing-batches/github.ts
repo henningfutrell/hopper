@@ -1,5 +1,5 @@
-// The batch runner's GitHub calls (issue #1073), with the user's own GitHub connection: the default branch (the landing
-// branch), a compare of the tested branch with it, a batch run's branch made and removed, its pull request opened, read,
+// The batch runner's GitHub calls (issue #1073), with the user's own GitHub connection: a compare of the tested branch
+// with the landing branch's tip (both reads conditional through the limiter's ETag, so an unchanged tip costs no call), a batch run's branch made and removed, its pull request opened, read,
 // merged at its tip or closed, its check runs, and a job's open pull request moved to another base; for a red batch, the
 // pull request a commit merged, GitHub's revert of it (GraphQL `revertPullRequest`), a check's log and the fix issue; for
 // merge conflicts, the tested branch merged into a back-merge branch (`POST …/merges`); for the canary, the bug reports
@@ -26,10 +26,6 @@ export function createLandingBatchGitHub(o: { apiUrl: string } & TokenSource): L
   };
   const headers = (token: string) => ({ authorization: `token ${token}` });
   return {
-    defaultBranch: (repo) => withToken(async (token) => {
-      const d = (await req('GET /repos/{owner}/{repo}', { ...splitRepo(repo), headers: headers(token) })).data as { default_branch: string };
-      return d.default_branch;
-    }, failed(`the repository ${repo}`)),
     compare: (repo, base, head) => withToken(async (token) => {
       // The tip first, so the compare is of that commit even when the branch moves meanwhile. A full sha is the tip.
       const tip = /^[0-9a-f]{40}$/.test(head) ? head

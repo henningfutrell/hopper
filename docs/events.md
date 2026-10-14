@@ -5683,7 +5683,7 @@ Version 1 (`docs/schemas/landing_batch.retargeted.v1.json`). The hopper moved a 
 
 ## `landing_batches.changed`
 
-Version 1 (`docs/schemas/landing_batches.changed.v1.json`). An admin changed the landing batches (issue #1073): per repository (`owner/repo`, lowercased), the `tested` branch a green batch run moves, when a batch run starts (`everyMerges`, `everyMinutes`), and the canary window (`canaryHours`, part 5; absent: no canary step). `from` and `to` the settings, `by` who changed them.
+Version 1 (`docs/schemas/landing_batches.changed.v1.json`). An admin changed the landing batches (issue #1073): per repository (`owner/repo`, lowercased), the `landing` branch a batch run tests (issue #1142; absent in a change saved before it: `main`), the `tested` branch a green batch run moves, when a batch run starts (`everyMerges`, `everyMinutes`), and the canary window (`canaryHours`, part 5; absent: no canary step). `from` and `to` the settings, `by` who changed them.
 
 | field | type | required |
 |---|---|---|
@@ -5700,6 +5700,7 @@ Version 1 (`docs/schemas/landing_batches.changed.v1.json`). An admin changed the
     "repos": {
       "owner/repo": {
         "tested": "dev",
+        "landing": "main",
         "everyMerges": 5,
         "everyMinutes": 60
       }
