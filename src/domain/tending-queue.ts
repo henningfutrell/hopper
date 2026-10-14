@@ -10,6 +10,7 @@
 // One queue per set of pull requests that conflict, not per repository (issue #939): the source says whether two conflict
 // (`JobSource.conflictBetween`, the hopper's mirror); the after-done half asks it, so pull requests whose changes do not
 // conflict are tended at the same time. Where the source cannot say, they conflict: one tend at a time, as before.
+// No hold lasts for ever (issue #1143): a due rebase held `MAX_HELD_MS` is tended whatever holds it.
 import { following, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Job } from './types.ts';
 
@@ -27,10 +28,23 @@ export interface Holds {
   heldBehind?: QueueHead;
   /** Why the source refused the last tend it was due (issue #967), kept until a tend starts: the card says it, never "next". */
   tendRefused?: string;
+  /** Since when a head holds it (issue #1143), kept while it is held: held `MAX_HELD_MS`, it is tended anyway. */
+  heldSince?: string;
 }
 
 /** How long a pull request whose checks run holds its repository's tending queue after its last push (issue #927). */
 export const PENDING_HOLD_MS = 30 * 60_000;
+
+/**
+ * How long a head holds a due rebase at most (issue #1143): one hour. Pull requests that touch the same files all conflict,
+ * and new ones on their way to the merge come all the time, so a held one could wait for ever with no job on it. After
+ * this, it is tended whatever holds it: at worst it needs one more rebase after the next merge.
+ */
+export const MAX_HELD_MS = 60 * 60_000;
+
+/** Whether a due tend held since `heldSince` (ISO) is held no more at `now` (ms): held `MAX_HELD_MS` or longer (issue #1143). */
+export const heldTooLong = (heldSince: string | undefined, now: number): boolean =>
+  heldSince !== undefined && now - Date.parse(heldSince) >= MAX_HELD_MS;
 
 interface Followed { pullRequest?: string; follow?: string; seen?: PullRequestSeen; tended?: Tended }
 

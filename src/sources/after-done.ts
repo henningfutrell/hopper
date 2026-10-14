@@ -21,7 +21,8 @@
 // hopper followed pull requests is shown, merged and tended as a job's own. A throw is asked again next sync.
 // A pull request is followed to its end (issue #786): a failed job's is reconciled, followed and tended as a done job's —
 // but a failed tend's (`failedTend`), which waits on a person —, and a rebase tend is never capped, only `fix_checks`.
-// The tending queue (issue #796): after every follow of the sync, a tend starts only when no head holds it (`queueHeads`):
+// The tending queue (issue #796): after every follow of the sync, a tend starts only when no head holds it (`queueHeads`),
+// or a head held it an hour (`MAX_HELD_MS`, issue #1143: `heldSince`), as new heads keep coming:
 // a tend job at work, or a pull request on its way to the hopper's merge. Jev's pick first (`merge-order`, `tend-order.ts`),
 // then the rules' order (`tendOrder`). A pull request whose checks stay pending
 // holds it no more than `PENDING_HOLD_MS` after its last push; one not seen yet holds nothing (issue #927). A `fix_checks`
@@ -55,7 +56,7 @@
 // conflicts, failed checks, checks running, the merge) is recorded as `job.pull_request_seen` when it differs from what the
 // ledger holds for it, so the item says what it waits on. What was seen of it stays kept with no event otherwise.
 import type { JobSource, PullRequestActResult, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
-import { queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
+import { heldTooLong, queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
 import { SourceError } from '../domain/ports.ts';
 import {
@@ -316,6 +317,8 @@ export function createAfterDone(c: AfterDoneContext) {
   async function heldBy(source: JobSource, d: TendDue, heads: readonly QueueHead[]): Promise<QueueHead | undefined> {
     if (d.step !== 'rebase') return undefined;
     const job = store.jobs.get(d.jobId)!;
+    // Held an hour (issue #1143): new heads keep coming, so it is tended now.
+    if (heldTooLong((job.sourceState?.source as Holds | undefined)?.heldSince, c.now())) return undefined;
     for (const h of heads) if (await conflict(source, job, h.pullRequest) !== false) return h;
     return undefined;
   }
@@ -324,7 +327,7 @@ export function createAfterDone(c: AfterDoneContext) {
    * The tends of each job repository (issue #796), one queue per set of pull requests that conflict (issue #939): of the
    * source's jobs whose followed pull request needs tending, each one no head and no tend started before it conflicts with,
    * Jev's pick first, then the rules' order. Each other rebase is held behind the first that conflicts with it; a
-   * `fix_checks` never is (issue #938).
+   * `fix_checks` never is (issue #938). Since when it is held is kept; held `MAX_HELD_MS`, it is held no more (issue #1143).
    */
   async function tendNext(source: JobSource, listed: Job[]): Promise<void> {
     const get = (id: string) => store.jobs.get(id);
@@ -356,7 +359,12 @@ export function createAfterDone(c: AfterDoneContext) {
         await tendIfDue(source, d.jobId).catch((e: unknown) => { c.failed(d.jobId, e); });
       }
     }
-    for (const j of jobs) keepHold(j.id, 'heldBehind', held.get(j.id));
+    for (const j of jobs) {
+      const h = held.get(j.id);
+      keepHold(j.id, 'heldBehind', h);
+      const since = (store.jobs.get(j.id)?.sourceState?.source as Holds | undefined)?.heldSince;
+      keepHold(j.id, 'heldSince', h ? since ?? new Date(c.now()).toISOString() : undefined);
+    }
   }
 
   /** May follow its item's open pull request (issues #763, #786): no failed tend, and the newest job of its item. */

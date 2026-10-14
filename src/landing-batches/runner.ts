@@ -13,6 +13,7 @@ import {
 import type { FailedCheck } from '../domain/landing-bisect.ts';
 import type { DomainEvent, NewEvent } from '../domain/types.ts';
 import { backMergePass, startBackMerge } from './back-merge.ts';
+import { retargetNote } from '../sources/github/pr-notes.ts';
 import { canaryPass } from './canary.ts';
 import { bisectPass, culpritPass, startBisect } from './red.ts';
 
@@ -35,6 +36,8 @@ export interface LandingBatchGitHub {
   mergeInto(repo: string, base: string, head: string, message: string): Promise<{ kind: 'merged'; sha: string } | { kind: 'nothing' } | { kind: 'conflict' }>;
   openPullRequests(repo: string, base: string): Promise<{ number: number; url: string }[]>;
   retarget(repo: string, number: number, base: string): Promise<void>;
+  /** One comment on pull request `number`: what the hopper did with it (issue #1143). */
+  comment(repo: string, number: number, body: string): Promise<void>;
   /** The merged pull request whose merge (or squash) commit is `sha`, when there is one. */
   pullRequestOf(repo: string, sha: string): Promise<number | undefined>;
   /** GitHub's revert of a merged pull request: a new pull request into its base, with this text. */
@@ -64,7 +67,7 @@ export function createLandingBatches(o: {
   /** The user's `landing_batch.*` events. */
   events(): readonly DomainEvent[];
   record(event: NewEvent): void;
-  /** The URLs of the open pull requests of the user's jobs: only those move to the landing branch. */
+  /** The URLs of the pull requests the user's jobs named, followed or not (issue #1143): only those move to the landing branch. */
   jobPullRequests(): readonly string[];
   now(): Date;
   log(line: string): void;
@@ -90,6 +93,9 @@ export function createLandingBatches(o: {
       if (!jobs.has(p.url)) continue;
       await gh.retarget(repo, p.number, landing);
       o.record({ type: 'landing_batch.retargeted', data: { repo, pullRequest: p.number, url: p.url, from: cfg.tested, to: landing } });
+      // The pull request shows it (issue #1143); a refusal loses only the comment.
+      await gh.comment(repo, p.number, retargetNote(cfg.tested, landing))
+        .catch((e: unknown) => o.log(`hopper: landing batches: the note on ${p.url} was not posted: ${(e as Error).message}`));
     }
     const state = landingBatchStates(o.events())[repo];
     const red = { gh, repo, landing, tested: cfg.tested, record: o.record, state: () => landingBatchStates(o.events())[repo], note: (f: { why?: string; problem?: string }) => note(repo, f), login: o.login, now: o.now, log: o.log };

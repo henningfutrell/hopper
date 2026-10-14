@@ -25,8 +25,8 @@ export interface JobFilter {
   unassessed?: boolean;
   /** Only the jobs whose pull request is followed, open or closed without a merge (issue #637: the Pull requests list), or handed to a tend job (issue #763). */
   followed?: boolean;
-  /** `undismissed`: only the jobs no one dismissed (`dismissedAt` unset, issue #1123). */
-  limit?: number; undismissed?: boolean;
+  /** `undismissed`: only the jobs no one dismissed (`dismissedAt` unset, issue #1123). `namesPullRequest`: only the jobs that name a pull request not merged nor abandoned, followed or not (issue #1143). */
+  limit?: number; undismissed?: boolean; namesPullRequest?: boolean;
 }
 
 export interface JobRepository {
