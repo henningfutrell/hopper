@@ -235,14 +235,33 @@ from in the UI: <strong>Sources</strong> → <strong>GitHub account</strong>. If
 <div class="cmd"><pre>wsl --install -d Ubuntu-24.04</pre><button type="button" data-copy="wsl --install -d Ubuntu-24.04">Copy</button></div>
 <p>Restart Windows if it asks. Then open <strong>Ubuntu</strong> from the Start menu and choose a user name
 and password. Every command below runs in that Ubuntu window, not in PowerShell, unless it says so.</p></li>
+<li><p>Turn systemd on in Ubuntu. Podman needs it to start your containers again:</p>
+<div class="cmd"><pre>printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf</pre><button type="button" data-copy="printf &#x27;[boot]\nsystemd=true\n&#x27; | sudo tee -a /etc/wsl.conf">Copy</button></div>
+<p>Then run <code>wsl --shutdown</code> in PowerShell and open Ubuntu again. <code>systemctl --user status</code>
+must not say <code>System has not been booted with systemd</code>.</p></li>
 <li><p>Install Podman in Ubuntu:</p>
 <div class="cmd"><pre>sudo apt-get update &amp;&amp; sudo apt-get install -y podman podman-compose</pre><button type="button" data-copy="sudo apt-get update &amp;&amp; sudo apt-get install -y podman podman-compose">Copy</button></div></li>
-<li><p>Continue with <a href="#podman">Run it with Podman</a> from step 2, in Ubuntu. The sign-in link opens in
-your Windows browser: WSL passes <code>127.0.0.1</code> through to Windows.</p></li>
+<li><p>Continue with <a href="#podman">Run it with Podman</a> from step 2, in Ubuntu, to its last step,
+<strong>Keep it running after a reboot</strong>. The sign-in link opens in
+your Windows browser: WSL passes <code>127.0.0.1</code> through to Windows. Do not skip the last step. It makes
+the hopper's containers start each time Ubuntu starts:</p>
+<div class="cmd"><pre>sudo loginctl enable-linger "$USER"
+systemctl --user enable podman-restart.service</pre><button type="button" data-copy="sudo loginctl enable-linger &quot;$USER&quot; &amp;&amp; systemctl --user enable podman-restart.service">Copy</button></div></li>
+<li id="windows-keep-running"><p><strong>Keep Ubuntu running.</strong> WSL stops Ubuntu, and the hopper with it, soon after
+no Windows program uses it. This shortcut in your Startup folder starts Ubuntu when you sign in to Windows,
+and keeps it running in a hidden window. If <code>wsl.exe</code> stops, it starts it again after 5 seconds. In
+PowerShell, not as administrator (change <code>Ubuntu-24.04</code> if your distro has another name; <code>wsl --list</code>
+shows the names):</p>
+<div class="cmd"><pre>$s = (New-Object -ComObject WScript.Shell).CreateShortcut(&quot;$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\hopper-wsl.lnk&quot;)
+$s.TargetPath = &#x27;powershell.exe&#x27;
+$s.Arguments = &#x27;-NoProfile -WindowStyle Hidden -Command &quot;while ($true) { wsl.exe -d Ubuntu-24.04 -e sleep infinity; Start-Sleep -Seconds 5 }&quot;&#x27;
+$s.WindowStyle = 7
+$s.Save()</pre><button type="button" data-copy="$s = (New-Object -ComObject WScript.Shell).CreateShortcut(&quot;$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\hopper-wsl.lnk&quot;); $s.TargetPath = &#x27;powershell.exe&#x27;; $s.Arguments = &#x27;-NoProfile -WindowStyle Hidden -Command &quot;while ($true) { wsl.exe -d Ubuntu-24.04 -e sleep infinity; Start-Sleep -Seconds 5 }&quot;&#x27;; $s.WindowStyle = 7; $s.Save()">Copy</button></div>
+<p>Start it now, so you need not sign out:</p>
+<div class="cmd"><pre>Invoke-Item &quot;$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\hopper-wsl.lnk&quot;</pre><button type="button" data-copy="Invoke-Item &quot;$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\hopper-wsl.lnk&quot;">Copy</button></div>
+<p>To stop it, delete <code>hopper-wsl.lnk</code> from the Startup folder (<code>shell:startup</code> in the Run box) and
+sign out. Nothing new listens, and it needs no administrator rights and no secret.</p></li>
 </ol>
-<p class="note">WSL stops Ubuntu, and hopper with it, soon after you close the last Ubuntu window.
-Keep one Ubuntu window open while jobs run, and run <code>podman compose up -d</code> in the hopper's folder
-after you open it again.</p>
 
 <details>
 <summary>Install it on the machine itself in WSL instead</summary>
@@ -267,6 +286,8 @@ as <a href="#before">step 1</a> says, sign in to <code>claude</code>, and run th
 </ol>
 <p class="note">Keep the repositories jobs work in inside Ubuntu (for example <code>~/src</code>), not under
 <code>/mnt/c</code>: it is much faster.</p>
+<p class="note">WSL stops Ubuntu, and the hopper with it, when no Windows program uses it. Add the shortcut from
+<a href="#windows-keep-running">Keep Ubuntu running</a> here too.</p>
 </details>
 
 <h3 id="windows-cli">The hopper CLI from Windows</h3>
@@ -292,10 +313,8 @@ instead: it does the same in PowerShell.</p>
 cannot join: hopper refuses it with <code>Windows isn't supported natively. Run the client inside WSL.</code> Run the
 machine inside WSL instead, with Podman for its sandbox boxes:</p>
 <ol class="steps">
-<li><p>On the Windows computer, install Ubuntu in WSL and Podman in it: <a href="#windows">On Windows</a>, steps 1 and 2.</p></li>
-<li><p>Turn systemd on in Ubuntu:</p>
-<div class="cmd"><pre>printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf</pre><button type="button" data-copy="printf &#x27;[boot]\nsystemd=true\n&#x27; | sudo tee -a /etc/wsl.conf">Copy</button></div>
-<p>Then run <code>wsl --shutdown</code> in PowerShell and open Ubuntu again.</p></li>
+<li><p>On the Windows computer, turn systemd on, and install Podman in it: <a href="#windows">On Windows</a>, steps 1 to 3.
+To keep the machine online, also do <a href="#windows-keep-running">Keep Ubuntu running</a>.</p></li>
 <li><p>Start the Podman socket, and keep your user's services running after you log out:</p>
 <div class="cmd"><pre>systemctl --user enable --now podman.socket
 sudo loginctl enable-linger "$USER"</pre><button type="button" data-copy="systemctl --user enable --now podman.socket &amp;&amp; sudo loginctl enable-linger &quot;$USER&quot;">Copy</button></div></li>

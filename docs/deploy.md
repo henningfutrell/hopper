@@ -374,6 +374,24 @@ Podman keep separate volumes: moving such a stack from Docker to Podman moves th
 is the `job-hopper_postgres` volume, which `deploy/compose.yaml` still serves. Move it into the new stack
 once, before the hopper's first start, with `pg_dump` from one and `psql` into the other.
 
+### Keep a hopper in WSL running
+
+WSL stops a distro soon after no Windows program uses it, and every container in it stops too. Rootless Podman has no
+daemon to start them again. So a hopper in WSL with Podman needs three things, done once by hand (`site/install.html`
+"On Windows" has the lines to copy). Nothing checks them.
+
+1. **systemd on in the distro.** `[boot]` `systemd=true` in `/etc/wsl.conf`, then `wsl --shutdown` in PowerShell.
+2. **The containers start with the distro.** In the distro: `sudo loginctl enable-linger "$USER"` and
+   `systemctl --user enable podman-restart.service` (it starts every container whose restart policy is `always` or
+   `unless-stopped`, as "Keep it running" above says).
+3. **The distro keeps running.** A shortcut `hopper-wsl.lnk` in the Windows user's Startup folder
+   (`shell:startup`) runs, in a hidden window, `powershell.exe -NoProfile -WindowStyle Hidden -Command "while ($true)
+   { wsl.exe -d <distro> -e sleep infinity; Start-Sleep -Seconds 5 }"`. The `sleep` keeps the distro in use; when
+   `wsl.exe` exits, the loop starts it again 5 seconds later.
+
+The keep-alive runs as the signed-in Windows user: it needs no administrator rights and no secret, and nothing new
+listens. It starts only when that user signs in to Windows. To stop it, delete the shortcut and sign out.
+
 ### The hopper CLI from Windows
 
 For a hopper in WSL with Podman (issue #712), `scripts/hopper.cmd` and `scripts/hopper.ps1` run the operator CLI from
@@ -900,7 +918,7 @@ loginctl enable-linger "$USER"
 ```
 
 The second line keeps your user's services, the socket included, running after you sign out. Under WSL, also keep
-the distro running: WSL stops an idle distro, and its containers with it.
+the distro running: WSL stops an idle distro, and its containers with it ("Keep a hopper in WSL running" above).
 
 Then Machines → Add machine → *A sandbox box* shows **on** with the hopper's computer and each machine online now:
 pick the machine, then **Start the box**. The box is on that machine's network and reaches the hopper at the address

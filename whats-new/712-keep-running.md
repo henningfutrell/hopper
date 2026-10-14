@@ -1,0 +1,1 @@
+- The Windows install page now says how to keep the hopper running in WSL after you close Ubuntu and after Windows restarts.
