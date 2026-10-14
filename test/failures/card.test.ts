@@ -1,7 +1,7 @@
 // A hand-off's card (issue #621): one plain sentence says what happened, from what the job's work shows at its source —
 // its pull requests and its item — never from the raw error; one resolution is recommended, with why in a few words.
 import { describe, expect, it } from 'vitest';
-import type { HandoffReason, WorkPullRequest, WorkState } from '../../src/domain/types.ts';
+import type { Allowed, HandoffReason, WorkPullRequest, WorkState } from '../../src/domain/types.ts';
 import { handoffCard, takenCard } from '../../src/failures/card.ts';
 
 const URL = 'https://github.com/o/r/pull/';
@@ -90,9 +90,9 @@ describe('before the work state is known', () => {
 });
 
 describe('only an action the hopper takes now (issue #1010)', () => {
-  const OK = { ok: true } as const;
-  const refused = (why: string, soon = false) => ({ ok: false, why, ...(soon ? { soon: true } : {}) }) as const;
-  const actions = (runs: ReturnType<typeof refused> | typeof OK) => ({ continue: runs, fixed: runs, doneByHand: OK, wontDo: OK });
+  const OK: Allowed = { ok: true };
+  const refused = (why: string, soon = false): Allowed => ({ ok: false, why, ...(soon ? { soon: true as const } : {}) });
+  const actions = (runs: Allowed) => ({ continue: runs, fixed: runs, doneByHand: OK, wontDo: OK });
 
   it('the recommended action is taken: the card is as it was', () => {
     const c = card(work());

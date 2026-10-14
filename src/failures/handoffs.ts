@@ -21,7 +21,7 @@ import {
 import { handoffCard } from './card.ts';
 import { handoffBrief } from './brief.ts';
 import { handoffReason, RAN_AGAIN, SETTLED } from './handoff.ts';
-import { handoffView, newerOf, newestOfItem, RESOLUTION_TEXT } from './view.ts';
+import { handoffView, newerOf, newestOfItem, RESOLUTION_TEXT, type TakesBack } from './view.ts';
 
 export type HandoffAction<T> = { ok: true; value: T } | { ok: false; reason: 'not_found' | 'conflict'; message: string };
 
@@ -38,6 +38,8 @@ export interface HandoffsOptions {
   continueJob(jobId: string, brief: string, by: ContinuedBy): Promise<RerunResult>;
   /** Whether the job's own agent session can resume: its executor parks, and it recorded one. */
   resumable(job: Job): boolean;
+  /** Whether the job's source takes its item back now (issue #1010): the sync loop's. */
+  takesBack: TakesBack;
   /** Finish a failed job whose work shipped (issue #621), its end told to its source again. false: it is no longer failed. */
   finishShipped(jobId: string, result: { summary: string; link?: string; backfill?: string }): boolean;
   /** Dismiss a failed job's locked entry (issue #355): Won't do leaves the queue too. Throws when it is not one. */
@@ -125,7 +127,7 @@ export function createHandoffs(o: HandoffsOptions): Handoffs {
 
   /** Hand-offs a person is resolving now: the new job's `job.queued` leaves them to the resolution to close. */
   const resolving = new Set<string>();
-  const view = (h: Handoff): HandoffView => handoffView(store, h, o.resumable);
+  const view = (h: Handoff): HandoffView => handoffView(store, h, o.resumable, o.takesBack);
 
   const openOf = (jobId: string): Handoff | undefined => {
     const h = store.handoffs.forJob(jobId);

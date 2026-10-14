@@ -33,8 +33,8 @@ import { createBackfill, type BackfillResult } from './backfill.ts';
 import { signatureOf } from './signature.ts';
 import { highestFirst, newerOf, releasable, viewOf } from './view.ts';
 
-/** `rerun` (the sync loop's Run again, which the assessor's runs again use too), `continueJob`, `finishShipped`, `resumable`, `dismiss`: as the hand-offs take them. */
-export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'continueJob' | 'finishShipped' | 'resumable' | 'dismiss'> {
+/** `rerun` (the sync loop's Run again, which the assessor's runs again use too), `continueJob`, `finishShipped`, `resumable`, `takesBack`, `dismiss`: as the hand-offs take them. */
+export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'continueJob' | 'finishShipped' | 'resumable' | 'takesBack' | 'dismiss'> {
   store: UserStore;
   clock: Clock;
   /** The machines now: a problem's check reads them. */
@@ -200,7 +200,7 @@ export function createFailures(o: FailuresOptions): Failures {
   }
 
   const jevStep = (c: JevCase) => (o.minorDecisions ? askJev({ ...o.minorDecisions, live: () => !stopped, logger: o.logger, rerun: rerunRecord }, c) : Promise.resolve());
-  const rerunRecord = (recordId: string, by: RerunBy, note: string): Promise<FailureAction<Job>> => rerunRecordOf({ store, rerun: o.rerun, now }, recordId, by, note);
+  const rerunRecord = (recordId: string, by: RerunBy, note: string): Promise<FailureAction<Job>> => rerunRecordOf({ store, rerun: o.rerun, takesBack: o.takesBack, now }, recordId, by, note);
 
   /**
    * Assess every failed job not assessed yet, whatever its age: a restart's, or an older build's backlog. The sweep
@@ -327,7 +327,7 @@ export function createFailures(o: FailuresOptions): Failures {
     },
     sweep,
     backfill,
-    view: () => viewOf(store, settings(), now(), o.resumable),
+    view: () => viewOf(store, settings(), now(), o.resumable, o.takesBack),
     blocks() {
       if (!settings().auto.hold) return [];
       // A Recurring problem (`general`) holds only its own jobs, never its whole scope (issue #637): no known cause says others meet it.
@@ -354,7 +354,7 @@ export function createFailures(o: FailuresOptions): Failures {
       if (done.ok) void sweep();
       return done;
     },
-    retry: (recordId, by) => doneCheck.unlessDone(recordId, () => rerunRecordOf({ store, rerun: o.rerun, now }, recordId, 'user', 'run again by a person', by)),
+    retry: (recordId, by) => doneCheck.unlessDone(recordId, () => rerunRecordOf({ store, rerun: o.rerun, takesBack: o.takesBack, now }, recordId, 'user', 'run again by a person', by)),
     resolveHandoff: (handoffId, input, by) => handoffs.resolve(handoffId, input, by),
     nameCause(cause) {
       store.settings.setNamedCauses([...store.settings.getNamedCauses().filter((c) => c.signature !== cause.signature), cause]);

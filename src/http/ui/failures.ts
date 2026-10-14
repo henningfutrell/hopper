@@ -88,7 +88,7 @@ export function registerFailureRoutes(app: FastifyInstance, o: { operator: Guard
   app.post('/ui/api/failures/kept-work/:id/push', o.operator, async (req) => {
     const { note } = parseWith(keptWorkPushBody, req.body ?? {});
     const t = o.tenant(req);
-    const d = { store: t.store, resumable: t.engine.resumable, continueJob: t.registry.continueJob, resolveHandoff: t.failures.resolveHandoff };
+    const d = { store: t.store, resumable: t.engine.resumable, takesBack: t.registry.takesBack, continueJob: t.registry.continueJob, resolveHandoff: t.failures.resolveHandoff };
     return answer(await pushKeptWork(d, parseWith(idParams, req.params).id, note || undefined, actingIn(req)));
   });
   app.post('/ui/api/failures/kept-work/:id/discard', o.operator, async (req) => o.tenant(req).engine.discardWork(parseWith(idParams, req.params).id, actingIn(req)));

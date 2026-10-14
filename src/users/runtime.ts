@@ -372,7 +372,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const failures = createFailures({
     store, clock, logger, sweepMs: config.tickMs,
     // Continue (issue #551): the job's own agent session resumes where the engine says it can.
-    rerun: sync.rerun, continueJob: sync.continueJob, finishShipped: (jobId, result) => engine.sourceHost.finishShipped(jobId, result),
+    rerun: sync.rerun, continueJob: sync.continueJob, takesBack: sync.takesBack, finishShipped: (jobId, result) => engine.sourceHost.finishShipped(jobId, result),
     resumable: (job) => engine.resumable(job), dismiss: (jobId) => { engine.dismiss(jobId); }, machines: () => host.machines().list(),
     workState: async (job) => sourceOf(job)?.workState?.(job), pullRequestOpen: async (job) => sourceOf(job)?.pullRequestOpen?.(job), doneAtSource: (job) => doneAtSource(sourceOf(job), job),
     trigger: (reason) => engine.trigger(reason), minorDecisions: { first: minorDecisions, gated },

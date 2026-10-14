@@ -6,7 +6,7 @@
 import type { RerunResult, UserStore } from '../domain/ports.ts';
 import { keptWorkOf, machineRanOn, PUSHABLE_ENDS, TERMINAL_STATUSES, WORK_EVENTS, type ActingPerson, type Allowed, type ContinuedBy, type HandoffView, type Job, type KeptWorkView } from '../domain/types.ts';
 import type { HandoffResolve } from './handoffs.ts';
-import { handoffView, newestOfItem } from './view.ts';
+import { handoffView, newestOfItem, type TakesBack } from './view.ts';
 
 /** The work trail read back: the newest this many events. */
 const KEPT_SCAN = 1000;
@@ -26,15 +26,16 @@ export function pushBrief(note: string | undefined): string {
 }
 
 /** Whether Push it is taken now, and why not: a failed, finished or cancelled job whose own session resumes, the newest of its item. */
-function pushAllowed(store: Reads, job: Job, handoff: ReturnType<Reads['handoffs']['forJob']>, resumable: (job: Job) => boolean): Allowed {
+function pushAllowed(store: Reads, job: Job, handoff: ReturnType<Reads['handoffs']['forJob']>, resumable: (job: Job) => boolean, takesBack: TakesBack): Allowed {
   if (!PUSHABLE_ENDS.includes(job.status)) return no(`it is ${job.status}: only a failed, finished or cancelled job goes on in its work tree`);
   if (!resumable(job)) return no('its agent session cannot resume: open its work tree on its machine, or discard it');
-  if (handoff?.status === 'open') return handoffView(store, handoff, resumable).actions.continue;
-  return newestOfItem(store, job.id);
+  if (handoff?.status === 'open') return handoffView(store, handoff, resumable, takesBack).actions.continue;
+  const newest = newestOfItem(store, job.id);
+  return newest.ok ? takesBack(job.id) : newest;
 }
 
 /** Every ended job whose work is kept, newest first, with its ways out. */
-export function keptWorkViews(store: Reads, resumable: (job: Job) => boolean): KeptWorkView[] {
+export function keptWorkViews(store: Reads, resumable: (job: Job) => boolean, takesBack: TakesBack): KeptWorkView[] {
   const out: KeptWorkView[] = [];
   for (const k of keptWorkOf(store.events.recent(KEPT_SCAN, [...WORK_EVENTS]))) {
     const job = store.jobs.get(k.jobId);
@@ -45,7 +46,7 @@ export function keptWorkViews(store: Reads, resumable: (job: Job) => boolean): K
       ...k, status: job.status,
       ...(job.source?.title ? { title: job.source.title } : {}), ...(job.source?.url ? { url: job.source.url } : {}),
       ...(machineId ? { machineId } : {}), ...(handoff?.status === 'open' ? { handoffId: handoff.id } : {}),
-      actions: { push: pushAllowed(store, job, handoff, resumable), discard: OK },
+      actions: { push: pushAllowed(store, job, handoff, resumable, takesBack), discard: OK },
     });
   }
   return out;
@@ -56,13 +57,13 @@ export type PushResult = { ok: true; value: { job: Job; handoff?: HandoffView } 
 /** Push it: through its open hand-off (Continue, with the brief as the note), else a Continue of its own. */
 export async function pushKeptWork(
   d: {
-    store: Reads; resumable(job: Job): boolean;
+    store: Reads; resumable(job: Job): boolean; takesBack: TakesBack;
     continueJob(jobId: string, brief: string, by: ContinuedBy): Promise<RerunResult>;
     resolveHandoff(id: string, input: HandoffResolve, by: ActingPerson): Promise<{ ok: true; value: { handoff: HandoffView; job?: Job } } | { ok: false; reason: 'not_found' | 'conflict'; message: string }>;
   },
   jobId: string, note: string | undefined, by: ActingPerson,
 ): Promise<PushResult> {
-  const kept = keptWorkViews(d.store, d.resumable).find((k) => k.jobId === jobId);
+  const kept = keptWorkViews(d.store, d.resumable, d.takesBack).find((k) => k.jobId === jobId);
   if (!kept) return d.store.jobs.get(jobId) ? { ok: false, reason: 'conflict', message: `job ${jobId} has no work kept` } : { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
   if (!kept.actions.push.ok) return { ok: false, reason: 'conflict', message: `job ${jobId}'s work cannot be pushed: ${kept.actions.push.why}` };
   if (kept.handoffId) {
