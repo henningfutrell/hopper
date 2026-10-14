@@ -91,12 +91,12 @@ export function writeBackText(r: HandoffResolution): string | undefined {
 /** A count as `n thing(s)`. */
 export const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
-/** What is left to process (issue #517), in words: nothing, or how many are not assessed and need a person. */
+/** What is left (issues #517, #1067), in words, as the work-item ledger counts it: nothing, or how many failed and need a person. */
 export function countsText(c: FailuresView['counts']): string {
-  if (c.unassessed === 0 && c.needsPerson === 0) return 'Every failed job is assessed, and none needs a person.';
+  if (c.failed === 0 && c.needsPerson === 0) return 'No work item failed, and none needs a person.';
   const parts = [
-    ...(c.unassessed ? [`${plural(c.unassessed, 'failed job')} not assessed yet`] : []),
-    ...(c.needsPerson ? [`${plural(c.needsPerson, 'failed job')} ${c.needsPerson === 1 ? 'needs' : 'need'} a person`] : []),
+    ...(c.failed ? [`${plural(c.failed, 'work item')} failed`] : []),
+    ...(c.needsPerson ? [`${plural(c.needsPerson, 'work item')} ${c.needsPerson === 1 ? 'needs' : 'need'} a person`] : []),
   ];
   return `${parts.join(' · ')}.`;
 }

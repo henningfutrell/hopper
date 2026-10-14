@@ -1751,8 +1751,9 @@ issue #354 Run again only cleared the labels and waited for a sync, and a closed
 issue #348); neither is so now. Any job made for a key that already had one carries `rerunOf`, whether
 Run again or a human clearing the marker made it.
 
-**Locked entries** (issue #355). A failed job does not drop out of the queue: the newest job of its
-item, failed and not dismissed, is a **locked entry** (`isLocked`, `src/domain/locked.ts`), listed in
+**Locked entries** (issue #355). A failed job does not drop out of the queue: a failed job whose failure is
+still its work item's — the work-item ledger has the item `failed` on it, or handed to a person on it (issue #1067:
+not run again, not dismissed, its issue not closed) — is a **locked entry** (`isLocked`, `src/domain/locked.ts`), listed in
 `/api/queue` `locked`, highest priority first, then oldest — under the Dashboard's Waiting jobs and in the
 Queue view's Locked panel, with its failure, the job it runs again (`rerunOf`), Run again and Dismiss.
 Its status stays `failed`: the decider never sees it, so it takes no lane and no budget, and nothing
@@ -10891,8 +10892,9 @@ its default), `retentionDays` (default 90: records and resolved problems older
 are deleted, a pending one never). Read at each assessment and sweep: no restart. Named causes: `failureCauses`.
 
 **Failures view** (its own nav entry, after Logins; the badge counts open problems and open hand-offs, "Needs a person"): first
-what is left (issue #517) — the failed jobs not assessed yet and the open hand-offs, `counts` in `GET /api/failures`,
-both zero once everything is processed; open problems with their
+what is left (issues #517, #1067) — the work items the work-item ledger has as `failed`, and those handed to a person on
+their failure (`needs_you`, waiting on a hand-off), `counts` in `GET /api/failures` (`failed`, `needsPerson`), both
+zero once nothing is left; the same counts every other view reads; open problems with their
 jobs, the held ones, Resolve and Release held; the recent assessed failures with their decision, summary and
 Retry; the profile and the known causes (an admin names a signature, or forgets one); the settings. `GET
 /api/failures` gives each problem and failure its `actions`, `{ ok }` or `{ ok: false, why }`, and the routes
@@ -11112,7 +11114,9 @@ The reap and the sweep keep an ended job's scratch dir when a repository in it h
 Now Failures lists it, and each has an action that moves it.
 
 - **The list** (`src/domain/kept-work.ts`, pure; `src/failures/kept-work.ts`). An ended job whose newest work event is
-  `job.work_kept` (`keptWorkOf`, the newest 1000 work events) is **work not pushed**: `keptWork` in `GET /api/failures`,
+  `job.work_kept` is **work not pushed** while its work item still waits on it (issue #1067, `keptWorkLeft`): the
+  work-item ledger's items name their jobs with kept work, and `keptWorkShown` leaves out an item done or closed and an
+  older job's of an item a newer job works. So a merged or closed item lists none, however old: `keptWork` in `GET /api/failures`,
   newest first, each with its paths, its machine (`machineRanOn`), its open hand-off, and `actions.push` and
   `actions.discard` (`{ ok }` or `{ ok: false, why }`). The Failures badge and `GET /api/sections` count each one that
   no open hand-off counts already.
@@ -15907,8 +15911,9 @@ settled was said to **block** its root, also a job that only works on its issue.
   in small type under the title.
 - **Stage words** (`src/domain/job-words.ts`, pure). Each node carries `stageText`: Queued, Building it (attempt 2 of
   3), Plan, Research, Waiting on you: answer a question / approve the plan / accept the research / answer it / take it
-  over, A person works on it, Parked, Ready for review, Checks failed, Has merge conflicts, Draft, Part shipped, Merged,
-  Done, Failed, Cancelled, Not started. An issue says what its newest job says. `waitsOnYou` marks a node that waits on
+  over, A person works on it, Parked, PR open: checks running / fixing checks / has merge conflicts / draft / waiting
+  for the merge (issue #1067: never "Ready for review"), Part shipped, Merged, Done, Failed, Cancelled, Not started. An
+  issue says what its item's job says. `waitsOnYou` marks a node that waits on
   the person. The attempt counts the failed runs a run again redoes (`attemptIn`), and its "of" is the failure settings'
   `maxAttempts` plus one, which the route passes in; a next part is no new attempt. The words are made on the server, as
   the UI imports nothing of `src/` at runtime, and so an agent over the API reads the same words.
@@ -15941,7 +15946,11 @@ poll: the owner's constraint on the issue.
   graph, its issue is closed as completed, the pull request it was the tend of merged after all, or a person dismissed it
   (`dismissed`, its words "Dismissed", as the Failed jobs list drops it). It is settled: it blocks no root and counts as
   no failure in the stage counts or a tree's summary. A run again that failed after a finished job stays failed: nothing
-  took its place. An issue reads its stage and words from its newest job that is not superseded.
+  took its place. An issue reads its stage and words from its newest job that is not superseded. **Replaced by the
+  work-item ledger (issue #1067):** an issue's stage is its item's state (`ITEM_STAGE`), and whether a failed or
+  cancelled job is still a failure is the ledger's (`stageInItem`, `isFailureOf`): `failed` only while its item is
+  failed on it, `waiting` (`handedOff`, "Waiting on you: take it over") while its item is handed to a person on it,
+  else superseded. The rollup keeps only the pull request's state over the jobs that name it.
 - **The route** adds the newest job of each issue it shows (`getBySourceKey`), so an issue whose last job ended before
   the queue's 24-hour window still takes its stage from it.
 
@@ -17620,12 +17629,29 @@ live writes gave.
 **The read.** `GET /api/work-items`: `counts`, every state with how many items are in it (`GROUP BY state`), and the
 items, filtered by `state`. Read-only, like every `/api/` read.
 
-**Not yet (the next parts).** Every view reads the ledger only: the Jobs graph and list (`job-rollup.ts`'s superseded
-staging and `stageAt` for items deleted), Failures' counts and lists (its `status: ['failed']` queries and the
-`keptWorkOf` event scan as a view's source), Intake, Needs you, the dashboard KPIs (`board.ts`), the nav badges, and
-the separate "still a failure" rules in `locked.ts` and `job-words.ts`. The pull request's checks (`pr_open`:
-checks running, fixing checks, merging) and GitHub's issue close and reopen as events of their own, from the webhooks
-and the follow; a batched fallback read for items in `pr_open` with no news in a while.
+**Part 2: the views read the ledger (2026-10-13).** Every count of a failure is the ledger's now, so the Jobs graph,
+Failures, the dashboard and the queue agree with `SELECT state, count(*) FROM work_items`:
+
+- **Failures' counts** (`countsOf`): `failed`, the items in `failed`, and `needsPerson`, the items in `needs_you` on a
+  hand-off (`HANDOFF_WAIT`). The `status: ['failed'], unassessed` count is gone from the view; the assessor still uses
+  it to find its own backlog.
+- **Work not pushed** (`keptWorkLeft`, `keptWorkShown`): from the items' `keptWork`, not the event scan. An item done,
+  or its issue closed, lists none; while a newer job works the item or its pull request is open, only that job's own.
+  The Failures section's count (`GET /api/sections`) reads the same list.
+- **Locked entries** (`isLocked`): a failed job whose failure is its item's (`isFailureOf`). No "newest and not
+  dismissed" rule of its own.
+- **The queue** (`GET /api/queue`) answers `items`, the ledger's counts. The dashboard's Failed card shows
+  `items.failed` — work items failed now — not the failed jobs of the last 24 hours.
+- **The Jobs graph** (`GET /api/jobs/graph`) reads each job's item: `stageInItem` settles a failed or cancelled job's
+  stage and a part's, and an issue node is at its item's state (`ITEM_STAGE`). `job-rollup.ts` keeps only the pull
+  request rollup; its superseded staging and the issue-closed rule are deleted. An open pull request's words name what
+  it waits on: "PR open: checks running", "fixing checks", "has merge conflicts", "draft", "waiting for the merge".
+  "Ready for review" is gone from the graph, the list and the stage filter ("PR open").
+
+**Left (the next part).** The pull request's checks as ledger input (`pr_open`: checks running, fixing checks,
+merging) and GitHub's issue close and reopen as events of their own, from the webhooks and the follow; a batched
+fallback read for items in `pr_open` with no news in a while; Intake and Needs you read from the ledger; the sync's
+re-offer rule ("issue closed as complete"). Then #1036, #994, #1057, #1064 and #1065 close in favour of #1067.
 
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 

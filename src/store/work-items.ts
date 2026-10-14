@@ -147,7 +147,11 @@ export function createWorkItemLedger(db: Db, tx: <T>(fn: () => T) => T): WorkIte
     },
     list(filter) {
       const states = filter?.state ?? [];
-      const where = states.length ? `WHERE state IN (${states.map(() => '?').join(',')})` : '';
+      const conds = [
+        ...(states.length ? [`state IN (${states.map(() => '?').join(',')})`] : []),
+        ...(filter?.keptWork ? ["body::jsonb->'keptWork' <> '[]'::jsonb"] : []),
+      ];
+      const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
       const limit = filter?.limit !== undefined ? 'LIMIT ?' : '';
       const args = [...states, ...(filter?.limit !== undefined ? [filter.limit] : [])];
       return db.all(`SELECT body FROM work_items ${where} ORDER BY state_since DESC, key ${limit}`, ...args).map((r) => parse<WorkItem>(r.body));

@@ -16,7 +16,7 @@ import { refreshPriorityLanes, refreshPriorityLanesSoon } from './priority-lanes
 import { refreshAllReviews, refreshReviewsSoon } from './reviews';
 import { EMPTY_REVIEWS, REVIEW_KINDS, REVIEW_UI, type ReviewState } from '@/model/reviews';
 import type { ReviewKind } from '@/model/wire';
-import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, PreSort, Queue, QueueGate, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookDelivery, WebhookView, WebhooksView } from '@/model/wire';
+import type { Decision, DomainEvent, Health, Job, MachineView, PartAccount, PluginsReport, PreSort, Queue, QueueGate, RoutingReport, SourceStatus, UpdateStatus, UsageReport, WebhookDelivery, WebhookView, WebhooksView, WorkItemState } from '@/model/wire';
 
 export const CAP = { events: 500, history: 5000, decisions: 100, deliveries: 100 };
 export type Conn = 'connecting' | 'live' | 'reconnecting';
@@ -39,6 +39,7 @@ export interface HopperState {
   waitingOrder: string[];
   /** The locked entries, as /api/queue gave them (issue #355): failed jobs of any age, so kept apart from `jobs`. */
   locked: Job[];
+  items: Record<WorkItemState, number> | null; // the work-item ledger's counts per state, as /api/queue gave them (issue #1067); null until read
   /** The queue gate and the pre-sort of the jobs not yet accepted, as /api/queue gave them (issue #159). */
   gate: QueueGate | null;
   presort: PreSort | null;
@@ -96,7 +97,7 @@ export interface HopperState {
 }
 
 export const useHopper = create<HopperState>(() => ({
-  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], gate: null, presort: null, highPriority: null, priorityLanes: null, blastRadius: null, machines: [],
+  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], locked: [], items: null, gate: null, presort: null, highPriority: null, priorityLanes: null, blastRadius: null, machines: [],
   decisions: [], questions: [], handled: [], reviews: EMPTY_REVIEWS, logins: [], loginSettings: null, failures: null, serverOffsetMs: 0, events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
   recorded: { usage: 0, machine: 0 },
@@ -109,12 +110,11 @@ const upsert = <T,>(list: T[], item: T, same: (x: T) => boolean, cap: number) =>
   list.some(same) ? list.map((x) => (same(x) ? item : x)) : capped([item, ...list], cap);
 
 /** The one way jobs enter the store: an /api/queue answer replaces them all, with the queue gate and its pre-sort. */
-const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'locked' | 'gate' | 'presort' | 'highPriority'> => ({
+const jobsOf = (q: Queue): Pick<HopperState, 'jobs' | 'waitingOrder' | 'locked' | 'items' | 'gate' | 'presort' | 'highPriority'> => ({
   jobs: Object.fromEntries([...q.waiting, ...q.waitingAnswer, ...q.operatorLed, ...q.parked, ...(q.waitingOn ?? []), ...q.running, ...q.ended].map((j) => [j.id, j])),
   waitingOrder: q.waiting.map((j) => j.id),
-  locked: q.locked,
-  gate: q.gate,
-  presort: q.presort,
+  locked: q.locked, items: q.items ?? null,
+  gate: q.gate, presort: q.presort,
   highPriority: typeof q.highPriority === 'number' ? q.highPriority : null,
 });
 

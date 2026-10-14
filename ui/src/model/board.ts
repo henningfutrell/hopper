@@ -3,7 +3,7 @@
 // a machine or an event's subject is named.
 import { highFirst, isHighJob } from './priority.ts';
 import { raisedByOf, raisedName } from './questions.ts';
-import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineView } from './wire.ts';
+import type { Decision, DomainEvent, Job, JobStatus, Lane, MachineView, WorkItemState } from './wire.ts';
 
 /** The one definition of each status's group (docs/glossary.md: Waiting, Waiting answer, Operator-led, Parked, Waiting on, Running, Ended). */
 export const GROUP = {
@@ -193,11 +193,12 @@ export interface Kpis {
   /** On a wait for their own background command (issue #1037): running work. */
   onOwnCommand: number;
   finished: number;
+  /** Work items failed now, as the work-item ledger counts them (issue #1067): no count of job statuses. */
   failed: number;
-  cancelled: number;
 }
 
-export function kpis(board: JobBoard, machines: MachineView[]): Kpis {
+/** `items`: the work-item ledger's counts (issue #1067), null until read. */
+export function kpis(board: JobBoard, machines: MachineView[], items: Record<WorkItemState, number> | null): Kpis {
   const lanes = machines.flatMap((m) => m.lanes);
   const ended = (status: JobStatus) => board.ended.filter((j) => j.status === status).length;
   return {
@@ -212,8 +213,7 @@ export function kpis(board: JobBoard, machines: MachineView[]): Kpis {
     waitingOn: board.waitingOn.filter((j) => ownWaitOf(j) !== 'command').length,
     onOwnCommand: board.waitingOn.filter((j) => ownWaitOf(j) === 'command').length,
     finished: ended('finished'),
-    failed: ended('failed'),
-    cancelled: ended('cancelled'),
+    failed: items?.failed ?? 0,
   };
 }
 

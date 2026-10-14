@@ -20,6 +20,9 @@ export const WORK_ITEM_STATES = [
 ] as const;
 export type WorkItemState = typeof WORK_ITEM_STATES[number];
 
+/** What an item handed to a person on its failure waits on: Needs a person's count. */
+export const HANDOFF_WAIT = 'a hand-off';
+
 /** The states in which a job or a person still acts on the item: what GitHub says of it waits until they end. */
 const ACTIVE: ReadonlySet<WorkItemState> = new Set(['waiting_for_approval', 'queued', 'working', 'needs_you', 'waiting_outside']);
 export const isActive = (state: WorkItemState): boolean => ACTIVE.has(state);
@@ -168,7 +171,7 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     case 'question.escalated_to_human':
       return move('needs_you', { waitingOn: 'a question' });
     case 'handoff.opened':
-      return move('needs_you', { waitingOn: 'a hand-off', failedJobId: job.id });
+      return move('needs_you', { waitingOn: HANDOFF_WAIT, failedJobId: job.id });
     case 'handoff.closed':
       if (d.end === 'wont_do') return move('dropped', { waitingOn: undefined });
       return base.eventState === 'needs_you' && ['cleared', 'superseded', 'item_closed', 'job_gone'].includes(String(d.end)) ? move('failed', { waitingOn: undefined }) : undefined;
@@ -208,6 +211,25 @@ export function applyRead(item: WorkItem, read: LedgerRead): WorkItem | undefine
   return settled(item, next, read.at);
 }
 
+/**
+ * Whether `jobId`'s failure is its item's (issue #1067): the item is `failed` on it, or a person holds it on its hand-off.
+ * Dismissed, run again, replaced or its issue closed, it is no failure: the one rule every view and the queue's locked
+ * entries read.
+ */
+export function isFailureOf(item: Pick<WorkItem, 'state' | 'failedJobId'> | undefined, jobId: string): boolean {
+  return item !== undefined && item.failedJobId === jobId && (item.state === 'failed' || item.state === 'needs_you');
+}
+
+/**
+ * The jobs of the item whose kept work still waits on a person (issue #1067): none once the item is done or its issue
+ * closed; while a newer job works it or its pull request is open, only that job's own.
+ */
+export function keptWorkShown(item: Pick<WorkItem, 'state' | 'jobId' | 'issueState' | 'keptWork'>): string[] {
+  if (item.state === 'done' || item.issueState === 'closed') return [];
+  const settledOn = item.state === 'failed' || item.state === 'needs_you' || item.state === 'dropped';
+  return item.keptWork.filter((j) => settledOn || j === item.jobId);
+}
+
 /** How many items are in each state: every view's count. */
 export function countStates(items: Iterable<Pick<WorkItem, 'state'>>): Record<WorkItemState, number> {
   const out = Object.fromEntries(WORK_ITEM_STATES.map((s) => [s, 0])) as Record<WorkItemState, number>;
@@ -224,7 +246,8 @@ export interface WorkItemLedger {
   get(key: string): WorkItem | undefined;
   /** The item whose pull request is `url` (issue #1074: a job's repo query of it); undefined: none. */
   byPullRequest(url: string): WorkItem | undefined;
-  list(filter?: { state?: WorkItemState[]; limit?: number }): WorkItem[];
+  /** The items, the newest state change first; `keptWork`: only those that hold kept work. */
+  list(filter?: { state?: WorkItemState[]; keptWork?: true; limit?: number }): WorkItem[];
   /** How many items are in each state: `SELECT state, count(*)`. */
   counts(): Record<WorkItemState, number>;
   /** Replay every event and the issue graph through the reducer, in place of the rows there are. How many items. */

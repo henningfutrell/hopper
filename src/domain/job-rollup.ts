@@ -1,18 +1,16 @@
-// Finished work rolls up on the job graph (issue #1036, design.md "The job graph", part 4). Split from job-graph.ts. Pure,
+// Pull requests roll up on the job graph (issue #1036, design.md "The job graph", part 4). Split from job-graph.ts. Pure,
 // and from what the hopper keeps already: no read of its own. A pull request any job or the issue graph saw merged is
 // merged for every job that names it — a tend or a rework hands it to a newer job, which follows it to its end —, with no
-// checks or conflicts; an issue GitHub closed as completed is done; a failed or cancelled job that a later job of its
-// issue, its issue's close, the merge of the pull request it tended, or a person's dismissal took the place of is
-// superseded.
+// checks or conflicts. Where a work item stands, and so whether a failure is still one, is the work-item ledger's alone
+// (issue #1067): the graph reads it — `stageInItem` settles a job's stage, `ITEM_STAGE` an issue's —, and nothing here
+// derives it.
 import type { GraphNode } from './issue-graph.ts';
-import { issueNodeId, pullRequestOf, stageAt, type JobGraphPullRequest, type JobStage } from './job-graph.ts';
-import type { Tended } from './pull-requests.ts';
+import { pullRequestOf, stageAt, type JobGraphPullRequest, type JobStage } from './job-graph.ts';
 import type { Job } from './types.ts';
+import { isFailureOf, type WorkItem, type WorkItemState } from './work-items.ts';
 
 /** The states a pull request never leaves, and which wins when two say different (issue #1036): merged over the rest. */
 const FINAL_RANK: Readonly<Record<string, number>> = { merged: 2, closed: 1, abandoned: 1 };
-/** Why a closed issue closed when it is not done by its close. */
-const NOT_COMPLETED: readonly string[] = ['not_planned', 'duplicate'];
 
 interface Rolled { final?: string; open?: JobGraphPullRequest }
 
@@ -43,16 +41,11 @@ function rolledPullRequests(jobs: readonly Job[], graphNodes: readonly GraphNode
 export interface Rollup {
   /** A job's pull request as the graph shows it: rolled up over every job that names it. */
   viewOf(job: Job): JobGraphPullRequest | undefined;
-  /** Each job's stage, by its id. */
+  /** Each job's stage by its own run and its pull request, by its id: the work-item ledger settles a failure's (job-graph.ts). */
   stages: Map<string, JobStage>;
-  /** The issue nodes GitHub closed as completed, as the issue graph last read them. */
-  completed: Set<string>;
-  /** The job each issue reads its stage, its words and whether a run again redoes a failed run from. */
-  newestOf: Map<string, Job>;
 }
 
-const followedOf = (job: Job): { follow?: string; tended?: Tended } => (job.sourceState?.source ?? {}) as { follow?: string; tended?: Tended };
-const issueOf = (job: Job): string | undefined => (job.source?.repo && job.source.number !== undefined ? issueNodeId(job.source.repo, job.source.number) : undefined);
+const followedOf = (job: Job): { follow?: string } => (job.sourceState?.source ?? {}) as { follow?: string };
 
 /** The rollup of `jobs`, oldest first, over the issue graph's nodes. */
 export function rollUp(jobs: readonly Job[], graphNodes: readonly GraphNode[]): Rollup {
@@ -65,43 +58,28 @@ export function rollUp(jobs: readonly Job[], graphNodes: readonly GraphNode[]): 
     if (r.final) return { url: pr.url, state: r.final };
     return r.open ? { ...r.open, state: pr.state } : pr;
   };
-  // The issues GitHub closed as completed, as the issue graph last read them.
-  const completed = new Set<string>();
-  for (const n of graphNodes) {
-    const { repo, number, state, stateReason } = n.attrs;
-    if (n.kind === 'issue' && typeof repo === 'string' && typeof number === 'number' && String(state).toLowerCase() === 'closed'
-      && !NOT_COMPLETED.includes(String(stateReason ?? '').toLowerCase())) completed.add(issueNodeId(repo, number));
-  }
   const stages = new Map<string, JobStage>();
-  for (const job of jobs) {
-    let stage = stageAt(job, rolled.get(pullRequestOf(job)?.url ?? '')?.final ?? followedOf(job).follow);
-    // Nothing waits on a part's merge once its issue is done.
-    if (stage === 'partly_done' && completed.has(issueOf(job) ?? '')) stage = 'done';
-    stages.set(job.id, stage);
-  }
-  // The jobs of each issue, oldest first.
-  const jobsOf = new Map<string, Job[]>();
-  for (const job of jobs) {
-    const issue = issueOf(job);
-    if (issue) jobsOf.set(issue, [...jobsOf.get(issue) ?? [], job]);
-  }
-  // The tend jobs of a pull request that merged after all.
-  const tendOfMerged = new Set<string>();
-  for (const job of jobs) {
-    const t = followedOf(job).tended;
-    if (t && rolled.get(t.pullRequest)?.final === 'merged') tendOfMerged.add(t.nextJobId);
-  }
-  for (const job of jobs) {
-    const stage = stages.get(job.id)!;
-    if (stage !== 'failed' && stage !== 'cancelled') continue;
-    const issue = issueOf(job);
-    const later = issue !== undefined && jobsOf.get(issue)!.at(-1) !== job;
-    if (job.dismissedAt !== undefined || later || completed.has(issue ?? '') || tendOfMerged.has(job.id)) stages.set(job.id, 'superseded');
-  }
-  // The job each issue reads its stage, its words and whether a run again redoes a failed run from: its newest job not
-  // superseded, else its newest.
-  const newestOf = new Map<string, Job>();
-  for (const [issue, list] of jobsOf) newestOf.set(issue, [...list].reverse().find((j) => stages.get(j.id) !== 'superseded') ?? list.at(-1)!);
+  for (const job of jobs) stages.set(job.id, stageAt(job, rolled.get(pullRequestOf(job)?.url ?? '')?.final ?? followedOf(job).follow));
+  return { viewOf, stages };
+}
 
-  return { viewOf, stages, completed, newestOf };
+/** An issue's stage: its work item's state, in the graph's words (issue #1067). */
+export const ITEM_STAGE: Readonly<Record<WorkItemState, JobStage>> = {
+  waiting_for_approval: 'waiting', queued: 'queued', working: 'running', needs_you: 'waiting', waiting_outside: 'waiting',
+  pr_open: 'pr_open', partly_done: 'partly_done', done: 'done', failed: 'failed', dropped: 'cancelled',
+};
+
+/**
+ * A job's stage, settled by its work item (issue #1067). A failed or cancelled job is `failed` only while the ledger has
+ * its item failed on it, and `waiting` while its item is handed to a person on it; the item's own job, dropped, stays
+ * cancelled (a person's dismissal: superseded); else something took its place: superseded. A part's job is done once its
+ * item is. With no item (a job of no source), its own stage.
+ */
+export function stageInItem(job: Job, stage: JobStage, item: WorkItem | undefined): JobStage {
+  if (!item) return stage;
+  if (stage === 'partly_done') return item.state === 'done' ? 'done' : stage;
+  if (stage !== 'failed' && stage !== 'cancelled') return stage;
+  if (isFailureOf(item, job.id)) return item.state === 'failed' ? 'failed' : 'waiting';
+  if (item.jobId === job.id && item.state === 'dropped' && job.dismissedAt === undefined) return 'cancelled';
+  return 'superseded';
 }

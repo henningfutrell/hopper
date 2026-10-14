@@ -280,7 +280,7 @@ export function Failures() {
   if (!failures) return <Panel title="Failures" icon={OctagonAlert}><Empty>failures not read yet</Empty></Panel>;
   const open = failures.problems.filter((p) => p.status === 'open');
   const resolved = failures.problems.filter((p) => p.status !== 'open');
-  const left = failures.counts.unassessed + failures.counts.needsPerson;
+  const left = failures.counts.failed + failures.counts.needsPerson;
   return (
     <div className="space-y-3">
       <div data-section="failure-counts" className={`text-sm ${left ? 'text-foreground' : 'text-muted-foreground'}`}>{countsText(failures.counts)}</div>

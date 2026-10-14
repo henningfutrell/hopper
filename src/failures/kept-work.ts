@@ -1,19 +1,19 @@
 // Work not pushed (issue #1010, design.md "Work not pushed"): the ended jobs whose reap kept work not pushed, as the
-// Failures view lists them, and Push it — the failed, finished or cancelled job goes on in its own agent session and kept work tree, told to
+// Failures view lists them — the work-item ledger says which (issue #1067: none of an item done or closed, none a newer
+// job took the place of) —, and Push it — the failed, finished or cancelled job goes on in its own agent session and kept work tree, told to
 // push its work and open the pull request. Through its open hand-off when it has one (resolved as Continue), else as a
 // Continue of its own (`job.continued` with `keptWork`). Discard is the engine's (`Engine.discardWork`): it reaches
 // the job's machine.
 import type { RerunResult, UserStore } from '../domain/ports.ts';
-import { keptWorkOf, machineRanOn, PUSHABLE_ENDS, TERMINAL_STATUSES, WORK_EVENTS, type ActingPerson, type Allowed, type ContinuedBy, type HandoffView, type Job, type KeptWorkView } from '../domain/types.ts';
+import { keptWorkShown } from '../domain/work-items.ts';
+import { keptWorkOf, machineRanOn, PUSHABLE_ENDS, TERMINAL_STATUSES, WORK_EVENTS, type ActingPerson, type Allowed, type ContinuedBy, type HandoffView, type Job, type KeptWork, type KeptWorkView } from '../domain/types.ts';
 import type { HandoffResolve } from './handoffs.ts';
 import { handoffView, newestOfItem, type TakesBack } from './view.ts';
 
-/** The work trail read back: the newest this many events. */
-const KEPT_SCAN = 1000;
 const OK: Allowed = { ok: true };
 const no = (why: string): Allowed => ({ ok: false, why });
 
-type Reads = Pick<UserStore, 'events' | 'jobs' | 'handoffs' | 'failures'>;
+type Reads = Pick<UserStore, 'events' | 'jobs' | 'handoffs' | 'failures' | 'workItems'>;
 
 /** What the job is told when it goes on (its own session, its kept work tree), with the person's note. */
 export function pushBrief(note: string | undefined): string {
@@ -34,10 +34,22 @@ function pushAllowed(store: Reads, job: Job, handoff: ReturnType<Reads['handoffs
   return newest.ok ? takesBack(job.id) : newest;
 }
 
-/** Every ended job whose work is kept, newest first, with its ways out. */
+/**
+ * The kept work still waiting on a person, newest first: the jobs the ledger's items say (`keptWorkShown`), each with
+ * what its newest work event kept. Failures lists it and the Failures section counts it, from this one read.
+ */
+export function keptWorkLeft(store: Pick<UserStore, 'events' | 'workItems'>): KeptWork[] {
+  const out: KeptWork[] = [];
+  for (const item of store.workItems.list({ keptWork: true })) {
+    for (const jobId of keptWorkShown(item)) out.push(...keptWorkOf(store.events.recent(1, [...WORK_EVENTS], jobId)));
+  }
+  return out.sort((a, b) => b.at.localeCompare(a.at) || a.jobId.localeCompare(b.jobId));
+}
+
+/** Every ended job whose work is kept and waits on a person, newest first, with its ways out. */
 export function keptWorkViews(store: Reads, resumable: (job: Job) => boolean, takesBack: TakesBack): KeptWorkView[] {
   const out: KeptWorkView[] = [];
-  for (const k of keptWorkOf(store.events.recent(KEPT_SCAN, [...WORK_EVENTS]))) {
+  for (const k of keptWorkLeft(store)) {
     const job = store.jobs.get(k.jobId);
     if (!job || !TERMINAL_STATUSES.includes(job.status)) continue;
     const handoff = store.handoffs.forJob(job.id);

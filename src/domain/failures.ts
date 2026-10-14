@@ -386,11 +386,11 @@ export interface FailureProfile {
   byExecutor: ProfileCount[];
 }
 
-/** How many failed jobs are left (issue #517): both zero, every failure is processed and none needs a person. */
+/** How many failures are left (issues #517, #1067), from the work-item ledger: both zero, none is left to look at. */
 export interface FailureCounts {
-  /** Failed jobs the assessor has not assessed yet. */
-  unassessed: number;
-  /** Open hand-offs: Needs a person. */
+  /** Work items in `failed`: the last attempt failed, nothing took its place, nobody dismissed it. */
+  failed: number;
+  /** Work items handed to a person on their failure: Needs a person. */
   needsPerson: number;
 }
 

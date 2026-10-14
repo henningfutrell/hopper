@@ -5,12 +5,11 @@
 // human stage; a parked job, waiting on a person to pick it up (issue #565).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { UserStore } from '../domain/ports.ts';
-import { jobPriorityTag, keptWorkOf, REVIEW_OPEN_STATUSES, SECTION_KINDS, SECTIONS, TERMINAL_STATUSES, WORK_EVENTS, type JobId, type SectionKind, type SectionSummary } from '../domain/types.ts';
+import { keptWorkLeft } from '../failures/kept-work.ts';
+import { jobPriorityTag, REVIEW_OPEN_STATUSES, SECTION_KINDS, SECTIONS, TERMINAL_STATUSES, type JobId, type SectionKind, type SectionSummary } from '../domain/types.ts';
 import type { TenantParts } from './tenants.ts';
 
 type Counts = Omit<SectionSummary, 'kind' | 'label' | 'events'>;
-/** The work trail read back for work not pushed: the newest this many events. */
-const KEPT_SCAN = 1000;
 
 function count(store: UserStore, kind: SectionKind): Counts {
   const lanes = store.settings.getPriorityLanes();
@@ -38,8 +37,9 @@ function count(store: UserStore, kind: SectionKind): Counts {
   }
   const problems = store.problems.list({ status: 'open' });
   const handoffs = store.handoffs.list({ status: 'open' });
-  // Work not pushed (issue #1010): an ended job's kept work waits on a person too, unless its hand-off counts it already.
-  const kept = keptWorkOf(store.events.recent(KEPT_SCAN, [...WORK_EVENTS]))
+  // Work not pushed (issue #1010): an ended job's kept work waits on a person too, as the work-item ledger has it (issue
+  // #1067), unless its hand-off counts it already.
+  const kept = keptWorkLeft(store)
     .filter((k) => { const job = store.jobs.get(k.jobId); return job !== undefined && TERMINAL_STATUSES.includes(job.status) && store.handoffs.forJob(k.jobId)?.status !== 'open'; });
   const n = problems.length + handoffs.length + kept.length;
   return { open: n, waiting: n, high: high([...handoffs.map((h) => h.jobId), ...kept.map((k) => k.jobId)]) };

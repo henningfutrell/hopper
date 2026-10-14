@@ -1,5 +1,5 @@
 // The job graph and a job's parts list in plain words (issue #935, design.md "The job graph"): where a node stands, in
-// human terms — Plan, Building it (attempt 2 of 3), Ready for review, Merged, Waiting on you: approve the plan — with no
+// human terms — Plan, Building it (attempt 2 of 3), PR open: checks running, Merged, Waiting on you: approve the plan — with no
 // pull request number in it; whether it waits on the person; what comes next; and a job tree summed up in one line.
 // Pure: the graph and the parts list call it with what they already read.
 import type { JobGraphEdge, JobGraphNode, JobGraphPullRequest, JobStage, JobTree } from './job-graph.ts';
@@ -21,6 +21,8 @@ export interface Worded {
   pullRequest?: JobGraphPullRequest;
   /** A failed job a person dismissed (issue #1036). */
   dismissed?: true;
+  /** A failed job whose item is handed to a person on its failure (issue #1067). */
+  handedOff?: true;
 }
 
 const WAITING: Partial<Record<JobStatus, string>> = { operator_led: 'A person works on it', parked: 'Parked', waiting_on: 'Waiting on the outside world' };
@@ -28,7 +30,7 @@ const WAITING: Partial<Record<JobStatus, string>> = { operator_led: 'A person wo
 /** What a person waits to be asked for: a plan to approve, a report to accept, a question to answer. */
 function waitingOnYou(n: Worded): string | undefined {
   if (n.kind === 'question') return 'answer it';
-  if (n.kind === 'handoff') return 'take it over';
+  if (n.kind === 'handoff' || n.handedOff) return 'take it over';
   if (n.ownWait === 'stuck') return 'its own command is gone, so it is stuck';
   if (n.status !== 'waiting_answer') return undefined;
   if (n.phase === 'proposal') return 'approve the plan';
@@ -39,16 +41,20 @@ function waitingOnYou(n: Worded): string | undefined {
 /** True when the node waits on the person: a question, a hand-off, a plan or a report to read. */
 export const waitsOnYou = (n: Worded): boolean => waitingOnYou(n) !== undefined;
 
-/** A pull request's stage, in words: what a reviewer sees first. */
+/** What an open pull request waits on (issue #1067): named, never "ready for review" — a job's pull request is on its way to the merge. */
+const PR_OPEN_WAIT = 'PR open: waiting for the merge';
+
+/** A pull request's stage, in words: what it waits on first. */
 function pullRequestWords(pr: JobGraphPullRequest): string {
   if (pr.state === 'merged') return 'Merged';
   if (pr.state === 'closed') return 'Closed without a merge';
   if (pr.state === 'abandoned') return 'Dropped';
   if (pr.state === 'unknown') return 'Not followed yet';
-  if (pr.draft) return 'Draft';
-  if (pr.conflicting) return 'Has merge conflicts';
-  if (pr.checks === 'failing') return 'Checks failed';
-  return 'Ready for review';
+  if (pr.draft) return 'PR open: draft';
+  if (pr.conflicting) return 'PR open: has merge conflicts';
+  if (pr.checks === 'failing') return 'PR open: fixing checks';
+  if (pr.checks === 'pending') return 'PR open: checks running';
+  return PR_OPEN_WAIT;
 }
 
 /** Where a node stands, in human terms. */
@@ -65,7 +71,7 @@ export function stageWords(n: Worded): string {
       return n.attempt && n.attempt > 1 ? `Building it (attempt ${n.attempt}${n.attempts ? ` of ${n.attempts}` : ''})` : 'Building it';
     }
     case 'waiting': return (n.status && WAITING[n.status]) ?? 'Waiting';
-    case 'pr_open': return n.pullRequest ? pullRequestWords(n.pullRequest) : 'Ready for review';
+    case 'pr_open': return n.pullRequest ? pullRequestWords(n.pullRequest) : PR_OPEN_WAIT;
     case 'partly_done': return 'Part shipped: the rest runs after the merge';
     case 'done': return n.pullRequest?.state === 'merged' ? 'Merged' : 'Done';
     case 'failed': return 'Failed';
@@ -86,7 +92,7 @@ export function nextWords(n: Worded, tasks?: { done: number; total: number }): s
     case 'queued': return 'It starts when a lane is free.';
     case 'running': return tasks ? `The agent works on it: ${tasks.done} of ${tasks.total} tasks done.` : 'The agent works on it.';
     case 'waiting': return n.status === 'operator_led' ? 'A person finishes it.' : 'It goes on when what it waits for happens.';
-    case 'pr_open': return n.pullRequest?.checks === 'failing' ? 'Fix the failed checks, or run it again.' : 'Review and merge the pull request.';
+    case 'pr_open': return n.pullRequest?.checks === 'failing' ? 'Fix the failed checks, or run it again.' : n.pullRequest?.checks === 'pending' ? 'It goes on to the merge once its checks pass.' : 'Merge the pull request, or yolo mode merges it.';
     case 'partly_done': return 'Merge the pull request: then the next part runs.';
     case 'done': return 'Nothing: it is done.';
     case 'failed': return 'Read why it failed, then run it again or close it.';

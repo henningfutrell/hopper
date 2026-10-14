@@ -5,10 +5,11 @@
 // carries out its path, a job to its pull request, and a partly done job to the pull request whose merge lets the rest run;
 // an issue to an issue that blocks it, a pull request to the one whose branch it is based on, and a job to its open
 // question or hand-off, which are nodes too: each waits on a person. Each node has its **stage**: queued, running, waiting, PR open, partly done, done, failed, cancelled or superseded — and an issue no
-// job works yet, no job. Finished work rolls up (issue #1036), from what the hopper already keeps and no read of its own: a
-// pull request any job or the issue graph saw merged is merged for every job that names it, with no checks or conflicts; an
-// issue closed as completed is done; a failed or cancelled job a later job of its issue, its issue's close, the merge of the
-// pull request it tended, or a person's dismissal took the place of is superseded, and counts as no failure. A pull request the hopper tended lists each tend attempt, oldest first (issue #927). Each group of
+// job works yet, no job. Pull requests roll up (issue #1036), from what the hopper already keeps and no read of its own: a
+// pull request any job or the issue graph saw merged is merged for every job that names it, with no checks or conflicts.
+// Where an issue stands, and whether a failed job is still a failure, is the work-item ledger's (issue #1067): an issue
+// is at its item's state; a failed or cancelled job a later job of its issue, its issue's close, a merge or a person's
+// dismissal took the place of is superseded, and counts as no failure; one handed to a person waits on you. A pull request the hopper tended lists each tend attempt, oldest first (issue #927). Each group of
 // connected nodes is one **job tree**, named by its root, with what blocks the root marked. Pure: no I/O, no clock — the
 // route reads the jobs, the lineage links, the issue graph and the open questions and hand-offs, and passes them in.
 import { ownWaitOf, type OwnWait } from './own-command.ts';
@@ -18,7 +19,8 @@ import { phaseOf } from './phase.ts';
 import type { ChecksState, Tended, TendStep } from './pull-requests.ts';
 import type { TaskCount } from './task-count.ts';
 import { countStages, treesOf } from './job-trees.ts';
-import { rollUp } from './job-rollup.ts';
+import { ITEM_STAGE, rollUp, stageInItem } from './job-rollup.ts';
+import type { WorkItem } from './work-items.ts';
 import type { Job, JobStatus } from './types.ts';
 
 /** Where a job stands in its life, in the words the Jobs view uses. */
@@ -65,7 +67,7 @@ export interface JobGraphNode {
    */
   label: string;
   stage: JobStage;
-  /** Where it stands in human terms (issue #935): `Building it (attempt 2 of 3)`, `Ready for review`, `Waiting on you: approve the plan`. */
+  /** Where it stands in human terms (issue #935): `Building it (attempt 2 of 3)`, `PR open: checks running`, `Waiting on you: approve the plan`. */
   stageText: string;
   /** True when it waits on the person: a question, a hand-off, a plan or a report to read. */
   waitsOnYou?: true;
@@ -97,6 +99,8 @@ export interface JobGraphNode {
   tends?: JobGraphTend[];
   /** A failed job a person dismissed (issue #1036): superseded, and its words say so. */
   dismissed?: true;
+  /** A failed job whose item is handed to a person on its failure (issue #1067): it waits on you, no failure counted. */
+  handedOff?: true;
 }
 
 /** One tend of a pull request (issue #927): the job the hopper ran to take the step, its status, and when it started and ended. */
@@ -142,6 +146,8 @@ export interface JobGraphInput {
   handoffs?: readonly JobGraphWait[];
   /** The failure settings' retries per job: a run again's attempt reads "of" one more than it. */
   maxAttempts?: number;
+  /** The work-item ledger's items of the jobs' source keys (issue #1067): where each issue stands, and each failure. */
+  items?: ReadonlyMap<string, WorkItem>;
 }
 
 interface Followed {
@@ -259,9 +265,20 @@ export function jobGraph(input: JobGraphInput): JobGraph {
   const jobs = [...input.jobs].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   const byId = new Map(jobs.map((j) => [j.id, j]));
 
-  // Finished work rolls up (issue #1036): each pull request's state over every job that names it, each job's stage, the
-  // issues closed as completed, and the job each issue reads its stage from.
-  const { viewOf, stages, completed, newestOf } = rollUp(jobs, input.issueGraph?.nodes ?? []);
+  // Pull requests roll up (issue #1036): each pull request's state over every job that names it, and each job's stage by
+  // its run, settled by its work item (issue #1067).
+  const { viewOf, stages } = rollUp(jobs, input.issueGraph?.nodes ?? []);
+  const itemOf = (job: Job): WorkItem | undefined => (job.source?.key ? input.items?.get(job.source.key) : undefined);
+  for (const job of jobs) stages.set(job.id, stageInItem(job, stages.get(job.id)!, itemOf(job)));
+  // The job each issue reads its words from: its item's own job, else its newest.
+  const newestOf = new Map<string, Job>();
+  for (const job of jobs) {
+    const s = job.source;
+    if (!s?.repo || s.number === undefined) continue;
+    const issue = issueNodeId(s.repo, s.number);
+    const own = itemOf(job)?.jobId;
+    if (own === job.id || !(own && byId.has(own))) newestOf.set(issue, job);
+  }
 
   for (const job of jobs) {
     const s = job.source;
@@ -276,6 +293,7 @@ export function jobGraph(input: JobGraphInput): JobGraph {
       ...(s?.repo ? { repo: s.repo } : {}), ...(s?.number !== undefined ? { number: s.number } : {}), ...(s?.url ? { url: s.url } : {}),
       ...(job.tasks ? { tasks: job.tasks } : {}), ...(job.laneId ? { laneId: job.laneId } : {}),
       ...(pr ? { pullRequest: pr } : {}), ...(job.dismissedAt !== undefined && stage === 'superseded' ? { dismissed: true as const } : {}),
+      ...(stage === 'waiting' && (job.status === 'failed' || job.status === 'cancelled') ? { handedOff: true as const } : {}),
       ...(job.partlyDone && stage === 'partly_done' ? {
         partlyDone: { pullRequest: job.partlyDone, afterMerge: s?.repo && s.number !== undefined ? `the next part of ${ref(s.repo, s.number)} runs` : 'the next part of its issue runs' },
       } : {}),
@@ -283,7 +301,8 @@ export function jobGraph(input: JobGraphInput): JobGraph {
     const issue = s?.repo && s.number !== undefined ? issueNodeId(s.repo, s.number) : undefined;
     if (s?.repo && s.number !== undefined && issue && newestOf.get(issue) === job) {
       const parts = partsOf(job);
-      issueNode(s.repo, s.number, { label: s.title || ref(s.repo, s.number), stage: completed.has(issue) ? 'done' : stage, ...(s.url ? { url: s.url } : {}), ...(parts ? { parts } : {}) });
+      const item = itemOf(job);
+      issueNode(s.repo, s.number, { label: s.title || ref(s.repo, s.number), stage: item ? ITEM_STAGE[item.state] : stage, ...(s.url ? { url: s.url } : {}), ...(parts ? { parts } : {}) });
     }
   }
   // Each pull request once, as rolled up: partly done while a job's part waits on its merge, labelled by its newest job.
@@ -393,7 +412,7 @@ export function jobGraph(input: JobGraphInput): JobGraph {
     }
   }
 
-  // The words (issue #935): an issue says what its newest job says, unless GitHub closed it as completed.
+  // The words (issue #935): an issue says what its item's job says, while it is at that job's stage.
   wordNodes(nodes, newestOf);
   const allNodes = [...nodes.values()];
   const allEdges = [...edges.values()];
