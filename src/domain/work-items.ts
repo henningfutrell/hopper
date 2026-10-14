@@ -303,14 +303,18 @@ export function requestsWaitingOf(items: Iterable<Pick<WorkItem, 'key' | 'eventS
 /** A GitHub issue's URL: what the fallback read can read. */
 const GITHUB_ISSUE = /^https?:\/\/[^/]+\/[^/]+\/[^/]+\/issues\/\d+$/;
 
+/** The states whose items the fallback read reads: no job or person acts on them, and they are not done (issue #1105). */
+export const FALLBACK_READ_STATES: readonly WorkItemState[] = WORK_ITEM_STATES.filter((s) => !isActive(s) && s !== 'done');
+
 /**
- * The issues the ledger's fallback read reads now (issue #1067, part 3): of the items in `pr_open` or `failed` whose key is
- * a GitHub issue, those with no news for `quietMs` — no event moved them and the read did not read them — , the one read
- * longest ago (never first, then the oldest news), at most `limit`.
+ * The issues the ledger's fallback read reads now (issue #1067, part 3): of the items in `FALLBACK_READ_STATES` (`pr_open`,
+ * `partly_done`, `failed`, `dropped`: its issue may have closed as completed since, issue #1105) whose key is a GitHub
+ * issue, those with no news for `quietMs` — no event moved them and the read did not read them — , the one read longest
+ * ago (never first, then the oldest news), at most `limit`.
  */
 export function fallbackReadPick(items: readonly WorkItem[], lastRead: ReadonlyMap<string, string>, now: string, o: { quietMs: number; limit: number }): string[] {
   const before = new Date(Date.parse(now) - o.quietMs).toISOString();
-  const quiet = items.filter((i) => (i.state === 'pr_open' || i.state === 'failed') && GITHUB_ISSUE.test(i.key)
+  const quiet = items.filter((i) => FALLBACK_READ_STATES.includes(i.state) && GITHUB_ISSUE.test(i.key)
     && i.eventAt <= before && (lastRead.get(i.key) ?? '') <= before);
   const since = (i: WorkItem) => lastRead.get(i.key) ?? '';
   return quiet.sort((a, b) => since(a).localeCompare(since(b)) || a.eventAt.localeCompare(b.eventAt)).slice(0, o.limit).map((i) => i.key);

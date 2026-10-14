@@ -104,7 +104,7 @@ describe('the read at the start (issue #1105)', () => {
     read.start();
     await new Promise((r) => setTimeout(r, 30));
     await read.stop();
-    expect(asked).toEqual([[url(1), url(2), url(3)]]);
+    expect(asked).toEqual([[url(3), url(1), url(2)]]);
     expect(appended.map((e) => e.data.key)).toEqual([url(1), url(2), url(3)]);
   });
 });
