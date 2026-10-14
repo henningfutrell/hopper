@@ -15516,8 +15516,8 @@ lost row is read again.
 **Intake from the listing cache** (issue #985 part 2, 2026-10-13; `src/sources/github/listing.ts`). Intake never lists a
 repository with REST: `listOpenIssues` is gone from the port. A discover takes the open labelled issues of its scope from
 the listing cache, and lists again first the repositories that are due, all of them in one `listRepos`:
-- Due: a repository with no listing, or one whose last listing — or last failed ask — is older than the **intake sync
-  interval**, `intakeSyncMinutes` of the shared rate limiter (default 15; Settings → GitHub rate limit,
+- Due: a repository with no listing, or one whose last listing — or this source's last failed ask (issue #1125) — is older
+  than the **intake sync interval**, `intakeSyncMinutes` of the shared rate limiter (default 15; Settings → GitHub rate limit,
   `POST /ui/api/github-rate-limiter`, the admin's). Read at each discover, so a change applies at the next one.
 - What asks: `JobSource.discover({ due: true })` is a timed sync (its timer, the sync watch, a rerun's sync). The first
   sync after start, a sync of a source new or changed in the plugins config, and a sync a person asked for — Sync now, an
@@ -18126,6 +18126,56 @@ after `DELIVERY_SYNC_MS`; a source that takes none does not sync), `test/integra
 server and database: no secret, 404; a wrong or missing signature, 401 and nothing done; a signed delivery syncs its source
 and is recorded; a redelivery is taken once; another repository, `ping` and `push` record nothing; rotate and remove; only
 the admin makes the secret), `test/ui/github-deliveries.test.ts`.
+
+## Change reads (issue #1125, 2026-10-14)
+
+A new issue, labelled and assigned in a job repository, did not reach Intake for hours on 2026-10-14; the `github-app`
+source's sync passes asked GitHub nothing (`REST 0, GraphQL 0`). Two causes, both in `src/sources/github/listing.ts`:
+- **Nothing noticed a change between listings.** Intake lists a repository again only every **intake sync interval**
+  ("Repository listings"); a **GitHub delivery** ("GitHub deliveries") makes it due sooner, but most hoppers run locally
+  and get none.
+- **A failed repository stayed failed while another source listed it.** The **listing cache** is the user's, one row per
+  repository, shared by the user's GitHub sources. A repository was due again once its last listing *or* its last failed
+  ask was older than the interval, the newer of the two. While the `github-account` source listed it every interval, a
+  repository the `github-app` source failed to list was never due for the app: it said the old error, and its issues were
+  never in the app's intake.
+
+Owner decision on the issue: a GitHub webhook is an optional accelerator, off by default. The default path is the hopper's
+own reads, made cheap: conditional requests (a `304` costs no call), `since=`, a modest interval, feeding what a delivery
+feeds.
+
+**As built:**
+- **The change read** (`GitHubApi.issuesChangedSince`, both adapters; `src/sources/github/app/rest.ts`):
+  `GET /repos/{owner}/{repo}/issues?state=all&sort=updated&direction=desc&per_page=100&since=<t>`, where `t` is the newest
+  `updatedAt` of an issue in the repository's listing (GitHub's clock, never the hopper's). The same `t` is the same URL, so
+  the shared rate limiter's ETag cache makes it a conditional request: while nothing changed, GitHub answers `304`, which
+  costs no call. An **intake call** (it waits at the intake reserve) that never waits: a call that would wait is not made
+  (`deferAfterMs: 0`).
+- **When:** in a timed sync (`discover({ due: true })`, every `pollSeconds`, default 60), for each job repository that is not
+  due, has a listing, and did not fail; at most once a minute a repository (`CHANGE_READ_EVERY_MS`), however often the
+  source syncs. A sync a person asked for lists every repository and makes none.
+- **What it does** (`readChanges`): it makes the repository due, as a delivery does, when it names an open issue with the
+  source's label that the listing does not hold, a listed issue now closed or without the label, or a full page (more may
+  have changed). A listed issue changed otherwise — its title, body, comments, labels or assignees, the hopper's own label
+  writes too — has its row read in place (title, labels, assignees, `updatedAt`), so its **listed reads** go to GitHub
+  again and no new listing is made. Pull requests are the listing's and the in-motion cycle's: a change read skips them.
+  A change read that fails (a rate limit, a network error) changes nothing; the timed listing stays.
+- **A failed repository** is due again an interval after this source asked, whatever another source's listing keeps fresh.
+  It is not change-read.
+- **Intake says why** (`ui/src/views/intake.tsx`, `intakeTrouble`): a paused source has its panel, with why it lists
+  nothing (`Not listing issues: …`); a source whose last sync failed says so, with its error; each job repository its last
+  sync could not list is named with what GitHub said (`repoErrors`). Before, a paused source had no panel and the
+  repository errors showed nowhere.
+- **Cost:** one REST call a repository a minute, almost all `304` (free); GitHub charges one for each credential (an
+  installation token lasts an hour; the ETag cache is per credential) and one more when an issue changed. A GraphQL listing
+  only when GitHub says the repository has a change intake must take. At 60 repositories for an hour,
+  `test/integration/github-budget.test.ts` holds it: the charged change reads are 60 for each installation token and the
+  changed repositories' few. The pass line counts the change reads (`REST`), so a source that is not paused and has a job
+  repository shows them at least once a minute.
+
+**Not here:** closes and reopens of a work item's issue move the work-item ledger through a delivery or the ledger's
+fallback read (issue #1067 part 3); a close or reopen a change read sees makes the repository due, and intake drops or
+lists the issue, but it records no ledger event (issues #1105, #1126).
 
 ## Landing batches (issue #1073, 2026-10-14)
 

@@ -8,16 +8,17 @@ import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/i
 import { memoryListings } from '../../src/sources/github/listing.ts';
 import { GitHubApiError } from '../../src/sources/github/api.ts';
 import type { GitHubListingRepository } from '../../src/domain/github-listing.ts';
+import type { Job } from '../../src/domain/types.ts';
 import { REPO, githubConfig, testTrust } from './fixtures/github-support.ts';
 
 const MIN = 60_000;
 
-function setup(o: { listings?: GitHubListingRepository; clock?: { at: number } } = {}) {
+function setup(o: { listings?: GitHubListingRepository; clock?: { at: number }; repos?: string[] } = {}) {
   const gh = createFakeGitHub();
   const clock = o.clock ?? { at: Date.parse('2026-10-14T18:00:00.000Z') };
   const source = createGitHubSource({
     name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', api: gh, trust: testTrust(),
-    config: githubConfig({ repos: [REPO] }), clock: { now: () => new Date(clock.at) }, listingEveryMs: () => 15 * MIN,
+    config: githubConfig({ repos: o.repos ?? [REPO] }), clock: { now: () => new Date(clock.at) }, listingEveryMs: () => 15 * MIN,
     ...(o.listings ? { listings: o.listings } : {}),
   });
   const count = (method: string) => gh.calls.filter((c) => c.method === method).length;
@@ -74,19 +75,39 @@ describe('the change read (issue #1125)', () => {
     expect(count('listRepos')).toBe(1);
   });
 
-  it('a listed issue closed, unlabelled or edited makes the repository due', async () => {
-    for (const change of ['close', 'unlabel', 'edit'] as const) {
+  it('a listed issue closed or unlabelled makes the repository due: intake drops it', async () => {
+    for (const change of ['close', 'unlabel'] as const) {
       const { gh, source, count, pass } = setup();
       gh.createIssue({ repo: REPO, labels: ['hopper'] });
       await source.discover({ due: true });
       if (change === 'close') gh.closeIssue(REPO, 1);
-      if (change === 'unlabel') gh.removeLabel(REPO, 1, 'hopper');
-      if (change === 'edit') gh.editIssue(REPO, 1, { body: 'Do the other thing.' }, 'owner', '2026-10-14T18:00:30.000Z');
+      else gh.removeLabel(REPO, 1, 'hopper');
       pass(MIN);
       await source.discover({ due: true });
       expect([change, count('listRepos')]).toEqual([change, 2]);
-      expect(source.intake!().map((x) => x.key)).toEqual(change === 'edit' ? [`https://github.com/${REPO}/issues/1`] : []);
+      expect([change, source.intake!()]).toEqual([change, []]);
     }
+  });
+
+  it('a listed issue edited is read again from GitHub, with no new listing', async () => {
+    const { gh, source, count, pass } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    await source.discover({ due: true });
+    gh.editIssue(REPO, 1, { body: 'Do the other thing.' }, 'owner', '2026-10-14T18:00:30.000Z');
+    pass(MIN);
+    expect((await source.discover({ due: true })).map((i) => i.body)).toEqual(['Do the other thing.']);
+    expect(count('listRepos')).toBe(1);
+  });
+
+  it("the hopper's own label write is no reason to list again", async () => {
+    const { gh, source, count, pass } = setup();
+    gh.createIssue({ repo: REPO, labels: ['hopper'] });
+    await source.discover({ due: true });
+    await source.report({ kind: 'claimed', job: { id: 'job-1', status: 'running', source: { source: 'github', key: `https://github.com/${REPO}/issues/1`, repo: REPO, number: 1, assignee: 'owner' } } as unknown as Job });
+    expect(gh.issue(REPO, 1).labels).toContain('hopper:claimed');
+    pass(MIN);
+    await source.discover({ due: true });
+    expect(count('listRepos')).toBe(1);
   });
 
   it('a change read that fails leaves the timed listing: the sync goes on', async () => {
@@ -114,7 +135,7 @@ describe('a repository one source could not list (issue #1125)', () => {
   it('is asked again each interval, though another source keeps the shared listing fresh', async () => {
     const listings = memoryListings();
     const clock = { at: Date.parse('2026-10-14T18:00:00.000Z') };
-    const a = setup({ listings, clock });
+    const a = setup({ listings, clock, repos: [REPO, 'owner/other'] });
     const b = setup({ listings, clock });
     a.gh.failRepo(REPO, 'Resource not accessible by integration');
     b.gh.createIssue({ repo: REPO, labels: ['hopper'] });
@@ -126,7 +147,7 @@ describe('a repository one source could not list (issue #1125)', () => {
     a.pass(15 * MIN);
     await b.source.discover({ due: true });
     expect((await a.source.discover({ due: true })).map((i) => i.number)).toEqual([1]);
-    expect(a.count('listRepos')).toBe(2);
+    expect(a.gh.calls.filter((c) => c.method === 'listRepos').map((c) => c.args[0])).toEqual([[REPO, 'owner/other'], [REPO, 'owner/other']]);
     expect(a.source.describe().repoErrors).toBeUndefined();
   });
 });

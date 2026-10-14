@@ -1,7 +1,7 @@
 // Issue, comment-read and label calls of the App adapter, each with an installation token for the
 // issue's repo. REST shapes mapped onto the GitHubApi port's types.
 
-import type { GitHubComment, GitHubIssue, IssueEvent, SubIssue } from '../api.ts';
+import { CHANGE_READ_PAGE, type GitHubComment, type GitHubIssue, type IssueChange, type IssueEvent, type SubIssue } from '../api.ts';
 import { paginate, splitRepo, statusOf } from './http.ts';
 import type { Request } from './http.ts';
 import type { PostedComment } from '../api.ts';
@@ -162,6 +162,21 @@ export async function removeLabels(req: Request, token: string, repo: string, nu
 
 export async function addAssignees(req: Request, token: string, repo: string, number: number, assignees: string[]): Promise<void> {
   await req('POST /repos/{owner}/{repo}/issues/{issue_number}/assignees', { ...splitRepo(repo), issue_number: number, assignees, headers: auth(token) });
+}
+
+/**
+ * A change read (issue #1125): `repo`'s issues and pull requests changed since `since`, newest change first, one page. The
+ * same `since` gives the same URL, so the rate limiter's ETag makes it a conditional request.
+ */
+export async function issuesChangedSince(req: Request, token: string, repo: string, since: string | undefined): Promise<IssueChange[]> {
+  const r = await req('GET /repos/{owner}/{repo}/issues', {
+    ...splitRepo(repo), state: 'all', sort: 'updated', direction: 'desc', per_page: CHANGE_READ_PAGE, ...(since ? { since } : {}), headers: auth(token),
+  });
+  return (r.data as RestIssue[]).map((i) => ({
+    number: i.number, kind: i.pull_request === undefined ? 'issue' : 'pull', state: i.state === 'closed' ? 'closed' : 'open', title: i.title,
+    labels: (i.labels ?? []).map((l) => (typeof l === 'string' ? l : l.name ?? '')),
+    assignees: (i.assignees ?? []).map((a) => a?.login ?? '').filter((l) => l !== ''), updatedAt: i.updated_at,
+  }));
 }
 
 /** `GET /issues?filter=assigned`: the user's open issues with `label`, across the repos the token reaches (issue #440). */

@@ -267,6 +267,14 @@ export interface GitHubApi {
    * `repoErrors`, never a throw. What intake reads (issue #985 part 2): never one REST listing per repository.
    */
   listRepos(repos: string[], labels: string[]): Promise<RepoListing>;
+  /**
+   * The issues and pull requests of `repo` changed since `since` (GitHub's `updatedAt`; undefined: any), newest change
+   * first, one page of at most CHANGE_READ_PAGE (issue #1125, a **change read**): `GET /repos/{owner}/{repo}/issues` with
+   * `state=all` and `since`, a conditional request, so an answer GitHub has not changed costs no call (304). Through the
+   * intake reserve, and never waits for the rate limit: a call that would wait is not made (GitHubRateLimited). Absent: not
+   * read, and intake waits for the timed listing.
+   */
+  issuesChangedSince?(repo: string, since: string | undefined): Promise<IssueChange[]>;
 
   // ---- GitHub App mode only (absent on the connected account's adapter) ----------------------------
 
@@ -289,6 +297,20 @@ export interface GitHubApi {
   baseMerge?(repo: string, pr: BaseMergeTarget): Promise<BaseMerge | undefined>;
   /** Every repo (owner/repo) the app is installed on, across installations: the allowlist. */
   listInstalledRepos?(): Promise<{ repo: string; installationId: number }[]>;
+}
+
+/** The most changes one change read answers (issue #1125): a full page may hold more, so it counts as a change. */
+export const CHANGE_READ_PAGE = 100;
+
+/** One issue or pull request a change read answered (issue #1125): what tells whether the listing cache still holds it, and its row if so. */
+export interface IssueChange {
+  number: number;
+  kind: 'issue' | 'pull';
+  state: 'open' | 'closed';
+  title: string;
+  labels: string[];
+  assignees: string[];
+  updatedAt: string;
 }
 
 export class GitHubApiError extends Error {

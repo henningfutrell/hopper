@@ -8,7 +8,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { verify } from 'node:crypto';
 import { buildState } from './fake-state.ts';
-import type { FakeGitHubOptions, FakeState, FakeTokenRecord } from './fake-state.ts';
+import type { FakeGitHubOptions, FakeRequestRecord, FakeState, FakeTokenRecord } from './fake-state.ts';
 import { routeJwt, routeToken } from './fake-routes.ts';
 import type { FakeCtx, FakeReply, FakeReq } from './fake-routes.ts';
 import { graphql } from './fake-graphql.ts';
@@ -67,7 +67,7 @@ export async function createFakeGitHubServer(o: FakeGitHubOptions): Promise<Fake
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const u = new URL(req.url ?? '/', ctx.baseUrl);
     const r: FakeReq = { method: req.method ?? 'GET', path: u.pathname, query: Object.fromEntries(u.searchParams), body: await readBody(req) };
-    const record = { method: r.method, path: r.path, query: r.query, auth: 'none' as 'jwt' | 'token' | 'none', ...(r.body === undefined ? {} : { body: r.body }) };
+    const record: FakeRequestRecord = { method: r.method, path: r.path, query: r.query, auth: 'none', ...(r.body === undefined ? {} : { body: r.body }) };
     state.requests.push(record);
 
     const failure = failures.get(`${r.method} ${r.path}`);
@@ -90,7 +90,13 @@ export async function createFakeGitHubServer(o: FakeGitHubOptions): Promise<Fake
     if (!token || Date.parse(token.expiresAt) <= Date.now()) return send(res, { status: 401, body: { message: 'Bad credentials' } });
     record.auth = 'token';
     r.token = token;
-    return send(res, r.method === 'POST' && r.path === '/graphql' ? graphql(ctx, r) : routeToken(ctx, r));
+    const reply = r.method === 'POST' && r.path === '/graphql' ? graphql(ctx, r) : routeToken(ctx, r);
+    // A conditional request whose ETag still holds: 304, no body, as GitHub answers it (and does not charge it).
+    if (reply.status === 200 && reply.headers?.etag !== undefined && req.headers['if-none-match'] === reply.headers.etag) {
+      record.notModified = true;
+      return send(res, { status: 304, headers: { etag: reply.headers.etag } });
+    }
+    return send(res, reply);
   };
 
   const server = createServer((req, res) => {

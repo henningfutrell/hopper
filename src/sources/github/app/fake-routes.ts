@@ -1,8 +1,8 @@
 // REST endpoints of the fake GitHub: app installations, token minting, installation repos,
-// issues (read), comments, assignment events, labels, a pull request's merge. Response shapes follow the GitHub REST API (the fields the adapter
+// issues (read; a repository's issue list with `since`, newest change first, and an ETag), comments, assignment events, labels, a pull request's merge. Response shapes follow the GitHub REST API (the fields the adapter
 // reads). Authentication is checked by fake-server.ts before a route runs.
 
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { FakeGitHubOptions, FakeIssue, FakeRepo, FakeState, FakeTokenRecord } from './fake-state.ts';
 import { endPull } from './fake-pull-end.ts';
 
@@ -11,6 +11,9 @@ export interface FakeCtx { state: FakeState; opts: FakeGitHubOptions; baseUrl: s
 export interface FakeReq { method: string; path: string; query: Record<string, string>; body: unknown; token?: FakeTokenRecord }
 
 const notFound: FakeReply = { status: 404, body: { message: 'Not Found' } };
+
+/** An answer's ETag: the same body, the same tag. */
+export const etagOf = (body: unknown): string => `"${createHash('sha1').update(JSON.stringify(body)).digest('hex')}"`;
 
 /** One page of `items` plus a Link header when more follow. */
 export function paginate<T>(ctx: FakeCtx, req: FakeReq, items: T[]): { items: T[]; headers: Record<string, string> } {
@@ -86,10 +89,13 @@ function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): 
   if (req.method === 'GET' && rest === '/issues') {
     const state = req.query.state ?? 'open';
     const want = (req.query.labels ?? '').split(',').filter(Boolean);
-    const list = [...repo.issues.values()].sort((a, b) => a.number - b.number)
-      .filter((i) => (state === 'all' || i.state === state) && want.every((l) => i.labels.includes(l)));
+    const since = req.query.since;
+    const byUpdate = req.query.sort === 'updated';
+    const list = [...repo.issues.values()].sort((a, b) => (byUpdate ? b.updatedAt.localeCompare(a.updatedAt) : a.number - b.number))
+      .filter((i) => (state === 'all' || i.state === state) && want.every((l) => i.labels.includes(l)) && (since === undefined || i.updatedAt >= since));
     const p = paginate(ctx, req, list.map((i) => restIssue(repo, i)));
-    return { status: 200, body: p.items, headers: p.headers };
+    // A list read is conditional, as on GitHub (issue #1125): its ETag, and a 304 for a request that names it (fake-server.ts).
+    return { status: 200, body: p.items, headers: { ...p.headers, etag: etagOf(p.items) } };
   }
   if (req.method === 'POST' && rest === '/labels') {
     const name = String(body.name ?? '');
