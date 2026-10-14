@@ -249,6 +249,14 @@ describe('the survey a sweep asks of a machine (issue #410)', () => {
     expect(found!.scratch.find((d) => d.path === scratch)!.ageMs).toBeLessThan(60_000);
   });
 
+  it('names each work tree whose scratch area is there (issue #1120), so a kept job\'s dir missing from it is known gone', () => {
+    const work = join(root, 'work');
+    const bare = join(root, 'bare');
+    mkdirSync(bare);
+    const found = readSurvey(survey(work, bare, join(root, 'nowhere')));
+    expect(found?.roots).toEqual([work]);
+  });
+
   it('lists each job worktree in the work trees\' workspace with its age (issue #1103), so one whose scratch dir is gone is swept too', () => {
     const work = join(root, 'work');
     const tree = join(work, 'workspace', 'worktrees', `app-${OTHER}`);
