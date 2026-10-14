@@ -319,6 +319,11 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
         pulls.push(pull);
         return { status: 201, body: restPull(pull) };
       }
+      // The open pull requests, by `head` (`owner:branch`) and `base` when asked (issue #1147: the shrink guard's base).
+      if (r.method === 'GET' && rest === 'pulls') {
+        const head = r.query.head?.split(':').at(-1);
+        return { status: 200, body: pageOf(pulls.filter((p) => p.repo === repo && (!head || p.head.split(':').at(-1) === head) && (!r.query.base || p.base === r.query.base)), r.query).map(restPull) };
+      }
       const pm = /^pulls\/(\d+)$/.exec(rest);
       const pull = pm ? pulls.find((p) => p.repo === repo && p.number === Number(pm[1])) : undefined;
       if (r.method === 'GET' && pm) return pull ? { status: 200, body: restPull(pull) } : { status: 404, body: { message: 'Not Found' } };

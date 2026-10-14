@@ -25,6 +25,11 @@
 //     And a job that ends with its last push refused ends failed, not done
 //   Scenario: the pull request's own change empties the file
 //     Then the rebase that keeps it empty goes through
+//   Scenario: a rebase onto main, the pull request's base, while main shrank a file dev still has whole (issue #1147)
+//     Given a repository whose default branch is dev, and a pull request into main
+//     Then the guard compares the push with main: the rebase goes through, and a push that empties the file is refused
+//   Scenario: a branch with no pull request, in a repository with landing batches (issue #1147)
+//     Then the guard compares the push with the landing branch, main: a push that empties the file is refused, the rebase goes through
 //   Scenario: an admin sets the guard's percent (Settings → Shrink guard)
 //     Then a push that takes more than that percent of a file's lines is refused, and the change is recorded
 import { execFile } from 'node:child_process';
@@ -361,5 +366,60 @@ describe('the shrink guard (issue #1096)', () => {
     const t = await start();
     const r = await branchThenDevMoves(t, '');
     expect(await resolve(r, '')).toMatchObject({ code: 0 });
+  });
+
+  /**
+   * main from dev, with a 200-line design; the job's branch issue-7 off main edits notes.md; then dev moves on, main takes
+   * dev and shrinks the design to 100 lines on purpose, which dev does not have.
+   */
+  async function branchThenMainShrinks(t: Started) {
+    await seedCommit(t, 'octo/tools', 'dev', { 'docs/design.md': linesOf(200) });
+    const bare = join(t.gitRoot, 'octo/tools.git');
+    await run('git', ['--git-dir', bare, 'branch', 'main', 'dev']);
+    const r = await running(t);
+    expect((await r.git(['clone', '--quiet', '--branch', 'main', `${t.github.url}/octo/tools.git`, 'tools'])).code).toBe(0);
+    const work = join(r.home, 'tools');
+    writeFileSync(join(work, 'notes.md'), 'notes\n');
+    await r.git(['add', 'notes.md'], work);
+    await r.git(['commit', '--quiet', '-m', 'Add notes'], work);
+    expect((await r.git(['push', '--quiet', 'origin', 'HEAD:refs/heads/issue-7'], work)).code).toBe(0);
+    await seedCommit(t, 'octo/tools', 'dev', { 'other.md': 'other\n' });
+    await run('git', ['--git-dir', bare, 'update-ref', 'refs/heads/main', 'refs/heads/dev']);
+    await seedCommit(t, 'octo/tools', 'main', { 'docs/design.md': linesOf(100) });
+    expect((await r.git(['fetch', '--quiet', 'origin'], work)).code).toBe(0);
+    /** issue-7 rebased onto main's tip, `design` as docs/design.md, pushed with a lease. */
+    const rebase = async (design = linesOf(100)) => {
+      await r.git(['checkout', '--quiet', '-B', 'tended', 'origin/main'], work);
+      writeFileSync(join(work, 'notes.md'), 'notes\n');
+      writeFileSync(join(work, 'docs/design.md'), design);
+      await r.git(['add', '.'], work);
+      await r.git(['commit', '--quiet', '-m', 'Add notes'], work);
+      return r.git(['push', '--force-with-lease=issue-7:origin/issue-7', 'origin', 'HEAD:refs/heads/issue-7'], work);
+    };
+    return { ...r, work, rebase };
+  }
+
+  it('compares a rebase with the pull request\'s base, not the default branch (issue #1147)', async () => {
+    const t = await start();
+    const r = await branchThenMainShrinks(t);
+    const opened = await fetch(`${t.github.url}/api/v3/repos/octo/tools/pulls`, {
+      method: 'POST', headers: { authorization: 'token test-account-token', 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Add notes', body: 'Closes #7', head: 'issue-7', base: 'main' }),
+    });
+    expect(opened.status).toBe(201);
+
+    const emptied = await r.rebase('');
+    expect(emptied.code).not.toBe(0);
+    expect(emptied.stderr).toContain('docs/design.md (100 lines on main, 0 after)');
+    expect(await r.rebase()).toMatchObject({ code: 0 });
+  });
+
+  it('compares a branch with no pull request with the landing branch (issue #1147)', async () => {
+    const t = await start();
+    const token = await t.app.login();
+    expect((await t.app.ui('/ui/api/landing-batches', { repos: { 'octo/tools': { tested: 'dev' } } }, { token })).status).toBe(200);
+    const r = await branchThenMainShrinks(t);
+    expect((await r.rebase('')).stderr).toContain('docs/design.md (100 lines on main, 0 after)');
+    expect(await r.rebase()).toMatchObject({ code: 0 });
   });
 });
