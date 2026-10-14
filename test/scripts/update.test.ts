@@ -40,7 +40,9 @@ case "$*" in
   "ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=postgres") [ -n "$STUB_STACK" ] && echo 0123456789abcdef ;;
   "ps -q --filter label=com.docker.compose.project=hopper --filter label=com.docker.compose.service=hopper") echo ${HOPPER_ID} ;;
   "image inspect --format {{.Id}} "*) echo ${NEW_ID} ;;
-  "inspect --format {{.Image}} "*) echo "\${STUB_RUNNING_IMAGE:-${NEW_ID}}" ;;
+  "inspect --format {{.Image}} "*) if grep -q 'up -d' "$STUB_LOG"; then echo "\${STUB_RUNNING_IMAGE:-${NEW_ID}}"; else echo "\${STUB_BEFORE_IMAGE:-}"; fi ;;
+  "images -q --no-trunc --filter label=org.opencontainers.image.title=hopper") printf '%s\\n' \${STUB_IMAGES:-} ;;
+  "rmi "*) [ "$2" != "\${STUB_IN_USE:-}" ]; exit $? ;;
   "inspect --format {{.State.Running}} "*) echo "\${STUB_STATE:-true}" ;;
   "logs "*) echo 'the last log line' ;;
   "exec ${HOPPER_ID} node "*) exit "\${STUB_HEALTH:-0}" ;;
@@ -111,6 +113,22 @@ describe('scripts/update.sh (issue #1104)', () => {
     expect(r.read('compose.yaml.bak')).toContain(`\${HOPPER_IMAGE:-${IMAGE}}`);
     expect(r.out).toMatch(/hopper update: done: the hopper runs ghcr\.io\/henningfutrell\/hopper:beta \(bbbbbbbbbbbb\), it is healthy, its master key is given \(fingerprint ffffffffffffffff\)/);
     expect(r.out).not.toContain(KEY);
+  });
+
+  it('removes the older hopper images once the update is done, and keeps the one it runs and the one before (issue #1120)', () => {
+    const [prev, old, used] = ['d'.repeat(64), 'e'.repeat(64), '1'.repeat(64)] as const;
+    const images = [`sha256:${NEW_ID}`, `sha256:${prev}`, `sha256:${old}`, `sha256:${used}`, `sha256:${old}`].join(' ');
+    const r = update({ masterKey: KEY, stack: 'podman-compose', env: { STUB_IMAGES: images, STUB_BEFORE_IMAGE: `sha256:${prev}`, STUB_IN_USE: used } });
+    expect(r.status, r.out).toBe(0);
+    expect(r.calls.filter((c) => c.startsWith('podman rmi '))).toEqual([`podman rmi ${old} | HOPPER_IMAGE=${IMAGE}`, `podman rmi ${used} | HOPPER_IMAGE=${IMAGE}`]);
+    expect(r.out).toMatch(/removed 1 older hopper image; kept the one it runs \(bbbbbbbbbbbb\) and the one before \(dddddddddddd\)/);
+    expect(r.out).not.toMatch(/image prune/);
+  });
+
+  it('removes no image when the update fails', () => {
+    const r = update({ masterKey: KEY, stack: 'podman-compose', env: { STUB_IMAGES: `sha256:${'e'.repeat(64)}`, STUB_DRIFT: '3' } });
+    expect(r.status).not.toBe(0);
+    expect(r.calls.filter((c) => c.startsWith('podman rmi '))).toEqual([]);
   });
 
   it('updates a stack docker-compose started through podman compose, never with podman-compose', () => {

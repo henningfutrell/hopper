@@ -896,7 +896,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
     removed. Work kept that the sweep then removes is recorded as `job.work_removed { paths }`; work it
     keeps the first time, as `job.work_kept`. A job worktree `<name>-<job id>` of an ended job is reaped
     the same way, by the job's scratch dir in that work tree, also once that dir is gone: no worktree
-    outlives its job.
+    outlives its job;
+  - kept work that is gone (issue #1120, "Hopper's own disk use"): no record of kept work outlives its folder.
   A job id the hopper does not know is never touched: it may be another hopper's, or a test's. A machine
   offline at startup is swept once it is online. Each reap is one log line.
 - **Each job its own git worktree** (issue #379). One work tree serves every job given it, so jobs
@@ -11189,6 +11190,8 @@ Now Failures lists it, and each has an action that moves it.
 - **Discarded once done** (issue #1105). Kept work of a job whose work item is `done`, as the ledger has it, waits on
   nobody: the sweep reaps its scratch dir with `discard`, as Discard does, and records `job.work_removed` with
   `discarded` and no person. A client older than the discard keeps it, and the sweep records nothing new.
+- **Gone from disk** (issue #1120, "Hopper's own disk use"). Kept work whose scratch dir and job worktree a person or a
+  cleanup outside the hopper removed leaves the list at the next sweep: `job.work_removed` with `gone`.
 
 Done since, in issue #1010: the Stuck list ("Stuck
 work"), with counts by cause and one bulk action per cause; a hand-off card recommends only an action the hopper takes ("Only an action the
@@ -18366,3 +18369,38 @@ tree. Two repositories with one name in one work tree share `workspace/<name>`: 
 Tests: `test/herdr/job-worktree.test.ts`, `job-worktree-reap.test.ts`, `job-worktree-other-repository.test.ts`,
 `job-worktree-lock.test.ts` (real git and sh), `test/client/reap.test.ts` (the survey's trees), `test/engine/sweep.test.ts`
 (trees planned), `test/client/checkpoint.test.ts`, `test/domain/kept-work.test.ts`, `test/herdr/shared-deps.test.ts`.
+
+### Hopper's own disk use (issue #1120, 2026-10-14)
+
+One host held about 880 GB of hopper leftovers: job checkouts, unused images, orphaned volumes, exited job containers,
+old database backups, update logs, and kept work whose records named folders a person had removed. Nothing removed them.
+The issue asks that every resource the hopper makes is recorded with its owner and removed when the owner ends; that a
+periodic reconcile removes orphans and old images, with a backup retention; that Machines shows the hopper's disk use per
+host against a budget; and that kept-work records are reconciled against disk. It ships in parts.
+
+**Part 1: kept work reconciled against disk** (`src/engine/sweep.ts` `goneKept`, pure; `src/client/reap.ts`).
+- **The survey names its work trees.** For each work tree asked about whose scratch area (`.hopper-scratch`) is there, it
+  prints `hopper-root <path>` (`Survey.roots`). A work tree that is not there, or has no scratch area (an unmounted disk, a
+  path not made yet), is not named, so nothing in it counts as gone.
+- **Gone is resolved.** On each pass, kept work (`job.work_kept`, newest work event) of an ended job that ran on the
+  machine swept, whose scratch dir is in a named work tree, and which the survey found neither as a scratch dir nor as a job
+  worktree (`workspace/worktrees/<name>-<job id>`), is recorded as `job.work_removed` with `gone` and the scratch dir. Nothing
+  is removed: the folder is already gone. One log line each. The work-item ledger drops the job from its item's kept work,
+  so Failures and its badge stop listing it.
+- **Not resolved:** a parked or live job's (its work tree is its own while it may go on), another machine's, and any while
+  the machine's client is older than this (it names no work tree).
+- **Should it come back** (a disk mounted again), the sweep finds the scratch dir; once it is `scratchMaxAgeHours` old it
+  reaps it with the reap's rule, and work not pushed is kept again as `job.work_kept`.
+
+**Part 1: older images go with the update** (`scripts/update.sh` `prune`, docs/deploy.md "Update" step 7). Once every
+check of the update passed, it removes each image labelled `org.opencontainers.image.title=hopper` but the one the hopper
+runs and the one it ran before (read from the hopper's container before the stack stops), so a person can still go back.
+`rmi` without force: an image a container uses, or with more than one name, stays. The update keeps one database backup
+(`hopper-backup.dump`, replaced each time), so it adds no backups. The manual `image prune` command stays valid.
+
+**Left for later parts:** a record of each resource the hopper makes (job containers, volumes, logs, bundles) with its
+owner, removed as an event when the owner ends; a periodic reconcile of orphans and of images the hopper's boxes left, with a
+retention for backups and update logs; and the hopper's disk use per host on Machines, with a budget and an alert.
+
+**Verification:** `test/engine/sweep.test.ts` ("kept work whose folder is gone"), `test/client/survey-roots.test.ts` (the
+survey for real), `test/scripts/update.test.ts` (the older images removed, none on a failed update).

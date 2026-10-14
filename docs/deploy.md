@@ -309,6 +309,9 @@ is only in the hopper's environment, given at launch.
        stops: a wrong master key stops it), has its master key (`hopper master-key status` is not `missing`), and the
        stack has no drift (`hopper update drift` exits 0). Then it says `hopper update: done: …` with the image and the
        key's fingerprint, and exits 0. When a check fails, it says which and exits 1.
+    7. **Removes the older hopper images** (issue #1120), once every check passed: each image labelled
+       `org.opencontainers.image.title=hopper` but the one the hopper runs and the one it ran before the update (to go
+       back to). An image a container still uses, or with more than one name, stays. It says how many it removed.
 
     **Use the compose tool that started the stack** (issue #1063). docker-compose does not see a stack podman-compose
     started, and podman-compose does not see one docker-compose started: each finds containers by its own labels. Both
@@ -363,9 +366,8 @@ is only in the hopper's environment, given at launch.
     a LAN install's `0.0.0.0` as `${HOPPER_BIND:-0.0.0.0}` in `compose.yaml`, prints its own services and mounts (a
     container socket for boxes, say) to add to `compose.override.yaml`, adds OpenFGA, and keeps the old file as
     `compose.yaml.bak`. Until then the stack banner names the gaps.
-  - **Optionally, remove the image it replaced:** `podman image prune -f --filter label=org.opencontainers.image.title=hopper`
-    (`docker image prune …` the same). It removes only untagged hopper images, so repeated upgrades do not
-    pile up images.
+  - **Older images go with the update** (issue #1120, step 7 above): repeated upgrades do not pile up images. By hand,
+    `podman image prune -f --filter label=org.opencontainers.image.title=hopper` removes the untagged ones.
   - **When.** Recreating the container is a restart. A job whose machine reattaches (a herdr pane on an
     attached machine) keeps running through restart recovery (issue #368); a job a restart would lose (a
     restart blocker) ends. The notice shows how many there are, the same count the host updater waits on:

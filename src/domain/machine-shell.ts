@@ -19,6 +19,11 @@ export interface Survey {
   scratch: { jobId: string; path: string; ageMs: number }[];
   /** Each job worktree `<work tree>/workspace/worktrees/<name>-<job id>` there (issue #1103); absent, none. */
   trees?: { path: string; ageMs: number }[];
+  /**
+   * Each work tree asked about whose scratch area (`.hopper-scratch`) is there (issue #1120): a kept job's scratch dir
+   * missing from one of these is gone. Absent (a client older than this), none is known.
+   */
+  roots?: string[];
 }
 
 /**

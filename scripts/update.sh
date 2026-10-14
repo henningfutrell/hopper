@@ -14,7 +14,9 @@
 #      (`hopper update carry`; the old one stays as compose.yaml.bak), pulls, stops the stack and starts it on the image,
 #      so every container is made again (when it does not start: back to the old compose.yaml and stack);
 #   4. checks that the hopper runs the image pulled, answers /api/health, has its master key and that the stack has no
-#      drift (`hopper update drift`), and says the result. It exits 1 when one of these fails.
+#      drift (`hopper update drift`), and says the result. It exits 1 when one of these fails;
+#   5. when all of these pass, removes the older hopper images (issue #1120): it keeps the one it runs and the one it ran
+#      before, to go back to. An image a container still uses is not removed.
 #
 #   HOPPER_UPDATE_WAIT  seconds to wait for the hopper's health (default: 180)
 #
@@ -72,6 +74,12 @@ main() {
   fi
   say "compose: ${compose[*]}"
 
+  # The image the hopper runs now: after the update, the one before, kept to go back to.
+  local previous=''
+  local running_id; running_id="$("$runtime" ps -q --filter label=com.docker.compose.project=$project --filter label=com.docker.compose.service=hopper 2>/dev/null | head -n 1 || true)"
+  [ -z "$running_id" ] || previous="$("$runtime" inspect --format '{{.Image}}' "$running_id" 2>/dev/null || true)"
+  previous="${previous#sha256:}"
+
   if [ -n "$("$runtime" ps -q --filter "label=com.docker.compose.project=$project" --filter label=com.docker.compose.service=postgres 2>/dev/null || true)" ]; then
     say 'back up the database: hopper-backup.dump'
     "${compose[@]}" exec -T postgres pg_dump -U hopper -d hopper -Fc </dev/null >hopper-backup.dump.next || fail 'the backup of the database failed: the update stops, and nothing changed'
@@ -110,6 +118,24 @@ main() {
   fi
 
   check "$runtime" "$image" "${HOPPER_UPDATE_WAIT:-180}"
+  prune "$runtime" "$image" "$previous"
+}
+
+# The older hopper images (issue #1120): every one but the one the hopper runs and the one it ran before. An image a
+# container still uses, or that has more than one name, is not removed and not counted.
+prune() {
+  local runtime=$1 image=$2 previous=$3
+  local want; want="$("$runtime" image inspect --format '{{.Id}}' "$image")"; want="${want#sha256:}"
+  local id seen=' ' removed=0
+  for id in $("$runtime" images -q --no-trunc --filter label=org.opencontainers.image.title=hopper 2>/dev/null || true); do
+    id="${id#sha256:}"
+    case "$seen" in *" $id "*) continue ;; esac
+    seen="$seen$id "
+    [ "$id" = "$want" ] || [ "$id" = "$previous" ] && continue
+    "$runtime" rmi "$id" >/dev/null 2>&1 && removed=$((removed + 1))
+  done
+  local images=images; [ "$removed" = 1 ] && images=image
+  say "removed $removed older hopper $images; kept the one it runs (${want:0:12})${previous:+ and the one before (${previous:0:12})}"
 }
 
 # The hopper after the recreate: the image pulled, healthy, with its master key, the stack as its compose file says.
@@ -144,7 +170,7 @@ check() {
   local drift
   drift="$("$runtime" exec "$id" hopper update drift </dev/null)" \
     || fail "the stack differs from the compose file of this version: $drift"
-  say "done: the hopper runs $image (${want:0:12}), it is healthy, its master key is given (fingerprint ${fingerprint:0:16}), and the stack is whole. Optional: $runtime image prune -f --filter label=org.opencontainers.image.title=hopper"
+  say "done: the hopper runs $image (${want:0:12}), it is healthy, its master key is given (fingerprint ${fingerprint:0:16}), and the stack is whole"
 }
 
 say() { printf 'hopper update: %s\n' "$*" >&2; }

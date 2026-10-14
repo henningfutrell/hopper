@@ -13,6 +13,10 @@
       "type": "boolean",
       "const": true
     },
+    "gone": {
+      "type": "boolean",
+      "const": true
+    },
     "person": {
       "type": "string"
     },

@@ -150,12 +150,7 @@ You update a container install. The hopper never updates its own container, and 
    - pulls, stops the stack and starts it on the new image. Your data stays. When the new stack does not start, it puts the old file back and starts the old stack;
    - checks that the hopper runs the new image, answers its health check, has its master key, and that the stack has no drift.
 
-   It ends with `hopper update: done:` when all of this is true. Else it says what failed.
-5. Optional: remove the image it replaced:
-
-   ```sh
-   podman image prune -f --filter label=org.opencontainers.image.title=hopper
-   ```
+   It ends with `hopper update: done:` when all of this is true. Else it says what failed. Then it removes the older hopper images. It keeps the image it runs and the image it ran before, so you can go back.
 
 `hopper update podman`, `hopper update docker` and `hopper update podman-compose` made an update script before. They are removed. Run them now and they print the update command.
 
