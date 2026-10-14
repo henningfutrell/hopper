@@ -269,6 +269,24 @@ as <a href="#before">step 1</a> says, sign in to <code>claude</code>, and run th
 <code>/mnt/c</code>: it is much faster.</p>
 </details>
 
+<h3 id="windows-cli">The hopper CLI from Windows</h3>
+<p>Run the <code>hopper</code> CLI from PowerShell or the Command Prompt. <code>hopper.cmd</code> runs it in the hopper's
+container in WSL, with the credentials the CLI already has there. Windows keeps no token.</p>
+<ol class="steps">
+<li><p>In PowerShell, download <a href="https://henningfutrell.github.io/hopper/hopper.cmd"><code>hopper.cmd</code></a> to a folder of its own:</p>
+<div class="cmd"><pre>New-Item -ItemType Directory -Force &quot;$env:LOCALAPPDATA\hopper&quot; | Out-Null
+Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.cmd -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.cmd&quot;</pre><button type="button" data-copy="New-Item -ItemType Directory -Force &quot;$env:LOCALAPPDATA\hopper&quot; | Out-Null; Invoke-WebRequest https://henningfutrell.github.io/hopper/hopper.cmd -OutFile &quot;$env:LOCALAPPDATA\hopper\hopper.cmd&quot;">Copy</button></div></li>
+<li><p>Add that folder to your PATH, then open a new PowerShell window:</p>
+<div class="cmd"><pre>[Environment]::SetEnvironmentVariable(&#x27;Path&#x27;, [Environment]::GetEnvironmentVariable(&#x27;Path&#x27;, &#x27;User&#x27;) + &quot;;$env:LOCALAPPDATA\hopper&quot;, &#x27;User&#x27;)</pre><button type="button" data-copy="[Environment]::SetEnvironmentVariable(&#x27;Path&#x27;, [Environment]::GetEnvironmentVariable(&#x27;Path&#x27;, &#x27;User&#x27;) + &quot;;$env:LOCALAPPDATA\hopper&quot;, &#x27;User&#x27;)">Copy</button></div></li>
+<li><p>Run a command, for example:</p>
+<div class="cmd"><pre>hopper help</pre><button type="button" data-copy="hopper help">Copy</button></div></li>
+</ol>
+<p class="note">If the hopper runs in a WSL distro that is not your default one, set <code>HOPPER_WSL_DISTRO</code> to
+its name (<code>wsl --list</code> shows the names). If you changed the compose project name, set
+<code>HOPPER_COMPOSE_PROJECT</code>. The wrapper finds the container by its compose labels, not by its name. For a
+terminal the CLI can use interactively, use <a href="https://henningfutrell.github.io/hopper/hopper.ps1"><code>hopper.ps1</code></a>
+instead: it does the same in PowerShell.</p>
+
 <h3 id="windows-machine">A Windows computer as a machine</h3>
 <p>hopper is not supported natively on Windows. A client that runs on Windows itself (Node.js for Windows, Git Bash)
 cannot join: hopper refuses it with <code>Windows isn't supported natively. Run the client inside WSL.</code> Run the

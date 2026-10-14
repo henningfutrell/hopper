@@ -2,3 +2,6 @@
 # branch's first, with no job: the migration lists, which only grow. Read by the hopper only; git's own merge ignores it.
 src/store/migrations-recent.ts hopper-merge=additions
 src/store/tenant-migrations-recent.ts hopper-merge=additions
+# The hopper CLI for Windows (issue #712): cmd and PowerShell read these files with Windows line endings.
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
