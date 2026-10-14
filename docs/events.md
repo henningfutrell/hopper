@@ -5831,3 +5831,99 @@ Version 1 (`docs/schemas/landing_batch.pending.v1.json`). The pull requests merg
   ]
 }
 ```
+
+## `landing_batch.back_merge_opened`
+
+Version 1 (`docs/schemas/landing_batch.back_merge_opened.v1.json`). A batch run (`batch`) had merge conflicts with the tested branch, so the hopper merged the `tested` branch into a branch at the landing branch's `tip` (issue #1073 part 4, design.md "Landing batches"): `branch`, its merge commit `merge` by GitHub's own merge, and a pull request of it into the `landing` branch (`pullRequest`, `url`). The hopper merges it once GitHub lets it.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `landing` | string | yes |
+| `tested` | string | yes |
+| `tip` | string | yes |
+| `batch` | integer | yes |
+| `branch` | string | yes |
+| `merge` | string | yes |
+| `pullRequest` | integer | yes |
+| `url` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "landing": "main",
+  "tested": "dev",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "batch": 1101,
+  "branch": "hopper-batch/back-merge-0123456789ab",
+  "merge": "abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+  "pullRequest": 1106,
+  "url": "https://github.com/owner/repo/pull/1106"
+}
+```
+
+## `landing_batch.back_merged`
+
+Version 1 (`docs/schemas/landing_batch.back_merged.v1.json`). The back-merge's pull request merged into the landing branch (issue #1073 part 4): `merge` its merge commit, when known. The next batch run starts at once.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tip` | string | yes |
+| `pullRequest` | integer | yes |
+| `url` | string | yes |
+| `merge` | string | no |
+
+```json
+{
+  "repo": "owner/repo",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "pullRequest": 1106,
+  "url": "https://github.com/owner/repo/pull/1106",
+  "merge": "bcdefabcdefabcdefabcdefabcdefabcdefabcde"
+}
+```
+
+## `landing_batch.back_merge_failed`
+
+Version 1 (`docs/schemas/landing_batch.back_merge_failed.v1.json`). No back-merge after the batch run (`batch`) at `tip` had merge conflicts (issue #1073 part 4): `reason`, and `conflict` true when GitHub cannot merge the tested branch into the landing branch (then an issue is filed), false when there was nothing to merge or the back-merge (`pullRequest`, `url`) was closed without a merge.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tip` | string | yes |
+| `batch` | integer | no |
+| `conflict` | boolean | yes |
+| `reason` | string | yes |
+| `pullRequest` | integer | no |
+| `url` | string | no |
+
+```json
+{
+  "repo": "owner/repo",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "batch": 1101,
+  "conflict": true,
+  "reason": "dev has changes that conflict with main at 0123456789ab: GitHub cannot merge them"
+}
+```
+
+## `landing_batch.back_merge_issue_filed`
+
+Version 1 (`docs/schemas/landing_batch.back_merge_issue_filed.v1.json`). The hopper filed an issue for merge conflicts it cannot merge (issue #1073 part 4): `issue`, `url`, on the repository, with the hopper label and assigned to the user, so Intake takes it. One at a time: a later conflict files none until a back-merge or a batch run is promoted.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `tip` | string | yes |
+| `issue` | integer | yes |
+| `url` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "issue": 1107,
+  "url": "https://github.com/owner/repo/issues/1107"
+}
+```

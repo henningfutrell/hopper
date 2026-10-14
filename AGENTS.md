@@ -132,7 +132,11 @@ while the drift lasts, never filing a second. With **landing batches** on for a 
 "Landing batches"), a red batch's **culprit** — the first change a bisect within the batch finds failing — is reverted from the
 landing branch through GitHub's own revert of its pull request, which the hopper merges, and one **fix issue** is filed through
 the user's own connection — the hopper label, assigned to their connected account, so Intake takes it —, its text fixed but for
-the failing checks' output, masked; a `landing_batch.fix_filed` event keeps it from being filed twice. A job's own request through the GitHub proxy (issue #563) is
+the failing checks' output, masked; a `landing_batch.fix_filed` event keeps it from being filed twice. A batch run with merge
+conflicts with the tested branch gets a **back-merge** (issue #1073 part 4): the tested branch merged into a branch at the
+landing tip by GitHub's own merge, and a pull request of it into the landing branch, its text fixed, which the hopper merges;
+a conflict GitHub cannot merge files one issue the same way as a fix issue, its text fixed, and no second while it stands
+(`landing_batch.back_merge_issue_filed`). A job's own request through the GitHub proxy (issue #563) is
 the job's act, as when it pushes: its text is the job's, under the publishing rule; so are, with the user's Contribution on
 (issue #429), the fork of a repository its user cannot push to and the pull request it opens there from that fork; an issue filed that way ends with the
 hopper's note naming the job and the request by id only, and gets no label or assignee. The default job rules carry the rule (`src/job-rules/` `DEFAULT_JOB_RULES`); the job rules are the owner's to edit (issue #172).

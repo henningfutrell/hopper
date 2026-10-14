@@ -9,6 +9,8 @@
 //   Scenario: a red batch of one direct commit: the culprit at once, no revert, a fix issue that says why
 //   Scenario: a bisect run with no check in time ends the bisect, with no culprit and no issue
 //   Scenario: a red batch with no failing check (merge conflicts) starts no bisect
+//   Scenario: merge conflicts: the tested branch is merged into the landing branch, and the batch runs again at once (part 4)
+//   Scenario: a real conflict: one issue is filed, so Intake takes it; a later conflict files none (part 4)
 import { describe, expect, it } from 'vitest';
 import type { LandingBatchSettings } from '../../src/domain/landing-batches.ts';
 import type { DomainEvent, NewEvent } from '../../src/domain/types.ts';
@@ -30,13 +32,15 @@ interface World {
   issues: { title: string; body: string; labels: string[]; assignees: string[] }[];
   calls: string[];
   next: number;
+  /** What GitHub's merge of the tested branch into a back-merge branch answers. */
+  backMerge: 'merged' | 'conflict' | 'nothing';
 }
 
 const merged = (n: number, sha: string, body = ''): [number, Pull] =>
   [n, { head: `issue-${n}`, base: 'main', state: 'closed', merged: true, mergeable: null, url: `https://github.test/${REPO}/pull/${n}`, headSha: `h${n}`, body, mergeSha: sha }];
 
 function world(commits: Commit[], pulls: [number, Pull][] = []): World {
-  return { tip: commits.at(-1)!.sha, commits, pulls: new Map(pulls), checks: new Map(), logs: new Map(), issues: [], calls: [], next: 100 };
+  return { tip: commits.at(-1)!.sha, commits, pulls: new Map(pulls), checks: new Map(), logs: new Map(), issues: [], calls: [], next: 100, backMerge: 'merged' };
 }
 
 function fake(w: World): LandingBatchGitHub {
@@ -48,7 +52,8 @@ function fake(w: World): LandingBatchGitHub {
     deleteBranch: async (_repo, name) => { w.calls.push(`delete ${name}`); },
     openPullRequest: async (_repo, p) => {
       const n = w.next++;
-      const sha = p.head.startsWith('hopper-batch/bisect-') ? w.commits.find((c) => p.head.endsWith(c.sha.slice(0, 12)))!.sha : w.tip;
+      const sha = p.head.startsWith('hopper-batch/bisect-') ? w.commits.find((c) => p.head.endsWith(c.sha.slice(0, 12)))!.sha
+        : p.head.startsWith('hopper-batch/back-merge-') ? 'backmerge0000000' : w.tip;
       w.pulls.set(n, { head: p.head, base: p.base, state: 'open', merged: false, mergeable: true, url: url(n), headSha: sha, body: p.body });
       w.calls.push(`open #${n} ${p.head} -> ${p.base}`);
       return { number: n, url: url(n) };
@@ -72,6 +77,10 @@ function fake(w: World): LandingBatchGitHub {
       return { sha: `m${n}` };
     },
     close: async (_repo, n) => { w.pulls.get(n)!.state = 'closed'; w.calls.push(`close #${n}`); },
+    mergeInto: async (_repo, base, head) => {
+      w.calls.push(`merge ${head} into ${base}: ${w.backMerge}`);
+      return w.backMerge === 'merged' ? { kind: 'merged', sha: 'backmerge0000000' } : { kind: w.backMerge };
+    },
     openPullRequests: async () => [],
     retarget: async () => {},
     pullRequestOf: async (_repo, sha) => [...w.pulls.entries()].find(([, p]) => p.merged && p.mergeSha === sha)?.[0],
@@ -203,6 +212,57 @@ describe('the batch runner on a red batch (issue #1073)', () => {
     await r.pass();
     w.pulls.get(100)!.mergeable = false;
     await r.pass();
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed']);
+    // A back-merge in its place (part 4).
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_opened']);
+  });
+
+  it('merge conflicts: the tested branch is merged into the landing branch, and the batch runs again at once', async () => {
+    const w = world([{ sha: P1, parents: ['base', 'h11'], message: 'Merge pull request #11 from owner/issue-1' }, { sha: P2, parents: [P1, 'h12'], message: 'Merge pull request #12 from owner/issue-5' }]);
+    const clock = { now: new Date('2026-10-14T12:00:00.000Z') };
+    const { r, events } = runner(w, clock);
+    await r.pass();
+    w.pulls.get(100)!.mergeable = false;
+    await r.pass(); // red: closed; dev merged into a branch at the tip, and a pull request of it into main
+    const branch = `hopper-batch/back-merge-${P2.slice(0, 12)}`;
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_opened']);
+    expect(w.calls.slice(-3)).toEqual([`branch ${branch} ${P2}`, `merge dev into ${branch}: merged`, `open #101 ${branch} -> main`]);
+    expect(events.at(-1)!.data).toMatchObject({ tip: P2, batch: 100, branch, merge: 'backmerge0000000', pullRequest: 101 });
+    expect(w.pulls.get(101)!.body).toContain('#100');
+
+    await r.pass(); // merged into main; the next batch run starts at once
+    expect(w.calls).toContain('merge #101 backmerge0000000');
+    expect(w.calls).toContain(`delete ${branch}`);
+    expect(events.map((e) => e.type).slice(-2)).toEqual(['landing_batch.back_merged', 'landing_batch.started']);
+    expect(events.at(-1)!.data).toMatchObject({ why: 'dev was merged into the landing branch', tip: w.tip });
+    w.checks.set(w.tip, pass);
+    await r.pass();
+    expect(events.at(-1)!.type).toBe('landing_batch.promoted');
+    expect(w.issues).toEqual([]);
+  });
+
+  it('a real conflict: one issue is filed, so Intake takes it; a later conflict files none', async () => {
+    const w = world([{ sha: P1, parents: ['base', 'h11'], message: 'Merge pull request #11 from owner/issue-1' }]);
+    w.backMerge = 'conflict';
+    const clock = { now: new Date('2026-10-14T12:00:00.000Z') };
+    const { r, events } = runner(w, clock);
+    await r.pass();
+    w.pulls.get(100)!.mergeable = false;
+    await r.pass();
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_failed', 'landing_batch.back_merge_issue_filed']);
+    expect(events[2]!.data).toMatchObject({ tip: P1, batch: 100, conflict: true });
+    expect(w.calls).toContain(`delete hopper-batch/back-merge-${P1.slice(0, 12)}`);
+    expect(w.issues).toHaveLength(1);
+    expect(w.issues[0]).toMatchObject({ title: 'Resolve the merge conflicts of dev with main', labels: ['hopper'], assignees: ['me'] });
+    expect(r.view().repos[0]!.state.backMergeIssue).toMatchObject({ issue: 901 });
+
+    // A new merge, and its batch run has the same conflicts: no second issue.
+    w.commits.push({ sha: P2, parents: [P1, 'h12'], message: 'Merge pull request #12 from owner/issue-5' });
+    w.tip = P2;
+    clock.now = new Date('2026-10-14T13:01:00.000Z');
+    await r.pass();
+    w.pulls.get(101)!.mergeable = false;
+    await r.pass();
+    expect(events.map((e) => e.type).slice(-3)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_failed']);
+    expect(w.issues).toHaveLength(1);
   });
 });

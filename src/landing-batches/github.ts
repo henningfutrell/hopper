@@ -1,7 +1,8 @@
 // The batch runner's GitHub calls (issue #1073), with the user's own GitHub connection: the default branch (the landing
 // branch), a compare of the tested branch with it, a batch run's branch made and removed, its pull request opened, read,
 // merged at its tip or closed, its check runs, and a job's open pull request moved to another base; for a red batch, the
-// pull request a commit merged, GitHub's revert of it (GraphQL `revertPullRequest`), a check's log and the fix issue.
+// pull request a commit merged, GitHub's revert of it (GraphQL `revertPullRequest`), a check's log and the fix issue; for
+// merge conflicts, the tested branch merged into a back-merge branch (`POST …/merges`).
 // The same `@octokit/request` binding and token renewal as Promote to GitHub (src/promotions/github.ts).
 import type { BatchCheckRun } from '../domain/landing-batches.ts';
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
@@ -68,6 +69,16 @@ export function createLandingBatchGitHub(o: { apiUrl: string } & TokenSource): L
     close: (repo, number) => withToken(async (token) => {
       await req('PATCH /repos/{owner}/{repo}/pulls/{pull_number}', { ...splitRepo(repo), pull_number: number, state: 'closed', headers: headers(token) });
     }, failed(`the close of ${repo}#${number}`)),
+    mergeInto: (repo, base, head, message) => withToken(async (token) => {
+      try {
+        const r = await req('POST /repos/{owner}/{repo}/merges', { ...splitRepo(repo), base, head, commit_message: message, headers: headers(token) });
+        // 204: the base has everything of the head.
+        return (r.status as number) === 204 ? { kind: 'nothing' as const } : { kind: 'merged' as const, sha: (r.data as { sha: string }).sha };
+      } catch (e) {
+        if (statusOf(e) === 409) return { kind: 'conflict' as const };
+        throw e;
+      }
+    }, failed(`the merge of ${head} into ${base} on ${repo}`)),
     openPullRequests: (repo, base) => withToken(async (token) => {
       const pulls = await paginate<{ number: number; html_url: string }>(req, 'GET /repos/{owner}/{repo}/pulls', { ...splitRepo(repo), state: 'open', base, per_page: 100 }, `token ${token}`,
         (data) => data as { number: number; html_url: string }[]);

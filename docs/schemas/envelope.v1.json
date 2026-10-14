@@ -276,6 +276,10 @@
         "landing_batch.revert_failed",
         "landing_batch.fix_filed",
         "landing_batch.pending",
+        "landing_batch.back_merge_opened",
+        "landing_batch.back_merged",
+        "landing_batch.back_merge_failed",
+        "landing_batch.back_merge_issue_filed",
         "jev.mode_changed",
         "router.mode_changed"
       ]

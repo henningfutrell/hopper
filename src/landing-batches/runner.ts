@@ -2,7 +2,8 @@
 // `LANDING_BATCH_PASS_MS`. For each repository the settings name: a job's open pull request on the tested branch moves
 // to the landing branch (the default branch); a batch run at work is read — green, merged into the tested branch at its
 // tip; red, closed and recorded failed; either way its branch is removed —; failing checks start a bisect within the
-// batch, and a pass takes its next step, then the culprit's revert and fix issue (`red.ts`); with none of these at work,
+// batch, and a pass takes its next step, then the culprit's revert and fix issue (`red.ts`); merge conflicts with the
+// tested branch start a back-merge of it into the landing branch (`back-merge.ts`); with none of these at work,
 // a batch run starts when due (`batchDue`). Each step is an event, with the user's own GitHub connection. What the last
 // pass found is kept in memory for the view: why no batch run started, or the problem.
 import {
@@ -11,6 +12,7 @@ import {
 } from '../domain/landing-batches.ts';
 import type { FailedCheck } from '../domain/landing-bisect.ts';
 import type { DomainEvent, NewEvent } from '../domain/types.ts';
+import { backMergePass, startBackMerge } from './back-merge.ts';
 import { bisectPass, culpritPass, startBisect } from './red.ts';
 
 /** How often the runner passes: 2 minutes. */
@@ -29,6 +31,8 @@ export interface LandingBatchGitHub {
   /** A merge commit, only while the head is `sha`. */
   merge(repo: string, number: number, sha: string, title: string): Promise<{ sha: string }>;
   close(repo: string, number: number): Promise<void>;
+  /** GitHub's merge of `head` into the branch `base`: its merge commit, nothing to merge, or a conflict it cannot merge. */
+  mergeInto(repo: string, base: string, head: string, message: string): Promise<{ kind: 'merged'; sha: string } | { kind: 'nothing' } | { kind: 'conflict' }>;
   openPullRequests(repo: string, base: string): Promise<{ number: number; url: string }[]>;
   retarget(repo: string, number: number, base: string): Promise<void>;
   /** The merged pull request whose merge (or squash) commit is `sha`, when there is one. */
@@ -103,7 +107,12 @@ export function createLandingBatches(o: {
       if (pr.headSha !== run.tip) return fail(`its branch moved from ${run.tip.slice(0, 12)}`, [], true);
       const checks = batchChecks(await gh.checkRuns(repo, run.tip), pr, run.startedAt, o.now());
       if (checks.kind === 'pending') { note(repo, { why: `batch run #${run.pullRequest} waits for its checks` }); return; }
-      if (checks.kind === 'red') return fail(checks.reason, checks.checks, true);
+      if (checks.kind === 'red') {
+        await fail(checks.reason, checks.checks, true);
+        // Merge conflicts: the tested branch has a change the landing branch lacks, merged into it by a back-merge.
+        if (pr.mergeable === false) await startBackMerge(red, { tip: run.tip, batch: run.pullRequest });
+        return;
+      }
       const merged = await gh.merge(repo, run.pullRequest, run.tip, batchTitle({ landing, tested: cfg.tested, tip: run.tip }));
       await gh.deleteBranch(repo, run.branch).catch((e: unknown) => o.log(`hopper: landing batches: ${run.branch} of ${repo} not removed: ${(e as Error).message}`));
       o.record({ type: 'landing_batch.promoted', data: { ...ended, merge: merged.sha } });
@@ -112,6 +121,7 @@ export function createLandingBatches(o: {
     }
     if (state?.bisect) return bisectPass(red, state.bisect);
     if (state?.culprit) await culpritPass(red, state.culprit);
+    if (state?.backMerge) await backMergePass(red, state.backMerge);
     const cmp = await gh.compare(repo, cfg.tested, landing);
     const merges = mergedPullRequests(cmp.commits.map((c) => c.message));
     const fresh = landingBatchStates(o.events())[repo];

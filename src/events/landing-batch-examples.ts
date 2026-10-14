@@ -15,5 +15,9 @@ export const LANDING_BATCH_EXAMPLES: Record<Extract<EventType, `landing_batch${s
   'landing_batch.reverted': { repo: 'owner/repo', tip: '0123456789abcdef0123456789abcdef01234567', sha: 'fedcba9876543210fedcba9876543210fedcba98', pullRequest: 1104, url: 'https://github.com/owner/repo/pull/1104', merge: '89abcdef0123456789abcdef0123456789abcdef' },
   'landing_batch.revert_failed': { repo: 'owner/repo', tip: '0123456789abcdef0123456789abcdef01234567', sha: 'fedcba9876543210fedcba9876543210fedcba98', reason: 'the culprit is a direct commit, not a pull request: revert it by hand' },
   'landing_batch.fix_filed': { repo: 'owner/repo', tip: '0123456789abcdef0123456789abcdef01234567', sha: 'fedcba9876543210fedcba9876543210fedcba98', issue: 1105, url: 'https://github.com/owner/repo/issues/1105' },
+  'landing_batch.back_merge_opened': { repo: 'owner/repo', landing: 'main', tested: 'dev', tip: '0123456789abcdef0123456789abcdef01234567', batch: 1101, branch: 'hopper-batch/back-merge-0123456789ab', merge: 'abcdefabcdefabcdefabcdefabcdefabcdefabcd', pullRequest: 1106, url: 'https://github.com/owner/repo/pull/1106' },
+  'landing_batch.back_merged': { repo: 'owner/repo', tip: '0123456789abcdef0123456789abcdef01234567', pullRequest: 1106, url: 'https://github.com/owner/repo/pull/1106', merge: 'bcdefabcdefabcdefabcdefabcdefabcdefabcde' },
+  'landing_batch.back_merge_failed': { repo: 'owner/repo', tip: '0123456789abcdef0123456789abcdef01234567', batch: 1101, conflict: true, reason: 'dev has changes that conflict with main at 0123456789ab: GitHub cannot merge them' },
+  'landing_batch.back_merge_issue_filed': { repo: 'owner/repo', tip: '0123456789abcdef0123456789abcdef01234567', issue: 1107, url: 'https://github.com/owner/repo/issues/1107' },
   'landing_batches.changed': { from: { repos: {} }, to: { repos: { 'owner/repo': { tested: 'dev', everyMerges: 5, everyMinutes: 60 } } }, by: 'owner' },
 };

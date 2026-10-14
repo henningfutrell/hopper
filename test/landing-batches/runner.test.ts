@@ -60,6 +60,7 @@ function fake(w: World): LandingBatchGitHub {
     checkRuns: async () => w.checks,
     merge: async (_repo, n, sha) => { const p = w.pulls.get(n)!; p.merged = true; p.state = 'closed'; w.calls.push(`merge #${n} ${sha}`); return { sha: 'merge-sha' }; },
     close: async (_repo, n) => { w.pulls.get(n)!.state = 'closed'; w.calls.push(`close #${n}`); },
+    mergeInto: async () => ({ kind: 'nothing' }),
     openPullRequests: async (_repo, base) => [...w.pulls.entries()].filter(([, p]) => p.state === 'open' && p.base === base).map(([number, p]) => ({ number, url: p.url })),
     retarget: async (_repo, n, base) => { w.pulls.get(n)!.base = base; w.calls.push(`retarget #${n} ${base}`); },
     pullRequestOf: async () => undefined,
@@ -153,11 +154,12 @@ describe('the batch runner (issue #1073)', () => {
     await r.pass();
     w.pulls.get(100)!.mergeable = false;
     await r.pass();
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed']);
+    // Nothing of dev to merge into the landing branch (part 4): the back-merge fails, and no issue is filed.
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_failed']);
     await r.pass();
     await r.pass();
     // Its pull requests wait for the next batch run again: recorded once (part 3).
-    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.pending']);
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.back_merge_failed', 'landing_batch.pending']);
     expect(r.view().repos[0]!.why).toBe(`the landing branch tip ${TIP.slice(0, 12)} was tested already`);
   });
 

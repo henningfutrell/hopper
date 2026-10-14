@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string"
+    },
+    "landing": {
+      "type": "string"
+    },
+    "tested": {
+      "type": "string"
+    },
+    "tip": {
+      "type": "string"
+    },
+    "batch": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "branch": {
+      "type": "string"
+    },
+    "merge": {
+      "type": "string"
+    },
+    "pullRequest": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "repo",
+    "landing",
+    "tested",
+    "tip",
+    "batch",
+    "branch",
+    "merge",
+    "pullRequest",
+    "url"
+  ],
+  "additionalProperties": false
+}

@@ -28,6 +28,7 @@ const TYPE_TONE: Record<string, Tone> = {
   'step.refused': 'warn', 'vault.step_delivered': 'ok', 'vault.step_refused': 'warn',
   'landing_batch.promoted': 'ok', 'landing_batch.failed': 'bad', 'landing_batches.changed': 'warn',
   'landing_batch.culprit': 'bad', 'landing_batch.reverted': 'ok', 'landing_batch.revert_failed': 'bad', 'landing_batch.fix_filed': 'ok',
+  'landing_batch.back_merged': 'ok', 'landing_batch.back_merge_failed': 'bad', 'landing_batch.back_merge_issue_filed': 'ok',
   'artifact.posted': 'ok', 'artifact.revised': 'ok',
   'lanes.recommended': 'warn', 'lanes.tuning_changed': 'warn', 'lanes.applied': 'warn', 'lanes.undone': 'warn', 'lanes.dismissed': 'warn',
   'bug_report.filed': 'ok', 'bug_report.failed': 'bad',

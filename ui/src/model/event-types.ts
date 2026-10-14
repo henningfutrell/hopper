@@ -43,6 +43,7 @@ const ALL: Record<EventType, true> = {
   'step.started': true, 'step.finished': true, 'step.refused': true, 'vault.step_delivered': true, 'vault.step_refused': true,
   'landing_batch.started': true, 'landing_batch.promoted': true, 'landing_batch.failed': true, 'landing_batch.retargeted': true, 'landing_batches.changed': true,
   'landing_batch.bisect_started': true, 'landing_batch.bisect_run': true, 'landing_batch.bisect_tested': true, 'landing_batch.culprit': true, 'landing_batch.revert_opened': true, 'landing_batch.reverted': true, 'landing_batch.revert_failed': true, 'landing_batch.fix_filed': true, 'landing_batch.pending': true,
+  'landing_batch.back_merge_opened': true, 'landing_batch.back_merged': true, 'landing_batch.back_merge_failed': true, 'landing_batch.back_merge_issue_filed': true,
   'artifact.created': true, 'artifact.shared': true, 'artifact.share_revoked': true, 'artifact.removed': true, 'artifact.settings_changed': true, 'artifact.posted': true,
   'tldr.written': true, 'tldr.settings_changed': true,
   'artifact.revised': true, 'artifact.revision_pinned': true, 'artifact.revision_removed': true,
