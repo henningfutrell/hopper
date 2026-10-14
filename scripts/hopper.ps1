@@ -71,21 +71,30 @@ function Invoke-Autostart([string] $action) {
       $body = @'
 # Written by hopper autostart on. It keeps a process in the WSL distro, so WSL does not stop the distro,
 # and starts the distro again 5 s after wsl --shutdown. At most every 5 minutes, while the hopper runs, it
-# tests whether Windows opens the hopper at localhost and tells the hopper the result, which the hopper
+# tests whether Windows opens the hopper at localhost, else at 127.0.0.1, and tells the hopper the result, which the hopper
 # shows with the fix when the link is broken. hopper autostart off removes it.
 $wsl = __WSL__
 $project = '__PROJECT__'
-$url = 'http://localhost:__PORT__/api/health'
+# The address check answers 204 to anyone the hopper's Host guard lets in, with no session. Windows tries ::1 first for
+# localhost, so 127.0.0.1 next.
+$urls = @('http://localhost:__PORT__/job/address', 'http://127.0.0.1:__PORT__/job/address')
 $ProgressPreference = 'SilentlyContinue'
 function Send-WindowsLink {
   $container = @(& wsl.exe @wsl -e podman ps -q --filter "label=com.docker.compose.project=$project" --filter 'label=com.docker.compose.service=hopper' 2>$null) | Select-Object -First 1
   if (-not $container) { return }
-  # Any HTTP answer, an error status too, means the hopper answered.
-  try { $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Uri $url; $result = @('--status', [string][int]$r.StatusCode) }
-  catch {
-    if ($_.Exception.Response) { $result = @('--status', [string][int]$_.Exception.Response.StatusCode) }
-    else { $result = @('--error', ($_.Exception.Message -replace '[\s"]+', ' ').Trim()) }
+  # Any HTTP answer, an error status too, means the hopper answered. The link is the URL that answered, else localhost.
+  $url = $urls[0]
+  $result = $null
+  $firstError = $null
+  foreach ($u in $urls) {
+    try { $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 10 -Uri $u; $result = @('--status', [string][int]$r.StatusCode) }
+    catch {
+      if ($_.Exception.Response) { $result = @('--status', [string][int]$_.Exception.Response.StatusCode) }
+      elseif (-not $firstError) { $firstError = @('--error', ($_.Exception.Message -replace '[\s"]+', ' ').Trim()) }
+    }
+    if ($result) { $url = $u; break }
   }
+  if (-not $result) { $result = $firstError }
   $mode = (@(& wsl.exe @wsl -e wslinfo --networking-mode 2>$null) -join '').Trim().ToLower()
   if ($mode -match '^[a-z]{1,20}$') { $result += @('--mode', $mode) }
   & wsl.exe @wsl -e podman exec $container.Trim() hopper windows-link report --link $url @result *> $null

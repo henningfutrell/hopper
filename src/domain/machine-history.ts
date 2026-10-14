@@ -36,6 +36,12 @@ export interface ResourceReading {
  * the localhost one. `ok`: the hopper answered, with `status`; else `error` says why.
  * `mode`: WSL's networking mode (`nat`, `mirrored`), absent when not read. `at`: when it was tested.
  */
+/**
+ * The URLs a Windows link names (issue #712): the address check (`/job/address`) at localhost or 127.0.0.1; or the
+ * health route at localhost, which a client or a keep-alive loop made before the address check still opens.
+ */
+export const WINDOWS_LINK_URL = /^https?:\/\/(localhost(:\d{1,5})?\/(job\/address|api\/health)|127\.0\.0\.1(:\d{1,5})?\/job\/address)$/;
+
 export interface WindowsLink {
   url: string;
   mode?: string;

@@ -2,7 +2,7 @@
 // (src/client/resources.ts) at every list; an ssh target's from what RESOURCES_COMMAND prints in its probe —
 // two /proc/stat cpu lines a second apart, the load averages, the memory lines and the core count, each line
 // marked `hopper-res `; a client target's from its `/release` answer, checked before it is believed.
-import type { ResourceReading, WindowsLink } from '../domain/machine-history.ts';
+import { WINDOWS_LINK_URL, type ResourceReading, type WindowsLink } from '../domain/machine-history.ts';
 
 const MARK = 'hopper-res ';
 
@@ -68,11 +68,11 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
   };
 }
 
-/** A client's Windows link (issue #712), when sane: the address check's URL at localhost or 127.0.0.1 (a client before it: the health URL at localhost), `ok` and a time; a bad mode or status dropped, the reason cut short. */
+/** A client's Windows link (issue #712), when sane: a Windows link URL (`WINDOWS_LINK_URL`), `ok` and a time; a bad mode or status dropped, the reason cut short. */
 function windowsLinkOf(v: unknown): WindowsLink | undefined {
   if (typeof v !== 'object' || v === null) return undefined;
   const l = v as Record<string, unknown>;
-  if (typeof l.url !== 'string' || !/^https?:\/\/(localhost(:\d{1,5})?\/(job\/address|api\/health)|127\.0\.0\.1(:\d{1,5})?\/job\/address)$/.test(l.url) || typeof l.ok !== 'boolean') return undefined;
+  if (typeof l.url !== 'string' || !WINDOWS_LINK_URL.test(l.url) || typeof l.ok !== 'boolean') return undefined;
   if (typeof l.at !== 'string' || Number.isNaN(Date.parse(l.at))) return undefined;
   return {
     url: l.url,

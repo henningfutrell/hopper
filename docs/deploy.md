@@ -456,7 +456,8 @@ that folder. It works on the distro `HOPPER_WSL_DISTRO` names; unset, WSL's defa
     process in the distro keeps WSL from stopping it. After `wsl --shutdown` the `wsl.exe` ends, the loop starts it
     again, the distro boots, and systemd starts the containers through `podman-restart.service`;
   - the loop also reports the Windows link: at most every 5 minutes, while the hopper's container runs, it opens
-    `http://localhost:<port>/api/health` (`HOPPER_PORT`; unset, `4790`), 10 s at most, reads the networking mode
+    the address check, `http://localhost:<port>/job/address`, else `http://127.0.0.1:<port>/job/address` (`HOPPER_PORT`;
+    unset, `4790`), 10 s at most each, reads the networking mode
     (`wsl.exe -e wslinfo --networking-mode`), and runs `hopper windows-link report` in the container with the result:
     the HTTP status (any status means the hopper answered) or why there was no answer. The hopper keeps the report in
     memory for 15 minutes, and a broken link shows the banner with the fix and tells `machine.windows_link_broken`
