@@ -1,0 +1,99 @@
+// Stuck work (issue #1010): every item that waits on a person — an open hand-off, a failure, work not pushed, a pull
+// request the hopper gave up on, a parked job, a job stuck on its own wait — in exactly one stuck cause, counted, with
+// one bulk action when the hopper takes it for each of them, else what a person does. Pure.
+import { describe, expect, it } from 'vitest';
+import type { Allowed, FailureRecordView, HandoffResolutionAction, HandoffView, Job, KeptWorkView, PullRequestCard } from '../../src/domain/types.ts';
+import { stuckOf } from '../../src/domain/stuck.ts';
+
+const OK: Allowed = { ok: true };
+const no = (why: string, soon?: true): Allowed => ({ ok: false, why, ...(soon ? { soon } : {}) });
+
+function handoff(id: string, recommended: HandoffResolutionAction, over: Partial<HandoffView['actions']> = {}, recordId?: string): HandoffView {
+  return {
+    id, jobId: `job-${id}`, status: 'open', reason: 'person', openedAt: '2026-10-13T00:00:00.000Z', ...(recordId ? { recordId } : {}),
+    card: { whatHappened: 'The job stopped.', recommended, why: `why ${id}` }, continueResumes: true,
+    actions: { continue: OK, fixed: OK, doneByHand: OK, wontDo: OK, ...over },
+  } as unknown as HandoffView;
+}
+const record = (id: string, retry: Allowed, handoffId?: string): FailureRecordView =>
+  ({ id, jobId: `job-${id}`, actions: { retry }, ...(handoffId ? { handoffId } : {}) }) as unknown as FailureRecordView;
+const kept = (jobId: string, push: Allowed, handoffId?: string): KeptWorkView =>
+  ({ jobId, paths: ['/w/x'], at: '2026-10-13T00:00:00.000Z', status: 'failed', actions: { push, discard: OK }, ...(handoffId ? { handoffId } : {}) }) as KeptWorkView;
+const card = (jobId: string, over: Partial<PullRequestCard>): PullRequestCard => ({ jobId, repo: 'o/r', state: 'open', ...over }) as PullRequestCard;
+const job = (id: string, over: Partial<Job>): Job => ({ id, status: 'parked', ...over }) as Job;
+
+const empty = { handoffs: [], recent: [], keptWork: [], pullRequests: [], jobs: [] };
+
+describe('stuck work by cause (issue #1010)', () => {
+  it('nothing stuck: no cause', () => {
+    expect(stuckOf(empty)).toEqual([]);
+  });
+
+  it('open hand-offs by the card\'s recommended resolution; a bulk action for each one the hopper takes', () => {
+    const causes = stuckOf({
+      ...empty,
+      handoffs: [
+        handoff('a', 'continue'), handoff('b', 'continue'), handoff('c', 'fixed'), handoff('d', 'wont_do'),
+        handoff('e', 'done_by_hand'), handoff('f', 'fixed', { fixed: no('it runs again by itself', true) }),
+        { ...handoff('g', 'continue'), status: 'closed' } as HandoffView,
+      ],
+    });
+    expect(causes.map((c) => [c.cause, c.ids, c.act !== undefined])).toEqual([
+      ['continue', ['a', 'b'], true],
+      ['run_again', ['c'], true],
+      ['wont_do', ['d'], true],
+      ['done_by_hand', ['e'], false],
+      ['taken_soon', ['f'], false],
+    ]);
+    // A cause with no bulk action says what a person does.
+    expect(causes.find((c) => c.cause === 'done_by_hand')!.todo).toMatch(/Done/);
+  });
+
+  it('a failure runs again in bulk only when it takes Retry and no open hand-off counts it already', () => {
+    const causes = stuckOf({
+      ...empty,
+      handoffs: [handoff('h', 'continue', {}, 'r3')],
+      recent: [record('r1', OK), record('r2', no('its item is closed')), record('r3', OK, 'h')],
+    });
+    expect(causes.find((c) => c.cause === 'retry')!.ids).toEqual(['r1']);
+    expect(causes.flatMap((c) => c.ids).sort()).toEqual(['h', 'r1']);
+  });
+
+  it('work not pushed: Push it in bulk when taken, and its hand-off is counted there, not twice', () => {
+    const causes = stuckOf({
+      ...empty,
+      handoffs: [handoff('h', 'continue')],
+      keptWork: [kept('job-h', OK, 'h'), kept('k2', no('its agent session cannot resume'))],
+    });
+    expect(causes.map((c) => [c.cause, c.ids])).toEqual([['push', ['job-h']], ['kept_work', ['k2']]]);
+  });
+
+  it('pull requests the hopper gave up on: Tend again in bulk for a failed tend; failing checks and a refused tend say what to do', () => {
+    const causes = stuckOf({
+      ...empty,
+      pullRequests: [
+        card('p1', { waits: 'tend failed', gaveUp: 'the job that rebased it was cancelled' }),
+        card('p2', { waits: 'checks failing', gaveUp: 'checks still fail after 3 fixes' }),
+        card('p3', { waits: 'conflicts', queue: { refused: 'its source refused' } }),
+        card('p4', { waits: 'conflicts', queue: { next: true } }),
+      ],
+    });
+    expect(causes.map((c) => [c.cause, c.ids, c.act !== undefined])).toEqual([
+      ['tend', ['p1'], true], ['checks', ['p2'], false], ['tend_refused', ['p3'], false],
+    ]);
+  });
+
+  it('parked jobs and jobs stuck on their own wait: counted, with what a person does', () => {
+    const causes = stuckOf({
+      ...empty,
+      jobs: [job('j1', {}), job('j2', { status: 'waiting_on', wait: { for: 'x', since: 's', ownCommand: true, stuckAt: 't' } }), job('j3', { status: 'waiting_on', wait: { for: 'x', since: 's' } })],
+    });
+    expect(causes.map((c) => [c.cause, c.ids])).toEqual([['parked', ['j1']], ['own_wait', ['j2']]]);
+    expect(causes.every((c) => c.act === undefined && c.todo)).toBe(true);
+  });
+
+  it('the bulk causes come first', () => {
+    const causes = stuckOf({ ...empty, jobs: [job('j1', {})], recent: [record('r1', OK)] });
+    expect(causes.map((c) => c.cause)).toEqual(['retry', 'parked']);
+  });
+});

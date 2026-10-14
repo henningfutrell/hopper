@@ -33,7 +33,7 @@ export const handoff = (over: Record<string, unknown> = {}) => ({
   card: { whatHappened: 'The job stopped before it opened or updated a PR.', recommended: 'continue', why: 'Its session can go on. Tell it what to do in a note.' }, ...over,
 });
 export const view = (over: Record<string, unknown> = {}) => ({
-  now: at(0), counts: { unassessed: 0, needsPerson: 0 }, settings, handoffs: [] as ReturnType<typeof handoff>[], keptWork: [] as Record<string, unknown>[], causes: [{ id: 'disk-full', name: 'Disk full', description: 'The disk is full.', cls: 'shared', decision: 'redirect', builtin: true }],
+  now: at(0), counts: { unassessed: 0, needsPerson: 0 }, settings, handoffs: [] as ReturnType<typeof handoff>[], keptWork: [] as Record<string, unknown>[], stuck: [] as Record<string, unknown>[], causes: [{ id: 'disk-full', name: 'Disk full', description: 'The disk is full.', cls: 'shared', decision: 'redirect', builtin: true }],
   problems: [problem()], ended: [] as ReturnType<typeof record>[], recent: [record(), record({ id: 'f2', jobId: 'j9', cls: 'job', decision: 'person', outcome: 'surfaced', problemId: undefined, summary: 'Needs a person. Ran 1 time on desk. Failed: tests fail.', actions: { retry: { ok: true } } })],
   profile: {
     days: [{ day: '2026-10-07', count: 1 }, { day: '2026-10-08', count: 3 }],

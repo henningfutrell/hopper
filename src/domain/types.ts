@@ -518,6 +518,7 @@ export * from './phase.ts';
 export * from './sections.ts';
 export * from './failures.ts';
 export * from './kept-work.ts';
+export * from './stuck.ts';
 export * from './yolo-mode.ts';
 export * from './contribution.ts';
 export * from './pull-requests.ts';
