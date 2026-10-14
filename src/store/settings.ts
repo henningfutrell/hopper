@@ -256,6 +256,9 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
   };
 }
 
+/** The update settings that are on or off, and their keys: auto-update, and taking stable releases early (issue #1073 part 5). */
+const UPDATE_SWITCHES = [['autoUpdate', 'autoUpdate'], ['updateCanary', 'canary']] as const;
+
 /** The instance's settings: self-update, the shared rate limiter (issue #436), the plugin store (issue #445) and the store installs. */
 export function createInstanceSettingsRepository(c: StoreContext): InstanceSettingsRepository {
   const { read, write } = keyValues(c);
@@ -264,13 +267,12 @@ export function createInstanceSettingsRepository(c: StoreContext): InstanceSetti
       const out: Partial<UpdateSettings> = {};
       const channel = read('updateChannel');
       if (channel && (UPDATE_CHANNELS as readonly string[]).includes(channel)) out.channel = channel as UpdateChannel;
-      const auto = read('autoUpdate');
-      if (auto !== undefined) out.autoUpdate = auto === 'true';
+      for (const [key, field] of UPDATE_SWITCHES) { const v = read(key); if (v !== undefined) out[field] = v === 'true'; }
       return out;
     },
     setUpdateSettings(patch) {
       if (patch.channel !== undefined) write('updateChannel', patch.channel);
-      if (patch.autoUpdate !== undefined) write('autoUpdate', String(patch.autoUpdate));
+      for (const [key, field] of UPDATE_SWITCHES) if (patch[field] !== undefined) write(key, String(patch[field]));
     },
     getPluginInstalls() {
       const text = read('pluginInstalls');

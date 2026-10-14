@@ -1,8 +1,8 @@
 // Landing batches in the UI (issue #1073), pure: one line per configured repository saying where its batch runs stand,
 // and the change a save sends — only what differs. A red batch (part 2): the bisect at work, the culprit, its revert
-// and its fix issue, and the event lines of each step. A back-merge after merge conflicts (part 4).
+// and its fix issue, and the event lines of each step. A back-merge after merge conflicts (part 4). The canary of a stable candidate (part 5).
 import { describe, expect, it } from 'vitest';
-import { landingBatchLine, landingBatchPatch, redBatchDetail } from '../../ui/src/model/landing-batches.ts';
+import { canaryLine, landingBatchLine, landingBatchPatch, redBatchDetail } from '../../ui/src/model/landing-batches.ts';
 import type { LandingBatchRepoView } from '../../ui/src/model/wire.ts';
 
 const row = (r: Partial<LandingBatchRepoView>): LandingBatchRepoView => ({ repo: 'owner/a', config: { tested: 'dev', everyMerges: 5, everyMinutes: 60 }, state: { repo: 'owner/a' }, ...r });
@@ -61,5 +61,24 @@ describe('landing batches model', () => {
     expect(redBatchDetail('landing_batch.back_merged', { repo: 'owner/a', pullRequest: 15 })).toBe('owner/a: back-merge #15 merged');
     expect(redBatchDetail('landing_batch.back_merge_failed', { repo: 'owner/a', reason: 'nothing to merge' })).toBe('owner/a: no back-merge: nothing to merge');
     expect(redBatchDetail('landing_batch.back_merge_issue_filed', { repo: 'owner/a', issue: 16 })).toBe('owner/a: issue #16 filed for the merge conflicts');
+  });
+
+  it('the canary (part 5): its line, its event lines, and its window in the patch', () => {
+    const tip = '0123456789abcdef';
+    expect(canaryLine(row({}))).toBeUndefined();
+    const config = { tested: 'dev', everyMerges: 5, everyMinutes: 60, canaryHours: 24 };
+    expect(canaryLine(row({ config, canary: { problem: 'no canary branch', checkedAt: 'c' } }))).toBe('Canary: cannot run: no canary branch');
+    expect(canaryLine(row({ config, canary: { why: 'nothing new on canary beyond stable', checkedAt: 'c' } }))).toBe('Canary: nothing new on canary beyond stable.');
+    expect(canaryLine(row({ config, canary: { why: 'w', checkedAt: 'c' }, state: { repo: 'owner/a', canary: { tip, state: 'held', startedAt: 's', reports: [41], reason: 'bug reports name it: #41', issue: { issue: 50, url: 'u' }, at: 'a' } } })))
+      .toBe('Canary: w. Candidate 0123456789ab held: bug reports name it: #41, issue #50.');
+    expect(canaryLine(row({ config, canary: { why: 'w', checkedAt: 'c' }, state: { repo: 'owner/a', canary: { tip, state: 'promoted', startedAt: 's', reports: [], at: 'a' } } })))
+      .toBe('Canary: w. Candidate 0123456789ab went to stable.');
+    expect(redBatchDetail('landing_batch.canary_started', { repo: 'owner/a', tip, hours: 24 })).toBe('owner/a: canary candidate 0123456789ab, 24 hours');
+    expect(redBatchDetail('landing_batch.canary_held', { repo: 'owner/a', tip, reason: 'bug reports name it: #41' })).toBe('owner/a: canary 0123456789ab held: bug reports name it: #41');
+    expect(redBatchDetail('landing_batch.canary_issue_filed', { repo: 'owner/a', issue: 50 })).toBe('owner/a: issue #50 filed for the held canary');
+    expect(redBatchDetail('landing_batch.canary_promoted', { repo: 'owner/a', tip })).toBe('owner/a: stable moved to 0123456789ab');
+    const settings = { repos: { 'owner/a': { tested: 'dev', everyMerges: 5, everyMinutes: 60 } } };
+    expect(landingBatchPatch(settings, { repos: { 'owner/a': config } })).toEqual({ repos: { 'owner/a': { canaryHours: 24 } } });
+    expect(landingBatchPatch({ repos: { 'owner/a': config } }, settings)).toEqual({ repos: { 'owner/a': { canaryHours: null } } });
   });
 });

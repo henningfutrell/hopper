@@ -67,7 +67,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items in `pr_open` or `failed`, read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts` | engine, http, store, plugins, decider |
 | `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
-| `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch; for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event (`runner.ts`); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
+| `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch; for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event (`runner.ts`); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`), and a submission as the item its job runs — the private line, the brief, the context block (`item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/intake-actors/` | The trusted actor picker (issue #930, "Trusted origin and request cards"): what GitHub shows of an account — by user id, by login —, a repository's collaborators, an organization's members and the authors of a repository's newest issues, with the person's own connection (`github.ts`, `@octokit/request`); the actor candidates and the check of the ids a person saves (`service.ts`); the trusted actors in force and what Access is told are `src/domain/intake-origin.ts`, a user's GitHub for it `src/users/github-proxy.ts`, its routes `src/http/ui/intake-actors.ts` | engine, http, store, plugins, decider |
@@ -7171,8 +7171,9 @@ to `stable`'s head, though the `dev` install contains it (its What's new is then
 
 **Channels and promotion (issues #282, #423, #1073).** `main` is the repository's default branch, the
 landing branch: every pull request, a job's included, merges there after the fast checks, and `dev` moves only when a
-green batch run of `main` merges into it ("Landing batches"). `main` is no update channel. `beta` is promoted from `dev`, and `stable` from `beta`, each by
-a maintainer with `scripts/promote.sh beta|stable [commit]`: a fast-forward to a commit the less steady
+green batch run of `main` merges into it ("Landing batches"). `main` is no update channel. `beta` is promoted from `dev`, the stable candidate on
+`canary` from `beta`, and `stable` from `canary` once its canary window passed ("Landing batches: the canary", issue #1073 part 5), each step
+by a maintainer with `scripts/promote.sh beta|canary|stable [commit]` or, for `stable`, by the batch runner: a fast-forward to a commit the less steady
 branch already has, whose image built there (`docs/deploy.md` "Update channels and promotion" says when). A
 hopper moved to a steadier channel can run an older build on a store a newer one migrated, so a store
 migration leaves a store the build before it still runs on (AGENTS.md "Persisted state is the user's"). A hopper on `dev` gets every change first; one on `stable` gets only what ran on
@@ -7247,8 +7248,9 @@ timers; UI sessions are in the database; schema migrations run at boot as on any
 by hand) → `update.failed`. The UI reloads itself when `GET /api/update` names another installed
 commit than the page was loaded with — the new UI bundle.
 
-**Settings** in the store's `settings` table (`updateChannel`, `autoUpdate`; key/value, no
-migration): `POST /ui/api/update { action: "settings", channel?, autoUpdate? }`. Auto-update applies
+**Settings** in the store's `settings` table (`updateChannel`, `autoUpdate`, `updateCanary`; key/value, no
+migration): `POST /ui/api/update { action: "settings", channel?, autoUpdate?, canary? }` (`canary`: take stable releases early,
+"Landing batches: the canary"). Auto-update applies
 an available update as soon as a check finds it, and at once when switched on with one available.
 
 **UI.** A notice above the views while an update is available, applying or failed — headline
@@ -18168,5 +18170,57 @@ Not taken: the base merge of the hopper's mirror ("The base merge"), which also 
 pull request inside a source's sync pass, with that pass's fetch; the batch runner has neither, and a back-merge is rare.
 A conflict in an additions file therefore files the issue, and a job resolves it.
 
-**Not yet (the next part).** `beta` → `stable` through a canary: a subset of installs runs the candidate first, and it
-reaches every install only when its health stays good for the canary window, with the subset and the window as settings.
+## Landing batches: the canary (issue #1073 part 5, 2026-10-14)
+
+**The problem.** `stable` moved straight from `beta` to every stable install at once. A change that broke on a stable
+install reached all of them before anyone could see it.
+
+**The branch model.** `beta` → `canary` → `stable`. The **canary branch** holds the **stable candidate**: a maintainer
+promotes a commit of `beta` to it (`scripts/promote.sh canary`; the first promotion makes the branch at `stable`'s head
+and the candidate must contain `stable`). `canary` is no update channel, and no job pushes to it (`RELEASE_BRANCHES`).
+Its image tag is `canary` (`.github/workflows/image.yml`).
+
+**The canary subset.** A stable install takes stable releases early when its admin turns **Take stable releases early**
+on (Settings → Version; `UpdateSettings.canary`, the instance setting `updateCanary`, key/value, no migration). Such an
+install, on the stable channel, follows `canary`'s head while it is ahead of `stable` — `stable`'s head is its ancestor
+and it is not `stable`'s head —, else `stable` (`src/update/updater.ts`). The target's ref is then `canary`: the build
+installs from that branch, the release check checks that commit as any other, and an image install pulls the `canary`
+tag. Turned off on a candidate, or once `stable` has it, the install goes back to `stable` (as a move between channels:
+the target is `stable`'s head, though the install contains it). So the subset is each install's own choice, and the
+maintainer's hopper needs no list of installs and no telemetry from them.
+
+Not taken: a share of installs chosen by a hash. The share would have to reach every install, the hopper's own
+repository has no place for it but a branch's content, and the canary's commit must be the candidate itself (a
+fast-forward to `stable`). And a hopper that picks itself into a canary without its admin's word is a surprise.
+
+**The health signal: bug reports.** Every install already has one way to report trouble: **Report a bug** ("Report a
+bug"), filed on the hopper's repository labelled `user-report`, with the context `Hopper: <branch> at <12 characters
+of the commit>`. A canary install's report therefore names `canary at <candidate>`. The batch runner asks GitHub for the
+issues labelled `user-report` created since the window started whose text names the candidate's 12 characters
+(`GET /search/issues`). One or more: the candidate is **held**. Not taken: a health report each install sends; it would
+be a new outward channel from every install, with what it says about that machine.
+
+**The canary window** (`canaryHours`, per repository in Settings → Landing batches, an admin's; absent: no canary step).
+Each pass of the batch runner (`src/landing-batches/canary.ts`, the rules
+`src/domain/landing-canary.ts`, pure) compares `stable` with `canary`:
+
+1. Nothing new on `canary` beyond `stable`: nothing happens (an idle period records nothing).
+2. A new candidate (its tip is not the newest one seen): `landing_batch.canary_started` with the tip and the window. The
+   window counts from it.
+3. The candidate at work: its bug reports. Some: `landing_batch.canary_held` with them, and once one issue through the
+   user's own connection — the hopper label, assigned to their connected account, so Intake takes it
+   (`landing_batch.canary_issue_filed`) —, its text fixed (`canaryIssueText`): the reports, and what to do. None, and
+   the window passed: `stable` moves to the candidate as a fast-forward (`PATCH …/git/refs/heads/stable`, `force:
+   false`), `landing_batch.canary_promoted`; the push starts the image build of `stable`, and every stable install is
+   offered it. None, the window still open: it waits.
+4. A held candidate stays held: a fix goes through `main` and up the channels as any change, and its promotion to
+   `canary` is a new candidate with a new window. A maintainer who read the reports and finds them not about the
+   candidate moves it by hand (`scripts/promote.sh stable`, from `canary` only).
+
+The move of `stable` is a ref update with the user's own GitHub connection, so branch protection on `stable` must let
+that account update it, as it lets the maintainer's push. The candidate is a merge commit of `dev` promoted up, so the
+release check offers it on `stable` as it did on `canary` ("Updates only to a merged pull request with passing checks").
+
+**The state.** The events reduce to each repository's `canary` (`reduceCanary`): the tip, `running`, `held` (with the
+reports, the reason and the issue) or `promoted`. `GET /api/landing-batches` answers it and what the last pass found of
+the canary (`canary.why` or `canary.problem`); Settings → Landing batches shows a line for it.

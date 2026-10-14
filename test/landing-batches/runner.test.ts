@@ -67,6 +67,8 @@ function fake(w: World): LandingBatchGitHub {
     revert: async () => { throw new Error('no revert here'); },
     checkLog: async () => '',
     fileIssue: async () => { throw new Error('no issue here'); },
+    bugReports: async () => [],
+    fastForward: async () => { throw new Error('no canary here'); },
   };
 }
 

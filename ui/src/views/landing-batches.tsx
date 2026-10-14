@@ -1,7 +1,8 @@
 // Landing batches (issue #1073), in Settings, an admin's: per repository, the tested branch a green batch run moves, and
 // when a batch run starts (after N merges into the landing branch, or a timer; none while nothing is new). A job's pull
 // request lands on the repository's default branch, the landing branch (`main` for the hopper's own); the full
-// test suite runs on its tip as a batch run. Each configured repository says where its batch runs stand.
+// test suite runs on its tip as a batch run. Each configured repository says where its batch runs stand. With a canary
+// window (part 5), a stable candidate on `canary` goes to `stable` after it, unless a bug report names it.
 import { Layers } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -9,11 +10,11 @@ import { Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
-import { landingBatchLine, landingBatchPatch } from '@/model/landing-batches';
+import { canaryLine, landingBatchLine, landingBatchPatch } from '@/model/landing-batches';
 import type { LandingBatchesView, LandingBatchSettings } from '@/model/wire';
 import { useHopper } from '@/store';
 
-const DEFAULTS = { tested: 'dev', everyMerges: 5, everyMinutes: 60 };
+const DEFAULTS: LandingBatchSettings['repos'][string] = { tested: 'dev', everyMerges: 5, everyMinutes: 60 };
 
 function Form({ view, onSaved }: { view: LandingBatchesView; onSaved: (v: LandingBatchesView) => void }) {
   const [draft, setDraft] = useState<LandingBatchSettings>(view.settings);
@@ -22,6 +23,11 @@ function Form({ view, onSaved }: { view: LandingBatchesView; onSaved: (v: Landin
   const patch = landingBatchPatch(view.settings, draft);
   const free = view.choices.repos.filter((r) => !draft.repos[r.toLowerCase()]);
   const setRepo = (repo: string, part: Partial<typeof DEFAULTS>) => setDraft({ repos: { ...draft.repos, [repo]: { ...draft.repos[repo]!, ...part } } });
+  const setCanary = (repo: string, v: string) => {
+    const { canaryHours: _, ...rest } = draft.repos[repo]!;
+    setDraft({ repos: { ...draft.repos, [repo]: v.trim() === '' ? rest : { ...rest, canaryHours: number(v) } } });
+  };
+  const number = (v: string) => Math.max(1, Math.floor(Number(v) || 1));
   const save = async () => {
     if (!patch) return;
     setBusy(true);
@@ -34,7 +40,6 @@ function Form({ view, onSaved }: { view: LandingBatchesView; onSaved: (v: Landin
     }
     setBusy(false);
   };
-  const number = (v: string) => Math.max(1, Math.floor(Number(v) || 1));
   return (
     <div data-slot="landing-batches" className="space-y-3 text-sm">
       <p className="text-xs text-muted-foreground">
@@ -48,6 +53,7 @@ function Form({ view, onSaved }: { view: LandingBatchesView; onSaved: (v: Landin
           <fieldset key={repo} className="grid gap-2 rounded-md border p-3">
             <legend className="px-1 font-mono text-xs">{repo}</legend>
             {row && <p data-slot="landing-batch-line" className="text-xs">{landingBatchLine(row)}</p>}
+            {row && canaryLine(row) && <p data-slot="canary-line" className="text-xs">{canaryLine(row)}</p>}
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <label className="flex items-center gap-1">Tested branch
                 <Input className="h-8 w-28" value={c.tested} disabled={busy} aria-label={`Tested branch of ${repo}`} onChange={(e) => setRepo(repo, { tested: e.target.value.trim() })} />
@@ -59,6 +65,10 @@ function Form({ view, onSaved }: { view: LandingBatchesView; onSaved: (v: Landin
               <label className="flex items-center gap-1">
                 <Input type="number" min={1} className="h-8 w-20" value={c.everyMinutes} disabled={busy} aria-label={`Minutes between batch runs of ${repo}`} onChange={(e) => setRepo(repo, { everyMinutes: number(e.target.value) })} />
                 minutes
+              </label>
+              <label className="flex items-center gap-1" title="A stable candidate on the canary branch goes to stable after this many hours, unless a bug report names it. Empty: no canary.">Canary window
+                <Input type="number" min={1} className="h-8 w-20" value={c.canaryHours ?? ''} placeholder="off" disabled={busy} aria-label={`Canary window in hours of ${repo}`} onChange={(e) => setCanary(repo, e.target.value)} />
+                hours
               </label>
               <Button size="sm" variant="ghost" disabled={busy} onClick={() => { const { [repo]: _, ...rest } = draft.repos; setDraft({ repos: rest }); }}>Remove</Button>
             </div>

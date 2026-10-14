@@ -9,13 +9,14 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import type { Clock, InstanceEvents, InstanceSettingsRepository, ReleaseCheck, Restarter, UpdateBuilder, Updater } from '../domain/ports.ts';
+import { CANARY_BRANCH } from '../domain/landing-canary.ts';
 import { isUpdateChannel, type InstallInfo, type UpdateApply, type UpdateSettings, type UpdateStatus, type UpdateTarget, type VersionHistory } from '../domain/types.ts';
 import { createGitMirror, type GitMirror, notesAt } from './git.ts';
 import { allBullets, newSince, readNotes, WHATS_NEW_DIR, WHATS_NEW_FILE } from './whats-new.ts';
 import { nextDirOf, readInstallInfo, swapInstall } from './install.ts';
 
 const exec = promisify(execFile);
-const DEFAULTS: UpdateSettings = { channel: 'stable', autoUpdate: false };
+const DEFAULTS: UpdateSettings = { channel: 'stable', autoUpdate: false, canary: false };
 
 /** With no channel chosen: the branch the install came from when it is a channel (issue #282), else `stable` (issue #423). */
 const defaults = (installed: InstallInfo | undefined): UpdateSettings =>
@@ -146,13 +147,16 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
       return { ...checked, state: 'error', reason: `fetch from ${info.repo} failed: ${messageOf(e)}`, installed: info, checkedAt: at };
     }
     const base = { installed: info, whatsNew: [], checkedAt: at };
-    const { channel } = settings();
+    const { channel, canary } = settings();
     const head = await mirror.branchHead(channel);
     if (!head) return { ...base, state: 'error', reason: `branch ${channel} not found in ${info.repo}` };
-    const target = { commit: head, ref: channel };
-    // Installed from another channel's branch: that channel's head is the target even when the install
+    // In the canary subset (issue #1073 part 5): stable's candidate on `canary`, while it is ahead of stable.
+    const candidate = channel === 'stable' && canary ? await mirror.branchHead(CANARY_BRANCH) : undefined;
+    const early = candidate !== undefined && candidate !== head && (await mirror.contains(candidate, head));
+    const target = early ? { commit: candidate, ref: CANARY_BRANCH } : { commit: head, ref: channel };
+    // Installed from another channel's branch (or the canary's): that branch's head is the target even when the install
     // already contains it — a move to a more stable channel goes back to it (issue #282).
-    const switching = isUpdateChannel(info.branch) && info.branch !== channel;
+    const switching = (isUpdateChannel(info.branch) || info.branch === CANARY_BRANCH) && info.branch !== target.ref;
     if (target.commit === info.commit || (!switching && (await mirror.contains(info.commit, target.commit)))) return { ...base, state: 'current', target };
     // Only the merge of a pull request whose checks passed is offered (issue #652): nothing else is announced or applied.
     const verdict = await o.release.verify(info.repo, target.commit);

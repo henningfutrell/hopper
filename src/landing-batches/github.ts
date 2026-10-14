@@ -2,8 +2,10 @@
 // branch), a compare of the tested branch with it, a batch run's branch made and removed, its pull request opened, read,
 // merged at its tip or closed, its check runs, and a job's open pull request moved to another base; for a red batch, the
 // pull request a commit merged, GitHub's revert of it (GraphQL `revertPullRequest`), a check's log and the fix issue; for
-// merge conflicts, the tested branch merged into a back-merge branch (`POST …/merges`).
+// merge conflicts, the tested branch merged into a back-merge branch (`POST …/merges`); for the canary, the bug reports
+// that name a candidate (`GET /search/issues`) and `stable` moved to it, only as a fast-forward.
 // The same `@octokit/request` binding and token renewal as Promote to GitHub (src/promotions/github.ts).
+import { REPORT_LABEL } from '../bug-reports/context.ts';
 import type { BatchCheckRun } from '../domain/landing-batches.ts';
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
 import { makeRequest, paginate, splitRepo, statusOf } from '../sources/github/app/http.ts';
@@ -105,5 +107,14 @@ export function createLandingBatchGitHub(o: { apiUrl: string } & TokenSource): L
       const d = (await req('POST /repos/{owner}/{repo}/issues', { ...splitRepo(repo), ...issue, headers: headers(token) })).data as { number: number; html_url: string };
       return { number: d.number, url: d.html_url };
     }, failed(`a new issue on ${repo}`)),
+    bugReports: (repo, sha, since) => withToken(async (token) => {
+      // A bug report's context names the hopper's version as `<branch> at <12 characters of the commit>` (src/bug-reports/context.ts).
+      const q = `repo:${repo} is:issue label:${REPORT_LABEL} "${sha}" created:>=${since.slice(0, 19)}Z`;
+      const d = (await req('GET /search/issues', { q, per_page: 100, headers: headers(token) })).data as { items: { number: number }[] };
+      return d.items.map((i) => i.number).sort((a, b) => a - b);
+    }, failed(`the bug reports of ${sha} on ${repo}`)),
+    fastForward: (repo, branch, sha) => withToken(async (token) => {
+      await req('PATCH /repos/{owner}/{repo}/git/refs/{ref}', { ...splitRepo(repo), ref: `heads/${branch}`, sha, force: false, headers: headers(token) });
+    }, failed(`the move of ${branch} to ${sha.slice(0, 12)} on ${repo}`)),
   };
 }

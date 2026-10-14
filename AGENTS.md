@@ -179,11 +179,12 @@ hopper's note naming the job and the request by id only, and gets no label or as
   records too. A migration leaves a store the build before it still runs on: a hopper moved to a
   steadier update channel runs that channel's older build on the migrated store (`docs/deploy.md`
   "Update channels and promotion").
-- **Changes reach people main → dev → beta → stable** (issue #1073, `docs/design.md` "Landing batches").
+- **Changes reach people main → dev → beta → canary → stable** (issue #1073, `docs/design.md` "Landing batches").
   Pull requests merge to `main`, the landing branch and the default branch, after the fast checks (the
   gates and the affected tests); `dev` moves only when a green batch run of `main`'s tip merges into it; a red
   batch's culprit is reverted from `main`, and the rest of the batch moves on;
-  `beta` and `stable` move only by `scripts/promote.sh`, one step at a time.
+  `beta` and `canary` move only by `scripts/promote.sh`, one step at a time; `stable` moves to the canary's candidate
+  when its canary window passes with no bug report that names it (the batch runner, part 5), or by `scripts/promote.sh stable`.
 - **The UI is the daemon's one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served
   by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.
   The GitHub Pages site is built too (`npm run build:site` → `site/dist`, gitignored), for Pages only,

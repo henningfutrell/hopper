@@ -124,9 +124,9 @@ describe('every build path records what it was built from', () => {
     expect(workflow).toContain('HOPPER_COMMIT=${{ github.sha }}');
   });
 
-  it('the published image follows dev, beta and stable: a tag for each branch, and latest is stable (issue #423)', () => {
+  it('the published image follows dev, beta, canary and stable: a tag for each branch (canary: issue #1073), and latest is stable (issue #423)', () => {
     const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'image.yml'), 'utf8');
-    expect(workflow).toMatch(/branches: \[dev, beta, stable\]/);
+    expect(workflow).toMatch(/branches: \[dev, beta, canary, stable\]/);
     expect(workflow).toContain("type=raw,value=latest,enable=${{ github.ref_name == 'stable' }}");
     expect(workflow).toContain('type=ref,event=branch');
     expect(workflow).not.toMatch(/\bmain\b/);

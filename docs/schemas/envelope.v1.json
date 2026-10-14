@@ -280,6 +280,10 @@
         "landing_batch.back_merged",
         "landing_batch.back_merge_failed",
         "landing_batch.back_merge_issue_filed",
+        "landing_batch.canary_started",
+        "landing_batch.canary_held",
+        "landing_batch.canary_issue_filed",
+        "landing_batch.canary_promoted",
         "jev.mode_changed",
         "router.mode_changed"
       ]

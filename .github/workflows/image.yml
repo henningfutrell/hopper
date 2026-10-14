@@ -1,12 +1,13 @@
 # Builds the Dockerfile and publishes it as the public image ghcr.io/henningfutrell/hopper (issue #125),
 # the image compose.yaml pulls. One tag per update channel (issue #423): `dev`, `beta` and `stable` follow
-# the branch of that name, `latest` follows `stable`, and `sha-<commit>` pins one build. Intel/AMD and ARM
+# the branch of that name, `latest` follows `stable`, and `sha-<commit>` pins one build. `canary` follows the
+# stable candidate on the canary branch, which the canary subset pulls first (issue #1073 part 5). Intel/AMD and ARM
 # (arm64 is built under QEMU). Pushed with the workflow's own token; the package is public.
 name: image
 
 on:
   push:
-    branches: [dev, beta, stable]
+    branches: [dev, beta, canary, stable]
   workflow_dispatch:
 
 permissions:

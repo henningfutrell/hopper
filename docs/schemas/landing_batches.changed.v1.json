@@ -25,6 +25,11 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 9007199254740991
+              },
+              "canaryHours": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
               }
             },
             "required": [
@@ -61,6 +66,11 @@
                 "maximum": 9007199254740991
               },
               "everyMinutes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "canaryHours": {
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 9007199254740991

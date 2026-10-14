@@ -4,7 +4,7 @@
 // tip; red, closed and recorded failed; either way its branch is removed —; failing checks start a bisect within the
 // batch, and a pass takes its next step, then the culprit's revert and fix issue (`red.ts`); merge conflicts with the
 // tested branch start a back-merge of it into the landing branch (`back-merge.ts`); with none of these at work,
-// a batch run starts when due (`batchDue`). Each step is an event, with the user's own GitHub connection. What the last
+// a batch run starts when due (`batchDue`). With a canary window set, the canary step after it (`canary.ts`). Each step is an event, with the user's own GitHub connection. What the last
 // pass found is kept in memory for the view: why no batch run started, or the problem.
 import {
   batchBody, batchBranch, batchChecks, batchDue, batchTitle, landingBatchStates, mergedPullRequests, pendingChanged,
@@ -13,6 +13,7 @@ import {
 import type { FailedCheck } from '../domain/landing-bisect.ts';
 import type { DomainEvent, NewEvent } from '../domain/types.ts';
 import { backMergePass, startBackMerge } from './back-merge.ts';
+import { canaryPass } from './canary.ts';
 import { bisectPass, culpritPass, startBisect } from './red.ts';
 
 /** How often the runner passes: 2 minutes. */
@@ -42,6 +43,10 @@ export interface LandingBatchGitHub {
   /** The log of a GitHub Actions job, by its check run's id. */
   checkLog(repo: string, checkRunId: number): Promise<string>;
   fileIssue(repo: string, issue: { title: string; body: string; labels: string[]; assignees: string[] }): Promise<{ number: number; url: string }>;
+  /** The bug reports (issues labelled `user-report`) filed since `since` whose text names the commit `sha` (12 characters). */
+  bugReports(repo: string, sha: string, since: string): Promise<number[]>;
+  /** Moves the branch to `sha`, only as a fast-forward. */
+  fastForward(repo: string, branch: string, sha: string): Promise<void>;
 }
 
 export interface LandingBatches {
@@ -68,6 +73,7 @@ export function createLandingBatches(o: {
 }): LandingBatches {
   const found = new Map<string, { why?: string; problem?: string; checkedAt: string }>();
   const note = (repo: string, f: { why?: string; problem?: string }): void => { found.set(repo, { ...f, checkedAt: o.now().toISOString() }); };
+  const canaryFound = new Map<string, { why?: string; problem?: string; checkedAt: string }>();
 
   async function passRepo(gh: LandingBatchGitHub, repo: string): Promise<void> {
     const cfg = o.settings().repos[repo];
@@ -152,6 +158,15 @@ export function createLandingBatches(o: {
         note(repo, { problem: (e as Error).message });
         o.log(`hopper: landing batches: ${repo}: ${(e as Error).message}`);
       }
+      const hours = o.settings().repos[repo]?.canaryHours;
+      if (hours === undefined) { canaryFound.delete(repo); continue; }
+      const noteCanary = (f: { why?: string; problem?: string }): void => { canaryFound.set(repo, { ...f, checkedAt: o.now().toISOString() }); };
+      try {
+        await canaryPass({ gh, repo, hours, record: o.record, state: () => landingBatchStates(o.events())[repo], note: noteCanary, login: o.login, now: o.now });
+      } catch (e) {
+        noteCanary({ problem: (e as Error).message });
+        o.log(`hopper: landing batches: the canary of ${repo}: ${(e as Error).message}`);
+      }
     }
   }
 
@@ -167,6 +182,7 @@ export function createLandingBatches(o: {
       return {
         repos: Object.entries(settings.repos).map(([repo, config]) => ({
           repo, config, state: states[repo] ?? { repo }, ...found.get(repo),
+          ...(config.canaryHours !== undefined && canaryFound.has(repo) ? { canary: canaryFound.get(repo) } : {}),
         })),
       };
     },
