@@ -2,7 +2,7 @@
 // with its repository, owner, Projects and linked issues and pull requests; it stays current as the issue changes; its
 // setting is edited in the UI and applies at once; and nothing depends on it. Real daemon and database, in-memory fake
 // GitHub at the GitHubApi seam.
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PluginsReport } from '../../src/domain/plugins.ts';
 import type { SourceStatus } from '../../src/domain/types.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
@@ -17,6 +17,7 @@ const apps: TestApp[] = [];
 let cleanup: (() => void) | undefined;
 
 afterEach(async () => {
+  vi.useRealTimers();
   for (const a of apps.splice(0)) await a.stop();
   cleanup?.();
 });
@@ -34,6 +35,7 @@ async function boot(gh: FakeGitHub, options: Record<string, unknown> = {}) {
 const graphOf = (a: TestApp) => a.user().store.issueGraph;
 const edges = (a: TestApp) => graphOf(a).edges().map((e) => `${e.from} ${e.kind} ${e.to}`);
 const places = (gh: FakeGitHub) => gh.calls.filter((c) => c.method === 'issuePlace').length;
+const refreshes = (gh: FakeGitHub) => gh.calls.filter((c) => c.method === 'graphStates');
 
 /** Issue 1, labelled for the hopper, an item of Project 4, a sub-issue of issue 2, with a closing and a mentioning pull request. */
 function seed(gh: FakeGitHub) {
@@ -123,5 +125,37 @@ describe('the issue graph', () => {
 
     await a.sync();
     expect(graphOf(a).node(ISSUE)).toBeDefined();
+  });
+
+  it('the graph refresh: each refresh interval, the items it shows not done are read again in one batched read (issue #1036)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: Date.now() });
+    const gh = createFakeGitHub();
+    const prs = seed(gh);
+    const a = await boot(gh);
+    await a.sync();
+    const first = refreshes(gh).length;
+    expect(first).toBe(1);
+
+    // The watched issue closes, so no read of its place tells the graph what became of the items it links.
+    gh.closeIssue(REPO, 1);
+    gh.closeIssue(REPO, 2);
+    gh.mergePullRequest(prs.mentioning);
+    gh.closePullRequest(prs.closing);
+    await a.sync();
+    expect(refreshes(gh)).toHaveLength(first);
+    expect(graphOf(a).node(`https://github.com/${REPO}/issues/2`)!.attrs.state).toBe('open');
+
+    vi.setSystemTime(Date.now() + 61 * 60_000);
+    await a.sync();
+    expect(refreshes(gh)).toHaveLength(first + 1);
+    expect(graphOf(a).node(`https://github.com/${REPO}/issues/2`)!.attrs).toMatchObject({ state: 'closed', stateReason: 'completed' });
+    expect(graphOf(a).node(ISSUE)!.attrs).toMatchObject({ state: 'closed', stateReason: 'completed' });
+    expect(graphOf(a).node(prs.mentioning)!.attrs.state).toBe('merged');
+    expect(graphOf(a).node(prs.closing)!.attrs.state).toBe('closed');
+
+    // Nothing the graph shows is open now: no read at the next refresh.
+    vi.setSystemTime(Date.now() + 61 * 60_000);
+    await a.sync();
+    expect(refreshes(gh)).toHaveLength(first + 1);
   });
 });
