@@ -14,11 +14,14 @@
 // runtime (a source told, an answer typed into a waiting pane) apply as they do for a click. The session it
 // goes under is minted here, in the database, for the one call, and dropped after it: whoever runs the CLI
 // holds the database's credentials, the daemon's own trust, so a session of theirs adds none.
+// With HOPPER_REFRESH_TOKEN_FILE (issue #1138) the CLI opens no database: it acts with a grant — a delegate approver's,
+// say — trading the refresh token that file holds for an API token, and keeping the new refresh token in the file.
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { ESCALATION_REASONS, HANDOFF_RESOLUTIONS, QUEUE_GATE_MODES, type FailuresView, type QueueGate, type ReviewItemView, type User } from './domain/types.ts';
 import type { InstanceStore } from './domain/ports.ts';
 import { OPERATOR_CLI_NAME } from './domain/failures.ts';
-import { OperatorRefusal, usage, type Call } from './cli-operator-call.ts';
+import { OperatorRefusal, perform, sender, usage, type Call } from './cli-operator-call.ts';
 import { questionCall } from './cli-operator-questions.ts';
 import { SESSION_HEADER } from './http/ui/guard.ts';
 import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
@@ -33,11 +36,11 @@ import { REPO_USAGE, repoCall } from './cli-operator-repo.ts';
 import { DIRECT_USAGE, directCall } from './cli-operator-direct.ts'; import { DISMISS_USAGE, dismissCall } from './cli-operator-dismiss.ts';
 import { REPORT_USAGE, reportCall } from './cli-operator-report.ts';
 import { SEARCH_USAGE, searchCall } from './cli-operator-search.ts';
-import { VAULT_USAGE, sandboxCall, templateCall, vaultCall } from './cli-operator-vault.ts';
+import { VAULT_USAGE, grantCall, sandboxCall, templateCall, vaultCall } from './cli-operator-vault.ts';
 import { driftCall } from './cli-update-drift.ts';
 import { WINDOWS_LINK_USAGE, windowsLinkCall } from './cli-operator-windows-link.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'accounts', 'vault', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'auto-park', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'accounts', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link'] as const;
 
 export const OPERATOR_USAGE = `  hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
@@ -260,6 +263,7 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'accounts') return accountsCall(args, stdin);
   if (command === 'token') return tokenCall(args);
   if (command === 'vault') return vaultCall(args, stdin);
+  if (command === 'grant') return grantCall(args);
   if (command === 'template') return templateCall(args);
   if (command === 'sandbox') return sandboxCall(args);
   if (command === 'artifact') return artifactCall(args);
@@ -323,30 +327,37 @@ export async function runOperatorAction(
   const signIn = { config: () => loadSignInConfig(instance.signInConfig.read()), checkGateway: async () => ({ ok: false as const, status: 403 as const, error: 'the operator CLI checks no gateway token' }) };
   const sessions = createUiSessions({ repo: instance.uiSessions, clock: { now: () => new Date() }, signIn });
   const session = sessions.create({ role: call.role, identity: CLI_IDENTITY, userId: user.id, lastsMs: SESSION_MS });
-  const send = async (path: string, body?: unknown): Promise<unknown> => {
-    let res: Response;
-    try {
-      res = await fetch(new URL(path, url), {
-        method: body === undefined ? 'GET' : 'POST',
-        headers: { [SESSION_HEADER]: session.token, origin: url.origin, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      });
-    } catch (e) {
-      throw new Error(`no hopper answers at ${url.origin} (${(e as Error).message}): is the daemon running? --url names it`, { cause: e });
-    }
-    const text = await res.text();
-    let parsed: unknown;
-    try { parsed = text ? JSON.parse(text) : undefined; } catch { parsed = text; }
-    if (res.ok) return parsed;
-    const why = (parsed as { error?: string } | undefined)?.error ?? text;
-    if (res.status >= 400 && res.status < 500) throw new OperatorRefusal(`refused (${res.status}): ${why}`);
-    throw new Error(`the hopper failed (${res.status}): ${why}`);
-  };
   try {
-    const answer = call.body ? await send(call.path, await call.body(send)) : await send(call.path);
-    io.out(`${JSON.stringify(call.pick ? call.pick(answer) : answer, null, 2)}\n`);
-    return call.exit ? call.exit(answer) : 0;
+    return await perform(call, sender(url, { [SESSION_HEADER]: session.token, origin: url.origin }), io);
   } finally {
     sessions.drop(session.token, 'logout');
   }
+}
+
+/** The environment variable that names a grant's refresh-token file (issue #1138): the CLI then opens no database. */
+export const REFRESH_TOKEN_FILE = 'HOPPER_REFRESH_TOKEN_FILE';
+
+/**
+ * One operator action with a grant's API token, not a session of the database's (issue #1138): the refresh token in the
+ * file `HOPPER_REFRESH_TOKEN_FILE` names is traded at `POST /ui/auth/token/refresh`, and the new one replaces it in the
+ * file before the action is sent, as the old one is spent. The grant's scopes and role, and Access, decide the action.
+ */
+export async function runOperatorActionWithGrant(command: string, args: string[], io: OperatorIo): Promise<number> {
+  const { rest, url: rawUrl, user } = common(args);
+  if (user !== undefined) throw new OperatorRefusal(`--user: with ${REFRESH_TOKEN_FILE}, the grant names the user it acts for`);
+  const call = callOf(command, rest, io.stdin);
+  const url = daemonUrl(rawUrl, io.env);
+  const file = io.env[REFRESH_TOKEN_FILE]!;
+  let refresh: string;
+  try {
+    refresh = readFileSync(file, 'utf8').trim();
+  } catch (e) {
+    throw new OperatorRefusal(`${REFRESH_TOKEN_FILE} names ${file}, which cannot be read: ${(e as Error).message}`);
+  }
+  const traded = await sender(url, {})('/ui/auth/token/refresh', { refresh }) as { token: string; refresh: string };
+  // The refresh token sent is spent now: keep its successor before anything else can fail.
+  const next = `${file}.new`;
+  writeFileSync(next, `${traded.refresh}\n`, { mode: 0o600 });
+  renameSync(next, file);
+  return perform(call, sender(url, { authorization: `Bearer ${traded.token}` }), io);
 }

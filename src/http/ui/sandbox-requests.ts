@@ -11,6 +11,9 @@ import { HttpError, parseWith } from '../errors.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
 import { vaultAnswer } from '../vault.ts';
+import { templateNames } from '../../domain/delegates.ts';
+import type { ApiGrants } from './api-grants.ts';
+import { approverOf, delegateOf, refuseDenied } from './delegates.ts';
 import { identityName } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
@@ -35,14 +38,21 @@ export const SANDBOX_REQUEST_OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/sandbox-approvals', tag: 'Vault', summary: 'Skip template approval, skip sandbox approval, or sandbox YOLO', description: 'Issue #991: `skipTemplateApproval`: a template the hopper makes for a job\'s request, and the read policy does not approve, is approved at once, its write, sync and apply profiles with it (`by` `skip template approval`). `skipSandboxApproval`: a box a job asks for starts the moment it asks, a high-blast-radius one too (`by` `skip sandbox approval`). `yolo` sets both; a toggle named with it wins. Issue #1001: `autoApprove` (`low`, `medium`, `high`): the blast radius levels whose templates and runs are approved with no person (`by` `the auto-approve policy`); each level named sets itself; default low on, medium and high off. `rememberWritesHours`: how long a person\'s write, sync or apply approval is remembered for later asks of that asset and access (`by` `a remembered write approval`); 0, until forgotten; default 168. `forgetWrite` (`operation`, `asset`): forget one now (`vault.write_forgotten`). Absent fields keep what was set. Both toggles off by default. Recorded as `vault.sandbox_approvals_set`. A box action: it approves work with no person. Answers the vault\'s view, with `sandboxApprovals`.', role: 'admin', body: sandboxApprovalsBody, returns: 'the new view, as GET /api/vault', errors: [400] },
 ];
 
-export function registerSandboxRequestRoutes(app: FastifyInstance, o: { admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {
+export function registerSandboxRequestRoutes(app: FastifyInstance, o: { admin: Guard; tenant: (req: FastifyRequest) => TenantParts; grants: Pick<ApiGrants, 'live'> }): void {
   app.post('/ui/api/sandbox-requests', o.admin, async (req, reply) => {
     reply.header('cache-control', 'no-store');
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to decide a sandbox request');
     const b = parseWith(sandboxRequestBody, req.body);
     const parts = o.tenant(req);
-    const by = identityName(s.identity);
+    // A delegate approver (issue #1138) decides a request only where its approver policy names nothing of its template.
+    const delegate = delegateOf(o.grants, s);
+    const by = approverOf(delegate, s);
+    if (delegate) {
+      const template = parts.sandboxRequests.list().find((x) => x.id === b.id)?.template;
+      const t = parts.vault.view().templates.find((x) => x.name === template);
+      refuseDenied(delegate, t ? templateNames(t) : [template], `deciding the sandbox request ${b.id}`);
+    }
     const r = b.action === 'approve' ? parts.sandboxRequests.approve(b.id, by) : parts.sandboxRequests.decline(b.id, b.reason, by);
     if (!r.ok) throw new HttpError(STATUS[r.code], r.error);
     return await vaultAnswer(parts);

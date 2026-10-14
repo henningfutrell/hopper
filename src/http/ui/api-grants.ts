@@ -9,6 +9,7 @@
 // adds nothing a guess could use against 256 random bits, so none is kept.
 import { createHash, randomBytes } from 'node:crypto';
 import type { ApiGrantRepository, ApiGrantRow } from '../../domain/api-grants.ts';
+import type { DelegatePolicy } from '../../domain/delegates.ts';
 import type { Clock } from '../../domain/ports.ts';
 import {
   API_TOKEN_MINUTES, GRANT_IDLE_DAYS, REFRESH_GRACE_MS, REFRESH_TOKEN_PREFIX, lowerRole,
@@ -30,6 +31,8 @@ export type GrantRecord =
 /** A grant to mint: its scopes already checked, its role already no higher than its minter's. `days` null: no fixed end. */
 export interface GrantWanted {
   userId: string; identity: Identity; role: UiRole; label: string; holder?: string; scopes: string[]; box: boolean; days: number | null; minutes?: number;
+  /** A delegate approver's approver policy (issue #1138). */
+  delegate?: DelegatePolicy;
 }
 
 export type RefreshAnswer = { ok: true; value: ApiTokenRefreshed } | { ok: false; error: string };
@@ -87,7 +90,7 @@ export function createApiGrants(o: {
     id: g.id, label: g.label, ...(g.holder === undefined ? {} : { holder: g.holder }), role: g.role, box: g.box === true, scopes: g.scopes,
     createdAt: g.createdAt, endsAt: g.endsAt ?? null, idleEndsAt: new Date(idleEnd(g)).toISOString(),
     ...(g.lastUsedAt === g.createdAt ? {} : { lastUsedAt: g.lastUsedAt }), ...(g.lastUsedFrom === undefined ? {} : { lastUsedFrom: g.lastUsedFrom }),
-    ...(g.tokenMinutes === undefined ? {} : { tokenMinutes: g.tokenMinutes }),
+    ...(g.tokenMinutes === undefined ? {} : { tokenMinutes: g.tokenMinutes }), ...(g.delegate ? { delegate: { deny: [...g.delegate.deny] } } : {}),
   });
   /** A new API token of the grant: an API token session, with the grant's role and box flag, for the grant's lifetime. */
   const issue = (g: ApiGrantRow): UiSession => o.sessions.create({
@@ -110,6 +113,7 @@ export function createApiGrants(o: {
         ...(want.holder === undefined ? {} : { holder: want.holder }), role: want.role, scopes: [...new Set(want.scopes)].sort(),
         ...(want.box ? { box: true as const } : {}), createdAt: at, ...(want.days === null ? {} : { endsAt: new Date(now() + want.days * DAY).toISOString() }),
         ...(want.minutes === undefined ? {} : { tokenMinutes: want.minutes }), lastUsedAt: at, lastUsedFrom: from,
+        ...(want.delegate ? { delegate: { deny: [...want.delegate.deny] } } : {}),
       };
       const refresh = `${REFRESH_TOKEN_PREFIX}${randomSecret()}`;
       o.repo.create(g, hashOf(refresh));

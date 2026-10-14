@@ -6,7 +6,9 @@
 // With none, the panel says what will show here. Each grant names what it covers (issue #1124): the item's title, repository
 // and link, its newest job's status, the date granted, and how it was made — the operator CLI's command when it was made
 // there. A grant whose item has no job waiting or at work is flagged stale: it gives nothing now, and Revoke takes it back.
-import { KeyRound, ShieldCheck, Undo2 } from 'lucide-react';
+// Issue #1138: Deny drops an ask, and that job asks no more; a grant says when it was made to the minute, and a delegate
+// approver's names the delegate and the person it acted for.
+import { Ban, KeyRound, ShieldCheck, Undo2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -23,7 +25,7 @@ export function VaultGrants({ view }: { view: VaultView | null }) {
   const [busy, setBusy] = useState(false);
   const asks = view?.grantAsks ?? [];
   const grants = view?.grants ?? [];
-  const act = async (job: string, what: 'grant-vault' | 'revoke-vault', done: string): Promise<void> => {
+  const act = async (job: string, what: 'grant-vault' | 'deny-vault' | 'revoke-vault', done: string): Promise<void> => {
     setBusy(true);
     try {
       await viewAnswer(() => post<VaultView>(`/ui/api/jobs/${encodeURIComponent(job)}/${what}`, {}));
@@ -50,7 +52,12 @@ export function VaultGrants({ view }: { view: VaultView | null }) {
               </div>
               <p className="text-xs break-words">Asked for: <span className="font-mono">{a.names.join(', ')}</span></p>
               <p className="text-xs text-muted-foreground break-all">Item: {a.item ? <ItemName item={a.item} /> : a.key}</p>
-              {can && <Button size="sm" disabled={busy} onClick={() => void act(a.job, 'grant-vault', `job ${a.job.slice(0, 8)}: granted the vault`)}><ShieldCheck />Grant</Button>}
+              {can && (
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" disabled={busy} onClick={() => void act(a.job, 'grant-vault', `job ${a.job.slice(0, 8)}: granted the vault`)}><ShieldCheck />Grant</Button>
+                  <Button size="sm" variant="outline" disabled={busy} onClick={() => void act(a.job, 'deny-vault', `job ${a.job.slice(0, 8)}: denied; it asks no more`)}><Ban />Deny</Button>
+                </div>
+              )}
             </li>
           ))}</ul>
         )}
@@ -85,7 +92,7 @@ function ItemName({ item }: { item: VaultGrantItem }) {
 
 /** Who granted it, on which day, and the way: a direct job's submission, or the operator CLI's command. */
 function grantedHow(g: VaultGrantView): string {
-  const when = `on ${g.at.slice(0, 10)}`;
+  const when = `on ${g.at.slice(0, 10)} ${g.at.slice(11, 16)} UTC`;
   const how = g.made === 'submit' ? 'when the direct job was submitted with the vault authorization' : '';
   const cli = g.via === 'cli' && g.command ? `through the operator CLI (\`${g.command}\`, run on the hopper's host with the database's credentials)` : '';
   const by = g.via === 'cli' ? '' : `by ${g.by}`;

@@ -48,6 +48,8 @@ export interface Vault extends Pick<VaultService, 'forStep' | 'saveTemplate' | '
   grant?(jobId: string, by: string): VaultResult;
   /** A person takes a job's item's vault grant back (issue #652): its jobs get nothing from the vault again. */
   revokeGrant?(jobId: string, by: string): VaultResult;
+  /** A person, or a delegate approver for them (issue #1138), denies a job's grant ask: the ask goes, and the job asks no more. 409: none waits. */
+  denyGrant?(jobId: string, by: string): VaultResult;
 }
 
 /**

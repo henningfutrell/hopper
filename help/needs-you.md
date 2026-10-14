@@ -61,18 +61,29 @@ Each new review request records the event `source.review_requested`. Your webhoo
 
 ## Access requests
 
-**Access requests** shows what jobs on boxes wait on a person for. It always shows four panels. A panel with nothing in it says what will show there.
+**Access requests** shows what jobs on boxes wait on a person for. It always shows four panels, and an admin also sees **Delegate approvers**. A panel with nothing in it says what will show there.
 
 | Panel | What you do |
 |---|---|
 | **Asked for** | A job needs a credential the vault does not give. Give one, or decline with a reason. |
-| **Vault grants** | A job on a box asked the vault with no grant. Select **Grant**. Granted items show here, with **Revoke**. |
+| **Vault grants** | A job on a box asked the vault with no grant. Select **Grant**, or **Deny**: then that job asks no more. Granted items show here, with who granted them and when, and **Revoke**. |
 | **Template approvals** | A template is new, or has a new image, secret or profile. Select **Approve**. When the card lists a write, sync or apply profile, select **Approve all listed** to approve the template and each profile. |
 | **Sandbox runs** | A job asked for a sandbox. Select **Approve** to start the box, or write why not and select **Decline**. Runs that start, run or end show below. A run of a template you approved for the same job, of a blast radius the auto-approve policy holds, or whose every change you approved before (a remembered write approval), does not wait here. Each card shows why the job asks, the job and its link, its plan, and each need in plain words. Skip this step with **Skip sandbox approval** on Settings → Vault. Each card's approval is its own: you can approve several cards in a row. |
 
 To approve several at once, select the box on each template or sandbox run card, or select **Select all waiting**. Then select **Approve selected**. Each approval goes on its own, at the same time. Each card shows **Approving…**, then **Approved**, or why it was not approved. One that fails does not stop the others.
 
 The page also links to **Settings → API tokens**, where you mint a box token for an agent that approves or merges through the API.
+
+### Delegate approvers
+
+A **delegate approver** lets an agent approve for you what waits on this page: vault grants, templates and sandbox runs. It can also deny a grant ask and decline a sandbox run. It cannot change settings, secrets or the master key.
+
+1. On **Delegate approvers**, select **Mint delegate**.
+2. Give it a name. Under **Never approves what names**, write what stays yours, for example `prod`. An approval that touches a template, secret, asset or machine whose name holds one of these is refused; you approve it yourself.
+3. Copy the refresh token. It is shown once. Put it in a file the agent alone can read.
+4. The agent runs `HOPPER_REFRESH_TOKEN_FILE=<that file> HOPPER_URL=<the hopper's URL> hopper grant approve <job>`. Also `hopper grant list`, `hopper grant deny <job>`, `hopper sandbox requests`, `hopper sandbox approve <id>`, `hopper sandbox decline <id> --reason <text>` and `hopper template approve <name>`. Each use writes a new refresh token to the file.
+
+Each approval it makes shows its name and yours, for example "granted by cos (delegate of you)". Select **Revoke** on its row to stop it at once.
 
 **Settings → Vault** keeps the configuration: secrets, templates, the sandbox approvals, the read policy, shared secrets and the hopper's own secrets. A template that waits there links to Access requests. See [The vault](vault.md) and [Sandbox boxes](sandboxes.md).
 

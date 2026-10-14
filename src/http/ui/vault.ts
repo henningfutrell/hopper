@@ -20,9 +20,11 @@ import { needsOf, previewTemplate, requestedName, requestTemplate } from '../../
 import { holdsTemplate, type Vault } from '../../vault/vault.ts';
 import { templateRequestUser, vaultAnswer } from '../vault.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
-import { identityName } from './sessions.ts';
 import { profileAsk, profileNeedsPerson, profileRef } from '../../domain/confirmation-asks.ts';
 import { askerOf, askPerson, byApiToken } from './confirmation-asks.ts';
+import { templateNames } from '../../domain/delegates.ts';
+import type { ApiGrants } from './api-grants.ts';
+import { approverOf, delegateOf, refuseDenied } from './delegates.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -85,15 +87,21 @@ const giveOf = (e: GiveEdit) => ({
   ...(e.value ? { value: e.value } : {}),
 });
 
-export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts }): void {
+export function registerVaultRoutes(app: FastifyInstance, o: { operator: Guard; admin: Guard; tenant: (req: FastifyRequest) => TenantParts; grants: Pick<ApiGrants, 'live'> }): void {
   app.post('/ui/api/vault', o.admin, async (req, reply) => {
     reply.header('cache-control', 'no-store');
     const s = signedInOf(req);
     if (!s) throw new HttpError(401, 'sign in to change the vault');
-    const by = identityName(s.identity);
     const parts = o.tenant(req);
     const { vault } = parts;
     const edit = parseWith(vaultEditBody, req.body);
+    // A delegate approver (issue #1138) approves a template only where its approver policy names nothing of it.
+    const delegate = delegateOf(o.grants, s);
+    const by = approverOf(delegate, s);
+    if (delegate && edit.action === 'approve-template') {
+      const t = vault.view().templates.find((x) => x.name === edit.name);
+      refuseDenied(delegate, t ? templateNames(t) : [edit.name], `approving the template ${edit.name}`);
+    }
     if (edit.action === 'approve-profile' && byApiToken(s) && profileNeedsPerson(edit)) {
       const profile = { operation: edit.operation, asset: edit.asset };
       const waits = vault.view().templates.find((t) => t.name === edit.name)?.pending.profiles.some((p) => profileRef(edit.name, p) === profileRef(edit.name, profile));
