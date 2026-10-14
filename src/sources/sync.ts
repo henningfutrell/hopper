@@ -373,12 +373,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       for (const slot of slots.values()) void runSync(slot, true);
     },
     repoChanged(repo) {
-      if (!running) return [];
-      const named = [...slots.values()].filter((s) => !s.removed && s.source.repoChanged?.(repo) === true);
-      for (const slot of named) {
-        if (slot.delivered) continue;
-        slot.delivered = setTimeout(() => { delete slot.delivered; if (running) void runSync(slot); }, DELIVERY_SYNC_MS);
-      }
+      const named = running ? [...slots.values()].filter((s) => !s.removed && s.source.repoChanged?.(repo) === true) : [];
+      for (const slot of named) slot.delivered ??= setTimeout(() => { delete slot.delivered; if (running) void runSync(slot); }, DELIVERY_SYNC_MS);
       return named.map((s) => s.source.name);
     },
     async stop() {

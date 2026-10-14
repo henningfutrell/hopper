@@ -271,8 +271,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     discover: (d) => reads.cached(async () => {
       const bot = await botLogin();
       const assignee = o.assignee();
-      const repos = bot === undefined ? config.repos : await appScope(d?.due === true);
-      scanned = repos;
+      const repos = scanned = bot === undefined ? config.repos : await appScope(d?.due === true);
       nothingToScan = app && repos.length === 0;
       if (nothingToScan || assignee === undefined) {
         repoErrors = {};
@@ -325,12 +324,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       lastDiscoverAt = o.clock.now().toISOString();
       return items;
     }),
-    repoChanged(repo) {
-      const own = scanned.find((r) => r.toLowerCase() === repo.toLowerCase());
-      if (own === undefined) return false;
-      listing.markDue(own);
-      return true;
-    },
+    repoChanged: (repo) => { const own = scanned.find((r) => r.toLowerCase() === repo.toLowerCase()); if (own !== undefined) listing.markDue(own); return own !== undefined; },
     check: (active) => reads.cached(async () => {
       const mine = active.filter((j) => j.source?.source === o.name && !TERMINAL_STATUSES.includes(j.status));
       if (mine.length === 0) return [];
