@@ -4,7 +4,7 @@
 // each problem, failure and hand-off (issue #551), whether the daemon takes each action now and why not. The routes
 // refuse with the same reasons, so the view offers only what is taken.
 import type { UserStore } from '../domain/ports.ts';
-import { highFirst, jobPriorityTag, type Allowed, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
+import { DEFAULT_YOLO_MODE, highFirst, jobPriorityTag, pullRequestList, stuckOf, type Allowed, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
 import { handoffCard, takenCard } from './card.ts';
 import { keptWorkViews } from './kept-work.ts';
 import { knownCauses } from './causes.ts';
@@ -125,6 +125,12 @@ function problemView(store: Reads, p: Problem): ProblemView {
   };
 }
 
+/** The Pull requests page's cards (issue #637), as it reads them: those the hopper gave up on are stuck work. */
+function pullRequestCards(store: Pick<UserStore, 'jobs' | 'settings'>, now: Date) {
+  const view = pullRequestList(store.jobs.list({ status: ['finished', 'failed'], followed: true }), (key) => store.jobs.getBySourceKey(key), store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, store.settings.getJobRepositories('github'), now.getTime(), (id) => store.jobs.get(id));
+  return view.repos.flatMap((g) => g.pullRequests);
+}
+
 export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 'events'>, settings: FailureSettings, now: Date, resumable: (job: Job) => boolean, takesBack: TakesBack): FailuresView {
   const dayAgo = new Date(now.getTime() - DAY_MS).toISOString();
   const handoffs = [...store.handoffs.list({ status: 'open' }), ...store.handoffs.list({ status: 'closed', closedSince: dayAgo, limit: 50 })];
@@ -135,18 +141,23 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 
   const tag = (jobId: string) => jobPriorityTag(store.jobs, saved, jobId);
   const tldr = tldrSettings(store);
   const recordView = (r: FailureRecord) => ({ ...r, ...tag(r.jobId), actions: { retry: recordRetry(store, r, takesBack) } });
+  const shownHandoffs = highFirst(handoffs.map((h) => ({ ...handoffView(store, withShownTldr('handoff', h, tldr), resumable, takesBack), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true);
+  const keptWork = keptWorkViews(store, resumable, takesBack);
+  const recent = store.failures.list({ limit: SCAN, notOutcome: [...SETTLED, ...RAN_AGAIN] }).filter((r) => endedAt(store, r) === undefined).slice(0, RECENT).map(recordView);
   return {
     now: now.toISOString(),
     counts: countsOf(store),
     settings,
     // Each with its TL;DR (issue #569) only while it is shown.
-    handoffs: highFirst(handoffs.map((h) => ({ ...handoffView(store, withShownTldr('handoff', h, tldr), resumable, takesBack), ...tag(h.jobId) })), (h) => h.status === 'open' && h.high === true),
+    handoffs: shownHandoffs,
     causes: knownCauses(store.settings.getNamedCauses()),
     // Work not pushed (issue #1010): ended jobs whose reap kept work, each with Push it and Discard.
-    keptWork: keptWorkViews(store, resumable, takesBack),
+    keptWork,
+    // Stuck work (issue #1010): each item that waits on a person, by its cause, with one bulk action or what to do.
+    stuck: stuckOf({ handoffs: shownHandoffs, recent, keptWork, pullRequests: pullRequestCards(store, now), jobs: store.jobs.list({ status: ['parked', 'waiting_on'] }) }),
     problems: [...store.problems.list({ status: 'open' }), ...resolved].map((p) => problemView(store, p)),
     // Nothing waits on an ended one (issues #529, #618): out of the open failures, in Ended for a day, still in the profile.
-    recent: store.failures.list({ limit: SCAN, notOutcome: [...SETTLED, ...RAN_AGAIN] }).filter((r) => endedAt(store, r) === undefined).slice(0, RECENT).map(recordView),
+    recent,
     ended: store.failures.list({ limit: SCAN }).filter((r) => (endedAt(store, r) ?? '') >= dayAgo).slice(0, RECENT).map(recordView),
     profile: profileOf(store.failures.list({ since, limit: 5000 }), now.toISOString(), { days: PROFILE_DAYS, generalThreshold: settings.groupThreshold }),
   };

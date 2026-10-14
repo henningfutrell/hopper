@@ -1,11 +1,13 @@
 // The UI session's actions on failures (issue #509): resolve a problem, release its held jobs, run a surfaced
-// failure's job again, resolve a hand-off (issues #516, #551), push or discard work not pushed (issue #1010) (operator); the failures settings and the known causes a person names (admin). Each refuses
+// failure's job again, resolve a hand-off (issues #516, #551), push or discard work not pushed, a stuck cause's bulk
+// action (issue #1010) (operator); the failures settings and the known causes a person names (admin). Each refuses
 // with the reason the Failures view reads from `actions`, so the view offers only what is taken.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { FAILURE_DECISIONS, FAILURE_SETTING_BOUNDS, HANDOFF_RESOLUTIONS } from '../../domain/types.ts';
+import { FAILURE_DECISIONS, FAILURE_SETTING_BOUNDS, HANDOFF_RESOLUTIONS, STUCK_BULK } from '../../domain/types.ts';
 import type { FailureAction } from '../../failures/index.ts';
 import { pushKeptWork } from '../../failures/kept-work.ts';
+import { actOnStuck } from '../../failures/stuck.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
@@ -50,6 +52,14 @@ export const KEPT_WORK_OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/failures/kept-work/:id/discard', tag: 'Failures', summary: 'Discard work not pushed', description: 'Work not pushed (issue #1010): the ended job\'s kept scratch dir is removed on its machine, whatever it holds — its git worktrees removed with --force —, then `job.work_removed` with `discarded` and who acted (`person`, `via`). The work is lost. A box action. 409: it has no work kept, it has not ended, or its machine is unknown, offline, out of reach, or kept it all the same (a client older than this hopper: update it, then discard again).', role: 'operator', returns: '`{ jobId, paths }`: the scratch dir removed', errors: [401, 404, 409] },
 ];
 
+/** A stuck cause with a bulk action (issue #1010). */
+export const stuckParams = z.object({ cause: z.enum(STUCK_BULK) });
+
+/** A stuck cause's bulk action (issue #1010), as the OpenAPI document lists it. */
+export const STUCK_OPERATIONS: Operation[] = [
+  { method: 'post', path: '/ui/api/failures/stuck/:cause', tag: 'Failures', summary: 'Act on a stuck cause', description: 'Stuck work (issue #1010): runs the bulk action of one stuck cause (`stuck` in `GET /api/failures`) on each of its items now, one after another, through the same path as the item\'s own button: `continue`, `run_again` and `wont_do` resolve each open hand-off so (Won\'t do with its card\'s why as the note), `retry` runs each failure again, `push` is Push it on each job\'s work not pushed, `tend` is Tend again on each pull request the hopper gave up on. An item refused meanwhile is skipped with why; the others go on. A box action. 400: the cause has no bulk action.', role: 'operator', returns: '`StuckActResult`: `{ cause, done, refused: [{ id, why }] }`', errors: [400, 401] },
+];
+
 /** A problem's resolution (issue #623): a note, if any, kept in its `failure.resolved`. */
 export const problemResolveBody = z.strictObject({ note: z.string().trim().max(NOTE_MAX).optional() });
 
@@ -92,6 +102,17 @@ export function registerFailureRoutes(app: FastifyInstance, o: { operator: Guard
     return answer(await pushKeptWork(d, parseWith(idParams, req.params).id, note || undefined, actingIn(req)));
   });
   app.post('/ui/api/failures/kept-work/:id/discard', o.operator, async (req) => o.tenant(req).engine.discardWork(parseWith(idParams, req.params).id, actingIn(req)));
+  // A stuck cause's bulk action (issue #1010): each item through its own button's path.
+  app.post('/ui/api/failures/stuck/:cause', o.operator, async (req) => {
+    const { cause } = parseWith(stuckParams, req.params);
+    const by = actingIn(req);
+    const t = o.tenant(req);
+    const kept = { store: t.store, resumable: t.engine.resumable, takesBack: t.registry.takesBack, continueJob: t.registry.continueJob, resolveHandoff: t.failures.resolveHandoff };
+    return actOnStuck({
+      view: () => t.failures.view(), resolveHandoff: t.failures.resolveHandoff, retry: t.failures.retry, tendAgain: t.registry.tendAgain,
+      push: (jobId, who) => pushKeptWork(kept, jobId, undefined, who),
+    }, cause, by);
+  });
   app.post('/ui/api/failures/:id/retry', o.operator, async (req) => answer(await o.tenant(req).failures.retry(parseWith(idParams, req.params).id, actingIn(req))));
   // Read at each assessment and sweep: applies without a restart.
   app.post('/ui/api/failures/settings', o.admin, async (req) => {

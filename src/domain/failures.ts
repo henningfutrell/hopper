@@ -3,6 +3,7 @@
 // grouped into a problem (a shared cause, held or redirected), handed to a person (job-specific), or — a timed-out
 // job still at work (issue #630) — continued.
 import type { KeptWorkView } from './kept-work.ts';
+import type { StuckCause } from './stuck.ts';
 import type { Tldr } from './tldr.ts';
 
 /** What the assessor decides for a failed job. `continue` (issue #630): a timed-out job still at work goes on. */
@@ -408,6 +409,11 @@ export interface FailuresView {
   problems: ProblemView[];
   /** Work not pushed (issue #1010): every ended job whose reap kept work, newest first, with Push it and Discard. */
   keptWork: KeptWorkView[];
+  /**
+   * Stuck work (issue #1010): every item that waits on a person — here, in Parked, or on the Pull requests page — by its
+   * stuck cause, each with one bulk action or what a person does.
+   */
+  stuck: StuckCause[];
   /** The newest assessed failures still open: none that ended (issue #618). */
   recent: FailureRecordView[];
   /**
