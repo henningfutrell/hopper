@@ -25,6 +25,7 @@ import type { Engine } from '../engine/index.ts';
 import type { Failures } from '../failures/index.ts';
 import type { Logins, SignIns } from '../logins/index.ts';
 import type { JobTerminal } from '../engine/terminal.ts';
+import type { MachineTerminal } from '../engine/machine-terminal.ts';
 import type { MinorDecisions, TypesafeKey } from '../minor-decisions/index.ts';
 import type { Tldrs } from '../tldr/index.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
@@ -60,6 +61,8 @@ export interface TenantParts {
   signIns: SignIns;
   /** The job's terminal (issue #1128): a running job's pane, viewed and typed into. */
   terminal: JobTerminal;
+  /** The machine's terminal (issue #1128): the panes of the hopper's herdr session on a machine, viewed and typed into. */
+  machineTerminal: MachineTerminal;
   /** The failure assessor (issue #509). */
   failures: Failures;
   /** Decider calls through Jev first (issue #550). */

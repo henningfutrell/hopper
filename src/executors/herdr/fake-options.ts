@@ -172,4 +172,6 @@ export interface FakeHerdrClient extends HerdrClient {
   /** While set, every call rejects as a client target not dialled in does (issue #371): the panes live on, unreached. */
   setUnreachable(on: boolean): void;
   screen(paneId: string): string;
+  /** A pane no job holds (issue #1128, the machine's terminal): a person's own, its title and what it shows. Its pane id. */
+  openPane(o: { title: string; lines: string[] }): string;
 }

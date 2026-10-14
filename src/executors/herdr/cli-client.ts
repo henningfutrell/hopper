@@ -13,7 +13,7 @@ import { clientShell, localShell, sshShell } from '../machine-shell.ts';
 import type { MachineShell } from '../../domain/ports.ts';
 import { REMOTE_HERDR, SSH_FAILED, shellQuote, sshArgv, type SshTransport } from '../ssh.ts';
 import { HerdrError } from './client.ts';
-import type { AgentInfo, AgentStatus, HerdrClient } from './client.ts';
+import type { AgentInfo, AgentStatus, HerdrClient, HerdrPane } from './client.ts';
 
 const DEFAULT_TIMEOUT_MS = 15000;
 
@@ -162,6 +162,10 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
         throw err;
       }
     },
+    async listPanes() {
+      const r = await run(['pane', 'list']);
+      return ((r.panes ?? []) as HerdrListedPane[]).map(paneOf);
+    },
     async closePane(paneId) { await run(['pane', 'close', paneId]); },
     reap: (jobId, scratch, keep, discard) => shell.reap(jobId, scratch, keep, discard),
     survey: (roots) => shell.survey(roots),
@@ -171,3 +175,10 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
     keepCredential: (jobId, dir, file, content, make) => shell.keepCredential(jobId, dir, file, content, make),
   };
 }
+
+/** A pane as `herdr pane list` gives it: only what the machine's terminal shows, never its working directory. */
+interface HerdrListedPane { pane_id: string; tab_id: string; workspace_id: string; terminal_title_stripped?: string; terminal_title?: string; agent?: string; agent_status?: AgentStatus }
+const paneOf = (p: HerdrListedPane): HerdrPane => {
+  const title = p.terminal_title_stripped ?? p.terminal_title;
+  return { paneId: p.pane_id, tabId: p.tab_id, workspaceId: p.workspace_id, ...(title ? { title } : {}), ...(p.agent ? { agent: p.agent } : {}), agentStatus: p.agent_status ?? 'unknown' };
+};

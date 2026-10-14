@@ -3,6 +3,7 @@
 // A job waiting on its own background command (issue #1037): whether its pane still shows that command run.
 // The job's terminal (issue #1128): its pane's screen for a person, and their input to it.
 import type { Clock, Executor, PaneAnswer } from '../../domain/ports.ts';
+import type { PaneSession } from '../../domain/terminal.ts';
 import type { HerdrClient } from './client.ts';
 import { RECENT_LINES } from './monitor.ts';
 import { lastLineOf, paneStateOf } from './panes.ts';
@@ -88,6 +89,18 @@ export function terminalProbes(herdrOn: (s: PaneState) => HerdrClient): Required
       if ('text' in input) await herdr.sendText(s.paneId, input.text);
       else await herdr.sendKeys(s.paneId, input.keys);
       return true;
+    },
+  };
+}
+
+/** The machine's terminal (issue #1128): every pane of the herdr session, on the herdr the machine is reached by. */
+export function paneSessionOn(herdr: HerdrClient): PaneSession {
+  return {
+    panes: () => herdr.listPanes(),
+    read: (paneId, lines) => herdr.read(paneId, { source: 'recent', lines }),
+    type: async (paneId, input) => {
+      if ('text' in input) await herdr.sendText(paneId, input.text);
+      else await herdr.sendKeys(paneId, input.keys);
     },
   };
 }

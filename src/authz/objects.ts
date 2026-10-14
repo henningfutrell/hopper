@@ -44,6 +44,13 @@ export function terminalCheck(userId: string, t: { ownerId: string; jobId: strin
   const object = terminalObject(t);
   return { tuple: { subject: userObject(userId), relation: 'can_attach', object }, contextual: [{ subject: userObject(t.ownerId), relation: 'owner', object }] };
 }
+/** A machine's terminal (issue #1128): the user whose machine it is, and the machine. */
+export const machineTerminalObject = (t: { ownerId: string; machineId: string }): string => `machine_terminal:${t.ownerId}/${encodeURIComponent(t.machineId)}`;
+/** The check whether a user may attach to a machine's terminal (issue #1128): the machine's owner, told for this check only. */
+export function machineTerminalCheck(userId: string, t: { ownerId: string; machineId: string }): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = machineTerminalObject(t);
+  return { tuple: { subject: userObject(userId), relation: 'can_attach', object }, contextual: [{ subject: userObject(t.ownerId), relation: 'owner', object }] };
+}
 /** A search hit (issue #945): the user whose work it is, its type and its id there. */
 export const searchHitObject = (h: { ownerId: string; type: string; ref: string }): string => `search_hit:${h.ownerId}/${h.type}/${encodeURIComponent(h.ref)}`;
 /** The check whether a user may see a search hit (issue #945): its owner, and every user unless it is private, told for this check only. */

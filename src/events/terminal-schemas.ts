@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { ACTION_VIAS } from '../domain/types.ts';
 
 const strict = z.strictObject;
-const who = { sessionId: z.string(), person: z.string(), via: z.enum(ACTION_VIAS) };
+// The machine's terminal (issue #1128) names the machine and the pane too; the job's terminal names neither.
+const who = { sessionId: z.string(), person: z.string(), via: z.enum(ACTION_VIAS), machineId: z.string().optional(), paneId: z.string().optional() };
 
 export const TERMINAL_EVENT_SCHEMAS = {
   'terminal.opened': strict(who),
@@ -13,8 +14,8 @@ export const TERMINAL_EVENT_SCHEMAS = {
 };
 
 export const TERMINAL_EVENT_DOCS = {
-  'terminal.opened': 'A person opened the job\'s terminal (issue #1128, `POST /ui/api/jobs/:id/terminal/screen`): the first read of its herdr pane by that person, or the first after two minutes with no read or input. `sessionId` names the session; `person` and `via` (`ui`, `api`, `cli`) say who and how.',
-  'terminal.typed': 'A person typed into the job\'s terminal (issue #1128, `POST /ui/api/jobs/:id/terminal/input`), in the session `sessionId`: `chars`, how many characters of text were written to its pane, or `keys`, the key names pressed. The text itself is never in the event: it may hold a secret.',
+  'terminal.opened': 'A person opened a terminal (issue #1128): the job\'s (`POST /ui/api/jobs/:id/terminal/screen`), or the machine\'s (`POST /ui/api/machines/:id/terminal/screen`), which names `machineId` and `paneId` and the job only when one holds that pane. It is the first read of the pane by that person, or the first after two minutes with no read or input. `sessionId` names the session; `person` and `via` (`ui`, `api`, `cli`) say who and how.',
+  'terminal.typed': 'A person typed into a terminal (issue #1128): the job\'s (`POST /ui/api/jobs/:id/terminal/input`) or the machine\'s (`POST /ui/api/machines/:id/terminal/input`, with `machineId` and `paneId`), in the session `sessionId`: `chars`, how many characters of text were written to its pane, or `keys`, the key names pressed. The text itself is never in the event: it may hold a secret.',
 };
 
 export const TERMINAL_EVENT_EXAMPLES = {

@@ -1102,13 +1102,15 @@ Version 1 (`docs/schemas/job.note_carried.v1.json`). A new job of the job's item
 
 ## `terminal.opened`
 
-Version 1 (`docs/schemas/terminal.opened.v1.json`). A person opened the job's terminal (issue #1128, `POST /ui/api/jobs/:id/terminal/screen`): the first read of its herdr pane by that person, or the first after two minutes with no read or input. `sessionId` names the session; `person` and `via` (`ui`, `api`, `cli`) say who and how.
+Version 1 (`docs/schemas/terminal.opened.v1.json`). A person opened a terminal (issue #1128): the job's (`POST /ui/api/jobs/:id/terminal/screen`), or the machine's (`POST /ui/api/machines/:id/terminal/screen`), which names `machineId` and `paneId` and the job only when one holds that pane. It is the first read of the pane by that person, or the first after two minutes with no read or input. `sessionId` names the session; `person` and `via` (`ui`, `api`, `cli`) say who and how.
 
 | field | type | required |
 |---|---|---|
 | `sessionId` | string | yes |
 | `person` | string | yes |
 | `via` | `ui` \| `cli` \| `api` | yes |
+| `machineId` | string | no |
+| `paneId` | string | no |
 
 ```json
 {
@@ -1120,13 +1122,15 @@ Version 1 (`docs/schemas/terminal.opened.v1.json`). A person opened the job's te
 
 ## `terminal.typed`
 
-Version 1 (`docs/schemas/terminal.typed.v1.json`). A person typed into the job's terminal (issue #1128, `POST /ui/api/jobs/:id/terminal/input`), in the session `sessionId`: `chars`, how many characters of text were written to its pane, or `keys`, the key names pressed. The text itself is never in the event: it may hold a secret.
+Version 1 (`docs/schemas/terminal.typed.v1.json`). A person typed into a terminal (issue #1128): the job's (`POST /ui/api/jobs/:id/terminal/input`) or the machine's (`POST /ui/api/machines/:id/terminal/input`, with `machineId` and `paneId`), in the session `sessionId`: `chars`, how many characters of text were written to its pane, or `keys`, the key names pressed. The text itself is never in the event: it may hold a secret.
 
 | field | type | required |
 |---|---|---|
 | `sessionId` | string | yes |
 | `person` | string | yes |
 | `via` | `ui` \| `cli` \| `api` | yes |
+| `machineId` | string | no |
+| `paneId` | string | no |
 | `chars` | integer | no |
 | `keys` | string[] | no |
 
