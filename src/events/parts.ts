@@ -115,6 +115,7 @@ export const vaultGrantEvents = {
   'vault.grant_asked': strict({ job: z.string(), key: z.string(), machine: z.string().optional(), template: z.string().optional(), windowsHost: z.string().optional(), name: z.string() }),
   'vault.granted': strict({ job: z.string(), key: z.string(), by: z.string() }),
   'vault.grant_revoked': strict({ job: z.string(), key: z.string(), by: z.string() }),
+  'vault.grant_denied': strict({ job: z.string(), key: z.string(), by: z.string() }),
 };
 
 // The shared rate limiter (issue #436): the hopper's admin changed its settings.

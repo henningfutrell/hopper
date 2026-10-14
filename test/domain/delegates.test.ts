@@ -16,7 +16,7 @@ describe('a delegate approver (issue #1138)', () => {
   it('a template\'s names: its own, its secrets, and the assets of its profiles, pending ones too', () => {
     expect(templateNames({
       name: 'kube', secrets: ['KUBE_TOKEN'], profiles: [{ operation: 'read', asset: { kind: 'cluster', name: 'lab' } }],
-      pending: { secrets: ['NEW'], image: false, profiles: [{ operation: 'write', asset: { kind: 'namespace', name: 'prod/apps' } }] },
+      pending: { secrets: ['NEW'], profiles: [{ operation: 'write', asset: { kind: 'namespace', name: 'prod/apps' } }] },
     })).toEqual(['kube', 'KUBE_TOKEN', 'lab', 'NEW', 'prod/apps']);
   });
 

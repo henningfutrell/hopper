@@ -49,6 +49,8 @@ export const REFRESH_GRACE_MS = 30_000;
 export interface ApiGrantView {
   id: string; label: string; holder?: string; role: UiRole; box: boolean; scopes: string[];
   createdAt: string; endsAt: string | null; idleEndsAt: string; lastUsedAt?: string; lastUsedFrom?: string; tokenMinutes?: number;
+  /** A delegate approver's (issue #1138): what its approver policy denies. Absent: no delegate approver. */
+  delegate?: { deny: string[] };
 }
 /** A new API token for a grant, and the grant's next refresh token: both answered once (issue #881). */
 export interface ApiTokenRefreshed { grant: string; token: string; expiresAt: string; refresh: string }

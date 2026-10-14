@@ -216,7 +216,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'vault.credential_asked': { request: 'c9d0e1f2-0000-4000-8000-000000000583', skill: 'example-api', template: 'web', machine: 'hopper-sandbox-web', job: 'f3b1c2d4-0000-4000-8000-000000000001', why: 'deploy the web service' },
   'vault.grant_asked': { job: 'f3b1c2d4-0000-4000-8000-000000000001', key: 'https://github.com/octo-org/hello/issues/7', machine: 'hopper-sandbox-web', template: 'web', name: 'KUBE_TOKEN' },
   'vault.granted': { job: 'f3b1c2d4-0000-4000-8000-000000000001', key: 'https://github.com/octo-org/hello/issues/7', by: 'octocat' },
-  'vault.grant_revoked': { job: 'f3b1c2d4-0000-4000-8000-000000000001', key: 'https://github.com/octo-org/hello/issues/7', by: 'octocat' },
+  'vault.grant_revoked': { job: 'f3b1c2d4-0000-4000-8000-000000000001', key: 'https://github.com/octo-org/hello/issues/7', by: 'octocat' }, 'vault.grant_denied': { job: 'f3b1c2d4-0000-4000-8000-000000000001', key: 'https://github.com/octo-org/hello/issues/7', by: 'cos (delegate of octocat)' },
   'vault.credential_given': { request: 'c9d0e1f2-0000-4000-8000-000000000583', skill: 'example-api', name: 'example-api', kind: 'asked', template: 'web', by: 'github:octocat', approved: true, jobs: ['f3b1c2d4-0000-4000-8000-000000000001'] },
   'vault.credential_declined': { request: 'c9d0e1f2-0000-4000-8000-000000000583', skill: 'example-api', template: 'web', reason: 'deploy by hand this time', by: 'github:octocat', jobs: ['f3b1c2d4-0000-4000-8000-000000000001'] },
   'skill.listed': { requestId: 'r4', machine: 'hopper-sandbox-kube', template: 'kube' },

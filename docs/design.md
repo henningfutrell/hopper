@@ -15313,6 +15313,56 @@ scope, as every box job did before. A person who grants a job of a request card'
 A job on a person's own account (no box) can still read that home's files (`~/.ssh`, a gh login): only a box keeps them
 out ("Git through the hopper", residual risk).
 
+## Delegate approvers (issue #1138, 2026-10-14)
+
+Requirement: the owner hands approvals to an agent (Chief of Staff) without the agent touching the owner's browser session
+or session token. A named, revocable credential with an end, scoped to approvals only; usable from the CLI headless; each
+approval records the delegate, whom it acted for, and when; optional limits on what it may approve, prod staying the
+owner's.
+
+- **What it is.** A **delegate approver** is a **grant** ("Grants and refresh tokens") of the preset `delegate-approver`
+  (`src/domain/delegates.ts` `DELEGATE_SCOPES`): `vault:read`, `jobs:grant-vault`, `jobs:deny-vault`,
+  `vault:edit.approve-template`, `sandbox-requests:edit.approve`, `sandbox-requests:edit.decline`. A box grant, as a
+  sandbox request is a box action. A mint that names the preset and any other `scopes` is refused (400): it is approvals
+  only, so settings, secrets, `revoke-vault`, the sandbox toggles and the master key are out of its scopes (403). Its name
+  is the grant's label, its end the grant's `days`; its role is its minter's, at most. No new kind of token: the grant's
+  refresh rotation, reuse detection, idle end and revoke all apply.
+- **Minted and revoked on Access requests.** The panel **Delegate approvers** (`ui/src/views/delegate-approvers.tsx`, an
+  admin's) mints one (`POST /ui/api/api-tokens` `{ action: 'mint', label, preset: 'delegate-approver', deny, days }`),
+  shows its refresh token once with the command an agent runs, lists each delegate with its policy, and revokes it at
+  once. `hopper token mint --preset delegate-approver --deny prod` mints one from the operator CLI.
+- **The approver policy.** `deny` on the mint (at most 32 entries): each entry matches, in any case, any name an approval
+  touches. A grant ask: its template, machine or Windows host, the names the job asked for, and the template's secrets and
+  assets. A template: its name, secrets and profiles' assets, waiting ones too. A sandbox request: its template's. A match
+  is 403 (`src/http/ui/delegates.ts` `refuseDenied`); the owner still approves it. Substring, not glob: `prod` keeps
+  `shop-prod` and `prod/apps` the owner's. Kept on the grant's row (`api_grants` body `delegate`), so no migration; a build
+  before this one reads the row and ignores the field, and its scopes still keep the token to the approval routes.
+- **Only what waits.** A delegate grants or denies only a grant ask that waits (409 else): it never grants an item no job
+  asked for. Its template approval and sandbox decisions are those of the routes, which approve only what waits already.
+- **Deny.** `POST /ui/api/jobs/:id/deny-vault` (a person's too: Deny on the ask's card) drops the ask and records
+  `vault.grant_denied`; that job, still with no grant, asks no more (kept in memory). Run again makes a new job, which may
+  ask again.
+- **Audit.** An approval by a delegate records `by` as `<label> (delegate of <person>)` in its event (`vault.granted`,
+  `vault.grant_denied`, `vault.approved`, `vault.sandbox_approved`, `vault.sandbox_declined`), on the vault grant and on the
+  template's approval, so Access requests shows it on the card, with the time. A notifier or webhook subscribed to those
+  events tells the owner.
+- **The CLI, headless.** `hopper grant [list] | approve <job> | deny <job>`, `hopper sandbox requests | approve <id> |
+  decline <id> --reason <text>`, `hopper template approve <name>`. With `HOPPER_REFRESH_TOKEN_FILE` set the operator CLI
+  opens no database (`runOperatorActionWithGrant`, `src/cli-operator.ts`): it trades the refresh token in that file at
+  `POST /ui/auth/token/refresh`, writes the new one to the file (mode 600, by rename) before it acts, and sends the action
+  with the API token. `HOPPER_URL` or `--url` names the hopper; `--user` is refused (the grant names its user). Any
+  operator action works this way, within the grant's scopes.
+- **Not built.** "Read-only approvals can be set to auto" is the read policy and the auto-approve policy already
+  ("Templates on request", "Sandboxes jobs start"). A limit by role is not built: a delegate's role is its minter's, and its
+  scopes already keep it to approvals.
+
+**Residual risk.** Whoever holds the refresh-token file approves what waits, within the policy, until the grant ends or
+is revoked. The policy is by name: an asset named with none of the deny entries is approved. A deny entry that is a
+common word (`a`) denies nearly everything.
+
+Tests: `test/integration/delegate-approver.test.ts`, `test/integration/job-sandboxes.test.ts` (a delegate's sandbox
+approval), `test/domain/delegates.test.ts`, `test/ui/delegate-approvers-view.test.ts`.
+
 ## Repository-agnostic lanes (issue #431, 2026-10-11)
 
 Job 7 of the pointed-job architecture (tracking issue #424). Requirement: a lane takes any job and gets a GitHub

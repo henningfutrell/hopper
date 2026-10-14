@@ -2,6 +2,8 @@
 // boxes from the operator CLI"): an agent sets a vault secret, saves and approves a template, sets the read policy
 // (issue #716, item 1), tests a minting credential (issues #781, #854), grants a job the vault (issue #1089), asks for the template some needs name (issue #718), and launches a box of it without a UI session in a browser. Each is the UI's own read or `POST /ui/api/vault` / `POST /ui/api/machines/sandbox`,
 // so the vault's checks and its approval gate apply as they do for a click. A secret's value comes from stdin only.
+// What waits for a person — a job's grant ask, a sandbox request — is decided here too (issue #1138), by a person or by a
+// delegate approver with its refresh token alone (cli-operator.ts, HOPPER_REFRESH_TOKEN_FILE).
 import { parseArgs } from 'node:util';
 import { ASSET_KINDS, OPERATIONS, type AssetKind, type Operation, type OperationProfile } from './domain/access.ts';
 import type { StateBackend } from './domain/state-backend.ts';
@@ -43,7 +45,13 @@ export const VAULT_USAGE = `  hopper vault                                      
   hopper template read-policy [set [<kind>/<asset>|<kind>/<prefix>*]...]
                                                      the read policy: the assets read is approved on with no person, for a
                                                      template a job asks for; set replaces it, set with none clears it
+  hopper grant [list]                                the jobs that wait for a vault grant (grant asks)
+  hopper grant approve <job>                         grant a job that waits the vault; a delegate approver's, within its policy
+  hopper grant deny <job>                            deny a job's grant ask: it goes, and the job asks no more
   hopper sandbox list                                the user's sandbox boxes, and whether the hopper can start one now
+  hopper sandbox requests                            the sandbox runs jobs asked for, waiting or decided
+  hopper sandbox approve <request>                   approve a sandbox request: its box starts
+  hopper sandbox decline <request> --reason <text>   decline a sandbox request: the job is told why
   hopper sandbox launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>]
                     [--tool <name>]...
                                                      start a sandbox box, of an approved template, within its limits; with
@@ -56,7 +64,8 @@ const VAULT_VERBS = `vault | hopper ${VAULT_SET} | hopper vault remove <name> [-
 const TEMPLATE_SAVE = 'template save <name> --image <image> [--secret <name>]... [--profile <operation>/<kind>/<asset>]... [--cpus <d>:<max>] [--memory-mb <d>:<max>] [--ttl-minutes [<d>]:[<max>]] [--keep-home on|off] [--tool <name>]... [--backend <workspace>=<bucket>[/<key prefix>]@<region>]... [--agent-credential <secret>|none] [--mark <probe>=expect-denied|skip|none]...';
 const TEMPLATE_REQUEST = 'template request --needs "<operation>/<kind>/<asset> ..." (or plain words, one line each: "get pods on cluster lab")';
 const TEMPLATE_VERBS = 'template list | save <name> … | request --needs <needs> | approve <name> | approve-profile <name> <operation>/<kind>/<asset> | revoke <name> | remove <name> | check <name> | read-policy [set <entry>...]';
-const SANDBOX_VERBS = 'sandbox list | launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>] [--tool <name>]...';
+const GRANT_VERBS = 'grant [list] | approve <job> | deny <job>';
+const SANDBOX_VERBS = 'sandbox list | requests | approve <request> | decline <request> --reason <text> | launch [--template <name>] [--secret <name>]... [--cpus <n>] [--memory-mb <n>] [--ttl-minutes <n>] [--profile <p>] [--tool <name>]...';
 
 const edit = (body: Record<string, unknown>): Call => ({ role: 'admin', path: '/ui/api/vault', body: async () => body });
 
@@ -214,14 +223,36 @@ export function templateCall(args: string[]): Call {
   throw usage(TEMPLATE_VERBS);
 }
 
+/**
+ * `hopper grant [list] | approve <job> | deny <job>` (issue #1138): a job's grant ask on Access requests, decided with
+ * `POST /ui/api/jobs/:id/grant-vault|deny-vault`. Access decides as for a click; the answer is the vault's view.
+ */
+export function grantCall(args: string[]): Call {
+  const { positionals } = parseArgs({ args, allowPositionals: true, options: {} });
+  const [verb, job, ...extra] = positionals;
+  if ((verb === undefined || verb === 'list') && job === undefined) return { role: 'viewer', path: '/api/vault', pick: (v) => (v as VaultView).grantAsks ?? [] };
+  if ((verb !== 'approve' && verb !== 'deny') || !job || extra.length > 0) throw usage(GRANT_VERBS);
+  return { role: 'operator', path: `/ui/api/jobs/${encodeURIComponent(job)}/${verb === 'approve' ? 'grant' : 'deny'}-vault`, body: async () => ({}) };
+}
+
 export function sandboxCall(args: string[]): Call {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
+    reason: { type: 'string' },
     template: { type: 'string' }, secret: { type: 'string', multiple: true }, cpus: { type: 'string' }, 'memory-mb': { type: 'string' },
     'ttl-minutes': { type: 'string' }, profile: { type: 'string' }, tool: { type: 'string', multiple: true },
   } });
   const [verb, ...extra] = positionals;
   if (verb === 'list' && extra.length === 0 && Object.keys(values).length === 0) return { role: 'viewer', path: '/api/sandboxes' };
-  if (verb !== 'launch' || extra.length > 0) throw usage(SANDBOX_VERBS);
+  // A sandbox request (issues #991, #1138): what jobs asked for, approved or declined as on Access requests.
+  if (verb === 'requests' && extra.length === 0 && Object.keys(values).length === 0) return { role: 'viewer', path: '/api/vault', pick: (v) => (v as VaultView).sandboxRequests ?? [] };
+  if (verb === 'approve' || verb === 'decline') {
+    const { reason, ...other } = values;
+    const [id, ...more] = extra;
+    if (!id || more.length > 0 || Object.keys(other).length > 0 || (verb === 'approve') !== (reason === undefined)) throw usage(SANDBOX_VERBS);
+    const requests = (v: unknown) => (v as VaultView).sandboxRequests ?? [];
+    return { role: 'admin', path: '/ui/api/sandbox-requests', pick: requests, body: async () => (verb === 'approve' ? { action: 'approve', id } : { action: 'decline', id, reason }) };
+  }
+  if (verb !== 'launch' || extra.length > 0 || values.reason !== undefined) throw usage(SANDBOX_VERBS);
   const num = (flag: 'cpus' | 'memory-mb' | 'ttl-minutes') => (values[flag] === undefined ? undefined : numberOf(flag, values[flag]));
   const cpus = num('cpus');
   const memoryMb = num('memory-mb');

@@ -4,6 +4,7 @@
 // from the routes themselves (./token-scopes.ts names their scopes), so a new route's scope shows up with no edit here: an
 // area no section names goes under "Other". Pure: the HTTP layer gives the routes and what a box action is.
 import { actionWord, scopeAllows, scopeOfAction, scopeOfRoute } from './token-scopes.ts';
+import { DELEGATE_PRESET, DELEGATE_SCOPES } from './delegates.ts';
 import { roleAllows, type ScopePermission, type ScopePreset, type ScopeRegistry, type ScopeSection, type UiRole } from './sign-in.ts';
 
 export type { ScopePermission, ScopePreset, ScopeRegistry, ScopeSection };
@@ -36,7 +37,7 @@ export const SCOPE_SECTIONS: readonly { id: string; title: string; description: 
 ];
 
 /** Scopes shown in another section than their area's: a job's vault grant is a vault approval. */
-const MOVED: Readonly<Record<string, string>> = { 'jobs:grant-vault': 'vault', 'jobs:revoke-vault': 'vault' };
+const MOVED: Readonly<Record<string, string>> = { 'jobs:grant-vault': 'vault', 'jobs:revoke-vault': 'vault', 'jobs:deny-vault': 'vault' };
 
 const OTHER = { id: 'other', title: 'Other', description: 'Routes no section names yet.' };
 
@@ -45,6 +46,7 @@ const PRESETS: readonly Omit<ScopePreset, 'box'>[] = [
   { id: 'read-only', label: 'Read only', description: 'Reads everything you can see — jobs, questions, intake, the Needs you list, settings — and changes nothing.', scopes: ['*:read'] },
   { id: 'agent-intake', label: 'Agent: read everything and approve intake', description: 'Reads everything, the Needs you list included, and acts on intake: approves request cards, assigns issues to you, releases claims, takes issues off the backburner. An approval starts a job, so it is a box grant.', scopes: ['*:read', 'sources:intake'] },
   { id: 'agent-approvals', label: 'Agent: read everything and approve what waits', description: 'Reads everything, and approves what waits for a person and is no infrastructure change: request cards in intake, held jobs, and a job\'s vault grant ask. A box grant. Infra plans and vault templates stay a person\'s: tick them below to add them.', scopes: ['*:read', 'sources:intake', 'jobs:approve', 'jobs:grant-vault'] },
+  { id: DELEGATE_PRESET, label: 'Delegate approver', description: 'Approves on your behalf what waits for a person, and nothing else: a job\'s vault grant ask, a template, a sandbox request; it declines or denies them too. It reads the vault\'s view only. Its approver policy names what stays yours (e.g. prod). Each approval it makes names it and you. Mint it on Access requests.', scopes: [...DELEGATE_SCOPES] },
   { id: 'full-admin', label: 'Full admin', description: 'Everything your role allows, box actions included, and every route added later.', scopes: ['*'] },
 ];
 
