@@ -16,6 +16,8 @@
 //     pass or a head that moved, git cannot say
 //   Scenario: the tip of a base branch (issue #1143 part 3)
 //     Then the commit the pass fetched, with no second fetch; outside a pass or another base, git cannot say
+//   Scenario: the lines a pull request changes (issue #1076)
+//     Then the added and removed lines of the files asked for, the blobs coming on demand; outside a pass, git cannot say
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createGitHubTraffic } from '../../src/github-limiter/traffic.ts';
@@ -132,5 +134,18 @@ describe("the hopper's mirror (issue #858 part 2)", () => {
     expect([dev, again, other]).toEqual([tip, tip, undefined]);
     expect(fetches).toHaveLength(1);
     expect(await m.baseTip('acme/app', remote, 'dev')).toBeUndefined();
+  });
+
+  it('says the lines a pull request changes in the files asked for, blobs on demand (issue #1076)', async () => {
+    const o = origin();
+    const { m, traffic } = mirrors(join(o.root, 'mirrors'));
+    const remote = async () => ({ url: o.url });
+    const [one, two] = await traffic.pass('github', async () => [
+      await m.changedLines('acme/app', remote, { number: 1, base: 'dev', headOid: o.heads[1]! }, ['b.txt']),
+      await m.changedLines('acme/app', remote, { number: 2, base: 'dev', headOid: o.heads[2]! }, ['a.txt']),
+    ]);
+    expect(one).toEqual({ 'b.txt': ['new'] });
+    expect(two).toEqual({ 'a.txt': ['one', 'two'] });
+    expect(await m.changedLines('acme/app', remote, { number: 1, base: 'dev', headOid: o.heads[1]! }, ['b.txt'])).toBeUndefined();
   });
 });
