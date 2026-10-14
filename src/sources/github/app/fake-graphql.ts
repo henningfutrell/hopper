@@ -10,7 +10,8 @@
 // its open issues and pull requests that carry one of `$labels`, paged by cursor. And the in-motion cycle's batched reads
 // (issue #985): `p<i>: repository(owner, name) { pr: pullRequest(number) issue: issue(number) }` aliases, each a pull request
 // entry of the repository (`pullRequest: true`) and an issue; and `u<i>: repository(owner, name) { pullRequests(states: OPEN) }`
-// aliases, each repository's open pull request entries, newest (highest number) first.
+// aliases, each repository's open pull request entries, newest (highest number) first. And the issue graph refresh (issue
+// #1036): `g<i>: repository(owner, name) { item: issueOrPullRequest(number) }` aliases, each an issue's or a pull request's state.
 
 import { tokenReaches } from './fake-routes.ts';
 import type { FakeCtx, FakeReply, FakeReq } from './fake-routes.ts';
@@ -210,9 +211,33 @@ function pulls(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
   return { status: 200, body: { data, ...(errors.length ? { errors } : {}) } };
 }
 
+/** The issue graph refresh (issue #1036): each `g<i>` alias, an issue's or a pull request entry's state. */
+function graphStates(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
+  const query = b.query ?? '';
+  const vars = (b.variables ?? {}) as Record<string, unknown>;
+  const data: Record<string, unknown> = {};
+  const errors: unknown[] = [];
+  for (const m of query.matchAll(/(g\d+): repository\(owner: \$(o\d+), name: \$(n\d+)\) \{ item: issueOrPullRequest\(number: (\d+)\)/g)) {
+    const [, alias, o, n, number] = m as unknown as [string, string, string, string, string];
+    const repo = ctx.state.repos.get(`${String(vars[o])}/${String(vars[n])}`);
+    if (!repo || !tokenReaches(req.token!, repo)) { data[alias] = null; errors.push(notResolved(alias, vars, o, n)); continue; }
+    const i = repo.issues.get(Number(number));
+    if (!i) {
+      data[alias] = { item: null };
+      errors.push({ type: 'NOT_FOUND', path: [alias, 'item'], message: `Could not resolve to an issue or pull request with the number of ${number}.` });
+      continue;
+    }
+    data[alias] = { item: i.pullRequest
+      ? { __typename: 'PullRequest', state: pullState(i).state }
+      : { __typename: 'Issue', state: i.state.toUpperCase(), stateReason: i.stateReason?.toUpperCase() ?? null } };
+  }
+  return { status: 200, body: { data, ...(errors.length ? { errors } : {}) } };
+}
+
 export function graphql(ctx: FakeCtx, req: FakeReq): FakeReply {
   const b = (req.body ?? {}) as GqlBody;
   const query = b.query ?? '';
+  if (/g0: repository\(owner/.test(query)) return graphStates(ctx, req, b);
   if (/[pu]0: repository\(owner/.test(query)) return pulls(ctx, req, b);
   if (/r0: repository\(owner/.test(query)) return listing(ctx, req, b);
   if (/q0: repository\(owner/.test(query)) return batched(ctx, req, b);

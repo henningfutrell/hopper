@@ -165,6 +165,18 @@ export interface PullRequestStates { pulls: Map<string, PullRequestState>; error
 /** The open pull requests of many repositories (issue #985: reconciling), each newest first; a repository GitHub did not answer for is in `repoErrors`. */
 export interface OpenPullRequestsIn { repos: Map<string, BranchPullRequest[]>; repoErrors: Map<string, string> }
 
+/** An issue or a pull request the issue graph shows not done, as its refresh asks it (issue #1036). */
+export interface GraphItemRef { repo: string; number: number }
+
+/** What GitHub says of an issue graph item now: an issue's `stateReason` when it is closed (`completed`, `not_planned`, `duplicate`). */
+export interface GraphItemState { kind: 'issue' | 'pull_request'; state: 'open' | 'closed' | 'merged'; stateReason?: string }
+
+/** The answer of the issue graph refresh, each by `itemKey`; one GitHub did not answer for is in `errors`, never a throw. */
+export interface GraphStates { items: Map<string, GraphItemState>; errors: Map<string, string> }
+
+/** An issue's or a pull request's key in a batched read: its repository, lowercased, and its number. */
+export const itemKey = (repo: string, number: number): string => `${repo.toLowerCase()}#${number}`;
+
 /** A pull request's key in a batched read: its repository, lowercased, and its number. */
 export const pullKey = (repo: string, pullRequest: number): string => `${repo.toLowerCase()}#${pullRequest}`;
 
@@ -240,6 +252,11 @@ export interface GitHubApi {
    * for each 50 pull requests with one credential. A pull request GitHub does not answer for is in `errors`, never a throw.
    */
   pullRequestStates(refs: PullRequestRef[]): Promise<PullRequestStates>;
+  /**
+   * The state of each issue graph item `refs` (issue #1036, the graph refresh): batched GraphQL, about one request for each
+   * 100 items with one credential. An item GitHub does not answer for is in `errors`, never a throw. Absent: not read.
+   */
+  graphStates?(refs: GraphItemRef[]): Promise<GraphStates>;
   /**
    * Merge pull request `number` of `repo` with a merge commit (issue #637: yolo mode, the hopper's own merge of a ready
    * pull request it follows). GitHub's refusal — not mergeable, checks required, no access — throws.

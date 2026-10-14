@@ -9,6 +9,7 @@ import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosin
 import { batchGraphQL } from '../app/graphql-batch.ts';
 import { listRepos } from '../app/graphql-listing.ts';
 import { openPullRequestsIn, pullRequestStates } from '../app/graphql-pulls.ts';
+import { graphStates } from '../app/graphql-graph-states.ts';
 import { SOURCE_DEFER_AFTER_MS, makeRequest, rateLimitedError } from '../app/http.ts';
 import * as rest from '../app/rest.ts';
 
@@ -74,6 +75,7 @@ export function createAccountGitHubApi(o: { apiUrl: string; token(): Promise<str
     openPullRequests: (repo) => call(`open pull requests of ${repo}`, (t) => openPullRequests(req, t, repo)),
     openPullRequestsIn: (repos) => call(`open pull requests of ${repos.length} repositories`, (t) => openPullRequestsIn(req, t, repos)),
     pullRequestStates: (refs) => call(`${refs.length} pull requests`, (t) => pullRequestStates(req, t, refs)),
+    graphStates: (refs) => call(`${refs.length} issue graph items`, (t) => graphStates(req, t, refs)),
     merge: (repo, number) => call(`merge ${repo}#${number}`, (t) => rest.mergePullRequest(req, t, repo, number)),
     closeWithoutMerge: (repo, number) => call(`close ${repo}#${number}`, (t) => rest.closePullRequest(req, t, repo, number)),
     toDraft: (repo, number) => call(`draft ${repo}#${number}`, (t) => rest.convertToDraft(req, t, repo, number)),

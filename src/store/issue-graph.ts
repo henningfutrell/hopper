@@ -50,6 +50,18 @@ export function createIssueGraphRepository(c: StoreContext): IssueGraphRepositor
     edges() {
       return c.db.all('SELECT DISTINCT from_id, kind, to_id FROM graph_edges ORDER BY from_id, kind, to_id').map(edgeOf);
     },
+    unsettled() {
+      return c.db.all(`SELECT id, kind, attrs, read_at FROM graph_nodes WHERE kind IN ('issue', 'pull_request')
+        AND COALESCE(lower(attrs::jsonb->>'state'), '') NOT IN ('closed', 'merged') ORDER BY id`)
+        .map((r) => ({ ...nodeOf(r), ...(r.read_at != null ? { readAt: String(r.read_at) } : {}) }));
+    },
+    keepStates(states) {
+      c.tx(() => {
+        for (const s of states) {
+          c.db.run(`UPDATE graph_nodes SET attrs = ((attrs::jsonb - 'stateReason') || ?::jsonb)::text WHERE id = ?`, JSON.stringify(s.attrs), s.id);
+        }
+      });
+    },
     edgesOf(id) {
       return c.db.all('SELECT DISTINCT from_id, kind, to_id FROM graph_edges WHERE from_id = ? OR to_id = ? ORDER BY from_id, kind, to_id', id, id).map(edgeOf);
     },

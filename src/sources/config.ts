@@ -35,7 +35,7 @@ const sharedKeys = {
   projects: z.record(z.string(), projectSchema).default({}),
   issueGraph: z.boolean().default(true).meta({ description: 'keep the issue graph: each listed issue with its repository, owner, Projects and linked issues and pull requests' }),
   graphRefreshMinutes: z.number().int().min(0).default(60)
-    .meta({ description: 'the issue graph: how many minutes an issue\'s place is kept before it is read again, unchanged; 0 reads it at every sync' }),
+    .meta({ description: 'the issue graph: how many minutes an issue\'s place is kept before it is read again, unchanged, and how often the issues and pull requests it shows open are read again in one batched read; 0 reads them at every sync' }),
 };
 
 /** Options as stored before issue #387 may carry `authors`, before issue #579 `completion`: dropped, not refused. */

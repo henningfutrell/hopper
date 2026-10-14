@@ -1,12 +1,13 @@
 // The in-memory fake's batched pull request reads (issue #985, the in-motion cycle), for fake.ts: each followed pull request
-// and its issue as GitHub would tell them, and the open pull requests of many repositories. One the fake does not know is an
-// error of its own, never a throw.
-import type { BranchPullRequest, GitHubIssue, OpenPullRequestsIn, PullRequestRef, PullRequestStates, ReferencingPullRequest } from './api.ts';
-import { pullKey } from './api.ts';
+// and its issue as GitHub would tell them, and the open pull requests of many repositories. And the issue graph refresh's
+// read (issue #1036): the state of each issue and pull request. One the fake does not know is an error of its own, never a
+// throw.
+import type { BranchPullRequest, GitHubIssue, GraphItemRef, GraphStates, OpenPullRequestsIn, PullRequestRef, PullRequestStates, ReferencingPullRequest } from './api.ts';
+import { itemKey, pullKey } from './api.ts';
 
 type Pull = ReferencingPullRequest & { headRef: string; base?: string };
 
-export function fakePulls(pulls: Pull[], issues: Map<string, GitHubIssue>, enter: (method: 'pullRequestStates' | 'openPullRequestsIn', args: unknown[]) => void) {
+export function fakePulls(pulls: Pull[], issues: Map<string, GitHubIssue>, enter: (method: 'pullRequestStates' | 'openPullRequestsIn' | 'graphStates', args: unknown[]) => void) {
   return {
     async pullRequestStates(refs: PullRequestRef[]): Promise<PullRequestStates> {
       enter('pullRequestStates', [refs]);
@@ -20,6 +21,18 @@ export function fakePulls(pulls: Pull[], issues: Map<string, GitHubIssue>, enter
           headRef: p.headRef, ...(p.base ? { base: p.base } : {}), ...(p.headCommittedAt ? { headCommittedAt: p.headCommittedAt } : {}), ...(p.checks ? { checks: p.checks } : {}),
           ...(i ? { issue: { state: i.state, ...(i.stateReason ? { stateReason: i.stateReason } : {}), updatedAt: i.updatedAt } } : {}),
         });
+      }
+      return out;
+    },
+    async graphStates(refs: GraphItemRef[]): Promise<GraphStates> {
+      enter('graphStates', [refs]);
+      const out: GraphStates = { items: new Map(), errors: new Map() };
+      for (const r of refs) {
+        const p = pulls.find((x) => x.url === `https://github.com/${r.repo}/pull/${r.number}`);
+        const i = issues.get(`${r.repo}#${r.number}`);
+        if (p) out.items.set(itemKey(r.repo, r.number), { kind: 'pull_request', state: p.state });
+        else if (i) out.items.set(itemKey(r.repo, r.number), { kind: 'issue', state: i.state, ...(i.state === 'closed' && i.stateReason ? { stateReason: i.stateReason } : {}) });
+        else out.errors.set(itemKey(r.repo, r.number), `Could not resolve to an issue or pull request with the number of ${r.number}.`);
       }
       return out;
     },

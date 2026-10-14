@@ -1,0 +1,1 @@
+- The Jobs graph now also shows an issue or pull request that no job works on as done, at most an hour after it closes or merges on GitHub.

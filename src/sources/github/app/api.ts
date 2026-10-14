@@ -12,9 +12,10 @@ import { closingPullRequest, crossReferences, issueEdits, issuePlace, openClosin
 import { batchGraphQL } from './graphql-batch.ts';
 import { listRepos } from './graphql-listing.ts';
 import { openPullRequestsIn, pullRequestStates } from './graphql-pulls.ts';
+import { graphStates } from './graphql-graph-states.ts';
 import type { RepoListing } from '../../../domain/github-listing.ts';
-import type { OpenPullRequestsIn, PullRequestStates } from '../api.ts';
-import { pullKey } from '../api.ts';
+import type { GraphStates, OpenPullRequestsIn, PullRequestStates } from '../api.ts';
+import { itemKey, pullKey } from '../api.ts';
 import { SOURCE_DEFER_AFTER_MS, makeRequest, paginate, splitRepo, statusOf, toApiError } from './http.ts';
 import * as rest from './rest.ts';
 
@@ -184,6 +185,18 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
         for (const [k, v] of got.errors) out.errors.set(k, v);
       }
       for (const r of refs) { const why = failed.get(r.repo); if (why !== undefined) out.errors.set(pullKey(r.repo, r.pullRequest), why); }
+      return out;
+    }),
+    // The issue graph refresh (issue #1036), one batch for each installation's token.
+    graphStates: (refs) => call(`${refs.length} issue graph items`, async (l) => {
+      const out: GraphStates = { items: new Map(), errors: new Map() };
+      const failed = new Map<string, string>();
+      for (const [token, some] of await byInstallation(l, refs.map((r) => r.repo), failed)) {
+        const got = await graphStates(req, token, refs.filter((r) => some.includes(r.repo)));
+        for (const [k, v] of got.items) out.items.set(k, v);
+        for (const [k, v] of got.errors) out.errors.set(k, v);
+      }
+      for (const r of refs) { const why = failed.get(r.repo); if (why !== undefined) out.errors.set(itemKey(r.repo, r.number), why); }
       return out;
     }),
     getIssue: (repo, number) => call(`get ${repo}#${number}`, async (l) => rest.getIssue(req, await tokenFor(l, repo), repo, number)),

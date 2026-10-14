@@ -173,8 +173,8 @@ export interface JobSourceContext {
   yoloMode(repo: string): boolean;
   /** The artifacts a job made (issue #673): each one's id and the URL of the issue it is linked to. */
   jobArtifacts(jobId: string): { id: string; issue?: string }[];
-  /** The user's issue graph (issue #437): a source keeps the place of each issue it sees there. Store only. */
-  issueGraph: Pick<IssueGraphRepository, 'record' | 'lastRead'>;
+  /** The user's issue graph (issue #437): a source keeps the place of each issue it sees there, and refreshes what it shows not done (issue #1036). Store only. */
+  issueGraph: Pick<IssueGraphRepository, 'record' | 'lastRead' | 'unsettled' | 'keepStates'>;
   /** The user's listing cache (issue #985): each repository's latest repository listing. Absent: a source keeps it in memory. */
   githubListings?: GitHubListingRepository;
   /** The user's mirrors of the job repositories (issue #858): whether a pull request has conflicts, as git says. Absent: none. */

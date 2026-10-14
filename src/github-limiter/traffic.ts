@@ -61,9 +61,9 @@ export function graphqlNameOf(query: unknown): string {
   return path ? [path[1], path[2]].filter(Boolean).join('.') : 'graphql';
 }
 
-/** The port's reads that look for new jobs (issue #983), and those of the in-motion cycle (issue #985). */
+/** The port's reads that look for new jobs (issue #983), and those of the in-motion cycle (issue #985) and the issue graph refresh (issue #1036). */
 const INTAKE_READS = new Set(['listRepos', 'listAssignedIssues', 'listInstalledRepos', 'projectItems']);
-const CYCLE_READS: Record<string, GitHubCallKind> = { openPullRequestsIn: 'reconcile', pullRequestStates: 'pr_cycle' };
+const CYCLE_READS: Record<string, GitHubCallKind> = { openPullRequestsIn: 'reconcile', pullRequestStates: 'pr_cycle', graphStates: 'reconcile' };
 
 /**
  * The kind of a call (issue #985): from the read that made it — intake, reconcile, the in-motion cycle —, else a GET or a

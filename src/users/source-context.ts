@@ -34,6 +34,11 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
     issueGraph: {
       record: (issue, graph, readAt) => { store.issueGraph.record(issue, graph, readAt); graphRead?.(graphKeys(graph)); },
       lastRead: (issue) => store.issueGraph.lastRead(issue),
+      unsettled: () => store.issueGraph.unsettled(),
+      keepStates: (states) => {
+        store.issueGraph.keepStates(states);
+        graphRead?.(graphKeys({ nodes: states.flatMap((s) => store.issueGraph.node(s.id) ?? []), edges: [] }));
+      },
     },
     githubListings: store.githubListings,
     jobArtifacts: (jobId) => store.artifacts.list({ jobId }).map((a) => ({ id: a.id, ...(a.issue ? { issue: a.issue.url } : {}) })),

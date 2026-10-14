@@ -40,7 +40,7 @@ import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
 import { openRequests, originsOf, requestOutcome } from './origin.ts';
 import { backburnerReader } from './backburner.ts';
-import { recordIssueGraph, type IssueGraphRecorder } from './graph.ts';
+import { issueGraphKeeper, type IssueGraphRecorder } from './graph.ts';
 import { reportToGitHub, takeBack, writeResolution } from './report.ts';
 
 /** What the source reads of its config. */
@@ -113,11 +113,11 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   let repoErrors: Record<string, string> = {};
   let projectErrors: Record<string, string> = {};
   let checkErrors: Record<string, string> = {};
-  let graphErrors: Record<string, string> = {};
   let outcomes: IntakeOutcome[] = [];
   /** The labels of each issue the last discover listed, by URL: what a release removes. */
   let listedLabels = new Map<string, string[]>();
   const outside = outsideReader(api, config);
+  const graph = o.issueGraph && config.issueGraph ? issueGraphKeeper({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }) : undefined;
   let lastDiscoverAt: string | undefined;
   let installedRepos: string[] = [];
   /** When the installed repositories were last asked (issue #985): a timed sync asks again only each intake sync interval. */
@@ -261,7 +261,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...outside.detail(),
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),
-        ...(Object.keys(graphErrors).length ? { graphErrors } : {}),
+        ...graph?.detail(),
         ...(lastDiscoverAt ? { lastDiscoverAt } : {}),
       };
     },
@@ -314,7 +314,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       next = next.map((x) => requestOutcome(x, requests.get(x.key), o.trust));
       if (intake) openRequests(o.name, intake, requests, opened);
       next = await backburner(next);
-      if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);
+      await graph?.keep(found.seen);
       repoErrors = found.repoErrors;
       outcomes = next;
       listedLabels = found.listed;

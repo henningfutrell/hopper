@@ -15862,11 +15862,44 @@ poll: the owner's constraint on the issue.
 - **The route** adds the newest job of each issue it shows (`getBySourceKey`), so an issue whose last job ended before
   the queue's 24-hour window still takes its stage from it.
 
-Left: an issue no job works, closed after its last read, shows `no_job` until a read of it or of an issue that links it
-(each discover reads the open issues of the hopper's label again). Reading closed issues again would be a new poll.
-
 Tests: `test/domain/job-rollup.test.ts`, `test/domain/issue-graph.test.ts` and
 `test/sources/issue-place.test.ts` (`stateReason`), `test/integration/job-graph.test.ts` (the newest job of an issue).
+
+**Part 5: the graph refresh (issue #1036, 2026-10-13).** Part 4 left one gap: an issue no job works (a follow-up, a
+sub-issue, a parent) or a pull request no job follows learns that it closed or merged only from a later read of an issue
+that links it. When that issue closed too, no discover reads it again, so the node stayed open: "Not started" for an issue
+closed as completed, an open pull request that merged.
+
+- **The owner's constraint** on the issue: no new GitHub polling; drive it from webhooks; when a webhook is missed,
+  reconcile with one batched GraphQL query an hour across repositories, never a read for each job or pull request. The
+  hopper takes no inbound webhooks ("Webhooks: not part of issue #985", "Remote access"), so the batched query is the
+  whole mechanism. The other two parts of the constraint hold already: a tend or a rework names the pull request it took
+  over (part 4 links the jobs by that URL), and a merged or closed pull request is followed no more, so its checks and
+  merge state are not read again (the in-motion cycle's budget test holds that).
+- **What is read** (`issueGraphKeeper`, `src/sources/github/graph.ts`). After the issue graph's reads of a discover, once each
+  `graphRefreshMinutes` (default 60; the first discover after a start or a rebuild of the source at once): every issue and
+  pull request node whose state is not `closed` or `merged` (`IssueGraphRepository.unsettled`), except an issue read for
+  itself within that time. None: no request.
+- **How** (`graphStates` on the GitHub port, `src/sources/github/app/graphql-graph-states.ts`, both adapters):
+  `g0: repository(owner: $o0, name: $n0) { item: issueOrPullRequest(number: 7) { __typename ... on Issue { state stateReason }
+  ... on PullRequest { state } } }`, `g1: …`, at most `GRAPH_STATES_MAX` = 100 to a request, one batch for each
+  installation's token. An item GitHub does not answer for (deleted, a repository the credential does not reach) fails only
+  itself. Through the shared rate limiter as every call; counted under `reconcile` on Settings → GitHub rate limit.
+- **What is kept** (`IssueGraphRepository.keepStates`): only a state that changed, merged into the node, no edge touched;
+  an issue opened again loses its `stateReason`. Each change is named to search, as a read is. No migration: the nodes'
+  attributes are JSON, and the build before reads them as before.
+- **What a person sees.** The job graph rolls these states up as part 4 says: a closed-as-completed issue is Done, a merged
+  pull request Merged, at most one refresh interval after GitHub changed. The source's status says what the last refresh
+  did (`graphRefresh`: when, items read, changed, not answered, and the error when the request failed).
+
+Budget: about 1 request an hour for each credential while the graph shows up to 100 open items. Items that GitHub does
+not answer for are asked again at the next refresh. Dropped: a refresh only of the items whose tree shows on the graph
+(the route reads the whole issue graph, so every open item can show); a refresh at Sync now (a person who waits on it can
+see the issue on GitHub).
+
+Tests: `test/sources/github-graphql-graph-states.test.ts` (the batched read), `test/store/issue-graph.test.ts`
+(`unsettled`, `keepStates`), `test/integration/issue-graph.test.ts` (a closed parent issue and a merged pull request no job
+follows settle at the next refresh, and nothing is read once nothing is open).
 
 ## A job's parts list (issue #935, 2026-10-12)
 

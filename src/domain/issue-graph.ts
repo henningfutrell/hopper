@@ -59,6 +59,10 @@ export interface IssueGraphRepository {
   edges(): GraphEdge[];
   /** The edges from or to one node, once each (search, issue #945). */
   edgesOf(id: string): GraphEdge[];
+  /** The issues and pull requests whose state is not `closed` or `merged` (issue #1036, the graph refresh), each with its last read when it was read itself. */
+  unsettled(): (GraphNode & { readAt?: string })[];
+  /** Keep what GitHub says of each node's state now (issue #1036): merged into a node there is; a node with no `stateReason` loses one. No edge changes. */
+  keepStates(states: { id: string; attrs: GraphNode['attrs'] }[]): void;
 }
 
 export const ownerId = (login: string): string => `owner:${login.toLowerCase()}`;

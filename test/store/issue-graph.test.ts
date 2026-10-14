@@ -58,4 +58,39 @@ describe('the issue graph in the database', () => {
     expect(store.issueGraph.lastRead(PROJECT)).toBeUndefined();
     store.close();
   });
+
+  it('the graph refresh (issue #1036): the issues and pull requests not settled, and their new states kept, edges untouched', () => {
+    const store = t.open(t.url());
+    const PR = 'https://github.com/o/r/pull/3';
+    const C = 'https://github.com/o/r/issues/4';
+    store.issueGraph.record(A, readOfA({
+      nodes: [
+        ...readOfA().nodes,
+        { id: B, kind: 'issue', attrs: { repo: 'o/r', number: 2, state: 'closed', stateReason: 'completed' } },
+        { id: PR, kind: 'pull_request', attrs: { repo: 'o/r', number: 3, state: 'open' } },
+        { id: C, kind: 'issue', attrs: { repo: 'o/r', number: 4 } },
+      ],
+      edges: [...readOfA().edges, { from: PR, kind: 'closes', to: A }],
+    }), '2026-10-11T10:00:00.000Z');
+    expect(store.issueGraph.unsettled().map((n) => [n.id, n.readAt])).toEqual([
+      [A, '2026-10-11T10:00:00.000Z'], [C, undefined], [PR, undefined],
+    ]);
+
+    store.issueGraph.keepStates([
+      { id: PR, attrs: { state: 'merged' } }, { id: C, attrs: { state: 'closed', stateReason: 'not_planned' } },
+      { id: 'https://github.com/o/r/issues/99', attrs: { state: 'closed' } },
+    ]);
+    expect(store.issueGraph.node(PR)!.attrs).toEqual({ repo: 'o/r', number: 3, state: 'merged' });
+    expect(store.issueGraph.node(C)!.attrs).toEqual({ repo: 'o/r', number: 4, state: 'closed', stateReason: 'not_planned' });
+    expect(store.issueGraph.node('https://github.com/o/r/issues/99')).toBeUndefined();
+    expect(store.issueGraph.unsettled().map((n) => n.id)).toEqual([A]);
+    expect(lines({ edges: store.issueGraph.edges() })).toContain(`${PR} closes ${A}`);
+    expect(store.issueGraph.lastRead(A)).toEqual({ readAt: '2026-10-11T10:00:00.000Z', updatedAt: 'u1' });
+
+    // An issue opened again forgets why it closed.
+    store.issueGraph.keepStates([{ id: C, attrs: { state: 'open' } }]);
+    expect(store.issueGraph.node(C)!.attrs).toEqual({ repo: 'o/r', number: 4, state: 'open' });
+    store.close();
+  });
 });
+

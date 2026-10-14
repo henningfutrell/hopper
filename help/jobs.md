@@ -141,6 +141,7 @@ The view updates live. A job that changes stage moves with no reload.
 | A note stays queued | The job waits, or its turn has not ended yet. The note goes in when the job goes on. A job that runs with another executor than herdr-claude or cursor-agent never gets notes. |
 | Time in stage starts at the wrong moment | The hopper uses the times the job keeps: created for queued, started for running, the wait or park time for waiting, finished for the rest. A held job counts from when it was created. |
 | Two issues are not linked | The graph shows only the links the hopper knows: issues a job filed, and sub-issues, "blocked by" links and closing pull requests from the issue graph. The hopper reads an issue's links when it syncs that issue, so a new link shows after the next sync. An older GitHub Enterprise has no "blocked by" links. |
+| An issue shows "Not started" after it closed, or a pull request shows open after it merged | No job works on it, so the hopper learns its state from the issue graph. The hopper reads the state of every issue and pull request the graph shows open once an hour (the source option `graphRefreshMinutes`). The graph shows the change after that read. |
 | Two pull requests are not stacked | The hopper learns a pull request's branches when it follows it. A pull request that no job here opened is not followed, so the graph cannot stack it. |
 | An old finished job is missing | The view shows ended jobs for 24 hours, unless their pull request is still open. Open the job from its issue, or from **Events**. |
 

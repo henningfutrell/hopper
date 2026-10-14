@@ -86,6 +86,8 @@ describe('GET /api/jobs/graph (issue #900)', () => {
     // The failed job ended today: the queue holds it. The job that ran the issue again merged three days ago: only the
     // newest job of the issue brings it in.
     const failed = made('failed', { finishedAt: new Date().toISOString() });
+    // Jobs made in the same millisecond have no order but their ids: the run again is made later.
+    await new Promise((r) => setTimeout(r, 5));
     const done = made('finished', { rerunOf: failed.id, finishedAt: new Date(Date.now() - 3 * 86_400_000).toISOString(), sourceState: { source: { pullRequest: PR, follow: 'merged' } } });
 
     const g = (await a.api<JobGraph>('GET', '/api/jobs/graph')).body;

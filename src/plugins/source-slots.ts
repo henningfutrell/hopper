@@ -15,7 +15,7 @@ import type { JobSourceContext, JobSourceInstance, RoleInstance } from './sdk.ts
 export const NO_SOURCE_CONTEXT: JobSourceContext = {
   knownKeys: () => new Set(), rerunnable: () => new Set(), rejections: () => new Map(),
   intake: () => undefined, intakeTrust: NO_INTAKE_TRUST, yoloMode: () => false, jobArtifacts: () => [],
-  issueGraph: { record: () => undefined, lastRead: () => undefined },
+  issueGraph: { record: () => undefined, lastRead: () => undefined, unsettled: () => [], keepStates: () => undefined },
   connectedAccounts: { account: () => undefined, ended: () => undefined, expired: () => false, token: () => Promise.reject(new Error('no connected accounts')), renew: () => Promise.reject(new Error('no connected accounts')), endpoints: () => ({ url: '', apiUrl: '' }), jobRepositories: () => [] },
 };
 
