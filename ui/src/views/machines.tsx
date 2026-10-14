@@ -16,7 +16,7 @@
 // job says since when it is out of reach and that the job is held (issue #752, machine-away.tsx). Each card
 // says the hopper's own disk use there, against the disk budget set under the machines (issue #1120, disk-budget.tsx).
 // A machine whose home holds infra credential folders is flagged with their names (issue #1128 part 7).
-import { Activity, Box, Pencil, Plus, Server, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Activity, Box, Pencil, Plus, Server, SlidersHorizontal, SquareTerminal, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
@@ -45,6 +45,7 @@ import { LaneTuningPanel } from './lane-tuning';
 import { CpuSparkline, MachineResourcesGraph, useCpuSparks } from './machine-resources';
 import { UnreachableBoxes } from './sandbox-reach';
 import { DiskBudgetPanel } from './disk-budget';
+import { MachineTerminal } from './machine-terminal';
 
 const REFRESH_MS = 15000;
 const fetchConfig = () => get<MachinesConfig>('/api/machines/config');
@@ -97,6 +98,8 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   const updateLine = clientUpdateLine(m.client, window.location.origin);
   const editing = ctx.editing === m.id;
   const [graph, setGraph] = useState(false);
+  const [terminal, setTerminal] = useState(false);
+  const admin = useCanAdmin();
   const res = resourcesText(m.resources);
   const off = offNetwork(m);
   const actions = ctx.authed && !editing && kind.kind !== 'unknown' && (
@@ -177,9 +180,11 @@ function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       <CpuSparkline series={ctx.sparks} machineId={m.id} />
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="outline" aria-expanded={graph} onClick={() => setGraph((g) => !g)}><Activity />{graph ? 'Hide the graph' : 'Resources, lanes and usage'}</Button>
+        {admin && m.online && m.herdr && !terminal && <Button size="sm" variant="outline" onClick={() => setTerminal(true)}><SquareTerminal />Terminal</Button>}
         {actions}
       </div>
       {graph && <MachineResourcesGraph machineId={m.id} />}
+      {terminal && <MachineTerminal machineId={m.id} onClose={() => setTerminal(false)} />}
       {editing && kind.kind === 'attached' && ctx.config && (
         <EditMachineForm machine={kind} config={ctx.config} busy={ctx.busy} send={ctx.edit} onDone={() => ctx.setEditing(null)} />
       )}
