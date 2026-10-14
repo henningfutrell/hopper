@@ -19,6 +19,7 @@ export const STAGES: readonly { stage: JobStage; label: string; tone: Tone; titl
   { stage: 'done', label: 'Done', tone: 'ok', title: 'finished, its pull request merged or none' },
   { stage: 'failed', label: 'Failed', tone: 'bad', title: 'failed' },
   { stage: 'cancelled', label: 'Cancelled', tone: 'muted', title: 'cancelled, or turned away at the queue gate' },
+  { stage: 'superseded', label: 'Superseded', tone: 'muted', title: 'failed or cancelled, then a later job, the issue\'s close or a dismissal took its place' },
   { stage: 'no_job', label: 'Not started', tone: 'muted', title: 'an issue no job works' },
 ];
 const BY_STAGE = new Map(STAGES.map((s) => [s.stage, s]));

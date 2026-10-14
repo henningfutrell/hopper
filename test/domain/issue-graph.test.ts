@@ -61,4 +61,11 @@ describe('placeGraph', () => {
     const { edges } = placeGraph({ ...place, blockedBy: [{ kind: 'issue', repo: 'Acme/app', number: 3, url: 'https://github.com/Acme/app/issues/3', state: 'open' }] });
     expect(edges.map((e) => `${e.from} ${e.kind} ${e.to}`)).toContain(`${ISSUE} blocked_by https://github.com/Acme/app/issues/3`);
   });
+
+  it('keeps why a closed issue and a closed linked issue closed (issue #1036)', () => {
+    const { nodes } = placeGraph({ ...place, issue: { ...place.issue, state: 'closed', stateReason: 'completed' },
+      subIssues: [{ kind: 'issue', repo: 'Acme/app', number: 9, url: 'https://github.com/Acme/app/issues/9', state: 'closed', stateReason: 'not_planned' }] });
+    expect(nodes.find((n) => n.id === ISSUE)!.attrs).toMatchObject({ state: 'closed', stateReason: 'completed' });
+    expect(nodes.find((n) => n.id === 'https://github.com/Acme/app/issues/9')!.attrs).toMatchObject({ state: 'closed', stateReason: 'not_planned' });
+  });
 });

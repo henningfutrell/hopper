@@ -59,6 +59,15 @@ describe('issuePlaceFrom', () => {
     expect(place).toMatchObject({ owner: { login: 'me', type: 'User' }, projects: [], closedBy: [], references: [], subIssues: [] });
   });
 
+  it('reads why a closed issue and its closed sub-issues closed (issue #1036): completed or not planned', () => {
+    const place = issuePlaceFrom({ data: { repository: { owner: { __typename: 'User', login: 'me' }, issue: {
+      url: 'https://github.com/me/r/issues/1', number: 1, title: 't', state: 'CLOSED', stateReason: 'COMPLETED', updatedAt: 'u',
+      subIssues: { nodes: [{ ...item('https://github.com/me/r/issues/2', 2, 'CLOSED', 'me/r'), stateReason: 'NOT_PLANNED' }] },
+    } } } }, 'place');
+    expect(place.issue).toMatchObject({ state: 'closed', stateReason: 'completed' });
+    expect(place.subIssues).toEqual([{ kind: 'issue', repo: 'me/r', number: 2, url: 'https://github.com/me/r/issues/2', state: 'closed', stateReason: 'not_planned' }]);
+  });
+
   it('no issue is an error that names the read', () => {
     expect(() => issuePlaceFrom({ data: { repository: { owner: { login: 'me' }, issue: null } }, errors: [{ type: 'NOT_FOUND', message: 'Could not resolve to an Issue.' }] }, 'place of me/r#4'))
       .toThrow(new GitHubApiError('place of me/r#4: Could not resolve to an Issue.', true));

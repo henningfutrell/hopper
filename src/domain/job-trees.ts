@@ -3,7 +3,7 @@
 import type { JobGraphEdge, JobGraphNode, JobGraphNodeKind, JobStage, JobTree } from './job-graph.ts';
 
 /** The stages that block nothing. */
-const SETTLED: readonly JobStage[] = ['done', 'cancelled'];
+const SETTLED: readonly JobStage[] = ['done', 'cancelled', 'superseded'];
 
 export const countStages = (nodes: readonly JobGraphNode[]): Partial<Record<JobStage, number>> => {
   const out: Partial<Record<JobStage, number>> = {};

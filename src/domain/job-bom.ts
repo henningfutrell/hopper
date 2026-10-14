@@ -94,7 +94,7 @@ export function spanText(fromIso: string, toIso: string): string {
 }
 
 const JOB_STATUS: Record<ReturnType<typeof stageOf>, BomStatus> = {
-  queued: 'open', running: 'running', waiting: 'open', pr_open: 'open', partly_done: 'open', done: 'done', failed: 'failed', cancelled: 'cancelled', no_job: 'open',
+  queued: 'open', running: 'running', waiting: 'open', pr_open: 'open', partly_done: 'open', done: 'done', failed: 'failed', cancelled: 'cancelled', superseded: 'cancelled', no_job: 'open',
 };
 
 /** What was asked: the issue, the follow-ups the job filed, rework and a changed spec. */

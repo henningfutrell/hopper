@@ -74,6 +74,28 @@ describe('GET /api/jobs/graph (issue #900)', () => {
     ]));
   });
 
+  it('answers the newest job of each issue it shows, so a later finished job supersedes an earlier failure (issue #1036)', async () => {
+    const a = await start();
+    const { store } = a.user();
+    const key = 'https://github.com/acme/app/issues/7';
+    const made = (status: 'failed' | 'finished', over: object) => {
+      const j = store.jobs.create({ executor: 'test', payload: {}, machineId: 'nowhere' }, 50, { source: 'github', kind: 'github', key, url: key, repo: 'acme/app', number: 7, title: 'issue 7' });
+      store.jobs.update(j.id, { status, ...over });
+      return j;
+    };
+    // The failed job ended today: the queue holds it. The job that ran the issue again merged three days ago: only the
+    // newest job of the issue brings it in.
+    const failed = made('failed', { finishedAt: new Date().toISOString() });
+    const done = made('finished', { rerunOf: failed.id, finishedAt: new Date(Date.now() - 3 * 86_400_000).toISOString(), sourceState: { source: { pullRequest: PR, follow: 'merged' } } });
+
+    const g = (await a.api<JobGraph>('GET', '/api/jobs/graph')).body;
+    const node = (id: string) => g.nodes.find((n) => n.id === id);
+    expect(node(`job:${done.id}`)).toMatchObject({ stage: 'done' });
+    expect(node(`job:${failed.id}`)).toMatchObject({ stage: 'superseded' });
+    expect(node('issue:acme/app#7')).toMatchObject({ stage: 'done' });
+    expect(g.stages).toEqual({ done: 1, superseded: 1 });
+  });
+
   it('answers an empty graph for a hopper with no job', async () => {
     const a = await start();
     const r = await a.api<JobGraph>('GET', '/api/jobs/graph');
