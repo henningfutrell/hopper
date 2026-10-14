@@ -37,13 +37,18 @@ describe('what a job may push', () => {
   });
 
   it('never the default branch, a release branch, a tag, or a delete', () => {
-    for (const branch of ['dev', 'main', 'master', 'beta', 'stable', 'DEV']) {
+    for (const branch of ['dev', 'main', 'master', 'integration', 'beta', 'stable', 'DEV']) {
       expect(checkPush([{ old: A, new: B, ref: `refs/heads/${branch}` }], at)).toEqual({ ok: false, reason: `a job pushes only to a branch of its own work, never to ${branch}: push a new branch and open a pull request` });
     }
     expect(checkPush([{ old: A, new: B, ref: 'refs/heads/trunk' }], { defaultBranch: 'trunk' })).toMatchObject({ ok: false });
     expect(checkPush([{ old: ZERO, new: B, ref: 'refs/tags/v1' }], at)).toEqual({ ok: false, reason: 'a job pushes branches only, not refs/tags/v1' });
     expect(checkPush([{ old: A, new: ZERO, ref: 'refs/heads/issue-7-fast' }], at)).toEqual({ ok: false, reason: 'a job deletes no branch (refs/heads/issue-7-fast)' });
     expect(checkPush([{ old: A, new: B, ref: 'refs/heads/ok' }, { old: A, new: B, ref: 'refs/heads/main' }], at)).toMatchObject({ ok: false });
+  });
+
+  it('never a batch run\'s branch (issue #1073): what its checks test is what the hopper merges', () => {
+    expect(checkPush([{ old: A, new: B, ref: 'refs/heads/hopper-batch/0123456789ab' }], at))
+      .toEqual({ ok: false, reason: 'a job pushes only to a branch of its own work, never to a batch run\'s branch (hopper-batch/0123456789ab)' });
   });
 });
 

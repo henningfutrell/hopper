@@ -56,6 +56,7 @@ function fake(w: World): LandingBatchGitHub {
     checkRuns: async () => w.checks,
     merge: async (_repo, n, sha) => { const p = w.pulls.get(n)!; p.merged = true; p.state = 'closed'; w.calls.push(`merge #${n} ${sha}`); return { sha: 'merge-sha' }; },
     close: async (_repo, n) => { w.pulls.get(n)!.state = 'closed'; w.calls.push(`close #${n}`); },
+    openPullRequests: async (_repo, base) => [...w.pulls.entries()].filter(([, p]) => p.state === 'open' && p.base === base).map(([number, p]) => ({ number, url: p.url })),
     retarget: async (_repo, n, base) => { w.pulls.get(n)!.base = base; w.calls.push(`retarget #${n} ${base}`); },
   };
 }
@@ -69,7 +70,6 @@ function runner(w: World, o: { jobPullRequests?: string[]; now?: Date } = {}) {
     events: () => events,
     record: (e: NewEvent) => { events.push({ ...e, seq: ++seq, id: `e${seq}`, at: (o.now ?? new Date()).toISOString(), schemaVersion: 1 } as DomainEvent); },
     jobPullRequests: () => o.jobPullRequests ?? [],
-    openPullRequests: async () => [...w.pulls.entries()].filter(([, p]) => p.state === 'open').map(([number, p]) => ({ number, base: p.base, url: p.url })),
     now: () => o.now ?? new Date(),
     log: () => {},
   });
