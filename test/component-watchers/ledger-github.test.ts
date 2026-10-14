@@ -18,7 +18,7 @@ describe('the ledger-vs-GitHub watcher', () => {
       ledger: { list: () => [row] },
       github: () => ({
         async states(urls) {
-          asked.push(urls);
+          asked.push([...urls]);
           return new Map<string, GitHubItemState>([[row.pullRequest!, { url: row.pullRequest!, state: 'merged', changedAt: '2026-10-13T10:00:00.000Z' }]]);
         },
       }),

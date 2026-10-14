@@ -1,0 +1,51 @@
+// Issue #1077: component watchers. The daemon, store and HTTP edge are real. Each user has the ledger-vs-GitHub watcher,
+// which checks at start; whether a drift files a drift issue is the user's setting, an admin's, in the database.
+//
+// Feature: component watchers
+//   Scenario: the watchers and the setting
+//     Given a fresh hopper with no GitHub connection
+//     Then GET /api/component-watchers lists the ledger-vs-GitHub watcher, its check failed with why, and filing is off
+//     When an admin turns filing on
+//     Then it is saved, component_watchers.settings_changed is in the log once, and a restart keeps it
+import { afterEach, describe, expect, it } from 'vitest';
+import { ADMIN_ID, type DomainEvent } from '../../src/domain/types.ts';
+import type { ComponentWatchersView } from '../../src/component-watchers/index.ts';
+import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
+
+const apps: TestApp[] = [];
+const cleanups: (() => unknown)[] = [];
+afterEach(async () => {
+  for (const a of apps.splice(0)) await a.stop();
+  for (const c of cleanups.splice(0)) await c();
+});
+
+const eventsOf = (a: TestApp, type: string): DomainEvent[] => a.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === type);
+const view = async (a: TestApp) => (await a.api<ComponentWatchersView>('GET', '/api/component-watchers')).body;
+
+describe('component watchers', () => {
+  it('lists the ledger-vs-GitHub watcher and keeps the admin\'s setting to file drift issues', { timeout: 40_000 }, async () => {
+    const db = tempDbPath();
+    cleanups.push(db.cleanup);
+    const app = await startTestApp({ dbPath: db.dbPath });
+    apps.push(app);
+    const token = await app.login();
+
+    await expect.poll(async () => (await view(app)).watchers[0]?.error, { timeout: 10_000 }).toMatch(/not connected/);
+    const v = await view(app);
+    expect(v.settings).toEqual({ fileIssues: false });
+    expect(v.watchers).toMatchObject([{ name: 'ledger-github', component: 'the work-item ledger', truth: 'GitHub', intervalSeconds: 900, drifts: [] }]);
+
+    const r = await app.ui<ComponentWatchersView>('/ui/api/component-watchers', { fileIssues: true }, { token });
+    expect(r.status).toBe(200);
+    expect(r.body.settings).toEqual({ fileIssues: true });
+    await app.ui('/ui/api/component-watchers', { fileIssues: true }, { token });
+    expect(eventsOf(app, 'component_watchers.settings_changed').map((e) => e.data)).toEqual([{ from: { fileIssues: false }, to: { fileIssues: true }, by: expect.any(String) }]);
+    expect((await app.ui('/ui/api/component-watchers', { fileIssues: 'yes' }, { token })).status).toBe(400);
+
+    await app.stop();
+    apps.splice(0);
+    const again = await startTestApp({ dbPath: db.dbPath });
+    apps.push(again);
+    expect((await view(again)).settings).toEqual({ fileIssues: true });
+  });
+});
