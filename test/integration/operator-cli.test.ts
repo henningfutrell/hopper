@@ -98,6 +98,21 @@ describe('operator actions from the CLI (issue #374)', () => {
     expect(JSON.parse(again.out)).toMatchObject({ rerunOf: job.id });
   });
 
+  it('job dismiss (issue #1123): the failed jobs named, or --superseded every one nothing waits on; usage else', async () => {
+    const a = await boot();
+    const failed = async () => { const j = await a.pull({ op: 'fail', message: 'it broke' }); await a.waitForStatus(j.id, 'failed'); return j; };
+    const one = await failed();
+    const two = await failed();
+    const r = await hopper(a, ['job', 'dismiss', one.id, two.id]);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.out)).toEqual({ dismissed: [one.id, two.id], refused: [] });
+    const all = await hopper(a, ['job', 'dismiss', '--superseded']);
+    expect(all.code).toBe(0);
+    expect(JSON.parse(all.out)).toEqual({ dismissed: [], refused: [] });
+    expect((await hopper(a, ['job', 'dismiss'])).err).toMatch(/usage: hopper job dismiss <id>\.\.\. \| --superseded/);
+    expect((await hopper(a, ['job', 'dismiss', one.id, '--superseded'])).err).toMatch(/usage: hopper job dismiss <id>\.\.\. \| --superseded/);
+  });
+
   it('answer, close and dismiss a question waiting on the human', async () => {
     const a = await boot({ seams: { levels: [] } });
     const job = await a.pull({ op: 'ask', message: 'Which colour?' });
