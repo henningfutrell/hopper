@@ -39,14 +39,14 @@ export const workTreeRule = (cwd: string, scratch?: string): string => `[hopper 
 
 /**
  * The fixed line of a job that runs in its own git worktree of its work tree (issue #379): the worktree is
- * the job's alone, in its scratch dir; the work tree is shared with the other jobs there. Git goes through the
- * worktree's origin only (issue #858): a clone or an ssh remote of the job's own bypassed the mirror and the hopper. With
+ * the job's alone, in the work tree's workspace (issue #1103); the work tree is shared with the other jobs there. Git goes through the
+ * worktree's origin only (issue #858): a clone or an ssh remote of the job's own bypassed the checkout and the hopper. With
  * `sharedDependencies`, its node_modules is a link to dependencies shared with the repository's other jobs
  * (issue #410).
  */
 export const jobWorktreeRule = (path: string, cwd: string, sharedDependencies = false): string => `[hopper job worktree] Work in ${path}: a git worktree of ${cwd} made for this job alone, detached at its remote's default branch as just fetched (at its HEAD when it has no remote), and where you start. Make your branch in it. ${cwd} itself is shared with other jobs: never edit files, switch branches or build in it, and make no other clone or worktree of it for this job. Fetch and push through the worktree's origin only: never clone the repository again and never add a remote of your own, such as an ssh one. ${sharedDependencies
   ? 'Its node_modules is a link to dependencies shared with the other jobs of this repository: read-only. Before you add, remove or upgrade a dependency, replace the link with an install of your own (rm node_modules && npm ci). '
-  : ''}The worktree is in this job's scratch dir, so the reap removes it when the job ends, unless it holds uncommitted or unpushed work.`;
+  : ''}The reap removes the worktree when the job ends, unless it holds uncommitted or unpushed work.`;
 
 /** The protocol line on GitHub (issue #563): never a login of the job's own; the hopper's proxy, its help read only when needed. */
 export const GITHUB_PROXY_LINE = 'Never log in to GitHub yourself: no gh auth login, no device code. This machine holds no GitHub token: git fetch and git push to GitHub go through the hopper by themselves, and a push goes only to a new branch of your own work. For any other GitHub operation (filing an issue, opening a pull request from your pushed branch, reading an issue and its discussion, a pull request, its diff, commits and checks, or a failed check\'s log, and the like), ask the hopper, which does it with its own GitHub connection: run sh "$HOPPER_GH" help to see how. Read GitHub only through the hopper: never curl api.github.com or a github.com page. When your user cannot push to the repository of the job (sh "$HOPPER_GH" repo view --repo OWNER/NAME says canPush false), contribute through a fork: the help says how. Never ask a person for a check\'s log: read it through the hopper, and ask only when the hopper says it cannot read it. If the hopper cannot be reached from here (HOPPER_URL is not set, or hopper-gh or git to GitHub cannot connect to it), do not sign in to GitHub another way: end with HOPPER_FAILED and say that this machine cannot reach the hopper.';

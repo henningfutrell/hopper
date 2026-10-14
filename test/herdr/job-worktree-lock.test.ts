@@ -1,11 +1,11 @@
-// One start at a time per repository (issue #1075): concurrent jobs on one machine share its repository mirror, so a
+// One start at a time per repository (issue #1075): concurrent jobs on one machine share its repository checkout, so a
 // start takes the repository's start lock around its fetch and its worktree add. Real git and sh, as in
 // job-worktree.test.ts: what these commands do to a repository is what they do in a job's pane.
 import { afterEach, describe, expect, it } from 'vitest';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { JOB_WORKTREE_LOCK, jobWorktreeOf, makeJobWorktreeCommand, mirrorOf, mirrorWorktreeOf } from '../../src/executors/herdr/job-worktree.ts';
+import { checkoutOf, JOB_WORKTREE_LOCK, jobWorktreeOf, makeJobWorktreeCommand } from '../../src/executors/herdr/job-worktree.ts';
 import { jobScratchOf } from '../../src/executors/herdr/start.ts';
 
 import { GIT_ENV, ID, git, repository, served, sh } from './job-worktree-support.ts';
@@ -37,7 +37,7 @@ function heldLock(gitDir: string): string {
   return lock;
 }
 
-/** A mirror, cloned by a first job, of a repository served as GitHub serves one. */
+/** A tended checkout, cloned by a first job, of a repository served as GitHub serves one. */
 function warmMirror(): { root: string; plain: string; bare: string; url: string; mirror: string } {
   const { root, origin } = repository();
   mkdirSync(join(root, 'acme'));
@@ -47,7 +47,7 @@ function warmMirror(): { root: string; plain: string; bare: string; url: string;
   mkdirSync(plain);
   const url = served(bare);
   sh(plain, makeJobWorktreeCommand(plain, ID, { repo: 'acme/app', url }));
-  return { root, plain, bare, url, mirror: mirrorOf(plain, 'acme/app') };
+  return { root, plain, bare, url, mirror: join(checkoutOf(plain, 'acme/app'), '.git') };
 }
 
 const wait = (ms: number) => new Promise((r) => { setTimeout(r, ms); });
@@ -59,10 +59,10 @@ describe('one start at a time per repository mirror (issue #1075)', () => {
     const next = idOf(2);
     const done = started(plain, next, makeJobWorktreeCommand(plain, next, { repo: 'acme/app', url }));
     await wait(1500);
-    expect(existsSync(mirrorWorktreeOf(plain, next, 'acme/app'))).toBe(false);
+    expect(existsSync(jobWorktreeOf(plain, next, 'acme/app'))).toBe(false);
     spawnSync('rm', ['-rf', lock]);
-    expect(await done).toBe('hopper-worktree-running\nhopper-job-worktree-mirror\n');
-    expect(existsSync(join(mirrorWorktreeOf(plain, next, 'acme/app'), 'a.txt'))).toBe(true);
+    expect(await done).toBe('hopper-worktree-running\nhopper-job-worktree-checkout\n');
+    expect(existsSync(join(jobWorktreeOf(plain, next, 'acme/app'), 'a.txt'))).toBe(true);
     expect(existsSync(lock)).toBe(false);
   }, 20000);
 
@@ -73,7 +73,7 @@ describe('one start at a time per repository mirror (issue #1075)', () => {
     writeFileSync(join(lock, 'pid'), `${spawnSync('true').pid}\n`);
     const next = idOf(2);
     const out = await started(plain, next, makeJobWorktreeCommand(plain, next, { repo: 'acme/app', url }));
-    expect(out).toContain('hopper-job-worktree-mirror');
+    expect(out).toContain('hopper-job-worktree-checkout');
     expect(out).toContain(`hopper: took over the start lock ${lock}`);
     expect(existsSync(lock)).toBe(false);
   }, 20000);
@@ -90,12 +90,12 @@ describe('one start at a time per repository mirror (issue #1075)', () => {
     const outs = await Promise.all(ids.map((id) => started(plain, id, makeJobWorktreeCommand(plain, id, { repo: 'acme/app', url }))));
     const now = git(bare, 'rev-parse', 'main');
     for (const [i, id] of ids.entries()) {
-      expect(outs[i]).toBe('hopper-worktree-running\nhopper-job-worktree-mirror\n');
-      expect(git(mirrorWorktreeOf(plain, id, 'acme/app'), 'rev-parse', 'HEAD')).toBe(now);
-      expect(git(mirrorWorktreeOf(plain, id, 'acme/app'), 'status', '--porcelain')).toBe('');
+      expect(outs[i]).toBe('hopper-worktree-running\nhopper-job-worktree-checkout\n');
+      expect(git(jobWorktreeOf(plain, id, 'acme/app'), 'rev-parse', 'HEAD')).toBe(now);
+      expect(git(jobWorktreeOf(plain, id, 'acme/app'), 'status', '--porcelain')).toBe('');
     }
-    expect(git(mirror, 'worktree', 'list').split('\n')).toHaveLength(ids.length + 2);
-    expect(spawnSync('git', ['fsck', '--no-progress'], { cwd: mirror, env: GIT_ENV }).status).toBe(0);
+    expect(git(join(mirror, '..'), 'worktree', 'list').split('\n')).toHaveLength(ids.length + 2);
+    expect(spawnSync('git', ['fsck', '--no-progress'], { cwd: join(mirror, '..'), env: GIT_ENV }).status).toBe(0);
     expect(existsSync(join(mirror, JOB_WORKTREE_LOCK))).toBe(false);
   }, 60000);
 
@@ -115,6 +115,6 @@ describe('one start at a time per repository mirror (issue #1075)', () => {
   it('a worktree an earlier run of the job left is entered as it is, whatever holds the lock', async () => {
     const { plain, url, mirror } = warmMirror();
     heldLock(mirror);
-    expect(await started(plain, ID, makeJobWorktreeCommand(plain, ID, { repo: 'acme/app', url }))).toBe('hopper-worktree-running\nhopper-job-worktree-mirror\n');
+    expect(await started(plain, ID, makeJobWorktreeCommand(plain, ID, { repo: 'acme/app', url }))).toBe('hopper-worktree-running\nhopper-job-worktree-checkout\n');
   }, 20000);
 });

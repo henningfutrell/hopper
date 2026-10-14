@@ -39,12 +39,17 @@ export function keptWorkOf(newestFirst: readonly DomainEvent[]): KeptWork[] {
   return out;
 }
 
-/** The job's own scratch dir (`…/.hopper-scratch/<job id>`) its kept repositories are in; undefined when none is in it. */
+/**
+ * The job's own scratch dir (`…/.hopper-scratch/<job id>`) its kept repositories are in, or beside: a job worktree
+ * `<work tree>/workspace/worktrees/<name>-<job id>` (issue #1103) has it in that work tree. Undefined when none is.
+ */
 export function scratchOf(paths: readonly string[], jobId: string): string | undefined {
   const marker = `/.hopper-scratch/${jobId}`;
   for (const p of paths) {
     const at = p.indexOf(marker);
     if (at > 0 && (p.length === at + marker.length || p[at + marker.length] === '/')) return p.slice(0, at + marker.length);
+    const tree = /^(\/.*)\/workspace\/worktrees\/[^/]+$/.exec(p);
+    if (tree && p.endsWith(`-${jobId}`)) return `${tree[1]}${marker}`;
   }
   return undefined;
 }

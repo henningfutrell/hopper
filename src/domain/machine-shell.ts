@@ -17,6 +17,8 @@ export interface Survey {
   processes: string[];
   /** Each `<work tree>/.hopper-scratch/<job id>` under the work trees asked about. */
   scratch: { jobId: string; path: string; ageMs: number }[];
+  /** Each job worktree `<work tree>/workspace/worktrees/<name>-<job id>` there (issue #1103); absent, none. */
+  trees?: { path: string; ageMs: number }[];
 }
 
 /**

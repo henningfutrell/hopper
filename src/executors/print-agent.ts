@@ -9,7 +9,7 @@
 import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor, MachineShell } from '../domain/ports.ts';
 import { REVIEW_KINDS, REVIEW_SECTIONS, type MachineSnapshot } from '../domain/types.ts';
-import { scopeUnitOf } from '../client/server.ts';
+import { scopeUnitOf } from '../client/reap.ts';
 import { commandOn, run } from './command.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './herdr/payload.ts';
 import { makeJobWorktreeCommand } from './herdr/job-worktree.ts';

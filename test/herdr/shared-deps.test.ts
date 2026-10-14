@@ -115,6 +115,19 @@ describe('shared dependencies for job worktrees (issue #410)', () => {
     expect(existsSync(used)).toBe(true);
   });
 
+  it('never removes an entry a job worktree in the workspace links to (issue #1103)', async () => {
+    const a = join(tree, 'workspace', 'worktrees', 'tree-a');
+    mkdirSync(a, { recursive: true });
+    writeFileSync(join(a, 'package.json'), '{"name":"app"}');
+    writeFileSync(join(a, 'package-lock.json'), LOCK);
+    await share(a);
+    const used = readlinkSync(join(a, 'node_modules')).replace(/\/node_modules$/, '');
+    const old = Date.now() / 1000 - 3 * 3600;
+    utimesSync(used, old, old);
+    await share(job('b', LOCK.replace('"app"', '"other"')), 1);
+    expect(existsSync(used)).toBe(true);
+  });
+
   it('the command is one line any shell runs, its outcome never read from its own echo', () => {
     const command = shareDepsCommand('/w/', '/w/.hopper-scratch/j/w', 24);
     expect(command).not.toContain('\n');
@@ -142,7 +155,7 @@ describe('the reap after shared dependencies (issue #410)', () => {
     git(tree, 'worktree', 'add', '-q', '--detach', w, 'origin/main');
     expect(await share(w)).toBe('installed');
     const shared = readlinkSync(join(w, 'node_modules'));
-    const { reapArgv, readReap } = await import('../../src/client/server.ts');
+    const { reapArgv, readReap } = await import('../../src/client/reap.ts');
     const [file, ...args] = reapArgv('j1', join(tree, '.hopper-scratch', 'j1'));
     expect(readReap(execFileSync(file!, args, { encoding: 'utf8' }))).toEqual({ kept: [] });
     expect(existsSync(w)).toBe(false);
