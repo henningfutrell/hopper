@@ -4,7 +4,7 @@
 // request not seen yet, or whose checks the hopper cannot read, holds nothing.
 import { describe, expect, it } from 'vitest';
 import { PENDING_HOLD_MS, queueHeads } from '../../src/domain/tending-queue.ts';
-import type { Job, PullRequestSeen } from '../../src/domain/types.ts';
+import type { Job, PullRequestSeen, Tended } from '../../src/domain/types.ts';
 import { jobForIssue, REPO } from '../sources/fixtures/github-support.ts';
 
 const PR = `https://github.com/${REPO}/pull/7`;
@@ -18,7 +18,7 @@ function waiting(origin: boolean, s: PullRequestSeen | null = seen): Job {
   return { ...job, source };
 }
 
-const head = (job: Job) => queueHeads(REPO.toLowerCase(), [job], () => undefined, () => true, NOW)[0];
+const head = (job: Job) => queueHeads(REPO.toLowerCase(), [job], () => undefined, () => true, NOW, () => true)[0];
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
 
 describe('the tending queue\'s head (issues #796, #805)', () => {
@@ -28,7 +28,7 @@ describe('the tending queue\'s head (issues #796, #805)', () => {
 
   it('yolo off: it holds nothing, whatever its origin', () => {
     for (const origin of [true, false]) {
-      expect(queueHeads(REPO.toLowerCase(), [waiting(origin)], () => undefined, () => false, NOW)).toEqual([]);
+      expect(queueHeads(REPO.toLowerCase(), [waiting(origin)], () => undefined, () => false, NOW, () => true)).toEqual([]);
     }
   });
 });
@@ -50,5 +50,39 @@ describe('nothing holds the tending queue for good (issue #927)', () => {
 
   it('no checks: it holds the queue until the merge', () => {
     expect(head(waiting(true, { ...seen, checks: 'none', pushedAt: ago(PENDING_HOLD_MS * 2) }))).toEqual({ pullRequest: PR, why: 'merging' });
+  });
+});
+
+describe('a merged pull request holds nothing (issue #1162)', () => {
+  /** The tended job and its tend job, `status`, with `source` as the tend job's source state; and any other jobs. */
+  function tend(status: Job['status'], source: Record<string, unknown> = {}, others: Job[] = []) {
+    const t: Tended = { pullRequest: PR, step: 'rebase', nextJobId: 'job-2' };
+    const jobs = [
+      jobForIssue(1, { id: 'job-1', status: 'finished', sourceState: { source: { follow: 'tended', pullRequest: PR, tended: t } } }),
+      jobForIssue(1, { id: 'job-2', status, rerunOf: 'job-1', sourceState: { source } }),
+      ...others,
+    ];
+    return { jobs, get: (id: string) => jobs.find((j) => j.id === id) };
+  }
+  const heads = ({ jobs, get }: ReturnType<typeof tend>, reported: boolean) => queueHeads(REPO.toLowerCase(), jobs, get, () => false, NOW, () => reported);
+
+  it('a tend job at work holds the queue, and the head names it', () => {
+    expect(heads(tend('running'), false)).toEqual([{ pullRequest: PR, why: 'tending', jobId: 'job-2' }]);
+  });
+
+  it('a finished tend job holds it only while its end is still to report', () => {
+    expect(heads(tend('finished'), false)).toHaveLength(1);
+    expect(heads(tend('finished'), true)).toEqual([]);
+  });
+
+  it('a tend job that waits on a person holds nothing', () => {
+    for (const status of ['waiting_answer', 'parked', 'operator_led'] as const) expect(heads(tend(status), false)).toEqual([]);
+  });
+
+  it('a pull request a job saw merged or closed holds nothing, even while its tend job runs', () => {
+    for (const follow of ['merged', 'closed']) {
+      const other = jobForIssue(1, { id: 'job-0', status: 'finished', sourceState: { source: { follow, pullRequest: PR } } });
+      expect(heads(tend('running', {}, [other]), false)).toEqual([]);
+    }
   });
 });

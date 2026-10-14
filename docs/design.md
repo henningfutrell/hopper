@@ -2065,7 +2065,17 @@ is kept on its job (`heldSince`, cleared when nothing holds it), and a rebase he
 (`heldTooLong`). On a busy repository new pull requests reach their checks all the time, each a new head, and each
 conflicts with the same old pull request: it was held behind one head after another, conflicted, with no job on it and no
 signal on GitHub. At worst the late rebase needs one more rebase after the head's merge. The tend job it starts is said on
-the pull request ("Pull request housekeeping").
+the pull request ("Pull request housekeeping"). The log says each such release: the pull request, its head, and since when.
+
+**A merged pull request holds nothing** (issue #1162). A tend job holds its queue only while it works on the pull request:
+queued, held, claimed, running, or in its own wait, or finished with its end still to report to its source
+(`queueHeads`' `reported`). Once that end is reported, the finished tend job follows the pull request, which holds the
+queue only on its way to the merge, or the pull request was merged or closed first and there is nothing to follow; either
+way the tend job holds nothing. Before, a tend job whose pull request a person merged while it worked finished following
+nothing, and held every conflicted pull request of its repository until the hour above ran out, again and again. A tend job
+that waits on a person (a question, parked, worked by hand) holds nothing either, nor one whose pull request any job saw
+merged or closed. A held card says since when (`heldSince`) and the tend job that holds it with its status now
+(`heldBehind.jobId`).
 
 **Rework goes back at once** (issue #938). The queue holds only a `rebase`: a rebase onto a base that a head is about to
 move is made again after that merge. A `fix_checks` is rework, and no head holds it: every pull request with failed checks
