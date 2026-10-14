@@ -6,6 +6,7 @@
 //   Scenario: a due batch starts a batch run: a branch at the tip, a pull request into the tested branch, one event
 //   Scenario: nothing new: no branch, no pull request, no event
 //   Scenario: a green batch run is merged into the tested branch at its tip, and its branch removed
+//   Scenario: a merge that waits for its batch run is recorded pending once
 //   Scenario: a red batch run is closed and recorded failed; failing checks start a bisect; with none, the same tip does not run again
 //   Scenario: a job's open pull request on the tested branch moves to the landing branch; another's does not
 //   Scenario: a repository whose default branch is the tested branch runs nothing and says why
@@ -119,6 +120,22 @@ describe('the batch runner (issue #1073)', () => {
     expect(events[1]!.data).toMatchObject({ repo: REPO, tested: 'dev', tip: TIP, pullRequest: 100, merge: 'merge-sha' });
   });
 
+  it('a merge that waits for its batch run is recorded pending once, for the work-item ledger (part 3)', async () => {
+    const w = world();
+    const { r, events } = runner(w);
+    await r.pass();
+    w.checks = [{ name: 'test', status: 'completed', conclusion: 'success' }];
+    await r.pass();
+    // One merge since: fewer than N, and the timer has not run out.
+    const tip2 = '1111111111111111111111111111111111111111';
+    Object.assign(w, { tip: tip2, aheadBy: 1, messages: ['Merge pull request #16 from owner/issue-3-c'] });
+    await r.pass();
+    await r.pass();
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.promoted', 'landing_batch.pending']);
+    expect(events[2]!.data).toMatchObject({ repo: REPO, landing: 'main', tested: 'dev', tip: tip2, merges: [16] });
+    expect(r.view().repos[0]!.state.pending).toEqual({ tip: tip2, merges: [16] });
+  });
+
   it('red: closes the batch run, records it failed, and bisects within the batch (red.test.ts)', async () => {
     const w = world();
     const { r, events } = runner(w);
@@ -138,7 +155,9 @@ describe('the batch runner (issue #1073)', () => {
     await r.pass();
     expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed']);
     await r.pass();
-    expect(events).toHaveLength(2);
+    await r.pass();
+    // Its pull requests wait for the next batch run again: recorded once (part 3).
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.started', 'landing_batch.failed', 'landing_batch.pending']);
     expect(r.view().repos[0]!.why).toBe(`the landing branch tip ${TIP.slice(0, 12)} was tested already`);
   });
 

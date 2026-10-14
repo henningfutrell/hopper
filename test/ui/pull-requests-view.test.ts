@@ -7,8 +7,8 @@ import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { checksText, doingText, noChecksLine, waitsText, waitingLine, yoloLine } from '../../ui/src/model/pull-requests.ts';
-import type { PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '../../src/domain/types.ts';
+import { checksText, doingText, landingText, noChecksLine, waitsText, waitingLine, yoloLine } from '../../ui/src/model/pull-requests.ts';
+import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '../../src/domain/types.ts';
 
 const card = (over: Partial<PullRequestCard>): PullRequestCard => ({
   jobId: 'j1', repo: 'owner/a', issue: { number: 10, url: 'https://github.com/owner/a/issues/10' },
@@ -300,6 +300,29 @@ describe('Pull requests view', () => {
     await boot(fixture, 'admin', dismissed);
     await vi.waitFor(() => expect(group('org/b').querySelector('[data-slot="repo-no-checks"]')).not.toBeNull());
     expect(group('org/b').querySelector('[data-slot="repo-checks-job"]')).toBeNull();
+  });
+
+  it('a job\'s pull request merged into the landing branch is listed with its batch stage (issue #1073)', async () => {
+    const landing = (over: Partial<LandingCard>): LandingCard => ({
+      jobId: 'j12', repo: 'owner/a', issue: 'https://github.com/owner/a/issues/1', pullRequest: { number: 12, url: 'https://github.com/owner/a/pull/12' },
+      stage: 'waiting', since: '2026-10-08T10:00:00.000Z', ...over,
+    });
+    const cards = [
+      landing({}), landing({ jobId: 'j13', pullRequest: { number: 13, url: 'https://github.com/owner/a/pull/13' }, stage: 'batch_run', batch: 100 }),
+      landing({ jobId: 'j14', pullRequest: { number: 14, url: 'https://github.com/owner/a/pull/14' }, stage: 'reverted', revert: 101, fixIssue: 'https://github.com/owner/a/issues/105' }),
+    ];
+    await boot({ ...fixture, landing: cards });
+    await vi.waitFor(() => expect(document.querySelector('[data-slot="landing"]')).not.toBeNull());
+    expect([...document.querySelectorAll('[data-landing]')].map((e) => e.getAttribute('data-landing'))).toEqual(['j12', 'j13', 'j14']);
+    expect(text('[data-slot="landing-stage"]', document.querySelector('[data-landing="j13"]')!)).toBe('in batch run #100');
+    expect(landingText(cards[0]!)).toBe('merged into the landing branch: waits for a batch run');
+    expect(landingText(landing({ stage: 'bisecting' }))).toBe('its batch failed: a bisect tests it');
+    expect(landingText(landing({ stage: 'culprit' }))).toBe('it fails the full test suite: the hopper reverts it');
+    expect(landingText(landing({ stage: 'culprit', revert: 101 }))).toBe('it fails the full test suite: its revert #101 waits to merge');
+    expect(landingText(cards[2]!)).toBe('reverted by #101: a fix issue is filed');
+    // None: no Landing list.
+    await boot(fixture);
+    expect(document.querySelector('[data-slot="landing"]')).toBeNull();
   });
 
   it('no card in any repo: the view says no pull request waits', async () => {

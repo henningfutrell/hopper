@@ -1,0 +1,1 @@
+- The Pull requests page now lists the job pull requests that merged but have not passed the full test suite yet, and says where each one stands: waiting for a batch, being tested, taken back out, or moved on.

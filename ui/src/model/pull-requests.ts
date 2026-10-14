@@ -1,6 +1,6 @@
 // The Pull requests view (issue #637), pure: the header lines, and the words for each card's checks, merge state and
 // closing issue, and the repositories with no checks (issue #677). The daemon builds the list; the UI only says it.
-import type { PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from './wire.ts';
+import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from './wire.ts';
 
 type MergeWait = NonNullable<PullRequestCard['waits']>;
 
@@ -114,3 +114,15 @@ export function noChecksLine(v: RepoChecksView): string {
 export const noChecksNote = (r: Pick<RepoChecks, 'yolo'>): string => r.yolo
   ? 'No checks: yolo mode merges unverified code here.'
   : 'No checks: nothing verifies a pull request here before a person merges it.';
+
+/** Where a job's pull request merged into the landing branch stands on its way to the tested branch (issue #1073). */
+export function landingText(c: Pick<LandingCard, 'stage' | 'batch' | 'revert' | 'fixIssue'>): string {
+  switch (c.stage) {
+    case 'waiting': return 'merged into the landing branch: waits for a batch run';
+    case 'batch_run': return c.batch !== undefined ? `in batch run #${c.batch}` : 'in a batch run';
+    case 'bisecting': return 'its batch failed: a bisect tests it';
+    case 'culprit': return c.revert !== undefined ? `it fails the full test suite: its revert #${c.revert} waits to merge` : 'it fails the full test suite: the hopper reverts it';
+    case 'reverted': return `reverted${c.revert !== undefined ? ` by #${c.revert}` : ''}: ${c.fixIssue ? 'a fix issue is filed' : 'no fix issue yet'}`;
+    case 'promoted': return 'on the tested branch';
+  }
+}

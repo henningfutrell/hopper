@@ -70,6 +70,7 @@ export function detailOf(e: DomainEvent): string {
   if (e.type === 'vault.step_refused') return `${String(d.name)} for a step on ${String(d.host)}: no: ${String(d.reason)}`;
   // Landing batches (issue #1073): a batch run of the landing branch, how it ended, a job's pull request moved to it.
   if (e.type === 'landing_batch.started') return `${String(d.repo)}: batch run #${String(d.pullRequest)} of ${String(d.landing)} into ${String(d.tested)}`;
+  if (e.type === 'landing_batch.pending') return `${String(d.repo)}: ${Array.isArray(d.merges) ? d.merges.map((n) => `#${String(n)}`).join(', ') : ''} wait for a batch run`;
   if (e.type === 'landing_batch.promoted') return `${String(d.repo)}: batch run #${String(d.pullRequest)} moved ${String(d.tested)}`;
   if (e.type === 'landing_batch.failed') return `${String(d.repo)}: batch run #${String(d.pullRequest)} failed: ${String(d.reason)}`;
   if (e.type === 'landing_batch.retargeted') return `${String(d.repo)}#${String(d.pullRequest)} moved from ${String(d.from)} to ${String(d.to)}`;
