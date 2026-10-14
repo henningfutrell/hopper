@@ -17,6 +17,8 @@
 // read-only calls `claude-plan` makes, nothing else — with no shell, stdin closed, in a fresh private dir
 // removed after with the project dir claude keeps for it, and answers `{code, stdout, stderr}`; `POST /work-tree
 // {workTree}` makes the machine's work tree under this user's home, `{workTreeProblem}` when it cannot (issue #361).
+// `POST /sign-in {act, …}` runs this machine's claude sign-in (issue #1128, sign-in.ts): `start` answers its URL, `paste` writes the
+// code a person pasted and answers how it ended, `cancel` stops it; the argv is built here, the request names only the account.
 // `POST /level {model, effort?, jsonSchema, prompt, timeoutMs?}` runs an escalation level's claude in print
 // mode the same way (issue #482, level.ts): the argv locked down and built here, the prompt on stdin.
 // A request runs only when the hopper signed it with the client's token (signature.ts); every answer
@@ -38,6 +40,7 @@ import { runArgv } from './run.ts';
 import { readReap, reapArgv, scriptArgvOf } from './reap.ts';
 import { defaultRuntimeSockets, runtimeRoute, type RuntimeSockets } from './runtime.ts';
 import { level, runClaude } from './level.ts';
+import { createSignInRoute, startSignIn } from './sign-in.ts';
 import { checkRelease, installRelease, readRelease } from './release.ts';
 import { createResourceMeter, diskOfHome } from './resources.ts';
 import type { WindowsLink } from './windows-link.ts';
@@ -127,7 +130,7 @@ function readBody(stream: ServerHttp2Stream): Promise<string | 'too large'> {
 }
 
 /** One request on the tunnel: verified, then run; the answer signed. */
-const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree', '/discover', '/reach', '/checkpoint', '/runtime']);
+const ROUTES = new Set(['/herdr', '/release', '/load', '/claude', '/level', '/reap', '/survey', '/credential', '/work-tree', '/discover', '/reach', '/checkpoint', '/runtime', '/sign-in']);
 /** How long a reap or a survey may take: stopping a scope waits up to its 10 s stop timeout. */
 const SCRIPT_TIMEOUT_MS = 60000;
 
@@ -137,10 +140,13 @@ const resources = createResourceMeter();
 /** The resources with the Windows link, when it was tested. */
 const withWindowsLink = <R extends object>(r: R, link: WindowsLink | undefined): R | (R & { windowsLink: WindowsLink }) => (link ? { ...r, windowsLink: link } : r);
 
+/** This machine's claude sign-in (issue #1128): one at a time. */
+type SignInRoute = ReturnType<typeof createSignInRoute>;
+
 /** What a client knows of its releases: the one it runs, and the one a load put in its install dir. */
 interface Releases { running: string; installed: string }
 
-async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCache>, releases: Releases, watch: StartedIsolationWatch, stream: ServerHttp2Stream, headers: IncomingHttpHeaders): Promise<void> {
+async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCache>, releases: Releases, watch: StartedIsolationWatch, signIn: SignInRoute, stream: ServerHttp2Stream, headers: IncomingHttpHeaders): Promise<void> {
   const body = await readBody(stream);
   let nonce = '';
   const answer = (status: number, payload: unknown): void => {
@@ -167,6 +173,7 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   // Discovery (issue #542): the fixed script, no argument of the request's.
   if (path === '/discover') return answer(200, await runArgv(discoverArgv(), DISCOVER_TIMEOUT_MS));
   if (path === '/level') return level(o.claudeBin ?? 'claude', body, answer);
+  if (path === '/sign-in') { const r = await signIn(body); return answer(r.status, r.payload); }
   if (path === '/runtime') { const r = await runtimeRoute(o.runtimeSockets?.() ?? defaultRuntimeSockets(), body); return answer(r.status, r.payload); }
   let parsed: { args?: unknown; timeoutMs?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
@@ -220,6 +227,7 @@ export function startClient(o: ClientOptions): Client {
   const running = readRelease(o.installDir).id;
   const releases: Releases = { running, installed: running };
   const nonces = createNonceCache();
+  const signIn = createSignInRoute((argv) => startSignIn(o.claudeBin ?? 'claude', argv, { cwd: homedir() }));
   const log = o.log ?? (() => {});
   const backoff = o.backoffMs ?? BACKOFF_MS;
   let stopped = false;
@@ -250,7 +258,7 @@ export function startClient(o: ClientOptions): Client {
       link = socket;
       const session = serveLink(socket, () => { log('hopper-client: the hopper did not answer a PING; the link is dead'); socket.destroy(); }, o.ping, watch.heard);
       session.on('stream', (stream, headers) => {
-        serve(o, nonces, releases, watch, stream, headers).catch((e: unknown) => {
+        serve(o, nonces, releases, watch, signIn, stream, headers).catch((e: unknown) => {
           log(`hopper-client: ${(e as Error).message}`);
           if (!stream.destroyed) stream.close();
         });

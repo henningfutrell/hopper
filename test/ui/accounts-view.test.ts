@@ -23,21 +23,28 @@ const SIGNED_IN: ToolAccount = {
 };
 const SIGNED_OUT: ToolAccount = {
   service: 'claude', detail: {}, login: 'signed-out', spend: [],
-  machines: [{ machineId: 'm3', label: 'Server', source: 'claude-server', login: 'signed-out', problem: 'not logged in', readAt: at(1) }],
+  machines: [{ machineId: 'm3', label: 'Server', source: 'claude-server', login: 'signed-out', problem: 'not logged in', readAt: at(1), signIn: true }],
 };
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-async function render(report: ToolAccountsReport) {
+let posts: { path: string; body: unknown }[] = [];
+
+async function render(report: ToolAccountsReport, role: 'viewer' | 'operator' = 'viewer') {
+  posts = [];
   localStorage.setItem('jh_session', 'a'.repeat(64));
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(NOW);
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => (String(url).startsWith('/api/tool-accounts') ? json(report) : json({ error: 'not found' }, 404))));
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+    if (String(url).startsWith('/ui/api/')) { posts.push({ path: String(url), body: JSON.parse(String(init.body)) }); return json({ id: 'l9', status: 'pending' }); }
+    if (String(url).startsWith('/api/logins')) return json({ now: new Date(NOW).toISOString(), settings: { onExpiry: 'renew', warnSec: 60 }, logins: [] });
+    return String(url).startsWith('/api/tool-accounts') ? json(report) : json({ error: 'not found' }, 404);
+  }));
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   const store = '../../ui/src/store/index.ts';
   const { useHopper } = (await import(store)) as { useHopper: { setState(s: Record<string, unknown>): void } };
-  useHopper.setState({ authed: true, serverOffsetMs: 0, user: { id: 'u1', name: 'ada', role: 'viewer', realm: 'github', identity: 'ada' } });
+  useHopper.setState({ authed: true, serverOffsetMs: 0, user: { id: 'u1', name: 'ada', role, realm: 'github', identity: 'ada' } });
   const view = '../../ui/src/views/accounts.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { Accounts } = (await import(view)) as { Accounts: () => El };
   await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(Accounts)); });
@@ -74,6 +81,20 @@ describe('the Accounts view', () => {
     expect(document.querySelector('[data-slot="tool-account-spend"]')?.textContent).toContain('week');
     expect(text).toContain('Claude · signed in as nobody');
     expect(cards()).toHaveLength(2);
+  });
+
+  it('Sign in (issue #1128): an operator starts the tool\'s sign-in on a machine whose source can, then goes to Logins; a viewer has no button', async () => {
+    await render({ accounts: [SIGNED_IN, SIGNED_OUT] });
+    expect(document.querySelector('[data-sign-in]')).toBeNull();
+    await act(async () => { root?.unmount(); });
+    vi.resetModules();
+    await render({ accounts: [SIGNED_IN, SIGNED_OUT] }, 'operator');
+    const buttons = document.querySelectorAll<HTMLButtonElement>('[data-sign-in]');
+    expect([...buttons].map((b) => [b.getAttribute('data-sign-in'), b.textContent])).toEqual([['claude-server', 'Sign in']]);
+    await act(async () => { buttons[0]!.click(); });
+    for (let i = 0; i < 3; i++) await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    expect(posts).toEqual([{ path: '/ui/api/tool-accounts/sign-in', body: { source: 'claude-server' } }]);
+    expect(window.location.hash).toBe('#logins');
   });
 
   it('no tool account: says where to add a usage source', async () => {

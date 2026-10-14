@@ -2,8 +2,11 @@
 // code to enter at a URL — handled by its login kind, never as a question. Re-exported from types.ts.
 import type { JobId, LaneId, MachineId } from './types.ts';
 
-/** How the user completes a login. `device_code` first; the registry (src/logins/kinds.ts) takes the next ones. */
-export const LOGIN_KINDS = ['device_code'] as const;
+/**
+ * How the user completes a login. `device_code`: open the URL, enter the code. `paste_code` (issue #1128, a tool sign-in): open the
+ * URL, sign in, and paste the code the page then shows back to the hopper. The registry (src/logins/kinds.ts) takes the next ones.
+ */
+export const LOGIN_KINDS = ['device_code', 'paste_code'] as const;
 export type LoginKind = typeof LOGIN_KINDS[number];
 
 /**

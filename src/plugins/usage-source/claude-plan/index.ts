@@ -9,16 +9,20 @@
 // executor; a client target through its client, which runs its own claude, issue #366) — and the
 // readings are that machine's: its own Claude account (issue #139). The machine is named, never a default
 // (issue #174); a source stored with none reads the only machine there is, at each read (issue #442).
+// `signIn` (issue #1128, design.md "Tool sign-in") starts `claude auth login` on that machine, the same way, with its stdin open:
+// a person opens its URL, and the code the sign-in page shows goes to its stdin. claude keeps its own token there.
 import { chmodSync, mkdirSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { clientClaude } from '../../../executors/client.ts';
+import { clientClaude, clientSignIn } from '../../../executors/client.ts';
+import { signInArgs, startSignIn } from '../../../client/sign-in.ts';
 import { commandOn } from '../../../executors/command.ts';
-import { dockerHost } from '../../../executors/docker.ts';
+import { dockerArgv, dockerHost } from '../../../executors/docker.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
 import { pickMachine } from '../../../domain/machine-pick.ts';
-import { ON_MACHINE } from '../../claude-print.ts';
-import type { PluginDefinition } from '../../sdk.ts';
+import { ON_MACHINE, scrubbedEnv } from '../../claude-print.ts';
+import { userProcessEnv } from '../../../executors/env.ts';
+import type { PluginDefinition, ToolSignIn } from '../../sdk.ts';
 import { createPolledUsageSource, EXECUTORS_DESCRIPTION } from '../polled.ts';
 import { runCli, type CliRun } from '../run.ts';
 import { parseAuthStatus, parseUsageEnvelope } from './parse.ts';
@@ -94,11 +98,42 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
         return { error: `machine ${id}: ${e instanceof Error ? e.message : String(e)}` };
       }
     };
+    /**
+     * The sign-in on the machine the source reads (issue #1128). A client target's client runs its own claude; elsewhere the
+     * hopper runs it as a read does, with stdin open (docker exec -i, so the code reaches it).
+     */
+    const signIn = async ({ email }: { email?: string }): Promise<ToolSignIn> => {
+      const picked = o.machine ? { machine: o.machine } : pickMachine({ reach: 'any', machines: await ctx.machines() });
+      if ('none' in picked) throw new Error(picked.none);
+      const id = picked.machine;
+      const m = await ctx.machine(id);
+      if (!m) throw new Error(`machine ${id} is not configured`);
+      if (!m.online) throw new Error(`machine ${id} is offline`);
+      const args = signInArgs(email);
+      let run: Omit<ToolSignIn, 'machineId' | 'tool'>;
+      if (m.client) {
+        const t = ctx.client(id);
+        if (!t) throw new Error(`machine ${id}: client ${id} is not dialled in`);
+        run = await clientSignIn(t, email);
+      } else if (m.docker) {
+        run = await startSignIn(o.dockerBin, dockerArgv(dockerHost(ctx.env), ['exec', '-i', '--', m.docker, 'sh', '-c', ON_MACHINE, 'sh', o.bin, ...args]), { cwd: ctx.scratchDir });
+      } else if (m.ssh) {
+        const [file, argv] = commandOn(m, ['sh', '-c', ON_MACHINE, 'sh', o.bin, ...args], {
+          sshBin: o.sshBin, dockerBin: o.dockerBin, sshControlDir: join(ctx.dataDir, 'ssh'),
+          sshAuth: () => hopperSshAuth({ env: ctx.env, dataDir: ctx.dataDir }), dockerHost: () => dockerHost(ctx.env),
+        });
+        run = await startSignIn(file, argv, { cwd: ctx.scratchDir });
+      } else {
+        mkdirSync(probe, { recursive: true, mode: 0o700 });
+        run = await startSignIn(o.bin, args, { cwd: probe, env: scrubbedEnv(userProcessEnv(ctx.userEnv)) });
+      }
+      return { machineId: id, tool: 'claude', url: run.url, paste: (code) => run.paste(code), cancel: () => run.cancel() };
+    };
     /** A failure of the run itself (no machine, offline): the reason as it is, not as claude's. */
     const notReady = (r: CliRun): boolean => 'error' in r && r.error.startsWith('machine ');
     const failure = (what: string, r: CliRun): string => (notReady(r) && 'error' in r ? r.error : failed(what, r));
     return createPolledUsageSource(ctx, {
-      intervalSeconds: o.intervalSeconds, executors: o.executors, ...(o.machine ? { machineId: o.machine } : {}),
+      signIn, intervalSeconds: o.intervalSeconds, executors: o.executors, ...(o.machine ? { machineId: o.machine } : {}),
       async read(signal) {
         // None named: the only machine there is now; none, or several: said, and tried again soon (a machine is probed online after start).
         const picked = o.machine ? { machine: o.machine } : pickMachine({ reach: 'any', machines: await ctx.machines() });

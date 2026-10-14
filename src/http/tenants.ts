@@ -23,7 +23,7 @@ import type { Identity, SessionKind, UiRole, User } from '../domain/types.ts';
 import type { Access } from '../authz/service.ts';
 import type { Engine } from '../engine/index.ts';
 import type { Failures } from '../failures/index.ts';
-import type { Logins } from '../logins/index.ts';
+import type { Logins, SignIns } from '../logins/index.ts';
 import type { MinorDecisions, TypesafeKey } from '../minor-decisions/index.ts';
 import type { Tldrs } from '../tldr/index.ts';
 import type { WebhooksEditor } from '../webhooks/edit.ts';
@@ -54,6 +54,8 @@ export interface TenantParts {
   levelNames(): string[];
   /** The logins a job or run waits on (issue #476). */
   logins: Logins;
+  /** The tool sign-ins a person starts from Accounts (issue #1128). */
+  signIns: SignIns;
   /** The failure assessor (issue #509). */
   failures: Failures;
   /** Decider calls through Jev first (issue #550). */

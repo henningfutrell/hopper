@@ -47,7 +47,7 @@ export function toolAccountsOf(o: { sources: UsageSourceReport[]; readings: Usag
     const lastUsedAt = latest((started.get(machineId) ?? []).filter((j) => !s.executors || s.executors.includes(j.spec.executor)).map((j) => j.startedAt));
     const machine: ToolAccountMachine = {
       machineId, label: o.labels.get(machineId) ?? machineId, source: s.name, login,
-      ...(problem ? { problem } : {}), ...(s.accountReadAt ? { readAt: s.accountReadAt } : {}), ...(lastUsedAt ? { lastUsedAt } : {}),
+      ...(problem ? { problem } : {}), ...(s.accountReadAt ? { readAt: s.accountReadAt } : {}), ...(lastUsedAt ? { lastUsedAt } : {}), ...(s.signIn ? { signIn: true as const } : {}),
     };
     // Signed in as nobody, or not known: one entry per service, so a machine signed out is seen beside the accounts.
     const key = `${a.service}\u0000${login === 'signed-in' ? a.identity : `\u0000${login}`}`;

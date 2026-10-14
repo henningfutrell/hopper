@@ -1438,12 +1438,12 @@ Version 1 (`docs/schemas/source.delivery_received.v1.json`). GitHub sent the hop
 
 ## `auth.pending`
 
-Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`). A risk hold the Decider made (issue #679) carries `decider` in place of `guards`: its `risk`, `categories`, `confidence` and `threshold`, or the `error` it failed with. `host` (issue #698): the host of the URL to open — what asks —, never its path or query. The Grok Bot routine notifier posts it (issue #698).
+Version 1 (`docs/schemas/auth.pending.v1.json`). A job or run waits on a login (issue #476): a CLI shows a device code to enter at a URL. Kind `paste_code` (issue #1128): a tool sign-in a person started on the machine (`machineId`), with no job, `run` `sign-in`; the person pastes the code its page shows. It goes to the logins, never to the questions or an escalation level. `run` is the executor or escalation level that waits; `questionId` when it is an escalation level's run for that question. Again, with the same `loginId` and `renewed: true`, when the same tool shows a new code for the same job: a login is updated, never duplicated. The URL and the code are never in an event, a log or a webhook: only a UI session of the user reads them, from `GET /api/logins`. `priority`, `high` (issue #535): the job's live priority, and whether it is at or above the high-priority threshold. `holds` (issue #679): every hold on the level's answer that sent it, strongest first — `guard` (`by` `risk` or `guard`, the `guards` by name), `high_priority`, `auto_answer_off`, `low_confidence` (with the `confidence` and the `threshold`). A risk hold the Decider made (issue #679) carries `decider` in place of `guards`: its `risk`, `categories`, `confidence` and `threshold`, or the `error` it failed with. `host` (issue #698): the host of the URL to open — what asks —, never its path or query. The Grok Bot routine notifier posts it (issue #698).
 
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
-| `kind` | `device_code` | yes |
+| `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
 | `host` | string | no |
 | `expiresAt` | string | yes |
@@ -1472,7 +1472,7 @@ Version 1 (`docs/schemas/auth.completed.v1.json`). The machine went on after the
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
-| `kind` | `device_code` | yes |
+| `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
 | `by` | `requester` | no |
 
@@ -1491,7 +1491,7 @@ Version 1 (`docs/schemas/auth.expired.v1.json`). The login's code ran out (`expi
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
-| `kind` | `device_code` | yes |
+| `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
 | `expiresAt` | string | yes |
 | `renewing` | boolean | no |
@@ -1512,7 +1512,7 @@ Version 1 (`docs/schemas/auth.cancelled.v1.json`). The user cancelled the login.
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
-| `kind` | `device_code` | yes |
+| `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
 | `by` | `user` | yes |
 
@@ -1532,7 +1532,7 @@ Version 1 (`docs/schemas/auth.failed.v1.json`). What waited on the login ended f
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
-| `kind` | `device_code` | yes |
+| `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
 | `reason` | string | yes |
 | `by` | `requester` | no |
@@ -1553,7 +1553,7 @@ Version 1 (`docs/schemas/auth.reopened.v1.json`). The job that asked for a login
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
-| `kind` | `device_code` | yes |
+| `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
 | `reason` | string | yes |
 
@@ -1573,7 +1573,7 @@ Version 1 (`docs/schemas/auth.dismissed.v1.json`). A person put an open login aw
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
-| `kind` | `device_code` | yes |
+| `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
 | `by` | `user` | yes |
 

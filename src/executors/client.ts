@@ -8,6 +8,7 @@
 // its machine scripts (issue #410); `POST /runtime` a container runtime call on the machine's own runtime (issue #708). One session per link: a client that dials in again is a new link.
 import { DISCOVER_TIMEOUT_MS } from '../client/discover.ts';
 import { CHECKPOINT_TIMEOUT_MS } from '../client/checkpoint.ts';
+import { SIGN_IN_PASTE_MS, SIGN_IN_URL_MS, type SignInRun } from '../client/sign-in.ts';
 import { connect, type ClientHttp2Session } from 'node:http2';
 import type { Duplex } from 'node:stream';
 import type { IsolationStop } from '../client/isolation.ts';
@@ -68,6 +69,29 @@ export function clientHerdr(t: ClientTransport, args: string[], timeoutMs: numbe
 /** One claude call of a usage read on the client target (issue #366): the client runs its own claude, and only those calls. */
 export function clientClaude(t: ClientTransport, args: string[], timeoutMs: number): Promise<ClientAnswer> {
   return clientCall<ClientAnswer>(t, '/claude', { args, timeoutMs }, timeoutMs);
+}
+
+/**
+ * The claude sign-in on the client target (issue #1128, src/client/sign-in.ts): the client starts it and answers its URL; the code
+ * a person pasted goes down the same link, and the client answers how it ended. Throws when it cannot start.
+ */
+export async function clientSignIn(t: ClientTransport, email?: string): Promise<SignInRun> {
+  const started = await clientCall<{ id?: unknown; url?: unknown; error?: unknown }>(t, '/sign-in', { act: 'start', ...(email ? { email } : {}) }, SIGN_IN_URL_MS);
+  if (typeof started.error === 'string') throw new ClientError(`client ${t.machine}: ${started.error}`);
+  if (typeof started.id !== 'string' || typeof started.url !== 'string') throw new ClientError(`client ${t.machine}: no sign-in in its answer`);
+  const id = started.id;
+  return {
+    url: started.url,
+    async paste(code) {
+      try {
+        const r = await clientCall<{ ok?: unknown; reason?: unknown }>(t, '/sign-in', { act: 'paste', id, code }, SIGN_IN_PASTE_MS);
+        return r.ok === true ? { ok: true } : { ok: false, reason: typeof r.reason === 'string' ? r.reason : 'the client gave no reason' };
+      } catch (e) {
+        return { ok: false, reason: e instanceof Error ? e.message : String(e) };
+      }
+    },
+    cancel() { clientCall(t, '/sign-in', { act: 'cancel', id }, 15000).catch(() => undefined); },
+  };
 }
 
 /** An escalation level's run on the client target (issue #482): the client runs its own claude, locked down, the prompt on stdin. */

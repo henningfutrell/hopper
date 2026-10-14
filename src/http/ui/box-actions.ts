@@ -49,6 +49,9 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/jobs/:id/keep-original', kind: 'change work on a machine' },
   { route: '/ui/api/jobs/:id/accept-new-text', kind: 'change work on a machine' },
   { route: '/ui/api/logins/:id/new-code', kind: 'change work on a machine' },
+  // Issue #1128: a machine's agent tool signed in again, and the code its sign-in page showed.
+  { route: '/ui/api/tool-accounts/sign-in', kind: 'change work on a machine' },
+  { route: '/ui/api/logins/:id/code', kind: 'change work on a machine' },
   { route: '/ui/api/machines', kind: 'change work on a machine' },
   { route: '/ui/api/machines/join', kind: 'change work on a machine' },
   { route: '/ui/api/machines/sandbox', kind: 'change work on a machine' },

@@ -8,7 +8,8 @@
     "kind": {
       "type": "string",
       "enum": [
-        "device_code"
+        "device_code",
+        "paste_code"
       ]
     },
     "tool": {

@@ -29,7 +29,7 @@ import { startHerdrSession } from '../plugins/machine-source/local/index.ts';
 import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugins/index.ts';
 import { splitSources } from './job-sources.ts';
 import { createFailures, type Failures } from '../failures/index.ts';
-import { createLogins, type Logins } from '../logins/index.ts';
+import { createLogins, createSignIns, type Logins, type SignIns } from '../logins/index.ts';
 import { createReviewServices } from '../review/index.ts';
 import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../minor-decisions/index.ts';
 import { userTypesafeKey } from './typesafe-key.ts';
@@ -138,8 +138,8 @@ export interface UserRuntime {
   reviews: ReviewServices;
   /** The escalation levels' names now: what may review a review section's items (issues #537, #543). */
   levelNames(): string[];
-  /** The logins a job or run waits on (issue #476). */
-  logins: Logins;
+  /** The logins a job or run waits on (issue #476), and the tool sign-ins a person starts from Accounts (issue #1128). */
+  logins: Logins; signIns: SignIns;
   /** The failure assessor (issue #509): every failed job judged, shared causes grouped into problems. */
   failures: Failures;
   /** Decider calls, Jev first (issue #550). */
@@ -308,7 +308,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // reached through closures that run only after `engine` exists (design.md "Construction
   // contract added").
   // The logins (issue #476): a login a job or an escalation level's run waits on, never a question.
-  const logins = createLogins({ store, clock });
+  // And the tool sign-ins (issue #1128): started by the usage sources that read each machine's tool.
+  const logins = createLogins({ store, clock }), signIns = createSignIns({ logins, sources: () => host.usageSources(), clock });
   // Decider calls (issue #550) go through Jev first, through TypeSafe with the user's TypeSafe API key (issue #657).
   const minorDecisions: MinorDecisions = createMinorDecisions({ store, clock, logger, timeoutMs: JEV_TIMEOUT_MS, jev, typesafeKey: () => typesafeKey.view() });
   // The TL;DR of every long card (issue #569): Claude Haiku through the `claude` CLI, in the user's work dir.
@@ -393,7 +394,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined;
   return {
     search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, needSteps, directJobs, sandboxRequests,
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound,
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound,
     levelNames: () => levels().map((l) => l.name), connectedAccounts,
     ...history.recorders,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
@@ -413,7 +414,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     stop() {
       stopped ??= (async () => {
         await search.stop(); jobStream.stop(); await proxy.githubProxy.bugReports.stop(); await proxy.githubProxy.watches.stop(); await proxy.githubProxy.componentWatchers.stop(); await proxy.githubProxy.landingBatches.stop(); await proxy.githubProxy.ledgerFallbackRead.stop();
-        await failures.stop();
+        await failures.stop(); signIns.stop();
         minorDecisions.stop(); await tldrs.stop();
         await sync.stop();
         history.stop(); connectedAccounts.stop();

@@ -6,7 +6,8 @@
 // server's `auth.expired` arrives, whose word is final. Cancelled and failed say so. Ended logins stay a short while,
 // then go to Earlier logins below; a completed or dismissed one goes there at once (issue #1110). Dismiss puts an open
 // login away when its job never says what came of it; a login its job reopened says why (issue #1110). A session whose UI role cannot act (viewer) sees a notice, never
-// the code (the server answers it none either). A 403 on an action drops the UI to the landing page.
+// the code (the server answers it none either). A 403 on an action drops the UI to the landing page. A tool sign-in (issue #1128, kind
+// `paste_code`, no job) asks for the code its sign-in page shows instead (`SignInCode`).
 import { Ban, Check, EyeOff, KeyRound, Lock, RotateCw, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -16,6 +17,7 @@ import { JobTitle } from '@/components/job';
 import { HighTag } from '@/components/priority';
 import { Empty, Panel } from '@/components/panel';
 import { RaisedOn } from '@/components/raised-by';
+import { SignInCode } from '@/components/sign-in-code';
 import { StatusBadge } from '@/components/status';
 import { cn } from '@/lib/utils';
 import { clock } from '@/model/format';
@@ -31,11 +33,19 @@ const BORDER: Record<LoginPhase, string> = {
 const TONE: Record<LoginPhase, 'warn' | 'bad' | 'ok' | 'muted'> = { pending: 'warn', expiring: 'warn', expired: 'bad', completed: 'ok', cancelled: 'muted', failed: 'bad', dismissed: 'muted' };
 const LABEL: Record<LoginPhase, string> = { pending: 'pending', expiring: 'expires soon', expired: 'expired', completed: 'signed in', cancelled: 'cancelled', failed: 'failed', dismissed: 'dismissed' };
 
-/** What waits on the login, as a noun: the job, or the escalation run. */
-const waiter = (l: LoginView): string => (l.jobId ? 'The job' : 'The escalation run');
+/** A tool sign-in a person started from Accounts (issue #1128): no job waits on it. */
+const isSignIn = (l: LoginView): boolean => l.kind === 'paste_code' && !l.jobId;
+
+/** What waits on the login, as a noun: the job, the sign-in, or the escalation run. */
+const waiter = (l: LoginView): string => (l.jobId ? 'The job' : isSignIn(l) ? 'The sign-in' : 'The escalation run');
 
 /** What happened to what waited on it, for an ended login. */
 function outcome(l: LoginView, phase: LoginPhase, settings: LoginSettings): string {
+  if (isSignIn(l)) {
+    if (phase === 'completed') return `${l.tool} on this machine is signed in.`;
+    if (phase === 'failed') return `${l.reason ? `Failed: ${l.reason}.` : 'Failed.'} Start it again from Accounts.`;
+    if (phase === 'expired' || phase === 'cancelled') return 'The sign-in stopped. Start it again from Accounts.';
+  }
   switch (phase) {
     case 'expired':
       if (!l.jobId) return 'The escalation run stops waiting on it; the question goes on as on any error.';
@@ -56,6 +66,7 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
   const role = useHopper((s) => s.user?.role);
   const job = useJobIndex().get(l.jobId ?? '');
   const machine = useMachineName(l.machineId);
+  const name = machine ?? 'machine unknown';
   const [busy, setBusy] = useState(false);
   const left = countdownText(l, now);
   const open = isOpen(phase);
@@ -82,7 +93,6 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
       {canDismiss && <Button size="sm" variant="ghost" disabled={busy} title="The login is done or no longer needed: put it away" onClick={() => void act('dismiss')}><EyeOff />Dismiss</Button>}
     </div>
   );
-  const name = machine ?? 'machine unknown';
   return (
     <div data-login={l.id} data-phase={phase} className="min-w-0">
       <Panel title={`${l.tool} login`} icon={KeyRound} className={BORDER[phase]} bodyClassName="space-y-3"
@@ -96,7 +106,7 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
         <div className="flex items-start gap-2 text-sm">
           <span className="shrink-0 text-xs text-muted-foreground">Waiting:</span>
           {job ? <JobTitle job={job} className="flex-1" />
-            : <span className="min-w-0 flex-1 truncate">{l.jobId ? `job ${l.jobId.slice(0, 8)}` : `the ${l.run} escalation run for a question`}</span>}
+            : <span className="min-w-0 flex-1 truncate">{l.jobId ? `job ${l.jobId.slice(0, 8)}` : isSignIn(l) ? `the ${l.tool} sign-in on ${name}` : `the ${l.run} escalation run for a question`}</span>}
           {!job && l.high && l.priority !== undefined && <HighTag priority={l.priority} />}
         </div>
         {(l.host || l.account || l.scopes?.length || l.laneId) && (
@@ -109,12 +119,13 @@ function LoginCard({ l, now, settings }: { l: LoginView; now: number; settings: 
         )}
         {open && (
           <div className={cn('text-center text-sm text-muted-foreground', phase === 'expiring' && 'text-base font-semibold text-warn')}>
-            The code expires in <span data-countdown className="num">{left}</span>
+            {isSignIn(l) ? 'The sign-in stops in' : 'The code expires in'} <span data-countdown className="num">{left}</span>
           </div>
         )}
         {open && canAct && l.userCode && l.verificationUrl && (
           <DeviceCode provider={l.tool} userCode={l.userCode} verificationUri={l.verificationUrl} waiting="Waiting for the sign-in" actions={actions || undefined} />
         )}
+        {open && canAct && isSignIn(l) && l.codeKept && <SignInCode l={l} />}
         {open && l.reason && (
           <div data-slot="login-reopened" className="text-center text-sm text-bad">The login did not work: {l.reason}. {waiter(l)} reports a new code here.</div>
         )}
