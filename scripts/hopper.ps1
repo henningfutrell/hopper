@@ -29,12 +29,13 @@ function Read-Distro([string[]] $command) {
 function Invoke-Autostart([string] $action) {
   $dir = Join-Path $env:LOCALAPPDATA 'hopper'
   $loop = Join-Path $dir 'hopper-keepalive.ps1'
-  $link = Join-Path ([Environment]::GetFolderPath('Startup')) 'hopper keep-alive.lnk'
+  $link = Join-Path ([Environment]::GetFolderPath('Startup')) 'hopper-wsl.lnk'
   $powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
   $loopArgs = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$loop`""
-  # The keep-alive loops of this user, found by the script they run.
+  # The keep-alive loops of this user: by the script they run, or the loop the install page's shortcut runs by hand.
+  # The shortcut has the install page's name, so on replaces that one and off removes it.
   $running = @(Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" |
-    Where-Object { $_.CommandLine -and $_.CommandLine.Contains($loop) })
+    Where-Object { $_.CommandLine -and ($_.CommandLine.Contains($loop) -or $_.CommandLine.Contains('-e sleep infinity; Start-Sleep')) })
   switch ($action) {
     'on' {
       if ((Read-Distro @('cat', '/proc/1/comm')) -ne 'systemd') {
