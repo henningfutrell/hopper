@@ -25,5 +25,8 @@ describe('kept work, from the work trail (issue #1010)', () => {
     expect(scratchOf(['/w/.hopper-scratch/a'], 'a')).toBe('/w/.hopper-scratch/a');
     expect(scratchOf(['/w/.hopper-scratch/b/repo'], 'a')).toBeUndefined();
     expect(scratchOf(['/w/a/repo'], 'a')).toBeUndefined();
+    // A job worktree in the work tree's workspace (issue #1103): the scratch dir beside it in that work tree.
+    expect(scratchOf(['/w/workspace/worktrees/my-app-a'], 'a')).toBe('/w/.hopper-scratch/a');
+    expect(scratchOf(['/w/workspace/worktrees/my-app-ba'], 'a')).toBeUndefined();
   });
 });

@@ -5,17 +5,17 @@ import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand, mirrorOf, mirrorWorktreeOf, passFetchKey, passFetches } from '../../src/executors/herdr/job-worktree.ts';
+import { checkoutOf, jobWorktreeOf, jobWorktreeOutcome, makeJobWorktreeCommand, passFetchKey, passFetches } from '../../src/executors/herdr/job-worktree.ts';
 import { reapArgv } from '../../src/client/server.ts';
 import { jobScratchOf } from '../../src/executors/herdr/start.ts';
 
 import { GIT_ENV, ID, git, repository, served, sh } from './job-worktree-support.ts';
 
 describe('the job worktree command (issue #379)', () => {
-  it('makes the job its own git worktree of the work tree in its scratch dir, detached at the remote default branch as just fetched, and enters it', () => {
+  it('makes the job its own git worktree of the work tree in <work tree>/workspace/worktrees (issue #1103), detached at the remote default branch as just fetched, and enters it', () => {
     const { tree, origin } = repository();
     const path = jobWorktreeOf(tree, ID);
-    expect(path).toBe(`${tree}/.hopper-scratch/${ID}/tree`);
+    expect(path).toBe(`${tree}/workspace/worktrees/tree-${ID}`);
     const out = sh(tree, makeJobWorktreeCommand(tree, ID), 'pwd');
     expect(out).toBe(`hopper-worktree-running\nhopper-job-worktree-made\n${path}\n`);
     expect(git(path, 'rev-parse', 'HEAD')).toBe(git(origin, 'rev-parse', 'main'));
@@ -40,6 +40,7 @@ describe('the job worktree command (issue #379)', () => {
     expect(git(tree, 'rev-parse', 'HEAD')).toBe(before);
     expect(git(tree, 'status', '--porcelain')).toBe('');
     expect(git(jobWorktreeOf(tree, ID), 'status', '--porcelain')).toBe('');
+    expect(existsSync(join(tree, '.hopper-scratch', ID, 'tree'))).toBe(false);
   });
 
   it('makes no worktree when the work tree is not the top of a git repository: a plain directory, or one inside a repository', () => {
@@ -92,11 +93,11 @@ describe('the job worktree command (issue #379)', () => {
   });
 });
 
-// Issues #361, #858: a work tree that is no repository (a machine's, the jobs directory by default) gets the job's
-// repository's mirror: a bare, blobless clone in `<work tree>/.hopper-scratch/repos/<owner>/<name>.git`, fetched for the
-// default branch only, and the job's worktree made of it. A local bare repository at `<root>/acme/app.git`, served over
-// a file URL with blob filters allowed, stands in for GitHub.
-describe('the job\'s repository in a work tree that is no repository (issues #361, #858)', () => {
+// Issues #361, #858, #1103: a work tree that is no repository (a machine's, the jobs directory by default) gets the job's
+// repository's tended checkout: a clone in `<work tree>/workspace/<name>`, as a workflow repo tends its workspace, fetched
+// for the default branch only, and the job's worktree made of it beside it, in `<work tree>/workspace/worktrees`. A local
+// bare repository at `<root>/acme/app.git`, served over a file URL, stands in for GitHub.
+describe('the job\'s repository in a work tree that is no repository (issues #361, #858, #1103)', () => {
   function plainTree(): { root: string; plain: string; origin: string; bare: string; url: string } {
     const { root, origin } = repository();
     const bare = join(root, 'acme', 'app.git');
@@ -117,41 +118,50 @@ describe('the job\'s repository in a work tree that is no repository (issues #36
     return git(ahead, 'rev-parse', 'HEAD');
   }
 
-  it('clones its mirror into the work tree\'s scratch dir the first time, makes the job its own worktree of it, and enters it', () => {
+  it('clones its tended checkout into <work tree>/workspace the first time, makes the job its own worktree of it beside it, and enters it', () => {
     const { plain, bare, url } = plainTree();
-    const path = mirrorWorktreeOf(plain, ID, 'acme/app');
-    const mirror = mirrorOf(plain, 'acme/app');
-    expect(path).toBe(`${plain}/.hopper-scratch/${ID}/app`);
-    expect(mirror).toBe(`${plain}/.hopper-scratch/repos/acme/app.git`);
-    expect(sh(plain, checkout(plain, url), 'pwd')).toBe(`hopper-worktree-running\nhopper-job-worktree-mirror\n${path}\n`);
-    expect(git(mirror, 'remote', 'get-url', 'origin')).toBe(url);
+    const path = jobWorktreeOf(plain, ID, 'acme/app');
+    const tended = checkoutOf(plain, 'acme/app');
+    expect(path).toBe(`${plain}/workspace/worktrees/app-${ID}`);
+    expect(tended).toBe(`${plain}/workspace/app`);
+    expect(sh(plain, checkout(plain, url), 'pwd')).toBe(`hopper-worktree-running\nhopper-job-worktree-checkout\n${path}\n`);
+    expect(git(tended, 'remote', 'get-url', 'origin')).toBe(url);
     expect(git(path, 'rev-parse', 'HEAD')).toBe(git(bare, 'rev-parse', 'main'));
-    expect(git(mirror, 'worktree', 'list')).toContain(path);
-    expect(readdirSync(plain).sort()).toEqual(['.hopper-scratch']);
+    expect(git(tended, 'worktree', 'list')).toContain(path);
+    expect(readdirSync(plain).sort()).toEqual(['.hopper-scratch', 'workspace']);
+    expect(readdirSync(join(plain, 'workspace')).sort()).toEqual(['.gitignore', 'app', 'worktrees']);
   });
 
-  it('the mirror is bare and blobless, its branches the remote\'s (refs/remotes/origin), and the job\'s files are there to work on', () => {
+  it('makes no copy of the repository in the scratch dir (issue #1103): no mirror, no worktree there', () => {
     const { plain, url } = plainTree();
     sh(plain, checkout(plain, url));
-    const mirror = mirrorOf(plain, 'acme/app');
-    expect(git(mirror, 'rev-parse', '--is-bare-repository')).toBe('true');
-    expect(git(mirror, 'config', 'remote.origin.partialclonefilter')).toBe('blob:none');
-    expect(git(mirror, 'config', 'remote.origin.fetch')).toBe('+refs/heads/*:refs/remotes/origin/*');
-    expect(git(mirror, 'for-each-ref', '--format=%(refname)')).toBe('refs/remotes/origin/HEAD\nrefs/remotes/origin/main');
-    const path = mirrorWorktreeOf(plain, ID, 'acme/app');
-    expect(readdirSync(path).sort()).toEqual(['.git', 'a.txt', 'b.txt']);
+    expect(readdirSync(join(plain, '.hopper-scratch')).sort()).toEqual(['.gitignore', ID]);
+    expect(readdirSync(join(plain, '.hopper-scratch', ID))).toEqual([]);
   });
 
-  it('a later job fetches the mirror instead, the default branch only: its worktree starts at what the remote has now', () => {
+  it('uses the checkout the workspace already tends, as it is: nothing cloned again, its own branch and files left alone', () => {
+    const { root, plain, origin, url } = plainTree();
+    mkdirSync(join(plain, 'workspace'));
+    const tended = checkoutOf(plain, 'acme/app');
+    git(root, 'clone', '--quiet', url, tended);
+    git(tended, 'switch', '--quiet', '-c', 'persons-work');
+    writeFileSync(join(tended, 'wip.txt'), 'wip\n');
+    expect(sh(plain, checkout(plain, url))).toContain('hopper-job-worktree-checkout');
+    expect(git(tended, 'symbolic-ref', '--short', 'HEAD')).toBe('persons-work');
+    expect(git(tended, 'status', '--porcelain')).toBe('?? wip.txt');
+    expect(existsSync(join(plain, 'workspace', '.gitignore'))).toBe(false);
+    expect(git(jobWorktreeOf(plain, ID, 'acme/app'), 'rev-parse', 'HEAD')).toBe(git(origin, 'rev-parse', 'main'));
+  });
+
+  it('a later job fetches the checkout instead, the default branch only: its worktree starts at what the remote has now', () => {
     const { root, plain, bare, url } = plainTree();
     sh(plain, checkout(plain, url));
     const now = pushTo(root, bare, 'main');
     pushTo(root, bare, 'someone-elses');
-    mkdirSync(join(plain, '.hopper-scratch', NEXT), { recursive: true });
-    const out = sh(plain, makeJobWorktreeCommand(plain, NEXT, { repo: 'acme/app', url }), 'pwd');
-    expect(out).toBe(`hopper-worktree-running\nhopper-job-worktree-mirror\n${mirrorWorktreeOf(plain, NEXT, 'acme/app')}\n`);
-    expect(git(mirrorWorktreeOf(plain, NEXT, 'acme/app'), 'rev-parse', 'HEAD')).toBe(now);
-    expect(git(mirrorOf(plain, 'acme/app'), 'for-each-ref', '--format=%(refname)')).not.toContain('someone-elses');
+        const out = sh(plain, makeJobWorktreeCommand(plain, NEXT, { repo: 'acme/app', url }), 'pwd');
+    expect(out).toBe(`hopper-worktree-running\nhopper-job-worktree-checkout\n${jobWorktreeOf(plain, NEXT, 'acme/app')}\n`);
+    expect(git(jobWorktreeOf(plain, NEXT, 'acme/app'), 'rev-parse', 'HEAD')).toBe(now);
+    expect(git(checkoutOf(plain, 'acme/app'), 'for-each-ref', '--format=%(refname)')).not.toContain('someone-elses');
   });
 
   it('a later job in the same sync pass fetches nothing (issue #858 part 2): its worktree starts at what the pass fetched', () => {
@@ -159,29 +169,27 @@ describe('the job\'s repository in a work tree that is no repository (issues #36
     const first = git(bare, 'rev-parse', 'main');
     sh(plain, checkout(plain, url));
     pushTo(root, bare, 'main');
-    mkdirSync(join(plain, '.hopper-scratch', NEXT), { recursive: true });
-    const out = sh(plain, makeJobWorktreeCommand(plain, NEXT, { repo: 'acme/app', url, fetch: false }), 'pwd');
-    expect(out).toBe(`hopper-worktree-running\nhopper-job-worktree-mirror\n${mirrorWorktreeOf(plain, NEXT, 'acme/app')}\n`);
-    expect(git(mirrorWorktreeOf(plain, NEXT, 'acme/app'), 'rev-parse', 'HEAD')).toBe(first);
-    expect(git(mirrorOf(plain, 'acme/app'), 'rev-parse', 'refs/remotes/origin/main')).toBe(first);
+        const out = sh(plain, makeJobWorktreeCommand(plain, NEXT, { repo: 'acme/app', url, fetch: false }), 'pwd');
+    expect(out).toBe(`hopper-worktree-running\nhopper-job-worktree-checkout\n${jobWorktreeOf(plain, NEXT, 'acme/app')}\n`);
+    expect(git(jobWorktreeOf(plain, NEXT, 'acme/app'), 'rev-parse', 'HEAD')).toBe(first);
+    expect(git(checkoutOf(plain, 'acme/app'), 'rev-parse', 'refs/remotes/origin/main')).toBe(first);
   });
 
-  it('an extra job adds only its worktree: one mirror, nothing cloned again', () => {
+  it('an extra job adds only its worktree: one checkout, nothing cloned again', () => {
     const { plain, url } = plainTree();
     sh(plain, checkout(plain, url));
-    const mirror = mirrorOf(plain, 'acme/app');
-    const objects = git(mirror, 'count-objects', '-v');
-    mkdirSync(join(plain, '.hopper-scratch', NEXT), { recursive: true });
+    const tended = checkoutOf(plain, 'acme/app');
+    const objects = git(tended, 'count-objects', '-v');
     sh(plain, makeJobWorktreeCommand(plain, NEXT, { repo: 'acme/app', url }));
-    expect(readdirSync(join(plain, '.hopper-scratch', 'repos', 'acme'))).toEqual(['app.git']);
-    expect(git(mirror, 'count-objects', '-v')).toBe(objects);
-    expect(git(mirror, 'worktree', 'list').split('\n')).toHaveLength(3);
+    expect(readdirSync(join(plain, 'workspace')).sort()).toEqual(['.gitignore', 'app', 'worktrees']);
+    expect(git(tended, 'count-objects', '-v')).toBe(objects);
+    expect(git(tended, 'worktree', 'list').split('\n')).toHaveLength(3);
   });
 
-  it('what the job pushed from its worktree is the remote\'s branch in the mirror, so the reap reads it as pushed', () => {
+  it('what the job pushed from its worktree is the remote\'s branch in the checkout, so the reap reads it as pushed', () => {
     const { plain, url } = plainTree();
     sh(plain, checkout(plain, url));
-    const path = mirrorWorktreeOf(plain, ID, 'acme/app');
+    const path = jobWorktreeOf(plain, ID, 'acme/app');
     git(path, 'switch', '--quiet', '-c', 'fix');
     git(path, 'commit', '--quiet', '--allow-empty', '-m', 'fix');
     git(path, 'push', '--quiet', '-u', 'origin', 'fix');
@@ -192,12 +200,12 @@ describe('the job\'s repository in a work tree that is no repository (issues #36
     expect(existsSync(path)).toBe(false);
   });
 
-  it('a mirror there of another repository is never used: unmade, with why', () => {
+  it('a checkout there of another repository is never used: unmade, with why', () => {
     const { root, plain, url } = plainTree();
-    mkdirSync(join(plain, '.hopper-scratch', 'repos', 'acme'), { recursive: true });
-    git(root, 'clone', '--quiet', '--bare', join(root, 'origin.git'), mirrorOf(plain, 'acme/app'));
+    mkdirSync(join(plain, 'workspace'));
+    git(root, 'clone', '--quiet', join(root, 'origin.git'), checkoutOf(plain, 'acme/app'));
     const out = sh(plain, checkout(plain, url));
-    expect(out).toContain('is not a mirror of acme/app');
+    expect(out).toContain('is not a checkout of acme/app');
     expect(out).toContain('hopper-job-worktree-unmade');
   });
 
@@ -205,31 +213,30 @@ describe('the job\'s repository in a work tree that is no repository (issues #36
     const { root, plain } = plainTree();
     const out = sh(plain, checkout(plain, served(join(root, 'origin.git')).replace('origin.git', 'missing.git')));
     expect(out).toContain('hopper-job-worktree-unmade');
-    expect(readdirSync(plain).filter((f) => f !== '.hopper-scratch')).toEqual([]);
-    expect(readdirSync(join(plain, '.hopper-scratch', 'repos', 'acme'))).toEqual([]);
+    expect(readdirSync(join(plain, 'workspace')).sort()).toEqual(['.gitignore']);
   });
 
-  it('job worktrees off: the full checkout <work tree>/<name> is cloned, and the shell stays in the work tree', () => {
+  it('job worktrees off: the tended checkout <work tree>/workspace/<name> is cloned, and the shell stays in the work tree', () => {
     const { plain, url } = plainTree();
     expect(sh(plain, checkout(plain, url, false), 'pwd')).toBe(`hopper-worktree-running\nhopper-job-worktree-none\n${plain}\n`);
-    expect(existsSync(join(plain, 'app', '.git'))).toBe(true);
-    expect(existsSync(join(plain, '.hopper-scratch', 'repos'))).toBe(false);
+    expect(existsSync(join(plain, 'workspace', 'app', '.git'))).toBe(true);
+    expect(existsSync(join(plain, 'workspace', 'worktrees'))).toBe(false);
   });
 
   it('job worktrees off: a directory of that name holding another repository is never used: unmade, with why', () => {
     const { root, plain, url } = plainTree();
-    git(root, 'clone', '--quiet', join(root, 'origin.git'), join(plain, 'app'));
+    git(root, 'clone', '--quiet', join(root, 'origin.git'), checkoutOf(plain, 'acme/app'));
     const out = sh(plain, checkout(plain, url, false));
     expect(out).toContain('is not a checkout of acme/app');
     expect(out).toContain('hopper-job-worktree-unmade');
   });
 
-  it('a work tree that is a checkout of the job\'s own repository gets no mirror: its own job worktree, as before (any case)', () => {
+  it('a work tree that is a checkout of the job\'s own repository gets no second checkout: its own job worktree, as before (any case)', () => {
     const { root, bare, url } = plainTree();
     const own = join(root, 'own');
     git(root, 'clone', '--quiet', bare, own);
     expect(sh(own, makeJobWorktreeCommand(own, ID, { repo: 'Acme/App', url }), 'pwd')).toBe(`hopper-worktree-running\nhopper-job-worktree-made\n${jobWorktreeOf(own, ID)}\n`);
-    expect(existsSync(join(own, '.hopper-scratch', 'repos'))).toBe(false);
+    expect(readdirSync(join(own, 'workspace')).sort()).toEqual(['.gitignore', 'worktrees']);
   });
 });
 
@@ -262,7 +269,7 @@ describe('the job worktree command, typed into any shell (issue #518)', () => {
 
   it('its outcome is read wherever it stands on its line, and never from the command\'s own echo', () => {
     expect(jobWorktreeOutcome('$ cd x\nuser@box:~/x$ hopper-job-worktree-made\n$ ')).toBe('made');
-    expect(jobWorktreeOutcome('hopper-job-worktree-mirror\nhopper-job-worktree-unmade')).toBe('unmade');
+    expect(jobWorktreeOutcome('hopper-job-worktree-checkout\nhopper-job-worktree-unmade')).toBe('unmade');
     expect(jobWorktreeOutcome(`$ ${makeJobWorktreeCommand('/w/tree', ID)}\nhopper-worktree-running`)).toBeUndefined();
   });
 });
@@ -284,7 +291,30 @@ describe('the reap ends a job worktree (issues #379, #401)', () => {
     const { tree, path, reap } = made();
     expect(reap()).toContain('hopper-reaped');
     expect(existsSync(jobScratchOf(tree, ID))).toBe(false);
+    expect(existsSync(path)).toBe(false);
     expect(git(tree, 'worktree', 'list')).not.toContain(path);
+  });
+
+  it('leaves another job\'s worktree beside it (issue #1103)', () => {
+    const { tree, reap } = made();
+    const other = 'abcdef12-0000-0000-0000-000000000003';
+    sh(tree, makeJobWorktreeCommand(tree, other));
+    reap();
+    expect(existsSync(jobWorktreeOf(tree, other))).toBe(true);
+  });
+
+  it('removes a mirror an older release left in the scratch dirs once no worktree uses it (issue #1103)', () => {
+    const { tree, reap } = made();
+    const old = join(tree, '.hopper-scratch', 'repos', 'acme', 'app.git');
+    mkdirSync(join(old, '..'), { recursive: true });
+    git(tree, 'clone', '--quiet', '--bare', join(tree, '..', 'origin.git'), old);
+    const used = join(tree, '.hopper-scratch', 'repos', 'acme', 'used.git');
+    git(tree, 'clone', '--quiet', '--bare', join(tree, '..', 'origin.git'), used);
+    const kept = join(tree, '.hopper-scratch', 'abcdef12-0000-0000-0000-000000000004', 'used');
+    git(used, 'worktree', 'add', '--quiet', '--detach', kept, 'main');
+    reap();
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(used)).toBe(true);
   });
 
   it('removes it once the branch the job made is pushed, and with ignored build output in it', () => {

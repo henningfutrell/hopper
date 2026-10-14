@@ -3,14 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { makeJobWorktreeCommand, mirrorOf, mirrorWorktreeOf } from '../../src/executors/herdr/job-worktree.ts';
+import { checkoutOf, jobWorktreeOf, makeJobWorktreeCommand } from '../../src/executors/herdr/job-worktree.ts';
 import { reapArgv } from '../../src/client/server.ts';
 import { jobScratchOf } from '../../src/executors/herdr/start.ts';
 import { GIT_ENV, ID, git, repository, served, sh } from './job-worktree-support.ts';
 
 // Issue #431: a lane runs jobs of any repository one after another. A work tree that is the top of another
-// repository never gives a job that repository: the job's own mirror is cloned into the work tree's scratch dir,
-// `<work tree>/.hopper-scratch/repos/<owner>/<name>.git` (issue #858), which git ignores, and the job gets a worktree of it.
+// repository never gives a job that repository: the job's own repository is cloned into the work tree's workspace,
+// `<work tree>/workspace/<name>` (issue #1103), which git ignores, and the job gets a worktree of it beside it.
 describe('a work tree that is another repository (issue #431)', () => {
   function twoRepositories(): { root: string; tree: string; app: string; lib: string } {
     const { root, tree, origin } = repository();
@@ -28,13 +28,13 @@ describe('a work tree that is another repository (issue #431)', () => {
     return { root, tree, app, lib };
   }
 
-  it('clones the job\'s repository\'s mirror into the work tree\'s scratch dir, makes the job a worktree of it, and leaves the work tree untouched', () => {
+  it('clones the job\'s repository into the work tree\'s workspace, makes the job a worktree of it, and leaves the work tree untouched', () => {
     const { tree, app } = twoRepositories();
     const before = git(tree, 'rev-parse', 'HEAD');
-    const mirror = mirrorOf(tree, 'acme/app');
-    expect(mirror).toBe(`${tree}/.hopper-scratch/repos/acme/app.git`);
-    const path = mirrorWorktreeOf(tree, ID, 'acme/app');
-    expect(sh(tree, makeJobWorktreeCommand(tree, ID, { repo: 'acme/app', url: served(app) }), 'pwd')).toBe(`hopper-worktree-running\nhopper-job-worktree-mirror\n${path}\n`);
+    const mirror = checkoutOf(tree, 'acme/app');
+    expect(mirror).toBe(`${tree}/workspace/app`);
+    const path = jobWorktreeOf(tree, ID, 'acme/app');
+    expect(sh(tree, makeJobWorktreeCommand(tree, ID, { repo: 'acme/app', url: served(app) }), 'pwd')).toBe(`hopper-worktree-running\nhopper-job-worktree-checkout\n${path}\n`);
     expect(git(mirror, 'remote', 'get-url', 'origin')).toBe(served(app));
     expect(git(path, 'rev-parse', 'HEAD')).toBe(git(app, 'rev-parse', 'main'));
     expect(git(mirror, 'worktree', 'list')).toContain(path);
@@ -46,48 +46,49 @@ describe('a work tree that is another repository (issue #431)', () => {
   it('one lane, two jobs from two repositories back to back: each runs in a worktree of its own repository, never the other\'s', () => {
     const { tree, app, lib } = twoRepositories();
     const second = 'abcdef12-0000-0000-0000-000000000002';
-    expect(sh(tree, makeJobWorktreeCommand(tree, ID, { repo: 'acme/app', url: served(app) }))).toContain('hopper-job-worktree-mirror');
-    mkdirSync(join(tree, '.hopper-scratch', second), { recursive: true });
-    expect(sh(tree, makeJobWorktreeCommand(tree, second, { repo: 'acme/lib', url: served(lib) }))).toContain('hopper-job-worktree-mirror');
-    const first = mirrorWorktreeOf(tree, ID, 'acme/app');
-    const next = mirrorWorktreeOf(tree, second, 'acme/lib');
+    expect(sh(tree, makeJobWorktreeCommand(tree, ID, { repo: 'acme/app', url: served(app) }))).toContain('hopper-job-worktree-checkout');
+    expect(sh(tree, makeJobWorktreeCommand(tree, second, { repo: 'acme/lib', url: served(lib) }))).toContain('hopper-job-worktree-checkout');
+    const first = jobWorktreeOf(tree, ID, 'acme/app');
+    const next = jobWorktreeOf(tree, second, 'acme/lib');
     expect(git(first, 'remote', 'get-url', 'origin')).toBe(served(app));
     expect(git(next, 'remote', 'get-url', 'origin')).toBe(served(lib));
     expect(existsSync(join(next, 'lib.txt'))).toBe(true);
     expect(existsSync(join(first, 'lib.txt'))).toBe(false);
   });
 
-  it('a later job of that repository fetches the mirror there instead of cloning it again', () => {
+  it('a later job of that repository fetches the checkout there instead of cloning it again', () => {
     const { tree, app } = twoRepositories();
     sh(tree, makeJobWorktreeCommand(tree, ID, { repo: 'acme/app', url: served(app) }));
     const second = 'abcdef12-0000-0000-0000-000000000002';
-    mkdirSync(join(tree, '.hopper-scratch', second), { recursive: true });
-    expect(sh(tree, makeJobWorktreeCommand(tree, second, { repo: 'acme/app', url: served(app) }))).toContain('hopper-job-worktree-mirror');
-    expect(git(mirrorOf(tree, 'acme/app'), 'worktree', 'list')).toContain(mirrorWorktreeOf(tree, second, 'acme/app'));
+    expect(sh(tree, makeJobWorktreeCommand(tree, second, { repo: 'acme/app', url: served(app) }))).toContain('hopper-job-worktree-checkout');
+    expect(git(checkoutOf(tree, 'acme/app'), 'worktree', 'list')).toContain(jobWorktreeOf(tree, second, 'acme/app'));
   });
 
-  it('a mirror there of another repository is never used: unmade, with why', () => {
+  it('a checkout there of another repository is never used: unmade, with why', () => {
     const { root, tree, app } = twoRepositories();
-    mkdirSync(join(tree, '.hopper-scratch', 'repos', 'acme'), { recursive: true });
-    git(root, 'clone', '--quiet', '--bare', join(root, 'acme', 'lib.git'), mirrorOf(tree, 'acme/app'));
+    mkdirSync(join(tree, 'workspace'));
+    git(root, 'clone', '--quiet', join(root, 'acme', 'lib.git'), checkoutOf(tree, 'acme/app'));
     const out = sh(tree, makeJobWorktreeCommand(tree, ID, { repo: 'acme/app', url: served(app) }));
-    expect(out).toContain('is not a mirror of acme/app');
+    expect(out).toContain('is not a checkout of acme/app');
     expect(out).toContain('hopper-job-worktree-unmade');
   });
 
   it('job worktrees off: the work tree is used as it is, nothing cloned', () => {
     const { tree, app } = twoRepositories();
     expect(sh(tree, makeJobWorktreeCommand(tree, ID, { repo: 'acme/app', url: app, worktrees: false }), 'pwd')).toBe(`hopper-worktree-running\nhopper-job-worktree-none\n${tree}\n`);
-    expect(existsSync(join(tree, '.hopper-scratch', 'repos'))).toBe(false);
+    expect(existsSync(join(tree, 'workspace'))).toBe(false);
   });
 
-  it('the reap removes the job\'s worktree of the mirror, and keeps the mirror for the next job', () => {
+  it('the reap removes the job\'s worktree of the checkout, and keeps the checkout for the next job', () => {
     const { tree, app } = twoRepositories();
     sh(tree, makeJobWorktreeCommand(tree, ID, { repo: 'acme/app', url: served(app) }));
     const [file, ...args] = reapArgv(ID, jobScratchOf(tree, ID));
     const r = spawnSync(file!, args, { cwd: tree, env: GIT_ENV, encoding: 'utf8' });
     expect(`${r.stdout}${r.stderr}`).toContain('hopper-reaped');
     expect(existsSync(jobScratchOf(tree, ID))).toBe(false);
-    expect(git(mirrorOf(tree, 'acme/app'), 'worktree', 'list')).not.toContain(mirrorWorktreeOf(tree, ID, 'acme/app'));
+    expect(git(checkoutOf(tree, 'acme/app'), 'worktree', 'list')).not.toContain(jobWorktreeOf(tree, ID, 'acme/app'));
+    expect(existsSync(jobWorktreeOf(tree, ID, 'acme/app'))).toBe(false);
+    expect(existsSync(join(checkoutOf(tree, 'acme/app'), '.git'))).toBe(true);
+    expect(git(tree, 'status', '--porcelain')).toBe('');
   });
 });

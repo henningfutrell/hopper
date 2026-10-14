@@ -45,6 +45,20 @@ describe('what the sweep reaps (issue #410)', () => {
     expect(planSweep({ ...none, scratch }, (id) => parked.get(id), new Set(), 24 * HOUR)).toEqual([]);
   });
 
+  it('a job worktree in the workspace (issue #1103): its ended job is reaped by its scratch dir, even once that is gone; never a job it does not know', () => {
+    const trees = [
+      { path: '/w/workspace/worktrees/my-app-done', ageMs: 25 * HOUR },
+      { path: '/w/workspace/worktrees/app-run', ageMs: 99 * HOUR },
+      { path: '/w/workspace/worktrees/app-stranger', ageMs: 99 * HOUR },
+      { path: '/w/workspace/worktrees/app-fail', ageMs: 1 * HOUR },
+      { path: '/w/workspace/worktrees/app-gone', ageMs: 1 * HOUR },
+    ];
+    expect(plan({ trees }, ['gone'])).toEqual([
+      { jobId: 'done', scratch: '/w/.hopper-scratch/done' },
+      { jobId: 'gone', scratch: '/w/.hopper-scratch/gone' },
+    ]);
+  });
+
   it('one reap per job: its processes and its scratch dir together', () => {
     expect(plan({ processes: ['done'], scratch: [{ jobId: 'done', path: '/w/.hopper-scratch/done', ageMs: 30 * HOUR }] }))
       .toEqual([{ jobId: 'done', scratch: '/w/.hopper-scratch/done' }]);

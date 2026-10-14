@@ -249,6 +249,18 @@ describe('the survey a sweep asks of a machine (issue #410)', () => {
     expect(found!.scratch.find((d) => d.path === scratch)!.ageMs).toBeLessThan(60_000);
   });
 
+  it('lists each job worktree in the work trees\' workspace with its age (issue #1103), so one whose scratch dir is gone is swept too', () => {
+    const work = join(root, 'work');
+    const tree = join(work, 'workspace', 'worktrees', `app-${OTHER}`);
+    mkdirSync(tree, { recursive: true });
+    writeFileSync(join(work, 'workspace', 'worktrees', '.gitignore'), '*\n');
+    const hour = Date.now() / 1000 - 3600;
+    utimesSync(tree, hour, hour);
+    const found = readSurvey(survey(work));
+    expect(found?.trees).toEqual([{ path: tree, ageMs: expect.any(Number) }]);
+    expect(found!.trees![0]!.ageMs).toBeGreaterThanOrEqual(3590_000);
+  });
+
   it.runIf(userSystemd)('names each job with a running scope', () => {
     const id = `${JOB}-s${process.pid}`;
     execFileSync('systemd-run', ['--user', '--scope', '--quiet', '--collect', `--unit=${scopeUnitOf(id)}`, '--',
