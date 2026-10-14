@@ -321,11 +321,11 @@ export const EVENT_SCHEMAS = {
   // byHopper (issue #637): the hopper merged it itself, yolo mode on for its repository. person, via (issue #677): a
   // person's Merge now or Close PR, and the way.
   'job.pull_request_merged': strict({ pullRequest: z.string(), part: z.boolean(), byHopper: z.literal(true).optional(), ...actingIfPerson }),
-  'job.pull_request_closed': strict({ pullRequest: z.string(), part: z.boolean(), ...actingIfPerson }),
+  'job.pull_request_closed': strict({ pullRequest: z.string(), part: z.boolean(), superseded: z.string().optional(), ...actingIfPerson }),
   'job.pull_request_abandoned': strict({ pullRequest: z.string(), part: z.boolean() }),
   // The job's own pull request was left with merge conflicts or as a draft (issue #626): the job goes on with the fixed brief.
   'job.finish_briefed': strict({ pullRequest: z.string(), step: z.enum(FINISH_STEPS) }),
-  'job.pull_request_tended': strict({ pullRequest: z.string(), step: z.enum(TEND_STEPS), nextJobId: z.string(), ...actingIfPerson }), 'job.pull_request_base_merged': strict({ pullRequest: z.string(), commit: z.string(), resolved: z.array(z.string()) }),
+  'job.pull_request_tended': strict({ pullRequest: z.string(), step: z.enum(TEND_STEPS), nextJobId: z.string(), ...actingIfPerson }), 'job.pull_request_base_merged': strict({ pullRequest: z.string(), commit: z.string(), resolved: z.array(z.string()) }), 'job.pull_request_retargeted': strict({ pullRequest: z.string(), from: z.string(), to: z.string() }),
   'job.pull_request_followed': strict({ pullRequest: z.string(), part: z.boolean() }), ...WORK_ITEM_EVENT_SCHEMAS,
   // Yolo mode (issue #579): the settings before and after, and who changed them.
   'yolo_mode.changed': strict({ from: yoloMode, to: yoloMode, by: z.string() }),

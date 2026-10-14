@@ -5,6 +5,7 @@
 import type { JobSourceContext } from '../plugins/sdk.ts';
 import type { UserStore } from '../domain/store.ts';
 import { DEFAULT_YOLO_MODE, isRerunnable, yoloModeFor } from '../domain/types.ts';
+import { landingBranch } from '../domain/landing-batches.ts';
 import { rejectionOf } from '../domain/rejection.ts';
 import { requestsWaitingOf } from '../domain/work-items.ts';
 import { itemHistory, requestOpenedSince } from '../domain/intake.ts';
@@ -36,6 +37,8 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
     }),
     intakeTrust: storeIntakeTrust(store, decideActor),
     yoloMode: (repo) => yoloModeFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),
+    // The landing batch setting's, never GitHub's default branch (issues #1142, #1143).
+    landingBranch: (repo) => { const cfg = store.settings.getLandingBatches()?.repos[repo.toLowerCase()]; return cfg && landingBranch(cfg); },
     // Each read kept names its issues and pull requests to search (issue #945), once the store has it.
     issueGraph: {
       record: (issue, graph, readAt) => { store.issueGraph.record(issue, graph, readAt); graphRead?.(graphKeys(graph)); },

@@ -71,6 +71,11 @@ export interface FollowsPullRequests {
    */
   checkLogs?(failed: readonly FailedCheck[]): Promise<FailedCheck[]>;
   /**
+   * Say on the job's followed pull request `pullRequest` that a tend job started, with its step (issue #1143). Never
+   * throws. Absent: nothing is said.
+   */
+  tendStarted?(job: Job, pullRequest: string, step: TendStep): Promise<void>;
+  /**
    * Reconcile with the source (issue #763): of `jobs` — done, each the newest of its item, following no pull request —
    * the ones whose item is open and has an open pull request, each with the newest such pull request. A throw is asked
    * again on a later sync. Absent: nothing is reconciled.
@@ -199,6 +204,10 @@ export interface FollowUp {
   part: boolean;
   /** The job's source state from now on. */
   state: Record<string, unknown>;
+  /** Open: the hopper moved it from base `from` to the landing branch `to` (issue #1143). */
+  retargeted?: { from: string; to: string };
+  /** Closed: the hopper closed it, as nothing is left to land, and why (issue #1143). */
+  superseded?: string;
 }
 
 /**

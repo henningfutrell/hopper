@@ -21,6 +21,7 @@ import type { FakeActor, FakeAppIdentity, FakeGitHub, Method, PullRequestInput }
 import { fakeConflicts } from './fake-conflicts.ts';
 import { fakeIssuePlace } from './fake-issue-place.ts';
 import { fakePulls } from './fake-pulls.ts';
+import { fakePullActs } from './fake-pull-acts.ts';
 import { fakeListing } from './fake-listing.ts';
 
 export type { FakeActor, FakeAppIdentity, FakeGitHub, PullRequestInput } from './fake-types.ts';
@@ -106,6 +107,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   /** A change to the issue: its `updatedAt` moves. */
   const touch = (i: GitHubIssue) => { i.updatedAt = stamp(); };
   const listing = fakeListing(issues, (m, a) => enter(m, a));
+  const acts = fakePullActs(pulls, (m, a) => enter(m, a), notFound);
   const batched = fakePulls(pulls, issues, (m, a) => enter(m, a));
 
   const api: GitHubApi = {
@@ -173,6 +175,8 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     },
     async postComment(repo, n, body) {
       enter('postComment', [repo, n, body]);
+      const onPull = issues.has(key(repo, n)) ? undefined : acts.comment(repo, n, body, commentId + 1);
+      if (onPull) { commentId += 1; return onPull; }
       const i = find(repo, n);
       const c: GitHubComment = { id: ++commentId, author: o.app?.botLogin ?? human, body, createdAt: stamp(), url: `${i.url}#issuecomment-${commentId}` };
       comments.set(key(repo, n), [...(comments.get(key(repo, n)) ?? []), c]); touch(i);
@@ -217,19 +221,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
       if (p.state !== 'open' || p.isDraft || p.conflicting) throw new GitHubApiError(`Pull Request is not mergeable (HTTP 405): ${p.url}`, true, 405);
       merged(p, new Date().toISOString(), o.app?.botLogin ?? human);
     },
-    async closeWithoutMerge(repo, n) {
-      enter('closeWithoutMerge', [repo, n]);
-      const p = pulls.find((x) => x.url === `https://github.com/${repo}/pull/${n}`);
-      if (!p) throw notFound(`${repo}/pull/${n}`);
-      if (p.state === 'open') p.state = 'closed';
-    },
-    async toDraft(repo, n) {
-      enter('toDraft', [repo, n]);
-      const p = pulls.find((x) => x.url === `https://github.com/${repo}/pull/${n}`);
-      if (!p) throw notFound(`${repo}/pull/${n}`);
-      if (p.state !== 'open') throw new GitHubApiError(`Pull request is ${p.state} (HTTP 422): ${p.url}`, true, 422);
-      p.isDraft = true;
-    },
+    ...acts.api,
     jobLog: jobLogs.jobLog,
   };
 
@@ -325,6 +317,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     failNext(method, error) { failures.set(method, [...(failures.get(method) ?? []), error]); },
     issue(repo, n) { return copy(find(repo, n)); },
     commentsOn(repo, n) { return (comments.get(key(repo, n)) ?? []).map((c) => ({ ...c })); },
+    ...acts.helpers,
     labelsIn(repo) { return [...repoLabels(repo)]; },
   };
   return fake;

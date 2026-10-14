@@ -48,6 +48,9 @@
 // pull requests in motion (`inMotion`); `none` follows nothing. Before its follows, a round asks the source for every pull
 // request they follow in one batch (`readFollowed`); a throw is logged, and the round follows nothing. Tending runs at every
 // sync, from what was last seen.
+// Housekeeping (issue #1143): a follow that moved its pull request to the landing branch is recorded
+// (`job.pull_request_retargeted`); one that closed it as superseded records the close with why (`superseded`); and a tend
+// job started is said on the pull request (`JobSource.tendStarted`).
 // The work-item ledger (issue #1067, part 3): what an open pull request waits on (its **pull request wait**: a draft, merge
 // conflicts, failed checks, checks running, the merge) is recorded as `job.pull_request_seen` when it differs from what the
 // ledger holds for it, so the item says what it waits on. What was seen of it stays kept with no event otherwise.
@@ -99,11 +102,15 @@ export function createAfterDone(c: AfterDoneContext) {
   /** Keep what following found, and record a merge or a close: by the hopper, by `acting`, or as seen on GitHub. */
   function record(jobId: string, r: FollowUp, acting?: ActingPerson): void {
     c.setSource(jobId, r.state);
+    if (r.retargeted) store.events.append({ type: 'job.pull_request_retargeted', jobId, data: { pullRequest: r.pullRequest, ...r.retargeted } });
     if (r.outcome === 'open') seen(jobId, r.pullRequest, r.state.seen as PullRequestSeen | undefined);
     if (r.outcome === 'open' || r.outcome === 'checked') return;
     store.events.append({
       type: r.outcome === 'merged' ? 'job.pull_request_merged' : r.outcome === 'abandoned' ? 'job.pull_request_abandoned' : 'job.pull_request_closed', jobId,
-      data: { pullRequest: r.pullRequest, part: r.part, ...(r.byHopper ? { byHopper: true } : {}), ...(acting ? { person: acting.person, via: acting.via } : {}) },
+      data: {
+        pullRequest: r.pullRequest, part: r.part, ...(r.byHopper ? { byHopper: true } : {}), ...(r.superseded ? { superseded: r.superseded } : {}),
+        ...(acting ? { person: acting.person, via: acting.via } : {}),
+      },
     });
   }
 
@@ -230,6 +237,8 @@ export function createAfterDone(c: AfterDoneContext) {
     const { tendRefused: _r, ...was } = (job.sourceState?.source ?? {}) as Record<string, unknown>;
     c.setSource(jobId, { ...was, follow: 'tended', tended });
     store.events.append({ type: 'job.pull_request_tended', jobId, data: { pullRequest: due.url, step: due.step, nextJobId: r.job.id, ...acting } });
+    // The pull request says the hopper works on it (issue #1143).
+    await source.tendStarted?.(job, due.url, due.step);
     return r;
   }
 

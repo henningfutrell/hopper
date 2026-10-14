@@ -8,6 +8,9 @@
     "part": {
       "type": "boolean"
     },
+    "superseded": {
+      "type": "string"
+    },
     "person": {
       "type": "string"
     },

@@ -18712,3 +18712,48 @@ infra credential folders (`.aws`, `.keycloak`, `.terraform.d`) a machine's home 
 Tests: `test/client/infra-credentials.test.ts` (the read, the ssh command, a client's answer), `test/adapters/infra-credentials.test.ts`
 (this machine, an attached machine's probe, the ssh probe, a client's `/release`), `test/http/tool-accounts.test.ts`,
 `test/ui/machine-infra-credentials.test.ts`, `test/ui/accounts-view.test.ts`.
+
+## Pull request housekeeping (issue #1143 part 1, 2026-10-14)
+
+**The problem.** Job pull requests sat with no signal on them. Three still had `dev` as their base after `main` became the
+landing branch (issue #1073), and the batch runner moves only a pull request based on the tested branch. Others had
+nothing left to land, and stayed open. The pull request itself never showed what the hopper did with it.
+
+**What the follow does now** (`src/sources/github/follow.ts`), with no job and no lane, for an open pull request a job
+follows, never on a person's act:
+
+- **Retarget.** Its repository has landing batches, and its base is not their landing branch (the setting's `landing`,
+  `main` when left out; never GitHub's default branch, issue #1142) and is no open pull request's head (a stack, issue
+  #900, stays as it is): the hopper changes its base to the landing branch (`GitHubApi.retarget`, `PATCH …/pulls/{n}` with `base`). The follow returns `retargeted`,
+  recorded as `job.pull_request_retargeted { pullRequest, from, to }`. It is not merged in the same follow: the next read
+  sees its merge conflicts and checks against the new base, and tending goes on from there. The batch runner's own move
+  from the tested branch stays: it runs for every job pull request of a repository with landing batches, followed or not.
+- **Superseded.** Nothing is left to land, so it is closed without a merge (`job.pull_request_closed` with `superseded`,
+  why):
+  - its issue is closed as completed by the merge of another pull request: the item is done, `hopper:done`. A part
+    ("Part of #N") is never superseded this way: its issue's close is for the whole.
+  - the hopper's mirror says its base branch has every commit of it (`commits` empty, `git log base..head`): the item
+    gets `hopper:pr-closed`, as any pull request closed without a merge, and waits for a person, who decides whether the
+    issue is done.
+- **What the pull request shows.** One fixed comment for each act (`src/sources/github/pr-notes.ts`): moved to the
+  landing branch, closed as superseded, and a tend job started (`JobSource.tendStarted`, after `job.pull_request_tended`:
+  "rebases this pull request", or "fixes the failing checks"). Neutral text: it names no person and no machine. A comment
+  GitHub refuses is lost, never retried: the act it reports stands.
+
+**The batch read** (issue #985): a follow reads GitHub, not the batch, when the base is off the landing branch or the
+issue is closed, so housekeeping is never skipped for want of a read. A repository with no landing batches has no
+landing branch: none of its pull requests is moved.
+
+**The shrink guard** (issue #1096) covers every tend job already: their pushes go through the git proxy.
+
+Not in this part, left on issue #1143:
+
+- A pull request no job follows (one of an item whose newest job does not follow it, or whose tend failed) is not
+  housekept. Owning them needs a record of which pull requests a job opened that does not depend on the follow.
+- "Behind" without merge conflicts starts nothing: with merge commits, a pull request behind its base merges as it is.
+  Only a repository that wants branches up to date before a merge needs it (GitHub then refuses the merge, `mergeError`).
+- A failed rebase tend still waits on a person. Tending it again when its base moves again is a later part.
+
+Tests: `test/sources/github-pr-housekeeping.test.ts` (retarget, a stack, no landing branch known, after the batch,
+superseded both ways, a part), `test/integration/pull-request-tending.test.ts` (the events and the comments over the
+real daemon).
