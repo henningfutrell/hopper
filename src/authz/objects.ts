@@ -37,6 +37,13 @@ export const artifactObject = (a: { userId: string; id: string }): string => `ar
 export const itemObject = (i: { ownerId: string; key: string }): string => `item:${i.ownerId}/${createHash('sha256').update(i.key).digest('hex')}`;
 /** The vault grant of a user's item (issue #652): its key hashed, as an item's. */
 export const vaultGrantObject = (g: { ownerId: string; key: string }): string => `vault_grant:${g.ownerId}/${createHash('sha256').update(g.key).digest('hex')}`;
+/** A job's terminal (issue #1128): the user whose job it is, and the job. */
+export const terminalObject = (t: { ownerId: string; jobId: string }): string => `terminal:${t.ownerId}/${encodeURIComponent(t.jobId)}`;
+/** The check whether a user may attach to a job's terminal (issue #1128): the job's owner, told for this check only. */
+export function terminalCheck(userId: string, t: { ownerId: string; jobId: string }): { tuple: RelationshipTuple; contextual: RelationshipTuple[] } {
+  const object = terminalObject(t);
+  return { tuple: { subject: userObject(userId), relation: 'can_attach', object }, contextual: [{ subject: userObject(t.ownerId), relation: 'owner', object }] };
+}
 /** A search hit (issue #945): the user whose work it is, its type and its id there. */
 export const searchHitObject = (h: { ownerId: string; type: string; ref: string }): string => `search_hit:${h.ownerId}/${h.type}/${encodeURIComponent(h.ref)}`;
 /** The check whether a user may see a search hit (issue #945): its owner, and every user unless it is private, told for this check only. */

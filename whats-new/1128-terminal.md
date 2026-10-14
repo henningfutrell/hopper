@@ -1,0 +1,1 @@
+- A running job's page now has a Terminal: open it to see what the job's pane shows and type into it or press keys, from anywhere you reach the hopper, with no terminal on the job's machine.

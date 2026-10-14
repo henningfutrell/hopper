@@ -77,6 +77,8 @@
         "job.note_added",
         "job.note_delivered",
         "job.note_carried",
+        "terminal.opened",
+        "terminal.typed",
         "source.stalled",
         "connected_account.expired",
         "connected_account.renewed",

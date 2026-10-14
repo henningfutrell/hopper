@@ -11,7 +11,7 @@ import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts'; import { WORK_ITEM_EVENT_SCHEMAS } from './work-item-schemas.ts';
 import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
-import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts';
+import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts'; import { TERMINAL_EVENT_SCHEMAS } from './terminal-schemas.ts';
 import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, driftEvents, holdPlan, infraPlanEvents, apiGrantEvents, issueLineageEvents, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents, windowsStepEvents, sandboxRequestEvents, landingBatchEvents } from './parts.ts';
 
 const strict = z.strictObject;
@@ -376,7 +376,7 @@ export const EVENT_SCHEMAS = {
   ...ARTIFACT_EVENT_SCHEMAS, ...ITEM_EVENT_SCHEMAS, ...MACHINE_MEMORY_EVENT_SCHEMAS, ...MACHINE_DISK_EVENT_SCHEMAS, // the memory alert (issue #868), the disk budget (issue #1120): machine-memory-schemas.ts, machine-disk-schemas.ts
   // Lane tuning (issue #688): src/events/lane-tuning-schemas.ts.
   ...LANE_TUNING_EVENT_SCHEMAS,
-  ...THREAD_ASK_EVENT_SCHEMAS, ...NOTE_EVENT_SCHEMAS, // issue #997: notes to a job
+  ...THREAD_ASK_EVENT_SCHEMAS, ...NOTE_EVENT_SCHEMAS, ...TERMINAL_EVENT_SCHEMAS, // issues #997, #1128: notes to a job, the job's terminal
   ...bugReportEvents, ...repoChecksEvents, ...vaultGrantEvents, ...issueLineageEvents, ...rateLimiterEvents, ...contributionEvents, ...pointedJobEvents, ...githubWatchEvents, ...driftEvents, ...infraPlanEvents, ...apiGrantEvents, ...windowsStepEvents, ...sandboxRequestEvents, ...landingBatchEvents,
 } satisfies Record<EventType, z.ZodType>;
 

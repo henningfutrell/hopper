@@ -130,6 +130,14 @@ type search_hit
     define owner: [user]
     define reader: [user, user:*]
     define can_view: owner or reader
+
+# A job's terminal (issue #1128): a person who views a running job's herdr pane and types into it. At each use the hopper
+# tells the user whose job it is as its owner. Only a person signed in attaches, through a UI session or an API token;
+# a job, a machine or a box never.
+type terminal
+  relations
+    define owner: [user]
+    define can_attach: owner
 `;
 
 interface RelationMetadata { directly_related_user_types?: { type: string }[] }
@@ -176,6 +184,10 @@ const VAULT_GRANT_ASKED: readonly [type: string, relation: string][] = [['vault_
 /** What the hopper tells and asks for search hits (issue #945): apart, so a model edited before them still decides mints. */
 const SEARCH_HIT_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['search_hit', 'owner', 'user'], ['search_hit', 'reader', 'user']];
 const SEARCH_HIT_ASKED: readonly [type: string, relation: string][] = [['search_hit', 'can_view']];
+
+/** What the hopper tells and asks for a job's terminal (issue #1128): apart, so a model edited before it still decides mints. */
+const TERMINAL_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['terminal', 'owner', 'user']];
+const TERMINAL_ASKED: readonly [type: string, relation: string][] = [['terminal', 'can_attach']];
 
 /** What the hopper writes and asks for artifacts (issue #624): apart, so a model edited before them still decides mints. */
 const ARTIFACT_WRITTEN: readonly [type: string, relation: string, accepts: string][] = [['artifact', 'viewer', 'user'], ['artifact', 'viewer', 'link']];
@@ -237,6 +249,11 @@ export function vaultGrantGaps(model: ModelJson): string[] {
 /** What the model lacks for search hits (issue #945); empty: hits are decided. A gap here hides every hit, never denies a mint. */
 export function searchHitGaps(model: ModelJson): string[] {
   return gapsIn(model, SEARCH_HIT_WRITTEN, SEARCH_HIT_ASKED);
+}
+
+/** What the model lacks for a job's terminal (issue #1128); empty: attaching is decided. A gap here denies every attach, never a mint. */
+export function terminalGaps(model: ModelJson): string[] {
+  return gapsIn(model, TERMINAL_WRITTEN, TERMINAL_ASKED);
 }
 
 function gapsIn(model: ModelJson, written: typeof WRITTEN, asked: typeof ASKED): string[] {
