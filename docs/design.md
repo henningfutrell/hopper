@@ -11125,7 +11125,7 @@ Now Failures lists it, and each has an action that moves it.
   the work: the refusal says to update it.
 - **Quieter sweep.** The sweep logs kept work only when it keeps it the first time.
 
-Not done here, carried in issue #1010: Run again and tending for direct jobs. Done since: the Stuck list ("Stuck
+Done since, in issue #1010: the Stuck list ("Stuck
 work"), with counts by cause and one bulk action per cause; a hand-off card recommends only an action the hopper takes ("Only an action the
 hopper takes", under "Needs a person"); Tend again on a pull request the hopper gave up on ("PR waiting", "A pull request stays in sight"); Push it
 for a finished or cancelled job — its source takes the item back as for Run again (a cancelled job's too, for this
@@ -11162,9 +11162,15 @@ one press per cause where the hopper can move each item.
   count and what it is, its bulk action — asked first, with the count — or what a person does. A viewer sees no button.
 - Why no bulk Done, and none for parked jobs: Done needs a person to look at each pull request or the work; a parked
   job needs its own answer. Those causes say so.
+- **Direct jobs** (issue #901). A direct job has no issue, so nothing is assigned: the `direct` source gives its
+  submission back (`JobSource.rerun`), and a failed direct job is in Stuck as any failure, by its hand-off or as `retry`,
+  and its bulk action runs it again. Tending does not apply: the `direct` source follows no pull request (no
+  `JobSource.follow`), so a direct job's pull request never waits on the hopper and is never given up. Following one is
+  a new capability, not a way out of stuck work: issue #1068.
 
 **Verification:** `test/domain/stuck.test.ts` (each cause, an item counted once, the order),
 `test/integration/stuck.test.ts` (two hand-offs resolved by one press; a cause with no bulk action refused),
+`test/integration/direct-jobs.test.ts` (a failed direct job in Stuck with a bulk action, and one press runs it again),
 `test/ui/stuck-view.test.ts` (the counts, the todo, the bulk action asked first, a viewer).
 
 ## Parked jobs (issue #501, 2026-10-08)
