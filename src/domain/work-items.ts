@@ -222,6 +222,8 @@ export interface WorkItemLedger {
   /** Fold what a read of the issue graph said of issues and pull requests into their items. Called in the read's transaction. */
   applyNodes(nodes: readonly GraphNode[], readAt: string): void;
   get(key: string): WorkItem | undefined;
+  /** The item whose pull request is `url` (issue #1074: a job's repo query of it); undefined: none. */
+  byPullRequest(url: string): WorkItem | undefined;
   list(filter?: { state?: WorkItemState[]; limit?: number }): WorkItem[];
   /** How many items are in each state: `SELECT state, count(*)`. */
   counts(): Record<WorkItemState, number>;

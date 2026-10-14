@@ -23,9 +23,13 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
   sh "$HOPPER_GH" issue create   --repo OWNER/NAME --title TITLE (--body TEXT | --body-file FILE) [--required]
   sh "$HOPPER_GH" issue comment N --repo OWNER/NAME (--body TEXT | --body-file FILE)
   sh "$HOPPER_GH" issue view N    --repo OWNER/NAME
+  sh "$HOPPER_GH" issue comments N --repo OWNER/NAME     (an issue's or a pull request's comments)
   sh "$HOPPER_GH" issue close N   --repo OWNER/NAME      (this job's own issue only, as completed)
   sh "$HOPPER_GH" pr create      --repo OWNER/NAME --head [LOGIN:]BRANCH [--base BRANCH] --title TITLE (--body TEXT | --body-file FILE)
   sh "$HOPPER_GH" pr view N       --repo OWNER/NAME
+  sh "$HOPPER_GH" pr diff N       --repo OWNER/NAME      (its changed files and their diff)
+  sh "$HOPPER_GH" pr commits N    --repo OWNER/NAME
+  sh "$HOPPER_GH" pr checks N     --repo OWNER/NAME      (the check runs and statuses of its head commit)
   sh "$HOPPER_GH" pr ready N      --repo OWNER/NAME      (mark a draft ready for review)
   sh "$HOPPER_GH" repo view      --repo OWNER/NAME      (canPush: whether your user can push to it; hasIssues)
   sh "$HOPPER_GH" repo fork      --repo OWNER/NAME      (this job's own repository only, when your user cannot push to it)
@@ -34,6 +38,9 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
                                                          (report a bug in the hopper itself)
 
 Prints the answer as JSON, with the url. A refusal prints why and exits 1: do not try another way around it.
+Read GitHub only this way: never curl api.github.com, never gh api, never a browser. A read is answered from what the
+hopper read last when that is at most 30 seconds old, or when the pull request is merged: source cache, else source
+github, and readAt says when it was read. ledger, when the hopper follows the item, says where its work stands.
 An issue filed this way gets no labels or assignees and says the hopper filed it; a person triages it.
 It is a child of this job's issue: its text names that issue as its parent, as a follow-up. With --required it is a
 required child: the hopper links it as a sub-issue of this job's issue, which is not done while it is open. Use
@@ -64,7 +71,7 @@ ${PROXY_HELP}
 HOPPER_GH_HELP
 }
 case "$1 $2" in
-  'issue create'|'issue comment'|'issue view'|'issue close'|'pr create'|'pr view'|'pr ready'|'repo view'|'repo fork'|'check log'|'report bug') op="$1.$2"; shift 2 ;;
+  'issue create'|'issue comment'|'issue view'|'issue comments'|'issue close'|'pr create'|'pr view'|'pr diff'|'pr commits'|'pr checks'|'pr ready'|'repo view'|'repo fork'|'check log'|'report bug') op="$1.$2"; shift 2 ;;
   'help '*|' ') help; exit 0 ;;
   *) help >&2; exit 2 ;;
 esac

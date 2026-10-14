@@ -18,7 +18,10 @@
 // job's own repository owned by the user, as GitHub says (the broker reads it): the fork is no job repository.
 import { z } from 'zod';
 
-export const PROXY_OPS = ['issue.create', 'issue.comment', 'issue.view', 'issue.close', 'pr.create', 'pr.view', 'pr.ready', 'repo.view', 'repo.fork', 'check.log'] as const;
+export const PROXY_OPS = [
+  'issue.create', 'issue.comment', 'issue.view', 'issue.comments', 'issue.close', 'pr.create', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks',
+  'pr.ready', 'repo.view', 'repo.fork', 'check.log',
+] as const;
 export type ProxyOp = (typeof PROXY_OPS)[number];
 
 const repo = z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'repo must be owner/name');
@@ -35,9 +38,14 @@ export const proxyRequest = z.discriminatedUnion('op', [
   z.strictObject({ op: z.literal('issue.create'), repo, title: text(256), body: text(60_000), required: flag.optional() }),
   z.strictObject({ op: z.literal('issue.comment'), repo, number, body: text(60_000) }),
   z.strictObject({ op: z.literal('issue.view'), repo, number }),
+  z.strictObject({ op: z.literal('issue.comments'), repo, number }),
   z.strictObject({ op: z.literal('issue.close'), repo, number }),
   z.strictObject({ op: z.literal('pr.create'), repo, head, base: branch.optional(), title: text(256), body: text(60_000) }),
   z.strictObject({ op: z.literal('pr.view'), repo, number }),
+  // The repo queries of a pull request (issue #1074): its diff, its commits, the check runs of its head commit.
+  z.strictObject({ op: z.literal('pr.diff'), repo, number }),
+  z.strictObject({ op: z.literal('pr.commits'), repo, number }),
+  z.strictObject({ op: z.literal('pr.checks'), repo, number }),
   z.strictObject({ op: z.literal('pr.ready'), repo, number }),
   z.strictObject({ op: z.literal('repo.view'), repo }),
   z.strictObject({ op: z.literal('repo.fork'), repo }),
@@ -81,10 +89,14 @@ export interface ProxyAsker {
 export const CONTRIBUTION_OFF = 'contributing through a fork is off: a person turns it on in Settings → Contribution';
 
 /** What a job may ask on its fork: issues, and reads. Its pull request goes on the repository the fork is of. */
-const ON_FORK: readonly ProxyOp[] = ['issue.create', 'issue.comment', 'issue.view', 'pr.view', 'repo.view'];
+const ON_FORK: readonly ProxyOp[] = ['issue.create', 'issue.comment', 'issue.view', 'issue.comments', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks', 'repo.view'];
 
-/** What only reads (issue #1015): the hopper's own job asks them on any repository its connection sees. */
-const READS: readonly ProxyOp[] = ['issue.view', 'pr.view', 'repo.view', 'check.log'];
+/**
+ * What only reads (issue #1015): the hopper's own job asks them on any repository its connection sees. Each is a **repo
+ * query** (issue #1074): answered from the repo-query cache when it can be (repo-query.ts).
+ */
+export const READS: readonly ProxyOp[] = ['issue.view', 'issue.comments', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks', 'repo.view', 'check.log'];
+export const isRead = (op: ProxyOp): boolean => READS.includes(op);
 
 /** What a job of another user may ask: filing an issue. Everything else reads or writes as the hopper's user. */
 const OTHERS_MAY: readonly ProxyOp[] = ['issue.create'];

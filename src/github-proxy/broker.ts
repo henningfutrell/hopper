@@ -11,12 +11,16 @@
 // GitHub sub-issue of it, and the link is recorded on the job's timeline (`job.child_issue_filed`). The contribution flow
 // (issue #429): before the check, what it decides on is read from GitHub — whether a repository outside the job
 // repositories is the job's fork, and, for `repo.fork`, whether the user can push to the job's own repository.
+// A read — a **repo query** (issue #1074) — is answered from the repo-query cache when what it kept answers now
+// (repo-query.ts), else read from GitHub and kept; the answer says which (`source`) and, where the work-item ledger holds
+// the item, what it says (`ledger`). A write drops what the cache kept of the issue or pull request it changed.
 import { randomUUID } from 'node:crypto';
 import { sourceItemOf, type Job, type JobStatus, type NewEvent } from '../domain/types.ts';
 import { maskGitHubTokens } from '../secrets/mask.ts';
 import { ProxyGitHubError, type ProxyApi } from './api.ts';
 import type { ProxyLimiter } from './limits.ts';
-import { checkRequest, filedNote, proxyRequest, REPORT_OP, reportRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
+import { checkRequest, filedNote, isRead, proxyRequest, REPORT_OP, reportRequest, type IssueParent, type ProxyAsker, type ProxyRequest, type ReportRequest } from './policy.ts';
+import { answersNow, createRepoQueryCache, queryKey, type LedgerView, type RepoQueryCache } from './repo-query.ts';
 import { parseProxyToken, type ProxyTokenParts } from './token.ts';
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
@@ -30,6 +34,8 @@ export interface ProxyUser {
   /** The machine the job runs on now; undefined when it holds no lane. */
   machineOf(job: Job): string | undefined;
   record(event: NewEvent): void;
+  /** What this user's work-item ledger says of the issue or pull request at `url` (issue #1074); undefined: it holds none. */
+  ledger?(url: string): LedgerView | undefined;
 }
 
 /** The hopper's own GitHub connection: the repositories it works on, and its calls; or why it has none. */
@@ -58,6 +64,10 @@ export interface GitHubProxyOptions {
   report?(user: ProxyUser, job: Job, req: ReportRequest): Promise<ProxyAnswer>;
   log(line: string): void;
   newId?: () => string;
+  /** The repo-query cache (issue #1074); absent: one of its own. */
+  cache?: RepoQueryCache;
+  /** Now, in ms: when an answer was read. */
+  now?: () => number;
 }
 
 const BEARER = /^Bearer\s+(\S+)$/i;
@@ -69,6 +79,8 @@ const repoOf = (job: Job): string | undefined => sourceItemOf(job)?.repo;
 
 export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
   const newId = o.newId ?? (() => randomUUID());
+  const cache = o.cache ?? createRepoQueryCache();
+  const now = o.now ?? (() => Date.now());
   return {
     async handle(authorization, body) {
       const parts = parseProxyToken(BEARER.exec(authorization ?? '')?.[1] ?? '');
@@ -151,11 +163,30 @@ export function createGitHubProxy(o: GitHubProxyOptions): GitHubProxy {
       const masked = maskRequest(req);
       const parent: IssueParent | undefined = masked.op === 'issue.create' && jobRepo && issue !== undefined ? { repo: jobRepo, number: issue, required: masked.required === true } : undefined;
       const sent: ProxyRequest = masked.op === 'issue.create' ? { ...masked, body: `${masked.body}${filedNote(job.id, requestId, parent)}` } : masked;
+      // A repo query (issue #1074): what the cache kept, when it answers now; the ledger's word on the item beside it.
+      const read = isRead(req.op);
+      const key = queryKey(req);
+      const ledgerOf = (url: unknown): LedgerView | undefined => (typeof url === 'string' ? user.ledger?.(url) : undefined);
+      const answered = (result: Record<string, unknown>, source: 'github' | 'cache', at: number): ProxyAnswer => {
+        const ledger = ledgerOf(result.url);
+        record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, source });
+        const seen = req.op === 'repo.view' ? { contribution } : {};
+        return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result, ...seen, source, readAt: new Date(at).toISOString(), ...(ledger ? { ledger } : {}) } };
+      };
+      if (read) {
+        const kept = cache.get(key);
+        if (kept && answersNow(req.op, kept, now(), ledgerOf(kept.result.url))) return answered(kept.result, 'cache', kept.at);
+      }
       try {
         const result = await api.perform(sent, parent?.required ? parent : undefined);
+        if (read) {
+          const at = now();
+          cache.put(key, result, at);
+          return answered(result, 'github', at);
+        }
+        if ('number' in req) cache.forget(req.repo, req.number);
         record('github_proxy.done', { op: req.op, repo: req.repo, ...(result.number !== undefined ? { number: result.number } : {}), url: result.url, ...(typeof result.fork === 'string' ? { fork: result.fork } : {}) });
-        const seen = req.op === 'repo.view' ? { contribution } : {};
-        if (!parent) return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result, ...seen } };
+        if (!parent) return { status: 200, body: { ok: true, op: req.op, repo: req.repo, requestId, ...result } };
         const { subIssue, subIssueError } = result as { subIssue?: boolean; subIssueError?: string };
         user.record({ type: 'job.child_issue_filed', jobId: job.id, data: {
           requestId, parent: { repo: parent.repo, number: parent.number }, child: { repo: req.repo, number: result.number, url: result.url }, required: parent.required,

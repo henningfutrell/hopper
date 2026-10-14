@@ -1914,7 +1914,7 @@ Version 1 (`docs/schemas/proposal.revision_requested.v1.json`). A proposal was s
 
 ## `proposal.accepted`
 
-Version 1 (`docs/schemas/proposal.accepted.v1.json`). A proposal was signed off as accepted (issue #537), by a person (`stage: "human"`, `by` who) or by the top reviewer level where the proposal settings let it. `selected` (issue #651): the paths the person continues with, each with its note (the top level continues with the recommended paths); none on a proposal of zero paths. Its job ends finished, with the decision as its result; each selected path continues as a follow-on job (`proposal.followed_on`).
+Version 1 (`docs/schemas/proposal.accepted.v1.json`). A proposal was signed off as accepted (issue #537), by a person (`stage: "human"`, `by` who), by the top reviewer level where the proposal settings let it, or by the hopper itself (`stage: "hopper"`, issue #1059: one recommended path and no rule needs a person). `selected` (issue #651): the paths the person continues with, each with its note (the top level continues with the recommended paths); none on a proposal of zero paths. Its job ends finished, with the decision as its result; each selected path continues as a follow-on job (`proposal.followed_on`).
 
 | field | type | required |
 |---|---|---|
@@ -2919,7 +2919,7 @@ Version 1 (`docs/schemas/thread_ask.settings_changed.v1.json`). An admin changed
 
 ## `github_proxy.done`
 
-Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the hopper's own GitHub connection: `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.close`, `pr.create`, `pr.view`, `pr.ready`) on `repo`, `number` and `url` where it is; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `own`: the job is the hopper's own user's. For another user's job the same event is also in the log of the hopper's own user, with `forUser` and `job`.
+Version 1 (`docs/schemas/github_proxy.done.v1.json`). The hopper did a GitHub operation a running job asked for (issue #563), with the hopper's own GitHub connection: `op` (`issue.create`, `issue.comment`, `issue.view`, `issue.comments`, `issue.close`, `pr.create`, `pr.view`, `pr.diff`, `pr.commits`, `pr.checks`, `pr.ready`) on `repo`, `number` and `url` where it is; for a read (a repo query, issue #1074), `source`: `github` when GitHub was read for it, `cache` when the hopper's repo-query cache answered it; a repository read or forked (issue #429, `repo.view`, `repo.fork`): its `url`, and for a fork `fork`, the fork made or found in the user's account; a failed check's log read (issue #993, `check.log`): `number`, its GitHub Actions job, and `url`, its check run (the log itself is never in the event); or the job's git push (issue #652, op `git.push`, with the connection of the job's own user): `refs`, the refs it changed, and no `number` or `url`. `requestId` names the request (an issue filed this way says it at its end); `machine`, the job's machine; `own`: the job is the hopper's own user's. For another user's job the same event is also in the log of the hopper's own user, with `forUser` and `job`.
 
 `data` is `{}`.
 
@@ -2975,7 +2975,7 @@ Version 1 (`docs/schemas/github_proxy.failed.v1.json`). GitHub failed or refused
 | `own` | boolean | yes |
 | `forUser` | string | no |
 | `job` | string | no |
-| `op` | `issue.create` \| `issue.comment` \| `issue.view` \| `issue.close` \| `pr.create` \| `pr.view` \| `pr.ready` \| `repo.view` \| `repo.fork` \| `check.log` \| string | yes |
+| `op` | `issue.create` \| `issue.comment` \| `issue.view` \| `issue.comments` \| `issue.close` \| `pr.create` \| `pr.view` \| `pr.diff` \| `pr.commits` \| `pr.checks` \| `pr.ready` \| `repo.view` \| `repo.fork` \| `check.log` \| string | yes |
 | `repo` | string | yes |
 | `refs` | string[] | no |
 | `error` | string | yes |

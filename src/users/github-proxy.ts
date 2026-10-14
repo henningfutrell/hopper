@@ -83,6 +83,15 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
     job: (id) => o.store.jobs.get(id),
     machineOf: (job) => o.store.lanes.list().find((l) => l.id === job.laneId)?.machineId,
     record: (event) => { o.store.events.append(event); },
+    // What the work-item ledger says of an issue (its key) or a pull request (issue #1074): beside a repo query's answer.
+    ledger: (url) => {
+      const item = o.store.workItems.get(url) ?? o.store.workItems.byPullRequest(url);
+      if (!item) return undefined;
+      return {
+        key: item.key, state: item.state, since: item.stateSince, ...(item.pullRequestState ? { pullRequestState: item.pullRequestState } : {}),
+        ...(item.issueState ? { issueState: item.issueState } : {}), ...(item.issueReason ? { issueReason: item.issueReason } : {}),
+      };
+    },
   };
   return {
     jobProxy(job, machine) {
