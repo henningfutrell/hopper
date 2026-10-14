@@ -34,5 +34,6 @@ describe('the Component watchers panel', () => {
   it('names every watcher in its note', () => {
     expect(COMPONENT_WATCHERS_NOTE).toContain('the work-item ledger against the job records');
     expect(COMPONENT_WATCHERS_NOTE).toContain('the lanes against the jobs they run');
+    expect(COMPONENT_WATCHERS_NOTE).toContain('intake against the jobs and the sync timers');
   });
 });

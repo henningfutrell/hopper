@@ -1,9 +1,12 @@
 // The watchers of the hopper's own records (issue #1077, design.md "Component watchers"): the work-item ledger against the
-// job records, and the lanes against the jobs they run. Each check reads the store in one synchronous pass, so no event
-// lands between its reads, and answers the drift (`src/domain/drift-jobs.ts`). They need no GitHub connection.
+// job records, the lanes against the jobs they run, and intake against the jobs and the sync timers. Each check reads the
+// store in one synchronous pass, so no event lands between its reads, and answers the drift (`src/domain/drift-jobs.ts`,
+// `src/domain/drift-intake.ts`). They need no GitHub connection.
 import { LANES_JOBS, LEDGER_JOBS, lanesJobsDrift, ledgerJobsDrift } from '../domain/drift-jobs.ts';
+import { INTAKE_JOBS, intakeJobsDrift } from '../domain/drift-intake.ts';
+import type { IntakeOutcome } from '../domain/intake.ts';
 import type { JobRepository, LaneRepository } from '../domain/store.ts';
-import type { Job, JobStatus } from '../domain/types.ts';
+import type { Job, JobStatus, SourceStatus } from '../domain/types.ts';
 import { isActive, WORK_ITEM_STATES, type WorkItem, type WorkItemLedger } from '../domain/work-items.ts';
 import type { ComponentWatcher } from './service.ts';
 
@@ -59,6 +62,26 @@ export function lanesJobsWatcher(o: Options & { lanes: Pick<LaneRepository, 'lis
         if (j) jobs.set(j.id, j);
       }
       return lanesJobsDrift(lanes, [...jobs.values()], o.now(), o.graceMs ?? STORE_WATCHER_GRACE_MS);
+    },
+  };
+}
+
+export function intakeJobsWatcher(o: Omit<Options, 'jobs'> & { jobs: Pick<JobRepository, 'getBySourceKey'>; sources(): readonly SourceStatus[] }): ComponentWatcher {
+  return {
+    name: INTAKE_JOBS,
+    component: 'intake',
+    truth: 'the job records and the sync timers',
+    intervalMs: o.intervalMs ?? STORE_WATCHER_INTERVAL_MS,
+    async check() {
+      const sources = o.sources();
+      const jobs = new Map<string, Job>();
+      for (const st of sources) {
+        for (const x of Array.isArray(st.detail.intake) ? st.detail.intake as IntakeOutcome[] : []) {
+          const j = x.reason === undefined ? o.jobs.getBySourceKey(x.key) : undefined;
+          if (j) jobs.set(x.key, j);
+        }
+      }
+      return intakeJobsDrift(sources, jobs, o.now(), o.graceMs ?? STORE_WATCHER_GRACE_MS);
     },
   };
 }

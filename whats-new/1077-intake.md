@@ -1,0 +1,1 @@
+- The hopper now also checks that each issue it took has a job, and that each source syncs on time. Settings shows each difference it finds.

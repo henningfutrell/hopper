@@ -23,7 +23,7 @@ const source = (name: string, extra: Partial<SourceStatus> = {}, intake: IntakeO
   name, kind: 'github', state: 'ok', lastSyncAt: HOUR_AGO, lastOkAt: HOUR_AGO, nextSyncAt: IN_A_MINUTE, itemsSeen: intake.length, jobsCreated: 0, activeJobs: 0,
   detail: { intake }, ...extra,
 });
-const job = (id: string): Job => ({ id, status: 'queued', spec: { prompt: 'p' }, priority: 50, approved: false, createdAt: HOUR_AGO, updatedAt: HOUR_AGO } as Job);
+const job = (id: string): Job => ({ id, status: 'queued', spec: { prompt: 'p' }, priority: 50, approved: false, createdAt: HOUR_AGO, updatedAt: HOUR_AGO } as unknown as Job);
 
 describe('intake-vs-jobs drift', () => {
   it('finds an item the last sync took that has no job', () => {
