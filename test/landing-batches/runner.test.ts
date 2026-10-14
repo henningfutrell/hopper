@@ -73,6 +73,7 @@ function runner(w: World, o: { jobPullRequests?: string[]; now?: Date } = {}) {
   let seq = 0;
   const r = createLandingBatches({
     github: () => fake(w),
+    login: () => 'me',
     settings: () => SETTINGS,
     events: () => events,
     record: (e: NewEvent) => { events.push({ ...e, seq: ++seq, id: `e${seq}`, at: (o.now ?? new Date()).toISOString(), schemaVersion: 1 } as DomainEvent); },

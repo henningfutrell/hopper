@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string"
+    },
+    "tested": {
+      "type": "string"
+    },
+    "tip": {
+      "type": "string"
+    },
+    "index": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "sha": {
+      "type": "string"
+    },
+    "branch": {
+      "type": "string"
+    },
+    "pullRequest": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "repo",
+    "tested",
+    "tip",
+    "index",
+    "sha",
+    "branch",
+    "pullRequest",
+    "url"
+  ],
+  "additionalProperties": false
+}

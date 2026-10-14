@@ -29,17 +29,17 @@ interface World {
   logs: Map<number, string>;
   issues: { title: string; body: string; labels: string[]; assignees: string[] }[];
   calls: string[];
+  next: number;
 }
 
 const merged = (n: number, sha: string, body = ''): [number, Pull] =>
   [n, { head: `issue-${n}`, base: 'main', state: 'closed', merged: true, mergeable: null, url: `https://github.test/${REPO}/pull/${n}`, headSha: `h${n}`, body, mergeSha: sha }];
 
 function world(commits: Commit[], pulls: [number, Pull][] = []): World {
-  return { tip: commits.at(-1)!.sha, commits, pulls: new Map(pulls), checks: new Map(), logs: new Map(), issues: [], calls: [] };
+  return { tip: commits.at(-1)!.sha, commits, pulls: new Map(pulls), checks: new Map(), logs: new Map(), issues: [], calls: [], next: 100 };
 }
 
 function fake(w: World): LandingBatchGitHub {
-  let next = 100;
   const url = (n: number): string => `https://github.test/${REPO}/pull/${n}`;
   return {
     defaultBranch: async () => 'main',
@@ -47,7 +47,7 @@ function fake(w: World): LandingBatchGitHub {
     createBranch: async (_repo, name, sha) => { w.calls.push(`branch ${name} ${sha}`); },
     deleteBranch: async (_repo, name) => { w.calls.push(`delete ${name}`); },
     openPullRequest: async (_repo, p) => {
-      const n = next++;
+      const n = w.next++;
       const sha = p.head.startsWith('hopper-batch/bisect-') ? w.commits.find((c) => p.head.endsWith(c.sha.slice(0, 12)))!.sha : w.tip;
       w.pulls.set(n, { head: p.head, base: p.base, state: 'open', merged: false, mergeable: true, url: url(n), headSha: sha, body: p.body });
       w.calls.push(`open #${n} ${p.head} -> ${p.base}`);
@@ -76,7 +76,7 @@ function fake(w: World): LandingBatchGitHub {
     retarget: async () => {},
     pullRequestOf: async (_repo, sha) => [...w.pulls.entries()].find(([, p]) => p.merged && p.mergeSha === sha)?.[0],
     revert: async (_repo, n, t) => {
-      const r = next++;
+      const r = w.next++;
       w.pulls.set(r, { head: `revert-${n}`, base: 'main', state: 'open', merged: false, mergeable: true, url: url(r), headSha: `rh${r}`, body: t.body });
       w.calls.push(`revert #${n} as #${r}: ${t.title}`);
       return { number: r, url: url(r) };

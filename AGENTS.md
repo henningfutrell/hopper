@@ -127,7 +127,11 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   label (`hopper:done`, `hopper:rejected`) in place of `hopper:failed`; Report a bug (issue #694) files the person's own bug report on the hopper's repository through their own connection — an issue labelled `user-report`, no assignee, or a comment on a similar open one —, its text theirs, as they read and edited it, the report context masked first; a running job's report on itself (`hopper-gh report bug`) goes the same way through its user's connection, its text masked whole, marked as the job's; Queue job for a job repository with no checks (issue #677) files "Add PR checks to <repo>" on that repository through the person's own connection — an issue with the hopper label, assigned to their connected account, its text fixed —, once: an open one of that title is answered instead. Promote to GitHub (issue #946, `docs/design.md` "Promote to GitHub") posts a finished direct job as an issue, or a comment on an issue the person picks, on a repository they choose, through their own connection, never a job's — the text they read, edited and confirmed in a preview, scanned first: never a secret, personal data only on a private repository they allow it for, a public repository only when they confirm it; it names who promoted it, and the requester only when they ask; its links need a hopper sign-in, but a small text artifact the person ticks, scanned the same way, is committed to the promotion's own branch `hopper-promotion/<direct job>` (never the default branch) and linked there; promoted again it edits what it posted and updates what it committed. With the user's **drift issues** setting on (issue #1077,
 `docs/design.md` "Component watchers"), a **component watcher** files one issue per kind of drift on the hopper's own repository through
 the user's own connection — labelled `user-report`, no assignee, each item only a short hash of its key — and edits that issue's body
-while the drift lasts, never filing a second. A job's own request through the GitHub proxy (issue #563) is
+while the drift lasts, never filing a second. With **landing batches** on for a repository (issue #1073, `docs/design.md`
+"Landing batches"), a red batch's **culprit** — the first change a bisect within the batch finds failing — is reverted from the
+landing branch through GitHub's own revert of its pull request, which the hopper merges, and one **fix issue** is filed through
+the user's own connection — the hopper label, assigned to their connected account, so Intake takes it —, its text fixed but for
+the failing checks' output, masked; a `landing_batch.fix_filed` event keeps it from being filed twice. A job's own request through the GitHub proxy (issue #563) is
 the job's act, as when it pushes: its text is the job's, under the publishing rule; so are, with the user's Contribution on
 (issue #429), the fork of a repository its user cannot push to and the pull request it opens there from that fork; an issue filed that way ends with the
 hopper's note naming the job and the request by id only, and gets no label or assignee. The default job rules carry the rule (`src/job-rules/` `DEFAULT_JOB_RULES`); the job rules are the owner's to edit (issue #172).
@@ -172,7 +176,8 @@ hopper's note naming the job and the request by id only, and gets no label or as
   "Update channels and promotion").
 - **Changes reach people main → dev → beta → stable** (issue #1073, `docs/design.md` "Landing batches").
   Pull requests merge to `main`, the landing branch and the default branch, after the fast checks (the
-  gates and the affected tests); `dev` moves only when a green batch run of `main`'s tip merges into it;
+  gates and the affected tests); `dev` moves only when a green batch run of `main`'s tip merges into it; a red
+  batch's culprit is reverted from `main`, and the rest of the batch moves on;
   `beta` and `stable` move only by `scripts/promote.sh`, one step at a time.
 - **The UI is the daemon's one built part.** `ui/` → `npm run build:ui` → `ui/dist` (gitignored), served
   by the daemon. It imports nothing of `src/` at runtime; types only, from `src/domain/types.ts`.

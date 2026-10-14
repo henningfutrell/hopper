@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string"
+    },
+    "tip": {
+      "type": "string"
+    },
+    "sha": {
+      "type": "string"
+    },
+    "pullRequest": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "url": {
+      "type": "string"
+    },
+    "merge": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "repo",
+    "tip",
+    "sha",
+    "pullRequest",
+    "url"
+  ],
+  "additionalProperties": false
+}

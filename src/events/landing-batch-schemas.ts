@@ -1,11 +1,16 @@
 // Landing batches' events (issue #1073, design.md "Landing batches"): a batch run started on the landing branch's tip, its
 // end — promoted to the tested branch, or failed —, a job's pull request moved from the tested branch to the landing
-// branch, and an admin's change of the settings. Part of EVENT_SCHEMAS (schemas.ts).
+// branch, and an admin's change of the settings; a red batch's bisect, its runs and results, the culprit, its revert and
+// its fix issue (part 2). Part of EVENT_SCHEMAS (schemas.ts).
 import { z } from 'zod';
 
 const strict = z.strictObject;
 const settings = strict({ repos: z.record(z.string(), strict({ tested: z.string(), everyMerges: z.number().int().min(1), everyMinutes: z.number().int().min(1) })) });
 const ended = { repo: z.string(), tested: z.string(), tip: z.string(), pullRequest: z.number().int(), url: z.string() };
+const check = strict({ name: z.string(), id: z.number().int().optional() });
+const point = strict({ sha: z.string(), pullRequest: z.number().int().optional() });
+const result = strict({ index: z.number().int(), sha: z.string(), outcome: z.enum(['good', 'bad', 'unknown']) });
+const culpritAt = { repo: z.string(), tip: z.string(), sha: z.string() };
 
 export const LANDING_BATCH_EVENT_SCHEMAS = {
   'landing_batch.started': strict({
@@ -13,7 +18,21 @@ export const LANDING_BATCH_EVENT_SCHEMAS = {
     pullRequest: z.number().int(), url: z.string(), merges: z.array(z.number().int()), why: z.string().optional(),
   }),
   'landing_batch.promoted': strict({ ...ended, merge: z.string().optional() }),
-  'landing_batch.failed': strict({ ...ended, reason: z.string(), checks: z.array(z.string()) }),
+  'landing_batch.failed': strict({ ...ended, reason: z.string(), checks: z.array(z.string()), checkRuns: z.array(check).optional() }),
   'landing_batch.retargeted': strict({ repo: z.string(), pullRequest: z.number().int(), url: z.string(), from: z.string(), to: z.string() }),
   'landing_batches.changed': strict({ from: settings, to: settings, by: z.string() }),
+  'landing_batch.bisect_started': strict({ ...ended, points: z.array(point), checks: z.array(check), reason: z.string() }),
+  'landing_batch.bisect_run': strict({ repo: z.string(), tested: z.string(), tip: z.string(), index: z.number().int(), sha: z.string(), branch: z.string(), pullRequest: z.number().int(), url: z.string() }),
+  'landing_batch.bisect_tested': strict({
+    repo: z.string(), tested: z.string(), tip: z.string(), index: z.number().int(), sha: z.string(), pullRequest: z.number().int(), url: z.string(),
+    outcome: z.enum(['good', 'bad', 'unknown']), reason: z.string().optional(), checks: z.array(check).optional(),
+  }),
+  'landing_batch.culprit': strict({
+    repo: z.string(), tested: z.string(), tip: z.string(), index: z.number().int(), sha: z.string(), pullRequest: z.number().int().optional(),
+    checks: z.array(check), reason: z.string(), results: z.array(result), batch: z.number().int().optional(),
+  }),
+  'landing_batch.revert_opened': strict({ ...culpritAt, culpritPullRequest: z.number().int(), pullRequest: z.number().int(), url: z.string() }),
+  'landing_batch.reverted': strict({ ...culpritAt, pullRequest: z.number().int(), url: z.string(), merge: z.string().optional() }),
+  'landing_batch.revert_failed': strict({ ...culpritAt, reason: z.string(), pullRequest: z.number().int().optional(), url: z.string().optional() }),
+  'landing_batch.fix_filed': strict({ ...culpritAt, issue: z.number().int(), url: z.string() }),
 } as const;

@@ -172,6 +172,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       }),
       landingBatches: createLandingBatches({
         github: () => (!o.accounts.account('github') ? { problem: o.accounts.ended('github') ?? notMine } : createLandingBatchGitHub(mine())),
+        login: () => o.accounts.account('github'),
         settings: () => o.store.settings.getLandingBatches() ?? DEFAULT_LANDING_BATCHES,
         events: () => o.store.events.recent(500, [...LANDING_BATCH_EVENT_TYPES]),
         record: (e) => { o.store.events.append(e); },
