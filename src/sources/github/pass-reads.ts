@@ -21,7 +21,7 @@ const UNSCOPED = new Set<string>(['projectItems', 'listAssignedIssues', 'listIns
 // Every method of the port is a read, a write, the bot's login (no GitHub call after the first), where git fetches
 // (issue #858: a token, asked once per pass by the mirror), or git's own answer (issue #939: no GitHub call): a new one
 // must be sorted.
-type Sorted = (typeof READS)[number] | (typeof WRITES)[number] | 'botLogin' | 'gitRemote' | 'conflictBetween';
+type Sorted = (typeof READS)[number] | (typeof WRITES)[number] | 'botLogin' | 'gitRemote' | 'conflictBetween' | 'baseTip';
 const _everyMethodSorted: Exclude<keyof GitHubApi, Sorted> extends never ? true : never = true;
 void _everyMethodSorted;
 
@@ -68,6 +68,7 @@ export function passReads(api: GitHubApi, source: string, traffic: GitHubTraffic
   if (api.botLogin) out.botLogin = api.botLogin.bind(api);
   if (api.gitRemote) out.gitRemote = api.gitRemote.bind(api);
   if (api.conflictBetween) out.conflictBetween = api.conflictBetween.bind(api);
+  if (api.baseTip) out.baseTip = api.baseTip.bind(api);
 
   return {
     api: out as unknown as GitHubApi,

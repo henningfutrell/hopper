@@ -11,7 +11,7 @@
 // (`JobSource.conflictBetween`, the hopper's mirror); the after-done half asks it, so pull requests whose changes do not
 // conflict are tended at the same time. Where the source cannot say, they conflict: one tend at a time, as before.
 // No hold lasts for ever (issue #1143): a due rebase held `MAX_HELD_MS` is tended whatever holds it.
-import { following, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
+import { following, tendOf, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Job } from './types.ts';
 
 /** A waiting pull request a tend is due for: its job, the pull request, and the step. */
@@ -59,8 +59,8 @@ export const repoOf = (job: Job): string | undefined => job.source?.repo?.toLowe
  * yet following it again (its end is still to report). A failed one waits on a person and holds nothing.
  */
 function tending(job: Job, get: (id: string) => Job | undefined): string | undefined {
-  const t = followedOf(job.rerunOf ? get(job.rerunOf) : undefined).tended;
-  if (t?.nextJobId !== job.id || ENDED.includes(job.status)) return undefined;
+  const t = tendOf(job, get);
+  if (!t || ENDED.includes(job.status)) return undefined;
   return job.status !== 'finished' || followedOf(job).follow === undefined ? t.pullRequest : undefined;
 }
 

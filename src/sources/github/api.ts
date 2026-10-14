@@ -301,6 +301,11 @@ export interface GitHubApi {
    * (issue #967, `gitAnswers`); undefined: git cannot. A write: it drops what the pass read of `repo`. Absent: no mirror.
    */
   baseMerge?(repo: string, pr: BaseMergeTarget): Promise<BaseMerge | undefined>;
+  /**
+   * The commit branch `base` of `repo` is at, as the hopper's mirror fetched it this pass (issue #1143 part 3,
+   * `gitAnswers`); undefined: git cannot say. Absent: no mirror.
+   */
+  baseTip?(repo: string, base: string): Promise<string | undefined>;
   /** Every repo (owner/repo) the app is installed on, across installations: the allowlist. */
   listInstalledRepos?(): Promise<{ repo: string; installationId: number }[]>;
 }

@@ -18772,14 +18772,36 @@ landing branch: none of its pull requests is moved.
   (`LandingBatchGitHub.comment`, `retargetNote`).
 - **A held rebase is tended within an hour** ("No hold lasts for ever", above).
 
+**Part 3: a failed rebase, once its base moves.** A rebase tend job fails when it cannot keep the intent of both sides
+("Conflicts a rebase sends to a person"). The base it failed against does not stay: the change it conflicted with can be
+changed again, reverted from the landing branch (a red batch's culprit), or a person can land the other half. So the
+hopper does not leave it to a person for ever:
+
+- Each sync, before the tends, while the tended job's tend job is a `rebase` that ended failed and its end is reported,
+  the source says the commit the pull request's base branch is at (`JobSource.baseTip`, `GitMirrors.baseTip`: `git
+  rev-parse` of the base as this pass fetched it, no new fetch). The first commit is kept (`tended.baseAt`): the base when
+  the hopper first saw the failure, never older than the base the tend job saw. Another commit later marks the base moved
+  (`tended.baseMoved`).
+- `tendRetryAt` makes the same `rebase` due from `baseMoved` (`rebasesWhenBaseMoves`): a tend job of the item, the brief
+  as before, the tend note on the pull request, `retries` one more. At most `MAX_TEND_RETRIES` (3) in a row, the same count
+  as a cancel's retries; a person's Tend again starts a new row. After that, it waits on a person.
+- The card says it: while the base is watched, its "gave up" line ends "the hopper rebases it again when its base branch
+  moves"; once moved, it waits "its base branch moved since its rebase failed".
+- A source with no mirror, or outside a pass, says no commit: the pull request waits on a person, as before. A throw is
+  only logged.
+- **The tend of a job, at any distance** (`tendOf`). A tend run again keeps `tended` on the job it tended, not on the tend
+  job before it. So `failedTend` and the tending queue's head (`tending`) look up the whole chain of runs again. Before,
+  a failed retry was taken as no tend: reconciling followed its pull request again and tended it at once, past the cap.
+
 Still left on issue #1143:
 
 - A pull request no job follows is moved off the tested branch only; it is not tended or closed as superseded.
 - "Behind" without merge conflicts starts nothing: with merge commits, a pull request behind its base merges as it is.
   Only a repository that wants branches up to date before a merge needs it (GitHub then refuses the merge, `mergeError`).
-- A failed rebase tend still waits on a person. Tending it again when its base moves again is a later part.
 
 Tests: `test/sources/github-pr-housekeeping.test.ts` (retarget, a stack, no landing branch known, after the batch,
 superseded both ways, a part), `test/integration/pull-request-housekeeping.test.ts` (the events and the comments over the
 real daemon, and a rebase held an hour), `test/landing-batches/runner.test.ts` (the batch runner's move and its note),
-`test/store/jobs-lanes.test.ts` (`namesPullRequest`).
+`test/store/jobs-lanes.test.ts` (`namesPullRequest`), `test/integration/pull-request-retend.test.ts` (part 3: a failed
+rebase tended again once its base moves, at most three in a row; no mirror, no retry), `test/domain/tend-retries.test.ts`
+(`tendOf`, `tendRetryAt` with a moved base), `test/git-mirror/mirrors.test.ts` (`baseTip`).
