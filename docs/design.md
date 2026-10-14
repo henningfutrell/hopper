@@ -18446,8 +18446,12 @@ refused push changes nothing on GitHub. Not taken: a check after the push, befor
 GitHub, a person could merge it, and the job would be finished already.
 
 **What is judged.** Each ref update of a push to a branch that is there already (a new branch has no head before the
-push), against the repository's default branch — the branch a job's pull request merges into, the landing branch where
-there are landing batches. The push's pack is indexed in a **quarantine** beside the user's mirror (`src/git-mirror/
+push), against the branch's **base**: the base branch of its open pull request, else the repository's landing branch
+where it has landing batches, else its default branch (issue #1147). Not taken: the default branch always. With landing
+batches the default branch (`dev`) is not where pull requests merge (`main`), so each change on `main` and not yet on
+`dev` looked like the branch's own, and a file `main` shrank on purpose made the guard refuse every rebase onto `main`. A
+read of the pull request that fails counts as none: the read does not hold up the push. A push to a job's fork compares
+with the fork's own landing or default branch: its pull request is on the parent. The push's pack is indexed in a **quarantine** beside the user's mirror (`src/git-mirror/
 push-lines.ts`): an object directory of its own, with the mirror's as an alternate, removed after. Nothing a job pushes
 enters the mirror. The base branch and the branch's head before the push are fetched into the mirror first when it
 lacks them (blobless, with the user's own connection). A push whose merge base with the base branch is the head's merge

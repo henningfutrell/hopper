@@ -25,7 +25,7 @@ import { issueIdOf, subIssuesRoute, type SubIssuesForge } from './fake-sub-issue
 import { watchRoute, type WatchForge } from './fake-github-watch.ts';
 import { contentsRoute, headsRoute, type ContentsForge, type HeadsForge } from './fake-heads.ts';
 import { peopleRoute, type PeopleForge } from './fake-people.ts';
-import { listingRoute, updatedAtOf } from './fake-listing.ts'; import { pullReadsRoute, type PullReadsForge } from './fake-pull-reads.ts';
+import { listingRoute, updatedAtOf } from './fake-listing.ts'; import { pullListRoute, pullReadsRoute, type PullReadsForge } from './fake-pull-reads.ts';
 
 export interface FakeIssue {
   repo: string;
@@ -296,7 +296,7 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       if (!m) return { status: 404, body: { message: 'Not Found' } };
       const repo = m[1]!;
       const rest = m[2] ?? '';
-      const sub = pullReadsRoute(forge, r.method, repo, rest) ?? subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest) ?? commentEditRoute(issues, r.method, repo, rest, r.body) ?? contentsRoute(forge ?? {}, base, r.method, repo, rest, r.query, r.body) ?? jobLogsRoute(forge, base, r.method, rest); if (sub) return sub;
+      const sub = pullReadsRoute(forge, r.method, repo, rest) ?? pullListRoute(pulls, restPull, r.method, repo, rest, r.query) ?? subIssuesRoute(forge, issues, restIssue, r.method, repo, rest, r.body) ?? watchRoute(forge, issues, restIssue, r.method, repo, rest) ?? headsRoute(forge, r.method, repo, rest) ?? commentEditRoute(issues, r.method, repo, rest, r.body) ?? contentsRoute(forge ?? {}, base, r.method, repo, rest, r.query, r.body) ?? jobLogsRoute(forge, base, r.method, rest); if (sub) return sub;
       if (r.method === 'POST' && rest === 'labels') return { status: 201, body: { name: r.body.name } };
       if (r.method === 'GET' && rest === 'issues') {
         return { status: 200, body: issues.filter((i) => i.repo === repo && (i.state ?? 'open') === 'open' && i.labels.includes(r.query.labels ?? '')).map(restIssue) };

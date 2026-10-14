@@ -51,6 +51,8 @@ export interface ProxyApi {
   repo(repo: string): Promise<RepoFacts>;
   /** The commit `ref` (a branch) of `repo` is at now (issue #870: the apply gate's check that the code did not move). */
   head(repo: string, ref: string): Promise<string>;
+  /** The base branch of the open pull request from `branch` of `repo` into it; undefined: none (issue #1147: the shrink guard's base). */
+  pullRequestBase(repo: string, branch: string): Promise<string | undefined>;
 }
 
 interface RestIssue { id?: number; number: number; title: string; state: string; body?: string | null; html_url: string; user?: { login?: string } | null; labels?: ({ name?: string } | string)[]; pull_request?: unknown }
@@ -265,6 +267,13 @@ export function createProxyApi(o: { apiUrl: string } & TokenSource): ProxyApi {
     head: (repo, ref) => withToken(
       async (token) => ((await req('GET /repos/{owner}/{repo}/commits/{ref}', { ...splitRepo(repo), ref, headers: { authorization: `token ${token}` } })).data as { sha: string }).sha,
       (err) => new ProxyGitHubError(messageOf(err, `the head of ${repo} ${ref}`), statusOf(err)),
+    ),
+    pullRequestBase: (repo, branch) => withToken(
+      async (token) => {
+        const pulls = (await req('GET /repos/{owner}/{repo}/pulls', { ...splitRepo(repo), state: 'open', head: `${repo.split('/')[0]!}:${branch}`, per_page: 1, headers: { authorization: `token ${token}` } })).data as RestPull[];
+        return pulls[0]?.base.ref;
+      },
+      (err) => new ProxyGitHubError(messageOf(err, `the pull request of ${repo} ${branch}`), statusOf(err)),
     ),
   };
 }
