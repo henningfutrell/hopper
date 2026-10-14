@@ -173,6 +173,12 @@ describe('what the hopper does about a pull request that needs tending (issue #9
     expect(cards([head, behind]).find((c) => c.jobId === 'job-a')).not.toHaveProperty('queue');
   });
 
+  it('a hold says since when, and the tend job that holds it with its status (issue #1162)', () => {
+    const since = ago(25 * 60_000);
+    const behind = job(2, 'job-b', PR8, seen({ conflicting: true }), {}, { heldBehind: { pullRequest: PR, why: 'tending', job: { id: 'job-t', status: 'running' } }, heldSince: since });
+    expect(cards([behind])[0]).toMatchObject({ queue: { held: { pullRequest: 7, why: 'tending', since, holder: { jobId: 'job-t', status: 'running' } } } });
+  });
+
   it('a tend the source refused: the card says why, not that it is tended next (issue #967)', () => {
     const refused = job(2, 'job-b', PR8, seen({ conflicting: true }), {}, { tendRefused: 'its issue is not assigned to the connected account' });
     expect(cards([refused])[0]).toMatchObject({ waits: 'conflicts', queue: { refused: 'its issue is not assigned to the connected account' } });
