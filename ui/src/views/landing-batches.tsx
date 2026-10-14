@@ -1,6 +1,6 @@
 // Landing batches (issue #1073), in Settings, an admin's: per repository, the tested branch a green batch run moves, and
 // when a batch run starts (after N merges into the landing branch, or a timer; none while nothing is new). A job's pull
-// request lands on the repository's default branch, the landing branch (`main` for the hopper's own); the full
+// request lands on the landing branch, a setting here (`main` when left out), whatever GitHub's default branch (issue #1142); the full
 // test suite runs on its tip as a batch run. Each configured repository says where its batch runs stand. With a canary
 // window (part 5), a stable candidate on `canary` goes to `stable` after it, unless a bug report names it.
 import { Layers } from 'lucide-react';
@@ -14,7 +14,7 @@ import { canaryLine, landingBatchLine, landingBatchPatch } from '@/model/landing
 import type { LandingBatchesView, LandingBatchSettings } from '@/model/wire';
 import { useHopper } from '@/store';
 
-const DEFAULTS: LandingBatchSettings['repos'][string] = { tested: 'dev', everyMerges: 5, everyMinutes: 60 };
+const DEFAULTS: LandingBatchSettings['repos'][string] = { tested: 'dev', landing: 'main', everyMerges: 5, everyMinutes: 60 };
 
 function Form({ view, onSaved }: { view: LandingBatchesView; onSaved: (v: LandingBatchesView) => void }) {
   const [draft, setDraft] = useState<LandingBatchSettings>(view.settings);
@@ -43,9 +43,9 @@ function Form({ view, onSaved }: { view: LandingBatchesView; onSaved: (v: Landin
   return (
     <div data-slot="landing-batches" className="space-y-3 text-sm">
       <p className="text-xs text-muted-foreground">
-        A job&apos;s pull request merges into the repository&apos;s default branch, the landing branch, after the fast checks only.
-        The full test suite then runs on the landing branch&apos;s tip as a batch run, and a green batch run moves the tested
-        branch in one merge. Make the landing branch the default branch on GitHub first.
+        A job&apos;s pull request merges into the landing branch after the fast checks only. The full test suite then runs on
+        the landing branch&apos;s tip as a batch run, and a green batch run moves the tested branch in one merge. The landing
+        branch is the one named here, whatever the default branch on GitHub.
       </p>
       {Object.entries(draft.repos).map(([repo, c]) => {
         const row = view.repos.find((r) => r.repo === repo);
@@ -55,6 +55,9 @@ function Form({ view, onSaved }: { view: LandingBatchesView; onSaved: (v: Landin
             {row && <p data-slot="landing-batch-line" className="text-xs">{landingBatchLine(row)}</p>}
             {row && canaryLine(row) && <p data-slot="canary-line" className="text-xs">{canaryLine(row)}</p>}
             <div className="flex flex-wrap items-center gap-2 text-xs">
+              <label className="flex items-center gap-1">Landing branch
+                <Input className="h-8 w-28" value={c.landing ?? 'main'} disabled={busy} aria-label={`Landing branch of ${repo}`} onChange={(e) => setRepo(repo, { landing: e.target.value.trim() })} />
+              </label>
               <label className="flex items-center gap-1">Tested branch
                 <Input className="h-8 w-28" value={c.tested} disabled={busy} aria-label={`Tested branch of ${repo}`} onChange={(e) => setRepo(repo, { tested: e.target.value.trim() })} />
               </label>

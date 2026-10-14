@@ -9,7 +9,8 @@
 //   Scenario: a merge that waits for its batch run is recorded pending once
 //   Scenario: a red batch run is closed and recorded failed; failing checks start a bisect; with none, the same tip does not run again
 //   Scenario: a job's open pull request on the tested branch moves to the landing branch; another's does not
-//   Scenario: a repository whose default branch is the tested branch runs nothing and says why
+//   Scenario: the landing branch is the one the settings name, whatever the repository's default branch (issue #1142)
+//   Scenario: a landing branch that is the tested branch runs nothing and says why
 import { describe, expect, it } from 'vitest';
 import type { LandingBatchSettings } from '../../src/domain/landing-batches.ts';
 import type { DomainEvent, NewEvent } from '../../src/domain/types.ts';
@@ -20,7 +21,6 @@ const SETTINGS: LandingBatchSettings = { repos: { [REPO]: { tested: 'dev', every
 const TIP = 'abcdef0123456789abcdef0123456789abcdef01';
 
 interface World {
-  defaultBranch: string;
   aheadBy: number;
   tip: string;
   messages: string[];
@@ -31,7 +31,7 @@ interface World {
 
 function world(): World {
   return {
-    defaultBranch: 'main', aheadBy: 3, tip: TIP,
+    aheadBy: 3, tip: TIP,
     messages: ['Merge pull request #12 from owner/issue-1-a', 'Merge pull request #14 from owner/issue-2-b'],
     pulls: new Map(), checks: [], calls: [],
   };
@@ -40,7 +40,6 @@ function world(): World {
 function fake(w: World): LandingBatchGitHub {
   let next = 100;
   return {
-    defaultBranch: async () => w.defaultBranch,
     compare: async (_repo, base, head) => {
       w.calls.push(`compare ${base}...${head}`);
       return { aheadBy: w.aheadBy, tip: w.tip, commits: w.messages.map((message, i) => ({ sha: i === w.messages.length - 1 ? w.tip : `c${i}`, parents: i === 0 ? ['base'] : [`c${i - 1}`], message })) };
@@ -72,13 +71,13 @@ function fake(w: World): LandingBatchGitHub {
   };
 }
 
-function runner(w: World, o: { jobPullRequests?: string[]; now?: Date } = {}) {
+function runner(w: World, o: { jobPullRequests?: string[]; now?: Date; settings?: LandingBatchSettings } = {}) {
   const events: DomainEvent[] = [];
   let seq = 0;
   const r = createLandingBatches({
     github: () => fake(w),
     login: () => 'me',
-    settings: () => SETTINGS,
+    settings: () => o.settings ?? SETTINGS,
     events: () => events,
     record: (e: NewEvent) => { events.push({ ...e, seq: ++seq, id: `e${seq}`, at: (o.now ?? new Date()).toISOString(), schemaVersion: 1 } as DomainEvent); },
     jobPullRequests: () => o.jobPullRequests ?? [],
@@ -177,13 +176,20 @@ describe('the batch runner (issue #1073)', () => {
     expect(events.map((e) => [e.type, e.data])).toEqual([['landing_batch.retargeted', { repo: REPO, pullRequest: 7, url: `https://github.test/${REPO}/pull/7`, from: 'dev', to: 'main' }]]);
   });
 
-  it('runs nothing while the default branch is the tested branch, and says why', async () => {
+  it('batches the landing branch the settings name, and reads no default branch (issue #1142)', async () => {
     const w = world();
-    w.defaultBranch = 'dev';
-    const { r, events } = runner(w);
+    const { r, events } = runner(w, { settings: { repos: { [REPO]: { tested: 'dev', landing: 'trunk', everyMerges: 2, everyMinutes: 60 } } } });
+    await r.pass();
+    expect(w.calls).toEqual(['compare dev...trunk', `branch hopper-batch/abcdef012345 ${TIP}`, 'open hopper-batch/abcdef012345 -> dev']);
+    expect(events[0]!.data).toMatchObject({ landing: 'trunk', tested: 'dev', tip: TIP });
+  });
+
+  it('runs nothing while the landing branch is the tested branch, and says why', async () => {
+    const w = world();
+    const { r, events } = runner(w, { settings: { repos: { [REPO]: { tested: 'dev', landing: 'dev', everyMerges: 2, everyMinutes: 60 } } } });
     await r.pass();
     expect(w.calls).toEqual([]);
     expect(events).toEqual([]);
-    expect(r.view().repos[0]!.problem).toBe('the default branch of owner/app is dev, its tested branch: make the landing branch its default branch');
+    expect(r.view().repos[0]!.problem).toBe('the landing branch of owner/app is dev, its tested branch: name another landing branch in Settings → Landing batches');
   });
 });

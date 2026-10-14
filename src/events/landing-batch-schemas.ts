@@ -6,7 +6,7 @@
 import { z } from 'zod';
 
 const strict = z.strictObject;
-const settings = strict({ repos: z.record(z.string(), strict({ tested: z.string(), everyMerges: z.number().int().min(1), everyMinutes: z.number().int().min(1), canaryHours: z.number().int().min(1).optional() })) });
+const settings = strict({ repos: z.record(z.string(), strict({ tested: z.string(), landing: z.string().optional(), everyMerges: z.number().int().min(1), everyMinutes: z.number().int().min(1), canaryHours: z.number().int().min(1).optional() })) });
 const ended = { repo: z.string(), tested: z.string(), tip: z.string(), pullRequest: z.number().int(), url: z.string() };
 const check = strict({ name: z.string(), id: z.number().int().optional() });
 const point = strict({ sha: z.string(), pullRequest: z.number().int().optional() });

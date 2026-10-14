@@ -46,7 +46,6 @@ function world(commits: Commit[], pulls: [number, Pull][] = []): World {
 function fake(w: World): LandingBatchGitHub {
   const url = (n: number): string => `https://github.test/${REPO}/pull/${n}`;
   return {
-    defaultBranch: async () => 'main',
     compare: async () => ({ aheadBy: w.commits.length, tip: w.tip, commits: w.commits }),
     createBranch: async (_repo, name, sha) => { w.calls.push(`branch ${name} ${sha}`); },
     deleteBranch: async (_repo, name) => { w.calls.push(`delete ${name}`); },

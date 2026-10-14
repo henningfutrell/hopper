@@ -16,6 +16,9 @@
               "tested": {
                 "type": "string"
               },
+              "landing": {
+                "type": "string"
+              },
               "everyMerges": {
                 "type": "integer",
                 "minimum": 1,
@@ -58,6 +61,9 @@
             "type": "object",
             "properties": {
               "tested": {
+                "type": "string"
+              },
+              "landing": {
                 "type": "string"
               },
               "everyMerges": {

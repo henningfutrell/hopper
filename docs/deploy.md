@@ -1258,7 +1258,7 @@ branch `main` (issue #1073, docs/design.md "Landing batches"), least stable firs
 
 | Branch | What is on it | Who moves it, and when |
 |---|---|---|
-| `main` | the default branch, the landing branch: every pull request, a job's included, merges here after the fast checks (the gates and the affected tests). No update channel: no hopper follows it | each merge |
+| `main` | the landing branch (a setting in Settings → Landing batches, whatever the default branch on GitHub, issue #1142): every pull request, a job's included, merges here after the fast checks (the gates and the affected tests). No update channel: no hopper follows it | each merge |
 | `dev` | what passed the full test suite on `main` as one batch run | the hopper merges a green batch run (Settings → Landing batches) |
 | `beta` | changes that ran on `dev` | a maintainer promotes, once a `dev` hopper has run the change without trouble |
 | `canary` | the stable candidate: changes that ran on `beta`. No update channel: the stable installs that take stable releases early follow it | a maintainer promotes, once a `beta` hopper has run the change without trouble |
@@ -1294,10 +1294,12 @@ admin's GitHub connection, so branch protection on `stable` must let that accoun
 **Setting up the landing branch** (once, by a maintainer):
 
 1. Move `main` to `dev`'s head. `main` is not an ancestor of `dev`, so the push replaces it: `git push --force origin origin/dev:refs/heads/main`.
-2. Make `main` the default branch: the repository's Settings → General → Default branch.
+2. Optional: make `main` the default branch (the repository's Settings → General → Default branch), so a job's pull
+   request opens into `main` at once. The batch runner does not need it: it reads the landing branch from its settings
+   (issue #1142), and moves a job's pull request on `dev` to `main` at its next pass.
 3. Require `pr / test` on `main` as on `dev` (a branch protection rule or ruleset), so yolo mode merges only on
    it.
-4. In the hopper, Settings → Landing batches: add the repository, tested branch `dev`. Open job pull requests on `dev`
+4. In the hopper, Settings → Landing batches: add the repository, landing branch `main` (the default), tested branch `dev`. Open job pull requests on `dev`
    move to `main` at the next pass.
 
 **Assemble What's new first (issue #824).** Pull requests add their What's new lines as fragments in

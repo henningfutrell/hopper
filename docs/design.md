@@ -18218,16 +18218,25 @@ HEAD^1`, in the full suite's ten shards, issue #1104; issue #1038). The full sui
 `dev` by the whole batch in one merge. `dev` → `beta` → `stable` stays as it is (`scripts/promote.sh`). `main` is
 no update channel: no hopper follows it.
 
-**The landing branch is the default branch.** Every part of the hopper that names a pull request's base — a job's
-work tree, detached at the default branch; `hopper-gh pr create` with no `--base`; the tending queue's rebase; the
-merge gate; yolo mode — reads the repository's default branch on GitHub. So the landing branch is not a setting: it is
-the default branch, and a repository takes landing batches by making its landing branch the default branch on GitHub
-and naming its tested branch in the settings. A repository whose default branch is still its tested branch runs no
-batch and says so (`problem`). Since `main` is a branch no job pushes to (`RELEASE_BRANCHES`), a job pushes
-its own branch and opens its pull request into `main`, as it did into `dev`.
+**The landing branch is a setting, not the default branch** (issue #1142). Each repository's settings name it
+(`landing`, `main` when left out, so a setting saved before it reads `main`). The runner never reads GitHub's default
+branch. Before, it did, and a repository whose default branch was still its tested branch ran no batch at all: every pass
+stopped on that `problem`, so merges into `main` piled up and `dev` never moved, with no check run on `main`'s tip.
+Other parts of the hopper still read the default branch for a pull request's base — a job's work tree, `hopper-gh pr
+create` with no `--base`, the tending queue's rebase —, so a job may open its pull request into the tested branch. The
+runner moves each such job pull request to the landing branch at its next pass ("Job pull requests move to the landing
+branch" below), so it lands there all the same. A landing branch that is the tested branch runs no batch and says so
+(`problem`). Since `main` is a branch no job pushes to (`RELEASE_BRANCHES`), a job pushes its own branch and opens its
+pull request into `main`.
+
+**What a pass costs when nothing is new.** The runner reads the landing branch's tip (`GET …/git/ref/heads/<landing>`)
+and the compare of the tested branch with that tip. Both go through the shared rate limiter, which sends the ETag of the
+last answer (`If-None-Match`): an unchanged tip and an unchanged tested branch answer 304, which GitHub does not charge.
+No webhook is needed: a GitHub delivery is optional. The last tip tested is an event (`landing_batch.promoted` or
+`.failed`, "The state" below), so the same tip never runs twice, after a restart too.
 
 **The settings** (`landingBatches`, the user's, `POST /ui/api/landing-batches`, an admin's, Settings → Landing
-batches): per repository (`owner/repo`, lowercased), `tested` (the tested branch), `everyMerges` (N, default 5) and
+batches): per repository (`owner/repo`, lowercased), `landing` (the landing branch, default `main`), `tested` (the tested branch), `everyMerges` (N, default 5) and
 `everyMinutes` (the timer, default 60). Read at each pass, so a change applies with no restart
 (`landing_batches.changed`).
 
