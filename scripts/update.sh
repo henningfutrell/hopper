@@ -11,7 +11,8 @@
 #   2. takes the master key from HOPPER_MASTER_KEY at launch (a secret manager), else asks for it on the terminal (nothing
 #      is shown); without it the update stops, so the hopper never comes back limited. It reads no file and no container;
 #   3. backs up the database (hopper-backup.dump), puts in the compose.yaml of the image with the install's own settings
-#      (`hopper update carry`; the old one stays as compose.yaml.bak), pulls, and recreates every container on the image;
+#      (`hopper update carry`; the old one stays as compose.yaml.bak), pulls, stops the stack and starts it on the image,
+#      so every container is made again (when it does not start: back to the old compose.yaml and stack);
 #   4. checks that the hopper runs the image pulled, answers /api/health, has its master key and that the stack has no
 #      drift (`hopper update drift`), and says the result. It exits 1 when one of these fails.
 #
@@ -94,9 +95,19 @@ main() {
   export HOPPER_IMAGE="$image"
   say 'pull the stack'
   "${compose[@]}" pull </dev/null >&2 || [ "$local_image" = 1 ] || fail "${compose[*]} pull failed. To go back: cp compose.yaml.bak compose.yaml"
-  # A plain `up -d` keeps a container whose image changed under the same tag (podman-compose): recreate them all.
-  say 'recreate every container on the new image'
-  "${compose[@]}" up -d --force-recreate </dev/null >&2 || fail "${compose[*]} up failed. To go back: cp compose.yaml.bak compose.yaml, then run the update with the old image"
+  # Every container is made again on the new image: podman-compose's plain `up -d` keeps a container whose image changed
+  # under the same tag, and it cannot `--force-recreate` a service with no container yet (issue #894). So the old stack
+  # stops (its volumes stay), and the new one starts.
+  say 'stop the stack (its volumes and data stay), and start it on the new image'
+  "${compose[@]}" down </dev/null >&2 || say 'the stop did not remove everything (a box on the hopper network keeps it); the start goes on'
+  if ! "${compose[@]}" up -d </dev/null >&2; then
+    say 'the stack did not start: back to the old compose.yaml and image'
+    unset HOPPER_IMAGE
+    "${compose[@]}" down </dev/null >/dev/null 2>&1 || true
+    cp compose.yaml.bak compose.yaml
+    "${compose[@]}" up -d </dev/null >&2 || true
+    fail "${compose[*]} up failed on $image. The old compose.yaml is back and the old stack was started again; the database backup is hopper-backup.dump"
+  fi
 
   check "$runtime" "$image" "${HOPPER_UPDATE_WAIT:-180}"
 }

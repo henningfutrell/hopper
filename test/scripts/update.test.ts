@@ -53,6 +53,7 @@ exit 0
 const PODMAN_COMPOSE = `#!/bin/sh
 printf 'podman-compose %s | HOPPER_IMAGE=%s\\n' "$*" "\${HOPPER_IMAGE:-}" >> "$STUB_LOG"
 case "$*" in
+  *"up -d") [ -n "\${HOPPER_IMAGE:-}" ] && exit "\${STUB_UP:-0}" ;;
   *"ps -q") [ "$STUB_STACK" = podman-compose ] && echo 0123456789abcdef ;;
   *"exec -T postgres pg_dump"*) echo DUMP ;;
 esac
@@ -94,14 +95,15 @@ function update(o: Run = {}) {
 const composeCalls = (calls: string[]) => calls.filter((c) => /^(podman compose|podman-compose) /.test(c));
 
 describe('scripts/update.sh (issue #1104)', () => {
-  it('updates a podman-compose stack with podman-compose and the project hopper: backup, new compose.yaml, pull, recreate', () => {
+  it('updates a podman-compose stack with podman-compose and the project hopper: backup, new compose.yaml, pull, down and up', () => {
     const r = update({ masterKey: KEY, stack: 'podman-compose' });
     expect(r.status, r.out).toBe(0);
     expect(composeCalls(r.calls)).toEqual([
       'podman-compose -p hopper ps -q | HOPPER_IMAGE=',
       'podman-compose -p hopper exec -T postgres pg_dump -U hopper -d hopper -Fc | HOPPER_IMAGE=',
       `podman-compose -p hopper pull | HOPPER_IMAGE=${IMAGE}`,
-      `podman-compose -p hopper up -d --force-recreate | HOPPER_IMAGE=${IMAGE}`,
+      `podman-compose -p hopper down | HOPPER_IMAGE=${IMAGE}`,
+      `podman-compose -p hopper up -d | HOPPER_IMAGE=${IMAGE}`,
     ]);
     expect(r.calls).toContain(`podman pull ${IMAGE} | HOPPER_IMAGE=`);
     expect(r.read('hopper-backup.dump')).toBe('DUMP\n');
@@ -115,7 +117,7 @@ describe('scripts/update.sh (issue #1104)', () => {
     const r = update({ masterKey: KEY, stack: 'docker-compose' });
     expect(r.status, r.out).toBe(0);
     expect(composeCalls(r.calls).every((c) => c.startsWith('podman compose -p hopper '))).toBe(true);
-    expect(r.calls).toContain(`podman compose -p hopper up -d --force-recreate | HOPPER_IMAGE=${IMAGE}`);
+    expect(r.calls).toContain(`podman compose -p hopper up -d | HOPPER_IMAGE=${IMAGE}`);
   });
 
   it('stops before it changes anything when the compose tool does not see the stack that runs (issue #1063)', () => {
@@ -154,6 +156,18 @@ describe('scripts/update.sh (issue #1104)', () => {
     expect(wrong.status).not.toBe(0);
     expect(wrong.out).toMatch(/HOPPER_MASTER_KEY is no master key: 32 bytes, as 64 hex digits or base64/);
     expect(composeCalls(wrong.calls)).toEqual([]);
+  });
+
+  it('goes back to the old compose.yaml and stack when the new stack does not start', () => {
+    const r = update({ masterKey: KEY, stack: 'podman-compose', env: { STUB_UP: '1' } });
+    expect(r.status).not.toBe(0);
+    expect(r.out).toMatch(/The old compose\.yaml is back and the old stack was started again/);
+    expect(r.read('compose.yaml')).toBe(r.read('compose.yaml.bak'));
+    expect(composeCalls(r.calls).slice(-3)).toEqual([
+      `podman-compose -p hopper up -d | HOPPER_IMAGE=${IMAGE}`,
+      'podman-compose -p hopper down | HOPPER_IMAGE=',
+      'podman-compose -p hopper up -d | HOPPER_IMAGE=',
+    ]);
   });
 
   it('fails when the hopper does not run the image it pulled', () => {
