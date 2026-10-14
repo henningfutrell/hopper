@@ -52,9 +52,10 @@ describe('what the sweep reaps (issue #410)', () => {
 });
 
 /** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-function rig(o: { found?: Survey; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean } = {}) {
+function rig(o: { found?: Survey; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[] } = {}) {
   let now = Date.parse('2026-10-08T00:00:00Z');
-  const jobs = [job('done', 'finished', '/w'), job('run', 'running', '/v'), job('old', 'failed', '/w')];
+  // Each job works the item `item:<id>`; the ledger holds the items of `itemDone` done.
+  const jobs = [job('done', 'finished', '/w'), job('run', 'running', '/v'), job('old', 'failed', '/w')].map((j) => ({ ...j, source: { source: 's', kind: 'github', key: `item:${j.id}` } }) as Job);
   const events: { type: string; jobId?: string; data: unknown }[] = (o.kept ?? []).map((id) => ({ type: 'job.work_kept', jobId: id, data: { paths: ['x'] } }));
   const surveyed: string[][] = [];
   const reaps: { jobId: string; scratch?: string; discard?: boolean }[] = [];
@@ -82,6 +83,7 @@ function rig(o: { found?: Survey; kept?: string[]; machines?: MachineSnapshot[];
         recent: (_limit: number, types: string[], jobId?: string) => events.filter((e) => types.includes(e.type) && (!jobId || e.jobId === jobId)).reverse() as unknown as DomainEvent[],
         append: (e: { type: string; jobId?: string; data: unknown }) => { events.push(e); return e as unknown as DomainEvent; },
       },
+      workItems: { get: (key: string) => (o.itemDone?.some((id) => key === `item:${id}`) ? { key, state: 'done' } : undefined) },
     } as never,
   }, (l) => logs.push(l));
   return { sweep, surveyed, reaps, events, logs, advance: (ms: number) => { now += ms; } };
@@ -154,6 +156,28 @@ describe('the sweep runner (issue #410)', () => {
     const first = rig({ found: { scopes: [], processes: [], scratch: [{ jobId: 'done', path: '/w/.hopper-scratch/done', ageMs: 30 * HOUR }] }, keeps: ['done'] });
     await first.sweep.run(true);
     expect(first.logs).toEqual([expect.stringContaining('kept: it holds work not pushed')]);
+  });
+});
+
+describe('kept work of a done item (issue #1105)', () => {
+  const found = { scopes: [], processes: [], scratch: [{ jobId: 'old', path: '/w/.hopper-scratch/old', ageMs: HOUR }] };
+
+  it('is discarded by the sweep, whatever it holds: its item is done, so nobody waits on it', async () => {
+    const r = rig({ found, kept: ['old'], keeps: ['old'], itemDone: ['old'] });
+    await r.sweep.run(true);
+    expect(r.reaps).toEqual([{ jobId: 'old', scratch: '/w/.hopper-scratch/old', discard: true }]);
+    expect(r.events.at(-1)).toEqual({ type: 'job.work_removed', jobId: 'old', data: { paths: ['/w/.hopper-scratch/old'], discarded: true } });
+    expect(r.logs).toEqual([expect.stringContaining('its item is done')]);
+  });
+
+  it('is kept while its item is not done; a machine that still kept it records nothing', async () => {
+    const open = rig({ found, kept: ['old'], keeps: ['old'] });
+    await open.sweep.run(true);
+    expect(open.reaps).toEqual([{ jobId: 'old', scratch: '/w/.hopper-scratch/old' }]);
+    expect(open.events).toHaveLength(1);
+    const old = rig({ found, kept: ['old'], keeps: ['old'], itemDone: ['old'], oldClient: true });
+    await old.sweep.run(true);
+    expect(old.events).toHaveLength(1);
   });
 });
 
