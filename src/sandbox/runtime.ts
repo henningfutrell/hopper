@@ -5,6 +5,7 @@
 // - On a client target: the remote runtime (remote.ts), that machine's own Podman (else Docker) through its client.
 //   The box is on that machine's network and dials the hopper where the machine's client did: an address the client
 //   proved by dialling in on it (issue #695).
+import { statSync } from 'node:fs';
 import type { ContainerRuntime, RuntimeKind, RuntimeRelay } from '../domain/sandboxes.ts';
 import { createDockerRuntime } from './docker.ts';
 import { LaunchRefused } from './launch.ts';
@@ -18,10 +19,25 @@ export interface RuntimeChoice {
   runtime?: Exclude<RuntimeKind, 'remote'>;
 }
 
+/**
+ * `path`, unless something that is no socket is there: compose.yaml mounts /dev/null at the socket's path when the computer
+ * has no Podman socket (issue #1157), and that is no socket given. Nothing there is still a socket given: its runtime says
+ * it cannot reach it.
+ */
+export function givenSocket(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  try {
+    return statSync(path).isSocket() ? path : undefined;
+  } catch {
+    return path;
+  }
+}
+
 /** Undefined: no runtime socket is given, so the hopper starts no box. Throws when a configured runtime has no socket. */
 export async function selectRuntime(o: RuntimeChoice): Promise<ContainerRuntime | undefined> {
-  const podman = o.podmanSocket ? createPodmanRuntime(o.podmanSocket) : undefined;
-  const docker = o.dockerSocket ? createDockerRuntime(o.dockerSocket) : undefined;
+  const podmanSocket = givenSocket(o.podmanSocket), dockerSocket = givenSocket(o.dockerSocket);
+  const podman = podmanSocket ? createPodmanRuntime(podmanSocket) : undefined;
+  const docker = dockerSocket ? createDockerRuntime(dockerSocket) : undefined;
   if (o.runtime) {
     const chosen = o.runtime === 'podman' ? podman : docker;
     if (!chosen) throw new Error(`HOPPER_SANDBOX_RUNTIME=${o.runtime} needs HOPPER_${o.runtime.toUpperCase()}_SOCKET`);

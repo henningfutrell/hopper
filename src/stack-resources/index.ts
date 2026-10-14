@@ -7,6 +7,7 @@ import type { Clock } from '../domain/ports.ts';
 import type { RuntimeKind } from '../domain/sandboxes.ts';
 import type { ContainerMeter, DatabaseStats, OpenFgaMeter, RemoteBoxMeter, SolrMeter, SolrPart, StackResources } from '../domain/stack-resources.ts';
 import type { StackHistoryRepository } from '../domain/stack-resources.ts';
+import { givenSocket } from '../sandbox/runtime.ts';
 import { createContainerMeter } from './containers.ts';
 import { createStackRecorder, type StackRecorder } from './history.ts';
 
@@ -30,7 +31,8 @@ const why = (e: unknown): string => (e instanceof Error ? e.message : String(e))
  * absent when it is not in one.
  */
 export function meterFor(o: { config: { podmanSocket?: string; dockerSocket?: string; sandboxRuntime?: RuntimeKind }; instanceId: string; self: string | undefined }): ContainerMeter | undefined {
-  const { podmanSocket, dockerSocket, sandboxRuntime } = o.config;
+  const { sandboxRuntime } = o.config;
+  const podmanSocket = givenSocket(o.config.podmanSocket), dockerSocket = givenSocket(o.config.dockerSocket);
   const socket = sandboxRuntime === 'docker' ? dockerSocket : sandboxRuntime === 'podman' ? podmanSocket : podmanSocket ?? dockerSocket;
   return socket ? createContainerMeter({ socket, self: o.self ?? '', instanceId: o.instanceId }) : undefined;
 }
