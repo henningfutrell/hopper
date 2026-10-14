@@ -14,17 +14,18 @@ const job = (id: string, status: JobStatus, o: Partial<Job> = {}): Job => ({
   createdAt: hoursAgo(2), updatedAt: hoursAgo(1), attempts: 1, ...o,
 } as Job);
 
-/** What /api/queue answers: the daemon's partition of the jobs it holds. */
-function queueOf(jobs: Job[]) {
+/** What /api/queue answers: the daemon's partition of the jobs it holds, and the work-item ledger's counts (issue #1067). */
+function queueOf(jobs: Job[], failedItems: number) {
   const of = (...s: JobStatus[]) => jobs.filter((j) => s.includes(j.status));
-  return { waiting: of('queued', 'held'), running: of('claimed', 'running'), waitingAnswer: of('waiting_answer'), operatorLed: of('operator_led'), parked: of('parked'), ended: of('finished', 'failed', 'cancelled'), locked: [] };
+  const items = { waiting_for_approval: 0, queued: 0, working: 0, needs_you: 0, waiting_outside: 0, pr_open: 0, partly_done: 0, done: 0, failed: failedItems, dropped: 0 };
+  return { waiting: of('queued', 'held'), running: of('claimed', 'running'), waitingAnswer: of('waiting_answer'), operatorLed: of('operator_led'), parked: of('parked'), ended: of('finished', 'failed', 'cancelled'), locked: [], items };
 }
 
-function fakeDaemon(initial: Job[]) {
+function fakeDaemon(initial: Job[], failedItems: number) {
   let jobs = initial;
   const routes = (): Record<string, unknown> => ({
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
-    '/api/queue': queueOf(jobs),
+    '/api/queue': queueOf(jobs, failedItems),
     '/api/machines': { machines: [{ id: 'm1', label: 'm1', maxLanes: 2, online: true, executors: ['test'], usage: [],
       lanes: [{ id: 'm1/lane-1', machineId: 'm1', state: 'busy', jobId: 'r1', openedAt: hoursAgo(1) }] }] },
     '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
@@ -54,12 +55,13 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-async function boot(jobs: Job[]) {
+/** `failedItems`: the work items the ledger has as failed; by default, one per failed job. */
+async function boot(jobs: Job[], failedItems = jobs.filter((j) => j.status === 'failed').length) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   window.location.hash = '#dashboard';
   localStorage.clear();
-  const daemon = fakeDaemon(jobs);
+  const daemon = fakeDaemon(jobs, failedItems);
   vi.stubGlobal('fetch', daemon.fetch);
   vi.stubGlobal('EventSource', FakeEventSource);
   vi.resetModules();
@@ -121,6 +123,13 @@ describe('Dashboard cards and lists', () => {
     const after = cardsAndLists();
     expect(agree(after)).toEqual({ running: true, waiting: true, waitingAnswer: true, finished: true, failed: true });
     expect(after).toMatchObject({ running: [2, 2], waiting: [1, 1], finished: [3, 3] });
+  });
+
+  it('the Failed card is the work-item ledger\'s count (issue #1067): a failed job the ledger does not count is no failure', async () => {
+    await boot([job('x1', 'failed', { finishedAt: hoursAgo(4), error: 'boom' }), job('x2', 'failed', { finishedAt: hoursAgo(2), error: 'boom' })], 1);
+    expect(card('failed')).toBe(1);
+    expect(rows('ended', 'failed')).toBe(2);
+    expect(document.querySelector('[data-kpi="failed"]')!.textContent).toContain('work item failed now');
   });
 
   it('a parked job (issue #501) is in its own group: not running, not waiting, on no lane; a viewer is offered neither Park nor Re-queue', async () => {

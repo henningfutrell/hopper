@@ -207,6 +207,8 @@ describe('the job graph in plain words (issue #935)', () => {
         job('red', 'finished', followed(PR(2), 'open', { checks: 'failing' }), 7),
         job('merged', 'finished', followed(PR(3), 'merged'), 8),
         job('part', 'finished', { partlyDone: PR(4), ...followed(PR(4), 'open') }, 9),
+        job('pending', 'finished', followed(PR(5), 'open', { checks: 'pending' }), 10),
+        job('draft', 'finished', followed(PR(6), 'open', { draft: true }), 11),
       ],
       questions: [{ id: 'q1', jobId: 'q', text: 'Which?', since: '2026-10-02T00:00:00.000Z' }],
     });
@@ -217,8 +219,12 @@ describe('the job graph in plain words (issue #935)', () => {
     expect(words(jobNodeId('ask'))).toBe('Waiting on you: approve the plan');
     expect(words(jobNodeId('q'))).toBe('Waiting on you: answer a question');
     expect(words(questionNodeId('q1'))).toBe('Waiting on you: answer it');
-    expect(words(jobNodeId('review'))).toBe('Ready for review');
-    expect(words(jobNodeId('red'))).toBe('Checks failed');
+    expect(words(jobNodeId('review'))).toBe('PR open: waiting for the merge');
+    expect(words(jobNodeId('red'))).toBe('PR open: fixing checks');
+    // No "Ready for review" (issue #1067): an open pull request names what it waits on.
+    expect(words(jobNodeId('pending'))).toBe('PR open: checks running');
+    expect(words(jobNodeId('draft'))).toBe('PR open: draft');
+    expect(g.nodes.map((n) => n.stageText)).not.toContain('Ready for review');
     expect(words(jobNodeId('merged'))).toBe('Merged');
     expect(words(pullRequestNodeId(PR(3)))).toBe('Merged');
     expect(words(jobNodeId('part'))).toBe('Part shipped: the rest runs after the merge');

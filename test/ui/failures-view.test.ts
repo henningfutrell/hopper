@@ -232,16 +232,16 @@ describe('the Failures view', () => {
     expect(handoffRow()!.querySelector('input[aria-label="Next time"]')).not.toBeNull();
   });
 
-  it('counts what is left (issue #517): failed jobs not assessed yet, and those that need a person', async () => {
-    await boot('#failures', { failures: view({ counts: { unassessed: 2, needsPerson: 1 } }) });
+  it('counts what is left (issues #517, #1067): the work items that failed, and those that need a person', async () => {
+    await boot('#failures', { failures: view({ counts: { failed: 2, needsPerson: 1 } }) });
     const counts = document.querySelector('[data-section="failure-counts"]')!;
-    expect(counts.textContent).toContain('2 failed jobs not assessed yet');
-    expect(counts.textContent).toContain('1 failed job needs a person');
+    expect(counts.textContent).toContain('2 work items failed');
+    expect(counts.textContent).toContain('1 work item needs a person');
   });
 
   it('nothing left: it says so', async () => {
-    await boot('#failures', { failures: view({ counts: { unassessed: 0, needsPerson: 0 } }) });
-    expect(document.querySelector('[data-section="failure-counts"]')!.textContent).toContain('Every failed job is assessed, and none needs a person');
+    await boot('#failures', { failures: view({ counts: { failed: 0, needsPerson: 0 } }) });
+    expect(document.querySelector('[data-section="failure-counts"]')!.textContent).toContain('No work item failed, and none needs a person');
   });
 
   it('a superseded failure says its item ran again, and offers no Retry', async () => {

@@ -38,17 +38,21 @@ describe('jobBoard', () => {
 });
 
 describe('kpis', () => {
-  it('every count is the length of the list it names, for any mix of statuses', () => {
+  it('every count is the length of the list it names, for any mix of statuses; failed is the ledger\'s (issue #1067)', () => {
     const jobs = STATUSES.flatMap((status, i) => Array.from({ length: i + 1 }, (_, n) => job(`${status}-${n}`, { status })));
     const b = jobBoard(jobs, []);
-    const k = kpis(b, [machine([lane('lane-1', 'busy'), lane('lane-2', 'draining'), lane('lane-3', 'idle')], 4)]);
+    const items = { waiting_for_approval: 0, queued: 0, working: 0, needs_you: 0, waiting_outside: 0, pr_open: 0, partly_done: 0, done: 0, failed: 2, dropped: 0 };
+    const k = kpis(b, [machine([lane('lane-1', 'busy'), lane('lane-2', 'draining'), lane('lane-3', 'idle')], 4)], items);
     expect(k).toEqual({
       running: b.running.length, waiting: b.waiting.length, held: b.waiting.filter((j) => j.status === 'held').length,
       waitingAnswer: b.waitingAnswer.length, parked: b.parked.length, waitingOn: b.waitingOn.length, onOwnCommand: 0,
-      finished: b.ended.filter((j) => j.status === 'finished').length, failed: b.ended.filter((j) => j.status === 'failed').length,
-      cancelled: b.ended.filter((j) => j.status === 'cancelled').length,
+      finished: b.ended.filter((j) => j.status === 'finished').length, failed: 2,
       lanesBusy: 2, lanesOpen: 3, lanesMax: 4,
     });
+    // No count of job statuses: failed jobs the ledger does not count are no failure; none read yet, none shown.
+    expect(b.ended.some((j) => j.status === 'failed')).toBe(true);
+    expect(kpis(b, [], { ...items, failed: 0 }).failed).toBe(0);
+    expect(kpis(b, [], null).failed).toBe(0);
   });
   it('a job on its own command counts as running work, not as a wait on the outside world; stuck, it waits (issue #1037)', () => {
     const since = '2026-10-03T10:00:00Z';
@@ -58,13 +62,13 @@ describe('kpis', () => {
       job('stuck', { status: 'waiting_on', wait: { ...own, stuckAt: since } }),
       job('out', { status: 'waiting_on', wait: { for: 'a review', since } }),
     ], []);
-    const k = kpis(b, []);
+    const k = kpis(b, [], null);
     expect([k.waitingOn, k.onOwnCommand]).toEqual([2, 1]);
     expect(b.waitingOn.map(ownWaitOf)).toEqual(['command', 'stuck', undefined]);
   });
   it('one job on a question and nothing queued: waiting 0, waiting answer 1 (issue #45)', () => {
     const b = jobBoard([job('q', { status: 'waiting_answer' })], []);
-    const k = kpis(b, []);
+    const k = kpis(b, [], null);
     expect([k.waiting, k.waitingAnswer]).toEqual([0, 1]);
     expect(waitingRows(b, undefined)).toEqual([]);
   });
@@ -89,7 +93,7 @@ describe('Park and Re-queue (issue #501): offered only where the daemon takes th
   });
   it('a parked job is in no other group: never running, never waiting, never on a lane', () => {
     const b = jobBoard([job('p', { status: 'parked', resumeOn: 'm1' })], []);
-    const k = kpis(b, [machine([lane('lane-1', 'idle')])]);
+    const k = kpis(b, [machine([lane('lane-1', 'idle')])], null);
     expect([k.running, k.waiting, k.waitingAnswer, k.lanesBusy, k.parked]).toEqual([0, 0, 0, 0, 1]);
     expect(laneRows([machine([lane('lane-1', 'idle')])], b.running).every((r) => r.job === undefined)).toBe(true);
   });

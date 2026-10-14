@@ -78,15 +78,21 @@ describe('GET /api/jobs/graph (issue #900)', () => {
     const a = await start();
     const { store } = a.user();
     const key = 'https://github.com/acme/app/issues/7';
+    const spec = { executor: 'test', payload: {}, machineId: 'nowhere' };
     const made = (status: 'failed' | 'finished', over: object) => {
-      const j = store.jobs.create({ executor: 'test', payload: {}, machineId: 'nowhere' }, 50, { source: 'github', kind: 'github', key, url: key, repo: 'acme/app', number: 7, title: 'issue 7' });
+      const j = store.jobs.create(spec, 50, { source: 'github', kind: 'github', key, url: key, repo: 'acme/app', number: 7, title: 'issue 7' });
       store.jobs.update(j.id, { status, ...over });
       return j;
     };
     // The failed job ended today: the queue holds it. The job that ran the issue again merged three days ago: only the
-    // newest job of the issue brings it in.
+    // newest job of the issue brings it in. Their events move the issue's work item (issue #1067).
     const failed = made('failed', { finishedAt: new Date().toISOString() });
+    store.events.append({ type: 'job.queued', jobId: failed.id, data: { spec, priority: 50 } });
+    store.events.append({ type: 'job.failed', jobId: failed.id, data: { error: 'boom' } });
     const done = made('finished', { rerunOf: failed.id, finishedAt: new Date(Date.now() - 3 * 86_400_000).toISOString(), sourceState: { source: { pullRequest: PR, follow: 'merged' } } });
+    store.events.append({ type: 'job.queued', jobId: done.id, data: { spec, priority: 50 } });
+    store.events.append({ type: 'job.finished', jobId: done.id, data: { result: 'pull request ready for review' } });
+    store.events.append({ type: 'job.pull_request_merged', jobId: done.id, data: { pullRequest: PR, part: false } });
 
     const g = (await a.api<JobGraph>('GET', '/api/jobs/graph')).body;
     const node = (id: string) => g.nodes.find((n) => n.id === id);

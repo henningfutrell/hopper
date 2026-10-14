@@ -280,7 +280,7 @@ describe('every failed job is processed', () => {
     expect(retry.body.error).toMatch(/already run again/);
     const v = await failuresOf(a);
     expect(v.recent.some((x) => x.jobId === job.id)).toBe(false);
-    expect(v.counts).toEqual({ unassessed: 0, needsPerson: 0 });
+    expect(v.counts).toEqual({ failed: 0, needsPerson: 0 });
     expect(v.handoffs.filter((h) => h.jobId === job.id && h.status === 'open')).toEqual([]);
   });
 
@@ -290,12 +290,12 @@ describe('every failed job is processed', () => {
     const job = await a.pull(fail('HOPPER_FAILED the tests do not pass', 3000));
     await a.waitForStatus(job.id, 'failed');
     await waitFor(async () => (await recordOf(a, job.id))?.outcome === 'surfaced', { what: 'the failure surfaced' });
-    expect((await failuresOf(a)).counts).toEqual({ unassessed: 0, needsPerson: 1 });
+    expect((await failuresOf(a)).counts).toEqual({ failed: 0, needsPerson: 1 });
     const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/rerun`, {}, { token });
     expect(r.status).toBe(200);
     const record = await waitFor(async () => supersededOf(a, job.id), { what: 'superseded' });
     expect(record.nextJobId).toBe(r.body.id);
-    expect((await failuresOf(a)).counts).toEqual({ unassessed: 0, needsPerson: 0 });
+    expect((await failuresOf(a)).counts).toEqual({ failed: 0, needsPerson: 0 });
   });
 
   it('an unassessed failed job older than a day is assessed, with no automatic action: it waits on a person', async () => {
@@ -312,7 +312,7 @@ describe('every failed job is processed', () => {
     expect(record).toMatchObject({ decision: 'retry', auto: false, outcome: 'surfaced' });
     expect(record.reasons.join(' ')).toMatch(/failed 3 d before it was assessed/);
     expect(record.actions.retry).toEqual({ ok: true });
-    expect((await failuresOf(a)).counts).toEqual({ unassessed: 0, needsPerson: 1 });
+    expect((await failuresOf(a)).counts).toEqual({ failed: 0, needsPerson: 1 });
     await new Promise((r) => setTimeout(r, 1500));
     expect(await chain(a, job.source!.key)).toHaveLength(1);
   });
@@ -322,7 +322,7 @@ describe('every failed job is processed', () => {
     const job = await a.pull(fail('HOPPER_FAILED the tests do not pass'));
     await a.waitForStatus(job.id, 'failed');
     await waitFor(async () => (await failuresOf(a)).handoffs.find((h) => h.jobId === job.id && h.status === 'open'), { what: 'handed off' });
-    expect((await failuresOf(a)).counts).toEqual({ unassessed: 0, needsPerson: 1 });
+    expect((await failuresOf(a)).counts).toEqual({ failed: 0, needsPerson: 1 });
     // The source offers the item again: a new job of it, not one a person or the assessor ran again.
     const next = await a.pull({ op: 'echo' }, { key: job.source!.key });
     expect(next.id).not.toBe(job.id);
@@ -330,6 +330,6 @@ describe('every failed job is processed', () => {
     expect(closed).toMatchObject({ end: 'run_again', nextJobId: next.id });
     const record = await waitFor(async () => supersededOf(a, job.id), { what: 'superseded' });
     expect(record.nextJobId).toBe(next.id);
-    expect((await failuresOf(a)).counts).toEqual({ unassessed: 0, needsPerson: 0 });
+    expect((await failuresOf(a)).counts).toEqual({ failed: 0, needsPerson: 0 });
   });
 });

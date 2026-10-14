@@ -142,8 +142,8 @@ describe('a job\'s parts list (issue #935)', () => {
     expect(waiting.header).toEqual({ asked: 'Make the cache faster (acme/app#7)', stands: 'Waiting on you: answer a question', next: 'You: answer the question.' });
     expect(waiting.summary).toBe('0 of 1 parts done, 1 waiting on you.');
     const review = jobBom(input({ job: job('finished', { sourceState: { source: { pullRequest: PR, follow: 'open', seen: { checks: 'passing' } } } }) }));
-    expect(review.header.stands).toBe('Ready for review');
-    expect(review.header.next).toBe('Review and merge the pull request.');
+    expect(review.header.stands).toBe('PR open: waiting for the merge');
+    expect(review.header.next).toBe('Merge the pull request, or yolo mode merges it.');
     expect(review.summary).toMatch(/nothing waiting on you\.$/);
     const running = jobBom(input({ job: job('running', { tasks: { done: 1, total: 3 } }) }));
     expect(running.header).toMatchObject({ stands: 'Building it', next: 'The agent works on it: 1 of 3 tasks done.' });
