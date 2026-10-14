@@ -18,6 +18,10 @@ describe('a system secret on the page (issue #658)', () => {
     expect(systemSecretTitle(secret('typesafe-api-key', 'typesafe'))).toBe('TypeSafe API key (Jev)');
     expect(systemSecretWhere({ kind: 'webhook' })).toBe('Settings → Webhooks');
     expect(systemSecretWhere({ kind: 'sign-in' })).toBe('Settings → Sign-in');
+    // The GitHub webhook secret (issue #1079): the whole hopper's.
+    expect(systemSecretTitle(secret('github-webhook-secret', 'github-webhook'))).toBe('GitHub webhook secret');
+    expect(systemSecretWhere({ kind: 'github-webhook' })).toBe('Settings → GitHub webhook');
+    expect(mayKeepInBackend(secret('github-webhook-secret', 'github-webhook', { scope: 'instance' }))).toBe(false);
   });
 
   it('says set, its last 4 characters, who and that it is sealed', () => {
