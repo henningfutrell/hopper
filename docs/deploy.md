@@ -814,8 +814,10 @@ its update notice gives the command. Not in the chart: HashiCorp Vault (the comp
 `scripts/kind-check.ts` (issue #1281) checks the cluster install end to end on a fresh kind cluster: `helm install`
 alone brings up the hopper; its health answers ok in its pod; and no pod anywhere in the cluster
 has a Podman or Docker socket (a host path, a mount or a socket variable) or runs Podman, Docker or compose; and
-`helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Then it deletes the
-cluster. It needs `kind`, `helm` and `kubectl` on PATH, and Docker or Podman for kind itself (rootless
+`helm upgrade` with the same values runs the OpenFGA migration Job no second time (issue #1282). Then the machines
+come up as pods: an upgrade turns on sandbox boxes (`sandbox.enabled=true`, the hopper's health asked again), and one
+more scales the lane pods to one (`lanes.replicas=1`, with no wait: a lane pod joins only once a person signed in).
+The lane pod must exist, and again no pod may have a container runtime socket. Then it deletes the cluster. It needs `kind`, `helm` and `kubectl` on PATH, and Docker or Podman for kind itself (rootless
 Podman: `KIND_EXPERIMENTAL_PROVIDER=podman`).
 
 ```sh
