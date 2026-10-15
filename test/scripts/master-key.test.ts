@@ -107,6 +107,17 @@ describe('scripts/master-key.sh (issue #1296)', () => {
     expect(f.files().sort()).toEqual(['hopper-master-key.cred', 'master-key.sh']);
   });
 
+  it('the first launch with the key given seals it: the next launch needs no key from anyone', () => {
+    const f = folder();
+    const first = f.run(['run', process.execPath, '-e', env], { HOPPER_MASTER_KEY: KEY });
+    expect(first.status, first.err).toBe(0);
+    expect(JSON.parse(first.out)).toEqual([KEY, 'systemd-creds']);
+    expect(f.files().sort()).toEqual(['hopper-master-key.cred', 'master-key.sh']);
+    const next = f.run(['run', process.execPath, '-e', env]);
+    expect(JSON.parse(next.out)).toEqual([KEY, 'systemd-creds']);
+    expect(`${first.out}${first.err}${next.err}`.replace(JSON.stringify([KEY, 'systemd-creds']), '')).not.toContain(KEY);
+  });
+
   it('a sealed key that does not unseal stops the launch: the command does not run', () => {
     const f = folder();
     expect(f.run(['seal'], { HOPPER_MASTER_KEY: KEY }).status).toBe(0);
