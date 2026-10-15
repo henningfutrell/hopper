@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { GITHUB_CALL_KINDS } from '../../src/domain/github-rate-limit.ts';
 import { createGitHubLimiter } from '../../src/github-limiter/limiter.ts';
 import { callKindOf, createGitHubTraffic } from '../../src/github-limiter/traffic.ts';
-import { makeRequest } from '../../src/sources/github/app/http.ts';
+import { makeRequest } from '../../src/sources/github/http/http.ts';
 
 const servers: Server[] = [];
 afterEach(async () => { for (const s of servers.splice(0)) await new Promise((r) => s.close(r)); });
@@ -56,7 +56,7 @@ const zero = Object.fromEntries(GITHUB_CALL_KINDS.map((k) => [k, { calls: 0, poi
 
 describe('GitHub calls per hour by kind (issue #985)', () => {
   it('each read or write names its kind: intake, reconcile, the in-motion cycle, a job\'s read, a write', () => {
-    for (const read of ['listRepos', 'listAssignedIssues', 'listInstalledRepos', 'projectItems']) expect(callKindOf(read, 'POST', '/graphql', QUERY)).toBe('intake');
+    for (const read of ['listRepos', 'listAssignedIssues', 'projectItems']) expect(callKindOf(read, 'POST', '/graphql', QUERY)).toBe('intake');
     expect(callKindOf('openPullRequestsIn', 'POST', '/graphql', QUERY)).toBe('reconcile');
     expect(callKindOf('pullRequestStates', 'POST', '/graphql', QUERY)).toBe('pr_cycle');
     expect(callKindOf('getIssue', 'GET', '/repos/{owner}/{repo}/issues/{issue_number}')).toBe('per_job_read');

@@ -35,7 +35,7 @@ function setup() {
   const gated = gatedGitHub(gh);
   const events: { type: string; data: Record<string, unknown> }[] = [];
   const options: GitHubSourceOptions = {
-    name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', config: githubConfig({}), api: gated.api,
+    name: 'github', kind: 'github-account', whoami: 'owner', assignee: () => 'owner', config: githubConfig({}), api: gated.api,
     trust: testTrust(undefined, { assignedHere: (k) => events.some((e) => e.type === 'source.issues_assigned' && (e.data.keys as string[]).includes(k)) }),
     clock: { now: () => new Date('2026-10-08T10:00:00.000Z') },
     knownKeys: () => new Set(),

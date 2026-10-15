@@ -20,7 +20,6 @@ import type { OutboxChange } from '../../domain/github-outbox.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import { contextComments } from './context.ts';
 import type { GitHubOutbox } from './outbox.ts';
-import type { BotLogin } from './identity.ts';
 import { LABEL_CLAIMED, LABEL_DONE } from './labels.ts';
 import { originsOf } from './origin.ts';
 import { ALREADY_TAKEN, DECLINED, HAS_JOB, NOT_SHOWN, TEXT_CHANGED_SINCE_SHOWN } from './intake-actions.ts';
@@ -32,7 +31,6 @@ export interface ApprovalsContext {
   /** The source's `recentComments`: 0 reads none. */
   recentComments: number;
   assignee(): string | undefined;
-  botLogin(): Promise<BotLogin>;
   outbox: GitHubOutbox;
   /** The source's label: an issue resolved again still has it. */
   label: string;
@@ -118,7 +116,7 @@ export function createApprovals(c: ApprovalsContext) {
     },
     /** The outbox's `read_comments`: the assignee's comments the job would see, added to the approved snapshot. */
     async readComments(repo: string, key: string): Promise<void> {
-      const seen = contextComments(await c.api.listComments(repo, numberOf(key)), c.assignee(), c.recentComments, await c.botLogin());
+      const seen = contextComments(await c.api.listComments(repo, numberOf(key)), c.assignee(), c.recentComments);
       c.trust.approvedComments(key, seen.map((x) => ({ author: x.author, at: x.createdAt, body: x.body })));
     },
   };

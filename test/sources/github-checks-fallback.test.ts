@@ -5,9 +5,9 @@
 // node:http fake GitHub through the App adapter, and the in-memory fake through the source's follow.
 import { afterEach, describe, expect, it } from 'vitest';
 import { pullKey } from '../../src/sources/github/api.ts';
-import { ACCOUNT_CONNECTION, APP_CONNECTION, UNREADABLE_KEEP_MS, checksFallback } from '../../src/sources/github/checks-fallback.ts';
+import { ACCOUNT_CONNECTION, UNREADABLE_KEEP_MS, checksFallback } from '../../src/sources/github/checks-fallback.ts';
 import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/index.ts';
-import type { FakeIssueInput, FakeLack, FakePullFields } from '../../src/sources/github/app/fake-state.ts';
+import type { FakeIssueInput, FakeLack, FakePullFields } from '../../src/sources/github/http/fake-state.ts';
 import type { HeadChecks } from '../../src/sources/github/api.ts';
 import type { ChecksState } from '../../src/domain/pull-requests.ts';
 import { startApp, type AppHarness } from './fixtures/app/setup.ts';
@@ -22,7 +22,7 @@ const pull = (number: number, fields: FakePullFields): FakeIssueInput =>
 async function app(lacks: FakeLack[], pulls: FakeIssueInput[]) {
   h = await startApp({ installations: [{ id: 11, account: 'owner', repos: [{ owner: 'owner', name: 'a', lacks, issues: [{ number: 1, labels: ['hopper'] }, ...pulls] }] }] });
   let now = Date.parse('2026-10-15T10:00:00Z');
-  const api = checksFallback(h.api, APP_CONNECTION, () => now);
+  const api = checksFallback(h.api, ACCOUNT_CONNECTION, () => now);
   const refs = pulls.map((p) => ({ repo: 'owner/a', pullRequest: p.number, issue: 1 }));
   const states = async () => [...(await api.pullRequestStates(refs)).pulls.values()];
   const reads = (what: string) => h!.fake.state.requests.filter((r) => r.path.endsWith(`/${what}`)).length;
@@ -52,7 +52,7 @@ describe('checks the rollup would not give, read again over REST (issue #1244)',
 
   it('REST refused too: unknown, saying the connection, the permission it lacks and the fix; the repository is asked once', async () => {
     const a = await app(['checks'], [pull(2, {}), pull(3, {}), pull(4, {})]);
-    const why = 'the GitHub App lacks Checks: read: add them to the GitHub App and accept them on its installation';
+    const why = `the connected GitHub account lacks Checks: read: ${ACCOUNT_CONNECTION.fix}`;
     expect(await a.states()).toEqual([2, 3, 4].map(() => expect.objectContaining({ checks: 'unknown', checksWhy: why, checksRefused: true })));
     expect(a.reads('check-runs')).toBe(1);
     expect(await a.api.pullRequest('owner/a', 2)).toMatchObject({ checks: 'unknown', checksWhy: why });
@@ -64,7 +64,7 @@ describe('checks the rollup would not give, read again over REST (issue #1244)',
 
   it('both permissions missing: says both', async () => {
     const a = await app(['checks', 'statuses'], [pull(2, {})]);
-    expect(await a.states()).toMatchObject([{ checks: 'unknown', checksWhy: expect.stringMatching(/^the GitHub App lacks Checks: read and Commit statuses: read: /) }]);
+    expect(await a.states()).toMatchObject([{ checks: 'unknown', checksWhy: expect.stringMatching(/^the connected GitHub account lacks Checks: read and Commit statuses: read: /) }]);
   });
 
   it('a REST read that fails otherwise: unknown with GitHub\'s error, not refused, so no checks read problem', async () => {
@@ -72,7 +72,7 @@ describe('checks the rollup would not give, read again over REST (issue #1244)',
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
     const pr = gh.openPullRequest(REPO, 1, { createdAt: '2026-10-02T09:50:00.000Z', checks: 'unknown' as ChecksState, headRef: 'issue-1' });
     const failing = Object.assign(Object.create(gh) as typeof gh, { headChecks: async () => { throw new Error('timeout'); } });
-    const got = await checksFallback(failing, APP_CONNECTION).pullRequest(REPO, Number(pr.url.split('/').pop()));
+    const got = await checksFallback(failing, ACCOUNT_CONNECTION).pullRequest(REPO, Number(pr.url.split('/').pop()));
     expect(got).toMatchObject({ checks: 'unknown', checksWhy: 'GitHub did not answer the read of its checks: timeout' });
     expect(got).not.toHaveProperty('checksRefused');
   });
@@ -92,7 +92,7 @@ describe('a follow in yolo mode over the fallback (issue #1244)', () => {
     const gh = createFakeGitHub();
     const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };
     const source = createGitHubSource({
-      name: 'github', kind: 'github-account', mode: 'account', whoami: 'owner', assignee: () => 'owner', config: githubConfig(),
+      name: 'github', kind: 'github-account', whoami: 'owner', assignee: () => 'owner', config: githubConfig(),
       api: checksFallback(gh, ACCOUNT_CONNECTION, () => clock.now().getTime()), clock, trust: testTrust(), yoloMode: () => true,
     });
     gh.createIssue({ repo: REPO, labels: ['hopper'] });

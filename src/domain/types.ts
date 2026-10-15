@@ -303,8 +303,8 @@ export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, 
   configuredLanes?: number;
   /** Lanes kept for jobs pinned to it (issue #372): jobs with no machine pin use at most its lane cap less these. Absent: 0. */
   reservedLanes?: number;
-  /** How many lanes specialty jobs may elbow in past its lane cap at once (issue #762). Absent: 1. 0: none. */
-  elbowIns?: number;
+  /** How many lanes specialty jobs may elbow in past its lane cap at once (issue #762). Absent: 1. 0: none. `windows`: a Windows machine (issue #1350), the only kind that takes a job with a Windows label. */
+  elbowIns?: number; windows?: true;
   online: boolean;
   /** Executors this machine can run. */
   executors: string[];
@@ -492,7 +492,7 @@ export { ESCALATION_REASONS, LOGIN_SCREEN_MARK, NOT_SIGNED_IN, SIGNED_IN_ANSWER,
 
 // ---- Sources: src/domain/sources.ts (re-exported here) ------------------------------------
 
-export type { AfterAnswerTimed, AfterAnswerTiming, GitHubAppKeyView, InstalledApp, InstalledAppsView, SetupProblem, SourceCallLog, SourceCalls, SourceStatus, TimingSpread } from './sources.ts';
+export type { AfterAnswerTimed, AfterAnswerTiming, SourceCallLog, SourceCalls, SourceStatus, TimingSpread } from './sources.ts';
 
 // ---- Attached machines: src/domain/machines.ts (re-exported here) ------------------------
 

@@ -8,8 +8,8 @@
 // no conditional request, so the pull requests' checks are read only when they decide: no required check and no
 // workflow on pull requests was found (else `pullRequests` is `{ read: 0, withChecks: 0 }`).
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
-import { makeRequest, retryAtOf, splitRepo, statusOf } from '../sources/github/app/http.ts';
-import { explained, permissionsOfError, permissionsOfPath } from '../sources/github/app/refusal.ts';
+import { makeRequest, retryAtOf, splitRepo, statusOf } from '../sources/github/http/http.ts';
+import { explained, permissionsOfError, permissionsOfPath } from '../sources/github/http/refusal.ts';
 import { runsOnPullRequests, type RepoChecksFound } from '../domain/types.ts';
 import type { ConditionalAnswers, Get } from './conditional.ts';
 import { createSetupReader, type Read, type RepoAnswer } from './setup.ts';

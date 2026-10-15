@@ -11,12 +11,12 @@ const item = { title: issue.title, body: issue.body, prompt: issuePrompt(untrust
 
 describe('a GitHub item rendered with a text (issue #662)', () => {
   it('with the text it was read with, is the item as it was', () => {
-    const same = promptWithText(item, { title: issue.title, body: issue.body, comments: [{ author: 'owner', at: '2026-10-01T10:00:00Z', body: 'A live note.' }] }, 10, 'account');
+    const same = promptWithText(item, { title: issue.title, body: issue.body, comments: [{ author: 'owner', at: '2026-10-01T10:00:00Z', body: 'A live note.' }] }, 10);
     expect(same).toEqual(item);
   });
 
   it('with the snapshot\'s text, carries its title, body and comments, and the context as read now', () => {
-    const r = promptWithText(item, { title: 'Approved title', body: 'Approved body.', comments: [] }, 10, 'account');
+    const r = promptWithText(item, { title: 'Approved title', body: 'Approved body.', comments: [] }, 10);
     expect(r.title).toBe('Approved title');
     expect(r.body).toBe('Approved body.');
     expect(r.env.HOPPER_ISSUE_TITLE).toBe('Approved title');
@@ -29,6 +29,6 @@ describe('a GitHub item rendered with a text (issue #662)', () => {
   });
 
   it('refuses an item whose prompt is not its untrusted block and context block', () => {
-    expect(() => promptWithText({ ...item, prompt: 'something else' }, { title: 't', body: 'b', comments: [] }, 10, 'account')).toThrow(/cannot be rendered/);
+    expect(() => promptWithText({ ...item, prompt: 'something else' }, { title: 't', body: 'b', comments: [] }, 10)).toThrow(/cannot be rendered/);
   });
 });

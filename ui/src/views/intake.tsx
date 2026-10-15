@@ -6,7 +6,8 @@
 // that links to Jobs. A request declined here (issue #1035) is no row either: one line counts them. With nothing waiting, a source says so. The nav badge counts the request cards. An issue approved here stays in its place until the view closes (issue #811).
 // Always rendered: with no source that lists issues, it says what will show here. Sources keeps each source's sync and
 // links here; who is a trusted actor is configuration, on Settings → Intake. A source that lists fewer issues than it should
-// says why (issue #1125): paused (and still shown), its last sync failed, or a job repository GitHub did not answer for.
+// says why (issue #1125): paused (and still shown), its last sync failed, or a job repository GitHub did not answer for. The
+// GitHub connection's source that cannot run is shown with its error (issue #1377), never left out.
 import { Hand, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { IntakeGroups } from '@/components/intake-groups';
@@ -29,7 +30,9 @@ function SourceIntake({ s }: { s: SourceStatus }) {
     <Panel title={s.name} icon={Inbox} bodyClassName="space-y-2 text-xs">
       <div data-intake={s.name} className="space-y-2">
         {trouble.paused !== undefined && <p data-intake-paused className="text-warn">Not listing issues: {trouble.paused}</p>}
-        {trouble.error !== undefined && <p data-intake-error className="text-destructive">The last sync failed: {trouble.error}. Intake shows what the sync before it listed.</p>}
+        {trouble.error !== undefined && (Array.isArray(s.detail?.intake)
+          ? <p data-intake-error className="text-destructive">The last sync failed: {trouble.error}. Intake shows what the sync before it listed.</p>
+          : <p data-intake-error className="text-destructive">Not listing issues: this source cannot run. {trouble.error}</p>)}
         {trouble.repoErrors.map(([repo, error]) => (
           <p key={repo} data-intake-repo-error={repo} className="text-warn">Not listed: {repo}. GitHub said: {error}. Its issues show here once it is listed again.</p>
         ))}

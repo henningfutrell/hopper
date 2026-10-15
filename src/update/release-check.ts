@@ -6,7 +6,7 @@
 import type { Clock, ConnectedAccountTokens, ReleaseCheck, ReleaseVerdict } from '../domain/ports.ts';
 import type { GitHubLimiter } from '../github-limiter/limiter.ts';
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
-import { makeRequest, statusOf } from '../sources/github/app/http.ts';
+import { makeRequest, statusOf } from '../sources/github/http/http.ts';
 
 /** github.com's REST API: where the update repository is asked about. */
 export const GITHUB_API = 'https://api.github.com';

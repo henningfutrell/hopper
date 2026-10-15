@@ -1,5 +1,4 @@
-// The GitHub job sources' options (the plugins config `jobSources[].options` of `github-account` and
-// `github-app`), and the
+// The GitHub job source's options (the plugins config `jobSources[].options` of `github-account`), and the
 // source config they turn into: `model: null` dropped. No path: a job's work tree is its machine's (issue #361). The plugin host validates
 // them with these schemas; an invalid instance is dropped with the error shown. There is no `authors`
 // option (issue #387): a source takes an issue by its label and its assignee, never by who filed it. An
@@ -17,7 +16,7 @@ const projectSchema = z.object({
   map: z.record(z.string(), z.number()).optional(),
 }).strict().refine((p) => p.mode !== 'field' || p.field !== undefined, { message: 'mode field needs a field name', path: ['field'] });
 
-/** Keys both GitHub sources share. A working directory is command-bearing. */
+/** The GitHub source's keys. A working directory is command-bearing. */
 const sharedKeys = {
   pollSeconds: z.number().int().positive().default(60),
   repos: z.array(z.string().regex(/^[^/\s]+\/[^/\s]+$/, 'owner/repo')).default([]),
@@ -45,18 +44,6 @@ function withoutGone(raw: unknown): unknown {
   return rest;
 }
 
-/** github-app: the App source, posting as the app's bot, taking issues assigned to the user's connected account. */
-export const githubAppOptions = z.preprocess(withoutGone, z.object({
-  enabled: z.boolean().default(true),
-  // The identity the source acts as: command-bearing. Its private key is in the vault (issue #1243), set on the setup card.
-  appId: z.number().int().positive().optional().meta({ commandBearing: true, description: "the GitHub App's id" }),
-  slug: z.string().min(1).optional().meta({ commandBearing: true, description: "the GitHub App's slug; its bot is <slug>[bot]" }),
-  // Where the app's tokens are sent: command-bearing, so a UI session can never redirect them.
-  apiUrl: z.url({ protocol: /^https?$/ }).transform((u) => u.replace(/\/+$/, '')).optional()
-    .meta({ commandBearing: true, description: 'GitHub API base; unset: https://api.github.com' }),
-  ...sharedKeys,
-}).strict());
-
 /**
  * A connected account's source (issue #214): who it acts as is the account the user connected, so
  * nothing names an identity or a credential, and it takes the issues assigned to that account. Which
@@ -73,12 +60,8 @@ const accountKeys = {
 export const githubAccountOptions = z.preprocess(withoutGone, z.object(accountKeys).strict());
 
 /** Both on, and the same issues by label and hopper name (issue #1264). */
-const sameIssues = (a: GitHubAccountOptions | GitHubAppOptions, b: GitHubAccountOptions | GitHubAppOptions): boolean =>
+const sameIssues = (a: GitHubAccountOptions, b: GitHubAccountOptions): boolean =>
   a.enabled && b.enabled && a.label === b.label && a.hopperName === b.hopperName;
-
-/** Repositories that overlap: none listed is every repository the app is installed on. GitHub's names ignore case. */
-const overlap = (a: readonly string[], b: readonly string[]): boolean =>
-  !a.length || !b.length || a.some((r) => b.some((o) => o.toLowerCase() === r.toLowerCase()));
 
 /**
  * Two connected-account sources take the same work (issue #1264) when they take the same issues: both read the one account
@@ -86,13 +69,8 @@ const overlap = (a: readonly string[], b: readonly string[]): boolean =>
  */
 export const sameAccountWork = (a: GitHubAccountOptions, b: GitHubAccountOptions): boolean => sameIssues(a, b);
 
-/** Two app sources take the same work (issue #1264): the same issues, through the same app, over repositories that overlap. */
-export const sameAppWork = (a: GitHubAppOptions, b: GitHubAppOptions): boolean =>
-  sameIssues(a, b) && a.appId === b.appId && a.apiUrl === b.apiUrl && overlap(a.repos, b.repos);
-
 export type GitHubProjectConfig = z.infer<typeof projectSchema>;
 export type GitHubAccountOptions = z.output<typeof githubAccountOptions>;
-export type GitHubAppOptions = z.output<typeof githubAppOptions>;
 
 /** What the source logic reads: the shared keys, no `model: null`. */
 export type GitHubSourceConfig = Omit<z.output<z.ZodObject<typeof sharedKeys>>, 'model'> & { model?: string };

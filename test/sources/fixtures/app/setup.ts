@@ -1,44 +1,27 @@
-// Test support for the GitHub App adapter: in-process RSA keys, the app's key as a value, and the
-// node:http fake GitHub. Nothing here talks to github.com.
+// Test support for the connected account's adapter over the node:http fake GitHub: the adapter with the account's token,
+// pointed at the fake. Nothing here talks to github.com.
 
-import { generateKeyPairSync } from 'node:crypto';
-import { createFakeGitHubServer } from '../../../../src/sources/github/app/fake-server.ts';
-import type { FakeGitHubOptions, FakeGitHubServer } from '../../../../src/sources/github/app/fake-server.ts';
-import { createGitHubAppApi, loadGitHubApp } from '../../../../src/sources/github/app/index.ts';
-import type { GitHubAppApi } from '../../../../src/sources/github/app/index.ts';
+import { createFakeGitHubServer } from '../../../../src/sources/github/http/index.ts';
+import type { FakeGitHubOptions, FakeGitHubServer } from '../../../../src/sources/github/http/index.ts';
+import { FAKE_USER_TOKEN } from '../../../../src/sources/github/http/fake-state.ts';
+import { createAccountGitHubApi } from '../../../../src/sources/github/account/api.ts';
+import type { GitHubApi } from '../../../../src/sources/github/api.ts';
 
-export const APP_ID = 4242;
-export const SLUG = 'hopper-test';
-export const BOT = `${SLUG}[bot]`;
+/** The connected account's login: its writes appear under it. */
+export const LOGIN = 'owner';
 export const clock = { now: () => new Date() };
-
-export interface KeyPair { publicKey: string; privateKey: string }
-
-export function generateKeys(): KeyPair {
-  return generateKeyPairSync('rsa', {
-    modulusLength: 2048,
-    publicKeyEncoding: { type: 'spki', format: 'pem' },
-    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-  });
-}
-
-export const KEYS = generateKeys();
 
 export interface AppHarness {
   fake: FakeGitHubServer;
-  api: GitHubAppApi;
+  api: GitHubApi;
   close(): Promise<void>;
 }
 
-/** Fake GitHub + an adapter pointed at it. `privateKey` defaults to the matching key. */
-export async function startApp(o: Partial<FakeGitHubOptions> & { privateKey?: string } = {}): Promise<AppHarness> {
-  const { privateKey, ...fakeOpts } = o;
-  const fake = await createFakeGitHubServer({
-    appId: APP_ID, publicKeyPem: KEYS.publicKey, slug: SLUG, installations: [], ...fakeOpts,
-  });
-  const key = privateKey ?? KEYS.privateKey;
-  const app = () => loadGitHubApp({ appId: APP_ID, slug: SLUG, privateKey: key });
-  const api = createGitHubAppApi({ app, baseUrl: fake.url, clock });
+/** Fake GitHub + the connected account's adapter pointed at it. `token` defaults to the one the fake takes. */
+export async function startApp(o: Partial<FakeGitHubOptions> & { token?: string } = {}): Promise<AppHarness> {
+  const { token, ...fakeOpts } = o;
+  const fake = await createFakeGitHubServer({ login: LOGIN, installations: [], ...fakeOpts });
+  const api = createAccountGitHubApi({ apiUrl: fake.url, token: async () => token ?? FAKE_USER_TOKEN });
   return { fake, api, close: () => fake.close() };
 }
 

@@ -131,6 +131,23 @@ The setting's name in error messages is in brackets.
 | | Email / Username / Name / Groups claim (`claims.…`) | `email` / `preferred_username` / `name` / `groups` | Claim names, read from the token or the introspection answer. |
 | | Trust unverified email (`trustUnverifiedEmail`) | off | Count the email even without `email_verified: true`. |
 
+### How an OIDC sign-in is checked
+
+The hopper checks the ID token of each OIDC sign-in (openid-client) before it reads a claim (issue #1380):
+
+- **The signature**, against the keys the issuer publishes at the `jwks_uri` of its discovery document.
+  A token signed with a shared secret (`HS256`) has no published key: it is refused. Set the client to
+  sign ID tokens with `RS256` or `ES256` at the identity provider.
+- **`iss`** must be the issuer, **`aud`** must name the client ID, **`exp`** must not have passed, and
+  **`nonce`** must be the one this sign-in sent.
+- **`email`** counts only with `email_verified: true` (or **Trust unverified email**).
+
+**Key rotation needs no person.** The hopper keeps the issuer's keys for at most five minutes. A token
+signed with a key id it does not know makes it read the keys again, at most once a minute. A key the
+issuer removed stops working when the hopper reads the keys again: five minutes after the last read at
+the latest. An identity provider that publishes a new key before it signs with it (Google, Entra ID,
+Okta, Auth0, Keycloak all do) is picked up at its first sign-in.
+
 ## Sign-in from the environment
 
 Realms, the login code and no sign-in can be set up at launch by the daemon's environment, the way
@@ -992,6 +1009,8 @@ The same for every realm, no sign-in and the login code:
 | 429 "too many sign-in attempts" | Over 20 sign-in attempts a minute from one address. Wait a minute. |
 | "Sign in on the sign-in address" | The page is open on another address than the sign-in origin. Open the origin shown. |
 | The identity provider says the redirect URI does not match | Register exactly `<origin>/ui/auth/<name>/callback`; check `HOPPER_PUBLIC_URL`. |
+| OIDC: "sign-in failed: JWT signature verification failed" or "no applicable keys found" | The ID token is signed with a key the issuer does not publish at its `jwks_uri`, or with `HS256`. Set the client to sign with `RS256` or `ES256`. Just after a key rotation, try again in a minute ([How an OIDC sign-in is checked](#how-an-oidc-sign-in-is-checked)). |
+| OIDC: "sign-in failed: unexpected JWT claim value encountered: …" | The message names the claim: `iss` (the issuer URL differs from the one in the token, often a trailing `/`), `aud` (the client ID is wrong), `nonce`, or the times (the clocks differ). |
 | "signed in, but the sign-in config grants this account no role" | No rule matched. The journal line names the account; for OIDC check that the email is verified or match on groups. |
 | "unknown or expired sign-in; start again" | The sign-in took over 10 minutes, the daemon restarted meanwhile, or the callback was opened twice. |
 | "another browser began it" | The callback page ran in a browser (or private window) other than the one that clicked *Sign in*. |

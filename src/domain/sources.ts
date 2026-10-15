@@ -1,62 +1,10 @@
 // A job source's status (/api/sources, SSE source.updated). Re-exported by types.ts.
 
-/**
- * Why a job source that is on cannot run (issue #1243): the required config it lacks, by name — for the app source its
- * `appId`, its `slug`, the variable of its private key —, or a value that is wrong. `help`: the help page that walks
- * through its setup.
- */
-export interface SetupProblem {
-  /** The config not set, by name; empty when what is set is wrong (`reason` says what). */
-  missing: string[];
-  /** What is missing or wrong, in a line. */
-  reason: string;
-  /** The help page's slug (`/help/<help>`). */
-  help: string;
-}
-
-/**
- * The GitHub App's private key (issue #1243): set through the write-only field on the app source's setup card, kept in
- * the vault's system scope. Never the key: whether one is kept, who set it and when, the variable the runtime still
- * gives it in (imported once, never read again), and why none can be kept or opened.
- */
-export interface GitHubAppKeyView {
-  set: boolean;
-  setAt?: string;
-  setBy?: string;
-  environment?: { variable: string };
-  problem?: string;
-}
-
-/** A GitHub App installed on an organization (issue #1243): what Use this app sets on the app source. */
-export interface InstalledApp {
-  /** The organization it is installed on. */
-  account: string;
-  appId: number;
-  slug: string;
-  /** The installation's settings page on GitHub. */
-  settingsUrl?: string;
-}
-
-/**
- * GET /api/github-apps (issue #1243): the GitHub Apps installed on each organization the person's GitHub connection knows.
- * `refused`: an organization GitHub would not list, and why. `notConnected`: no connection to ask with; nothing was asked.
- */
-export interface InstalledAppsView {
-  apps: InstalledApp[];
-  refused: { account: string; error: string }[];
-  notConnected?: string;
-}
-
 export interface SourceStatus {
   name: string;
   kind: string;
-  /**
-   * ok: last sync succeeded. error: last sync failed. disabled: configured off. starting: no sync yet. needs-setup: on,
-   * but not configured (`setupProblem`, issue #1243): it ran no sync pass.
-   */
-  state: 'ok' | 'error' | 'disabled' | 'starting' | 'needs-setup';
-  /** Its setup problem while it has one (issue #1243). */
-  setupProblem?: SetupProblem;
+  /** ok: last sync succeeded. error: last sync failed, or the source could not be built. disabled: configured off. starting: no sync yet. */
+  state: 'ok' | 'error' | 'disabled' | 'starting';
   lastSyncAt?: string;
   lastOkAt?: string;
   lastError?: string;

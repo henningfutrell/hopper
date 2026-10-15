@@ -11,10 +11,8 @@ import { runCli, type CliIo } from '../../src/cli.ts';
 import { CONNECTED_VIA, NOT_SIGNED_IN, SIGNED_IN_ANSWER, SIGNED_IN_BY, type Job, type LoginView, type Question, type PartAccount, type ToolAccount, type UsageReport } from '../../src/domain/types.ts';
 import { databaseUrlFor } from '../support/database.ts';
 import { createFakeGitHub } from '../../src/sources/index.ts';
-import { NO_ASSIGNEE } from '../../src/sources/compose.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { connectGitHub } from '../support/github-account.ts';
-import { appSecrets, BOT, jobSourcesDoc } from '../support/github-app.ts';
+import { connectGitHub, githubSource } from '../support/github-account.ts';
 import { waitFor } from '../support/wait.ts';
 
 const FAKE_CLAUDE = join(import.meta.dirname, '..', 'plugins', 'fake-claude-plan.mjs');
@@ -275,27 +273,16 @@ describe('tool sign-in (issue #1128)', () => {
 });
 
 describe('GitHub accounts of the job sources', () => {
-  it('the connected account\'s source, not connected, says so; the app source then has no account to take issues for (issue #387)', async () => {
+  it('the connected account\'s source, not connected, says so', async () => {
     const gh = createFakeGitHub();
-    const app = createFakeGitHub({ app: { botLogin: BOT, installedRepos: [REPO] } });
-    const a = await boot({ plugins: { jobSources: jobSourcesDoc() }, secrets: appSecrets(), seams: { github: gh, githubApp: app } });
+    const a = await boot({ plugins: { jobSources: [githubSource()] }, seams: { github: gh } });
     await a.sync();
-    const list = await accounts(a);
-    expect(list).toContainEqual({ role: 'job-source', instance: 'github', service: 'github', detail: { via: CONNECTED_VIA }, problem: 'GitHub is not connected: Sources → Connect GitHub' });
-    expect(list).toContainEqual(expect.objectContaining({ instance: 'github-app', problem: NO_ASSIGNEE }));
-  });
-
-  it('the app source acts as its bot on its installation repos', async () => {
-    const app = createFakeGitHub({ app: { botLogin: BOT, installedRepos: [REPO] } });
-    const a = await boot({ plugins: { jobSources: jobSourcesDoc({ github: false }) }, secrets: appSecrets(), seams: { githubApp: app } });
-    connectGitHub(a, [REPO]);
-    await a.sync();
-    expect(await accounts(a)).toContainEqual({ role: 'job-source', instance: 'github-app', service: 'github', identity: BOT, detail: { via: 'GitHub App', installedRepos: [REPO] } });
+    expect(await accounts(a)).toContainEqual({ role: 'job-source', instance: 'github', service: 'github', detail: { via: CONNECTED_VIA }, problem: 'GitHub is not connected: Sources → Connect GitHub' });
   });
 
   it('the connected account\'s source names the account it acts as', async () => {
     const gh = createFakeGitHub({ login: 'owner' });
-    const a = await boot({ plugins: { jobSources: jobSourcesDoc({ github: {} }) }, seams: { github: gh } });
+    const a = await boot({ plugins: { jobSources: [githubSource()] }, seams: { github: gh } });
     connectGitHub(a, [REPO]);
     await a.sync();
     expect(await accounts(a)).toContainEqual({ role: 'job-source', instance: 'github', service: 'github', identity: 'owner', detail: { via: CONNECTED_VIA } });

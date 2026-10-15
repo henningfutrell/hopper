@@ -1,0 +1,1 @@
+- Jobs that run on codex, opencode, omp or Cursor's agent now run in the same sandbox as Claude jobs, so they cannot reach the containers that keep the hopper running either.

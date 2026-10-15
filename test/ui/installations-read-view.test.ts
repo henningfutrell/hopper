@@ -8,7 +8,7 @@ import { boot, source, unmount } from './sources-daemon.ts';
 
 afterEach(unmount);
 
-const SOURCES = { sources: [source('github-account', 'github-account', 'ok', { mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] };
+const SOURCES = { sources: [source('github-account', 'github-account', 'ok', { login: 'octo-user', assignee: 'octo-user', label: 'hopper' })] };
 const CONNECTED = { provider: 'github', via: 'the hopper\'s app', state: 'connected', account: 'octo-user', connectedAt: '2026-10-07T00:00:00.000Z', jobRepositories: [] };
 const INSTALLED = [{ account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'] }];
 const panel = () => document.querySelector('[data-connected-account="github"]');

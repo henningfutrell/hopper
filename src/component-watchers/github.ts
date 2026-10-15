@@ -7,7 +7,7 @@ import type { GitHubItemState } from '../domain/drift.ts';
 import type { BranchHead } from '../domain/drift-branches.ts';
 import { DRIFT_MARKER } from '../domain/drift.ts';
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
-import { makeRequest, splitRepo, statusOf } from '../sources/github/app/http.ts';
+import { makeRequest, splitRepo, statusOf } from '../sources/github/http/http.ts';
 import { REPORT_LABEL, REPORT_REPO } from '../bug-reports/context.ts';
 
 /** How many issues and pull requests one GraphQL call reads. */

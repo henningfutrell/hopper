@@ -44,7 +44,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/outbound/` | the outbound guard — one per process: each destination's rate limit, dedupe and circuit — and each user's `Outbound`, which writes the user's send log (issue #1014, "Outbound sends"); the arithmetic and the types are `src/domain/outbound.ts` | engine, http, store, plugins, decider, webhooks |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/docker/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `docker.ts` (the docker socket check, the proxy's allowlist), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment; `kubernetes.ts` the kubernetes executor — herdr-claude on each job's own pod (issue #1283, "Job pods on Kubernetes"), its pane given the user's Claude setup token (issue #1287) | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `job-runtime.ts` (the job's container runtime: its set-up, the guards `podman`, `docker` and `systemd-run`, and its part of the reap and the survey, issue #1295; shared with `src/executors/herdr/start.ts` and `src/executors/print-agent.ts`), `job-sandbox.ts` (the job's sandbox: bubblewrap around Claude, its runner and its `claude`, issue #1295; shared with `src/executors/herdr/start-isolation.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `spawn.ts` (a fixed script's argv run with no `env` program, issues #691, #1348), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `job-runtime.ts` (the job's container runtime: its set-up, the guards `podman`, `docker` and `systemd-run`, and its part of the reap and the survey, issue #1295; shared with `src/executors/herdr/start.ts` and `src/executors/print-agent.ts`), `job-sandbox.ts` (the job's sandbox: bubblewrap around Claude, its runner and its `claude`, issue #1295; shared with `src/executors/herdr/start-isolation.ts` and `src/executors/print-agent.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `spawn.ts` (a fixed script's argv run with no `env` program, issues #691, #1348), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; the container probe, `docker container inspect`, in `container-probe.ts`), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each ssh target on the hopper's own herdr (`herdr-owned.ts`, pure; `herdr-owned-ssh.ts`, over ssh; issue #741), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), the lane pool key (`lane-pool.ts`, issue #1284), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the requester's outcome and a person's dismiss (issue #1110), the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`), `hopper-login` (`script.ts`, issue #1110; its route `src/http/job-login.ts`), the last account of each machine's tool, kept from the usage sources' reads and shown on its logins (`last-accounts.ts`, issue #1269), the tool sign-ins a person starts from Accounts — a `paste_code` login per sign-in a usage source started, through the `UsageSource.signIn` port (`sign-ins.ts`, issue #1128; its routes `src/http/ui/tool-sign-in.ts`; a completed one calls `onSignedIn`, which the composition root gives to the questions), and the hopper's Claude sign-in for pods — `claude setup-token` in a pseudo-terminal, its token set as the user's `CLAUDE_TOKEN` through the vault's `set` the composition root gives (`setup-token.ts`, issue #1287). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
@@ -857,7 +857,8 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   with guards named `podman` and `docker` first on its PATH. It prints `hopper-runtime-own`; with no podman or no runtime
   dir of the user's, `hopper-runtime-none`, and DOCKER_HOST names a socket that is not there. `hopper-runtime-failed`
   fails the job before Claude starts; no answer within 60000 ms is a start that timed out. A print-agent turn runs the
-  same setup before its scope, with no socket of its own.
+  same setup in its scope, its socket started there and stopped when the agent ends, then the agent in the job's sandbox
+  ("The sandbox" → "Print-agent turns").
 - **The reap** (issues #401, #410; the script in `src/client/reap.ts`, run by
   `src/executors/machine-shell.ts`). A job left processes and copies behind: dev servers and watchers
   started with `&` or `setsid` outlive the pane (herdr's close hangs up only the pane's own session),
@@ -2625,8 +2626,7 @@ inbound webhook to the laptop.
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/github/app/` | the App `GitHubApi` adapter: app config file loader, JWT + installation tokens (`@octokit/auth-app`), REST + GraphQL via `@octokit/request`, per-repo scoped token minting | engine, http, store |
-| `scripts/create-github-app.*` | the manifest-flow helper the owner runs once | everything in `src/` except small pure helpers it imports explicitly |
+| `src/sources/github/http/` | the REST and GraphQL calls the connected account's adapter (`src/sources/github/account/api.ts`) makes, via `@octokit/request`, and the node:http fake GitHub for tests. Until issue #1377 `src/sources/github/app/`, with the App adapter (JWT and installation tokens): removed | engine, http, store |
 | `scripts/hopper.cmd`, `scripts/hopper.ps1` | the **Windows CLI wrapper** (issue #712, `docs/deploy.md` "The hopper CLI from Windows"): runs `hopper` in the hopper's container in WSL, found by its compose labels, through `wsl.exe -e podman exec`; `hopper doctor` checks from Windows what a hopper in WSL needs; served by the site | everything in `src/`; it keeps no credential |
 
 ## App configuration (files the owner's one click produces)
@@ -3018,7 +3018,7 @@ A **role** is a slot the engine calls through one port. A **plugin** implements 
 | `router` | `Router { name; advise(job) → Advice }` (was `JevAdvisor`) | 1 | `gate-router`, `pass-through` | live |
 | `escalation-level` | `EscalationLevel { name; answer(req, signal) → { answer?, escalate, reason } }` | 0..n, in order | `claude-cli` | live |
 | `executor` | `Executor` (unchanged) | 1..n | `herdr-claude`, `test` | live (since issue #142) |
-| `job-source` | `JobSource` (unchanged) | 0..n | `github-account`, `github-app` (`github-gh` removed by issue #359) | live (since issue #356) |
+| `job-source` | `JobSource` (unchanged) | 0..n | `github-account` (`github-gh` removed by issue #359, `github-app` by issue #1377) | live (since issue #356) |
 | `machine-source` | `MachineSource` (unchanged) | 1 | `local` | live (since issue #18) |
 | `usage-source` | `UsageSource` (unchanged) | 0..n | none in production; `fake` stays a test fake at the `ports.ts` seam | live (since issue #356) |
 | `notifier` | `Notifier { name; start(events); stop() }` (new) | 0..n | `grokbot-routine` | live (since issue #356) |
@@ -4859,8 +4859,9 @@ Bash's `sh` on its `PATH`) also joins and dials in, so work that needs Windows (
 - **Not built:** a named-pipe vault. Node on Windows cannot listen on a socket file in the client dir, so the vault's
   socket fails (`listen EACCES`); the client logs it and runs on. Give such a machine no box jobs. Not planned: any VM
   path (Podman machine, Docker Desktop, Hyper-V).
-- **Routing.** A label routes nothing by itself: a routing rule (Settings → Routing) places `hopper:win` work on the
-  machine. Its job's `windows:` line (`WINDOWS_LINE`) says to do the work there when the machine runs Windows natively.
+- **Routing.** Turn on the machine's `windows` option (Settings → Machines): it is then a **Windows machine**, and a job
+  with a Windows label goes only to such a machine (issue #1350, "Windows jobs wait for a Windows machine"). Its job's
+  `windows:` line (`WINDOWS_LINE`) says it runs on a Windows machine and does the work there.
 - **Outside the hopper:** a person's own scripts that keep the client running on Windows (a logon task and a restart
   loop) are not part of this repository.
 - **Docs:** the install page's "A Windows computer as a machine" (`site/install.html#windows-machine`) and the
@@ -4951,16 +4952,38 @@ reversed), or writes it into an output, gives it to the job. The mask is a guard
 the gates decide what the job may reach. The host's account sees the value while the step runs, as any process of it
 would.
 
-**A native Windows machine** (issue #1348): a person's machine and routing rule, set in Settings → Machines and Settings →
-Routing; no code of the hopper holds them. Its job does the work there, Windows steps included.
+**A native Windows machine** (issue #1348): a person's machine, joined with the native Windows client and set in Settings →
+Machines. With its `windows` option on it is a **Windows machine** (issue #1350, below), and a job with a Windows label
+goes only there. Its job does the work there, Windows steps included.
 
 **A Windows label** (issue #918): an issue labelled `hopper:win` or `hopper:windows` (any case; `WINDOWS_LABELS`,
-`src/sources/github/labels.ts`) needs Windows. Its job is placed as any job is, and its
-`[hopper issue context]` gets a `windows:` line before `done:` (`WINDOWS_LINE`, `src/sources/github/context.ts`): on a
-native Windows machine, do the work there; else do the work there and run each step that needs Windows as a Windows sandbox step (the `windows-step` skill, `sh "$HOPPER_STEP"
-hosts`), and ask the user for a host when none is set up. The label routes nothing: a routing rule that still names a
-removed Windows machine is skipped at intake, with why ("Routing rules"), and the next rule or the default placement
-applies. The line reaches a job at its prompt, so a job queued before keeps the prompt it was read with.
+`src/domain/windows-jobs.ts`) needs Windows. Since issue #1350 its job goes only to a **Windows machine** ("Windows jobs
+wait for a Windows machine", below), and its `[hopper issue context]` gets a `windows:` line before `done:`
+(`WINDOWS_LINE`, `src/sources/github/context.ts`): it runs on a Windows machine, and does its Windows work there. A
+routing rule that still names a removed Windows machine is skipped at intake, with why ("Routing rules"). The line
+reaches a job at its prompt, so a job queued before keeps the prompt it was read with. A job on a Linux machine can
+still ask for Windows sandbox steps; the label no longer sends a job to Linux to do so.
+
+**Windows jobs wait for a Windows machine** (issue #1350, 2026-10-15). A `hopper:windows` direct job was placed on a
+Linux machine while the one Windows machine was offline, and failed: the work could not run there. Requirement: a job
+with a Windows label is only ever placed on a Windows machine; when none is online it waits queued and says why; it
+never falls back to a Linux machine.
+
+- **A Windows machine** says so: the machine option `windows: true` (every attached machine and `local`;
+  `windowsOption`, `src/plugins/machine-source/attached.ts`), set by a person in Settings → Machines. It reaches the
+  decider as `MachineSnapshot.windows`. The hopper does not guess it from a probe: the person who adds the machine knows.
+- **The decider** reads the job's labels at intake (`job.source.labels`; `isWindowsJob`, `windowsFits`,
+  `src/domain/windows-jobs.ts`), so a job queued before this change is judged too. Step 7 takes as candidates only Windows
+  machines for such a job (`eligible`, `src/decider/assign.ts`); the problem and gate holds count only them. A job with no
+  Windows label goes to any machine, a Windows machine too.
+- **The wait, not a hold** (issue #381): with no Windows machine that can take it, the job stays `queued` and its wait
+  reason starts `waiting for a Windows lane:` — `no Windows machine runs executor e`, `no Windows machine that runs
+  executor e is online (m offline)`, `it is pinned to m, which is not an online Windows machine`, or `no Windows machine
+  that runs executor e takes a new job now (m)`. With a Windows machine eligible but full, the lane-cap wait names that
+  machine as for any job.
+
+Tests: `test/decider/windows.test.ts`, `test/plugins/machine-targets.test.ts`, `test/plugins/host-sources.test.ts`,
+`test/adapters/ssh-machine.test.ts`, `test/sources/github-context.test.ts`.
 
 **Not built.** A minted credential or a shared secret for a step; a step's output on the job stream (the response carries it); more than
 one step at a time on one host; a host reached through a jump host.
@@ -7095,7 +7118,8 @@ provider types are adapters behind one port (`src/auth/provider.ts`), so a fourt
 schema branch.
 
 **Libraries, not hand-rolled protocol code.** OIDC and GitHub's OAuth 2.0: `openid-client` (v6;
-discovery, PKCE, state, nonce, ID token validation, userinfo). SAML: `@node-saml/node-saml` (v5;
+discovery, PKCE, state, nonce, ID token validation — its signature against the issuer's JWKS included,
+issue #1380 —, userinfo). SAML: `@node-saml/node-saml` (v5;
 signature, audience, InResponseTo, clock-skew validation, SP metadata). Tests drive real protocol
 exchanges against loopback IdPs: `oauth2-mock-server`, a GitHub fake, a SAML IdP signing with an
 openssl throwaway key through `xml-crypto` (`test/support/idp.ts`).
@@ -8078,7 +8102,7 @@ redirect a credential:
 | part | option (default) | was |
 |------|------------------|-----|
 | database | `HOPPER_DATABASE_URL` (it carries the password; also `_FILE`) | — |
-| github-app source | none since issue #1243: the private key is the hopper's own, pasted on the source's setup card and kept in the vault's system scope; `appId`, `slug` options. A key the runtime still gives as `GITHUB_APP_PRIVATE_KEY` is imported once | `appFile` → github-app.json + .pem, then `privateKeyEnv` |
+| github-app source | removed by issue #1377: there is no App private key, and no `github-app` source. Every GitHub call uses the signed-in user's token of the hopper's app | `appFile`, then the vault (issue #1243) |
 | grokbot-routine notifier | `urlEnv`, `keyEnv` (`GROKBOT_WEBHOOK_URL`, `GROKBOT_WEBHOOK_KEY`) | `envFile` |
 | gate-router | none since issue #657: the TypeSafe API key is the hopper's own, set on the Jev page and kept in the vault's system scope. A key the runtime still gives as `TYPESAFE_API_KEY` is imported once | `typesafeKeyFile`, `TYPESAFE_API_KEY` |
 | anthropic-api escalation level | `apiKeyEnv` (`ANTHROPIC_API_KEY`) | — |
@@ -21335,15 +21359,35 @@ path, or signal the stack's processes. So Claude, and everything it runs, runs i
 - A job that started a service with `env -u HOPPER_JOB_ID systemd-run --user …` to outlive it can no longer do that from
   the sandbox: the user's systemd is masked.
 
-**Not done here** (the next part of issue #1295): print-agent turns (`src/executors/print-agent.ts`). A turn's runtime has
-no socket, and local podman cannot run in the sandbox, so a turn needs its socket started in its scope first.
+**Print-agent turns** (issue #1295 part 4, `src/executors/print-agent.ts` `isolatedTurn`). A print-mode agent (codex,
+opencode, omp, Cursor's agent, Claude in print mode) runs in the same sandbox. The turn's scope runs `sh -c` of:
+- the job's container runtime setup, as before;
+- the sandbox setup (`sandboxCommand`, in a subshell: the turn uses the runner, not the sandbox's `claude`);
+- the job's socket, `podman system service` through the job's guard, started in the scope. Its pid stays in the turn's
+  shell, never in a file: the job can write its runtime dir, and the turn kills that pid from outside the sandbox;
+- the agent through the runner (`<scratch dir>/sandbox/run env <the turn's variables> <the CLI> …`), then the socket
+  stopped. The turn's exit code is the agent's. Nothing of a turn outlives it: in the sandbox's PID namespace, a process the
+  agent left ends with the turn.
+
+systemd 254 and later expand `$` in a scope's command, which would rewrite the script's own variables, so the turn's
+`systemd-run` gets `--expand-environment=no` where it knows that option (a trial run first).
+
+`hopper-sandbox-none` runs the agent as before, with the job's runtime and its guards. A runtime that wrote no `env.sh`, or
+a sandbox that could not be set up, ends the turn with exit 125 and a line on stderr, so the job fails. The turn does not
+wait for the socket: an agent's first podman call comes seconds after it starts. A turn killed from outside (a cancel, a
+timeout) leaves its socket in its scope; the next turn stops that scope first, and the reap stops it at the job's end.
+
+**Not done**: a network namespace of the job's own (pasta, only the hopper's port forwarded). The residual risk above
+stands.
 
 **Verification:** `test/client/job-sandbox.test.ts` (with the machine's bubblewrap, skipped where it cannot run; a
 stand-in podman, claude and user runtime dir: the setup, herdr's `claude` running the real one in the sandbox with its
 arguments, the user's runtime dir showing only the job's own, its bus masked, a wipe of the user's runtime dir and
 container storage from the sandbox leaving them as they were whatever HOME and `XDG_*` say, herdr's sockets and the
 storage not there, no host process seen, podman reaching the job's socket as a remote client, a reset still refused, a
-nested runner, `/run/user/<uid>` empty, and none where there is no bubblewrap), `test/herdr/executor-sandbox.test.ts`
+nested runner, `/run/user/<uid>` empty, and none where there is no bubblewrap), `test/adapters/print-agent-executors.test.ts`
+(each print-mode agent's turn in the sandbox with podman a client of the job's socket, that socket stopped when the turn
+ends, a process the agent left gone with the turn), `test/herdr/executor-sandbox.test.ts`
 (set up after the runtime, before Claude; none starts Claude as before; failed fails the job), and by hand with
 stand-ins under the job's work tree: a stand-in user runtime dir with a real bus socket, a stand-in podman, the real
 bubblewrap and the real Claude CLI (`claude --version` through the sandbox's `claude`). Not checked by hand: real podman
@@ -21541,8 +21585,8 @@ built-in realm: a hopper that runs with no GitHub and no identity provider, end 
 
 Inputs, from `main` at `e48e2ec4`: issue #237 removed the password realm and its accounts (argon2 with them); issue #238
 removed every bootstrap login, so a fresh hopper's only way in was GitHub's first sign-in (issue #239). OIDC (issue
-#185) already discovers the issuer, checks the ID token's signature against its keys, `iss`, `aud`, `exp` and `nonce`
-through openid-client, and counts `email` only when `email_verified` is true.
+#185) already discovers the issuer, checks the ID token's `iss`, `aud`, `exp` and `nonce` through openid-client, and
+counts `email` only when `email_verified` is true. It did not check the signature: part 2 below.
 
 **Decisions** (taken from the issue, none asked):
 - **Not a realm of the sign-in config.** The accounts are rows of their own (`local_accounts`, instance migration 41),
@@ -21596,3 +21640,82 @@ required; the migration of GitHub-signed-in users; Kubernetes and service-accoun
 the CLI's refusals; an admin adds an account that signs in as its own user; an admin never sets the password of an
 account that signs in as another user; an account's own password change ends its other sessions; no lockout; the realm
 name reserved), `test/ui/local-accounts-panel.test.ts`.
+
+## OIDC: the ID token's signature against the issuer's keys (issue #1380, part 2, 2026-10-15)
+
+The owner's requirements on issue #1380: hopper does discovery, verifies ID token signatures against the provider's
+JWKS and handles key rotation, and checks `iss`, `aud`, `exp`, `nonce` and `email_verified`. Acceptance tests: a valid
+token passes; a bad signature, a wrong `iss` or a wrong `aud` is refused; a rotated key is picked up without manual
+action, and a removed key stops validating.
+
+**What was missing.** openid-client v6 checks an ID token's claims, but not its signature when the token came straight
+from the token endpoint over TLS (OIDC Core 3.1.3.7 allows that). The oidc realm never asked for more: a token endpoint
+that answered a token signed by any key was believed.
+
+**The change.** `src/auth/oidc.ts` gives discovery `client.enableNonRepudiationChecks`: openid-client then checks the
+signature against the keys at the issuer's `jwks_uri`, and refuses a token signed with a shared secret (`HS*`), which
+has no published key. A refusal names the claim or the key: openid-client's message plus the cause it wraps.
+
+**Key rotation** is openid-client's JWKS cache (oauth4webapi): kept per discovered issuer for at most 300 seconds; a key
+id it does not hold makes it read the JWKS again when its copy is at least 60 seconds old. So a new key is picked up at
+the first token signed with it (one minute after the last read at most), and a removed key stops validating at the next
+read (five minutes at most). These bounds are the library's constants; the hopper sets none.
+
+**Decisions:**
+- **The library's check, not one of our own.** jose (already used by the gateway realm) could verify the ID token a
+  second time with a cache the hopper tunes. The library's check is one switch and no code to own.
+- **Allowed email domains stay the role rules' `emailDomains`.** A new field in the `sign-in` record is one an older
+  build refuses (its schema is strict): a hopper moved to a steadier update channel would stop. A realm whose rules
+  match only on `emailDomains`, with no default role, lets in nobody else.
+
+**Left for later parts of issue #1380:** as part 1 lists, but for the JWKS checks and key rotation: passkeys; identity
+keyed by email in OpenFGA subjects, audit and attribution; GitHub as a source a user attaches, with its repositories,
+the acting identity and the email match setting; a source's expiry marking only that source; no GitHub App; the
+migration of GitHub-signed-in users; Kubernetes and service-account tokens.
+
+**Verification:** `test/auth/oidc-id-token.test.ts` against `test/support/oidc-issuer.ts`, a loopback issuer whose keys
+the test holds: a valid token; a token signed by a key the issuer does not publish (same key id); a wrong `iss`, `aud`,
+`exp` or `nonce`; a rotated key read again after a minute; a removed key refused after five minutes, the new key
+accepted; an unverified email left out.
+
+## GitHub through the sign-in alone (issue #1377, 2026-10-15)
+
+The problem: a hopper with a GitHub sign-in (the device code of the hopper's app), a token that renews and five job
+repositories listed nothing. Intake showed `Not listing issues: no GitHub App configured`, Sources said `No GitHub
+connection is configured`, and the `github-app` source said `needs setup: private key not set`. Two causes. The hopper had
+two identities on GitHub: the user's sign-in, and an admin's own GitHub App with its private key (`github-app`). And the
+plugins config of that hopper held no `github-account` instance, so no source read through the sign-in, while the Sources
+card of the connection still showed the account and its repositories. A self-hosted hopper cannot be given an App private
+key, so the second identity goes, not only its pause.
+
+- **One identity.** The device-code sign-in is the hopper's app's user-to-server token. Every GitHub read and write —
+  listing, intake, labels, comments, pull requests, checks, merges — uses it, through the connected account's source
+  (`github-account`, `src/sources/compose.ts` `createAccountSource`). Jobs label, comment, push and open pull requests
+  through the same token (the GitHub proxy and git through the hopper, unchanged).
+- **Removed.** The `github-app` job-source plugin; the App adapter (`createAppAuth` JWT and installation tokens,
+  `loadGitHubApp`, `@octokit/auth-app`); the vault's `github-app-private-key` system secret and `GITHUB_APP_PRIVATE_KEY`;
+  the private-key setup card, `POST /ui/api/github-app-key`, `GET /api/github-app-key` and `GET /api/github-apps`; the
+  help page `github-app-setup`; `scripts/create-github-app.*`; the source's app mode (`mode`, bot comments, installed
+  repositories as the allowlist); and the setup problem of a source (`JobSource.setupProblem`, the `needs-setup` source
+  state, Needs you's Setup row), which only the App source had. A plugin's detection keeps its own `needs-setup`.
+  `src/sources/github/app/` is `src/sources/github/http/`: the REST and GraphQL calls the account's adapter makes.
+- **Migration** (tenant migration 69, `src/store/migration-account-source.ts`). A plugins config whose job sources hold no
+  `github-account` instance gets one. Each `github-app` instance leaves the config; the account's source takes its jobs and
+  its source events (claims, request cards, intake), switched on where the app source was on and it was off; the
+  work-item ledger is rebuilt from them, so a request card waits on a source that runs. The key's vault row goes. A config
+  with no job sources section is left as it is: the built-in instances apply. The build before runs on the result.
+- **A source that cannot be built shows.** Sources and Intake show the account's source with its error (state `error`,
+  `lastError`) when the plugin host cannot build it, never leave it out.
+- **The Sources summary reads the sign-in** (`ui/src/model/sources.ts`), never only whether a source status exists:
+  signed in with repositories, issues are read through the connection; with none, it asks to choose them; with an
+  expired token, to sign in again; with the source missing, switched off or unable to run, it says which. It never says
+  `No GitHub connection is configured`.
+
+**Verification:** `test/store/tenant-migration-69.test.ts` (a config with only `github-app` migrated: instance, jobs,
+request cards and key; beside an account source; a config with none added; one left as it is), `test/sources/no-app-key.test.ts`
+(no code names the key, its vault row, installation tokens, the setup route or the App source's states; no `github-app`
+plugin; no `@octokit/auth-app`), `test/integration/github-writes.test.ts` and `test/integration/github-graphql-batch.test.ts`
+(a daemon with only a sign-in and chosen repositories, its GitHub the node:http fake: it lists, takes, labels and posts on
+the thread through the account's token), `test/integration/github-budget.test.ts` (the budget, through the account's
+source), `test/ui/sources.test.ts` (the summary per state), `test/ui/intake-view.test.ts` (the account's source that
+cannot run has its panel, with the error).

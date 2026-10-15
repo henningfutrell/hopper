@@ -6,16 +6,15 @@
 // an answer. Jobs get no way to write to their issue (no token file, no comment helper).
 // Issue #435 added one more write under the thread policy: a question that reaches a person goes on the issue as one
 // comment, and a reply answers it. These tests pin the rest with the policy off, and the last one checks that comment
-// through the real App adapter.
+// through the connected account's real adapter (issue #1377: the only way to GitHub).
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ADMIN_ID, type DomainEvent, type Job } from '../../src/domain/types.ts';
-import { createFakeGitHubServer, type FakeGitHubServer } from '../../src/sources/github/app/index.ts';
+import { createFakeGitHubServer, type FakeGitHubServer } from '../../src/sources/github/http/index.ts';
 import { createFakeGitHub, type FakeGitHub } from '../../src/sources/index.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
-import { APP_ID, BOT, KEYS, SLUG, appSecrets, jobSourcesDoc } from '../support/github-app.ts';
-import { connectGitHub } from '../support/github-account.ts';
+import { TEST_ACCOUNT_TOKEN, connectGitHub, fakeGitHubEnv, githubSource } from '../support/github-account.ts';
 import { mergesPullRequest } from '../support/scripted-executor.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -34,16 +33,12 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) c();
 });
 
-type Mode = 'account' | 'app';
-
-async function boot(mode: Mode, gh: FakeGitHub | undefined, app: Record<string, unknown> = {}, thread: 'off' | 'post' = 'off') {
+/** The daemon, its GitHub the in-memory fake `gh`, or else the node:http fake GitHub at `server`. */
+async function boot(gh: FakeGitHub | undefined, server?: FakeGitHubServer, thread: 'off' | 'post' = 'off') {
   const db = tempDbPath();
   cleanups.push(db.cleanup);
-  const jobSources = mode === 'account'
-    ? jobSourcesDoc({ github: {}, githubApp: { enabled: false } })
-    : jobSourcesDoc({ github: false, githubApp: app });
-  const seams = gh === undefined ? {} : mode === 'account' ? { github: gh } : { githubApp: gh };
-  const a = await startTestApp({ dbPath: db.dbPath, plugins: { jobSources }, seams, secrets: mode === 'app' ? appSecrets() : {} });
+  const jobSources = [githubSource({ executor: 'scripted' })];
+  const a = await startTestApp({ dbPath: db.dbPath, plugins: { jobSources }, seams: gh === undefined ? {} : { github: gh }, ...(server ? { env: fakeGitHubEnv(server) } : {}) });
   if (gh !== undefined) a.scripted.ships(mergesPullRequest(gh));
   apps.push(a);
   connectGitHub(a, [REPO]);
@@ -51,16 +46,15 @@ async function boot(mode: Mode, gh: FakeGitHub | undefined, app: Record<string, 
   return a;
 }
 
-const fakeFor = (mode: Mode) => (mode === 'account' ? createFakeGitHub() : createFakeGitHub({ app: { botLogin: BOT, installedRepos: [REPO] } }));
 const body = (op: Record<string, unknown>) => `${JSON.stringify(op)}\n\nPlease do the thing.`;
 const jobFor = async (a: TestApp, url: string): Promise<Job | undefined> =>
   (await a.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs.find((j) => j.source?.key === url);
 const writesTo = (gh: FakeGitHub) => gh.calls.filter((c) => WRITES.has(c.method));
 
-describe.each<Mode>(['account', 'app'])('issue writes (%s source)', (mode) => {
+describe('issue writes', () => {
   it('claim → progress → question → answer in the UI → finished: labels only, zero comments', async () => {
-    const gh = fakeFor(mode);
-    const a = await boot(mode, gh);
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
     const issue = gh.createIssue({ repo: REPO, title: 'Risky thing', body: body({ op: 'ask', message: 'Is this risky?', progress: [[1, 4], [2, 4]] }), labels: ['hopper'] });
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
@@ -94,8 +88,8 @@ describe.each<Mode>(['account', 'app'])('issue writes (%s source)', (mode) => {
   });
 
   it('a failed job: labels hopper:failed, zero comments', async () => {
-    const gh = fakeFor(mode);
-    const a = await boot(mode, gh);
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'fail', message: 'boom', progress: [[2, 4]] }), labels: ['hopper'] });
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
@@ -108,8 +102,8 @@ describe.each<Mode>(['account', 'app'])('issue writes (%s source)', (mode) => {
   });
 
   it('a cancelled job (issue closed): claimed label removed, zero comments', async () => {
-    const gh = fakeFor(mode);
-    const a = await boot(mode, gh);
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
     const issue = gh.createIssue({ repo: REPO, body: body({ op: 'sleep', ms: 10000 }), labels: ['hopper'] });
     await a.sync();
     const job = (await jobFor(a, issue.url))!;
@@ -123,8 +117,8 @@ describe.each<Mode>(['account', 'app'])('issue writes (%s source)', (mode) => {
   });
 
   it('the job gets its issue read-only: no token file, no comment helper, no comment instructions', async () => {
-    const gh = fakeFor(mode);
-    const a = await boot(mode, gh);
+    const gh = createFakeGitHub();
+    const a = await boot(gh);
     const issue = gh.createIssue({ repo: REPO, title: 'Echo it', body: body({ op: 'echo', message: 'hi' }), labels: ['hopper'] });
     gh.addComment(REPO, issue.number, 'owner', 'context from the owner');
     await a.sync();
@@ -145,16 +139,16 @@ describe.each<Mode>(['account', 'app'])('issue writes (%s source)', (mode) => {
   });
 });
 
-describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', () => {
-  it('only label writes reach GitHub, no close and no comment POST; no repo-scoped token is minted', async () => {
+describe('issue writes through HTTP (node:http fake GitHub, the connected account\'s real adapter)', () => {
+  it('only label writes reach GitHub, no close and no comment POST', async () => {
     const fake = await createFakeGitHubServer({
-      appId: APP_ID, publicKeyPem: KEYS.publicKey, slug: SLUG,
+      login: 'owner', token: TEST_ACCOUNT_TOKEN,
       installations: [{ id: 7, account: 'owner', repos: [{ owner: 'owner', name: 'hopper-sandbox', labels: ['hopper'], issues: [
         { number: 1, title: 'Risky thing', author: 'owner', labels: ['hopper'], body: body({ op: 'ask', message: 'Is this risky?', progress: [[2, 4]] }) },
       ] }] }],
     });
     servers.push(fake);
-    const a = await boot('app', undefined, { apiUrl: fake.url });
+    const a = await boot(undefined, fake);
     const issue = fake.state.repos.get(REPO)!.issues.get(1)!;
     a.scripted.ships(() => {
       const now = new Date().toISOString();
@@ -175,7 +169,7 @@ describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', 
 
     expect(issue.comments).toEqual([]);
     const writes = fake.state.requests
-      .filter((r) => r.method !== 'GET' && !r.path.startsWith('/app/') && !r.path.startsWith('/graphql'))
+      .filter((r) => r.method !== 'GET' && !r.path.startsWith('/graphql'))
       .map((r) => `${r.method} ${r.path.replace(/\/labels\/.+$/, '/labels/:name')}`);
     expect(writes.filter((w) => !/\/labels(\/:name)?$/.test(w))).toEqual([]);
     expect(issue.state).toBe('closed'); // by the job's merged pull request, not the hopper (issue #187)
@@ -183,20 +177,19 @@ describe('issue writes through HTTP (node:http fake GitHub, real App adapter)', 
     expect(writes.filter((w) => w.endsWith('/issues/1/labels'))).toEqual([`POST /repos/${REPO}/issues/1/labels`, `POST /repos/${REPO}/issues/1/labels`]);
     // hopper:claimed and its holder label (issue #440), one DELETE each.
     expect(writes.filter((w) => w.endsWith('/labels/:name'))).toEqual([`DELETE /repos/${REPO}/issues/1/labels/:name`, `DELETE /repos/${REPO}/issues/1/labels/:name`]);
-    expect(fake.state.tokens.some((t) => t.body.permissions !== undefined || t.body.repositories !== undefined)).toBe(false);
   });
 });
 
-describe('a question on the issue thread through HTTP (node:http fake GitHub, real App adapter; issue #435)', () => {
-  it('with the policy post, the question goes on the issue once, as the bot, and the owner\'s reply answers it', async () => {
+describe('a question on the issue thread through HTTP (node:http fake GitHub, the connected account\'s real adapter; issue #435)', () => {
+  it('with the policy post, the question goes on the issue once, as the connected account, and the owner\'s reply answers it', async () => {
     const fake = await createFakeGitHubServer({
-      appId: APP_ID, publicKeyPem: KEYS.publicKey, slug: SLUG,
+      login: 'owner', token: TEST_ACCOUNT_TOKEN,
       installations: [{ id: 7, account: 'owner', repos: [{ owner: 'owner', name: 'hopper-sandbox', labels: ['hopper'], issues: [
         { number: 1, title: 'Risky thing', author: 'owner', labels: ['hopper'], body: body({ op: 'ask', message: 'Is this risky?' }) },
       ] }] }],
     });
     servers.push(fake);
-    const a = await boot('app', undefined, { apiUrl: fake.url }, 'post');
+    const a = await boot(undefined, fake, 'post');
     const issue = fake.state.repos.get(REPO)!.issues.get(1)!;
     await a.sync();
     const job = (await jobFor(a, `https://github.com/${REPO}/issues/1`))!;
@@ -205,7 +198,7 @@ describe('a question on the issue thread through HTTP (node:http fake GitHub, re
     await a.sync();
     expect(issue.comments).toHaveLength(1);
     expect(issue.comments[0]!.body).toContain(`kind=question id=${q.id}`);
-    expect(issue.comments[0]!.author).toBe(`${SLUG}[bot]`);
+    expect(issue.comments[0]!.author).toBe('owner');
     expect((await a.questionsOf(job.id))[0]!.thread).toMatchObject({ state: 'posted', commentId: issue.comments[0]!.id });
 
     issue.comments.push({ id: fake.state.nextCommentId++, author: 'owner', body: 'go ahead', createdAt: new Date().toISOString() });

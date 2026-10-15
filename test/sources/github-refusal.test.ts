@@ -2,8 +2,7 @@
 // permission nor the install it lacks. The hopper adds both: the permission GitHub asks for (REST's
 // x-accepted-github-permissions header, or the GraphQL field it refused) and the fix.
 import { describe, expect, it } from 'vitest';
-import { explained, permissionsOfHeader, permissionsOfPath } from '../../src/sources/github/app/refusal.ts';
-import { toApiError } from '../../src/sources/github/app/http.ts';
+import { explained, permissionsOfHeader, permissionsOfPath } from '../../src/sources/github/http/refusal.ts';
 import { accountError } from '../../src/sources/github/account/api.ts';
 
 const REFUSED = 'Resource not accessible by integration';
@@ -51,18 +50,17 @@ describe('a refusal explained', () => {
     expect(explained('Not Found', 'Issues (read)')).toBe('Not Found');
   });
 
-  it('the App adapter and the connected account explain a 403 refusal, and keep it permanent', () => {
-    const app = toApiError(refusal('checks=read'), 'checks of owner/repo@abc');
-    expect(app).toMatchObject({ status: 403, permanent: true });
-    expect(app.message).toMatch(/^checks of owner\/repo@abc: Resource not accessible by integration \(the GitHub App needs Checks \(read\)/);
+  it('the connected account explains a 403 refusal, and keeps it permanent', () => {
+    const checks = accountError(refusal('checks=read'), 'checks of owner/repo@abc');
+    expect(checks).toMatchObject({ status: 403, permanent: true });
+    expect(checks.message).toMatch(/^checks of owner\/repo@abc: Resource not accessible by integration \(the GitHub App needs Checks \(read\)/);
     const account = accountError(refusal('pull_requests=read'), 'open pull requests of owner/repo');
     expect(account).toMatchObject({ status: 403, permanent: true });
     expect(account.message).toContain('the GitHub App needs Pull requests (read)');
   });
 
-  it('the App adapter and the connected account give the install link they are given', () => {
+  it('the connected account gives the install link it is given', () => {
     const link = 'https://github.com/apps/some-app/installations/new';
-    expect(toApiError(refusal('checks=read'), 'checks of owner/repo@abc', link).message).toContain(`with this repository at ${link}`);
     expect(accountError(refusal('pull_requests=read'), 'open pull requests of owner/repo', link).message).toContain(`with this repository at ${link}`);
   });
 });

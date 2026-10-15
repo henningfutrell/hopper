@@ -2,8 +2,7 @@
 // at start from the plugins config (or the built-in instances when a section is absent). All three
 // follow the plugins config live: the machine sources — this machine and every attached one (issue
 // #74) — since issue #18, the job and usage sources since issue #356. Detection
-// never makes a paid call: github-app looks for the app's identity and key in the environment,
-// claude-plan `which`es claude.
+// never makes a paid call: claude-plan `which`es claude.
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { MachineSource, UsageSource } from '../../src/domain/ports.ts';
@@ -13,7 +12,6 @@ import { createPluginHost, type BuiltJobSource, type PluginHost } from '../../sr
 import type { DetectionKit, PluginDefinition } from '../../src/plugins/sdk.ts';
 import { PLUGINS } from '../../src/plugins/plugins-config.ts';
 import { useTempConfig } from '../support/config.ts';
-import { KEYS } from '../support/github-app.ts';
 import { fakeKit, fixedClock, useTempDirs } from './support.ts';
 
 const temp = useTempDirs();
@@ -74,44 +72,28 @@ function start(o: { file?: object; kit?: DetectionKit; executors?: () => string[
   return { host, config, dir };
 }
 
-const catalogue = (h: PluginHost, id: string) => h.report().plugins.find((p) => p.id === id);
-
 describe('detection of the job-source plugins', () => {
-  const appFile = { version: 1, jobSources: [{ name: 'github-app', plugin: 'github-app', options: { appId: 4242, slug: 'hopper-test' } }] };
-  const detection = (h: PluginHost) => h.report().jobSources.instances[0]!.detection;
-
-  it('github-app: needs-setup with the create-github-app command while no private key is kept; available once it is', async () => {
-    const { host: a } = start({ file: appFile, kit: fakeKit() });
-    await a.start();
-    expect(detection(a)).toEqual({
-      status: 'needs-setup', reason: expect.stringMatching(/private key not set/),
-      command: expect.stringContaining('scripts/create-github-app.sh'),
-    });
-    a.stop();
-    const { host: b } = start({ file: appFile, kit: fakeKit({ env: (n) => (n === 'GITHUB_APP_PRIVATE_KEY' ? KEYS.privateKey : undefined) }) });
-    await b.start();
-    expect(detection(b)).toMatchObject({ status: 'available' });
-  });
-
-  it.each(['github-app'])('%s in the catalogue: needs-setup until its app is set up; no authors to name (issue #387)', async (id) => {
-    const { host } = start({ kit: fakeKit() });
+  it('no github-app plugin (issue #1377): the hopper has no App private-key path; an instance of it is an unknown plugin', async () => {
+    expect(BUILTIN_PLUGINS.map((p) => p.id)).not.toContain('github-app');
+    const { host } = start({ file: { version: 1, jobSources: [{ name: 'github-app', plugin: 'github-app', options: { appId: 4242, slug: 'hopper-test' } }] }, kit: fakeKit() });
     await host.start();
-    expect(catalogue(host, id)!.detection).toMatchObject({ status: 'needs-setup', reason: 'no GitHub App configured' });
+    expect(host.report().jobSources.instances[0]).toMatchObject({ active: null, reason: expect.stringMatching(/unknown job-source plugin github-app/) });
   });
+
 });
 
 describe('job-source instances', () => {
-  it('built from the plugins config under their instance names; a source that needs setup is still built (it waits), and says so', async () => {
+  it('built from the plugins config under their instance names', async () => {
     const { host } = start({ file: {
       version: 1,
       jobSources: [
         { name: 'github', plugin: 'github-account', options: { enabled: true } },
-        { name: 'github-app', plugin: 'github-app', options: { label: 'hopper' } },
+        { name: 'work', plugin: 'github-account', options: { label: 'work' } },
       ],
     } });
     await host.start();
     const built = host.jobSources();
-    expect(built.map((b) => b.spec.name)).toEqual(['github', 'github-app']);
+    expect(built.map((b) => b.spec.name)).toEqual(['github', 'work']);
     for (const b of built) {
       expect(b.instance && 'source' in b.instance && b.instance.source.name).toBe(b.spec.name);
     }
@@ -119,7 +101,7 @@ describe('job-source instances', () => {
     expect('source' in gh && gh.pollMs).toBe(60_000);
     expect(host.report().jobSources.instances).toEqual([
       { instance: { name: 'github', plugin: 'github-account', options: { enabled: true } }, detection: { status: 'available', detail: expect.any(String) }, active: 'github-account' },
-      { instance: expect.objectContaining({ name: 'github-app' }), detection: expect.objectContaining({ status: 'needs-setup' }), active: 'github-app' },
+      { instance: expect.objectContaining({ name: 'work' }), detection: expect.objectContaining({ status: 'available' }), active: 'github-account' },
     ]);
   });
 
@@ -143,12 +125,12 @@ describe('job-source instances', () => {
   });
 
   it('two sources with one name are refused (sync state is keyed by the name)', async () => {
-    const { host } = start({ file: { version: 1, jobSources: [{ name: 'g', plugin: 'github-account' }, { name: 'g', plugin: 'github-app' }] } });
+    const { host } = start({ file: { version: 1, jobSources: [{ name: 'g', plugin: 'github-account' }, { name: 'g', plugin: 'github-account', options: { label: 'other' } }] } });
     await host.start();
     expect(host.report().config.error).toMatch(/jobSources.*twice|twice/);
   });
 
-  it('no jobSources section: the built-in instance — the connected GitHub account\'s (#214, #359), which runs and waits for a connection; the app-as-itself source is an admin\'s to add', async () => {
+  it('no jobSources section: the built-in instance — the connected GitHub account\'s (#214, #359), which runs and waits for a connection', async () => {
     const { host } = start({ file: { version: 1 } });
     await host.start();
     expect(host.report().jobSources.instances.map((i) => i.instance)).toEqual([{ name: 'github-account', plugin: 'github-account' }]);
@@ -187,6 +169,12 @@ describe('the machine-source role', () => {
     const { host } = start({ file: { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 4, reservedLanes: 1 } }] } });
     await host.start();
     expect(await host.machines().list()).toEqual([expect.objectContaining({ id: 'local', maxLanes: 4, reservedLanes: 1 })]);
+  });
+
+  it('local: a Windows machine says so (issue #1350)', async () => {
+    const { host } = start({ file: { version: 1, machines: [{ name: 'local', plugin: 'local', options: { lanes: 1, windows: true } }] } });
+    await host.start();
+    expect(await host.machines().list()).toEqual([expect.objectContaining({ id: 'local', windows: true })]);
   });
 
   it('no machines section: local with 4 lanes', async () => {

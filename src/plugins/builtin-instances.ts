@@ -42,8 +42,7 @@ export function builtinInstances(answerTimeoutMs = 180_000, localMachine = true)
       { name: 'herdr-claude', plugin: 'herdr-claude' },
     ],
     // The GitHub account the user signs in with or connects (issue #214), paused until it is connected:
-    // the one way the hopper reads GitHub as the user (issue #359). The app-as-itself source (`github-app`,
-    // an admin's own GitHub App and its private key) is no built-in: an admin adds it where it suits.
+    // the one way the hopper reads and writes GitHub (issues #359, #1377).
     jobSources: [{ name: 'github-account', plugin: 'github-account' }],
     // This machine; attached machines are added beside it (issue #74). None where this host is not
     // a machine (the container, issue #141).

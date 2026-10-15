@@ -68,6 +68,8 @@ interface AttachedBase {
   reservedLanes?: number;
   /** Lanes specialty jobs may elbow in past its lane cap at once (issue #762). */
   elbowIns?: number;
+  /** A Windows machine (issue #1350): the jobs with a Windows label go only to one. */
+  windows?: true;
 }
 
 export interface SshMachine extends AttachedBase {

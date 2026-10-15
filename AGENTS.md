@@ -167,7 +167,7 @@ hopper's note naming the job and the request by id only, and gets no label or as
   it. A value that cannot be opened is said so, never read as no secret. A token or code it mints is only
   hashed. **Every secret the hopper owns for itself is a system secret** (issues #657, #658, `docs/design.md`
   "The vault's system scope"): the GitHub connection's access and refresh tokens, each webhook signing secret, each
-  user's TypeSafe API key and each user's GitHub App private key (issue #1243) in that user's vault, each sign-in realm's `clientSecret` or `bindPassword` (set in the UI or
+  user's TypeSafe API key in that user's vault, each sign-in realm's `clientSecret` or `bindPassword` (set in the UI or
   from the `HOPPER_SIGN_IN_*` environment) and remote access's — each tunnel provider's credential and the tunnel token the hopper
   minted with it (issues #880, #968, set in Settings → Remote access, never in `.env`) — and the GitHub webhook secret (issue #1079, made in Settings → GitHub webhook) in the instance's vault — rows named `system/<name>`, sealed, written only
   through `SystemSecrets.keep` (src/vault/system.ts), each set, replace, rotation, removal, move and read an event with no
@@ -187,8 +187,8 @@ hopper's note naming the job and the request by id only, and gets no label or as
   `POST /ui/api/*` on the running daemon, and drops it after.
 - **A job's containers are its own** (issue #1295, `docs/design.md` "Each job its own container runtime"): a job's shell
   gets a podman runtime of its own (`src/client/job-runtime.ts`) — its runtime dir, storage and socket —, never the user's
-  runtime dir or a host docker or podman socket; with no podman there, none. The reap resets only that runtime. Claude runs
-  in the **job's sandbox** (`src/client/job-sandbox.ts`, bubblewrap): the kernel hides the user's runtime dir but for the
+  runtime dir or a host docker or podman socket; with no podman there, none. The reap resets only that runtime. Claude, and a print-mode agent's turn,
+  runs in the **job's sandbox** (`src/client/job-sandbox.ts`, bubblewrap): the kernel hides the user's runtime dir but for the
   job's own, the user's bus and container storage, the host's container sockets, herdr's sockets and the host's processes;
   with no bubblewrap that runs there, none.
 - **Never write into the Jev repo.** The shim reads it; logs go to hopper's work dir.

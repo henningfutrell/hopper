@@ -1,5 +1,5 @@
 // The GitHub issue thread as a job source's thread (issue #435, design.md "The hopper label means full automation"): a
-// question goes onto the issue as one comment under the source's identity — the user's account, or the app's bot — and
+// question goes onto the issue as one comment under the source's identity — the user's account — and
 // its replies are the issue's comments. A post is done once: a comment that already carries the question's marker (a
 // post whose record was lost to a crash) is answered in place of a second one. The post answers the comment it made, so
 // nothing waits on the listing to show it.

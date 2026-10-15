@@ -2,7 +2,7 @@
 // the duplicate search over the open reports, filing one, a comment on one, and a report's state. The same `@octokit/request` binding and
 // token renewal as the GitHub proxy (src/github-proxy/api.ts).
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
-import { makeRequest, splitRepo, statusOf } from '../sources/github/app/http.ts';
+import { makeRequest, splitRepo, statusOf } from '../sources/github/http/http.ts';
 
 /** An open report on GitHub. */
 export interface SimilarReport { number: number; title: string; url: string }

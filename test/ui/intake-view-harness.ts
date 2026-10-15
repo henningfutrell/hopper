@@ -13,7 +13,7 @@ export const request = (n: number) => ({
   why: ['written by an app or a bot (helper[bot])'],
 });
 export const DETAIL = {
-  mode: 'account', login: 'octo-user', assignee: 'octo-user', label: 'hopper',
+  login: 'octo-user', assignee: 'octo-user', label: 'hopper',
   intake: [
     { key: url(1), title: 'Taken one', repo: 'octo-user/hopper', jobId: 'j-1', jobStatus: 'running' },
     { key: url(2), title: 'Taken, job ended', repo: 'octo-user/hopper', jobId: 'j-2', jobStatus: 'finished' },

@@ -1,20 +1,18 @@
-// The Sources view's GitHub section (issues #160, #214, #254, #359): the connected GitHub account is how
-// the hopper reads GitHub as the user, and the GitHub App an admin set up (github-app) is the one other
-// connection. The connected account's source is the GitHub connection itself — the panel shows it,
-// never a card beside it. Which one reads issues, why the other is paused or disabled, and one sentence
-// that says how they relate. A source on but not configured (issue #1243) needs setup and says what it lacks.
+// The Sources view's GitHub section (issues #160, #214, #254, #359, #1377): the GitHub sign-in is the one way the hopper
+// reads and writes GitHub, through the hopper's app, and the connected account's source (`github-account`) is that
+// connection's sync — the panel shows it, never a card beside it. The summary line says what the sign-in does now, from
+// the sign-in itself and its job repositories, never from whether a source status exists: signed in with no repositories,
+// it asks to choose them; signed in with an expired token, to sign in again; signed in while the source cannot run, why.
 // Pure; the view renders it.
-import type { SourceStatus } from './wire.ts';
+import type { ConnectedAccountStatus, SourceStatus } from './wire.ts';
 
-export type SourceUse = 'in-use' | 'needs-setup' | 'paused' | 'disabled';
-export interface GitHubConnection { source: SourceStatus; use: SourceUse; why?: string }
 export interface SourcesView {
   /** The connected account's source (`github-account`), shown in the GitHub connection panel. */
   account?: SourceStatus;
   /** GitHub is connected and its source reads issues. */
   connected: boolean;
-  /** The GitHub App sources still shown, in use first. */
-  github: GitHubConnection[];
+  /** The other connected-account sources (issue #1264): each a card of its own, marked as the duplicate it is. */
+  github: SourceStatus[];
   summary: string;
   others: SourceStatus[];
   /** The sources that take the same work as an earlier one (issue #1264), each to remove. */
@@ -22,50 +20,54 @@ export interface SourcesView {
 }
 
 const ACCOUNT = 'github-account';
-const APP = 'github-app';
-const ORDER: Record<SourceUse, number> = { 'in-use': 0, 'needs-setup': 1, paused: 2, disabled: 3 };
 
-// Paused before disabled: the sync loop reports a paused source with no active jobs as state
-// `disabled` (src/sources/sync.ts), yet it is paused, not switched off.
-function connection(source: SourceStatus): GitHubConnection {
-  if (source.setupProblem) return { source, use: 'needs-setup', why: source.setupProblem.reason };
-  const paused = source.detail.paused;
-  if (typeof paused === 'string') return { source, use: 'paused', why: paused };
-  if (source.state === 'disabled') return { source, use: 'disabled', why: 'switched off in its settings' };
-  return { source, use: 'in-use' };
+const isConnected = (s: SourceStatus | undefined) => s !== undefined && typeof s.detail.paused !== 'string' && s.state !== 'disabled' && s.state !== 'error';
+
+/** Why the connection's source reads no issue, from its status: switched off, cannot run, or paused. Undefined: it reads. */
+function sourceTrouble(account: SourceStatus | undefined): string | undefined {
+  if (!account) return 'its job source is not in the plugins config: add a github-account job source in Settings → Plugins';
+  if (account.state === 'error' && account.lastError) return `its job source cannot run: ${account.lastError}`;
+  if (typeof account.detail.paused === 'string') return undefined;
+  if (account.state === 'disabled') return 'its job source is switched off in Settings → Plugins';
+  return undefined;
 }
 
-const isConnected = (s: SourceStatus | undefined) => s !== undefined && typeof s.detail.paused !== 'string' && s.state !== 'disabled';
-
-function summary(account: SourceStatus | undefined, connected: boolean, github: GitHubConnection[]): string {
-  const app = github.some((c) => c.use === 'in-use');
+/** The summary line, from the GitHub sign-in (`signIn`, undefined until read) and the connection's source. */
+function summary(account: SourceStatus | undefined, connected: boolean, signIn: ConnectedAccountStatus | undefined): string {
+  if (signIn?.state === 'expired') return 'Your GitHub sign-in expired. Sign in with GitHub again to read issues and work through it.';
+  if (signIn?.state === 'unreadable') return `The hopper cannot open the GitHub connection's token: ${signIn.error}.`;
+  if (signIn?.state === 'waiting') return 'Waiting for the GitHub sign-in to finish: enter the code shown below at GitHub.';
+  if (signIn?.state === 'connected') {
+    const who = `Signed in with GitHub as ${signIn.account}`;
+    const trouble = sourceTrouble(account);
+    if (trouble) return `${who}, but ${trouble}.`;
+    if (signIn.jobRepositories.length === 0) return `${who}. Choose the repositories for jobs below: until then no issue is read.`;
+    if (connected) return `Issues are read, and jobs work, through your GitHub connection, ${signIn.account}.`;
+    return typeof account?.detail.paused === 'string' ? `${who}. No issue is read now: ${account.detail.paused}.` : `${who}.`;
+  }
+  if (signIn?.state === 'not-connected' || signIn?.state === 'failed') {
+    return `Sign in with GitHub, or connect GitHub below, to read issues and work through it.${signIn.state === 'failed' ? ` The last try failed: ${signIn.error}.` : ''}`;
+  }
   if (connected) {
     const who = typeof account!.detail.login === 'string' ? `, ${account!.detail.login}` : '';
-    return `Issues are read, and jobs work, through your GitHub connection${who}.${app ? ' The GitHub App an admin set up also reads issues, as its bot.' : ''}`;
+    return `Issues are read, and jobs work, through your GitHub connection${who}.`;
   }
-  if (app) return `Issues are read through the GitHub App, as its bot.${account ? ' Connect GitHub to read your own issues too.' : ''}`;
+  if (account?.state === 'error' && account.lastError) return `The GitHub job source cannot run: ${account.lastError}.`;
   if (account) return typeof account.detail.paused === 'string' ? `No issue is read through your GitHub connection: ${account.detail.paused}.` : 'No issue is read through your GitHub connection.';
-  return 'No GitHub connection is configured.';
+  return 'Reading the GitHub connection.';
 }
 
-export function sourcesView(sources: SourceStatus[]): SourcesView {
-  // A second connected-account source (issue #1264) is a card of its own beside the app's, marked as the duplicate it is.
+export function sourcesView(sources: SourceStatus[], signIn?: ConnectedAccountStatus): SourcesView {
+  // A second connected-account source (issue #1264) is a card of its own, marked as the duplicate it is.
   const account = sources.find((s) => s.kind === ACCOUNT && !s.duplicateOf) ?? sources.find((s) => s.kind === ACCOUNT);
   const connected = isConnected(account);
-  const github = sources
-    .filter((s) => s.kind === APP || (s.kind === ACCOUNT && s !== account))
-    .map(connection)
-    .sort((a, b) => ORDER[a.use] - ORDER[b.use]);
   return {
-    ...(account ? { account } : {}), connected, github, summary: summary(account, connected, github),
-    others: sources.filter((s) => s.kind !== ACCOUNT && s.kind !== APP),
+    ...(account ? { account } : {}), connected, summary: summary(account, connected, signIn),
+    github: sources.filter((s) => s.kind === ACCOUNT && s !== account),
+    others: sources.filter((s) => s.kind !== ACCOUNT),
     duplicates: sources.filter((s) => s.duplicateOf !== undefined),
   };
 }
-
-/** The sources on but not configured (issue #1243), one line each: its name and what it lacks. */
-export const notConfiguredLines = (sources: readonly SourceStatus[]): string[] =>
-  sources.flatMap((s) => (s.setupProblem ? [`${s.name}: ${s.setupProblem.reason}`] : []));
 
 /**
  * Why the GitHub connection ended (issue #441), while it has — its sign-in expired or its stored token
