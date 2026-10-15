@@ -107,6 +107,25 @@ export function verifyVault(token: string, header: string | undefined, user: str
   return { ok: true, nonce };
 }
 
+/**
+ * A machine leaving the hopper (design.md "Lane pods", issue #1284): the client signs which user's machine it is and its
+ * machine key, fresh and once, with the client token, so only the machine itself can say it leaves. Its own label.
+ */
+export function signLeave(token: string, user: string, machineKey: string, now = Date.now()): string {
+  const nonce = randomBytes(16).toString('hex');
+  return `ts=${now},nonce=${nonce},sig=${mac(token, ['hopper-leave', user, machineKey, String(now), nonce])}`;
+}
+
+export function verifyLeave(token: string, header: string | undefined, user: string, machineKey: string, nonces: NonceCache, now = Date.now()): Verdict {
+  const m = header ? HEADER.exec(header) : null;
+  if (!m) return { ok: false, why: 'unsigned' };
+  const [, ts, nonce, sig] = m as unknown as [string, string, string, string];
+  if (Math.abs(now - Number(ts)) > WINDOW_MS) return { ok: false, why: 'stale' };
+  if (!same(sig, mac(token, ['hopper-leave', user, machineKey, ts, nonce]))) return { ok: false, why: 'bad signature' };
+  if (nonces.seen(nonce, now)) return { ok: false, why: 'replayed' };
+  return { ok: true, nonce };
+}
+
 /** The nonce a signed request carries (the hopper keeps it to check the answer). */
 export const nonceOf = (header: string): string => HEADER.exec(header)?.[2] ?? '';
 
