@@ -6,13 +6,13 @@ import { requestHash } from '../../src/domain/intake-origin.ts';
 import type { IntakeContext } from '../../src/domain/intake.ts';
 import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/index.ts';
 import { DONE_OPEN } from '../../src/sources/github/discover.ts';
-import { AWAITS_BATCH, REOPENED_REASON } from '../../src/sources/github/origin.ts';
+import { AWAITS_BATCH, PROMOTED_CLOSED, REOPENED_REASON } from '../../src/sources/github/origin.ts';
 import { REPO, githubConfig, testTrust } from './fixtures/github-support.ts';
 
 const url = (n: number) => `https://github.com/${REPO}/issues/${n}`;
 const PR = `https://github.com/${REPO}/pull/9`;
 
-function setup(o: { rerunnable?: string[]; awaitsBatch?: string[] } = {}) {
+function setup(o: { rerunnable?: string[]; awaitsBatch?: string[]; promotedOpen?: string[]; waiting?: string[] } = {}) {
   const gh = createFakeGitHub();
   const trust = testTrust();
   const events: { type: string; data: Record<string, unknown> }[] = [];
@@ -24,8 +24,9 @@ function setup(o: { rerunnable?: string[]; awaitsBatch?: string[] } = {}) {
     migrated: () => undefined,
     record: (type, data) => { events.push({ type, data }); },
     requestOpened: (key, hash) => events.some((e) => e.type === 'source.request_opened' && e.data.key === key && e.data.hash === hash),
-    requestsWaiting: () => [],
+    requestsWaiting: () => o.waiting ?? [],
     awaitsBatch: (key) => (o.awaitsBatch ?? []).includes(key),
+    promotedOpen: (key) => (o.promotedOpen ?? []).includes(key),
     history: (key) => (ended.has(key) ? { jobs: [{ id: 'job-2', status: 'finished' }, { id: 'job-1', status: 'failed' }], pullRequest: PR } : undefined),
   };
   const source = createGitHubSource({
@@ -60,6 +61,21 @@ describe('a reopened issue re-enters Intake (issue #1126)', () => {
     expect(card!.action).toBeUndefined();
     expect(card!.request).toBeUndefined();
     expect(events.filter((e) => e.type === 'source.request_opened')).toEqual([]);
+  });
+
+  it('an issue whose pull request was promoted with its batch is closed, once, and its stale card withdrawn (issue #1232)', async () => {
+    const { gh, source, events } = setup({ promotedOpen: [url(1)], waiting: [url(1)] });
+    gh.createIssue({ repo: REPO, title: 'Fix it', body: 'Fixed on main, promoted to dev.', labels: ['hopper', 'hopper:done'] });
+    expect(await source.discover()).toEqual([]);
+    expect(gh.issue(REPO, 1)).toMatchObject({ state: 'closed', stateReason: 'completed' });
+    const [card] = source.intake!();
+    expect(card).toMatchObject({ key: url(1), reason: PROMOTED_CLOSED });
+    expect(card!.action).toBeUndefined();
+    expect(card!.request).toBeUndefined();
+    expect(events.filter((e) => e.type === 'source.request_opened')).toEqual([]);
+    expect(events.filter((e) => e.type === 'work_item.issue_closed').map((e) => e.data)).toEqual([{ key: url(1), reason: 'completed', via: 'landing' }]);
+    expect(events.filter((e) => e.type === 'source.request_withdrawn').map((e) => e.data)).toEqual([{ source: 'github', key: url(1) }]);
+    expect(gh.calls.filter((c) => c.method === 'postComment')).toEqual([]);
   });
 
   it('an open issue with hopper:done and no job here stays done, with no action', async () => {
