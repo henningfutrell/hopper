@@ -1,10 +1,12 @@
 // Intake's events (issue #440): a claim released, a source moved to the current intake rules, issues assigned to the user
 // from Sources; and (issue #652) a person approved a request card's text, the user's trusted actors changed, a job queued
 // before origins were judged got its origin; (issue #798) a new request card opened, and an item taken off the backburner;
-// (issue #1035) a person declined a request card's text; (issue #1079) a GitHub delivery named a job repository.
+// (issue #1035) a person declined a request card's text; (issue #1079) a GitHub delivery named a job repository; (issue
+// #1268) the hopper approved a request card a rule matched, and the auto-approval setting changed.
 // Part of EVENT_SCHEMAS (schemas.ts).
 import { z } from 'zod';
 import { JOB_ORIGINS } from '../domain/intake-origin.ts';
+import { AUTO_APPROVE_RULES } from '../domain/intake-auto-approve.ts';
 import { ACTION_VIAS } from '../domain/types.ts';
 
 const strict = z.strictObject;
@@ -16,6 +18,10 @@ export const INTAKE_EVENT_SCHEMAS = {
   'source.request_approved': strict({
     source: z.string(), key: z.string(), hash: z.string().regex(/^[0-9a-f]{64}$/), author: z.string(),
     person: z.string().optional(), via: z.enum(ACTION_VIAS).optional(),
+    actors: z.array(strict({ role: z.enum(['author', 'labelled', 'assigned']), login: z.string().optional(), app: z.string().optional(), trusted: z.boolean() })),
+  }),
+  'source.request_auto_approved': strict({
+    source: z.string(), key: z.string(), hash: z.string().regex(/^[0-9a-f]{64}$/), author: z.string(), rule: z.enum(AUTO_APPROVE_RULES), actor: z.string(),
     actors: z.array(strict({ role: z.enum(['author', 'labelled', 'assigned']), login: z.string().optional(), app: z.string().optional(), trusted: z.boolean() })),
   }),
   'source.request_opened': strict({ source: z.string(), key: z.string(), hash: z.string().regex(/^[0-9a-f]{64}$/), author: z.string(), why: z.array(z.string()) }),
@@ -30,5 +36,8 @@ export const INTAKE_EVENT_SCHEMAS = {
     sources: z.array(z.string()).min(1), delivery: z.string(), event: z.string(), action: z.string().optional(), repo: z.string(), number: z.number().int().positive().optional(),
   }),
   'intake.actors_changed': strict({ from: z.array(z.string()), to: z.array(z.string()), by: z.string() }),
+  'intake.auto_approval_changed': strict({
+    from: strict({ on: z.boolean(), apps: z.array(z.string()) }), to: strict({ on: z.boolean(), apps: z.array(z.string()) }), by: z.string(),
+  }),
   'job.origin_judged': strict({ key: z.string(), origin: z.enum(JOB_ORIGINS) }),
 };

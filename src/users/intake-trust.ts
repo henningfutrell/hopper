@@ -7,7 +7,8 @@
 import type { AccessAnswer } from '../domain/access.ts';
 import { NO_INTAKE_ACCESS, type IntakeTrust } from '../domain/intake.ts';
 import { APPROVED_BY_A_PERSON, textHash } from '../domain/item-snapshots.ts';
-import { toldFor, trustedActors } from '../domain/intake-origin.ts';
+import { toldFor, trustedActors, type IntakeRequest } from '../domain/intake-origin.ts';
+import { DEFAULT_INTAKE_AUTO_APPROVAL } from '../domain/intake-auto-approve.ts';
 import type { UserStore } from '../domain/store.ts';
 
 /** Access's check of one login against the user's trusted actors; absent: OpenFGA is not set up. */
@@ -19,6 +20,9 @@ function assignedKeys(store: UserStore): Set<string> {
     .flatMap((e) => (Array.isArray(e.data.keys) ? e.data.keys as string[] : typeof e.data.key === 'string' ? [e.data.key] : []));
   return new Set(keys);
 }
+
+/** The acts of a request, as its approval events name them. */
+const actsOf = (request: IntakeRequest) => request.actors.map((a) => ({ role: a.role, ...(a.login ? { login: a.login } : {}), ...(a.app ? { app: a.app } : {}), trusted: a.trusted }));
 
 export function storeIntakeTrust(store: UserStore, decide: DecideIntakeActor | undefined): IntakeTrust {
   return {
@@ -44,8 +48,18 @@ export function storeIntakeTrust(store: UserStore, decide: DecideIntakeActor | u
           type: 'source.request_approved',
           data: {
             source, key, hash: request.hash, author: request.author, ...acting,
-            actors: request.actors.map((a) => ({ role: a.role, ...(a.login ? { login: a.login } : {}), ...(a.app ? { app: a.app } : {}), trusted: a.trusted })),
+            actors: actsOf(request),
           },
+        });
+      });
+    },
+    autoApproval: () => store.settings.getIntakeAutoApproval() ?? DEFAULT_INTAKE_AUTO_APPROVAL,
+    autoApprove(source, key, text, request, approval) {
+      store.tx(() => {
+        store.itemSnapshots.put({ key, ...text, hash: textHash(text), recordedAt: new Date().toISOString(), reason: 'approved' });
+        store.events.append({
+          type: 'source.request_auto_approved',
+          data: { source, key, hash: request.hash, author: request.author, rule: approval.rule, actor: approval.actor, actors: actsOf(request) },
         });
       });
     },
@@ -60,6 +74,7 @@ export function storeIntakeTrust(store: UserStore, decide: DecideIntakeActor | u
       store.events.append({ type: 'source.request_declined', data: { source, key, hash: request.hash, author: request.author, ...acting } });
     },
     assignedHere: (key) => assignedKeys(store).has(key),
+    takenIn: (key) => store.events.between(['source.issue_taken_in'], '1970-01-01T00:00:00.000Z').some((e) => e.data.key === key),
     originPending: (key) => store.jobs.getBySourceKey(key)?.originPending === true,
   };
 }

@@ -32,7 +32,7 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       record: (type, data) => { store.events.append({ type, data }); },
       // Opened with this text since its last withdraw or approval (issues #1067 part 4, #1126): a card back in Intake opens again.
       requestOpened: (key, hash) => requestOpenedSince(
-        store.events.between(['source.request_opened', 'source.request_withdrawn', 'source.request_approved'], EPOCH).filter((e) => e.data.source === name && e.data.key === key), hash),
+        store.events.between(['source.request_opened', 'source.request_withdrawn', 'source.request_approved', 'source.request_auto_approved'], EPOCH).filter((e) => e.data.source === name && e.data.key === key), hash),
       requestsWaiting: () => requestsWaitingOf(store.workItems.list({ state: ['waiting_for_approval'] }), name),
       tagged: { get: () => store.settings.getTaggedRecord(name), set: (r) => store.settings.setTaggedRecord(name, r) },
       history: (key) => itemHistory(store.jobs.getBySourceKey(key), (id) => store.jobs.get(id), store.workItems.get(key)?.pullRequest),

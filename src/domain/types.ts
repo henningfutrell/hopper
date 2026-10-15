@@ -505,7 +505,7 @@ export * from './usage-history.ts'; export type { HeaderBadge, HeaderBadgeSettin
 export * from './machine-history.ts'; export * from './hopper-disk.ts';
 export * from './stack-resources.ts';
 export * from './lane-tuning.ts';
-export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView };
+export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView }; export type { AutoApproveRule, IntakeAutoApproval } from './intake-auto-approve.ts';
 export * from './plugins.ts';
 export * from './item-snapshots.ts';
 export * from './check-logs.ts';

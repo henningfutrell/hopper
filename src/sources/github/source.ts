@@ -38,7 +38,7 @@ import { gitHubThread } from './thread.ts';
 import { contextBlock, contextComments, issueEnv, issuePrompt, promptWithText, untrustedBlock, type SourceMode } from './context.ts';
 import { NOT_ASSIGNED, discoverIssues, type Rejection } from './discover.ts';
 import { intakeAct } from './intake-actions.ts';
-import { createApprovals } from './approvals.ts';
+import { createApprovals } from './approvals.ts'; import { autoOutcome } from './auto-approve.ts';
 import { createGitHubOutbox, memoryGitHubOutbox, outboxSend } from './outbox.ts';
 import { outsideReader } from './outside.ts';
 import type { BotLogin } from './identity.ts';
@@ -322,7 +322,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         const item = await toItem(issue, known, rerun, priorityOf(issue, config, projects.views.get(issue.repo)), bot, assignee);
         items.push(v ? { ...item, origin: v.origin } : item);
       }
-      next = next.map((x) => requestOutcome(x, requests.get(x.key), o.trust));
+      // A card a rule approves (issue #1268) is the hopper's approval, no card: the next sync takes it.
+      const autos = await approvals.auto(requests, [...taken, ...found.seen]); next = next.map((x) => autoOutcome(x, autos.get(x.key)) ?? requestOutcome(x, requests.get(x.key), o.trust));
       if (intake) { openRequests(o.name, intake, requests, opened); withdrawRequests(o.name, intake, requests, { repos, repoErrors: found.repoErrors }, opened); }
       next = await backburner(next);
       if (o.issueGraph && config.issueGraph) graphErrors = await recordIssueGraph({ api, graph: o.issueGraph, clock: o.clock, refreshMinutes: config.graphRefreshMinutes }, found.seen);

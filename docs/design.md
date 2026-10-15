@@ -15656,6 +15656,46 @@ a per-job grant ("Vault grants").
 when a later bot assigned it again. A person with write access to the repository who removes the hopper's note from a
 job-filed issue makes it read as the author's.
 
+### Auto-approval (issue #1268, 2026-10-15)
+
+Owner requirement: an issue the user opened or reopened, or that an app acting for the user filed, waited in Intake for
+the user's own approval. The user was the bottleneck for work they already asked for. Now **the hopper approves a
+request card itself when the user's own act already asks for it**, and records that approval as a person's is recorded.
+
+**The rules** (`src/domain/intake-auto-approve.ts`, `src/sources/github/auto-approve.ts`), in this order. An act
+counts when a trusted actor did it, or a **listed app**: an app or bot named in the setting, by its slug (`helper` for
+`helper[bot]` or an act `performed_via_github_app` `helper`).
+
+- `reopened`: a reopened card (an open issue with `hopper:done` whose job here ended, issue #1126) whose newest
+  `reopened` event is an act that counts. Approval takes `hopper:done` off, as Approve does, and the next sync runs it.
+- `author`: a trusted actor wrote the issue, whoever labelled or assigned it.
+- `app`: a listed app wrote the issue.
+- `high-label`: the issue has `hopper:high`, and the newest `labeled` event of `hopper:high` is an act that counts. The
+  author may be anyone: the label is the approval.
+
+**Guards.** A card waits for a person whatever the rules say when a job filed it (`FILED_BY_JOB`), the trusted actors
+cannot be checked (no OpenFGA), its text changed since a person approved it, a person took it into Intake (issue #1176:
+Take into Intake asks for a card, not a job), or someone whose act does not count edited its title or body
+(`GitHubApi.issueEdits`) — unless a person approved this same text before. A card whose events or edits cannot be read
+waits too.
+
+**Recording.** The approval is `IntakeTrust.autoApprove`: the item's snapshot is the text as read, reason `approved`,
+as for Approve, and `source.request_auto_approved` names the rule, the actor, the hash and the three acts — never the
+text. Its GitHub work is Approve's rows in the GitHub outbox, kept in the same transaction: the comments the job would
+see, and `hopper:done` off a reopened card. The card opens no `source.request_opened`; its outcome says `approved by the
+hopper: <rule> <actor>; taken at the next sync`, and a sync after the rows are sent takes the item with origin `approved`. The work-item ledger moves a waiting item to queued on it, as on
+`source.request_approved`.
+
+**The setting** is the user's, in Settings → Intake below the trusted actors: `GET /api/intake-auto-approval`,
+`POST /ui/api/intake-auto-approval` (admin) `{ on, apps }`, kept as `intakeAutoApproval`, recorded as
+`intake.auto_approval_changed`. On by default, with no app listed. Read at each sync. Off, the source reads and asks
+nothing more, and every card is as before.
+
+**Residual risk.** A trusted actor's old issue that someone else labels and assigns to the user runs: its text is the
+trusted actor's, and an edit by anyone else keeps it waiting. Listing an app trusts every act through it: listing the
+hopper's own app makes this hopper's writes count, though a job-filed issue still waits by its note. A person with write
+access who removes that note, or who adds `hopper:high` while being a trusted actor, approves as the user.
+
 ## Vault grants (issue #652, 2026-10-11)
 
 Owner requirement (the 2026-10-10 intake security review, path F, requirement 5): "A job does not get the host's SSH
