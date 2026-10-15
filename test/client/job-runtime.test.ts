@@ -137,6 +137,31 @@ describe('the guards: podman and docker in a job use only its own runtime (issue
     expect(calls()).toEqual([]);
   });
 
+  it('an argument that names the host\'s runtime, its storage or a host socket is refused: a job never mounts or dials it', () => {
+    for (const cmd of [`podman run -v ${host}/podman/podman.sock:/run/podman.sock img`, 'docker run -v /var/run/docker.sock:/var/run/docker.sock img',
+      `podman run --volume=${host}/containers:/c img`, 'podman run -v /run/podman/podman.sock:/s img', `podman run -v ${root}/.local/share/containers/storage:/s img`,
+      `docker run --mount type=bind,src=${host}/docker.sock,dst=/d img`]) {
+      const r = inJobShell(cmd);
+      expect(r.status, cmd).toBe(126);
+      expect(r.stderr, cmd).toContain('the host\'s container runtime');
+    }
+    expect(calls()).toEqual([]);
+  });
+
+  it('what a job makes carries its job label; its own socket may be named', () => {
+    const r = inJobShell([
+      'podman run --rm img echo hi', 'podman --log-level debug container create --name c img', 'podman pod create --name p', 'podman volume create v',
+      'podman network create kind', 'docker run -d img', `podman run -v ${own()}/podman/podman.sock:/s img`, 'podman ps --filter label=x',
+    ].join(' && '));
+    expect(r.status).toBe(0);
+    const label = `--label hopper.job=${JOB}`;
+    expect(calls().map((c) => c.slice(0, c.indexOf(' | ')))).toEqual([
+      `podman run ${label} --rm img echo hi`, `podman --log-level debug container create ${label} --name c img`, `podman pod create ${label} --name p`,
+      `podman volume create ${label} v`, `podman network create ${label} kind`, `docker run ${label} -d img`,
+      `podman run ${label} -v ${own()}/podman/podman.sock:/s img`, 'podman ps --filter label=x',
+    ]);
+  });
+
   it('anything else runs on the job\'s runtime, whatever the caller set, with its arguments as they are', () => {
     const r = inJobShell(`XDG_RUNTIME_DIR=${host} DOCKER_HOST=unix://${host}/podman/podman.sock CONTAINER_HOST=x podman ps -a && podman run --rm img system reset && docker ps`);
     expect(r.status).toBe(0);
