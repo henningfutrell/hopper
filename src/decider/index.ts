@@ -6,6 +6,7 @@ import { idleReason, planGoneLanes, planLanes } from './lanes.ts';
 import { laneSlots } from './priority-lanes.ts';
 import { elbowsInAs } from '../domain/elbow-in.ts';
 import { laneEffect, placementPressure } from './usage.ts';
+import { signedOutNote } from './signed-out.ts';
 
 /** The hold of a job waiting at the queue gate (issue #159). */
 export const AWAITING_ACCEPTANCE = 'awaiting acceptance';
@@ -32,6 +33,8 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
     for (const r of burning) {
       reasons.push(`${machine.id}: usage window ${r.window} of ${r.source} is in its burn window (resets ${r.resetsAt}, used ${Math.round((r.used / r.limit) * 100)}%): not throttling`);
     }
+    const signedOut = (inputs.signedOut ?? []).filter((t) => t.machineId === machine.id);
+    for (const t of signedOut) reasons.push(signedOutNote(t));
     const mine = lanes.filter((l) => l.machineId === machine.id);
     const held = mine.filter((l) => l.state !== 'idle');
     reasons.push(`${machine.id}: ${Math.round(usedFrac * 100)}% used, lane cap ${cap} of ${machine.maxLanes} (${band})${machine.reservedLanes ? `, ${machine.reservedLanes} reserved for jobs pinned to it` : ''}`);
@@ -47,6 +50,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       freeIdle: mine.filter((l) => l.state === 'idle').sort((a, b) => a.id.localeCompare(b.id)),
       slots: laneSlots(machine.id, lanes, inputs.priorityLanes),
       ...(inputs.blastRadius?.gated.some((g) => g.machineId === machine.id) ? { gate: inputs.blastRadius } : {}),
+      ...(signedOut.length ? { signedOut } : {}),
       executors: new Map(executors.map((e) => [e.executor, {
         cap: e.cap, band: e.band, usedFrac: e.usedFrac, assigned: 0,
         pressure: policy.pacing?.resetAwarePlacement ? placementPressure(machine.id, inputs.usage, inputs.at, policy, e.executor) : 0,
@@ -75,8 +79,8 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
       hold.push({ jobId: job.id, reason: AWAITING_ACCEPTANCE });
       continue;
     }
-    const native = nativeHold(job, machines, inputs.unavailableExecutors) ?? cleanupHold(job, inputs.cleanupDue ?? []) ?? problemHold(job, machines, inputs.problems ?? [])
-      ?? bringsToGate(job, machines, inputs.problems ?? [], inputs.blastRadius);
+    const native = nativeHold(job, machines, inputs.unavailableExecutors, inputs.signedOut) ?? cleanupHold(job, inputs.cleanupDue ?? []) ?? problemHold(job, machines, inputs.problems ?? [])
+      ?? bringsToGate(job, machines, inputs.problems ?? [], inputs.blastRadius, inputs.signedOut);
     if (!native && job.pendingAnswer !== undefined) {
       // Admitted once already: the router neither holds nor reorders it.
       candidates.push({

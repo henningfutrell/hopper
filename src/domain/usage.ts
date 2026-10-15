@@ -45,6 +45,20 @@ export interface Account {
   signedOut?: true;
 }
 
+/**
+ * A usage source whose tool on a machine reads signed out (issue #1128 part 5, design.md "Failover to signed-in machines"):
+ * the decider places no new job of its executors there.
+ */
+export interface SignedOutTool {
+  machineId: MachineId;
+  /** The usage source that read it. */
+  source: string;
+  /** The account's service: `claude`. */
+  service: string;
+  /** The executors whose jobs it keeps off the machine (the source's `executors`); absent: every job. */
+  executors?: string[];
+}
+
 /** An account and the part that uses it: one entry of `GET /api/accounts`. */
 export interface PartAccount extends Account {
   role: 'usage-source' | 'job-source';

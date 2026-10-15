@@ -184,7 +184,8 @@ describe('tool sign-in (issue #1128)', () => {
 
   it('a job held because claude is signed out on its machine goes on once the sign-in from the hopper completes; another question stays', async () => {
     writeFileSync(join(control, 'mode'), 'logged-out');
-    const a = await boot({ plugins: { usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE } }] } });
+    // The source limits another executor's jobs: the scripted jobs stand in for ones placed before the read said signed out.
+    const a = await boot({ plugins: { usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE, executors: ['herdr-claude'] } }] } });
     const token = await a.login();
     const held = await a.pull({ op: 'ask', message: `${NOT_SIGNED_IN}.\n\nA hard screen` });
     const other = await a.pull({ op: 'ask', message: 'Is this risky?' });
@@ -201,6 +202,19 @@ describe('tool sign-in (issue #1128)', () => {
     expect(answered.attempts.at(-1)!.reason).toContain(login.id);
     const settled = (await a.events('types=question.answered')).filter((e) => e.jobId === held.id);
     expect(settled.map((e) => e.data.by)).toEqual([SIGNED_IN_BY]);
+  });
+
+  it('failover (part 5): a machine signed out takes no new job of its executors; the job is held with why, and starts once it is signed in', async () => {
+    writeFileSync(join(control, 'mode'), 'logged-out');
+    const a = await boot({ plugins: { usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE, executors: ['scripted'] } }] } });
+    await waitFor(async () => ((await toolAccounts(a))[0]?.login === 'signed-out' ? true : undefined), { what: 'the signed-out machine' });
+    const token = await a.login();
+    const job = await a.pull({ op: 'echo', message: 'hi' });
+    const held = await waitFor(async () => { const j = (await a.api<Job>('GET', `/api/jobs/${job.id}`)).body; return j.holdReason ? j : undefined; }, { what: 'the hold' });
+    expect(held).toMatchObject({ status: 'held', holdReason: 'no machine running executor scripted is signed in: local (claude signed out): sign it in from Accounts' });
+    const login = await pendingSignIn(a, token);
+    expect((await a.ui<LoginView>(`/ui/api/logins/${login.id}/code`, { code: 'good-code' }, { token })).body.status).toBe('completed');
+    await a.waitForStatus(job.id, 'finished');
   });
 
   it('a wrong code fails the login with the tool\'s reason; a new sign-in cancels the one before; a code to an ended one is 409', async () => {
