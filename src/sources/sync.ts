@@ -27,8 +27,8 @@ import type { Clock, JobSource, SourceHost, SourceRegistry, SourceReport } from 
 import { TERMINAL_STATUSES, isRerunnable, type DomainEvent, type JevFirst, type Job, type SourceStatus } from '../domain/types.ts';
 import { offer } from './item-text.ts';
 import { intakeOrder } from './intake-order.ts';
-import { REMOVED, detailOf, followSources, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
-import { liveIntake } from './intake-live.ts';
+import { REMOVED, detailOf, followSources, joined, newSlot, told, type NotRerun, type Slot } from './sync-slots.ts';
+import { liveIntake, withTakenStatus } from './intake-live.ts';
 import { createRerun } from './rerun.ts';
 import { createWriteBacks } from './write-back.ts';
 import { createAfterDone } from './after-done.ts';
@@ -36,6 +36,7 @@ import { createThreadAsks } from './thread-asks.ts';
 import { followRound, PR_ENDED, type FollowEvery } from './follow-rounds.ts';
 import { signalsApplier, type SyncFlags } from './sync-signals.ts';
 import { finishedIfClosedAsComplete } from './closed-as-complete.ts'; import { createFixingReports } from './fixing-reports.ts';
+import { createAfterAnswerTimings, syncAsks, timed, timedSync, withAct } from './after-answer-timings.ts';
 
 export { REMOVED } from './sync-slots.ts';
 
@@ -91,6 +92,8 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   const listeners = new Set<(s: SourceStatus) => void>();
   let unsubscribe: (() => void) | undefined;
   let running = false;
+  /** How the work after each person's act waited and ran (issue #1194). */
+  const timings = createAfterAnswerTimings(() => clock.now());
 
   for (const source of o.sources) slots.set(source.name, newSlot(source));
 
@@ -106,7 +109,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   /** Reports and writes for one job never overlap: one promise chain per job. */
   function enqueue(jobId: string, fn: () => Promise<void>): Promise<void> {
-    const next = (jobQueues.get(jobId) ?? Promise.resolve()).then(fn).catch(() => undefined);
+    const next = (jobQueues.get(jobId) ?? Promise.resolve()).then(timed(timings, fn)).catch(() => undefined);
     jobQueues.set(jobId, next);
     void next.then(() => { if (jobQueues.get(jobId) === next) jobQueues.delete(jobId); });
     return track(next);
@@ -305,13 +308,13 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
    */
   function runSync(slot: Slot, asked = false): Promise<void> {
     clearTimeout(slot.timer);
-    if (slot.queued) {
-      slot.queued.asked ||= asked;
-      return slot.queued.done;
-    }
-    const queued: NonNullable<Slot['queued']> = { asked, done: Promise.resolve() };
+    // A person's act that asks for this sync (issue #1194) is timed as `sync:<act>`, its wait from now.
+    const asks = syncAsks();
+    const joining = joined(slot, asked, asks);
+    if (joining) return joining;
+    const queued: NonNullable<Slot['queued']> = { asked, done: Promise.resolve(), asks };
     slot.queued = queued;
-    slot.chain = slot.chain.then(() => { slot.queued = undefined; return syncOnce(slot, queued.asked); });
+    slot.chain = slot.chain.then(() => { slot.queued = undefined; return timedSync(timings, queued.asks, () => syncOnce(slot, queued.asked)); });
     queued.done = slot.chain;
     syncs.add(slot.chain);
     void slot.chain.finally(() => syncs.delete(slot.chain)).catch(() => undefined);
@@ -342,6 +345,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
 
   return {
     statuses: () => [...slots.values()].map((s) => live(s.status)),
+    afterAnswerTimings: () => timings.summary(),
     onStatus(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     // Run again, Continue and Rework.
     ...rerunning,
@@ -352,14 +356,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       if (!slot || slot.removed || !running) return { ok: false, reason: 'not_found', message: `no running job source ${name}` };
       if (!slot.source.intakeAction) return { ok: false, reason: 'conflict', message: `job source ${name} takes no intake action` };
       const result = await slot.source.intakeAction(action);
-      // A refusal because the item is taken names its job's status (issue #1045).
-      for (const [key, why] of Object.entries(result.failed)) {
-        const job = why.startsWith('already ') ? store.jobs.getBySourceKey(key) : undefined;
-        if (job) result.failed[key] = `${why}: its job is ${job.status}`;
-      }
+      withTakenStatus(result.failed, (key) => store.jobs.getBySourceKey(key));
       // The answer does not wait for the sync (issue #1194): the action is recorded, and the sync it asks for takes the
       // assigned, released or approved issues after, its status on the stream.
-      void runSync(slot, true);
+      void withAct(action.kind, () => runSync(slot, true));
       return { ok: true, result };
     },
     start() {

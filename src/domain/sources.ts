@@ -21,3 +21,22 @@ export interface SourceStatus {
   /** Source-specific facts for the UI, e.g. { owners, repos, authors, label }. */
   detail: Record<string, unknown>;
 }
+
+/** p50, p95 and max of a set of times, in ms. */
+export interface TimingSpread { p50: number; p95: number; max: number }
+
+/**
+ * How the work after a person's act spent its time (issue #1194): per act, the time its runs waited on their queue (the
+ * job's report chain, or the source's sync chain) apart from the time they ran; the last runs of each act since the
+ * daemon started. `act` is a give-back act (`rerun`, `retry`, …), `merge` or `close`, an intake action's `approve`, `assign`, …; and
+ * `sync:<act>` for the sync an act asks for.
+ */
+export interface AfterAnswerTiming {
+  act: string;
+  /** Runs since the daemon started. */
+  count: number;
+  waitMs: TimingSpread;
+  runMs: TimingSpread;
+  /** When the last run ended. */
+  lastAt: string;
+}
