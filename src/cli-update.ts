@@ -2,16 +2,18 @@
 // the image to update to. Needs no database: it is run as `podman run --rm <image> hopper update …` on the host. `script`
 // answers scripts/update.sh, the update itself, piped to bash on the host. `carry` answers the new compose.yaml: the one
 // this image ships with, the settings of the old one (on stdin) as its variables' defaults. It reads no .env and writes no
-// file; what the new file cannot hold, it says on stderr.
+// file; what the new file cannot hold, it says on stderr. In a cluster install (issue #1285) there is no compose step:
+// `skill` prints the Helm update, and `script`, `carry` and `compose` refuse and say so.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { CliIo } from './cli.ts';
+import { clusterInstall, helmUpgradeCommand } from './update/cluster.ts';
 import { carryCompose, carryOverride, PODMAN_SOCKET_PATH } from './update/compose-carry.ts';
 import { COMPOSE, composeConflicts, conflictLine, dropRedundant, OVERRIDE, OVERRIDE_MARK } from './update/compose-conflicts.ts';
 import { BUILD_DIR, readShippedCompose } from './update/shipped-compose.ts';
 import { COMPOSE_TOOLS, IMAGE_REF, PUBLISHED_IMAGE, runtimeOf, updateCommand, type ComposeTool } from './update/update-commands.ts';
-import { UPDATE_SKILL } from './update/update-skill.ts';
+import { updateSkill } from './update/update-skill.ts';
 import { DRIFT_USAGE } from './cli-update-drift.ts';
 
 export const UPDATE_USAGE = `  hopper update script                               print the update of a container install (scripts/update.sh); run in the
@@ -31,7 +33,8 @@ export const UPDATE_USAGE = `  hopper update script                             
                                                      print compose.override.yaml without the entries compose.yaml gives
                                                      itself; exit 4, and nothing printed, when another conflict stays
   hopper update compose                              print the compose.yaml this build ships with, stamped with its version
-  hopper update skill                                print the steps an agent follows to update a container hopper
+  hopper update skill                                print the steps an agent follows to update a container hopper; in a
+                                                     Kubernetes pod, those of a cluster install (helm upgrade)
 ${DRIFT_USAGE}`;
 
 /**
@@ -58,7 +61,12 @@ export function runUpdate(args: string[], io: CliIo, appDir = BUILD_DIR): number
   const [what, ...extra] = positionals;
   const fail = (text: string, code = 2): number => { io.err(`hopper update: ${text}\n`); return code; };
   if (extra.length > 0 || what === undefined) return fail(`usage:\n${UPDATE_USAGE}`);
-  if (what === 'skill') { io.out(UPDATE_SKILL); return 0; }
+  const cluster = clusterInstall(io.env);
+  if (what === 'skill') { io.out(updateSkill(cluster)); return 0; }
+  if (cluster && (what === 'script' || what === 'carry' || what === 'compose')) {
+    const helm = helmUpgradeCommand(cluster, 'sha-<commit>');
+    return fail(`'hopper update ${what}' is for a compose install. This is a cluster install: update it with helm upgrade of its release:\n  ${helm}\nThe steps: hopper update skill`);
+  }
   if (what === 'script') {
     try { io.out(readFileSync(join(appDir, 'scripts', 'update.sh'), 'utf8')); } catch { return fail(`this build ships no scripts/update.sh (${appDir})`, 1); }
     return 0;

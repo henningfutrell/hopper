@@ -1,7 +1,7 @@
 // The update notice (issue #44), from GET /api/update: its words, whether it shows, and when the
 // page must reload because the daemon now runs another commit. What's new is plain-language
 // bullets (issue #104): the words here never count commits.
-import type { UpdateStatus } from '../../../src/domain/types.ts';
+import type { ClusterInstall, UpdateStatus } from '../../../src/domain/types.ts';
 
 /** The update channels, least stable first, and what each one pulls (issues #282, #423). */
 export const CHANNELS: { channel: UpdateStatus['channel']; hint: string }[] = [
@@ -30,8 +30,10 @@ export const parseContainerTool = (text: string | null): ContainerTool => (text 
 export interface ImageUpdate {
   /** The selected channel's image: the update runs on it. */
   image: string;
-  /** The command for each tool; then the optional prune of the replaced image. */
+  /** The command for each tool; then the optional prune of the replaced image. None for a cluster install. */
   commands: { tool: ContainerTool; command: string; prune: string }[];
+  /** A cluster install's update (issue #1285): helm upgrade of its release to the target's pinned image; set in place of `commands`. */
+  helm?: string;
   /** Set when the running image is another channel's than the selected one. */
   mismatch?: string;
   /** What a recreate would end now: the restart blockers, as the host updater waits on them. */
@@ -43,6 +45,13 @@ const cli = (tool: ContainerTool) => tool.toLowerCase();
 /** The update, to `image`, with `tool`: one command (issue #1104). */
 export const updateCommand = (tool: ContainerTool, image: string): string =>
   `${cli(tool)} run --rm --pull=always ${image} hopper update script | bash -s -- ${image}`;
+
+/**
+ * The update of a cluster install (issue #1285): helm upgrade of its release to `tag`, its other values kept
+ * (src/update/cluster.ts, its twin).
+ */
+export const helmUpgradeCommand = (c: ClusterInstall, tag: string): string =>
+  `helm upgrade ${c.release} ${c.chart}${c.namespace ? ` --namespace ${c.namespace}` : ''} --reuse-values --set image.tag=${tag}`;
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -75,9 +84,12 @@ export function imageUpdate(s: UpdateStatus): ImageUpdate | undefined {
   const n = s.restartBlockers;
   const mismatch = channelMismatch(s);
   const image = `${IMAGE}:${imageTag(s)}`;
+  // A cluster install pins the target's own build (`sha-<commit>`): a channel tag does not change, so it would not roll out.
+  const helm = s.cluster && s.target ? helmUpgradeCommand(s.cluster, `sha-${s.target.commit.slice(0, 7)}`) : undefined;
   return {
     image,
-    commands: CONTAINER_TOOLS.map((tool) => ({ tool, command: updateCommand(tool, image), prune: `${cli(tool)} ${PRUNE}` })),
+    ...(helm ? { helm } : {}),
+    commands: s.cluster ? [] : CONTAINER_TOOLS.map((tool) => ({ tool, command: updateCommand(tool, image), prune: `${cli(tool)} ${PRUNE}` })),
     mismatch: mismatch && `this container ${runsWords(s, mismatch)}: switch the image tag`,
     blockers: n > 0
       ? `${plural(n, 'running job', 'running jobs')} would be lost by recreating the container: wait until none runs.`
@@ -90,7 +102,7 @@ export function headline(s: UpdateStatus): string {
     case 'available': {
       // An image is updated by its user pulling the channel's tag, never in place (issues #409, #494).
       const image = imageUpdate(s);
-      if (image) return `Update available: ${image.mismatch ?? `pull the ${imageTag(s)} image and recreate the container`}`;
+      if (image) return `Update available: ${image.mismatch ?? (s.cluster ? `upgrade the Helm release to the ${imageTag(s)} image` : `pull the ${imageTag(s)} image and recreate the container`)}`;
       // Installed from another channel's branch: applying moves to this channel (issue #282).
       return s.installed && s.installed.branch !== s.channel ? `Update available: move to the ${s.channel} channel` : 'Update available';
     }

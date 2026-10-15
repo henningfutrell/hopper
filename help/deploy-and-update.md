@@ -166,6 +166,18 @@ A container hopper compares its stack with the compose file of its own version, 
 
 An agent that updates a hopper follows the agent update skill: `GET /api/update/skill`, or `hopper update skill`.
 
+## Update a hopper on Kubernetes
+
+A hopper that runs on Kubernetes, as a Helm release, is a cluster install. It has no compose file, and no Podman or compose step applies to it. The update notice gives the update for it: `helm upgrade` of the release, to the image of the new version.
+
+```sh
+helm upgrade hopper oci://ghcr.io/henningfutrell/charts/hopper --namespace <namespace> --reuse-values --set image.tag=sha-<commit>
+```
+
+The update keeps the other values of the release. It pins the image to one build, so Kubernetes rolls it out. Wait until no job runs first. To go back: `helm rollback hopper --namespace <namespace>`.
+
+When the image the hopper runs is of another channel than the one in Settings → Version, a banner says "This hopper's release differs from its update channel", with the `helm upgrade` that fixes it. Do not edit the hopper's Deployment by hand. An agent follows `hopper update skill`, run in the hopper's pod, or `GET /api/update/skill`.
+
 ## Host install
 
 1. Install the daemon with one line:

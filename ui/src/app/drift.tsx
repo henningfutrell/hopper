@@ -1,14 +1,15 @@
 // A stack drifted from the compose file of its version (issue #697): one banner over every view, from GET /api/update/drift
 // — each gap, what it turns off, and the fix: the update's compose commands with the image the hopper runs (issue #970), for the container tool
 // this browser chose. Not dismissable: it ends when the stack matches. Read once signed in, then each minute. When OpenFGA is
-// one of its gaps, the OpenFGA banner (#696) gives way: one cause, said once.
+// one of its gaps, the OpenFGA banner (#696) gives way: one cause, said once. A cluster install (issue #1285) drifts from its
+// update channel, not a compose file: its banner gives helm upgrade of its release, with no container tool.
 import { LogBlock } from '@/components/log-block';
 import { Layers } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { setContainerTool, useContainerTool } from '@/hooks/use-container-tool';
 import { get } from '@/lib/api';
-import { asDrift, driftFix, driftNamesOpenFga } from '@/model/drift';
+import { asDrift, clusterFix, driftFix, driftNamesOpenFga } from '@/model/drift';
 import { CONTAINER_TOOLS } from '@/model/update';
 import type { StackDrift } from '@/model/wire';
 import { useHopper } from '@/store';
@@ -33,6 +34,7 @@ export function useStackDrift(): StackDrift | null {
 export function DriftBanner({ drift }: { drift: StackDrift | null }) {
   const tool = useContainerTool();
   if (!drift || drift.state !== 'checked' || drift.gaps.length === 0) return null;
+  if (drift.cluster) return <ClusterDriftBanner drift={drift} />;
   const fix = drift.image ? driftFix(drift.image, tool) : undefined;
   return (
     <div data-stack-drift className="space-y-2 rounded-lg border border-bad/40 bg-bad/5 p-3 text-sm">
@@ -59,6 +61,21 @@ export function DriftBanner({ drift }: { drift: StackDrift | null }) {
       {fix
         ? <LogBlock title="Command" copy={fix} contentClassName="text-[11px]">{fix}</LogBlock>
         : <p className="text-xs text-muted-foreground">This hopper does not know its image: give <code>HOPPER_IMAGE</code> at launch, then see How to update.</p>}
+    </div>
+  );
+}
+
+/** A cluster install that runs another image than its update channel's (issue #1285), and the fix: helm upgrade of its release. */
+function ClusterDriftBanner({ drift }: { drift: StackDrift }) {
+  const fix = clusterFix(drift);
+  return (
+    <div data-stack-drift className="space-y-2 rounded-lg border border-bad/40 bg-bad/5 p-3 text-sm">
+      <p className="flex items-center gap-2 font-medium text-bad"><Layers className="size-4" />This hopper's release differs from its update channel</p>
+      <ul className="list-disc space-y-1 pl-5 text-xs break-words">
+        {drift.gaps.map((g) => <li key={`${g.kind}:${g.name}`}><span className="text-bad">{g.what}</span>{g.off && <span className="text-muted-foreground">. Off until then: {g.off}.</span>}</li>)}
+      </ul>
+      <p className="text-xs text-muted-foreground">The fix: upgrade the Helm release to the update channel's image. Do not edit its Deployment by hand.</p>
+      {fix && <LogBlock title="Command" copy={fix} contentClassName="text-[11px]">{fix}</LogBlock>}
     </div>
   );
 }
