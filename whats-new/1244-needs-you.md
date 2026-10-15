@@ -1,0 +1,1 @@
+- When the hopper cannot read the checks of a repository's pull requests at all, the Pull requests page says so once for that repository, and Needs you lists it with the permission to add.
