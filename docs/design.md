@@ -18738,7 +18738,10 @@ pure):
 
 **Job pull requests move to the landing branch.** Each pass, an open pull request of one of the user's jobs whose base
 is the tested branch is moved to the landing branch (`PATCH …/pulls/{n}` `base`, `landing_batch.retargeted`), so the
-pull requests jobs opened before the switch land there too. A pull request that is no job's is left as it is.
+pull requests jobs opened before the switch land there too. A pull request that is no job's is left as it is, and so is
+the hopper's own (a batch run, a bisect, a back-merge: its branch starts `hopper-batch/`), even when a job named it
+(issue #1311): its head is a landing branch tip, so GitHub refuses the move. A move GitHub refuses skips only that pull
+request: the others move and the batch run goes on, and the refusal is logged once, not on every pass.
 
 **The state.** Every step is an event (`landing_batch.started`, `.promoted`, `.failed`, `.retargeted`,
 `landing_batches.changed`); the state of each repository — the batch run at work, the last tip tested and the last tip

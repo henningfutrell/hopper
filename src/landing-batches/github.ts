@@ -79,9 +79,9 @@ export function createLandingBatchGitHub(o: { apiUrl: string } & TokenSource): L
       }
     }, failed(`the merge of ${head} into ${base} on ${repo}`)),
     openPullRequests: (repo, base) => withToken(async (token) => {
-      const pulls = await paginate<{ number: number; html_url: string }>(req, 'GET /repos/{owner}/{repo}/pulls', { ...splitRepo(repo), state: 'open', base, per_page: 100 }, `token ${token}`,
-        (data) => data as { number: number; html_url: string }[]);
-      return pulls.map((p) => ({ number: p.number, url: p.html_url }));
+      const pulls = await paginate<{ number: number; html_url: string; head: { ref: string } }>(req, 'GET /repos/{owner}/{repo}/pulls', { ...splitRepo(repo), state: 'open', base, per_page: 100 }, `token ${token}`,
+        (data) => data as { number: number; html_url: string; head: { ref: string } }[]);
+      return pulls.map((p) => ({ number: p.number, url: p.html_url, head: p.head.ref }));
     }, failed(`the open pull requests on ${base} of ${repo}`)),
     retarget: (repo, number, base) => withToken(async (token) => {
       await req('PATCH /repos/{owner}/{repo}/pulls/{pull_number}', { ...splitRepo(repo), pull_number: number, base, headers: headers(token) });
