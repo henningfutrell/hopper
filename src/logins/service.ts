@@ -9,6 +9,7 @@ import {
   DEFAULT_LOGIN_SETTINGS, jobPriorityTag, type EventType, type PriorityTag, type Login, type LoginBlocks, type LoginCheck, type LoginOutcome, type LoginReport, type LoginSettings, type LoginStatus, type LoginView, type RunLogins,
 } from '../domain/types.ts';
 import { LOGIN_KIND_HANDLERS } from './kinds.ts';
+import type { LastAccounts } from './last-accounts.ts';
 import { hideCodes } from './recognise.ts';
 
 /** The host of a login's URL (issue #698): what asks, with no path or query, which may carry the code. */
@@ -65,6 +66,8 @@ export interface Logins {
 export interface LoginsOptions {
   store: UserStore;
   clock: Clock;
+  /** The last accounts (issue #1269): recorded at each sweep, and shown on the logins of their tool and machine. */
+  lastAccounts?: LastAccounts;
 }
 
 export function createLogins(o: LoginsOptions): Logins {
@@ -244,6 +247,7 @@ export function createLogins(o: LoginsOptions): Logins {
     },
 
     sweep() {
+      o.lastAccounts?.record();
       const at = clock.now().getTime();
       for (const l of store.logins.list({ status: [...OPEN] })) {
         const job = l.jobId ? store.jobs.get(l.jobId) : undefined;
@@ -267,7 +271,11 @@ export function createLogins(o: LoginsOptions): Logins {
 
     view(login, withSecrets) {
       const secret = OPEN.includes(login.status) ? secrets.get(login.id) : undefined;
-      return { ...login, ...tagOf(login), codeKept: secret !== undefined, ...(secret ? { host: hostOf(secret.verificationUrl) } : {}), ...(withSecrets && secret ? secret : {}) };
+      const lastAccount = o.lastAccounts?.of(login);
+      return {
+        ...login, ...tagOf(login), codeKept: secret !== undefined, ...(secret ? { host: hostOf(secret.verificationUrl) } : {}), ...(withSecrets && secret ? secret : {}),
+        ...(lastAccount !== undefined ? { lastAccount } : {}),
+      };
     },
 
     settings,

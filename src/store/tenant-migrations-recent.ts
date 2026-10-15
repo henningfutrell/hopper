@@ -16,6 +16,7 @@ import { GITHUB_OUTBOX_TABLE } from './github-outbox.ts';
 import { workItemLedger } from './work-items.ts';
 import { rebuildWorkItems } from './work-items.ts';
 import { REPO_CHECKS_TABLE } from './repo-checks.ts';
+import { LAST_ACCOUNT_TABLE } from './last-accounts.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -66,4 +67,6 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 64: The repositories' checks as last read (issue #1250): Sources answers from them, and a restart reads nothing again.
   // A table only: the build before runs on it.
   REPO_CHECKS_TABLE,
+  // 65: The last accounts (issue #1269): who each machine's agent tool was last read signed in as. A table only: the build before runs on it.
+  LAST_ACCOUNT_TABLE,
 ];

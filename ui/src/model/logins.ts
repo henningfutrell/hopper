@@ -76,3 +76,14 @@ export function onCard(l: LoginView, now: number, settings: LoginSettings): bool
   if (l.status === 'expired' && settings.onExpiry !== 'fail' && l.renewable) return true;
   return now - Date.parse(l.endedAt ?? l.expiresAt) < ENDED_ON_CARD_MS;
 }
+
+/**
+ * Who the login's machine was last signed in as (issue #1269), so the person knows who to sign in as: the account and its
+ * organization, then the machine. Undefined for a login that does not say (no machine, or a tool whose account is not read).
+ */
+export function lastAccountText(l: LoginView, machine: string): string | undefined {
+  if (l.lastAccount === undefined) return undefined;
+  if (l.lastAccount === null) return `No previous account known for this machine (${machine})`;
+  const org = l.lastAccount.organization ? ` (${l.lastAccount.organization})` : '';
+  return `Last signed in as ${l.lastAccount.identity}${org} on ${machine}`;
+}

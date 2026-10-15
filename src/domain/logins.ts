@@ -101,6 +101,37 @@ export interface LoginView extends Login {
   /** The account and the scopes the tool showed (issue #698): with the URL and code only. */
   account?: string;
   scopes?: string[];
+  /**
+   * The account the login's machine was last signed in as (issue #1269), on a login of a tool whose account the hopper reads
+   * (`LAST_ACCOUNT_TOOLS`) on a machine: `null` when none was ever read there. Absent on any other login.
+   */
+  lastAccount?: LastAccount | null;
+}
+
+/** The tools whose account a usage source reads on a machine, so a login of one says who the machine was last signed in as (issue #1269). */
+export const LAST_ACCOUNT_TOOLS = ['claude'] as const;
+
+/**
+ * The last account (issue #1269): who a machine's agent tool was last read signed in as — by its usage source, while it was
+ * signed in, and again after each sign-in. Only the label, never a token: it outlives the session and a restart (`last_accounts`).
+ */
+export interface LastAccount {
+  machineId: MachineId;
+  /** The tool's service: `claude`. */
+  service: string;
+  /** The email the tool said it is signed in as. */
+  identity: string;
+  /** Its organization, when the tool said one. */
+  organization?: string;
+  /** When it was last read signed in as it. */
+  capturedAt: string;
+}
+
+/** The last accounts (issue #1269): one per machine and service, the label only. */
+export interface LastAccountRepository {
+  get(machineId: MachineId, service: string): LastAccount | undefined;
+  /** Kept in place of the one before for its machine and service. */
+  put(a: LastAccount): void;
 }
 
 /**
