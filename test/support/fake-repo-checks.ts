@@ -41,7 +41,7 @@ export interface RepoChecksForge {
 type Answer = { status: number; body?: unknown; etag?: string };
 
 /** An answer's ETag: the same body, the same tag. */
-const etagOf = (body: unknown): string => `"${createHash('sha1').update(JSON.stringify(body)).digest('hex')}"`;
+export const etagOf = (body: unknown): string => `"${createHash('sha1').update(JSON.stringify(body)).digest('hex')}"`;
 
 const notFound: Answer = { status: 404, body: { message: 'Not Found' } };
 const down: Answer = { status: 503, body: { message: 'Service Unavailable' } };
