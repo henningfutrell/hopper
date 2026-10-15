@@ -32,8 +32,8 @@ type Method = (...args: unknown[]) => Promise<unknown>;
 export interface PassReads {
   /** The port as the source uses it: its reads shared inside a pass. */
   api: GitHubApi;
-  /** Run one sync pass: the reads `run` makes, and the reads of what it starts, are asked once. */
-  pass<T>(run: () => Promise<T>): Promise<T>;
+  /** Run one sync pass: the reads `run` makes, and the reads of what it starts, are asked once. `idle`: why it takes nothing new. */
+  pass<T>(run: () => Promise<T>, idle?: string): Promise<T>;
   /** The REST and GraphQL calls the last pass made (issue #1264); 0 before the first. */
   calls(): number;
 }
@@ -77,7 +77,7 @@ export function passReads(api: GitHubApi, source: string, traffic: GitHubTraffic
   return {
     api: out as unknown as GitHubApi,
     calls: () => last,
-    pass(run) {
+    pass(run, idle) {
       return traffic.pass(source, async () => {
         const pass: Pass = new Map();
         open.add(pass);
@@ -86,7 +86,7 @@ export function passReads(api: GitHubApi, source: string, traffic: GitHubTraffic
         } finally {
           open.delete(pass);
         }
-      }, (n) => { last = n; });
+      }, (n) => { last = n; }, idle);
     },
   };
 }

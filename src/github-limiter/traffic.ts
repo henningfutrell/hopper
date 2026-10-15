@@ -35,9 +35,10 @@ export interface GitHubTraffic {
   hourly(): HourlyCalls;
   /**
    * One sync pass of source `name`: its line is logged when it ends, with what went between passes since the last line.
-   * `counted`: told its REST and GraphQL calls when it ends (issue #1264, the call log).
+   * `counted`: told its REST and GraphQL calls when it ends (issue #1264, the call log). `idle`: why the pass takes nothing
+   * new (issue #1351: a paused or unconfigured source), which its line says, so its zero never reads as a healthy pass.
    */
-  pass<T>(name: string, run: () => Promise<T>, counted?: (calls: number) => void): Promise<T>;
+  pass<T>(name: string, run: () => Promise<T>, counted?: (calls: number) => void, idle?: string): Promise<T>;
   /** The id of the pass this runs in; undefined outside any. */
   passId(): number | undefined;
   /** The id of the newest pass begun, of any source; 0 before the first. */
@@ -106,14 +107,14 @@ function rollingHour(now: () => number) {
   };
 }
 
-/** The line a pass logs: its counts, then what went between passes, when anything did. */
-export function trafficLine(name: string, pass: Traffic, between: Traffic): string {
+/** The line a pass logs: why it takes nothing new, if so; its counts; then what went between passes, when anything did. */
+export function trafficLine(name: string, pass: Traffic, between: Traffic, idle?: string): string {
   const part = (t: Traffic): string => [
     counted('REST', t.rest), counted('GraphQL', t.graphql),
     `git fetches ${total(t.fetches)}${t.fetches.size ? ` (${each(t.fetches)}; by ${each(t.jobFetches)})` : ''}`,
   ].join(', ');
   const quiet = (t: Traffic): boolean => !t.rest.size && !t.graphql.size && !t.fetches.size;
-  return `hopper: GitHub traffic of sync pass ${name}: ${part(pass)}${quiet(between) ? '' : `; between passes: ${part(between)}`}`;
+  return `hopper: GitHub traffic of sync pass ${name}${idle === undefined ? '' : ` (nothing new taken: ${idle})`}: ${part(pass)}${quiet(between) ? '' : `; between passes: ${part(between)}`}`;
 }
 
 export function createGitHubTraffic(o: { log(line: string): void; now?: () => number }): GitHubTraffic {
@@ -142,7 +143,7 @@ export function createGitHubTraffic(o: { log(line: string): void; now?: () => nu
     hourly: () => hour.totals(),
     passId: () => scope.getStore()?.id,
     lastPass: () => passes,
-    async pass(name, run, counted) {
+    async pass(name, run, counted, idle) {
       const traffic = empty();
       const id = ++passes;
       try {
@@ -150,7 +151,7 @@ export function createGitHubTraffic(o: { log(line: string): void; now?: () => nu
       } finally {
         const before = between;
         between = empty();
-        o.log(trafficLine(name, traffic, before));
+        o.log(trafficLine(name, traffic, before, idle));
         counted?.(total(traffic.rest) + total(traffic.graphql));
       }
     },

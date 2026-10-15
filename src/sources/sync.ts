@@ -279,7 +279,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
       await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot), round, asked), threadAsks.catchUp(slot.source, jobsOf(slot))]);
     };
     try {
-      await (slot.source.pass ? slot.source.pass(pass) : pass());
+      await (slot.source.pass ? slot.source.pass(pass, setup?.reason ?? paused) : pass()); // its line says why it takes nothing new (issue #1351)
       await drain();
       st.state = 'ok';
       st.lastOkAt = clock.now().toISOString();
@@ -293,9 +293,10 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
     delete st.syncing; st.lastSyncAt = clock.now().toISOString();
     st.activeJobs = jobs.filter((j) => !isTerminal(j)).length;
     if (paused !== undefined && st.state === 'ok' && st.activeJobs === 0) st.state = 'disabled';
-    if (setup) st.setupProblem = setup; else delete st.setupProblem;
+    // Not configured is never ok, even while its pass runs for its own jobs (issue #1351).
+    if (setup) { st.setupProblem = setup; if (st.state === 'ok') st.state = 'needs-setup'; } else delete st.setupProblem;
     st.detail = detailOf(slot, paused, jobs.filter((j) => flagsOf(j).permanentErrors?.length).length);
-    afterSync(slot, { changed: all || st.state !== 'ok' || st.jobsCreated > made || st.activeJobs > 0, calls: o.calls, now: st.lastSyncAt });
+    afterSync(slot, { changed: all || (st.state !== 'ok' && st.state !== 'needs-setup') || st.jobsCreated > made || st.activeJobs > 0, calls: o.calls, now: st.lastSyncAt });
     if (slot.removed && st.state !== 'error' && jobs.every((j) => isTerminal(j) && flagsOf(j).claimReported && flagsOf(j).finalReported)) {
       // Nothing of its own is left to report: the removed source goes.
       if (slots.get(slot.source.name) === slot) slots.delete(slot.source.name);
