@@ -4,10 +4,11 @@
 // Pull requests counts the ones the hopper gave up on (issue #927), each with why: one with merge conflicts or failing checks
 // the hopper tends itself, and is no decision. Tagged (issue #1141) counts the GitHub items that wait on the person's own review
 // or reply. Accounts (issue #1128) counts the machines whose agent tool is signed in as nobody, each named: its jobs wait on a sign-in.
+// Setup (issue #1243) counts the job sources on but not configured, each with what it lacks: they take no job until set up.
 // A machine's join takes no approval (a join code joins it at once); a machine whose box template waits counts in Access requests.
 import type { SectionKind } from './wire.ts';
 
-export const NEEDS_YOU_KINDS = ['intake', 'access', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'failures', 'pull-requests', 'tagged', 'sorting'] as const;
+export const NEEDS_YOU_KINDS = ['intake', 'access', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'setup', 'failures', 'pull-requests', 'tagged', 'sorting'] as const;
 export type NeedsYouKind = (typeof NEEDS_YOU_KINDS)[number];
 
 export interface NeedsYouCounts {
@@ -19,6 +20,8 @@ export interface NeedsYouCounts {
   plans: number;
   /** The machines whose agent tool is signed in as nobody (issue #1128), one line each. */
   signedOut: readonly string[];
+  /** The job sources on but not configured (issue #1243), one line each, with what each lacks. */
+  notConfigured: readonly string[];
   /** The open pull requests the hopper gave up on (issue #927), one line each, with why. */
   gaveUp: readonly string[];
   /** Tagged items (issue #1141): open issues and pull requests that ask for the user's review, mention or are assigned to the user. */
@@ -44,6 +47,7 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
   research: { label: 'Research', href: '#research', what: 'research reports that wait for you to accept or steer them' },
   logins: { label: 'Logins', href: '#logins', what: 'logins a job waits on, and connections that ended' },
   accounts: { label: 'Accounts', href: '#accounts', what: 'machines whose agent tool is signed in as nobody: sign them in again' },
+  setup: { label: 'Setup', href: '#sources', what: 'job sources that are on but not configured: they take no job until you set them up' },
   failures: { label: 'Failures', href: '#failures', what: 'open problems, jobs handed off to a person, and work not pushed' },
   'pull-requests': { label: 'Pull requests', href: '#pull-requests', what: 'pull requests the hopper gave up on: tend them again, fix them, or close them' },
   tagged: { label: 'Tagged', href: '#tagged', what: 'issues and pull requests that ask for your review, mention you, or are assigned to you' },
@@ -57,6 +61,7 @@ export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {
     if (k === 'plans') return { n: c.plans, high: 0 };
     if (k === 'pull-requests') return { n: c.gaveUp.length, high: 0, ...(c.gaveUp.length ? { details: c.gaveUp } : {}) };
     if (k === 'accounts') return { n: c.signedOut.length, high: 0, ...(c.signedOut.length ? { details: c.signedOut } : {}) };
+    if (k === 'setup') return { n: c.notConfigured.length, high: 0, ...(c.notConfigured.length ? { details: c.notConfigured } : {}) };
     if (k === 'tagged') return { n: c.tagged, high: 0 };
     if (k === 'sorting') return { n: c.sorting, high: 0 };
     return c.sections[k];

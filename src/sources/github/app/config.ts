@@ -15,7 +15,8 @@ export interface GitHubApp {
 
 export type GitHubAppLoad =
   | { ok: true; app: GitHubApp }
-  | { ok: false; reason: 'missing' | string };
+  /** `missing`: the identity's parts not set, by name (issue #1243); empty when the key is set but is no key. */
+  | { ok: false; reason: 'missing' | string; missing: string[] };
 
 /** A PEM from an environment variable: real newlines, or `\n` escapes. */
 export const pemFromEnv = (value: string): string => (value.includes('\n') ? value : value.replaceAll('\\n', '\n')).trim() + '\n';
@@ -24,13 +25,13 @@ export const pemFromEnv = (value: string): string => (value.includes('\n') ? val
 export function loadGitHubApp(o: { appId?: number; slug?: string; privateKeyEnv: string; privateKey: string | undefined }): GitHubAppLoad {
   if (o.appId === undefined || o.slug === undefined || !o.privateKey?.trim()) {
     const missing = [o.appId === undefined ? 'appId' : '', o.slug === undefined ? 'slug' : '', o.privateKey?.trim() ? '' : o.privateKeyEnv].filter(Boolean);
-    return missing.length === 3 ? { ok: false, reason: 'missing' } : { ok: false, reason: `incomplete GitHub App: ${missing.join(', ')} not set` };
+    return missing.length === 3 ? { ok: false, reason: 'missing', missing } : { ok: false, reason: `incomplete GitHub App: ${missing.join(', ')} not set`, missing };
   }
   const privateKey = pemFromEnv(o.privateKey);
   try {
     createPrivateKey(privateKey);
   } catch (err) {
-    return { ok: false, reason: `${o.privateKeyEnv} is not a private key: ${(err as Error).message}` };
+    return { ok: false, reason: `${o.privateKeyEnv} is not a private key: ${(err as Error).message}`, missing: [] };
   }
   return { ok: true, app: { appId: o.appId, slug: o.slug, botLogin: `${o.slug}[bot]`, htmlUrl: `https://github.com/apps/${o.slug}`, privateKey } };
 }

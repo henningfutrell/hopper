@@ -11,7 +11,7 @@ import type { PlanView, PullRequestCard, PullRequestsView, TemplateView, VaultVi
 
 const none = { n: 0, high: 0 };
 const counts = (o: Partial<NeedsYouCounts> = {}): NeedsYouCounts => ({
-  intake: 0, access: 0, plans: 0, signedOut: [], gaveUp: [], tagged: 0, sorting: 0,
+  intake: 0, access: 0, plans: 0, signedOut: [], notConfigured: [], gaveUp: [], tagged: 0, sorting: 0,
   sections: { questions: none, proposals: none, research: none, logins: none, failures: none, parked: none },
   ...o,
 });
@@ -20,21 +20,28 @@ describe('Needs you rows (issue #897)', () => {
   it('one row per kind, in order, each linked to its one home, with what it counts', () => {
     const rows = needsYouRows(counts());
     expect(rows.map((r) => r.kind)).toEqual(NEEDS_YOU_KINDS);
-    expect(rows.map((r) => r.href)).toEqual(['#intake', '#access-requests', '#infra', '#questions', '#proposals', '#research', '#logins', '#accounts', '#failures', '#pull-requests', '#tagged', '#queue']);
+    expect(rows.map((r) => r.href)).toEqual(['#intake', '#access-requests', '#infra', '#questions', '#proposals', '#research', '#logins', '#accounts', '#sources', '#failures', '#pull-requests', '#tagged', '#queue']);
     expect(rows.every((r) => r.n === 0 && r.what.length > 0)).toBe(true);
   });
 
   it('counts each kind, and the total adds them with the high-priority ones', () => {
-    const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, signedOut: ['Claude on Server: signed in as nobody — sign it in from Accounts'], gaveUp: ['o/a#7: why'], tagged: 2, sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
+    const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, signedOut: ['Claude on Server: signed in as nobody — sign it in from Accounts'], notConfigured: ['github-app: slug not set'], gaveUp: ['o/a#7: why'], tagged: 2, sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
     const n = Object.fromEntries(rows.map((r) => [r.kind, r.n]));
-    expect(n).toEqual({ intake: 2, access: 1, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, accounts: 1, failures: 4, 'pull-requests': 1, tagged: 2, sorting: 3 });
-    expect(needsYouTotal(rows)).toEqual({ n: 17, high: 3 });
+    expect(n).toEqual({ intake: 2, access: 1, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, accounts: 1, setup: 1, failures: 4, 'pull-requests': 1, tagged: 2, sorting: 3 });
+    expect(needsYouTotal(rows)).toEqual({ n: 18, high: 3 });
   });
 
   it('a machine whose tool is signed in as nobody waits on a sign-in (issue #1128): the Accounts row names each', () => {
     const row = needsYouRows(counts({ signedOut: ['Claude on Server: signed in as nobody — sign it in from Accounts'] })).find((r) => r.kind === 'accounts')!;
     expect(row).toMatchObject({ n: 1, href: '#accounts', details: ['Claude on Server: signed in as nobody — sign it in from Accounts'] });
     expect(needsYouRows(counts()).find((r) => r.kind === 'accounts')!.details).toBeUndefined();
+  });
+
+  it('a job source on but not configured waits on its setup (issue #1243): the Setup row names what each lacks', () => {
+    const line = 'github-app: appId, slug, GITHUB_APP_PRIVATE_KEY not set';
+    const row = needsYouRows(counts({ notConfigured: [line] })).find((r) => r.kind === 'setup')!;
+    expect(row).toMatchObject({ n: 1, href: '#sources', details: [line] });
+    expect(needsYouRows(counts()).find((r) => r.kind === 'setup')!.details).toBeUndefined();
   });
 
   it('a parked job waits to be picked up, not on a decision: it has no row', () => {

@@ -4,7 +4,8 @@
 // read, but a POST under /ui/api, as the terminal's screen: it is behind the role guard. A fresh read of a job at work
 // (`fresh`, issue #1169 part 7) takes the job's checkpoint first, as the ten-minute pass does, at most once a minute;
 // else it changes and records nothing.
-import { gunzipSync } from 'node:zlib';
+import { gunzip } from 'node:zlib';
+import { promisify } from 'node:util';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Access } from '../../authz/service.ts';
@@ -13,6 +14,9 @@ import { parseTranscript, transcriptPage, TRANSCRIPT_PAGE, type JobTranscript } 
 import { HttpError, parseWith } from '../errors.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
+
+/** Unpacked in zlib's thread pool, not on the event loop (issue #1154). */
+const unpack = promisify(gunzip);
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
@@ -60,6 +64,6 @@ export function registerJobTranscriptRoutes(app: FastifyInstance, o: { operator:
     }
     const k = store.checkpoints.get(id);
     if (!k?.session) throw new HttpError(409, `job ${id}'s checkpoint keeps no agent session${stale ? `: ${stale}` : ''}`);
-    return { jobId: id, checkpointAt: k.at, ...transcriptPage(parseTranscript(gunzipSync(k.session).toString('utf8')), page), ...(stale ? { stale } : {}) };
+    return { jobId: id, checkpointAt: k.at, ...transcriptPage(parseTranscript((await unpack(k.session)).toString('utf8')), page), ...(stale ? { stale } : {}) };
   });
 }

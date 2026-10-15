@@ -124,7 +124,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'machine.discovery_failed': { machineId: 'desk', error: 'the discovery on desk did not finish (exit 255): ssh: connect to host timed out' },
   'machine.radius_grew': { machineId: 'desk', from: 'medium', to: 'high' },
   'machine.actor_mismatch': { machineId: 'deploy-box', expected: 'high', found: 'medium' },
-  'machine.memory_low': { machineId: 'win-desk', of: 'windows', freeBytes: 3_221_225_472, totalBytes: 34_359_738_368, thresholdBytes: 5_368_709_120, since: '2026-10-13T10:00:00.000Z' },
+  'hopper.event_loop_stalled': { ms: 5200, during: ['POST /job/step'], store: { ms: 3900, calls: [{ what: 'SELECT jobs', ms: 2100, count: 3 }, { what: 'INSERT checkpoints', ms: 1800, count: 1 }] }, skipped: 2 }, 'machine.memory_low': { machineId: 'win-desk', of: 'windows', freeBytes: 3_221_225_472, totalBytes: 34_359_738_368, thresholdBytes: 5_368_709_120, since: '2026-10-13T10:00:00.000Z' },
   'machine.memory_recovered': { machineId: 'win-desk', of: 'windows', freeBytes: 9_663_676_416, totalBytes: 34_359_738_368, thresholdBytes: 5_368_709_120 },
   'machine.windows_link_broken': { machineId: 'win-desk', url: 'http://localhost:4790/job/address', mode: 'nat', error: 'Unable to connect to the remote server' },
   'machine.windows_link_restored': { machineId: 'win-desk', url: 'http://localhost:4790/job/address', mode: 'nat' },

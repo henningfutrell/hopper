@@ -10,7 +10,7 @@ import type {
 import type { UserStore } from './store.ts';
 import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts';
 export type { NoteDelivery } from './job-notes.ts';
-import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts';
+import type { HasSetup, RunsPasses, SourceItem, SourceRef } from './source-item.ts';
 export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts';
 import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts';
@@ -452,7 +452,7 @@ export type SourceReport =
   | { kind: 'cancelled'; job: Job }
   | { kind: 'rejected'; job: Job };
 
-export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses, Partial<AfterAnswerTimed> {
+export interface JobSource extends FollowsPullRequests, HasThread, RunsPasses, HasSetup, Partial<AfterAnswerTimed> {
   readonly name: string;
   readonly kind: string;
   /** Facts for SourceStatus.detail. */
