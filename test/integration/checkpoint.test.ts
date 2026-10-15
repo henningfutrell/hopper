@@ -93,6 +93,17 @@ describe('taking a checkpoint', () => {
     expect((await a.job(job.id)).checkpoint).toBeUndefined();
     expect(a.user().store.checkpoints.get(job.id)).toBeUndefined();
   });
+
+  it('says what its machine said when the script fails there, never that the machine could not be reached (issue #1353)', async () => {
+    const said = 'the checkpoint on local did not finish (exit 2): not the job\'s worktree: /w/elsewhere';
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WORKING], repositories: [tree()], checkpoint: new Error(said) });
+    const a = await boot(herdr);
+    const job = await runningJob(a, herdr);
+    const got = await a.user().engine.checkpoints.take(job.id);
+    expect(got).toContain(said);
+    expect(got).not.toContain('could not be reached');
+    expect((await a.job(job.id)).checkpoint).toBeUndefined();
+  });
 });
 
 describe('resuming elsewhere', () => {

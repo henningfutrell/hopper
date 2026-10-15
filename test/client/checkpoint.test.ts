@@ -115,6 +115,25 @@ describe('taking a checkpoint', () => {
     expect(checkpointOf({ jobId: JOB, worktree: `/w/.worktrees/repo/${JOB}/../x`, session: SESSION })).toMatch(/worktree/);
     expect(checkpointOf({ jobId: JOB, worktree: `/w/.worktrees/repo/other`, session: SESSION })).toMatch(/worktree/);
   });
+
+  it('reads a job that started before the layout of issue #1188 in its worktree there (issue #1353)', async () => {
+    expect(checkpointOf({ jobId: JOB, worktree: `/w/.hopper-scratch/${JOB}/repo`, session: SESSION })).toEqual(expect.arrayContaining([JOB, SESSION]));
+    expect(checkpointOf({ jobId: JOB, worktree: `/w/workspace/worktrees/repo-${JOB}`, session: SESSION })).toEqual(expect.arrayContaining([JOB, SESSION]));
+    expect(checkpointOf({ jobId: JOB, worktree: `/w/.hopper-scratch/other/repo`, session: SESSION })).toMatch(/worktree/);
+    expect(checkpointOf({ jobId: JOB, worktree: `/w/.hopper-scratch/${JOB}/../../etc`, session: SESSION })).toMatch(/worktree/);
+    expect(checkpointOf({ jobId: JOB, worktree: `/w/workspace/worktrees/repo-other`, session: SESSION })).toMatch(/worktree/);
+    const { home } = await workOnFirstMachine();
+    for (const at of [join(root, 'old', '.hopper-scratch', JOB, 'repo'), join(root, 'old', 'workspace', 'worktrees', `repo-${JOB}`)]) {
+      mkdirSync(join(at, '..'), { recursive: true });
+      git(root, 'clone', '-q', remote, at);
+      const read = readCheckpoint(await run(checkpointArgv(JOB, at, SESSION), at, { HOME: home, CLAUDE_CONFIG_DIR: '' }));
+      expect(read && 'taken' in read).toBe(true);
+    }
+  });
+
+  it('the script refuses a path with .. in it, whatever its layout', async () => {
+    await expect(run(checkpointArgv(JOB, `/w/.hopper-scratch/${JOB}/../../etc`, SESSION), root, {})).rejects.toThrow(/not the job's worktree/);
+  });
 });
 
 describe('restoring a checkpoint on another machine', () => {

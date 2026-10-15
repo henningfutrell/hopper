@@ -14,12 +14,14 @@ export const CHECKPOINT_BEGIN = 'hopper-checkpoint-begin';
 export const CHECKPOINT_END = 'hopper-checkpoint-end';
 
 // $1 the job id, $2 its worktree (`<work tree>/.worktrees/<name>/<job id>`, issue #1188; or in its own scratch
-// dir), $3 its agent session id, $4 the most bytes. Prints
+// dir; or, for a job that started before issue #1188 and still runs, `<work tree>/.hopper-scratch/<job id>/<name>` or
+// `<work tree>/workspace/worktrees/<name>-<job id>`, issue #1353), $3 its agent session id, $4 the most bytes. Prints
 // `hopper-checkpoint none <why>`, or the checkpoint between the begin and end marks. The base: the job's branch as pushed
 // when its HEAD holds it, else where HEAD left the default branch, else HEAD. Git never prompts and never fetches.
 const SCRIPT = [
   'id=$1; w=$2; s=$3; max=$4;',
-  'case $w in /*/.worktrees/@*/*) case $w in /*/.worktrees/@scratch/"$id"/*) ;; *) echo "not the job\'s worktree: $w" >&2; exit 2;; esac;; /*/.worktrees/*/"$id") ;; *) echo "not the job\'s worktree: $w" >&2; exit 2;; esac;',
+  'no() { echo "not the job\'s worktree: $w" >&2; exit 2; };',
+  'case $w in */../*|*/..) no;; /*/.hopper-scratch/"$id"/*|/*/workspace/worktrees/*-"$id") ;; /*/.worktrees/@*/*) case $w in /*/.worktrees/@scratch/"$id"/*) ;; *) no;; esac;; /*/.worktrees/*/"$id") ;; *) no;; esac;',
   'case $s in ""|*[!0-9A-Za-z-]*) echo "not a session id: $s" >&2; exit 2;; esac;',
   'none() { echo "hopper-checkpoint none $*"; exit 0; };',
   'cd "$w" 2>/dev/null || none "the worktree $w is not there";',
@@ -50,11 +52,14 @@ const JOB_ID = /^[A-Za-z0-9_-]{1,100}$/;
 export const isSessionId = (s: unknown): s is string => typeof s === 'string' && /^[0-9A-Za-z-]{8,64}$/.test(s);
 /**
  * A worktree the checkpoint may read: absolute, one line, the job's own — `…/.worktrees/<name>/<job id>` (issue #1188), or
- * in its own scratch dir `…/.worktrees/@scratch/<job id>/…`.
+ * in its own scratch dir `…/.worktrees/@scratch/<job id>/…`; or, for a job that started before issue #1188 and still
+ * runs, its place in the layout before: `…/.hopper-scratch/<job id>/…` or `…/workspace/worktrees/<name>-<job id>` (issue
+ * #1353).
  */
 export const isJobWorktreeOf = (path: unknown, jobId: string): path is string =>
   typeof path === 'string' && path.startsWith('/') && !/[\n\0]/.test(path) && !path.split('/').includes('..')
-  && (path.includes(`/.worktrees/@scratch/${jobId}/`) || new RegExp(`/\\.worktrees/[^/@][^/]*/${jobId}$`).test(path));
+  && (path.includes(`/.worktrees/@scratch/${jobId}/`) || new RegExp(`/\\.worktrees/[^/@][^/]*/${jobId}$`).test(path)
+    || path.includes(`/.hopper-scratch/${jobId}/`) || new RegExp(`/workspace/worktrees/[^/]+-${jobId}$`).test(path));
 
 /** The argv that takes a job's checkpoint. */
 export const checkpointArgv = (jobId: string, worktree: string, session: string, maxBytes = CHECKPOINT_MAX_BYTES): string[] =>

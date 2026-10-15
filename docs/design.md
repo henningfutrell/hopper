@@ -17987,7 +17987,10 @@ runs, and a parked job with such a copy can resume on any machine.
 - **Read on the machine, never through the pane.** `MachineShell.checkpoint(jobId, worktree, session)` runs the fixed
   script of `src/client/checkpoint.ts` through the machine's own connection: this machine, ssh, or a client target's
   `POST /checkpoint` (a client older than it answers 404: no checkpoint, as for a missing `/reach`). The worktree must be
-  in the job's own scratch dir and the session id plain, or it is refused. The script only reads: an index of its own
+  the job's own — `.worktrees/<name>/<job id>` or in its scratch dir, or, for a job that started before issue #1188 and
+  still runs, its place in the layout before (`.hopper-scratch/<job id>/…`, `workspace/worktrees/<name>-<job id>`, issue
+  #1353) — and the session id plain, or it is refused. A refusal or a failure on the machine is said as the machine said
+  it, never as a machine not reached. The script only reads: an index of its own
   (`GIT_INDEX_FILE`, so the job's index is never locked; `GIT_OPTIONAL_LOCKS=0`; no fetch, no prompt) takes the work tree
   as it is, untracked files too, a `node_modules` link to shared dependencies left out. The **base** is the job's branch
   as pushed when HEAD holds it, else where HEAD left the default branch, else HEAD: always a commit the remote has. It
