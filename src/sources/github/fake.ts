@@ -33,7 +33,8 @@ export const FAKE_HOPPER_APP = 'hopper-test-app';
 const notFound = (what: string) => new GitHubApiError(`gh: Not Found (HTTP 404): ${what}`, true, 404);
 const notOpen = (url: string): never => { throw new Error(`no open pull request ${url}`); };
 
-export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = {}): FakeGitHub {
+/** `defaultBranch` (issue #1337): a merge into another base closes no issue, as on GitHub. Absent: every merge closes it. */
+export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity; defaultBranch?: string } = {}): FakeGitHub {
   const human = o.login ?? 'owner';
   let installed = [...(o.app?.installedRepos ?? [])];
   const issues = new Map<string, GitHubIssue>();
@@ -53,14 +54,14 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const closers = new Map<string, ClosingPullRequest>();
   const subIssues = new Map<string, string[]>(); const diffs = new Map<string, NonNullable<PullRequestInput['diff']>>();
   /** Every pull request, by the issue it mentions: a closing one, or a part. */
-  const pulls: (ReferencingPullRequest & { issue: string; closes: boolean; mergedAt?: string; headRef: string; base?: string })[] = [];
+  const pulls: (ReferencingPullRequest & { issue: string; closes: boolean; mergedAt?: string; headRef: string; base?: string; crossReferenced?: false })[] = [];
   const addPull = (repo: string, issue: string, o: PullRequestInput, closes: boolean, body: string): OpenPullRequest => {
     const number = ++pullNumber;
     const pr = {
       url: `https://github.com/${repo}/pull/${number}`, createdAt: o.createdAt, isDraft: o.isDraft ?? false, conflicting: o.conflicting ?? false,
       headCommittedAt: o.headCommittedAt ?? o.createdAt, ...(o.checks ? { checks: o.checks } : {}), ...(o.commits ? { commits: o.commits } : {}), ...(o.files ? { files: o.files } : {}),
     };
-    pulls.push({ ...pr, state: 'open', body, repo, issue, closes, headRef: o.headRef ?? `branch-${number}`, base: o.base ?? 'dev' }); if (o.diff) diffs.set(pr.url, o.diff);
+    pulls.push({ ...pr, state: 'open', body, repo, issue, closes, headRef: o.headRef ?? `branch-${number}`, base: o.base ?? 'dev', ...(o.crossReferenced === false ? { crossReferenced: false as const } : {}) }); if (o.diff) diffs.set(pr.url, o.diff);
     return { ...pr };
   };
   const openPull = (repo: string, n: number, o: PullRequestInput, closes: boolean, says = closes ? 'Closes' : 'Part of'): OpenPullRequest => {
@@ -73,7 +74,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const merged = (p: (typeof pulls)[number], at: string, by = human) => {
     Object.assign(p, { state: 'merged', mergedAt: at });
     for (const q of pulls) if (q.state === 'open' && conflicts.conflictsWith(p.url).includes(q.url)) q.conflicting = true;
-    if (!p.closes) return;
+    if (!p.closes || (o.defaultBranch !== undefined && p.base !== o.defaultBranch)) return;
     Object.assign(issues.get(p.issue)!, { state: 'closed', closedBy: by, closedAt: at, stateReason: 'completed' }); touch(issues.get(p.issue)!);
     closers.set(p.issue, { url: p.url, createdAt: p.createdAt, mergedAt: at });
   };
@@ -203,19 +204,23 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     async referencingPullRequests(repo, n) {
       enter('referencingPullRequests', [repo, n]);
       find(repo, n);
-      return pulls.filter((p) => p.issue === key(repo, n)).map(({ issue: _i, closes: _c, headRef: _h, base: _b, ...p }) => ({ ...p }));
+      return pulls.filter((p) => p.issue === key(repo, n) && p.crossReferenced !== false).map(({ issue: _i, closes: _c, headRef: _h, base: _b, crossReferenced: _x, ...p }) => ({ ...p }));
     },
     crossReferences: async (repo, n) => { enter('crossReferences', [repo, n]); find(repo, n); return xrefs.of(key(repo, n), pulls); },
     async pullRequest(repo, n) {
       enter('pullRequest', [repo, n]);
       const p = pulls.find((x) => x.url === `https://github.com/${repo}/pull/${n}`);
       if (!p) return undefined;
-      const { issue: _i, closes: _c, body: _b, repo: _r, ...pr } = p;
+      const { issue: _i, closes: _c, body: _b, repo: _r, crossReferenced: _x, ...pr } = p;
       return { ...pr } satisfies NumberedPullRequest;
     },
     async openPullRequests(repo) {
       enter('openPullRequests', [repo]);
       return pulls.filter((p) => p.repo === repo && p.state === 'open').reverse().map((p): BranchPullRequest => ({ ...shown(p), headRef: p.headRef, body: p.body }));
+    },
+    async mergedPullRequestsInto(repo, base) {
+      enter('mergedPullRequestsInto', [repo, base]);
+      return pulls.filter((p) => p.repo === repo && p.base === base && p.state === 'merged').reverse().map((p) => ({ url: p.url, number: Number(p.url.split('/').pop()), createdAt: p.createdAt, mergedAt: p.mergedAt!, body: p.body }));
     },
     async merge(repo, n) {
       enter('merge', [repo, n]);
@@ -283,7 +288,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     openPullRequest: (repo, n, o) => openPull(repo, n, o, true),
     openPartPullRequest: (repo, n, o) => openPull(repo, n, o, false),
     openReferencingPullRequest: (repo, n, o) => openPull(repo, n, o, false, 'Refs'),
-    openUnlinkedPullRequest: (repo, o) => addPull(repo, '', o, false, 'A change.'),
+    openUnlinkedPullRequest: (repo, o) => addPull(repo, '', o, false, o.body ?? 'A change.'),
     mentionIssue: (repo, n, m) => { find(repo, n); return xrefs.mention(key(repo, n), repo, m); },
     setChecks(url, checks, failedChecks) { const p = pull(url); if (checks) p.checks = checks; else delete p.checks; if (failedChecks) p.failedChecks = failedChecks; else delete p.failedChecks; },
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
