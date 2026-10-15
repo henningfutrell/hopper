@@ -18847,12 +18847,27 @@ removed either.
   `removeImage` (`DELETE /images/<id>`, no query: gone or kept is false). Podman and Docker over their sockets only; the
   remote runtime has neither, so a client target's builds stay (its client allows no image call).
 
-**Left for later parts:** a container a job starts without the label (the job's own tooling outside the hopper's tests);
-the box builds on client targets, and the fetch-stage images built before part 4 (untagged and unlabelled, so not known
-as the hopper's: `podman image prune` once removes them); a retention for database backups and update logs (the update
-keeps one backup, `hopper-backup.dump`, and one build log, each replaced, so neither grows now); the shared checkouts
-(`workspace/<name>`) and the shared dependencies in the disk use; and the Grok Bot routine posting the disk budget's
-events.
+**Part 5: the shared checkouts in the disk use** (`src/client/reap.ts` survey). A job worktree is made of its repository's
+checkout in the workspace (`workspace/<name>`, cloned there once, issue #1103), and the checkout's git objects grow with
+each fetch. The measure left it out, so a machine could be over its disk budget with nothing on Machines to say so.
+- **The survey measures each one.** Each directory in a named work tree's workspace with a `.git` (a repository checkout;
+  not a plain folder, not a link, not the layout before's `worktrees`) is a place of its own in `hopper-du`, beside the
+  work tree's `.worktrees` and what the layout before left (issue #1188). A workflow repository's own clones in its workspace count too: the hopper's jobs use them as their
+  checkouts when they name that repository.
+- **One `du` per work tree.** The places of a work tree are measured by one `du -skx` call, cut off at 20 s, so more
+  checkouts add no more 20 s waits to the survey (which has 60 s in all). `du` counts a file once across its arguments.
+- **The shared dependencies** (`.worktrees/@deps`, issue #410, issue #1188) are in `.worktrees`, so the measure had them already;
+  an entry no job worktree links to goes after the scratch age (`src/executors/herdr/shared-deps.ts`).
+- **The sweep never removes a checkout**: jobs to come are made of it, and git's own automatic gc keeps its objects packed
+  (each start fetches under the start lock with gc in the foreground, issue #1075). Over the budget, the checkouts are in
+  `machine.disk_over_budget`'s `paths`, so a person sees why it stays over.
+
+**Not done here, each a follow-up of its own:** the box builds on client targets (the client allows no image call; to
+allow one is a security change of its own); and the Grok Bot routine posting the disk budget's events (it posts only
+questions that reach a person and intake stops; webhooks take the events). **Not the hopper's to know:** a container a
+job starts without the label (the job's own tooling outside the hopper's tests), and the fetch-stage images built before
+part 4 (untagged and unlabelled: `podman image prune` once removes them). **Bounded already:** database backups and
+update logs (the update keeps one backup, `hopper-backup.dump`, and one build log, each replaced).
 
 **Verification:** `test/engine/sweep.test.ts` ("kept work whose folder is gone", "the hopper's own disk use"),
 `test/client/survey-roots.test.ts` (the survey for real, its measure too), `test/scripts/update.test.ts` (the older images
@@ -18861,7 +18876,7 @@ removed, none on a failed update), `test/integration/disk-budget.test.ts` (the s
 survey for real, with a fake container runtime), `test/engine/sweep.test.ts` ("a job's containers and volumes"),
 `test/integration/work-kept.test.ts` (the event at a job's end), `test/support-run.test.ts` (the tests' labels). Part 4:
 `test/sandbox/leftover-builds.test.ts` (which builds are leftover, their removal, once an hour from the reconcile pass),
-`test/adapters/runtime-images.test.ts` (the image calls of both runtimes), `test/sandbox/tools.test.ts` (the stage label).
+`test/adapters/runtime-images.test.ts` (the image calls of both runtimes), `test/sandbox/tools.test.ts` (the stage label). Part 5: `test/client/survey-roots.test.ts` (each checkout measured, not a plain folder or a link).
 
 ## Tool accounts (issue #1128, 2026-10-14, part 1)
 
