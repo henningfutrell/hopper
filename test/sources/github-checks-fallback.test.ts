@@ -70,7 +70,7 @@ describe('checks the rollup would not give, read again over REST (issue #1244)',
   it('a REST read that fails otherwise: unknown with GitHub\'s error, not refused, so no checks read problem', async () => {
     const gh = createFakeGitHub();
     gh.createIssue({ repo: REPO, labels: ['hopper'] });
-    const pr = gh.openPullRequest(REPO, 1, { checks: 'unknown' as ChecksState, headRef: 'issue-1' });
+    const pr = gh.openPullRequest(REPO, 1, { createdAt: '2026-10-02T09:50:00.000Z', checks: 'unknown' as ChecksState, headRef: 'issue-1' });
     const failing = Object.assign(Object.create(gh) as typeof gh, { headChecks: async () => { throw new Error('timeout'); } });
     const got = await checksFallback(failing, APP_CONNECTION).pullRequest(REPO, Number(pr.url.split('/').pop()));
     expect(got).toMatchObject({ checks: 'unknown', checksWhy: 'GitHub did not answer the read of its checks: timeout' });

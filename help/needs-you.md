@@ -20,12 +20,13 @@ Each kind of decision has one page, its home. Needs you collects the counts. You
 | Setup | **Sources** | Job sources that are on but not configured, one line each, with what each lacks. Such a source takes no job until you set it up. For the GitHub App source, see [Set up the GitHub App source](github-app-setup.md). |
 | Failures | **Failures** | Open problems and jobs handed off to a person. |
 | Pull requests | **Pull requests** | Open pull requests with merge conflicts. Fix them, or close them. |
+| Checks | **Pull requests** | Repositories whose pull request checks the hopper may not read, one line each, with the permission that is missing and the fix. The hopper merges no pull request there until you give the permissions. |
 | Tagged | **Tagged** | Open issues and pull requests in your job repositories that ask for your review, mention you, or are assigned to you. |
 | Pre-sort | **Queue** | Jobs that wait on the pre-sort before a lane takes them. |
 
 The badge on **Needs you** is the sum of all rows. When a high-priority job waits, the badge has a ring and an arrow. Parked jobs are not in Needs you: they wait to be picked up, not for a decision. **Parked** keeps its own badge.
 
-**Infra** and **Pull requests** also have their own badges in the navigation, with the same counts. The Infra badge also counts the out-of-band changes that no one marked yet: see [Infra](infra.md). A machine has no row: a join code adds a machine at once, with no approval. A box whose template waits for approval counts in Access requests.
+**Infra** and **Pull requests** also have their own badges in the navigation, with the same counts. The Pull requests badge adds the Checks row. The Infra badge also counts the out-of-band changes that no one marked yet: see [Infra](infra.md). A machine has no row: a join code adds a machine at once, with no approval. A box whose template waits for approval counts in Access requests.
 
 Every row shows, also when its count is 0. The page says *Nothing waits on you* when all counts are 0.
 

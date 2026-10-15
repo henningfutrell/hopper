@@ -167,6 +167,11 @@ export interface PullRequestSeen {
   checks: ChecksState | 'none';
   /** Why its checks are `unknown` (issue #1244): no read of them works with the source's connection, and the fix. */
   checksWhy?: string;
+  /**
+   * GitHub refused every read of its checks to the source's connection (issue #1244): its repository has a checks read
+   * problem. Absent: not refused — known, or a read that failed otherwise (`checksWhy` says GitHub's error).
+   */
+  checksRefused?: true;
   /** When it was opened. */
   openedAt?: string;
   /** When it was last pushed to (issue #677): the later of when it was opened and its head commit. */

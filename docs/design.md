@@ -14746,8 +14746,19 @@ sees and on the card): the connection (the GitHub App, or the connected GitHub a
 the fix. The card says `checks unknown: <why>`. Which read works is kept per repository in memory: a refused repository is
 not asked again for ten minutes (`UNREADABLE_KEEP_MS`), so a sync over many of its pull requests asks GitHub once, and a
 permission added is seen within ten minutes. A REST read that fails otherwise (a timeout, 5xx) keeps the checks `unknown`
-with GitHub's error, and is asked again at the next read. Not done yet (part 2): one problem per repository, and a Needs
-you row, when no read of its checks works.
+with GitHub's error, and is asked again at the next read.
+
+**Checks read problem** (issue #1244, part 2). A refusal marks the checks `checksRefused` (on `OpenPullRequest`,
+`PullRequestState` and `PullRequestSeen`); a read that failed otherwise does not. The Pull requests list
+(`src/domain/pull-request-list.ts`) makes one **checks read problem** per repository of its open cards that wait on
+`checks unknown` with that mark — `checksProblems: { repo, why, pullRequests }[]` on `GET /api/pull-requests`, never one
+per pull request. Its `why` is the newest refusal's: the connection, the permissions it lacks, and the fix. The Pull
+requests view says it once at the top of the repository's group (`repo-checks-unread`, `checksProblemText`); each card
+still says `checks unknown: <why>`. Needs you has a **Checks** row (`checksProblemLines`), one line per repository with the
+fix, linked to Pull requests; the Pull requests nav badge adds it. Pure, from what the follow last saw: no new route, table
+or event. It is gone at the first sync after a permission is added (the fallback's cache keeps a refusal ten minutes). It
+is not a failure **problem** (`src/failures/`): those group failed jobs and hold new ones, and here no job failed and no
+job need wait — only the merge does.
 
 **A pull request the report could not name** (the report names only a ready one) is looked for again at each follow: the
 newest open one that closes the issue, else one in its repository that mentions it — a part when it says `Part of #N` —,
