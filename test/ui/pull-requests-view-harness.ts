@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, vi } from 'vitest';
-import type { PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '../../src/domain/types.ts';
+import type { PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView, SourceStatus } from '../../src/domain/types.ts';
 
 export const card = (over: Partial<PullRequestCard>): PullRequestCard => ({
   jobId: 'j1', repo: 'owner/a', issue: { number: 10, url: 'https://github.com/owner/a/issues/10' },
@@ -38,14 +38,14 @@ export const checksFixture: RepoChecksView = {
 /** What the fake daemon answers a `POST /ui/api/…` path; any other answers `{}`. Cleared after each test. */
 export const uiAnswers: Record<string, unknown> = {};
 
-function fakeDaemon(view: PullRequestsView, role: 'viewer' | 'admin', checks: RepoChecksView) {
+function fakeDaemon(view: PullRequestsView, role: 'viewer' | 'admin', checks: RepoChecksView, sources: SourceStatus[]) {
   const bodies: { path: string; body: unknown }[] = [];
   const json = (status: number, b: unknown) => new Response(JSON.stringify(b), { status, headers: { 'content-type': 'application/json' } });
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
     '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked: [] },
     '/api/machines': { machines: [] }, '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
-    '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] }, '/api/sources': { sources: [] },
+    '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] }, '/api/sources': { sources },
     '/api/questions': { questions: [] }, '/api/accounts': { accounts: [] },
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] },
     '/api/pull-requests': view, '/api/repo-checks': checks,
@@ -68,13 +68,13 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-export async function boot(view: PullRequestsView, role: 'viewer' | 'admin' = 'admin', checks: RepoChecksView = { repos: [] }) {
+export async function boot(view: PullRequestsView, role: 'viewer' | 'admin' = 'admin', checks: RepoChecksView = { repos: [] }, sources: SourceStatus[] = []) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   window.location.hash = '#pull-requests';
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
-  const daemon = fakeDaemon(view, role, checks);
+  const daemon = fakeDaemon(view, role, checks, sources);
   vi.stubGlobal('fetch', daemon.fetch);
   vi.stubGlobal('EventSource', FakeEventSource);
   vi.resetModules();
