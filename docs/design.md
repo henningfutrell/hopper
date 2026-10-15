@@ -19155,7 +19155,7 @@ Then its pull request is `not_by_a_job`; the job the approval starts makes its o
 pull request whose item no job follows is attached by reconciling, then tended as any. What stays is a second pull request of
 an item whose job follows another one. A rebase is a tend, and a tend runs the item again for the pull request its job follows:
 tending the second one would take the follow off the first. The list names both (`second_pull_request`), and a person closes
-one; the follow-up issue carries a design for it.
+one; issue #1208 carries the rest.
 
 Tests: `test/domain/untracked-pull-requests.test.ts` (each reason, a stack, no landing batches, the issue a text links),
 `test/sources/github-pr-census.test.ts` (the census, the move of a job's branch, a person's branch left),
