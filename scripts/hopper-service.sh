@@ -188,9 +188,10 @@ clear_one_shot() {
   done
 }
 
-# ExecStart: the stack, made again under this service, so its port belongs to the service and not to a caller.
+# ExecStart: the stack, made again under this service, so its port belongs to the service and not to a caller. The
+# down removes the containers of a service turned off (COMPOSE_PROFILES changed, then the install run again).
 start() {
-  compose down </dev/null >&2 || say 'the stop did not remove everything (a box on the hopper network keeps it); the start goes on'
+  compose down --remove-orphans </dev/null >&2 || say 'the stop did not remove everything (a box on the hopper network keeps it); the start goes on'
   clear_one_shot
   if [ -f master-key.sh ] && { [ -f hopper-master-key.cred ] || [ -f hopper-master-key.enc ]; }; then
     say 'start the stack with the master key sealed to this host'
