@@ -83,7 +83,8 @@ describe('matchCause', () => {
     for (const c of BUILTIN_CAUSES) {
       expect(c.name.length, c.id).toBeGreaterThan(0);
       expect(c.description.length, c.id).toBeGreaterThan(0);
-      if (c.cls === 'transient') expect(c.id === 'timed-out' ? 'continue' : 'retry').toBe(c.decision);
+      // A timed-out job at work, and one whose own pull request's checks are red (issue #1230), go on in their session.
+      if (c.cls === 'transient') expect(c.id === 'timed-out' || c.id === 'own-pr-checks-red' ? 'continue' : 'retry').toBe(c.decision);
       if (c.cls === 'shared') expect(['hold', 'redirect']).toContain(c.decision);
       if (c.cls === 'job') expect(c.decision).toBe('person');
     }
