@@ -14,6 +14,7 @@
 import type { ItemEdit } from '../../domain/item-snapshots.ts';
 import { GitHubApiError } from './api.ts';
 import { fakeJobLogs } from './fake-job-logs.ts';
+import { fakeHeadChecks } from './fake-head-checks.ts';
 import type { BranchPullRequest, ClosingPullRequest, GitHubApi, GitHubComment, GitHubIssue, GitHubProjectItem, IssueEvent, NumberedPullRequest, OpenPullRequest, ReferencingPullRequest } from './api.ts';
 
 import { createFakeCrossReferences } from './fake-cross-references.ts';
@@ -109,6 +110,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
   const listing = fakeListing(issues, (m, a) => enter(m, a));
   const acts = fakePullActs(pulls, (m, a) => enter(m, a), notFound);
   const batched = fakePulls(pulls, issues, (m, a) => enter(m, a));
+  const heads = fakeHeadChecks((m, a) => enter(m, a), (repo, ref) => pulls.find((p) => p.repo === repo && p.headRef === ref)?.url);
 
   const api: GitHubApi = {
     listRepos: listing.listRepos, issuesChangedSince: listing.issuesChangedSince, pullRequestStates: batched.pullRequestStates, openPullRequestsIn: batched.openPullRequestsIn,
@@ -224,6 +226,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     ...acts.api,
     jobLog: jobLogs.jobLog,
     rerunJob: jobLogs.rerunJob,
+    headChecks: heads.headChecks,
   };
 
   // A connected account's listing across repos; the app's installation token has none.
@@ -284,7 +287,7 @@ export function createFakeGitHub(o: { login?: string; app?: FakeAppIdentity } = 
     mergePullRequest(url, at) { merged(pull(url), at ?? new Date().toISOString()); },
     closePullRequest(url) { pull(url).state = 'closed'; },
     markReady(url) { pull(url).isDraft = false; },
-    setJobLog: jobLogs.setJobLog, jobReruns: jobLogs.reruns, setRerunError: jobLogs.setRerunError,
+    setHeadChecks: heads.setHeadChecks, setJobLog: jobLogs.setJobLog, jobReruns: jobLogs.reruns, setRerunError: jobLogs.setRerunError,
     setConflicting(url, conflicting) { pull(url).conflicting = conflicting; }, ...conflicts.methods, ...fakeChangedLines((m, a) => enter(m, a), (url) => diffs.get(url)),
     pushToPullRequest(url, at, o = {}) { Object.assign(pull(url), { headCommittedAt: at, conflicting: o.conflicting ?? false }); },
     closeByPullRequest(repo, n, { createdAt, mergedAt }) {

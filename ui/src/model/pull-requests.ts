@@ -19,8 +19,10 @@ const WAITS_TEXT: Record<MergeWait, string> = {
   'merge held': 'ready, waits for another pull request to merge first', ready: 'ready, merging',
 };
 
-export const waitsText = (c: Pick<PullRequestCard, 'waits' | 'base'>): string =>
-  !c.waits ? '' : c.waits === 'conflicts' && c.base ? `conflicts with ${c.base}` : WAITS_TEXT[c.waits];
+/** Why a card waits; checks the hopper cannot read say why (issue #1244): `checks unknown: <the connection lacks …>`. */
+export const waitsText = (c: Pick<PullRequestCard, 'waits' | 'base' | 'checksWhy'>): string =>
+  !c.waits ? '' : c.waits === 'conflicts' && c.base ? `conflicts with ${c.base}`
+    : c.waits === 'checks unknown' && c.checksWhy ? `checks unknown: ${c.checksWhy}` : WAITS_TEXT[c.waits];
 
 /**
  * What the hopper does about an open card now (issue #927), when no tend is queued or given up: its tend job's step, the

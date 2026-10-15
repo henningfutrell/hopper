@@ -17,6 +17,7 @@ import type { OpenPullRequestsIn, PullRequestStates } from '../api.ts';
 import { pullKey } from '../api.ts';
 import { SOURCE_DEFER_AFTER_MS, makeRequest, paginate, splitRepo, statusOf, toApiError } from './http.ts';
 import * as rest from './rest.ts';
+import { headChecks } from './rest-checks.ts';
 
 export type AppStatus = { ok: true; slug: string; botLogin: string; htmlUrl: string } | { ok: false; reason: string };
 export type GitHubAppApi = GitHubApi & { appStatus(): AppStatus };
@@ -220,6 +221,7 @@ export function createGitHubAppApi(o: { app(): GitHubAppLoad; keyEnv: string; ba
     closeWithoutMerge: (repo, number) => call(`close ${repo}#${number}`, async (l) => rest.closePullRequest(req, await tokenFor(l, repo), repo, number)),
     retarget: (repo, number, base) => call(`base of ${repo}#${number}`, async (l) => rest.retargetPullRequest(req, await tokenFor(l, repo), repo, number, base)),
     toDraft: (repo, number) => call(`draft ${repo}#${number}`, async (l) => rest.convertToDraft(req, await tokenFor(l, repo), repo, number)),
+    headChecks: (repo, ref) => call(`checks of ${repo}@${ref}`, async (l) => headChecks(req, await tokenFor(l, repo), repo, ref)),
     jobLog: (repo, jobId) => call(`log of Actions job ${jobId} of ${repo}`, async (l) => rest.jobLog(req, await tokenFor(l, repo), repo, jobId)),
     rerunJob: (repo, jobId) => call(`rerun of Actions job ${jobId} of ${repo}`, async (l) => rest.rerunJob(req, await tokenFor(l, repo), repo, jobId)),
     gitRemote: (repo) => call(`git of ${repo}`, async (l) => ({ url: `${webOriginOf(o.baseUrl ?? 'https://api.github.com')}/${repo}.git`, token: await tokenFor(l, repo) })),

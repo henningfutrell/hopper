@@ -21,6 +21,7 @@ import { gitHubThread } from './github/thread.ts';
 import { passReads } from './github/pass-reads.ts';
 import { baseMergeOf, baseTipOf, conflictBetweenOf, gitAnswers } from './github/git-answers.ts';
 import { createCheckLogs } from './github/check-logs.ts';
+import { ACCOUNT_CONNECTION, APP_CONNECTION, checksFallback } from './github/checks-fallback.ts';
 import type { GitMirrors } from '../git-mirror/mirrors.ts';
 import { sourceConfig, type GitHubAccountOptions, type GitHubAppOptions } from './config.ts';
 import type { GitHubListingRepository } from '../domain/github-listing.ts';
@@ -96,8 +97,9 @@ export function createAppSource(o: GitHubSourceDeps, options: GitHubAppOptions):
   const assignee = () => o.accounts?.account('github');
   const real = o.api ? undefined : createGitHubAppApi({ app, keyEnv: options.privateKeyEnv, clock: o.clock, ...(options.apiUrl ? { baseUrl: options.apiUrl } : {}) });
   // One read per sync pass (issue #822): the source reads through `reads.api`, and each sync is one `reads.pass`. Conflicts
-  // from the mirror (issue #858), inside it, so a pass shares git's answer as it shares GitHub's.
-  const reads = passReads(gitAnswers(o.api ?? real!, o.gitMirrors), o.name);
+  // from the mirror (issue #858), inside it, so a pass shares git's answer as it shares GitHub's; so are checks the rollup
+  // would not give, read again over REST (issue #1244).
+  const reads = passReads(gitAnswers(checksFallback(o.api ?? real!, APP_CONNECTION, () => o.clock.now().getTime()), o.gitMirrors), o.name);
   const api = reads.api;
   const source = createGitHubSource({
     name: o.name, kind: 'github-app', mode: 'app', config: sourceConfig(options), clock: o.clock, knownKeys: o.knownKeys, rerunnable: o.rerunnable, trust: o.trust,
@@ -124,8 +126,10 @@ export function createAccountSource(o: GitHubSourceDeps & { provider: ConnectedA
   const token = async (): Promise<string> => {
     try { return await accounts.token(provider); } catch (err) { throw new GitHubApiError((err as Error).message, false); }
   };
-  // One read per sync pass (issue #822), across a rebuild of the source too; conflicts from the mirror (issue #858).
-  const reads = passReads(gitAnswers(o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token, renew: (refused) => accounts.renew(provider, refused) }), o.gitMirrors), o.name);
+  // One read per sync pass (issue #822), across a rebuild of the source too; conflicts from the mirror (issue #858); checks
+  // the rollup would not give, read again over REST (issue #1244).
+  const account = o.api ?? createAccountGitHubApi({ apiUrl: accounts.endpoints(provider).apiUrl, token, renew: (refused) => accounts.renew(provider, refused) });
+  const reads = passReads(gitAnswers(checksFallback(account, ACCOUNT_CONNECTION, () => o.clock.now().getTime()), o.gitMirrors), o.name);
   const api = reads.api;
   let built: { key: string; source: JobSource } | undefined;
   const current = (): JobSource | undefined => {

@@ -165,6 +165,8 @@ export interface PullRequestSeen {
   draft: boolean;
   conflicting: boolean;
   checks: ChecksState | 'none';
+  /** Why its checks are `unknown` (issue #1244): no read of them works with the source's connection, and the fix. */
+  checksWhy?: string;
   /** When it was opened. */
   openedAt?: string;
   /** When it was last pushed to (issue #677): the later of when it was opened and its head commit. */
