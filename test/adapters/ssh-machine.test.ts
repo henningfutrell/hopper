@@ -209,7 +209,7 @@ describe('probeSsh', () => {
     // The fake ssh runs the command in a local shell: the home is this test's own HOME.
     expect(await probe('laptop')).toMatchObject({ home: process.env.HOME });
     const argv = (JSON.parse(readFileSync(join(dir, 'ssh-calls.jsonl'), 'utf8').trim()) as { argv: string[] }).argv;
-    expect(argv.at(-1)).toMatch(/^printf '%s\\n' "\$HOME"; /);
+    expect(argv.at(-1)).toMatch(/^\[ -n "\$HOME" \] \|\| HOME=.*; printf 'hopper-home %s\\n' "\$HOME"; /);
     expect(argv.at(-1)).toContain(DF_COMMAND);
     expect(argv.at(-1)).not.toContain('herdr');
   });
