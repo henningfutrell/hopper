@@ -18804,8 +18804,9 @@ feeds.
 
 **As built:**
 - **The change read** (`GitHubApi.issuesChangedSince`, both adapters; `src/sources/github/app/rest.ts`):
-  `GET /repos/{owner}/{repo}/issues?state=all&sort=updated&direction=desc&per_page=100&since=<t>`, where `t` is the newest
-  `updatedAt` of an issue in the repository's listing (GitHub's clock, never the hopper's). The same `t` is the same URL, so
+  `GET /repos/{owner}/{repo}/issues?state=all&sort=updated&direction=desc&per_page=100&since=<t>`, where `t` is the listing's
+  `since` (GitHub's clock, never the hopper's): the newest `updatedAt` of an issue its listing held when read, then the newest
+  issue change each change read answered. The same `t` is the same URL, so
   the shared rate limiter's ETag cache makes it a conditional request: while nothing changed, GitHub answers `304`, which
   costs no call. An **intake call** (it waits at the intake reserve) that never waits: a call that would wait is not made
   (`deferAfterMs: 0`).
@@ -18830,6 +18831,16 @@ feeds.
   `test/integration/github-budget.test.ts` holds it: the charged change reads are 60 for each installation token and the
   changed repositories' few. The pass line counts the change reads (`REST`), so a source that is not paused and has a job
   repository shows them at least once a minute.
+
+**Where a change read starts (issue #1276, 2026-10-15).** New labelled issues did not reach intake until the next listing,
+up to the intake sync interval later. `t` was the newest `updatedAt` of the listing's rows, and a **listed read** of one issue
+(a job, a follow or a discover reads its in-flight issues every pass) set that issue's row to its current `updatedAt`. The
+hopper's own labels and comments change those issues all the time, so `t` jumped past issues no change read had seen, and
+GitHub never answered them. Now the cursor is its own column, `github_listings.since` (tenant migration 63): a listing sets it
+to the newest issue change it holds, a change read moves it to the newest issue change it answered, and nothing else moves
+it — a read of one issue proves nothing of the others. A pull request's change moves no `since`, as a change read skips
+pull requests, so its `304` stays. A listing the build before kept has no `since`: its rows' newest stands in until the
+next listing. Test: `test/sources/github-change-read.test.ts`.
 
 **Not here:** closes and reopens of a work item's issue move the work-item ledger through a delivery or the ledger's
 fallback read (issue #1067 part 3); a close or reopen a change read sees makes the repository due, and intake drops or

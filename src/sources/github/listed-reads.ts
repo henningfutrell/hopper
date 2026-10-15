@@ -8,7 +8,8 @@
 //
 // The listing cache follows what the hopper itself knows of an issue between listings: a read of it from GitHub sets its
 // row (gone when it is closed), and the hopper's own label, assignee and close writes change its row, so a timed sync
-// never acts on the labels from before the hopper's own write.
+// never acts on the labels from before the hopper's own write. Neither moves where the listing's next change read starts
+// (issue #1276): a read of one issue proves nothing of the others.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { GitHubListingRepository, ListedItem } from '../../domain/github-listing.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
@@ -32,7 +33,7 @@ function patch(listings: GitHubListingRepository, repo: string, number: number, 
   const at = l?.items.findIndex((i) => i.number === number) ?? -1;
   if (!l || at < 0) return;
   const next = change(l.items[at]!);
-  listings.record(repo, next ? l.items.map((i, k) => (k === at ? next : i)) : l.items.filter((_, k) => k !== at), l.fetchedAt);
+  listings.record(repo, { ...l, items: next ? l.items.map((i, k) => (k === at ? next : i)) : l.items.filter((_, k) => k !== at) });
 }
 
 /** What the hopper's own write does to the row of its issue. */

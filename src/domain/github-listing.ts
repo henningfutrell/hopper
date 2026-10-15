@@ -40,13 +40,18 @@ export interface RepoListing {
   repoErrors: Map<string, string>;
 }
 
-/** A repository's listing as the cache keeps it: when it was read, and its items then. */
-export interface CachedListing { fetchedAt: string; items: ListedItem[] }
+/**
+ * A repository's listing as the cache keeps it: when it was read, and its items then. `since`: where its next change read
+ * starts (issue #1276), as GitHub dates it — set only by a listing or a change read, never by a read of one issue, which
+ * moves that issue's row but proves nothing of the others. Absent (a listing the build before kept): the newest change its
+ * items hold.
+ */
+export interface CachedListing { fetchedAt: string; since?: string; items: ListedItem[] }
 
 /** The listing cache (tenant migration 52): derived data, read again from GitHub when lost. */
 export interface GitHubListingRepository {
-  /** Keep `items` as `repo`'s listing read at `fetchedAt`: it replaces the one before, so an item gone from it is gone. */
-  record(repo: string, items: ListedItem[], fetchedAt: string): void;
+  /** Keep `listing` as `repo`'s: it replaces the one before, so an item gone from it is gone. */
+  record(repo: string, listing: CachedListing): void;
   /** `repo`'s latest listing, or undefined when none was read. */
   listing(repo: string): CachedListing | undefined;
   /** One item of `repo`'s latest listing, or undefined when it is in none. */
