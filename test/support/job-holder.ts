@@ -34,7 +34,7 @@ export function holder(root: string) {
   const executor: Executor = {
     name: 'holder', idempotent: false, validate: () => null, machineShell: () => shell,
     async run(ctx) {
-      const env = { ...(await ctx.credentials?.(`/work/.hopper-scratch/${ctx.job.id}`)) };
+      const env = { ...(await ctx.credentials?.(`/work/.worktrees/@scratch/${ctx.job.id}`)) };
       // An abort (cancel, park, shutdown) returns at once, as the port asks: the daemon's stop does not wait it out.
       const aborted = await new Promise<boolean>((end) => {
         held.set(ctx.job.id, { env, end: () => end(false) });

@@ -158,7 +158,7 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     reply('Done.\n\nHOPPER_DONE');
     const { ctx, saved } = ctxFor({ prompt: 'p', cwd: work });
     expect(await ex.run(ctx)).toMatchObject({ kind: 'finished' });
-    const scratch = `${work}/.hopper-scratch/${ID}`;
+    const scratch = `${work}/.worktrees/@scratch/${ID}`;
     expect(existsSync(`${scratch}/left.txt`)).toBe(true);
     expect(readlinkSync(`/tmp/hopper-${ID}`)).toBe(scratch);
     expect(saved[0]).toEqual({ cwd: work });

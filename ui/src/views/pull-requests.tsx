@@ -8,7 +8,8 @@
 // header and warned of in its group, with the job that adds them: Queue job files it at once, Dismiss hides it.
 // A card the hopper gave up on (its tend job ended failed, cancelled or rejected) has Tend again (issue #1010).
 // Landing (issue #1073): the job pull requests merged into the landing branch, each with its batch stage, until a batch run
-// moves it to the tested branch.
+// moves it to the tested branch. Not tracked (issue #1176): each open pull request of a job repository the hopper does not
+// track, with why.
 // Each card shows its change kind (issue #1076), why in its title.
 import { ExternalLink, GitBranch, GitMerge, GitPullRequest, RotateCw, TriangleAlert, Undo2, X } from 'lucide-react';
 import { useCallback, useState } from 'react';
@@ -22,8 +23,8 @@ import { usePoll } from '@/hooks/use-poll';
 import { useNow } from '@/hooks/use-now';
 import { get } from '@/lib/api';
 import { ago } from '@/model/format';
-import { CHANGE_KIND_TEXT, MERGEABLE_TEXT, changeWhy, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, landingText, mergeQuestion, hasCards, noChecksLine, noChecksNote, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
-import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from '@/model/wire';
+import { CHANGE_KIND_TEXT, MERGEABLE_TEXT, changeWhy, checksText, closeQuestion, closesText, conflictedPullRequests, doingText, conflictsLine, landingText, mergeQuestion, hasCards, noChecksLine, noChecksNote, untrackedText, waitingLine, waitsText, yoloLine, yoloNote } from '@/model/pull-requests';
+import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView, UntrackedPullRequest } from '@/model/wire';
 import { act } from '@/store';
 import { setPolled } from '@/store/polled';
 import { useCanOperate } from '@/store/selectors';
@@ -214,6 +215,32 @@ function Landing({ cards }: { cards: LandingCard[] }) {
   );
 }
 
+const UNTRACKED_TONE: Record<UntrackedPullRequest['reason'], string> = {
+  no_issue: 'text-muted-foreground', issue_not_in_intake: 'text-warn', wrong_base: 'text-warn', not_by_a_job: 'text-muted-foreground',
+};
+
+/** Not tracked (issue #1176): each open pull request of a job repository that no job names and the ledger does not hold, with why. */
+function Untracked({ prs }: { prs: UntrackedPullRequest[] }) {
+  return (
+    <section data-slot="untracked">
+      <Panel title="Not tracked" icon={GitPullRequest} count={prs.length} bodyClassName="p-0">
+        <p className="border-b px-4 py-2 text-xs text-muted-foreground">
+          Open pull requests of your job repositories that the hopper does not rebase, land or close.
+        </p>
+        <ul className="divide-y">
+          {prs.map((u) => (
+            <li key={u.url} data-untracked={u.url} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm">
+              <GhLink url={u.url} className="font-medium text-foreground">{u.repo}#{u.url.split('/').pop()}<ExternalLink className="size-3 opacity-60" /></GhLink>
+              {u.title && <span className="text-muted-foreground">{u.title}</span>}
+              <span data-slot="untracked-reason" className={`text-xs ${UNTRACKED_TONE[u.reason]}`}>{untrackedText(u)}</span>
+            </li>
+          ))}
+        </ul>
+      </Panel>
+    </section>
+  );
+}
+
 export function PullRequests() {
   const [view, setView] = useState<PullRequestsView | undefined>();
   const [checks, setChecks] = useState<RepoChecksView>({ repos: [] });
@@ -240,6 +267,7 @@ export function PullRequests() {
         </div>
       </Panel>
       {view.landing && view.landing.length > 0 && <Landing cards={view.landing} />}
+      {view.untracked && view.untracked.length > 0 && <Untracked prs={view.untracked} />}
       {view.repos.map((g) => <RepoGroup key={g.repo} group={g} checks={checks.repos.find((c) => c.repo.toLowerCase() === g.repo.toLowerCase())} onChanged={reload} />)}
     </div>
   );

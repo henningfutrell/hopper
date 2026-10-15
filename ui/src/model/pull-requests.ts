@@ -1,7 +1,7 @@
 // The Pull requests view (issue #637), pure: the header lines, and the words for each card's checks, merge state and
 // closing issue, and the repositories with no checks (issue #677). The daemon builds the list; the UI only says it.
 import { ago } from './format.ts';
-import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView } from './wire.ts';
+import type { LandingCard, PullRequestCard, PullRequestsView, RepoChecks, RepoChecksView, UntrackedPullRequest } from './wire.ts';
 
 type MergeWait = NonNullable<PullRequestCard['waits']>;
 
@@ -116,6 +116,18 @@ export const gaveUpLines = (v: PullRequestsView | undefined): string[] =>
 /** The header's line for them; '' when none. */
 export const conflictsLine = (n: number): string =>
   n === 0 ? '' : `${n} ${n === 1 ? 'pull request has' : 'pull requests have'} merge conflicts: fix ${n === 1 ? 'it' : 'them'}, or close ${n === 1 ? 'it' : 'them'}`;
+
+/** Why the hopper does not track an open pull request (issue #1176), and what would make it track it. */
+export function untrackedText(u: UntrackedPullRequest): string {
+  const links = u.issue ? `${u.issue.part ? 'part of' : 'closes'} #${u.issue.number}` : '';
+  const moved = u.retargeted ? `; moved from ${u.retargeted.from} to ${u.retargeted.to}` : '';
+  switch (u.reason) {
+    case 'no_issue': return 'links no issue: no "Closes #N" or "Part of #N" in its text';
+    case 'issue_not_in_intake': return `${links}, which is not in Intake: give the issue the hopper label and assign it`;
+    case 'wrong_base': return `${links}, on ${u.base ?? 'another branch'}, not on the landing branch`;
+    case 'not_by_a_job': return `${links}, and no job of it made it or follows it${moved}`;
+  }
+}
 
 export const hasCards = (v: PullRequestsView): boolean => v.repos.some((r) => r.pullRequests.length > 0);
 

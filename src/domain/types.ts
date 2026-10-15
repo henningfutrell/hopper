@@ -5,7 +5,7 @@ import type { EventType } from './event-types.ts';
 import type { ExecutorUnavailable, QueueOrder } from './plugins.ts';
 import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
-import type { UsageReading } from './usage.ts';
+import type { SignedOutTool, UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
 import type { JobMachineLink, MachineHerdr, MachineInfraCredentials } from './machines.ts';
 import type { ParkedElsewhere } from './checkpoints.ts';
@@ -284,8 +284,11 @@ export interface Lane {
   state: 'idle' | 'busy' | 'draining';
   jobId?: JobId;
   openedAt: string;
-  /** Set when the lane last became idle; cleared when busy. */
-  idleSince?: string;
+  /**
+   * `idleSince`: set when the lane last became idle; cleared when busy. `pastCap`: a reattach opened it past the lane cap,
+   * no lane idle (issue #1181); it drains first, and is cleared when it goes idle.
+   */
+  idleSince?: string; pastCap?: true;
 }
 
 /** Point-in-time view of one machine, as polled by the engine. Its herdr and infra credentials: `MachineHerdr`, `MachineInfraCredentials` (src/domain/machines.ts). */
@@ -367,9 +370,10 @@ export interface DecisionInputs {
   /**
    * Issue #688. `expectedCosts`: each waiting job's expected cost, where one is known: a machine where it does not fit is
    * passed over. `placementPicks`: Jev's applied picks of a waiting job's machine (`job-machine`), taken first where the
-   * job may go. Absent on Decisions stored before them: none.
+   * job may go. Absent on Decisions stored before them: none. `signedOut` (issue #1128 part 5): the machines whose agent tool
+   * reads signed out; no new job of its executors there. Absent on Decisions stored before it: none.
    */
-  expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>;
+  expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[];
   policy: DeciderPolicy;
 }
 
@@ -495,8 +499,8 @@ export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, typ
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
 export type * from './routing.ts';
-export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, ToolSignIn, ToolSignInStart } from './usage.ts';
-export * from './usage-history.ts';
+export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, SignedOutTool, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, ToolSignIn, ToolSignInStart } from './usage.ts';
+export * from './usage-history.ts'; export type { HeaderBadge, HeaderBadgeSettings } from './header-badges.ts';
 export * from './machine-history.ts'; export * from './hopper-disk.ts';
 export * from './stack-resources.ts';
 export * from './lane-tuning.ts';
@@ -522,7 +526,7 @@ export * from './stuck.ts';
 export * from './yolo-mode.ts'; export * from './landing-batches.ts'; export * from './change-kinds.ts';
 export * from './contribution.ts'; export * from './shrink-guard.ts';
 export * from './pull-requests.ts';
-export * from './pull-request-list.ts';
+export * from './pull-request-list.ts'; export * from './untracked-pull-requests.ts';
 export * from './priority.ts';
 export * from './blast-radius.ts';
 export * from './minor-decisions.ts';

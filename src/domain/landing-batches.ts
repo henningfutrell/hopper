@@ -235,8 +235,11 @@ export const batchBranch = (tip: string): string => `${BATCH_BRANCH_PREFIX}${sho
 export const batchTitle = (b: { landing: string; tested: string; tip: string }): string =>
   `Batch run: ${b.landing} at ${short(b.tip)} into ${b.tested}`;
 
-/** A batch run's pull request text: neutral, what it carries and what happens to it. */
-export function batchBody(b: { landing: string; tested: string; tip: string; merges: readonly number[] }): string {
+/**
+ * A batch run's pull request text: neutral, what it carries and what happens to it. `closes` (issue #1175): a closing
+ * keyword for each issue its job pull requests close, so its merge into the tested branch (the default branch) closes them.
+ */
+export function batchBody(b: { landing: string; tested: string; tip: string; merges: readonly number[]; closes?: readonly string[] }): string {
   const list = b.merges.length > 0 ? b.merges.map((n) => `- #${n}`).join('\n') : '- (no pull request merges: direct commits only)';
   return [
     `A batch run of the landing branch \`${b.landing}\` at \`${short(b.tip)}\` into the tested branch \`${b.tested}\`.`,
@@ -247,6 +250,7 @@ export function batchBody(b: { landing: string; tested: string; tip: string; mer
     '',
     'Pull requests in this batch:',
     list,
+    ...(b.closes && b.closes.length > 0 ? ['', ...b.closes.map((ref) => `Closes ${ref}`)] : []),
   ].join('\n');
 }
 

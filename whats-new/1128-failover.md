@@ -1,0 +1,1 @@
+- When Claude on a machine is signed out, new jobs now go to machines whose Claude is signed in. If no such machine is free, the job waits and says to sign Claude in from the Accounts page.

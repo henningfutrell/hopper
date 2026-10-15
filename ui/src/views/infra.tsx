@@ -9,8 +9,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { Empty, Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { get } from '@/lib/api';
-import { infraTimeline, planState } from '@/model/infra-plans';
+import { infraTimeline, plansWaiting } from '@/model/infra-plans';
 import type { InfraPlanSettings, InfraWatchers, PlanApply, PlanView } from '@/model/wire';
+import { setPolled } from '@/store/polled';
 import { useServerNow } from '@/store/selectors';
 import { AutoApprove, PlanList, Watchers } from './infra-plans';
 import { OutOfBandChanges, type OutOfBandList } from './out-of-band';
@@ -18,7 +19,8 @@ import { OutOfBandChanges, type OutOfBandList } from './out-of-band';
 type Load<T> = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'ok'; data: T };
 type Plans = { plans: PlanView[]; applies: PlanApply[]; settings: InfraPlanSettings; watchers: InfraWatchers };
 
-/** One read, with its state: loading, failed (and why), or its answer; `reload` reads again. */
+/** One read, with its state: loading, failed (and why), or its answer; `reload` reads again. Each answer, and each change
+ *  to it (an approve, a mark), is also the shared one, so the nav badge and Needs you change with the page (issue #1193). */
 function useLoad<T>(path: string): [Load<T>, (f: (d: T) => T) => void, () => void] {
   const [state, setState] = useState<Load<T>>({ kind: 'loading' });
   const [round, setRound] = useState(0);
@@ -27,6 +29,7 @@ function useLoad<T>(path: string): [Load<T>, (f: (d: T) => T) => void, () => voi
     get<T>(path).then((data) => { if (live) setState({ kind: 'ok', data }); }, (e: Error) => { if (live) setState({ kind: 'error', message: e.message }); });
     return () => { live = false; };
   }, [path, round]);
+  useEffect(() => { if (state.kind === 'ok') setPolled(path, state.data); }, [path, state]);
   const change = useCallback((f: (d: T) => T) => setState((s) => (s.kind === 'ok' ? { kind: 'ok', data: f(s.data) } : s)), []);
   return [state, change, () => { setState({ kind: 'loading' }); setRound((n) => n + 1); }];
 }
@@ -55,7 +58,7 @@ export function Infra() {
   const onPlan = (plan: PlanView) => changePlans((d) => ({ ...d, plans: d.plans.map((p) => (p.id === plan.id ? plan : p)) }));
   const onSettings = (settings: InfraPlanSettings) => changePlans((d) => ({ ...d, settings }));
   const onWatchers = (watchers: InfraWatchers) => changePlans((d) => ({ ...d, watchers }));
-  const waiting = plans.kind === 'ok' ? plans.data.plans.filter((p) => planState(p, now).kind === 'waiting').length : 0;
+  const waiting = plansWaiting(plans.kind === 'ok' ? plans.data : undefined, now);
   const timeline = plans.kind === 'ok' && changes.kind === 'ok' ? infraTimeline(plans.data.plans, plans.data.applies, changes.data.changes) : [];
   return (
     <div className="max-w-3xl space-y-3">

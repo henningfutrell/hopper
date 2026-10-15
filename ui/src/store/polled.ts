@@ -1,10 +1,10 @@
 // Reads of the daemon that the nav, Needs you and the header share (issue #897): the pull requests, the infra plans, the
-// out-of-band changes (issue #871), and yolo mode. Each path is read once when first used, again every POLL_MS while anything shows it, and again after an event
+// out-of-band changes (issue #871), yolo mode, and the header badges (issue #1181). Each path is read once when first used, again every POLL_MS while anything shows it, and again after an event
 // whose type starts with one of the given prefixes. A failed read keeps the last answer; until one comes, there is none.
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { get } from '@/lib/api';
-import type { OutOfBandView, PlanView, PullRequestsView, ToolAccountsReport, YoloModeView } from '@/model/wire';
+import type { HeaderBadgeSettings, OutOfBandView, PlanView, PullRequestsView, ToolAccountsReport, YoloModeView } from '@/model/wire';
 import { useHopper } from './index';
 
 const POLL_MS = 30_000;
@@ -43,3 +43,6 @@ export const useOutOfBand = (): { changes: OutOfBandView[] } | undefined => useP
 export const useYoloMode = (): YoloModeView | undefined => usePolled('/api/yolo-mode', ['yolo_mode.']);
 /** The tool accounts (issue #1128): the Accounts view and its badge. A usage source reads with no event: polled only. */
 export const useToolAccounts = (): ToolAccountsReport | undefined => usePolled('/api/tool-accounts');
+/** The header badges the user chose (issue #1181): saved with no event, so a save keeps its answer (`setPolled`). */
+export const HEADER_BADGES_PATH = '/api/header-badges';
+export const useHeaderBadges = (): HeaderBadgeSettings | undefined => usePolled(HEADER_BADGES_PATH);

@@ -1,8 +1,8 @@
 // The dashboard's numbers, lists and lane board, all derived from the one job store (issue #45).
 import { describe, expect, it } from 'vitest';
 import type { Job, JobStatus, Lane } from '../../src/domain/types.ts';
-import { GROUP, ownWaitOf, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, rerunOutcome, laneJobState, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
-import type { MachineView } from '../../ui/src/model/wire.ts';
+import { GROUP, ownWaitOf, canPark, canPickUp, canRerun, parkRefusal, startsFresh, jobBoard, kpis, lanesSub, rerunOutcome, laneJobState, laneName, laneRows, overCap, waitingRows } from '../../ui/src/model/board.ts';
+import type { MachineLaneEffect, MachineView } from '../../ui/src/model/wire.ts';
 
 const job = (id: string, o: Partial<Job> = {}): Job => ({
   id, spec: { executor: 'test', payload: {} }, priority: 50, status: 'running', approved: false,
@@ -47,7 +47,7 @@ describe('kpis', () => {
       waiting: b.waiting.length, held: b.waiting.filter((j) => j.status === 'held').length,
       waitingAnswer: b.waitingAnswer.length, parked: b.parked.length, waitingOn: b.waitingOn.length,
       finished: b.ended.filter((j) => j.status === 'finished').length, failed: 2,
-      lanesBusy: 2, lanesOpen: 3, lanesMax: 4,
+      lanesBusy: 2, lanesOpen: 3, lanesMax: 4, lanesOver: 0,
     });
     // No count of job statuses: failed jobs the ledger does not count are no failure; none read yet, none shown.
     expect(b.ended.some((j) => j.status === 'failed')).toBe(true);
@@ -71,6 +71,28 @@ describe('kpis', () => {
     const k = kpis(b, [], null);
     expect([k.waiting, k.waitingAnswer]).toEqual([0, 1]);
     expect(waitingRows(b, undefined)).toEqual([]);
+  });
+});
+
+describe('the Lanes card (issue #1181)', () => {
+  const effect = (cap: number, over: Partial<MachineLaneEffect> = {}): MachineLaneEffect => ({ machineId: 'm1', label: 'laptop', online: true, maxLanes: 6, usedFrac: 0, cap, band: 'free', executors: [], ...over });
+  const seven = [lane('lane-1', 'draining'), ...[3, 4, 5, 6, 7].map((n) => lane(`lane-${n}`, 'busy')), lane('lane-8', 'idle')];
+  it('lanes holding a job, busy and draining, over the machine\'s effective cap; the amount over it said', () => {
+    const k = kpis(jobBoard([], []), [machine(seven, 6)], null, [effect(6)]);
+    expect([k.lanesBusy, k.lanesMax, k.lanesOver, k.lanesOpen]).toEqual([6, 6, 0, 7]);
+    const over = kpis(jobBoard([], []), [machine([...seven.slice(0, 6), lane('lane-2', 'busy')], 6)], null, [effect(6)]);
+    expect([over.lanesBusy, over.lanesMax, over.lanesOver]).toEqual([7, 6, 1]);
+  });
+  it('the effective cap is the decider\'s, usage pacing included; with no reading, or offline, the machine\'s lanes', () => {
+    const lanes = [lane('lane-1', 'busy'), lane('lane-2', 'draining'), lane('lane-3', 'busy')];
+    expect(kpis(jobBoard([], []), [machine(lanes, 6)], null, [effect(2, { band: 'soft' })])).toMatchObject({ lanesBusy: 3, lanesMax: 2, lanesOver: 1 });
+    expect(kpis(jobBoard([], []), [machine(lanes, 6)], null, [effect(0, { band: 'offline', online: false })])).toMatchObject({ lanesMax: 6, lanesOver: 0 });
+    expect(kpis(jobBoard([], []), [machine(lanes, 6)], null, null)).toMatchObject({ lanesMax: 6, lanesOver: 0 });
+  });
+  it('unopened is the cap less the open lanes; lanes past the cap are said, never clamped to 0', () => {
+    expect(lanesSub(kpis(jobBoard([], []), [machine(seven, 6)], null, [effect(6)]))).toBe('7 open · 1 idle past the cap');
+    expect(lanesSub(kpis(jobBoard([], []), [machine(seven.slice(0, 4), 6)], null, [effect(6)]))).toBe('4 open · 2 unopened');
+    expect(lanesSub(kpis(jobBoard([], []), [machine([...seven.slice(0, 6), lane('lane-2', 'busy')], 6)], null, [effect(6)]))).toBe('7 open · 1 over the cap');
   });
 });
 
@@ -123,6 +145,12 @@ describe('laneRows', () => {
     const t = job('t', { spec: { executor: 'test', payload: {}, tend: true } });
     const over = laneRows([machine([lane('lane-1', 'busy', 'a'), lane('lane-2', 'busy', 't')], 1)], [job('a'), t]);
     expect(over.map((r) => [r.job?.id, r.elbowIn ?? false])).toEqual([['a', false], ['t', true]]);
+  });
+  it('a lane a reattach opened past the cap is marked while the machine is over its cap (issue #1181)', () => {
+    const back = { ...lane('lane-2', 'busy', 'b'), pastCap: true as const };
+    const over = laneRows([machine([lane('lane-1', 'busy', 'a'), back], 1)], [job('a'), job('b')]);
+    expect(over.map((r) => [r.job?.id, r.pastCap ?? false])).toEqual([['a', false], ['b', true]]);
+    expect(laneRows([machine([lane('lane-1', 'busy', 'a'), back], 2)], [job('a'), job('b')]).some((r) => r.pastCap)).toBe(false);
   });
 });
 

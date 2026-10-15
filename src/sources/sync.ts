@@ -264,7 +264,7 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
         .filter((j) => !isTerminal(j) || !flagsOf(j).finalReported || !flagsOf(j).claimReported)
         .map((j) => queueReport(slot, j.id)));
       await writeBacks.catchUp(slot.source);
-      await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot), round), threadAsks.catchUp(slot.source, jobsOf(slot))]);
+      await Promise.all([afterDone.catchUp(slot.source, jobsOf(slot), round, asked), threadAsks.catchUp(slot.source, jobsOf(slot))]);
     };
     try {
       await (slot.source.pass ? slot.source.pass(pass) : pass());

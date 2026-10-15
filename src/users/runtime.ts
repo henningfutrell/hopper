@@ -269,7 +269,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     defaultMachines: builtin.machines, defaultExecutors: builtin.executors,
     kit: createDetectionKit({ env: { ...o.env, ...cliEnv }, secret, secretName: (n) => `${user.secretPrefix}${n}` }),
     builtins: withSeams(seams, outbound),
-    jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow, o.access && ((login, actors) => o.access!.decideIntakeActor(user.id, login, actors)), { dataDir, logger }, (keys) => searchChanged(keys)), connectedAccounts },
+    jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow, o.access && ((login, actors) => o.access!.decideIntakeActor(user.id, login, actors)), { dataDir, logger }, (keys) => searchChanged(keys), () => clock.now()), connectedAccounts },
     machineContext: { executors: () => executorNames(), target },
     executorContext: { client: clientNamed },
     intervalMs: o.pluginsConfigIntervalMs,

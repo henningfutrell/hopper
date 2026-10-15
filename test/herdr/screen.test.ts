@@ -32,7 +32,7 @@ const screen = (...parts: string[][]): string => parts.flat().join('\n');
 
 const PUBLISHING_RULE = "[hopper publishing rule] Any text you send to GitHub (commit messages, branch names, pull request titles and bodies, issue text) describes the change and how it was verified, in neutral terms. Never quote or name the repository owner or any other person. Never include personal or machine details: email addresses, people's names, IP addresses, hostnames, tailnet names, home directory paths, usernames, machine or pane ids, port numbers of local machines, codes, tokens or secrets.";
 
-const WORK_TREE = "[hopper work tree] This job's work tree is /w/repo. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in /w/repo/.hopper-scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.";
+const WORK_TREE = "[hopper work tree] This job's work tree is /w/repo. Do all of the job's work inside it: clones, git worktrees, edits, builds, test runs, scratch and temporary files go under it. Never make or work in a copy of the code outside it, under /tmp or anywhere else. Temporary files go in /w/repo/.worktrees/@scratch: git ignores it, and TMPDIR and your scratchpad point there. Running or installing what you built, and reading files elsewhere, is fine. If the job seems to need a work tree outside this one, ask instead.";
 const PROTOCOL = '[hopper decisions] Decide and go on when a path is clear. The standing rules are these job rules and the rules of the repository (its AGENTS.md, CLAUDE.md, CONTRIBUTING.md and design documents). When one path is recommended and it stays inside the standing rules, take it and continue to the pull request: do not ask a question or write a proposal for a person to pick it. Ask a person only when: the paths differ in security or cost in a way the rules do not settle; you need a credential or access from outside; or the change is destructive. Then say which of these cases it is, and which rule does not settle it. A check that no CI runner can do (for example a live test on Windows) is not a reason to stop: write the manual check in the pull request body and continue. List each decision you made yourself in the pull request body, under a heading Decisions made, so a person can change it later.\n[hopper protocol] When you need an answer from the user, ask exactly one question, in Simplified Technical English (ASD-STE100), in Markdown: one short sentence that says what you need first, then the context, with the options as a numbered list. End your message with a line containing only: HOPPER_QUESTION\n'
   + 'If your question needs research or a proposal before it can be answered, say so on a line of its own before HOPPER_QUESTION: "Suggest: research — <the aspect>" or "Suggest: proposal — <the aspect>". A person decides.\n'
   + 'When you are asked to research, do not do the work: research, then write a research report in Simplified Technical English (ASD-STE100), each part on a line of its own starting with its label — Question:, Findings:, Sources and evidence:, Confidence:, Open threads:, Next step: —. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_RESEARCH_REPORT. A person accepts it, asks you to dig deeper, or steers you; you keep your session meanwhile.\n'
@@ -66,12 +66,12 @@ describe('protocol footer', () => {
 
   it('names the job\'s own work tree, whatever it is', () => {
     expect(protocolFooter('/srv/other')).toContain("This job's work tree is /srv/other.");
-    expect(protocolFooter('/srv/other')).toContain('Temporary files go in /srv/other/.hopper-scratch');
+    expect(protocolFooter('/srv/other')).toContain('Temporary files go in /srv/other/.worktrees/@scratch');
   });
 
   it('names the job\'s own scratch dir when it has one, and says the hopper stops its processes and removes it at the end (issue #401)', () => {
-    const footer = protocolFooter('/w/repo', '', '/w/repo/.hopper-scratch/j1');
-    expect(footer).toContain('Temporary files, and clones or git worktrees made only for this job, go in /w/repo/.hopper-scratch/j1: git ignores it, and TMPDIR and your scratchpad point there, through a short link in /tmp, so a Unix socket path under TMPDIR fits.');
+    const footer = protocolFooter('/w/repo', '', '/w/repo/.worktrees/@scratch/j1');
+    expect(footer).toContain('Temporary files, and clones or git worktrees made only for this job, go in /w/repo/.worktrees/@scratch/j1: git ignores it, and TMPDIR and your scratchpad point there, through a short link in /tmp, so a Unix socket path under TMPDIR fits.');
     expect(footer).toContain('When the job ends, the hopper stops every process the job started and removes that directory, unless a repository in it holds uncommitted or unpushed work.');
   });
 
@@ -347,7 +347,7 @@ describe('windowsShellOf', () => {
   });
 
   it('names nothing for a POSIX shell, Git Bash included', () => {
-    expect(windowsShellOf('$ cd /w && mkdir -p /w/.hopper-scratch\n$ ')).toBeUndefined();
+    expect(windowsShellOf('$ cd /w && mkdir -p /w/.worktrees/@scratch\n$ ')).toBeUndefined();
     expect(windowsShellOf('dev@box MINGW64 /c/Users/dev\n$ ')).toBeUndefined();
     expect(windowsShellOf('')).toBeUndefined();
   });

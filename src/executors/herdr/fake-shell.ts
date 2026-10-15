@@ -24,7 +24,7 @@ export function shellSays(command: string, o: FakeShellOptions, scoped: boolean)
   // Restoring a checkpoint (issue #921, checkpoint.ts): its outcome, as two printf words.
   if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-restore ')) return { lines: [`hopper-restore-${o.restore ?? 'restored'}`] };
   // Sharing dependencies (shared-deps.ts): its outcome.
-  if (command.startsWith("sh -c '") && command.includes('.hopper-scratch/deps')) return { lines: [`hopper-deps-${o.deps ?? 'none'}`] };
+  if (command.startsWith("sh -c '") && command.includes('.worktrees/@deps')) return { lines: [`hopper-deps-${o.deps ?? 'none'}`] };
   // A job worktree command (job-worktree.ts): `cd 'work tree' && { printf … worktree running; o=$(sh -c '…' hopper-worktree 'a' 'b' 'repo' 'url' '1' …`,
   // that it runs (issue #518), then its outcome, two printf words each: made in the top of the job's repository, else
   // checkout when the job names a repository (issues #361, #431, #1103); none with job worktrees off.

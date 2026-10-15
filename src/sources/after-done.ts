@@ -57,14 +57,16 @@
 // (`tended.baseMoved`), which makes the same step due (`tendRetryAt`), at most `MAX_TEND_RETRIES` in a row. A source that
 // cannot say leaves it to a person, as before. A throw is only logged. Strays (issue #1143 part 4, `strays.ts`): in a round
 // of every one, after reconciling, the pull requests no job follows, of items no job works on, get the same housekeeping.
+// The census (issue #1176, `census.ts`): after the strays, at most once an hour, the source lists every open pull request of its job repositories that no job
+// names and the ledger does not hold, each with why (`JobSource.censusPullRequests`, `untrackedPullRequests`).
 // The work-item ledger (issue #1067, part 3): what an open pull request waits on (its **pull request wait**: a draft, merge
 // conflicts, failed checks, checks running, the merge) is recorded as `job.pull_request_seen` when it differs from what the
 // ledger holds for it, so the item says what it waits on. What was seen of it stays kept with no event otherwise.
-import type { JobSource, PullRequestActResult, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
+import { SourceError, type JobSource, type PullRequestActResult, type RerunResult, type SourceHost, type UserStore } from '../domain/ports.ts';
 import { heldTooLong, queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
 import { strayHousekeeping } from './strays.ts'; import { changeOf, keepFollowed } from './keep-followed.ts';
-import { SourceError } from '../domain/ports.ts';
+import { pullRequestCensus } from './census.ts';
 import {
   failedTend, following, followsWhenEnded, inMotion, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendAgainRefusal, tendBrief, tendRetryAt, tendsInRow, tendStep,
   type ActingPerson, type BaseMerge, type ChangeKind, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestAct, type PullRequestSeen, type Tended, type TendChecks,
@@ -101,7 +103,7 @@ export type FollowRound = 'all' | 'in_motion' | 'none';
 
 export function createAfterDone(c: AfterDoneContext) {
   const { store } = c;
-  const strays = strayHousekeeping(c);
+  const strays = strayHousekeeping(c), census = pullRequestCensus(c);
 
   /** Only the newest job of its item is checked again: an older one's merge never takes off a later job's `hopper:done`. */
   const newestOfItem = (j: Job) => !j.source || store.jobs.getBySourceKey(j.source.key)?.id === j.id;
@@ -426,10 +428,10 @@ export function createAfterDone(c: AfterDoneContext) {
   return {
     act,
     tendAgain,
-    /** One sync of the source: the jobs of its round to follow, or to judge again; then the tends. */
-    async catchUp(source: JobSource, listed: Job[], round: FollowRound = 'all'): Promise<void> {
+    /** One sync of the source: the jobs of its round to follow, or to judge again; then the tends. `asked`: a census now. */
+    async catchUp(source: JobSource, listed: Job[], round: FollowRound = 'all', asked = false): Promise<void> {
       const all = round === 'all';
-      if (all) await reconcile(source, listed).then(() => strays(source, listed));
+      if (all) await reconcile(source, listed).then(() => strays(source, listed)).then(() => census(source, listed, asked));
       const jobs = listed.map((j) => store.jobs.get(j.id) ?? j);
       const run = (j: Job, fn: (s: JobSource, id: string) => Promise<void>) =>
         c.enqueue(j.id, () => fn(source, j.id).catch((e: unknown) => { c.failed(j.id, e); }));

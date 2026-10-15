@@ -5,6 +5,7 @@
 // tree line and the protocol lines are fixed: the executors set the work tree up, and the hopper reads the markers back
 // (src/executors/herdr/screen.ts). design.md "Job rules".
 import type { ConfigRecords } from '../domain/ports.ts';
+import { SCRATCH_AREA, WORKTREES_DIR } from '../domain/job-layout.ts';
 import { asksOfSpec, followOnBrief, forkBrief, REVIEW_KINDS, REVIEW_SECTIONS, SUGGEST_PROTOCOL, type FollowOnOf, type ForkOf, type JobRulesView, type ReviewKind } from '../domain/types.ts';
 
 /** The config record that holds them. */
@@ -26,8 +27,8 @@ export const MARKDOWN_RULE = '[hopper formatting] Format the text you write for 
 /** What a job is told while no job rules are saved. */
 export const DEFAULT_JOB_RULES = [PUBLISHING_RULE, ...PARALLEL_WORK, STE_RULE, MARKDOWN_RULE].join('\n');
 
-/** Where a job's temporary files go, inside its work tree (design.md "Work tree"). */
-export const SCRATCH_DIR = '.hopper-scratch';
+/** Where a job's temporary files go, inside its work tree (design.md "Work tree", issue #1188). */
+export const SCRATCH_DIR = `${WORKTREES_DIR}/${SCRATCH_AREA}`;
 
 /**
  * The fixed line naming the job's work tree. With `scratch`, the job's own scratch dir, which the reap

@@ -8,6 +8,7 @@ import { changeRuleFor, DEFAULT_YOLO_MODE, isRerunnable, yoloModeFor } from '../
 import { landingBranch } from '../domain/landing-batches.ts';
 import { rejectionOf } from '../domain/rejection.ts';
 import { requestsWaitingOf } from '../domain/work-items.ts';
+import { awaitsBatch } from '../domain/work-item-landing.ts';
 import { itemHistory, requestOpenedSince } from '../domain/intake.ts';
 import { storeIntakeTrust, type DecideIntakeActor } from './intake-trust.ts';
 import { join } from 'node:path';
@@ -17,7 +18,7 @@ import { graphKeys } from '../search/index.ts';
 const EPOCH = '1970-01-01T00:00:00.000Z';
 
 export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: string[]) => Set<string>) | undefined, decideActor: DecideIntakeActor | undefined,
-  mirrors?: { dataDir: string; logger: { warn(line: string): void } }, graphRead?: (keys: string[]) => void): Omit<JobSourceContext, 'connectedAccounts'> {
+  mirrors?: { dataDir: string; logger: { warn(line: string): void } }, graphRead?: (keys: string[]) => void, clock: () => Date = () => new Date()): Omit<JobSourceContext, 'connectedAccounts'> {
   return {
     ...(mirrors ? { gitMirrors: createGitMirrors({ dir: join(mirrors.dataDir, 'git-mirrors'), log: (line) => mirrors.logger.warn(line) }) } : {}),
     knownKeys: (keys) => new Set(keys.filter((k) => store.jobs.getBySourceKey(k))),
@@ -35,6 +36,8 @@ export function storeSourceContext(store: UserStore, otherUsersKnow: ((keys: str
       requestsWaiting: () => requestsWaitingOf(store.workItems.list({ state: ['waiting_for_approval'] }), name),
       tagged: { get: () => store.settings.getTaggedRecord(name), set: (r) => store.settings.setTaggedRecord(name, r) },
       history: (key) => itemHistory(store.jobs.getBySourceKey(key), (id) => store.jobs.get(id), store.workItems.get(key)?.pullRequest),
+      // Merged into the landing branch, its batch run not yet on the tested branch (issue #1175): no reopened card.
+      awaitsBatch: (key) => awaitsBatch(store.workItems.get(key), (repo) => store.settings.getLandingBatches()?.repos[repo] !== undefined, clock().getTime()),
     }),
     intakeTrust: storeIntakeTrust(store, decideActor),
     yoloMode: (repo) => yoloModeFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo),

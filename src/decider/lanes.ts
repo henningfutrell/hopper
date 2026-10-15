@@ -1,11 +1,13 @@
 import type { HoldPlan, JobId, Lane, LanePlan, StartPlan, WaitPlan } from '../domain/types.ts';
 import { NO_NEW_JOB, homeless, unpinnedCap, type MachineState } from './assign.ts';
+import { SIGN_IN, signedOutEvery } from './signed-out.ts';
 
 /**
  * Step 8: per-machine lane plan. `unassignedIdle` = idle lanes no start took. `priorityOf`: the running jobs'
  * priorities — the lowest-priority busy lane drains first, high-priority work last (issue #535). `elbowing`: the running
  * jobs that may elbow in, specialty and tend jobs — their lanes drain before any other, so the lanes they elbowed in close
- * when they end (issues #762, #967).
+ * when they end (issues #762, #967); so does a lane a reattach opened past the cap (`pastCap`, issue #1181). A draining
+ * lane holds its job until it ends: it counts in `occupied`, so no job starts in its place before it closes.
  */
 export function planLanes(
   s: MachineState, unassignedIdle: Lane[], lanes: Lane[], starts: StartPlan[], at: string, graceMs: number,
@@ -31,7 +33,7 @@ export function planLanes(
   // drains its own lanes (issue #140); then the machine drains what is still past its cap.
   const draining = mine.filter((l) => l.state === 'draining');
   const priority = (l: Lane): number => (l.jobId === undefined ? -Infinity : priorityOf.get(l.jobId) ?? -Infinity);
-  const elbow = (l: Lane): number => (l.jobId !== undefined && elbowing.has(l.jobId) ? 0 : 1);
+  const elbow = (l: Lane): number => (l.pastCap || (l.jobId !== undefined && elbowing.has(l.jobId)) ? 0 : 1);
   const busy = mine.filter((l) => l.state === 'busy')
     .sort((a, b) => elbow(a) - elbow(b) || priority(a) - priority(b) || b.openedAt.localeCompare(a.openedAt) || b.id.localeCompare(a.id));
   const drained = new Set<string>();
@@ -73,6 +75,8 @@ export function idleReason(s: MachineState, hold: readonly HoldPlan[], wait: rea
   if (homeless(m)) return 'its home is not known yet: no job is placed there';
   if (m.template?.waiting) return `${m.template.waiting}: ${NO_NEW_JOB}`;
   if (m.disk?.low) return `disk low: ${NO_NEW_JOB}`;
+  const out = signedOutEvery(m.id, m.executors, s.signedOut);
+  if (out) return `${out.service} signed out: ${SIGN_IN}; ${NO_NEW_JOB}`;
   const gated = s.gate?.gated.find((g) => g.machineId === m.id);
   if (gated && used === 0) return `gated by blast radius: ${gated.reason}; only jobs let through the gate run here`;
   if (used >= s.cap) return `usage pacing: lane cap ${s.cap} of ${m.maxLanes} (${s.band}${s.band === 'soft' || s.band === 'hard' ? `, used ${Math.round(s.usedFrac * 100)}%` : ''})`;

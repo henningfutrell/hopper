@@ -1,4 +1,4 @@
-// The reap that ends a job worktree (issues #379, #401, #1103), run for real as test/herdr/job-worktree.test.ts runs the
+// The reap that ends a job worktree (issues #379, #401, #1103, #1188), run for real as test/herdr/job-worktree.test.ts runs the
 // job worktree command: sh, the machine's own git, the origin a bare repository beside the work tree.
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
@@ -39,18 +39,34 @@ describe('the reap ends a job worktree (issues #379, #401)', () => {
     expect(existsSync(jobWorktreeOf(tree, other))).toBe(true);
   });
 
-  it('removes a mirror an older release left in the scratch dirs once no worktree uses it (issue #1103)', () => {
+  it('removes a job worktree and scratch dir of the layout before issue #1188, then the rest of that layout, and git forgets the worktree', () => {
+    const { tree } = repository();
+    const old = 'abcdef12-0000-0000-0000-000000000005';
+    const scratch = join(tree, '.hopper-scratch', old);
+    const oldTree = join(tree, 'workspace', 'worktrees', `tree-${old}`);
+    mkdirSync(join(tree, '.hopper-scratch', 'deps', 'abc'), { recursive: true });
+    mkdirSync(join(tree, '.hopper-scratch', 'repos', 'acme', 'app.git'), { recursive: true });
+    mkdirSync(scratch, { recursive: true });
+    writeFileSync(join(tree, '.hopper-scratch', '.gitignore'), '*\n');
+    git(tree, 'worktree', 'add', '--quiet', '--detach', oldTree, 'HEAD');
+    const [file, ...args] = reapArgv(old, scratch);
+    expect(spawnSync(file!, args, { cwd: tree, env: GIT_ENV, encoding: 'utf8' }).stdout).toContain('hopper-reaped');
+    expect(existsSync(oldTree)).toBe(false);
+    expect(existsSync(join(tree, '.hopper-scratch'))).toBe(false);
+    expect(existsSync(join(tree, 'workspace', 'worktrees'))).toBe(false);
+    expect(git(tree, 'worktree', 'list')).not.toContain(oldTree);
+  });
+
+  it('keeps what the layout before left while a job\'s work there is kept; the reap of a job of the new layout removes none of it', () => {
     const { tree, reap } = made();
-    const old = join(tree, '.hopper-scratch', 'repos', 'acme', 'app.git');
-    mkdirSync(join(old, '..'), { recursive: true });
-    git(tree, 'clone', '--quiet', '--bare', join(tree, '..', 'origin.git'), old);
-    const used = join(tree, '.hopper-scratch', 'repos', 'acme', 'used.git');
-    git(tree, 'clone', '--quiet', '--bare', join(tree, '..', 'origin.git'), used);
-    const kept = join(tree, '.hopper-scratch', 'abcdef12-0000-0000-0000-000000000004', 'used');
-    git(used, 'worktree', 'add', '--quiet', '--detach', kept, 'main');
+    const old = 'abcdef12-0000-0000-0000-000000000006';
+    const oldTree = join(tree, 'workspace', 'worktrees', `tree-${old}`);
+    git(tree, 'worktree', 'add', '--quiet', '--detach', oldTree, 'HEAD');
+    writeFileSync(join(oldTree, 'x.txt'), 'x\n');
+    mkdirSync(join(tree, '.hopper-scratch', 'deps'), { recursive: true });
     reap();
-    expect(existsSync(old)).toBe(false);
-    expect(existsSync(used)).toBe(true);
+    expect(existsSync(join(oldTree, 'x.txt'))).toBe(true);
+    expect(existsSync(join(tree, '.hopper-scratch', 'deps'))).toBe(true);
   });
 
   it('removes it once the branch the job made is pushed, and with ignored build output in it', () => {

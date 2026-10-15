@@ -11,10 +11,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const KEY = 'jh_overview';
 const DEFAULT_ORDER = ['kpis', 'timeline', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'usage', 'usageHistory', 'live'];
 
+/** The header badges the fake daemon keeps for the user (issue #1181); undefined: never chosen. */
+let savedBadges: { badges: string[] } | undefined;
+const posts: { path: string; body: unknown }[] = [];
+
 function fakeDaemon() {
   const routes: Record<string, unknown> = {
     '/api/health': { ok: true, version: '0', router: 'pass-through', fallback: false, executors: [], uptimeS: 1 },
-    '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked: [] },
+    '/api/queue': { waiting: [], running: [], operatorLed: [], parked: [], waitingAnswer: [], ended: [], locked: [], inFlight: { total: 0, running: 0, ownCommand: 0, pullRequests: 0 } },
     '/api/machines': { machines: [] },
     '/api/decisions': { decisions: [] }, '/api/events': { events: [] },
     '/api/webhooks': { subscriptions: [] }, '/api/webhooks/deliveries': { deliveries: [] },
@@ -22,8 +26,15 @@ function fakeDaemon() {
     '/api/usage': { readings: [], sources: [], limits: { soft: 0.7, hard: 0.95 }, machines: [] }, '/api/accounts': { accounts: [] },
   };
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
-  return vi.fn(async (input: string) => {
+  return vi.fn(async (input: string, init?: RequestInit) => {
     const path = String(input).split('?')[0]!;
+    if (path === '/ui/api/header-badges' && init?.method === 'POST') {
+      const body = JSON.parse(String(init.body)) as { badges: string[] };
+      posts.push({ path, body });
+      savedBadges = body;
+      return json(body);
+    }
+    if (path === '/api/header-badges') return savedBadges ? json(savedBadges) : json({ badges: ['lanes'] });
     if (path === '/ui/api/session') return json({ authenticated: true, user: { role: 'viewer', realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
     return path in routes ? json(routes[path]) : new Response('{"error":"not found"}', { status: 404 });
   });
@@ -193,4 +204,23 @@ describe('Rearranging the dashboard', () => {
     expect(shown()).toEqual(['kpis', 'timeline', 'usage', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'usageHistory', 'live']);
     expect(stored()?.panels.map((p) => p.id)).toEqual(['kpis', 'timeline', 'usage', 'attention', 'lanes', 'waiting', 'ended', 'throughput', 'usageHistory', 'live']);
   });
+
+  it('Customize chooses the header badges (issue #1181): saved for the user on the hopper, not in this browser; a reload keeps them', async () => {
+    savedBadges = undefined;
+    posts.length = 0;
+    await boot();
+    const badges = () => [...document.querySelectorAll<HTMLElement>('header [data-badge]')].map((e) => e.dataset.badge);
+    await vi.waitFor(() => expect(badges()).toEqual(['lanes']));
+    await openCustomize();
+    const choice = document.querySelector<HTMLElement>('[data-slot="header-badges-choice"]')!;
+    await click(choice.querySelector('[data-badge="waiting"]'));
+    await click(choice.querySelector('[data-badge="lanes"]'));
+    expect(posts.map((p) => p.body)).toEqual([{ badges: ['lanes', 'waiting'] }, { badges: ['waiting'] }]);
+    await vi.waitFor(() => expect(badges()).toEqual(['waiting']));
+    expect(localStorage.getItem(KEY) ?? '').not.toContain('waiting"]');
+
+    await reload();
+    await vi.waitFor(() => expect(badges()).toEqual(['waiting']));
+  });
 });
+

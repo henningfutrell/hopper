@@ -30,6 +30,7 @@ import { issueState, notComplete, ownPullRequestOpen, partlyDone, unfinishedPull
 import { followPullRequest, housekeepStrays, tendStartedOn, type FollowContext } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
+import { pullRequestCensus } from './census.ts';
 import { followedBatch } from './followed-batch.ts';
 import { partsOf, tickedParts } from './parts.ts';
 import { sendBack } from './rework.ts';
@@ -40,7 +41,7 @@ import { intakeAct } from './intake-actions.ts';
 import { outsideReader } from './outside.ts';
 import type { BotLogin } from './identity.ts';
 import { priorityOf, readProjects } from './priority.ts';
-import { openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
+import { awaitingBatch, openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
 import { backburnerReader } from './backburner.ts'; import { taggedReader } from './tagged.ts';
 import { recordIssueGraph, type IssueGraphRecorder } from './graph.ts';
 import { reportToGitHub, takeBack, writeResolution } from './report.ts';
@@ -140,6 +141,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   /** The pull requests the round's follows read first (issue #985). */
   const batch = followedBatch(api);
   /** What a follow, and the housekeeping of strays (issue #1143 part 4), need. */
+  const census = pullRequestCensus(api, (repo) => o.landingBranch?.(repo));
   const followContext = (): FollowContext => ({ api, labelledRepos, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}) });
 
   /** App mode: the bot, once known (the app file, or the first sync). */
@@ -269,7 +271,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...(paused ? { paused } : {}),
         repos: config.repos, ...(o.assignee() ? { assignee: o.assignee() } : {}), label: config.label, hopperName: config.hopperName, projectErrors,
         ...(o.intake?.migration() ? { intakeMigration: o.intake.migration() } : {}),
-        ...outside.detail(), ...tagged.detail(),
+        ...outside.detail(), ...tagged.detail(), ...census.detail(),
         ...(Object.keys(repoErrors).length ? { repoErrors } : {}),
         ...(Object.keys(checkErrors).length ? { checkErrors } : {}),
         ...(Object.keys(graphErrors).length ? { graphErrors } : {}),
@@ -297,8 +299,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
         ...(intake ? { holder: intake.holder, othersKnown: intake.othersKnown, migrating } : {}),
       });
       // The new listing is built apart and kept at the end, in one step (issue #1019): until then the intake is the last
-      // sync's, so an Approve sent while this sync reads GitHub finds its request card, never a half-built list.
-      let next = found.outcomes;
+      // sync's, so an Approve sent while this sync reads GitHub finds its request card, never a half-built list. A merge
+      // on the landing branch waits on its batch run (issue #1175): done, and no reopened card.
+      let next = awaitingBatch(found.outcomes, intake);
       for (const r of found.released) intake?.record('source.claim_released', { source: o.name, key: r.key, by: r.by, reason: r.reason });
       if (intake && migrating && found.migrated) migrate(intake, found.released.filter((r) => r.by === 'migration').map((r) => r.key), next);
       if (listed.listed) await outside.read(repos, assignee); await tagged.read(repos, assignee, d?.due !== true);
@@ -376,15 +379,13 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return unfinishedPullRequest(api, job);
     },
     follow: (job, act) => followPullRequest(followContext(), job, act),
-    housekeepStrays: (strays) => housekeepStrays(followContext(), strays),
+    housekeepStrays: (strays) => housekeepStrays(followContext(), strays), censusPullRequests: (facts) => census.read(scanned, facts),
     unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api),
     readFollowed: (jobs) => batch.read(jobs),
     crossReferences: (job) => crossReferencesOfJob(api, job),
     mergesOnReady: (repo, kind) => mergesOnReady(o.changeRule?.(repo) ?? DEFAULT_CHANGE_RULE, o.yoloMode?.(repo) ?? false, kind),
     issueState: (job) => issueState(api, job),
     workState: (job) => workState(api, job),
-    pullRequestOpen(job) {
-      return ownPullRequestOpen(api, job);
-    },
+    pullRequestOpen: (job) => ownPullRequestOpen(api, job),
   };
 }

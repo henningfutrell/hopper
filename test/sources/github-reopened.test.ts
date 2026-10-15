@@ -6,13 +6,13 @@ import { requestHash } from '../../src/domain/intake-origin.ts';
 import type { IntakeContext } from '../../src/domain/intake.ts';
 import { createFakeGitHub, createGitHubSource } from '../../src/sources/github/index.ts';
 import { DONE_OPEN } from '../../src/sources/github/discover.ts';
-import { REOPENED_REASON } from '../../src/sources/github/origin.ts';
+import { AWAITS_BATCH, REOPENED_REASON } from '../../src/sources/github/origin.ts';
 import { REPO, githubConfig, testTrust } from './fixtures/github-support.ts';
 
 const url = (n: number) => `https://github.com/${REPO}/issues/${n}`;
 const PR = `https://github.com/${REPO}/pull/9`;
 
-function setup(o: { rerunnable?: string[] } = {}) {
+function setup(o: { rerunnable?: string[]; awaitsBatch?: string[] } = {}) {
   const gh = createFakeGitHub();
   const trust = testTrust();
   const events: { type: string; data: Record<string, unknown> }[] = [];
@@ -25,6 +25,7 @@ function setup(o: { rerunnable?: string[] } = {}) {
     record: (type, data) => { events.push({ type, data }); },
     requestOpened: (key, hash) => events.some((e) => e.type === 'source.request_opened' && e.data.key === key && e.data.hash === hash),
     requestsWaiting: () => [],
+    awaitsBatch: (key) => (o.awaitsBatch ?? []).includes(key),
     history: (key) => (ended.has(key) ? { jobs: [{ id: 'job-2', status: 'finished' }, { id: 'job-1', status: 'failed' }], pullRequest: PR } : undefined),
   };
   const source = createGitHubSource({
@@ -48,6 +49,17 @@ describe('a reopened issue re-enters Intake (issue #1126)', () => {
       reopened: { jobs: [{ id: 'job-2', status: 'finished' }, { id: 'job-1', status: 'failed' }], pullRequest: PR },
     });
     expect(events.filter((e) => e.type === 'source.request_opened').map((e) => e.data.key)).toEqual([url(1)]);
+  });
+
+  it('an issue whose pull request merged into the landing branch waits on its batch: no card, no job (issue #1175)', async () => {
+    const { gh, source, events } = setup({ awaitsBatch: [url(1)] });
+    gh.createIssue({ repo: REPO, title: 'Fix it', body: 'Fixed on main.', labels: ['hopper', 'hopper:done'] });
+    expect(await source.discover()).toEqual([]);
+    const [card] = source.intake!();
+    expect(card).toMatchObject({ key: url(1), reason: AWAITS_BATCH, group: 'pr-waiting' });
+    expect(card!.action).toBeUndefined();
+    expect(card!.request).toBeUndefined();
+    expect(events.filter((e) => e.type === 'source.request_opened')).toEqual([]);
   });
 
   it('an open issue with hopper:done and no job here stays done, with no action', async () => {

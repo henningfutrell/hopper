@@ -5,7 +5,9 @@
 // else it is a request card. A new request card's text records `source.request_opened` once (issue #798), so it notifies;
 // a card that leaves Intake with no approval or decline records `source.request_withdrawn` (issue #1067, part 4).
 // An open issue with `hopper:done` whose job here ended was reopened (issue #1126): it is a request card again, the
-// reopened card (`reopenedRequest`), whatever its origin, so a person decides whether the item runs again.
+// reopened card (`reopenedRequest`), whatever its origin, so a person decides whether the item runs again — unless its pull
+// request merged into the landing branch and waits on its batch run (issue #1175, `awaitingBatch`): its issue closes when
+// the batch reaches the tested branch, so it is not offered again.
 import {
   FILED_BY_JOB, FILED_BY_JOB_REASON, isBotLogin, requestHash, untrustedReason, type ActorRef, type IntakeRequest, type ItemHistory, type JobOrigin, type OriginActor, type OriginRole,
 } from '../../domain/intake-origin.ts';
@@ -21,6 +23,8 @@ export const REQUEST_REASON = 'a request: approve it to take it';
 export const REOPENED_REASON = 'reopened after its job was done: approve it to run it again';
 /** Why a reopened card is a request. */
 export const REOPENED_WHY = 'reopened after its job was done';
+/** A done item whose merge waits on its batch run (issue #1175). */
+export const AWAITS_BATCH = 'done: merged into the landing branch; its batch run closes the issue';
 /** A request card a person declined (issue #1035). */
 export const DECLINED_REASON = 'a request you declined: an edit to its title or body shows it again';
 
@@ -98,6 +102,16 @@ export function requestOutcome(x: IntakeOutcome, r: IntakeRequest | undefined, t
  */
 export function reopenedRequest(issue: Pick<GitHubIssue, 'title' | 'body' | 'author'>, history: ItemHistory): IntakeRequest {
   return { hash: requestHash(issue), title: issue.title, body: issue.body, author: issue.author, actors: [], why: [REOPENED_WHY], reopened: history };
+}
+
+/**
+ * The outcomes with each `done, but the issue is still open` whose merge waits on its batch run (issue #1175) said so: in
+ * the pull request waiting group, with no action, and so no reopened card.
+ */
+export function awaitingBatch(outcomes: readonly IntakeOutcome[], intake: Pick<IntakeContext, 'awaitsBatch'> | undefined): IntakeOutcome[] {
+  const waits = intake?.awaitsBatch;
+  if (!waits) return [...outcomes];
+  return outcomes.map((x) => (x.reason === DONE_OPEN && waits(x.key) ? { ...x, reason: AWAITS_BATCH, group: 'pr-waiting' } : x));
 }
 
 /**
