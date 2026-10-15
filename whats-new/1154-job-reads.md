@@ -1,0 +1,1 @@
+- The hopper reads much less from its database when it lists jobs, so pages and jobs no longer wait while it reads every job again.

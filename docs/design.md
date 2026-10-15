@@ -7874,6 +7874,14 @@ sub-millisecond to a database on the same host or LAN, but put Postgres near the
 link × ~50 queries a tick is a second of stall). An async Store was rejected: ~230 call sites, and a
 new class of interleaving bug between the tick and the UI's mutations.
 
+**Jobs are read by row version** (issue #1154, `src/store/jobs.ts`). A job list asks Postgres for each row's id
+and version only (`xmin`), and reads the body only of a row the store holds no copy of at that version; it keeps
+each job it read, parsed, by that version. Every write of a row changes `xmin`, whoever writes it (a migration, the
+build before, the operator CLI), and a rolled back write leaves the old one, so a kept job is never older than its
+row. Before, every list sent and parsed the body of every job it named — about 20 KB each, some lists the whole
+table, about one a second — and the call blocks the event loop: a stall, and a terabyte a day out of Postgres. A
+job the store hands out may be a kept one: never change it in place (the store's own writes make a new one).
+
 SQL (`src/store/db.ts`): `?` placeholders, numbered `$n` before sending; `RETURNING` for generated
 keys; `ON CONFLICT … DO UPDATE` for upserts. A BIGINT seq comes back as a number. The schema version
 is the `schema_version` table: a new store is created at `BASE` (version 6 — versions 1-6 were the
