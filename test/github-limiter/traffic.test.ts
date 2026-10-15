@@ -75,11 +75,11 @@ describe('GitHub traffic per sync pass (issue #858)', () => {
   // Issue #1351: a paused or unconfigured source's pass asks nothing new of GitHub; its line says so, or it reads as a healthy zero.
   it('a pass that takes nothing new says why in its line', async () => {
     const { lines, traffic } = counting();
-    await traffic.pass('github-app', async () => undefined, undefined, 'appId, slug, private key not set');
-    await traffic.pass('github-app', async () => undefined);
+    await traffic.pass('github-account', async () => undefined, undefined, 'no repositories chosen for jobs');
+    await traffic.pass('github-account', async () => undefined);
     expect(lines).toEqual([
-      'hopper: GitHub traffic of sync pass github-app (nothing new taken: appId, slug, private key not set): REST 0, GraphQL 0, git fetches 0',
-      'hopper: GitHub traffic of sync pass github-app: REST 0, GraphQL 0, git fetches 0',
+      'hopper: GitHub traffic of sync pass github-account (nothing new taken: no repositories chosen for jobs): REST 0, GraphQL 0, git fetches 0',
+      'hopper: GitHub traffic of sync pass github-account: REST 0, GraphQL 0, git fetches 0',
     ]);
   });
 

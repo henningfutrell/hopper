@@ -119,7 +119,7 @@ export async function startTestApp(o: {
   plugins?: Record<string, unknown> | false;
   /** Run the plugin host's escalation levels instead of the fake doubles. */
   realLevels?: boolean;
-  /** Secrets the parts read (GITHUB_APP_PRIVATE_KEY, GROKBOT_WEBHOOK_URL, …), over PATH; mutable while the app runs. */
+  /** Secrets the parts read (GROKBOT_WEBHOOK_URL, …), over PATH; mutable while the app runs. */
   secrets?: Record<string, string | undefined>;
 }): Promise<TestApp> {
   const dataDir = dirname(o.dbPath);
