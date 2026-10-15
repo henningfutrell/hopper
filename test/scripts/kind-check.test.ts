@@ -219,4 +219,12 @@ describe('.github/workflows/kind.yml, the kind check on a pull request', () => {
     expect(remove?.if).toBe('always()');
     expect(workflow.on.pull_request.paths).toEqual(expect.arrayContaining(['scripts/kind-sandbox-check.ts', 'src/sandbox/kubernetes.ts', 'src/sandbox/need-box.ts']));
   });
+
+  it('runs the migration check too, on a pull request that changes it or the cluster script (issue #1373)', () => {
+    expect(workflow.on.pull_request.paths).toEqual(
+      expect.arrayContaining(['scripts/kind-migrate-check.ts', 'scripts/hopper-cluster.sh']),
+    );
+    const runs = Object.values(workflow.jobs).flatMap((j) => j.steps.map((s) => s.run ?? ''));
+    expect(runs).toContain('node scripts/kind-migrate-check.ts --tag dev');
+  });
 });
