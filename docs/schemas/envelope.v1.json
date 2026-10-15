@@ -95,6 +95,7 @@
         "source.request_declined",
         "source.request_withdrawn",
         "source.delivery_received",
+        "source.review_requested",
         "auth.pending",
         "auth.completed",
         "auth.expired",

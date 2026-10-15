@@ -17,6 +17,7 @@ Each kind of decision has one page, its home. Needs you collects the counts. You
 | Logins | **Logins** | Logins a job waits on, and connections that ended. A code that ran out still counts while its job waits for a new code: by default the job gets a new code by itself. |
 | Failures | **Failures** | Open problems and jobs handed off to a person. |
 | Pull requests | **Pull requests** | Open pull requests with merge conflicts. Fix them, or close them. |
+| Tagged | **Tagged** | Open issues and pull requests in your job repositories that ask for your review, mention you, or are assigned to you. |
 | Pre-sort | **Queue** | Jobs that wait on the pre-sort before a lane takes them. |
 
 The badge on **Needs you** is the sum of all rows. When a high-priority job waits, the badge has a ring and an arrow. Parked jobs are not in Needs you: they wait to be picked up, not for a decision. **Parked** keeps its own badge.
@@ -39,6 +40,24 @@ An issue the hopper took leaves Intake. Its progress (taken, partly done, its pu
 The nav badge counts the request cards. A second, dashed badge counts the issues on the backburner. When no source lists issues, the page says so.
 
 **Sources** shows each source's sync and a link to Intake with its counts. Who is a trusted actor is set on **Settings → Intake**. See [How issues become jobs](intake.md).
+
+## Tagged
+
+**Tagged** lists the open issues and pull requests in your job repositories that wait on you on GitHub, per source:
+
+- **review requested**: a pull request asks for your review.
+- **mentioned**: the issue or pull request mentions you (`@` and your GitHub login).
+- **assigned**: the issue or pull request is assigned to you.
+
+Each row shows the repository and number, the title, the author, why it is listed (one or more of the three), when it was opened, and for a pull request its checks. The number links to GitHub.
+
+The source reads them at each sync, at most once for each intake sync interval, and at once when you select **Sync now**. A new review request shows within one sync. A row leaves by itself when you handle it on GitHub: you give the review, the pull request is merged or closed, the issue is closed, or you are no longer mentioned or assigned.
+
+Select **Dismiss** to take a row off the list. Nothing changes on GitHub. The row comes back only when it is listed for a new reason: for example, someone asks for your review again after you reviewed it. The source shows how many rows you dismissed.
+
+Issues with the hopper label are not on Tagged: they are on **Intake**. Your own pull requests are not on Tagged: they are on **Pull requests**. Only a GitHub source of a connected account reads tagged items.
+
+Each new review request records the event `source.review_requested`. Your webhooks get it, as they get every event.
 
 ## Access requests
 
@@ -90,6 +109,7 @@ Every count comes from the same reads the UI makes, with the same scopes:
 | Access requests | `GET /api/vault`: `requests`, `grantAsks`, and the templates with `pending` items or no `approval`. |
 | Infra plans | `GET /api/infra-plans`: the plans with no `approval`, no failed check (`summary.failed`), and an `expiresAt` still to come. |
 | Pull requests | `GET /api/pull-requests`: the cards with `state: "open"` and `mergeable: "conflicts"`. |
+| Tagged | `GET /api/sources`: `detail.tagged` of each source. **Dismiss** is `POST /ui/api/sources/<name>/intake` with `kind: "dismiss"`. |
 | Questions, proposals, research, logins, failures, pre-sort | `GET /api/questions`, `GET /api/proposals`, `GET /api/research`, `GET /api/logins`, `GET /api/failures`. The pre-sort: `GET /api/queue`. |
 
 The yolo mode in the top bar is `GET /api/yolo-mode`. Each action is the same `POST /ui/api/*` route the page uses. See [The operator CLI and the API](cli-and-api.md).
