@@ -13,6 +13,7 @@
 // updates live, read again on each assessor event. The assessment summary and a person's note are rendered as Markdown,
 // sanitized (issue #569); the raw error stays as it was written. Each hand-off card and failure row has Report a bug on its
 // job (issue #694), for an operator or admin. Work not pushed (issue #1010, kept-work.tsx) after Needs a person.
+import { LogBlock } from '@/components/log-block';
 import { Archive, History, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -194,7 +195,7 @@ function HandoffRow({ h }: { h: HandoffView }) {
           <Markdown text={h.summary} />
           {h.causeName && <div>Known cause: {h.causeName}</div>}
           <ul className="list-disc space-y-0.5 pl-4">{h.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/50 p-2 font-mono">{h.error}</pre>
+          <LogBlock title="Error" copy={h.error} wrap contentClassName="max-h-40 text-xs">{h.error}</LogBlock>
         </div>
       </details>
       <Resolution h={h} />

@@ -5,9 +5,8 @@
 import { Circle, CircleCheck, CircleDot, CircleX, GitFork, MessageCircleQuestion, SquareTerminal, TriangleAlert, UserRound, type LucideIcon } from 'lucide-react';
 import { Empty } from '@/components/panel';
 import { TEXT, type Tone } from '@/components/status';
-import { CodeBlock, CodeBlockActions, CodeBlockContent, CodeBlockCopyButton, CodeBlockLine } from '@/components/ui/code-block';
+import { JsonBlock } from '@/components/json-block';
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceDescription, TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace';
-import { useHighlightedCode } from '@/hooks/use-highlighted-code';
 import { subjectOf } from '@/model/board';
 import { clock } from '@/model/format';
 import { AT_WORK, groupStatus, timelineNodes, type StepStatus, type TimelineGroup } from '@/model/timeline-steps';
@@ -33,19 +32,6 @@ function waitOf(job: Job | undefined): string | undefined {
   return undefined;
 }
 
-function StepData({ e }: { e: DomainEvent }) {
-  const json = JSON.stringify(e.data, null, 2);
-  const lines = useHighlightedCode(json, 'json');
-  return (
-    <CodeBlock size="sm">
-      <CodeBlockActions><CodeBlockCopyButton value={json} /></CodeBlockActions>
-      <CodeBlockContent aria-label={`data of ${e.type}`} className="max-h-72">
-        {lines.map((line, i) => <CodeBlockLine key={i}>{line}</CodeBlockLine>)}
-      </CodeBlockContent>
-    </CodeBlock>
-  );
-}
-
 type Names = { nameOf: (jobId: string) => string; machines: readonly Pick<MachineView, 'id' | 'label'>[] };
 
 /** One event's line, which opens to its data. */
@@ -67,7 +53,7 @@ function EventStep({ e, status, nameOf, machines }: Names & { e: DomainEvent; st
           {status && <span className="sr-only">, {SAID[status]}</span>}
         </TraceLine>
       </TraceCollapsibleTrigger>
-      <TraceCollapsibleContent><StepData e={e} /></TraceCollapsibleContent>
+      <TraceCollapsibleContent><JsonBlock value={e.data} label={`data of ${e.type}`} /></TraceCollapsibleContent>
     </TraceCollapsible>
   );
 }
