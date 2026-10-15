@@ -1,8 +1,10 @@
 // `hopper-gh` (issue #563): the command a job runs to ask the hopper for a GitHub operation. Kept in the job's
 // credentials dir on its machine beside its proxy token, run as `sh "$HOPPER_GH" …`: POSIX sh and curl, nothing
 // else, so it works on any machine a job runs on. Its help is the whole manual, read only when a job needs it. A 503
-// with Retry-After (the client door while the hopper is out of reach, issue #752) is waited out: `hcurl`.
+// with Retry-After (the client door while the hopper is out of reach, issue #752) is waited out: `hcurl`. `pr wait`
+// (issue #1072 part 2) reads the job stream (issue #613) when the hopper opens a watch: `stream_wait`, as `hopper-skill`.
 
+import { STREAM_WAIT_SH } from '../job-stream/script.ts';
 import { HCURL_SH } from './retry-after.ts';
 
 /** The variables a job asks through: the script, its token file, and the hopper's URL as its machine reaches it. */
@@ -31,6 +33,8 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
   sh "$HOPPER_GH" pr commits N    --repo OWNER/NAME
   sh "$HOPPER_GH" pr checks N     --repo OWNER/NAME      (the check runs and statuses of its head commit)
   sh "$HOPPER_GH" pr status N     --repo OWNER/NAME      (state, mergeable, checks, failed checks, the work item)
+  sh "$HOPPER_GH" pr wait N       --repo OWNER/NAME [--timeout SECONDS]
+                                                         (wait until its checks end; then as pr status)
   sh "$HOPPER_GH" pr ready N      --repo OWNER/NAME      (mark a draft ready for review)
   sh "$HOPPER_GH" repo view      --repo OWNER/NAME      (canPush: whether your user can push to it; hasIssues)
   sh "$HOPPER_GH" repo fork      --repo OWNER/NAME      (this job's own repository only, when your user cannot push to it)
@@ -51,7 +55,11 @@ pushes only to a new branch of its own work on this job's own repository, never 
 A pull request: push the branch first (git push), on this job's own repository.
 Where a pull request stands: pr status. Ask it, not GitHub: the hopper answers from what it already knows (from:
 hopper), the same as its Pull requests list, and reads GitHub only for a pull request it does not know (from: github),
-then answers that read again for a minute (from: cache). To wait on checks, ask pr status once a minute at most.
+then answers that read again for a minute (from: cache). To wait on checks, run pr wait, once: do not ask again and
+again. On a pull request the hopper follows, it returns when the hopper sees the checks end (or the pull request merged
+or closed), with its status (exit 0); --timeout is the most it waits (an hour unless said; exit 4 when it ends first).
+On one the hopper does not follow, it answers at once as pr status, wait none (exit 3): ask pr status again later, once
+a minute at most. A job that ends its turn with HOPPER_WAITING while a pr wait is open is woken with the answer.
 A failed check's log: check log reads the log of a GitHub Actions job through the hopper. Never ask a person to paste a
 log. Ask a person only when check log says that the hopper cannot read it, and say why.
 Contributing to a repository your user cannot push to (repo view says canPush false; a push there is refused so):
@@ -75,7 +83,7 @@ ${PROXY_HELP}
 HOPPER_GH_HELP
 }
 case "$1 $2" in
-  'issue create'|'issue comment'|'issue view'|'issue comments'|'issue close'|'pr create'|'pr view'|'pr diff'|'pr commits'|'pr checks'|'pr status'|'pr ready'|'repo view'|'repo fork'|'check log'|'report bug') op="$1.$2"; shift 2 ;;
+  'issue create'|'issue comment'|'issue view'|'issue comments'|'issue close'|'pr create'|'pr view'|'pr diff'|'pr commits'|'pr checks'|'pr status'|'pr wait'|'pr ready'|'repo view'|'repo fork'|'check log'|'report bug') op="$1.$2"; shift 2 ;;
   'help '*|' ') help; exit 0 ;;
   *) help >&2; exit 2 ;;
 esac
@@ -87,7 +95,7 @@ while [ "$i" -lt "$n" ]; do
   case "$a" in
     --force) set -- "$@" --data-urlencode "force=true" ;;
     --required) set -- "$@" --data-urlencode "required=true" ;;
-    --repo|--title|--body|--head|--base|--body-file|--comment-on)
+    --repo|--title|--body|--head|--base|--body-file|--comment-on|--timeout)
       [ "$i" -lt "$n" ] || { echo "hopper-gh: $a needs a value" >&2; exit 2; }
       v=$1; shift; i=$((i + 1))
       if [ "$a" = --body-file ]; then
@@ -104,8 +112,32 @@ while [ "$i" -lt "$n" ]; do
 done
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; }
 ${HCURL_SH}
-hcurl -sS --fail-with-body -H @- --data-urlencode "op=$op" "$@" "$HOPPER_URL${PROXY_PATH}"
+if [ "$op" != pr.wait ]; then
+  hcurl -sS --fail-with-body -H @- --data-urlencode "op=$op" "$@" "$HOPPER_URL${PROXY_PATH}"
+  code=$?
+  echo
+  [ "$code" -eq 0 ] || exit 1
+  exit 0
+fi
+# pr wait (issue #1072 part 2): 200, the answer now (wait none: the hopper does not follow it, exit 3); 202, a watch on
+# the job stream, read until the hopper ends it.
+${STREAM_WAIT_SH}
+out=$(hcurl -sS -H @- --data-urlencode "op=$op" "$@" -w '\\n%{http_code}' "$HOPPER_URL${PROXY_PATH}") || exit 1
+code=\${out##*
+}
+body=\${out%
+*}
+case $code in
+  200) printf '%s\\n' "$body"; case $body in *'"wait":"none"'*) exit 3 ;; esac; exit 0 ;;
+  202) ;;
+  *) printf '%s\\n' "$body"; exit 1 ;;
+esac
+printf '%s\\n' "$body" >&2
+id=$(printf '%s' "$body" | sed -n 's/.*"waitId":"\\([A-Za-z0-9_-]*\\)".*/\\1/p')
+secs=$(printf '%s' "$body" | sed -n 's/.*"waitSeconds":\\([0-9]*\\).*/\\1/p')
+[ -n "$id" ] && [ -n "$secs" ] || { echo 'no: the hopper opened no wait for this pull request' >&2; exit 1; }
+stream_wait "$id" "$secs"
 code=$?
 echo
-[ "$code" -eq 0 ] || exit 1
+exit "$code"
 `;
