@@ -12,7 +12,7 @@
 //   Scenario: a machine that is no lane pod is given no token
 //   Scenario: a vault secret that is no setup token fails a lane pod's job before its pane starts
 //   Scenario: a usage source on a lane pod reads it signed in with the user's setup token, and holds none of its jobs
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -142,13 +142,16 @@ describe('the agent\'s sign-in survives lane pod restarts (issue #1287)', () => 
     const { a, token } = await boot(herdr, [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'hopper-lanes-0', executors: ['claude'] } }]);
     expect((await a.ui('/ui/api/vault', { action: 'set', name: 'CLAUDE_TOKEN', value: TOKEN }, { token })).status).toBe(200);
     await joined(a, POOL_KEY, 'hopper-lanes-0', PLAN);
-    type Usage = { readings: { source: string; machineId?: string }[]; sources: { name: string; account?: { detail: Record<string, string> }; problem?: string }[] };
-    const usage = await waitFor(async () => {
-      const u = (await a.api<Usage>('GET', '/api/usage')).body;
-      return u.readings.some((r) => r.source === 'claude') && u.sources[0]?.account ? u : undefined;
-    }, { timeoutMs: 30_000, what: 'claude readings of the lane pod' });
-    expect(usage.sources[0]!.account!.detail).toEqual({ authMethod: 'oauth_token', machine: 'hopper-lanes-0' });
-    expect(usage.readings.filter((r) => r.source === 'claude').every((r) => r.machineId === 'hopper-lanes-0')).toBe(true);
+    type Usage = { sources: { name: string; account?: { detail: Record<string, string> }; problem?: string }[] };
+    const read = await waitFor(async () => {
+      const u = (await a.api<Usage>('GET', '/api/usage')).body.sources.find((x) => x.name === 'claude');
+      return u?.account?.detail.authMethod ? u : undefined;
+    }, { timeoutMs: 30_000, what: 'the claude account of the lane pod' });
+    expect(read.account!.detail).toEqual({ authMethod: 'oauth_token', machine: 'hopper-lanes-0' });
+    expect(read.problem).toBeUndefined();
+    const ran = readFileSync(join(plan, 'calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { token?: boolean });
+    expect(ran.length).toBeGreaterThan(0);
+    expect(ran.every((c) => c.token)).toBe(true);
     const job = await a.pull({}, item);
     await a.waitForStatus(job.id, 'finished', 30_000);
     expect(JSON.stringify(a.user().store.events.since(0, 100_000))).not.toContain(TOKEN);

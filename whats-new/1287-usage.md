@@ -1,0 +1,1 @@
+- On Kubernetes, the Claude usage of a lane pod now shows without a sign-in in the pod, and the pod's jobs are no longer held as signed out.

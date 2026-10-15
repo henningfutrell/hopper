@@ -136,7 +136,14 @@ export interface EscalationLevelContext extends MachineLookup, Pick<ExecutorCont
  * and how to reach it when it is a client target (issue #366). An escalation level learns the machine
  * too, so it can run on its designated machine (issue #150).
  */
-export type UsageSourceContext = MachineLookup & Pick<ExecutorContext, 'client'>;
+export type UsageSourceContext = MachineLookup & Pick<ExecutorContext, 'client'> & {
+  /**
+   * The agent's sign-in a read on `machine` runs with (issue #1287, design.md "The agent's sign-in in a lane pod"): a lane
+   * pod's user's setup token, as its jobs start with; none on any other machine, which keeps its own sign-in; or why not.
+   * Absent: none.
+   */
+  agentSignIn?(machine: string): Promise<{ variable: string; value: string } | { none: true } | { refused: string }>;
+};
 
 /**
  * What a machine source learns: the executors registered when it is asked, and how the hopper reaches

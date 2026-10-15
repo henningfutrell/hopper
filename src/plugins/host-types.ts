@@ -10,7 +10,7 @@ import type { AttachedEditOptions } from './attached-slot.ts';
 import type { BuiltExecutor } from './executor-slot.ts';
 import type { BuiltJobSource } from './source-slots.ts';
 import type { ConfiguredBackend } from '../domain/vault.ts';
-import type { DetectionKit, ExecutorContext, JobSourceContext, MachineSourceContext, PluginDefinition, PluginLogger, QueueSorter, Router } from './sdk.ts';
+import type { DetectionKit, ExecutorContext, UsageSourceContext, JobSourceContext, MachineSourceContext, PluginDefinition, PluginLogger, QueueSorter, Router } from './sdk.ts';
 
 export interface PluginHostOptions {
   /** Custom plugins, one directory each; undefined: none (design.md "Where plugins live"). */
@@ -34,6 +34,8 @@ export interface PluginHostOptions {
   machineContext?: Partial<MachineSourceContext>;
   /** What every executor is told (RoleContext['executor']): a client target's link (issue #308). Default: none is reached. */
   executorContext?: ExecutorContext;
+  /** What every usage source is told besides the machines (RoleContext['usage-source']): a lane pod's sign-in (issue #1287). Default: none. */
+  usageSourceContext?: Pick<UsageSourceContext, 'agentSignIn'>;
   dataDir: string;
   /** PluginContext.userEnv: what the user's processes add to the daemon's environment; default none. */
   userEnv?: Readonly<Record<string, string>>;

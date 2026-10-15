@@ -13,8 +13,8 @@
 // `POST /reach {url}` runs the reach check (issue #695, reach.ts): whether this machine reaches the hopper at that URL; `{code, stdout, stderr}`;
 // `POST /checkpoint {jobId, worktree, session}` takes a running job's checkpoint (issue #921, checkpoint.ts): it only reads; `{code, stdout, stderr}`;
 // `POST /runtime` carries a container runtime call of the hopper's to this machine's own Podman or Docker, checked (issue #708, runtime.ts);
-// `POST /claude {args, timeoutMs?}` runs `<claudeBin> <args>` for a usage read (issue #366) — only the two
-// read-only calls `claude-plan` makes, nothing else — with no shell, stdin closed, in a fresh private dir
+// `POST /claude {args, timeoutMs?, token?}` runs `<claudeBin> <args>` for a usage read (issue #366) — only the two
+// read-only calls `claude-plan` makes, nothing else, with a lane pod's setup token when it carries one (issue #1287) — with no shell, stdin closed, in a fresh private dir
 // removed after with the project dir claude keeps for it, and answers `{code, stdout, stderr}`; `POST /work-tree
 // {workTree}` makes the machine's work tree under this user's home, `{workTreeProblem}` when it cannot (issue #361).
 // `POST /sign-in {act, …}` runs this machine's claude sign-in (issue #1128, sign-in.ts): `start` answers its URL, `paste` writes the
@@ -114,6 +114,9 @@ const CLAUDE_CALLS = [
   ['auth', 'status', '--json'],
 ];
 
+/** What `claude setup-token` prints (src/domain/agent-credential.ts; the client imports nothing of hopper). */
+const SETUP_TOKEN = /^sk-ant-oat\d\d-[A-Za-z0-9_-]{8,}$/;
+
 const allowedClaude = (v: unknown): v is string[] =>
   Array.isArray(v) && CLAUDE_CALLS.some((c) => c.length === v.length && c.every((a, i) => a === v[i]));
 
@@ -180,12 +183,15 @@ async function serve(o: ClientOptions, nonces: ReturnType<typeof createNonceCach
   if (path === '/level') return level(o.claudeBin ?? 'claude', body, answer);
   if (path === '/sign-in') { const r = await signIn(body); return answer(r.status, r.payload); }
   if (path === '/runtime') { const r = await runtimeRoute(o.runtimeSockets?.() ?? defaultRuntimeSockets(), body); return answer(r.status, r.payload); }
-  let parsed: { args?: unknown; timeoutMs?: unknown };
+  let parsed: { args?: unknown; timeoutMs?: unknown; token?: unknown };
   try { parsed = JSON.parse(body) as typeof parsed; } catch { return answer(400, { error: 'body must be JSON' }); }
   const timeoutMs = typeof parsed.timeoutMs === 'number' && parsed.timeoutMs > 0 ? Math.min(parsed.timeoutMs, MAX_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
   if (path === '/claude') {
     if (!allowedClaude(parsed.args)) return answer(400, { error: 'args must be one of the claude calls of a usage read' });
-    return answer(200, await runClaude(o.claudeBin ?? 'claude', parsed.args, timeoutMs));
+    // A lane pod's read (issue #1287): the user's setup token, for this one call, never kept here.
+    if (parsed.token !== undefined && (typeof parsed.token !== 'string' || !SETUP_TOKEN.test(parsed.token))) return answer(400, { error: 'token must be what claude setup-token prints' });
+    const env = typeof parsed.token === 'string' ? { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: parsed.token } : undefined;
+    return answer(200, await runClaude(o.claudeBin ?? 'claude', parsed.args, timeoutMs, '', env));
   }
   if (!validArgs(parsed.args)) return answer(400, { error: 'args must be a non-empty list of strings, without --session' });
   answer(200, await herdr(o, parsed.args, timeoutMs));

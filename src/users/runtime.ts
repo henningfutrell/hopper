@@ -15,7 +15,7 @@ import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts';
 import { logFailures } from '../engine/failure-log.ts'; import { createJobTerminal, type JobTerminal } from '../engine/terminal.ts'; import { createMachineTerminal, type MachineTerminal } from '../engine/machine-terminal.ts';
 import { linkToken } from '../client/link.ts';
-import type { MachineLinks } from '../machines/links.ts'; import { laneAgentSignIn } from '../machines/lane-pool.ts';
+import type { MachineLinks } from '../machines/links.ts'; import { laneSignIn } from '../machines/lane-pool.ts';
 import type { MachineJoin } from '../plugins/attached-edit.ts'; import { machineLeave, type MachineLeaveAnswer } from './machine-leave.ts';
 import { dockerHost } from '../executors/docker.ts';
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
@@ -264,7 +264,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // The GitHub proxy (issue #563): a client target's jobs reach the hopper where it dialled in.
   const proxy = createUserGitHubProxy({ user, store, clock, logger, linkPrivateKey: hopperLink.privateKey, accounts: connectedAccounts, url: (m) => o.proxyUrl?.(m, link.dialled(m.id), store.artifacts.settings().linkBase), artifactUrl: (id) => artifactUrl(linkBase(), id), publicUrl: () => config.publicUrl ?? o.reach?.(), sources: () => sync.statuses(), ...(o.stack ? { stack: o.stack } : {}), pushLines: createPushLines({ dir: join(dataDir, 'git-mirrors'), log: (line) => logger.warn(line) }) }); // the shrink guard's (issue #1096), in the user's mirrors
   const notEnded = () => store.jobs.list({ status: [...IN_FLIGHT_STATUSES] });
-  const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine);
+  const builtin = builtinInstances(config.answerTimeoutMs, config.localMachine); const lanePodSignIn = laneSignIn(() => host.targets(), (ask) => vault.podCredential(ask)); // a lane pod's agent sign-in, its jobs' and its usage reads' (issue #1287); reached only after `vault` exists
   let searchChanged = (_keys: readonly string[]): void => undefined; const host = createPluginHost({ // searchChanged: set once search exists (issue #945)
     ...(config.pluginDir ? { pluginDir: config.pluginDir } : {}), installedDir: o.installedDir,
     config: store.config, dataDir, clock, logger, userEnv: cliEnv,
@@ -274,7 +274,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow, o.access && ((login, actors) => o.access!.decideIntakeActor(user.id, login, actors)), { dataDir, logger }, (keys) => searchChanged(keys), () => clock.now()), connectedAccounts },
     machineContext: { executors: () => executorNames(), target },
     executorContext: { client: clientNamed, ...(o.jobPods ? { pods: { join: o.jobPods.join, instanceId: o.jobPods.instanceId, leave: (pod: string) => host.leavePod(pod), agentCredential: (ask: Parameters<Vault['podCredential']>[0]) => vault.podCredential(ask) } } : {}) }, // job pods (issue #1283), their agent's sign-in (issue #1287)
-    intervalMs: o.pluginsConfigIntervalMs,
+    usageSourceContext: { agentSignIn: (machine) => lanePodSignIn(machine) }, intervalMs: o.pluginsConfigIntervalMs,
     // The job sources follow the plugins config live (issue #356); reached only after `sync` exists.
     jobSourcesChanged: (built) => applyJobSources(built),
     executorInUse: (name) => notEnded().filter((j) => j.spec.executor === name).map((j) => j.id),
@@ -361,7 +361,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // Every job on a machine that reaches the hopper asks it for GitHub (issue #563): its token, the script, the URL, and
     // git's way to GitHub through it (issue #652). No job holds a GitHub token of its own.
     // A box's blast radius includes its template's rating (issue #605), read live from the vault.
-    jobProxy: proxy.jobProxy, agentSignIn: laneAgentSignIn(() => host.targets(), (ask) => vault.podCredential(ask)), boxRadius: (machine) => vault.boxRadius(machine),
+    jobProxy: proxy.jobProxy, agentSignIn: (job, machine) => lanePodSignIn(machine.id, job.id), boxRadius: (machine) => vault.boxRadius(machine),
     // Read at each Decision; reached only after `failures` exists. An applied lane recommendation edits the machine (issue #688).
     problems: () => failures.blocks(), machineLanes: machineLanesEditor(plugins),
     // A machine's lanes and a waiting job's machine are decider calls too (issue #688).
