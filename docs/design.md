@@ -996,7 +996,7 @@ When you are asked to research, do not do the work: research, then write a resea
 When you are asked for a proposal, do not do the work: write the proposal in Simplified Technical English (ASD-STE100), as Markdown, as a set of alternative paths. Start with TL;DR: (one or two sentences) and Problem: (a short problem statement). Then write each path as a heading "Path N: <title>" with these lines: Summary:, Security:, Effort:, Risk:, Friction: (for the person), Creates: (the jobs, issues or research that continuing with it creates), and more detail in Markdown if needed. Then Recommended: the number of the path, or the numbers of a combination, and why in one or two sentences. If no change is needed or no viable path was found, write Paths: none — and the reason. End with Context: (what you read and relied on). When a person must decide (a case the decisions line names), write Needs a person: and the case, and which rule does not settle it. Write each part in Markdown, with a short summary first, then lists, code spans and links where they help. End your message with a line containing only: HOPPER_PROPOSAL. When you recommend one path, or a combination of paths that go together, inside the standing rules, and need no person, the hopper continues with them at once. Else a person selects one or more paths to continue with; you are told the decision, or what to change.
 When a command waits for a login (it shows a code to enter at a URL), never ask a question about it: leave the command running in the background, and end your message with a line containing only HOPPER_AUTH_PENDING, then one line each: tool: <the command>, url: <the URL>, code: <the code>, expires_in: <seconds until the code expires>, and, when the command shows them, account: <the account or host it signs in to>, scopes: <the scopes it asks for>. The user completes the login; then the command goes on and you continue.
 Keep a task list for the job: the tasks that take it to done. When you make the list, and each time a task completes, write a line containing only: HOPPER_TASKS <completed>/<total>, for example HOPPER_TASKS 2/5. When the list changes, write the new total. The hopper shows this count as the progress of the job.
-When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, and, if you can, one line: until: <how you will know it happened>. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait. A wait only for a command of your own that runs in the background (a build, a test run) is not blocked: if you end your message with HOPPER_WAITING for it, write until: own command <its id> ends.
+When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, and, if you can, one line: until: <how you will know it happened>. To be woken when it happens, first start a command in the background that ends when it happens (a poll), and name it in until:. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait. A wait only for a command of your own that runs in the background (a build, a test run) is not blocked: if you end your message with HOPPER_WAITING for it, write until: own command <its id> ends. A poll is never a command of your own: never write own command for it. Never wait in a loop for the hopper to tend, rebase or merge a pull request: it does that by itself, so go on with your work or end the job.
 When the job is completely finished, end your final message with a line containing only: HOPPER_DONE
 If the job cannot be done, end with a line containing only: HOPPER_FAILED followed by the reason.
 ```
@@ -2085,7 +2085,7 @@ signal on GitHub. At worst the late rebase needs one more rebase after the head'
 the pull request ("Pull request housekeeping"). The log says each such release: the pull request, its head, and since when.
 
 **A merged pull request holds nothing** (issue #1162). A tend job holds its queue only while it works on the pull request:
-queued, held, claimed, running, or in its own wait, or finished with its end still to report to its source
+queued, held, claimed, running, or in its own wait on the outside world, or finished with its end still to report to its source
 (`queueHeads`' `reported`). Once that end is reported, the finished tend job follows the pull request, which holds the
 queue only on its way to the merge, or the pull request was merged or closed first and there is nothing to follow; either
 way the tend job holds nothing. Before, a tend job whose pull request a person merged while it worked finished following
@@ -2093,6 +2093,16 @@ nothing, and held every conflicted pull request of its repository until the hour
 that waits on a person (a question, parked, worked by hand) holds nothing either, nor one whose pull request any job saw
 merged or closed. A held card says since when (`heldSince`) and the tend job that holds it with its status now
 (`heldBehind.jobId`).
+
+**A tend job on its own command holds nothing** (issue #1210). A tend job on its own wait for its own background command
+(`ownCommand`, "A wait on its own command") works on nothing meanwhile, as one that waits on a person, so it holds nothing
+(`ownWaitOf` in `tending`). One tend job ran a `sleep` loop that read another pull request, and named it as its own command:
+four conflicted pull requests waited behind it with every lane free until `MAX_HELD_MS` ran out. Once its wait ends and it
+pushes, it is a head again. The protocol's wait line also says that a poll is never a command of the job's own, and that a job
+never waits in a loop for the hopper to tend, rebase or merge a pull request. Not built (issue #1210, left): a hopper wait on a
+pull request's state (`pr wait`, the job resumed on the pull request's next seen state), the proxy refusing or flagging the same
+read from one job again and again, a one-hour cap on an own command that only sleeps and reads, and a wait that says which
+event it waits on.
 
 **Rework goes back at once** (issue #938). The queue holds only a `rebase`: a rebase onto a base that a head is about to
 move is made again after that merge. A `fix_checks` is rework, and no head holds it: every pull request with failed checks
