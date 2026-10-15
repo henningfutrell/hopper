@@ -33,10 +33,9 @@ const HOME_SUFFIX = '-home';
 
 /**
  * Removes each home volume with these labels whose box is not in `held` (issue #1371): a home whose remove failed, or one
- * a hopper that stopped mid-step left. A runtime that lists no volumes (through a machine's relay) is left as it is.
+ * a hopper that stopped mid-step left. On a client target too: its client lists the volumes (issue #1371).
  */
 export async function sweepHomes(runtime: ContainerRuntime, labels: Record<string, string>, held: ReadonlySet<string>): Promise<void> {
-  if (!runtime.listVolumes) return;
   for (const name of await runtime.listVolumes(labels)) {
     if (!name.endsWith(HOME_SUFFIX) || held.has(name.slice(0, -HOME_SUFFIX.length))) continue;
     await runtime.removeVolume(name).catch(() => {});

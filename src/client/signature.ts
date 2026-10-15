@@ -12,6 +12,11 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 export const REQUEST_HEADER = 'x-hopper-signature';
 export const RESPONSE_HEADER = 'x-hopper-client-signature';
 export const WINDOW_MS = 30000;
+/**
+ * The most a machine's signed ask may be credited for the time it waited behind the hopper's held event loop (issue
+ * #1383): read only when the loop is free, it is that much older than it was when it came. The nonce is still once.
+ */
+export const HELD_CREDIT_MS = 5 * 60_000;
 /** 256 bits, base64url: the shortest token accepted. */
 const MIN_TOKEN = 43;
 
@@ -55,6 +60,17 @@ export function createNonceCache(windowMs = WINDOW_MS): NonceCache {
 
 const HEADER = /^ts=(\d{1,16}),nonce=([0-9a-f]{32}),sig=([A-Za-z0-9_-]{43})$/;
 
+/** How long the hopper's event loop was held since a moment (ms since the epoch): event-loop.ts `heldSince`. */
+export type HeldSince = (from: number) => number;
+
+/** A machine's ask signed at `ts` is fresh: within the window, plus the time it waited behind a held loop, at most HELD_CREDIT_MS. */
+function fresh(ts: number, now: number, heldSince: HeldSince | undefined): boolean {
+  const age = now - ts;
+  if (age < -WINDOW_MS) return false;
+  if (age <= WINDOW_MS) return true;
+  return age <= WINDOW_MS + Math.min(heldSince?.(ts) ?? 0, HELD_CREDIT_MS);
+}
+
 export type Verdict = { ok: true; nonce: string } | { ok: false; why: 'unsigned' | 'stale' | 'bad signature' | 'replayed' };
 
 export function verifyRequest(token: string, header: string | undefined, method: string, path: string, body: string, nonces: NonceCache, now = Date.now()): Verdict {
@@ -77,11 +93,11 @@ export function signConnect(token: string, user: string, machineKey: string, now
   return `ts=${now},nonce=${nonce},sig=${mac(token, ['hopper-connect', user, machineKey, String(now), nonce])}`;
 }
 
-export function verifyConnect(token: string, header: string | undefined, user: string, machineKey: string, nonces: NonceCache, now = Date.now()): Verdict {
+export function verifyConnect(token: string, header: string | undefined, user: string, machineKey: string, nonces: NonceCache, now = Date.now(), heldSince?: HeldSince): Verdict {
   const m = header ? HEADER.exec(header) : null;
   if (!m) return { ok: false, why: 'unsigned' };
   const [, ts, nonce, sig] = m as unknown as [string, string, string, string];
-  if (Math.abs(now - Number(ts)) > WINDOW_MS) return { ok: false, why: 'stale' };
+  if (!fresh(Number(ts), now, heldSince)) return { ok: false, why: 'stale' };
   if (!same(sig, mac(token, ['hopper-connect', user, machineKey, ts, nonce]))) return { ok: false, why: 'bad signature' };
   if (nonces.seen(nonce, now)) return { ok: false, why: 'replayed' };
   return { ok: true, nonce };
@@ -97,11 +113,11 @@ export function signVault(token: string, user: string, machineKey: string, body:
   return `ts=${now},nonce=${nonce},sig=${mac(token, ['hopper-vault', user, machineKey, String(now), nonce, sha256(body)])}`;
 }
 
-export function verifyVault(token: string, header: string | undefined, user: string, machineKey: string, body: string, nonces: NonceCache, now = Date.now()): Verdict {
+export function verifyVault(token: string, header: string | undefined, user: string, machineKey: string, body: string, nonces: NonceCache, now = Date.now(), heldSince?: HeldSince): Verdict {
   const m = header ? HEADER.exec(header) : null;
   if (!m) return { ok: false, why: 'unsigned' };
   const [, ts, nonce, sig] = m as unknown as [string, string, string, string];
-  if (Math.abs(now - Number(ts)) > WINDOW_MS) return { ok: false, why: 'stale' };
+  if (!fresh(Number(ts), now, heldSince)) return { ok: false, why: 'stale' };
   if (!same(sig, mac(token, ['hopper-vault', user, machineKey, ts, nonce, sha256(body)]))) return { ok: false, why: 'bad signature' };
   if (nonces.seen(nonce, now)) return { ok: false, why: 'replayed' };
   return { ok: true, nonce };
@@ -116,11 +132,11 @@ export function signLeave(token: string, user: string, machineKey: string, now =
   return `ts=${now},nonce=${nonce},sig=${mac(token, ['hopper-leave', user, machineKey, String(now), nonce])}`;
 }
 
-export function verifyLeave(token: string, header: string | undefined, user: string, machineKey: string, nonces: NonceCache, now = Date.now()): Verdict {
+export function verifyLeave(token: string, header: string | undefined, user: string, machineKey: string, nonces: NonceCache, now = Date.now(), heldSince?: HeldSince): Verdict {
   const m = header ? HEADER.exec(header) : null;
   if (!m) return { ok: false, why: 'unsigned' };
   const [, ts, nonce, sig] = m as unknown as [string, string, string, string];
-  if (Math.abs(now - Number(ts)) > WINDOW_MS) return { ok: false, why: 'stale' };
+  if (!fresh(Number(ts), now, heldSince)) return { ok: false, why: 'stale' };
   if (!same(sig, mac(token, ['hopper-leave', user, machineKey, ts, nonce]))) return { ok: false, why: 'bad signature' };
   if (nonces.seen(nonce, now)) return { ok: false, why: 'replayed' };
   return { ok: true, nonce };

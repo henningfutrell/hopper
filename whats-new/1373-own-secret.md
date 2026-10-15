@@ -1,0 +1,1 @@
+- When you move the hopper onto Kubernetes, you can make the master key Secret yourself: the move then never reads the key, and checks in the cluster that it is the right one.

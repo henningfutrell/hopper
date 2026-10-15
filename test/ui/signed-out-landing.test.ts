@@ -63,7 +63,7 @@ describe('logged out: only the landing page', () => {
     it(`${required ? 'several users' : 'one user'}: the ways to sign in and nothing of the app, and no read but the session`, async () => {
       await boot(async () => json({ authenticated: false, viewing: { id: 'admin', name: 'admin' }, signIn: offer(required) }));
       await vi.waitFor(() => expect(landing()).not.toBeNull());
-      expect(document.querySelector('input[aria-label="Username"]')).not.toBeNull();
+      expect(document.querySelector('input[aria-label="Email or username"]')).not.toBeNull();
       expect(document.querySelector('input[aria-label="Login code"]')).toBeNull();
       expect(shell()).toBeNull();
       for (const label of ['Queue', 'Questions', 'Decisions', 'Events', 'Sources', 'Machines', 'Usage', 'Settings']) expect(text()).not.toContain(label);
@@ -89,7 +89,7 @@ describe('logged out: only the landing page', () => {
     await vi.waitFor(() => expect(landing()).not.toBeNull());
     const card = landing()!.querySelector('[data-landing-card]');
     const showcase = landing()!.querySelector('[data-landing-showcase]');
-    expect(card!.querySelector('input[aria-label="Username"]')).not.toBeNull();
+    expect(card!.querySelector('input[aria-label="Email or username"]')).not.toBeNull();
     expect(showcase?.querySelector('h2')?.textContent).toContain('Your GitHub issues, worked on your machines');
     expect([...showcase!.querySelectorAll('[data-landing-step]')].map((s) => s.querySelector('h3')?.textContent)).toEqual([
       'Label an issue', 'It runs on your machine', 'Review the pull request',

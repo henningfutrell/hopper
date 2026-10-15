@@ -5,7 +5,8 @@
 // among themselves, edited in a form of its type's fields or removed; one added from the form of the
 // chosen type; whoever signs in one of those ways connects their GitHub in Sources for their jobs.
 // Then how long a session lasts (./session-lengths.tsx, issue #439), device links (the login code) and no sign-in,
-// each saying what it does. Every switch says On or Off in words. The hopper keeps no password accounts of its own.
+// each saying what it does. Every switch says On or Off in words. The hopper's own local accounts (an email and a
+// password, issue #1380): ./local-accounts.tsx, with a local account's own password change.
 // No YAML: every setting is a field. In Settings, admin only (GET /api/realms). Every change is POST /ui/api/realms
 // against the version read, and applies at once; the daemon refuses one that would not load, or that would end your
 // own admin session, and the refusal is shown where the change was made. Admins: ./admins.tsx (issue #242).
@@ -14,6 +15,7 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Confirm } from '@/components/confirm';
 import { Admins } from '@/views/admins';
+import { LocalAccounts, OwnPassword } from '@/views/local-accounts';
 import { SessionLengthsPanel } from '@/views/session-lengths';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
@@ -42,8 +44,7 @@ export function Realms() {
   const canAdmin = useCanAdminInstance();
   const [view, setView] = useState<RealmsView | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null), [busy, setBusy] = useState(false);
 
   // GET /api/realms answers an admin session (or loopback without one): nobody else reads it.
   useEffect(() => {
@@ -67,7 +68,7 @@ export function Realms() {
     } finally { setBusy(false); }
   };
 
-  if (!canAdmin) return <Panel title="Sign-in" icon={KeyRound}><Empty>Only the hopper's admins manage sign-in.</Empty></Panel>;
+  if (!canAdmin) return <div className="space-y-3"><OwnPassword /><Panel title="Sign-in" icon={KeyRound}><Empty>Only the hopper's admins manage sign-in.</Empty></Panel></div>;
   if (!view) return <Panel title="Sign-in" icon={KeyRound}><Empty>Loading…</Empty></Panel>;
   const { version, githubAdmin } = view;
   // Each realm with its place in the whole list: a move names that place.
@@ -98,6 +99,7 @@ export function Realms() {
 
   return (
     <div className="space-y-3">
+      <OwnPassword />
       <Panel title="GitHub" icon={KeyRound}>
         <div data-section="github" className="space-y-3 text-sm">
           <p className="text-muted-foreground">
@@ -120,7 +122,7 @@ export function Realms() {
           ) : list(github)}
         </div>
       </Panel>
-      <Admins view={view} busy={busy} change={change} />
+      <Admins view={view} busy={busy} change={change} /><LocalAccounts />
       <Panel title="Other ways to sign in" icon={Users} count={others.length}
         action={!editing ? <Button size="xs" variant="outline" className="gap-1" onClick={() => { setError(null); setEditing({ draft: emptyDraft('oidc') }); }}><Plus />Add realm</Button> : undefined}>
         <div data-section="other" className="space-y-3 text-sm">

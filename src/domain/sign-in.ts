@@ -208,6 +208,21 @@ export type RealmsEdit = { version: string } & (
   | { action: 'super-admin'; who: { realm: string; subject: string }; transfer?: boolean }
 );
 
+/**
+ * One local account as Settings → Sign-in shows it (GET /api/local-accounts, issue #1380): never its hash. `user`: the
+ * user it signs in as, once it has signed in.
+ */
+export interface LocalAccountView { email: string; role: UiRole; createdAt: string; user?: string }
+
+/** GET /api/local-accounts (instance admin): every local account, by email. */
+export interface LocalAccountsView { accounts: LocalAccountView[] }
+
+/** POST /ui/api/local-accounts (instance admin): one change to the local accounts. */
+export type LocalAccountsEdit =
+  /** Add an account, or change one's role and, given, its password. */
+  | { action: 'save'; email: string; role: UiRole; password?: string }
+  | { action: 'remove'; email: string };
+
 /** GET /ui/api/session. */
 export interface SessionView {
   authenticated: boolean;

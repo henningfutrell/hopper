@@ -1,5 +1,5 @@
-// Logged out, the page is only the landing page (issue #213): the hopper's name and the ways to sign in — a button per GitHub realm, per OIDC or SAML realm (the sign-in config), a username
-// and password form while an LDAP realm is on, and continuing without sign-in while `none` is on. The
+// Logged out, the page is only the landing page (issue #213): the hopper's name and the ways to sign in — a button per GitHub realm, per OIDC or SAML realm (the sign-in config), an email or
+// username and password form while there is a local account (issue #1380) or an LDAP realm is on, and continuing without sign-in while `none` is on. The
 // login code is not offered here (issue #247): its device link signs a browser in by itself (main.tsx).
 // GitHub (issues #214, #258): to GitHub and back in this browser when the hopper can (`redirect`, on the
 // sign-in origin), else the device code; the code stays a link away. The sign-in card over a backdrop
@@ -43,7 +43,7 @@ function PasswordSignIn() {
   const submit = async () => { finish(await signInWithPassword(username.trim(), password)); setPassword(''); };
   return (
     <form className="flex w-full flex-col gap-2" onSubmit={(e) => { e.preventDefault(); if (username.trim() && password) void submit(); }}>
-      <Input aria-label="Username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username"
+      <Input aria-label="Email or username" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Email or username"
         autoComplete="username" className="h-10" />
       <Input aria-label="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password"
         autoComplete="current-password" className="h-10" />

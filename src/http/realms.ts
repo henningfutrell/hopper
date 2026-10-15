@@ -35,7 +35,7 @@ const supersOf = (config: AuthConfig): string[] =>
   config.superAdmins.filter((a) => isSuperAdmin(config, a)).map((a) => `${a.realm} ${a.subject}`).sort();
 
 export function createRealmsAdmin(o: {
-  instance: Pick<InstanceStore, 'signInConfig' | 'users' | 'identities'>;
+  instance: Pick<InstanceStore, 'signInConfig' | 'users' | 'identities' | 'localAccounts'>;
   /** The realms the environment set up at start. */
   environment: string[];
   signIn: SignIn; sessions: UiSessions;
@@ -110,7 +110,7 @@ export function createRealmsAdmin(o: {
       if (!superActor && supersOf(config).join('\n') !== supersOf(current).join('\n')) {
         throw new HttpError(403, 'this change would change who is a super admin: only a super admin may');
       }
-      const role = roleIn(config, actor);
+      const role = roleIn(config, actor, o.instance.localAccounts);
       if (role === null || !roleAllows(role, 'admin')) {
         throw new HttpError(409, `this change would end your own admin session (${actor.realm}): sign in as an admin another way first, or change it with hopper config set sign-in`);
       }

@@ -58,8 +58,8 @@ bash hopper-cluster.sh migrate                    # in the folder of compose.yam
 ```
 
 Options: `--namespace` (default `hopper`), `--release` (default `hopper`), `--chart <dir>` (default: the chart in the
-compose hopper's image), `--set key=value` (more chart values, as `helm install --set`), and the outside store options
-below.
+compose hopper's image), `--set key=value` (more chart values, as `helm install --set`), and the master key options
+below (`--master-key-secret`, `--external-secret-*`).
 
 What it does, in order:
 
@@ -67,11 +67,14 @@ What it does, in order:
    stack runs; the image is one the cluster can pull (a `localhost/` image needs `--set image.repository=… --set
    image.tag=…`); the local KMS is off. Then the master key: from `HOPPER_MASTER_KEY` given here, else the key sealed to
    this host (`master-key.sh`), else the compose hopper's launch environment, else asked on the terminal. Its
-   fingerprint must be the running hopper's (`hopper master-key status`). If one check fails, nothing changes.
-2. **The master key and the settings.** The key goes into the Secret `hopper-master-key` on a pipe. The chart mounts it
-   as a file. The hopper's own launch settings go to the chart (see "What is carried" below).
+   fingerprint must be the running hopper's (`hopper master-key status`). With `--master-key-secret`, the key is not
+   read: the Secret you made must be there, with a `master-key`. If one check fails, nothing changes.
+2. **The master key and the settings.** The key goes into the Secret `hopper-master-key` on a pipe (not with
+   `--master-key-secret` or an outside store). The chart mounts it as a file. The hopper's own launch settings go to the
+   chart (see "What is carried" below).
 3. **The release, with the hopper at 0.** `helm install` with `replicas=0`. Its Postgres, OpenFGA and Solr start empty.
-   The compose hopper still runs.
+   The compose hopper still runs. With `--master-key-secret` or an outside store, a one-off pod checks the key in the
+   Secret now (below); a key of another fingerprint stops here, and the compose hopper runs on.
 4. **The cutover starts.** The user service's port check (`hopper-compose-check.timer`) stops, and the user service no
    longer starts the stack at boot. The compose hopper stops: nothing writes its database now.
 5. **The data.** `pg_dump` of compose's Postgres goes on a pipe into `pg_restore` in the chart's Postgres, into a new,
@@ -88,14 +91,29 @@ What it does, in order:
 If a step from 4 to 7 fails, or you stop the script (Ctrl-C), it rolls back by itself (below), and says which step
 stopped. The cluster's release stays, with its hopper at 0.
 
-### The master key: a Secret, or an outside store
+### The master key
 
-The master key never goes to a file, a log or a command line here. The script holds it in memory, and gives it to the
-next command on a pipe. You choose where the cluster keeps it:
+The master key never goes to a file, a log or a command line here. You choose where the cluster keeps it, and whether
+the script touches it at all:
 
-- **A Secret (the default).** The script puts the key in the Secret `<release>-master-key`, under `master-key`. The
-  chart mounts it as a file (`masterKey.existingSecret`). The key is then in the cluster's store (etcd). k3s keeps it in
-  its `data/` folder, readable only by you. Choose this for a cluster on this host.
+- **A Secret the script makes (the default).** The script reads the key from the launch source, holds it in memory, and
+  puts it in the Secret `<release>-master-key`, under `master-key`, on a pipe. The chart mounts it as a file
+  (`masterKey.existingSecret`). The key is then in the cluster's store (etcd). k3s keeps it in its `data/` folder,
+  readable only by you.
+- **A Secret you make: the script never reads the key.** Make the namespace and the Secret first, from your password
+  manager. Then give its name:
+
+  ```sh
+  kubectl create namespace hopper
+  kubectl --namespace hopper create secret generic hopper-master-key --from-file=master-key=/dev/stdin
+  # paste the key, then Ctrl-D
+  bash hopper-cluster.sh migrate --master-key-secret hopper-master-key
+  ```
+
+  The script reads no launch source and never reads the Secret's value. After `helm install` (the hopper at 0), a
+  one-off pod of the hopper's image (`<release>-key-check`, removed after) mounts the Secret as the chart does and
+  prints only the key's fingerprint. It must be the running hopper's, else the move stops before the compose hopper
+  stops. Choose this when the key must not pass through any tool but your own.
 - **An outside store.** Put the key in your store first, under a key of your choice. The External Secrets Operator must
   run in the cluster, with a `ClusterSecretStore` (or `SecretStore`) for your store. Then:
 
@@ -105,8 +123,9 @@ next command on a pipe. You choose where the cluster keeps it:
   ```
 
   The chart makes the `ExternalSecret` (`masterKey.externalSecret.*`). The script waits up to 5 minutes for the
-  operator to fill the Secret, and checks its fingerprint before the compose hopper stops. The script writes nothing to
-  your store. Choose this when the cluster is shared, or when a store is where your keys are kept already.
+  operator to fill the Secret, and checks its fingerprint in a one-off pod, as above, before the compose hopper stops.
+  The script never reads the key, and writes nothing to your store. Choose this when the cluster is shared, or when a
+  store is where your keys are kept already.
 
 AWS KMS (`kms.aws.*`) wraps only the vault's data key, not the master key ("AWS KMS for the vault" in
 `docs/deploy.md`): give it with `--set` if you want it. The local KMS of compose (profile `kms`) cannot move: its keys

@@ -14,6 +14,7 @@
 //   hopper join-code [--user <id>]                    a one-time join code: a machine joins with <hopper URL>#<code> (issue #308)
 //   hopper ssh-key [--user <id>]                      the public half of the hopper's ssh key (issue #307)
 //   hopper ledger rebuild [--user <id>]               the work-item ledger replayed from every event (issue #1067)
+//   hopper local-account list|add|password|remove     the local accounts, a password on stdin (issue #1380, cli-local-accounts.ts)
 //   hopper job|queue|question … [--user <id>] [--url <hopper URL>]
 //                                                     an operator action on the running daemon (issue #374, cli-operator.ts)
 //   hopper problem|handoff|failure … [--user <id>] [--url <hopper URL>]
@@ -29,7 +30,8 @@
 //   hopper update drift [--url <hopper URL>]          the running stack's drift from its compose file (issue #1017, cli-update-drift.ts)
 //   hopper help                                       what each command does
 //
-// There is no login from here (issue #238: no bootstrap login): people sign in through a realm. An agent with a grant — a
+// There is no login from here (issue #238: no bootstrap login): people sign in through a realm or a local account, and a
+// hopper with no identity provider gets its first admin from `hopper local-account add` (issue #1380). An agent with a grant — a
 // delegate approver (issue #1138) — runs the operator actions with no database: HOPPER_REFRESH_TOKEN_FILE names the file
 // that holds the grant's refresh token, HOPPER_URL (or --url) the hopper.
 //
@@ -52,6 +54,7 @@ import { runtimeSecrets } from './secrets/runtime.ts';
 import { OPERATOR_COMMANDS, OPERATOR_USAGE, REFRESH_TOKEN_FILE, runOperatorAction, runOperatorActionWithGrant } from './cli-operator.ts';
 import { OperatorRefusal } from './cli-operator-call.ts';
 import { printHostScript, runUpdate, UPDATE_USAGE } from './cli-update.ts';
+import { LOCAL_ACCOUNT_USAGE, LocalAccountUsage, localAccountCommand } from './cli-local-accounts.ts';
 
 export interface CliIo {
   env: Record<string, string | undefined>;
@@ -77,6 +80,7 @@ usage:
                                                      authorized_keys takes (scripts/agent-boxes.sh asks it)
   hopper ledger rebuild                              the work-item ledger replayed from every event and the issue graph,
                                                      in place of the rows there are; prints how many items it holds
+${LOCAL_ACCOUNT_USAGE}
 ${OPERATOR_USAGE}
 ${UPDATE_USAGE}
   hopper service script                              print the host's user-service script (scripts/hopper-service.sh): it
@@ -263,7 +267,7 @@ function ledger(instance: InstanceStore, args: string[], io: CliIo): void {
   }
 }
 
-const COMMANDS: readonly string[] = ['config', 'users', 'user', 'join-code', 'ssh-key', 'ledger', 'update', ...OPERATOR_COMMANDS];
+const COMMANDS: readonly string[] = ['config', 'users', 'user', 'local-account', 'join-code', 'ssh-key', 'ledger', 'update', ...OPERATOR_COMMANDS];
 
 /** Run one command; the exit code. */
 export async function runCli(argv: string[], io: CliIo): Promise<number> {
@@ -313,6 +317,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     else if (command === 'ssh-key') sshKey(store, rest, io);
     else if (command === 'ledger') ledger(store, rest, io);
     else if (command === 'config') config(store, rest, io);
+    else if (command === 'local-account') await localAccountCommand(store, rest, io, clock.now);
     else {
       const instance = store;
       return await runOperatorAction(instance, command, rest, (id) => userOf(instance, id), io);
@@ -320,7 +325,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     return 0;
   } catch (e) {
     io.err(`hopper: ${e instanceof Error ? e.message : String(e)}\n`);
-    return e instanceof CliError || e instanceof OperatorRefusal ? 2 : 1;
+    return e instanceof CliError || e instanceof OperatorRefusal || e instanceof LocalAccountUsage ? 2 : 1;
   } finally {
     store?.close();
   }

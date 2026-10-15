@@ -70,7 +70,7 @@ describe('sign in first', () => {
   it('the landing page offers the ways to sign in — no username and password form — and shows no work', async () => {
     await render('../../ui/src/app/landing.tsx', 'Landing', { authed: false, user: null, signIn: offer(true) });
     expect(document.querySelector('[data-slot="landing"]')).not.toBeNull();
-    expect(document.querySelector('input[aria-label="Username"]')).toBeNull();
+    expect(document.querySelector('input[aria-label="Email or username"]')).toBeNull();
   });
 
   it('signed out, the page names no open-ui.sh and asks for no login code (issue #247)', async () => {

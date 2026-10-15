@@ -2,6 +2,7 @@
 // only way to mutate (design.md "Phase 3"). Loopback, plus the LAN names when set; every request
 // passes the Host guard (AGENTS.md).
 import { watchEventLoop, type EventLoopStall } from './event-loop.ts';
+import type { HeldWatch } from './event-loop-held.ts';
 import { join } from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { accessRoutes } from './access.ts';
@@ -45,6 +46,7 @@ import { reviewRoutes } from './reviews.ts';
 import { sectionRoutes } from './sections.ts';
 import { questionRoutes } from './questions.ts';
 import { createRealmsAdmin, realmRoutes } from './realms.ts';
+import { createLocalAccountsAdmin, localAccountRoutes } from './local-accounts.ts';
 import { createApiGrants } from './ui/api-grants.ts';
 import { actionFields, routeScopeRegistry } from './scopes.ts';
 import { sourceRoutes } from './sources.ts';
@@ -89,7 +91,7 @@ export type { TailnetSource } from './tailnet.ts';
 
 export interface ServerOptions {
   /** The instance store: UI sessions, login codes, the users and their identity links, the sign-in config. */
-  instance: Pick<InstanceStore, 'uiSessions' | 'apiGrants' | 'loginCodes' | 'joinCodes' | 'users' | 'identities' | 'signInConfig' | 'settings' | 'stackHistory' | 'tx'>;
+  instance: Pick<InstanceStore, 'uiSessions' | 'apiGrants' | 'loginCodes' | 'joinCodes' | 'users' | 'identities' | 'localAccounts' | 'signInConfig' | 'settings' | 'stackHistory' | 'tx'>;
   /** Every user's running parts (issue #158): a tenant route reads and changes the request's user's. */
   tenants: Tenants;
   /** The plugin store (the instance's): GET /api/plugin-store, POST /ui/api/plugin-store. */
@@ -140,6 +142,8 @@ export interface ServerOptions {
   client: Pick<ClientLinkOptions, 'links' | 'release' | 'installScript' | 'poolKey'>;
   /** Fastify logger; off by default. */
   logger?: boolean;
+  /** The thread that reads where the event loop is held (issue #1383); absent: a stall does not say. */
+  held?: HeldWatch;
 }
 
 export function createServer(o: ServerOptions): FastifyInstance {
@@ -152,7 +156,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   // (issue #1154), shown on /api/health, and raised as an instance event.
   const events = o.events;
   const loop = watchEventLoop(app, {
-    clock: o.clock, warn: (line) => console.warn(line), storeCalls: slowStoreCalls.since,
+    clock: o.clock, warn: (line) => console.warn(line), storeCalls: slowStoreCalls.since, ...(o.held ? { held: o.held } : {}),
     ...(events ? { raise: ({ at: _at, ...data }: EventLoopStall & { skipped: number }) => { events.append({ type: 'hopper.event_loop_stalled', data }); } } : {}),
   });
   // Every end of a session is logged and is an event of its user's (issue #439): early logouts can be told apart.
@@ -224,8 +228,11 @@ export function createServer(o: ServerOptions): FastifyInstance {
   componentWatcherReadRoutes(app, { ...tenant, instanceAdmin }); // Component watchers (issue #1077): the stack's only for the instance admin
   const realms = createRealmsAdmin({ instance: o.instance, environment: o.signInEnvironment, signIn: o.signIn, sessions, grants });
   realmRoutes(app, { realms, instanceAdmin });
+  // Local accounts (issue #1380): the hopper's own email and password sign-in.
+  const localAccounts = createLocalAccountsAdmin({ instance: o.instance, signIn: o.signIn, sessions, grants, clock: o.clock });
+  localAccountRoutes(app, { localAccounts, instanceAdmin });
   accessRoutes(app, { access: o.access, instanceAdmin });
-  clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan });
+  clientLinkRoutes(app, { ...o.client, tenants: o.tenants, instance: o.instance, clock: o.clock, port: o.port, lan: o.lan, heldSince: loop.heldSince });
   // A running job asks the hopper for GitHub (issue #563), with its own proxy token.
   const { proxy: github, prWaits } = jobGitHubRoutes(app, { tenants: o.tenants, clock: o.clock, updater: o.updater });
   jobGitRoutes(app, { tenants: o.tenants });
@@ -256,7 +263,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   staticRoutes(app, o.uiDir);
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
-    ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
+    ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, localAccounts, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
     updater: o.updater, instanceAdmin, access: o.access, sandboxes: o.sandboxes, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, hostLink: o.instance.settings, wsl: o.wsl,
   });
   return app;

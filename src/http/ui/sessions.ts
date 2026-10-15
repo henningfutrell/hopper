@@ -49,6 +49,8 @@ export interface UiSessions {
   reconcile(roleOf: (who: Identity) => UiRole | null): { dropped: number; changed: number };
   /** The identities of the stored sessions, as their realms gave them at sign-in. */
   identities(): Identity[];
+  /** End every session and API token of this identity but `keep` (a local account's password changed, issue #1380); how many. */
+  endIdentity(who: Pick<Identity, 'realm' | 'subject'>, keep?: string): number;
 }
 
 /** A renewal is written at most this often (a tenth of the idle timeout when that is shorter); a gateway token is checked as often. */
@@ -218,6 +220,11 @@ export function createUiSessions(o: {
     },
     identities() {
       return o.repo.all().map((r) => r.identity);
+    },
+    endIdentity(who, keep) {
+      const rows = o.repo.all().filter((r) => r.identity.realm === who.realm && r.identity.subject === who.subject && (keep === undefined || r.tokenHash !== hashOf(keep)));
+      for (const r of rows) end(r, 'logout');
+      return rows.length;
     },
   };
 }

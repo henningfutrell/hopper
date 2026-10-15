@@ -9,6 +9,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { isSuperAdmin, type SignIn } from '../../auth/index.ts';
+import { registerLocalAccountRoutes } from './local-accounts.ts';
 import type { Clock, InstanceStore, PluginStoreView, Updater } from '../../domain/ports.ts';
 import { ACCESS_UNAVAILABLE, CONNECTED_ACCOUNT_PROVIDERS, MAX_HISTORY_RETENTION_DAYS, HERDR_SESSION, HOST_KEY, LIST_ROLES, QUEUE_GATE_MODES, REALM_TYPES, ROLES, SELECTABLE_ROLES, UI_ROLES, type RealmsEdit, type RealmsView, type SessionView, type UiRole, type UserAdded } from '../../domain/types.ts';
 import { HttpError, parseWith } from '../errors.ts';
@@ -48,8 +49,8 @@ export interface UiRouteOptions extends Pick<Parameters<typeof registerInstanceR
   /** Grants (issue #881), and every scope a route needs. */
   grants: import('./api-grants.ts').ApiGrants; scopeRegistry: import('../../domain/scope-registry.ts').ScopeRegistry;
   signIn: SignIn;
-  /** Settings → Sign-in: the sign-in config's realms (issue #185). */
-  realms: RealmsAdmin;
+  /** Settings → Sign-in: the sign-in config's realms (issue #185), and the local accounts (issue #1380). */
+  realms: RealmsAdmin; localAccounts: import('../local-accounts.ts').LocalAccountsAdmin;
   pluginStore: PluginStoreView;
   /** The bound port (known only after listen). */
   port: () => number;
@@ -398,10 +399,9 @@ export function registerUiRoutes(app: FastifyInstance, o: UiRouteOptions): void 
 
   // Realms (issue #185, design.md "Sign-in: realms"): one change to the sign-in config, applied at once.
   // Answers the new GET /api/realms view.
-  app.post('/ui/api/realms', instance, async (req): Promise<RealmsView> => {
-    const s = sessionOf(req)!;
-    return o.realms.edit(parseWith(realmsEditBody, req.body) as RealmsEdit, s.identity);
-  });
+  app.post('/ui/api/realms', instance, async (req): Promise<RealmsView> => o.realms.edit(parseWith(realmsEditBody, req.body) as RealmsEdit, sessionOf(req)!.identity));
+  // Local accounts (issue #1380, design.md "Local accounts"): add, change or remove one; an account's own password change.
+  registerLocalAccountRoutes(app, { instance, viewer: allow('viewer'), localAccounts: o.localAccounts, sessionOf });
 
   app.post('/ui/api/logout', allow('viewer'), async (req) => {
     sessions.drop(sessionOf(req)!.token, 'logout');

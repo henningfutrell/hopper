@@ -2,6 +2,7 @@
 // realm fills the same Identity, so the rules read the same everywhere. The highest
 // matching role wins; nothing matching and no default role → no role, no session.
 import type { Identity, UiRole } from '../domain/types.ts';
+import type { AuthConfig } from './config.ts';
 
 /** Who a role is granted to. Emails, domains and usernames compare case-insensitively; subjects and groups exactly. */
 export interface RoleMatch {
@@ -36,4 +37,10 @@ function matches(who: Identity, m: RoleMatch | undefined): boolean {
 
 export function roleFor(who: Identity, rules: RoleRules): UiRole | null {
   return HIGHEST_FIRST.find((r) => matches(who, rules[r])) ?? rules.defaultRole ?? null;
+}
+
+/** `who` is a super admin (issue #242): named in the super admins, and its realm is there and on. Never the login code or no sign-in. */
+export function isSuperAdmin(config: AuthConfig, who: Pick<Identity, 'realm' | 'subject'>): boolean {
+  return config.superAdmins.some((a) => a.realm === who.realm && a.subject === who.subject)
+    && config.realms.some((r) => r.name === who.realm && r.enabled);
 }

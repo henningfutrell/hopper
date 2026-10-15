@@ -833,5 +833,5 @@ export type { SearchIndex } from './search.ts';
 
 // ---- Persistence: src/domain/store.ts (re-exported here, one vocabulary) ----------------
 
-export type * from './store.ts';
+export type * from './store.ts'; export type * from './local-accounts.ts'; // local accounts (issue #1380)
 export { CONFIG_NAMES, INSTANCE_CONFIG, USER_CONFIG } from './store.ts';
