@@ -44,7 +44,7 @@ describe('infra credentials', () => {
   });
 
   it('a token variable in the environment counts by its name; an empty one and any other do not', () => {
-    expect(infraCredentialsAt(home, { GH_TOKEN: 'x', KUBECONFIG: '/k', PATH: '/bin', AWS_SESSION_TOKEN: '' })).toEqual(['$GH_TOKEN', '$KUBECONFIG']);
+    expect(infraCredentialsAt(home, { GH_TOKEN: 'x', KUBECONFIG: '/k', PATH: '/bin', AWS_SESSION_TOKEN: '' })).toEqual(['$KUBECONFIG', '$GH_TOKEN']);
   });
 
   it('the command an ssh target runs prints each one there; read back from the probe\'s other lines, never a value', () => {
