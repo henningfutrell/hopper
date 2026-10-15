@@ -1,4 +1,4 @@
-// The last accounts (issue #1269, tenant migration 64): who each machine's agent tool was last read signed in as, one row per
+// The last accounts (issue #1269, tenant migration 65): who each machine's agent tool was last read signed in as, one row per
 // machine and service, the label only (identity, organization, when), as JSON in the body. Never a token.
 import type { LastAccount, LastAccountRepository } from '../domain/types.ts';
 import { parse, type StoreContext } from './context.ts';
