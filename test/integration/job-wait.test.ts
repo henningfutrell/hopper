@@ -120,6 +120,26 @@ describe('a job that waits on what it named', () => {
     expect(events.find((e) => e.type === 'job.wait_ended')!.data).toEqual({ by: 'hopper', note: `${PR} was merged` });
   });
 
+  it('a job waiting on an issue the ledger holds closed already goes on at once (issue #1356): no event comes for it now', async () => {
+    const ISSUE = 'https://github.com/o/r/issues/45';
+    const herdr = createFakeHerdrClient({ session: 'jh-test' });
+    const a = await start(herdr);
+    const { store } = a.user();
+    const card = { source: 'gh', key: ISSUE, hash: 'a'.repeat(64), author: 'someone' };
+    store.events.append({ type: 'source.request_opened', data: { ...card, why: ['not a trusted actor'] } });
+    store.events.append({ type: 'work_item.issue_closed', data: { key: ISSUE, reason: 'completed', via: 'landing' } });
+    expect(store.workItems.get(ISSUE)).toMatchObject({ issueState: 'closed' });
+    herdr.addTurns({ output: ['● The work is merged; its batch run closes the issue.', '  HOPPER_WAITING', '  for: the issue to close', '  on: issue o/r#45'] }, DONE);
+
+    const job = await a.pull({}, item);
+
+    await a.waitForStatus(job.id, 'finished', 8000);
+    expect(herdr.prompts[1]!.text).toContain(`${ISSUE} was closed`);
+    const events = await ofJob(a, job.id);
+    expect(events.map((e) => e.type)).toEqual(expect.arrayContaining(['job.waiting', 'job.wait_ended']));
+    expect(events.find((e) => e.type === 'job.wait_ended')!.data).toEqual({ by: 'hopper', note: `${ISSUE} was closed` });
+  });
+
   it('a job waiting on another job goes on when that job ends (issue #1245): on the event, never a poll', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test' });
     const a = await start(herdr);

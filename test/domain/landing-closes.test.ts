@@ -7,10 +7,11 @@
 //   Scenario: a merge on the landing branch waits on its batch until a batch run promotes it, or it turns out a culprit
 //   Scenario: a culprit and a reverted one are failed in the ledger; a new job takes the item over
 //   Scenario: a batch run's pull request closes the issues of the job pull requests in it, not a part or a culprit
+//   Scenario: a job pull request's own closing keywords are closed by its batch run, whatever its job does now (issue #1356)
 import { describe, expect, it } from 'vitest';
 import { applyEvent, applyLandingEvent, type LedgerJob, type WorkItem } from '../../src/domain/work-items.ts';
-import { awaitsBatch, batchClosingIssues, LANDING_UNSEEN_MS } from '../../src/domain/work-item-landing.ts';
-import { batchBody } from '../../src/domain/landing-batches.ts';
+import { awaitsBatch, batchClosingIssues, LANDING_UNSEEN_MS, promotedOpen } from '../../src/domain/work-item-landing.ts';
+import { batchBody, closingReferences } from '../../src/domain/landing-batches.ts';
 import type { EventType } from '../../src/domain/types.ts';
 
 const REPO = 'owner/app';
@@ -106,5 +107,47 @@ describe('a batch run closes the issues of its job pull requests (issue #1175)',
     expect(body).toContain('- #101\n- #102');
     expect(body).toMatch(/\nCloses #1\nCloses #2$/);
     expect(batchBody({ landing: 'main', tested: 'dev', tip: TIP, merges: [101] })).not.toContain('Closes');
+  });
+});
+
+describe('an item whose job still waits after its merge (issue #1356)', () => {
+  const waiting = (n: number, over: Partial<WorkItem> = {}) => item(n, { state: 'waiting_outside', eventState: 'waiting_outside', waitingOn: `issue #${n} closed`, wholeMerged: true, ...over });
+  const promoted = { landing: { repo: REPO, pullRequest: 101, stage: 'promoted' as const, since: '2026-10-14T10:05:00.000Z' } };
+
+  it('its batch run closes its issue: the job waits on that close', () => {
+    expect(batchClosingIssues([waiting(1), waiting(2, { wholeMerged: undefined })], REPO, [101, 102])).toEqual(['#1']);
+  });
+
+  it('promoted with its issue open, the hopper closes the issue', () => {
+    expect(promotedOpen(waiting(1, promoted), landingRepo)).toBe(true);
+    expect(promotedOpen(waiting(1, { ...promoted, wholeMerged: undefined }), landingRepo)).toBe(false);
+    expect(promotedOpen(waiting(1, { ...promoted, issueState: 'closed' }), landingRepo)).toBe(false);
+    expect(promotedOpen(item(1, { ...promoted, state: 'pr_open', eventState: 'pr_open' }), landingRepo)).toBe(false);
+  });
+
+  it('the ledger keeps a whole merge while its job acts on the item, past a later part, and a new job forgets it', () => {
+    const job: LedgerJob = { id: 'j1', key: waiting(1).key };
+    const at = { at: '2026-10-14T12:00:00.000Z' };
+    const open = item(1, { state: 'working', eventState: 'working', pullRequestState: 'open' });
+    const part = applyEvent(open, { type: 'job.pull_request_merged', ...at, data: { pullRequest: open.pullRequest, part: true } }, open.key, job)!;
+    expect(part).toMatchObject({ state: 'working', pullRequestState: 'merged' });
+    expect(part.wholeMerged).toBeUndefined();
+    const whole = applyEvent(open, { type: 'job.pull_request_merged', ...at, data: { pullRequest: open.pullRequest, part: false } }, open.key, job)!;
+    expect(whole).toMatchObject({ state: 'working', wholeMerged: true });
+    const later = applyEvent(whole, { type: 'job.pull_request_merged', ...at, data: { pullRequest: 'https://github.com/Owner/App/pull/300', part: true } }, open.key, job)!;
+    expect(later.wholeMerged).toBe(true);
+    expect(applyEvent(whole, { type: 'job.queued', ...at, data: {} }, open.key, { id: 'j2', key: open.key })!.wholeMerged).toBeUndefined();
+  });
+});
+
+describe('the issues a pull request\'s text closes (issue #1356)', () => {
+  it('reads GitHub\'s closing keywords, each issue once, as references from the repository', () => {
+    const body = 'Closes #1264\nFixes: #7\nresolved owner/APP#9, closes Other/repo#3\nCloses https://github.com/owner/app/issues/12\nPart of #44\nfixes #7';
+    expect(closingReferences(body, REPO)).toEqual(['#1264', '#7', '#9', 'Other/repo#3', '#12']);
+  });
+
+  it('names nothing for a part, a mention or no text', () => {
+    expect(closingReferences('Part of #1356\nSee #12. Disclosed #3', REPO)).toEqual([]);
+    expect(closingReferences('', REPO)).toEqual([]);
   });
 });
