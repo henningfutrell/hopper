@@ -71,8 +71,10 @@ async function start(o: { connected?: boolean } = {}) {
 
 const eventsOf = (a: TestApp, type: string): DomainEvent[] => a.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === type);
 
-/** The list once GitHub was read for every repository: the first read answers at once and reads GitHub after. */
+/** The list once Refresh read GitHub for every repository: it answers at once and reads GitHub after. */
 async function checked(app: TestApp): Promise<RepoChecksView> {
+  // A list never reads GitHub (issue #1250): Refresh reads each repository in the background.
+  expect((await app.ui('/ui/api/repo-checks/refresh', {}, { token: await app.login() })).status).toBe(200);
   let view: RepoChecksView = { repos: [] };
   await expect.poll(async () => {
     view = (await app.api<RepoChecksView>('GET', '/api/repo-checks')).body;

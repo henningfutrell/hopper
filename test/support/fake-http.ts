@@ -10,7 +10,8 @@ export async function readBody(req: IncomingMessage): Promise<Record<string, unk
   try { return JSON.parse(text) as Record<string, unknown>; } catch { return { raw: text }; }
 }
 
-export const send = (res: ServerResponse, status: number, body: unknown) => {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
+/** `etag`: the answer's ETag (issue #1250). */
+export const send = (res: ServerResponse, status: number, body: unknown, etag?: string) => {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', ...(etag !== undefined ? { etag } : {}) });
   res.end(body === undefined ? '' : JSON.stringify(body));
 };

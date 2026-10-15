@@ -15,6 +15,7 @@ import { OUTBOUND_SEND_TABLE } from './outbound-sends.ts';
 import { GITHUB_OUTBOX_TABLE } from './github-outbox.ts';
 import { workItemLedger } from './work-items.ts';
 import { rebuildWorkItems } from './work-items.ts';
+import { REPO_CHECKS_TABLE } from './repo-checks.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -62,4 +63,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 63: Where each listing's next change read starts (issue #1276), apart from its rows. A nullable column only: the build
   // before runs on it, and names its columns when it inserts.
   'ALTER TABLE github_listings ADD COLUMN since TEXT',
+  // 64: The repositories' checks as last read (issue #1250): Sources answers from them, and a restart reads nothing again.
+  // A table only: the build before runs on it.
+  REPO_CHECKS_TABLE,
 ];

@@ -4,28 +4,38 @@
 // one it does not ask for). Recent checks: the status check rollup of the newest pull requests, through GraphQL, as the
 // GitHub source reads it. The same `@octokit/request` binding and token renewal as Report a bug. The repository's setup
 // (issue #652) is read beside them (setup.ts); its default branch's required checks are the ones read there.
+// Every GET is conditional (issue #1250, conditional.ts): an unchanged answer is a 304, which costs no call. GraphQL has
+// no conditional request, so the pull requests' checks are read only when they decide: no required check and no
+// workflow on pull requests was found (else `pullRequests` is `{ read: 0, withChecks: 0 }`).
 import { tokenCaller, type TokenSource } from '../github-proxy/index.ts';
-import { makeRequest, splitRepo, statusOf } from '../sources/github/app/http.ts';
+import { makeRequest, retryAtOf, splitRepo, statusOf } from '../sources/github/app/http.ts';
 import { runsOnPullRequests, type RepoChecksFound } from '../domain/types.ts';
-import { createSetupReader, type RepoAnswer } from './setup.ts';
+import type { ConditionalAnswers, Get } from './conditional.ts';
+import { createSetupReader, type Read, type RepoAnswer } from './setup.ts';
+
+/** The repository itself: read first, the anchor of a read's kept refusals (conditional.ts). */
+export const REPO_ROUTE = 'GET /repos/{owner}/{repo}';
 
 /** The newest pull requests read for their checks. */
 export const RECENT_PULL_REQUESTS = 5;
 
 export interface RepoChecksGitHub {
-  found(repo: string): Promise<RepoChecksFound>;
-  /** The open issue with `label` and exactly this title, when there is one. */
-  openIssue(repo: string, label: string, title: string): Promise<{ number: number; url: string } | undefined>;
+  /** What GitHub shows of the repository's checks, each GET through `answers`. */
+  found(repo: string, answers: ConditionalAnswers): Promise<RepoChecksFound>;
+  /** The open issue with `label` and exactly this title, when there is one; through `answers` when given. */
+  openIssue(repo: string, label: string, title: string, answers?: ConditionalAnswers): Promise<{ number: number; url: string } | undefined>;
   file(repo: string, issue: { title: string; body: string; labels: string[]; assignees: string[] }): Promise<{ number: number; url: string }>;
 }
 
-/** GitHub's refusal or failure, with its status when it gave one. */
+/** GitHub's refusal or failure, with its status when it gave one, and when its rate limit lets the read go again. */
 export class RepoChecksGitHubError extends Error {
   readonly status?: number;
-  constructor(message: string, status?: number) {
+  readonly retryAt?: number;
+  constructor(message: string, status?: number, retryAt?: number) {
     super(message);
     this.name = 'RepoChecksGitHubError';
     if (status !== undefined) this.status = status;
+    if (retryAt !== undefined) this.retryAt = retryAt;
   }
 }
 
@@ -39,12 +49,12 @@ interface Rollups { repository?: { pullRequests?: { nodes?: ({ commits?: { nodes
 
 export function createRepoChecksGitHub(o: { apiUrl: string } & TokenSource): RepoChecksGitHub {
   const req = makeRequest(o.apiUrl);
-  const setup = createSetupReader(req);
+  const asGet = req as unknown as Get;
   const withToken = tokenCaller(o);
   const failed = (what: string) => (err: unknown): Error => {
     const e = err as { message?: unknown; response?: { data?: { message?: unknown } } };
     const message = typeof e.response?.data?.message === 'string' ? e.response.data.message : String(e.message ?? err);
-    return new RepoChecksGitHubError(`GitHub answered ${statusOf(err) ?? 'no status'} to ${what}: ${message}`, statusOf(err));
+    return new RepoChecksGitHubError(`GitHub answered ${statusOf(err) ?? 'no status'} to ${what}: ${message}`, statusOf(err), retryAtOf(err));
   };
   const headers = (token: string) => ({ authorization: `token ${token}` });
   /** A 404 is "there is none" (no workflows folder, no rulesets); anything else throws. */
@@ -57,12 +67,12 @@ export function createRepoChecksGitHub(o: { apiUrl: string } & TokenSource): Rep
     }
   };
 
-  async function workflows(token: string, repo: string, branch: string): Promise<string[]> {
+  async function workflows(get: Read, token: string, repo: string, branch: string): Promise<string[]> {
     const at = { ...splitRepo(repo), ref: branch, headers: headers(token) };
-    const files = await orNone(req('GET /repos/{owner}/{repo}/contents/.github/workflows', at).then((r) => r.data as { name: string; path: string; type: string }[]), []);
+    const files = await orNone(get<{ name: string; path: string; type: string }[]>('GET /repos/{owner}/{repo}/contents/.github/workflows', at), []);
     const found: string[] = [];
     for (const f of files.filter((x) => x.type === 'file' && /\.ya?ml$/i.test(x.name))) {
-      const d = (await req('GET /repos/{owner}/{repo}/contents/.github/workflows/{name}', { ...at, name: f.name })).data as { content?: string; encoding?: string };
+      const d = await get<{ content?: string; encoding?: string }>('GET /repos/{owner}/{repo}/contents/.github/workflows/{name}', { ...at, name: f.name });
       if (runsOnPullRequests(Buffer.from(d.content ?? '', d.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8'))) found.push(f.name);
     }
     return found;
@@ -77,15 +87,21 @@ export function createRepoChecksGitHub(o: { apiUrl: string } & TokenSource): Rep
   }
 
   return {
-    found: (repo) => withToken(async (token) => {
-      const answer = (await req('GET /repos/{owner}/{repo}', { ...splitRepo(repo), headers: headers(token) })).data as RepoAnswer;
+    found: (repo, answers) => withToken(async (token) => {
+      const get: Read = (route, params) => answers.get(asGet, route, params);
+      const answer = await get<RepoAnswer>(REPO_ROUTE, { ...splitRepo(repo), headers: headers(token) });
       const branch = answer.default_branch;
-      const [s, w, p] = await Promise.all([setup.read(token, repo, answer), workflows(token, repo, branch), pullRequests(token, repo)]);
+      const [s, w] = await Promise.all([createSetupReader(get).read(token, repo, answer), workflows(get, token, repo, branch)]);
       // The default branch is read first: its required checks are the repository's.
-      return { required: s.branches[0]?.checks ?? [], workflows: w, pullRequests: p, setup: s.setup };
+      const required = s.branches[0]?.checks ?? [];
+      const p = required.length > 0 || w.length > 0 ? { read: 0, withChecks: 0 } : await pullRequests(token, repo);
+      return { required, workflows: w, pullRequests: p, setup: s.setup };
     }, failed(`the checks of ${repo}`)),
-    openIssue: (repo, label, title) => withToken(async (token) => {
-      const d = (await req('GET /repos/{owner}/{repo}/issues', { ...splitRepo(repo), state: 'open', labels: label, per_page: 100, headers: headers(token) })).data as { number: number; title: string; html_url: string; pull_request?: unknown }[];
+    openIssue: (repo, label, title, answers) => withToken(async (token) => {
+      type Issue = { number: number; title: string; html_url: string; pull_request?: unknown };
+      const params = { ...splitRepo(repo), state: 'open', labels: label, per_page: 100, headers: headers(token) };
+      const route = 'GET /repos/{owner}/{repo}/issues';
+      const d = answers ? await answers.get<Issue[]>(asGet, route, params) : (await asGet(route, params)).data as Issue[];
       const i = d.find((x) => x.pull_request === undefined && x.title === title);
       return i ? { number: i.number, url: i.html_url } : undefined;
     }, failed(`the open issues of ${repo}`)),
