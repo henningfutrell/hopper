@@ -10,6 +10,7 @@ import { JobTitle, Since, UnassignedFlag } from '@/components/job';
 import { RejectButton } from '@/components/reject';
 import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
+import { WaitsOnLink } from '@/components/waits-on';
 import { useNow } from '@/hooks/use-now';
 import { canRerun, machineName, ownWaitOf, waitOnLink, waitingRows } from '@/model/board';
 import { ago, between } from '@/model/format';
@@ -169,11 +170,8 @@ function WaitBadge({ job }: { job: Job }) {
 
 /** What the wait waits on (issue #1245): a link where it is a page; "nothing recorded" for a wait from before. */
 function WaitsOn({ job }: { job: Job }) {
-  const on = waitOnLink(job);
-  if (!on) return null;
-  return <div className="text-xs">waits on {on.href
-    ? <a data-slot="waits-on" href={on.href} target={on.href.startsWith('#') ? undefined : '_blank'} rel="noreferrer" className="font-medium underline">{on.label}</a>
-    : <span data-slot="waits-on" className="font-medium text-foreground/90">{on.label}</span>}</div>;
+  if (!waitOnLink(job)) return null;
+  return <div className="text-xs">waits on <WaitsOnLink on={job.wait?.on} repo={job.source?.repo} /></div>;
 }
 
 export function WaitingOnRows({ heading = true }: { heading?: boolean }) {

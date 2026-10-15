@@ -22,6 +22,7 @@ import { countStages, treesOf } from './job-trees.ts';
 import { ITEM_STAGE, rollUp, stageInItem } from './job-rollup.ts';
 import { isInFlight, type WorkItem } from './work-items.ts';
 import type { Job, JobStatus } from './types.ts';
+import type { WaitOn } from './wait-on.ts';
 
 /** Where a job stands in its life, in the words the Jobs view uses. */
 export const JOB_STAGES = ['queued', 'running', 'waiting', 'pr_open', 'partly_done', 'done', 'failed', 'cancelled', 'superseded', 'no_job'] as const;
@@ -75,6 +76,8 @@ export interface JobGraphNode {
   phase?: string;
   /** A job on a wait for its own command (issue #1037): `command` while it runs, `stuck` once flagged stuck. */
   ownWait?: OwnWait;
+  /** A job on its own wait: what it waits on (issue #1245). Absent on a wait from before, which waits on nothing recorded. */
+  waitOn?: WaitOn;
   /** A job's run in the chain of runs again of its issue (1 the first), and how many the failure settings allow. */
   attempt?: number; attempts?: number;
   /** owner/name, when the node has one. */
@@ -292,6 +295,7 @@ export function jobGraph(input: JobGraphInput): JobGraph {
     nodes.set(id, {
       id, kind: 'job', label: job.spec.goal || s?.title || job.spec.executor, stage, stageText: '', jobId: job.id, status: job.status,
       stageSince: stageSinceOf(job), ...(phase !== 'work' ? { phase } : {}), ...(ownWait ? { ownWait } : {}),
+      ...(job.status === 'waiting_on' && job.wait?.on ? { waitOn: job.wait.on } : {}),
       ...(attempt > 1 ? { attempt, ...(input.maxAttempts !== undefined ? { attempts: input.maxAttempts + 1 } : {}) } : {}),
       ...(s?.repo ? { repo: s.repo } : {}), ...(s?.number !== undefined ? { number: s.number } : {}), ...(s?.url ? { url: s.url } : {}),
       ...(job.tasks ? { tasks: job.tasks } : {}), ...(job.laneId ? { laneId: job.laneId } : {}),

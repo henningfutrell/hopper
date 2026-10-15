@@ -121,10 +121,9 @@ describe('the jobs each dependency\'s event wakes (issue #1245, part 2)', () => 
     expect(woken({ type: 'vault.granted', jobId: 'on-job', data: { job: 'on-job', key: 'k', by: 'p' } })!.jobs).toEqual([]);
   });
 
-  it('a sandbox request approved or declined wakes its job; a template approval wakes the jobs waiting on one', () => {
-    expect(woken({ type: 'vault.sandbox_approved', jobId: 'on-sandbox', data: { request: 'r', template: 't', by: 'p' } })).toEqual({ note: 'the sandbox request for t was approved', jobs: ['on-sandbox'] });
-    expect(woken({ type: 'vault.sandbox_declined', jobId: 'on-sandbox', data: { request: 'r', template: 't', reason: 'no', by: 'p' } })!.jobs).toEqual(['on-sandbox']);
-    expect(woken({ type: 'vault.approved', data: { template: 't', image: 'i', secrets: [], by: 'p' } })).toEqual({ note: 'template t was approved', jobs: ['on-template'] });
+  it('an approval wakes nothing here: the skill request\'s watch ends the wait with its answer (issue #998)', () => {
+    expect(settledBy({ type: 'vault.sandbox_approved', jobId: 'on-sandbox', data: { request: 'r', template: 't', by: 'p' } })).toBeUndefined();
+    expect(settledBy({ type: 'vault.approved', data: { template: 't', image: 'i', secrets: [], by: 'p' } })).toBeUndefined();
   });
 
   it('other events wake nothing', () => {

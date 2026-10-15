@@ -246,7 +246,7 @@ describe('the job graph in plain words (issue #935)', () => {
     expect(node(g, jobNodeId('own'))).toMatchObject({ stage: 'running', stageText: 'Running: waiting on its own command', stageSince: '2026-10-02T01:00:00.000Z' });
     expect(node(g, jobNodeId('own')).waitsOnYou).toBeUndefined();
     expect(node(g, jobNodeId('stuck'))).toMatchObject({ stage: 'waiting', stageText: 'Waiting on you: its own command is gone, so it is stuck', waitsOnYou: true });
-    expect(node(g, jobNodeId('out'))).toMatchObject({ stage: 'waiting', stageText: 'Waiting on the outside world' });
+    expect(node(g, jobNodeId('out'))).toMatchObject({ stage: 'waiting', stageText: 'Waiting on nothing recorded' });
   });
 
   it('a job on its own wait carries what it waits on, and says it (issue #1245)', () => {

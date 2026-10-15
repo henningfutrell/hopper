@@ -1029,7 +1029,7 @@ marker still on screen, a marker in backticks or bold. Then:
 | last marker `HOPPER_FAILED` | `failed`, error = text after the marker on that line or the next line |
 | last marker `HOPPER_QUESTION` | `question`, `detectedBy: marker`, text = the assistant message before the marker |
 | last marker `HOPPER_AUTH_PENDING`, nothing after it but its field lines (`tool:`, `url:`, `code:`, `expires_in:`; also `kind:`, `expires_at:`, `interval:`, and, issue #698, `account:`, `scopes:`) | a **login** ("Logins", issue #476): no question, no nudge. Reported to the logins; the job stays running and waits, as on background work, until Claude goes on by itself (the login then `completed`), the user acts on it, it expires, or `timeoutMs`. A login the logins cannot take (no code, no URL) is said back to the job, three times at most, then the job fails. Field lines are never progress; output after them means the job went on, and the marker no longer counts |
-| last marker `HOPPER_WAITING`, then a `for:` line (and an `until:` line) | the job's **own wait** ("A job's own wait", issue #483): outcome `wait`, no question, no nudge. The job is `waiting_on`, its lane free, its pane kept. The turn's output lines then are saved as `turn.markersAfter`: when Claude goes on by itself in the same turn, that marker no longer counts. Without a `for:` line the marker is no wait (a status note) |
+| last marker `HOPPER_WAITING`, then a `for:` line (and `on:` and `until:` lines, issue #1245) | the job's **own wait** ("A job's own wait", issue #483): outcome `wait`, no question, no nudge. The job is `waiting_on`, its lane free, its pane kept. The turn's output lines then are saved as `turn.markersAfter`: when Claude goes on by itself in the same turn, that marker no longer counts. Without a `for:` line the marker is no wait (a status note) |
 | status `blocked` (question/approval UI) | `question`, `detectedBy: blocked`, text = the dialog alone (`dialogText` in `screen.ts`, issue #377): from its border, or the ● line above it, to its options — title, what it is about, warnings, countdown, options; gutter, box edges, cursor and key hints removed. Earlier tool output above it is not the question: it is in `recentOutput`. No dialog found: the last 30 visible lines |
 | idle/done with no marker after the anchor for `idleNudgeMs` (20000), and no background work in the footer | **status note** (issue #163): no question, no outcome. The executor types `STATUS_NOTE_NUDGE` into the pane as the next turn of the same job (anchor = the nudge, same `timeoutMs` clock) and watches again. Further status notes in a row wait 1, 5, 15 and 30 minutes idle before their nudge (`NUDGE_GAPS_MS`, `nudge.ts`, issue #491); the one after that gets none: progress `waiting: N status notes in a row without a marker; no more nudges until claude works again`, and the watch goes on until Claude works again by itself (a background notification, a person in its pane), which begins a new row, or `timeoutMs`. Before each nudge, the check before a nudge (issue #627): work over at the source ends the job done; a person awaited means no nudge |
 | idle/done with no marker, and the footer under the input box names background work (`backgroundWork`, `screen.ts`: `· 1 shell ·`, `background task`, `monitor`, `agent`) | no status note, no nudge (issue #491): Claude Code wakes the job when that work ends. Progress once: `waiting on background work (1 shell): no nudge while it runs`. When the footer no longer names it and Claude stays idle, the status note timer starts |
@@ -11568,11 +11568,13 @@ one press per cause where the hopper can move each item.
   failure that Run again takes and no open hand-off counts (`retry`); work not pushed, `push` when Push it is taken (its
   open hand-off is then counted here, not with the hand-offs) else `kept_work`; an open pull request card (the Pull
   requests page's own list, `pullRequestList`) the hopper gave up on, `tend` after a failed tend else `checks`, or one whose
-  tend its source refused (`tend_refused`); a parked job (`parked`); a job stuck on its own command wait (`own_wait`); an
+  tend its source refused (`tend_refused`); a parked job (`parked`); a job on a wait that names nothing it waits on (`wait_unnamed`,
+  "waiting on nothing recorded", issue #1245); a job stuck on its own command wait (`own_wait`); an
   item left in PR open with no pull request to wait on (`pr_open_stale`, issue #1231).
   Each has `ids`, `what` in a few words, and `act`, the bulk action's button, or `todo`, what a person does.
 - **The bulk action** (`POST /ui/api/failures/stuck/:cause`, operator, a box action; `src/failures/stuck.ts`
-  `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend` (else 400).
+  `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend`, `wait_unnamed` (else 400;
+  `wait_unnamed`, Resume all, ends each such wait with a note that tells the job to go on or name what it waits on, issue #1245).
   It reads the view at the press and runs the cause's action on each item, through the same path as its own button, with
   who pressed it, answered once each is checked, its give-back running after (issue #1194, "Actions answer at once"): the hand-off's resolution (Won't do with its card's why as the note, so the
   source is told why), the failure's Run again, Push it, Tend again. An item refused meanwhile is skipped and said with
@@ -20017,3 +20019,53 @@ said why.
 still runs for its own jobs), `test/integration/github-app.test.ts` (an enabled app source with empty options, and with no
 key; the key given clears it without a restart), `test/ui/sources.test.ts`, `test/ui/sources-view.test.ts` (the setup
 card), `test/ui/needs-you.test.ts` (the Setup row), `test/sources/app-config.test.ts` (`missing`).
+
+## What a wait waits on (issue #1245, 2026-10-15)
+
+Fourteen jobs were seen in `waiting_on` with no record of what they waited for. Neither the UI nor an operator could tell
+whether to act, and nothing could wake them when the thing came. A job's own wait now always names what it waits on, typed.
+
+- **The dependency** (`WaitOn`, `src/domain/wait-on.ts`): a pull request (`number`, `repo` when not the job's own, and
+  `about`: `checks`, `merge` or `review`), another job, an item (an issue), a person (a question id), a `sandbox` or
+  `template` approval, a vault grant, its own command, or an outside event (`what`). It is `wait.on` on the job and `on` on
+  `job.waiting`.
+- **Named by the job.** `WAIT_LINE` asks for an `on:` line after `HOPPER_WAITING`: `pr 12 merge`, `o/r#12 checks`,
+  `job <id>`, `issue 45`, `question <id>`, `sandbox approval`, `template approval`, `vault grant`, `own command`,
+  `outside: <what>`. `waitFields` reads it beside `for:` and `until:`. With no `on:` line, `waitOnOf` reads it from `for:` and
+  `until:` (own command as `namesOwnCommand`; a pull request; an approval; a grant); what reads as none of them is an outside
+  event with the `for:` text. So a wait is never recorded without one.
+- **Never without one.** The job repository refuses to write a job that enters `waiting_on` with no `wait.on`
+  (`waitEntryProblem`, `src/store/jobs.ts`): the one place every write goes through. A job already on a wait keeps it.
+- **Woken on the event, never a poll.** The engine hears each event and asks `settledBy` (`src/domain/wait-on.ts`) what it
+  settles; each job on its own wait on that (`waitsFor`) is woken by the hopper (`wakeOn`, `src/engine/wait.ts`),
+  `job.wait_ended { by: hopper, note }`, and told so in its pane:
+
+  | Waits on | Woken by | Note |
+  |---|---|---|
+  | a pull request | `job.pull_request_merged`, `job.pull_request_closed`: its number, in `repo` or the job's own repository; whatever it waited for about it is over | `<url> was merged` |
+  | a job | `job.finished`, `job.failed`, `job.cancelled` of that job | `job <id> finished` |
+  | an item | `work_item.issue_closed`: its issue, in `repo` or the job's own repository | `<url> was closed` |
+  | a question | `question.answered`, `question.closed`, `question.dismissed`, `question.expired` | `question <id> was answered` |
+  | a vault grant | `vault.granted`, `vault.grant_denied` for this job | `a vault grant was given` |
+
+  An approval is not woken here: a job asks for one through a skill request, whose watch ends its wait with the answer when
+  it is ready (issue #998, `src/skills/waits.ts`), the box started, not only the template approved. A wake on the approval
+  event would end the wait before that answer, and the answer would then find no wait to end. Checks keep `pr wait`
+  (issue #1072). Its own command and an outside event are woken as before: by the job's own poll or a person. Issue #1210
+  carries the waits on hopper state a job polls for.
+- **Legacy waits.** A `waiting_on` job from before, with no `wait.on` and not on its own command, is **stuck work** of cause
+  `wait_unnamed`, "Jobs waiting on nothing recorded". Its bulk action **Resume all** ends each wait, as a person does, with a
+  note: go on, or end the turn with `HOPPER_WAITING` again and an `on:` line. That is its one tend pass.
+- **UI.** Each says "waits on" the dependency, from one helper (`waitOnLinkOf`, `ui/src/model/board.ts`; `WaitsOnLink`,
+  `ui/src/components/waits-on.tsx`): a link to the pull request or issue on GitHub, the job, or the question; "nothing
+  recorded" for a legacy wait. The Queue view's own-wait rows, with the row's "for <since>". The job view: a "waits on" fact
+  with how long it has waited, and its header ("Where it stands") says `Waiting on PR #12 to merge`. The job graph: a job
+  node on its own wait carries `waitOn` and its words say it (`Waiting on …`, `Waiting on nothing recorded`); its details
+  link it, beside "in stage", the time since the wait began.
+- **Persisted state.** No migration: `wait.on` is optional in the job's JSON, and a wait without it is read as a legacy
+  wait. A build before this one ignores `wait.on`.
+- **Verification (part 2).** `test/domain/wait-on.test.ts` (each event wakes only the jobs waiting on what it settles; an
+  approval wakes nothing), `test/integration/job-wait.test.ts` (a job waiting on another job goes on when that job ends),
+  `test/domain/job-graph.test.ts` (the node's `waitOn` and words), `test/ui/jobs-view.test.ts` (the node's words and its
+  details' link), `test/ui/board.test.ts` (`waitOnLinkOf`), `test/integration/skill-wait-wakes-job.test.ts` (an approval
+  still ends the wait with the skill's answer).

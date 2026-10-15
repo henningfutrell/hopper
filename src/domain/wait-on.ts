@@ -1,7 +1,8 @@
 // What a job's own wait waits on (issue #1245, design.md "What a wait waits on"): typed, so the UI and an operator can
 // tell whether to act, and the hopper can wake the job when it comes. The job names it on an `on:` line after
 // HOPPER_WAITING; with none, it is read from its `for:` and `until:`, and what reads as nothing else is an outside event.
-// A job never enters `waiting_on` without one (`waitEntryProblem`, checked where a job is written). Pure.
+// A job never enters `waiting_on` without one (`waitEntryProblem`, checked where a job is written). The event that settles
+// it wakes the job (`settledBy`, `waitsFor`; engine/wait.ts). Pure.
 import { namesOwnCommand } from './own-command.ts';
 import type { Job } from './types.ts';
 
@@ -95,12 +96,55 @@ export function waitEntryProblem(cur: Pick<Job, 'status'>, next: Pick<Job, 'id' 
   return `job ${next.id} waits on nothing recorded: a job enters waiting_on only with what it waits on`;
 }
 
-/** True when `job` waits on the pull request at `url` (merged or closed: whatever it waited for about it is over). */
-export function mergedWaiter(job: Pick<Job, 'status' | 'wait' | 'source'>, url: string): boolean {
+/** What an event settles (issue #1245): the dependency it ends, and what happened, in a few words. */
+export type Settled = { note: string } & (
+  | { kind: 'pull_request' | 'item'; repo: string; number: number }
+  | { kind: 'job'; jobId: string }
+  | { kind: 'question'; questionId: string }
+  | { kind: 'grant'; jobId: string });
+
+const AT = /github\.com\/([^/]+\/[^/]+)\/(?:pull|issues)\/(\d+)/;
+const JOB_ENDS: Record<string, string> = { 'job.finished': 'finished', 'job.failed': 'failed', 'job.cancelled': 'was cancelled' };
+const QUESTION_ENDS: Record<string, string> = { 'question.answered': 'was answered', 'question.closed': 'was closed', 'question.dismissed': 'was dismissed', 'question.expired': 'expired' };
+
+/**
+ * The dependency `e` settles, if any: what wakes the jobs waiting on it, on that event, never a poll. An approval is not
+ * here: a job asks for one through a skill request, whose watch ends its wait with the answer once it is ready (issue #998,
+ * src/skills/waits.ts) — the box started, not only the template approved.
+ */
+export function settledBy(e: { type: string; jobId?: string; data?: unknown }): Settled | undefined {
+  const d = (e.data ?? {}) as Record<string, unknown>;
+  const str = (k: string): string | undefined => (typeof d[k] === 'string' ? d[k] : undefined);
+  const at = (url: string | undefined) => { const m = url ? AT.exec(url) : null; return m ? { repo: m[1]!, number: Number(m[2]) } : undefined; };
+  switch (e.type) {
+    case 'job.pull_request_merged': case 'job.pull_request_closed': {
+      const pr = at(str('pullRequest'));
+      return pr && { kind: 'pull_request', ...pr, note: `${str('pullRequest')} was ${e.type === 'job.pull_request_merged' ? 'merged' : 'closed'}` };
+    }
+    case 'work_item.issue_closed': {
+      const item = at(str('key'));
+      return item && { kind: 'item', ...item, note: `${str('key')} was closed` };
+    }
+    case 'vault.granted': case 'vault.grant_denied':
+      return e.jobId ? { kind: 'grant', jobId: e.jobId, note: `a vault grant was ${e.type === 'vault.granted' ? 'given' : 'denied'}` } : undefined;
+  }
+  if (JOB_ENDS[e.type]) return e.jobId ? { kind: 'job', jobId: e.jobId, note: `job ${e.jobId} ${JOB_ENDS[e.type]}` } : undefined;
+  const q = str('questionId');
+  if (QUESTION_ENDS[e.type] && q) return { kind: 'question', questionId: q, note: `question ${q} ${QUESTION_ENDS[e.type]}` };
+  return undefined;
+}
+
+/** True when `job` is on its own wait on what `s` settled. A pull request or an item with no repository named is in the job's own. */
+export function waitsFor(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>, s: Settled): boolean {
   const on = job.wait?.on;
-  if (job.status !== 'waiting_on' || on?.kind !== 'pull_request') return false;
-  const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(url);
-  return !!m && Number(m[2]) === on.number && (on.repo ?? job.source?.repo) === m[1];
+  if (job.status !== 'waiting_on' || !on || on.kind !== s.kind) return false;
+  switch (on.kind) {
+    case 'pull_request': case 'item': return 'number' in s && on.number === s.number && (on.repo ?? job.source?.repo) === s.repo;
+    case 'job': return 'jobId' in s && on.jobId === s.jobId;
+    case 'question': return 'questionId' in s && on.questionId === s.questionId;
+    case 'grant': return 'jobId' in s && job.id === s.jobId;
+    default: return false;
+  }
 }
 
 /** A legacy wait (before issue #1245) names nothing it waits on, unless it was on its own command: stuck work, "waiting on nothing recorded". */
