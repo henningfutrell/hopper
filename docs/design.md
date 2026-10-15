@@ -86,7 +86,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/search/` | search (issue #945, "Search"): the Solr adapter at the `SearchIndex` seam (`solr.ts`: the hopper's schema, put into the core at each start; update, select with highlights and facets, suggest, count, over Solr's JSON API), a job, an artifact, an infra plan, an issue or a pull request as a **search document**, masked (`document.ts`, pure), and each user's search (`index.ts`: the pending index updates written from job events and issue graph reads, the backfill, the search and suggest with each hit decided by Access); the types and the port are `src/domain/search.ts` | engine, http, plugins, decider, sources |
 | `src/remote-access/` | the tunnel providers (issue #968): what the hopper asks of Cloudflare's and ngrok's APIs with the admin's credential — mint a tunnel, its token and its host name, and release them again (`provider.ts`, `cloudflare.ts`, `ngrok.ts`) | `src/http/`, `src/store/`, `src/vault/`: it is given the credential, keeps nothing, and knows no route |
 | `src/update/` | self-update ("Self-update"): install.json, the compose file a build ships with and the update commands and agent update skill of a container install (`shipped-compose.ts`, `compose-carry.ts`, `update-commands.ts`, `update-skill.ts`, issues #697, #970) and the stack against it (`drift.ts`, `stack-probe.ts`), a cluster install's Helm update and its drift from the update channel (`cluster.ts`, issue #1285), the git mirror of the update repository, the release check: only the merge of a pull request with passing checks is offered (`release-check.ts`, issue #652), the build of the next install (install.sh build-only mode), the swap, the restart (exit or respawn), restart blockers; the move of a job-hopper install to the new names (`rename.ts`, "Rename from job-hopper") | engine, http, plugins, decider |
-| `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the slow store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
+| `src/http/` | Fastify routes, SSE, static UI; the event loop watchdog — a stall logged with the routes in flight and the slow store calls in it, shown on `/api/health`, raised as `hopper.event_loop_stalled` (`event-loop.ts`, issues #1002, #1154); whose request it is — the session's user, or a loopback read's (`tenants.ts`) — and the users list (`users.ts`) and the instance totals (`instance.ts`); the tunnel watch — whether the remote access URL is up through the tunnel (`tunnel.ts`, issue #795); GitHub deliveries — `POST /github/webhook`, its signature check and the GitHub webhook secret (`github-deliveries.ts`, issue #1079); remote access — the tunnel's settings, the provider's credential and the minted tunnel's token in the instance's vault, minting and releasing the tunnel, its status and the tunnel services' ask (`remote-access.ts`, `ui/remote-access.ts`, issues #880, #968); the tunnel's edge for requests through it (`tunnel.ts` `installTunnelEdge`, issue #968); this host's tailnet — its MagicDNS name and addresses, read from tailscaled's local API or the Tailscale interface every minute (`tailnet.ts`, issue #1024) — and the allowed hosts, the admin's, kept in the instance's settings (`allowed-hosts.ts`, `ui/allowed-hosts.ts`, issue #1024); the usage graph's reads (`usage-history.ts`, issue #385); whether a session is an instance admin (`instance-admin.ts`, issue #240); the master key's status and its banner's read (`master-key.ts`, issue #659); which hopper answers — the instance tag on every answer and first on the event stream (`instance-tag.ts`, issue #1295); the hopper's admin's own mutations, self-update and the master key (`ui/instance.ts`); the UI session, its role check and the sign-in routes (`ui/`); the API reference (`openapi.ts` the document, `openapi-operation.ts` its operation type, `api-reference.ts` Scalar at `/docs/`); the help pages (`help.ts`, issue #782); the plugin store's read side (`plugin-store.ts`); machines joining and dialling in (`client-link.ts`, issue #308); Add machine's join code and the sandbox box the hopper starts (`ui/machine-join.ts`, issues #308, #603); the failures read (`failures.ts`) and its actions (`ui/failures.ts`, issue #509), access's read (`access.ts`) and its actions (`ui/access.ts`, issue #559), the UI route groups registered with the role guards (`ui/route-groups.ts`) | executors, plugins (reads them through the `PluginsView` and `PluginStoreView` ports) |
 | `ui/` | the UI: Vite + React + shadcn/ui + Tailwind + d3, built to `ui/dist` (gitignored) — browser only. `ui/src/model/` is pure (tested from `test/ui/`); `ui/src/components/ui/` is vendored shadcn | all of `src/` at runtime; **type-only** imports from `src/domain/types.ts` (the wire contract has one definition) |
 | `scripts/agent-box/` | the agent box's image (issue #295, "Agent boxes"; under `scripts/` because the install and the image carry `scripts/`, not `deploy/`): `Dockerfile` (one agent CLI per build, sshd, the herdr binary put beside it by `scripts/agent-boxes.sh`) `entrypoint.sh` (sshd, then the box's herdr session) and `pickup.ts` (the box side of the pickup protocol, `hopper-pickup`, issue #319: node's own modules only, the box runs it with no install); `scripts/agent-boxes.ts` is the script's plugins-config filter, `scripts/box-pickups.ts` the pickup protocol's reader | everything in `src/` |
 | `scripts/box/` | the sandbox box's image (issue #308, "Joining a machine"; built from the repo root, it carries `src/client`): `Dockerfile` (one agent CLI, herdr, the client) and `entrypoint.sh` (herdr's session, then the client, again after each release load); `scripts/client-install.sh` is the install a computer's line runs, served at `/client/install` | everything in `src/` but the client files it copies |
@@ -414,7 +414,8 @@ Domain events: `id: <seq>`, `event: <type>`, `data: <DomainEvent JSON>`. New usa
 issue #502) and new machine samples (`machine.recorded`, issue #560), `data: { added }`, no `id`. Delivery updates
 (not domain events, never persisted or webhooked, so a delivery cannot trigger a delivery):
 `event: delivery.updated`, `data: <WebhookDelivery JSON>`, no `id`. Comment heartbeat
-`: ping` every 15 s. A running job's own stream is another, `GET /job/stream` ("The job stream", issue #613).
+`: ping` every 15 s. Before all of it, the hopper's **instance tag** (`event: hopper.instance`, `data: "<tag>"`, issue #1295,
+"Which hopper answers"). A running job's own stream is another, `GET /job/stream` ("The job stream", issue #613).
 
 ## Webhooks
 
@@ -21072,9 +21073,9 @@ the user's sockets by path, or signals the stack's processes. A boundary against
 "Sandboxing jobs: mechanisms compared"): a VM or another OS user. The job's image pulls are its own (no image store shared
 with the user's), so each job pulls what it runs once.
 
-**Not done here.** A test hopper a job installs inside its cluster showed its Limited banner ("the master key is
-missing") to the admin as if it were the real hopper. How it reached the admin's browser is not settled; it is carried on
-the issue as the part left.
+**Not done here.** The hard boundary above: a job as another OS user, or in a VM. It differs in security and cost from
+what is built, so a person decides it (carried as its own issue). A test hopper's banner on the admin's page is
+"Which hopper answers" below.
 
 **Verification:** `test/client/job-runtime.test.ts` (the setup, the guards, the reap and the survey for real, with a
 stand-in podman and docker on PATH and a stand-in user runtime dir: a reset refused whatever HOME and `XDG_*` say, a flag
@@ -21086,3 +21087,39 @@ machine with podman 6: a job's network with DNS, a container listed by the job's
 reset refused, a mount of the user's podman socket refused, the job label on a container, a health check passing, the
 repository's own database tests (testcontainers, Postgres) passing on the job's runtime, and the reap leaving the stack's
 containers as they were. kind was not run by hand: no kind on that machine.
+
+## Which hopper answers (issue #1295, 2026-10-15)
+
+**What happened.** A job installed a test hopper in its kind cluster. The test hopper made its own master key, and its
+banner ("the master key is missing") reached the admin's page as if it were the real hopper's. The likely path: the job's
+podman reset took the hopper stack down (the reset "Each job its own container runtime" stops), and the address of the
+user's hopper, `127.0.0.1:4790`, was free; the test hopper took it (the chart's `kubectl port-forward svc/hopper 4790`,
+or a port its kind cluster publishes). The page open on that address went on reading it, now from the test hopper, on
+the same origin: with the user's session token sent along, and a session the test hopper did not know cleared.
+
+**As built.**
+- **The instance tag** (`src/http/instance-tag.ts`): every answer carries `x-hopper-instance`, 16 hex characters, a hash
+  of the instance id (`settings.instanceId`), set on the raw response first thing, so a guard's refusal and the event
+  stream have it too. The event stream's first event is the tag (`hopper.instance`, "SSE").
+- **The page** (`ui/src/lib/instance.ts`): its hopper is the first tag it reads, else the tag this browser kept
+  (`jh_instance` in localStorage), which the first tag it ever reads sets. An answer to `get`, `post`, the session read or
+  a sign-in with another tag, or with none once the page knows its hopper, is another hopper's: dropped, with
+  `OtherHopper`. From then on the page sends nothing more to that address — the session neither sent nor cleared — and
+  takes nothing of it. The event stream takes no event before its tag once the page knows its hopper, and closes on
+  another hopper's tag.
+- **The notice** (`ui/src/app/other-hopper.tsx`, `HopperGate`): one card in place of the whole page — no view, no banner:
+  which hopper the page talks to, which one answered, and that the page shows nothing of it. **Reload** reads the page
+  again (the real hopper back: all is as before). **This is my hopper now** is for a hopper set up again (a new
+  database, a new instance id): the kept tag and the session are forgotten, and the person signs in again.
+
+**Residual risk.** The tag is no proof. A hopper a job changed can send the user's tag (it is on every answer), and a
+page that loads from the other hopper runs that hopper's code. It stops the mistake that happened — a test hopper built
+from this repository on the user's address —, not a job that means harm: that is the hard boundary of "Each job its own
+container runtime". The first request after the switch still carries the session token to the other address; the page
+stops at its answer.
+
+**Verification:** `test/integration/instance-tag.test.ts` (the tag on every route, the page and a 404 alike, another
+hopper's another, the stream's first event), `test/ui/other-hopper.test.ts` (an answer from another hopper dropped and
+nothing more sent, the session kept; a fresh page knows its hopper from the browser; an answer with no tag; the master
+key banner of a test hopper never shown, the notice in its place; This is my hopper now; the stream takes no event before
+its tag and closes on another's).

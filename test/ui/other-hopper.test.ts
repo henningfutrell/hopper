@@ -100,8 +100,8 @@ describe('another hopper at the page\'s address (#1295)', () => {
     const tag = { now: MINE as string | null };
     vi.stubGlobal('fetch', address(tag).fetch);
     const api = (await import(API)) as Api;
-    const { HopperGate } = (await import(GATE)) as { HopperGate: (p: { children: El }) => El };
-    const { MasterKeyBanner } = (await import(MASTER_KEY)) as { MasterKeyBanner: (p: object) => El };
+    const { HopperGate } = (await import(GATE)) as { HopperGate: (p: { children?: El }) => El };
+    const { MasterKeyBanner } = (await import(MASTER_KEY)) as { MasterKeyBanner: (p: Record<string, unknown>) => El };
     await api.get('/api/health');
     document.body.innerHTML = '<div id="root"></div>';
     const page = () => createElement(HopperGate, null, createElement(MasterKeyBanner, { view: GENERATED, admin: true, onReveal: () => {}, onSaved: () => {} }));
@@ -125,7 +125,7 @@ describe('another hopper at the page\'s address (#1295)', () => {
     vi.stubGlobal('fetch', address({ now: THEIRS }).fetch);
     const reload = vi.fn();
     const api = (await import(API)) as Api;
-    const { HopperGate } = (await import(GATE)) as { HopperGate: (p: { children: El; reload?: () => void }) => El };
+    const { HopperGate } = (await import(GATE)) as { HopperGate: (p: { children?: El; reload?: () => void }) => El };
     await api.readSession().catch(() => undefined);
     document.body.innerHTML = '<div id="root"></div>';
     await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(HopperGate, { reload }, createElement('p', null, 'page'))); });
@@ -135,5 +135,40 @@ describe('another hopper at the page\'s address (#1295)', () => {
     expect(localStorage.getItem('jh_instance')).toBeNull();
     expect(api.readToken()).toBeNull();
     expect(reload).toHaveBeenCalledOnce();
+  });
+
+  it('the event stream: no event before its tag; another hopper\'s tag ends it', async () => {
+    const streams: FakeEventSource[] = [];
+    class FakeEventSource {
+      onopen: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      closed = false;
+      readonly listeners = new Map<string, ((m: { data: string }) => void)[]>();
+      constructor() { streams.push(this); }
+      addEventListener(type: string, fn: (m: { data: string }) => void): void { this.listeners.set(type, [...(this.listeners.get(type) ?? []), fn]); }
+      emit(type: string, data: unknown): void { for (const fn of this.listeners.get(type) ?? []) fn({ data: JSON.stringify(data) }); }
+      close(): void { this.closed = true; }
+    }
+    vi.stubGlobal('EventSource', FakeEventSource);
+    vi.stubGlobal('fetch', address({ now: MINE }).fetch);
+    const api = (await import(API)) as Api;
+    const { connect } = (await import('../../ui/src/store/stream.ts')) as { connect(): () => void };
+    const { useHopper } = (await import('../../ui/src/store/index.ts')) as { useHopper: { getState(): { events: { seq: number }[] } } };
+    await api.get('/api/health');
+    const close = connect();
+    const es = streams[0]!;
+    const event = (seq: number) => ({ seq, type: 'job.queued', at: '2026-10-15T00:00:00.000Z', jobId: 'j1', data: {} });
+    es.onopen?.();
+    es.emit('job.queued', event(1));
+    expect(useHopper.getState().events.map((e) => e.seq)).toEqual([]);
+    es.emit('hopper.instance', MINE);
+    es.emit('job.queued', event(2));
+    expect(useHopper.getState().events.map((e) => e.seq)).toEqual([2]);
+    es.onopen?.();
+    es.emit('hopper.instance', THEIRS);
+    es.emit('job.queued', event(3));
+    expect(es.closed).toBe(true);
+    expect(useHopper.getState().events.map((e) => e.seq)).toEqual([2]);
+    close();
   });
 });
